@@ -35,7 +35,7 @@ internal class BrowserDownloads(private val context: Context) {
     var bytes = 0L
     var totalBytes = -1L
     var mimeType = "application/octet-stream"
-    var state = "downloading"
+    var state = BrowserDownloadState.ACTIVE
     var error: String? = null
     var lastProgress = 0L
     @Synchronized fun json() = JSONObject().apply {
@@ -50,7 +50,7 @@ internal class BrowserDownloads(private val context: Context) {
     ConcurrentHashMap<String, JSONObject>().apply {
       root.listFiles()?.filter { it.extension == "json" }?.forEach { manifest ->
         runCatching { JSONObject(manifest.readText()) }.getOrNull()?.let { entry ->
-          if (entry.optString("state") == "complete") put(entry.optString("id"), entry)
+          if (entry.optString("state") == BrowserDownloadState.COMPLETE) put(entry.optString("id"), entry)
         }
       }
     }
@@ -72,7 +72,9 @@ internal class BrowserDownloads(private val context: Context) {
     val id = UUID.randomUUID().toString()
     val entry = Entry(id, android.webkit.URLUtil.guessFileName(url, null, null), BrowserDownloadRequest())
     entries[id] = entry
+    notify(entry, false)
     executor.execute {
+      val staging = File(root, "$id.json.tmp")
       try {
         entry.request.fetchUser(directory(id), url, cookies, userAgent, proxy,
           progress = { bytes, total ->
@@ -89,48 +91,50 @@ internal class BrowserDownloads(private val context: Context) {
             }
           }, routeCurrent = routeCurrent)
         synchronized(entry) {
-          check(entry.state == "downloading" && routeCurrent())
-          check(entry.request.file!!.renameTo(file(id, entry.name)))
-          entry.state = "complete"
+          if (!BrowserDownloadState.active(entry.state) || !routeCurrent()) throw BrowserDownloadFailure.INTERRUPTED.exception()
+          entry.state = BrowserDownloadState.SAVING
+          notify(entry, false)
+        }
+        // Publish saving before disk work; completion is visible only once both files are saved.
+        val completion = entry.json().put("state", BrowserDownloadState.COMPLETE).put("total_bytes", entry.bytes)
+        staging.writeText(completion.toString())
+        synchronized(entry) {
+          if (entry.state != BrowserDownloadState.SAVING || !routeCurrent()) throw BrowserDownloadFailure.INTERRUPTED.exception()
+          if (!entry.request.file!!.renameTo(file(id, entry.name))) throw BrowserDownloadFailure.WRITE.exception()
+          if (!staging.renameTo(File(root, "$id.json"))) throw BrowserDownloadFailure.WRITE.exception()
           entry.totalBytes = entry.bytes
-          // Keep completion recoverable if the app exits before JS persists it.
-          val manifest = File(root, "$id.json")
-          val staging = File(root, "$id.json.tmp")
-          staging.writeText(entry.json().toString())
-          check(staging.renameTo(manifest))
+          entry.state = BrowserDownloadState.COMPLETE
           notify(entry, true)
         }
       } catch (error: Exception) {
         synchronized(entry) {
-          if (entry.state != "cancelled") {
-            entry.state = "failed"
-            entry.error = when {
-              error.message == BrowserDownloadStorage.LOW_STORAGE -> BrowserDownloadStorage.LOW_STORAGE
-              error.message == BrowserDownloadStorage.UNAVAILABLE -> BrowserDownloadStorage.UNAVAILABLE
-              generateSequence<Throwable>(error) { it.cause }.any {
-                it is android.system.ErrnoException && it.errno == android.system.OsConstants.ENOSPC
-              } -> BrowserDownloadStorage.LOW_STORAGE
-              else -> "Download failed. Check your connection and try again from the page."
-            }
+          if (BrowserDownloadState.active(entry.state)) {
+            val interrupted = !routeCurrent() || (error is BrowserDownloadException && error.reason == BrowserDownloadFailure.INTERRUPTED)
+            entry.error = if (interrupted) BrowserDownloadFailure.INTERRUPTED.description
+              else if (entry.state == BrowserDownloadState.SAVING && error !is BrowserDownloadException)
+                BrowserDownloadFailure.message(BrowserDownloadFailure.WRITE.exception().apply { initCause(error) })
+              else BrowserDownloadFailure.message(error)
+            entry.state = if (interrupted) BrowserDownloadState.INTERRUPTED else BrowserDownloadState.FAILED
           }
           entry.request.cancel()
           directory(id).deleteRecursively()
           notifications.cancel(id, 0)
         }
-      }
+      } finally { staging.delete() }
     }
   }
 
-  fun cancel(id: String) {
+  fun cancel(id: String, interrupted: Boolean = false) {
     entries[id]?.let { entry -> synchronized(entry) {
-      if (entry.state == "downloading") {
-        entry.state = "cancelled"
+      if (BrowserDownloadState.active(entry.state)) {
+        entry.state = if (interrupted) BrowserDownloadState.INTERRUPTED else BrowserDownloadState.CANCELLED
+        if (interrupted) entry.error = BrowserDownloadFailure.INTERRUPTED.description
         entry.request.cancel()
         notifications.cancel(id, 0)
       }
     } }
   }
-  fun cancelActive() { entries.keys.forEach(::cancel) }
+  fun cancelActive() { entries.keys.forEach { cancel(it, interrupted = true) } }
   fun remove(id: String) {
     cancel(id)
     check(!directory(id).exists() || directory(id).deleteRecursively())
@@ -161,10 +165,11 @@ internal class BrowserDownloads(private val context: Context) {
       .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
     val pending = PendingIntent.getActivity(context, entry.id.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     val builder = NotificationCompat.Builder(context, if (complete) CHANNEL else PROGRESS_CHANNEL)
-      .setSmallIcon(R.drawable.ic_notification_whip).setContentTitle(if (complete) "Download complete" else "Downloading")
+      .setSmallIcon(R.drawable.ic_notification_whip).setContentTitle(if (complete) "Download complete" else if (entry.state == BrowserDownloadState.SAVING) "Saving download" else "Downloading")
       .setContentText(entry.name).setContentIntent(pending).setAutoCancel(complete)
       .setOngoing(!complete).setOnlyAlertOnce(!complete)
-    if (!complete) builder.setProgress(100, if (entry.totalBytes > 0) ((entry.bytes * 100) / entry.totalBytes).toInt() else 0, entry.totalBytes <= 0)
+    if (!complete) builder.setProgress(100, if (entry.totalBytes > 0) ((entry.bytes * 100) / entry.totalBytes).toInt().coerceIn(0, 100) else 0,
+      entry.totalBytes <= 0 || entry.state == BrowserDownloadState.SAVING)
     if (complete) notifications.cancel(entry.id, 0)
     notifications.notify(entry.id, 0, builder.build())
     } catch (_: RuntimeException) { /* Notifications can be disabled while transferring. */ }

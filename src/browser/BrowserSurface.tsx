@@ -81,6 +81,7 @@ import { BrowserSettings } from './BrowserSettings';
 import { BrowserStartPage } from './BrowserStartPage';
 import { BrowserLibraryScreen } from './BrowserLibraryScreen';
 import { BrowserDownloadsScreen } from './BrowserDownloadsScreen';
+import { BrowserDownloadIndicator } from './BrowserDownloadIndicator';
 import { useBrowserDownloads } from './useBrowserDownloads';
 import { BrowserSiteInfo } from './BrowserSiteInfo';
 import { browserDisplayAddress } from './siteInfo';
@@ -651,6 +652,7 @@ export function BrowserSurface({
         style={styles.fill}
         behavior="padding" automaticOffset
       >
+        {entry && <BrowserDownloadIndicator onOpen={openDownloads} />}
         {error && (
           <Text
             accessibilityRole="alert"

@@ -6,16 +6,12 @@ import { ArrowLeft, Download, File, Trash2, X } from 'lucide-react-native';
 import { browserLibrary } from './library';
 import { browserDownloads, BROWSER_DOWNLOAD_STATE } from './downloads';
 import { cancelSavedBrowserDownload, openSavedBrowserDownload } from './native';
+import { downloadPresentation, isActiveDownload } from './downloadPresentation';
+import { BrowserDownloadProgress } from './BrowserDownloadProgress';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Text } from '../components/ui/text';
 import { useTheme } from '../theme';
-
-export function downloadSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 export function BrowserDownloadsScreen({
   visible,
@@ -76,24 +72,9 @@ export function BrowserDownloadsScreen({
             </Text>
           )}
           {entries.map(entry => {
-            const active = entry.state === BROWSER_DOWNLOAD_STATE.active;
+            const active = isActiveDownload(entry);
             const complete = entry.state === BROWSER_DOWNLOAD_STATE.complete;
-            const bytes = Number(entry.bytes);
-            const total = Number(entry.totalBytes);
-            const percent =
-              total > 0
-                ? Math.min(100, Math.floor((bytes * 100) / total))
-                : null;
-            const status = active
-              ? `${percent === null ? 'Downloading' : `${percent}%`} · ${downloadSize(bytes)}${total > 0 ? ` / ${downloadSize(total)}` : ''}`
-              : complete
-                ? downloadSize(bytes)
-                : entry.state === BROWSER_DOWNLOAD_STATE.interrupted
-                  ? 'Interrupted — download again from the page'
-                  : entry.state === BROWSER_DOWNLOAD_STATE.cancelled
-                    ? 'Cancelled'
-                    : entry.error ||
-                      'Download failed — try again from the page';
+            const { status } = downloadPresentation(entry);
             return (
               <View
                 key={entry.id}
@@ -146,28 +127,7 @@ export function BrowserDownloadsScreen({
                     )}
                   </Button>
                 </View>
-                {active && (
-                  <View
-                    accessibilityRole="progressbar"
-                    accessibilityLabel={`Downloading ${entry.name}`}
-                    accessibilityValue={
-                      percent === null
-                        ? { text: status }
-                        : { min: 0, max: 100, now: percent, text: status }
-                    }
-                    className="h-1 overflow-hidden rounded-full bg-muted"
-                  >
-                    {percent !== null && (
-                      <View
-                        style={{
-                          width: `${percent}%`,
-                          backgroundColor: colors.text,
-                          height: '100%',
-                        }}
-                      />
-                    )}
-                  </View>
-                )}
+                {active && <BrowserDownloadProgress entry={entry} />}
               </View>
             );
           })}

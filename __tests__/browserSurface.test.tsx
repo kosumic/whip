@@ -21,6 +21,7 @@ import {
 } from 'react-native';
 import { BROWSER_ACTION_TIMEOUT_MS } from '../src/browser/controller';
 import { browserArchive } from '../src/browser/archive';
+import type { BrowserSavedDownload } from '../src/browser/library';
 import { LOCAL_BROWSER_RUNTIME_ID } from '../src/browser/routing';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { browserSearchHistory } from '../src/browser/searchHistory';
@@ -30,6 +31,7 @@ import {
 } from '../src/browser/preferences';
 
 let mockMounted = 0;
+let mockDownloads: BrowserSavedDownload[] = [];
 jest.mock('../src/browser/useBrowserDownloads', () => ({
   useBrowserDownloads: jest.fn(),
 }));
@@ -47,6 +49,7 @@ jest.mock('../src/browser/library', () => ({
     bookmarks: () => [],
     history: () => [],
     shortcuts: () => [],
+    downloads: () => mockDownloads,
     tunneling: () => false,
     visit: jest.fn(async () => undefined),
     bookmark: jest.fn(async () => undefined),
@@ -262,6 +265,25 @@ function browserSession(id: string) {
     entry: browserRegistry.ensure(identity, runtime),
   };
 }
+
+test('an active page download opens Downloads directly from the browser surface', async () => {
+  const { identity, runtime } = browserSession('download-indicator');
+  mockDownloads = [{
+    id: 'download', name: 'report.pdf', bytes: 512n, totalBytes: 1024n,
+    state: 'downloading', mimeType: 'application/pdf', createdAt: 1n,
+  }];
+  browserRegistry.open(identity.sessionId);
+  let view!: ReactTestRenderer;
+  try {
+    await act(async () => { view = create(<BrowserSurface runtimes={[runtime]} />); });
+    expect(view.root.findByProps({ accessibilityRole: 'progressbar' }).props.accessibilityValue.now).toBe(50);
+    await act(async () => { view.root.findByProps({ accessibilityLabel: 'Open downloads' }).props.onPress(); });
+    expect(view.root.findByType('BrowserDownloadsScreen' as never).props.visible).toBe(true);
+  } finally {
+    mockDownloads = [];
+    await act(async () => { await browserRegistry.close(identity.sessionId); view?.unmount(); });
+  }
+});
 
 test('startup restores tabs without WebViews and opening or selecting loads only that page', async () => {
   const tabs = [
