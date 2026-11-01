@@ -9,6 +9,7 @@ mod browser_proxy;
 pub(crate) mod known_hosts;
 mod reverse_forward;
 mod session;
+pub(crate) use session::SessionRoute;
 pub(crate) mod tailcat;
 
 pub(crate) use reverse_forward::RemoteForward;
@@ -1027,6 +1028,14 @@ async fn connect_inner(
     connection: &SshConnectionConfig,
     jump: Option<&Session>,
 ) -> Result<Arc<Session>, TransportError> {
+    connect_inner_guarded(connection, jump, None).await
+}
+async fn connect_inner_guarded(
+    connection: &SshConnectionConfig,
+    jump: Option<&Session>,
+    control: Option<&crate::ssh_workflows::Control>,
+) -> Result<Arc<Session>, TransportError> {
+    check_workflow_control(control)?;
     if connection.tailcat_ssh_server && connection.tailcat_address.is_none() {
         return Err(TransportError::InvalidRequest(
             "Tailcat's SSH server requires Tailcat mode".into(),
@@ -1085,10 +1094,11 @@ async fn connect_inner(
             .map_err(classify_direct_connect_error)?
     };
 
+    check_workflow_control(control)?;
     let mut forwarding_key = None;
     let authenticated = match &connection.credential {
         SshCredential::Password(password) => {
-            authenticate_password(&mut handle, &username, password).await?
+            authenticate_password(&mut handle, &username, password, control).await?
         }
         SshCredential::Key {
             private_key,
@@ -1099,6 +1109,7 @@ async fn connect_inner(
                 passphrase.as_deref(),
             )?);
             let hash_alg = handle.best_supported_rsa_hash().await?.flatten();
+            check_workflow_control(control)?;
             let auth_key = PrivateKeyWithHashAlg::new(key_pair.clone(), hash_alg);
             let result = handle
                 .authenticate_publickey(&username, auth_key)
@@ -1134,7 +1145,9 @@ async fn authenticate_password(
     handle: &mut client::Handle<RusshHandler>,
     username: &str,
     password: &str,
+    control: Option<&crate::ssh_workflows::Control>,
 ) -> Result<bool, TransportError> {
+    check_workflow_control(control)?;
     if handle
         .authenticate_password(username, password)
         .await?
@@ -1143,6 +1156,7 @@ async fn authenticate_password(
         return Ok(true);
     }
 
+    check_workflow_control(control)?;
     // macOS and other PAM-backed SSH servers commonly present a password
     // through keyboard-interactive authentication. OpenSSH clients fall back
     // automatically, so mirror that behavior without answering unknown MFA
@@ -1155,6 +1169,7 @@ async fn authenticate_password(
             client::KeyboardInteractiveAuthResponse::Success => return Ok(true),
             client::KeyboardInteractiveAuthResponse::Failure { .. } => return Ok(false),
             client::KeyboardInteractiveAuthResponse::InfoRequest { prompts, .. } => {
+                check_workflow_control(control)?;
                 let Some(responses) =
                     keyboard_interactive_password_responses(&prompts, username, password)
                 else {
@@ -3702,3 +3717,14 @@ pub fn shutdown() {
 
 #[cfg(test)]
 mod tests;
+
+fn check_workflow_control(
+    control: Option<&crate::ssh_workflows::Control>,
+) -> Result<(), TransportError> {
+    if let Some(control) = control {
+        control
+            .check()
+            .map_err(|_| TransportError::InvalidRequest("SSH operation cancelled".into()))?;
+    }
+    Ok(())
+}

@@ -163,3 +163,20 @@ test('pairing failures return to setup with the route intact and allow a fresh s
   expect(view.root.findAllByType('CameraView' as never)).toHaveLength(1);
   await act(async () => { view.unmount(); });
 });
+
+
+test('leaving QR pairing aborts the native operation and ignores its delayed result', async () => {
+  let complete!: (value: typeof result) => void;
+  jest.mocked(pairHostWithRoute).mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+  const onPaired = jest.fn(async () => {});
+  const view = await mountSetup(onPaired);
+  await openScanner(view);
+  let request!: Promise<void>;
+  await act(async () => { request = view.root.findByType('CameraView' as never).props.onBarcodeScanned({ data: 'WP4:code' }); });
+  const signal = jest.mocked(pairHostWithRoute).mock.calls[0][3].signal;
+  expect(signal?.aborted).toBe(false);
+  await act(async () => { view.unmount(); });
+  expect(signal?.aborted).toBe(true);
+  await act(async () => { complete(result); await request; });
+  expect(onPaired).not.toHaveBeenCalled();
+});

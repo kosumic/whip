@@ -34,7 +34,8 @@ export class KnownHostsUnavailableError extends Error {
   }
 }
 
-const repository = new KnownHostRepository();
+export const knownHostRepository = new KnownHostRepository();
+const repository = knownHostRepository;
 
 /** Render a fresh native projection rather than an older operation result. */
 export function currentKnownHostsState(): KnownHostsLoadState {

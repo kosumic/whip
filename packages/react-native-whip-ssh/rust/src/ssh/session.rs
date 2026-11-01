@@ -60,7 +60,7 @@ use super::{
     CommandOutput, ExecDelivery, LengthFormat, NEXT_TEMP_ID, REMOTE_HOME_COMMAND, RemoteForward,
     Session, SftpEntry, SftpFileServer, SftpMetadata, ShellCommand, ShellDelivery,
     SshConnectionConfig, SshFailure, SshSession, SshShellClose, StreamCommand, TransportError,
-    UnixSocketDelivery, browser_proxy, close_local_forward_for_key, connect_inner, connect_sftp_on,
+    UnixSocketDelivery, browser_proxy, close_local_forward_for_key, connect_sftp_on,
     directory_download, disconnect_key, exec_channel_command_for_key, execute_on, latency_on,
     open_exec_channel_with_delivery, open_local_forward_on, open_unix_socket_channel_with_framing,
     request_unix_socket_bytes_on, reverse_forward, sessions, sftp_create_dir_all_on,
@@ -99,7 +99,19 @@ impl SshSession {
         config: &SshConnectionConfig,
         jump: Option<&SshSession>,
     ) -> Result<Arc<Self>, SshFailure> {
-        let inner = connect_inner(config, jump.map(|session| session.inner.as_ref())).await?;
+        Self::connect_guarded(config, jump, None).await
+    }
+    pub(crate) async fn connect_guarded(
+        config: &SshConnectionConfig,
+        jump: Option<&SshSession>,
+        control: Option<&crate::ssh_workflows::Control>,
+    ) -> Result<Arc<Self>, SshFailure> {
+        let inner = super::connect_inner_guarded(
+            config,
+            jump.map(|session| session.inner.as_ref()),
+            control,
+        )
+        .await?;
         Ok(Arc::new(Self {
             inner,
             resource_key: format!(
@@ -621,5 +633,18 @@ impl Session {
         // Keep returning the command's original output. Path callers perform
         // their existing validation and report their existing path errors.
         Ok(home)
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct SessionRoute(pub Vec<Arc<SshSession>>);
+impl Drop for SessionRoute {
+    fn drop(&mut self) {
+        let sessions = std::mem::take(&mut self.0);
+        if !sessions.is_empty()
+            && let Ok(runtime) = crate::runtime()
+        {
+            runtime.spawn(crate::host_runtime::disconnect_sessions(sessions));
+        }
     }
 }

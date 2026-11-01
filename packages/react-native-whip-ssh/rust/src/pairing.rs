@@ -12,13 +12,14 @@ use sha2::{Digest, Sha256};
 use ssh_key::{PrivateKey, private::Ed25519Keypair};
 use tokio::time::timeout;
 
-use crate::host_runtime::{HostSshConfig, disconnect_sessions, ssh_config};
+use crate::host_runtime::{HostSshConfig, ssh_config};
 use crate::ssh::{SshFailure, SshSession};
 
 use whipair_protocol::{
     ED25519_SEED_BYTES, EnrollmentRequest, EnrollmentResponse, ProtocolError, SHA256_BYTES,
 };
 
+const CANCELLED_OPERATION: &str = "SSH operation cancelled";
 const MAX_MESSAGE_BYTES: usize = 16 * 1024;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const TAILCAT_CONNECT_TIMEOUT: Duration = Duration::from_secs(60);
@@ -60,20 +61,6 @@ pub(crate) enum PairingError {
     Json(#[from] serde_json::Error),
     #[error("jump host: {0}")]
     JumpHost(#[from] SshFailure),
-}
-
-#[derive(Default)]
-struct PairingJumpSessions(Vec<Arc<SshSession>>);
-
-impl Drop for PairingJumpSessions {
-    fn drop(&mut self) {
-        let sessions = std::mem::take(&mut self.0);
-        if !sessions.is_empty()
-            && let Ok(runtime) = crate::runtime()
-        {
-            runtime.spawn(disconnect_sessions(sessions));
-        }
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, uniffi::Record)]
@@ -161,6 +148,20 @@ pub(crate) async fn pair_host(
     device_name: &str,
     jump_hosts: &[HostSshConfig],
 ) -> Result<PairHostResult, PairingError> {
+    pair_host_guarded(code, public_key, device_name, jump_hosts, None).await
+}
+pub(crate) async fn pair_host_guarded(
+    code: &str,
+    public_key: &str,
+    device_name: &str,
+    jump_hosts: &[HostSshConfig],
+    control: Option<Arc<crate::ssh_workflows::Control>>,
+) -> Result<PairHostResult, PairingError> {
+    if let Some(control) = &control {
+        control
+            .check()
+            .map_err(|_| PairingError::CommandFailed(CANCELLED_OPERATION.into()))?;
+    }
     let payload = decode_pairing_code(code.trim())?;
     if payload.tailcat && !jump_hosts.is_empty() {
         return Err(PairingError::TailcatJumpHost);
@@ -181,13 +182,17 @@ pub(crate) async fn pair_host(
         nodelay: true,
         ..Default::default()
     });
-    let mut jumps = PairingJumpSessions::default();
+    let mut jumps = crate::ssh::SessionRoute::default();
     for jump in jump_hosts {
         let mut connection = ssh_config(jump);
         connection.forward_agent = false;
         let session = timeout(
             CONNECT_TIMEOUT,
-            SshSession::connect(&connection, jumps.0.last().map(Arc::as_ref)),
+            SshSession::connect_guarded(
+                &connection,
+                jumps.0.last().map(Arc::as_ref),
+                control.as_deref(),
+            ),
         )
         .await
         .map_err(|_| PairingError::ConnectionTimeout)??;
@@ -230,6 +235,11 @@ pub(crate) async fn pair_host(
     .await
     .map_err(|_| PairingError::ConnectionTimeout)??;
 
+    if let Some(control) = &control {
+        control
+            .check()
+            .map_err(|_| PairingError::CommandFailed(CANCELLED_OPERATION.into()))?;
+    }
     let private_key = Arc::new(temporary_private_key(&payload.temporary_private_key_seed));
     let authentication = handle
         .authenticate_publickey(
@@ -249,6 +259,11 @@ pub(crate) async fn pair_host(
         public_key: public_key.to_owned(),
     })?;
     encoded.push(b'\n');
+    if let Some(control) = &control {
+        control
+            .admit_mutation()
+            .map_err(|_| PairingError::CommandFailed(CANCELLED_OPERATION.into()))?;
+    }
     channel.data(encoded.as_slice()).await?;
     channel.eof().await?;
 

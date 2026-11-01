@@ -28,6 +28,7 @@ import {
   type UniffiVTableCallbackInterfaceWhipSshSessionConnectionPlatform,
   type UniffiVTableCallbackInterfaceWhipSshSessionPersistencePlatform,
   type UniffiVTableCallbackInterfaceWhipSshSessionRestorePlatform,
+  type UniffiVTableCallbackInterfaceWhipSshSshWorkflowPlatform,
   type UniffiVTableCallbackInterfaceWhipSshTerminalDeliveryEventSink,
   type UniffiVTableCallbackInterfaceWhipSshTerminalSubmissionPlatform,
   type UniffiVTableCallbackInterfaceWhipSshWhipSshEventSink,
@@ -2631,6 +2632,18 @@ export function setSshAgentForwarding(
       nativeModule().ubrn_uniffi_whip_ssh_fn_func_set_ssh_agent_forwarding(
         FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
         FfiConverterBool.lower(enabled, nativeModule().rustbuffer_alloc),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
+export function setSshWorkflowLocked(locked: boolean): void {
+  uniffiCaller.rustCall(
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_set_ssh_workflow_locked(
+        FfiConverterBool.lower(locked, nativeModule().rustbuffer_alloc),
         callStatus,
       );
     },
@@ -37896,6 +37909,1035 @@ const FfiConverterTypeSshError = (() => {
   return new FFIConverter();
 })();
 
+// Error type: SshWorkflowError
+export enum SshWorkflowError_Tags {
+  Cancelled = 'Cancelled',
+  NeverConnected = 'NeverConnected',
+  InvalidRoute = 'InvalidRoute',
+  MissingCredential = 'MissingCredential',
+  InvalidChallenge = 'InvalidChallenge',
+  TrustUnavailable = 'TrustUnavailable',
+  Platform = 'Platform',
+  Timeout = 'Timeout',
+  OutcomeUnknown = 'OutcomeUnknown',
+  Pairing = 'Pairing',
+  Installation = 'Installation',
+  ResultConsumed = 'ResultConsumed',
+}
+export const SshWorkflowError = (() => {
+  type Cancelled__interface = {
+    tag: SshWorkflowError_Tags.Cancelled;
+  };
+  class Cancelled_ extends UniffiError implements Cancelled__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshWorkflowError';
+    readonly tag = SshWorkflowError_Tags.Cancelled;
+    constructor() {
+      super('SshWorkflowError', 'Cancelled');
+    }
+
+    static new(): Cancelled_ {
+      return new Cancelled_();
+    }
+
+    static instanceOf(obj: any): obj is Cancelled_ {
+      return obj.tag === SshWorkflowError_Tags.Cancelled;
+    }
+    static hasInner(obj: any): obj is Cancelled_ {
+      return false;
+    }
+  }
+
+  type NeverConnected__interface = {
+    tag: SshWorkflowError_Tags.NeverConnected;
+  };
+  class NeverConnected_
+    extends UniffiError
+    implements NeverConnected__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshWorkflowError';
+    readonly tag = SshWorkflowError_Tags.NeverConnected;
+    constructor() {
+      super('SshWorkflowError', 'NeverConnected');
+    }
+
+    static new(): NeverConnected_ {
+      return new NeverConnected_();
+    }
+
+    static instanceOf(obj: any): obj is NeverConnected_ {
+      return obj.tag === SshWorkflowError_Tags.NeverConnected;
+    }
+    static hasInner(obj: any): obj is NeverConnected_ {
+      return false;
+    }
+  }
+
+  type InvalidRoute__interface = {
+    tag: SshWorkflowError_Tags.InvalidRoute;
+  };
+  class InvalidRoute_ extends UniffiError implements InvalidRoute__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshWorkflowError';
+    readonly tag = SshWorkflowError_Tags.InvalidRoute;
+    constructor() {
+      super('SshWorkflowError', 'InvalidRoute');
+    }
+
+    static new(): InvalidRoute_ {
+      return new InvalidRoute_();
+    }
+
+    static instanceOf(obj: any): obj is InvalidRoute_ {
+      return obj.tag === SshWorkflowError_Tags.InvalidRoute;
+    }
+    static hasInner(obj: any): obj is InvalidRoute_ {
+      return false;
+    }
+  }
+
+  type MissingCredential__interface = {
+    tag: SshWorkflowError_Tags.MissingCredential;
+  };
+  class MissingCredential_
+    extends UniffiError
+    implements MissingCredential__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshWorkflowError';
+    readonly tag = SshWorkflowError_Tags.MissingCredential;
+    constructor() {
+      super('SshWorkflowError', 'MissingCredential');
+    }
+
+    static new(): MissingCredential_ {
+      return new MissingCredential_();
+    }
+
+    static instanceOf(obj: any): obj is MissingCredential_ {
+      return obj.tag === SshWorkflowError_Tags.MissingCredential;
+    }
+    static hasInner(obj: any): obj is MissingCredential_ {
+      return false;
+    }
+  }
+
+  type InvalidChallenge__interface = {
+    tag: SshWorkflowError_Tags.InvalidChallenge;
+  };
+  class InvalidChallenge_
+    extends UniffiError
+    implements InvalidChallenge__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshWorkflowError';
+    readonly tag = SshWorkflowError_Tags.InvalidChallenge;
+    constructor() {
+      super('SshWorkflowError', 'InvalidChallenge');
+    }
+
+    static new(): InvalidChallenge_ {
+      return new InvalidChallenge_();
+    }
+
+    static instanceOf(obj: any): obj is InvalidChallenge_ {
+      return obj.tag === SshWorkflowError_Tags.InvalidChallenge;
+    }
+    static hasInner(obj: any): obj is InvalidChallenge_ {
+      return false;
+    }
+  }
+
+  type TrustUnavailable__interface = {
+    tag: SshWorkflowError_Tags.TrustUnavailable;
+  };
+  class TrustUnavailable_
+    extends UniffiError
+    implements TrustUnavailable__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshWorkflowError';
+    readonly tag = SshWorkflowError_Tags.TrustUnavailable;
+    constructor() {
+      super('SshWorkflowError', 'TrustUnavailable');
+    }
+
+    static new(): TrustUnavailable_ {
+      return new TrustUnavailable_();
+    }
+
+    static instanceOf(obj: any): obj is TrustUnavailable_ {
+      return obj.tag === SshWorkflowError_Tags.TrustUnavailable;
+    }
+    static hasInner(obj: any): obj is TrustUnavailable_ {
+      return false;
+    }
+  }
+
+  type Platform__interface = {
+    tag: SshWorkflowError_Tags.Platform;
+  };
+  class Platform_ extends UniffiError implements Platform__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshWorkflowError';
+    readonly tag = SshWorkflowError_Tags.Platform;
+    constructor() {
+      super('SshWorkflowError', 'Platform');
+    }
+
+    static new(): Platform_ {
+      return new Platform_();
+    }
+
+    static instanceOf(obj: any): obj is Platform_ {
+      return obj.tag === SshWorkflowError_Tags.Platform;
+    }
+    static hasInner(obj: any): obj is Platform_ {
+      return false;
+    }
+  }
+
+  type Timeout__interface = {
+    tag: SshWorkflowError_Tags.Timeout;
+  };
+  class Timeout_ extends UniffiError implements Timeout__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshWorkflowError';
+    readonly tag = SshWorkflowError_Tags.Timeout;
+    constructor() {
+      super('SshWorkflowError', 'Timeout');
+    }
+
+    static new(): Timeout_ {
+      return new Timeout_();
+    }
+
+    static instanceOf(obj: any): obj is Timeout_ {
+      return obj.tag === SshWorkflowError_Tags.Timeout;
+    }
+    static hasInner(obj: any): obj is Timeout_ {
+      return false;
+    }
+  }
+
+  type OutcomeUnknown__interface = {
+    tag: SshWorkflowError_Tags.OutcomeUnknown;
+    inner: Readonly<{ operationId: string }>;
+  };
+  class OutcomeUnknown_
+    extends UniffiError
+    implements OutcomeUnknown__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshWorkflowError';
+    readonly tag = SshWorkflowError_Tags.OutcomeUnknown;
+    readonly inner: Readonly<{ operationId: string }>;
+    constructor(inner: { operationId: string }) {
+      super('SshWorkflowError', 'OutcomeUnknown');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { operationId: string }): OutcomeUnknown_ {
+      return new OutcomeUnknown_(inner);
+    }
+
+    static instanceOf(obj: any): obj is OutcomeUnknown_ {
+      return obj.tag === SshWorkflowError_Tags.OutcomeUnknown;
+    }
+    static hasInner(obj: any): obj is OutcomeUnknown_ {
+      return OutcomeUnknown_.instanceOf(obj);
+    }
+
+    static getInner(obj: OutcomeUnknown_): Readonly<{ operationId: string }> {
+      return obj.inner;
+    }
+  }
+
+  type Pairing__interface = {
+    tag: SshWorkflowError_Tags.Pairing;
+    inner: Readonly<[PairHostError]>;
+  };
+  class Pairing_ extends UniffiError implements Pairing__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshWorkflowError';
+    readonly tag = SshWorkflowError_Tags.Pairing;
+    readonly inner: Readonly<[PairHostError]>;
+    constructor(v0: PairHostError) {
+      super('SshWorkflowError', 'Pairing');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: PairHostError): Pairing_ {
+      return new Pairing_(v0);
+    }
+
+    static instanceOf(obj: any): obj is Pairing_ {
+      return obj.tag === SshWorkflowError_Tags.Pairing;
+    }
+    static hasInner(obj: any): obj is Pairing_ {
+      return Pairing_.instanceOf(obj);
+    }
+
+    static getInner(obj: Pairing_): Readonly<[PairHostError]> {
+      return obj.inner;
+    }
+  }
+
+  type Installation__interface = {
+    tag: SshWorkflowError_Tags.Installation;
+    inner: Readonly<[HostRuntimeError]>;
+  };
+  class Installation_ extends UniffiError implements Installation__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshWorkflowError';
+    readonly tag = SshWorkflowError_Tags.Installation;
+    readonly inner: Readonly<[HostRuntimeError]>;
+    constructor(v0: HostRuntimeError) {
+      super('SshWorkflowError', 'Installation');
+
+      this.inner = Object.freeze([v0]);
+    }
+    static new(v0: HostRuntimeError): Installation_ {
+      return new Installation_(v0);
+    }
+
+    static instanceOf(obj: any): obj is Installation_ {
+      return obj.tag === SshWorkflowError_Tags.Installation;
+    }
+    static hasInner(obj: any): obj is Installation_ {
+      return Installation_.instanceOf(obj);
+    }
+
+    static getInner(obj: Installation_): Readonly<[HostRuntimeError]> {
+      return obj.inner;
+    }
+  }
+
+  type ResultConsumed__interface = {
+    tag: SshWorkflowError_Tags.ResultConsumed;
+  };
+  class ResultConsumed_
+    extends UniffiError
+    implements ResultConsumed__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshWorkflowError';
+    readonly tag = SshWorkflowError_Tags.ResultConsumed;
+    constructor() {
+      super('SshWorkflowError', 'ResultConsumed');
+    }
+
+    static new(): ResultConsumed_ {
+      return new ResultConsumed_();
+    }
+
+    static instanceOf(obj: any): obj is ResultConsumed_ {
+      return obj.tag === SshWorkflowError_Tags.ResultConsumed;
+    }
+    static hasInner(obj: any): obj is ResultConsumed_ {
+      return false;
+    }
+  }
+
+  function instanceOf(obj: any): obj is SshWorkflowError {
+    return obj[uniffiTypeNameSymbol] === 'SshWorkflowError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Cancelled: Cancelled_,
+    NeverConnected: NeverConnected_,
+    InvalidRoute: InvalidRoute_,
+    MissingCredential: MissingCredential_,
+    InvalidChallenge: InvalidChallenge_,
+    TrustUnavailable: TrustUnavailable_,
+    Platform: Platform_,
+    Timeout: Timeout_,
+    OutcomeUnknown: OutcomeUnknown_,
+    Pairing: Pairing_,
+    Installation: Installation_,
+    ResultConsumed: ResultConsumed_,
+  });
+})();
+export type SshWorkflowError = InstanceType<
+  (typeof SshWorkflowError)[
+    | 'Cancelled'
+    | 'NeverConnected'
+    | 'InvalidRoute'
+    | 'MissingCredential'
+    | 'InvalidChallenge'
+    | 'TrustUnavailable'
+    | 'Platform'
+    | 'Timeout'
+    | 'OutcomeUnknown'
+    | 'Pairing'
+    | 'Installation'
+    | 'ResultConsumed']
+>;
+
+// FfiConverter for enum SshWorkflowError
+const FfiConverterTypeSshWorkflowError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = SshWorkflowError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new SshWorkflowError.Cancelled();
+        case 2:
+          return new SshWorkflowError.NeverConnected();
+        case 3:
+          return new SshWorkflowError.InvalidRoute();
+        case 4:
+          return new SshWorkflowError.MissingCredential();
+        case 5:
+          return new SshWorkflowError.InvalidChallenge();
+        case 6:
+          return new SshWorkflowError.TrustUnavailable();
+        case 7:
+          return new SshWorkflowError.Platform();
+        case 8:
+          return new SshWorkflowError.Timeout();
+        case 9:
+          return new SshWorkflowError.OutcomeUnknown({
+            operationId: FfiConverterString.read(from),
+          });
+        case 10:
+          return new SshWorkflowError.Pairing(
+            FfiConverterTypePairHostError.read(from),
+          );
+        case 11:
+          return new SshWorkflowError.Installation(
+            FfiConverterTypeHostRuntimeError.read(from),
+          );
+        case 12:
+          return new SshWorkflowError.ResultConsumed();
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case SshWorkflowError_Tags.Cancelled: {
+          ordinalConverter.write(1, into);
+          return;
+        }
+        case SshWorkflowError_Tags.NeverConnected: {
+          ordinalConverter.write(2, into);
+          return;
+        }
+        case SshWorkflowError_Tags.InvalidRoute: {
+          ordinalConverter.write(3, into);
+          return;
+        }
+        case SshWorkflowError_Tags.MissingCredential: {
+          ordinalConverter.write(4, into);
+          return;
+        }
+        case SshWorkflowError_Tags.InvalidChallenge: {
+          ordinalConverter.write(5, into);
+          return;
+        }
+        case SshWorkflowError_Tags.TrustUnavailable: {
+          ordinalConverter.write(6, into);
+          return;
+        }
+        case SshWorkflowError_Tags.Platform: {
+          ordinalConverter.write(7, into);
+          return;
+        }
+        case SshWorkflowError_Tags.Timeout: {
+          ordinalConverter.write(8, into);
+          return;
+        }
+        case SshWorkflowError_Tags.OutcomeUnknown: {
+          ordinalConverter.write(9, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.operationId, into);
+          return;
+        }
+        case SshWorkflowError_Tags.Pairing: {
+          ordinalConverter.write(10, into);
+          const inner = value.inner;
+          FfiConverterTypePairHostError.write(inner[0], into);
+          return;
+        }
+        case SshWorkflowError_Tags.Installation: {
+          ordinalConverter.write(11, into);
+          const inner = value.inner;
+          FfiConverterTypeHostRuntimeError.write(inner[0], into);
+          return;
+        }
+        case SshWorkflowError_Tags.ResultConsumed: {
+          ordinalConverter.write(12, into);
+          return;
+        }
+        default:
+          // Throwing from here means that SshWorkflowError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case SshWorkflowError_Tags.Cancelled: {
+          return ordinalConverter.allocationSize(1);
+        }
+        case SshWorkflowError_Tags.NeverConnected: {
+          return ordinalConverter.allocationSize(2);
+        }
+        case SshWorkflowError_Tags.InvalidRoute: {
+          return ordinalConverter.allocationSize(3);
+        }
+        case SshWorkflowError_Tags.MissingCredential: {
+          return ordinalConverter.allocationSize(4);
+        }
+        case SshWorkflowError_Tags.InvalidChallenge: {
+          return ordinalConverter.allocationSize(5);
+        }
+        case SshWorkflowError_Tags.TrustUnavailable: {
+          return ordinalConverter.allocationSize(6);
+        }
+        case SshWorkflowError_Tags.Platform: {
+          return ordinalConverter.allocationSize(7);
+        }
+        case SshWorkflowError_Tags.Timeout: {
+          return ordinalConverter.allocationSize(8);
+        }
+        case SshWorkflowError_Tags.OutcomeUnknown: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(9);
+          size += FfiConverterString.allocationSize(inner.operationId);
+          return size;
+        }
+        case SshWorkflowError_Tags.Pairing: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(10);
+          size += FfiConverterTypePairHostError.allocationSize(inner[0]);
+          return size;
+        }
+        case SshWorkflowError_Tags.Installation: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(11);
+          size += FfiConverterTypeHostRuntimeError.allocationSize(inner[0]);
+          return size;
+        }
+        case SshWorkflowError_Tags.ResultConsumed: {
+          return ordinalConverter.allocationSize(12);
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Error type: SshWorkflowPlatformError
+export enum SshWorkflowPlatformError_Tags {
+  Cancelled = 'Cancelled',
+  Unavailable = 'Unavailable',
+}
+export const SshWorkflowPlatformError = (() => {
+  type Cancelled__interface = {
+    tag: SshWorkflowPlatformError_Tags.Cancelled;
+  };
+  class Cancelled_ extends UniffiError implements Cancelled__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshWorkflowPlatformError';
+    readonly tag = SshWorkflowPlatformError_Tags.Cancelled;
+    constructor() {
+      super('SshWorkflowPlatformError', 'Cancelled');
+    }
+
+    static new(): Cancelled_ {
+      return new Cancelled_();
+    }
+
+    static instanceOf(obj: any): obj is Cancelled_ {
+      return obj.tag === SshWorkflowPlatformError_Tags.Cancelled;
+    }
+    static hasInner(obj: any): obj is Cancelled_ {
+      return false;
+    }
+  }
+
+  type Unavailable__interface = {
+    tag: SshWorkflowPlatformError_Tags.Unavailable;
+  };
+  class Unavailable_ extends UniffiError implements Unavailable__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshWorkflowPlatformError';
+    readonly tag = SshWorkflowPlatformError_Tags.Unavailable;
+    constructor() {
+      super('SshWorkflowPlatformError', 'Unavailable');
+    }
+
+    static new(): Unavailable_ {
+      return new Unavailable_();
+    }
+
+    static instanceOf(obj: any): obj is Unavailable_ {
+      return obj.tag === SshWorkflowPlatformError_Tags.Unavailable;
+    }
+    static hasInner(obj: any): obj is Unavailable_ {
+      return false;
+    }
+  }
+
+  function instanceOf(obj: any): obj is SshWorkflowPlatformError {
+    return obj[uniffiTypeNameSymbol] === 'SshWorkflowPlatformError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Cancelled: Cancelled_,
+    Unavailable: Unavailable_,
+  });
+})();
+export type SshWorkflowPlatformError = InstanceType<
+  (typeof SshWorkflowPlatformError)['Cancelled' | 'Unavailable']
+>;
+
+// FfiConverter for enum SshWorkflowPlatformError
+const FfiConverterTypeSshWorkflowPlatformError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = SshWorkflowPlatformError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new SshWorkflowPlatformError.Cancelled();
+        case 2:
+          return new SshWorkflowPlatformError.Unavailable();
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case SshWorkflowPlatformError_Tags.Cancelled: {
+          ordinalConverter.write(1, into);
+          return;
+        }
+        case SshWorkflowPlatformError_Tags.Unavailable: {
+          ordinalConverter.write(2, into);
+          return;
+        }
+        default:
+          // Throwing from here means that SshWorkflowPlatformError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case SshWorkflowPlatformError_Tags.Cancelled: {
+          return ordinalConverter.allocationSize(1);
+        }
+        case SshWorkflowPlatformError_Tags.Unavailable: {
+          return ordinalConverter.allocationSize(2);
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Enum: SshWorkflowRequest
+export enum SshWorkflowRequest_Tags {
+  Pair = 'Pair',
+  Install = 'Install',
+}
+export const SshWorkflowRequest = (() => {
+  type Pair__interface = {
+    tag: SshWorkflowRequest_Tags.Pair;
+    inner: Readonly<{
+      code: string;
+      publicKey: string;
+      deviceName: string;
+      jumpHostId?: string;
+    }>;
+  };
+  class Pair_ extends UniffiEnum implements Pair__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshWorkflowRequest';
+    readonly tag = SshWorkflowRequest_Tags.Pair;
+    readonly inner: Readonly<{
+      code: string;
+      publicKey: string;
+      deviceName: string;
+      jumpHostId?: string;
+    }>;
+    constructor(inner: {
+      code: string;
+      publicKey: string;
+      deviceName: string;
+      jumpHostId?: string;
+    }) {
+      super('SshWorkflowRequest', 'Pair');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      code: string;
+      publicKey: string;
+      deviceName: string;
+      jumpHostId?: string;
+    }): Pair_ {
+      return new Pair_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Pair_ {
+      return obj.tag === SshWorkflowRequest_Tags.Pair;
+    }
+  }
+
+  type Install__interface = {
+    tag: SshWorkflowRequest_Tags.Install;
+    inner: Readonly<{
+      host: HostProfileRecord;
+      publicKey: string;
+      connected: boolean;
+    }>;
+  };
+  class Install_ extends UniffiEnum implements Install__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshWorkflowRequest';
+    readonly tag = SshWorkflowRequest_Tags.Install;
+    readonly inner: Readonly<{
+      host: HostProfileRecord;
+      publicKey: string;
+      connected: boolean;
+    }>;
+    constructor(inner: {
+      host: HostProfileRecord;
+      publicKey: string;
+      connected: boolean;
+    }) {
+      super('SshWorkflowRequest', 'Install');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      host: HostProfileRecord;
+      publicKey: string;
+      connected: boolean;
+    }): Install_ {
+      return new Install_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Install_ {
+      return obj.tag === SshWorkflowRequest_Tags.Install;
+    }
+  }
+
+  function instanceOf(obj: any): obj is SshWorkflowRequest {
+    return obj[uniffiTypeNameSymbol] === 'SshWorkflowRequest';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Pair: Pair_,
+    Install: Install_,
+  });
+})();
+export type SshWorkflowRequest = InstanceType<
+  (typeof SshWorkflowRequest)['Pair' | 'Install']
+>;
+
+// FfiConverter for enum SshWorkflowRequest
+const FfiConverterTypeSshWorkflowRequest = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = SshWorkflowRequest;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new SshWorkflowRequest.Pair({
+            code: FfiConverterString.read(from),
+            publicKey: FfiConverterString.read(from),
+            deviceName: FfiConverterString.read(from),
+            jumpHostId: FfiConverterOptionalString.read(from),
+          });
+        case 2:
+          return new SshWorkflowRequest.Install({
+            host: FfiConverterTypeHostProfileRecord.read(from),
+            publicKey: FfiConverterString.read(from),
+            connected: FfiConverterBool.read(from),
+          });
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case SshWorkflowRequest_Tags.Pair: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.code, into);
+          FfiConverterString.write(inner.publicKey, into);
+          FfiConverterString.write(inner.deviceName, into);
+          FfiConverterOptionalString.write(inner.jumpHostId, into);
+          return;
+        }
+        case SshWorkflowRequest_Tags.Install: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterTypeHostProfileRecord.write(inner.host, into);
+          FfiConverterString.write(inner.publicKey, into);
+          FfiConverterBool.write(inner.connected, into);
+          return;
+        }
+        default:
+          // Throwing from here means that SshWorkflowRequest_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case SshWorkflowRequest_Tags.Pair: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterString.allocationSize(inner.code);
+          size += FfiConverterString.allocationSize(inner.publicKey);
+          size += FfiConverterString.allocationSize(inner.deviceName);
+          size += FfiConverterOptionalString.allocationSize(inner.jumpHostId);
+          return size;
+        }
+        case SshWorkflowRequest_Tags.Install: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterTypeHostProfileRecord.allocationSize(inner.host);
+          size += FfiConverterString.allocationSize(inner.publicKey);
+          size += FfiConverterBool.allocationSize(inner.connected);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Enum: SshWorkflowResult
+export enum SshWorkflowResult_Tags {
+  Paired = 'Paired',
+  Installed = 'Installed',
+  Cancelled = 'Cancelled',
+}
+export const SshWorkflowResult = (() => {
+  type Paired__interface = {
+    tag: SshWorkflowResult_Tags.Paired;
+    inner: Readonly<{ result: PairHostResult }>;
+  };
+  class Paired_ extends UniffiEnum implements Paired__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshWorkflowResult';
+    readonly tag = SshWorkflowResult_Tags.Paired;
+    readonly inner: Readonly<{ result: PairHostResult }>;
+    constructor(inner: { result: PairHostResult }) {
+      super('SshWorkflowResult', 'Paired');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { result: PairHostResult }): Paired_ {
+      return new Paired_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Paired_ {
+      return obj.tag === SshWorkflowResult_Tags.Paired;
+    }
+  }
+
+  type Installed__interface = {
+    tag: SshWorkflowResult_Tags.Installed;
+    inner: Readonly<{ outcome: PublicKeyInstallOutcome }>;
+  };
+  class Installed_ extends UniffiEnum implements Installed__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshWorkflowResult';
+    readonly tag = SshWorkflowResult_Tags.Installed;
+    readonly inner: Readonly<{ outcome: PublicKeyInstallOutcome }>;
+    constructor(inner: { outcome: PublicKeyInstallOutcome }) {
+      super('SshWorkflowResult', 'Installed');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { outcome: PublicKeyInstallOutcome }): Installed_ {
+      return new Installed_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Installed_ {
+      return obj.tag === SshWorkflowResult_Tags.Installed;
+    }
+  }
+
+  type Cancelled__interface = {
+    tag: SshWorkflowResult_Tags.Cancelled;
+  };
+  class Cancelled_ extends UniffiEnum implements Cancelled__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'SshWorkflowResult';
+    readonly tag = SshWorkflowResult_Tags.Cancelled;
+    constructor() {
+      super('SshWorkflowResult', 'Cancelled');
+    }
+
+    static new(): Cancelled_ {
+      return new Cancelled_();
+    }
+
+    static instanceOf(obj: any): obj is Cancelled_ {
+      return obj.tag === SshWorkflowResult_Tags.Cancelled;
+    }
+  }
+
+  function instanceOf(obj: any): obj is SshWorkflowResult {
+    return obj[uniffiTypeNameSymbol] === 'SshWorkflowResult';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Paired: Paired_,
+    Installed: Installed_,
+    Cancelled: Cancelled_,
+  });
+})();
+export type SshWorkflowResult = InstanceType<
+  (typeof SshWorkflowResult)['Paired' | 'Installed' | 'Cancelled']
+>;
+
+// FfiConverter for enum SshWorkflowResult
+const FfiConverterTypeSshWorkflowResult = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = SshWorkflowResult;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new SshWorkflowResult.Paired({
+            result: FfiConverterTypePairHostResult.read(from),
+          });
+        case 2:
+          return new SshWorkflowResult.Installed({
+            outcome: FfiConverterTypePublicKeyInstallOutcome.read(from),
+          });
+        case 3:
+          return new SshWorkflowResult.Cancelled();
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case SshWorkflowResult_Tags.Paired: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterTypePairHostResult.write(inner.result, into);
+          return;
+        }
+        case SshWorkflowResult_Tags.Installed: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterTypePublicKeyInstallOutcome.write(inner.outcome, into);
+          return;
+        }
+        case SshWorkflowResult_Tags.Cancelled: {
+          ordinalConverter.write(3, into);
+          return;
+        }
+        default:
+          // Throwing from here means that SshWorkflowResult_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case SshWorkflowResult_Tags.Paired: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterTypePairHostResult.allocationSize(inner.result);
+          return size;
+        }
+        case SshWorkflowResult_Tags.Installed: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterTypePublicKeyInstallOutcome.allocationSize(
+            inner.outcome,
+          );
+          return size;
+        }
+        case SshWorkflowResult_Tags.Cancelled: {
+          return ordinalConverter.allocationSize(3);
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
 // Error type: TailcatIdentityError
 export enum TailcatIdentityError_Tags {
   GenerationFailed = 'GenerationFailed',
@@ -56129,6 +57171,777 @@ const uniffiCallbackInterfaceSessionPersistencePlatform: {
   },
 };
 
+export interface SshWorkflowLike {
+  cancel(): void;
+  run(asyncOpts_?: {
+    signal: AbortSignal;
+  }) /*throws*/ : Promise<SshWorkflowResult>;
+}
+/**
+ * @deprecated Use `SshWorkflowLike` instead.
+ */
+export type SshWorkflowInterface = SshWorkflowLike;
+
+export class SshWorkflow
+  extends UniffiAbstractObject
+  implements SshWorkflowLike
+{
+  readonly [uniffiTypeNameSymbol] = 'SshWorkflow';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  constructor(
+    request: SshWorkflowRequest,
+    hosts: Array<HostProfileRecord>,
+    biometric: boolean,
+    credentials: CredentialCoordinatorLike,
+    knownHosts: KnownHostRepositoryLike,
+    platform: SshWorkflowPlatform,
+  ) {
+    super();
+    const pointer = uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_constructor_sshworkflow_new(
+          FfiConverterTypeSshWorkflowRequest.lower(
+            request,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterSequenceTypeHostProfileRecord.lower(
+            hosts,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterBool.lower(biometric, nativeModule().rustbuffer_alloc),
+          FfiConverterTypeCredentialCoordinator.lower(
+            credentials,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterTypeKnownHostRepository.lower(
+            knownHosts,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterTypeSshWorkflowPlatform.lower(
+            platform,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeSshWorkflowObjectFactory.bless(pointer);
+  }
+
+  cancel(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_sshworkflow_cancel(
+          uniffiTypeSshWorkflowObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  async run(asyncOpts_?: {
+    signal: AbortSignal;
+  }): Promise<SshWorkflowResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_sshworkflow_run(
+            uniffiTypeSshWorkflowObjectFactory.clonePointer(this),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeSshWorkflowResult.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeSshWorkflowError.lift.bind(
+          FfiConverterTypeSshWorkflowError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeSshWorkflowObjectFactory.pointer(this);
+      uniffiTypeSshWorkflowObjectFactory.freePointer(pointer);
+      uniffiTypeSshWorkflowObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is SshWorkflow {
+    return uniffiTypeSshWorkflowObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeSshWorkflowObjectFactory: UniffiObjectFactory<SshWorkflowLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): SshWorkflowLike {
+        const instance = Object.create(SshWorkflow.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'SshWorkflow';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_sshworkflow_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: SshWorkflowLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: SshWorkflowLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_sshworkflow(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_sshworkflow(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is SshWorkflowLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'SshWorkflow'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeSshWorkflow = new FfiConverterObject(
+  uniffiTypeSshWorkflowObjectFactory,
+);
+
+export interface SshWorkflowPermitLike {
+  checkActive() /*throws*/ : void;
+}
+/**
+ * @deprecated Use `SshWorkflowPermitLike` instead.
+ */
+export type SshWorkflowPermitInterface = SshWorkflowPermitLike;
+
+export class SshWorkflowPermit
+  extends UniffiAbstractObject
+  implements SshWorkflowPermitLike
+{
+  readonly [uniffiTypeNameSymbol] = 'SshWorkflowPermit';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeSshWorkflowPermitObjectFactory.bless(pointer);
+  }
+
+  checkActive(): void /*throws*/ {
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeSshWorkflowError.lift.bind(
+        FfiConverterTypeSshWorkflowError,
+      ),
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_sshworkflowpermit_check_active(
+          uniffiTypeSshWorkflowPermitObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeSshWorkflowPermitObjectFactory.pointer(this);
+      uniffiTypeSshWorkflowPermitObjectFactory.freePointer(pointer);
+      uniffiTypeSshWorkflowPermitObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is SshWorkflowPermit {
+    return uniffiTypeSshWorkflowPermitObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeSshWorkflowPermitObjectFactory: UniffiObjectFactory<SshWorkflowPermitLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): SshWorkflowPermitLike {
+        const instance = Object.create(SshWorkflowPermit.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'SshWorkflowPermit';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_sshworkflowpermit_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: SshWorkflowPermitLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: SshWorkflowPermitLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_sshworkflowpermit(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_sshworkflowpermit(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is SshWorkflowPermitLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'SshWorkflowPermit'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeSshWorkflowPermit = new FfiConverterObject(
+  uniffiTypeSshWorkflowPermitObjectFactory,
+);
+
+export interface SshWorkflowPlatform {
+  authenticatePrivateKey(
+    permit: SshWorkflowPermitLike,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<boolean>;
+  confirmHostKey(
+    permit: SshWorkflowPermitLike,
+    challenge: HostKeyChallenge,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<boolean>;
+  /**
+   * Post-commit UI refresh; cannot acknowledge native trust.
+   */
+  hostKeyTrusted(
+    permit: SshWorkflowPermitLike,
+    challenge: HostKeyChallenge,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<void>;
+}
+
+export class SshWorkflowPlatformImpl
+  extends UniffiAbstractObject
+  implements SshWorkflowPlatform
+{
+  readonly [uniffiTypeNameSymbol] = 'SshWorkflowPlatformImpl';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeSshWorkflowPlatformImplObjectFactory.bless(pointer);
+  }
+
+  async authenticatePrivateKey(
+    permit: SshWorkflowPermitLike,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<boolean> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_sshworkflowplatform_authenticate_private_key(
+            uniffiTypeSshWorkflowPlatformImplObjectFactory.clonePointer(this),
+            FfiConverterTypeSshWorkflowPermit.lower(
+              permit,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_i8,
+        /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_i8,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_i8,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_i8,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterBool.lift.bind(FfiConverterBool),
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeSshWorkflowPlatformError.lift.bind(
+          FfiConverterTypeSshWorkflowPlatformError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async confirmHostKey(
+    permit: SshWorkflowPermitLike,
+    challenge: HostKeyChallenge,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<boolean> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_sshworkflowplatform_confirm_host_key(
+            uniffiTypeSshWorkflowPlatformImplObjectFactory.clonePointer(this),
+            FfiConverterTypeSshWorkflowPermit.lower(
+              permit,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterTypeHostKeyChallenge.lower(
+              challenge,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_i8,
+        /*cancelFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_cancel_i8,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_i8,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_i8,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterBool.lift.bind(FfiConverterBool),
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeSshWorkflowPlatformError.lift.bind(
+          FfiConverterTypeSshWorkflowPlatformError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  /**
+   * Post-commit UI refresh; cannot acknowledge native trust.
+   */
+  async hostKeyTrusted(
+    permit: SshWorkflowPermitLike,
+    challenge: HostKeyChallenge,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_sshworkflowplatform_host_key_trusted(
+            uniffiTypeSshWorkflowPlatformImplObjectFactory.clonePointer(this),
+            FfiConverterTypeSshWorkflowPermit.lower(
+              permit,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterTypeHostKeyChallenge.lower(
+              challenge,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeSshWorkflowPlatformError.lift.bind(
+          FfiConverterTypeSshWorkflowPlatformError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeSshWorkflowPlatformImplObjectFactory.pointer(this);
+      uniffiTypeSshWorkflowPlatformImplObjectFactory.freePointer(pointer);
+      uniffiTypeSshWorkflowPlatformImplObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is SshWorkflowPlatformImpl {
+    return uniffiTypeSshWorkflowPlatformImplObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeSshWorkflowPlatformImplObjectFactory: UniffiObjectFactory<SshWorkflowPlatform> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): SshWorkflowPlatform {
+        const instance = Object.create(SshWorkflowPlatformImpl.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'SshWorkflowPlatformImpl';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_sshworkflowplatform_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: SshWorkflowPlatform): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: SshWorkflowPlatform): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_sshworkflowplatform(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_sshworkflowplatform(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is SshWorkflowPlatform {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'SshWorkflowPlatformImpl'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeSshWorkflowPlatform = new FfiConverterObjectWithCallbacks(
+  uniffiTypeSshWorkflowPlatformImplObjectFactory,
+);
+
+// Add a vtable for the callbacks that go in SshWorkflowPlatform.
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+const uniffiCallbackInterfaceSshWorkflowPlatform: {
+  vtable: any;
+  register: () => void;
+} = {
+  // Create the VTable using a series of closures.
+  // ts automatically converts these into C callback functions.
+  vtable: {
+    authenticate_private_key: (
+      uniffiHandle: bigint,
+      permit: bigint,
+      uniffiFutureCallback: UniffiForeignFutureCompletei8,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (signal: AbortSignal): Promise<boolean> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeSshWorkflowPlatform.lift(uniffiHandle);
+          return await jsCallback.authenticatePrivateKey(
+            FfiConverterTypeSshWorkflowPermit.lift(permit),
+            { signal },
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: boolean) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultI8 */ {
+            return_value: FfiConverterBool.lower(
+              returnValue,
+              nativeModule().rustbuffer_alloc,
+            ),
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultI8 */ {
+            return_value: 0,
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ SshWorkflowPlatformError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeSshWorkflowPlatformError.lower.bind(
+          FfiConverterTypeSshWorkflowPlatformError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    confirm_host_key: (
+      uniffiHandle: bigint,
+      permit: bigint,
+      challenge: Uint8Array,
+      uniffiFutureCallback: UniffiForeignFutureCompletei8,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (signal: AbortSignal): Promise<boolean> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeSshWorkflowPlatform.lift(uniffiHandle);
+          return await jsCallback.confirmHostKey(
+            FfiConverterTypeSshWorkflowPermit.lift(permit),
+            FfiConverterTypeHostKeyChallenge.lift(challenge),
+            { signal },
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(challenge);
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: boolean) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultI8 */ {
+            return_value: FfiConverterBool.lower(
+              returnValue,
+              nativeModule().rustbuffer_alloc,
+            ),
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultI8 */ {
+            return_value: 0,
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ SshWorkflowPlatformError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeSshWorkflowPlatformError.lower.bind(
+          FfiConverterTypeSshWorkflowPlatformError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    host_key_trusted: (
+      uniffiHandle: bigint,
+      permit: bigint,
+      challenge: Uint8Array,
+      uniffiFutureCallback: UniffiForeignFutureCompletevoid,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (signal: AbortSignal): Promise<void> => {
+        try {
+          const jsCallback =
+            FfiConverterTypeSshWorkflowPlatform.lift(uniffiHandle);
+          return await jsCallback.hostKeyTrusted(
+            FfiConverterTypeSshWorkflowPermit.lift(permit),
+            FfiConverterTypeHostKeyChallenge.lift(challenge),
+            { signal },
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(challenge);
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: void) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultVoid */ {
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultVoid */ {
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsyncWithError(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*isErrorType:*/ SshWorkflowPlatformError.instanceOf,
+        /*lowerError:*/ FfiConverterTypeSshWorkflowPlatformError.lower.bind(
+          FfiConverterTypeSshWorkflowPlatformError,
+        ),
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    uniffi_free: (uniffiHandle: UniffiHandle): void => {
+      // this will throw a stale handle error if the handle isn't found.
+      FfiConverterTypeSshWorkflowPlatform.drop(uniffiHandle);
+    },
+    uniffi_clone: (uniffiHandle: UniffiHandle): UniffiHandle => {
+      return FfiConverterTypeSshWorkflowPlatform.clone(uniffiHandle);
+    },
+  },
+  register: () => {
+    nativeModule().ubrn_uniffi_whip_ssh_fn_init_callback_vtable_sshworkflowplatform(
+      uniffiCallbackInterfaceSshWorkflowPlatform.vtable,
+    );
+  },
+};
+
 export interface TerminalDeliveryEventSink {
   /**
    * One already-serialized batch, built on a Rust delivery worker.
@@ -58691,6 +60504,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_set_ssh_agent_forwarding',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_set_ssh_workflow_locked() !==
+    13518
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_set_ssh_workflow_locked',
     );
   }
   if (
@@ -61479,6 +63300,62 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_sshworkflow_new() !==
+    42006
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_constructor_sshworkflow_new',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_sshworkflow_cancel() !==
+    6451
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_sshworkflow_cancel',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_sshworkflow_run() !==
+    7424
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_sshworkflow_run',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_sshworkflowpermit_check_active() !==
+    33801
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_sshworkflowpermit_check_active',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_sshworkflowplatform_authenticate_private_key() !==
+    64103
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_sshworkflowplatform_authenticate_private_key',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_sshworkflowplatform_confirm_host_key() !==
+    54004
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_sshworkflowplatform_confirm_host_key',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_sshworkflowplatform_host_key_trusted() !==
+    48557
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_sshworkflowplatform_host_key_trusted',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_startupsessionrestore_wait() !==
     4671
   ) {
@@ -61643,6 +63520,7 @@ function uniffiEnsureInitialized() {
   uniffiCallbackInterfaceNotificationPlatform.register();
   uniffiCallbackInterfaceReverseControlEventSink.register();
   uniffiCallbackInterfaceSessionPersistencePlatform.register();
+  uniffiCallbackInterfaceSshWorkflowPlatform.register();
   uniffiCallbackInterfaceTerminalDeliveryEventSink.register();
   uniffiCallbackInterfaceTerminalSubmissionPlatform.register();
   uniffiCallbackInterfaceWhipSshEventSink.register();
@@ -61960,6 +63838,13 @@ export default Object.freeze({
     FfiConverterTypeSshErrorCode,
     FfiConverterTypeSshGeneratedKeyPair,
     FfiConverterTypeSshKeyDetails,
+    FfiConverterTypeSshWorkflow,
+    FfiConverterTypeSshWorkflowError,
+    FfiConverterTypeSshWorkflowPermit,
+    FfiConverterTypeSshWorkflowPlatform,
+    FfiConverterTypeSshWorkflowPlatformError,
+    FfiConverterTypeSshWorkflowRequest,
+    FfiConverterTypeSshWorkflowResult,
     FfiConverterTypeStartupSessionHost,
     FfiConverterTypeStartupSessionRestore,
     FfiConverterTypeStartupSessionResult,
