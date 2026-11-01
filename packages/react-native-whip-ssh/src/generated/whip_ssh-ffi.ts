@@ -356,11 +356,19 @@ interface NativeModuleInterface {
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
-  ubrn_uniffi_whip_ssh_fn_clone_knownhoststore(
+  ubrn_uniffi_whip_ssh_fn_clone_knownhostoperation(
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): bigint;
-  ubrn_uniffi_whip_ssh_fn_free_knownhoststore(
+  ubrn_uniffi_whip_ssh_fn_free_knownhostoperation(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_knownhostrepository(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_knownhostrepository(
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
@@ -2304,37 +2312,26 @@ interface NativeModuleInterface {
     event: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
-  ubrn_uniffi_whip_ssh_fn_constructor_knownhoststore_new(
+  ubrn_uniffi_whip_ssh_fn_method_knownhostoperation_cancel(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): number;
+  ubrn_uniffi_whip_ssh_fn_method_knownhostoperation_result(
+    uniffiSelf: bigint,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_constructor_knownhostrepository_new(
     uniffi_out_err: UniffiRustCallStatus,
   ): bigint;
-  ubrn_uniffi_whip_ssh_fn_method_knownhoststore_commit(
+  ubrn_uniffi_whip_ssh_fn_method_knownhostrepository_begin(
     uniffiSelf: bigint,
-    token: bigint,
+    command: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
-  ): Uint8Array;
-  ubrn_uniffi_whip_ssh_fn_method_knownhoststore_hydrate(
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_knownhostrepository_close(
     uniffiSelf: bigint,
-    persisted: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
-  ): Uint8Array;
-  ubrn_uniffi_whip_ssh_fn_method_knownhoststore_prepare_add(
-    uniffiSelf: bigint,
-    challenge: Uint8Array,
-    id: Uint8Array,
-    createdAt: Uint8Array,
-    uniffi_out_err: UniffiRustCallStatus,
-  ): Uint8Array;
-  ubrn_uniffi_whip_ssh_fn_method_knownhoststore_prepare_remove(
-    uniffiSelf: bigint,
-    id: Uint8Array,
-    uniffi_out_err: UniffiRustCallStatus,
-  ): Uint8Array;
-  ubrn_uniffi_whip_ssh_fn_method_knownhoststore_rollback(
-    uniffiSelf: bigint,
-    token: bigint,
-    uniffi_out_err: UniffiRustCallStatus,
-  ): Uint8Array;
-  ubrn_uniffi_whip_ssh_fn_method_knownhoststore_view(
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_knownhostrepository_view(
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
@@ -3149,13 +3146,12 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_transfer_progress(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_unsubscribe_events(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntimeeventsink_event(): number;
-  ubrn_uniffi_whip_ssh_checksum_constructor_knownhoststore_new(): number;
-  ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_commit(): number;
-  ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_hydrate(): number;
-  ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_prepare_add(): number;
-  ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_prepare_remove(): number;
-  ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_rollback(): number;
-  ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_view(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_knownhostoperation_cancel(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_knownhostoperation_result(): number;
+  ubrn_uniffi_whip_ssh_checksum_constructor_knownhostrepository_new(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_knownhostrepository_begin(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_knownhostrepository_close(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_knownhostrepository_view(): number;
   ubrn_uniffi_whip_ssh_checksum_constructor_localalertcoordinator_new(): number;
   ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_alert(): number;
   ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_begin_effect(): number;
@@ -3383,7 +3379,11 @@ interface NativeModuleInterface {
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
-  ubrn_uniffi_internal_fn_method_knownhoststore_ffi__bless_pointer(
+  ubrn_uniffi_internal_fn_method_knownhostoperation_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_knownhostrepository_ffi__bless_pointer(
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;

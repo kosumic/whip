@@ -8,6 +8,10 @@ use std::sync::{OnceLock, mpsc};
 use parking_lot::Mutex;
 use tokio::sync::oneshot;
 
+mod known_hosts;
+pub(crate) use known_hosts::detach as detach_known_host_repository;
+pub use known_hosts::*;
+
 const SCHEMA_VERSION: i64 = 1;
 const LEGACY_IMPORT: &str = "async-storage-v1";
 static DATABASE: OnceLock<Mutex<Option<Result<AppDatabase, AppStorageError>>>> = OnceLock::new();
@@ -101,16 +105,20 @@ struct Worker {
 }
 
 impl Worker {
+    fn store(&mut self) -> Result<&mut Store, AppStorageError> {
+        if self.store.is_none() {
+            self.store = Some(Store::open(&self.path, self.runtime)?);
+        }
+        self.store
+            .as_mut()
+            .ok_or_else(|| AppStorageError::Unavailable("application storage did not open".into()))
+    }
+
     fn with_store<T>(
         &mut self,
         operation: impl FnOnce(&mut Store) -> Result<T, AppStorageError>,
     ) -> Result<T, AppStorageError> {
-        if self.store.is_none() {
-            self.store = Some(Store::open(&self.path, self.runtime)?);
-        }
-        operation(self.store.as_mut().ok_or_else(|| {
-            AppStorageError::Unavailable("application storage did not open".into())
-        })?)
+        operation(self.store()?)
     }
 }
 

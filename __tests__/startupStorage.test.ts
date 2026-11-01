@@ -1,6 +1,6 @@
 jest.mock('../src/services/appStorage', () => ({
   __esModule: true,
-  appStorage: { multiGet: jest.fn() },
+  appStorage: { multiGet: jest.fn(), initialize: jest.fn().mockResolvedValue(undefined) },
 }));
 jest.mock('../src/services/terminalBackground', () => ({}));
 jest.mock('../src/services/appBackground', () => ({}));
@@ -8,7 +8,7 @@ jest.mock('react-native-whip-ssh', () => require('./mockWhipSsh').createMockWhip
 
 import { appStorage } from '../src/services/appStorage';
 
-import { knownHostsFromStorage } from '../src/services/knownHosts';
+import { loadKnownHosts } from '../src/services/knownHosts';
 import {
   STARTUP_STORAGE_KEYS,
   readStartupStorage,
@@ -35,7 +35,7 @@ test('reads every startup value through one appStorage bridge call', async () =>
   expect(snapshot.herdrSocketPaths).toBe('value:herdr.api-socket-paths.v1');
 });
 
-test('startup snapshot known hosts are strictly parsed by the native store', async () => {
+test('an older startup snapshot cannot resurrect trust absent from the native repository', async () => {
   const storedKnownHost = {
     id: 'known-host-startup',
     host: 'startup.example',
@@ -53,9 +53,10 @@ test('startup snapshot known hosts are strictly parsed by the native store', asy
   );
 
   const snapshot = await readStartupStorage();
-  const state = knownHostsFromStorage(snapshot.knownHosts);
+  expect(snapshot.knownHosts).toBe(JSON.stringify([storedKnownHost]));
+  const state = await loadKnownHosts();
 
-  expect(state).toEqual({ status: 'loaded', hosts: [storedKnownHost] });
+  expect(state).toEqual({ status: 'loaded', hosts: [] });
 });
 
 test('an omitted multiGet entry is a read failure, not an authoritative null', async () => {

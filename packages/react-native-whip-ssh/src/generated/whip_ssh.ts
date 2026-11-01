@@ -13637,98 +13637,99 @@ const FfiConverterTypeKnownHostRecord = (() => {
   return new FFIConverter();
 })();
 
-export type KnownHostStoreView = {
-  revision: bigint;
-  hosts: Array<KnownHostRecord>;
-  persistedValue: string;
-};
+export enum KnownHostRepositoryStatus {
+  Loading,
+  Loaded,
+  ReadFailed,
+  InvalidData,
+}
 
-/**
- * Generated factory for {@link KnownHostStoreView} record objects.
- */
-export const KnownHostStoreView = (() => {
-  const defaults = () => ({});
-  const create = (() => {
-    return uniffiCreateRecord<KnownHostStoreView, ReturnType<typeof defaults>>(
-      defaults,
-    );
-  })();
-  return Object.freeze({
-    create,
-    new: create,
-    defaults: () => Object.freeze(defaults()) as Partial<KnownHostStoreView>,
-  });
-})();
-
-const FfiConverterTypeKnownHostStoreView = (() => {
-  type TypeName = KnownHostStoreView;
+const FfiConverterTypeKnownHostRepositoryStatus = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = KnownHostRepositoryStatus;
   class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
     read(from: RustBuffer): TypeName {
-      return {
-        revision: FfiConverterUInt64.read(from),
-        hosts: FfiConverterSequenceTypeKnownHostRecord.read(from),
-        persistedValue: FfiConverterString.read(from),
-      };
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return KnownHostRepositoryStatus.Loading;
+        case 2:
+          return KnownHostRepositoryStatus.Loaded;
+        case 3:
+          return KnownHostRepositoryStatus.ReadFailed;
+        case 4:
+          return KnownHostRepositoryStatus.InvalidData;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
     }
     write(value: TypeName, into: RustBuffer): void {
-      FfiConverterUInt64.write(value.revision, into);
-      FfiConverterSequenceTypeKnownHostRecord.write(value.hosts, into);
-      FfiConverterString.write(value.persistedValue, into);
+      switch (value) {
+        case KnownHostRepositoryStatus.Loading:
+          return ordinalConverter.write(1, into);
+        case KnownHostRepositoryStatus.Loaded:
+          return ordinalConverter.write(2, into);
+        case KnownHostRepositoryStatus.ReadFailed:
+          return ordinalConverter.write(3, into);
+        case KnownHostRepositoryStatus.InvalidData:
+          return ordinalConverter.write(4, into);
+      }
     }
     allocationSize(value: TypeName): number {
-      return (
-        FfiConverterUInt64.allocationSize(value.revision) +
-        FfiConverterSequenceTypeKnownHostRecord.allocationSize(value.hosts) +
-        FfiConverterString.allocationSize(value.persistedValue)
-      );
+      return ordinalConverter.allocationSize(0);
     }
   }
   return new FFIConverter();
 })();
 
-export type KnownHostMutation = {
-  token: bigint;
-  changed: boolean;
-  view: KnownHostStoreView;
+export type KnownHostRepositoryView = {
+  status: KnownHostRepositoryStatus;
+  revision: bigint;
+  generation: bigint;
+  hosts: Array<KnownHostRecord>;
 };
 
 /**
- * Generated factory for {@link KnownHostMutation} record objects.
+ * Generated factory for {@link KnownHostRepositoryView} record objects.
  */
-export const KnownHostMutation = (() => {
+export const KnownHostRepositoryView = (() => {
   const defaults = () => ({});
   const create = (() => {
-    return uniffiCreateRecord<KnownHostMutation, ReturnType<typeof defaults>>(
-      defaults,
-    );
+    return uniffiCreateRecord<
+      KnownHostRepositoryView,
+      ReturnType<typeof defaults>
+    >(defaults);
   })();
   return Object.freeze({
     create,
     new: create,
-    defaults: () => Object.freeze(defaults()) as Partial<KnownHostMutation>,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<KnownHostRepositoryView>,
   });
 })();
 
-const FfiConverterTypeKnownHostMutation = (() => {
-  type TypeName = KnownHostMutation;
+const FfiConverterTypeKnownHostRepositoryView = (() => {
+  type TypeName = KnownHostRepositoryView;
   class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
     read(from: RustBuffer): TypeName {
       return {
-        token: FfiConverterUInt64.read(from),
-        changed: FfiConverterBool.read(from),
-        view: FfiConverterTypeKnownHostStoreView.read(from),
+        status: FfiConverterTypeKnownHostRepositoryStatus.read(from),
+        revision: FfiConverterUInt64.read(from),
+        generation: FfiConverterUInt64.read(from),
+        hosts: FfiConverterSequenceTypeKnownHostRecord.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
-      FfiConverterUInt64.write(value.token, into);
-      FfiConverterBool.write(value.changed, into);
-      FfiConverterTypeKnownHostStoreView.write(value.view, into);
+      FfiConverterTypeKnownHostRepositoryStatus.write(value.status, into);
+      FfiConverterUInt64.write(value.revision, into);
+      FfiConverterUInt64.write(value.generation, into);
+      FfiConverterSequenceTypeKnownHostRecord.write(value.hosts, into);
     }
     allocationSize(value: TypeName): number {
       return (
-        FfiConverterUInt64.allocationSize(value.token) +
-        FfiConverterBool.allocationSize(value.changed) +
-        FfiConverterTypeKnownHostStoreView.allocationSize(value.view)
+        FfiConverterTypeKnownHostRepositoryStatus.allocationSize(value.status) +
+        FfiConverterUInt64.allocationSize(value.revision) +
+        FfiConverterUInt64.allocationSize(value.generation) +
+        FfiConverterSequenceTypeKnownHostRecord.allocationSize(value.hosts)
       );
     }
   }
@@ -33206,6 +33207,493 @@ const FfiConverterTypeHostTerminalResizeOutcome = (() => {
   return new FFIConverter();
 })();
 
+// Enum: KnownHostCommand
+export enum KnownHostCommand_Tags {
+  Load = 'Load',
+  Trust = 'Trust',
+  Revoke = 'Revoke',
+}
+export const KnownHostCommand = (() => {
+  type Load__interface = {
+    tag: KnownHostCommand_Tags.Load;
+  };
+  class Load_ extends UniffiEnum implements Load__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'KnownHostCommand';
+    readonly tag = KnownHostCommand_Tags.Load;
+    constructor() {
+      super('KnownHostCommand', 'Load');
+    }
+
+    static new(): Load_ {
+      return new Load_();
+    }
+
+    static instanceOf(obj: any): obj is Load_ {
+      return obj.tag === KnownHostCommand_Tags.Load;
+    }
+  }
+
+  type Trust__interface = {
+    tag: KnownHostCommand_Tags.Trust;
+    inner: Readonly<{ challenge: HostKeyChallenge }>;
+  };
+  class Trust_ extends UniffiEnum implements Trust__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'KnownHostCommand';
+    readonly tag = KnownHostCommand_Tags.Trust;
+    readonly inner: Readonly<{ challenge: HostKeyChallenge }>;
+    constructor(inner: { challenge: HostKeyChallenge }) {
+      super('KnownHostCommand', 'Trust');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { challenge: HostKeyChallenge }): Trust_ {
+      return new Trust_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Trust_ {
+      return obj.tag === KnownHostCommand_Tags.Trust;
+    }
+  }
+
+  type Revoke__interface = {
+    tag: KnownHostCommand_Tags.Revoke;
+    inner: Readonly<{ id: string }>;
+  };
+  class Revoke_ extends UniffiEnum implements Revoke__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'KnownHostCommand';
+    readonly tag = KnownHostCommand_Tags.Revoke;
+    readonly inner: Readonly<{ id: string }>;
+    constructor(inner: { id: string }) {
+      super('KnownHostCommand', 'Revoke');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { id: string }): Revoke_ {
+      return new Revoke_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Revoke_ {
+      return obj.tag === KnownHostCommand_Tags.Revoke;
+    }
+  }
+
+  function instanceOf(obj: any): obj is KnownHostCommand {
+    return obj[uniffiTypeNameSymbol] === 'KnownHostCommand';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Load: Load_,
+    Trust: Trust_,
+    Revoke: Revoke_,
+  });
+})();
+export type KnownHostCommand = InstanceType<
+  (typeof KnownHostCommand)['Load' | 'Trust' | 'Revoke']
+>;
+
+// FfiConverter for enum KnownHostCommand
+const FfiConverterTypeKnownHostCommand = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = KnownHostCommand;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new KnownHostCommand.Load();
+        case 2:
+          return new KnownHostCommand.Trust({
+            challenge: FfiConverterTypeHostKeyChallenge.read(from),
+          });
+        case 3:
+          return new KnownHostCommand.Revoke({
+            id: FfiConverterString.read(from),
+          });
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case KnownHostCommand_Tags.Load: {
+          ordinalConverter.write(1, into);
+          return;
+        }
+        case KnownHostCommand_Tags.Trust: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterTypeHostKeyChallenge.write(inner.challenge, into);
+          return;
+        }
+        case KnownHostCommand_Tags.Revoke: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.id, into);
+          return;
+        }
+        default:
+          // Throwing from here means that KnownHostCommand_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case KnownHostCommand_Tags.Load: {
+          return ordinalConverter.allocationSize(1);
+        }
+        case KnownHostCommand_Tags.Trust: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterTypeHostKeyChallenge.allocationSize(
+            inner.challenge,
+          );
+          return size;
+        }
+        case KnownHostCommand_Tags.Revoke: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterString.allocationSize(inner.id);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
+// Error type: KnownHostRepositoryError
+export enum KnownHostRepositoryError_Tags {
+  NotLoaded = 'NotLoaded',
+  Cancelled = 'Cancelled',
+  StorageRead = 'StorageRead',
+  StorageWrite = 'StorageWrite',
+  InvalidData = 'InvalidData',
+  InvalidKey = 'InvalidKey',
+  ResultConsumed = 'ResultConsumed',
+}
+/**
+ * Errors deliberately exclude foreign exception text and host-key material.
+ */
+export const KnownHostRepositoryError = (() => {
+  type NotLoaded__interface = {
+    tag: KnownHostRepositoryError_Tags.NotLoaded;
+  };
+  class NotLoaded_ extends UniffiError implements NotLoaded__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'KnownHostRepositoryError';
+    readonly tag = KnownHostRepositoryError_Tags.NotLoaded;
+    constructor() {
+      super('KnownHostRepositoryError', 'NotLoaded');
+    }
+
+    static new(): NotLoaded_ {
+      return new NotLoaded_();
+    }
+
+    static instanceOf(obj: any): obj is NotLoaded_ {
+      return obj.tag === KnownHostRepositoryError_Tags.NotLoaded;
+    }
+    static hasInner(obj: any): obj is NotLoaded_ {
+      return false;
+    }
+  }
+
+  type Cancelled__interface = {
+    tag: KnownHostRepositoryError_Tags.Cancelled;
+  };
+  class Cancelled_ extends UniffiError implements Cancelled__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'KnownHostRepositoryError';
+    readonly tag = KnownHostRepositoryError_Tags.Cancelled;
+    constructor() {
+      super('KnownHostRepositoryError', 'Cancelled');
+    }
+
+    static new(): Cancelled_ {
+      return new Cancelled_();
+    }
+
+    static instanceOf(obj: any): obj is Cancelled_ {
+      return obj.tag === KnownHostRepositoryError_Tags.Cancelled;
+    }
+    static hasInner(obj: any): obj is Cancelled_ {
+      return false;
+    }
+  }
+
+  type StorageRead__interface = {
+    tag: KnownHostRepositoryError_Tags.StorageRead;
+  };
+  class StorageRead_ extends UniffiError implements StorageRead__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'KnownHostRepositoryError';
+    readonly tag = KnownHostRepositoryError_Tags.StorageRead;
+    constructor() {
+      super('KnownHostRepositoryError', 'StorageRead');
+    }
+
+    static new(): StorageRead_ {
+      return new StorageRead_();
+    }
+
+    static instanceOf(obj: any): obj is StorageRead_ {
+      return obj.tag === KnownHostRepositoryError_Tags.StorageRead;
+    }
+    static hasInner(obj: any): obj is StorageRead_ {
+      return false;
+    }
+  }
+
+  type StorageWrite__interface = {
+    tag: KnownHostRepositoryError_Tags.StorageWrite;
+  };
+  class StorageWrite_ extends UniffiError implements StorageWrite__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'KnownHostRepositoryError';
+    readonly tag = KnownHostRepositoryError_Tags.StorageWrite;
+    constructor() {
+      super('KnownHostRepositoryError', 'StorageWrite');
+    }
+
+    static new(): StorageWrite_ {
+      return new StorageWrite_();
+    }
+
+    static instanceOf(obj: any): obj is StorageWrite_ {
+      return obj.tag === KnownHostRepositoryError_Tags.StorageWrite;
+    }
+    static hasInner(obj: any): obj is StorageWrite_ {
+      return false;
+    }
+  }
+
+  type InvalidData__interface = {
+    tag: KnownHostRepositoryError_Tags.InvalidData;
+  };
+  class InvalidData_ extends UniffiError implements InvalidData__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'KnownHostRepositoryError';
+    readonly tag = KnownHostRepositoryError_Tags.InvalidData;
+    constructor() {
+      super('KnownHostRepositoryError', 'InvalidData');
+    }
+
+    static new(): InvalidData_ {
+      return new InvalidData_();
+    }
+
+    static instanceOf(obj: any): obj is InvalidData_ {
+      return obj.tag === KnownHostRepositoryError_Tags.InvalidData;
+    }
+    static hasInner(obj: any): obj is InvalidData_ {
+      return false;
+    }
+  }
+
+  type InvalidKey__interface = {
+    tag: KnownHostRepositoryError_Tags.InvalidKey;
+  };
+  class InvalidKey_ extends UniffiError implements InvalidKey__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'KnownHostRepositoryError';
+    readonly tag = KnownHostRepositoryError_Tags.InvalidKey;
+    constructor() {
+      super('KnownHostRepositoryError', 'InvalidKey');
+    }
+
+    static new(): InvalidKey_ {
+      return new InvalidKey_();
+    }
+
+    static instanceOf(obj: any): obj is InvalidKey_ {
+      return obj.tag === KnownHostRepositoryError_Tags.InvalidKey;
+    }
+    static hasInner(obj: any): obj is InvalidKey_ {
+      return false;
+    }
+  }
+
+  type ResultConsumed__interface = {
+    tag: KnownHostRepositoryError_Tags.ResultConsumed;
+  };
+  class ResultConsumed_
+    extends UniffiError
+    implements ResultConsumed__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'KnownHostRepositoryError';
+    readonly tag = KnownHostRepositoryError_Tags.ResultConsumed;
+    constructor() {
+      super('KnownHostRepositoryError', 'ResultConsumed');
+    }
+
+    static new(): ResultConsumed_ {
+      return new ResultConsumed_();
+    }
+
+    static instanceOf(obj: any): obj is ResultConsumed_ {
+      return obj.tag === KnownHostRepositoryError_Tags.ResultConsumed;
+    }
+    static hasInner(obj: any): obj is ResultConsumed_ {
+      return false;
+    }
+  }
+
+  function instanceOf(obj: any): obj is KnownHostRepositoryError {
+    return obj[uniffiTypeNameSymbol] === 'KnownHostRepositoryError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    NotLoaded: NotLoaded_,
+    Cancelled: Cancelled_,
+    StorageRead: StorageRead_,
+    StorageWrite: StorageWrite_,
+    InvalidData: InvalidData_,
+    InvalidKey: InvalidKey_,
+    ResultConsumed: ResultConsumed_,
+  });
+})();
+/**
+ * Errors deliberately exclude foreign exception text and host-key material.
+ */
+export type KnownHostRepositoryError = InstanceType<
+  (typeof KnownHostRepositoryError)[
+    | 'NotLoaded'
+    | 'Cancelled'
+    | 'StorageRead'
+    | 'StorageWrite'
+    | 'InvalidData'
+    | 'InvalidKey'
+    | 'ResultConsumed']
+>;
+
+// FfiConverter for enum KnownHostRepositoryError
+const FfiConverterTypeKnownHostRepositoryError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = KnownHostRepositoryError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new KnownHostRepositoryError.NotLoaded();
+        case 2:
+          return new KnownHostRepositoryError.Cancelled();
+        case 3:
+          return new KnownHostRepositoryError.StorageRead();
+        case 4:
+          return new KnownHostRepositoryError.StorageWrite();
+        case 5:
+          return new KnownHostRepositoryError.InvalidData();
+        case 6:
+          return new KnownHostRepositoryError.InvalidKey();
+        case 7:
+          return new KnownHostRepositoryError.ResultConsumed();
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case KnownHostRepositoryError_Tags.NotLoaded: {
+          ordinalConverter.write(1, into);
+          return;
+        }
+        case KnownHostRepositoryError_Tags.Cancelled: {
+          ordinalConverter.write(2, into);
+          return;
+        }
+        case KnownHostRepositoryError_Tags.StorageRead: {
+          ordinalConverter.write(3, into);
+          return;
+        }
+        case KnownHostRepositoryError_Tags.StorageWrite: {
+          ordinalConverter.write(4, into);
+          return;
+        }
+        case KnownHostRepositoryError_Tags.InvalidData: {
+          ordinalConverter.write(5, into);
+          return;
+        }
+        case KnownHostRepositoryError_Tags.InvalidKey: {
+          ordinalConverter.write(6, into);
+          return;
+        }
+        case KnownHostRepositoryError_Tags.ResultConsumed: {
+          ordinalConverter.write(7, into);
+          return;
+        }
+        default:
+          // Throwing from here means that KnownHostRepositoryError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case KnownHostRepositoryError_Tags.NotLoaded: {
+          return ordinalConverter.allocationSize(1);
+        }
+        case KnownHostRepositoryError_Tags.Cancelled: {
+          return ordinalConverter.allocationSize(2);
+        }
+        case KnownHostRepositoryError_Tags.StorageRead: {
+          return ordinalConverter.allocationSize(3);
+        }
+        case KnownHostRepositoryError_Tags.StorageWrite: {
+          return ordinalConverter.allocationSize(4);
+        }
+        case KnownHostRepositoryError_Tags.InvalidData: {
+          return ordinalConverter.allocationSize(5);
+        }
+        case KnownHostRepositoryError_Tags.InvalidKey: {
+          return ordinalConverter.allocationSize(6);
+        }
+        case KnownHostRepositoryError_Tags.ResultConsumed: {
+          return ordinalConverter.allocationSize(7);
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
 // Error type: KnownHostStoreError
 export enum KnownHostStoreError_Tags {
   EmptyHost = 'EmptyHost',
@@ -52562,61 +53050,44 @@ const uniffiCallbackInterfaceHostRuntimeEventSink: {
   },
 };
 
-export interface KnownHostStoreLike {
-  commit(token: bigint) /*throws*/ : KnownHostStoreView;
-  hydrate(persisted: string | undefined) /*throws*/ : KnownHostStoreView;
-  prepareAdd(
-    challenge: HostKeyChallenge,
-    id: string,
-    createdAt: string,
-  ) /*throws*/ : KnownHostMutation;
-  prepareRemove(id: string) /*throws*/ : KnownHostMutation;
-  rollback(token: bigint) /*throws*/ : KnownHostStoreView;
-  view() /*throws*/ : KnownHostStoreView;
+export interface KnownHostOperationLike {
+  /**
+   * False means the operation has settled or crossed its durable commit point.
+   */
+  cancel(): boolean;
+  result(asyncOpts_?: {
+    signal: AbortSignal;
+  }) /*throws*/ : Promise<KnownHostRepositoryView>;
 }
 /**
- * @deprecated Use `KnownHostStoreLike` instead.
+ * @deprecated Use `KnownHostOperationLike` instead.
  */
-export type KnownHostStoreInterface = KnownHostStoreLike;
+export type KnownHostOperationInterface = KnownHostOperationLike;
 
-export class KnownHostStore
+export class KnownHostOperation
   extends UniffiAbstractObject
-  implements KnownHostStoreLike
+  implements KnownHostOperationLike
 {
-  readonly [uniffiTypeNameSymbol] = 'KnownHostStore';
+  readonly [uniffiTypeNameSymbol] = 'KnownHostOperation';
   readonly [destructorGuardSymbol]: UniffiGcObject;
   readonly [pointerLiteralSymbol]: UniffiHandle;
-  constructor() {
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
     super();
-    const pointer = uniffiCaller.rustCall(
-      /*caller:*/ callStatus => {
-        return nativeModule().ubrn_uniffi_whip_ssh_fn_constructor_knownhoststore_new(
-          callStatus,
-        );
-      },
-      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-    );
     this[pointerLiteralSymbol] = pointer;
     this[destructorGuardSymbol] =
-      uniffiTypeKnownHostStoreObjectFactory.bless(pointer);
+      uniffiTypeKnownHostOperationObjectFactory.bless(pointer);
   }
 
-  commit(token: bigint): KnownHostStoreView /*throws*/ {
-    return ((__rb: Uint8Array) => {
-      try {
-        return FfiConverterTypeKnownHostStoreView.lift(__rb);
-      } finally {
-        nativeModule().rustbuffer_free(__rb);
-      }
-    })(
-      uniffiCaller.rustCallWithError(
-        /*liftError:*/ FfiConverterTypeKnownHostStoreError.lift.bind(
-          FfiConverterTypeKnownHostStoreError,
-        ),
+  /**
+   * False means the operation has settled or crossed its durable commit point.
+   */
+  cancel(): boolean {
+    return FfiConverterBool.lift(
+      uniffiCaller.rustCall(
         /*caller:*/ callStatus => {
-          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_knownhoststore_commit(
-            uniffiTypeKnownHostStoreObjectFactory.clonePointer(this),
-            FfiConverterUInt64.lower(token, nativeModule().rustbuffer_alloc),
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_knownhostoperation_cancel(
+            uniffiTypeKnownHostOperationObjectFactory.clonePointer(this),
             callStatus,
           );
         },
@@ -52625,170 +53096,82 @@ export class KnownHostStore
     );
   }
 
-  hydrate(persisted: string | undefined): KnownHostStoreView /*throws*/ {
-    return ((__rb: Uint8Array) => {
-      try {
-        return FfiConverterTypeKnownHostStoreView.lift(__rb);
-      } finally {
-        nativeModule().rustbuffer_free(__rb);
-      }
-    })(
-      uniffiCaller.rustCallWithError(
-        /*liftError:*/ FfiConverterTypeKnownHostStoreError.lift.bind(
-          FfiConverterTypeKnownHostStoreError,
-        ),
-        /*caller:*/ callStatus => {
-          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_knownhoststore_hydrate(
-            uniffiTypeKnownHostStoreObjectFactory.clonePointer(this),
-            FfiConverterOptionalString.lower(
-              persisted,
-              nativeModule().rustbuffer_alloc,
-            ),
-            callStatus,
+  async result(asyncOpts_?: {
+    signal: AbortSignal;
+  }): Promise<KnownHostRepositoryView> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_knownhostoperation_result(
+            uniffiTypeKnownHostOperationObjectFactory.clonePointer(this),
           );
         },
-        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-      ),
-    );
-  }
-
-  prepareAdd(
-    challenge: HostKeyChallenge,
-    id: string,
-    createdAt: string,
-  ): KnownHostMutation /*throws*/ {
-    return ((__rb: Uint8Array) => {
-      try {
-        return FfiConverterTypeKnownHostMutation.lift(__rb);
-      } finally {
-        nativeModule().rustbuffer_free(__rb);
-      }
-    })(
-      uniffiCaller.rustCallWithError(
-        /*liftError:*/ FfiConverterTypeKnownHostStoreError.lift.bind(
-          FfiConverterTypeKnownHostStoreError,
-        ),
-        /*caller:*/ callStatus => {
-          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_knownhoststore_prepare_add(
-            uniffiTypeKnownHostStoreObjectFactory.clonePointer(this),
-            FfiConverterTypeHostKeyChallenge.lower(
-              challenge,
-              nativeModule().rustbuffer_alloc,
-            ),
-            FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
-            FfiConverterString.lower(
-              createdAt,
-              nativeModule().rustbuffer_alloc,
-            ),
-            callStatus,
-          );
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeKnownHostRepositoryView.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
         },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-      ),
-    );
-  }
-
-  prepareRemove(id: string): KnownHostMutation /*throws*/ {
-    return ((__rb: Uint8Array) => {
-      try {
-        return FfiConverterTypeKnownHostMutation.lift(__rb);
-      } finally {
-        nativeModule().rustbuffer_free(__rb);
-      }
-    })(
-      uniffiCaller.rustCallWithError(
-        /*liftError:*/ FfiConverterTypeKnownHostStoreError.lift.bind(
-          FfiConverterTypeKnownHostStoreError,
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeKnownHostRepositoryError.lift.bind(
+          FfiConverterTypeKnownHostRepositoryError,
         ),
-        /*caller:*/ callStatus => {
-          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_knownhoststore_prepare_remove(
-            uniffiTypeKnownHostStoreObjectFactory.clonePointer(this),
-            FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
-            callStatus,
-          );
-        },
-        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-      ),
-    );
-  }
-
-  rollback(token: bigint): KnownHostStoreView /*throws*/ {
-    return ((__rb: Uint8Array) => {
-      try {
-        return FfiConverterTypeKnownHostStoreView.lift(__rb);
-      } finally {
-        nativeModule().rustbuffer_free(__rb);
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
       }
-    })(
-      uniffiCaller.rustCallWithError(
-        /*liftError:*/ FfiConverterTypeKnownHostStoreError.lift.bind(
-          FfiConverterTypeKnownHostStoreError,
-        ),
-        /*caller:*/ callStatus => {
-          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_knownhoststore_rollback(
-            uniffiTypeKnownHostStoreObjectFactory.clonePointer(this),
-            FfiConverterUInt64.lower(token, nativeModule().rustbuffer_alloc),
-            callStatus,
-          );
-        },
-        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-      ),
-    );
-  }
-
-  view(): KnownHostStoreView /*throws*/ {
-    return ((__rb: Uint8Array) => {
-      try {
-        return FfiConverterTypeKnownHostStoreView.lift(__rb);
-      } finally {
-        nativeModule().rustbuffer_free(__rb);
-      }
-    })(
-      uniffiCaller.rustCallWithError(
-        /*liftError:*/ FfiConverterTypeKnownHostStoreError.lift.bind(
-          FfiConverterTypeKnownHostStoreError,
-        ),
-        /*caller:*/ callStatus => {
-          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_knownhoststore_view(
-            uniffiTypeKnownHostStoreObjectFactory.clonePointer(this),
-            callStatus,
-          );
-        },
-        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
-      ),
-    );
+      throw __error;
+    }
   }
 
   uniffiDestroy(): void {
     const ptr = (this as any)[destructorGuardSymbol];
     if (ptr !== undefined) {
-      const pointer = uniffiTypeKnownHostStoreObjectFactory.pointer(this);
-      uniffiTypeKnownHostStoreObjectFactory.freePointer(pointer);
-      uniffiTypeKnownHostStoreObjectFactory.unbless(ptr);
+      const pointer = uniffiTypeKnownHostOperationObjectFactory.pointer(this);
+      uniffiTypeKnownHostOperationObjectFactory.freePointer(pointer);
+      uniffiTypeKnownHostOperationObjectFactory.unbless(ptr);
       delete (this as any)[destructorGuardSymbol];
     }
   }
 
-  static instanceOf(obj_: any): obj_ is KnownHostStore {
-    return uniffiTypeKnownHostStoreObjectFactory.isConcreteType(obj_);
+  static instanceOf(obj_: any): obj_ is KnownHostOperation {
+    return uniffiTypeKnownHostOperationObjectFactory.isConcreteType(obj_);
   }
 }
 
-const uniffiTypeKnownHostStoreObjectFactory: UniffiObjectFactory<KnownHostStoreLike> =
+const uniffiTypeKnownHostOperationObjectFactory: UniffiObjectFactory<KnownHostOperationLike> =
   (() => {
     return {
-      create(pointer: UniffiHandle): KnownHostStoreLike {
-        const instance = Object.create(KnownHostStore.prototype);
+      create(pointer: UniffiHandle): KnownHostOperationLike {
+        const instance = Object.create(KnownHostOperation.prototype);
         instance[pointerLiteralSymbol] = pointer;
         instance[destructorGuardSymbol] = this.bless(pointer);
-        instance[uniffiTypeNameSymbol] = 'KnownHostStore';
+        instance[uniffiTypeNameSymbol] = 'KnownHostOperation';
         return instance;
       },
 
       bless(p: UniffiHandle): UniffiGcObject {
         return uniffiCaller.rustCall(
           /*caller:*/ status =>
-            nativeModule().ubrn_uniffi_internal_fn_method_knownhoststore_ffi__bless_pointer(
+            nativeModule().ubrn_uniffi_internal_fn_method_knownhostoperation_ffi__bless_pointer(
               p,
               status,
             ),
@@ -52800,18 +53183,18 @@ const uniffiTypeKnownHostStoreObjectFactory: UniffiObjectFactory<KnownHostStoreL
         ptr_.markDestroyed();
       },
 
-      pointer(obj_: KnownHostStoreLike): UniffiHandle {
+      pointer(obj_: KnownHostOperationLike): UniffiHandle {
         if ((obj_ as any)[destructorGuardSymbol] === undefined) {
           throw new UniffiInternalError.UnexpectedNullPointer();
         }
         return (obj_ as any)[pointerLiteralSymbol];
       },
 
-      clonePointer(obj_: KnownHostStoreLike): UniffiHandle {
+      clonePointer(obj_: KnownHostOperationLike): UniffiHandle {
         const pointer = this.pointer(obj_);
         return uniffiCaller.rustCall(
           /*caller:*/ callStatus =>
-            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_knownhoststore(
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_knownhostoperation(
               pointer,
               callStatus,
             ),
@@ -52822,7 +53205,7 @@ const uniffiTypeKnownHostStoreObjectFactory: UniffiObjectFactory<KnownHostStoreL
       freePointer(pointer: UniffiHandle): void {
         uniffiCaller.rustCall(
           /*caller:*/ callStatus =>
-            nativeModule().ubrn_uniffi_whip_ssh_fn_free_knownhoststore(
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_knownhostoperation(
               pointer,
               callStatus,
             ),
@@ -52830,16 +53213,190 @@ const uniffiTypeKnownHostStoreObjectFactory: UniffiObjectFactory<KnownHostStoreL
         );
       },
 
-      isConcreteType(obj_: any): obj_ is KnownHostStoreLike {
+      isConcreteType(obj_: any): obj_ is KnownHostOperationLike {
         return (
           obj_[destructorGuardSymbol] &&
-          obj_[uniffiTypeNameSymbol] === 'KnownHostStore'
+          obj_[uniffiTypeNameSymbol] === 'KnownHostOperation'
         );
       },
     };
   })();
-const FfiConverterTypeKnownHostStore = new FfiConverterObject(
-  uniffiTypeKnownHostStoreObjectFactory,
+const FfiConverterTypeKnownHostOperation = new FfiConverterObject(
+  uniffiTypeKnownHostOperationObjectFactory,
+);
+
+export interface KnownHostRepositoryLike {
+  /**
+   * Reserve native FIFO order before UniFFI async polling can reorder calls.
+   */
+  begin(command: KnownHostCommand): KnownHostOperationLike;
+  close(): void;
+  view() /*throws*/ : KnownHostRepositoryView;
+}
+/**
+ * @deprecated Use `KnownHostRepositoryLike` instead.
+ */
+export type KnownHostRepositoryInterface = KnownHostRepositoryLike;
+
+export class KnownHostRepository
+  extends UniffiAbstractObject
+  implements KnownHostRepositoryLike
+{
+  readonly [uniffiTypeNameSymbol] = 'KnownHostRepository';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  constructor() {
+    super();
+    const pointer = uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_constructor_knownhostrepository_new(
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeKnownHostRepositoryObjectFactory.bless(pointer);
+  }
+
+  /**
+   * Reserve native FIFO order before UniFFI async polling can reorder calls.
+   */
+  begin(command: KnownHostCommand): KnownHostOperationLike {
+    return FfiConverterTypeKnownHostOperation.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_knownhostrepository_begin(
+            uniffiTypeKnownHostRepositoryObjectFactory.clonePointer(this),
+            FfiConverterTypeKnownHostCommand.lower(
+              command,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  close(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_knownhostrepository_close(
+          uniffiTypeKnownHostRepositoryObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  view(): KnownHostRepositoryView /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeKnownHostRepositoryView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeKnownHostRepositoryError.lift.bind(
+          FfiConverterTypeKnownHostRepositoryError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_knownhostrepository_view(
+            uniffiTypeKnownHostRepositoryObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeKnownHostRepositoryObjectFactory.pointer(this);
+      uniffiTypeKnownHostRepositoryObjectFactory.freePointer(pointer);
+      uniffiTypeKnownHostRepositoryObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is KnownHostRepository {
+    return uniffiTypeKnownHostRepositoryObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeKnownHostRepositoryObjectFactory: UniffiObjectFactory<KnownHostRepositoryLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): KnownHostRepositoryLike {
+        const instance = Object.create(KnownHostRepository.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'KnownHostRepository';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_knownhostrepository_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: KnownHostRepositoryLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: KnownHostRepositoryLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_knownhostrepository(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_knownhostrepository(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is KnownHostRepositoryLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'KnownHostRepository'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeKnownHostRepository = new FfiConverterObject(
+  uniffiTypeKnownHostRepositoryObjectFactory,
 );
 
 /**
@@ -60152,59 +60709,51 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_knownhoststore_new() !==
-    51550
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_knownhostoperation_cancel() !==
+    8171
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_constructor_knownhoststore_new',
+      'uniffi_whip_ssh_checksum_method_knownhostoperation_cancel',
     );
   }
   if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_commit() !==
-    17027
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_knownhostoperation_result() !==
+    31347
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_method_knownhoststore_commit',
+      'uniffi_whip_ssh_checksum_method_knownhostoperation_result',
     );
   }
   if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_hydrate() !==
-    22914
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_knownhostrepository_new() !==
+    40653
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_method_knownhoststore_hydrate',
+      'uniffi_whip_ssh_checksum_constructor_knownhostrepository_new',
     );
   }
   if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_prepare_add() !==
-    29483
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_knownhostrepository_begin() !==
+    35205
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_method_knownhoststore_prepare_add',
+      'uniffi_whip_ssh_checksum_method_knownhostrepository_begin',
     );
   }
   if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_prepare_remove() !==
-    59860
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_knownhostrepository_close() !==
+    42776
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_method_knownhoststore_prepare_remove',
+      'uniffi_whip_ssh_checksum_method_knownhostrepository_close',
     );
   }
   if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_rollback() !==
-    746
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_knownhostrepository_view() !==
+    31905
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_method_knownhoststore_rollback',
-    );
-  }
-  if (
-    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_knownhoststore_view() !==
-    64263
-  ) {
-    throw new UniffiInternalError.ApiChecksumMismatch(
-      'uniffi_whip_ssh_checksum_method_knownhoststore_view',
+      'uniffi_whip_ssh_checksum_method_knownhostrepository_view',
     );
   }
   if (
@@ -61211,11 +61760,14 @@ export default Object.freeze({
     FfiConverterTypeHostTerminalGeometry,
     FfiConverterTypeHostTerminalResizeOutcome,
     FfiConverterTypeHostTerminalState,
-    FfiConverterTypeKnownHostMutation,
+    FfiConverterTypeKnownHostCommand,
+    FfiConverterTypeKnownHostOperation,
     FfiConverterTypeKnownHostRecord,
-    FfiConverterTypeKnownHostStore,
+    FfiConverterTypeKnownHostRepository,
+    FfiConverterTypeKnownHostRepositoryError,
+    FfiConverterTypeKnownHostRepositoryStatus,
+    FfiConverterTypeKnownHostRepositoryView,
     FfiConverterTypeKnownHostStoreError,
-    FfiConverterTypeKnownHostStoreView,
     FfiConverterTypeLegacySftpEntry,
     FfiConverterTypeLegacySftpFileServer,
     FfiConverterTypeLocalAlertAction,

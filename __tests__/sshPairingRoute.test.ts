@@ -7,7 +7,6 @@ import type { ConnectionProfile } from '../src/types';
 jest.mock('react-native-whip-ssh', () => ({
   ...require('./mockWhipSsh').createMockWhipSshModule(),
   pairHost: jest.fn(),
-  NativeKnownHostStore: jest.fn(),
 }));
 jest.mock('../src/services/appStorage', () => ({ __esModule: true, appStorage: {} }));
 jest.mock('../src/services/hostProfiles', () => ({ ensureTailcatIdentity: jest.fn(async profile => profile), loadJumpHostConnectionProfiles: jest.fn() }));

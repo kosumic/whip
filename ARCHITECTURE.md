@@ -62,7 +62,7 @@ Native credential effects distinguish interactive picker/recovery access from a
 background store read; background restore cannot open the editor or navigate.
 
 React supplies individual effects through `SessionConnectionPlatform`: the
-credential/recovery UI, biometric and trust prompts, known-host persistence,
+credential/recovery UI, biometric and trust prompts, known-host command dispatch,
 physical `HerdrClient` attachment, terminal-storage loading, localized messages
 and navigation. The hook retains runtime event rendering and offline-cache
 notifications. The connection workflow calls `CredentialCoordinator` for durable
@@ -226,9 +226,41 @@ Only ciphertext enters the backup map. Recovery resolves selected IDs against
 current profiles, retains per-host failure counts, and cannot restore tombstoned
 IDs. Clearing the final encrypted backup attempts recovery-key cleanup; a cleanup
 failure is diagnosed without reversing the deletion. Existing AsyncStorage import
-receipts and legacy Keychain sources remain intact for migration retries. Known
-host trust remains a metadata-only native store with generation-scoped commit and
-rollback tokens; its single database write does not cross secure stores.
+receipts and legacy Keychain sources remain intact for migration retries.
+
+### Known-host trust transactions
+
+`app_database/known_hosts.rs` owns the process-wide SSH trust repository. Its
+synchronous `begin` reserves FIFO order in the existing application database
+worker before foreign async polling can reorder calls. Rust owns loading and
+mutation admission, record validation and IDs, durable trust/revoke writes,
+commit/rollback, and typed, revisioned projections. Prepared records become
+effective in SSH authentication only after the database commit succeeds. Failed
+reads or malformed data preserve previously installed trust and block mutations;
+failed writes preserve the committed list and remain retryable.
+
+The repository uses the existing `herdr.known-hosts.v1` row and Rust known-host
+domain store. The read-only AsyncStorage importer and its native migration receipt
+remain unchanged. After initialization, Rust reads the current database row;
+the older batched startup snapshot cannot hydrate or replace trust. TypeScript
+only forwards semantic commands, maps cancellation signals and typed outcomes,
+and reads a fresh native projection before updating the UI. It owns no trust
+mutation queue, prepared token, persistence acknowledgement, or rollback policy.
+OpenSSH key representation, matching and explicit unknown-host approval remain
+unchanged; changed keys and unsupported host certificates retain their distinct
+SSH errors. Diagnostics contain operation categories, never host-key material or
+raw storage exceptions.
+
+Loads and replacement owners advance a native generation. Queued work and read
+completions from an older generation cannot install records or publish Loaded.
+Bridge detachment closes the owner while retaining committed trust. Dropped
+callers and explicit cancellation stop queued work. Under the native state lock,
+a mutation seals its commit point immediately before database I/O: `cancel()`
+returns false after this boundary, and the native worker completes that durable
+operation before processing the next one. Disk I/O holds no UI-facing state lock.
+If ownership changes during a sealed commit, the write finishes in order while
+the replacement stays Loading until its own authoritative read. Result consumption
+is single-use; delayed result delivery cannot regress the rendered trust list.
 
 ### Agent-facing browser operations
 
@@ -614,7 +646,8 @@ search. Existing Rust host, trust, terminal and browser domain models keep their
 validation, ordering and serialization responsibilities.
 
 `appStorage` initializes the database and imports older data before reads or
-mutations. Startup state is a single batch. Session persistence uses one native
+mutations. Startup metadata is read in one batch; the trust repository performs
+its own generation-fenced read before admitting mutations. Session persistence uses one native
 `SessionPersistence` worker after the same initialization barrier: snapshot
 deadlines, pending exports, runtime/revision cursors, terminal resume/font
 transactions and live-host membership identities are Rust-owned. Commands enter

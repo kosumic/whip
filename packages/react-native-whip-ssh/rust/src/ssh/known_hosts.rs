@@ -76,14 +76,14 @@ pub struct KnownHostRecord {
     pub created_at: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KnownHostStoreView {
     pub revision: u64,
     pub hosts: Vec<KnownHostRecord>,
     pub persisted_value: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KnownHostMutation {
     pub token: u64,
     pub changed: bool,
@@ -104,14 +104,11 @@ struct KnownHostDomainState {
     pending: Option<PendingKnownHostMutation>,
 }
 
-#[derive(uniffi::Object)]
 pub struct KnownHostStore {
     state: Mutex<KnownHostDomainState>,
 }
 
-#[uniffi::export]
 impl KnownHostStore {
-    #[uniffi::constructor]
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
             state: Mutex::new(KnownHostDomainState::default()),

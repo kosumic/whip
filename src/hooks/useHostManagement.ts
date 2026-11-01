@@ -26,7 +26,7 @@ import {
 } from '../services/hostProfiles';
 import {
   deleteKnownHost,
-  knownHostsFromStorage,
+  currentKnownHostsState,
   loadKnownHosts,
   KnownHostsUnavailableError,
   trustKnownHost,
@@ -115,7 +115,7 @@ export interface HostManagementController {
   completeLiveHostRestore: () => void;
 }
 
-/** Owns host profiles, credentials, trust data, and host-management flows. */
+/** Renders native host/trust state and coordinates host-management UI. */
 export function useHostManagement({
   startupStorage,
   deferredHydrationReady,
@@ -150,7 +150,6 @@ export function useHostManagement({
   );
   const [deleteHostBusy, setDeleteHostBusy] = useState(false);
   const hostsRef = useRef(hosts);
-  const knownHostsStateRef = useRef(knownHostsState);
   const profileHydrationStartedRef = useRef(false);
   const deferredHydrationStartedRef = useRef(false);
   const credentialMigrationStartedRef = useRef(false);
@@ -160,7 +159,6 @@ export function useHostManagement({
   const onDeleteConnectedHostRef = useRef(onDeleteConnectedHost);
   onDeleteConnectedHostRef.current = onDeleteConnectedHost;
   hostsRef.current = hosts;
-  knownHostsStateRef.current = knownHostsState;
 
   const knownHosts = useMemo(
     () => knownHostsState.status === 'loaded' ? knownHostsState.hosts : [],
@@ -176,7 +174,6 @@ export function useHostManagement({
   useEffect(() => subscribeToHostProfiles(replaceHosts), [replaceHosts]);
 
   const replaceKnownHostsState = useCallback((value: KnownHostsLoadState) => {
-    knownHostsStateRef.current = value;
     setKnownHostsState(value);
   }, []);
 
@@ -211,15 +208,12 @@ export function useHostManagement({
   useEffect(() => {
     if (!deferredHydrationReady || deferredHydrationStartedRef.current) return;
     deferredHydrationStartedRef.current = true;
-    const load =
-      startupStorage.status === 'loaded'
-        ? knownHostsFromStorage(startupStorage.value.knownHosts)
-        : loadKnownHosts();
+    const load = loadKnownHosts();
     reportBackgroundFailure(
       withAppPerformanceTrace(
         'Whip startup store: known hosts',
         () => load,
-      ).then(replaceKnownHostsState),
+      ).then(() => replaceKnownHostsState(currentKnownHostsState())),
       'known-hosts-load',
     );
     reportBackgroundFailure(
@@ -229,14 +223,15 @@ export function useHostManagement({
       ).then(setCredentialRecovery),
       'credential-recovery-status-load',
     );
-  }, [deferredHydrationReady, replaceKnownHostsState, startupStorage]);
+  }, [deferredHydrationReady, replaceKnownHostsState]);
 
   const retryKnownHosts = useCallback(async () => {
     replaceKnownHostsState({ status: 'loading' });
-    replaceKnownHostsState(await withAppPerformanceTrace(
+    await withAppPerformanceTrace(
       'Whip known hosts: retry storage load',
       loadKnownHosts,
-    ));
+    );
+    replaceKnownHostsState(currentKnownHostsState());
   }, [replaceKnownHostsState]);
 
   const completeLiveHostRestore = useCallback(() => {
@@ -328,14 +323,14 @@ export function useHostManagement({
 
   const savePairedHost = useCallback(
     async (result: PairHostResult, key: PairingKeySelection, jumpHostId?: string) => {
-      const nextKnownHosts = await trustKnownHost({
+      await trustKnownHost({
         host: result.sshHost,
         port: result.sshPort,
         keyType: result.sshHostKeyType,
         publicKey: result.sshHostPublicKey,
         fingerprint: result.sshHostFingerprint,
       });
-      replaceKnownHostsState({ status: 'loaded', hosts: nextKnownHosts });
+      replaceKnownHostsState(currentKnownHostsState());
       await persistProfile(profileFromPairing(result, key, jumpHostId));
       setCredentialRecovery(await credentialRecoveryStatus());
       setNewHostOpen(false);
@@ -387,7 +382,7 @@ export function useHostManagement({
 
   const confirmUnknownHost = useCallback(
     (challenge: UnknownHostKeyChallenge): Promise<boolean> => {
-      if (knownHostsStateRef.current.status !== 'loaded') {
+      if (currentKnownHostsState().status !== 'loaded') {
         return Promise.reject(new KnownHostsUnavailableError());
       }
       return new Promise(resolve => {
@@ -408,15 +403,15 @@ export function useHostManagement({
 
   const trustChallenge = useCallback(
     async (challenge: UnknownHostKeyChallenge) => {
-      const trustedHosts = await trustKnownHost(challenge);
-      replaceKnownHostsState({ status: 'loaded', hosts: trustedHosts });
+      await trustKnownHost(challenge);
+      replaceKnownHostsState(currentKnownHostsState());
     },
     [replaceKnownHostsState],
   );
 
   const forgetKnownHost = useCallback(async (id: string) => {
-    const remainingHosts = await deleteKnownHost(id);
-    replaceKnownHostsState({ status: 'loaded', hosts: remainingHosts });
+    await deleteKnownHost(id);
+    replaceKnownHostsState(currentKnownHostsState());
   }, [replaceKnownHostsState]);
 
   const deleteConfirmed = useCallback(async () => {

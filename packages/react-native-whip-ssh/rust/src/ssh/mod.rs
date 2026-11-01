@@ -6,7 +6,7 @@
 //! between the SSH and Herdr implementations.
 
 mod browser_proxy;
-mod known_hosts;
+pub(crate) mod known_hosts;
 mod reverse_forward;
 mod session;
 pub(crate) mod tailcat;

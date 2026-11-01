@@ -4,7 +4,7 @@ import { installPublicKeyForHost } from '../src/services/publicKeyInstallation';
 import { ensureTailcatIdentity, loadConnectionProfile, loadJumpHostConnectionProfiles } from '../src/services/hostProfiles';
 import type { ConnectionProfile } from '../src/types';
 
-jest.mock('react-native-whip-ssh', () => ({ installHostPublicKey: jest.fn(), NativeKnownHostStore: jest.fn() }));
+jest.mock('react-native-whip-ssh', () => ({ ...require('./mockWhipSsh').createMockWhipSshModule(), installHostPublicKey: jest.fn() }));
 jest.mock('../src/services/appStorage', () => ({ __esModule: true, appStorage: {} }));
 jest.mock('../src/services/hostProfiles', () => ({ ensureTailcatIdentity: jest.fn(), loadConnectionProfile: jest.fn(), loadJumpHostConnectionProfiles: jest.fn() }));
 jest.mock('../src/lib/hostProfiles', () => ({ hostDisplayName: (profile: ConnectionProfile) => profile.name }));

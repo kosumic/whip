@@ -1,15 +1,15 @@
 import { appStorage } from './appStorage';
 import {
-  NativeKnownHostStore,
-  type KnownHostMutation,
+  KnownHostRepository,
+  KnownHostCommand,
+  KnownHostRepositoryError,
+  KnownHostRepositoryStatus,
+  type KnownHostRepositoryView,
 } from 'react-native-whip-ssh';
 
-import { createSecureId } from '../lib/secureId';
 import type { KnownHost } from '../types';
 import {
   recordStorageDiagnostic,
-  storageErrorDetails,
-  storageParseErrorDetails,
 } from './storageDiagnostics';
 
 export const KNOWN_HOSTS_STORAGE_KEY = 'herdr.known-hosts.v1';
@@ -34,60 +34,77 @@ export class KnownHostsUnavailableError extends Error {
   }
 }
 
-let knownHostsMutation = Promise.resolve();
-let knownHostsState: KnownHostsLoadState = { status: 'loading' };
-const knownHostStore = new NativeKnownHostStore();
+const repository = new KnownHostRepository();
 
-export async function loadKnownHosts(): Promise<KnownHostsLoadState> {
-  knownHostsState = { status: 'loading' };
-  let value: string | null;
-  try {
-    value = await appStorage.getItem(KNOWN_HOSTS_STORAGE_KEY);
-  } catch (error) {
-    recordStorageDiagnostic('error', 'storage-read-failed', {
-      store: 'known-hosts',
-      storageKey: KNOWN_HOSTS_STORAGE_KEY,
-      phase: 'startup',
-      operation: 'getItem',
-      fallbackUsed: 'preserved-native-known-hosts',
-      ...storageErrorDetails(error),
-    });
-    knownHostsState = { status: 'failed', error };
-    return knownHostsState;
+/** Render a fresh native projection rather than an older operation result. */
+export function currentKnownHostsState(): KnownHostsLoadState {
+  const view = repository.view();
+  switch (view.status) {
+    case KnownHostRepositoryStatus.Loading: return { status: 'loading' };
+    case KnownHostRepositoryStatus.Loaded: return { status: 'loaded', hosts: view.hosts };
+    case KnownHostRepositoryStatus.ReadFailed: return { status: 'failed', error: new KnownHostRepositoryError.StorageRead() };
+    case KnownHostRepositoryStatus.InvalidData: return { status: 'failed', error: new KnownHostRepositoryError.InvalidData() };
   }
-  return knownHostsFromStorage(value);
 }
 
-export function knownHostsFromStorage(value: string | null): KnownHostsLoadState {
+async function run(command: KnownHostCommand, signal?: AbortSignal): Promise<KnownHostRepositoryView> {
+  if (signal?.aborted) throw new KnownHostRepositoryError.Cancelled();
+  const operation = repository.begin(command);
+  const cancel = () => { operation.cancel(); };
+  signal?.addEventListener('abort', cancel, { once: true });
+  if (signal?.aborted) cancel();
   try {
-    const view = knownHostStore.hydrate(value ?? undefined);
-    knownHostsState = { status: 'loaded', hosts: view.hosts };
+    await operation.result();
+    // The native worker may have committed a newer operation while an older
+    // result was crossing the bridge. Never return that stale trust snapshot.
+    return repository.view();
   } catch (error) {
-    recordStorageDiagnostic('error', 'storage-parse-failed', {
-      store: 'known-hosts',
-      storageKey: KNOWN_HOSTS_STORAGE_KEY,
-      phase: 'startup',
-      operation: 'parse',
-      fallbackUsed: 'preserved-native-known-hosts',
-      ...storageParseErrorDetails(error),
-    });
-    knownHostsState = { status: 'failed', error };
+    if (error instanceof KnownHostRepositoryError.NotLoaded) throw new KnownHostsUnavailableError();
+    if (error instanceof KnownHostRepositoryError.StorageWrite) {
+      recordStorageDiagnostic('error', 'storage-write-failed', {
+        store: 'known-hosts', storageKey: KNOWN_HOSTS_STORAGE_KEY,
+        phase: 'persistence', operation: 'native-mutation',
+      });
+    }
+    throw error;
+  } finally {
+    signal?.removeEventListener('abort', cancel);
   }
-  return knownHostsState;
+}
+
+export async function loadKnownHosts(signal?: AbortSignal): Promise<KnownHostsLoadState> {
+  try {
+    await appStorage.initialize();
+  } catch {
+    // Rust still attempts its own read. Its migration receipt prevents a failed
+    // legacy import from being mistaken for an authoritative empty trust list.
+    recordStorageDiagnostic('error', 'storage-read-failed', {
+      store: 'known-hosts', storageKey: KNOWN_HOSTS_STORAGE_KEY,
+      phase: 'startup', operation: 'initialize', fallbackUsed: 'preserved-native-known-hosts',
+    });
+  }
+  try {
+    await run(new KnownHostCommand.Load(), signal);
+  } catch (error) {
+    if (!(error instanceof KnownHostRepositoryError.Cancelled)) {
+      recordStorageDiagnostic('error', error instanceof KnownHostRepositoryError.InvalidData ? 'storage-parse-failed' : 'storage-read-failed', {
+        store: 'known-hosts', storageKey: KNOWN_HOSTS_STORAGE_KEY,
+        phase: 'startup', operation: 'native-load', fallbackUsed: 'preserved-native-known-hosts',
+      });
+    }
+  }
+  return currentKnownHostsState();
 }
 
 export async function trustKnownHost(
   challenge: UnknownHostKeyChallenge,
+  signal?: AbortSignal,
 ): Promise<KnownHost[]> {
-  return mutateKnownHosts(() => knownHostStore.prepareAdd(
-    challenge,
-    createSecureId('known-host'),
-    new Date().toISOString(),
-  ));
+  return (await run(new KnownHostCommand.Trust({ challenge }), signal)).hosts;
 }
 
-export async function deleteKnownHost(id: string): Promise<KnownHost[]> {
-  return mutateKnownHosts(() => knownHostStore.prepareRemove(id));
+export async function deleteKnownHost(id: string, signal?: AbortSignal): Promise<KnownHost[]> {
+  return (await run(new KnownHostCommand.Revoke({ id }), signal)).hosts;
 }
 
 export function parseUnknownHostKey(error: unknown): UnknownHostKeyChallenge | null {
@@ -146,40 +163,4 @@ function structuredHostKeyPayload(
     host: details.host,
     port: details.port,
   };
-}
-
-async function mutateKnownHosts(
-  prepare: () => KnownHostMutation,
-): Promise<KnownHost[]> {
-  const operation = knownHostsMutation.then(async () => {
-    if (knownHostsState.status !== 'loaded') {
-      throw new KnownHostsUnavailableError();
-    }
-    const mutation = prepare();
-    if (!mutation.changed) return mutation.view.hosts;
-    try {
-      await appStorage.setItem(
-        KNOWN_HOSTS_STORAGE_KEY,
-        mutation.view.persistedValue,
-      );
-    } catch (error) {
-      knownHostStore.rollback(mutation.token);
-      recordStorageDiagnostic('error', 'storage-write-failed', {
-        store: 'known-hosts',
-        storageKey: KNOWN_HOSTS_STORAGE_KEY,
-        phase: 'persistence',
-        operation: 'setItem',
-        ...storageErrorDetails(error),
-      });
-      throw error;
-    }
-    const committed = knownHostStore.commit(mutation.token);
-    knownHostsState = { status: 'loaded', hosts: committed.hosts };
-    return committed.hosts;
-  });
-  knownHostsMutation = operation.then(
-    () => undefined,
-    () => undefined,
-  );
-  return operation;
 }
