@@ -173,6 +173,9 @@ pub(crate) async fn request_on_runtime(
     replay: HerdrRequestReplay,
 ) -> Result<HerdrControlResult, HerdrControlError> {
     let request_id = next_request_id(connection.client_key());
+    if connection.backend().await? == crate::host_profiles::HostHerdrBackend::Core {
+        return connection.core().await?.control(request, &request_id).await;
+    }
     let bytes = request.encode(&request_id)?;
     let response = connection
         .request(
@@ -224,6 +227,19 @@ pub(crate) async fn request_json_on_runtime(
     params: Value,
     timeout_ms: u64,
 ) -> Result<Value, HerdrControlError> {
+    if connection.backend().await? == crate::HostHerdrBackend::Core {
+        let core = connection.core().await?;
+        return tokio::time::timeout(
+            std::time::Duration::from_millis(timeout_ms),
+            core.request_json(method, params, &next_request_id(connection.client_key())),
+        )
+        .await
+        .map_err(|_| {
+            HerdrControlError::RequestTimeout(
+                "core request timed out; its outcome may be unknown".into(),
+            )
+        })?;
+    }
     let mut bytes = serde_json::to_vec(&serde_json::json!({
         "id": next_request_id(connection.client_key()), "method":method, "params":params
     }))

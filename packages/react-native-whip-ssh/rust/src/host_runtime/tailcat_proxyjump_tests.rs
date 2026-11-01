@@ -170,6 +170,7 @@ impl Reference {
             ssh,
             jump_hosts: vec![gateway, router],
             herdr_enabled: false,
+            herdr_backend: crate::HostHerdrBackend::Legacy,
             session_name: "main".into(),
             herdr_command: "herdr".into(),
             socket_path: None,

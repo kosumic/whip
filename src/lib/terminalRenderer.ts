@@ -132,9 +132,10 @@ export class TerminalRendererContentState {
 
 export function terminalScrollbackMode(
   session: Pick<TerminalSession, 'kind' | 'status'>,
+  localScrollback = false,
 ): TerminalScrollbackMode {
   return {
-    localScrollback: session.kind === 'ssh',
+    localScrollback: session.kind === 'ssh' || localScrollback,
     offlineScrollback: session.status !== 'connected',
   };
 }

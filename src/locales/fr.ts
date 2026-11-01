@@ -1,6 +1,11 @@
 import type { en } from './en';
 
 export const fr = {
+  'connection.herdrBackend': 'Moteur',
+  'connection.herdrBackend.auto': 'Automatique',
+  'connection.herdrBackend.core': 'Herdr Core',
+  'connection.herdrBackend.legacy': 'Herdr classique',
+  'connection.socketAuto': 'Détecter automatiquement',
   'connection.tailcatSshServer': "Utiliser le serveur SSH de Tailcat",
   'connection.tailcatSshServerCopy': "Utilisez le service SSH intégré de Tailcat avec authentification par clé SSH. Le shell s’exécute sous le compte qui démarre Tailcat.",
   'connection.tailcatClientIdentity': "Clé publique cliente Tailcat",

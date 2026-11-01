@@ -1897,6 +1897,12 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     command: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_focus_terminal(
+    uniffiSelf: bigint,
+    terminalId: Uint8Array,
+    focused: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_git_diff(
     uniffiSelf: bigint,
     repository: Uint8Array,
@@ -1983,6 +1989,10 @@ interface NativeModuleInterface {
     terminalId: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): number;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_herdr_backend(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_herdr_enabled(
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -2011,6 +2021,10 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     path: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_local_terminal_scrollback(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): number;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_matches_ssh_config(
     uniffiSelf: bigint,
     config: Uint8Array,
@@ -3057,6 +3071,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_discover_git_repository(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_discover_github_repository(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_execute(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_focus_terminal(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_diff(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_diff_review(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_status(): number;
@@ -3071,6 +3086,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_resource(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_has_ssh_shell(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_has_terminal(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_herdr_backend(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_herdr_enabled(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_herdr_setup(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_host_state(): number;
@@ -3078,6 +3094,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_install_herdr(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_is_terminal_opening(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_list_directory(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_local_terminal_scrollback(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_matches_ssh_config(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_measure_host_latency(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_agent_chat(): number;

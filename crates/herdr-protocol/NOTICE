@@ -1,0 +1,8 @@
+herdr-protocol hc interoperability
+
+Portions of hc wire framing, request/channel routing, event reduction and desktop document interoperability are adapted from herdr-core and herdr-app (herdrdev contributors), licensed under Apache License 2.0. See LICENSE-APACHE.
+
+herdr-core source: 7a54c2975225a859b7e7d67302df5efc249fb9d0
+herdr-app source: 1581a587919dddd6f1efd5f78eb542c4b2b02cb5
+
+Modified for a transport-neutral Rust client, checked and bounded framing/buffering, asynchronous caller-owned transport, cancellation, channel credit, and lossless document updates. See UPSTREAM.md for the audit and update procedure.

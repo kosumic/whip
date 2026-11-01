@@ -8,6 +8,7 @@ import {
   type HostActionProfilePatch,
 } from 'react-native-whip-ssh/src/credentialTransactions';
 import type { ConnectionProfile, HostProfile } from '../types';
+import {toNativeHerdrBackend} from 'react-native-whip-ssh/src/herdrBackend';
 import { CredentialTransactions, credentialTransactions, hostProfile, material, nativeHost } from './credentialTransactions';
 import { reportBackgroundFailure } from './backgroundOperations';
 
@@ -76,6 +77,7 @@ export class HostProfileRepository {
       name: patch.name, host: patch.host, port: patch.port, username: patch.username,
       authMode: patch.authMode === undefined ? undefined : patch.authMode === 'key' ? HostAuthMode.Key : HostAuthMode.Password,
       herdrCommand: patch.herdrCommand, herdrSocketPath: patch.herdrSocketPath,
+      herdrBackend: patch.herdrBackend === undefined ? undefined : toNativeHerdrBackend(patch.herdrBackend),
       sessionName: patch.sessionName, forwardAgent: patch.forwardAgent,
       jumpHostId: patch.jumpHostId ?? undefined, jumpHostChanged: patch.jumpHostId !== undefined,
     };

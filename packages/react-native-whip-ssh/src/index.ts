@@ -1,3 +1,4 @@
+import {type HerdrBackend,toNativeHerdrBackend,fromNativeHerdrBackend} from './herdrBackend';
 import {
   setReverseControlEventSink,
   type ReverseControlEvent,
@@ -503,11 +504,13 @@ export type RuntimeSshConfig = {
   forwardAgent?: boolean;
 };
 
+export {type HerdrBackend,toNativeHerdrBackend,fromNativeHerdrBackend} from './herdrBackend';
 export type RuntimeConfig = {
   runtimeId: string;
   ssh: RuntimeSshConfig;
   jumpHosts: RuntimeSshConfig[];
   herdrEnabled?: boolean;
+  herdrBackend?: HerdrBackend;
   sessionName: string;
   herdrCommand: string;
   socketPath?: string;
@@ -1193,6 +1196,7 @@ export type NativeHostProfile = {
   forwardAgent: boolean;
   authMode: 'password' | 'key';
   herdrEnabled: boolean;
+  herdrBackend?: HerdrBackend;
   herdrCommand: string;
   herdrSocketPath: string;
   sessionName: string;
@@ -1212,6 +1216,7 @@ function nativeHostProfile(value: NativeHostProfileRecord): NativeHostProfile {
   return {
     ...value,
     authMode: value.authMode === HostAuthMode.Key ? 'key' : 'password',
+    herdrBackend: fromNativeHerdrBackend(value.herdrBackend),
   };
 }
 
@@ -1223,6 +1228,7 @@ function rustHostProfile(value: NativeHostProfile): NativeHostProfileRecord {
     agentInstructions: value.agentInstructions ?? '',
     authMode:
       value.authMode === 'key' ? HostAuthMode.Key : HostAuthMode.Password,
+    herdrBackend: toNativeHerdrBackend(value.herdrBackend),
   };
 }
 
@@ -2904,6 +2910,8 @@ export class NativeHostRuntime {
   get herdrEnabled(): boolean {
     return this.runtime.herdrEnabled();
   }
+  get herdrBackend(): HerdrBackend {return fromNativeHerdrBackend(this.runtime.herdrBackend());}
+  get localTerminalScrollback(): boolean {return this.runtime.localTerminalScrollback();}
   get tailcatEnabled(): boolean {
     return this.runtime.tailcatEnabled();
   }
@@ -3503,6 +3511,8 @@ export class NativeHostRuntime {
       return Promise.reject(bridgeError(error));
     }
   }
+
+  herdrBridgeFocus(terminalId:string,focused:boolean):void {this.runtime.focusTerminal(terminalId,focused);}
 
   closeHerdrBridge(terminalId: string): void {
     removeBridgeHandler(this.runtimeId, terminalId);
@@ -4262,6 +4272,7 @@ export function createHostRuntime(
       ssh: runtimeSshConfig(config.ssh),
       jumpHosts: config.jumpHosts.map(runtimeSshConfig),
       herdrEnabled: config.herdrEnabled !== false,
+      herdrBackend: toNativeHerdrBackend(config.herdrBackend),
       sessionName: config.sessionName,
       herdrCommand: config.herdrCommand,
       socketPath: config.socketPath,
@@ -4386,6 +4397,7 @@ export {
   HostActionPermitError,
   HostActionPlatformError,
   HostAuthMode,
+  HostHerdrBackend,
 } from './generated-entry';
 export type {
   HostActionConnection,

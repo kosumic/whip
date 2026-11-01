@@ -46,6 +46,7 @@ pub struct HostActionProfilePatch {
     pub username: Option<String>,
     pub auth_mode: Option<HostAuthMode>,
     pub herdr_command: Option<String>,
+    pub herdr_backend: Option<crate::HostHerdrBackend>,
     pub herdr_socket_path: Option<String>,
     pub session_name: Option<String>,
     pub forward_agent: Option<bool>,

@@ -1,4 +1,5 @@
 import { NativeModules, Platform } from 'react-native';
+import {toNativeHerdrBackend,fromNativeHerdrBackend} from 'react-native-whip-ssh/src/herdrBackend';
 import * as Keychain from 'react-native-keychain';
 import {
   CredentialCoordinator,
@@ -143,12 +144,13 @@ export function nativeHost(host: HostProfile): HostProfileRecord {
     jumpHostId: host.jumpHostId, forwardAgent: !!host.forwardAgent, tailcatEnabled: !!host.tailcatEnabled,
     tailcatSshServer: !!host.tailcatSshServer, herdrEnabled: host.herdrEnabled !== false,
     herdrCommand: host.herdrCommand, herdrSocketPath: host.herdrSocketPath ?? '', sessionName: host.sessionName,
+    herdrBackend: toNativeHerdrBackend(host.herdrBackend),
     agentInstructions: host.agentInstructions ?? '', createdAt: host.createdAt, updatedAt: host.updatedAt,
     lastConnectedAt: host.lastConnectedAt,
   };
 }
 export function hostProfile(host: HostProfileRecord): HostProfile {
-  return { ...host, authMode: host.authMode === HostAuthMode.Key ? 'key' : 'password' };
+  return { ...host, authMode: host.authMode === HostAuthMode.Key ? 'key' : 'password',herdrBackend:fromNativeHerdrBackend(host.herdrBackend) };
 }
 export function material(profile: Pick<ConnectionProfile, 'secret' | 'passphrase' | 'tailcatAddress' | 'tailcatPrivateKey' | 'tailcatPublicKey'>): CredentialMaterial {
   return { secret: profile.secret, passphrase: profile.passphrase ?? '', tailcatAddress: profile.tailcatAddress, tailcatPrivateKey: profile.tailcatPrivateKey, tailcatPublicKey: profile.tailcatPublicKey };

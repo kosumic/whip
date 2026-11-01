@@ -239,6 +239,9 @@ function createMockWhipSshModule() {
     const runtime = {
       runtimeId: config.runtimeId,
       herdrEnabled: config.herdrEnabled !== false,
+      herdrBackend: config.herdrBackend ?? 'legacy',
+      localTerminalScrollback: config.herdrBackend === 'core',
+      herdrBridgeFocus:jest.fn(),
       tailcatEnabled: config.ssh.tailcatAddress !== undefined,
       matchesSshConfig: value => [...new Set([...Object.keys(config.ssh), ...Object.keys(value)])].every(key => config.ssh[key] === value[key]),
       controlClient: undefined,

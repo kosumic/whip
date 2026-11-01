@@ -169,6 +169,18 @@ pub(crate) async fn start_on_runtime(
     protocol: u32,
     pane_ids: Vec<String>,
 ) -> Result<(), HerdrEventError> {
+    if connection
+        .backend()
+        .await
+        .map_err(|e| HerdrEventError::SubscriptionUnavailable(e.to_string()))?
+        == crate::host_profiles::HostHerdrBackend::Core
+    {
+        connection
+            .core()
+            .await
+            .map_err(|e| HerdrEventError::SubscriptionUnavailable(e.to_string()))?;
+        return Ok(());
+    }
     let client_key = connection.client_key().to_owned();
     if registry().lock().by_client.contains_key(&client_key) {
         return Ok(());

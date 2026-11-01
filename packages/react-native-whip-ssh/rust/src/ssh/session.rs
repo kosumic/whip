@@ -566,6 +566,15 @@ impl SshSession {
             .map_err(Into::into)
     }
 
+    pub(crate) fn write_exec(&self, channel_id: &str, bytes: Vec<u8>) -> Result<(), SshFailure> {
+        super::exec_channel_command_for_key(
+            &self.resource_key,
+            channel_id,
+            super::StreamCommand::Write(bytes),
+        )
+        .map_err(Into::into)
+    }
+
     pub(crate) async fn disconnect(&self) {
         reverse_forward::close_routes(&self.inner.reverse_forwards);
         self.inner

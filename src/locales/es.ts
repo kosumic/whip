@@ -1,4 +1,9 @@
 export const es = {
+  "connection.herdrBackend": "Motor",
+  "connection.herdrBackend.auto": "Automático",
+  "connection.herdrBackend.core": "Herdr Core",
+  "connection.herdrBackend.legacy": "Herdr clásico",
+  "connection.socketAuto": "Detectar automáticamente",
   'connection.tailcatSshServer': "Usar el servidor SSH de Tailcat",
   'connection.tailcatSshServerCopy': "Usa el servicio SSH integrado de Tailcat con autenticación por clave SSH. La consola se ejecuta como el usuario que inicia Tailcat.",
   'connection.tailcatClientIdentity': "Clave pública del cliente Tailcat",

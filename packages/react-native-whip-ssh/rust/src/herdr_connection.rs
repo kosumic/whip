@@ -9,6 +9,8 @@ use std::sync::{
 use parking_lot::RwLock;
 use tokio::sync::{Mutex, watch};
 
+use crate::herdr_api::HerdrControlError;
+use crate::host_profiles::HostHerdrBackend;
 use crate::ssh::{CommandOutput, SshErrorCode, SshFailure, SshSession};
 
 const REMOTE_HOME_COMMAND: &str = r#"printf %s "$HOME""#;
@@ -76,6 +78,7 @@ struct ConnectionState {
     ssh: Option<Arc<SshSession>>,
     socket_path: Option<String>,
     socket_from_cache: bool,
+    backend: Option<HostHerdrBackend>,
 }
 
 #[derive(Clone)]
@@ -108,6 +111,10 @@ pub(crate) struct HerdrConnection {
     state: RwLock<ConnectionState>,
     lifecycle: watch::Sender<u64>,
     socket_discovery: Mutex<()>,
+    backend_config: RwLock<(HostHerdrBackend, String)>,
+    explicit_socket: Option<String>,
+    core: RwLock<Option<Arc<crate::hc_transport::Core>>>,
+    core_start: Mutex<()>,
 }
 
 impl HerdrConnection {
@@ -121,7 +128,7 @@ impl HerdrConnection {
         let cached_socket_path =
             cached_socket_path.filter(|path| path.ends_with(&session_socket_suffix(&session_name)));
         let socket_from_cache = socket_path.is_none() && cached_socket_path.is_some();
-        let resolved_socket = socket_path.or(cached_socket_path);
+        let resolved_socket = socket_path.clone().or(cached_socket_path);
         let (lifecycle, _) = watch::channel(0);
         Arc::new(Self {
             client_key,
@@ -133,9 +140,14 @@ impl HerdrConnection {
                 ssh: None,
                 socket_path: resolved_socket,
                 socket_from_cache,
+                backend: None,
             }),
             lifecycle,
             socket_discovery: Mutex::new(()),
+            backend_config: RwLock::new((HostHerdrBackend::Legacy, "herdr".into())),
+            explicit_socket: socket_path,
+            core: RwLock::new(None),
+            core_start: Mutex::new(()),
         })
     }
 
@@ -153,15 +165,128 @@ impl HerdrConnection {
         &self.client_key
     }
 
+    pub(crate) fn configure_backend(&self, backend: HostHerdrBackend, command: String) {
+        *self.backend_config.write() = (backend, command);
+    }
+    pub(crate) fn core_command(&self) -> String {
+        let config = self.backend_config.read();
+        if config.1.trim().is_empty() || config.1 == "herdr" {
+            "hc".into()
+        } else {
+            config.1.clone()
+        }
+    }
+    pub(crate) fn configured_backend(&self) -> HostHerdrBackend {
+        self.backend_config.read().0
+    }
+    pub(crate) async fn backend(&self) -> Result<HostHerdrBackend, HerdrControlError> {
+        if !self.enabled {
+            return Err(HerdrControlError::InvalidField(
+                HERDR_DISABLED_MESSAGE.into(),
+            ));
+        }
+        let configured = self.configured_backend();
+        if configured != HostHerdrBackend::Auto {
+            return Ok(configured);
+        }
+        if let Some(backend) = self.state.read().backend {
+            return Ok(backend);
+        }
+        let revision = self.revision();
+        let command = self.core_command();
+        let probe = herdr_protocol::hc::endpoint::discover_command(
+            &command,
+            &self.session_name,
+            self.explicit_socket.as_deref(),
+        )
+        .map_err(|e| HerdrControlError::InvalidField(e.to_string()))?;
+        let output = self
+            .execute(&probe)
+            .await
+            .map_err(|e| HerdrControlError::TransportDisconnected(e.to_string()))?;
+        let installed = match herdr_protocol::hc::endpoint::parse_discovery(&output.stdout)
+            .map_err(|e| HerdrControlError::MalformedResponse(e.to_string()))?
+        {
+            Some(endpoint) => endpoint.installed,
+            None => {
+                let command = herdr_protocol::hc::endpoint::version_command(&command, false)
+                    .map_err(|e| HerdrControlError::InvalidField(e.to_string()))?;
+                self.execute(&command)
+                    .await
+                    .map_err(|e| HerdrControlError::TransportDisconnected(e.to_string()))?
+                    .exit_status
+                    == Some(0)
+            }
+        };
+        let backend = if installed {
+            HostHerdrBackend::Core
+        } else {
+            let output = self
+                .execute(&herdr_protocol::hc::endpoint::legacy_version_command())
+                .await
+                .map_err(|e| HerdrControlError::TransportDisconnected(e.to_string()))?;
+            if output.exit_status == Some(0) {
+                HostHerdrBackend::Legacy
+            } else {
+                HostHerdrBackend::Core
+            }
+        };
+        let mut state = self.state.write();
+        if state.revision != revision {
+            return Err(HerdrControlError::TransportDisconnected(
+                "SSH changed during backend detection".into(),
+            ));
+        }
+        state.backend = Some(backend);
+        drop(state);
+        Ok(backend)
+    }
+    pub(crate) fn is_core(&self) -> bool {
+        self.configured_backend() == HostHerdrBackend::Core
+            || self.state.read().backend == Some(HostHerdrBackend::Core)
+    }
+    pub(crate) fn local_terminal_scrollback(&self) -> bool {
+        self.is_core()
+    }
+    pub(crate) async fn core(
+        self: &Arc<Self>,
+    ) -> Result<Arc<crate::hc_transport::Core>, HerdrControlError> {
+        let _start = self.core_start.lock().await;
+        if let Some(core) = self.core.read().as_ref().filter(|core| core.is_alive()) {
+            return Ok(core.clone());
+        }
+        let core = crate::hc_transport::Core::open(
+            self.clone(),
+            &self.core_command(),
+            &self.session_name,
+            self.explicit_socket.as_deref(),
+        )
+        .await?;
+        if !core.is_alive() {
+            return Err(HerdrControlError::TransportDisconnected(
+                "core changed while connecting".into(),
+            ));
+        }
+        *self.core.write() = Some(core.clone());
+        Ok(core)
+    }
+
     pub(crate) fn install(&self, generation: u64, ssh: Arc<SshSession>) -> Option<Arc<SshSession>> {
         let (revision, previous) = {
             let mut state = self.state.write();
             state.revision = state.revision.wrapping_add(1);
             state.generation = generation;
+            state.backend = None;
             let previous = state.ssh.replace(ssh);
             (state.revision, previous)
         };
         self.lifecycle.send_replace(revision);
+        let old_core = self.core.write().take();
+        if let Some(core) = old_core {
+            core.fail(HerdrControlError::TransportDisconnected(
+                "SSH session replaced".into(),
+            ));
+        }
         previous
     }
 
@@ -176,6 +301,12 @@ impl HerdrConnection {
             (state.revision, previous)
         };
         self.lifecycle.send_replace(revision);
+        let old_core = self.core.write().take();
+        if let Some(core) = old_core {
+            core.fail(HerdrControlError::TransportDisconnected(
+                "SSH session disconnected".into(),
+            ));
+        }
         previous
     }
 
@@ -186,6 +317,13 @@ impl HerdrConnection {
     pub(crate) fn resolved_socket_path(&self) -> Option<String> {
         if !self.enabled {
             return None;
+        }
+        if self.is_core() {
+            return self
+                .core
+                .read()
+                .as_ref()
+                .and_then(|core| core.socket_path());
         }
         self.state.read().socket_path.clone()
     }
@@ -546,6 +684,59 @@ impl HerdrConnection {
             }
         }
     }
+
+    /// Open an already discovered endpoint without applying legacy path rules.
+    pub(crate) async fn open_raw_socket(
+        self: &Arc<Self>,
+        path: &str,
+        data: Arc<dyn Fn(Vec<u8>) + Send + Sync>,
+        closed: Arc<dyn Fn(String) + Send + Sync>,
+    ) -> Result<Arc<HerdrStream>, HerdrConnectionError> {
+        let snapshot = self.snapshot()?;
+        let channel_id = format!(
+            "whip-core-{}",
+            NEXT_STREAM_ID.fetch_add(1, Ordering::Relaxed)
+        );
+        let weak = Arc::downgrade(self);
+        let revision = snapshot.revision;
+        let data = Arc::new(move |bytes| {
+            if connection_revision_is_current(&weak, revision) {
+                data(bytes);
+            }
+        });
+        let weak = Arc::downgrade(self);
+        let closed = Arc::new(move |reason| {
+            if connection_revision_is_current(&weak, revision) {
+                closed(reason);
+            }
+        });
+        let opened = self
+            .wait_current(
+                &snapshot,
+                snapshot
+                    .ssh
+                    .open_unix_socket(&channel_id, path, 32 * 1024, data, closed),
+            )
+            .await;
+        match opened {
+            Ok(Ok(())) => Ok(Arc::new(HerdrStream {
+                connection: self.clone(),
+                snapshot,
+                channel_id,
+                framing: HerdrStreamFraming::Raw,
+                closed: AtomicBool::new(false),
+            })),
+            Ok(Err(error)) => Err(error.into()),
+            Err(error) => {
+                let _ = snapshot.ssh.close_unix_socket(&channel_id);
+                Err(error)
+            }
+        }
+    }
+
+    pub(crate) fn revision(&self) -> u64 {
+        self.state.read().revision
+    }
 }
 
 fn connection_revision_is_current(connection: &Weak<HerdrConnection>, revision: u64) -> bool {
@@ -653,6 +844,21 @@ impl std::fmt::Debug for ConnectionExecStream {
 }
 
 impl ConnectionExecStream {
+    pub(crate) fn write(&self, bytes: Vec<u8>) -> Result<(), HerdrConnectionError> {
+        if !self.is_current() {
+            return Err(HerdrConnectionError::Stale);
+        }
+        self.snapshot
+            .ssh
+            .write_exec(&self.channel_id, bytes)
+            .map_err(Into::into)
+    }
+    pub(crate) async fn wait_current<T, F: Future<Output = T>>(
+        &self,
+        future: F,
+    ) -> Result<T, HerdrConnectionError> {
+        self.connection.wait_current(&self.snapshot, future).await
+    }
     pub(crate) fn close(&self) -> Result<(), HerdrConnectionError> {
         if self.closed.swap(true, Ordering::AcqRel) {
             return Ok(());

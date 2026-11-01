@@ -15,6 +15,7 @@ mod composer_dictation;
 mod credential_transactions;
 mod git_review;
 mod github;
+mod hc_transport;
 mod herdr_api;
 mod herdr_codec;
 mod herdr_connection;

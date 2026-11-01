@@ -47,6 +47,9 @@ jobs:
       - name: Check formatting
         run: cargo fmt --check
 
+      - name: Check pinned OpenRPC models
+        run: node scripts/generate-hc.cjs --check
+
       - name: Lint
         run: cargo clippy --locked --all-targets -- -D warnings
 

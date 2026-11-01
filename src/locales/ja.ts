@@ -1,4 +1,9 @@
 export const ja = {
+  "connection.herdrBackend": "バックエンド",
+  "connection.herdrBackend.auto": "自動",
+  "connection.herdrBackend.core": "Herdr Core",
+  "connection.herdrBackend.legacy": "従来の Herdr",
+  "connection.socketAuto": "自動検出",
   'connection.tailcatSshServer': "TailcatのSSHサーバーを使う",
   'connection.tailcatSshServerCopy': "SSH鍵認証でTailcat内蔵のSSHサービスを使用します。シェルはTailcatを起動したユーザーとして実行されます。",
   'connection.tailcatClientIdentity': "Tailcatクライアント公開鍵",

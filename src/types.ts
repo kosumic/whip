@@ -28,6 +28,7 @@ export interface HostProfile {
   tailcatSshServer?: boolean;
   authMode: AuthMode;
   herdrEnabled?: boolean;
+  herdrBackend?: 'auto' | 'legacy' | 'core';
   herdrCommand: string;
   herdrSocketPath?: string;
   sessionName: string;

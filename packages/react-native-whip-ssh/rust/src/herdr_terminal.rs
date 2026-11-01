@@ -8,6 +8,9 @@ use std::sync::{
 use std::time::Duration;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use herdr_protocol::hc::{
+    self, client::Transport, generated::Response, session::StreamItem, wire::Kind,
+};
 use parking_lot::{Mutex, RwLock};
 use tokio::sync::oneshot;
 
@@ -121,9 +124,22 @@ struct Bridge {
     id: u64,
     client_key: String,
     stream: Mutex<Option<Arc<HerdrStream>>>,
+    core: Mutex<Option<Arc<CoreAttachment>>>,
     protocol: u32,
     state: Mutex<ProtocolState>,
     welcomed: Mutex<Option<oneshot::Sender<Result<(), HerdrBridgeError>>>>,
+}
+struct CoreAttachment {
+    client: Arc<crate::hc_transport::Core>,
+    channel: u32,
+    geometry: Mutex<hc::terminal::Geometry>,
+}
+impl CoreAttachment {
+    fn send(&self, kind: Kind, payload: Vec<u8>) -> Result<(), HerdrBridgeError> {
+        self.client
+            .stream_send(self.channel, kind, payload)
+            .map_err(|e| HerdrBridgeError::BridgeClosed(e.to_string()))
+    }
 }
 
 pub(crate) type HerdrBridgeId = u64;
@@ -224,6 +240,9 @@ impl Bridge {
     }
 
     fn close_stream(&self) {
+        if let Some(core) = self.core.lock().take() {
+            let _ = core.client.stream_close(core.channel);
+        }
         if let Some(stream) = self.stream.lock().take() {
             let _ = stream.close();
         }
@@ -561,6 +580,7 @@ async fn open_bridge(
         id,
         client_key: client_key.clone(),
         stream: Mutex::new(None),
+        core: Mutex::new(None),
         protocol,
         state: Mutex::new(ProtocolState::AwaitingWelcome),
         welcomed: Mutex::new(Some(welcome_sender)),
@@ -675,6 +695,23 @@ where
     if let Some(bridge) = active_bridge(&client_key, &terminal_id) {
         claim(bridge.id)?;
         return Ok(bridge.id);
+    }
+    if connection
+        .backend()
+        .await
+        .map_err(|e| HerdrBridgeError::BridgeUnavailable(e.to_string()))?
+        == crate::HostHerdrBackend::Core
+    {
+        return start_core_bridge(
+            connection,
+            terminal_id,
+            columns,
+            rows,
+            cell_width_px,
+            cell_height_px,
+            claim,
+        )
+        .await;
     }
     let prepared_id = registry().lock().prepared.remove(&client_key);
     let mut bridge = prepared_id.and_then(bridge_for_id);
@@ -801,6 +838,129 @@ fn require_active_bridge(
     })
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the existing terminal API supplies renderer geometry and an ownership fence"
+)]
+async fn start_core_bridge<F: FnOnce(HerdrBridgeId) -> Result<(), HerdrBridgeError>>(
+    connection: Arc<HerdrConnection>,
+    terminal_id: String,
+    columns: u32,
+    rows: u32,
+    cell_width: u32,
+    cell_height: u32,
+    claim: F,
+) -> Result<HerdrBridgeId, HerdrBridgeError> {
+    let geometry = hc::terminal::Geometry::new(columns, rows, [cell_width, cell_height])
+        .map_err(|e| HerdrBridgeError::BridgeUnavailable(e.to_string()))?;
+    let core = connection
+        .core()
+        .await
+        .map_err(|e| HerdrBridgeError::BridgeUnavailable(e.to_string()))?;
+    let Response::TerminalAttach(attached) = core
+        .rpc(geometry.attach(terminal_id.clone(), false))
+        .await
+        .map_err(|e| HerdrBridgeError::BridgeUnavailable(e.to_string()))?
+    else {
+        return Err(HerdrBridgeError::MalformedServerFrame(
+            "expected core attachment".into(),
+        ));
+    };
+    let id = NEXT_BRIDGE_ID.fetch_add(1, Ordering::Relaxed);
+    let attachment = Arc::new(CoreAttachment {
+        client: core.clone(),
+        channel: attached.channel,
+        geometry: Mutex::new(geometry),
+    });
+    let bridge = Arc::new(Bridge {
+        id,
+        client_key: connection.client_key().into(),
+        stream: Mutex::new(None),
+        core: Mutex::new(Some(attachment.clone())),
+        protocol: hc::GENERATION,
+        state: Mutex::new(ProtocolState::Attached(terminal_id.clone())),
+        welcomed: Mutex::new(None),
+    });
+    if let Err(error) = claim(id) {
+        bridge.close_stream();
+        return Err(error);
+    }
+    {
+        let mut registry = registry().lock();
+        registry.bridges.insert(id, bridge.clone());
+        registry.insert_active(bridge.client_key.clone(), terminal_id.clone(), id);
+    }
+    if let Err(error) = attachment.send(Kind::Focus, vec![1]) {
+        bridge.close_transport();
+        return Err(error);
+    }
+    let weak = Arc::downgrade(&bridge);
+    tokio::spawn(async move {
+        let mut sequence = 0u64;
+        loop {
+            let items = core.read_channel(attachment.channel).await;
+            let Some(bridge) = weak.upgrade() else {
+                let _ = core.stream_close(attachment.channel);
+                return;
+            };
+            let items = match items {
+                Ok(items) => items,
+                Err(error) => {
+                    bridge.transport_closed(error.to_string());
+                    bridge.close_stream();
+                    return;
+                }
+            };
+            for item in items {
+                match item {
+                    StreamItem::Data(bytes) => {
+                        sequence = sequence.saturating_add(1);
+                        let length = bytes.len();
+                        let bridge = bridge.clone();
+                        let terminal = terminal_id.clone();
+                        let geometry = *attachment.geometry.lock();
+                        // The native renderer can block when its bounded queue is
+                        // full. That wait must never hold up RPC or other viewers.
+                        let delivered = tokio::task::spawn_blocking(move || {
+                            let generation =
+                                crate::terminal_delivery::generation(&bridge.client_key, &terminal);
+                            bridge.dispatch(
+                                &terminal,
+                                ServerMessage::Terminal {
+                                    sequence,
+                                    width: geometry.columns,
+                                    height: geometry.rows,
+                                    full: sequence == 1,
+                                    bytes,
+                                },
+                                generation,
+                            );
+                        })
+                        .await;
+                        if delivered.is_err() {
+                            core.fail(crate::herdr_api::HerdrControlError::TransportDisconnected(
+                                "terminal delivery worker failed".into(),
+                            ));
+                            return;
+                        }
+                        if core.consumed(attachment.channel, length).is_err() {
+                            return;
+                        }
+                    }
+                    StreamItem::Closed(reason) => {
+                        bridge.transport_closed(format!(
+                            "core terminal attachment closed: {reason:?}"
+                        ));
+                        bridge.close_stream();
+                        return;
+                    }
+                }
+            }
+        }
+    });
+    Ok(id)
+}
+
 #[uniffi::export]
 pub fn herdr_terminal_input(
     client_key: String,
@@ -808,6 +968,9 @@ pub fn herdr_terminal_input(
     text: String,
 ) -> Result<(), HerdrBridgeError> {
     let bridge = require_active_bridge(&client_key, &terminal_id)?;
+    if let Some(core) = bridge.core.lock().clone() {
+        return core.send(Kind::Data, text.into_bytes());
+    }
     bridge
         .stream()?
         .write(herdr_codec::input(text.as_bytes()))
@@ -824,6 +987,18 @@ pub fn herdr_terminal_resize(
     cell_height_px: u32,
 ) -> Result<(), HerdrBridgeError> {
     let bridge = require_active_bridge(&client_key, &terminal_id)?;
+    if let Some(core) = bridge.core.lock().clone() {
+        let geometry = hc::terminal::Geometry::new(columns, rows, [cell_width_px, cell_height_px])
+            .map_err(|e| HerdrBridgeError::BridgeUnavailable(e.to_string()))?;
+        for (kind, bytes) in geometry
+            .updates()
+            .map_err(|e| HerdrBridgeError::BridgeUnavailable(e.to_string()))?
+        {
+            core.send(kind, bytes)?;
+        }
+        *core.geometry.lock() = geometry;
+        return Ok(());
+    }
     let payload = herdr_codec::resize(
         bridge.protocol,
         columns,
@@ -852,6 +1027,10 @@ pub fn herdr_terminal_scroll(
     modifiers: u8,
 ) -> Result<(), HerdrBridgeError> {
     let bridge = require_active_bridge(&client_key, &terminal_id)?;
+    // Core sends ANSI output; its scrollback belongs to the local renderer.
+    if bridge.core.lock().is_some() {
+        return Ok(());
+    }
     let direction = if up {
         ScrollDirection::Up
     } else {
@@ -862,6 +1041,19 @@ pub fn herdr_terminal_scroll(
         .stream()?
         .write(payload)
         .map_err(|error| HerdrBridgeError::BridgeClosed(error.to_string()))
+}
+
+pub(crate) fn focus_terminal(
+    client_key: &str,
+    terminal_id: &str,
+    focused: bool,
+) -> Result<(), HerdrBridgeError> {
+    if let Some(bridge) = active_bridge(client_key, terminal_id)
+        && let Some(core) = bridge.core.lock().clone()
+    {
+        core.send(Kind::Focus, vec![u8::from(focused)])?;
+    }
+    Ok(())
 }
 
 #[uniffi::export]
@@ -987,6 +1179,7 @@ mod tests {
                 id: u64::MAX,
                 client_key: "test".to_owned(),
                 stream: Mutex::new(None),
+                core: Mutex::new(None),
                 protocol,
                 state: Mutex::new(ProtocolState::AwaitingWelcome),
                 welcomed: Mutex::new(Some(welcome_sender)),

@@ -104,6 +104,7 @@ fn config() -> HostRuntimeConfig {
         },
         jump_hosts: Vec::new(),
         herdr_enabled: true,
+        herdr_backend: crate::HostHerdrBackend::Legacy,
         session_name: "main".to_owned(),
         herdr_command: "herdr".to_owned(),
         socket_path: None,
