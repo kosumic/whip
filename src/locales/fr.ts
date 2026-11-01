@@ -1274,7 +1274,7 @@ export const fr = {
   'app.hostSessionUnavailable': 'La session de l’hôte est indisponible',
   'alerts.channelName': 'État des agents',
   'alerts.regularChannelName': 'Notifications des agents',
-  'alerts.needsYou': '{{name}} a besoin de vous',
+  'alerts.needsAttention': '{{name}} a besoin de votre attention',
   'alerts.finished': '{{name}} a terminé',
   'alerts.agentState': 'État de l’agent : {{status}}',
   'pane.ansiOutput': 'Sortie ANSI du volet',

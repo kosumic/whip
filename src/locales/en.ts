@@ -1271,7 +1271,7 @@ export const en = {
   'app.hostSessionUnavailable': 'Host session is unavailable',
   'alerts.channelName': 'Agent state',
   'alerts.regularChannelName': 'Agent notifications',
-  'alerts.needsYou': '{{name}} needs you',
+  'alerts.needsAttention': '{{name}} needs attention',
   'alerts.finished': '{{name}} finished',
   'alerts.agentState': 'Agent is {{status}}',
   'pane.ansiOutput': 'ANSI pane output',
