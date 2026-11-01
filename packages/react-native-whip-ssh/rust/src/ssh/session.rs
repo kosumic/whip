@@ -187,6 +187,13 @@ impl SshSession {
             .map_err(Into::into)
     }
 
+    pub(crate) async fn download_sftp(&self) -> Result<Arc<SftpSession>, TransportError> {
+        self.inner.ensure_alive()?;
+        let channel = self.inner.handle.channel_open_session().await?;
+        channel.request_subsystem(true, "sftp").await?;
+        Ok(Arc::new(SftpSession::new(channel.into_stream()).await?))
+    }
+
     async fn ensure_sftp(&self) -> Result<Arc<SftpSession>, SshFailure> {
         connect_sftp_on(&self.inner).await.map_err(Into::into)
     }
@@ -377,13 +384,13 @@ impl SshSession {
             )
             .into());
         }
-        sftp_transfer_file_on(
-            sftp,
+        super::file_download::download(
             destination_path.to_owned(),
             remote_path.to_owned(),
-            false,
+            "owned-session",
             cancel,
             move |copied, total| progress(copied, total),
+            || self.download_sftp(),
         )
         .await
         .map_err(Into::into)
