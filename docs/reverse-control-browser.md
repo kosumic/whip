@@ -95,7 +95,17 @@ notifications open the library when tapped, subject to the system's notification
 permission. Android also shows an ongoing progress notification. Android HTTP(S)
 downloads use the tab's cookies and active SSH route; iOS retains the original
 WebKit transfer, including POST exports and blob downloads. Personal downloads
-currently share the 64 MiB transfer limit. Website file inputs use the system's
+have no fixed per-file size ceiling and stream directly to native files, without
+buffering file contents in JavaScript. They must fit in the destination volume's
+available storage while leaving 64 MiB free for the app and OS. Known sizes are
+checked before saving; available storage is checked again during transfers
+(including unknown-length responses) and at completion. Storage checks are best
+effort, since other apps can consume space concurrently. Storage failures show an
+explicit error and remove the partial file. Personal downloads have no overall
+transfer deadline; Android retains its 15-second connection/read inactivity
+timeouts. Cancellation, route changes, and app shutdown still interrupt transfers;
+completed files and their manifests survive restarts. Agent/MCP downloads retain
+their separate 64 MiB bound and 120-second deadline. Website file inputs use the system's
 upload picker; agents cannot operate that picker.
 
 The MCP URL, launch token and initialized session survive temporary SSH loss
@@ -655,7 +665,7 @@ nix develop -c android/gradlew -p android :app:assembleRelease :app:assembleRele
 # Install the upload-signed APK in place, followed by its matching test APK.
 nix develop -c adb install -r android/app/build/outputs/apk/release/app-release.apk
 nix develop -c adb install -r android/app/build/outputs/apk/androidTest/release/app-release-androidTest.apk
-nix develop -c adb shell am instrument -w -e class io.github.kaminarios.whip.BrowserWebViewTest,io.github.kaminarios.whip.BrowserSiteCookiesTest,io.github.kaminarios.whip.BrowserDownloadRequestTest io.github.kaminarios.whip.test/androidx.test.runner.AndroidJUnitRunner
+nix develop -c adb shell am instrument -w -e class io.github.kaminarios.whip.BrowserWebViewTest,io.github.kaminarios.whip.BrowserSiteCookiesTest,io.github.kaminarios.whip.BrowserDownloadRequestTest,io.github.kaminarios.whip.BrowserDownloadsTest io.github.kaminarios.whip.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
 Reference architecture inspected: OpenMinis BrowserTabPool/Registry,

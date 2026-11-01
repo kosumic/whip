@@ -38,7 +38,7 @@ end
 target = project.new_target(:unit_test_bundle, 'BrowserTests', :ios, '16.4')
 target.add_dependency(host)
 target.add_system_frameworks(%w[UIKit WebKit UserNotifications UniformTypeIdentifiers XCTest])
-%w[ios/HerdR/WhipBrowser.m ios/Tests/WhipBrowserTests.m ios/Tests/WhipClipboardTests.m
+%w[ios/HerdR/WhipBrowser.m ios/Tests/WhipBrowserTests.m ios/Tests/WhipBrowserDownloadTests.m ios/Tests/WhipClipboardTests.m
    packages/expo-whip-terminal-input/tests/ios/WhipTerminalInputTests.m].each do |path|
   target.source_build_phase.add_file_reference(project.main_group.new_file(File.join(root, path)))
 end

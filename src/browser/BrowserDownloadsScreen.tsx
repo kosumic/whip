@@ -68,7 +68,7 @@ export function BrowserDownloadsScreen({
             onChangeText={setFilter}
           />
           <Text className="text-xs text-muted-foreground">
-            Saved on this device · Up to 64 MiB per file
+            Saved on this device · Limited by available storage
           </Text>
           {error && (
             <Text accessibilityRole="alert" className="text-destructive">
@@ -92,7 +92,8 @@ export function BrowserDownloadsScreen({
                   ? 'Interrupted — download again from the page'
                   : entry.state === BROWSER_DOWNLOAD_STATE.cancelled
                     ? 'Cancelled'
-                    : 'Download failed — try again from the page';
+                    : entry.error ||
+                      'Download failed — try again from the page';
             return (
               <View
                 key={entry.id}

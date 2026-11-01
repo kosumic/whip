@@ -9260,6 +9260,7 @@ export type BrowserSavedDownload = {
   mimeType: string;
   state: string;
   createdAt: bigint;
+  error?: string;
 };
 
 /**
@@ -9292,6 +9293,7 @@ const FfiConverterTypeBrowserSavedDownload = (() => {
         mimeType: FfiConverterString.read(from),
         state: FfiConverterString.read(from),
         createdAt: FfiConverterUInt64.read(from),
+        error: FfiConverterOptionalString.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
@@ -9302,6 +9304,7 @@ const FfiConverterTypeBrowserSavedDownload = (() => {
       FfiConverterString.write(value.mimeType, into);
       FfiConverterString.write(value.state, into);
       FfiConverterUInt64.write(value.createdAt, into);
+      FfiConverterOptionalString.write(value.error, into);
     }
     allocationSize(value: TypeName): number {
       return (
@@ -9311,7 +9314,8 @@ const FfiConverterTypeBrowserSavedDownload = (() => {
         FfiConverterInt64.allocationSize(value.totalBytes) +
         FfiConverterString.allocationSize(value.mimeType) +
         FfiConverterString.allocationSize(value.state) +
-        FfiConverterUInt64.allocationSize(value.createdAt)
+        FfiConverterUInt64.allocationSize(value.createdAt) +
+        FfiConverterOptionalString.allocationSize(value.error)
       );
     }
   }

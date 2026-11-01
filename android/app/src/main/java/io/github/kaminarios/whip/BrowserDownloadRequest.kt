@@ -39,6 +39,18 @@ internal class BrowserDownloadRequest {
             userAgent: String, proxy: Proxy, progress: (Long, Long) -> Unit = { _, _ -> },
             routeCurrent: () -> Boolean) {
     require(maxBytes in 1..MAX_BYTES)
+    transfer(directory, address, maxBytes, cookies, userAgent, proxy, progress, null, routeCurrent)
+  }
+
+  fun fetchUser(directory: File, address: String, cookies: CookieManager,
+                userAgent: String, proxy: Proxy, progress: (Long, Long) -> Unit = { _, _ -> },
+                storage: BrowserDownloadStorage = BrowserDownloadStorage(), routeCurrent: () -> Boolean) {
+    transfer(directory, address, Long.MAX_VALUE, cookies, userAgent, proxy, progress, storage, routeCurrent)
+  }
+
+  private fun transfer(directory: File, address: String, maxBytes: Long, cookies: CookieManager,
+                       userAgent: String, proxy: Proxy, progress: (Long, Long) -> Unit,
+                       storage: BrowserDownloadStorage?, routeCurrent: () -> Boolean) {
     fun active() = check(!cancelled.get() && routeCurrent()) { "Browser download cancelled" }
     fun valid(url: URL) {
       require(url.protocol in listOf("http", "https") && url.host.isNotEmpty() && url.userInfo == null)
@@ -88,7 +100,9 @@ internal class BrowserDownloadRequest {
           .trimEnd { Character.isHighSurrogate(it) }
           .takeUnless { it.isBlank() || it == "." || it == ".." } ?: "download"
         progress(0, length)
+        var budget = storage?.budget(directory, length.coerceAtLeast(0)) ?: Long.MAX_VALUE
         check(directory.isDirectory || directory.mkdirs())
+        var nextStorageCheck = BrowserDownloadStorage.CHECK_INTERVAL_BYTES
         val output = File.createTempFile("download-", ".tmp", directory)
         file = output
         active()
@@ -99,14 +113,20 @@ internal class BrowserDownloadRequest {
               active()
               val count = input.read(buffer)
               if (count < 0) break
-              bytes += count
-              check(bytes <= maxBytes) { "Download exceeds size limit" }
+              check(count <= maxBytes - bytes) { "Download exceeds size limit" }
+              if (storage != null && (bytes >= nextStorageCheck || count > budget)) {
+                budget = storage.budget(directory, maxOf(count.toLong(), length - bytes))
+                nextStorageCheck = bytes + BrowserDownloadStorage.CHECK_INTERVAL_BYTES
+              }
               stream.write(buffer, 0, count)
+              bytes += count
+              budget -= count
               progress(bytes, length)
             }
           }
         }
         check(length < 0 || bytes == length) { "Incomplete download" }
+        storage?.budget(directory, 0)
         active()
         return
       }
