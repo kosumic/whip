@@ -130,11 +130,11 @@
       [adapter downloadUpdates:^(NSString *json) {
         NSArray *entries = [NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
         for (NSDictionary *entry in entries) {
-          if ([entry[@"name"] isEqual:@"large.bin"] && ![entry[@"state"] isEqual:@"downloading"] &&
+          if ([entry[@"name"] isEqual:@"large.bin"] && ![@[@"downloading", @"saving"] containsObject:entry[@"state"]] &&
               ![entry[@"state"] isEqual:@"complete"]) { result = entry; break; }
           if ([entry[@"name"] isEqual:@"large.bin"] && [entry[@"bytes"] isEqual:size]) { result = entry; break; }
         }
-        if (result && ![result[@"state"] isEqual:@"downloading"]) { [timer invalidate]; [finished fulfill]; }
+        if (result && ![@[@"downloading", @"saving"] containsObject:result[@"state"]]) { [timer invalidate]; [finished fulfill]; }
       } reject:^(NSString *code, NSString *message, NSError *error) { XCTFail(@"%@", message); }];
     }];
     @try {
@@ -236,7 +236,69 @@
   [@"partial" writeToURL:job.file atomically:NO encoding:NSUTF8StringEncoding error:nil];
   [adapter setValue:[@{job.identifier:job} mutableCopy] forKey:@"savedDownloads"];
   [adapter invalidate];
+  XCTAssertEqualObjects(job.status[@"state"], @"interrupted");
+  XCTAssertEqualObjects(job.status[@"error"], @"Download interrupted because the browser connection or app stopped. Download again from the page.");
+  XCTAssertFalse([[NSFileManager defaultManager] fileExistsAtPath:job.file.path]);
+  [self removeJob:job];
+}
+- (void)testHTTPAndSizeFailuresAreDistinctAndDoNotExposeResponseURLs {
+  for (NSNumber *status in @[@403, @503]) {
+    StorageTestDownload *job = [self jobWithCapacity:@(128 * 1024 * 1024)];
+    NSHTTPURLResponse *response = [[NSHTTPURLResponse alloc] initWithURL:[NSURL URLWithString:@"https://example.test/file?token=secret"]
+      statusCode:status.integerValue HTTPVersion:@"HTTP/1.1" headerFields:@{}];
+    [job download:nil decideDestinationUsingResponse:response suggestedFilename:@"file.bin" completionHandler:^(NSURL *file) { XCTAssertNil(file); }];
+    XCTAssertEqualObjects(job.status[@"state"], @"failed");
+    NSString *expected = [NSString stringWithFormat:@"The server could not provide the file (HTTP %@). Try again from the page.", status];
+    XCTAssertEqualObjects(job.status[@"error"], expected);
+    [self removeJob:job];
+  }
+  for (NSNumber *known in @[@YES, @NO]) {
+    StorageTestDownload *job = [self jobWithCapacity:@(128 * 1024 * 1024)];
+    job.maxBytes = 4;
+    [self chooseDestination:job length:known.boolValue ? @10 : nil];
+    if (!known.boolValue) {
+      [@"0123456789" writeToURL:job.file atomically:NO encoding:NSUTF8StringEncoding error:nil];
+      [job.timer fire];
+    }
+    XCTAssertEqualObjects(job.status[@"error"], @"Download exceeds the size limit.");
+    if (job.file) XCTAssertFalse([[NSFileManager defaultManager] fileExistsAtPath:job.file.path]);
+    [self removeJob:job];
+  }
+}
+- (void)testNativeFailuresAreCategorizedWithoutExposingErrorInternals {
+  NSArray *failures = @[
+    @[NSURLErrorDomain, @(NSURLErrorBadServerResponse), @"The server could not provide the file. Try again from the page."],
+    @[NSURLErrorDomain, @(NSURLErrorTimedOut), @"The download timed out. Check your connection and try again."],
+    @[NSURLErrorDomain, @(NSURLErrorNetworkConnectionLost), @"The connection was interrupted. Check your connection and download again."],
+    @[NSCocoaErrorDomain, @(NSFileWriteNoPermissionError), @"Could not save the download. Check device storage and try again."],
+    @[NSCocoaErrorDomain, @(NSFileWriteOutOfSpaceError), @"Not enough storage. Free up space and download again."],
+    @[@"private-domain", @123, @"Download failed. Try again from the page."]
+  ];
+  for (NSArray *failure in failures) {
+    StorageTestDownload *job = [self jobWithCapacity:@(128 * 1024 * 1024)];
+    [self chooseDestination:job length:nil];
+    [@"partial" writeToURL:job.file atomically:NO encoding:NSUTF8StringEncoding error:nil];
+    NSError *error = [NSError errorWithDomain:failure[0] code:[failure[1] integerValue]
+      userInfo:@{NSLocalizedDescriptionKey:@"https://example.test/file?token=secret"}];
+    [job download:nil didFailWithError:error resumeData:nil];
+    XCTAssertEqualObjects(job.status[@"state"], @"failed");
+    XCTAssertEqualObjects(job.status[@"error"], failure[2]);
+    XCTAssertFalse([[NSFileManager defaultManager] fileExistsAtPath:job.file.path]);
+    [self removeJob:job];
+  }
+}
+- (void)testDownloadedBytesAreSavingUntilFinalizationSucceeds {
+  StorageTestDownload *job = [self jobWithCapacity:@(128 * 1024 * 1024)];
+  [self chooseDestination:job length:@7];
+  [@"partial" writeToURL:job.file atomically:NO encoding:NSUTF8StringEncoding error:nil];
+  [job.timer fire];
+  XCTAssertEqualObjects(job.status[@"state"], @"saving");
+  // A destination collision fails during the save, after every network byte arrived.
+  NSURL *destination = [job.file.URLByDeletingLastPathComponent URLByAppendingPathComponent:job.name];
+  [[NSFileManager defaultManager] createDirectoryAtURL:destination withIntermediateDirectories:YES attributes:nil error:nil];
+  [job downloadDidFinish:nil];
   XCTAssertEqualObjects(job.status[@"state"], @"failed");
+  XCTAssertEqualObjects(job.status[@"error"], @"Could not save the download. Check device storage and try again.");
   XCTAssertFalse([[NSFileManager defaultManager] fileExistsAtPath:job.file.path]);
   [self removeJob:job];
 }

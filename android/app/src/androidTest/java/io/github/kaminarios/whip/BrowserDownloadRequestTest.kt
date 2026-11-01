@@ -164,7 +164,8 @@ class BrowserDownloadRequestTest {
           assertEquals(when (reason) {
             "storage" -> BrowserDownloadStorage.LOW_STORAGE
             "probe" -> BrowserDownloadStorage.UNAVAILABLE
-            else -> "Browser download cancelled"
+            "route" -> BrowserDownloadFailure.INTERRUPTED.description
+            else -> BrowserDownloadFailure.CANCELLED.description
           }, error.message)
         } finally { job.cancel(); directory.deleteRecursively() }
       }
@@ -227,19 +228,21 @@ class BrowserDownloadRequestTest {
   @Test fun httpFailuresAndOversizedOrTruncatedBodiesLeaveNoFile() {
     val directory = directory()
     val responses = listOf(
-      reply("403 Forbidden", "Content-Length: 4\r\n", "deny".toByteArray()),
-      reply("200 OK", "Content-Length: 10\r\n", "0123456789".toByteArray()),
-      reply("200 OK", "", "0123456789".toByteArray()),
-      reply("200 OK", "Content-Length: 4\r\n", "ab".toByteArray()),
+      reply("403 Forbidden", "Content-Length: 4\r\n", "deny".toByteArray()) to BrowserDownloadFailure.HTTP.exception(403).message,
+      reply("503 Unavailable", "Content-Length: 0\r\n") to BrowserDownloadFailure.HTTP.exception(503).message,
+      reply("200 OK", "Content-Length: 10\r\n", "0123456789".toByteArray()) to BrowserDownloadFailure.SIZE_LIMIT.description,
+      reply("200 OK", "", "0123456789".toByteArray()) to BrowserDownloadFailure.SIZE_LIMIT.description,
+      reply("200 OK", "Content-Length: 4\r\n", "ab".toByteArray()) to BrowserDownloadFailure.NETWORK.description,
     )
     try {
-      for (response in responses) Server(listOf(response)).use { server ->
+      for ((response, message) in responses) Server(listOf(response)).use { server ->
         val job = BrowserDownloadRequest()
         try {
           job.fetch(directory, "http://127.0.0.1:${server.port}/file", 4,
             CookieManager.getInstance(), "Whip-download-test", Proxy.NO_PROXY) { true }
           fail("Expected download failure")
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+          assertEquals(message, BrowserDownloadFailure.message(error))
           assertTrue(directory.listFiles()!!.isEmpty())
         } finally { job.cancel() }
       }
@@ -273,8 +276,8 @@ class BrowserDownloadRequestTest {
           job.fetch(directory, "http://127.0.0.1:1/file", 4,
             CookieManager.getInstance(), "Whip-download-test", Proxy.NO_PROXY) { cancelled }
           fail("Expected cancellation")
-        } catch (error: IllegalStateException) {
-          assertTrue(error.message!!.contains("cancelled"))
+        } catch (error: BrowserDownloadException) {
+          assertEquals(if (cancelled) BrowserDownloadFailure.CANCELLED else BrowserDownloadFailure.INTERRUPTED, error.reason)
           assertTrue(directory.listFiles()!!.isEmpty())
         }
       }

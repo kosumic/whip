@@ -6,6 +6,7 @@ export const BROWSER_DOWNLOAD_LINK = 'whip://browser-downloads';
 export const BROWSER_DOWNLOAD_NOTIFICATION_KEY = 'browserDownloadId';
 export const BROWSER_DOWNLOAD_STATE = {
   active: 'downloading',
+  saving: 'saving',
   complete: 'complete',
   failed: 'failed',
   cancelled: 'cancelled',

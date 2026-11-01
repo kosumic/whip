@@ -145,3 +145,31 @@ test('explains storage failures and the available-storage download policy', asyn
     await act(async () => view.unmount());
   }
 });
+
+test('saving stays active and cancellable until the file is ready', async () => {
+  const previous = mockEntries;
+  mockEntries = [{ ...previous[0], state: 'saving', bytes: 1024n }];
+  let view!: ReactTestRenderer;
+  try {
+    await act(async () => {
+      view = create(<BrowserDownloadsScreen visible onClose={jest.fn()} />);
+    });
+    expect(
+      view.root.findByProps({ accessibilityRole: 'progressbar' }).props
+        .accessibilityValue,
+    ).toEqual({ text: 'Saving download · 1.0 KB / 1.0 KB' });
+    expect(
+      view.root.findByProps({ accessibilityLabel: 'Open download archive.zip' })
+        .props.disabled,
+    ).toBe(true);
+    await act(async () => {
+      view.root
+        .findByProps({ accessibilityLabel: 'Cancel download archive.zip' })
+        .props.onPress();
+    });
+    expect(cancelSavedBrowserDownload).toHaveBeenCalledWith('active');
+  } finally {
+    mockEntries = previous;
+    await act(async () => view.unmount());
+  }
+});

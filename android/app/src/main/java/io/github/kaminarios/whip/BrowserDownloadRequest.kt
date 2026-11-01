@@ -4,6 +4,7 @@ import android.webkit.CookieManager
 import android.os.Handler
 import android.os.Looper
 import java.io.File
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.Proxy
 import java.net.URL
@@ -51,7 +52,13 @@ internal class BrowserDownloadRequest {
   private fun transfer(directory: File, address: String, maxBytes: Long, cookies: CookieManager,
                        userAgent: String, proxy: Proxy, progress: (Long, Long) -> Unit,
                        storage: BrowserDownloadStorage?, routeCurrent: () -> Boolean) {
-    fun active() = check(!cancelled.get() && routeCurrent()) { "Browser download cancelled" }
+    fun active() {
+      if (cancelled.get()) throw BrowserDownloadFailure.CANCELLED.exception()
+      if (!routeCurrent()) throw BrowserDownloadFailure.INTERRUPTED.exception()
+    }
+    fun <T> write(operation: () -> T): T = try { operation() } catch (error: IOException) {
+      throw BrowserDownloadFailure.WRITE.exception().apply { initCause(error) }
+    }
     fun valid(url: URL) {
       require(url.protocol in listOf("http", "https") && url.host.isNotEmpty() && url.userInfo == null)
     }
@@ -90,9 +97,9 @@ internal class BrowserDownloadRequest {
           request.disconnect()
           continue
         }
-        check(status in 200..299 && status != 206) { "Download HTTP failure" }
+        if (status !in 200..299 || status == 206) throw BrowserDownloadFailure.HTTP.exception(status)
         val length = request.contentLengthLong
-        check(length <= maxBytes) { "Download exceeds size limit" }
+        if (length > maxBytes) throw BrowserDownloadFailure.SIZE_LIMIT.exception()
         mimeType = request.contentType?.substringBefore(';')?.trim()
           ?.takeIf { it.length in 1..256 && it.none(Char::isISOControl) } ?: mimeType
         filename = android.webkit.URLUtil.guessFileName(current.toString(), request.getHeaderField("Content-Disposition"), mimeType)
@@ -101,31 +108,32 @@ internal class BrowserDownloadRequest {
           .takeUnless { it.isBlank() || it == "." || it == ".." } ?: "download"
         progress(0, length)
         var budget = storage?.budget(directory, length.coerceAtLeast(0)) ?: Long.MAX_VALUE
-        check(directory.isDirectory || directory.mkdirs())
+        if (!directory.isDirectory && !directory.mkdirs()) throw BrowserDownloadFailure.WRITE.exception()
         var nextStorageCheck = BrowserDownloadStorage.CHECK_INTERVAL_BYTES
-        val output = File.createTempFile("download-", ".tmp", directory)
+        val output = write { File.createTempFile("download-", ".tmp", directory) }
         file = output
         active()
         request.inputStream.use { input ->
-          output.outputStream().use { stream ->
+          val stream = write { output.outputStream() }
+          try {
             val buffer = ByteArray(32 * 1024)
             while (true) {
               active()
               val count = input.read(buffer)
               if (count < 0) break
-              check(count <= maxBytes - bytes) { "Download exceeds size limit" }
+              if (count > maxBytes - bytes) throw BrowserDownloadFailure.SIZE_LIMIT.exception()
               if (storage != null && (bytes >= nextStorageCheck || count > budget)) {
                 budget = storage.budget(directory, maxOf(count.toLong(), length - bytes))
                 nextStorageCheck = bytes + BrowserDownloadStorage.CHECK_INTERVAL_BYTES
               }
-              stream.write(buffer, 0, count)
+              write { stream.write(buffer, 0, count) }
               bytes += count
               budget -= count
               progress(bytes, length)
             }
-          }
+          } finally { write { stream.close() } }
         }
-        check(length < 0 || bytes == length) { "Incomplete download" }
+        if (length >= 0 && bytes != length) throw BrowserDownloadFailure.NETWORK.exception()
         storage?.budget(directory, 0)
         active()
         return

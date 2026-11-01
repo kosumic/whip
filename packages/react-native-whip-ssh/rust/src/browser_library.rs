@@ -5,6 +5,9 @@ use std::{collections::BTreeSet, sync::Arc};
 const MAX_HISTORY: usize = 500;
 const MAX_SAVED: usize = 100;
 const MAX_SNAPSHOT: usize = 2 * 1024 * 1024;
+const DOWNLOAD_ACTIVE: &str = "downloading";
+const DOWNLOAD_SAVING: &str = "saving";
+const DOWNLOAD_INTERRUPTED: &str = "interrupted";
 #[derive(Clone, Serialize, Deserialize, uniffi::Record)]
 pub struct BrowserSavedDownload {
     pub id: String,
@@ -40,7 +43,12 @@ impl BrowserSavedDownload {
                 .is_none_or(|error| error.len() <= 512 && !error.chars().any(char::is_control))
             && matches!(
                 self.state.as_str(),
-                "downloading" | "complete" | "failed" | "cancelled" | "interrupted"
+                DOWNLOAD_ACTIVE
+                    | DOWNLOAD_SAVING
+                    | "complete"
+                    | "failed"
+                    | "cancelled"
+                    | DOWNLOAD_INTERRUPTED
             )
     }
 }
@@ -126,8 +134,8 @@ impl BrowserLibrary {
             .retain(|id| !id.is_empty() && id.len() <= 256);
         data.downloads.retain(BrowserSavedDownload::valid);
         for entry in &mut data.downloads {
-            if entry.state == "downloading" {
-                entry.state = "interrupted".into();
+            if matches!(entry.state.as_str(), DOWNLOAD_ACTIVE | DOWNLOAD_SAVING) {
+                entry.state = DOWNLOAD_INTERRUPTED.into();
             }
         }
         Arc::new(Self {
@@ -224,13 +232,17 @@ mod tests {
         let library = BrowserLibrary::new(String::new());
         let first = "12345678-1234-1234-1234-123456789012";
         let second = "12345678-1234-1234-1234-123456789013";
+        let saving = "12345678-1234-1234-1234-123456789014";
         library.record_download(download(first, "downloading"));
         library.record_download(download(second, "downloading"));
         library.record_download(download(first, "complete"));
+        library.record_download(download(saving, DOWNLOAD_SAVING));
+        assert_eq!(library.downloads()[2].state, DOWNLOAD_SAVING);
         let restored = BrowserLibrary::new(library.snapshot());
-        assert_eq!(restored.downloads().len(), 2);
+        assert_eq!(restored.downloads().len(), 3);
         assert_eq!(restored.downloads()[0].state, "complete");
         assert_eq!(restored.downloads()[1].state, "interrupted");
+        assert_eq!(restored.downloads()[2].state, DOWNLOAD_INTERRUPTED);
         assert_eq!(restored.downloads()[0].bytes, 12);
         assert!(restored.downloads()[0].error.is_none());
         restored.remove_download(first.into());
