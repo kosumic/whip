@@ -24,16 +24,21 @@ pub(super) fn command(url: &str, token: &str) -> Result<String, String> {
     ])
     .map_err(|error| error.to_string())?;
     let failure = shlex::try_join([
-        "printf", "%s\\n",
+        "printf", "%s",
         &json!({"continue":false,"stopReason":"Could not load Whip instructions. Open and unlock Whip, then retry."}).to_string(),
     ]).map_err(|error| error.to_string())?;
     // Capture first, so a failed/partial transfer never reaches the hook parser.
     // Quoted printf treats instruction text as data, including shell syntax.
     let script = format!(
-        "if whip_context=$({request}); then printf '%s\\n' \"$whip_context\"; else {failure}; fi"
+        "if whip_context=$({request}); then printf '%s' \"$whip_context\"; else {failure}; fi"
     );
     // The SSH user's interactive shell may be fish rather than a POSIX shell.
-    shlex::try_join(["/bin/sh", "-c", &script]).map_err(|error| error.to_string())
+    // Keep quoting free of backslash escapes: Herdr sends POSIX-quoted arguments
+    // through that shell, and fish interprets backslashes inside single quotes.
+    Ok(format!(
+        "/bin/sh -c {}",
+        crate::remote_ops::shell_quote(&script)
+    ))
 }
 
 pub(super) fn codex_config(url: &str, token: &str) -> Result<Vec<String>, String> {
@@ -69,17 +74,24 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore = "requires installed Codex and Node; uses hooks/list without a model call"]
+    #[ignore = "requires installed Codex, Node and fish; uses hooks/list without a model call"]
     fn codex_accepts_and_trusts_only_the_generated_startup_hook()
     -> Result<(), Box<dyn std::error::Error>> {
         let directory = tempfile::tempdir()?;
         let mut args = codex_config("http://127.0.0.1:9/mcp/contract", "contract-token")?;
         args.push("app-server".into());
+        // Herdr types a POSIX-quoted command into the user's interactive shell.
+        // Direct argv spawning alone misses fish's single-quote escape rules.
+        let launch = std::iter::once("codex")
+            .chain(args.iter().map(String::as_str))
+            .map(crate::remote_ops::shell_quote)
+            .collect::<Vec<_>>()
+            .join(" ");
         let script = r"
 const { spawn } = require('node:child_process');
-function inspect(args) {
+function inspect([program, ...args]) {
   return new Promise(resolve => {
-    const child = spawn('codex', args, { cwd: process.argv[2], stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(program, args, { cwd: process.argv[2], stdio: ['pipe', 'pipe', 'pipe'] });
     let done = false;
     const finish = hooks => {
       if (done) return;
@@ -113,23 +125,31 @@ function inspect(args) {
   });
 }
 (async () => {
-  const before = await inspect(['app-server']);
-  const after = await inspect(JSON.parse(process.argv[1]));
-  const own = after?.find(hook => hook.key === '/<session-flags>/config.toml:session_start:0:0');
-  const preserved = before?.every(previous => {
-    const current = after?.find(hook => hook.key === previous.key);
-    return current?.trustStatus === previous.trustStatus && current?.enabled === previous.enabled && current?.command === previous.command;
-  });
-  const passed = own?.statusMessage === 'Loading Whip instructions' && own?.trustStatus === 'trusted' && own?.enabled === true && own?.additionalContextLimit === 0 && preserved;
-  if (!passed) {
-    process.stderr.write(JSON.stringify({found:!!own,trustStatus:own?.trustStatus,preserved}) + '\n');
-    process.exitCode = 1;
+  const before = await inspect(['codex', 'app-server']);
+  const launches = [
+    ['codex', ...JSON.parse(process.argv[1])],
+    ['/bin/sh', '-c', process.argv[3]],
+    ['fish', '--no-config', '-c', process.argv[3]],
+  ];
+  for (const launch of launches) {
+    const after = await inspect(launch);
+    const own = after?.find(hook => hook.key === '/<session-flags>/config.toml:session_start:0:0');
+    const preserved = before?.every(previous => {
+      const current = after?.find(hook => hook.key === previous.key);
+      return current?.trustStatus === previous.trustStatus && current?.enabled === previous.enabled && current?.command === previous.command;
+    });
+    const passed = own?.statusMessage === 'Loading Whip instructions' && own?.trustStatus === 'trusted' && own?.enabled === true && own?.additionalContextLimit === 0 && preserved;
+    if (!passed) {
+      process.stderr.write(JSON.stringify({program:launch[0],found:!!own,trustStatus:own?.trustStatus,preserved}) + '\n');
+      process.exitCode = 1;
+    }
   }
 })().catch(() => { process.exitCode = 1; });
 ";
         let status = std::process::Command::new("node")
             .args(["-e", script, &serde_json::to_string(&args)?])
             .arg(directory.path())
+            .arg(launch)
             .status()?;
         assert!(
             status.success(),
