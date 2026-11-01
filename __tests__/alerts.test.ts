@@ -59,7 +59,7 @@ jest.mock('../src/i18n', () => ({
   default: {
     resolvedLanguage: 'en',
     t: (key: string, options?: { name?: string; status?: string }) => {
-      if (key === 'alerts.needsYou') return `${options?.name} needs you`;
+      if (key === 'alerts.needsAttention') return `${options?.name} needs attention`;
       if (key === 'alerts.finished') return `${options?.name} finished`;
       if (key === 'alerts.agentState') return `Agent is ${options?.status}`;
       return key;
@@ -197,6 +197,12 @@ test('registration proofs are silent and local notifications retain foreground p
   });
 });
 
+test('shows the real Herdr agent kind even when its managed name matches the tab', async () => {
+  await alertAgent({ ...agent, name: 'rev', display_agent: 'rev', agent_status: 'done' }, false, target, 'rev');
+  expect(jest.mocked(Notifications.scheduleNotificationAsync).mock.calls[0][0].content.title)
+    .toBe('rev · codex finished');
+});
+
 test.each(['persistent', 'brief', 'regular'] as const)(
   '%s mode retains channel, text, sound and vibration',
   async delivery => {
@@ -204,7 +210,7 @@ test.each(['persistent', 'brief', 'regular'] as const)(
     const request = jest.mocked(Notifications.scheduleNotificationAsync).mock
       .calls[0][0];
     expect(request.content).toMatchObject({
-      title: 'work · codex needs you',
+      title: 'work · codex needs attention',
       body: 'Agent is blocked',
       data: { ...target, agentAlertLevel: delivery },
     });
@@ -269,7 +275,7 @@ test('dispatches status, preferences and foreground state for Rust admission', a
       request: expect.objectContaining({
         delivery: LocalAlertDelivery.Persistent,
         persistentTimeoutMs: 60_000,
-        announcement: 'work · codex needs you',
+        announcement: 'work · codex needs attention',
       }),
     }),
   );
@@ -305,7 +311,7 @@ test.each([
     await alertAgent(agent, true, target, 'work');
     expect(mockPlayback.speakAnnouncement).toHaveBeenCalledWith(
       'native-token',
-      'work · codex needs you',
+      'work · codex needs attention',
       'en-US',
     );
     expect(mockNative.completeEffect).toHaveBeenCalledWith(
@@ -367,7 +373,7 @@ test('preserves conversation title and language and rejects the prior session ti
   );
   expect(mockPlayback.speakAnnouncement).toHaveBeenLastCalledWith(
     'native-token',
-    'Fix keyboard latency needs you',
+    'Fix keyboard latency needs attention',
     'zh-TW',
   );
   await alertAgent(
@@ -386,7 +392,7 @@ test('preserves conversation title and language and rejects the prior session ti
   );
   expect(mockPlayback.speakAnnouncement).toHaveBeenLastCalledWith(
     'native-token',
-    'work · codex needs you',
+    'work · codex needs attention',
     'zh-TW',
   );
 });
