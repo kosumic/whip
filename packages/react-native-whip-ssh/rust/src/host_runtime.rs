@@ -773,6 +773,7 @@ pub fn clear_host_runtime_event_sink() {
 // React bridge invalidation detaches foreign callbacks, never SSH transports.
 #[unsafe(no_mangle)]
 pub extern "C" fn whip_detach_runtime_ui() {
+    crate::app_database::detach_known_host_repository();
     crate::terminal_delivery::clear();
     crate::reverse_control::detach_ui();
     crate::set_usage_foreground(false);

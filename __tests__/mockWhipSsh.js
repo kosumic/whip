@@ -97,50 +97,6 @@ class MockNativeHostProfileStore {
   }
 }
 
-class MockNativeKnownHostStore {
-  constructor() { this.hosts = []; this.pending = undefined; this.token = 0n; }
-  result(hosts = this.hosts) {
-    return { revision: 1, hosts, persistedValue: JSON.stringify(hosts) };
-  }
-  hydrate(value) {
-    const parsed = value === undefined ? [] : JSON.parse(value);
-    if (!Array.isArray(parsed)) throw new Error('malformed known hosts');
-    this.hosts = parsed;
-    this.pending = undefined;
-    return this.result();
-  }
-  view() { return this.result(); }
-  prepareAdd(challenge, id, createdAt) {
-    if (this.hosts.some(host => host.host.toLowerCase() === challenge.host.toLowerCase()
-      && host.port === challenge.port && host.keyType === challenge.keyType
-      && host.fingerprint === challenge.fingerprint)) {
-      return { token: 0n, changed: false, view: this.result() };
-    }
-    const hosts = [...this.hosts, { ...challenge, id, createdAt }];
-    const token = ++this.token;
-    this.pending = { token, hosts };
-    return { token, changed: true, view: this.result(hosts) };
-  }
-  prepareRemove(id) {
-    const hosts = this.hosts.filter(host => host.id !== id);
-    if (hosts.length === this.hosts.length) return { token: 0n, changed: false, view: this.result() };
-    const token = ++this.token;
-    this.pending = { token, hosts };
-    return { token, changed: true, view: this.result(hosts) };
-  }
-  commit(token) {
-    if (this.pending?.token !== token) throw new Error('invalid mutation');
-    this.hosts = this.pending.hosts;
-    this.pending = undefined;
-    return this.result();
-  }
-  rollback(token) {
-    if (this.pending?.token !== token) throw new Error('invalid mutation');
-    this.pending = undefined;
-    return this.result();
-  }
-}
-
 function createMockWhipSshModule() {
   const api = {
     connectWithPassword: jest.fn(),
@@ -623,7 +579,25 @@ function createMockWhipSshModule() {
     ReverseControlState: { Off: 0, RestartRequired: 1, Recovering: 2, Connected: 3 },
     subscribeReverseControlEvents: jest.fn(() => () => {}),
     NativeHostProfileStore: MockNativeHostProfileStore,
-    NativeKnownHostStore: MockNativeKnownHostStore,
+    KnownHostRepositoryStatus: { Loading: 0, Loaded: 1, ReadFailed: 2, InvalidData: 3 },
+    KnownHostRepositoryError: {
+      NotLoaded: class NotLoaded extends Error {}, Cancelled: class Cancelled extends Error {},
+      StorageRead: class StorageRead extends Error {}, StorageWrite: class StorageWrite extends Error {},
+      InvalidData: class InvalidData extends Error {}, InvalidKey: class InvalidKey extends Error {},
+    },
+    KnownHostCommand: {
+      Load: class Load {},
+      Trust: class Trust { constructor(inner) { this.inner = inner; } },
+      Revoke: class Revoke { constructor(inner) { this.inner = inner; } },
+    },
+    // UI suites supply outcomes, never a JS trust transaction engine.
+    KnownHostRepository: jest.fn(() => {
+      const repository = {
+        view: jest.fn(() => ({ status: 1, revision: 1n, generation: 1n, hosts: [] })),
+        begin: jest.fn(() => ({ result: jest.fn(async () => repository.view()), cancel: jest.fn() })),
+      };
+      return repository;
+    }),
   };
 }
 

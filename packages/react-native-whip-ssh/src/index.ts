@@ -55,7 +55,6 @@ import {
   type GithubRepositoryDetails,
   type GithubPage,
   HostProfileStore as RustHostProfileStore,
-  KnownHostStore as RustKnownHostStore,
   HostFreshness,
   HostTerminalResizeOutcome,
   HostTerminalState,
@@ -124,11 +123,7 @@ import {
   type HostProfileRecord as NativeHostProfileRecord,
   type HostProfileStoreLike,
   type HostProfileStoreView as NativeHostProfileStoreView,
-  type HostKeyChallenge as NativeHostKeyChallenge,
-  type KnownHostMutation as NativeKnownHostMutation,
   type KnownHostRecord as NativeKnownHostRecord,
-  type KnownHostStoreLike,
-  type KnownHostStoreView as NativeKnownHostStoreView,
   type HostLatencyMeasurement as NativeHostLatencyMeasurement,
   type RuntimeDiagnostic as NativeRuntimeDiagnostic,
   type GitStatusEntry as NativeGitStatusEntry,
@@ -1243,36 +1238,8 @@ function hostProfileStoreProjection(
 }
 
 export type KnownHostRecord = NativeKnownHostRecord;
-
-export type KnownHostStoreView = {
-  revision: number;
-  hosts: KnownHostRecord[];
-  persistedValue: string;
-};
-
-export type KnownHostMutation = {
-  token: bigint;
-  changed: boolean;
-  view: KnownHostStoreView;
-};
-
-function knownHostStoreView(
-  value: NativeKnownHostStoreView,
-): KnownHostStoreView {
-  return {
-    revision: Number(value.revision),
-    hosts: value.hosts,
-    persistedValue: value.persistedValue,
-  };
-}
-
-function knownHostMutation(value: NativeKnownHostMutation): KnownHostMutation {
-  return {
-    token: value.token,
-    changed: value.changed,
-    view: knownHostStoreView(value.view),
-  };
-}
+export { KnownHostRepository, KnownHostCommand, KnownHostRepositoryError, KnownHostRepositoryStatus } from './generated-entry';
+export type { KnownHostRepositoryView } from './generated-entry';
 
 function runtimeSshConfig(value: RuntimeSshConfig) {
   return {
@@ -4052,39 +4019,6 @@ export class NativeChatSpeechQueue {
 
   dispose(): void {
     this.queue.uniffiDestroy();
-  }
-}
-
-/** Canonical Rust known-host domain store; JS only persists prepared values. */
-export class NativeKnownHostStore {
-  private readonly store: KnownHostStoreLike = new RustKnownHostStore();
-
-  hydrate(persisted?: string): KnownHostStoreView {
-    return knownHostStoreView(this.store.hydrate(persisted));
-  }
-
-  view(): KnownHostStoreView {
-    return knownHostStoreView(this.store.view());
-  }
-
-  prepareAdd(
-    challenge: NativeHostKeyChallenge,
-    id: string,
-    createdAt: string,
-  ): KnownHostMutation {
-    return knownHostMutation(this.store.prepareAdd(challenge, id, createdAt));
-  }
-
-  prepareRemove(id: string): KnownHostMutation {
-    return knownHostMutation(this.store.prepareRemove(id));
-  }
-
-  commit(token: bigint): KnownHostStoreView {
-    return knownHostStoreView(this.store.commit(token));
-  }
-
-  rollback(token: bigint): KnownHostStoreView {
-    return knownHostStoreView(this.store.rollback(token));
   }
 }
 
