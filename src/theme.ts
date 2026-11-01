@@ -146,20 +146,21 @@ export function terminalStatusColor(
   palette: ThemeColors | typeof colors = colors,
 ): string {
   if (status === 'connected') return palette.done;
-  if (status === 'connecting') return palette.working;
+  if (status === 'connecting') return palette.warning;
   if (status === 'error') return palette.blocked;
   return palette.idle;
 }
 
-/** A healthy terminal must not mask the Herdr agent state shown by a tab. */
+/** Connected idle tabs show green checks; other agent states keep their status color. */
 export function sessionTabStatusColor(
   agentStatus: string,
   terminalStatus?: TerminalSessionStatus,
   palette: ThemeColors | typeof colors = colors,
 ): string {
-  return terminalStatus && terminalStatus !== 'connected'
-    ? terminalStatusColor(terminalStatus, palette)
-    : statusColor(agentStatus, palette);
+  if (terminalStatus && (terminalStatus !== 'connected' || agentStatus === 'idle')) {
+    return terminalStatusColor(terminalStatus, palette);
+  }
+  return statusColor(agentStatus, palette);
 }
 
 export function sessionTabGlassStyle(active: boolean, palette: ThemeColors) {
