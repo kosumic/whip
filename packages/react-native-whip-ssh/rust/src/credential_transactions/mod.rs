@@ -48,6 +48,7 @@ struct ProfileState {
 
 #[derive(uniffi::Object)]
 pub struct CredentialCoordinator {
+    pub(crate) workflow_security: Arc<Mutex<crate::ssh_workflows::Security>>,
     platform: Arc<dyn CredentialPlatform>,
     state: Mutex<ProfileState>,
     closed: AtomicBool,
@@ -57,21 +58,7 @@ pub struct CredentialCoordinator {
 impl CredentialCoordinator {
     #[uniffi::constructor]
     pub fn new(platform: Arc<dyn CredentialPlatform>) -> Arc<Self> {
-        let coordinator = Arc::new(Self {
-            platform,
-            state: Mutex::new(ProfileState {
-                store: HostProfileStore::new(),
-                loaded: false,
-                revision: 0,
-                repairs: vec![],
-            }),
-            closed: AtomicBool::new(false),
-        });
-        let mut owners = COORDINATORS.get_or_init(Mutex::default).lock();
-        owners.retain(|owner| owner.strong_count() > 0);
-        owners.push(Arc::downgrade(&coordinator));
-        drop(owners);
-        coordinator
+        Self::with_workflow_security(platform, crate::ssh_workflows::security().clone())
     }
 
     /// Reserve FIFO position synchronously, before foreign async work can yield.
@@ -80,11 +67,45 @@ impl CredentialCoordinator {
         command: CredentialCommand,
         guard: Option<Arc<HostActionPermit>>,
     ) -> Arc<CredentialOperation> {
+        self.begin_guarded(command, guard, None)
+    }
+}
+impl CredentialCoordinator {
+    pub(crate) fn begin_workflow(
+        self: &Arc<Self>,
+        command: CredentialCommand,
+        control: Arc<crate::ssh_workflows::Control>,
+    ) -> Arc<CredentialOperation> {
+        self.begin_guarded(command, None, Some(control))
+    }
+    fn begin_guarded(
+        self: &Arc<Self>,
+        command: CredentialCommand,
+        guard: Option<Arc<HostActionPermit>>,
+        workflow_guard: Option<Arc<crate::ssh_workflows::Control>>,
+    ) -> Arc<CredentialOperation> {
+        let invalidates_identity = workflow_guard.is_none()
+            && matches!(&command, CredentialCommand::EnsureIdentity { .. });
+        let mutation = (invalidates_identity
+            || matches!(
+                &command,
+                CredentialCommand::SaveHost { .. }
+                    | CredentialCommand::SaveMetadata { .. }
+                    | CredentialCommand::DeleteHost { .. }
+                    | CredentialCommand::RestoreBackups { .. }
+                    | CredentialCommand::RecoverHost { .. }
+                    | CredentialCommand::SaveGlobalKey { .. }
+                    | CredentialCommand::DeleteGlobalKey { .. }
+            ))
+        .then(|| {
+            crate::ssh_workflows::CredentialMutation::begin_for(self.workflow_security.clone())
+        });
         let inner = Arc::new(Operation {
             id: uuid::Uuid::new_v4().to_string(),
             coordinator: self.clone(),
             cancelled: AtomicBool::new(false),
             guard,
+            workflow_guard,
         });
         let (send, receive) = oneshot::channel();
         queue().entries.lock().push_back(inner.id.clone());
@@ -97,6 +118,7 @@ impl CredentialCoordinator {
                 runtime.spawn(async move {
                     // The worker owns the queue position until every started
                     // storage callback settles, even if the caller disappears.
+                    let _mutation = mutation;
                     let _queue = QueueGuard(inner.id.clone());
                     let result = async {
                         inner.wait_turn().await?;
@@ -122,7 +144,9 @@ impl CredentialCoordinator {
         }
         operation
     }
-
+}
+#[uniffi::export]
+impl CredentialCoordinator {
     pub fn view(&self) -> CredentialProfileView {
         let state = self.state.lock();
         CredentialProfileView {
@@ -162,11 +186,16 @@ struct Operation {
     coordinator: Arc<CredentialCoordinator>,
     cancelled: AtomicBool,
     guard: Option<Arc<HostActionPermit>>,
+    workflow_guard: Option<Arc<crate::ssh_workflows::Control>>,
 }
 
 impl Operation {
     fn check(&self) -> Result<()> {
-        if self.cancelled.load(Ordering::Acquire)
+        if self
+            .workflow_guard
+            .as_ref()
+            .is_some_and(|guard| guard.check().is_err())
+            || self.cancelled.load(Ordering::Acquire)
             || self.coordinator.closed.load(Ordering::Acquire)
             || self
                 .guard
@@ -362,3 +391,31 @@ impl Workflow {
 
 #[cfg(test)]
 mod tests;
+
+impl CredentialCoordinator {
+    pub(crate) fn with_workflow_security(
+        platform: Arc<dyn CredentialPlatform>,
+        workflow_security: Arc<Mutex<crate::ssh_workflows::Security>>,
+    ) -> Arc<Self> {
+        let coordinator = Arc::new(Self {
+            workflow_security,
+            platform,
+            state: Mutex::new(ProfileState {
+                store: HostProfileStore::new(),
+                loaded: false,
+                revision: 0,
+                repairs: vec![],
+            }),
+            closed: AtomicBool::new(false),
+        });
+        if Arc::ptr_eq(
+            &coordinator.workflow_security,
+            crate::ssh_workflows::security(),
+        ) {
+            let mut owners = COORDINATORS.get_or_init(Mutex::default).lock();
+            owners.retain(|owner| owner.strong_count() > 0);
+            owners.push(Arc::downgrade(&coordinator));
+        }
+        coordinator
+    }
+}

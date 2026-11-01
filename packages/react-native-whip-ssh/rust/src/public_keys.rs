@@ -5,9 +5,7 @@ use std::{sync::Arc, time::Duration};
 use russh::keys::ssh_key::{HashAlg, PublicKey};
 
 use crate::{
-    HostRuntimeError, HostSshConfig,
-    host_runtime::{disconnect_sessions, ssh_config},
-    remote_ops::shell_quote,
+    HostRuntimeError, HostSshConfig, host_runtime::ssh_config, remote_ops::shell_quote,
     ssh::SshSession,
 };
 
@@ -140,7 +138,15 @@ async fn install_on_route(
     jump_hosts: Vec<HostSshConfig>,
     key: PublicKeyShare,
 ) -> Result<PublicKeyInstallOutcome, HostRuntimeError> {
-    let mut sessions: Vec<Arc<SshSession>> = Vec::new();
+    install_on_route_guarded(target, jump_hosts, key, None).await
+}
+pub(crate) async fn install_on_route_guarded(
+    target: HostSshConfig,
+    jump_hosts: Vec<HostSshConfig>,
+    key: PublicKeyShare,
+    control: Option<Arc<crate::ssh_workflows::Control>>,
+) -> Result<PublicKeyInstallOutcome, HostRuntimeError> {
+    let mut sessions = crate::ssh::SessionRoute::default();
     let result = async {
         for config in jump_hosts.iter().chain(std::iter::once(&target)) {
             if config.host.trim().is_empty()
@@ -153,21 +159,31 @@ async fn install_on_route(
             connection.forward_agent = false;
             let session = tokio::time::timeout(
                 OPERATION_TIMEOUT,
-                SshSession::connect(&connection, sessions.last().map(Arc::as_ref)),
+                SshSession::connect_guarded(
+                    &connection,
+                    sessions.0.last().map(Arc::as_ref),
+                    control.as_deref(),
+                ),
             )
             .await
             .map_err(|_| {
                 HostRuntimeError::SshTransportFailure("SSH connection timed out".to_owned())
             })??;
-            sessions.push(session);
+            sessions.0.push(session);
         }
         let session = sessions
+            .0
             .last()
             .ok_or_else(|| invalid_key("Missing SSH target"))?;
         let command = format!(
             "cd \"$HOME\" && sh -c {}",
             shell_quote(&installation_script(&key))
         );
+        if let Some(control) = &control {
+            control
+                .admit_mutation()
+                .map_err(|_| invalid_key("SSH operation cancelled"))?;
+        }
         let output = tokio::time::timeout(OPERATION_TIMEOUT, session.execute(&command))
             .await
             .map_err(|_| {
@@ -190,7 +206,7 @@ async fn install_on_route(
         }
     }
     .await;
-    disconnect_sessions(sessions).await;
+    crate::host_runtime::disconnect_sessions(std::mem::take(&mut sessions.0)).await;
     result
 }
 
