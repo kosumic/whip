@@ -200,13 +200,42 @@ impl Follower {
     }
 }
 
+// An aborted poll can still install a follower after stop() clears it.
+struct WorkerGuard {
+    runtime: Weak<RuntimeInner>,
+    task_id: tokio::task::Id,
+}
+
+impl Drop for WorkerGuard {
+    fn drop(&mut self) {
+        let Some(inner) = self.runtime.upgrade() else {
+            return;
+        };
+        let task = inner.agent_view_task.lock();
+        // A replacement worker owns its own follower.
+        if task.as_ref().is_none_or(|task| task.id() == self.task_id) {
+            stop_follower(&inner);
+        }
+    }
+}
+
 pub(super) fn ensure_started(inner: Arc<RuntimeInner>, epoch: u64) {
     let generation = inner.state.lock().generation;
     let mut task = inner.agent_view_task.lock();
     if task.as_ref().is_some_and(|task| !task.is_finished()) {
         return;
     }
-    *task = Some(tokio::spawn(follow(Arc::downgrade(&inner), epoch, generation)).abort_handle());
+    let runtime = Arc::downgrade(&inner);
+    *task = Some(
+        tokio::spawn(async move {
+            let _worker = WorkerGuard {
+                runtime: runtime.clone(),
+                task_id: tokio::task::id(),
+            };
+            follow(runtime, epoch, generation).await;
+        })
+        .abort_handle(),
+    );
 }
 
 pub(super) fn request_refresh(inner: &RuntimeInner) {
@@ -823,28 +852,31 @@ mod tests {
     #[test]
     fn observer_worker_is_single_and_canceled_while_starting() {
         crate::runtime().unwrap().block_on(async {
-            let (inner, _) = super::super::tests::agent_view_test_core();
-            inner.state.lock().protocol = Some(22);
-            let opening = inner.agent_view_start.lock().await;
-            ensure_started(inner.clone(), 0);
-            let task = inner.agent_view_task.lock().as_ref().unwrap().clone();
-            ensure_started(inner.clone(), 0);
-            assert_eq!(
-                inner.agent_view_task.lock().as_ref().unwrap().id(),
-                task.id()
-            );
-            stop(&inner);
-            assert!(inner.agent_view_task.lock().is_none());
-            drop(opening);
-            tokio::time::timeout(Duration::from_secs(1), async {
-                while !task.is_finished() {
-                    tokio::task::yield_now().await;
-                }
-            })
-            .await
-            .unwrap();
-            assert!(inner.agent_view.lock().is_none());
-            assert!(!inner.state.lock().event.as_ref().unwrap().retry_running);
+            // Exercise cancellation across different worker scheduling orders.
+            for _ in 0..32 {
+                let (inner, _) = super::super::tests::agent_view_test_core();
+                inner.state.lock().protocol = Some(22);
+                let opening = inner.agent_view_start.lock().await;
+                ensure_started(inner.clone(), 0);
+                let task = inner.agent_view_task.lock().as_ref().unwrap().clone();
+                ensure_started(inner.clone(), 0);
+                assert_eq!(
+                    inner.agent_view_task.lock().as_ref().unwrap().id(),
+                    task.id()
+                );
+                stop(&inner);
+                assert!(inner.agent_view_task.lock().is_none());
+                drop(opening);
+                tokio::time::timeout(Duration::from_secs(1), async {
+                    while !task.is_finished() {
+                        tokio::task::yield_now().await;
+                    }
+                })
+                .await
+                .unwrap();
+                assert!(inner.agent_view.lock().is_none());
+                assert!(!inner.state.lock().event.as_ref().unwrap().retry_running);
+            }
         });
     }
 
