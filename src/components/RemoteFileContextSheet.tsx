@@ -8,13 +8,14 @@ import type { RuntimeRemoteFileEntry } from 'react-native-whip-ssh';
 import { formatRemoteFileSize, joinRemotePath, parentRemotePath, sortRemoteEntries } from '@/src/lib/remoteFiles';
 import { REMOTE_FILE_GLASS_SURFACE_PROPS } from '@/src/lib/remoteFileGlass';
 import type { HerdrClient } from '@/src/services/HerdrClient';
-import { downloadRemoteEntry } from '@/src/services/remoteFileTransfer';
+import { useRemoteFileDownload } from '@/src/hooks/useRemoteFileDownload';
 import { appGlassControlStyle, useTheme } from '@/src/theme';
 import { hapticPress } from './app-ui';
 import { GlassButton, GlassIconBadge } from './GlassControls';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { Input } from './ui/input';
 import { Text } from './ui/text';
+import { RemoteDownloadProgress } from './RemoteDownloadProgress';
 
 export function remoteFilenameSelection(entry: Pick<RuntimeRemoteFileEntry, 'name' | 'kind'>) {
   const dot = entry.name.lastIndexOf('.');
@@ -49,7 +50,7 @@ export function RemoteFileContextSheet({ entry, client, onClose, onChanged, onBu
   const [loadedPath, setLoadedPath] = useState<string | null>(null);
   const [properties, setProperties] = useState(entry);
   const input = useRef<TextInputInstance>(null);
-  const downloadAbort = useRef<AbortController | null>(null);
+  const download = useRemoteFileDownload(client, entry.path);
   const alive = useRef(true);
   const operation = useRef(false);
   const request = useRef(0);
@@ -62,8 +63,11 @@ export function RemoteFileContextSheet({ entry, client, onClose, onChanged, onBu
 
   useEffect(() => {
     alive.current = true;
-    return () => { alive.current = false; downloadAbort.current?.abort(); };
-  }, []);
+    return () => {
+      alive.current = false;
+      if (operation.current) onBusyChange(false);
+    };
+  }, [onBusyChange]);
 
   const run = async (action: () => Promise<void>) => {
     if (operation.current || !alive.current) return;
@@ -79,8 +83,10 @@ export function RemoteFileContextSheet({ entry, client, onClose, onChanged, onBu
       if (alive.current) setError(String(reason));
     } finally {
       operation.current = false;
-      if (alive.current) setBusy(false);
-      onBusyChange(false);
+      if (alive.current) {
+        setBusy(false);
+        onBusyChange(false);
+      }
     }
   };
 
@@ -132,22 +138,17 @@ export function RemoteFileContextSheet({ entry, client, onClose, onChanged, onBu
     if (current()) { await onChanged(); onClose(); }
   });
 
+  const startDownload = () => run(async () => {
+    Keyboard.dismiss();
+    await download.start(entry.path);
+  });
+
   const actions = [
     { label: 'files.moveTo', icon: FolderInput, action: () => changePage('move') },
     { label: 'files.copyPath', icon: Copy, action: () => {
       Keyboard.dismiss(); Clipboard.setString(entry.path); setFeedback(t('files.pathCopied'));
     } },
-    { label: 'files.download', icon: Download, action: () => run(async () => {
-      Keyboard.dismiss();
-      const abort = new AbortController();
-      downloadAbort.current = abort;
-      try {
-        const downloaded = await downloadRemoteEntry({ native: connection.native }, entry.path, bytes => {
-          if (alive.current) setFeedback(t('files.downloadProgress', { size: formatRemoteFileSize(bytes) }));
-        }, abort.signal);
-        if (alive.current) setFeedback(t(downloaded ? 'files.downloadedTitle' : 'common.cancel'));
-      } finally { downloadAbort.current = null; }
-    }) },
+    { label: 'files.download', icon: Download, action: startDownload },
     { label: 'files.properties', icon: Info, action: () => {
       changePage('properties');
       // Listing metadata is immediately usable; STAT adds no recursive work.
@@ -330,20 +331,18 @@ export function RemoteFileContextSheet({ entry, client, onClose, onChanged, onBu
             )}
           </>
         )}
-        {busy ? <ActivityIndicator className="mt-3" color={colors.primary} /> : null}
+        <RemoteDownloadProgress progress={download.progress} onCancel={download.cancel} onRetry={startDownload} />
+        {busy && !download.busy ? <ActivityIndicator className="mt-3" color={colors.primary} /> : null}
         {error ? <Text accessibilityRole="alert" className="mt-3 px-2 text-[13px] text-destructive">{error}</Text> : null}
         {feedback ? <Text accessibilityLiveRegion="polite" className="mt-3 px-2 text-[13px] text-muted-foreground">{feedback}</Text> : null}
-        <GlassButton
+        {!download.busy ? <GlassButton
           accessibilityLabel={t('common.cancel')}
           className="mt-3 h-12 rounded-full"
           variant="secondary"
-          disabled={busy && !downloadAbort.current}
-          onPress={hapticPress(() => {
-            if (busy) downloadAbort.current?.abort();
-            else onClose();
-          })}>
+          disabled={busy}
+          onPress={hapticPress(onClose)}>
           <Text>{t('common.cancel')}</Text>
-        </GlassButton>
+        </GlassButton> : null}
       </GlassSurface>
     </KeyboardAvoidingView>
   );
