@@ -136,9 +136,9 @@
         AR_aarch64_linux_android = "${androidNdkTools}/llvm-ar";
         CFLAGS_aarch64_linux_android = "--target=aarch64-none-linux-android24";
       };
-      # Go is needed only by separately provisioned interoperability fixtures.
+      # Optional interoperability fixtures need Go and SSH server tools.
       tailcat-tests = default.overrideAttrs (previous: {
-        nativeBuildInputs = previous.nativeBuildInputs ++ [androidPkgs.go_1_27];
+        nativeBuildInputs = previous.nativeBuildInputs ++ [androidPkgs.go_1_27 androidPkgs.openssh androidPkgs.netcat-openbsd];
       });
     };
 

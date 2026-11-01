@@ -7,6 +7,8 @@ mod agent_view;
 mod agents;
 mod chat_identity;
 mod connection;
+#[cfg(test)]
+mod tailcat_proxyjump_tests;
 pub use connection::herdr_protocol_label;
 pub(crate) mod diagnostics;
 mod directory_cache;

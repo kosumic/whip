@@ -70,6 +70,60 @@ static CLIENTS: OnceLock<whip_tailcat::ClientCache> = OnceLock::new();
 
 mod network;
 
+#[cfg(test)]
+pub(crate) use network::whip_tailcat_network_changed;
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    use super::*;
+    use std::collections::HashSet;
+    static RELAY_IDENTITIES: OnceLock<parking_lot::RwLock<HashSet<String>>> = OnceLock::new();
+
+    /// Scope the override to one fixture's identity, including HostRuntime's
+    /// spawned connect/reconnect tasks. Other SSH/Tailcat tests are unaffected.
+    pub(crate) struct RelayOnlyIdentity(String);
+    impl RelayOnlyIdentity {
+        pub(crate) fn new(identity: &whip_tailcat::Identity) -> Self {
+            let public = identity.public_key();
+            RELAY_IDENTITIES
+                .get_or_init(Default::default)
+                .write()
+                .insert(public.clone());
+            Self(public)
+        }
+    }
+    impl Drop for RelayOnlyIdentity {
+        fn drop(&mut self) {
+            if let Some(identities) = RELAY_IDENTITIES.get() {
+                identities.write().remove(&self.0);
+            }
+        }
+    }
+    pub(super) fn options(
+        identity: &whip_tailcat::Identity,
+        mut options: whip_tailcat::ClientOptions,
+    ) -> whip_tailcat::ClientOptions {
+        if RELAY_IDENTITIES
+            .get()
+            .is_some_and(|identities| identities.read().contains(&identity.public_key()))
+        {
+            options.relay_only = true;
+        }
+        options
+    }
+    pub(crate) async fn client(
+        address: &str,
+        private_key: &str,
+    ) -> io::Result<whip_tailcat::Client> {
+        let identity = whip_tailcat::Identity::from_private_key(private_key)?;
+        let options = options(&identity, whip_tailcat::ClientOptions::default());
+        CLIENTS
+            .get_or_init(whip_tailcat::ClientCache::default)
+            .connect(address, &identity, options)
+            .await
+    }
+}
+
 pub(super) async fn connect(address: &str, port: u16, private_key: &str) -> io::Result<Stream> {
     connect_with_options(
         address,
@@ -87,6 +141,8 @@ async fn connect_with_options(
     options: whip_tailcat::ClientOptions,
 ) -> io::Result<Stream> {
     let identity = whip_tailcat::Identity::from_private_key(private_key)?;
+    #[cfg(test)]
+    let options = test_support::options(&identity, options);
     let client = CLIENTS
         .get_or_init(whip_tailcat::ClientCache::default)
         .connect(address, &identity, options)
