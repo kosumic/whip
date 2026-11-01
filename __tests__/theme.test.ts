@@ -39,12 +39,20 @@ describe('application theme', () => {
     expect(statusColor('unexpected', lightColors)).toBe(lightColors.unknown);
   });
 
-  test('does not let a healthy terminal mask its agent status', () => {
-    expect(sessionTabStatusColor('blocked', 'connected', darkColors)).toBe(darkColors.blocked);
-    expect(sessionTabStatusColor('done', 'connected', darkColors)).toBe(darkColors.done);
-    expect(sessionTabStatusColor('idle', 'connected', darkColors)).toBe(darkColors.idle);
-    expect(sessionTabStatusColor('working', 'error', darkColors)).toBe(darkColors.blocked);
-    expect(sessionTabStatusColor('working', 'disconnected', darkColors)).toBe(darkColors.idle);
+  test('colors idle tab checks by connection state without hiding active agent status', () => {
+    for (const palette of [lightColors, darkColors]) {
+      expect(sessionTabStatusColor('idle', 'connected', palette)).toBe(palette.done);
+      expect(sessionTabStatusColor('idle', 'connecting', palette)).toBe(palette.warning);
+      expect(sessionTabStatusColor('idle', 'disconnected', palette)).toBe(palette.idle);
+      expect(sessionTabStatusColor('idle', 'error', palette)).toBe(palette.blocked);
+      expect(sessionTabStatusColor('idle', undefined, palette)).toBe(palette.idle);
+
+      expect(sessionTabStatusColor('blocked', 'connected', palette)).toBe(palette.blocked);
+      expect(sessionTabStatusColor('working', 'connected', palette)).toBe(palette.working);
+      expect(sessionTabStatusColor('done', 'connected', palette)).toBe(palette.done);
+      expect(sessionTabStatusColor('working', 'error', palette)).toBe(palette.blocked);
+      expect(sessionTabStatusColor('working', 'disconnected', palette)).toBe(palette.idle);
+    }
   });
 
   test('keeps terminal tab glass translucent without fading its contents', () => {
