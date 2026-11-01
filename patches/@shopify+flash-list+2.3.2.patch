@@ -1,0 +1,261 @@
+diff --git a/node_modules/@shopify/flash-list/src/recyclerview/hooks/useRecyclerViewController.tsx b/node_modules/@shopify/flash-list/src/recyclerview/hooks/useRecyclerViewController.tsx
+--- a/node_modules/@shopify/flash-list/src/recyclerview/hooks/useRecyclerViewController.tsx
++++ b/node_modules/@shopify/flash-list/src/recyclerview/hooks/useRecyclerViewController.tsx
+@@ -6,7 +6,7 @@
+   useRef,
+   useState,
+ } from "react";
+-import { I18nManager } from "react-native";
++import { I18nManager, NativeScrollEvent, Platform } from "react-native";
+ 
+ import {
+   ScrollToOffsetParams,
+@@ -46,7 +46,8 @@
+   recyclerViewManager: RecyclerViewManager<T>,
+   ref: React.Ref<FlashListRef<T>>,
+   scrollViewRef: RefObject<CompatScroller>,
+-  scrollAnchorRef: React.RefObject<ScrollAnchorRef>
++  scrollAnchorRef: React.RefObject<ScrollAnchorRef>,
++  nativeScrollEventRef?: React.RefObject<NativeScrollEvent | undefined>
+ ) {
+   const isUnmounted = useUnmountFlag();
+   const [_, setRenderId] = useState(0);
+@@ -57,6 +58,8 @@
+   // Track the first visible item for maintaining scroll position
+   const firstVisibleItemKey = useRef<string | undefined>(undefined);
+   const firstVisibleItemLayout = useRef<RVLayout | undefined>(undefined);
++  const firstVisibleItemOffset = useRef(0);
++  const firstVisibleItemEndDistance = useRef(Infinity);
+ 
+   // Queue to store callbacks that should be executed after scroll offset updates
+   const pendingScrollCallbacks = useRef<(() => void)[]>([]);
+@@ -104,12 +107,17 @@
+       if (firstVisibleIndex !== undefined && firstVisibleIndex >= 0) {
+         firstVisibleItemKey.current =
+           recyclerViewManager.getDataKey(firstVisibleIndex);
++        firstVisibleItemOffset.current = recyclerViewManager.firstItemOffset;
++        const event = nativeScrollEventRef?.current;
++        firstVisibleItemEndDistance.current = event
++          ? event.contentSize.height - event.layoutMeasurement.height - event.contentOffset.y
++          : Infinity;
+         firstVisibleItemLayout.current = {
+           ...recyclerViewManager.getLayout(firstVisibleIndex),
+         };
+       }
+     }
+-  }, [recyclerViewManager]);
++  }, [recyclerViewManager, nativeScrollEventRef]);
+ 
+   /**
+    * Maintains the visible content position when the list updates.
+@@ -167,11 +175,21 @@
+           currentIndexOfFirstVisibleItem >= 0
+         ) {
+           // Calculate the difference in position and apply the offset
+-          const diff = horizontal
++          const layoutDiff = horizontal
+             ? recyclerViewManager.getLayout(currentIndexOfFirstVisibleItem).x -
+               firstVisibleItemLayout.current!.x
+             : recyclerViewManager.getLayout(currentIndexOfFirstVisibleItem).y -
+               firstVisibleItemLayout.current!.y;
++          // Header movement changes every row's origin without changing its cell layout.
++          const headerDiff = Platform.OS === "android" && !horizontal
++            ? recyclerViewManager.firstItemOffset - firstVisibleItemOffset.current
++            : 0;
++          // Android already clamps the offset when shrinking content reaches the bottom.
++          const clampedHeader = headerDiff < 0
++            ? Math.min(-headerDiff, Math.max(0, -headerDiff - firstVisibleItemEndDistance.current))
++            : 0;
++          const diff = layoutDiff + headerDiff + clampedHeader;
++          firstVisibleItemOffset.current = recyclerViewManager.firstItemOffset;
+           firstVisibleItemLayout.current = {
+             ...recyclerViewManager.getLayout(currentIndexOfFirstVisibleItem),
+           };
+@@ -187,18 +205,18 @@
+             } else {
+               const scrollToParams = horizontal
+                 ? {
+-                    x: recyclerViewManager.getAbsoluteLastScrollOffset() + diff,
++                    x: recyclerViewManager.getAbsoluteLastScrollOffset() + layoutDiff,
+                     animated: false,
+                   }
+                 : {
+-                    y: recyclerViewManager.getAbsoluteLastScrollOffset() + diff,
++                    y: recyclerViewManager.getAbsoluteLastScrollOffset() + layoutDiff,
+                     animated: false,
+                   };
+               scrollViewRef.current?.scrollTo(scrollToParams);
+             }
+             if (hasDataChanged) {
+               updateScrollOffsetWithCallback(
+-                recyclerViewManager.getAbsoluteLastScrollOffset() + diff,
++                recyclerViewManager.getAbsoluteLastScrollOffset() + layoutDiff,
+                 () => {}
+               );
+               recyclerViewManager.ignoreScrollEvents = true;
+diff --git a/node_modules/@shopify/flash-list/dist/recyclerview/hooks/useRecyclerViewController.js b/node_modules/@shopify/flash-list/dist/recyclerview/hooks/useRecyclerViewController.js
+--- a/node_modules/@shopify/flash-list/dist/recyclerview/hooks/useRecyclerViewController.js
++++ b/node_modules/@shopify/flash-list/dist/recyclerview/hooks/useRecyclerViewController.js
+@@ -1,5 +1,5 @@
+ import { useCallback, useImperativeHandle, useMemo, useRef, useState, } from "react";
+-import { I18nManager } from "react-native";
++import { I18nManager, Platform } from "react-native";
+ import { adjustOffsetForRTL } from "../utils/adjustOffsetForRTL";
+ import { PlatformConfig } from "../../native/config/PlatformHelper";
+ import { WarningMessages } from "../../errors/WarningMessages";
+@@ -21,7 +21,7 @@
+  * @param scrollAnchorRef - Reference to the scroll anchor component
+  * @param props - The RecyclerViewProps containing configuration
+  */
+-export function useRecyclerViewController(recyclerViewManager, ref, scrollViewRef, scrollAnchorRef) {
++export function useRecyclerViewController(recyclerViewManager, ref, scrollViewRef, scrollAnchorRef, nativeScrollEventRef) {
+     const isUnmounted = useUnmountFlag();
+     const [_, setRenderId] = useState(0);
+     const pauseOffsetCorrection = useRef(false);
+@@ -30,6 +30,8 @@
+     // Track the first visible item for maintaining scroll position
+     const firstVisibleItemKey = useRef(undefined);
+     const firstVisibleItemLayout = useRef(undefined);
++    const firstVisibleItemOffset = useRef(0);
++    const firstVisibleItemEndDistance = useRef(Infinity);
+     // Queue to store callbacks that should be executed after scroll offset updates
+     const pendingScrollCallbacks = useRef([]);
+     // Handle initial scroll position when the list first loads
+@@ -66,12 +68,17 @@
+             if (firstVisibleIndex !== undefined && firstVisibleIndex >= 0) {
+                 firstVisibleItemKey.current =
+                     recyclerViewManager.getDataKey(firstVisibleIndex);
++                firstVisibleItemOffset.current = recyclerViewManager.firstItemOffset;
++                const event = nativeScrollEventRef?.current;
++                firstVisibleItemEndDistance.current = event
++                  ? event.contentSize.height - event.layoutMeasurement.height - event.contentOffset.y
++                  : Infinity;
+                 firstVisibleItemLayout.current = {
+                     ...recyclerViewManager.getLayout(firstVisibleIndex),
+                 };
+             }
+         }
+-    }, [recyclerViewManager]);
++    }, [recyclerViewManager, nativeScrollEventRef]);
+     /**
+      * Maintains the visible content position when the list updates.
+      * This is particularly useful for chat applications where we want to keep
+@@ -113,11 +120,21 @@
+                 if (currentIndexOfFirstVisibleItem !== undefined &&
+                     currentIndexOfFirstVisibleItem >= 0) {
+                     // Calculate the difference in position and apply the offset
+-                    const diff = horizontal
++                    const layoutDiff = horizontal
+                         ? recyclerViewManager.getLayout(currentIndexOfFirstVisibleItem).x -
+                             firstVisibleItemLayout.current.x
+                         : recyclerViewManager.getLayout(currentIndexOfFirstVisibleItem).y -
+                             firstVisibleItemLayout.current.y;
++                    // Header movement changes every row's origin without changing its cell layout.
++                    const headerDiff = Platform.OS === "android" && !horizontal
++                      ? recyclerViewManager.firstItemOffset - firstVisibleItemOffset.current
++                      : 0;
++                    // Android already clamps the offset when shrinking content reaches the bottom.
++                    const clampedHeader = headerDiff < 0
++                      ? Math.min(-headerDiff, Math.max(0, -headerDiff - firstVisibleItemEndDistance.current))
++                      : 0;
++                    const diff = layoutDiff + headerDiff + clampedHeader;
++                    firstVisibleItemOffset.current = recyclerViewManager.firstItemOffset;
+                     firstVisibleItemLayout.current = {
+                         ...recyclerViewManager.getLayout(currentIndexOfFirstVisibleItem),
+                     };
+@@ -132,17 +149,17 @@
+                         else {
+                             const scrollToParams = horizontal
+                                 ? {
+-                                    x: recyclerViewManager.getAbsoluteLastScrollOffset() + diff,
++                                    x: recyclerViewManager.getAbsoluteLastScrollOffset() + layoutDiff,
+                                     animated: false,
+                                 }
+                                 : {
+-                                    y: recyclerViewManager.getAbsoluteLastScrollOffset() + diff,
++                                    y: recyclerViewManager.getAbsoluteLastScrollOffset() + layoutDiff,
+                                     animated: false,
+                                 };
+                             (_c = scrollViewRef.current) === null || _c === void 0 ? void 0 : _c.scrollTo(scrollToParams);
+                         }
+                         if (hasDataChanged) {
+-                            updateScrollOffsetWithCallback(recyclerViewManager.getAbsoluteLastScrollOffset() + diff, () => { });
++                            updateScrollOffsetWithCallback(recyclerViewManager.getAbsoluteLastScrollOffset() + layoutDiff, () => { });
+                             recyclerViewManager.ignoreScrollEvents = true;
+                             setTimeout(() => {
+                                 recyclerViewManager.ignoreScrollEvents = false;
+diff --git a/node_modules/@shopify/flash-list/src/recyclerview/RecyclerView.tsx b/node_modules/@shopify/flash-list/src/recyclerview/RecyclerView.tsx
+--- a/node_modules/@shopify/flash-list/src/recyclerview/RecyclerView.tsx
++++ b/node_modules/@shopify/flash-list/src/recyclerview/RecyclerView.tsx
+@@ -121,6 +121,7 @@
+   // Refs for sticky headers and scroll anchoring
+   const stickyHeaderRef = useRef<StickyHeaderRef>(null);
+   const scrollAnchorRef = useRef<ScrollAnchorRef>(null);
++  const nativeScrollEventRef = useRef<NativeScrollEvent | undefined>(undefined);
+ 
+   // State for managing layout and render updates
+   const [_, setLayoutTreeId] = useLayoutState(0);
+@@ -145,7 +146,8 @@
+     recyclerViewManager,
+     ref,
+     scrollViewRef,
+-    scrollAnchorRef
++    scrollAnchorRef,
++    nativeScrollEventRef
+   );
+ 
+   // Initialize view holder collection ref
+@@ -262,6 +264,7 @@
+    */
+   const onScrollHandler = useCallback(
+     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
++      nativeScrollEventRef.current = event.nativeEvent;
+       if (recyclerViewManager.ignoreScrollEvents) {
+         return;
+       }
+diff --git a/node_modules/@shopify/flash-list/dist/recyclerview/RecyclerView.js b/node_modules/@shopify/flash-list/dist/recyclerview/RecyclerView.js
+--- a/node_modules/@shopify/flash-list/dist/recyclerview/RecyclerView.js
++++ b/node_modules/@shopify/flash-list/dist/recyclerview/RecyclerView.js
+@@ -51,6 +51,7 @@
+     // Refs for sticky headers and scroll anchoring
+     const stickyHeaderRef = useRef(null);
+     const scrollAnchorRef = useRef(null);
++    const nativeScrollEventRef = useRef();
+     // State for managing layout and render updates
+     const [_, setLayoutTreeId] = useLayoutState(0);
+     const [__, setRenderId] = useState(0);
+@@ -59,7 +60,7 @@
+     const refHolder = useMemo(() => new Map(), []);
+     // Initialize core RecyclerView manager and content offset management
+     const { recyclerViewManager, velocityTracker } = useRecyclerViewManager(props);
+-    const { applyOffsetCorrection, computeFirstVisibleIndexForOffsetCorrection, applyInitialScrollIndex, handlerMethods, } = useRecyclerViewController(recyclerViewManager, ref, scrollViewRef, scrollAnchorRef);
++    const { applyOffsetCorrection, computeFirstVisibleIndexForOffsetCorrection, applyInitialScrollIndex, handlerMethods, } = useRecyclerViewController(recyclerViewManager, ref, scrollViewRef, scrollAnchorRef, nativeScrollEventRef);
+     // Initialize view holder collection ref
+     const viewHolderCollectionRef = useRef(null);
+     // Hook to handle list loading
+@@ -147,6 +148,7 @@
+      * Scroll event handler that manages scroll position, velocity, and RTL support
+      */
+     const onScrollHandler = useCallback((event) => {
++        nativeScrollEventRef.current = event.nativeEvent;
+         var _a, _b, _c;
+         if (recyclerViewManager.ignoreScrollEvents) {
+             return;
+diff --git a/node_modules/@shopify/flash-list/dist/recyclerview/hooks/useRecyclerViewController.d.ts b/node_modules/@shopify/flash-list/dist/recyclerview/hooks/useRecyclerViewController.d.ts
+--- a/node_modules/@shopify/flash-list/dist/recyclerview/hooks/useRecyclerViewController.d.ts
++++ b/node_modules/@shopify/flash-list/dist/recyclerview/hooks/useRecyclerViewController.d.ts
+@@ -1,4 +1,5 @@
+ import { RefObject } from "react";
++import { NativeScrollEvent } from "react-native";
+ import { FlashListRef } from "../../FlashListRef";
+ import { CompatScroller } from "../components/CompatScroller";
+ import { RecyclerViewManager } from "../RecyclerViewManager";
+@@ -19,7 +20,7 @@
+  * @param scrollAnchorRef - Reference to the scroll anchor component
+  * @param props - The RecyclerViewProps containing configuration
+  */
+-export declare function useRecyclerViewController<T>(recyclerViewManager: RecyclerViewManager<T>, ref: React.Ref<FlashListRef<T>>, scrollViewRef: RefObject<CompatScroller>, scrollAnchorRef: React.RefObject<ScrollAnchorRef>): {
++export declare function useRecyclerViewController<T>(recyclerViewManager: RecyclerViewManager<T>, ref: React.Ref<FlashListRef<T>>, scrollViewRef: RefObject<CompatScroller>, scrollAnchorRef: React.RefObject<ScrollAnchorRef>, nativeScrollEventRef?: RefObject<NativeScrollEvent | undefined>): {
+     applyOffsetCorrection: () => void;
+     computeFirstVisibleIndexForOffsetCorrection: () => void;
+     applyInitialScrollIndex: () => void;

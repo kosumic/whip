@@ -141,6 +141,21 @@ test('retries a failed repository metadata request without refreshing the active
   expect(native.githubPage).toHaveBeenCalledTimes(pageCalls);
 });
 
+test('shows the SSH code and retries both failed queries without replacing the connection', async () => {
+  const message = 'githubPage [CHANNEL_UNAVAILABLE]: server refused session channel';
+  native.githubRepositoryDetails.mockRejectedValueOnce(new Error(message));
+  native.githubPage.mockRejectedValueOnce(new Error(message));
+  await act(async () => { await queryClient.resetQueries(); });
+  expect(renderer.root.findAllByType(Text).some(text => text.props.children === message)).toBe(true);
+  expect(native.githubRepositoryDetails).toHaveBeenCalledTimes(2);
+  expect(native.githubPage).toHaveBeenCalledTimes(2);
+  await press('github.retry');
+  expect(native.githubRepositoryDetails).toHaveBeenCalledTimes(3);
+  expect(native.githubPage).toHaveBeenCalledTimes(3);
+  expect(button(issue.title)).toBeDefined();
+  expect(button('github.retry')).toBeUndefined();
+});
+
 test('uses an opaque full-screen modal even when app glass is enabled', () => {
   const modal = renderer.root.findByType(Modal);
   expect(modal.props.transparent).toBe(false);

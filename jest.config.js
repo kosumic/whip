@@ -21,7 +21,7 @@ module.exports = {
   // Match the innermost node_modules to transform nested ES modules while
   // leaving jsdom's CommonJS internals untouched.
   transformIgnorePatterns: [
-    'node_modules/(?!((jest-)?react-native|react-native-css-interop|react-native-keyboard-controller|nativewind|@react-native(-community)?|@rn-primitives/(portal|slot)|expo/virtual|@exodus/bytes|parse5|entities|@asamuzakjp|@csstools)/)(?!.*node_modules/)',
+    'node_modules/(?!((jest-)?react-native|react-native-css-interop|react-native-keyboard-controller|nativewind|@react-native(-community)?|@rn-primitives/(portal|slot)|@shopify/flash-list|expo/virtual|@exodus/bytes|parse5|entities|@asamuzakjp|@csstools)/)(?!.*node_modules/)',
   ],
   testPathIgnorePatterns: [
     ...workerProjects.testIgnorePatterns,
