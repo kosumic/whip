@@ -1,4 +1,5 @@
 import { ChatSearchBar } from './ChatSearchBar';
+import { FLOATING_WARNING_BANNER_HEIGHT, FloatingWarningBanner, FloatingWarningOffsetContext } from './FloatingWarningBanner';
 import { GitHubMark } from './GitHubMark';
 import { EMPTY_TERMINAL_SEARCH } from '../lib/terminalSearch';
 import {
@@ -357,27 +358,16 @@ function TerminalLatencyWarning({
   const value = latencyMs ?? 0;
 
   return (
-    <View
-      accessibilityLabel={t('terminal.highLatencyA11y', { value })}
-      accessibilityLiveRegion="polite"
-      accessibilityRole="alert"
-      accessible
-      importantForAccessibility="yes"
-      pointerEvents="none"
-      className="absolute inset-x-0 z-20 h-9 flex-row items-center gap-2 border-b border-terminal-warning/60 bg-terminal-panel/95 px-3"
-      style={{ top }}
+    <FloatingWarningBanner
+      top={top}
+      message={t('terminal.highLatency')}
+      announcement={t('terminal.highLatencyA11y', { value })}
+      icon={<TriangleAlert color={colors.warning} size={15} strokeWidth={2.25} />}
     >
-      <TriangleAlert color={colors.warning} size={15} strokeWidth={2.25} />
-      <Text
-        numberOfLines={1}
-        className="flex-1 text-[11px] font-semibold text-terminal-warning"
-      >
-        {t('terminal.highLatency')}
-      </Text>
       <Text className="font-mono text-[11px] font-semibold text-terminal-warning">
         {value} ms
       </Text>
-    </View>
+    </FloatingWarningBanner>
   );
 }
 
@@ -689,6 +679,10 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       sessionChromeVisible,
       terminalBottomInset: viewportLayout.overlayInsets.bottom,
     });
+    const latencyWarningVisible = Boolean(
+      session && status === 'connected'
+      && shouldDisplayLatencyWarning(latencyWarningActive, latencyMs) && !searchOpen,
+    );
     const viewportOverlay = renderViewportOverlay?.(
       viewportOverlayInsets,
       viewportLatestButtonBottom,
@@ -2087,9 +2081,11 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 className="absolute inset-0 z-20"
                 style={{ opacity: chatViewEnabled ? 1 : 0 }}
               >
-                <ChatComposerSelection.Provider value={addChatSelectionToComposer}>
-                  {viewportOverlay}
-                </ChatComposerSelection.Provider>
+                <FloatingWarningOffsetContext.Provider value={latencyWarningVisible ? FLOATING_WARNING_BANNER_HEIGHT : 0}>
+                  <ChatComposerSelection.Provider value={addChatSelectionToComposer}>
+                    {viewportOverlay}
+                  </ChatComposerSelection.Provider>
+                </FloatingWarningOffsetContext.Provider>
               </View>
             </>
           )}
@@ -2097,12 +2093,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         <TerminalLatencyWarning
           latencyMs={latencyMs}
           top={0}
-          visible={Boolean(
-            session &&
-              status === 'connected' &&
-              shouldDisplayLatencyWarning(latencyWarningActive, latencyMs) &&
-              !searchOpen,
-          )}
+          visible={latencyWarningVisible}
         />
         {session && status !== 'connected' && (
           <View

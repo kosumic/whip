@@ -34,6 +34,7 @@ import type { ChatViewportState } from '../src/lib/chatViewportState';
 import type { ChatSearchResults } from 'react-native-whip-ssh/src/chatSearch';
 import { CHAT_SEARCH_DELAY_MS } from '../src/hooks/useChatSearch';
 import { SCROLL_IDLE_MS } from '../src/hooks/useScrollActivity';
+import { FLOATING_WARNING_BANNER_HEIGHT } from '../src/components/FloatingWarningBanner';
 
 const mockSearch = jest.fn<ChatSearchResults, [string]>();
 const mockSearchNavigate = jest.fn<ChatSearchResults, [boolean]>();
@@ -530,6 +531,96 @@ describe('AgentChatView viewport insets', () => {
     expect(latestButton.props.size).toBe('icon');
     expect(latestButton.findAll(node => String(node.type) === 'ArrowDown')).toHaveLength(1);
     expect(latestButton.findAll(node => String(node.type) === 'Text')).toHaveLength(0);
+  });
+});
+
+describe('AgentChatView floating transcript notice', () => {
+  let renderer: ReactTestRenderer;
+  let boundaries: ReactTestRenderer;
+  const turn = { ...SHELL_TURN, status: 'idle' as const };
+  const state = chatState([turn]);
+  const view = (chat: AgentChatState, active = true) => (
+    <AgentChatView {...chatView(chat, active).props} agentStatus="idle" contentInsets={{ ...CONTENT_INSETS, top: 24 }} />
+  );
+  const notices = () => renderer.root.findAll(node => String(node.type) === 'View' && node.props.testID === 'chat-transcript-notice');
+  const boundaryContent = () => (
+    <Fragment>{flatList(renderer).props.ListHeaderComponent}{flatList(renderer).props.ListFooterComponent}</Fragment>
+  );
+
+  afterEach(() => {
+    act(() => { renderer?.unmount(); boundaries?.unmount(); });
+  });
+
+  test('retry, loading and recovery leave list spacing and reading position unchanged', () => {
+    const scrollToEnd = jest.fn();
+    const scrollToOffset = jest.fn();
+    act(() => {
+      renderer = create(view(state), { createNodeMock: element => element.type === 'FlashList'
+        ? { scrollToEnd, scrollToOffset, getAbsoluteLastScrollOffset: () => 600 } : null });
+    });
+    act(() => {
+      chatViewport(renderer).props.onLayout({ nativeEvent: { layout: { height: 400 } } });
+      flatList(renderer).props.onContentSizeChange(0, 1000);
+      flatList(renderer).props.onScroll(scrollEvent(600, 1000));
+      flatList(renderer).props.onViewableItemsChanged({ viewableItems: [{ item: finalBlock(renderer, turn), isViewable: true }] });
+      flatList(renderer).props.onLoad();
+      boundaries = create(boundaryContent());
+    });
+    const spacing = boundaries.toJSON();
+    const rows = flatList(renderer).props.data;
+    scrollToEnd.mockClear(); scrollToOffset.mockClear();
+
+    const changes: Pick<AgentChatState, 'status' | 'error'>[] = [
+      { status: 'stale', error: 'Rebinding remote transcript' },
+      { status: 'stale', error: 'Codex transcript discovery failed: Failed to open channel (ConnectFailed)' },
+      { status: 'loading' },
+      { status: 'error', error: 'Transcript read failed' },
+      { status: 'stale' },
+      { status: 'live' },
+    ];
+    for (const change of changes) {
+      act(() => { renderer.update(view({ ...state, ...change })); boundaries.update(boundaryContent()); });
+      expect(boundaries.toJSON()).toEqual(spacing);
+      expect(flatList(renderer).props.data).toEqual(rows);
+      expect(flatList(renderer).props.scrollIndicatorInsets).toEqual({ ...CONTENT_INSETS, top: 24 });
+      if (change.status === 'live') {
+        expect(notices()).toHaveLength(0);
+      } else {
+        const notice = notices()[0];
+        expect(notice.props.style).toMatchObject({ position: 'absolute', top: 24, height: FLOATING_WARNING_BANNER_HEIGHT });
+        expect(notice.props.pointerEvents).toBe('none');
+        expect(notice.props.accessibilityRole).toBe('alert');
+        if (change.error) expect(notice.props.accessibilityLabel).toBe(change.error);
+        for (let parent = notice.parent; parent; parent = parent.parent) expect(parent).not.toBe(flatList(renderer));
+      }
+    }
+    expect(scrollToEnd).not.toHaveBeenCalled();
+    expect(scrollToOffset).not.toHaveBeenCalled();
+  });
+
+  test('native row errors stay visible and inactive chats do not announce notices', () => {
+    const error = 'Could not load transcript rows';
+    jest.mocked(useNativeChatRows).mockImplementation((...args) => {
+      const store = mockChatRows(...args);
+      store.error = error;
+      return store;
+    });
+    act(() => { renderer = create(view(state)); });
+    expect(notices()[0].props.accessibilityLabel).toBe(error);
+    act(() => { renderer.update(view(state, false)); });
+    expect(notices()).toHaveLength(0);
+  });
+
+  test('the notice stays below the search field and its expanded results', () => {
+    act(() => { renderer = create(<AgentChatView {...view({ ...state, status: 'stale' }).props} searchOpen />); });
+    const searchBar = () => renderer.root.findByType(ChatSearchBar);
+    const expectBelowSearch = () => {
+      const searchBounds: { top: number; height: number } = searchBar().find(node => typeof node.props.style?.height === 'number').props.style;
+      expect(notices()[0].props.style.top).toBeGreaterThanOrEqual(searchBounds.top + searchBounds.height);
+    };
+    expectBelowSearch();
+    act(() => { searchBar().props.search.setQuery('transcript'); });
+    expectBelowSearch();
   });
 });
 
@@ -1252,6 +1343,22 @@ describe('AgentChatView pinned context', () => {
     });
     expect(pinnedPrompts()).toHaveLength(0);
     expect(scrollToEnd).not.toHaveBeenCalled();
+  });
+
+  test('the floating retry notice leaves room for the pinned prompt without changing list spacing', () => {
+    scrollTo(180);
+    const headerHeight = flatList(renderer).props.ListHeaderComponent.props.height;
+    const label = pinnedPrompts()[0].props.accessibilityLabel;
+    for (const error of ['Rebinding remote transcript', 'Failed to open the remote transcript channel']) {
+      act(() => { renderer.update(view({ state: { ...chatState([turn]), status: 'stale', error } })); });
+      const notice = renderer.root.find(node => String(node.type) === 'View' && node.props.testID === 'chat-transcript-notice');
+      const bounds: { top: number; height: number } = notice.props.style;
+      expect(bounds.top + bounds.height).toBeLessThanOrEqual(pinnedPrompts()[0].props.style.top);
+      expect(pinnedPrompts()[0].props.accessibilityLabel).toBe(label);
+      expect(flatList(renderer).props.ListHeaderComponent.props.height).toBe(headerHeight);
+    }
+    expect(scrollToEnd).not.toHaveBeenCalled();
+    expect(scrollToOffset).not.toHaveBeenCalled();
   });
 
   test('supports image-only prompts, bounds pasted previews, and yields while searching', () => {
