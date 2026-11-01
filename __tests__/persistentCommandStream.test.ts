@@ -819,6 +819,7 @@ test('a recreated HerdrClient adopts a live native runtime without reconnecting 
   const { getHostRuntime } = require('react-native-whip-ssh');
   const runtime = {
     herdrEnabled: true,
+    herdrBackend: 'legacy',
     tailcatEnabled: false,
     matchesSshConfig: jest.fn(() => true),
     runtimeIncarnation: 7,
