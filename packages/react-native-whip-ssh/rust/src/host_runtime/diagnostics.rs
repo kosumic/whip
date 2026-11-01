@@ -89,7 +89,7 @@ pub unsafe extern "C" fn whip_set_runtime_diagnostic_path(path: *const std::ffi:
 }
 
 /// Lifecycle diagnostics remain available when no React event sink is attached.
-pub(super) fn log_lifecycle(message: std::fmt::Arguments<'_>) {
+pub(crate) fn log_lifecycle(message: std::fmt::Arguments<'_>) {
     let message = message.to_string();
     if let Some(log) = DIAGNOSTIC_LOG.get()
         && let Some(log) = log.lock().as_ref()

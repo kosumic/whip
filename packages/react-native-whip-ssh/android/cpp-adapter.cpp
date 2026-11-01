@@ -61,6 +61,7 @@ Java_com_whipssh_SpeechPolicy_cancelRequest(JNIEnv *env, jclass, jint kind, jstr
 }
 
 extern "C" void whip_set_background_monitoring_active(bool active);
+extern "C" void whip_tailcat_network_changed();
 extern "C" void whip_detach_runtime_ui();
 extern "C" void whip_set_runtime_diagnostic_path(const char *path);
 extern "C" void whip_set_reverse_control_recovery_directory(const char *path);
@@ -111,6 +112,11 @@ Java_com_whipssh_WhipSshModule_nativeDetachUi(JNIEnv *, jobject) {
 extern "C" JNIEXPORT void JNICALL
 Java_com_whipssh_HostRuntimeMonitoring_setBackgroundActive(JNIEnv *, jclass, jboolean active) {
     whip_set_background_monitoring_active(active == JNI_TRUE);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_whipssh_TailcatNetworkMonitoring_networkChanged(JNIEnv *, jclass) {
+    whip_tailcat_network_changed();
 }
 
 // Automated testing checks Java_com_whipssh_WhipSshModule and whipssh

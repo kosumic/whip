@@ -8,7 +8,7 @@ mod agents;
 mod chat_identity;
 mod connection;
 pub use connection::herdr_protocol_label;
-mod diagnostics;
+pub(crate) mod diagnostics;
 mod directory_cache;
 
 pub(crate) fn record_transcript_cache_failure(message: &str) {

@@ -68,6 +68,8 @@ pub(super) type Stream = whip_tailcat::Stream;
 // Sharing avoids duplicate DERP registrations for one saved host identity.
 static CLIENTS: OnceLock<whip_tailcat::ClientCache> = OnceLock::new();
 
+mod network;
+
 pub(super) async fn connect(address: &str, port: u16, private_key: &str) -> io::Result<Stream> {
     connect_with_options(
         address,

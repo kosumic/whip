@@ -2,11 +2,32 @@
 #import "WhipSsh.h"
 #import <React/RCTInvalidating.h>
 #import "WhipTerminalWebViewBridge.h"
+#import <Network/Network.h>
+#import <UIKit/UIKit.h>
 
 extern "C" void whip_detach_runtime_ui();
 extern "C" void whip_set_reverse_control_recovery_directory(const char *path);
 extern "C" void whip_set_conversation_directories(const char *directory, const char *legacy_directory);
 extern "C" void whip_set_app_data_directory(const char *directory);
+extern "C" void whip_tailcat_network_changed();
+
+static void startTailcatNetworkMonitoring() {
+    // Process lifetime matches the Rust registry, including React reloads.
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        static nw_path_monitor_t monitor = nw_path_monitor_create();
+        nw_path_monitor_set_update_handler(monitor, ^(nw_path_t path) {
+            whip_tailcat_network_changed();
+        });
+        nw_path_monitor_set_queue(monitor, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0));
+        nw_path_monitor_start(monitor);
+        [[NSNotificationCenter defaultCenter]
+            addObserverForName:UIApplicationWillEnterForegroundNotification
+            object:nil queue:nil usingBlock:^(NSNotification *notification) {
+                whip_tailcat_network_changed();
+            }];
+    });
+}
 
 static void configureRecoveryDirectory() {
     NSURL *support = [[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory
@@ -51,6 +72,7 @@ namespace uniffi_generated {
         auto& tm = static_cast<NativeWhipSshSpecJSI&>(turboModule);
         auto jsInvoker = tm.callInvoker;
         configureRecoveryDirectory();
+        startTailcatNetworkMonitoring();
         WhipInstallTerminalWebViewBridge();
         uint8_t result = whipssh::installRustCrate(rt, jsInvoker);
         return facebook::jsi::Value(rt, result);

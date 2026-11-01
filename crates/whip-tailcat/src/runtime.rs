@@ -69,6 +69,8 @@ pub struct RuntimeStatus {
     pub public_key: [u8; 32],
     pub derp_region_id: i64,
     pub active_tcp_connections: usize,
+    /// Successful UDP refreshes; SSH/TCP state is retained across each rebind.
+    pub network_rebinds: u64,
     pub peers: Vec<PeerStatus>,
 }
 
@@ -143,6 +145,7 @@ struct PendingPing {
 }
 
 struct Actor {
+    network_rebinds: u64,
     key: PrivateKey,
     local: Ipv6Addr,
     region: Region,
@@ -196,6 +199,7 @@ impl Runtime {
         let cancel = CancellationToken::new();
         let (done, stopped) = tokio::sync::watch::channel(false);
         let mut actor = Actor {
+            network_rebinds: 0,
             key,
             local,
             region,
@@ -394,6 +398,7 @@ impl Actor {
                             peer.candidates.clear();
                         }
                         self.relay.reconnect();
+                        self.network_rebinds = self.network_rebinds.saturating_add(1);
                         self.last_advertise = Instant::now() - Duration::from_secs(60);
                         let _ = result.send(Ok(()));
                     }
@@ -425,6 +430,7 @@ impl Actor {
             .collect::<Vec<_>>();
         peers.sort_by_key(|peer| peer.public_key);
         RuntimeStatus {
+            network_rebinds: self.network_rebinds,
             address: self.local,
             public_key: self.key.public(),
             derp_region_id: self.region.region_id,
