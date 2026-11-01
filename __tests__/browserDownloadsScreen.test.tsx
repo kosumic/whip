@@ -1,6 +1,7 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { BrowserDownloadsScreen } from '../src/browser/BrowserDownloadsScreen';
 import { browserDownloads } from '../src/browser/downloads';
+import type { BrowserSavedDownload } from '../src/browser/library';
 import {
   cancelSavedBrowserDownload,
   openSavedBrowserDownload,
@@ -40,7 +41,7 @@ jest.mock('../src/browser/native', () => ({
   cancelSavedBrowserDownload: jest.fn(),
   openSavedBrowserDownload: jest.fn(async () => undefined),
 }));
-let mockEntries = [
+let mockEntries: BrowserSavedDownload[] = [
   {
     id: 'active',
     name: 'archive.zip',
@@ -117,6 +118,28 @@ test('unknown content length shows downloaded bytes without a false percentage',
       view.root.findByProps({ accessibilityRole: 'progressbar' }).props
         .accessibilityValue,
     ).toEqual({ text: 'Downloading · 512 B' });
+  } finally {
+    mockEntries = previous;
+    await act(async () => view.unmount());
+  }
+});
+
+test('explains storage failures and the available-storage download policy', async () => {
+  const previous = mockEntries;
+  const message = 'Not enough storage. Free up space and download again.';
+  mockEntries = [{ ...previous[0], state: 'failed', error: message }];
+  let view!: ReactTestRenderer;
+  try {
+    await act(async () => {
+      view = create(<BrowserDownloadsScreen visible onClose={jest.fn()} />);
+    });
+    const text = view.root
+      .findAll(node => typeof node.props.children === 'string')
+      .map(node => node.props.children);
+    expect(text).toContain(message);
+    expect(text).toContain(
+      'Saved on this device · Limited by available storage',
+    );
   } finally {
     mockEntries = previous;
     await act(async () => view.unmount());

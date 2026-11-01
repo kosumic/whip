@@ -14,6 +14,8 @@ pub struct BrowserSavedDownload {
     pub mime_type: String,
     pub state: String,
     pub created_at: u64,
+    #[serde(default)]
+    pub error: Option<String>,
 }
 impl BrowserSavedDownload {
     fn valid(&self) -> bool {
@@ -32,6 +34,10 @@ impl BrowserSavedDownload {
             && !matches!(self.name.as_str(), "." | "..")
             && self.mime_type.len() <= 256
             && self.total_bytes >= -1
+            && self
+                .error
+                .as_ref()
+                .is_none_or(|error| error.len() <= 512 && !error.chars().any(char::is_control))
             && matches!(
                 self.state.as_str(),
                 "downloading" | "complete" | "failed" | "cancelled" | "interrupted"
@@ -226,8 +232,25 @@ mod tests {
         assert_eq!(restored.downloads()[0].state, "complete");
         assert_eq!(restored.downloads()[1].state, "interrupted");
         assert_eq!(restored.downloads()[0].bytes, 12);
+        assert!(restored.downloads()[0].error.is_none());
         restored.remove_download(first.into());
         assert_eq!(restored.downloads()[0].id, second);
+    }
+    #[test]
+    fn download_errors_survive_restart_and_reject_invalid_messages() {
+        let library = BrowserLibrary::new(String::new());
+        let id = "12345678-1234-1234-1234-123456789012";
+        let mut entry: serde_json::Value = serde_json::from_str(&download(id, "failed")).unwrap();
+        let message = "Not enough storage. Free up space and download again.";
+        entry["error"] = message.into();
+        library.record_download(entry.to_string());
+        let restored = BrowserLibrary::new(library.snapshot());
+        assert_eq!(restored.downloads()[0].error.as_deref(), Some(message));
+        for invalid in ["x".repeat(513), "bad\nmessage".into()] {
+            entry["error"] = invalid.into();
+            library.record_download(entry.to_string());
+            assert_eq!(library.downloads()[0].error.as_deref(), Some(message));
+        }
     }
     #[test]
     fn download_metadata_cannot_select_arbitrary_paths() {

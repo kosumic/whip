@@ -3,6 +3,7 @@
 #import <Security/Security.h>
 #import <UserNotifications/UserNotifications.h>
 #import <objc/runtime.h>
+#import <errno.h>
 
 static const CGFloat WhipBrowserScreenshotLimit = 1024;
 static const CGFloat WhipBrowserJPEGQuality = 0.75;
@@ -12,6 +13,10 @@ static NSString *const WhipBrowserScreenshot = @"BROWSER_SCREENSHOT";
 static NSString *const WhipBrowserInvalidURL = @"BROWSER_URL";
 static NSString *const WhipBrowserDownloadError = @"DOWNLOAD_FAILED";
 static const int64_t WhipBrowserMaxDownloadBytes = 64 * 1024 * 1024;
+static const int64_t WhipBrowserDownloadStorageReserve = 64 * 1024 * 1024;
+static NSString *const WhipDownloadLowStorage = @"Not enough storage. Free up space and download again.";
+static NSString *const WhipDownloadStorageUnavailable = @"Could not check available storage. Try downloading again.";
+static NSString *const WhipDownloadFailure = @"Download failed. Check your connection and try again from the page.";
 static NSString *const WhipDownloadActive = @"downloading";
 static NSString *const WhipDownloadComplete = @"complete";
 static NSString *const WhipDownloadFailed = @"failed";
@@ -49,20 +54,45 @@ static NSURL *WhipDownloadManifest(NSString *identifier) {
 @property(nonatomic) int64_t createdAt;
 @property(nonatomic) int64_t bytes;
 @property(nonatomic) int64_t totalBytes;
+@property(nonatomic, copy) NSString *error;
 - (void)cancel;
 - (NSDictionary *)status;
 @end
 
 @implementation WhipBrowserDownload
 - (NSDictionary *)status {
-  return @{@"id": self.identifier, @"name": self.name, @"bytes": @(self.bytes),
+  NSMutableDictionary *status = [@{@"id": self.identifier, @"name": self.name, @"bytes": @(self.bytes),
     @"total_bytes": @(self.totalBytes), @"mime_type": self.mimeType,
-    @"state": self.state, @"created_at": @(self.createdAt)};
+    @"state": self.state, @"created_at": @(self.createdAt)} mutableCopy];
+  if (self.error) status[@"error"] = self.error;
+  return status;
+}
+- (NSNumber *)availableBytesAtURL:(NSURL *)directory {
+  // Use a fresh URL so repeated checks do not reuse cached resource values.
+  NSURL *volume = [NSURL fileURLWithPath:directory.path];
+  return [volume resourceValuesForKeys:@[NSURLVolumeAvailableCapacityKey] error:nil][NSURLVolumeAvailableCapacityKey];
+}
+- (BOOL)checkStorageAtURL:(NSURL *)directory required:(int64_t)required {
+  if (!self.identifier) return YES; // Agent requests keep their independent byte bound.
+  NSNumber *available = [self availableBytesAtURL:directory];
+  if (!available || available.longLongValue < 0) {
+    self.error = WhipDownloadStorageUnavailable;
+    return NO;
+  }
+  if (available.longLongValue <= WhipBrowserDownloadStorageReserve ||
+      required > available.longLongValue - WhipBrowserDownloadStorageReserve) {
+    self.error = WhipDownloadLowStorage;
+    return NO;
+  }
+  return YES;
 }
 - (void)cancel
 {
   if (self.identifier && [self.state isEqual:WhipDownloadComplete]) return;
-  if (self.identifier && [self.state isEqual:WhipDownloadActive]) self.state = WhipDownloadFailed;
+  if (self.identifier && [self.state isEqual:WhipDownloadActive]) {
+    self.state = WhipDownloadFailed;
+    if (!self.error) self.error = WhipDownloadFailure;
+  }
   self.cancelled = YES;
   [self.timer invalidate];
   self.timer = nil;
@@ -95,6 +125,12 @@ static NSURL *WhipDownloadManifest(NSString *identifier) {
   if (self.identifier) directory = WhipDownloadDirectory(self.identifier);
   NSError *error = nil;
   if (![[NSFileManager defaultManager] createDirectoryAtURL:directory withIntermediateDirectories:YES attributes:nil error:&error]) {
+    if ([error.domain isEqual:NSCocoaErrorDomain] && error.code == NSFileWriteOutOfSpaceError) self.error = WhipDownloadLowStorage;
+    completionHandler(nil);
+    [self cancel];
+    return;
+  }
+  if (![self checkStorageAtURL:directory required:MAX(0, response.expectedContentLength)]) {
     completionHandler(nil);
     [self cancel];
     return;
@@ -116,7 +152,8 @@ static NSURL *WhipDownloadManifest(NSString *identifier) {
     if (!job) { [timer invalidate]; return; }
     NSNumber *size = [[NSFileManager defaultManager] attributesOfItemAtPath:job.file.path error:nil][NSFileSize];
     job.bytes = MAX(size.longLongValue, job.download.progress.completedUnitCount);
-    if (job.download.progress.completedUnitCount > job.maxBytes || size.longLongValue > job.maxBytes) [job cancel];
+    if (job.download.progress.completedUnitCount > job.maxBytes || size.longLongValue > job.maxBytes ||
+        ![job checkStorageAtURL:job.file.URLByDeletingLastPathComponent required:MAX(0, job.totalBytes - size.longLongValue)]) [job cancel];
   }];
   completionHandler(self.file);
 }
@@ -138,6 +175,7 @@ static NSURL *WhipDownloadManifest(NSString *identifier) {
   self.timer = nil;
   NSNumber *size = [[NSFileManager defaultManager] attributesOfItemAtPath:self.file.path error:nil][NSFileSize];
   if (self.cancelled || !size || size.longLongValue > self.maxBytes) { [self cancel]; return; }
+  if (![self checkStorageAtURL:self.file.URLByDeletingLastPathComponent required:0]) { [self cancel]; return; }
   if (self.identifier) {
     NSURL *destination = [WhipDownloadDirectory(self.identifier) URLByAppendingPathComponent:self.name];
     if (![[NSFileManager defaultManager] moveItemAtURL:self.file toURL:destination error:nil]) { [self cancel]; return; }
@@ -148,6 +186,7 @@ static NSURL *WhipDownloadManifest(NSString *identifier) {
     NSData *manifest = [NSJSONSerialization dataWithJSONObject:self.status options:0 error:nil];
     if (![manifest writeToURL:WhipDownloadManifest(self.identifier) options:NSDataWritingAtomic error:nil]) {
       self.state = WhipDownloadFailed;
+      self.error = @"Could not save the download. Free up space and try again.";
       [[NSFileManager defaultManager] removeItemAtURL:self.file error:nil];
       return;
     }
@@ -171,6 +210,13 @@ static NSURL *WhipDownloadManifest(NSString *identifier) {
 }
 - (void)download:(WKDownload *)download didFailWithError:(NSError *)error resumeData:(NSData *)resumeData
 {
+  for (NSError *cause = error; cause; cause = cause.userInfo[NSUnderlyingErrorKey]) {
+    if (([cause.domain isEqual:NSCocoaErrorDomain] && cause.code == NSFileWriteOutOfSpaceError) ||
+        ([cause.domain isEqual:NSPOSIXErrorDomain] && cause.code == ENOSPC)) {
+      self.error = WhipDownloadLowStorage;
+      break;
+    }
+  }
   [self cancel];
 }
 @end
@@ -218,7 +264,7 @@ RCT_EXPORT_MODULE(WhipBrowser)
   job.createdAt = (int64_t)(NSDate.date.timeIntervalSince1970 * 1000);
   job.totalBytes = -1;
   job.mimeType = @"application/octet-stream";
-  job.maxBytes = WhipBrowserMaxDownloadBytes;
+  job.maxBytes = INT64_MAX; // Personal downloads are bounded by available storage.
   job.download = download;
   self.savedDownloads[job.identifier] = job;
   download.delegate = job;

@@ -36,10 +36,12 @@ internal class BrowserDownloads(private val context: Context) {
     var totalBytes = -1L
     var mimeType = "application/octet-stream"
     var state = "downloading"
+    var error: String? = null
     var lastProgress = 0L
     @Synchronized fun json() = JSONObject().apply {
       put("id", id); put("name", name); put("bytes", bytes); put("total_bytes", totalBytes)
       put("mime_type", mimeType); put("state", state); put("created_at", createdAt)
+      error?.let { put("error", it) }
     }
   }
   private val entries = ConcurrentHashMap<String, Entry>()
@@ -72,7 +74,7 @@ internal class BrowserDownloads(private val context: Context) {
     entries[id] = entry
     executor.execute {
       try {
-        entry.request.fetch(directory(id), url, BrowserDownloadRequest.MAX_BYTES, cookies, userAgent, proxy,
+        entry.request.fetchUser(directory(id), url, cookies, userAgent, proxy,
           progress = { bytes, total ->
             synchronized(entry) {
               entry.bytes = bytes
@@ -98,9 +100,19 @@ internal class BrowserDownloads(private val context: Context) {
           check(staging.renameTo(manifest))
           notify(entry, true)
         }
-      } catch (_: Exception) {
+      } catch (error: Exception) {
         synchronized(entry) {
-          if (entry.state != "cancelled") entry.state = "failed"
+          if (entry.state != "cancelled") {
+            entry.state = "failed"
+            entry.error = when {
+              error.message == BrowserDownloadStorage.LOW_STORAGE -> BrowserDownloadStorage.LOW_STORAGE
+              error.message == BrowserDownloadStorage.UNAVAILABLE -> BrowserDownloadStorage.UNAVAILABLE
+              generateSequence<Throwable>(error) { it.cause }.any {
+                it is android.system.ErrnoException && it.errno == android.system.OsConstants.ENOSPC
+              } -> BrowserDownloadStorage.LOW_STORAGE
+              else -> "Download failed. Check your connection and try again from the page."
+            }
+          }
           entry.request.cancel()
           directory(id).deleteRecursively()
           notifications.cancel(id, 0)
