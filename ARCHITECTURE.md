@@ -90,6 +90,29 @@ Herdr protocol code asks a stable `HerdrConnection` for control, event, agent-vi
 
 Runtime failures cross UniFFI as tagged errors. SSH failures retain a stable `SshErrorCode` plus their diagnostic message, and protocol mismatches retain their expected and received versions. The native TypeScript adapter maps those fields mechanically to presentation codes; React Native does not classify native exception text or extract structured fields with regular expressions.
 
+GitHub viewer reads run the host's `gh` CLI on auxiliary SSH exec channels. Rust
+retries only channel-unavailable and transport-timeout failures while the original
+SSH session remains alive: at most three attempts, with 150/300 ms backoff and a
+30-second total deadline per command. A read retains its initial generation across
+retries and optional metadata lookups; replacement invalidates successes and errors.
+This recovery does not reconnect or reset a working terminal. GitHub mutations and
+asset preparation never enter the read retry path. The TypeScript bridge preserves
+the native code/message, operation, runtime ID and initial generation, and includes
+the code in the displayed error. Runtime logs record failed read attempts, operation,
+generation, transport liveness and retry disposition without command bodies.
+
+The real loopback SSH regression tests in
+[`host_runtime/github/tests.rs`](packages/react-native-whip-ssh/rust/src/host_runtime/github/tests.rs)
+inject server channel refusals alongside concurrent reads, SFTP and a live terminal,
+and cover persistent refusal, reconnect fencing and single-attempt writes. This
+reproduces the failure mode in [#279](https://github.com/kosumic/whip/issues/279);
+the original device failure's cause remains unconfirmed. On a device, repeatedly
+refresh/reopen Commits while using terminal, Git and SFTP, then repeat during a
+reconnect. `WhipHostRuntime` / `whip-runtime.log` entries distinguish
+`ChannelUnavailable` with `transport_alive=true` from `SessionClosed`,
+`ConnectionTimeout` and a changed generation. A persistent failure should show the
+SSH code/message, and Retry should recover both failed metadata and list requests.
+
 Transport/runtime timings are measured beside the Rust operations they describe and cross the native boundary as typed, coarse diagnostics. Connect/reconnect, terminal attach/recovery, and event-stream recovery produce one completion diagnostic; latency probes and ordinary Herdr requests produce diagnostics only when slow or failed. Successful latency calls still return a typed Rust-measured RTT/total/overhead record for live UI state. React Native owns bounded diagnostic history, thresholds, persistence, and display. It does not infer transport duration by timing an FFI promise.
 
 One Rust `HostRuntime` owns each connected host's stable

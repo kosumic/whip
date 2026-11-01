@@ -1395,6 +1395,9 @@ const SSH_ERROR_CODES: Readonly<Partial<Record<number, string>>> = {
 class HostRuntimeBridgeError extends Error {
   nativeTag?: string;
   code?: string;
+  operation?: string;
+  runtimeId?: string;
+  generation?: bigint;
   details?: unknown;
   expected?: string;
   received?: number;
@@ -3719,43 +3722,57 @@ export class NativeHostRuntime {
   }
 
   async discoverGithubRepository(path: string): Promise<RuntimeGithubRepository | null> {
-    return (await this.runtime.discoverGithubRepository(path)) ?? null;
+    return (await this.githubOperation('discoverGithubRepository', () => this.runtime.discoverGithubRepository(path))) ?? null;
   }
 
   githubRepositoryDetails(repository: RuntimeGithubRepository): Promise<RuntimeGithubRepositoryDetails> {
-    return this.runtime.githubRepositoryDetails(repository);
+    return this.githubOperation('githubRepositoryDetails', () => this.runtime.githubRepositoryDetails(repository));
   }
 
   githubPage(repository: RuntimeGithubRepository, section: RuntimeGithubSection, page: number, state: RuntimeGithubListState = 'open', query = ''): Promise<RuntimeGithubPage> {
-    return this.runtime.githubPage(repository, githubSections[section], page, githubListStates[state], query);
+    return this.githubOperation('githubPage', () => this.runtime.githubPage(repository, githubSections[section], page, githubListStates[state], query));
   }
 
   githubEntry(repository: RuntimeGithubRepository, section: RuntimeGithubSection, id: string): Promise<RuntimeGithubEntry> {
-    return this.runtime.githubEntry(repository, githubSections[section], id);
+    return this.githubOperation('githubEntry', () => this.runtime.githubEntry(repository, githubSections[section], id));
   }
 
   githubFiles(repository: RuntimeGithubRepository, id: string, pull: boolean, page: number): Promise<RuntimeGithubFilesPage> {
-    return this.runtime.githubFiles(repository, id, pull, page);
+    return this.githubOperation('githubFiles', () => this.runtime.githubFiles(repository, id, pull, page));
   }
 
   githubResource(repository: RuntimeGithubRepository, resource: RuntimeGithubResource, id: string, page: number): Promise<RuntimeGithubPage> {
-    return this.runtime.githubResource(repository, githubResources[resource], id, page);
+    return this.githubOperation('githubResource', () => this.runtime.githubResource(repository, githubResources[resource], id, page));
   }
 
   githubMutate(repository: RuntimeGithubRepository, action: RuntimeGithubMutation, id: string, title = '', body = '', expectedHead = ''): Promise<RuntimeGithubEntry | undefined> {
-    return this.runtime.githubMutate(repository, githubMutations[action], id, title, body, expectedHead);
+    return this.githubOperation('githubMutate', () => this.runtime.githubMutate(repository, githubMutations[action], id, title, body, expectedHead));
   }
 
   githubPrepareAsset(repository: RuntimeGithubRepository, id: string, name: string): Promise<string> {
-    return this.runtime.githubPrepareAsset(repository, id, name);
+    return this.githubOperation('githubPrepareAsset', () => this.runtime.githubPrepareAsset(repository, id, name));
   }
 
   githubComments(repository: RuntimeGithubRepository, number: number, page: number): Promise<RuntimeGithubPage> {
-    return this.runtime.githubComments(repository, number, page);
+    return this.githubOperation('githubComments', () => this.runtime.githubComments(repository, number, page));
   }
 
   githubPostComment(repository: RuntimeGithubRepository, number: number, body: string): Promise<RuntimeGithubEntry> {
-    return this.runtime.githubPostComment(repository, number, body);
+    return this.githubOperation('githubPostComment', () => this.runtime.githubPostComment(repository, number, body));
+  }
+
+  private async githubOperation<T>(operation: string, call: () => Promise<T>): Promise<T> {
+    const generation = this.runtime.status().generation;
+    try {
+      return await call();
+    } catch (error) {
+      const normalized = hostRuntimeError(error);
+      normalized.operation = operation;
+      normalized.runtimeId = this.runtimeId;
+      normalized.generation = generation;
+      normalized.message = `${operation}${normalized.code ? ` [${normalized.code}]` : ''}: ${normalized.message}`;
+      throw normalized;
+    }
   }
 
   async gitStatus(root: string): Promise<RuntimeGitStatusEntry[]> {

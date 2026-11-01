@@ -291,6 +291,44 @@ const mockAgentEventSink =
   mockGenerated.setAgentTranscriptEventSink.mock.calls[0][0];
 
 describe('native HostRuntime adapter', () => {
+  it.each([
+    ['discoverGithubRepository', ['/repo']],
+    ['githubRepositoryDetails', [{}]],
+    ['githubPage', [{}, 'commits', 1]],
+    ['githubEntry', [{}, 'commits', 'abc']],
+    ['githubFiles', [{}, 'abc', false, 1]],
+    ['githubResource', [{}, 'commitChecks', 'abc', 1]],
+    ['githubComments', [{}, 7, 1]],
+    ['githubPrepareAsset', [{}, '1', 'app.apk']],
+    ['githubPostComment', [{}, 7, 'reply']],
+    ['githubMutate', [{}, 'createIssue', '', 'title', 'body']],
+  ] as const)('preserves SSH diagnostics for %s without replaying the call', async (operation, args) => {
+    const call = jest.fn().mockRejectedValue({
+      tag: 'SshConnectionFailure',
+      inner: { code: mockGenerated.SshErrorCode.ChannelUnavailable, message: 'server refused session channel' },
+    });
+    const native = {
+      runtimeId: () => 'github-errors',
+      status: () => ({ generation: 4n }),
+      [operation]: call,
+    };
+    mockGenerated.createHostRuntime.mockReturnValueOnce(native);
+    const runtime = createHostRuntime({
+      runtimeId: 'github-errors',
+      ssh: { host: 'host.test', port: 22, username: 'me', authMode: 'password', secret: 'secret' },
+      jumpHosts: [], sessionName: 'main', herdrCommand: 'herdr',
+    });
+    const invoke = runtime[operation] as (...values: readonly unknown[]) => Promise<unknown>;
+    await expect(invoke.apply(runtime, [...args])).rejects.toMatchObject({
+      name: 'HostRuntimeError',
+      nativeTag: 'SshConnectionFailure',
+      code: 'CHANNEL_UNAVAILABLE',
+      message: `${operation} [CHANNEL_UNAVAILABLE]: server refused session channel`,
+      operation, runtimeId: 'github-errors', generation: 4n,
+    });
+    expect(call).toHaveBeenCalledTimes(1);
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
   });

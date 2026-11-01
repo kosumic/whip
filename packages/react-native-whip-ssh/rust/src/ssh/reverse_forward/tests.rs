@@ -24,6 +24,9 @@ struct ServerState {
     fail_sftp: AtomicBool,
     command_env: Option<std::collections::BTreeMap<String, String>>,
     deny_streamlocal: AtomicBool,
+    reject_sessions: AtomicUsize,
+    session_attempts: AtomicUsize,
+    session_started: tokio::sync::Notify,
 }
 
 /// A real SSH server on loopback, with actual remote TCP listeners. Tests use
@@ -54,6 +57,20 @@ impl Drop for Fixture {
 }
 
 impl Fixture {
+    pub(crate) fn reject_session_channels(&self, count: usize) {
+        self.state.reject_sessions.store(count, Ordering::Relaxed);
+    }
+
+    pub(crate) fn session_attempts(&self) -> usize {
+        self.state.session_attempts.load(Ordering::Relaxed)
+    }
+
+    pub(crate) async fn wait_for_session_attempts(&self, count: usize) {
+        while self.session_attempts() < count {
+            self.state.session_started.notified().await;
+        }
+    }
+
     pub(crate) async fn new(allow: bool, delay: Duration) -> Result<Self, Box<dyn Error>> {
         Self::with_commands(allow, delay, None).await
     }
@@ -204,6 +221,21 @@ impl server::Handler for ForwardServer {
         reply: server::ChannelOpenHandle,
         _session: &mut server::Session,
     ) -> Result<(), Self::Error> {
+        self.state.session_attempts.fetch_add(1, Ordering::Relaxed);
+        self.state.session_started.notify_one();
+        if self
+            .state
+            .reject_sessions
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |count| {
+                count.checked_sub(1)
+            })
+            .is_ok()
+        {
+            reply
+                .reject(russh::ChannelOpenFailure::ResourceShortage)
+                .await;
+            return Ok(());
+        }
         self.channels.insert(channel.id(), channel);
         reply.accept().await;
         Ok(())
