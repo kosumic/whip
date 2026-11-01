@@ -85,7 +85,8 @@ jobs:
         id: registry
         run: |
           version="$(cargo metadata --locked --format-version 1 --no-deps | jq -r '.packages[0].version')"
-          status="$(curl --silent --show-error --output "$RUNNER_TEMP/whipair-protocol-version.json" \
+          status="$(curl --silent --show-error --user-agent 'whip-release/0.1 (+https://github.com/kosumic/whip)' \
+            --output "$RUNNER_TEMP/whipair-protocol-version.json" \
             --write-out '%{http_code}' "https://crates.io/api/v1/crates/whipair-protocol/$version")"
           case "$status" in
             200) echo 'published=true' >> "$GITHUB_OUTPUT" ;;
