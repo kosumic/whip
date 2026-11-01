@@ -18,6 +18,10 @@ RCT_EXPORT_MODULE(HerdrBackground)
   return self;
 }
 - (void)chatStopped:(NSNotification *)notification { [self sendEventWithName:WhipChatSpeechStopped body:notification.userInfo]; }
+RCT_EXPORT_METHOD(speechBackendCommand:(NSString *)action resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  [WhipSpeechPlayback.shared backendCommand:action resolve:resolve reject:reject];
+}
 RCT_EXPORT_METHOD(startChatSpeech:(NSString *)token label:(NSString *)label resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 {
   [WhipSpeechPlayback.shared startChat:token label:label resolve:resolve reject:reject];
@@ -34,6 +38,10 @@ RCT_EXPORT_METHOD(stopChatSpeech:(NSString *)token resolve:(RCTPromiseResolveBlo
 RCT_EXPORT_METHOD(speakAnnouncement:(NSString *)token text:(NSString *)text language:(NSString *)language resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 {
   [WhipSpeechPlayback.shared announce:token text:text language:language resolve:resolve reject:reject];
+}
+RCT_EXPORT_METHOD(speakPreview:(NSString *)token text:(NSString *)text language:(NSString *)language resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  [WhipSpeechPlayback.shared preview:token text:text language:language resolve:resolve reject:reject];
 }
 RCT_EXPORT_METHOD(stopAnnouncement:(NSString *)token resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 {

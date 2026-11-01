@@ -8,6 +8,7 @@ export function useSectionExpansion(
   section:
     | 'usage'
     | 'notifications'
+    | 'voice'
     | 'security'
     | 'appearance'
     | 'herd'

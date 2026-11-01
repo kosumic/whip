@@ -135,6 +135,10 @@ impl SpeechPlayback {
 
 static PLAYBACK: LazyLock<Mutex<SpeechPlayback>> = LazyLock::new(Mutex::default);
 
+pub(crate) fn is_current(lease: u64) -> bool {
+    PLAYBACK.lock().is_current(lease)
+}
+
 /// # Safety
 /// `owner` and `request` must point to NUL-terminated UTF-8 strings for the call.
 #[unsafe(no_mangle)]

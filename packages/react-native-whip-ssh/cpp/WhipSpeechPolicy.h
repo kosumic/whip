@@ -20,6 +20,14 @@ bool whip_speech_stop(uint64_t lease);
 uint64_t whip_speech_timeout_ms(uint8_t kind, uint64_t text_units);
 uint64_t whip_speech_stop_owner(uint8_t kind, const char *owner);
 uint64_t whip_speech_cancel_request(uint8_t kind, const char *request);
+char *whip_phonon_command(const char *root, const char *action);
+void whip_phonon_free(char *value);
+bool whip_phonon_enabled(const char *language);
+void whip_phonon_set_supported(bool supported);
+void whip_phonon_playback_failed(void);
+// Synchronous worker call. PCM is borrowed only for the callback; false cancels.
+typedef bool (*WhipPcmCallback)(void *context, const float *samples, uintptr_t count);
+int32_t whip_phonon_speak(uint64_t lease, const char *text, WhipPcmCallback callback, void *context);
 #ifdef __cplusplus
 }
 #endif

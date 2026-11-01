@@ -62,6 +62,7 @@ import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { GlassButton, GlassIconBadge } from './GlassControls';
 import { CollapsibleSectionCard } from './CollapsibleSectionCard';
 import { SettingsChoiceRow } from './SettingsChoiceRow';
+import { SpeechBackendSetting } from './SpeechBackendSetting';
 import { DetailsTitle, SettingsDetailsProvider } from './SettingsDetails';
 import { ShizukuSection } from './ShizukuSection';
 import { Button } from './ui/button';
@@ -176,6 +177,7 @@ function useBackgroundImageActions({
 
 export function SettingsSection(props: SettingsSectionProps) {
   const { expanded: notificationsExpanded, toggleExpanded: toggleNotifications } = useSectionExpansion('notifications', true);
+  const { expanded: voiceExpanded, toggleExpanded: toggleVoice } = useSectionExpansion('voice', true);
   const { expanded: securityExpanded, toggleExpanded: toggleSecurity } = useSectionExpansion('security', true);
   const { expanded: appearanceExpanded, toggleExpanded: toggleAppearance } = useSectionExpansion('appearance', true);
   const { expanded: herdExpanded, toggleExpanded: toggleHerd } = useSectionExpansion('herd', true);
@@ -255,7 +257,6 @@ export function SettingsSection(props: SettingsSectionProps) {
           onPress={props.onTestAgentNotification}
           divided
         /> : null}
-        <SettingRow title={t('settings.speakChanges')} copy={t('settings.speakChangesCopy')} value={props.ttsEnabled} onChange={props.onTtsChange} divided />
         <ActionRow
           title={t('settings.changeNotificationSettings')}
           copy={t('settings.changeNotificationSettingsCopy')}
@@ -263,6 +264,15 @@ export function SettingsSection(props: SettingsSectionProps) {
           onPress={changeNotificationSettings}
           divided
         />
+      </CollapsibleSectionCard>
+
+      <CollapsibleSectionCard
+        title={t('settings.voice')}
+        icon={Volume2}
+        expanded={voiceExpanded}
+        onToggle={toggleVoice}>
+        <SpeechBackendSetting />
+        <SettingRow title={t('settings.speakChanges')} copy={t('settings.speakChangesCopy')} value={props.ttsEnabled} onChange={props.onTtsChange} divided />
       </CollapsibleSectionCard>
 
       <CollapsibleSectionCard
