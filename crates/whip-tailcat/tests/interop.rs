@@ -222,6 +222,38 @@ async fn registry_network_change_refreshes_only_live_shared_actors()
 
 #[tokio::test]
 #[ignore = "requires the separately built upstream Go fixture; run tests/interop.sh"]
+async fn fresh_actor_reconnects_with_saved_identity_while_old_tcp_is_unfinished()
+-> Result<(), Box<dyn std::error::Error>> {
+    let reference = Reference::start(false).await?;
+    for relay_only in [false, true] {
+        let identity = Identity::generate();
+        // Use the ordinary transport deadline: a lost first WireGuard exchange
+        // can require its five-second handshake retransmission timer.
+        let opts = options(relay_only);
+        let first = Client::connect(&reference.address, &identity, opts.clone()).await?;
+        let expected_public_key = first.status().await?.public_key;
+        let mut old = first.dial_tcp(23).await?;
+        old.write_all(b"old").await?;
+        let mut bytes = [0; 3];
+        timeout(Duration::from_secs(5), old.read_exact(&mut bytes)).await??;
+        assert_eq!(&bytes, b"old");
+        // Simulate process/transport loss without a TCP FIN exchange. The peer
+        // may still retain that flow when the saved identity connects again.
+        first.close().await;
+        drop(old);
+        let replacement = Client::connect(&reference.address, &identity, opts).await?;
+        assert_eq!(replacement.status().await?.public_key, expected_public_key);
+        let mut stream = replacement.dial_tcp(23).await?;
+        stream.write_all(b"new").await?;
+        timeout(Duration::from_secs(5), stream.read_exact(&mut bytes)).await??;
+        assert_eq!(&bytes, b"new");
+        replacement.close().await;
+    }
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires the separately built upstream Go fixture; run tests/interop.sh"]
 async fn bounded_streams_drop_cancellation_and_close_interrupt_idle_reads()
 -> Result<(), Box<dyn std::error::Error>> {
     let reference = Reference::start(false).await?;

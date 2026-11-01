@@ -78,6 +78,7 @@ nix develop -c cargo fmt --manifest-path crates/whip-tailcat/Cargo.toml --check
 nix develop -c cargo clippy --locked --manifest-path crates/whip-tailcat/Cargo.toml --all-targets -- -D warnings
 nix develop -c cargo test --locked --manifest-path crates/whip-tailcat/Cargo.toml
 nix develop .#tailcat-tests -c bash crates/whip-tailcat/tests/interop.sh
+nix develop .#tailcat-tests -c bash packages/react-native-whip-ssh/rust/tests/test-tailcat-proxyjump.sh
 nix develop -c cargo build --locked --release --manifest-path crates/whip-tailcat/Cargo.toml --target aarch64-linux-android --lib
 ```
 
@@ -87,6 +88,10 @@ server/DERP/STUN fixture in `tests/reference/`; it is never part of a library or
 mobile build. It tests direct UDP, forced DERP, binary transfers larger than the
 buffers, both half-close directions, shared identities, concurrent streams,
 stream limits, drop/close cancellation, network rebinding, and reconnecting.
+The separate Linux ProxyJump matrix covers real SSH chains through OpenSSH and the
+upstream built-in SSH gateway, private target routing, per-hop trust/authentication,
+streams, native network signaling, failure cleanup, and HostRuntime shell recovery.
+See the [SSH adapter validation notes](../../packages/react-native-whip-ssh/README.md).
 
 On macOS, run the native arm64 test inside an already booted iPhone simulator:
 

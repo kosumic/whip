@@ -161,7 +161,7 @@ independently of SSH `authorized_keys`; SSH authentication still applies.
 Copying the command does not change the running server.
 Whip supplies the saved private key on every connection;
 the CLI's `client-default` identity does not affect the embedded client.
-Concurrent SSH connections for one host share a Go client to avoid competing
+Concurrent SSH connections for one host share a Rust transport actor to avoid competing
 DERP registrations for the same identity.
 
 The **Use Tailcat's SSH server** toggle selects Tailcat's key-authenticated
@@ -205,6 +205,40 @@ Run `nix develop .#tailcat-tests -c bash packages/react-native-whip-ssh/rust/tes
 to verify a bulk transfer, TCP half-close, invalid addresses, and cancellation
 against an upstream Go server and DERP/STUN relay bound to loopback. It does
 not use public relays.
+
+On a Linux host, run the combined Tailcat-first-hop/ProxyJump matrix for issue #262 with:
+
+```sh
+nix develop .#tailcat-tests -c bash packages/react-native-whip-ssh/rust/tests/test-tailcat-proxyjump.sh
+```
+
+The named `tailcat_first_hop_proxyjump_end_to_end` Rust test runs four cases:
+OpenSSH and upstream Tailcat's built-in SSH gateway, each over direct UDP and
+forced DERP. All relays, STUN endpoints, SSH servers, and echo sockets are local.
+The development shell supplies Go, OpenSSH, and OpenBSD `nc`; no container,
+public relay, or root access is required. Temporary keys, isolated Tailcat SSH
+configuration, daemons, and session processes are owned by the fixture.
+The Linux requirement keeps upstream Tailcat's SSH keys in `XDG_CONFIG_HOME`;
+its macOS implementation would otherwise use the user's real configuration.
+
+Each chain has an additional authenticated SSH gateway whose fixed private
+route resolves `private-target.invalid` to a real target sshd. The Rust client
+cannot resolve or directly connect to that target name. The test verifies
+unknown/accepted/changed host keys and rejected authentication independently at
+all three hops; exec stdout/stderr/status; SFTP; interactive shell output;
+TCP half-close and Herdr-style Unix-socket requests/framed streams at both the
+first gateway and target; failure/cancellation cleanup; unsupported incoming
+SSH-to-Tailcat jumps; and automatic HostRuntime chain/shell restoration after
+first-hop transport loss. A burst of native network-change signals also checks
+one shared-actor rebind with the live shell and SSH generation retained.
+The fixture allowlists the saved node identity throughout reconnection, and
+relay cases explicitly disable direct paths in the Rust client.
+
+These deterministic tests do not emulate mobile radio handoffs or suspension.
+Android and iOS device validation should repeat Wi-Fi ↔ cellular transitions
+and foreground resumes, with a direct path and with UDP blocked to force DERP,
+checking terminal/Herdr restoration and native rebind/reconnect diagnostics.
+The Go fixture remains separate from production Android/iOS builds.
 
 For a live server running `tailcat serve 22`, the ignored
 `ssh::tailcat::tests::live_remote_ssh_over_tailcat` test exercises the production
