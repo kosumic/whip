@@ -68,6 +68,8 @@ impl HostActionCoordinator {
     }
 
     pub fn update_context(&self, context: HostActionContext) {
+        crate::ssh_workflows::set_ssh_workflow_locked(context.locked);
+        crate::ssh_workflows::set_biometric(context.biometric_for_keys);
         let revoked = {
             let mut state = self.state.lock();
             if state.closed {
