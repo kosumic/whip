@@ -1,10 +1,10 @@
 [package]
 name = "herdr-protocol"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.99"
 license = "MIT"
-description = "Versioned Herdr terminal wire codec, typed control API, and bounded event parsing"
+description = "Transport-neutral legacy Herdr and herdr-core framing, typed APIs, events, and desktop documents"
 repository = "https://github.com/kosumic/whip"
 documentation = "https://docs.rs/herdr-protocol"
 readme = "README.md"

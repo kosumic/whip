@@ -19,6 +19,13 @@ const SETUP_TIMEOUT: Duration = Duration::from_secs(15);
 static NEXT_INSTALLATION_ID: AtomicU64 = AtomicU64::new(1);
 // This exact script is returned to the confirmation UI before it can be run.
 const INSTALL_COMMAND: &str = "curl -fsSL https://herdr.dev/install.sh | sh";
+fn install_command(inner: &RuntimeInner) -> &'static str {
+    if inner.herdr.is_core() || inner.config.herdr_backend == crate::HostHerdrBackend::Auto {
+        herdr_protocol::hc::endpoint::INSTALL_COMMAND
+    } else {
+        INSTALL_COMMAND
+    }
+}
 // The probe prints this before it inspects anything, so a POSIX login shell always
 // echoes it. Its absence identifies a host whose shell cannot run the setup scripts
 // at all. Matching on the shell's own error text would not work, because that text
@@ -61,6 +68,7 @@ pub(super) struct Installation {
     pending: bool,
     tail: Vec<u8>,
     completion: watch::Sender<InstallationCompletion>,
+    install_command: String,
 }
 
 impl Installation {
@@ -72,6 +80,7 @@ impl Installation {
             pending: true,
             tail: Vec::new(),
             completion: watch::channel(InstallationCompletion::Running).0,
+            install_command: INSTALL_COMMAND.into(),
         }
     }
 
@@ -86,8 +95,9 @@ impl Installation {
 
     fn script(&self) -> String {
         format!(
-            "printf '%s\\n' {}\nwhip_status=0\ntrap 'whip_status=130' INT\n{INSTALL_COMMAND}\nwhip_result=$?\nif [ \"$whip_status\" -eq 0 ]; then whip_status=$whip_result; fi\nprintf '{}%s\\007' \"$whip_status\"\nexec \"${{SHELL:-/bin/sh}}\" -l",
-            shell_quote(&format!("$ {INSTALL_COMMAND}")),
+            "printf '%s\\n' {}\nwhip_status=0\ntrap 'whip_status=130' INT\n{}\nwhip_result=$?\nif [ \"$whip_status\" -eq 0 ]; then whip_status=$whip_result; fi\nprintf '{}%s\\007' \"$whip_status\"\nexec \"${{SHELL:-/bin/sh}}\" -l",
+            shell_quote(&format!("$ {}", self.install_command)),
+            self.install_command,
             self.marker.replace('\x1b', "\\033"),
         )
     }
@@ -325,6 +335,42 @@ async fn check_installation(
     generation: u64,
 ) -> Result<HerdrInstallationStatus, HostRuntimeError> {
     super::connection::require_herdr_enabled(inner)?;
+    let backend = inner
+        .herdr
+        .backend()
+        .await
+        .map_err(|e| HostRuntimeError::HerdrUnavailable(e.to_string()))?;
+    if backend == crate::HostHerdrBackend::Core {
+        let command = inner.herdr.core_command();
+        let script = herdr_protocol::hc::endpoint::discover_command(
+            &command,
+            &inner.config.session_name,
+            inner.config.socket_path.as_deref(),
+        )
+        .map_err(|e| HostRuntimeError::InvalidConfiguration(e.to_string()))?;
+        let output = execute_setup(inner, generation, &script, SETUP_TIMEOUT).await?;
+        let endpoint = herdr_protocol::hc::endpoint::parse_discovery(&output.stdout)
+            .map_err(|e| HostRuntimeError::HerdrUnavailable(e.to_string()))?;
+        return match endpoint {
+            Some(endpoint) if endpoint.installed => Ok(HerdrInstallationStatus::Installed),
+            Some(_) if command == "hc" => Ok(HerdrInstallationStatus::Missing),
+            Some(_) => Ok(HerdrInstallationStatus::CustomCommandMissing),
+            None => {
+                let command = herdr_protocol::hc::endpoint::version_command(&command, false)
+                    .map_err(|e| HostRuntimeError::InvalidConfiguration(e.to_string()))?;
+                let output = inner
+                    .herdr
+                    .execute(&command)
+                    .await
+                    .map_err(|e| HostRuntimeError::HerdrUnavailable(e.to_string()))?;
+                Ok(if output.exit_status == Some(0) {
+                    HerdrInstallationStatus::Installed
+                } else {
+                    HerdrInstallationStatus::HostShellUnsupported
+                })
+            }
+        };
+    }
     let output = execute_setup(
         inner,
         generation,
@@ -357,7 +403,9 @@ impl HostRuntime {
                 "Herdr installation is already in progress on this host".to_owned(),
             ));
         }
-        *installation = Some(Installation::new(terminal_id));
+        let mut prepared = Installation::new(terminal_id);
+        prepared.install_command = install_command(&self.inner).into();
+        *installation = Some(prepared);
         drop(installation);
         Ok(())
     }
@@ -382,7 +430,7 @@ impl HostRuntime {
                 let generation = current_generation(&inner)?;
                 Ok(HerdrSetup {
                     status: check_installation(&inner, generation).await?,
-                    install_command: INSTALL_COMMAND.to_owned(),
+                    install_command: install_command(&inner).to_owned(),
                 })
             })
             .await

@@ -1,4 +1,9 @@
 export const zhHant: Record<string, string> = {
+  "connection.herdrBackend": "後端",
+  "connection.herdrBackend.auto": "自動",
+  "connection.herdrBackend.core": "Herdr Core",
+  "connection.herdrBackend.legacy": "舊版 Herdr",
+  "connection.socketAuto": "自動偵測",
   'connection.tailcatSshServer': "使用 Tailcat 的 SSH 伺服器",
   'connection.tailcatSshServerCopy': "使用 Tailcat 內建的 SSH 服務並以 SSH 金鑰驗證。Shell 會以啟動 Tailcat 的使用者身分執行。",
   'connection.tailcatClientIdentity': "Tailcat 用戶端公鑰",

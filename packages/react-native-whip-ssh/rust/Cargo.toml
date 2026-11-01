@@ -9,7 +9,7 @@ description = "Private WP4 pairing transport for Whip"
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
-herdr-protocol = { version = "0.1.0", path = "../../../crates/herdr-protocol" }
+herdr-protocol = { version = "0.2.0", path = "../../../crates/herdr-protocol" }
 agent-transcript-core = { version = "0.1.0", path = "../../../crates/agent-transcript-core" }
 agent-browser-control = { version = "0.1.0", path = "../../../crates/agent-browser-control" }
 whipair-protocol = { version = "0.1.0", path = "../../../crates/whipair-protocol" }
@@ -44,7 +44,7 @@ url = "2"
 uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
-tokio = { version = "1", features = ["test-util"] }
+tokio = { version = "1", features = ["test-util", "process"] }
 tempfile = "3"
 
 [lints.clippy]

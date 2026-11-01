@@ -199,6 +199,10 @@ impl HostRuntime {
             .map_err(HerdrControlError::TransportDisconnected)?
             .spawn(async move {
                 let generation = selection_target(&inner, &terminal_id, &pane_id)?;
+                if inner.herdr.local_terminal_scrollback() {
+                    snapshot.range()?;
+                    return Ok(snapshot.text);
+                }
                 read_selection_using(&terminal_id, &pane_id, snapshot, |method, params| {
                     let inner = inner.clone();
                     let terminal_id = terminal_id.clone();

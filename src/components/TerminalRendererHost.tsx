@@ -167,6 +167,7 @@ interface WebViewHandle {
 }
 
 interface RendererEntry {
+  localScrollback?:boolean;
   identity: string;
   deliveryGeneration?: string;
   target: TerminalRenderTarget;
@@ -462,8 +463,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   }, [disposeEntry, preferences.xtermCacheCapacity]);
 
   const configureEntry = useCallback((entry: RendererEntry) => {
-    const scrollbackMode = terminalScrollbackMode(entry.target.session);
+    const scrollbackMode = terminalScrollbackMode(entry.target.session, entry.target.client.terminal.localScrollback);
     const currentVisualViewport = visualViewportRef.current;
+    entry.localScrollback=scrollbackMode.localScrollback;
     const visualScroll = entry.target.key === activeKey.current
       ? currentVisualViewport.scroll
       : entry.target.scroll;
@@ -1252,15 +1254,15 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     for (const [key, entry] of entries.current) {
       const target = valid.get(key);
       if (target) {
-        const previousScrollbackMode = terminalScrollbackMode(entry.target.session);
-        const nextScrollbackMode = terminalScrollbackMode(target.session);
+        const previousScrollbackMode = terminalScrollbackMode(entry.target.session, entry.target.client.terminal.localScrollback);
+        const nextScrollbackMode = terminalScrollbackMode(target.session, target.client.terminal.localScrollback);
         entry.target = target;
         if (target.session.status !== 'connected') {
           resumeScrolls.current.delete(key);
         }
         if (
           hostReady.current
-          && previousScrollbackMode.offlineScrollback !== nextScrollbackMode.offlineScrollback
+          && (previousScrollbackMode.offlineScrollback !== nextScrollbackMode.offlineScrollback || entry.localScrollback!==nextScrollbackMode.localScrollback)
         ) {
           configureEntry(entry);
         }
@@ -1278,6 +1280,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       ? activeKey.current
       : null;
     inject(`window.herdrActivate(${JSON.stringify(key)});`);
+    for (const [entryKey,entry] of entries.current) {
+      bestEffortCleanup(Promise.resolve().then(() => entry.target.client.terminal.focusTerminal(entry.target.session.terminalId,entryKey===key)), 'terminal-focus');
+    }
   }, [inject, renderingEnabled, visible]);
 
   const activeTargetKey = activeTarget?.key || '';
@@ -1841,7 +1846,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       ) return;
       if (
         entry.target.session.kind === 'ssh'
-        || !terminalScrollbackMode(entry.target.session).offlineScrollback
+        || !terminalScrollbackMode(entry.target.session, entry.target.client.terminal.localScrollback).offlineScrollback
       ) return;
       reportOfflineScroll(entry.target, {
         offset_from_bottom: message.offsetFromBottom,

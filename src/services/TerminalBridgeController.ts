@@ -69,11 +69,13 @@ const DEFAULT_TERMINAL_SIZE: RuntimeTerminalGeometry = {
 /** Owns the JavaScript attachment, tracing, and lifecycle state around native terminals. */
 export class TerminalBridgeController {
   private readonly attachments = new Map<string, TerminalAttachment>();
+  private readonly focusedTerminals = new Set<string>();
   private readonly applicationMouseCapture = new Map<string, boolean>();
   private readonly inputTraces = new Map<string, TerminalInputTrace[]>();
   private readonly pendingResizeTraces = new Map<string, TerminalResizeTrace>();
 
   constructor(private readonly currentRuntime: () => HostRuntimeConnection | null) {}
+  get localScrollback():boolean {return this.currentRuntime()?.localTerminalScrollback ?? false;}
 
   async openTerminal(
     terminalId: string,
@@ -124,6 +126,7 @@ export class TerminalBridgeController {
       : null;
     try {
       await this.attachTerminal(terminalId, coldAttach, initialGeometry);
+      this.requireRuntime().herdrBridgeFocus(terminalId,this.focusedTerminals.has(terminalId));
       this.attachments.get(terminalId)?.onControl?.({
         type: 'mouse-capture',
         enabled: this.applicationMouseCapture.get(terminalId) === true,
@@ -273,7 +276,14 @@ export class TerminalBridgeController {
     return '';
   }
 
+  focusTerminal(terminalId:string,focused:boolean):void {
+    const previous=this.focusedTerminals.has(terminalId);
+    if (focused) this.focusedTerminals.add(terminalId); else this.focusedTerminals.delete(terminalId);
+    if (previous!==focused) this.currentRuntime()?.herdrBridgeFocus(terminalId,focused);
+  }
+
   closeTerminal(terminalId: string): void {
+    this.focusedTerminals.delete(terminalId);
     this.attachments.get(terminalId)?.delivery?.detach();
     this.attachments.delete(terminalId);
     this.clearBridgeState(terminalId);

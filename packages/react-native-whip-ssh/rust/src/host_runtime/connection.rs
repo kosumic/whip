@@ -1078,7 +1078,9 @@ pub(super) async fn probe_herdr_readiness(
             ),
         ));
     };
-    validate_herdr_protocol(snapshot.protocol).map_err(HerdrReadinessProbeError::Permanent)?;
+    if !inner.herdr.is_core() {
+        validate_herdr_protocol(snapshot.protocol).map_err(HerdrReadinessProbeError::Permanent)?;
+    }
     Ok(ReadyHerdrSnapshot { snapshot })
 }
 
@@ -1205,6 +1207,12 @@ pub(super) async fn start_herdr_server_inner(
     }
 
     validate_generation(&inner, generation)?;
+    if inner.herdr.is_core() {
+        let error =
+            HostRuntimeError::HerdrUnavailable("herdr-core could not be reached or started".into());
+        fail_herdr_startup_sync(&inner, token, &error);
+        return Err(error);
+    }
     let command =
         start_herdr_server_command(&inner.config.herdr_command, &inner.config.session_name);
     let ssh = current_ssh(&inner)?;
@@ -1266,6 +1274,12 @@ pub(super) async fn start_herdr_server_inner(
 impl HostRuntime {
     pub fn herdr_enabled(&self) -> bool {
         self.inner.config.herdr_enabled
+    }
+    pub fn herdr_backend(&self) -> crate::HostHerdrBackend {
+        self.inner.config.herdr_backend
+    }
+    pub fn local_terminal_scrollback(&self) -> bool {
+        self.inner.herdr.local_terminal_scrollback()
     }
 
     pub fn tailcat_enabled(&self) -> bool {

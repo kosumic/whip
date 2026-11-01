@@ -324,6 +324,19 @@ pub(crate) fn event_subscription_closed(client_key: &str, reason: String) -> boo
     true
 }
 
+pub(crate) fn core_state_changed(client_key: &str, revision: u64) {
+    let runtime = runtimes().read().get(client_key).cloned();
+    let Some(runtime) = runtime else {
+        return;
+    };
+    if runtime.herdr.revision() != revision
+        || runtime.state.lock().connection != HostConnectionState::Connected
+    {
+        return;
+    }
+    schedule_state_resync(runtime, "core terminals or shared layout changed".into());
+}
+
 pub(crate) fn terminal_bridge_closed(
     client_key: &str,
     terminal_id: &str,

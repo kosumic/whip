@@ -129,6 +129,7 @@ export class HerdrClient {
     };
     let existingRuntime = retryRuntime ?? getHostRuntime(profile.id, handleEvent);
     if (existingRuntime && (existingRuntime.herdrEnabled !== herdrEnabled
+      || existingRuntime.herdrBackend !== (profile.herdrBackend ?? 'legacy')
       || !existingRuntime.matchesSshConfig(sshConfig(profile)))) {
       await existingRuntime.disconnect();
       if (attachmentEpoch !== this.attachmentEpoch || !isCurrent()) return;
@@ -139,6 +140,7 @@ export class HerdrClient {
       ssh: sshConfig(profile),
       jumpHosts: jumpProfiles.map(sshConfig),
       herdrEnabled,
+      herdrBackend:profile.herdrBackend,
       sessionName: profile.sessionName.trim(),
       herdrCommand: profile.herdrCommand.trim() || DEFAULT_HERDR_COMMAND,
       socketPath: herdrEnabled ? profile.herdrSocketPath?.trim() || undefined : undefined,

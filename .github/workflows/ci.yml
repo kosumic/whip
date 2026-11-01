@@ -58,7 +58,7 @@ jobs:
   rust:
     name: Whip Rust core checks
     if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 25
     permissions:
       checks: write
@@ -128,6 +128,7 @@ jobs:
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/packages/react-native-whip-ssh/rust/target
         run: |
+          node scripts/generate-hc.cjs --check
           cargo fmt --check
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked
@@ -146,6 +147,13 @@ jobs:
       - name: Test Whip Rust core
         # Host-runtime tests share process-wide event sinks.
         run: cargo test --locked -- --test-threads=1
+
+      - name: Test real Herdr Core over SSH
+        env:
+          CORE_TEST_DIRECTORY: ${{ runner.temp }}/herdr-core-0.1.16
+        run: |
+          export WHIP_HC_TEST_BINARY="$(bash ../../../scripts/fetch-herdr-core-test.sh "$CORE_TEST_DIRECTORY")"
+          cargo test --locked --lib hc_transport::tests::real_core_socket_multiplex_documents_reconnect_and_exec_fallback -- --ignored --test-threads=1
 
       - name: Test Tailcat against a local upstream relay and server
         run: bash tests/test-tailcat.sh

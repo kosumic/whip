@@ -215,6 +215,7 @@ impl Workflow {
             tailcat_ssh_server: false,
             auth_mode: crate::HostAuthMode::Password,
             herdr_enabled: true,
+            herdr_backend: crate::HostHerdrBackend::Legacy,
             herdr_command: DEFAULT_HERDR_COMMAND.into(),
             herdr_socket_path: String::new(),
             session_name: String::new(),
@@ -231,6 +232,7 @@ impl Workflow {
             username,
             auth_mode,
             herdr_command,
+            herdr_backend,
             herdr_socket_path,
             session_name,
             forward_agent

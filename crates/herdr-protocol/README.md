@@ -1,12 +1,13 @@
 # herdr-protocol
 
-MIT-licensed, transport-independent Herdr terminal protocols 17–22, typed control
-API requests/responses, shared domain validation, and bounded JSONL event parsing.
-No SSH, sockets, Tokio, UniFFI, mobile dependencies, callbacks, or global state.
+MIT-licensed, transport-independent legacy Herdr protocols 17–22 and herdr-core
+generation 1. Includes typed control APIs, framing, bounded routing and event
+reduction, shared desktop document edits, and backend-neutral projections.
+No SSH, sockets, Tokio runtime, UniFFI, mobile dependencies, or process/global state.
 
 ```toml
 [dependencies]
-herdr-protocol = "0.1.0"
+herdr-protocol = "0.2.0"
 ```
 
 ```rust
@@ -27,6 +28,36 @@ assert!(matches!(
 
 Run `cargo run --example messages` for terminal, control, and event examples
 without opening a connection.
+
+## Herdr Core
+
+`hc` is a separate protocol namespace. `legacy::{control,events,terminal}` names
+the older protocol; its original root exports remain compatible.
+
+- `hc::generated` contains all 32 methods from the pinned OpenRPC schema.
+  `node scripts/generate-hc.cjs --check` verifies the checked-in models.
+- `hc::session::Session` negotiates JSONL hello then nine-byte frames, correlates
+  concurrent RPCs, bounds channels and pre-reply output, and detaches cancelled
+  attachments. It emits bytes and actions for a caller-owned transport.
+- `take_channel` delivers bounded output; `consumed` grants credit only after the
+  consumer accepts those bytes. Each viewer needs an independent consumer.
+- `hc::events` reduces terminal events and missed-event snapshots. Reported OSC
+  status is authoritative; unreported terminals remain Unknown.
+- `hc::client::Client` implements shared control semantics over the injected
+  `Transport` trait. Raw input uses DATA on an attachment; `terminal.send` is a
+  submitted prompt. Ambiguous mutations are never automatically replayed.
+- `hc::documents` and `hc::edits` preserve unknown JSON and mod nodes, perform CAS
+  writes, and rebase only confirmed conflicts. `projection::View` holds private
+  client focus and zoom. Missing desktop documents produce terminal-only views.
+
+Use an SSH direct-streamlocal channel to the discovered core Unix socket where
+available. `hc connect` carries the same bytes over an SSH exec channel when
+direct socket forwarding is unavailable. Endpoint helpers honor session/socket
+overrides and the running core's lock file, without duplicating TOML parsing.
+
+The maintained upstream-client audit, exact source pins, wire exceptions and
+update procedure are in [UPSTREAM.md](UPSTREAM.md). Adapted Apache-2.0 portions
+retain [NOTICE](NOTICE) and [LICENSE-APACHE](LICENSE-APACHE); our additions use MIT.
 
 ## Wire compatibility
 

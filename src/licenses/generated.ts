@@ -718,7 +718,7 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     sourceUrl: "https://github.com/kosumic/whip",
     attribution: "Direct Rust dependency · version 0.1.0 · used by whip-ssh",
     licenseName: "MIT",
-    licenseAsset: require("../../assets/licenses/generated/39245945d4b3f9e1.txt"),
+    licenseAsset: require("../../assets/licenses/generated/6662b3bfb1c7feba.txt"),
   },
   {
     id: "cargo-agent-transcript-core-0-1-0",
@@ -775,13 +775,13 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/203736a37d023024.txt"),
   },
   {
-    id: "cargo-herdr-protocol-0-1-0",
+    id: "cargo-herdr-protocol-0-2-0",
     category: "cargo",
     projectName: "herdr-protocol",
     sourceUrl: "https://github.com/kosumic/whip",
-    attribution: "Direct Rust dependency · version 0.1.0 · used by whip-ssh",
+    attribution: "Direct Rust dependency · version 0.2.0 · used by whip-ssh",
     licenseName: "MIT",
-    licenseAsset: require("../../assets/licenses/generated/30b2447ba8d6f924.txt"),
+    licenseAsset: require("../../assets/licenses/generated/a8a8f3d137021a12.txt"),
   },
   {
     id: "cargo-hmac-0-12-1",
@@ -925,7 +925,7 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     sourceUrl: "https://github.com/kosumic/whip",
     attribution: "Direct Rust dependency · version 0.1.1 · used by whip-ssh",
     licenseName: "MIT",
-    licenseAsset: require("../../assets/licenses/generated/2cb268d98e816345.txt"),
+    licenseAsset: require("../../assets/licenses/generated/147936a5ca9ac729.txt"),
   },
   {
     id: "cargo-thiserror-2-0-21",
@@ -1006,6 +1006,6 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     sourceUrl: "https://github.com/kosumic/whip",
     attribution: "Direct Rust dependency · version 0.1.0 · used by whip-ssh",
     licenseName: "MIT",
-    licenseAsset: require("../../assets/licenses/generated/af7d909219942038.txt"),
+    licenseAsset: require("../../assets/licenses/generated/b7b2a6a39e2ff901.txt"),
   },
 ] as const;

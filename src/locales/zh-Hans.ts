@@ -1,4 +1,9 @@
 export const zhHans = {
+  "connection.herdrBackend": "后端",
+  "connection.herdrBackend.auto": "自动",
+  "connection.herdrBackend.core": "Herdr Core",
+  "connection.herdrBackend.legacy": "旧版 Herdr",
+  "connection.socketAuto": "自动发现",
   'connection.tailcatSshServer': "使用 Tailcat 的 SSH 服务器",
   'connection.tailcatSshServerCopy': "使用 Tailcat 内置的 SSH 服务并通过 SSH 密钥认证。Shell 将以启动 Tailcat 的用户身份运行。",
   'connection.tailcatClientIdentity': "Tailcat 客户端公钥",

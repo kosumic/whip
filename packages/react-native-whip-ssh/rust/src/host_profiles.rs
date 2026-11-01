@@ -20,6 +20,15 @@ pub enum HostAuthMode {
     Key,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "lowercase")]
+pub enum HostHerdrBackend {
+    Auto,
+    #[default]
+    Legacy,
+    Core,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct HostProfileRecord {
@@ -38,6 +47,8 @@ pub struct HostProfileRecord {
     pub auth_mode: HostAuthMode,
     #[serde(default = "default_herdr_enabled")]
     pub herdr_enabled: bool,
+    #[serde(default)]
+    pub herdr_backend: HostHerdrBackend,
     pub herdr_command: String,
     #[serde(default)]
     pub herdr_socket_path: String,
@@ -272,6 +283,7 @@ impl HostProfileStore {
                 tailcat_ssh_server: false,
                 auth_mode: legacy.auth_mode.unwrap_or(HostAuthMode::Password),
                 herdr_enabled: default_herdr_enabled(),
+                herdr_backend: crate::HostHerdrBackend::Legacy,
                 herdr_command: legacy
                     .herdr_command
                     .unwrap_or_else(|| DEFAULT_HERDR_COMMAND.to_owned()),
@@ -542,6 +554,7 @@ mod tests {
             tailcat_ssh_server: false,
             auth_mode: HostAuthMode::Key,
             herdr_enabled: default_herdr_enabled(),
+            herdr_backend: crate::HostHerdrBackend::Legacy,
             herdr_command: "herdr".to_owned(),
             herdr_socket_path: String::new(),
             session_name: String::new(),

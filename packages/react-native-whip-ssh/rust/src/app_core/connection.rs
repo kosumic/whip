@@ -54,6 +54,7 @@ fn same_target(a: &HostProfileRecord, b: &HostProfileRecord) -> bool {
         && a.tailcat_enabled == b.tailcat_enabled
         && a.tailcat_ssh_server == b.tailcat_ssh_server
         && a.herdr_enabled == b.herdr_enabled
+        && a.herdr_backend == b.herdr_backend
         && a.herdr_command == b.herdr_command
         && a.herdr_socket_path == b.herdr_socket_path
         && a.session_name == b.session_name
@@ -513,7 +514,9 @@ impl Workflow {
             .runtime
             .as_ref()
             .ok_or_else(|| platform_failure(SessionConnectionFailureKind::Platform))?;
-        if runtime.runtime_id() != host_id || runtime.herdr_enabled() != profile.host.herdr_enabled
+        if runtime.runtime_id() != host_id
+            || runtime.herdr_enabled() != profile.host.herdr_enabled
+            || runtime.herdr_backend() != profile.host.herdr_backend
         {
             return Err(platform_failure(SessionConnectionFailureKind::StaleProfile));
         }

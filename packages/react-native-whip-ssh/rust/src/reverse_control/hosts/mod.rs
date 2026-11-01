@@ -592,6 +592,7 @@ fn same_connection_profile(
         && a.tailcat_enabled == b.tailcat_enabled
         && a.tailcat_ssh_server == b.tailcat_ssh_server
         && a.herdr_enabled == b.herdr_enabled
+        && a.herdr_backend == b.herdr_backend
         && a.herdr_command == b.herdr_command
         && a.herdr_socket_path == b.herdr_socket_path
         && a.session_name == b.session_name

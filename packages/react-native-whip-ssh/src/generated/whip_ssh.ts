@@ -9964,6 +9964,45 @@ const FfiConverterTypeHostAuthMode = (() => {
   return new FFIConverter();
 })();
 
+export enum HostHerdrBackend {
+  Auto,
+  Legacy,
+  Core,
+}
+
+const FfiConverterTypeHostHerdrBackend = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = HostHerdrBackend;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return HostHerdrBackend.Auto;
+        case 2:
+          return HostHerdrBackend.Legacy;
+        case 3:
+          return HostHerdrBackend.Core;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case HostHerdrBackend.Auto:
+          return ordinalConverter.write(1, into);
+        case HostHerdrBackend.Legacy:
+          return ordinalConverter.write(2, into);
+        case HostHerdrBackend.Core:
+          return ordinalConverter.write(3, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type HostProfileRecord = {
   id: string;
   name: string;
@@ -9976,6 +10015,7 @@ export type HostProfileRecord = {
   tailcatSshServer: boolean;
   authMode: HostAuthMode;
   herdrEnabled: boolean;
+  herdrBackend: HostHerdrBackend;
   herdrCommand: string;
   herdrSocketPath: string;
   sessionName: string;
@@ -10018,6 +10058,7 @@ const FfiConverterTypeHostProfileRecord = (() => {
         tailcatSshServer: FfiConverterBool.read(from),
         authMode: FfiConverterTypeHostAuthMode.read(from),
         herdrEnabled: FfiConverterBool.read(from),
+        herdrBackend: FfiConverterTypeHostHerdrBackend.read(from),
         herdrCommand: FfiConverterString.read(from),
         herdrSocketPath: FfiConverterString.read(from),
         sessionName: FfiConverterString.read(from),
@@ -10039,6 +10080,7 @@ const FfiConverterTypeHostProfileRecord = (() => {
       FfiConverterBool.write(value.tailcatSshServer, into);
       FfiConverterTypeHostAuthMode.write(value.authMode, into);
       FfiConverterBool.write(value.herdrEnabled, into);
+      FfiConverterTypeHostHerdrBackend.write(value.herdrBackend, into);
       FfiConverterString.write(value.herdrCommand, into);
       FfiConverterString.write(value.herdrSocketPath, into);
       FfiConverterString.write(value.sessionName, into);
@@ -10060,6 +10102,7 @@ const FfiConverterTypeHostProfileRecord = (() => {
         FfiConverterBool.allocationSize(value.tailcatSshServer) +
         FfiConverterTypeHostAuthMode.allocationSize(value.authMode) +
         FfiConverterBool.allocationSize(value.herdrEnabled) +
+        FfiConverterTypeHostHerdrBackend.allocationSize(value.herdrBackend) +
         FfiConverterString.allocationSize(value.herdrCommand) +
         FfiConverterString.allocationSize(value.herdrSocketPath) +
         FfiConverterString.allocationSize(value.sessionName) +
@@ -12806,6 +12849,7 @@ export type HostActionProfilePatch = {
   username?: string;
   authMode?: HostAuthMode;
   herdrCommand?: string;
+  herdrBackend?: HostHerdrBackend;
   herdrSocketPath?: string;
   sessionName?: string;
   forwardAgent?: boolean;
@@ -12843,6 +12887,7 @@ const FfiConverterTypeHostActionProfilePatch = (() => {
         username: FfiConverterOptionalString.read(from),
         authMode: FfiConverterOptionalTypeHostAuthMode.read(from),
         herdrCommand: FfiConverterOptionalString.read(from),
+        herdrBackend: FfiConverterOptionalTypeHostHerdrBackend.read(from),
         herdrSocketPath: FfiConverterOptionalString.read(from),
         sessionName: FfiConverterOptionalString.read(from),
         forwardAgent: FfiConverterOptionalBoolean.read(from),
@@ -12857,6 +12902,7 @@ const FfiConverterTypeHostActionProfilePatch = (() => {
       FfiConverterOptionalString.write(value.username, into);
       FfiConverterOptionalTypeHostAuthMode.write(value.authMode, into);
       FfiConverterOptionalString.write(value.herdrCommand, into);
+      FfiConverterOptionalTypeHostHerdrBackend.write(value.herdrBackend, into);
       FfiConverterOptionalString.write(value.herdrSocketPath, into);
       FfiConverterOptionalString.write(value.sessionName, into);
       FfiConverterOptionalBoolean.write(value.forwardAgent, into);
@@ -12871,6 +12917,9 @@ const FfiConverterTypeHostActionProfilePatch = (() => {
         FfiConverterOptionalString.allocationSize(value.username) +
         FfiConverterOptionalTypeHostAuthMode.allocationSize(value.authMode) +
         FfiConverterOptionalString.allocationSize(value.herdrCommand) +
+        FfiConverterOptionalTypeHostHerdrBackend.allocationSize(
+          value.herdrBackend,
+        ) +
         FfiConverterOptionalString.allocationSize(value.herdrSocketPath) +
         FfiConverterOptionalString.allocationSize(value.sessionName) +
         FfiConverterOptionalBoolean.allocationSize(value.forwardAgent) +
@@ -13294,6 +13343,7 @@ export type HostRuntimeConfig = {
   ssh: HostSshConfig;
   jumpHosts: Array<HostSshConfig>;
   herdrEnabled: boolean;
+  herdrBackend: HostHerdrBackend;
   sessionName: string;
   herdrCommand: string;
   socketPath?: string;
@@ -13326,6 +13376,7 @@ const FfiConverterTypeHostRuntimeConfig = (() => {
         ssh: FfiConverterTypeHostSshConfig.read(from),
         jumpHosts: FfiConverterSequenceTypeHostSshConfig.read(from),
         herdrEnabled: FfiConverterBool.read(from),
+        herdrBackend: FfiConverterTypeHostHerdrBackend.read(from),
         sessionName: FfiConverterString.read(from),
         herdrCommand: FfiConverterString.read(from),
         socketPath: FfiConverterOptionalString.read(from),
@@ -13337,6 +13388,7 @@ const FfiConverterTypeHostRuntimeConfig = (() => {
       FfiConverterTypeHostSshConfig.write(value.ssh, into);
       FfiConverterSequenceTypeHostSshConfig.write(value.jumpHosts, into);
       FfiConverterBool.write(value.herdrEnabled, into);
+      FfiConverterTypeHostHerdrBackend.write(value.herdrBackend, into);
       FfiConverterString.write(value.sessionName, into);
       FfiConverterString.write(value.herdrCommand, into);
       FfiConverterOptionalString.write(value.socketPath, into);
@@ -13348,6 +13400,7 @@ const FfiConverterTypeHostRuntimeConfig = (() => {
         FfiConverterTypeHostSshConfig.allocationSize(value.ssh) +
         FfiConverterSequenceTypeHostSshConfig.allocationSize(value.jumpHosts) +
         FfiConverterBool.allocationSize(value.herdrEnabled) +
+        FfiConverterTypeHostHerdrBackend.allocationSize(value.herdrBackend) +
         FfiConverterString.allocationSize(value.sessionName) +
         FfiConverterString.allocationSize(value.herdrCommand) +
         FfiConverterOptionalString.allocationSize(value.socketPath) +
@@ -29411,8 +29464,7 @@ const FfiConverterTypeHerdrTabLaunchResult = (() => {
 })();
 
 /**
- * The terminal-attach variant moved from bincode discriminant 1 to 2 when
- * protocol 20 inserted `AppDirectGraphics` into Herdr's `ClientLaunchMode`.
+ * Protocol 20 moved terminal attach from discriminant 1 to 2.
  */
 export enum HerdrTerminalAttachLaunchMode {
   LegacyTerminalAttach,
@@ -38750,6 +38802,7 @@ export interface HostRuntimeLike {
     command: string,
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<string>;
+  focusTerminal(terminalId: string, focused: boolean) /*throws*/ : void;
   gitDiff(
     repository: GitRepository,
     status: GitStatusEntry,
@@ -38828,6 +38881,7 @@ export interface HostRuntimeLike {
   ) /*throws*/ : Promise<GithubPage>;
   hasSshShell(terminalId: string): boolean;
   hasTerminal(terminalId: string): boolean;
+  herdrBackend(): HostHerdrBackend;
   herdrEnabled(): boolean;
   herdrSetup(asyncOpts_?: {
     signal: AbortSignal;
@@ -38846,6 +38900,7 @@ export interface HostRuntimeLike {
     path: string | undefined,
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<RemoteDirectoryListing>;
+  localTerminalScrollback(): boolean;
   matchesSshConfig(config: HostSshConfig): boolean;
   measureHostLatency(asyncOpts_?: {
     signal: AbortSignal;
@@ -40044,6 +40099,23 @@ export class HostRuntime
     }
   }
 
+  focusTerminal(terminalId: string, focused: boolean): void /*throws*/ {
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+        FfiConverterTypeHostRuntimeError,
+      ),
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_focus_terminal(
+          uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
+          FfiConverterBool.lower(focused, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
   async gitDiff(
     repository: GitRepository,
     status: GitStatusEntry,
@@ -40778,6 +40850,26 @@ export class HostRuntime
     );
   }
 
+  herdrBackend(): HostHerdrBackend {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeHostHerdrBackend.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_herdr_backend(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
   herdrEnabled(): boolean {
     return FfiConverterBool.lift(
       uniffiCaller.rustCall(
@@ -41027,6 +41119,20 @@ export class HostRuntime
       }
       throw __error;
     }
+  }
+
+  localTerminalScrollback(): boolean {
+    return FfiConverterBool.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_local_terminal_scrollback(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
   }
 
   matchesSshConfig(config: HostSshConfig): boolean {
@@ -56916,6 +57022,11 @@ const FfiConverterOptionalTypeHostAuthMode = new FfiConverterOptional(
   FfiConverterTypeHostAuthMode,
 );
 
+// FfiConverter for HostHerdrBackend | undefined
+const FfiConverterOptionalTypeHostHerdrBackend = new FfiConverterOptional(
+  FfiConverterTypeHostHerdrBackend,
+);
+
 // FfiConverter for Array<HostSshConfig>
 const FfiConverterSequenceTypeHostSshConfig = new FfiConverterArray(
   FfiConverterTypeHostSshConfig,
@@ -59417,6 +59528,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_focus_terminal() !==
+    23622
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_focus_terminal',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_diff() !==
     55745
   ) {
@@ -59529,6 +59648,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_herdr_backend() !==
+    55056
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_herdr_backend',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_herdr_enabled() !==
     28144
   ) {
@@ -59582,6 +59709,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_list_directory',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_local_terminal_scrollback() !==
+    28010
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_local_terminal_scrollback',
     );
   }
   if (
@@ -61054,6 +61189,7 @@ export default Object.freeze({
     FfiConverterTypeHostAuthMode,
     FfiConverterTypeHostConnectionState,
     FfiConverterTypeHostFreshness,
+    FfiConverterTypeHostHerdrBackend,
     FfiConverterTypeHostKeyChallenge,
     FfiConverterTypeHostLatencyMeasurement,
     FfiConverterTypeHostOfflineCache,

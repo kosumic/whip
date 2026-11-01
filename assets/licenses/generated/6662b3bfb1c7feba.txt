@@ -29,6 +29,7 @@ Apache License 2.0 (Apache-2.0)
 
 Used by:
 - displaydoc 0.2.7
+- errno 0.3.14
 - form_urlencoded 1.2.2
 - idna 1.1.0
 - idna_adapter 1.2.2

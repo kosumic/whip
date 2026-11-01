@@ -29,6 +29,7 @@ pub(crate) fn host(id: &str) -> HostProfileRecord {
         tailcat_enabled: false,
         tailcat_ssh_server: false,
         herdr_enabled: true,
+        herdr_backend: crate::HostHerdrBackend::Legacy,
         herdr_command: "herdr".to_owned(),
         herdr_socket_path: String::new(),
         session_name: String::new(),

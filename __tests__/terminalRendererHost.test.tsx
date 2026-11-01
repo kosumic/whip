@@ -201,6 +201,8 @@ describe('TerminalRendererHost lifecycle', () => {
     const scrollTerminal = jest.fn(async () => '');
     return {
       terminal: {
+        focusTerminal:jest.fn(),
+        localScrollback:false,
         closeTerminalBridge,
         detachTerminal,
         isTerminalBridgeRetained,
@@ -997,6 +999,8 @@ describe('TerminalRendererHost lifecycle', () => {
     const isTerminalBridgeRetained = jest.fn(() => false);
     const client = {
       terminal: {
+        focusTerminal:jest.fn(),
+        localScrollback:false,
         closeTerminalBridge,
         detachTerminal,
         isTerminalBridgeRetained,
@@ -1072,6 +1076,8 @@ describe('TerminalRendererHost lifecycle', () => {
     const isTerminalBridgeRetained = jest.fn(() => false);
     const client = {
       terminal: {
+        focusTerminal:jest.fn(),
+        localScrollback:false,
         closeTerminalBridge,
         detachTerminal,
         isTerminalBridgeRetained,

@@ -76,7 +76,7 @@ use events::{
     refresh_host_state_inner, schedule_event_retry, schedule_state_resync, start_desired_events,
 };
 pub(crate) use events::{
-    deliver_herdr_events, event_subscription_closed, terminal_bridge_closed,
+    core_state_changed, deliver_herdr_events, event_subscription_closed, terminal_bridge_closed,
     terminal_kitty_keyboard_report_all_changed,
 };
 use host_latency::{
@@ -151,6 +151,7 @@ pub struct HostRuntimeConfig {
     pub ssh: HostSshConfig,
     pub jump_hosts: Vec<HostSshConfig>,
     pub herdr_enabled: bool,
+    pub herdr_backend: crate::host_profiles::HostHerdrBackend,
     pub session_name: String,
     pub herdr_command: String,
     pub socket_path: Option<String>,
@@ -916,6 +917,7 @@ pub fn create_host_runtime(
         config.cached_socket_path.clone(),
         config.herdr_enabled,
     );
+    herdr.configure_backend(config.herdr_backend, config.herdr_command.clone());
     let inner = Arc::new(RuntimeInner {
         interaction_response: AsyncMutex::new(HashMap::new()),
         id: id.clone(),

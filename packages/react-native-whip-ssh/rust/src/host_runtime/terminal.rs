@@ -1436,6 +1436,14 @@ impl HostRuntime {
     pub fn close_terminal(&self, terminal_id: String) {
         close_terminal_intent(&self.inner, terminal_id);
     }
+    pub fn focus_terminal(
+        &self,
+        terminal_id: String,
+        focused: bool,
+    ) -> Result<(), HostRuntimeError> {
+        crate::herdr_terminal::focus_terminal(&self.inner.id, &terminal_id, focused)
+            .map_err(|e| HostRuntimeError::TerminalUnavailable(e.to_string()))
+    }
 
     pub fn close_all_terminals(&self) {
         let terminal_ids = {

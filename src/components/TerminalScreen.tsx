@@ -807,7 +807,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
 
       const direction = lineDifference > 0 ? 'up' : 'down';
       const lines = Math.abs(lineDifference);
-      if (active.session.status === 'connected') {
+      if (active.session.status === 'connected' && !active.client.terminal.localScrollback) {
         active.client.terminal
           .scrollTerminal(active.session.terminalId, direction, lines)
           .catch(reason => {
