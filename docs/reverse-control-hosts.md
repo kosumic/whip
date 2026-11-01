@@ -28,10 +28,12 @@ endpoint and adds it directly to model context, including when tools are deferre
 The hook runs on startup, resume and compaction, and passes the full bounded
 document without spilling it to a preview file. Only Whip's generated hook is
 trusted through invocation-scoped config; existing hook trust and instruction
-files are preserved. If fetching fails, the hook stops the turn before a model
-request so the user can restore the connection and retry. This requires a Codex
-version with inline lifecycle hooks enabled; other MCP clients receive the
-initialization and discovery guidance.
+files are preserved. The generated command avoids nested backslash escapes so
+Herdr's shell quoting also preserves the hook config and trust hash on fish hosts.
+If fetching fails, the hook stops the turn before a model request so the user can
+restore the connection and retry. This requires a Codex version with inline
+lifecycle hooks enabled; other MCP clients receive the initialization and
+discovery guidance.
 
 `hosts.list` includes each host's AGENTS.md directly in its `agentInstructions`
 field. Read the target host's guidance when choosing a host, before connecting
