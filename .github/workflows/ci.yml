@@ -23,6 +23,8 @@ on:
       - '!.github/workflows/publish-whipair-packages.yml'
       - '!.github/workflows/publish-tailcat-client.yml'
       - '!.github/workflows/publish-whipair-protocol.yml'
+      - '!.github/workflows/publish-agent-browser-control.yml'
+      - '!.github/workflows/ci-agent-browser-control.yml'
       - '!.github/workflows/release-whip-notify.yml'
       - '!scripts/prepare-notify-install-tag.sh'
       # The app imports this library and embeds its platform detection script.

@@ -280,41 +280,41 @@ impl Drop for EffectGuard {
     }
 }
 
-#[derive(Clone)]
-struct Fence {
-    tab: String,
-    generation: Option<u64>,
-    view_generation: u64,
-    driver_generation: Option<u64>,
-    interaction_generation: u64,
-    allow_closed: bool,
+// Keep native records/UniFFI in the app; the fence policy is shared Rust.
+use agent_browser_control::fence::{FenceError, TabFence as Fence, TabState};
+
+trait NativeFence {
+    fn check(&self, tab: &BrowserTabProjection) -> Result<(), BrowserOperationError>;
+    fn check_view(&self, tab: &BrowserTabProjection) -> Result<(), BrowserOperationError>;
 }
 
-impl Fence {
-    fn check(&self, tab: &BrowserTabProjection) -> Result<(), BrowserOperationError> {
-        self.check_view(tab)?;
-        if self
-            .generation
-            .is_some_and(|generation| generation != tab.generation)
-        {
-            return Err(BrowserOperationError::StalePage);
-        }
-        Ok(())
+fn tab_state(tab: &BrowserTabProjection) -> TabState<'_> {
+    TabState {
+        tab: &tab.id,
+        generation: tab.generation,
+        view_generation: tab.view_generation,
+        driver_generation: tab.driver_generation,
+        interaction_generation: tab.interaction_generation,
+        closed: tab.lifecycle == BrowserTabLifecycle::Closed,
     }
+}
 
+impl From<FenceError> for BrowserOperationError {
+    fn from(error: FenceError) -> Self {
+        match error {
+            FenceError::Unauthorized => Self::Unauthorized,
+            FenceError::TabClosed => Self::TabClosed,
+            FenceError::StalePage => Self::StalePage,
+        }
+    }
+}
+
+impl NativeFence for Fence {
+    fn check(&self, tab: &BrowserTabProjection) -> Result<(), BrowserOperationError> {
+        self.validate(tab_state(tab)).map_err(Into::into)
+    }
     fn check_view(&self, tab: &BrowserTabProjection) -> Result<(), BrowserOperationError> {
-        if !self.allow_closed && tab.lifecycle == BrowserTabLifecycle::Closed {
-            return Err(BrowserOperationError::TabClosed);
-        }
-        if tab.view_generation != self.view_generation
-            || self
-                .driver_generation
-                .is_some_and(|generation| generation != tab.driver_generation)
-            || self.interaction_generation != tab.interaction_generation
-        {
-            return Err(BrowserOperationError::StalePage);
-        }
-        Ok(())
+        self.validate_view(tab_state(tab)).map_err(Into::into)
     }
 }
 

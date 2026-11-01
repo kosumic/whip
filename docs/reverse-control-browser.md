@@ -713,3 +713,18 @@ Protocol references: [Codex HTTP MCP configuration](https://developers.openai.co
 [OpenCode v2 standalone server](https://github.com/anomalyco/opencode/blob/7878744505/packages/cli/src/services/server-connection.ts),
 [v2 MCP configuration normalization](https://github.com/anomalyco/opencode/blob/7878744505/packages/core/src/config/normalize.ts), and
 [Streamable HTTP MCP](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports).
+
+## Shared browser engine
+
+The action schema, validation, DOM programs, bounded result encoding, execution
+engine, cancellation/deadline control, and tab generation checks live in the
+MIT-licensed [`agent-browser-control`](../crates/agent-browser-control/README.md)
+crate, published on crates.io. The app uses a versioned dependency with a local
+path for repository builds.
+
+The app's `browser::operations` module remains the ownership adapter. Its global
+session registry, FIFO admission/leases, route state, Reverse Control permissions,
+UniFFI effect permits, and SSH download delivery stay here because they depend on
+Whip's launch/session authority. Native Android WebView and iOS WKWebView drivers
+still receive and check the same permits. Generation-fence decisions delegate to
+the shared crate; native records and lifecycle transitions remain app-owned.

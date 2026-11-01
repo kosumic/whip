@@ -42,7 +42,7 @@ target.add_system_frameworks(%w[UIKit WebKit UserNotifications UniformTypeIdenti
    packages/expo-whip-terminal-input/tests/ios/WhipTerminalInputTests.m].each do |path|
   target.source_build_phase.add_file_reference(project.main_group.new_file(File.join(root, path)))
 end
-runtime = File.join(root, 'packages/react-native-whip-ssh/rust/src/reverse_control/browser/dom.js')
+runtime = File.join(root, 'crates/agent-browser-control/src/dom.js')
 target.resources_build_phase.add_file_reference(project.main_group.new_file(runtime))
 target.build_configurations.each do |config|
   config.build_settings.merge!({

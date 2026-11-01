@@ -4,9 +4,11 @@ use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 
+use super::control::OperationControl;
 use super::model::{
-    BrowserAction, BrowserError, BrowserResult, ErrorCode, MAX_DOWNLOAD_BYTES, MAX_EVAL_RESULT,
-    SessionId, TabId, TabInfo, TabsResult, WaitArgs, WaitCondition, WaitResult,
+    BrowserAction, BrowserError, BrowserResult, DownloadArgs, ErrorCode, MAX_DOWNLOAD_BYTES,
+    MAX_EVAL_RESULT, MAX_IMAGE_RESULT, ScreenshotArgs, SessionId, TabId, TabInfo, TabsResult,
+    WaitArgs, WaitCondition, WaitResult, validate_url,
 };
 use super::programs;
 use super::programs::EvalMode;
@@ -53,8 +55,30 @@ pub enum Primitive {
         tab_id: TabId,
     },
 }
+/// Trusted adapter to an existing browser, never exposed to page JavaScript.
+///
+/// Authenticate the caller and enforce session ownership outside this trait.
+/// Check each primitive's tab and document identity before starting an effect
+/// and before accepting its result. Native effects must be revoked when their
+/// call future is dropped. See [`crate::fence`] for generation checks.
 pub trait Bridge: Send + Sync {
     fn call(&self, operation: Primitive) -> BoxFuture<'_, Result<Value, BrowserError>>;
+}
+
+struct BoundedBridge(Arc<dyn Bridge>);
+impl Bridge for BoundedBridge {
+    fn call(&self, operation: Primitive) -> BoxFuture<'_, Result<Value, BrowserError>> {
+        Box::pin(async move {
+            let value = self.0.call(operation).await?;
+            if value.to_string().len() > MAX_IMAGE_RESULT {
+                return Err(BrowserError::new(
+                    ErrorCode::ResultTooLarge,
+                    "Browser response too large",
+                ));
+            }
+            Ok(value)
+        })
+    }
 }
 pub async fn deadline<T>(
     duration: Duration,
@@ -140,13 +164,31 @@ struct Runner<'a> {
 }
 impl Runner<'_> {
     async fn document(&self) -> Result<Document, BrowserError> {
-        decode(
+        let document: Document = decode(
             self.bridge
                 .call(Primitive::DocumentState {
                     tab_id: self.tab.clone(),
                 })
                 .await?,
-        )
+        )?;
+        if document.id.is_empty()
+            || document.id.len() > 1024
+            || document.identity.is_empty()
+            || document.identity.len() > 1024
+        {
+            return Err(BrowserError::new(
+                ErrorCode::InvalidResult,
+                "Invalid browser document identity",
+            ));
+        }
+        for url in [&document.url, &document.public_url] {
+            if url != "about:blank" {
+                validate_url(url).map_err(|_| {
+                    BrowserError::new(ErrorCode::InvalidResult, "Invalid browser document URL")
+                })?;
+            }
+        }
+        Ok(document)
     }
     async fn ready_document(&self) -> Result<Document, BrowserError> {
         loop {
@@ -285,6 +327,69 @@ impl Runner<'_> {
             .await
             .map_err(|_| BrowserError::new(ErrorCode::WaitTimeout, "Browser wait timed out"))?
     }
+    async fn download(&self, args: DownloadArgs) -> Result<BrowserResult, BrowserError> {
+        let tab_id = self.tab.clone();
+        let bridge = self.bridge;
+
+        let max_bytes = args.max_bytes.unwrap_or(MAX_DOWNLOAD_BYTES);
+        let destination_path = args.destination_path;
+        let document = self.ready_document().await?;
+        let result = bridge
+            .call(Primitive::Download {
+                tab_id: tab_id.clone(),
+                identity: document.identity,
+                url: args.url,
+                destination_path: destination_path.clone(),
+                max_bytes,
+            })
+            .await?;
+        let result: Downloaded = decode(result)?;
+        if result.bytes > u64::from(max_bytes) || result.destination_path != destination_path {
+            return Err(BrowserError::new(
+                ErrorCode::InvalidResult,
+                "Invalid browser download result",
+            ));
+        }
+        Ok(BrowserResult::Download {
+            tab_id,
+            destination_path: result.destination_path,
+            bytes: result.bytes,
+            mime_type: result.mime_type,
+        })
+    }
+    async fn screenshot(&self, args: ScreenshotArgs) -> Result<BrowserResult, BrowserError> {
+        let tab_id = self.tab.clone();
+        let bridge = self.bridge;
+
+        let document = self.ready_document().await?;
+        let raw = if args.annotate.unwrap_or(false) {
+            Some(self.dom("annotations", &json!({})).await?)
+        } else {
+            None
+        };
+        let result = bridge
+            .call(Primitive::Screenshot {
+                tab_id: tab_id.clone(),
+                identity: document.identity,
+                annotations: raw.clone(),
+            })
+            .await?;
+        let image = result["image"]
+            .as_str()
+            .ok_or_else(|| {
+                BrowserError::new(ErrorCode::InvalidResult, "Invalid screenshot result")
+            })?
+            .to_owned();
+        if let Some(raw) = &raw {
+            self.dom("annotation_check", &json!({"generation":raw["generation"]}))
+                .await?;
+        }
+        Ok(BrowserResult::Screenshot {
+            tab_id,
+            image,
+            annotations: raw.map(decode).transpose()?,
+        })
+    }
     async fn eval(&self, source: &str, request: &str) -> Result<BrowserResult, BrowserError> {
         let document = self.ready_document().await?;
         let key = format!("{}_eval_{request}", self.key);
@@ -360,7 +465,59 @@ impl Runner<'_> {
     }
 }
 
+/// Execute with the default deadline (20 seconds, or 120 for downloads).
 pub async fn run(
+    bridge: Arc<dyn Bridge>,
+    session: &SessionId,
+    request: &str,
+    action: BrowserAction,
+    context: Context,
+) -> Result<BrowserResult, BrowserError> {
+    let control = OperationControl::new(action_timeout(&action));
+    run_with_control(bridge, session, request, action, context, &control).await
+}
+
+fn action_timeout(action: &BrowserAction) -> Duration {
+    Duration::from_secs(if matches!(action, BrowserAction::Download(_)) {
+        120
+    } else {
+        20
+    })
+}
+
+/// Execute with caller-controlled cancellation/expiry and the default upper bound.
+/// Inputs are validated even if the action was constructed or deserialized directly.
+pub async fn run_with_control(
+    bridge: Arc<dyn Bridge>,
+    session: &SessionId,
+    request: &str,
+    action: BrowserAction,
+    context: Context,
+    control: &OperationControl,
+) -> Result<BrowserResult, BrowserError> {
+    session.validate()?;
+    if request.is_empty() || request.len() > 256 || request.chars().any(char::is_control) {
+        return Err(BrowserError::invalid("Invalid browser request identity"));
+    }
+    let action = BrowserAction::parse(action.name(), &action.arguments()?)?;
+    let timeout = action_timeout(&action);
+    control
+        .run(deadline(timeout, async {
+            let result = Box::pin(run_inner(
+                Arc::new(BoundedBridge(bridge)),
+                session,
+                request,
+                action,
+                context,
+            ))
+            .await?;
+            result.validate()?;
+            Ok(result)
+        }))
+        .await
+}
+
+async fn run_inner(
     bridge: Arc<dyn Bridge>,
     session: &SessionId,
     request: &str,
@@ -434,56 +591,8 @@ pub async fn run(
         BrowserAction::Reload(_) => runner.navigation(Primitive::Reload { tab_id }).await,
         BrowserAction::Wait(args) => runner.wait(&args).await,
         BrowserAction::Eval(args) => runner.eval(&args.js, request).await,
-        BrowserAction::Download(args) => {
-            let document = runner.ready_document().await?;
-            let result = bridge
-                .call(Primitive::Download {
-                    tab_id: tab_id.clone(),
-                    identity: document.identity,
-                    url: args.url,
-                    destination_path: args.destination_path,
-                    max_bytes: args.max_bytes.unwrap_or(MAX_DOWNLOAD_BYTES),
-                })
-                .await?;
-            let result: Downloaded = decode(result)?;
-            Ok(BrowserResult::Download {
-                tab_id,
-                destination_path: result.destination_path,
-                bytes: result.bytes,
-                mime_type: result.mime_type,
-            })
-        }
-        BrowserAction::Screenshot(args) => {
-            let document = runner.ready_document().await?;
-            let raw = if args.annotate.unwrap_or(false) {
-                Some(runner.dom("annotations", &json!({})).await?)
-            } else {
-                None
-            };
-            let result = bridge
-                .call(Primitive::Screenshot {
-                    tab_id: tab_id.clone(),
-                    identity: document.identity,
-                    annotations: raw.clone(),
-                })
-                .await?;
-            let image = result["image"]
-                .as_str()
-                .ok_or_else(|| {
-                    BrowserError::new(ErrorCode::InvalidResult, "Invalid screenshot result")
-                })?
-                .to_owned();
-            if let Some(raw) = &raw {
-                runner
-                    .dom("annotation_check", &json!({"generation":raw["generation"]}))
-                    .await?;
-            }
-            Ok(BrowserResult::Screenshot {
-                tab_id,
-                image,
-                annotations: raw.map(decode).transpose()?,
-            })
-        }
+        BrowserAction::Download(args) => runner.download(args).await,
+        BrowserAction::Screenshot(args) => runner.screenshot(args).await,
         action => {
             let value = runner.dom(action.name(), &args).await?;
             match action {

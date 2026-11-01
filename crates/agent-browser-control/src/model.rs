@@ -351,35 +351,7 @@ impl BrowserAction {
                 validate_target(args.target.as_ref(), args.r#ref.as_ref())?;
                 text(&args.text, MAX_INPUT, true)?;
             }
-            Self::Keys(args) => {
-                validate_target(args.target.as_ref(), args.r#ref.as_ref())?;
-                text(&args.key, 80, false)?;
-                let mut parts = args.key.split('+').collect::<Vec<_>>();
-                let key = parts.pop().unwrap_or_default();
-                if ![
-                    "Enter",
-                    "Escape",
-                    "Tab",
-                    "ArrowUp",
-                    "ArrowDown",
-                    "ArrowLeft",
-                    "ArrowRight",
-                    "Home",
-                    "End",
-                    "Backspace",
-                    "Delete",
-                    "a",
-                    "A",
-                    " ",
-                ]
-                .contains(&key)
-                    || parts
-                        .iter()
-                        .any(|part| !["Control", "Meta", "Shift", "Alt"].contains(part))
-                {
-                    return Err(BrowserError::invalid("Unsupported key"));
-                }
-            }
+            Self::Keys(args) => validate_keys(args)?,
             Self::Select(args) => {
                 validate_target(args.target.as_ref(), args.r#ref.as_ref())?;
                 text(&args.option, 1024, true)?;
@@ -391,48 +363,7 @@ impl BrowserAction {
                     return Err(BrowserError::invalid("Scroll outside allowed range"));
                 }
             }
-            Self::Wait(args) => {
-                limit(args.timeout_ms, 1, MAX_WAIT_MS)?;
-                limit(args.stable_ms, 1, 2000)?;
-                match args.condition.unwrap_or(if args.target.is_some() {
-                    WaitCondition::Target
-                } else if args.selector.is_some() {
-                    WaitCondition::Selector
-                } else {
-                    WaitCondition::Stable
-                }) {
-                    WaitCondition::Target => args
-                        .target
-                        .as_ref()
-                        .ok_or_else(|| BrowserError::invalid("Target required"))?
-                        .validate()?,
-                    WaitCondition::Selector => text(
-                        args.selector
-                            .as_deref()
-                            .ok_or_else(|| BrowserError::invalid("Selector required"))?,
-                        1024,
-                        false,
-                    )?,
-                    WaitCondition::Text => text(
-                        args.text
-                            .as_deref()
-                            .ok_or_else(|| BrowserError::invalid("Text required"))?,
-                        1024,
-                        false,
-                    )?,
-                    WaitCondition::Url => text(
-                        args.url
-                            .as_deref()
-                            .ok_or_else(|| BrowserError::invalid("URL match required"))?,
-                        8192,
-                        false,
-                    )?,
-                    _ => {}
-                }
-                if let Some(url) = &args.previous_url {
-                    text(url, 8192, false)?;
-                }
-            }
+            Self::Wait(args) => validate_wait(args)?,
             Self::Eval(args) => text(&args.js, MAX_REQUEST - 1024, false)?,
             _ => {}
         }
@@ -600,7 +531,12 @@ pub enum BrowserResult {
     },
 }
 impl BrowserResult {
-    pub fn mcp(&self) -> Result<Value, BrowserError> {
+    /// Check output limits without constructing an MCP envelope.
+    pub fn validate(&self) -> Result<(), BrowserError> {
+        self.validated_value().map(|_| ())
+    }
+
+    fn validated_value(&self) -> Result<Value, BrowserError> {
         match self {
             Self::Snapshot { result, .. }
             | Self::Screenshot {
@@ -658,6 +594,11 @@ impl BrowserResult {
                 "Browser result exceeds output limit",
             ));
         }
+        Ok(value)
+    }
+
+    pub fn mcp(&self) -> Result<Value, BrowserError> {
+        let value = self.validated_value()?;
         if let Self::Screenshot {
             image,
             annotations,
@@ -692,5 +633,82 @@ fn validate_elements(elements: &[Element], maximum: usize) -> Result<(), Browser
             ));
         }
     }
+    Ok(())
+}
+
+fn validate_keys(args: &KeysArgs) -> Result<(), BrowserError> {
+    validate_target(args.target.as_ref(), args.r#ref.as_ref())?;
+    text(&args.key, 80, false)?;
+    let mut parts = args.key.split('+').collect::<Vec<_>>();
+    let key = parts.pop().unwrap_or_default();
+    if ![
+        "Enter",
+        "Escape",
+        "Tab",
+        "ArrowUp",
+        "ArrowDown",
+        "ArrowLeft",
+        "ArrowRight",
+        "Home",
+        "End",
+        "Backspace",
+        "Delete",
+        "a",
+        "A",
+        " ",
+    ]
+    .contains(&key)
+        || parts
+            .iter()
+            .any(|part| !["Control", "Meta", "Shift", "Alt"].contains(part))
+    {
+        return Err(BrowserError::invalid("Unsupported key"));
+    }
+
+    Ok(())
+}
+
+fn validate_wait(args: &WaitArgs) -> Result<(), BrowserError> {
+    limit(args.timeout_ms, 1, MAX_WAIT_MS)?;
+    limit(args.stable_ms, 1, 2000)?;
+    match args.condition.unwrap_or(if args.target.is_some() {
+        WaitCondition::Target
+    } else if args.selector.is_some() {
+        WaitCondition::Selector
+    } else {
+        WaitCondition::Stable
+    }) {
+        WaitCondition::Target => args
+            .target
+            .as_ref()
+            .ok_or_else(|| BrowserError::invalid("Target required"))?
+            .validate()?,
+        WaitCondition::Selector => text(
+            args.selector
+                .as_deref()
+                .ok_or_else(|| BrowserError::invalid("Selector required"))?,
+            1024,
+            false,
+        )?,
+        WaitCondition::Text => text(
+            args.text
+                .as_deref()
+                .ok_or_else(|| BrowserError::invalid("Text required"))?,
+            1024,
+            false,
+        )?,
+        WaitCondition::Url => text(
+            args.url
+                .as_deref()
+                .ok_or_else(|| BrowserError::invalid("URL match required"))?,
+            8192,
+            false,
+        )?,
+        _ => {}
+    }
+    if let Some(url) = &args.previous_url {
+        text(url, 8192, false)?;
+    }
+
     Ok(())
 }
