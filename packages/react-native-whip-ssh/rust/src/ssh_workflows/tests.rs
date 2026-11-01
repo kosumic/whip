@@ -375,6 +375,7 @@ fn direct_proxyjump_and_tailcat_preserve_routes_and_outcomes() {
             );
             assert_eq!(routes[0][0].tailcat_address.is_some(), tailcat);
             assert!(routes[0].iter().all(|host| !host.forward_agent));
+            drop(routes);
         }
     }
     let f = Fixture::new(vec![host("target", None)], true);
