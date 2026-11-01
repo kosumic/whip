@@ -1,9 +1,10 @@
 # Herdr Core hosts
 
-Choose **Herdr Core** in a host's backend selector for herdr-core/hc and the new
-desktop app. **Automatic** prefers installed hc, then installed legacy Herdr;
-when neither is installed it offers core setup. Existing saved hosts retain
-**Legacy Herdr** until changed. Disabling Herdr keeps plain SSH available.
+New hosts default to **Legacy Herdr**. Choose **Herdr Core** in a host's backend
+selector for herdr-core/hc and the new desktop app. Saved backend choices are
+preserved. **Automatic** is also available: it prefers installed hc, then
+installed legacy Herdr; when neither is installed it offers core setup.
+Disabling Herdr keeps plain SSH available.
 
 Whip reuses its authenticated SSH connection, including ProxyJump and Tailcat.
 On Unix it discovers and forwards the core socket. Saved socket/session overrides
