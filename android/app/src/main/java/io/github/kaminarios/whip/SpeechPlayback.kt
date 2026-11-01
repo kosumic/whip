@@ -32,6 +32,7 @@ object SpeechPlayback : SensorEventListener {
   private const val INTERRUPTED = "interrupted"
   private const val ERROR_CODE = "E_SPEECH"
   private const val INITIALIZATION_TIMEOUT_MS = 10_000L
+  private const val MODEL_INITIALIZATION_TIMEOUT_MS = 60_000L
   private const val SHAKE_GRAVITY_THRESHOLD = 2.7f
 
   private data class Session(
@@ -91,9 +92,9 @@ object SpeechPlayback : SensorEventListener {
     speak(current, text, null, 1.0)
   }
 
-  fun announce(context: Context, owner: String, text: String, language: String?, promise: Promise) {
+  fun announce(context: Context, owner: String, text: String, language: String?, promise: Promise, preview: Boolean = false) {
     val accepted = begin(context, SpeechPolicy.ANNOUNCEMENT, owner, "", context.getString(R.string.app_name), {
-      session?.let { speak(it, text, language, 1.0) }
+      session?.let { speak(it, text, language, 1.0, preview = preview) }
     }) { reason, error ->
       if (error != null) promise.reject(ERROR_CODE, error) else promise.resolve(reason)
     }
@@ -104,7 +105,7 @@ object SpeechPlayback : SensorEventListener {
     var acknowledged = false
     val accepted = begin(context, SpeechPolicy.DEVICE, owner, request, context.getString(R.string.app_name), {
       val current = session
-      if (current != null && speak(current, text, language, rate)) {
+      if (current != null) speak(current, text, language, rate) {
         acknowledged = true
         promise.resolve(Arguments.createMap().apply { putBoolean("started", true) })
       }
@@ -139,6 +140,11 @@ object SpeechPlayback : SensorEventListener {
       HerdrBackgroundService.refreshNotification()
       handler.postDelayed(timeout, INITIALIZATION_TIMEOUT_MS)
       engine = TextToSpeech(app) { status -> handler.post { initialize(id, status) } }
+      if (SpeechPolicy.phononEnabled(Locale.getDefault().toLanguageTag())) {
+        engineReady = true
+        handler.removeCallbacks(timeout)
+        session?.ready?.invoke()
+      }
     } catch (error: Exception) {
       stop(error = error.message ?: "Could not start speech")
     }
@@ -147,6 +153,7 @@ object SpeechPlayback : SensorEventListener {
 
   private fun initialize(id: Long, status: Int) {
     if (session?.id != id || !SpeechPolicy.isCurrent(id)) return
+    if (status != TextToSpeech.SUCCESS && engineReady) return
     try {
       check(status == TextToSpeech.SUCCESS) { "Could not initialize text to speech" }
       val tts = checkNotNull(engine) { "Speech engine is unavailable" }
@@ -160,27 +167,31 @@ object SpeechPlayback : SensorEventListener {
         } }
         override fun onError(utteranceId: String?, errorCode: Int) { onError(utteranceId) }
       })
-      engineReady = true
-      handler.removeCallbacks(timeout)
-      session?.ready?.invoke()
+      if (!engineReady) {
+        engineReady = true
+        handler.removeCallbacks(timeout)
+        session?.ready?.invoke()
+      }
     } catch (error: Exception) {
       stop(error = error.message ?: "Could not initialize speech")
     }
   }
 
-  private fun speak(current: Session, text: String, language: String?, rate: Double): Boolean = try {
-    play(current, text, language, rate)
+  private fun speak(current: Session, text: String, language: String?, rate: Double, preview: Boolean = false, started: () -> Unit = {}): Boolean = try {
+    play(current, text, language, rate, started, preview)
   } catch (error: Exception) {
     stop(error = error.message ?: "Could not start speech playback")
     false
   }
 
   @Suppress("DEPRECATION")
-  private fun play(current: Session, text: String, language: String?, rate: Double): Boolean {
+  private fun play(current: Session, text: String, language: String?, rate: Double, started: () -> Unit, preview: Boolean): Boolean {
     if (!SpeechPolicy.isCurrent(current.id)) return false
     val tts = checkNotNull(engine) { "Speech engine is unavailable" }
-    val locale = language?.let(Locale::forLanguageTag) ?: Locale.getDefault()
-    if (!rate.isFinite() || rate <= 0 || tts.setLanguage(locale) < 0 || tts.setSpeechRate(rate.toFloat()) == TextToSpeech.ERROR) {
+    val locale = language?.takeIf { it.isNotBlank() }?.let(Locale::forLanguageTag) ?: Locale.getDefault()
+    val languageExplicit = !language.isNullOrBlank()
+    val local = SpeechPolicy.phononEnabled(locale.toLanguageTag())
+    if (!rate.isFinite() || rate <= 0 || (!local && !configureSystemVoice(tts, locale, languageExplicit, rate))) {
       stop(error = "Install a speech voice for the requested language in Android settings")
       return false
     }
@@ -205,10 +216,52 @@ object SpeechPlayback : SensorEventListener {
       stop(error = "Audio focus is unavailable")
       return false
     }
-    handler.postDelayed(timeout, SpeechPolicy.timeoutMs(current.kind, text.length.toLong()))
+    // Preview retains announcement admission, with Rust's text-sized deadline
+    // so an edited sample can play beyond the short status-announcement limit.
+    val playbackTimeout = SpeechPolicy.timeoutMs(if (preview) SpeechPolicy.CHAT else current.kind, text.length.toLong())
+    handler.postDelayed(timeout, if (local) MODEL_INITIALIZATION_TIMEOUT_MS else playbackTimeout)
+    if (local) {
+      val playbackStarted = {
+        if (session?.id == current.id && utteranceId == id) {
+          handler.removeCallbacks(timeout)
+          handler.postDelayed(timeout, playbackTimeout)
+          started()
+        }
+      }
+      PhononPlayback.start(current.id, text, rate, attributes, playbackStarted) { completed, spoke, error ->
+        if (session?.id == current.id && utteranceId == id) {
+          when {
+            completed -> finish(id)
+            error != null && !spoke -> {
+              // A failed load can still use the initialized OS engine. Never
+              // repeat a partially audible utterance after a synthesis failure.
+              if (!configureSystemVoice(tts, locale, languageExplicit, rate) ||
+                tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, id) == TextToSpeech.ERROR) stop(error = error)
+              else playbackStarted()
+            }
+            error != null -> stop(error = error)
+            else -> stop(reason = INTERRUPTED)
+          }
+        }
+      }
+      return true
+    }
     if (tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, id) == TextToSpeech.ERROR) {
       stop(error = "Could not start speech playback")
       return false
+    }
+    started()
+    return true
+  }
+
+  internal fun configureSystemVoice(tts: TextToSpeech, locale: Locale, languageExplicit: Boolean, rate: Double): Boolean {
+    val selected = tts.voices?.firstOrNull { it.name == PhononPlayback.systemVoice }
+      ?.takeIf { !languageExplicit || it.locale.language == locale.language }
+    val language = selected?.locale ?: locale
+    if (tts.setLanguage(language) < 0 || tts.setSpeechRate(rate.toFloat()) == TextToSpeech.ERROR) return false
+    if (selected != null && tts.setVoice(selected) == TextToSpeech.ERROR) {
+      Log.w("SpeechPlayback", "Selected system voice is unavailable; using the language default")
+      return tts.setLanguage(locale) >= 0
     }
     return true
   }
@@ -233,6 +286,7 @@ object SpeechPlayback : SensorEventListener {
     session = null
     handler.removeCallbacks(timeout)
     utteranceId = null
+    PhononPlayback.stop()
     engineReady = false
     engine?.stop()
     engine?.shutdown()

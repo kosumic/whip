@@ -15,6 +15,22 @@ export interface OpenSourceLicenseNotice {
 
 export const OPEN_SOURCE_LICENSES: readonly OpenSourceLicenseNotice[] = [
   {
+    id: 'phonon-31m-en',
+    projectName: 'Phonon 31M English',
+    sourceUrl: 'https://huggingface.co/gradium/phonon-31m-en',
+    attribution: 'Optional local English speech synthesis with the default checkpoint voice. Model files download only at your request.',
+    licenseName: 'Apache-2.0',
+    licenseAsset: bundledAsset(require('../../assets/licenses/phonon-Apache-2.0.txt')),
+  },
+  {
+    id: 'phonon-voices',
+    projectName: 'Phonon voice catalog',
+    sourceUrl: 'https://huggingface.co/gradium/phonon-voices',
+    attribution: 'Optional English voices for local Phonon speech, downloaded individually at your request.',
+    licenseName: 'Apache-2.0',
+    licenseAsset: bundledAsset(require('../../assets/licenses/phonon-Apache-2.0.txt')),
+  },
+  {
     id: 'shizuku-api',
     projectName: 'Shizuku API',
     sourceUrl: 'https://github.com/RikkaApps/Shizuku-API',

@@ -28,6 +28,7 @@ mod host_state;
 mod markdown_images;
 mod notification_crypto;
 mod pairing;
+mod phonon;
 mod public_keys;
 mod remote_ops;
 mod remote_preview;

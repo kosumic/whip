@@ -32,6 +32,7 @@ class MainApplication : Application(), ReactApplication {
       ReleaseLevel.STABLE
     }
     loadReactNative(this)
+    PhononPlayback.command(this, "status")
     ApplicationLifecycleDispatcher.onApplicationCreate(this)
   }
 

@@ -1,7 +1,7 @@
 //! Speech selection and ordering for one explicitly selected chat binding.
 
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::{HashMap, VecDeque},
     sync::Arc,
 };
 
@@ -26,8 +26,14 @@ pub struct ChatSpeechMessage {
 #[derive(Default)]
 struct SpeechState {
     live: bool,
-    seen: HashSet<(String, String)>,
+    parts: HashMap<(String, String), SpokenPart>,
     pending: VecDeque<String>,
+}
+
+#[derive(Default)]
+struct SpokenPart {
+    spoken: String,
+    finished: bool,
 }
 
 #[derive(Default, uniffi::Object)]
@@ -52,17 +58,55 @@ impl ChatSpeechQueue {
             return;
         }
         for message in messages {
-            // Codex publishes completed response items as parts of one growing
-            // turn message. Claude and OpenCode publish completed messages.
-            if !message.assistant || (agent != AgentTranscriptKind::Codex && !message.completed) {
+            if !message.assistant {
                 continue;
             }
-            for part in message.prose {
-                if state.seen.insert((message.id.clone(), part.id)) && state.live {
-                    state
-                        .pending
-                        .extend(speech_chunks(&spoken_prose(&part.text)));
+            let part_count = message.prose.len();
+            for (index, part) in message.prose.into_iter().enumerate() {
+                let live = state.live;
+                // Baseline complete prose is history. Codex publishes finalized
+                // response items inside a growing turn; keep their existing
+                // immediate playback without freezing a part on its first update.
+                let finalized = message.completed
+                    || index + 1 < part_count
+                    || agent == AgentTranscriptKind::Codex;
+                let progress = state
+                    .parts
+                    .entry((message.id.clone(), part.id))
+                    .or_default();
+                if progress.finished {
+                    continue;
                 }
+                let prose = spoken_prose(&part.text);
+                if !live {
+                    let end = if finalized {
+                        prose.len()
+                    } else {
+                        stable_prose_end(&prose, part.text.ends_with(char::is_whitespace))
+                    };
+                    prose[..end].clone_into(&mut progress.spoken);
+                    progress.finished = message.completed;
+                    continue;
+                }
+                // A provider rewriting already spoken prose must not replay it
+                // or reorder it into a later part. New parts remain speakable.
+                if !prose.starts_with(&progress.spoken) {
+                    progress.finished = true;
+                    continue;
+                }
+                let end = if finalized {
+                    prose.len()
+                } else {
+                    stable_prose_end(&prose, part.text.ends_with(char::is_whitespace))
+                };
+                if end <= progress.spoken.len() {
+                    progress.finished = message.completed;
+                    continue;
+                }
+                let tail = prose[progress.spoken.len()..end].trim().to_owned();
+                prose[..end].clone_into(&mut progress.spoken);
+                progress.finished = message.completed;
+                state.pending.extend(speech_chunks(&tail));
             }
         }
         state.live = true;
@@ -94,6 +138,24 @@ impl ChatSpeechQueue {
         }
         !state.pending.is_empty()
     }
+}
+
+/// Commit punctuation only once following whitespace is visible. The mutable
+/// tail stays in the transcript until more text arrives or the turn completes.
+fn stable_prose_end(prose: &str, trailing_whitespace: bool) -> usize {
+    let mut end = 0;
+    for (index, character) in prose.char_indices() {
+        if !matches!(character, '.' | '?' | '!' | ';' | ':') {
+            continue;
+        }
+        let next = index + character.len_utf8();
+        if prose[next..].starts_with(char::is_whitespace)
+            || (next == prose.len() && trailing_whitespace)
+        {
+            end = next;
+        }
+    }
+    end
 }
 
 // Keep each utterance below Android's 4,000 UTF-16-unit limit, including emoji.
@@ -196,6 +258,78 @@ mod tests {
                 text: text.into(),
             }],
         }
+    }
+
+    #[test]
+    fn growing_prose_speaks_stable_sentences_once_and_flushes_the_final_tail() {
+        for agent in [AgentTranscriptKind::Claude, AgentTranscriptKind::OpenCode] {
+            let queue = ChatSpeechQueue::new();
+            queue.update(agent, true, vec![]);
+            queue.update(
+                agent,
+                true,
+                vec![message("reply", false, "First sentence. Sec")],
+            );
+            assert_eq!(queue.next().as_deref(), Some("First sentence."));
+            assert_eq!(queue.next(), None);
+            queue.update(
+                agent,
+                true,
+                vec![message("reply", false, "First sentence. Second sentence.")],
+            );
+            assert_eq!(queue.next(), None);
+            queue.update(
+                agent,
+                true,
+                vec![message("reply", true, "First sentence. Second sentence.")],
+            );
+            assert_eq!(queue.next().as_deref(), Some("Second sentence."));
+            queue.update(
+                agent,
+                true,
+                vec![message("reply", true, "First sentence. Second sentence.")],
+            );
+            assert_eq!(queue.next(), None);
+        }
+    }
+
+    #[test]
+    fn a_later_part_flushes_the_previous_tail_in_prose_order() {
+        let queue = ChatSpeechQueue::new();
+        queue.update(AgentTranscriptKind::Claude, true, vec![]);
+        queue.update(
+            AgentTranscriptKind::Claude,
+            true,
+            vec![message("reply", false, "First. Remaining tail")],
+        );
+        assert_eq!(queue.next().as_deref(), Some("First."));
+        let mut reply = message("reply", false, "First. Remaining tail");
+        reply.prose.push(ChatSpeechPart {
+            id: "second".into(),
+            text: "Next sentence. More".into(),
+        });
+        queue.update(AgentTranscriptKind::Claude, true, vec![reply]);
+        assert_eq!(queue.next().as_deref(), Some("Remaining tail"));
+        assert_eq!(queue.next().as_deref(), Some("Next sentence."));
+        assert_eq!(queue.next(), None);
+    }
+
+    #[test]
+    fn partial_code_and_rewritten_spoken_text_are_not_replayed() {
+        let queue = ChatSpeechQueue::new();
+        queue.update(AgentTranscriptKind::Claude, true, vec![]);
+        queue.update(
+            AgentTranscriptKind::Claude,
+            true,
+            vec![message("reply", false, "Safe. ```rust\nsecret();")],
+        );
+        assert_eq!(queue.next().as_deref(), Some("Safe."));
+        queue.update(
+            AgentTranscriptKind::Claude,
+            true,
+            vec![message("reply", true, "Rewritten. New text.")],
+        );
+        assert_eq!(queue.next(), None);
     }
 
     #[test]

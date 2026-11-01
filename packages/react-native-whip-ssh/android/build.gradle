@@ -74,7 +74,7 @@ def buildRustArm64 = tasks.register("buildRustArm64", Exec) {
 
   inputs.files(
     fileTree("${rustDirectory}/src") {
-      include "**/*.rs"
+      include "**/*.rs", "**/*.json"
     },
     fileTree("${rustDirectory}/../../../whip-notify/src") { include "**/*.rs" },
     file("${rustDirectory}/../../../whip-notify/Cargo.toml"),

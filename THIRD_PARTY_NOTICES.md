@@ -3,6 +3,21 @@
 Whip includes or adapts work from the projects listed below. Those portions
 remain subject to their original licenses.
 
+## Phonon
+
+Whip optionally synthesizes English speech with Gradium's
+[Phonon 31M English](https://huggingface.co/gradium/phonon-31m-en), including
+the checkpoint's default voice and optional English voices from the
+[Phonon voice catalog](https://huggingface.co/gradium/phonon-voices), under
+the Apache License 2.0. Model weights
+are downloaded only at the user's request. The model license is bundled in
+[phonon-Apache-2.0.txt](assets/licenses/phonon-Apache-2.0.txt).
+
+The [official Phonon runtime](https://github.com/gradium-ai/xn-ptts) is licensed
+under MIT OR Apache-2.0. Android uses `ptts` 0.6.0 with Q8 CPU inference; iOS
+uses the official Core ML engine from the 0.6.0 release, pinned in Cargo.lock.
+Runtime and dependency licenses are included in the generated Cargo notices.
+
 ## Tailcat
 
 Whip's [tailcat-client client crate](crates/tailcat-client/README.md) implements the

@@ -299,6 +299,7 @@ fn legacy_app_key(key: &str) -> bool {
         "whip.latency-diagnostics.v1",
         "whip.usage.expanded.v1",
         "whip.notifications.expanded.v1",
+        "whip.voice.expanded.v1",
         "whip.security.expanded.v1",
         "whip.appearance.expanded.v1",
         "whip.herd.expanded.v1",
