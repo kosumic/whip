@@ -1976,6 +1976,10 @@ interface NativeModuleInterface {
     id: Uint8Array,
     name: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_github_repository_counts(
+    uniffiSelf: bigint,
+    repository: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_github_repository_details(
     uniffiSelf: bigint,
     repository: Uint8Array,
@@ -3079,6 +3083,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_page(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_post_comment(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_prepare_asset(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_repository_counts(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_repository_details(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_resource(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_has_ssh_shell(): number;

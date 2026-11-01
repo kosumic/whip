@@ -9,7 +9,7 @@ import * as WebBrowser from 'expo-web-browser';
 import type { RuntimeGithubListState, RuntimeGithubPage, RuntimeGithubRepository, RuntimeGithubSection } from 'react-native-whip-ssh';
 
 import { cn } from '../lib/utils';
-import { githubDetailsQueryOptions, githubPageQueryOptions } from '../services/remoteGithubQueries';
+import { githubCountsQueryOptions, githubDetailsQueryOptions, githubPageQueryOptions } from '../services/remoteGithubQueries';
 import type { RemoteGitConnection } from '../services/remoteGitQueries';
 import { useTheme } from '../theme';
 import { GitHubMark } from './GitHubMark';
@@ -54,12 +54,14 @@ export function GithubViewer({ connection, repository, onClose }: Props) {
   const [search, setSearch] = useState('');
   const connected = connection.isCurrent();
   const details = useQuery({ ...githubDetailsQueryOptions(connection, repository), enabled: connected });
+  const counts = useQuery({ ...githubCountsQueryOptions(connection, repository), enabled: connected });
   const page = useInfiniteQuery({ ...githubPageQueryOptions(connection, repository, section, listState, search), enabled: connected });
   const entries = useMemo(() => [...new Map(
     page.data?.pages.flatMap(result => result.entries).map(entry => [entry.id, entry]) ?? [],
   ).values()], [page.data]);
   const SectionIcon = SECTIONS.find(item => item.id === section)!.icon;
-  const error = linkError || page.error?.message || details.error?.message;
+  const error = linkError || page.error?.message || details.error?.message || counts.error?.message;
+  const refreshing = page.isFetching || counts.isFetching;
   const website = details.data?.website;
   const license = details.data?.license;
 
@@ -74,10 +76,12 @@ export function GithubViewer({ connection, repository, onClose }: Props) {
   const refresh = () => {
     setLinkError(null);
     void page.refetch();
+    void counts.refetch();
   };
   const retry = () => {
     setLinkError(null);
     if (details.isError) void details.refetch();
+    if (counts.isError) void counts.refetch();
     if (page.isFetchNextPageError || page.isFetchPreviousPageError) void retryGithubPage(page);
     else if (page.isError) void page.refetch();
   };
@@ -132,23 +136,31 @@ export function GithubViewer({ connection, repository, onClose }: Props) {
               </View>
               <View className="flex-row items-center border-b border-border">
                 <ScrollView className="flex-1" horizontal showsHorizontalScrollIndicator={false}>
-                  {SECTIONS.map(({ id, icon: TabIcon }) => (
-                    <Button
-                      key={id}
-                      accessibilityRole="tab"
-                      accessibilityState={{ selected: section === id }}
-                      accessibilityLabel={t(`github.${id}`)}
-                      className={cn('h-12 flex-row gap-2 rounded-none border-b-2 border-transparent px-4', section === id && 'border-primary')}
-                      variant="ghost"
-                      onPress={hapticPress(() => { setSection(id); setLinkError(null); setSearch(''); setSearchText(''); })}
-                    >
-                      <TabIcon size={16} color={section === id ? colors.primary : colors.textSecondary} />
-                      <Text className={cn('text-xs text-muted-foreground', section === id && 'text-primary')}>{t(`github.${id}`)}</Text>
-                    </Button>
-                  ))}
+                  {SECTIONS.map(({ id, icon: TabIcon }) => {
+                    const count = id === 'issues' ? counts.data?.openIssues : id === 'pullRequests' ? counts.data?.openPullRequests : undefined;
+                    const countLabel = count?.toLocaleString();
+                    return (
+                      <Button
+                        key={id}
+                        accessibilityRole="tab"
+                        accessibilityState={{ selected: section === id }}
+                        accessibilityLabel={t(`github.${id}`)}
+                        accessibilityValue={countLabel !== undefined ? { text: countLabel } : undefined}
+                        className={cn('h-12 flex-row gap-2 rounded-none border-b-2 border-transparent px-4', section === id && 'border-primary')}
+                        variant="ghost"
+                        onPress={hapticPress(() => { setSection(id); setLinkError(null); setSearch(''); setSearchText(''); })}
+                      >
+                        <TabIcon size={16} color={section === id ? colors.primary : colors.textSecondary} />
+                        <Text className={cn('text-xs text-muted-foreground', section === id && 'text-primary')}>{t(`github.${id}`)}</Text>
+                        {countLabel !== undefined ? <View className="min-w-5 items-center rounded-full bg-muted px-1.5 py-0.5">
+                          <Text className={cn('text-[11px] font-medium text-muted-foreground', section === id && 'text-primary')}>{countLabel}</Text>
+                        </View> : null}
+                      </Button>
+                    );
+                  })}
                 </ScrollView>
-                <Button accessibilityLabel={t('github.refresh')} className="size-11 px-0" disabled={page.isFetching} variant="ghost" onPress={hapticPress(refresh)}>
-                  {page.isFetching ? <ActivityIndicator size="small" color={colors.primary} /> : <RefreshCw size={17} color={colors.textSecondary} />}
+                <Button accessibilityLabel={t('github.refresh')} className="size-11 px-0" disabled={refreshing} variant="ghost" onPress={hapticPress(refresh)}>
+                  {refreshing ? <ActivityIndicator size="small" color={colors.primary} /> : <RefreshCw size={17} color={colors.textSecondary} />}
                 </Button>
               </View>
               {section !== 'releases' ? <View className="gap-2 border-b border-border px-4 py-3">

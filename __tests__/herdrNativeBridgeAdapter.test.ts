@@ -294,6 +294,7 @@ describe('native HostRuntime adapter', () => {
   it.each([
     ['discoverGithubRepository', ['/repo']],
     ['githubRepositoryDetails', [{}]],
+    ['githubRepositoryCounts', [{}]],
     ['githubPage', [{}, 'commits', 1]],
     ['githubEntry', [{}, 'commits', 'abc']],
     ['githubFiles', [{}, 'abc', false, 1]],

@@ -45,6 +45,14 @@ export function githubDetailsQueryOptions(connection: RemoteGitConnection, repos
   });
 }
 
+export function githubCountsQueryOptions(connection: RemoteGitConnection, repository: RuntimeGithubRepository) {
+  return queryOptions({
+    queryKey: [...connectionKey(connection), repository.nameWithOwner, 'counts'],
+    staleTime: GITHUB_STALE_TIME_MS,
+    queryFn: () => currentRead(connection, () => connection.native.githubRepositoryCounts(repository)),
+  });
+}
+
 export function githubCommentsQueryOptions(connection: RemoteGitConnection, repository: RuntimeGithubRepository, number: number) {
   return infiniteQueryOptions({
     queryKey: [...connectionKey(connection), repository.nameWithOwner, 'comments', number],
