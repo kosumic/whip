@@ -1273,6 +1273,9 @@ uniffi_whip_ssh_fn_method_hostruntime_discover_github_repository(
     /*handle*/ uint64_t ptr, RustBuffer repository, RustBuffer id,
     RustBuffer name);
 /*handle*/ uint64_t
+uniffi_whip_ssh_fn_method_hostruntime_github_repository_counts(
+    /*handle*/ uint64_t ptr, RustBuffer repository);
+/*handle*/ uint64_t
 uniffi_whip_ssh_fn_method_hostruntime_github_repository_details(
     /*handle*/ uint64_t ptr, RustBuffer repository);
 /*handle*/ uint64_t uniffi_whip_ssh_fn_method_hostruntime_github_resource(
@@ -2376,6 +2379,7 @@ uint16_t uniffi_whip_ssh_checksum_method_hostruntime_github_mutate();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_github_page();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_github_post_comment();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_github_prepare_asset();
+uint16_t uniffi_whip_ssh_checksum_method_hostruntime_github_repository_counts();
 uint16_t
 uniffi_whip_ssh_checksum_method_hostruntime_github_repository_details();
 uint16_t uniffi_whip_ssh_checksum_method_hostruntime_github_resource();
@@ -21236,6 +21240,18 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_fn_method_hostruntime_github_prepare_asset(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_fn_method_hostruntime_github_repository_counts"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                        "hostruntime_github_repository_counts"),
+          2,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_hostruntime_github_repository_counts(
+                    rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_fn_method_hostruntime_github_repository_"
         "details"] = jsi::Function::createFromHostFunction(
       rt,
@@ -28749,6 +28765,18 @@ NativeWhipSsh::NativeWhipSsh(
              const jsi::Value *args, size_t count) -> jsi::Value {
         return this
             ->cpp_uniffi_whip_ssh_checksum_method_hostruntime_github_prepare_asset(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_repository_"
+        "counts"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "hostruntime_github_repository_counts"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_hostruntime_github_repository_counts(
                 rt, thisVal, args, count);
       });
   props["ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_repository_"
@@ -36477,6 +36505,18 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_hostruntime_github_prepare_asset(
                                                          value);
 }
 jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_fn_method_hostruntime_github_repository_counts(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value = uniffi_whip_ssh_fn_method_hostruntime_github_repository_counts(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]));
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
+jsi::Value NativeWhipSsh::
     cpp_uniffi_whip_ssh_fn_method_hostruntime_github_repository_details(
         jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
         size_t count) {
@@ -43294,6 +43334,15 @@ jsi::Value NativeWhipSsh::
         size_t count) {
   auto value =
       uniffi_whip_ssh_checksum_method_hostruntime_github_prepare_asset();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_hostruntime_github_repository_counts(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_hostruntime_github_repository_counts();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }

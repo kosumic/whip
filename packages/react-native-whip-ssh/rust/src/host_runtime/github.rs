@@ -9,15 +9,16 @@ use crate::github::checks::{
     CHECKS_UNAVAILABLE, apply_commit_statuses, commit_status_script, commit_statuses_endpoint,
     parse_commit_checks,
 };
+use crate::github::counts::{counts_script, parse_counts};
 use crate::github::resources::{
     asset_script, checks_endpoint, files_endpoint, list_script, mutation_request, parse_files,
     parse_resource, positive_id, resource_endpoint, validate_merge_response,
 };
 use crate::github::{
     GithubEntry, GithubFilesPage, GithubListState, GithubMutation, GithubPage, GithubRepository,
-    GithubRepositoryDetails, GithubResource, GithubSection, api_script, comment_request,
-    comments_endpoint, discovery_script, parse_comment, parse_comments, parse_details,
-    parse_discovery, parse_license_url, parse_page,
+    GithubRepositoryCounts, GithubRepositoryDetails, GithubResource, GithubSection, api_script,
+    comment_request, comments_endpoint, discovery_script, parse_comment, parse_comments,
+    parse_details, parse_discovery, parse_license_url, parse_page,
 };
 use crate::ssh::{CommandOutput, SshErrorCode};
 use std::time::Duration;
@@ -140,6 +141,20 @@ impl HostRuntime {
         }
         validate_generation(&self.inner, generation)?;
         Ok(details)
+    }
+
+    pub async fn github_repository_counts(
+        &self,
+        repository: GithubRepository,
+    ) -> Result<GithubRepositoryCounts, HostRuntimeError> {
+        let generation = current_generation(&self.inner)?;
+        let command = counts_script(&repository).map_err(HostRuntimeError::GitFailure)?;
+        let output = self
+            .github_read_command(generation, "counts", command)
+            .await?;
+        let counts = parse_counts(&output).map_err(HostRuntimeError::GitFailure)?;
+        validate_generation(&self.inner, generation)?;
+        Ok(counts)
     }
 
     pub async fn github_page(

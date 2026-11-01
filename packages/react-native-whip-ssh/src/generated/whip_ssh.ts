@@ -11503,6 +11503,53 @@ const FfiConverterTypeGithubRepository = (() => {
   return new FFIConverter();
 })();
 
+export type GithubRepositoryCounts = {
+  openIssues: number;
+  openPullRequests: number;
+};
+
+/**
+ * Generated factory for {@link GithubRepositoryCounts} record objects.
+ */
+export const GithubRepositoryCounts = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      GithubRepositoryCounts,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<GithubRepositoryCounts>,
+  });
+})();
+
+const FfiConverterTypeGithubRepositoryCounts = (() => {
+  type TypeName = GithubRepositoryCounts;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        openIssues: FfiConverterUInt32.read(from),
+        openPullRequests: FfiConverterUInt32.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterUInt32.write(value.openIssues, into);
+      FfiConverterUInt32.write(value.openPullRequests, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterUInt32.allocationSize(value.openIssues) +
+        FfiConverterUInt32.allocationSize(value.openPullRequests)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type GithubRepositoryDetails = {
   description?: string;
   stars: number;
@@ -39360,6 +39407,10 @@ export interface HostRuntimeLike {
     name: string,
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<string>;
+  githubRepositoryCounts(
+    repository: GithubRepository,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<GithubRepositoryCounts>;
   githubRepositoryDetails(
     repository: GithubRepository,
     asyncOpts_?: { signal: AbortSignal },
@@ -41177,6 +41228,57 @@ export class HostRuntime
         /*liftFunc:*/ (__rb: Uint8Array) => {
           try {
             return FfiConverterString.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async githubRepositoryCounts(
+    repository: GithubRepository,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<GithubRepositoryCounts> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_github_repository_counts(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterTypeGithubRepository.lower(
+              repository,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeGithubRepositoryCounts.lift(__rb);
           } finally {
             nativeModule().rustbuffer_free(__rb);
           }
@@ -60177,6 +60279,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_repository_counts() !==
+    31162
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_github_repository_counts',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_repository_details() !==
     7837
   ) {
@@ -61676,6 +61786,7 @@ export default Object.freeze({
     FfiConverterTypeGithubPage,
     FfiConverterTypeGithubPullRequest,
     FfiConverterTypeGithubRepository,
+    FfiConverterTypeGithubRepositoryCounts,
     FfiConverterTypeGithubRepositoryDetails,
     FfiConverterTypeGithubResource,
     FfiConverterTypeGithubSection,

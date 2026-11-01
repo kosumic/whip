@@ -4,8 +4,10 @@ use serde::Deserialize;
 
 use crate::remote_ops::shell_quote;
 pub(crate) mod checks;
+pub(crate) mod counts;
 mod markdown;
 pub(crate) mod resources;
+pub use counts::GithubRepositoryCounts;
 pub use markdown::*;
 use resources::Commit;
 pub use resources::*;
@@ -154,6 +156,24 @@ pub(crate) fn parse_discovery(directory: String, output: &str) -> Option<GithubR
 
 pub(crate) fn api_script(repository: &GithubRepository, endpoint: &str) -> Result<String, String> {
     github_api_script(repository, endpoint, ApiMethod::Get)
+}
+
+fn repository_graphql_script(
+    repository: &GithubRepository,
+    fields: &str,
+) -> Result<String, String> {
+    if valid_slug(&repository.name_with_owner).as_deref() != Some(&repository.name_with_owner) {
+        return Err("Invalid GitHub repository".to_owned());
+    }
+    let (owner, name) = repository
+        .name_with_owner
+        .split_once('/')
+        .ok_or("Invalid GitHub repository")?;
+    let query = format!("query{{repository(owner:\"{owner}\",name:\"{name}\"){{{fields}}}}}");
+    Ok(format!(
+        "GH_PROMPT_DISABLED=1 GH_PAGER=cat gh api --hostname {GITHUB_HOST} graphql -f {}",
+        shell_quote(&format!("query={query}")),
+    ))
 }
 
 pub(super) enum ApiMethod {

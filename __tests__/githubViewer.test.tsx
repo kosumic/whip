@@ -12,7 +12,7 @@ import { Check, CircleDashed, CircleDot, CircleHelp, X } from 'lucide-react-nati
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { GlassSurface } from '../src/components/GlassSurface';
 import { appQueryClient } from '../src/services/appQueryClient';
-import { GITHUB_CHECK_REFRESH_INTERVAL_MS, GITHUB_DETAILS_STALE_TIME_MS, githubDetailsQueryOptions } from '../src/services/remoteGithubQueries';
+import { GITHUB_CHECK_REFRESH_INTERVAL_MS, GITHUB_DETAILS_STALE_TIME_MS, githubCountsQueryOptions, githubDetailsQueryOptions } from '../src/services/remoteGithubQueries';
 import type { RemoteGitConnection } from '../src/services/remoteGitQueries';
 import type { RuntimeGithubEntry } from 'react-native-whip-ssh';
 
@@ -47,6 +47,7 @@ jest.mock('../src/theme', () => ({ useTheme: () => ({ colors: {
 
 const repository = { directory: '/repo', nameWithOwner: 'owner/repo', url: 'https://github.com/owner/repo' };
 const repositoryDetails = { stars: 42, website: 'https://example.com/docs', license: { name: 'MIT License', url: repository.url + '/blob/main/COPYING.md' } };
+const repositoryCounts = { openIssues: 8, openPullRequests: 7 };
 const issue: RuntimeGithubEntry = { id: '7', title: 'A real issue', subtitle: '#7 · octo', state: 'open', url: repository.url + '/issues/7', body: 'Issue body' };
 const comment: RuntimeGithubEntry = { id: '99', title: 'octo', subtitle: '2026-10-30T12:00:00Z', state: '', url: issue.url + '#issuecomment-99', body: '**Reply**' };
 let renderer: ReactTestRenderer;
@@ -54,6 +55,7 @@ let queryClient: QueryClient;
 let native: {
   runtimeId: string;
   githubRepositoryDetails: jest.Mock;
+  githubRepositoryCounts: jest.Mock;
   githubPage: jest.Mock;
   githubComments: jest.Mock;
   githubPostComment: jest.Mock;
@@ -73,6 +75,7 @@ beforeEach(async () => {
   native = {
     runtimeId: 'viewer-test',
     githubRepositoryDetails: jest.fn().mockResolvedValue(repositoryDetails),
+    githubRepositoryCounts: jest.fn().mockResolvedValue(repositoryCounts),
     githubPage: jest.fn().mockResolvedValue({ entries: [issue], hasMore: false }),
     githubComments: jest.fn().mockResolvedValue({ entries: [], hasMore: false }),
     githubPostComment: jest.fn().mockResolvedValue(comment),
@@ -87,6 +90,61 @@ beforeEach(async () => {
   });
 });
 afterEach(async () => { await act(async () => { renderer.unmount(); }); queryClient.clear(); });
+
+test('shows open totals on issue and PR tabs regardless of list filters, search and pagination', async () => {
+  const tabCounts = () => ['issues', 'pullRequests'].map(id => button(`github.${id}`).findAllByType(Text)[1]?.props.children);
+  expect(tabCounts()).toEqual(['8', '7']);
+  expect(button('github.issues').props.accessibilityValue).toEqual({ text: '8' });
+  expect(button('github.pullRequests').props.accessibilityValue).toEqual({ text: '7' });
+  for (const id of ['commits', 'actions', 'releases']) {
+    expect(button(`github.${id}`).findAllByType(Text)).toHaveLength(1);
+  }
+  native.githubPage.mockResolvedValue({ entries: [], hasMore: true });
+  await press('github.issues');
+  await press('github.filter.closed');
+  await act(async () => { renderer.root.findByType(Input).props.onChangeText('label:bug'); });
+  await press('github.applySearch');
+  await press('github.nextPage');
+  expect(tabCounts()).toEqual(['8', '7']);
+  expect(native.githubRepositoryCounts).toHaveBeenCalledTimes(1);
+  native.githubRepositoryCounts.mockResolvedValue({ openIssues: 1250, openPullRequests: 0 });
+  await press('github.refresh');
+  expect(tabCounts()).toEqual([(1250).toLocaleString(), '0']);
+  expect(native.githubRepositoryDetails).toHaveBeenCalledTimes(1);
+});
+
+test('keeps unavailable counts blank and retries without blocking the list', async () => {
+  let finish!: (counts: typeof repositoryCounts) => void;
+  native.githubRepositoryCounts.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  let pending!: Promise<void>;
+  await act(async () => { pending = queryClient.resetQueries({ queryKey: githubCountsQueryOptions(connection, repository).queryKey, exact: true }); });
+  expect(button('github.issues').findAllByType(Text)).toHaveLength(1);
+  expect(button('github.pullRequests').props.accessibilityValue).toBeUndefined();
+  expect(button(issue.title)).toBeDefined();
+  await act(async () => { finish(repositoryCounts); await pending; });
+  native.githubRepositoryCounts.mockRejectedValueOnce(new Error('Counts unavailable'));
+  await act(async () => { await queryClient.resetQueries({ queryKey: githubCountsQueryOptions(connection, repository).queryKey, exact: true }); });
+  expect(button('github.issues').findAllByType(Text)).toHaveLength(1);
+  expect(button(issue.title)).toBeDefined();
+  await press('github.retry');
+  expect(button('github.issues').props.accessibilityValue).toEqual({ text: '8' });
+  expect(button('github.retry')).toBeUndefined();
+});
+
+test('refreshes counts after creating and closing an issue', async () => {
+  await press('github.issues');
+  await press('github.newIssue');
+  await act(async () => { renderer.root.findAllByType(Input)[0].props.onChangeText('New issue'); });
+  native.githubRepositoryCounts.mockResolvedValueOnce({ ...repositoryCounts, openIssues: 9 });
+  native.githubMutate.mockResolvedValueOnce(issue);
+  await press('github.createIssue');
+  await press('github.back');
+  expect(button('github.issues').props.accessibilityValue).toEqual({ text: '9' });
+  await press(issue.title);
+  await press('github.closeIssue');
+  await press('github.back');
+  expect(button('github.issues').props.accessibilityValue).toEqual({ text: '8' });
+});
 
 test('shows five repository tabs and leaves stale metadata cached through tab switches and list refreshes', async () => {
   const labels = renderer.root.findAllByType(Button).filter(item => item.props.accessibilityRole === 'tab').map(item => item.props.accessibilityLabel);
@@ -210,10 +268,13 @@ test.each(['mergePull', 'squashPull', 'rebasePull'] as const)('confirms %s with 
   // A refresh after a new push must not change the commit already confirmed.
   pull = { ...pull, pull: { ...pull.pull!, headSha: 'b'.repeat(40) } };
   await press('github.refreshDetail');
+  native.githubRepositoryCounts.mockResolvedValueOnce({ ...repositoryCounts, openPullRequests: 6 });
   await press('github.confirmMergeAction');
   expect(native.githubMutate).toHaveBeenCalledWith(repository, operation, issue.id, '', '', sha);
   expect(button('github.confirmMergeAction')).toBeUndefined();
   expect(button('github.closePull')).toBeUndefined();
+  await press('github.back');
+  expect(button('github.pullRequests').props.accessibilityValue).toEqual({ text: '6' });
   expect(native.githubRepositoryDetails).toHaveBeenCalledTimes(1);
 });
 

@@ -1,8 +1,7 @@
 use super::resources::{GithubResource, files_endpoint, parse_resource};
 use super::{
-    GITHUB_HOST, GITHUB_PAGE_SIZE, GithubEntry, GithubPage, GithubRepository, api_script, decode,
+    GITHUB_PAGE_SIZE, GithubEntry, GithubPage, GithubRepository, decode, repository_graphql_script,
 };
-use crate::remote_ops::shell_quote;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -13,11 +12,6 @@ pub(crate) fn commit_status_script(
     repository: &GithubRepository,
     entries: &[GithubEntry],
 ) -> Result<String, String> {
-    api_script(repository, "")?;
-    let (owner, name) = repository
-        .name_with_owner
-        .split_once('/')
-        .ok_or("Invalid GitHub repository")?;
     let mut fields = String::new();
     for (index, entry) in entries.iter().enumerate() {
         files_endpoint(&entry.id, false, 1)?;
@@ -28,11 +22,7 @@ pub(crate) fn commit_status_script(
         )
         .map_err(|error| error.to_string())?;
     }
-    let query = format!("query{{repository(owner:\"{owner}\",name:\"{name}\"){{{fields}}}}}");
-    Ok(format!(
-        "GH_PROMPT_DISABLED=1 GH_PAGER=cat gh api --hostname {GITHUB_HOST} graphql -f {}",
-        shell_quote(&format!("query={query}")),
-    ))
+    repository_graphql_script(repository, &fields)
 }
 
 #[derive(Deserialize)]

@@ -1,5 +1,5 @@
 import { appQueryClient } from '../src/services/appQueryClient';
-import { GITHUB_DETAILS_STALE_TIME_MS, githubCommentsQueryOptions, githubDetailsQueryOptions, githubDiscoveryQueryOptions, githubPageQueryOptions, postGithubComment } from '../src/services/remoteGithubQueries';
+import { GITHUB_DETAILS_STALE_TIME_MS, githubCommentsQueryOptions, githubCountsQueryOptions, githubDetailsQueryOptions, githubDiscoveryQueryOptions, githubPageQueryOptions, postGithubComment } from '../src/services/remoteGithubQueries';
 import type { RemoteGitConnection } from '../src/services/remoteGitQueries';
 
 const repository = { directory: '/repo', nameWithOwner: 'owner/repo', url: 'https://github.com/owner/repo' };
@@ -10,6 +10,7 @@ function setup() {
     runtimeId: 'github-test',
     discoverGithubRepository: jest.fn().mockResolvedValue(repository),
     githubRepositoryDetails: jest.fn().mockResolvedValue(repositoryDetails),
+    githubRepositoryCounts: jest.fn().mockResolvedValue({ openIssues: 8, openPullRequests: 7 }),
     githubPage: jest.fn().mockResolvedValue({ entries: [], hasMore: false }),
     githubComments: jest.fn().mockResolvedValue({ entries: [], hasMore: false }),
     githubPostComment: jest.fn(),
@@ -22,6 +23,21 @@ function setup() {
 }
 
 afterEach(() => appQueryClient.clear());
+
+test('shares count reads per repository and rejects counts from a replaced host', async () => {
+  const { native, connection } = setup();
+  const options = githubCountsQueryOptions(connection, repository);
+  await Promise.all([appQueryClient.fetchQuery(options), appQueryClient.fetchQuery(options)]);
+  expect(native.githubRepositoryCounts).toHaveBeenCalledTimes(1);
+  let finish!: (counts: { openIssues: number; openPullRequests: number }) => void;
+  native.githubRepositoryCounts.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const next = githubCountsQueryOptions({ ...connection, generation: 2n }, repository);
+  const pending = appQueryClient.fetchQuery(next);
+  jest.mocked(connection.isCurrent).mockReturnValue(false);
+  finish({ openIssues: 1, openPullRequests: 0 });
+  await expect(pending).rejects.toThrow('Host connection changed');
+  expect(appQueryClient.getQueryData(next.queryKey)).toBeUndefined();
+});
 
 test('shares discovery reads and isolates directories and reconnect generations', async () => {
   const { native, connection } = setup();

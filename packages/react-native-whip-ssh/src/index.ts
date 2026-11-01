@@ -52,6 +52,7 @@ import {
   formatGithubComment as nativeFormatGithubComment,
   type GithubEntry,
   type GithubRepository,
+  type GithubRepositoryCounts,
   type GithubRepositoryDetails,
   type GithubPage,
   HostProfileStore as RustHostProfileStore,
@@ -693,6 +694,7 @@ export type RuntimeRemoteDirectoryListing = {
 
 export type RuntimeGitRepository = { root: string; hasHead: boolean };
 export type RuntimeGithubRepository = GithubRepository;
+export type RuntimeGithubRepositoryCounts = GithubRepositoryCounts;
 export type RuntimeGithubRepositoryDetails = GithubRepositoryDetails;
 export type RuntimeGithubPage = GithubPage;
 export type RuntimeGithubEntry = GithubEntry;
@@ -3694,6 +3696,10 @@ export class NativeHostRuntime {
 
   githubRepositoryDetails(repository: RuntimeGithubRepository): Promise<RuntimeGithubRepositoryDetails> {
     return this.githubOperation('githubRepositoryDetails', () => this.runtime.githubRepositoryDetails(repository));
+  }
+
+  githubRepositoryCounts(repository: RuntimeGithubRepository): Promise<RuntimeGithubRepositoryCounts> {
+    return this.githubOperation('githubRepositoryCounts', () => this.runtime.githubRepositoryCounts(repository));
   }
 
   githubPage(repository: RuntimeGithubRepository, section: RuntimeGithubSection, page: number, state: RuntimeGithubListState = 'open', query = ''): Promise<RuntimeGithubPage> {

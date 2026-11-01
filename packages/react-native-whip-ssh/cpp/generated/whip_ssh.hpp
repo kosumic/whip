@@ -993,6 +993,9 @@ protected:
   jsi::Value cpp_uniffi_whip_ssh_fn_method_hostruntime_github_prepare_asset(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
+  jsi::Value cpp_uniffi_whip_ssh_fn_method_hostruntime_github_repository_counts(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
   jsi::Value
   cpp_uniffi_whip_ssh_fn_method_hostruntime_github_repository_details(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
@@ -3046,6 +3049,10 @@ protected:
       size_t count);
   jsi::Value
   cpp_uniffi_whip_ssh_checksum_method_hostruntime_github_prepare_asset(
+      jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+      size_t count);
+  jsi::Value
+  cpp_uniffi_whip_ssh_checksum_method_hostruntime_github_repository_counts(
       jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
       size_t count);
   jsi::Value
