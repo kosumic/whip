@@ -470,17 +470,22 @@ fn offline_restoration_for_all_agents_uses_rust_owned_checkpoint_formats() {
     let (_directory, database) = fixture();
     let session = "11111111-1111-4111-8111-111111111111";
     let mut claude = ClaudeSessionCore::new(session);
-    let bytes = include_bytes!("../../test-fixtures/claude/main.jsonl");
+    let bytes = include_bytes!(
+        "../../../../../crates/agent-transcript-core/tests/fixtures/claude/main.jsonl"
+    );
     let source = claude.bind_source("/claude".into(), "1:2".into(), bytes.len() as u64);
     claude.ingest(source.source_generation, bytes).unwrap();
     let mut codex = CodexSessionCore::new(session);
-    let bytes = include_bytes!("../../test-fixtures/codex/paginated-rollout.jsonl");
+    let bytes = include_bytes!(
+        "../../../../../crates/agent-transcript-core/tests/fixtures/codex/paginated-rollout.jsonl"
+    );
     let source = codex.bind_source("/codex".into(), "1:2".into(), bytes.len() as u64);
     codex.ingest(source.source_generation, bytes).unwrap();
     let mut opencode = OpenCodeSessionCore::new("ses_offline");
     opencode.bootstrap(1, &serde_json::json!({"info":{"id":"ses_offline"}, "messages":[{"info":{"id":"user", "role":"user"}, "parts":[{"id":"part", "type":"text", "text":"offline"}]}]}).to_string()).unwrap();
     let mut pi = crate::agent_transcript::PiSessionCore::new("pi-session");
-    let bytes = include_bytes!("../../test-fixtures/pi/main.jsonl");
+    let bytes =
+        include_bytes!("../../../../../crates/agent-transcript-core/tests/fixtures/pi/main.jsonl");
     let source = pi.bind_source("/pi-session.jsonl".into(), "1:2".into(), bytes.len() as u64);
     pi.ingest(source.source_generation, bytes).unwrap();
     run(async {

@@ -1,0 +1,55 @@
+[package]
+name = "agent-transcript-core"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT"
+description = "Provider-neutral coding-agent transcript parsing, normalization, incremental updates, and checkpoints"
+repository = "https://github.com/kosumic/whip"
+documentation = "https://docs.rs/agent-transcript-core"
+readme = "README.md"
+keywords = ["agent", "transcript", "claude", "codex", "opencode"]
+categories = ["parser-implementations", "text-processing"]
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+opt-level = 3
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+allow_attributes_without_reason = "deny"
+# Preserve the project's readable empty-collection assertions.
+assert_is_empty = "allow"
+dbg_macro = "deny"
+excessive_nesting = "warn"
+expect_used = "deny"
+large_futures = "warn"
+large_stack_arrays = "warn"
+doc_markdown = "allow"
+ignored_unit_patterns = "allow"
+if_not_else = "allow"
+map_unwrap_or = "allow"
+missing_errors_doc = "allow"
+multiple_unsafe_ops_per_block = "deny"
+mutex_atomic = "warn"
+mutex_integer = "warn"
+must_use_candidate = "allow"
+needless_pass_by_value = "allow"
+needless_collect = "deny"
+redundant_clone = "deny"
+similar_names = "allow"
+significant_drop_tightening = "warn"
+single_match_else = "allow"
+struct_excessive_bools = "allow"
+todo = "deny"
+undocumented_unsafe_blocks = "deny"
+unimplemented = "deny"
+unwrap_used = "deny"
+wildcard_imports = "deny"

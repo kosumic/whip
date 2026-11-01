@@ -55,7 +55,7 @@ pub(crate) enum RolloutRecord {
 /// Selected once from the rollout's first SessionMeta; never from event shapes.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum CodexHistoryMode {
+pub enum CodexHistoryMode {
     #[default]
     Unselected,
     Legacy,
@@ -81,7 +81,7 @@ impl CodexHistoryMode {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub(crate) struct SessionMeta {
+pub struct SessionMeta {
     pub id: Option<String>,
     pub cwd: Option<String>,
     #[serde(default)]
@@ -98,7 +98,7 @@ pub(crate) struct SessionMeta {
 /// Despite its wire name, `thread_id` identifies an immutable rollout, not
 /// necessarily the stable thread ID after a revert.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub(crate) struct HistoryPosition {
+pub struct HistoryPosition {
     pub thread_id: String,
     pub end_ordinal_exclusive: u64,
     pub end_byte_offset: u64,

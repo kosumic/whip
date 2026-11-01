@@ -14,17 +14,17 @@ use super::{
 };
 
 #[derive(Deserialize)]
-pub(crate) struct OpenCodeV2Page {
+pub struct OpenCodeV2Page {
     pub data: Vec<Value>,
     pub cursor: OpenCodeV2PageCursor,
 }
 
 #[derive(Deserialize)]
-pub(crate) struct OpenCodeV2PageCursor {
+pub struct OpenCodeV2PageCursor {
     pub next: Option<String>,
 }
 
-pub(crate) struct OpenCodeV2Snapshot {
+pub struct OpenCodeV2Snapshot {
     pub info: Value,
     pub messages: Vec<Value>,
 }
@@ -32,18 +32,18 @@ pub(crate) struct OpenCodeV2Snapshot {
 /// The durable log position and the complete API order, including hidden rows.
 /// A rollback can target a hidden row, so projected chat IDs alone are unsafe.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct OpenCodeV2History {
+pub struct OpenCodeV2History {
     pub sequence: u64,
     pub message_ids: Vec<String>,
 }
 
-pub(crate) struct OpenCodeV2ReadState {
+pub struct OpenCodeV2ReadState {
     pub history: OpenCodeV2History,
     pub pending_assistants: Vec<String>,
     pub shells: HashMap<String, String>,
 }
 
-pub(crate) enum OpenCodeV2Sync {
+pub enum OpenCodeV2Sync {
     Full {
         snapshot: OpenCodeV2Snapshot,
         sequence: Option<u64>,
@@ -56,11 +56,11 @@ pub(crate) enum OpenCodeV2Sync {
 }
 
 impl OpenCodeSessionCore {
-    pub(crate) fn v2_sequence(&self) -> Option<u64> {
+    pub fn v2_sequence(&self) -> Option<u64> {
         self.v2_history.as_ref().map(|history| history.sequence)
     }
 
-    pub(crate) fn v2_read_state(&self) -> Option<OpenCodeV2ReadState> {
+    pub fn v2_read_state(&self) -> Option<OpenCodeV2ReadState> {
         Some(OpenCodeV2ReadState {
             history: self.v2_history.clone()?,
             pending_assistants: self
@@ -88,7 +88,7 @@ impl OpenCodeSessionCore {
         })
     }
 
-    pub(crate) fn apply_v2_sync(
+    pub fn apply_v2_sync(
         &mut self,
         sync: OpenCodeV2Sync,
     ) -> Result<Option<AgentTranscriptUpdate>, OpenCodeTranscriptError> {
@@ -167,7 +167,7 @@ impl OpenCodeSessionCore {
     }
 
     #[cfg(test)]
-    pub(crate) fn apply_v2_snapshot(
+    pub fn apply_v2_snapshot(
         &mut self,
         snapshot: OpenCodeV2Snapshot,
     ) -> Result<Option<AgentTranscriptUpdate>, OpenCodeTranscriptError> {

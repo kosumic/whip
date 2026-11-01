@@ -40,7 +40,7 @@ for (const capture of captures) {
 }
 const result = spawnSync('cargo', [
   'test', '--locked', '--lib', '--manifest-path',
-  'packages/react-native-whip-ssh/rust/Cargo.toml', 'downloaded_pi_captures',
+  'crates/agent-transcript-core/Cargo.toml', 'downloaded_pi_captures',
   '--', '--ignored', '--nocapture',
 ], {
   cwd: root,

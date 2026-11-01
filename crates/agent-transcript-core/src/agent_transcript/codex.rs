@@ -1388,12 +1388,12 @@ struct CachedCodexLine {
 
 /// Referenced immutable prefixes are separate from the live file's byte cursor.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub(crate) struct CodexInheritedHistory {
+pub struct CodexInheritedHistory {
     pub header: Value,
     pub records: Vec<Value>,
 }
 
-pub(crate) struct CodexCachedHistoryPrefix {
+pub struct CodexCachedHistoryPrefix {
     pub bytes: String,
     pub inherited_history: Option<CodexInheritedHistory>,
 }
@@ -1516,11 +1516,11 @@ impl CodexSessionCore {
         }
     }
 
-    pub(crate) fn invalidate_source(&mut self) {
+    pub fn invalidate_source(&mut self) {
         self.cursor.source = None;
     }
 
-    pub(crate) fn rollout_path(&self) -> Option<&str> {
+    pub fn rollout_path(&self) -> Option<&str> {
         self.cursor
             .source
             .as_ref()
@@ -1528,15 +1528,12 @@ impl CodexSessionCore {
             .map(|source| source.rollout_path.as_str())
     }
 
-    pub(crate) fn inherited_history(&self) -> Option<&CodexInheritedHistory> {
+    pub fn inherited_history(&self) -> Option<&CodexInheritedHistory> {
         self.inherited_history.as_ref()
     }
 
     /// Copy only a complete physical prefix, preserving its original byte offsets.
-    pub(crate) fn cached_history_prefix(
-        &self,
-        end_byte_offset: u64,
-    ) -> Option<CodexCachedHistoryPrefix> {
+    pub fn cached_history_prefix(&self, end_byte_offset: u64) -> Option<CodexCachedHistoryPrefix> {
         if self.adapter.history_mode != CodexHistoryMode::Paginated
             || end_byte_offset > self.committable_offset()
         {
@@ -1593,7 +1590,7 @@ impl CodexSessionCore {
     }
 
     /// Optional session-index metadata is transient and never added to raw caches.
-    pub(crate) fn update_native_title(
+    pub fn update_native_title(
         &mut self,
         session_id: &str,
         title: Option<&str>,
@@ -1623,7 +1620,7 @@ impl CodexSessionCore {
         self.adapter.effective_status(self.history_gate.status())
     }
 
-    pub(crate) fn projection_view(&self) -> Option<AgentTranscriptView<'_>> {
+    pub fn projection_view(&self) -> Option<AgentTranscriptView<'_>> {
         Some(AgentTranscriptView {
             revision: self.revision,
             messages: self.adapter.projected_messages(),
@@ -1654,7 +1651,7 @@ impl CodexSessionCore {
         self.next_status_update()
     }
 
-    pub(crate) fn mark_discovery_retry_update(
+    pub fn mark_discovery_retry_update(
         &mut self,
         reason: impl Into<String>,
     ) -> AgentTranscriptUpdate {
@@ -1838,7 +1835,7 @@ impl CodexSessionCore {
         binding
     }
 
-    pub(crate) fn bind_source_with_history(
+    pub fn bind_source_with_history(
         &mut self,
         path: String,
         file_id: String,
@@ -2218,7 +2215,7 @@ mod tests {
     }
 
     fn paginated_fixture() -> &'static [u8] {
-        include_bytes!("../../test-fixtures/codex/paginated-rollout.jsonl")
+        include_bytes!("../../tests/fixtures/codex/paginated-rollout.jsonl")
     }
 
     fn parse_codex_chunks(bytes: &[u8], chunk_size: usize) -> AgentTranscriptState {
@@ -3400,7 +3397,7 @@ mod tests {
     fn paginated_async_question_items_preserve_options_without_duplicate_markdown() {
         // Sanitized records from the reported rollout. Async calls are rendered
         // upstream as AgentMessage items, not DynamicToolCall items or events.
-        let fixture = include_bytes!("../../test-fixtures/codex/async-question.jsonl");
+        let fixture = include_bytes!("../../tests/fixtures/codex/async-question.jsonl");
         let lines = fixture
             .split_inclusive(|byte| *byte == b'\n')
             .collect::<Vec<_>>();
@@ -3525,7 +3522,7 @@ mod tests {
     fn paginated_extension_web_search_survives_ingestion_and_cache_replay() {
         // Sanitized shape captured from a real paginated rollout: nested web
         // calls use Extension/web.search and IDs unrelated to the outer exec.
-        let fixture = include_bytes!("../../test-fixtures/codex/extension-web-search.jsonl");
+        let fixture = include_bytes!("../../tests/fixtures/codex/extension-web-search.jsonl");
         let lines = fixture
             .split_inclusive(|byte| *byte == b'\n')
             .collect::<Vec<_>>();

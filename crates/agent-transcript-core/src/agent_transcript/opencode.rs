@@ -23,14 +23,14 @@ use super::projection::{
 mod v2;
 #[cfg(test)]
 mod v2_tests;
-pub(crate) use v2::{
+pub use v2::{
     OpenCodeV2History, OpenCodeV2Page, OpenCodeV2ReadState, OpenCodeV2Snapshot, OpenCodeV2Sync,
 };
 
 const OPENCODE_CACHE_SCHEMA_VERSION: u32 = 4;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) enum OpenCodeProtocol {
+pub enum OpenCodeProtocol {
     #[default]
     V1,
     V2,
@@ -190,7 +190,7 @@ impl OpenCodeSessionCore {
         self.source_generation
     }
 
-    pub(crate) fn set_protocol(&mut self, protocol: OpenCodeProtocol) {
+    pub fn set_protocol(&mut self, protocol: OpenCodeProtocol) {
         if self.protocol != protocol {
             self.protocol = protocol;
             // V1 database sequences and V2 snapshot revisions are different
@@ -223,7 +223,7 @@ impl OpenCodeSessionCore {
         self.history_gate.status()
     }
 
-    pub(crate) fn projection_view(&self) -> AgentTranscriptView<'_> {
+    pub fn projection_view(&self) -> AgentTranscriptView<'_> {
         AgentTranscriptView {
             revision: self.revision,
             messages: &self.messages,

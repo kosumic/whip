@@ -103,6 +103,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "agent-transcript-core"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5759,6 +5769,7 @@ name = "whip-ssh"
 version = "0.1.0"
 dependencies = [
  "agent-browser-control",
+ "agent-transcript-core",
  "async-trait",
  "axum",
  "base64 0.22.1",

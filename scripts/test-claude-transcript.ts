@@ -38,7 +38,7 @@ const result = spawnSync(
     'test',
     '--locked',
     '--manifest-path',
-    'packages/react-native-whip-ssh/rust/Cargo.toml',
+    'crates/agent-transcript-core/Cargo.toml',
     'downloaded_claude_capture',
     '--',
     '--ignored',

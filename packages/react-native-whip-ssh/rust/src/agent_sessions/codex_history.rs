@@ -7,7 +7,7 @@ use std::path::Path;
 use serde_json::Value;
 
 use crate::agent_transcript::{CodexCachedHistoryPrefix, CodexInheritedHistory, CodexSessionCore};
-use crate::codex::rollout_wire::{CodexHistoryMode, HistoryPosition, SessionMeta};
+use crate::agent_transcript::{CodexHistoryMode, HistoryPosition, SessionMeta};
 
 use super::{AgentSessionError, parse_rollout_filename, parse_uuid_bytes, shell_quote};
 
@@ -285,7 +285,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let active = directory(root.path(), "sessions");
         let archived = directory(root.path(), "archived_sessions");
-        let original = include_str!("../../test-fixtures/codex/paginated-rollout.jsonl")
+        let original = include_str!("../../../../../crates/agent-transcript-core/tests/fixtures/codex/paginated-rollout.jsonl")
             .replace("thread-current", THREAD)
             .replace("Build it", "Build 日本語")
             .replace('\n', "\r\n");
@@ -503,7 +503,7 @@ mod tests {
     async fn reopening_replacement_reuses_resolved_history_in_memory_and_after_restore() {
         let root = tempfile::tempdir().unwrap();
         let active = directory(root.path(), "sessions");
-        let original = include_str!("../../test-fixtures/codex/paginated-rollout.jsonl")
+        let original = include_str!("../../../../../crates/agent-transcript-core/tests/fixtures/codex/paginated-rollout.jsonl")
             .replace("thread-current", THREAD);
         let ancestor = active.join(format!("rollout-2026-08-26T10-20-30-{THREAD}.jsonl"));
         std::fs::write(&ancestor, &original).unwrap();
@@ -578,7 +578,7 @@ mod tests {
     async fn cached_prefix_falls_back_when_rollout_or_coverage_differs() {
         let root = tempfile::tempdir().unwrap();
         let active = directory(root.path(), "sessions");
-        let original = include_str!("../../test-fixtures/codex/paginated-rollout.jsonl")
+        let original = include_str!("../../../../../crates/agent-transcript-core/tests/fixtures/codex/paginated-rollout.jsonl")
             .replace("thread-current", THREAD);
         let ancestor = active.join(format!("rollout-2026-08-26T10-20-30-{THREAD}.jsonl"));
         std::fs::write(&ancestor, &original).unwrap();
@@ -629,7 +629,7 @@ mod tests {
     async fn cached_prefix_preserves_remote_validation_of_invalid_history() {
         let root = tempfile::tempdir().unwrap();
         let active = directory(root.path(), "sessions");
-        let original = include_str!("../../test-fixtures/codex/paginated-rollout.jsonl")
+        let original = include_str!("../../../../../crates/agent-transcript-core/tests/fixtures/codex/paginated-rollout.jsonl")
             .replace("thread-current", THREAD);
         let ancestor = active.join(format!("rollout-2026-08-26T10-20-30-{THREAD}.jsonl"));
         std::fs::write(&ancestor, &original).unwrap();

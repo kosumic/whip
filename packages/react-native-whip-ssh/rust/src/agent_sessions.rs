@@ -14,6 +14,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use std::time::{Duration, Instant};
 
+use agent_transcript_core::SessionCore as AgentSessionCore;
 use chrono::NaiveDateTime;
 use parking_lot::{Mutex, RwLock};
 
@@ -21,10 +22,10 @@ use ids::{PaneId, SessionId, TerminalId, TranscriptKey};
 
 use crate::agent_transcript::{
     AgentCacheError, AgentTranscriptDelta, AgentTranscriptKind, AgentTranscriptState,
-    AgentTranscriptStatus, AgentTranscriptUpdate, AgentTranscriptView, AgentTurnStatus,
-    ClaudeSessionCore, CodexInheritedHistory, CodexSessionCore, FileTranscriptCore,
-    OpenCodeProtocol, OpenCodeSessionCore, OpenCodeV2Page, OpenCodeV2Snapshot, OpenCodeV2Sync,
-    PiSessionCore, parse_open_code_cursor,
+    AgentTranscriptStatus, AgentTranscriptUpdate, AgentTurnStatus, ClaudeSessionCore,
+    CodexInheritedHistory, CodexSessionCore, FileTranscriptCore, OpenCodeProtocol,
+    OpenCodeSessionCore, OpenCodeV2Page, OpenCodeV2Snapshot, OpenCodeV2Sync, PiSessionCore,
+    parse_open_code_cursor,
 };
 use crate::herdr_api::HerdrAgentStatus;
 use crate::herdr_connection::{ConnectionExecStream, HerdrConnection};
@@ -207,25 +208,8 @@ pub(crate) fn decode_cached_agent_transcript(
     session_id: String,
     cache_blob: Vec<u8>,
 ) -> Result<AgentTranscriptState, AgentSessionError> {
-    let mut state = match agent {
-        AgentTranscriptKind::Claude => {
-            ClaudeSessionCore::new(session_id).restore_cache(&cache_blob)?
-        }
-        AgentTranscriptKind::Pi => PiSessionCore::new(session_id).restore_cache(&cache_blob)?,
-        AgentTranscriptKind::Codex => {
-            let mut core = CodexSessionCore::new(session_id);
-            core.restore_cache(&cache_blob)?
-        }
-        AgentTranscriptKind::OpenCode => {
-            let mut core = OpenCodeSessionCore::new(session_id);
-            core.restore_cache(&cache_blob)?
-        }
-    };
-    // Offline viewing uses the saved projection itself. Live readiness still
-    // requires remote boundary validation in the session cores.
-    state.status = AgentTranscriptStatus::Stale;
-    state.error = None;
-    Ok(state)
+    agent_transcript_core::decode_cached_transcript(agent, session_id, &cache_blob)
+        .map_err(Into::into)
 }
 
 #[derive(Debug)]
@@ -344,135 +328,6 @@ struct TerminalBinding {
     pane_id: PaneId,
     agent: AgentTranscriptKind,
     session_id: SessionId,
-}
-
-#[derive(Debug)]
-enum AgentSessionCore {
-    Claude(Box<ClaudeSessionCore>),
-    Pi(Box<PiSessionCore>),
-    Codex(Box<CodexSessionCore>),
-    OpenCode(Box<OpenCodeSessionCore>),
-}
-
-impl AgentSessionCore {
-    fn file(&mut self) -> Option<&mut dyn FileTranscriptCore> {
-        match self {
-            Self::Pi(core) => Some(core.as_mut()),
-            Self::Claude(core) => Some(core.as_mut()),
-            Self::Codex(core) => Some(core.as_mut()),
-            Self::OpenCode(_) => None,
-        }
-    }
-
-    fn kind(&self) -> AgentTranscriptKind {
-        match self {
-            Self::Claude(_) => AgentTranscriptKind::Claude,
-            Self::Pi(_) => AgentTranscriptKind::Pi,
-            Self::Codex(_) => AgentTranscriptKind::Codex,
-            Self::OpenCode(_) => AgentTranscriptKind::OpenCode,
-        }
-    }
-
-    fn status(&self) -> AgentTranscriptStatus {
-        match self {
-            Self::Pi(core) => core.status(),
-            Self::Claude(core) => core.status(),
-            Self::Codex(core) => core.status(),
-            Self::OpenCode(core) => core.status(),
-        }
-    }
-
-    fn state(&self) -> AgentTranscriptState {
-        match self {
-            Self::Pi(core) => core.state(),
-            Self::Claude(core) => core.state(),
-            Self::Codex(core) => core.state(),
-            Self::OpenCode(core) => core.state(),
-        }
-    }
-
-    fn projection_view(&self) -> Option<AgentTranscriptView<'_>> {
-        match self {
-            Self::Claude(_) | Self::Pi(_) => None,
-            Self::Codex(core) => core.projection_view(),
-            Self::OpenCode(core) => Some(core.projection_view()),
-        }
-    }
-
-    fn revision(&self) -> u64 {
-        match self {
-            Self::Pi(core) => core.revision(),
-            Self::Claude(core) => core.revision(),
-            Self::Codex(core) => core.revision(),
-            Self::OpenCode(core) => core.revision(),
-        }
-    }
-
-    fn mark_stale_update(&mut self, reason: impl Into<String>) -> AgentTranscriptUpdate {
-        let reason = reason.into();
-        match self {
-            Self::Pi(core) => core.mark_stale_update(reason),
-            Self::Claude(core) => core.mark_stale_update(reason),
-            Self::Codex(core) => core.mark_stale_update(reason),
-            Self::OpenCode(core) => core.mark_stale_update(reason),
-        }
-    }
-
-    fn mark_restarting_update(&mut self, reason: impl Into<String>) -> AgentTranscriptUpdate {
-        let reason = reason.into();
-        match self {
-            Self::Pi(core) => core.mark_restarting_update(reason),
-            Self::Claude(core) => core.mark_restarting_update(reason),
-            Self::Codex(core) => core.mark_restarting_update(reason),
-            Self::OpenCode(core) => core.mark_restarting_update(reason),
-        }
-    }
-
-    fn mark_unavailable_update(&mut self, reason: impl Into<String>) -> AgentTranscriptUpdate {
-        let reason = reason.into();
-        match self {
-            Self::Pi(core) => core.mark_unavailable_update(reason),
-            Self::Claude(core) => core.mark_unavailable_update(reason),
-            Self::Codex(core) => core.mark_unavailable_update(reason),
-            Self::OpenCode(core) => core.mark_unavailable_update(reason),
-        }
-    }
-
-    fn close_update(&mut self) -> AgentTranscriptUpdate {
-        match self {
-            Self::Pi(core) => core.close_update(),
-            Self::Claude(core) => core.close_update(),
-            Self::Codex(core) => core.close_update(),
-            Self::OpenCode(core) => core.close_update(),
-        }
-    }
-
-    fn restore_cache(&mut self, bytes: &[u8]) -> Result<AgentTranscriptState, AgentCacheError> {
-        match self {
-            Self::Pi(core) => core.restore_cache(bytes),
-            Self::Claude(core) => core.restore_cache(bytes),
-            Self::Codex(core) => core.restore_cache(bytes),
-            Self::OpenCode(core) => core.restore_cache(bytes),
-        }
-    }
-
-    fn confirm_cache(&mut self, source_generation: u64, position: u64) -> bool {
-        match self {
-            Self::Pi(core) => core.confirm_cache(source_generation, position),
-            Self::Claude(core) => core.confirm_cache(source_generation, position),
-            Self::Codex(core) => core.confirm_cache(source_generation, position),
-            Self::OpenCode(core) => core.confirm_cache(source_generation, position),
-        }
-    }
-
-    fn source_generation(&self) -> u64 {
-        match self {
-            Self::Pi(core) => core.source_generation(),
-            Self::Claude(core) => core.source_generation(),
-            Self::Codex(core) => core.source_generation(),
-            Self::OpenCode(core) => core.source_generation(),
-        }
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -2944,11 +2799,15 @@ mod tests {
         for (mut core, fixture) in [
             (
                 AgentSessionCore::Claude(Box::new(ClaudeSessionCore::new(SESSION))),
-                &include_bytes!("../test-fixtures/claude/main.jsonl")[..],
+                &include_bytes!(
+                    "../../../../crates/agent-transcript-core/tests/fixtures/claude/main.jsonl"
+                )[..],
             ),
             (
                 AgentSessionCore::Codex(Box::new(CodexSessionCore::new("thread-current"))),
-                &include_bytes!("../test-fixtures/codex/paginated-rollout.jsonl")[..],
+                &include_bytes!(
+                    "../../../../crates/agent-transcript-core/tests/fixtures/codex/paginated-rollout.jsonl"
+                )[..],
             ),
             (
                 AgentSessionCore::OpenCode(Box::new(OpenCodeSessionCore::new(SESSION))),
@@ -3788,7 +3647,9 @@ mod tests {
 
     #[test]
     fn claude_checkpoint_opens_offline_and_archives_from_the_same_pane() {
-        let fixture = include_bytes!("../test-fixtures/claude/main.jsonl");
+        let fixture = include_bytes!(
+            "../../../../crates/agent-transcript-core/tests/fixtures/claude/main.jsonl"
+        );
         let mut core = ClaudeSessionCore::new(SESSION);
         let binding = core.bind_source("/transcript".into(), "1:2".into(), fixture.len() as u64);
         core.ingest(binding.source_generation, fixture).unwrap();
@@ -3913,8 +3774,10 @@ mod tests {
         std::fs::create_dir_all(&directory).unwrap();
         let ordinary = directory.join(format!("rollout-2026-08-26T10-20-30-{SESSION}.jsonl"));
         let reverted = directory.join(format!("rollout-{timestamp}-{SESSION}_{rollout_id}.jsonl"));
-        let original_bytes = include_str!("../test-fixtures/codex/paginated-rollout.jsonl")
-            .replace("thread-current", SESSION);
+        let original_bytes = include_str!(
+            "../../../../crates/agent-transcript-core/tests/fixtures/codex/paginated-rollout.jsonl"
+        )
+        .replace("thread-current", SESSION);
         let reverted_bytes = original_bytes
             .lines()
             .take(15)
@@ -4259,7 +4122,10 @@ mod tests {
             .unwrap();
         let database = manager.inner.database.as_ref().unwrap();
         let release = database.hold_worker();
-        let mut bytes = include_bytes!("../test-fixtures/codex/paginated-rollout.jsonl").to_vec();
+        let mut bytes = include_bytes!(
+            "../../../../crates/agent-transcript-core/tests/fixtures/codex/paginated-rollout.jsonl"
+        )
+        .to_vec();
         bytes.extend_from_slice(
             format!(
                 "{{\"type\":\"ignored\",\"data\":\"{}\"}}\n",
@@ -4362,7 +4228,9 @@ mod tests {
                 "22222222-2222-4222-8222-222222222222".into(),
             )
             .unwrap();
-        let bytes = include_bytes!("../test-fixtures/codex/paginated-rollout.jsonl");
+        let bytes = include_bytes!(
+            "../../../../crates/agent-transcript-core/tests/fixtures/codex/paginated-rollout.jsonl"
+        );
         let expected = {
             let mut state = manager.inner.state.lock();
             let session = state.sessions.get_mut(&binding.transcript_key).unwrap();
