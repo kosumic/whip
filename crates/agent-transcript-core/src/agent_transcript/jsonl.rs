@@ -241,7 +241,7 @@ pub type CodexIngestResult = FileIngestResult;
 
 /// Shared transport contract; OpenCode's database cursor deliberately stays out
 /// of this file-backed lifecycle.
-pub(crate) trait FileTranscriptCore {
+pub trait FileTranscriptCore {
     fn state(&self) -> AgentTranscriptState;
     fn source_generation(&self) -> u64;
     fn committed_offset(&self) -> u64;

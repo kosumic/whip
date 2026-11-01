@@ -6,7 +6,7 @@ use crate::agent_transcript::{AgentField, AgentScalarValue, AgentTranscriptDelta
 type ClaudeCheckpoint = super::super::file_session::JsonlCheckpoint<ClaudeTranscriptAdapter>;
 
 const SESSION: &str = "11111111-1111-4111-8111-111111111111";
-const FIXTURE: &[u8] = include_bytes!("../../../test-fixtures/claude/main.jsonl");
+const FIXTURE: &[u8] = include_bytes!("../../../tests/fixtures/claude/main.jsonl");
 
 #[test]
 fn session_title_prefers_custom_and_updates_or_clears_without_chat_messages() {

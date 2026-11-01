@@ -3,7 +3,7 @@ use crate::agent_transcript::AgentTranscriptDelta;
 use serde_json::{Value, json};
 
 const SESSION: &str = "pi-session";
-pub(crate) const FIXTURE: &[u8] = include_bytes!("../../../test-fixtures/pi/main.jsonl");
+pub(crate) const FIXTURE: &[u8] = include_bytes!("../../../tests/fixtures/pi/main.jsonl");
 
 fn line(value: Value) -> Vec<u8> {
     format!("{value}\n").into_bytes()
@@ -172,12 +172,8 @@ fn errors_interruptions_and_malformed_lines_survive_reconnect() {
                 .any(|part| matches!(part, AgentTranscriptPart::Notice { .. }))
         );
         let blob = core.cache_blob().unwrap();
-        let saved = crate::agent_sessions::decode_cached_agent_transcript(
-            AgentTranscriptKind::Pi,
-            SESSION.into(),
-            blob,
-        )
-        .unwrap();
+        let saved =
+            crate::decode_cached_transcript(AgentTranscriptKind::Pi, SESSION, &blob).unwrap();
         assert_eq!(saved.status, AgentTranscriptStatus::Stale);
         assert_eq!(saved.messages, core.state().messages);
     }

@@ -80,7 +80,7 @@ impl<A: JsonlTranscriptAdapter> JsonlSessionCore<A> {
     pub fn received_offset(&self) -> u64 {
         self.cursor.framer.received_offset()
     }
-    pub(crate) fn invalidate_source(&mut self) {
+    pub fn invalidate_source(&mut self) {
         self.cursor.source = None;
     }
     pub fn initial_history_caught_up(&self) -> bool {

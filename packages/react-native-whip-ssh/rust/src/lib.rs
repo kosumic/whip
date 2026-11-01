@@ -11,7 +11,6 @@ mod browser_search_history;
 mod chat_rows;
 mod chat_search;
 mod chat_speech;
-mod codex;
 mod composer_dictation;
 mod credential_transactions;
 mod git_review;

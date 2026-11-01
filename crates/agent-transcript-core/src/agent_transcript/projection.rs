@@ -370,7 +370,7 @@ pub(crate) fn tool_input(tool: &str, raw: Option<&Value>) -> Vec<AgentField> {
     canonical_tool_input(tool, fields)
 }
 
-pub(crate) fn is_question_tool(tool: &str) -> bool {
+pub fn is_question_tool(tool: &str) -> bool {
     let tool = tool.rsplit(" · ").next().unwrap_or(tool);
     matches!(
         tool.rsplit('.')

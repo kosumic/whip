@@ -751,7 +751,8 @@ Whip's Chat View is inspired by and adapted from the conversation design of [Ope
 Whip is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE).
 
 Packages published to crates.io, npm, or PyPI use MIT: `whipair`,
-`agent-browser-control`, `whipair-protocol`, `tailcat-client`, and `whip-notify`
+`agent-browser-control`, `agent-transcript-core`, `whipair-protocol`, `tailcat-client`,
+and `whip-notify`
 each carry their own `LICENSE` file. Original third-party attribution and license
 terms are retained.
 

@@ -12,7 +12,7 @@ ordered by modification time, then pathname for deterministic ties. Subagent
 and tool-result directories, control characters, and path traversal are
 excluded. Records explicitly naming another session are ignored.
 
-Codex and Claude share `agent_transcript/jsonl.rs`: byte framing, device/inode
+Codex and Claude share `crates/agent-transcript-core/src/agent_transcript/jsonl.rs`: byte framing, device/inode
 source identity, source generations, reconnect cursors, and durable offset
 confirmation. `agent_sessions.rs` shares stat, `tail -c +OFFSET -F`, cache
 publication/backpressure, retries, and a periodic stat check that rebinds a
@@ -80,7 +80,7 @@ wire objects are not retained. The remote JSONL remains authoritative.
 ## References and tests
 
 The parser was implemented from inspected schema concepts, without vendoring
-either application's parser. `test-fixtures/claude/main.jsonl` is an authored
+either application's parser. `crates/agent-transcript-core/tests/fixtures/claude/main.jsonl` is an authored
 fixture using representative shapes from:
 
 - [claude-code-viewer](https://github.com/d-kimuson/claude-code-viewer/tree/9367cf0),

@@ -1,0 +1,141 @@
+name: Publish agent-transcript-core to crates.io
+
+on:
+  push:
+    tags:
+      - 'agent-transcript-core-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version from crates/agent-transcript-core/Cargo.toml, without a leading v
+        required: true
+        default: 0.1.0
+        type: string
+      bootstrap_with_token:
+        description: Bootstrap first release with API token
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-agent-transcript-core
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Verify and publish crate
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    environment: crates-io
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: crates/agent-transcript-core
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install
+          rustc --version
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: crates/agent-transcript-core
+
+      - name: Verify release version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_VERSION: ${{ inputs.version }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          actual_version="$(cargo metadata --locked --format-version 1 --no-deps \
+            | jq -r '.packages[0].version')"
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            expected_version="${RELEASE_TAG#agent-transcript-core-v}"
+          else
+            expected_version="$MANUAL_VERSION"
+          fi
+          if [[ -z "$expected_version" || "$actual_version" != "$expected_version" ]]; then
+            echo "Expected agent-transcript-core version $expected_version, found $actual_version" >&2
+            exit 1
+          fi
+          cargo metadata --locked --format-version 1 --no-deps \
+            | jq --exit-status '.packages[0].license == "MIT"'
+          echo "version=$actual_version" >> "$GITHUB_OUTPUT"
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Lint
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Verify crates.io package
+        run: cargo publish --locked --dry-run
+
+      - name: Check whether this version is already published
+        id: registry
+        run: |
+          version="$(cargo metadata --locked --format-version 1 --no-deps | jq -r '.packages[0].version')"
+          status="$(curl --silent --show-error --user-agent 'whip-release/0.1 (+https://github.com/kosumic/whip)' \
+            --output "$RUNNER_TEMP/agent-transcript-core-version.json" \
+            --write-out '%{http_code}' "https://crates.io/api/v1/crates/agent-transcript-core/$version")"
+          case "$status" in
+            200) echo 'published=true' >> "$GITHUB_OUTPUT" ;;
+            404) echo 'published=false' >> "$GITHUB_OUTPUT" ;;
+            *) echo "Registry lookup failed: HTTP $status" >&2; exit 1 ;;
+          esac
+
+      - name: Authenticate with crates.io trusted publishing
+        if: steps.registry.outputs.published != 'true' && (github.event_name == 'push' || inputs.bootstrap_with_token == false)
+        id: crates-io-auth
+        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+
+      - name: Publish with trusted publishing
+        if: steps.registry.outputs.published != 'true' && (github.event_name == 'push' || inputs.bootstrap_with_token == false)
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-io-auth.outputs.token }}
+        run: cargo publish --locked
+
+      - name: Bootstrap first release with API token
+        if: steps.registry.outputs.published != 'true' && github.event_name == 'workflow_dispatch' && inputs.bootstrap_with_token == true
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        run: |
+          if [[ -z "$CARGO_REGISTRY_TOKEN" ]]; then
+            echo "Missing crates-io environment secret CRATES_IO_TOKEN" >&2
+            exit 1
+          fi
+          cargo publish --locked
+
+  github-release:
+    name: Publish GitHub Release
+    needs: publish
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Publish the registry package on GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CRATE_VERSION: ${{ needs.publish.outputs.version }}
+        run: bash scripts/publish-crate-github-release.sh agent-transcript-core "$CRATE_VERSION"

@@ -2,7 +2,7 @@ use super::*;
 
 fn snapshot() -> OpenCodeV2Snapshot {
     let mut fixture: Value = serde_json::from_str(include_str!(
-        "../../../test-fixtures/opencode/v2-session.json"
+        "../../../tests/fixtures/opencode/v2-session.json"
     ))
     .unwrap();
     OpenCodeV2Snapshot {

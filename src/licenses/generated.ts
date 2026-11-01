@@ -721,6 +721,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/39245945d4b3f9e1.txt"),
   },
   {
+    id: "cargo-agent-transcript-core-0-1-0",
+    category: "cargo",
+    projectName: "agent-transcript-core",
+    sourceUrl: "https://github.com/kosumic/whip",
+    attribution: "Direct Rust dependency · version 0.1.0 · used by whip-ssh",
+    licenseName: "MIT",
+    licenseAsset: require("../../assets/licenses/generated/dd0621aadacd0b61.txt"),
+  },
+  {
     id: "cargo-async-trait-0-1-92",
     category: "cargo",
     projectName: "async-trait",

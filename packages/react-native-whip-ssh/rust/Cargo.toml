@@ -9,6 +9,7 @@ description = "Private WP4 pairing transport for Whip"
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
+agent-transcript-core = { version = "0.1.0", path = "../../../crates/agent-transcript-core" }
 agent-browser-control = { version = "0.1.0", path = "../../../crates/agent-browser-control" }
 whipair-protocol = { version = "0.1.0", path = "../../../crates/whipair-protocol" }
 async-trait = "0.1"

@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 const marker = 'CODEX_INGESTION_BENCH=';
 const log = execFileSync('cargo', [
   'test', '--locked', '--release', '--lib', '--manifest-path',
-  'packages/react-native-whip-ssh/rust/Cargo.toml',
+  'crates/agent-transcript-core/Cargo.toml',
   'agent_transcript::codex::benchmark::ingestion_benchmark', '--',
   '--ignored', '--nocapture', '--test-threads=1',
 ], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024, stdio: ['ignore', 'pipe', 'inherit'] });

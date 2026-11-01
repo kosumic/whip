@@ -17,6 +17,16 @@ interface RustPackage {
   manifest: string;
 }
 
+interface CargoGraph {
+  packages: (CargoPackage & { id: string })[];
+  resolve: { nodes: { id: string; deps: { pkg: string; dep_kinds: { kind: string | null }[] }[] }[] };
+}
+
+interface ProductionReport {
+  metadata: CargoGraph;
+  licenses: { name: string; id: string; text: string; used_by: { crate: CargoPackage }[] }[];
+}
+
 const execFileAsync = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const configPath = resolve(root, 'licenses/cargo/about.toml');
@@ -36,6 +46,7 @@ const packages = [
 
 await mkdir(outputDirectory, { recursive: true });
 const directNotices = new Map<string, LicenseNotice>();
+const productionReports = new Map<string, Promise<ProductionReport>>();
 
 for (const rustPackage of packages) {
   const outputPath = resolve(outputDirectory, rustPackage.output);
@@ -92,7 +103,7 @@ for (const rustPackage of packages) {
     if (notice.name === 'turso') {
       notice.licenseText += `\n\n${await productionTransitiveNotices(rustPackage, 'turso')}`;
     }
-    if (['agent-browser-control', 'whip-notify', 'whipair-protocol', 'tailcat-client'].includes(notice.name)) {
+    if (['agent-browser-control', 'agent-transcript-core', 'whip-notify', 'whipair-protocol', 'tailcat-client'].includes(notice.name)) {
       notice.licenseText += `\n\n${await productionTransitiveNotices(rustPackage, notice.name)}`;
     }
     const key = `${notice.name}@${notice.version}`;
@@ -133,21 +144,7 @@ function omitRootPackage(notice: string, rootPackageName: string) {
 
 /** Include production subtrees with their parent notice, using the exact mobile lockfile. */
 async function productionTransitiveNotices(rustPackage: RustPackage, crateName: string): Promise<string> {
-  const manifest = resolve(root, rustPackage.manifest);
-  const reportPath = resolve(outputDirectory, `cargo-${crateName}-transitive-licenses.json`);
-  await execFileAsync('cargo', [
-    'about', 'generate', '--locked', '--fail', '--manifest-path', manifest,
-    '--config', resolve(root, 'licenses/cargo/turso-about.toml'),
-    '--target', 'aarch64-linux-android', '--target', 'aarch64-apple-ios',
-    '--format', 'json', '--output-file', reportPath,
-  ], { cwd: root, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 120_000 });
-  const { stdout } = await execFileAsync('cargo', [
-    'metadata', '--locked', '--format-version', '1', '--manifest-path', manifest,
-  ], { cwd: root, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 120_000 });
-  const metadata = JSON.parse(stdout) as {
-    packages: (CargoPackage & { id: string })[];
-    resolve: { nodes: { id: string; deps: { pkg: string; dep_kinds: { kind: string | null }[] }[] }[] };
-  };
+  const { metadata, licenses } = await productionReport(rustPackage);
   const graph = new Map(metadata.resolve.nodes.map(node => [node.id, node]));
   const ids = new Set<string>();
   const visit = (id: string) => {
@@ -162,10 +159,7 @@ async function productionTransitiveNotices(rustPackage: RustPackage, crateName: 
   visit(dependencyRoot.id);
   ids.delete(dependencyRoot.id);
   const dependencies = new Set(metadata.packages.filter(pkg => ids.has(pkg.id)).map(pkg => `${pkg.name}@${pkg.version}`));
-  const report = JSON.parse(await readFile(reportPath, 'utf8')) as {
-    licenses: { name: string; id: string; text: string; used_by: { crate: CargoPackage }[] }[];
-  };
-  const sections = report.licenses.flatMap(license => {
+  const sections = licenses.flatMap(license => {
     const users = license.used_by.map(user => user.crate)
       .filter(pkg => dependencies.has(`${pkg.name}@${pkg.version}`))
       .map(pkg => `- ${pkg.name} ${pkg.version}`).sort();
@@ -175,6 +169,32 @@ async function productionTransitiveNotices(rustPackage: RustPackage, crateName: 
   if (sections.length === 0) throw new Error(`${crateName} transitive license report is empty`);
   const label = crateName === 'turso' ? 'Turso and FTS' : crateName;
   return `${label} production transitive dependency notices (Android/iOS)\n\n${sections.join('\n\n================================================================================\n')}`;
+}
+
+/** Scan each exact production graph once, then select each bundled crate's subtree. */
+function productionReport(rustPackage: RustPackage): Promise<ProductionReport> {
+  const manifest = resolve(root, rustPackage.manifest);
+  let pending = productionReports.get(manifest);
+  if (!pending) {
+    pending = loadProductionReport(rustPackage, manifest);
+    productionReports.set(manifest, pending);
+  }
+  return pending;
+}
+
+async function loadProductionReport(rustPackage: RustPackage, manifest: string): Promise<ProductionReport> {
+  const reportPath = resolve(outputDirectory, `cargo-${rustPackage.name}-production-transitive-licenses.json`);
+  await execFileAsync('cargo', [
+    'about', 'generate', '--locked', '--fail', '--manifest-path', manifest,
+    '--config', resolve(root, 'licenses/cargo/turso-about.toml'),
+    '--target', 'aarch64-linux-android', '--target', 'aarch64-apple-ios',
+    '--format', 'json', '--output-file', reportPath,
+  ], { cwd: root, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 120_000 });
+  const { stdout } = await execFileAsync('cargo', [
+    'metadata', '--locked', '--format-version', '1', '--manifest-path', manifest,
+  ], { cwd: root, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 120_000 });
+  const report = JSON.parse(await readFile(reportPath, 'utf8')) as Pick<ProductionReport, 'licenses'>;
+  return { metadata: JSON.parse(stdout) as CargoGraph, licenses: report.licenses };
 }
 
 async function generateNotice(rustPackage: RustPackage, outputPath: string, template: string) {

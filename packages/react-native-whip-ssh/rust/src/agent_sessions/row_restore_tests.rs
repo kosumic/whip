@@ -88,7 +88,7 @@ fn row_restoration_matches_snapshots_for_materialized_and_reconstructed_history(
     for (mut core, fixture) in [
         (
             AgentSessionCore::Claude(Box::new(ClaudeSessionCore::new(SESSION))),
-            &include_bytes!("../../test-fixtures/claude/main.jsonl")[..],
+            &include_bytes!("../../../../../crates/agent-transcript-core/tests/fixtures/claude/main.jsonl")[..],
         ),
         (
             AgentSessionCore::Codex(Box::new(CodexSessionCore::new(SESSION))),
@@ -96,7 +96,7 @@ fn row_restoration_matches_snapshots_for_materialized_and_reconstructed_history(
         ),
         (
             AgentSessionCore::Codex(Box::new(CodexSessionCore::new("thread-current"))),
-            &include_bytes!("../../test-fixtures/codex/paginated-rollout.jsonl")[..],
+            &include_bytes!("../../../../../crates/agent-transcript-core/tests/fixtures/codex/paginated-rollout.jsonl")[..],
         ),
     ] {
         let file = core.file().unwrap();
@@ -105,13 +105,18 @@ fn row_restoration_matches_snapshots_for_materialized_and_reconstructed_history(
         file.mark_live_update();
         cores.push(core);
     }
-    let mut fixture: serde_json::Value =
-        serde_json::from_str(include_str!("../../test-fixtures/opencode/v2-session.json")).unwrap();
+    let mut fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../../crates/agent-transcript-core/tests/fixtures/opencode/v2-session.json"
+    ))
+    .unwrap();
     let mut opencode = OpenCodeSessionCore::new("ses_v2");
     opencode
-        .apply_v2_snapshot(OpenCodeV2Snapshot {
-            info: fixture["info"].take(),
-            messages: std::mem::take(fixture["messages"].as_array_mut().unwrap()),
+        .apply_v2_sync(OpenCodeV2Sync::Full {
+            snapshot: OpenCodeV2Snapshot {
+                info: fixture["info"].take(),
+                messages: std::mem::take(fixture["messages"].as_array_mut().unwrap()),
+            },
+            sequence: None,
         })
         .unwrap();
     cores.push(AgentSessionCore::OpenCode(Box::new(opencode)));

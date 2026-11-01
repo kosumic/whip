@@ -11,7 +11,7 @@ the Herdr integration, as with the existing OpenCode chat support.
 
 The v2 adapter is based on upstream v2.0.19, commit
 `7ef4a1a56e7d23ec6a52d0d7572cea60061b3715`. Its schema-shaped regression fixture is
-`packages/react-native-whip-ssh/rust/test-fixtures/opencode/v2-session.json`.
+`crates/agent-transcript-core/tests/fixtures/opencode/v2-session.json`.
 The relevant upstream contracts are `packages/protocol/src/groups/message.ts`,
 `packages/schema/src/session-message.ts`, and `packages/schema/src/tool.ts`.
 Incremental reads use the durable `session.log` contract in

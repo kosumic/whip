@@ -1,0 +1,1721 @@
+{
+  "baselineRevision": "814438b182e0c53950387f04ee7b7ac00f1b6647",
+  "platform": "linux",
+  "arch": "x64",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "order": "Three back-to-back pairs, alternating order; each operation uses the existing five-sample benchmark.",
+  "runs": [
+    {
+      "before": {
+        "chunkBytes": 65536,
+        "results": [
+          {
+            "adapterReplay": {
+              "allocatedBytes": 1414673,
+              "allocations": 13032,
+              "maxNs": 628638,
+              "minNs": 485377,
+              "ns": 515073,
+              "peakAllocatedBytes": 327907
+            },
+            "cacheBytes": 110651,
+            "historyMode": "legacy",
+            "ingest": {
+              "allocatedBytes": 3171357,
+              "allocations": 24742,
+              "maxNs": 1607518,
+              "minNs": 1234412,
+              "ns": 1432076,
+              "peakAllocatedBytes": 909148
+            },
+            "jsonlBytes": 77247,
+            "records": 601,
+            "restoreCache": {
+              "allocatedBytes": 2745195,
+              "allocations": 23185,
+              "maxNs": 1183046,
+              "minNs": 1063900,
+              "ns": 1076314,
+              "peakAllocatedBytes": 695882
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 28073,
+              "minNs": 27572,
+              "ns": 27592,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 100
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 14122141,
+              "allocations": 130043,
+              "maxNs": 6726282,
+              "minNs": 6276651,
+              "ns": 6360510,
+              "peakAllocatedBytes": 3239015
+            },
+            "cacheBytes": 1116678,
+            "historyMode": "legacy",
+            "ingest": {
+              "allocatedBytes": 45855901,
+              "allocations": 331445,
+              "maxNs": 20832048,
+              "minNs": 19285074,
+              "ns": 19677055,
+              "peakAllocatedBytes": 7003400
+            },
+            "jsonlBytes": 779247,
+            "records": 6001,
+            "restoreCache": {
+              "allocatedBytes": 27221563,
+              "allocations": 231106,
+              "maxNs": 12940274,
+              "minNs": 10881844,
+              "ns": 11885540,
+              "peakAllocatedBytes": 6871990
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 25929,
+              "minNs": 25849,
+              "ns": 25888,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 1000
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 37047793,
+              "allocations": 325881,
+              "maxNs": 17967625,
+              "minNs": 16720878,
+              "ns": 17108491,
+              "peakAllocatedBytes": 8937983
+            },
+            "cacheBytes": 2812998,
+            "historyMode": "legacy",
+            "ingest": {
+              "allocatedBytes": 192630459,
+              "allocations": 1235419,
+              "maxNs": 107457069,
+              "minNs": 89999237,
+              "ns": 95000448,
+              "peakAllocatedBytes": 18491972
+            },
+            "jsonlBytes": 1961247,
+            "records": 15001,
+            "restoreCache": {
+              "allocatedBytes": 70501875,
+              "allocations": 578448,
+              "maxNs": 30881819,
+              "minNs": 28460714,
+              "ns": 30089151,
+              "peakAllocatedBytes": 18360562
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 25548,
+              "minNs": 25398,
+              "ns": 25418,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 2500
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 3522747,
+              "allocations": 26854,
+              "maxNs": 1008385,
+              "minNs": 986354,
+              "ns": 998256,
+              "peakAllocatedBytes": 386507
+            },
+            "cacheBytes": 139248,
+            "historyMode": "paginated",
+            "ingest": {
+              "allocatedBytes": 5691261,
+              "allocations": 39390,
+              "maxNs": 1953031,
+              "minNs": 1878249,
+              "ns": 1915931,
+              "peakAllocatedBytes": 935968
+            },
+            "jsonlBytes": 101210,
+            "records": 601,
+            "restoreCache": {
+              "allocatedBytes": 5071767,
+              "allocations": 39995,
+              "maxNs": 1861488,
+              "minNs": 1771468,
+              "ns": 1786647,
+              "peakAllocatedBytes": 714374
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 29706,
+              "minNs": 29365,
+              "ns": 29556,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 100
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 35090955,
+              "allocations": 268072,
+              "maxNs": 13562129,
+              "minNs": 12314221,
+              "ns": 12467280,
+              "peakAllocatedBytes": 3745129
+            },
+            "cacheBytes": 1406584,
+            "historyMode": "paginated",
+            "ingest": {
+              "allocatedBytes": 55426561,
+              "allocations": 382537,
+              "maxNs": 19410481,
+              "minNs": 18967544,
+              "ns": 19299301,
+              "peakAllocatedBytes": 5670017
+            },
+            "jsonlBytes": 1022810,
+            "records": 6001,
+            "restoreCache": {
+              "allocatedBytes": 50466427,
+              "allocations": 399116,
+              "maxNs": 19587816,
+              "minNs": 18212708,
+              "ns": 18383310,
+              "peakAllocatedBytes": 7011359
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 29446,
+              "minNs": 29225,
+              "ns": 29285,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 1000
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 90541067,
+              "allocations": 670079,
+              "maxNs": 33558327,
+              "minNs": 31020081,
+              "ns": 31446216,
+              "peakAllocatedBytes": 10735675
+            },
+            "cacheBytes": 3545584,
+            "historyMode": "paginated",
+            "ingest": {
+              "allocatedBytes": 140520789,
+              "allocations": 954427,
+              "maxNs": 50377933,
+              "minNs": 48730048,
+              "ns": 49013294,
+              "peakAllocatedBytes": 14521168
+            },
+            "jsonlBytes": 2576810,
+            "records": 15001,
+            "restoreCache": {
+              "allocatedBytes": 128771839,
+              "allocations": 997625,
+              "maxNs": 48493982,
+              "minNs": 45678091,
+              "ns": 46904368,
+              "peakAllocatedBytes": 18815036
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 29516,
+              "minNs": 29335,
+              "ns": 29376,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 2500
+          }
+        ],
+        "samples": 5
+      },
+      "after": {
+        "chunkBytes": 65536,
+        "results": [
+          {
+            "adapterReplay": {
+              "allocatedBytes": 1414673,
+              "allocations": 13032,
+              "maxNs": 501158,
+              "minNs": 461292,
+              "ns": 469788,
+              "peakAllocatedBytes": 327907
+            },
+            "cacheBytes": 110651,
+            "historyMode": "legacy",
+            "ingest": {
+              "allocatedBytes": 3171357,
+              "allocations": 24742,
+              "maxNs": 1407860,
+              "minNs": 1243199,
+              "ns": 1285449,
+              "peakAllocatedBytes": 909148
+            },
+            "jsonlBytes": 77247,
+            "records": 601,
+            "restoreCache": {
+              "allocatedBytes": 2745195,
+              "allocations": 23185,
+              "maxNs": 1095741,
+              "minNs": 1024866,
+              "ns": 1064582,
+              "peakAllocatedBytes": 695882
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 25819,
+              "minNs": 25778,
+              "ns": 25789,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 100
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 14122141,
+              "allocations": 130043,
+              "maxNs": 6916511,
+              "minNs": 6316967,
+              "ns": 6815600,
+              "peakAllocatedBytes": 3239015
+            },
+            "cacheBytes": 1116678,
+            "historyMode": "legacy",
+            "ingest": {
+              "allocatedBytes": 45855901,
+              "allocations": 331445,
+              "maxNs": 19036805,
+              "minNs": 17822711,
+              "ns": 18440439,
+              "peakAllocatedBytes": 7003400
+            },
+            "jsonlBytes": 779247,
+            "records": 6001,
+            "restoreCache": {
+              "allocatedBytes": 27221563,
+              "allocations": 231106,
+              "maxNs": 11845264,
+              "minNs": 10431213,
+              "ns": 11072364,
+              "peakAllocatedBytes": 6871990
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 25629,
+              "minNs": 25498,
+              "ns": 25568,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 1000
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 37047793,
+              "allocations": 325881,
+              "maxNs": 18821509,
+              "minNs": 16796050,
+              "ns": 18126665,
+              "peakAllocatedBytes": 8937983
+            },
+            "cacheBytes": 2812998,
+            "historyMode": "legacy",
+            "ingest": {
+              "allocatedBytes": 192630459,
+              "allocations": 1235419,
+              "maxNs": 86930829,
+              "minNs": 78492913,
+              "ns": 82680767,
+              "peakAllocatedBytes": 18491972
+            },
+            "jsonlBytes": 1961247,
+            "records": 15001,
+            "restoreCache": {
+              "allocatedBytes": 70501875,
+              "allocations": 578448,
+              "maxNs": 29600197,
+              "minNs": 27723611,
+              "ns": 28298287,
+              "peakAllocatedBytes": 18360562
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 31099,
+              "minNs": 25779,
+              "ns": 25809,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 2500
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 3522747,
+              "allocations": 26854,
+              "maxNs": 1038943,
+              "minNs": 1012343,
+              "ns": 1030047,
+              "peakAllocatedBytes": 386507
+            },
+            "cacheBytes": 139248,
+            "historyMode": "paginated",
+            "ingest": {
+              "allocatedBytes": 5691261,
+              "allocations": 39390,
+              "maxNs": 2083988,
+              "minNs": 1835569,
+              "ns": 1876977,
+              "peakAllocatedBytes": 935968
+            },
+            "jsonlBytes": 101210,
+            "records": 601,
+            "restoreCache": {
+              "allocatedBytes": 5071767,
+              "allocations": 39995,
+              "maxNs": 2097795,
+              "minNs": 1750308,
+              "ns": 1809850,
+              "peakAllocatedBytes": 714374
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 30799,
+              "minNs": 30648,
+              "ns": 30788,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 100
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 35090955,
+              "allocations": 268072,
+              "maxNs": 12328829,
+              "minNs": 12050573,
+              "ns": 12232577,
+              "peakAllocatedBytes": 3745129
+            },
+            "cacheBytes": 1406584,
+            "historyMode": "paginated",
+            "ingest": {
+              "allocatedBytes": 55426561,
+              "allocations": 382537,
+              "maxNs": 18879067,
+              "minNs": 18131484,
+              "ns": 18419669,
+              "peakAllocatedBytes": 5670017
+            },
+            "jsonlBytes": 1022810,
+            "records": 6001,
+            "restoreCache": {
+              "allocatedBytes": 50466427,
+              "allocations": 399116,
+              "maxNs": 17889667,
+              "minNs": 17127888,
+              "ns": 17532803,
+              "peakAllocatedBytes": 7011359
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 31068,
+              "minNs": 30788,
+              "ns": 30978,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 1000
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 90541067,
+              "allocations": 670079,
+              "maxNs": 32706938,
+              "minNs": 31404246,
+              "ns": 31465442,
+              "peakAllocatedBytes": 10735675
+            },
+            "cacheBytes": 3545584,
+            "historyMode": "paginated",
+            "ingest": {
+              "allocatedBytes": 140520789,
+              "allocations": 954427,
+              "maxNs": 49281671,
+              "minNs": 47807845,
+              "ns": 48142918,
+              "peakAllocatedBytes": 14521168
+            },
+            "jsonlBytes": 2576810,
+            "records": 15001,
+            "restoreCache": {
+              "allocatedBytes": 128771839,
+              "allocations": 997625,
+              "maxNs": 48226016,
+              "minNs": 45977326,
+              "ns": 46470318,
+              "peakAllocatedBytes": 18815036
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 31019,
+              "minNs": 30778,
+              "ns": 30878,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 2500
+          }
+        ],
+        "samples": 5
+      }
+    },
+    {
+      "after": {
+        "chunkBytes": 65536,
+        "results": [
+          {
+            "adapterReplay": {
+              "allocatedBytes": 1414673,
+              "allocations": 13032,
+              "maxNs": 547314,
+              "minNs": 469006,
+              "ns": 472273,
+              "peakAllocatedBytes": 327907
+            },
+            "cacheBytes": 110651,
+            "historyMode": "legacy",
+            "ingest": {
+              "allocatedBytes": 3171357,
+              "allocations": 24742,
+              "maxNs": 1442135,
+              "minNs": 1243930,
+              "ns": 1269759,
+              "peakAllocatedBytes": 909148
+            },
+            "jsonlBytes": 77247,
+            "records": 601,
+            "restoreCache": {
+              "allocatedBytes": 2745195,
+              "allocations": 23185,
+              "maxNs": 1059172,
+              "minNs": 1020990,
+              "ns": 1038883,
+              "peakAllocatedBytes": 695882
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 32381,
+              "minNs": 25368,
+              "ns": 25508,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 100
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 14122141,
+              "allocations": 130043,
+              "maxNs": 6556831,
+              "minNs": 6276812,
+              "ns": 6430462,
+              "peakAllocatedBytes": 3239015
+            },
+            "cacheBytes": 1116678,
+            "historyMode": "legacy",
+            "ingest": {
+              "allocatedBytes": 45855901,
+              "allocations": 331445,
+              "maxNs": 18575964,
+              "minNs": 17514789,
+              "ns": 18058967,
+              "peakAllocatedBytes": 7003400
+            },
+            "jsonlBytes": 779247,
+            "records": 6001,
+            "restoreCache": {
+              "allocatedBytes": 27221563,
+              "allocations": 231106,
+              "maxNs": 11212449,
+              "minNs": 10519480,
+              "ns": 11045413,
+              "peakAllocatedBytes": 6871990
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 27001,
+              "minNs": 26820,
+              "ns": 26891,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 1000
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 37047793,
+              "allocations": 325881,
+              "maxNs": 17242284,
+              "minNs": 16834473,
+              "ns": 17012389,
+              "peakAllocatedBytes": 8937983
+            },
+            "cacheBytes": 2812998,
+            "historyMode": "legacy",
+            "ingest": {
+              "allocatedBytes": 192630459,
+              "allocations": 1235419,
+              "maxNs": 95057977,
+              "minNs": 83678804,
+              "ns": 89361241,
+              "peakAllocatedBytes": 18491972
+            },
+            "jsonlBytes": 1961247,
+            "records": 15001,
+            "restoreCache": {
+              "allocatedBytes": 70501875,
+              "allocations": 578448,
+              "maxNs": 29595198,
+              "minNs": 28125611,
+              "ns": 29187457,
+              "peakAllocatedBytes": 18360562
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 25628,
+              "minNs": 25538,
+              "ns": 25598,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 2500
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 3522747,
+              "allocations": 26854,
+              "maxNs": 1091252,
+              "minNs": 1013476,
+              "ns": 1035006,
+              "peakAllocatedBytes": 386507
+            },
+            "cacheBytes": 139248,
+            "historyMode": "paginated",
+            "ingest": {
+              "allocatedBytes": 5691261,
+              "allocations": 39390,
+              "maxNs": 1886896,
+              "minNs": 1834427,
+              "ns": 1847692,
+              "peakAllocatedBytes": 935968
+            },
+            "jsonlBytes": 101210,
+            "records": 601,
+            "restoreCache": {
+              "allocatedBytes": 5071767,
+              "allocations": 39995,
+              "maxNs": 1787599,
+              "minNs": 1726222,
+              "ns": 1730781,
+              "peakAllocatedBytes": 714374
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 30587,
+              "minNs": 30417,
+              "ns": 30428,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 100
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 35090955,
+              "allocations": 268072,
+              "maxNs": 13753301,
+              "minNs": 12485485,
+              "ns": 13279945,
+              "peakAllocatedBytes": 3745129
+            },
+            "cacheBytes": 1406584,
+            "historyMode": "paginated",
+            "ingest": {
+              "allocatedBytes": 55426561,
+              "allocations": 382537,
+              "maxNs": 19295775,
+              "minNs": 18591844,
+              "ns": 18969608,
+              "peakAllocatedBytes": 5670017
+            },
+            "jsonlBytes": 1022810,
+            "records": 6001,
+            "restoreCache": {
+              "allocatedBytes": 50466427,
+              "allocations": 399116,
+              "maxNs": 19786973,
+              "minNs": 17093512,
+              "ns": 17898124,
+              "peakAllocatedBytes": 7011359
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 31059,
+              "minNs": 30939,
+              "ns": 30979,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 1000
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 90541067,
+              "allocations": 670079,
+              "maxNs": 33992618,
+              "minNs": 31157641,
+              "ns": 32276886,
+              "peakAllocatedBytes": 10735675
+            },
+            "cacheBytes": 3545584,
+            "historyMode": "paginated",
+            "ingest": {
+              "allocatedBytes": 140520789,
+              "allocations": 954427,
+              "maxNs": 49609270,
+              "minNs": 47976174,
+              "ns": 49353836,
+              "peakAllocatedBytes": 14521168
+            },
+            "jsonlBytes": 2576810,
+            "records": 15001,
+            "restoreCache": {
+              "allocatedBytes": 128771839,
+              "allocations": 997625,
+              "maxNs": 48723375,
+              "minNs": 46003295,
+              "ns": 46569345,
+              "peakAllocatedBytes": 18815036
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 31058,
+              "minNs": 30848,
+              "ns": 30919,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 2500
+          }
+        ],
+        "samples": 5
+      },
+      "before": {
+        "chunkBytes": 65536,
+        "results": [
+          {
+            "adapterReplay": {
+              "allocatedBytes": 1414673,
+              "allocations": 13032,
+              "maxNs": 664216,
+              "minNs": 466382,
+              "ns": 489235,
+              "peakAllocatedBytes": 327907
+            },
+            "cacheBytes": 110651,
+            "historyMode": "legacy",
+            "ingest": {
+              "allocatedBytes": 3171357,
+              "allocations": 24742,
+              "maxNs": 1422739,
+              "minNs": 1199116,
+              "ns": 1370790,
+              "peakAllocatedBytes": 909148
+            },
+            "jsonlBytes": 77247,
+            "records": 601,
+            "restoreCache": {
+              "allocatedBytes": 2745195,
+              "allocations": 23185,
+              "maxNs": 1092134,
+              "minNs": 1049073,
+              "ns": 1068108,
+              "peakAllocatedBytes": 695882
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 29446,
+              "minNs": 26490,
+              "ns": 26540,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 100
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 14122141,
+              "allocations": 130043,
+              "maxNs": 6704580,
+              "minNs": 6323159,
+              "ns": 6565207,
+              "peakAllocatedBytes": 3239015
+            },
+            "cacheBytes": 1116678,
+            "historyMode": "legacy",
+            "ingest": {
+              "allocatedBytes": 45855901,
+              "allocations": 331445,
+              "maxNs": 20428174,
+              "minNs": 18570343,
+              "ns": 19178462,
+              "peakAllocatedBytes": 7003400
+            },
+            "jsonlBytes": 779247,
+            "records": 6001,
+            "restoreCache": {
+              "allocatedBytes": 27221563,
+              "allocations": 231106,
+              "maxNs": 11831739,
+              "minNs": 10582179,
+              "ns": 11174096,
+              "peakAllocatedBytes": 6871990
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 25709,
+              "minNs": 25468,
+              "ns": 25568,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 1000
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 37047793,
+              "allocations": 325881,
+              "maxNs": 19875621,
+              "minNs": 16732491,
+              "ns": 18082432,
+              "peakAllocatedBytes": 8937983
+            },
+            "cacheBytes": 2812998,
+            "historyMode": "legacy",
+            "ingest": {
+              "allocatedBytes": 192630459,
+              "allocations": 1235419,
+              "maxNs": 103575493,
+              "minNs": 86479004,
+              "ns": 94396737,
+              "peakAllocatedBytes": 18491972
+            },
+            "jsonlBytes": 1961247,
+            "records": 15001,
+            "restoreCache": {
+              "allocatedBytes": 70501875,
+              "allocations": 578448,
+              "maxNs": 29735042,
+              "minNs": 28571324,
+              "ns": 28891377,
+              "peakAllocatedBytes": 18360562
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 25087,
+              "minNs": 24978,
+              "ns": 25048,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 2500
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 3522747,
+              "allocations": 26854,
+              "maxNs": 1031900,
+              "minNs": 1002043,
+              "ns": 1019446,
+              "peakAllocatedBytes": 386507
+            },
+            "cacheBytes": 139248,
+            "historyMode": "paginated",
+            "ingest": {
+              "allocatedBytes": 5691261,
+              "allocations": 39390,
+              "maxNs": 1880454,
+              "minNs": 1865255,
+              "ns": 1872598,
+              "peakAllocatedBytes": 935968
+            },
+            "jsonlBytes": 101210,
+            "records": 601,
+            "restoreCache": {
+              "allocatedBytes": 5071767,
+              "allocations": 39995,
+              "maxNs": 1803097,
+              "minNs": 1767840,
+              "ns": 1781076,
+              "peakAllocatedBytes": 714374
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 30177,
+              "minNs": 29626,
+              "ns": 29816,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 100
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 35090955,
+              "allocations": 268072,
+              "maxNs": 13254097,
+              "minNs": 11996841,
+              "ns": 12707404,
+              "peakAllocatedBytes": 3745129
+            },
+            "cacheBytes": 1406584,
+            "historyMode": "paginated",
+            "ingest": {
+              "allocatedBytes": 55426561,
+              "allocations": 382537,
+              "maxNs": 19303809,
+              "minNs": 18416172,
+              "ns": 18895237,
+              "peakAllocatedBytes": 5670017
+            },
+            "jsonlBytes": 1022810,
+            "records": 6001,
+            "restoreCache": {
+              "allocatedBytes": 50466427,
+              "allocations": 399116,
+              "maxNs": 18471216,
+              "minNs": 17848691,
+              "ns": 18357081,
+              "peakAllocatedBytes": 7011359
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 29796,
+              "minNs": 29636,
+              "ns": 29766,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 1000
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 90541067,
+              "allocations": 670079,
+              "maxNs": 33509545,
+              "minNs": 30634822,
+              "ns": 31196444,
+              "peakAllocatedBytes": 10735675
+            },
+            "cacheBytes": 3545584,
+            "historyMode": "paginated",
+            "ingest": {
+              "allocatedBytes": 140520789,
+              "allocations": 954427,
+              "maxNs": 50181180,
+              "minNs": 48933342,
+              "ns": 49365840,
+              "peakAllocatedBytes": 14521168
+            },
+            "jsonlBytes": 2576810,
+            "records": 15001,
+            "restoreCache": {
+              "allocatedBytes": 128771839,
+              "allocations": 997625,
+              "maxNs": 50565137,
+              "minNs": 46084449,
+              "ns": 48075912,
+              "peakAllocatedBytes": 18815036
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 29636,
+              "minNs": 29426,
+              "ns": 29466,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 2500
+          }
+        ],
+        "samples": 5
+      }
+    },
+    {
+      "before": {
+        "chunkBytes": 65536,
+        "results": [
+          {
+            "adapterReplay": {
+              "allocatedBytes": 1414673,
+              "allocations": 13032,
+              "maxNs": 501548,
+              "minNs": 473455,
+              "ns": 480919,
+              "peakAllocatedBytes": 327907
+            },
+            "cacheBytes": 110651,
+            "historyMode": "legacy",
+            "ingest": {
+              "allocatedBytes": 3171357,
+              "allocations": 24742,
+              "maxNs": 1432807,
+              "minNs": 1221929,
+              "ns": 1379307,
+              "peakAllocatedBytes": 909148
+            },
+            "jsonlBytes": 77247,
+            "records": 601,
+            "restoreCache": {
+              "allocatedBytes": 2745195,
+              "allocations": 23185,
+              "maxNs": 1070172,
+              "minNs": 1045796,
+              "ns": 1051537,
+              "peakAllocatedBytes": 695882
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 30748,
+              "minNs": 25708,
+              "ns": 25729,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 100
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 14122141,
+              "allocations": 130043,
+              "maxNs": 6906712,
+              "minNs": 6618738,
+              "ns": 6694902,
+              "peakAllocatedBytes": 3239015
+            },
+            "cacheBytes": 1116678,
+            "historyMode": "legacy",
+            "ingest": {
+              "allocatedBytes": 45855901,
+              "allocations": 331445,
+              "maxNs": 21092249,
+              "minNs": 17845604,
+              "ns": 18314510,
+              "peakAllocatedBytes": 7003400
+            },
+            "jsonlBytes": 779247,
+            "records": 6001,
+            "restoreCache": {
+              "allocatedBytes": 27221563,
+              "allocations": 231106,
+              "maxNs": 11823314,
+              "minNs": 10621292,
+              "ns": 11046325,
+              "peakAllocatedBytes": 6871990
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 25929,
+              "minNs": 25779,
+              "ns": 25849,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 1000
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 37047793,
+              "allocations": 325881,
+              "maxNs": 17513076,
+              "minNs": 16402948,
+              "ns": 16919855,
+              "peakAllocatedBytes": 8937983
+            },
+            "cacheBytes": 2812998,
+            "historyMode": "legacy",
+            "ingest": {
+              "allocatedBytes": 192630459,
+              "allocations": 1235419,
+              "maxNs": 89296920,
+              "minNs": 80565790,
+              "ns": 85309555,
+              "peakAllocatedBytes": 18491972
+            },
+            "jsonlBytes": 1961247,
+            "records": 15001,
+            "restoreCache": {
+              "allocatedBytes": 70501875,
+              "allocations": 578448,
+              "maxNs": 32419224,
+              "minNs": 28431539,
+              "ns": 30155957,
+              "peakAllocatedBytes": 18360562
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 25729,
+              "minNs": 25588,
+              "ns": 25668,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 2500
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 3522747,
+              "allocations": 26854,
+              "maxNs": 1040076,
+              "minNs": 1002895,
+              "ns": 1010971,
+              "peakAllocatedBytes": 386507
+            },
+            "cacheBytes": 139248,
+            "historyMode": "paginated",
+            "ingest": {
+              "allocatedBytes": 5691261,
+              "allocations": 39390,
+              "maxNs": 2030267,
+              "minNs": 1881626,
+              "ns": 1995632,
+              "peakAllocatedBytes": 935968
+            },
+            "jsonlBytes": 101210,
+            "records": 601,
+            "restoreCache": {
+              "allocatedBytes": 5071767,
+              "allocations": 39995,
+              "maxNs": 1930989,
+              "minNs": 1813147,
+              "ns": 1821081,
+              "peakAllocatedBytes": 714374
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 37060,
+              "minNs": 30798,
+              "ns": 30848,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 100
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 35090955,
+              "allocations": 268072,
+              "maxNs": 14938961,
+              "minNs": 12262904,
+              "ns": 12443044,
+              "peakAllocatedBytes": 3745129
+            },
+            "cacheBytes": 1406584,
+            "historyMode": "paginated",
+            "ingest": {
+              "allocatedBytes": 55426561,
+              "allocations": 382537,
+              "maxNs": 19952185,
+              "minNs": 18444306,
+              "ns": 18693146,
+              "peakAllocatedBytes": 5670017
+            },
+            "jsonlBytes": 1022810,
+            "records": 6001,
+            "restoreCache": {
+              "allocatedBytes": 50466427,
+              "allocations": 399116,
+              "maxNs": 20222125,
+              "minNs": 18310793,
+              "ns": 18617052,
+              "peakAllocatedBytes": 7011359
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 29586,
+              "minNs": 29525,
+              "ns": 29555,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 1000
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 90541067,
+              "allocations": 670079,
+              "maxNs": 32987910,
+              "minNs": 31791249,
+              "ns": 32407323,
+              "peakAllocatedBytes": 10735675
+            },
+            "cacheBytes": 3545584,
+            "historyMode": "paginated",
+            "ingest": {
+              "allocatedBytes": 140520789,
+              "allocations": 954427,
+              "maxNs": 53518217,
+              "minNs": 49483182,
+              "ns": 50174978,
+              "peakAllocatedBytes": 14521168
+            },
+            "jsonlBytes": 2576810,
+            "records": 15001,
+            "restoreCache": {
+              "allocatedBytes": 128771839,
+              "allocations": 997625,
+              "maxNs": 50904749,
+              "minNs": 46296229,
+              "ns": 47197172,
+              "peakAllocatedBytes": 18815036
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 31339,
+              "minNs": 31089,
+              "ns": 31219,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 2500
+          }
+        ],
+        "samples": 5
+      },
+      "after": {
+        "chunkBytes": 65536,
+        "results": [
+          {
+            "adapterReplay": {
+              "allocatedBytes": 1414673,
+              "allocations": 13032,
+              "maxNs": 518339,
+              "minNs": 464828,
+              "ns": 469658,
+              "peakAllocatedBytes": 327907
+            },
+            "cacheBytes": 110651,
+            "historyMode": "legacy",
+            "ingest": {
+              "allocatedBytes": 3171357,
+              "allocations": 24742,
+              "maxNs": 1723136,
+              "minNs": 1269378,
+              "ns": 1362836,
+              "peakAllocatedBytes": 909148
+            },
+            "jsonlBytes": 77247,
+            "records": 601,
+            "restoreCache": {
+              "allocatedBytes": 2745195,
+              "allocations": 23185,
+              "maxNs": 1383154,
+              "minNs": 1025979,
+              "ns": 1041278,
+              "peakAllocatedBytes": 695882
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 33513,
+              "minNs": 25509,
+              "ns": 25848,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 100
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 14122141,
+              "allocations": 130043,
+              "maxNs": 6797305,
+              "minNs": 6209003,
+              "ns": 6320114,
+              "peakAllocatedBytes": 3239015
+            },
+            "cacheBytes": 1116678,
+            "historyMode": "legacy",
+            "ingest": {
+              "allocatedBytes": 45855901,
+              "allocations": 331445,
+              "maxNs": 18484992,
+              "minNs": 17676033,
+              "ns": 17901680,
+              "peakAllocatedBytes": 7003400
+            },
+            "jsonlBytes": 779247,
+            "records": 6001,
+            "restoreCache": {
+              "allocatedBytes": 27221563,
+              "allocations": 231106,
+              "maxNs": 11315263,
+              "minNs": 10584863,
+              "ns": 11214582,
+              "peakAllocatedBytes": 6871990
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 25999,
+              "minNs": 25698,
+              "ns": 25889,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 1000
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 37047793,
+              "allocations": 325881,
+              "maxNs": 17556969,
+              "minNs": 16973726,
+              "ns": 17222236,
+              "peakAllocatedBytes": 8937983
+            },
+            "cacheBytes": 2812998,
+            "historyMode": "legacy",
+            "ingest": {
+              "allocatedBytes": 192630459,
+              "allocations": 1235419,
+              "maxNs": 91407589,
+              "minNs": 83550641,
+              "ns": 84185381,
+              "peakAllocatedBytes": 18491972
+            },
+            "jsonlBytes": 1961247,
+            "records": 15001,
+            "restoreCache": {
+              "allocatedBytes": 70501875,
+              "allocations": 578448,
+              "maxNs": 29481272,
+              "minNs": 28455314,
+              "ns": 28513904,
+              "peakAllocatedBytes": 18360562
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 26520,
+              "minNs": 26319,
+              "ns": 26430,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 2500
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 3522747,
+              "allocations": 26854,
+              "maxNs": 1071735,
+              "minNs": 1000270,
+              "ns": 1002505,
+              "peakAllocatedBytes": 386507
+            },
+            "cacheBytes": 139248,
+            "historyMode": "paginated",
+            "ingest": {
+              "allocatedBytes": 5691261,
+              "allocations": 39390,
+              "maxNs": 1894450,
+              "minNs": 1862960,
+              "ns": 1875985,
+              "peakAllocatedBytes": 935968
+            },
+            "jsonlBytes": 101210,
+            "records": 601,
+            "restoreCache": {
+              "allocatedBytes": 5071767,
+              "allocations": 39995,
+              "maxNs": 1971386,
+              "minNs": 1776086,
+              "ns": 1800052,
+              "peakAllocatedBytes": 714374
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 30939,
+              "minNs": 30798,
+              "ns": 30829,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 100
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 35090955,
+              "allocations": 268072,
+              "maxNs": 12545839,
+              "minNs": 12269656,
+              "ns": 12348135,
+              "peakAllocatedBytes": 3745129
+            },
+            "cacheBytes": 1406584,
+            "historyMode": "paginated",
+            "ingest": {
+              "allocatedBytes": 55426561,
+              "allocations": 382537,
+              "maxNs": 19029521,
+              "minNs": 18236302,
+              "ns": 18367259,
+              "peakAllocatedBytes": 5670017
+            },
+            "jsonlBytes": 1022810,
+            "records": 6001,
+            "restoreCache": {
+              "allocatedBytes": 50466427,
+              "allocations": 399116,
+              "maxNs": 18778267,
+              "minNs": 17152545,
+              "ns": 18155600,
+              "peakAllocatedBytes": 7011359
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 31039,
+              "minNs": 30948,
+              "ns": 31018,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 1000
+          },
+          {
+            "adapterReplay": {
+              "allocatedBytes": 90541067,
+              "allocations": 670079,
+              "maxNs": 34876308,
+              "minNs": 31536968,
+              "ns": 32451386,
+              "peakAllocatedBytes": 10735675
+            },
+            "cacheBytes": 3545584,
+            "historyMode": "paginated",
+            "ingest": {
+              "allocatedBytes": 140520789,
+              "allocations": 954427,
+              "maxNs": 49000841,
+              "minNs": 47185129,
+              "ns": 47531033,
+              "peakAllocatedBytes": 14521168
+            },
+            "jsonlBytes": 2576810,
+            "records": 15001,
+            "restoreCache": {
+              "allocatedBytes": 128771839,
+              "allocations": 997625,
+              "maxNs": 48072606,
+              "minNs": 45704231,
+              "ns": 46790263,
+              "peakAllocatedBytes": 18815036
+            },
+            "steadyRecord": {
+              "allocatedBytes": 0,
+              "allocations": 0,
+              "maxNs": 30518,
+              "minNs": 30167,
+              "ns": 30247,
+              "peakAllocatedBytes": 0
+            },
+            "steadyRecords": 1000,
+            "turns": 2500
+          }
+        ],
+        "samples": 5
+      }
+    }
+  ],
+  "summary": [
+    {
+      "historyMode": "legacy",
+      "turns": 100,
+      "metrics": {
+        "steadyRecord": {
+          "beforeNs": 26540,
+          "afterNs": 25789,
+          "ratio": 0.9717030896759609,
+          "allocations": 0,
+          "allocatedBytes": 0,
+          "peakAllocatedBytes": 0
+        },
+        "adapterReplay": {
+          "beforeNs": 489235,
+          "afterNs": 469788,
+          "ratio": 0.9602501865156826,
+          "allocations": 13032,
+          "allocatedBytes": 1414673,
+          "peakAllocatedBytes": 327907
+        },
+        "ingest": {
+          "beforeNs": 1379307,
+          "afterNs": 1285449,
+          "ratio": 0.9319527849855036,
+          "allocations": 24742,
+          "allocatedBytes": 3171357,
+          "peakAllocatedBytes": 909148
+        },
+        "restoreCache": {
+          "beforeNs": 1068108,
+          "afterNs": 1041278,
+          "ratio": 0.9748808172956293,
+          "allocations": 23185,
+          "allocatedBytes": 2745195,
+          "peakAllocatedBytes": 695882
+        }
+      }
+    },
+    {
+      "historyMode": "legacy",
+      "turns": 1000,
+      "metrics": {
+        "steadyRecord": {
+          "beforeNs": 25849,
+          "afterNs": 25889,
+          "ratio": 1.001547448644048,
+          "allocations": 0,
+          "allocatedBytes": 0,
+          "peakAllocatedBytes": 0
+        },
+        "adapterReplay": {
+          "beforeNs": 6565207,
+          "afterNs": 6430462,
+          "ratio": 0.9794758946671446,
+          "allocations": 130043,
+          "allocatedBytes": 14122141,
+          "peakAllocatedBytes": 3239015
+        },
+        "ingest": {
+          "beforeNs": 19178462,
+          "afterNs": 18058967,
+          "ratio": 0.9416274881687593,
+          "allocations": 331445,
+          "allocatedBytes": 45855901,
+          "peakAllocatedBytes": 7003400
+        },
+        "restoreCache": {
+          "beforeNs": 11174096,
+          "afterNs": 11072364,
+          "ratio": 0.9908957288356929,
+          "allocations": 231106,
+          "allocatedBytes": 27221563,
+          "peakAllocatedBytes": 6871990
+        }
+      }
+    },
+    {
+      "historyMode": "legacy",
+      "turns": 2500,
+      "metrics": {
+        "steadyRecord": {
+          "beforeNs": 25418,
+          "afterNs": 25809,
+          "ratio": 1.015382799590841,
+          "allocations": 0,
+          "allocatedBytes": 0,
+          "peakAllocatedBytes": 0
+        },
+        "adapterReplay": {
+          "beforeNs": 17108491,
+          "afterNs": 17222236,
+          "ratio": 1.006648453098523,
+          "allocations": 325881,
+          "allocatedBytes": 37047793,
+          "peakAllocatedBytes": 8937983
+        },
+        "ingest": {
+          "beforeNs": 94396737,
+          "afterNs": 84185381,
+          "ratio": 0.8918251167940264,
+          "allocations": 1235419,
+          "allocatedBytes": 192630459,
+          "peakAllocatedBytes": 18491972
+        },
+        "restoreCache": {
+          "beforeNs": 30089151,
+          "afterNs": 28513904,
+          "ratio": 0.9476473430573032,
+          "allocations": 578448,
+          "allocatedBytes": 70501875,
+          "peakAllocatedBytes": 18360562
+        }
+      }
+    },
+    {
+      "historyMode": "paginated",
+      "turns": 100,
+      "metrics": {
+        "steadyRecord": {
+          "beforeNs": 29816,
+          "afterNs": 30788,
+          "ratio": 1.0325999463375368,
+          "allocations": 0,
+          "allocatedBytes": 0,
+          "peakAllocatedBytes": 0
+        },
+        "adapterReplay": {
+          "beforeNs": 1010971,
+          "afterNs": 1030047,
+          "ratio": 1.018868988329042,
+          "allocations": 26854,
+          "allocatedBytes": 3522747,
+          "peakAllocatedBytes": 386507
+        },
+        "ingest": {
+          "beforeNs": 1915931,
+          "afterNs": 1875985,
+          "ratio": 0.979150606154397,
+          "allocations": 39390,
+          "allocatedBytes": 5691261,
+          "peakAllocatedBytes": 935968
+        },
+        "restoreCache": {
+          "beforeNs": 1786647,
+          "afterNs": 1800052,
+          "ratio": 1.0075028810951463,
+          "allocations": 39995,
+          "allocatedBytes": 5071767,
+          "peakAllocatedBytes": 714374
+        }
+      }
+    },
+    {
+      "historyMode": "paginated",
+      "turns": 1000,
+      "metrics": {
+        "steadyRecord": {
+          "beforeNs": 29555,
+          "afterNs": 30979,
+          "ratio": 1.048181356792421,
+          "allocations": 0,
+          "allocatedBytes": 0,
+          "peakAllocatedBytes": 0
+        },
+        "adapterReplay": {
+          "beforeNs": 12467280,
+          "afterNs": 12348135,
+          "ratio": 0.9904433846035382,
+          "allocations": 268072,
+          "allocatedBytes": 35090955,
+          "peakAllocatedBytes": 3745129
+        },
+        "ingest": {
+          "beforeNs": 18895237,
+          "afterNs": 18419669,
+          "ratio": 0.9748313291862918,
+          "allocations": 382537,
+          "allocatedBytes": 55426561,
+          "peakAllocatedBytes": 5670017
+        },
+        "restoreCache": {
+          "beforeNs": 18383310,
+          "afterNs": 17898124,
+          "ratio": 0.9736072557118386,
+          "allocations": 399116,
+          "allocatedBytes": 50466427,
+          "peakAllocatedBytes": 7011359
+        }
+      }
+    },
+    {
+      "historyMode": "paginated",
+      "turns": 2500,
+      "metrics": {
+        "steadyRecord": {
+          "beforeNs": 29466,
+          "afterNs": 30878,
+          "ratio": 1.047919636190864,
+          "allocations": 0,
+          "allocatedBytes": 0,
+          "peakAllocatedBytes": 0
+        },
+        "adapterReplay": {
+          "beforeNs": 31446216,
+          "afterNs": 32276886,
+          "ratio": 1.0264155789046288,
+          "allocations": 670079,
+          "allocatedBytes": 90541067,
+          "peakAllocatedBytes": 10735675
+        },
+        "ingest": {
+          "beforeNs": 49365840,
+          "afterNs": 48142918,
+          "ratio": 0.9752273636992705,
+          "allocations": 954427,
+          "allocatedBytes": 140520789,
+          "peakAllocatedBytes": 14521168
+        },
+        "restoreCache": {
+          "beforeNs": 47197172,
+          "afterNs": 46569345,
+          "ratio": 0.9866977835027912,
+          "allocations": 997625,
+          "allocatedBytes": 128771839,
+          "peakAllocatedBytes": 18815036
+        }
+      }
+    }
+  ]
+}
