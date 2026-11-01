@@ -1,8 +1,21 @@
 import { Directory, File, Paths } from 'expo-file-system';
 
 import type { HerdrClient } from './HerdrClient';
+import { bestEffortCleanup } from './backgroundOperations';
 
-export type RemoteFileClient = Pick<HerdrClient, 'native'>;
+export type RemoteFileClient = Pick<HerdrClient, 'native'> & Partial<Pick<HerdrClient, 'activeNative'>>;
+
+export type RemoteDownloadPhase = 'selecting' | 'downloading' | 'saving' | 'completed' | 'failed' | 'cancelled';
+
+export interface RemoteDownloadProgress {
+  phase: RemoteDownloadPhase;
+  bytesTransferred: number;
+  totalBytes?: number;
+  failedPhase?: RemoteDownloadPhase;
+  error?: string;
+}
+
+const TRANSFER_POLL_INTERVAL_MS = 250;
 
 export interface CachedRemoteFile {
   file: File;
@@ -23,50 +36,117 @@ let transferSequence = 0;
 export async function downloadRemoteEntry(
   client: RemoteFileClient,
   remotePath: string | (() => Promise<string>),
-  onProgress: (bytes: number) => void,
+  onProgress: (progress: RemoteDownloadProgress) => void,
   signal?: AbortSignal,
 ): Promise<boolean> {
-  // Ask before starting a potentially large transfer. iOS picker scopes remain
-  // alive until the copy completes; Android may return a SAF content URI.
-  let destination: Directory;
-  try {
-    destination = await Directory.pickDirectoryAsync();
-  } catch (error) {
-    if (error instanceof Error && /cancel|dismiss/i.test(error.message)) return false;
-    throw error;
-  }
-  const directory = new Directory(Paths.cache, `whip-download-${Date.now()}-${++transferSequence}`);
-  directory.create();
   const native = client.native;
+  const generation = native.status().generation;
+  let progress: RemoteDownloadProgress = { phase: 'selecting', bytesTransferred: 0 };
+  const report = (update: Partial<RemoteDownloadProgress>) => {
+    progress = { ...progress, ...update };
+    onProgress(progress);
+  };
+  let directory: Directory | undefined;
   let transfer: ReturnType<typeof native.startDownload> | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
-  const cancel = () => { if (transfer) native.cancelTransfer(transfer.id); };
+  let connectionError: Error | undefined;
+  const stopPolling = () => {
+    if (timer !== undefined) clearInterval(timer);
+    timer = undefined;
+  };
+  const cancel = () => {
+    stopPolling();
+    signal?.removeEventListener('abort', cancel);
+    if (transfer) native.cancelTransfer(transfer.id);
+  };
+  const checkConnection = () => {
+    const status = native.status();
+    if (status.generation !== generation || status.state !== 'connected'
+      || ('activeNative' in client && client.activeNative !== native)) {
+      throw new Error('Host connection changed during download');
+    }
+  };
+  const check = () => {
+    if (signal?.aborted) throw new Error('Download cancelled');
+    if (connectionError) throw connectionError;
+    checkConnection();
+  };
   try {
-    if (signal?.aborted) throw new Error('Download cancelled');
+    report({});
+    check();
+    // Keep the picker scope alive through the destination copy (including SAF).
+    let destination: Directory;
+    try {
+      destination = await Directory.pickDirectoryAsync();
+    } catch (error) {
+      if (error instanceof Error && /cancel|dismiss/i.test(error.message)) {
+        report({ phase: 'cancelled' });
+        return false;
+      }
+      throw error;
+    }
+    check();
+    report({ phase: 'downloading' });
     const sourcePath = typeof remotePath === 'string' ? remotePath : await remotePath();
-    if (signal?.aborted) throw new Error('Download cancelled');
+    check();
+    directory = new Directory(Paths.cache, `whip-download-${Date.now()}-${++transferSequence}`);
+    directory.create();
     transfer = native.startDownload(sourcePath, `${nativePath(directory.uri)}/`);
     signal?.addEventListener('abort', cancel);
     const id = transfer.id;
     timer = setInterval(() => {
-      const progress = native.transferProgress(id);
-      if (progress) onProgress(progress.bytesTransferred);
-    }, 250);
-    const result = await transfer.result;
-    if (signal?.aborted) throw new Error('Download cancelled');
+      try {
+        check();
+        const value = native.transferProgress(id);
+        if (value) report({ bytesTransferred: value.bytesTransferred, totalBytes: value.totalBytes });
+      } catch (error) {
+        connectionError = error instanceof Error ? error : new Error(String(error));
+        cancel();
+      }
+    }, TRANSFER_POLL_INTERVAL_MS);
+    let result: Awaited<typeof transfer.result>;
+    try {
+      result = await transfer.result;
+    } finally {
+      stopPolling();
+      signal?.removeEventListener('abort', cancel);
+      transfer = undefined;
+    }
+    check();
     if (!result.localPath) throw new Error('Native download returned no local path');
     const info = Paths.info(fileUri(result.localPath));
     const source = info.isDirectory ? new Directory(fileUri(result.localPath)) : new File(fileUri(result.localPath));
+    if (!info.isDirectory) {
+      const size = (source as File).size;
+      report({ phase: 'saving', bytesTransferred: size, totalBytes: size });
+    } else report({ phase: 'saving' });
     // Let Expo resolve children of the picked directory. Android SAF URIs
     // cannot be joined as ordinary filesystem paths. Its copy operation checks
     // conflicts and recurses only over the safe, native-created staging tree.
     await source.copy(destination, { overwrite: false });
+    // Expo's asynchronous copy cannot be interrupted. Once it starts, wait for
+    // its real outcome, even if the owning UI goes away, before deleting staging.
+    report({ phase: 'completed' });
     return true;
+  } catch (error) {
+    if (signal?.aborted && progress.phase !== 'saving') {
+      report({ phase: 'cancelled' });
+      return false;
+    }
+    const reason = connectionError && error !== connectionError
+      ? new Error(`${connectionError.message}: ${String(error)}`)
+      : error instanceof Error ? error : new Error(String(error));
+    report({ phase: 'failed', failedPhase: progress.phase, error: String(reason) });
+    throw reason;
   } finally {
     signal?.removeEventListener('abort', cancel);
-    if (timer) clearInterval(timer);
-    if (transfer) native.cancelTransfer(transfer.id);
-    if (directory.exists) directory.delete();
+    stopPolling();
+    if (directory) {
+      const staging = directory;
+      bestEffortCleanup(Promise.resolve().then(() => {
+        if (staging.exists) staging.delete();
+      }), 'remote-download-cleanup');
+    }
   }
 }
 
@@ -117,12 +197,6 @@ export async function saveCachedRemoteText(
 ): Promise<void> {
   await cached.file.write(content);
   await client.native.startUpload(cached.nativePath, remoteDirectoryPath).result;
-}
-
-export async function copyCachedRemoteFileToPickedDirectory(cached: CachedRemoteFile): Promise<string> {
-  const destination = await Directory.pickDirectoryAsync();
-  await cached.file.copy(destination, { overwrite: true });
-  return destination.uri;
 }
 
 export async function pickLocalFileForUpload(): Promise<CachedLocalUpload | null> {
