@@ -17,6 +17,20 @@ fn main() {
         std::process::exit(1);
     }
 }
+
+fn hostname() -> String {
+    let mut name = [0u8; 256];
+    // SAFETY: name is writable for the full length passed to gethostname.
+    if unsafe { libc::gethostname(name.as_mut_ptr().cast(), name.len()) } != 0 {
+        return String::new();
+    }
+    let end = name
+        .iter()
+        .position(|&byte| byte == 0)
+        .unwrap_or(name.len());
+    String::from_utf8_lossy(&name[..end]).into_owned()
+}
+
 fn run() -> Result<()> {
     let mut args = std::env::args().skip(1);
     let mut command = args.next().ok_or("missing command")?;
@@ -69,7 +83,7 @@ fn run() -> Result<()> {
                 std::env::var("HERDR_PLUGIN_CONTEXT_JSON").unwrap_or_else(|_| "{}".into());
             let json = std::env::var("HERDR_PLUGIN_EVENT_JSON")?;
             if let Some(event) = parse_event(&json, &context, &session)? {
-                let preview = notification_preview(&event, &json, &context)?;
+                let preview = notification_preview(&event, &json, &context, &hostname())?;
                 let deadline = Instant::now() + Duration::from_secs(4);
                 whip_notify::host::deliver(&store, &event, &|device, envelope| {
                     let remaining = deadline

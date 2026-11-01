@@ -171,6 +171,7 @@ pub fn notification_preview(
     event: &NotificationEvent,
     json: &str,
     context: &str,
+    hostname: &str,
 ) -> Result<NotificationPreview> {
     let hook: Hook = serde_json::from_str(json)?;
     let context: serde_json::Value = serde_json::from_str(context)?;
@@ -184,26 +185,16 @@ pub fn notification_preview(
                 .then(|| context["focused_pane_agent"].as_str())
                 .flatten()
         })
-        .filter(|name| !name.trim().is_empty())
-        .unwrap_or(&event.pane_id);
-    let name = preview_text(name, PREVIEW_LABEL_BYTES);
-    let name = if name.is_empty() {
-        preview_text(&event.pane_id, PREVIEW_LABEL_BYTES)
-    } else {
-        name
-    };
+        .map(|name| preview_text(name, PREVIEW_LABEL_BYTES))
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "Agent".into());
     let action = if event.status == "blocked" {
         "needs you"
     } else {
         "finished"
     };
     let tab = pane_context
-        .then(|| {
-            context["tab_label"]
-                .as_str()
-                .filter(|label| !label.trim().is_empty())
-                .or_else(|| context["tab_id"].as_str())
-        })
+        .then(|| context["tab_label"].as_str())
         .flatten();
     let tab = tab
         .map(|tab| preview_text(tab, PREVIEW_LABEL_BYTES))
@@ -218,12 +209,13 @@ pub fn notification_preview(
         .filter(|title| !title.trim().is_empty())
         .map(|title| preview_text(title, PREVIEW_BODY_BYTES))
         .filter(|title| !title.is_empty())
-        .unwrap_or_else(|| {
-            format!(
-                "Agent is {} · {} · {}",
-                event.status, event.workspace_id, event.pane_id
-            )
-        });
+        .unwrap_or_else(|| format!("Agent is {}", event.status));
+    let hostname = preview_text(hostname, PREVIEW_LABEL_BYTES);
+    let body = if hostname.is_empty() {
+        body
+    } else {
+        format!("{hostname} · {body}")
+    };
     Ok(NotificationPreview {
         title: preview_text(&title, PREVIEW_TITLE_BYTES),
         body: preview_text(&body, PREVIEW_BODY_BYTES),
