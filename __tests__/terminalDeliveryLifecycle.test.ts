@@ -16,6 +16,7 @@ function fixture() {
     startHerdrBridge: jest.fn(async (...args: unknown[]) => { legacyHandler = args[6] as typeof legacyHandler; }),
     herdrBridgeProtocolState: () => ({ kittyKeyboardReportAll: false }),
     herdrBridgeGeometry: () => undefined,
+    herdrBridgeFocus: jest.fn(),
     detachHerdrBridge: jest.fn(),
     closeHerdrBridge: jest.fn(),
   };
