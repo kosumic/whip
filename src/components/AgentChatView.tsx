@@ -500,6 +500,17 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress, directory }: 
   const presentation = toolPresentation(item);
   const name = item.tool.toLowerCase();
   const files = item.state.files;
+  // Keep tool file diffs collapsed until the user selects a file.
+  // This state belongs to the tool card so closing and reopening the card
+  // does not discard previously selected diffs.
+  const [expandedFiles, setExpandedFiles] = useState<ReadonlySet<string>>(() => new Set());
+  const toggleFile = (path: string) => {
+    setExpandedFiles(current => {
+      const next = new Set(current);
+      if (!next.delete(path)) next.add(path);
+      return next;
+    });
+  };
   const changes = files.length
     ? {
       additions: files.reduce((total, file) => total + file.additions, 0),
@@ -595,7 +606,7 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress, directory }: 
           {shellCommand
             ? <ShellToolBlock command={shellCommand} output={shellOutput} />
             : shellOutput ? <ToolOutputBlock text={shellOutput} bordered copyable /> : null}
-          {files.map(file => <ToolFileDiffBlock key={file.file} file={file} directory={directory} />)}
+          {files.map(file => <ToolFileDiffBlock key={file.file} file={file} directory={directory} expanded={expandedFiles.has(file.file)} onToggle={() => toggleFile(file.file)} />)}
           {markdownOutput && <ToolOutputBlock text={markdownOutput} markdown bordered copyable onLinkPress={onLinkPress} />}
           {otherOutput && <ToolOutputBlock text={otherOutput} bordered copyable />}
           {writtenContent && <ToolOutputBlock text={writtenContent} bordered copyable />}
