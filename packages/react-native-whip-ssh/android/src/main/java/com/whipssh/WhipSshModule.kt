@@ -34,6 +34,7 @@ class WhipSshModule(reactContext: ReactApplicationContext) :
     WhipTerminalWebViewBridge.install()
     val context = this.reactApplicationContext
     nativeSetDiagnosticPath(java.io.File(context.noBackupFilesDir, "whip-runtime.log").absolutePath)
+    TailcatNetworkMonitoring.start(context)
     nativeSetRecoveryDirectory(java.io.File(context.noBackupFilesDir, "reverse-control").absolutePath)
     nativeSetAppDataDirectory(context.getDatabasePath("whip-app.db").parentFile!!.absolutePath)
     nativeSetConversationDirectories(

@@ -163,6 +163,65 @@ async fn network_change_preserves_live_tcp_and_stream_owns_client()
 
 #[tokio::test]
 #[ignore = "requires the separately built upstream Go fixture; run tests/interop.sh"]
+async fn registry_network_change_refreshes_only_live_shared_actors()
+-> Result<(), Box<dyn std::error::Error>> {
+    let reference = Reference::start(false).await?;
+    let cache = ClientCache::default();
+    assert_eq!(cache.network_changed().await.rebound_clients, 0);
+    for relay_only in [false, true] {
+        let identity = Identity::generate();
+        let (first, shared) = tokio::try_join!(
+            cache.connect(&reference.address, &identity, options(relay_only)),
+            cache.connect(&reference.address, &identity, options(relay_only)),
+        )?;
+        let other = cache
+            .connect(
+                &reference.address,
+                &Identity::generate(),
+                options(relay_only),
+            )
+            .await?;
+        let mut stream = first.dial_tcp(23).await?;
+        let mut concurrent = shared.dial_tcp(23).await?;
+        if !relay_only {
+            timeout(Duration::from_secs(10), async {
+                while first.disco_ping().await?.endpoint.is_none() {
+                    sleep(Duration::from_millis(20)).await;
+                }
+                Ok::<_, io::Error>(())
+            })
+            .await??;
+        }
+        // The registry must find actors kept alive only by SSH's byte streams.
+        drop(first);
+        drop(shared);
+        let report = cache.network_changed().await;
+        assert_eq!(report.rebound_clients, 2);
+        assert_eq!(report.failed_clients, 0);
+        if !relay_only {
+            assert!(report.direct_fallbacks >= 1);
+        }
+        for live in [&mut stream, &mut concurrent] {
+            timeout(Duration::from_secs(20), async {
+                live.write_all(b"retained").await?;
+                let mut bytes = [0; 8];
+                live.read_exact(&mut bytes).await?;
+                assert_eq!(&bytes, b"retained");
+                Ok::<_, io::Error>(())
+            })
+            .await??;
+        }
+        other.close().await;
+        assert_eq!(cache.network_changed().await.rebound_clients, 1);
+        drop(stream);
+        drop(concurrent);
+        assert_eq!(cache.network_changed().await.rebound_clients, 0);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires the separately built upstream Go fixture; run tests/interop.sh"]
 async fn bounded_streams_drop_cancellation_and_close_interrupt_idle_reads()
 -> Result<(), Box<dyn std::error::Error>> {
     let reference = Reference::start(false).await?;

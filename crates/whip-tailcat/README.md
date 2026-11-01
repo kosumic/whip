@@ -59,6 +59,16 @@ reconnection while retaining the identity and TCP/WireGuard state. DERP also
 reconnects after network failures with bounded backoff. A peer restart may
 require a fresh TCP connection; this crate does not replay application data.
 
+Whip's native Android default-network/link callbacks and iOS path monitor also
+signal foreground resumes directly to Rust. The SSH adapter coalesces signals
+in 500 ms batches and calls `ClientCache::network_changed()` once per batch.
+The cache refreshes each live server/identity actor once, including actors owned
+only by streams, without creating clients or changing saved keys or SSH trust.
+Signals during a refresh schedule another batch. Native lifecycle diagnostics
+record the refreshed/failed client counts and direct paths reset to DERP, apart
+from the HostRuntime's existing SSH reconnect records. Failed transport continuity
+uses that existing reconnect-and-restore pipeline.
+
 ## Validation
 
 Run from the repository root, using its pinned development environment:

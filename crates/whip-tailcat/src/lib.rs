@@ -251,10 +251,33 @@ impl Client {
     }
 }
 
-#[derive(Default)]
 struct CachedClient {
     runtime: Weak<Runtime>,
     configuration: [u8; 32],
+    options: ClientOptions,
+    server_addr: std::net::Ipv6Addr,
+}
+
+impl Default for CachedClient {
+    fn default() -> Self {
+        Self {
+            runtime: Weak::new(),
+            configuration: [0; 32],
+            options: ClientOptions::default(),
+            server_addr: std::net::Ipv6Addr::UNSPECIFIED,
+        }
+    }
+}
+
+impl CachedClient {
+    fn client(&self) -> Option<Client> {
+        let runtime = self.runtime.upgrade()?;
+        (!runtime.cancel.is_cancelled()).then(|| Client {
+            runtime,
+            options: self.options.clone(),
+            server_addr: self.server_addr,
+        })
+    }
 }
 
 type ClientSlot = Arc<Mutex<CachedClient>>;
@@ -267,7 +290,50 @@ pub struct ClientCache {
     clients: Mutex<HashMap<[u8; 32], ClientSlot>>,
 }
 
+/// Secret-free outcome of refreshing the registry's active transports.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct NetworkChangeReport {
+    pub rebound_clients: usize,
+    pub failed_clients: usize,
+    pub direct_fallbacks: usize,
+}
+
 impl ClientCache {
+    /// Refresh each live actor once, including actors owned only by streams.
+    /// Never create clients or hold registry/slot locks during network I/O.
+    pub async fn network_changed(&self) -> NetworkChangeReport {
+        let slots: Vec<_> = self.clients.lock().await.values().cloned().collect();
+        let results = futures_util::future::join_all(slots.into_iter().map(|slot| async move {
+            let client = slot.lock().await.client()?;
+            Some(
+                tokio::time::timeout(Duration::from_secs(5), async {
+                    let direct = client
+                        .status()
+                        .await?
+                        .peers
+                        .iter()
+                        .filter(|peer| peer.direct_endpoint.is_some())
+                        .count();
+                    client.network_changed().await?;
+                    Ok::<_, io::Error>(direct)
+                })
+                .await,
+            )
+        }))
+        .await;
+        let mut report = NetworkChangeReport::default();
+        for result in results.into_iter().flatten() {
+            match result {
+                Ok(Ok(direct)) => {
+                    report.rebound_clients += 1;
+                    report.direct_fallbacks += direct;
+                }
+                _ => report.failed_clients += 1,
+            }
+        }
+        report
+    }
+
     pub async fn connect(
         &self,
         address: &str,
@@ -296,24 +362,20 @@ impl ClientCache {
             clients.entry(key).or_default().clone()
         };
         let mut cached = entry.lock().await;
-        if let Some(runtime) = cached.runtime.upgrade()
-            && !runtime.cancel.is_cancelled()
-        {
+        if let Some(client) = cached.client() {
             if cached.configuration != configuration {
                 return Err(invalid(
                     "Tailcat client is already active with different settings",
                 ));
             }
-            return Ok(Client {
-                runtime,
-                options,
-                server_addr: protocol::tc_addr_for_key(&info.server_public),
-            });
+            return Ok(client);
         }
         let client = Client::connect(address, identity, options).await?;
         *cached = CachedClient {
             runtime: Arc::downgrade(&client.runtime),
             configuration,
+            options: client.options.clone(),
+            server_addr: client.server_addr,
         };
         Ok(client)
     }
