@@ -438,6 +438,7 @@ struct ConnectionLifecycle {
     alive: AtomicBool,
     disconnected: watch::Sender<Option<Arc<ConnectionDisconnect>>>,
     sftp_init: tokio::sync::Mutex<()>,
+    timed_exec_open: tokio::sync::Mutex<()>,
     sftp: RwLock<Option<Arc<SftpSession>>>,
 }
 
@@ -448,6 +449,7 @@ impl Default for ConnectionLifecycle {
             alive: AtomicBool::new(true),
             disconnected,
             sftp_init: tokio::sync::Mutex::new(()),
+            timed_exec_open: tokio::sync::Mutex::new(()),
             sftp: RwLock::new(None),
         }
     }
@@ -1192,7 +1194,9 @@ async fn request_agent_forwarding(
     channel: &russh::Channel<client::Msg>,
 ) -> Result<(), TransportError> {
     if session.agent.enabled.load(Ordering::Relaxed) {
-        channel.agent_forward(true).await?;
+        // Forwarding is optional. Its rejection must not be confused with the
+        // subsequent exec request's reply on this same channel.
+        channel.agent_forward(false).await?;
     }
     Ok(())
 }
@@ -1221,7 +1225,79 @@ async fn execute_with_input_on(
 ) -> Result<CommandOutput, TransportError> {
     session.ensure_alive()?;
     let mut channel = session.handle.channel_open_session().await?;
-    request_agent_forwarding(session, &channel).await?;
+    let result = execute_channel(session, &mut channel, command, input).await;
+    let _ = channel.close().await;
+    result
+}
+
+async fn execute_with_timeout_on(
+    session: &Arc<Session>,
+    command: &str,
+    timeout: Duration,
+) -> Result<CommandOutput, TransportError> {
+    session.ensure_alive()?;
+    let deadline = tokio::time::Instant::now() + timeout;
+    let session = session.clone();
+    let command = command.to_owned();
+    let (mut reply, result) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let result = execute_timed_command(&session, &command, deadline, timeout, &mut reply).await;
+        let _ = reply.send(result);
+    });
+    tokio::time::timeout_at(deadline, result)
+        .await
+        .map_err(|_| exec_timeout("request", timeout))?
+        .map_err(|_| TransportError::ChannelUnavailable("SSH exec worker stopped".into()))?
+}
+
+async fn execute_timed_command(
+    session: &Session,
+    command: &str,
+    deadline: tokio::time::Instant,
+    timeout: Duration,
+    reply: &mut tokio::sync::oneshot::Sender<Result<CommandOutput, TransportError>>,
+) -> Result<CommandOutput, TransportError> {
+    // russh does not close a channel whose open-confirmation receiver was
+    // dropped. Keep that request alive for cleanup, but allow at most one late
+    // open per SSH connection. Later callers time out waiting for this gate.
+    let opening = tokio::time::timeout_at(deadline, session.lifecycle.timed_exec_open.lock())
+        .await
+        .map_err(|_| exec_timeout("channel-open", timeout))?;
+    if reply.is_closed() {
+        return Err(exec_timeout("cancelled", timeout));
+    }
+    let channel = session.handle.channel_open_session().await;
+    drop(opening);
+    let mut channel = channel?;
+    let result = if reply.is_closed() || tokio::time::Instant::now() >= deadline {
+        Err(exec_timeout("channel-open", timeout))
+    } else {
+        tokio::select! {
+            result = tokio::time::timeout_at(deadline, execute_channel(session, &mut channel, command, None)) =>
+                result.unwrap_or_else(|_| Err(exec_timeout("command", timeout))),
+            () = reply.closed() => Err(exec_timeout("cancelled", timeout)),
+        }
+    };
+    // Only this command's channel is closed; other live channels keep working.
+    let _ = channel.close().await;
+    result
+}
+
+fn exec_timeout(stage: &str, timeout: Duration) -> TransportError {
+    std::io::Error::new(
+        std::io::ErrorKind::TimedOut,
+        format!("SSH exec {stage} timed out after {timeout:?}"),
+    )
+    .into()
+}
+
+async fn execute_channel(
+    session: &Session,
+    channel: &mut russh::Channel<client::Msg>,
+    command: &str,
+    input: Option<&[u8]>,
+) -> Result<CommandOutput, TransportError> {
+    request_agent_forwarding(session, channel).await?;
     channel.exec(true, command).await?;
     if let Some(input) = input {
         channel.data(input).await?;
@@ -1243,6 +1319,23 @@ async fn execute_with_input_on(
             russh::ChannelMsg::ExitStatus {
                 exit_status: status,
             } => exit_status = Some(status),
+            russh::ChannelMsg::Failure => {
+                return Err(TransportError::ChannelUnavailable(format!(
+                    "SSH exec request was rejected; stderr={}",
+                    String::from_utf8_lossy(&stderr),
+                )));
+            }
+            russh::ChannelMsg::ExitSignal {
+                signal_name,
+                error_message,
+                ..
+            } => {
+                return Err(TransportError::ChannelUnavailable(format!(
+                    "SSH exec terminated by {signal_name:?}: {error_message}; stderr={}",
+                    String::from_utf8_lossy(&stderr),
+                )));
+            }
+            russh::ChannelMsg::Close => break,
             _ => {}
         }
     }
@@ -2904,10 +2997,21 @@ async fn open_exec_channel_with_delivery(
                     }) => {
                         exit_status = Some(status);
                     }
-                    Some(russh::ChannelMsg::ExitSignal { error_message, .. }) => {
-                        if stderr.is_empty() {
-                            stderr.extend_from_slice(error_message.as_bytes());
-                        }
+                    Some(russh::ChannelMsg::ExitSignal {
+                        signal_name,
+                        error_message,
+                        ..
+                    }) => {
+                        break (
+                            format!(
+                                "remote exec channel terminated by {signal_name:?}: {error_message}; stderr={}",
+                                String::from_utf8_lossy(&stderr),
+                            ),
+                            false,
+                        );
+                    }
+                    Some(russh::ChannelMsg::Failure) => {
+                        break ("SSH exec request was rejected".to_owned(), false);
                     }
                     Some(russh::ChannelMsg::Close) | None => {
                         break (exec_channel_close_reason(exit_status, &stderr), false);

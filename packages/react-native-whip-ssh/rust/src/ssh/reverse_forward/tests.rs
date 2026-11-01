@@ -2,11 +2,21 @@ use super::*;
 use crate::ssh::{AgentState, ConnectionLifecycle, RusshHandler, SshSession};
 use std::error::Error;
 use std::future::{Future, ready};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
 use russh::server;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::net::TcpListener;
+
+enum ExecFault {
+    Reject,
+    Hang,
+    Response {
+        stdout: Vec<u8>,
+        stderr: Vec<u8>,
+        status: Option<u32>,
+    },
+}
 
 #[derive(Default)]
 struct ServerState {
@@ -27,6 +37,11 @@ struct ServerState {
     reject_sessions: AtomicUsize,
     session_attempts: AtomicUsize,
     session_started: tokio::sync::Notify,
+    exec_faults: parking_lot::Mutex<std::collections::VecDeque<ExecFault>>,
+    command_cancellations: RwLock<HashMap<russh::ChannelId, watch::Sender<bool>>>,
+    tail_channels: RwLock<Vec<russh::ChannelId>>,
+    closed_commands: AtomicUsize,
+    next_session_delay_ms: AtomicU64,
 }
 
 /// A real SSH server on loopback, with actual remote TCP listeners. Tests use
@@ -57,6 +72,43 @@ impl Drop for Fixture {
 }
 
 impl Fixture {
+    pub(crate) fn delay_next_session(&self, delay: Duration) {
+        self.state
+            .next_session_delay_ms
+            .store(u64::try_from(delay.as_millis()).unwrap(), Ordering::Relaxed);
+    }
+
+    pub(crate) fn reject_next_exec(&self) {
+        self.state.exec_faults.lock().push_back(ExecFault::Reject);
+    }
+
+    pub(crate) fn hang_next_exec(&self) {
+        self.state.exec_faults.lock().push_back(ExecFault::Hang);
+    }
+
+    pub(crate) fn respond_next_exec(&self, stdout: &[u8], stderr: &[u8], status: Option<u32>) {
+        self.state
+            .exec_faults
+            .lock()
+            .push_back(ExecFault::Response {
+                stdout: stdout.to_vec(),
+                stderr: stderr.to_vec(),
+                status,
+            });
+    }
+
+    pub(crate) fn closed_commands(&self) -> usize {
+        self.state.closed_commands.load(Ordering::Relaxed)
+    }
+
+    pub(crate) async fn close_tails(&self) {
+        let channels = std::mem::take(&mut *self.state.tail_channels.write());
+        let handle = self.state.handle.read().clone().unwrap();
+        for channel in channels {
+            let _ = handle.close(channel).await;
+        }
+    }
+
     pub(crate) fn reject_session_channels(&self, count: usize) {
         self.state.reject_sessions.store(count, Ordering::Relaxed);
     }
@@ -223,6 +275,10 @@ impl server::Handler for ForwardServer {
     ) -> Result<(), Self::Error> {
         self.state.session_attempts.fetch_add(1, Ordering::Relaxed);
         self.state.session_started.notify_one();
+        let delay = self.state.next_session_delay_ms.swap(0, Ordering::Relaxed);
+        if delay > 0 {
+            tokio::time::sleep(Duration::from_millis(delay)).await;
+        }
         if self
             .state
             .reject_sessions
@@ -265,16 +321,54 @@ impl server::Handler for ForwardServer {
         command: &[u8],
         session: &mut server::Session,
     ) -> Result<(), Self::Error> {
+        let fault = self.state.exec_faults.lock().pop_front();
+        if let Some(fault) = fault {
+            match fault {
+                ExecFault::Reject => {
+                    session.channel_failure(channel)?;
+                }
+                ExecFault::Hang => {
+                    session.channel_success(channel)?;
+                }
+                ExecFault::Response {
+                    stdout,
+                    stderr,
+                    status,
+                } => {
+                    session.channel_success(channel)?;
+                    session.data(channel, stdout)?;
+                    session.extended_data(channel, 1, stderr)?;
+                    if let Some(status) = status {
+                        session.exit_status_request(channel, status)?;
+                    }
+                    session.eof(channel)?;
+                    session.close(channel)?;
+                }
+            }
+            return Ok(());
+        }
         if let Some(environment) = self.state.command_env.clone() {
             let command = String::from_utf8_lossy(command).into_owned();
+            if command.starts_with("exec tail -c ") {
+                self.state.tail_channels.write().push(channel);
+            }
             let stream = self
                 .channels
                 .remove(&channel)
                 .ok_or(russh::Error::Inconsistent)?;
             session.channel_success(channel)?;
             let handle = session.handle();
+            *self.state.handle.write() = Some(handle.clone());
+            let (cancel, mut cancelled) = watch::channel(false);
+            self.state
+                .command_cancellations
+                .write()
+                .insert(channel, cancel);
             tokio::spawn(async move {
-                let Ok(mut child) = tokio::process::Command::new("sh")
+                let shell = environment
+                    .get("WHIP_TEST_REMOTE_SHELL")
+                    .map_or("sh", String::as_str);
+                let Ok(mut child) = tokio::process::Command::new(shell)
                     .arg("-c")
                     .arg(command)
                     .envs(environment)
@@ -322,7 +416,13 @@ impl server::Handler for ForwardServer {
                         }
                     }
                 });
-                let status = child.wait().await;
+                let status = tokio::select! {
+                    status = child.wait() => status,
+                    _ = cancelled.changed() => {
+                        let _ = child.kill().await;
+                        child.wait().await
+                    }
+                };
                 let _ = output.await;
                 let _ = errors.await;
                 input.abort();
@@ -355,6 +455,20 @@ impl server::Handler for ForwardServer {
         session.eof(channel)?;
         session.close(channel)?;
         Ok(())
+    }
+
+    fn channel_close(
+        &mut self,
+        channel: russh::ChannelId,
+        _session: &mut server::Session,
+    ) -> impl Future<Output = Result<(), Self::Error>> {
+        self.channels.remove(&channel);
+        self.state.tail_channels.write().retain(|id| *id != channel);
+        self.state.closed_commands.fetch_add(1, Ordering::Relaxed);
+        if let Some(cancel) = self.state.command_cancellations.write().remove(&channel) {
+            cancel.send_replace(true);
+        }
+        ready(Ok(()))
     }
 
     async fn channel_open_direct_tcpip(

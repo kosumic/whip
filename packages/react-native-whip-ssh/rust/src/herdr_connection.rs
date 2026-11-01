@@ -343,6 +343,20 @@ impl HerdrConnection {
             .map_err(Into::into)
     }
 
+    pub(crate) async fn execute_with_timeout(
+        &self,
+        command: &str,
+        timeout: std::time::Duration,
+    ) -> Result<CommandOutput, HerdrConnectionError> {
+        let snapshot = self.snapshot()?;
+        self.wait_current(
+            &snapshot,
+            snapshot.ssh.execute_with_timeout(command, timeout),
+        )
+        .await?
+        .map_err(Into::into)
+    }
+
     fn snapshot(&self) -> Result<ConnectionSnapshot, HerdrConnectionError> {
         let state = self.state.read();
         let ssh = state

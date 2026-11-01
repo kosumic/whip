@@ -1,6 +1,91 @@
 use super::*;
 
 #[test]
+fn rejected_and_timed_out_execs_close_their_channels_and_allow_recovery()
+-> Result<(), Box<dyn std::error::Error>> {
+    enum Failure {
+        Rejected,
+        Hung,
+        LateOpen,
+    }
+    runtime()?.block_on(async {
+        let fixture = ReverseForwardFixture::with_commands(
+            true,
+            Duration::ZERO,
+            Some(std::collections::BTreeMap::new()),
+        )
+        .await?;
+        // This server declines agent forwarding. Its optional request must not
+        // turn an otherwise accepted exec into an exec-rejection error.
+        fixture
+            .ssh
+            .inner
+            .agent
+            .enabled
+            .store(true, Ordering::Relaxed);
+        for failure in [Failure::Rejected, Failure::Hung, Failure::LateOpen] {
+            let closed = fixture.closed_commands();
+            let code = match failure {
+                Failure::Rejected => {
+                    fixture.reject_next_exec();
+                    SshErrorCode::ChannelUnavailable
+                }
+                Failure::Hung => {
+                    fixture.hang_next_exec();
+                    SshErrorCode::ConnectionTimeout
+                }
+                Failure::LateOpen => {
+                    fixture.delay_next_session(Duration::from_millis(300));
+                    SshErrorCode::ConnectionTimeout
+                }
+            };
+            let error = fixture
+                .ssh
+                .execute_with_timeout("printf ignored", Duration::from_millis(100))
+                .await
+                .err()
+                .unwrap();
+            assert!(matches!(error, SshFailure::Transport { code: actual, .. } if actual == code));
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while fixture.closed_commands() == closed {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await?;
+            let output = fixture
+                .ssh
+                .execute_with_timeout("printf recovered", Duration::from_secs(5))
+                .await?;
+            assert_eq!(output.stdout, b"recovered");
+            assert_eq!(output.exit_status, Some(0));
+            assert!(fixture.ssh.is_alive());
+        }
+        let (closed, mut events) = tokio::sync::mpsc::unbounded_channel();
+        fixture.reject_next_exec();
+        fixture
+            .ssh
+            .open_exec(
+                "rejected-stream",
+                "ignored",
+                Arc::new(|_| {}),
+                Arc::new(move |reason| {
+                    let _ = closed.send(reason);
+                }),
+            )
+            .await?;
+        let reason = tokio::time::timeout(Duration::from_secs(5), events.recv())
+            .await?
+            .unwrap();
+        assert!(reason.contains("rejected"));
+        assert_eq!(
+            fixture.ssh.execute("printf recovered").await?.stdout,
+            b"recovered"
+        );
+        Ok(())
+    })
+}
+
+#[test]
 fn sftp_initialization_is_shared_per_connection() -> Result<(), Box<dyn std::error::Error>> {
     runtime()?.block_on(async {
         let fixture = ReverseForwardFixture::new(true, Duration::ZERO).await?;
