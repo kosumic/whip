@@ -204,8 +204,6 @@ mod tests {
 
     use super::{pair_host, ssh};
 
-    const BASE45_ALPHABET: &[u8; 45] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
-
     struct ThreadWaker(thread::Thread);
 
     impl Wake for ThreadWaker {
@@ -226,31 +224,16 @@ mod tests {
         }
     }
 
-    fn base45_encode(bytes: &[u8]) -> String {
-        let mut encoded = String::new();
-        for chunk in bytes.chunks(2) {
-            let value = if chunk.len() == 2 {
-                usize::from(chunk[0]) * 256 + usize::from(chunk[1])
-            } else {
-                usize::from(chunk[0])
-            };
-            encoded.push(char::from(BASE45_ALPHABET[value % 45]));
-            encoded.push(char::from(BASE45_ALPHABET[(value / 45) % 45]));
-            if chunk.len() == 2 {
-                encoded.push(char::from(BASE45_ALPHABET[value / (45 * 45)]));
-            }
-        }
-        encoded
-    }
-
     fn unreachable_pairing_code() -> String {
-        let mut payload = vec![1, 127, 0, 0, 1];
-        payload.extend_from_slice(&1_u16.to_be_bytes());
-        payload.push(4);
-        payload.extend_from_slice(b"test");
-        payload.extend_from_slice(&[7; 32]);
-        payload.extend_from_slice(&[9; 32]);
-        format!("WP4:{}", base45_encode(&payload))
+        whipair_protocol::encode_pairing_code(&whipair_protocol::PairingPayload {
+            ssh_host: "127.0.0.1".into(),
+            tailcat: false,
+            ssh_port: 1,
+            ssh_user: "test".into(),
+            temporary_private_key_seed: [7; whipair_protocol::ED25519_SEED_BYTES],
+            ssh_host_key_sha256: [9; whipair_protocol::SHA256_BYTES],
+        })
+        .unwrap()
     }
 
     #[test]

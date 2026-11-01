@@ -5,6 +5,7 @@ module.exports = [
   'android/build',
   'build',
   'crates/tailcat-client/target',
+  'crates/whipair-protocol/target',
   'ios/Pods',
   'ios/build',
   'launch-videos',

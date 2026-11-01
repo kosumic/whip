@@ -72,6 +72,11 @@ jobs:
       - name: Test
         run: cargo test --locked
 
+      - name: Verify offline address validation
+        run: |
+          cargo clippy --locked --no-default-features --all-targets -- -D warnings
+          cargo test --locked --no-default-features
+
       - name: Verify crates.io package
         run: cargo publish --locked --dry-run
 

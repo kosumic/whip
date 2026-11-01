@@ -27,9 +27,11 @@ test('detects alert code or Rust API changes after a native build starts', () =>
   expect(captureNativeAppSources(root)[rust]).not.toBe(initial[rust]);
 });
 
-test('detects newly introduced and removed source files', () => {
+test.each([
+  'packages/react-native-whip-ssh/rust/src/app_core/local_alerts.rs',
+  'crates/whipair-protocol/src/lib.rs',
+])('detects newly introduced and removed source files: %s', path => {
   const initial = captureNativeAppSources(root);
-  const path = 'packages/react-native-whip-ssh/rust/src/app_core/local_alerts.rs';
   write(path, 'new native alerts');
   expect(captureNativeAppSources(root)).not.toEqual(initial);
   rmSync(join(root, path));
@@ -43,6 +45,7 @@ test('allows bindings, assets and compiler output to be regenerated', () => {
     'packages/react-native-whip-ssh/src/generated/whip_ssh.ts',
     'packages/react-native-whip-ssh/cpp/generated/whip_ssh.cpp',
     'packages/react-native-whip-ssh/rust/target/aarch64-linux-android/release/libwhip_ssh.a',
+    'crates/whipair-protocol/target/debug/build/example/out/generated.rs',
     'android/app/src/main/assets/terminal.html',
   ]) write(path, 'regenerated build output');
   expect(captureNativeAppSources(root)).toEqual(initial);

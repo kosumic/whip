@@ -72,6 +72,15 @@ uses that existing reconnect-and-restore pipeline.
 
 ## Validation
 
+The default `transport` feature provides the networking API. Disable default
+features to use `validate_address` offline without Tokio, HTTP/TLS, WireGuard,
+or userspace TCP dependencies. Both modes use the same CBOR parser and complete
+key/relay validation. This is the validation used by `whipair-protocol`:
+
+```toml
+tailcat-client = { version = "0.1.1", default-features = false }
+```
+
 Run from the repository root, using its pinned development environment:
 
 ```bash
@@ -140,3 +149,8 @@ The optional Go interoperability baseline is
 [tailscale/tailcat at 52fbad323e9d](https://github.com/tailscale/tailcat/tree/52fbad323e9d),
 matching Whip's existing transport pin. See [LICENSE](LICENSE) and
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## License
+
+This published package uses the [MIT license](LICENSE). Third-party code and
+dependencies retain their original license notices.

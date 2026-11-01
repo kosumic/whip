@@ -1,6 +1,6 @@
 mod authorized_keys;
 mod network;
-mod protocol;
+use whipair_protocol as protocol;
 
 use std::{
     io::{self, IsTerminal, Read as _, Write},

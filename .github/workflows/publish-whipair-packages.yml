@@ -9,7 +9,7 @@ on:
       version:
         description: Version from whipair/Cargo.toml, without a leading v
         required: true
-        default: 0.1.4
+        default: 0.1.5
         type: string
       publish_pypi:
         description: Publish the PyPI wheels
@@ -97,6 +97,15 @@ jobs:
 
       - name: Test
         run: cargo test --locked
+
+      - name: Check shared pairing protocol
+        working-directory: crates/whipair-protocol
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/whipair/target
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
 
       - name: Check npm launcher syntax
         run: |
@@ -261,9 +270,9 @@ jobs:
             staging="$RUNNER_TEMP/whipair-$target"
             mkdir -p "$staging"
             install -m 755 "native-dist/vendor/$target/whipair" "$staging/whipair"
-            cp whipair/README.md LICENSE "$staging/"
+            cp whipair/README.md whipair/LICENSE whipair/THIRD_PARTY_NOTICES.md "$staging/"
             tar -czf "dist/whipair-$RELEASE_VERSION-$target.tar.gz" \
-              -C "$staging" whipair README.md LICENSE
+              -C "$staging" whipair README.md LICENSE THIRD_PARTY_NOTICES.md
           done
           cd dist
           for archive in ./*.tar.gz; do

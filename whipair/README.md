@@ -230,6 +230,10 @@ characters and renders as a 37-module QR at error-correction level L. Expiry
 is enforced by the running host process and is intentionally omitted.
 Tailcat addresses may contain up to 1024 ASCII bytes and produce larger QR
 codes. Whip validates the complete Tailcat address before contacting a relay.
+The CLI and mobile Rust core share the published
+[`whipair-protocol`](../crates/whipair-protocol/) library. Both validate the full
+Tailcat CBOR structure, key lengths, required server and discovery keys, and
+relay configuration before accepting a pairing code.
 
 ### Host authorization and exchange
 
@@ -277,6 +281,12 @@ prompt.
   `0700` and `0600` when needed.
 
 ## Publishing
+
+The CLI uses versioned registry dependencies with local development paths.
+Publish `tailcat-client` 0.1.1 (offline validation support), then
+`whipair-protocol` 0.1.0 before publishing a CLI release that uses them.
+Each library has a tag-triggered crates.io workflow. See the
+[protocol release instructions](../crates/whipair-protocol/README.md).
 
 The [`Publish whipair to crates.io`](https://github.com/kosumic/whip/actions/workflows/publish-whipair.yml)
 workflow verifies the crate version, formatting, Clippy, tests, and package
@@ -326,6 +336,14 @@ Commit those changes, then push a tag whose version matches `Cargo.toml`
 exactly:
 
 ```bash
-git tag whipair-v0.1.4
-git push origin whipair-v0.1.4
+git tag whipair-v0.1.5
+git push origin whipair-v0.1.5
 ```
+
+## License
+
+This published package uses the [MIT license](LICENSE). Third-party code and
+dependencies retain their original license notices.
+
+After dependency changes, regenerate bundled notices with
+`nix develop -c bash whipair/scripts/generate-license-notices.sh`.

@@ -18,6 +18,13 @@ if (packageJson.version !== cargoVersion) {
     `npm version ${packageJson.version} does not match Cargo version ${cargoVersion}`,
   );
 }
+if (packageJson.license !== "MIT" || !packageJson.files.includes("LICENSE")) {
+  throw new Error("The published npm package must declare and include the MIT license");
+}
+const license = fs.readFileSync(path.join(packageRoot, "LICENSE"), "utf8");
+if (license !== fs.readFileSync(path.join(packageRoot, "..", "LICENSE"), "utf8")) {
+  throw new Error("The npm and Rust packages must ship the same MIT license");
+}
 
 for (const target of [
   "darwin-arm64",

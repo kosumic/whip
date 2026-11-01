@@ -5,11 +5,16 @@ on:
     branches: [main]
     paths: &whipair-paths
       - 'whipair/**'
+      - 'crates/whipair-protocol/**'
+      - 'crates/tailcat-client/**'
       - '!whipair/docs/**'
       - '!**/*.md'
       - '.github/workflows/ci-whipair.yml'
       - '.github/workflows/publish-whipair.yml'
       - '.github/workflows/publish-whipair-packages.yml'
+      - '.github/workflows/publish-whipair-protocol.yml'
+      - 'flake.nix'
+      - 'flake.lock'
       - 'rust-toolchain.toml'
       - 'packages/react-native-whip-ssh/rust/rust-toolchain.toml'
   pull_request:
@@ -53,6 +58,23 @@ jobs:
 
       - name: Test
         run: cargo test --locked --all-features
+
+      - name: Check shared pairing protocol
+        working-directory: crates/whipair-protocol
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/whipair/target
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+
+      - name: Check offline Tailcat validation
+        working-directory: crates/tailcat-client
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/whipair/target
+        run: |
+          cargo clippy --locked --no-default-features --all-targets -- -D warnings
+          cargo test --locked --no-default-features
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
