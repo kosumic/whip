@@ -60,6 +60,11 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 25
+    # xn-gemm-f16 uses AArch64 FP16 SIMD inline asm; the runner supports FEAT_FP16,
+    # but Rust's baseline AArch64 target does not enable it by default.
+    # Keep this flag in the ARM64 test job, not in shipped mobile builds.
+    env:
+      RUSTFLAGS: -C target-feature=+fp16
     permissions:
       checks: write
       contents: read
