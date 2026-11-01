@@ -1,4 +1,4 @@
-import { Plus, Server, ServerOff, X } from 'lucide-react-native';
+import { Plus, Server, ServerOff } from 'lucide-react-native';
 import { Platform, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
@@ -11,6 +11,7 @@ import { appGlassControlStyle, statusColor as agentStatusColor, useTheme, type T
 import type { AgentStatus } from '@/src/types';
 import { AnimatedAgentStatusGlyph, AnimatedStatusIndicator, hapticPress } from './app-ui';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
+import { RailAction, RailItemButton } from './RailItemButton';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
 
@@ -71,13 +72,15 @@ function HostPill({ session, active, onSelect, onClose }: { session: LiveSession
     <View
       className={cn(
         'h-11 max-w-[190px] flex-row items-center rounded-full',
+        isIpad && 'max-w-[240px]',
         appGlassEnabled && 'border',
         !appGlassEnabled && 'bg-muted',
         !appGlassEnabled && !active && 'border border-border',
         !appGlassEnabled && active && 'bg-primary',
       )}
       style={appGlassEnabled ? appGlassControlStyle(active, colors) : undefined}>
-      <Button accessibilityLabel={t(session.hostId ? 'rail.openHost' : 'rail.showHosts', { host: session.label, status: accessibilityStatus })} accessibilityRole="radio" accessibilityState={{ selected: active }} className="h-11 min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2.5 py-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent" variant="ghost" onPress={hapticPress(onSelect)}>
+      <RailItemButton label={session.label} accessibilityLabel={t(session.hostId ? 'rail.openHost' : 'rail.showHosts', { host: session.label, status: accessibilityStatus })} accessibilityRole="radio" accessibilityState={{ selected: active }} className="h-11 min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2.5 py-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent" variant="ghost" onPress={onSelect}
+        actions={onClose ? [{ id: RailAction.Disconnect, accessibilityLabel: t('rail.disconnectHost', { host: session.label }), onPress: onClose }] : undefined}>
         {indicator === 'progress' ? (
           <AnimatedStatusIndicator status={session.status} color={indicatorColor} size={12} />
         ) : indicator === 'offline' ? (
@@ -86,13 +89,12 @@ function HostPill({ session, active, onSelect, onClose }: { session: LiveSession
           <AnimatedAgentStatusGlyph status={session.agentStatus} color={indicatorColor} size={12} />
         )}
         {session.hostId ? (
-          <Text className={cn('max-w-[119px] pb-0.5 text-[11px] font-semibold leading-[18px] text-foreground', isIpad && 'max-w-[160px] text-[17px] leading-6', activeTextClass)} numberOfLines={1}>{session.label}</Text>
+          <Text className={cn('shrink pb-0.5 text-[11px] font-semibold leading-[18px] text-foreground', isIpad && 'text-[17px] leading-6', activeTextClass)} numberOfLines={1}>{session.label}</Text>
         ) : (
           <Server size={15} color={active ? (appGlassEnabled ? colors.primary : colors.onPrimary) : colors.text} />
         )}
         {session.terminalCount > 0 ? <Text className={cn('text-[10px] leading-[18px] text-muted-foreground', activeTextClass)}>{session.terminalCount}</Text> : null}
-      </Button>
-      {onClose ? <Button accessibilityLabel={t('rail.disconnectHost', { host: session.label })} className="size-11 rounded-none px-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent" variant="ghost" onPress={hapticPress(onClose)}><X size={14} color={active ? (appGlassEnabled ? colors.primary : colors.onPrimary) : colors.textSecondary} /></Button> : null}
+      </RailItemButton>
     </View>
   );
 }

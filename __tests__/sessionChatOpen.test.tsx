@@ -25,6 +25,7 @@ import type {
 jest.mock('react-native', () => ({
   View: 'View',
   Modal: 'Modal',
+  Pressable: 'Pressable',
   ScrollView: 'ScrollView',
   ActivityIndicator: 'Spinner',
   AppState: {
@@ -537,8 +538,13 @@ test('plain SSH tabs use the shared create, switch, rename, close and volume con
   host.setSnapshot(host.props.snapshot);
   host.props.terminalPreferences = { ...host.props.terminalPreferences, volumeDownAction: 'terminal-tab' };
   act(() => { renderer = create(<SessionScreen {...host.props} />); });
-  const tabButtons = (label: string) => renderer.root.findAll(node =>
-    String(node.type) === 'Button' && node.props.accessibilityLabel === label);
+  const tabButtons = (label: string) => renderer.root.findAll(node => {
+    if (String(node.type) !== 'Button' || node.props.accessibilityLabel !== label) return false;
+    for (let parent = node.parent; parent; parent = parent.parent) {
+      if (String(parent.type) === 'Modal' && !parent.props.visible) return false;
+    }
+    return true;
+  });
   expect(tabButtons('session.openTab')).toHaveLength(2);
   expect(host.props.onActivateTerminal).not.toHaveBeenCalled();
   act(() => { tabButtons('session.openTab')[1].props.onPress(); });
@@ -547,6 +553,8 @@ test('plain SSH tabs use the shared create, switch, rename, close and volume con
   expect(host.props.onSelectSshShell).toHaveBeenLastCalledWith(shells[1].terminalId);
 
   act(() => { tabButtons('session.openTab')[1].props.onLongPress(); });
+  expect(ui('EditorSheet').props.visible).toBe(false);
+  act(() => { tabButtons('session.renameTab')[0].props.onPress(); });
   expect(ui('EditorSheet').props.title).toBe('session.renameTab');
   expect(ui('Input').props.value).toBe('Logs');
   act(() => { ui('Input').props.onChangeText('Server logs'); });
@@ -555,6 +563,7 @@ test('plain SSH tabs use the shared create, switch, rename, close and volume con
   expect(ui('EditorSheet').props.visible).toBe(false);
 
   act(() => { tabButtons('session.openTab')[1].props.onLongPress(); });
+  act(() => { tabButtons('session.renameTab')[0].props.onPress(); });
   act(() => { ui('Input').props.onChangeText('Discarded rename'); });
   act(() => { ui('EditorSheet').props.onClose(); });
 
@@ -566,6 +575,8 @@ test('plain SSH tabs use the shared create, switch, rename, close and volume con
   await act(async () => { await ui('EditorSheet').props.onSave(); });
   expect(host.props.onOpenSshShell).toHaveBeenCalledWith('Deploy');
   expect(host.props.onRenameSshShell).toHaveBeenCalledTimes(1);
+  expect(tabButtons('session.closeTab')).toHaveLength(0);
+  act(() => { tabButtons('session.openTab')[0].props.onLongPress(); });
   act(() => { tabButtons('session.closeTab')[0].props.onPress(); });
   expect(host.props.onCloseTerminal).toHaveBeenCalledWith(shells[0].terminalId);
   expect(host.native.requestHerdrApi).not.toHaveBeenCalled();
@@ -1946,12 +1957,14 @@ test('disconnect keeps the new-tab button, tab identities, and scroll container 
   const plus = renderer.root.findByProps({ accessibilityLabel: 'session.newTab' });
   const rail = renderer.root.findByProps({ accessibilityLabel: 'session.backToHerd' }).parent!;
   const scroll = rail.findByType('ScrollView' as never);
-  const tabs = scroll.findAllByType('Button' as never);
+  const tabButtons = () => scroll.findAllByType('Button' as never)
+    .filter(node => node.props.accessibilityLabel === 'session.openTab');
+  const tabs = tabButtons();
   await act(async () => { renderer.update(<SessionScreen {...host.props} client={null} />); });
   expect(renderer.root.findByProps({ accessibilityLabel: 'session.newTab' })).toBe(plus);
   expect(plus.props.disabled).toBe(true);
   expect(rail.findByType('ScrollView' as never)).toBe(scroll);
-  expect(scroll.findAllByType('Button' as never)).toEqual(tabs);
+  expect(tabButtons()).toEqual(tabs);
   await act(async () => { renderer.update(<SessionScreen {...host.props} />); });
   expect(renderer.root.findByProps({ accessibilityLabel: 'session.newTab' })).toBe(plus);
   expect(plus.props.disabled).toBe(false);

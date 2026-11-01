@@ -922,6 +922,10 @@ export const fr = {
   'rail.newWorkspace': 'Nouvel espace',
   'rail.closeWorkspace': 'Fermer l’espace {{workspace}}',
   'rail.space': 'Espace',
+  'rail.actions': 'Actions',
+  'rail.actionsHint': 'Appuyez longuement pour afficher les actions, ou utilisez les actions d’accessibilité.',
+  'rail.rename': 'Renommer',
+  'rail.disconnect': 'Déconnecter',
   'rail.workspaceStatus': '{{workspace}}, {{status}}',
 
   'session.backToHerd': 'Retour au troupeau',

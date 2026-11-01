@@ -1,4 +1,4 @@
-import { Layers3, Plus, X } from 'lucide-react-native';
+import { Layers3, Plus } from 'lucide-react-native';
 import { Platform, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
@@ -9,6 +9,7 @@ import { appGlassControlStyle, statusColor, useTheme } from '@/src/theme';
 import type { WorkspaceInfo } from '@/src/types';
 import { AnimatedAgentStatusGlyph, hapticPress } from './app-ui';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
+import { RailAction, RailItemButton } from './RailItemButton';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
 
@@ -64,7 +65,7 @@ export function WorkspaceRail({
             active={workspace.workspace_id === selectedWorkspaceId}
             busy={busy}
             onPress={() => onSelect(workspace.workspace_id)}
-            onLongPress={readOnly ? undefined : () => onRename(workspace)}
+            onRename={readOnly ? undefined : () => onRename(workspace)}
             onClose={readOnly ? undefined : () => onClose(workspace)}
           />
         ))}
@@ -90,7 +91,7 @@ function WorkspacePill({
   aggregate = false,
   busy,
   onPress,
-  onLongPress,
+  onRename,
   onClose,
 }: {
   label: string;
@@ -100,7 +101,7 @@ function WorkspacePill({
   aggregate?: boolean;
   busy: boolean;
   onPress: () => void;
-  onLongPress?: () => void;
+  onRename?: () => void;
   onClose?: () => void;
 }) {
   const { colors } = useTheme();
@@ -123,16 +124,20 @@ function WorkspacePill({
         !appGlassEnabled && active && 'bg-primary',
       )}
       style={appGlassEnabled ? appGlassControlStyle(active, colors) : undefined}>
-      <Button accessibilityLabel={t('rail.workspaceStatus', { workspace: label, status })} accessibilityRole="radio" accessibilityState={{ selected: active }} className={cn('h-11 min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2.5 py-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent', isIpad && 'gap-2 px-3')} variant="ghost" onPress={hapticPress(onPress)} onLongPress={onLongPress ? hapticPress(onLongPress) : undefined}>
+      <RailItemButton label={label} accessibilityLabel={t('rail.workspaceStatus', { workspace: label, status })} accessibilityRole="radio" accessibilityState={{ selected: active }} className={cn('h-11 min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2.5 py-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent', isIpad && 'gap-2 px-3')} variant="ghost" onPress={onPress}
+        actionsDisabled={busy}
+        actions={[
+          ...(onRename ? [{ id: RailAction.Rename, accessibilityLabel: t('herd.renameSpace'), onPress: onRename }] : []),
+          ...(onClose ? [{ id: RailAction.Close, accessibilityLabel: t('rail.closeWorkspace', { workspace: label }), onPress: onClose }] : []),
+        ]}>
         <AnimatedAgentStatusGlyph status={status} color={statusColor(status, colors)} size={isIpad ? 16 : 12} />
         {aggregate ? (
           <Layers3 size={isIpad ? 19 : 15} color={active ? (appGlassEnabled ? colors.primary : colors.onPrimary) : colors.text} />
         ) : (
-          <Text numberOfLines={1} className={cn('max-w-[104px] pb-0.5 text-[11px] font-semibold leading-[18px] text-muted-foreground', isIpad && 'max-w-[160px] text-[17px] leading-6', activeTextClass)}>{label}</Text>
+          <Text numberOfLines={1} className={cn('shrink pb-0.5 text-[11px] font-semibold leading-[18px] text-muted-foreground', isIpad && 'text-[17px] leading-6', activeTextClass)}>{label}</Text>
         )}
         <Text className={cn('font-mono text-[8px] leading-[18px] text-muted-foreground', isIpad && 'text-[13px] leading-6', activeTextClass)}>{count}</Text>
-      </Button>
-      {onClose ? <Button accessibilityLabel={t('rail.closeWorkspace', { workspace: label })} className="size-11 rounded-none px-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent" disabled={busy} variant="ghost" onPress={hapticPress(onClose)}><X size={isIpad ? 18 : 14} color={active ? (appGlassEnabled ? colors.primary : colors.onPrimary) : colors.textSecondary} /></Button> : null}
+      </RailItemButton>
     </View>
   );
 }

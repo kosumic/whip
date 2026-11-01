@@ -247,6 +247,52 @@ describe('Herd workspace selection intent', () => {
     agentTranscriptService.reset();
   });
 
+  test.each(['space-a', 'space-b'])('closes %s directly and clears the filter only when closing the selected space', async workspaceId => {
+    const screenProps = props();
+    screenProps.onCloseWorkspace.mockResolvedValue(undefined);
+    act(() => { renderer = create(<HerdScreen {...screenProps} />); });
+    const target = screenProps.queues[0].workspaces.find(item => item.workspace_id === workspaceId)!;
+    await act(async () => { await findHost(renderer.root, 'WorkspaceRail').props.onClose(target); });
+    expect(screenProps.onCloseWorkspace).toHaveBeenCalledWith('host-1', workspaceId);
+    expect(renderer.root.findAll(node => String(node.type) === 'ConfirmationPopup' && node.props.visible)).toHaveLength(0);
+    if (workspaceId === 'space-a') expect(screenProps.onWorkspaceFilterChange).toHaveBeenCalledWith('host-1', null);
+    else expect(screenProps.onWorkspaceFilterChange).not.toHaveBeenCalled();
+  });
+
+  test('does not submit a second space close while the first close is pending', async () => {
+    const screenProps = props();
+    let finish!: () => void;
+    screenProps.onCloseWorkspace.mockReturnValue(new Promise<void>(resolve => { finish = resolve; }));
+    act(() => { renderer = create(<HerdScreen {...screenProps} />); });
+    const rail = findHost(renderer.root, 'WorkspaceRail');
+    const close = rail.props.onClose;
+    act(() => {
+      void close(screenProps.queues[0].workspaces[0]);
+      void close(screenProps.queues[0].workspaces[1]);
+    });
+    expect(screenProps.onCloseWorkspace).toHaveBeenCalledTimes(1);
+    expect(findHost(renderer.root, 'WorkspaceRail').props.busy).toBe(true);
+    await act(async () => { finish(); });
+    expect(findHost(renderer.root, 'WorkspaceRail').props.busy).toBe(false);
+  });
+
+  test('reports a failed space close without clearing the selected space', async () => {
+    const screenProps = props();
+    screenProps.onCloseWorkspace.mockRejectedValue(new Error('Close failed'));
+    act(() => { renderer = create(<HerdScreen {...screenProps} />); });
+    await act(async () => { await findHost(renderer.root, 'WorkspaceRail').props.onClose(screenProps.queues[0].workspaces[0]); });
+    expect(screenProps.onWorkspaceFilterChange).not.toHaveBeenCalled();
+    expect(findHost(renderer.root, 'AppAlertPopup').props.message).toContain('Close failed');
+  });
+
+  test.each(['offline', 'stopped'] as const)('does not close a space while the host is %s', state => {
+    const screenProps = props({ offline: state === 'offline' });
+    if (state === 'stopped') screenProps.queues[0].running = false;
+    act(() => { renderer = create(<HerdScreen {...screenProps} />); });
+    act(() => { void findHost(renderer.root, 'WorkspaceRail').props.onClose(screenProps.queues[0].workspaces[0]); });
+    expect(screenProps.onCloseWorkspace).not.toHaveBeenCalled();
+  });
+
   test('a ready single host keeps its rail hidden and space actions available during refreshes', async () => {
     const screenProps = props({
       sessions: [{
