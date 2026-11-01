@@ -27,6 +27,8 @@ on:
       - '!.github/workflows/ci-agent-browser-control.yml'
       - '!.github/workflows/ci-agent-transcript-core.yml'
       - '!.github/workflows/publish-agent-transcript-core.yml'
+      - '!.github/workflows/ci-herdr-protocol.yml'
+      - '!.github/workflows/publish-herdr-protocol.yml'
       - '!.github/workflows/release-whip-notify.yml'
       - '!scripts/prepare-notify-install-tag.sh'
       - '!scripts/publish-crate-github-release.sh'
@@ -120,6 +122,16 @@ jobs:
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked
           cargo run --locked --example ingest
+
+      - name: Check shared Herdr protocol
+        working-directory: crates/herdr-protocol
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/packages/react-native-whip-ssh/rust/target
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+          cargo run --locked --example messages
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
