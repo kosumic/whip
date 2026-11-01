@@ -92,7 +92,7 @@ for (const rustPackage of packages) {
     if (notice.name === 'turso') {
       notice.licenseText += `\n\n${await productionTransitiveNotices(rustPackage, 'turso')}`;
     }
-    if (notice.name === 'whip-notify' || notice.name === 'whip-tailcat') {
+    if (notice.name === 'whip-notify' || notice.name === 'tailcat-client') {
       notice.licenseText += `\n\n${await productionTransitiveNotices(rustPackage, notice.name)}`;
     }
     const key = `${notice.name}@${notice.version}`;

@@ -1631,6 +1631,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "tailcat-client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "boringtun",
+ "ciborium",
+ "crypto_box",
+ "futures-util",
+ "hex",
+ "hmac",
+ "if-addrs",
+ "rand 0.8.8",
+ "rcgen",
+ "reqwest",
+ "rustls",
+ "rustls-native-certs",
+ "serde",
+ "serde_json",
+ "sha2",
+ "smoltcp",
+ "socket2",
+ "tokio",
+ "tokio-rustls",
+ "tokio-util",
+ "tracing",
+ "webpki-roots",
+ "x25519-dalek",
+ "zeroize",
+]
+
+[[package]]
 name = "thiserror"
 version = "2.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1987,38 +2019,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f5f280bbb2b287bc8e7de7e3852945a0ff50d1bbcb5ed42b6c7a568c546df171"
 dependencies = [
  "rustls-pki-types",
-]
-
-[[package]]
-name = "whip-tailcat"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "boringtun",
- "ciborium",
- "crypto_box",
- "futures-util",
- "hex",
- "hmac",
- "if-addrs",
- "rand 0.8.8",
- "rcgen",
- "reqwest",
- "rustls",
- "rustls-native-certs",
- "serde",
- "serde_json",
- "sha2",
- "smoltcp",
- "socket2",
- "tokio",
- "tokio-rustls",
- "tokio-util",
- "tracing",
- "webpki-roots",
- "x25519-dalek",
- "zeroize",
 ]
 
 [[package]]

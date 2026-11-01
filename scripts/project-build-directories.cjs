@@ -4,7 +4,7 @@ module.exports = [
   'android/app/build',
   'android/build',
   'build',
-  'crates/whip-tailcat/target',
+  'crates/tailcat-client/target',
   'ios/Pods',
   'ios/build',
   'launch-videos',

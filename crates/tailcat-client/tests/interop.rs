@@ -1,11 +1,11 @@
 //! Run with tests/interop.sh. Go is an optional, separately built test fixture.
 use std::{io, process::Stdio, time::Duration};
+use tailcat_client::{Client, ClientCache, ClientOptions, Identity};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     process::{Child, Command},
     time::{sleep, timeout},
 };
-use whip_tailcat::{Client, ClientCache, ClientOptions, Identity};
 
 struct Reference {
     _child: Child,

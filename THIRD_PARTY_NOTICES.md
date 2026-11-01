@@ -5,11 +5,11 @@ remain subject to their original licenses.
 
 ## Tailcat
 
-Whip's [whip-tailcat client crate](crates/whip-tailcat/README.md) implements the
+Whip's [tailcat-client client crate](crates/tailcat-client/README.md) implements the
 [Tailcat](https://github.com/tailscale/tailcat) transport in Rust, adapting
 BSD-3-Clause code from spullara/tailcat-rs. Tailcat is copyright Tailscale Inc &
 contributors. Original license and provenance are retained in the crate's
-[notices](crates/whip-tailcat/THIRD_PARTY_NOTICES.md) and the bundled
+[notices](crates/tailcat-client/THIRD_PARTY_NOTICES.md) and the bundled
 [Tailcat attribution](assets/licenses/tailcat-dependencies.txt).
 Rust transport dependency licenses are bundled with the Cargo notices.
 Regenerate attribution with

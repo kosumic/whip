@@ -55,18 +55,18 @@ pub fn tailcat_server_command(
 
 #[uniffi::export]
 pub fn generate_tailcat_identity() -> Result<TailcatIdentity, TailcatIdentityError> {
-    let identity = whip_tailcat::Identity::generate();
+    let identity = tailcat_client::Identity::generate();
     Ok(TailcatIdentity {
         private_key: identity.private_key(),
         public_key: identity.public_key(),
     })
 }
 
-pub(super) type Stream = whip_tailcat::Stream;
+pub(super) type Stream = tailcat_client::Stream;
 
 // The registry owns weak references; active streams own their network actor.
 // Sharing avoids duplicate DERP registrations for one saved host identity.
-static CLIENTS: OnceLock<whip_tailcat::ClientCache> = OnceLock::new();
+static CLIENTS: OnceLock<tailcat_client::ClientCache> = OnceLock::new();
 
 mod network;
 
@@ -83,7 +83,7 @@ pub(crate) mod test_support {
     /// spawned connect/reconnect tasks. Other SSH/Tailcat tests are unaffected.
     pub(crate) struct RelayOnlyIdentity(String);
     impl RelayOnlyIdentity {
-        pub(crate) fn new(identity: &whip_tailcat::Identity) -> Self {
+        pub(crate) fn new(identity: &tailcat_client::Identity) -> Self {
             let public = identity.public_key();
             RELAY_IDENTITIES
                 .get_or_init(Default::default)
@@ -100,9 +100,9 @@ pub(crate) mod test_support {
         }
     }
     pub(super) fn options(
-        identity: &whip_tailcat::Identity,
-        mut options: whip_tailcat::ClientOptions,
-    ) -> whip_tailcat::ClientOptions {
+        identity: &tailcat_client::Identity,
+        mut options: tailcat_client::ClientOptions,
+    ) -> tailcat_client::ClientOptions {
         if RELAY_IDENTITIES
             .get()
             .is_some_and(|identities| identities.read().contains(&identity.public_key()))
@@ -114,11 +114,11 @@ pub(crate) mod test_support {
     pub(crate) async fn client(
         address: &str,
         private_key: &str,
-    ) -> io::Result<whip_tailcat::Client> {
-        let identity = whip_tailcat::Identity::from_private_key(private_key)?;
-        let options = options(&identity, whip_tailcat::ClientOptions::default());
+    ) -> io::Result<tailcat_client::Client> {
+        let identity = tailcat_client::Identity::from_private_key(private_key)?;
+        let options = options(&identity, tailcat_client::ClientOptions::default());
         CLIENTS
-            .get_or_init(whip_tailcat::ClientCache::default)
+            .get_or_init(tailcat_client::ClientCache::default)
             .connect(address, &identity, options)
             .await
     }
@@ -129,7 +129,7 @@ pub(super) async fn connect(address: &str, port: u16, private_key: &str) -> io::
         address,
         port,
         private_key,
-        whip_tailcat::ClientOptions::default(),
+        tailcat_client::ClientOptions::default(),
     )
     .await
 }
@@ -138,13 +138,13 @@ async fn connect_with_options(
     address: &str,
     port: u16,
     private_key: &str,
-    options: whip_tailcat::ClientOptions,
+    options: tailcat_client::ClientOptions,
 ) -> io::Result<Stream> {
-    let identity = whip_tailcat::Identity::from_private_key(private_key)?;
+    let identity = tailcat_client::Identity::from_private_key(private_key)?;
     #[cfg(test)]
     let options = test_support::options(&identity, options);
     let client = CLIENTS
-        .get_or_init(whip_tailcat::ClientCache::default)
+        .get_or_init(tailcat_client::ClientCache::default)
         .connect(address, &identity, options)
         .await
         .map_err(transport_error)?;
@@ -296,9 +296,9 @@ mod tests {
                 address,
                 22,
                 &identity.private_key,
-                whip_tailcat::ClientOptions {
+                tailcat_client::ClientOptions {
                     allow_insecure_relays: true,
-                    ..whip_tailcat::ClientOptions::default()
+                    ..tailcat_client::ClientOptions::default()
                 },
             )
             .await?;
@@ -306,9 +306,9 @@ mod tests {
                 address,
                 22,
                 &identity.private_key,
-                whip_tailcat::ClientOptions {
+                tailcat_client::ClientOptions {
                     allow_insecure_relays: true,
-                    ..whip_tailcat::ClientOptions::default()
+                    ..tailcat_client::ClientOptions::default()
                 },
             )
             .await?;
@@ -334,9 +334,9 @@ mod tests {
                 address,
                 22,
                 &identity.private_key,
-                whip_tailcat::ClientOptions {
+                tailcat_client::ClientOptions {
                     allow_insecure_relays: true,
-                    ..whip_tailcat::ClientOptions::default()
+                    ..tailcat_client::ClientOptions::default()
                 },
             )
             .await?;

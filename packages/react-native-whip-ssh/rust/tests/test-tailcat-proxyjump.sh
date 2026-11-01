@@ -7,7 +7,7 @@ if [[ "$(uname -s)" != Linux ]]; then
 fi
 
 rust_dir="$(cd "$(dirname "$0")/.." && pwd)"
-reference_dir="$rust_dir/../../../crates/whip-tailcat/tests/reference"
+reference_dir="$rust_dir/../../../crates/tailcat-client/tests/reference"
 fixture="$rust_dir/target/tailcat-proxyjump-reference"
 mkdir -p "$rust_dir/target"
 (cd "$reference_dir" && "${GO:-go}" test -mod=readonly -c -o "$fixture")

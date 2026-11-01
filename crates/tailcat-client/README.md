@@ -1,13 +1,14 @@
-# whip-tailcat
+# tailcat-client
 
-Whip-owned, client-only Tailcat transport for [Whip issue #254](https://github.com/kosumic/whip/issues/254).
+Client-only [Tailcat](https://github.com/tailscale/tailcat) transport maintained
+by [Whip](https://github.com/kosumic/whip).
 It uses BoringTun for WireGuard, smoltcp for userspace TCP, and Tokio for
 asynchronous I/O. It does not depend on SSH, React Native, UniFFI, Go, cgo, or
 the Tailcat C ABI. There is no server, CLI, TUN interface, or system routing.
 
 ```rust,no_run
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use whip_tailcat::{ClientCache, ClientOptions, Identity};
+use tailcat_client::{ClientCache, ClientOptions, Identity};
 
 # async fn example(address: &str, saved_private: &str, saved_public: &str) -> std::io::Result<()> {
 let identity = Identity::from_saved_keys(saved_private, saved_public)?;
@@ -74,12 +75,12 @@ uses that existing reconnect-and-restore pipeline.
 Run from the repository root, using its pinned development environment:
 
 ```bash
-nix develop -c cargo fmt --manifest-path crates/whip-tailcat/Cargo.toml --check
-nix develop -c cargo clippy --locked --manifest-path crates/whip-tailcat/Cargo.toml --all-targets -- -D warnings
-nix develop -c cargo test --locked --manifest-path crates/whip-tailcat/Cargo.toml
-nix develop .#tailcat-tests -c bash crates/whip-tailcat/tests/interop.sh
+nix develop -c cargo fmt --manifest-path crates/tailcat-client/Cargo.toml --check
+nix develop -c cargo clippy --locked --manifest-path crates/tailcat-client/Cargo.toml --all-targets -- -D warnings
+nix develop -c cargo test --locked --manifest-path crates/tailcat-client/Cargo.toml
+nix develop .#tailcat-tests -c bash crates/tailcat-client/tests/interop.sh
 nix develop .#tailcat-tests -c bash packages/react-native-whip-ssh/rust/tests/test-tailcat-proxyjump.sh
-nix develop -c cargo build --locked --release --manifest-path crates/whip-tailcat/Cargo.toml --target aarch64-linux-android --lib
+nix develop -c cargo build --locked --release --manifest-path crates/tailcat-client/Cargo.toml --target aarch64-linux-android --lib
 ```
 
 Ordinary Rust tests use a local TLS DERP fixture and wire-format vectors. The
@@ -91,12 +92,12 @@ stream limits, drop/close cancellation, network rebinding, and reconnecting.
 The separate Linux ProxyJump matrix covers real SSH chains through OpenSSH and the
 upstream built-in SSH gateway, private target routing, per-hop trust/authentication,
 streams, native network signaling, failure cleanup, and HostRuntime shell recovery.
-See the [SSH adapter validation notes](../../packages/react-native-whip-ssh/README.md).
+See the [SSH adapter validation notes](https://github.com/kosumic/whip/blob/main/packages/react-native-whip-ssh/README.md).
 
 On macOS, run the native arm64 test inside an already booted iPhone simulator:
 
 ```bash
-WHIP_IOS_SIMULATOR=YOUR_SIMULATOR_UDID nix develop .#tailcat-tests -c node crates/whip-tailcat/tests/ios-simulator.cjs
+WHIP_IOS_SIMULATOR=YOUR_SIMULATOR_UDID nix develop .#tailcat-tests -c node crates/tailcat-client/tests/ios-simulator.cjs
 ```
 
 This uses system Xcode and `simctl spawn` for the iOS executable. The separately
@@ -109,6 +110,25 @@ Whip's SSH adapter consumes this crate through `russh::client::connect_stream`.
 Android and iOS builds link the Rust transport without a Go build or C ABI.
 Real-device Wi-Fi/cellular transitions, controlled packet loss, SSH/Herdr/SFTP
 integration, and an iOS device app build remain part of that migration.
+
+## Releases
+
+Install the published library with `cargo add tailcat-client`.
+
+To publish a new version, update `version` in this crate's `Cargo.toml`, refresh
+its `Cargo.lock`, and commit the changes. Tag that commit with the crate's
+version and push the tag, for example:
+
+```bash
+git tag tailcat-client-v0.1.1
+git push origin tailcat-client-v0.1.1
+```
+
+The `Publish tailcat-client to crates.io` workflow checks that the tag matches the
+manifest, runs formatting, Clippy, tests, and a package dry run, then publishes
+using crates.io Trusted Publishing. Its GitHub publisher configuration uses
+repository `kosumic/whip`, workflow `publish-tailcat-client.yml`, and environment
+`crates-io`. No long-lived crates.io token is needed for tagged releases.
 
 ## Attribution
 
