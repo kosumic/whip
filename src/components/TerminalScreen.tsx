@@ -62,6 +62,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { useKeyboardInset } from '@/src/hooks/useKeyboardInset';
+import { useHorizontalScrollBounds } from '../hooks/useHorizontalScrollBounds';
 import { useClipboardCopyFeedback } from '../hooks/useClipboardCopyFeedback';
 import { useScrollActivity } from '../hooks/useScrollActivity';
 import { useSynchronousState } from '../hooks/useSynchronousState';
@@ -552,6 +553,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const [controlOrder, setControlOrder] = useState(() =>
       orderTerminalControls(controlUsage),
     );
+    const controlScroll = useHorizontalScrollBounds();
     const scrollThumb = alternateScreen
       ? null
       : terminalScrollThumb(scrollPosition);
@@ -2209,6 +2211,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         )}
         <Animated.View
           collapsable={false}
+          testID="terminal-control-bar"
           className="absolute inset-x-0 bottom-0 z-30"
           style={controlBarStyle}
           onLayout={event => {
@@ -2220,6 +2223,8 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           }}
         >
           <ScrollView
+            {...controlScroll}
+            testID="terminal-controls"
             horizontal
             keyboardShouldPersistTaps="always"
             showsHorizontalScrollIndicator={false}
