@@ -31,6 +31,7 @@ import { commitKeyboardState, endKeyboard, moveKeyboard, publishKeyboard, resetK
 import { uploadPastedComposerImage } from '../src/services/composerImagePaste';
 import { TerminalComposerStore } from '../src/lib/terminalComposerStore';
 import { ChatComposerSelection } from '../src/components/ChatComposerSelection';
+import { FLOATING_WARNING_BANNER_HEIGHT } from '../src/components/FloatingWarningBanner';
 import { useAppGlassEnabled } from '../src/components/GlassSurface';
 import type { TerminalSubmissionPermitLike } from 'react-native-whip-ssh/src/terminalSubmissions';
 
@@ -313,6 +314,28 @@ test('removes the latency banner when RTT recovers even while warning state is l
 
   act(() => renderer.update(<TerminalScreen {...warningProps} latencyMs={230} />));
   expect(banners()).toHaveLength(1);
+});
+
+test('latency and transcript notices stack without changing chat content insets', () => {
+  const state = { sessionId: 'chat-1', status: 'stale' as const, error: 'Rebinding remote transcript', transcript: emptyTranscript('chat-1') };
+  const renderViewportOverlay = jest.fn<ReactNode, Parameters<NonNullable<Props['renderViewportOverlay']>>>((contentInsets, latestButtonBottom) => (
+    <AgentChatView agent="codex" agentStatus="idle" state={state} contentInsets={contentInsets}
+      latestButtonBottom={latestButtonBottom} onOpenFile={jest.fn()} />
+  ));
+  const warningProps = { ...props, chatViewEnabled: true, renderViewportOverlay, latencyWarningActive: true, latencyMs: 240 };
+  mount(warningProps);
+  const retry = () => renderer.root.find(node => String(node.type) === 'View' && node.props.testID === 'chat-transcript-notice');
+  const latency = renderer.root.findByProps({ accessibilityLabel: 'terminal.highLatencyA11y' });
+  const initialInsets = ui('FlashList').props.scrollIndicatorInsets;
+  const initialSpacing = ui('FlashList').props.ListHeaderComponent.props.height;
+  const latencyBounds: { top: number; height: number } = latency.props.style;
+  expect(latencyBounds.top + latencyBounds.height).toBeLessThanOrEqual(retry().props.style.top);
+  expect(retry().props.style.top).toBe(FLOATING_WARNING_BANNER_HEIGHT);
+
+  act(() => { renderer.update(<TerminalScreen {...warningProps} latencyMs={5} />); });
+  expect(retry().props.style.top).toBe(0);
+  expect(ui('FlashList').props.scrollIndicatorInsets).toEqual(initialInsets);
+  expect(ui('FlashList').props.ListHeaderComponent.props.height).toBe(initialSpacing);
 });
 
 test('volume keys use the latest terminal action and ignore hidden terminals', () => {

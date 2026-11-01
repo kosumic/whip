@@ -50,6 +50,7 @@ import { useChatSearch } from '../hooks/useChatSearch';
 import { useChatActivity, type ChatActivity, type ChatToolActivity } from '../hooks/useChatActivity';
 import { useScrollActivity } from '../hooks/useScrollActivity';
 import { ChatSearchBar, chatSearchBarHeight } from './ChatSearchBar';
+import { FLOATING_WARNING_BANNER_HEIGHT, FloatingWarningBanner, FloatingWarningOffsetContext } from './FloatingWarningBanner';
 
 import type {
   AgentChatState,
@@ -1134,6 +1135,7 @@ export function AgentChatView({
 }: Props) {
   const { colors } = useTheme();
   const addToComposer = useContext(ChatComposerSelection);
+  const floatingWarningOffset = useContext(FloatingWarningOffsetContext);
   const selectionOwner = useRef({ active, sessionId: state.sessionId });
   selectionOwner.current = { active, sessionId: state.sessionId };
   const addSelectionToComposer = useCallback((text: string) => {
@@ -1284,6 +1286,12 @@ export function AgentChatView({
 
   const searchBarHeight = searchOpen ? chatSearchBarHeight(search.query) : 0;
   const contextTop = contentInsets.top + searchBarHeight;
+  const showTranscriptNotice = active && (state.status !== 'live' || Boolean(rowStore.error));
+  const transcriptNotice = rowStore.error || state.error || (state.status === 'loading'
+    ? `Reading the local ${agentName} history…`
+    : 'The transcript is temporarily unavailable.');
+  const floatingNoticeTop = Math.max(contentInsets.top, floatingWarningOffset) + searchBarHeight;
+  const pinnedPromptTop = floatingNoticeTop + (showTranscriptNotice ? FLOATING_WARNING_BANNER_HEIGHT + CHAT_CONTEXT_GAP : 0);
   const { prompt: pinnedPrompt, update: updatePinnedPrompt } = usePinnedPrompt(rowStore, state, list, contextTop);
   const latestTurn = turns.at(-1);
   const workActive = state.status === 'live'
@@ -1828,32 +1836,7 @@ export function AgentChatView({
           showsVerticalScrollIndicator={false}
           viewabilityConfig={CHAT_VIEWABILITY_CONFIG}
           ListHeaderComponent={
-            <>
-              <ChatBoundarySpacer height={contentPadding.top} />
-              {(state.status !== 'live' || rowStore.error) && (
-                <View
-                  className={cn(
-                    'flex-row items-center gap-2 py-3',
-                    turns.length > 0 && 'mb-4',
-                  )}
-                >
-                  {state.status === 'loading' ? (
-                    <ActivityIndicator animating={active} size="small" color={colors.primary} />
-                  ) : (
-                    <CircleAlert size={14} color={colors.textSecondary} />
-                  )}
-                  <Text
-                    numberOfLines={2}
-                    className="min-w-0 flex-1 text-[12px] text-muted-foreground"
-                  >
-                    {rowStore.error || state.error ||
-                      (state.status === 'loading'
-                        ? `Reading the local ${agentName} history…`
-                        : 'The transcript is temporarily unavailable.')}
-                  </Text>
-                </View>
-              )}
-            </>
+            <ChatBoundarySpacer height={contentPadding.top} />
           }
           ListFooterComponent={
             <>
@@ -1921,6 +1904,16 @@ export function AgentChatView({
           onViewableItemsChanged={trackViewableBlocks}
           scrollEventThrottle={16}
         />}
+        {showTranscriptNotice && (
+          <FloatingWarningBanner
+            testID="chat-transcript-notice"
+            top={floatingNoticeTop}
+            message={transcriptNotice}
+            icon={state.status === 'loading'
+              ? <ActivityIndicator animating={active} size="small" color={colors.warning} />
+              : <CircleAlert size={15} color={colors.warning} />}
+          />
+        )}
         {active && !searchOpen && pinnedPrompt && (
           <Pressable
             testID="chat-pinned-prompt"
@@ -1928,7 +1921,7 @@ export function AgentChatView({
             accessibilityLabel={`Jump to prompt: ${pinnedPrompt.preview}`}
             accessibilityHint="Scrolls to the original message"
             className="absolute left-4 right-4 z-20 flex-row items-center gap-2 rounded-xl bg-purple-950 px-3"
-            style={{ top: contextTop, height: CHAT_CONTEXT_HEIGHT }}
+            style={{ top: pinnedPromptTop, height: CHAT_CONTEXT_HEIGHT }}
             onPress={hapticPress(() => {
               pendingSearch.current = null;
               setFollowEnd(false);
