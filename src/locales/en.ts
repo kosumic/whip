@@ -1122,6 +1122,8 @@ export const en = {
   'files.remote': 'SFTP · CURRENT TERMINAL DIRECTORY',
   'files.gitRemote': 'GIT CHANGES · WORKING TREE VS HEAD',
   'files.gitMode': 'Toggle Git diff mode',
+  'files.gitDetectionFailed': 'Could not detect the Git repository',
+  'files.retryGitDiscovery': 'Retry Git detection',
   'files.gitLoading': 'Loading repository changes…',
   'files.gitFailed': 'Could not load Git changes',
   'files.gitClean': 'Working tree clean',
