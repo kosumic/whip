@@ -61,7 +61,7 @@ fn plaintext_previews_are_selected_per_registration_and_keep_authenticated_routi
     .to_string();
     let context = serde_json::json!({"focused_pane_id":"w1:p2","tab_label":"Checkout"}).to_string();
     let preview = notification_preview(&event(), &hook, &context, "mini").unwrap();
-    assert_eq!(preview.title, "Checkout · codex needs you");
+    assert_eq!(preview.title, "Checkout · codex needs attention");
     assert_eq!(preview.body, "mini · Private agent title");
     let encrypted = serde_json::to_value(registration.push_request(&envelope, &preview)).unwrap();
     assert!(encrypted.get("preview").is_none());
@@ -80,6 +80,29 @@ fn plaintext_previews_are_selected_per_registration_and_keep_authenticated_routi
             .unwrap()
             .end_to_end_encrypted
     );
+}
+
+#[test]
+fn preview_prefers_reported_agent_kind_over_tab_derived_name() {
+    let mut event = event();
+    event.status = "done".into();
+    let hook = serde_json::json!({"event":"pane_agent_status_changed","data":{
+        "pane_id":event.pane_id,"workspace_id":event.workspace_id,
+        "agent_status":"done","agent":"codex"
+    }}).to_string();
+    let context = serde_json::json!({
+        "focused_pane_id":event.pane_id,
+        "tab_label":"rev",
+        "focused_pane_agent":"rev"
+    }).to_string();
+    let preview = notification_preview(&event, &hook, &context, "mini").unwrap();
+    assert_eq!(preview.title, "rev · codex finished");
+    let same = serde_json::json!({
+        "focused_pane_id":event.pane_id,
+        "tab_label":"codex"
+    }).to_string();
+    let preview = notification_preview(&event, &hook, &same, "mini").unwrap();
+    assert_eq!(preview.title, "codex finished");
 }
 
 #[test]
@@ -117,7 +140,7 @@ fn preview_uses_hostname_and_status_without_internal_ids() {
     for title in [None, Some(" \n ".into())] {
         event.title = title;
         let preview = notification_preview(&event, hook, &context, " mini\n").unwrap();
-        assert_eq!(preview.title, "codex needs you");
+        assert_eq!(preview.title, "codex needs attention");
         assert_eq!(preview.body, "mini · Agent is blocked");
     }
     let preview = notification_preview(&event, hook, &context, "").unwrap();

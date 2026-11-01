@@ -1253,7 +1253,7 @@ export const es = {
   'app.hostSessionUnavailable': 'La sesión del host no está disponible',
   'alerts.channelName': 'Estado del agente',
   'alerts.regularChannelName': 'Notificaciones del agente',
-  'alerts.needsYou': '{{name}} te necesita',
+  'alerts.needsAttention': '{{name}} necesita tu atención',
   'alerts.finished': '{{name}} terminado',
   'alerts.agentState': 'El agente es {{status}}',
   'pane.ansiOutput': 'Salida del panel ANSI',
