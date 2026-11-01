@@ -1125,6 +1125,8 @@ export const fr = {
   'files.remote': 'SFTP · RÉPERTOIRE ACTUEL DU TERMINAL',
   'files.gitRemote': 'MODIFICATIONS GIT · ARBRE DE TRAVAIL PAR RAPPORT À HEAD',
   'files.gitMode': 'Basculer le mode diff Git',
+  'files.gitDetectionFailed': 'Impossible de détecter le dépôt Git',
+  'files.retryGitDiscovery': 'Réessayer la détection Git',
   'files.gitLoading': 'Chargement des modifications du dépôt…',
   'files.gitFailed': 'Impossible de charger les modifications Git',
   'files.gitClean': 'Arbre de travail propre',

@@ -1105,6 +1105,8 @@ export const zhHans = {
   'files.remote': 'SFTP · 当前终端目录',
   'files.gitRemote': 'GIT 更改 · 工作树与 HEAD',
   'files.gitMode': '切换 Git 差异模式',
+  'files.gitDetectionFailed': '无法检测 Git 仓库',
+  'files.retryGitDiscovery': '重试 Git 检测',
   'files.gitLoading': '正在加载仓库更改…',
   'files.gitFailed': '无法加载 Git 更改',
   'files.gitClean': '工作树干净',

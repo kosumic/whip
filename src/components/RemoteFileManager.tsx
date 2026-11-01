@@ -20,6 +20,7 @@ import { buildRemoteGitTree, collectRemoteGitFiles, flattenRemoteGitTree, isRemo
 import type { HerdrClient } from '@/src/services/HerdrClient';
 import { cacheRemoteFile, copyCachedRemoteFileToPickedDirectory, pickLocalFileForUpload, saveCachedRemoteText, type CachedRemoteFile } from '@/src/services/remoteFileTransfer';
 import { bestEffortCleanup, reportBackgroundFailure } from '../services/backgroundOperations';
+import { operationalErrorDetails, recordOperationalDiagnostic } from '../services/operationalDiagnostics';
 import { useRemoteFileViewPreferences } from '@/src/hooks/useRemoteFileViewPreferences';
 import { useGitReviewRefresh } from '@/src/hooks/useGitReviewRefresh';
 import { discoverRemoteGitRepository, gitStatusQueryOptions, hasFreshGitStatus, invalidateRemoteGitQueries, loadRemoteGitDiff, loadRemoteGitStatus, remoteConnectionRequest } from '@/src/services/remoteGitQueries';
@@ -49,6 +50,11 @@ import { Text } from './ui/text';
 
 const REMOTE_PREVIEW_CLOSE_CONTEXT = 'remote-preview-close';
 const EMPTY_GIT_STATUS: readonly RemoteGitStatusEntry[] = [];
+
+type GitDiscoveryState =
+  | { status: 'idle' | 'detecting' | 'not-repository'; repository: null }
+  | { status: 'found'; repository: RemoteGitRepository }
+  | { status: 'failed'; repository: RemoteGitRepository | null; error: string };
 
 interface GitNavigationContext {
   connection: ReturnType<typeof remoteConnectionRequest>;
@@ -149,7 +155,8 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   const [contextEntry, setContextEntry] = useState<RuntimeRemoteFileEntry | null>(null);
   const longPressedPath = useRef<string | null>(null);
   const [sortMenuVisible, setSortMenuVisible] = useState(false);
-  const [gitRepository, setGitRepository] = useState<RemoteGitRepository | null>(null);
+  const [gitDiscovery, setGitDiscovery] = useState<GitDiscoveryState>({ status: 'idle', repository: null });
+  const gitRepository = gitDiscovery.repository;
   const [gitMode, setGitMode] = useState(false);
   const [gitCollapsedPaths, setGitCollapsedPaths] = useState<Set<string>>(new Set());
   const gitCollapsedPathsRef = useRef(gitCollapsedPaths);
@@ -163,7 +170,8 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   }, appQueryClient);
   const gitStatus = gitMode ? gitStatusQuery.data ?? EMPTY_GIT_STATUS : EMPTY_GIT_STATUS;
   const gitBusy = gitOperationBusy || gitStatusQuery.isFetching;
-  const gitError = gitOperationError || (gitMode && gitStatusQuery.error ? String(gitStatusQuery.error) : null);
+  const gitError = gitOperationError || (gitDiscovery.status === 'failed' ? gitDiscovery.error : null)
+    || (gitMode && gitStatusQuery.error ? String(gitStatusQuery.error) : null);
   const [reviewRefreshVersion, setReviewRefreshVersion] = useState(0);
   const previewRef = useRef<FilePreview | null>(null);
   const codeEditorRef = useRef<CodeEditorHandle>(null);
@@ -209,7 +217,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
 
   const clearGitContext = useCallback(() => {
     gitContextRef.current = null;
-    setGitRepository(null);
+    setGitDiscovery({ status: 'idle', repository: null });
     setGitMode(false);
     replaceGitCollapsedPaths(new Set());
     setGitBusy(false);
@@ -243,7 +251,9 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
         && knownContext.connection.isCurrent()
         && isInsideRepository(requestedPath, knownContext.repository.root)
         ? knownContext : null;
-      if (!retainedContext) clearGitContext();
+      if (retainedContext) setGitDiscovery({ status: 'found', repository: retainedContext.repository });
+      else clearGitContext();
+      setGitError(null);
       onFileChangeRef.current?.(null);
       replacePreview(null);
       let connectionIsCurrent = () => true;
@@ -281,27 +291,33 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
           && listing.entries.some(entry => entry.name === '.git');
         const reuseRepository = retainedContext && useCache && !nestedRepository
           && isInsideRepository(listing.path, retainedContext.repository.root);
-        if (!reuseRepository) setGitBusy(true);
+        if (!reuseRepository) {
+          setGitBusy(true);
+          if (!retainedContext) setGitDiscovery({ status: 'detecting', repository: null });
+        }
         const restoreGit = async () => {
           let persistedGitMode = false;
+          let discoveryComplete = false;
           try {
             const repository = reuseRepository ? retainedContext.repository : await discoverRemoteGitRepository(connection, listing.path);
             if (!gitIsCurrent()) return;
+            discoveryComplete = true;
             if (!repository) {
-              if (gitContextRef.current) clearGitContext();
+              clearGitContext();
+              setGitDiscovery({ status: 'not-repository', repository: null });
               return;
             }
             let context = retainedContext?.repository.root === repository.root ? retainedContext : null;
             if (!context) {
               if (gitContextRef.current) clearGitContext();
-              setGitRepository(repository);
+              setGitDiscovery({ status: 'found', repository });
               const enabled = await loadRemoteGitMode(hostId, repository.root);
               if (!gitIsCurrent()) return;
               context = createGitContext(connection, hostId, repository, enabled);
               gitContextRef.current = context;
             } else {
               context.repository = repository;
-              setGitRepository(repository);
+              setGitDiscovery({ status: 'found', repository });
             }
             if (context.modeSave) {
               await context.modeSave;
@@ -324,9 +340,13 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
               setGitMode(true);
             }
           } catch (reason) {
-            if (gitIsCurrent() && persistedGitMode) {
-              setGitMode(true);
-              setGitError(String(reason));
+            if (gitIsCurrent()) {
+              if (persistedGitMode) setGitMode(true);
+              if (discoveryComplete) setGitError(String(reason));
+              else setGitDiscovery(previous => ({ status: 'failed', repository: previous.repository, error: String(reason) }));
+              recordOperationalDiagnostic('error', 'Application', discoveryComplete ? 'remote-git-restore-failed' : 'remote-git-discovery-failed', {
+                hostId, path: listing.path, generation: String(connection.generation), ...operationalErrorDetails(reason),
+              });
             }
           } finally {
             if (gitRequest === gitRequestRef.current) gitPendingRef.current = null;
@@ -440,7 +460,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
         restoreGitCollapsedPaths(context, isCurrent),
       ]);
       if (isCurrent()) {
-        setGitRepository(currentRepository);
+        setGitDiscovery({ status: 'found', repository: currentRepository });
         const current = previewRef.current;
         if (current?.gitStatus) {
           const status = changes.find(item => item.path === current.gitStatus!.path);
@@ -479,7 +499,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
         context = createGitContext(connection, hostId, repository, gitMode);
         gitContextRef.current = context;
       }
-      setGitRepository(repository);
+      setGitDiscovery({ status: 'found', repository });
       const savingContext = context;
       const save = saveRemoteGitMode(hostId, repository.root, next).then(() => {
         savingContext.enabled = next;
@@ -1112,7 +1132,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                   <Button accessibilityLabel={t('files.gitMode')} accessibilityRole="switch" accessibilityState={{ checked: gitMode }} className="h-12 w-12 rounded-none px-0" disabled={busy || actionBusy || gitBusy} variant={gitMode ? 'secondary' : 'ghost'} onPress={hapticPress(toggleGitMode)}>
                     {gitBusy ? <ActivityIndicator size="small" color={colors.primary} /> : <GitCompareArrows size={18} color={gitMode ? colors.primary : colors.text} />}
                   </Button>
-                ) : gitBusy ? (
+                ) : gitBusy || gitDiscovery.status === 'detecting' ? (
                   <View className="h-12 w-12 items-center justify-center" accessibilityLabel={t('files.gitLoading')}>
                     <ActivityIndicator size="small" color={colors.primary} />
                   </View>
@@ -1127,6 +1147,20 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                   <RefreshCw size={18} color={colors.text} />
                 </Button>
               </View>
+              {!gitMode && gitError && (
+                <View className="flex-row items-center gap-3 border-b border-border px-3 py-2">
+                  <View className="min-w-0 flex-1">
+                    <Text accessibilityRole="alert" className="text-[12px] font-semibold text-destructive">
+                      {t(gitDiscovery.status === 'failed' ? 'files.gitDetectionFailed' : 'files.gitFailed')}
+                    </Text>
+                    <Text selectable numberOfLines={3} className="mt-1 text-[10px] text-muted-foreground">{gitError}</Text>
+                  </View>
+                  <Button accessibilityLabel={t('files.retryGitDiscovery')} disabled={busy || actionBusy || gitBusy} variant="secondary" onPress={hapticPress(() => loadDirectory(pathRef.current || initialPath, false))}>
+                    <RefreshCw size={16} color={colors.text} />
+                    <Text>{t('files.retry')}</Text>
+                  </Button>
+                </View>
+              )}
               {busy ? (
                 <FileLoadingState label={t('files.loading')} />
               ) : error ? (

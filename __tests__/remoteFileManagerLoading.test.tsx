@@ -13,6 +13,7 @@ import { ConfirmationPopup } from '../src/components/ConfirmationPopup';
 import type { HerdrClient } from '../src/services/HerdrClient';
 import { loadRemoteGitCollapsedPaths, loadRemoteGitMode, saveRemoteGitCollapsedPaths, saveRemoteGitMode } from '../src/services/remoteGitPreferences';
 import { reportBackgroundFailure } from '../src/services/backgroundOperations';
+import { recordOperationalDiagnostic } from '../src/services/operationalDiagnostics';
 import * as remoteGit from '../src/lib/remoteGit';
 import { useRemoteFileViewPreferences } from '../src/hooks/useRemoteFileViewPreferences';
 import { loadGitReviewState } from '../src/services/gitReviewState';
@@ -83,6 +84,10 @@ jest.mock('../src/services/backgroundOperations', () => ({
     jest.requireActual<typeof import('../src/services/backgroundOperations')>('../src/services/backgroundOperations')
       .bestEffortCleanup(promise, context);
   }),
+}));
+jest.mock('../src/services/operationalDiagnostics', () => ({
+  operationalErrorDetails: (error: unknown) => ({ message: String(error) }),
+  recordOperationalDiagnostic: jest.fn(),
 }));
 jest.mock('../src/services/remoteGitPreferences', () => ({
   loadRemoteGitMode: jest.fn(), loadRemoteGitCollapsedPaths: jest.fn(),
@@ -453,7 +458,91 @@ it('keeps normal browsing available when Git discovery fails', async () => {
   expect(hasButton('files.openDirectory:child')).toBe(true);
   expect(text()).not.toContain('files.listFailed');
   expect(text()).not.toContain('files.gitLoading');
+  expect(text()).toContain('Git unavailable');
+  expect(hasButton('files.retryGitDiscovery')).toBe(true);
   await navigate('/repo/child');
+});
+
+it.each([{ name: 'clean', status: [] }, { name: 'changed', status: changes }])('offers Git mode in a $name repository', async ({ status }) => {
+  native.discoverGitRepository.mockResolvedValue(repository);
+  native.gitStatus.mockResolvedValue(status);
+  await mount();
+  expect(hasButton('files.gitMode')).toBe(true);
+  expect(hasButton('files.retryGitDiscovery')).toBe(false);
+  await act(async () => { await button('files.gitMode').props.onPress(); });
+  expect(button('files.gitMode').props.accessibilityState.checked).toBe(true);
+});
+
+it('does not offer Git mode or a detection error outside a repository', async () => {
+  await mount();
+  expect(hasButton('files.gitMode')).toBe(false);
+  expect(hasButton('files.retryGitDiscovery')).toBe(false);
+  expect(text()).not.toContain('files.gitDetectionFailed');
+});
+
+it('retries failed Git detection and restores the toggle without enabling Git mode', async () => {
+  native.discoverGitRepository.mockRejectedValueOnce(new Error('Git unavailable')).mockResolvedValue(repository);
+  await mount();
+  expect(hasButton('files.openDirectory:child')).toBe(true);
+  expect(text()).toContain('Git unavailable');
+  expect(recordOperationalDiagnostic).toHaveBeenCalledWith('error', 'Application', 'remote-git-discovery-failed', {
+    hostId: 'host', path: '/repo', generation: '1', message: 'Error: Git unavailable',
+  });
+  await act(async () => { await button('files.retryGitDiscovery').props.onPress(); });
+  expect(button('files.gitMode').props.accessibilityState.checked).toBe(false);
+  expect(hasButton('files.retryGitDiscovery')).toBe(false);
+  expect(text()).not.toContain('Git unavailable');
+  expect(hasButton('files.openDirectory:child')).toBe(true);
+});
+
+it('clears a detection error when retry confirms the directory is outside Git', async () => {
+  native.discoverGitRepository.mockRejectedValueOnce(new Error('Temporary discovery failure')).mockResolvedValue(null);
+  await mount();
+  expect(hasButton('files.retryGitDiscovery')).toBe(true);
+  await act(async () => { await button('files.retryGitDiscovery').props.onPress(); });
+  expect(hasButton('files.gitMode')).toBe(false);
+  expect(hasButton('files.retryGitDiscovery')).toBe(false);
+  expect(text()).not.toContain('Temporary discovery failure');
+  expect(text()).not.toContain('files.gitLoading');
+  expect(hasButton('files.openDirectory:child')).toBe(true);
+});
+
+it('retains a known repository toggle when a refresh fails to rediscover it', async () => {
+  native.discoverGitRepository.mockResolvedValueOnce(repository).mockRejectedValueOnce(new Error('Temporary discovery failure'));
+  await mount();
+  await act(async () => { await button('files.refresh').props.onPress(); });
+  expect(hasButton('files.gitMode')).toBe(true);
+  expect(hasButton('files.retryGitDiscovery')).toBe(true);
+  expect(hasButton('files.openDirectory:child')).toBe(true);
+});
+
+it.each(['failure', 'not-repository'] as const)('ignores a stale %s after a new directory detects its repository', async result => {
+  const old = deferred<RuntimeGitRepository | null>();
+  native.discoverGitRepository.mockReturnValueOnce(old.promise).mockResolvedValue(repository);
+  await mount();
+  await navigate('/repo/child');
+  expect(hasButton('files.gitMode')).toBe(true);
+  await act(async () => {
+    if (result === 'failure') old.reject(new Error('Obsolete discovery'));
+    else old.resolve(null);
+  });
+  expect(hasButton('files.gitMode')).toBe(true);
+  expect(hasButton('files.retryGitDiscovery')).toBe(false);
+  expect(text()).not.toContain('Obsolete discovery');
+  expect(recordOperationalDiagnostic).not.toHaveBeenCalled();
+});
+
+it('ignores a discovery failure from an old connection after reconnecting', async () => {
+  const old = deferred<RuntimeGitRepository | null>();
+  native.discoverGitRepository.mockReturnValueOnce(old.promise).mockResolvedValue(repository);
+  await mount();
+  native.status.mockReturnValue({ state: 'connected', generation: 2n });
+  await act(async () => { await button('files.refresh').props.onPress(); });
+  expect(hasButton('files.gitMode')).toBe(true);
+  await act(async () => { old.reject(new Error('Old connection')); });
+  expect(hasButton('files.gitMode')).toBe(true);
+  expect(hasButton('files.retryGitDiscovery')).toBe(false);
+  expect(recordOperationalDiagnostic).not.toHaveBeenCalled();
 });
 
 it('ignores unresolved Git discovery from a previous directory without starting its preferences or status', async () => {

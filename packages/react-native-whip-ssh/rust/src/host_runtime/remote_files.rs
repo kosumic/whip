@@ -14,8 +14,8 @@ use crate::remote_ops::{
     GitDiff, GitRepository, GitStatusEntry, MAX_ACTIVE_PREVIEWS, PreviewInfo, PreviewState,
     REMOTE_TEXT_MAX_BYTES, RemoteDirectoryListing, RemoteFileEntry, RemoteFileKind,
     TransferProgress, TransferResult, TransferState, attachment_filename, git_diff_command,
-    git_repository_command, git_status_command, join_remote_path, normalize_remote_path,
-    parse_git_diff, parse_git_repository, parse_git_status, remote_filename,
+    git_repository_command, git_repository_not_found, git_status_command, join_remote_path,
+    normalize_remote_path, parse_git_diff, parse_git_repository, parse_git_status, remote_filename,
 };
 use crate::ssh::SshSession;
 
@@ -398,15 +398,16 @@ pub(super) async fn execute_generation_checked(
 pub(super) fn command_failure(kind: &str, output: &crate::ssh::CommandOutput) -> String {
     let stderr = String::from_utf8_lossy(&output.stderr);
     let detail = stderr.lines().take(3).collect::<Vec<_>>().join("\n");
+    let failure = format!(
+        "{kind} exited with status {}",
+        output
+            .exit_status
+            .map_or_else(|| "unknown".to_owned(), |value| value.to_string())
+    );
     if detail.is_empty() {
-        format!(
-            "{kind} exited with status {}",
-            output
-                .exit_status
-                .map_or_else(|| "unknown".to_owned(), |value| value.to_string())
-        )
+        failure
     } else {
-        format!("{kind} failed: {detail}")
+        format!("{failure}: {detail}")
     }
 }
 #[uniffi::export]
@@ -774,7 +775,9 @@ impl HostRuntime {
                 };
                 let output =
                     execute_generation_checked(&inner, &git_repository_command(&path)).await?;
-                if output.exit_status != Some(0) {
+                let not_repository =
+                    output.exit_status == Some(128) && git_repository_not_found(&output.stderr);
+                if output.exit_status != Some(0) && !not_repository {
                     return Err(HostRuntimeError::GitFailure(command_failure(
                         "Git discovery",
                         &output,
@@ -785,13 +788,20 @@ impl HostRuntime {
                         "Git repository output exceeded the command limit".to_owned(),
                     ));
                 }
-                let repository =
-                    parse_git_repository(std::str::from_utf8(&output.stdout).map_err(|_| {
-                        HostRuntimeError::GitFailure(
-                            "Git repository output was not UTF-8".to_owned(),
-                        )
-                    })?)
-                    .map_err(HostRuntimeError::GitFailure)?;
+                let repository = if not_repository {
+                    None
+                } else {
+                    Some(
+                        parse_git_repository(std::str::from_utf8(&output.stdout).map_err(
+                            |_| {
+                                HostRuntimeError::GitFailure(
+                                    "Git repository output was not UTF-8".to_owned(),
+                                )
+                            },
+                        )?)
+                        .map_err(HostRuntimeError::GitFailure)?,
+                    )
+                };
                 validate_generation(&inner, generation)?;
                 inner.git_discovery.lock().insert(
                     generation,

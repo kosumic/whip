@@ -490,36 +490,36 @@ pub(crate) fn shell_quote(value: &str) -> String {
 
 pub(crate) fn git_repository_command(path: &str) -> String {
     let script = format!(
-        "if ! command -v git >/dev/null 2>&1; then printf 'WHIP_GIT_ERROR:missing\\n'; exit 0; fi\nrepo_root=$(git -C {} rev-parse --show-toplevel 2>/dev/null) || {{ printf 'WHIP_GIT_ERROR:not-repository\\n'; exit 0; }}\nif git -C \"$repo_root\" rev-parse --verify HEAD >/dev/null 2>&1; then has_head=1; else has_head=0; fi\nprintf 'WHIP_GIT_ROOT:%s\\nWHIP_GIT_HEAD:%s\\n' \"$repo_root\" \"$has_head\"",
+        "if ! command -v git >/dev/null 2>&1; then printf 'Git executable is unavailable on the remote host\\n' >&2; exit 127; fi\nrepo_root=$(LC_ALL=C git -C {} rev-parse --show-toplevel) || exit $?\nif git -C \"$repo_root\" rev-parse --verify HEAD >/dev/null 2>&1; then has_head=1; else has_head=0; fi\nprintf 'WHIP_GIT_ROOT:%s\\nWHIP_GIT_HEAD:%s\\n' \"$repo_root\" \"$has_head\"",
         shell_quote(path)
     );
     format!("sh -c {}", shell_quote(&script))
 }
 
-pub(crate) fn parse_git_repository(output: &str) -> Result<Option<GitRepository>, String> {
-    if output.lines().any(|line| line == "WHIP_GIT_ERROR:missing") {
-        return Err("Git executable is unavailable on the remote host".to_owned());
-    }
-    if output
-        .lines()
-        .any(|line| line == "WHIP_GIT_ERROR:not-repository")
-    {
-        return Ok(None);
-    }
+pub(crate) fn git_repository_not_found(stderr: &[u8]) -> bool {
+    // The discovery command fixes Git's diagnostic locale. Exit status 128 by
+    // itself also covers unsafe ownership, bad config, and inaccessible paths.
+    String::from_utf8_lossy(stderr).lines().any(|line| {
+        line == "fatal: not a git repository (or any of the parent directories): .git"
+            || line.starts_with("fatal: not a git repository (or any parent up to mount point ")
+    })
+}
+
+pub(crate) fn parse_git_repository(output: &str) -> Result<GitRepository, String> {
     let root = output
         .lines()
         .find_map(|line| line.strip_prefix("WHIP_GIT_ROOT:"));
     let Some(root) = root.filter(|root| !root.is_empty()) else {
-        return Ok(None);
+        return Err("Git discovery returned no repository root".to_owned());
     };
     let has_head = output
         .lines()
         .find_map(|line| line.strip_prefix("WHIP_GIT_HEAD:"))
         == Some("1");
-    Ok(Some(GitRepository {
+    Ok(GitRepository {
         root: root.to_owned(),
         has_head,
-    }))
+    })
 }
 
 pub(crate) fn git_status_command(root: &str) -> String {
@@ -868,6 +868,126 @@ mod tests {
             "/tmp/-leading;$HOME'"
         );
         assert!(normalize_absolute("C:\\temp").is_err());
+    }
+
+    fn discover_repository(path: &std::path::Path) -> std::process::Output {
+        std::process::Command::new("sh")
+            .args(["-c", &git_repository_command(path.to_str().unwrap())])
+            .output()
+            .unwrap()
+    }
+
+    #[test]
+    fn git_discovery_finds_clean_unborn_and_committed_repositories() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("repo space'$HOME");
+        std::fs::create_dir(&root).unwrap();
+        let outside = discover_repository(&root);
+        assert_eq!(outside.status.code(), Some(128));
+        assert!(git_repository_not_found(&outside.stderr));
+        let git = |args: &[&str]| {
+            let output = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        };
+        git(&["init", "--quiet"]);
+        let nested = root.join("child");
+        std::fs::create_dir(&nested).unwrap();
+        for has_head in [false, true] {
+            if has_head {
+                git(&[
+                    "-c",
+                    "user.name=Whip Test",
+                    "-c",
+                    "user.email=test@example.invalid",
+                    "-c",
+                    "commit.gpgsign=false",
+                    "commit",
+                    "--quiet",
+                    "--allow-empty",
+                    "-m",
+                    "fixture",
+                ]);
+            }
+            let output = discover_repository(&nested);
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(
+                parse_git_repository(std::str::from_utf8(&output.stdout).unwrap()),
+                Ok(GitRepository {
+                    root: root.canonicalize().unwrap().to_str().unwrap().to_owned(),
+                    has_head,
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn git_discovery_preserves_real_git_failures_instead_of_reporting_a_non_repository() {
+        let directory = tempfile::tempdir().unwrap();
+        let initialized = std::process::Command::new("git")
+            .args(["init", "--quiet"])
+            .arg(directory.path())
+            .status()
+            .unwrap();
+        assert!(initialized.success());
+        std::fs::write(
+            directory.path().join(".git/config"),
+            "[core]\nrepositoryformatversion = invalid\n",
+        )
+        .unwrap();
+        let output = discover_repository(directory.path());
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("repositoryformatversion"));
+        assert!(!git_repository_not_found(&output.stderr));
+    }
+
+    #[test]
+    fn git_discovery_rejects_an_incomplete_response() {
+        assert!(parse_git_repository("").is_err());
+        assert!(parse_git_repository("shell startup output\n").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn git_discovery_reports_missing_git_in_the_command_path() {
+        let directory = tempfile::tempdir().unwrap();
+        let shell = std::process::Command::new("sh")
+            .args(["-c", "command -v sh"])
+            .output()
+            .unwrap();
+        assert!(shell.status.success());
+        let shell = String::from_utf8(shell.stdout).unwrap();
+        let isolated_shell = directory.path().join("sh");
+        std::os::unix::fs::symlink(shell.trim(), &isolated_shell).unwrap();
+        let output = std::process::Command::new(isolated_shell)
+            .env("PATH", directory.path())
+            .args(["-c", &git_repository_command("/repo")])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(127));
+        assert!(String::from_utf8_lossy(&output.stderr).contains("Git executable is unavailable"));
+        assert!(!git_repository_not_found(&output.stderr));
+    }
+
+    #[test]
+    fn git_discovery_reports_a_directory_that_disappeared() {
+        let directory = tempfile::tempdir().unwrap();
+        let output = discover_repository(&directory.path().join("missing"));
+        assert_eq!(output.status.code(), Some(128));
+        assert!(String::from_utf8_lossy(&output.stderr).contains("cannot change to"));
+        assert!(!git_repository_not_found(&output.stderr));
     }
 
     #[test]

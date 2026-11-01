@@ -1105,6 +1105,8 @@ export const zhHant: Record<string, string> = {
   'files.remote': 'SFTP · 目前終端機目錄',
   'files.gitRemote': 'GIT 變更 · 工作樹與 HEAD',
   'files.gitMode': '切換 Git 差異模式',
+  'files.gitDetectionFailed': '無法偵測 Git 儲存庫',
+  'files.retryGitDiscovery': '重試 Git 偵測',
   'files.gitLoading': '正在載入儲存庫變更…',
   'files.gitFailed': '無法載入 Git 變更',
   'files.gitClean': '工作樹乾淨',

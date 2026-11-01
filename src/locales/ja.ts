@@ -1105,6 +1105,8 @@ export const ja = {
   'files.remote': 'SFTP · 現在のターミナル ディレクトリ',
   'files.gitRemote': 'GIT の変更 · 作業ツリーと HEAD の比較',
   'files.gitMode': 'Git 差分モードを切り替える',
+  'files.gitDetectionFailed': 'Git リポジトリを検出できませんでした',
+  'files.retryGitDiscovery': 'Git の検出を再試行',
   'files.gitLoading': 'リポジトリの変更を読み込んでいます…',
   'files.gitFailed': 'Git の変更を読み込めませんでした',
   'files.gitClean': '作業ツリーはクリーンです',
