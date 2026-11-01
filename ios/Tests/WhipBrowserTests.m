@@ -7,6 +7,9 @@
 static Class registeredModule;
 void RCTRegisterModule(Class module) { registeredModule = module; }
 
+// A fresh WebContent process can take over 20 seconds to start on CI runners.
+static const NSTimeInterval WebKitNavigationTimeout = 60;
+
 @interface WhipBrowser (Testing)
 - (void)prepare:(NSNumber *)tag resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
 - (void)defaultUserAgent:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
@@ -190,6 +193,7 @@ void RCTRegisterModule(Class module) { registeredModule = module; }
 - (void)setUp
 {
   [super setUp];
+  self.continueAfterFailure = NO;
   self.adapter = [WhipBrowser new];
   [self resultOf:^(RCTPromiseResolveBlock resolve, RCTPromiseRejectBlock reject) {
     [self.adapter clearSiteData:resolve reject:reject];
@@ -220,7 +224,7 @@ void RCTRegisterModule(Class module) { registeredModule = module; }
   self.navigation = [self expectationWithDescription:@"page loaded"];
   [self.browser loadHTMLString:@"<html><body style='background:red'><button id='button'>Continue</button></body></html>"
                       baseURL:[NSURL URLWithString:@"https://example.test/"]];
-  [self waitForExpectations:@[self.navigation] timeout:15];
+  [self waitForExpectations:@[self.navigation] timeout:WebKitNavigationTimeout];
 }
 
 - (void)tearDown
@@ -334,7 +338,7 @@ void RCTRegisterModule(Class module) { registeredModule = module; }
     self.navigation = [self expectationWithDescription:@"page loaded with new profile"];
     [self.browser loadHTMLString:@"<meta name='viewport' content='width=device-width'><body>Profile</body>"
                         baseURL:[NSURL URLWithString:@"https://example.test/"]];
-    [self waitForExpectations:@[self.navigation] timeout:15];
+    [self waitForExpectations:@[self.navigation] timeout:WebKitNavigationTimeout];
     NSDictionary *page = [self pageResult:@"JSON.stringify({agent:navigator.userAgent,session:sessionStorage.getItem('mode-test')})"];
     XCTAssertTrue([page[@"agent"] containsString:profile[@"contains"]], @"%@", page[@"agent"]);
     XCTAssertEqualObjects(page[@"session"], @"keep");
@@ -350,14 +354,14 @@ void RCTRegisterModule(Class module) { registeredModule = module; }
   @try {
     self.navigation = [self expectationWithDescription:@"local page loaded"];
     [self.browser loadFileURL:file allowingReadAccessToURL:file];
-    [self waitForExpectations:@[self.navigation] timeout:15];
+    [self waitForExpectations:@[self.navigation] timeout:WebKitNavigationTimeout];
     for (NSString *mode in @[@"desktop", @"mobile"]) {
       [self resultOf:^(RCTPromiseResolveBlock resolve, RCTPromiseRejectBlock reject) {
         [self.adapter configureProfile:@42 userAgent:nil contentMode:mode resolve:resolve reject:reject];
       }];
       self.navigation = [self expectationWithDescription:@"page reloaded with new profile"];
       [self.browser reload];
-      [self waitForExpectations:@[self.navigation] timeout:15];
+      [self waitForExpectations:@[self.navigation] timeout:WebKitNavigationTimeout];
       NSDictionary *page = [self pageResult:@"JSON.stringify({agent:navigator.userAgent})"];
       NSString *expected = [mode isEqual:@"desktop"] ? @"Macintosh" : @"Mobile/";
       XCTAssertTrue([page[@"agent"] containsString:expected], @"%@", page[@"agent"]);
