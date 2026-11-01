@@ -3,7 +3,7 @@ set -euo pipefail
 
 rust_dir="$(cd "$(dirname "$0")/.." && pwd)"
 go_tool="${GO:-go}"
-reference_dir="$rust_dir/../../../crates/whip-tailcat/tests/reference"
+reference_dir="$rust_dir/../../../crates/tailcat-client/tests/reference"
 fixture="$rust_dir/target/tailcat-test-relay"
 mkdir -p "$rust_dir/target"
 (cd "$reference_dir" && "$go_tool" test -mod=readonly -c -o "$fixture")

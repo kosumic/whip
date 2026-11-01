@@ -227,7 +227,7 @@ pub(crate) async fn pair_host(
         .map_err(|_| PairingError::ConnectionTimeout)??;
         jumps.0.push(session);
     }
-    let tailcat_identity = payload.tailcat.then(whip_tailcat::Identity::generate);
+    let tailcat_identity = payload.tailcat.then(tailcat_client::Identity::generate);
     let connect_timeout = if payload.tailcat {
         TAILCAT_CONNECT_TIMEOUT
     } else {
@@ -235,10 +235,10 @@ pub(crate) async fn pair_host(
     };
     let mut handle = timeout(connect_timeout, async {
         if let Some(identity) = &tailcat_identity {
-            let client = whip_tailcat::Client::connect(
+            let client = tailcat_client::Client::connect(
                 &payload.ssh_host,
                 identity,
-                whip_tailcat::ClientOptions::default(),
+                tailcat_client::ClientOptions::default(),
             )
             .await
             .map_err(|_| PairingError::TailcatConnection)?;
@@ -446,7 +446,7 @@ fn decode_pairing_code(code: &str) -> Result<PairingPayload, PairingError> {
     let tailcat = address_type == ADDRESS_TAILCAT;
     if tailcat
         && (ssh_host.len() > MAX_TAILCAT_ADDRESS_BYTES
-            || whip_tailcat::validate_address(&ssh_host).is_err())
+            || tailcat_client::validate_address(&ssh_host).is_err())
     {
         return Err(PairingError::BadPayload);
     }

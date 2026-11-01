@@ -66,7 +66,7 @@ impl Reference {
     fn start(
         builtin: bool,
         relay_only: bool,
-        identity: &whip_tailcat::Identity,
+        identity: &tailcat_client::Identity,
     ) -> TestResult<Self> {
         let mut child = Command::new(std::env::var("WHIP_TAILCAT_PROXYJUMP_REFERENCE")?)
             .arg("-test.run=^TestWhipTailcatProxyJump$")
@@ -137,7 +137,7 @@ impl Reference {
     fn config(
         &self,
         builtin: bool,
-        identity: &whip_tailcat::Identity,
+        identity: &tailcat_client::Identity,
     ) -> TestResult<HostRuntimeConfig> {
         let credential = HostSshCredential::Key {
             private_key: std::fs::read_to_string(format!("{}/client-key", self.info.root))?,
@@ -388,7 +388,7 @@ async fn cancellation(reference: &mut Reference, config: &HostRuntimeConfig) -> 
 }
 
 async fn exercise(builtin: bool, relay_only: bool) -> TestResult {
-    let identity = whip_tailcat::Identity::generate();
+    let identity = tailcat_client::Identity::generate();
     let _relay = relay_only.then(|| tailcat::test_support::RelayOnlyIdentity::new(&identity));
     let mut reference = Reference::start(builtin, relay_only, &identity)?;
     let saved_private = identity.private_key();

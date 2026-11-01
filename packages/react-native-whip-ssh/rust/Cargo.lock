@@ -4710,6 +4710,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "tailcat-client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "boringtun",
+ "ciborium",
+ "crypto_box",
+ "futures-util",
+ "hex",
+ "hmac 0.12.1",
+ "if-addrs",
+ "rand 0.8.8",
+ "reqwest",
+ "rustls",
+ "rustls-native-certs",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "smoltcp",
+ "socket2",
+ "tokio",
+ "tokio-rustls",
+ "tokio-util",
+ "tracing",
+ "webpki-roots",
+ "x25519-dalek 2.0.1",
+ "zeroize",
+]
+
+[[package]]
 name = "tap"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5735,6 +5766,7 @@ dependencies = [
  "shlex 2.0.1",
  "ssh-key",
  "syntect",
+ "tailcat-client",
  "tempfile",
  "thiserror",
  "tokio",
@@ -5744,38 +5776,6 @@ dependencies = [
  "url",
  "uuid",
  "whip-notify",
- "whip-tailcat",
-]
-
-[[package]]
-name = "whip-tailcat"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "boringtun",
- "ciborium",
- "crypto_box",
- "futures-util",
- "hex",
- "hmac 0.12.1",
- "if-addrs",
- "rand 0.8.8",
- "reqwest",
- "rustls",
- "rustls-native-certs",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "smoltcp",
- "socket2",
- "tokio",
- "tokio-rustls",
- "tokio-util",
- "tracing",
- "webpki-roots",
- "x25519-dalek 2.0.1",
- "zeroize",
 ]
 
 [[package]]

@@ -3,7 +3,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const crate = join(root, 'crates/whip-tailcat');
+const crate = join(root, 'crates/tailcat-client');
 const notice = 'Whip Tailcat client transport\n\n'
   + readFileSync(join(crate, 'LICENSE'), 'utf8').trim()
   + '\n\n' + readFileSync(join(crate, 'THIRD_PARTY_NOTICES.md'), 'utf8').trim() + '\n';

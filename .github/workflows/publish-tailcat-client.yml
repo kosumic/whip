@@ -1,0 +1,85 @@
+name: Publish tailcat-client to crates.io
+
+on:
+  push:
+    tags:
+      - 'tailcat-client-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version from crates/tailcat-client/Cargo.toml, without a leading v
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-tailcat-client
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Verify and publish crate
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    environment: crates-io
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: crates/tailcat-client
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install
+          rustc --version
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: crates/tailcat-client
+
+      - name: Verify release version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_VERSION: ${{ inputs.version }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          actual_version="$(cargo metadata --locked --format-version 1 --no-deps \
+            | jq -r '.packages[0].version')"
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            expected_version="${RELEASE_TAG#tailcat-client-v}"
+          else
+            expected_version="$MANUAL_VERSION"
+          fi
+          if [[ -z "$expected_version" || "$actual_version" != "$expected_version" ]]; then
+            echo "Expected tailcat-client version $expected_version, found $actual_version" >&2
+            exit 1
+          fi
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Lint
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Verify crates.io package
+        run: cargo publish --locked --dry-run
+
+      - name: Authenticate with crates.io trusted publishing
+        id: crates-io-auth
+        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+
+      - name: Publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-io-auth.outputs.token }}
+        run: cargo publish --locked

@@ -1,11 +1,11 @@
 //! Native simulator checks against a separately provisioned upstream server.
 //! No subprocess or Go binary runs inside the simulator.
 use std::{io, time::Duration};
+use tailcat_client::{Client, ClientOptions, Identity};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     time::{sleep, timeout},
 };
-use whip_tailcat::{Client, ClientOptions, Identity};
 
 async fn transfer(client: &Client) -> io::Result<()> {
     let mut stream = client.dial_tcp(22).await?;

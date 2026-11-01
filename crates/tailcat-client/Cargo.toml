@@ -1,11 +1,15 @@
 [package]
-name = "whip-tailcat"
+name = "tailcat-client"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.99"
 license = "BSD-3-Clause"
 description = "Client-only Tailcat transport with WireGuard, DERP, and userspace TCP"
 repository = "https://github.com/kosumic/whip"
+documentation = "https://docs.rs/tailcat-client"
+readme = "README.md"
+keywords = ["tailcat", "wireguard", "derp", "tcp", "async"]
+categories = ["network-programming", "asynchronous"]
 
 [dependencies]
 anyhow = "1"

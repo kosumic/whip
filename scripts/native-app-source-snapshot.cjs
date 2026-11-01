@@ -4,7 +4,7 @@ const {extname, join, relative, resolve, sep} = require('node:path');
 
 // Generated bindings and assets are expected to change during compilation.
 // Their source inputs must stay fixed until the APK has been packaged.
-const SOURCE_ROOTS = ['src', 'packages', 'modules', 'crates/whip-tailcat', 'whip-notify/src', 'scripts', 'patches', 'android/app/src/main'];
+const SOURCE_ROOTS = ['src', 'packages', 'modules', 'crates/tailcat-client', 'whip-notify/src', 'scripts', 'patches', 'android/app/src/main'];
 const OUTPUT_DIRECTORIES = new Set(['node_modules', 'build', 'target', '.git', '.cxx', 'generated', 'Pods', 'TerminalAssets', 'assets', 'jniLibs']);
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.cjs', '.mjs', '.rs', '.toml', '.lock', '.go', '.mod', '.sum', '.cpp', '.c', '.h', '.hpp', '.m', '.mm', '.swift', '.kt', '.java', '.gradle', '.properties', '.cmake', '.txt', '.json', '.xml', '.yaml', '.yml', '.sh', '.html', '.css', '.sql', '.patch']);
 const ROOT_FILES = ['index.js', 'package.json', 'package-lock.json', 'app.json', 'app.config.js', 'babel.config.js', 'metro.config.js', 'tailwind.config.js', 'global.css', 'flake.nix', 'flake.lock', 'android/build.gradle', 'android/settings.gradle', 'android/gradle.properties', 'android/app/build.gradle', 'whip-notify/Cargo.toml', 'whip-notify/Cargo.lock', 'whip-notify/platform.sh'];

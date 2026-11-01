@@ -21,6 +21,7 @@ on:
       - '!.github/workflows/ci-whip-notify.yml'
       - '!.github/workflows/publish-whipair.yml'
       - '!.github/workflows/publish-whipair-packages.yml'
+      - '!.github/workflows/publish-tailcat-client.yml'
       - '!.github/workflows/release-whip-notify.yml'
       - '!scripts/prepare-notify-install-tag.sh'
       # The app imports this library and embeds its platform detection script.
@@ -68,8 +69,8 @@ jobs:
       - name: Install Go for Tailcat interoperability tests
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version-file: crates/whip-tailcat/tests/reference/go.mod
-          cache-dependency-path: crates/whip-tailcat/tests/reference/go.sum
+          go-version-file: crates/tailcat-client/tests/reference/go.mod
+          cache-dependency-path: crates/tailcat-client/tests/reference/go.sum
 
       - name: Install local SSH fixture tools
         run: sudo apt-get update && sudo apt-get install --yes openssh-server netcat-openbsd
@@ -86,7 +87,7 @@ jobs:
         run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: Check Tailcat client library
-        working-directory: crates/whip-tailcat
+        working-directory: crates/tailcat-client
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/packages/react-native-whip-ssh/rust/target
         run: |
