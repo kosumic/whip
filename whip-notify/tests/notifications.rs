@@ -89,18 +89,21 @@ fn preview_prefers_reported_agent_kind_over_tab_derived_name() {
     let hook = serde_json::json!({"event":"pane_agent_status_changed","data":{
         "pane_id":event.pane_id,"workspace_id":event.workspace_id,
         "agent_status":"done","agent":"codex"
-    }}).to_string();
+    }})
+    .to_string();
     let context = serde_json::json!({
         "focused_pane_id":event.pane_id,
         "tab_label":"rev",
         "focused_pane_agent":"rev"
-    }).to_string();
+    })
+    .to_string();
     let preview = notification_preview(&event, &hook, &context, "mini").unwrap();
     assert_eq!(preview.title, "rev · codex finished");
     let same = serde_json::json!({
         "focused_pane_id":event.pane_id,
         "tab_label":"codex"
-    }).to_string();
+    })
+    .to_string();
     let preview = notification_preview(&event, &hook, &same, "mini").unwrap();
     assert_eq!(preview.title, "codex finished");
 }
