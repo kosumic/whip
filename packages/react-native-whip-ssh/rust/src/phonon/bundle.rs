@@ -47,16 +47,21 @@ pub(super) fn default_voice_name(directory: &Path) -> Result<String, String> {
         .ok_or_else(|| "Invalid default voice".into())
 }
 
+fn manifest_name(archive: &ZipArchive<fs::File>) -> Result<String, String> {
+    for name in archive.file_names() {
+        let name = name.map_err(|error| error.to_string())?;
+        if Path::new(name.as_ref())
+            .file_name()
+            .is_some_and(|name| name == "bundle.json")
+        {
+            return Ok(name.into_owned());
+        }
+    }
+    Err("Core ML archive has no manifest".into())
+}
+
 fn manifest(archive: &mut ZipArchive<fs::File>) -> Result<(PathBuf, Vec<u8>, Vec<File>), String> {
-    let name = archive
-        .file_names()
-        .find(|name| {
-            Path::new(name)
-                .file_name()
-                .is_some_and(|n| n == "bundle.json")
-        })
-        .ok_or("Core ML archive has no manifest")?
-        .to_owned();
+    let name = manifest_name(archive)?;
     if !safe(&name) {
         return Err("Invalid Core ML archive path".into());
     }

@@ -50,7 +50,7 @@ ptts = { version = "=0.6.0", default-features = false, features = ["hf"] }
 
 [target.'cfg(target_os = "ios")'.dependencies]
 ptts-ffi = { git = "https://github.com/gradium-ai/xn-ptts", rev = "cf90537f4599fb5ae6b09ac88258ce69e8e2f133" }
-zip = { version = "=6.0.0", default-features = false, features = ["deflate"] }
+zip = { version = "=9.0.5", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util", "process"] }
