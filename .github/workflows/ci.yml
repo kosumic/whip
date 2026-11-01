@@ -27,6 +27,7 @@ on:
       - '!.github/workflows/ci-agent-browser-control.yml'
       - '!.github/workflows/release-whip-notify.yml'
       - '!scripts/prepare-notify-install-tag.sh'
+      - '!scripts/publish-crate-github-release.sh'
       # The app imports this library and embeds its platform detection script.
       - 'whip-notify/Cargo.toml'
       - 'whip-notify/src/**'

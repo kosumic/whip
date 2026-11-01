@@ -27,6 +27,8 @@ concurrency:
 jobs:
   publish:
     name: Verify and publish crate
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 20
     environment: crates-io
@@ -52,6 +54,7 @@ jobs:
           workspaces: crates/whipair-protocol
 
       - name: Verify release version
+        id: version
         env:
           EVENT_NAME: ${{ github.event_name }}
           MANUAL_VERSION: ${{ inputs.version }}
@@ -68,6 +71,10 @@ jobs:
             echo "Expected whipair-protocol version $expected_version, found $actual_version" >&2
             exit 1
           fi
+
+          cargo metadata --locked --format-version 1 --no-deps \
+            | jq --exit-status '.packages[0].license == "MIT"'
+          echo "version=$actual_version" >> "$GITHUB_OUTPUT"
 
       - name: Check formatting
         run: cargo fmt --check
@@ -115,3 +122,21 @@ jobs:
             exit 1
           fi
           cargo publish --locked
+
+  github-release:
+    name: Publish GitHub Release
+    needs: publish
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Publish the registry package on GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CRATE_VERSION: ${{ needs.publish.outputs.version }}
+        run: bash scripts/publish-crate-github-release.sh whipair-protocol "$CRATE_VERSION"
