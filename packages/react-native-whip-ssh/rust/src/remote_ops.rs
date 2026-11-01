@@ -274,6 +274,7 @@ pub(crate) struct ManagedPreview {
 #[derive(Debug)]
 pub(crate) struct TransferSlot {
     pub generation: u64,
+    pub resumable_download: bool,
     pub cancel: watch::Sender<bool>,
     pub progress: TransferProgress,
     pub result: Option<Result<TransferResult, String>>,
@@ -299,6 +300,21 @@ impl RemoteOperationManager {
         &self,
         generation: u64,
     ) -> Result<(String, watch::Receiver<bool>, Arc<Notify>), String> {
+        self.begin_transfer_with_recovery(generation, false)
+    }
+
+    pub fn begin_resumable_download(
+        &self,
+        generation: u64,
+    ) -> Result<(String, watch::Receiver<bool>, Arc<Notify>), String> {
+        self.begin_transfer_with_recovery(generation, true)
+    }
+
+    fn begin_transfer_with_recovery(
+        &self,
+        generation: u64,
+        resumable_download: bool,
+    ) -> Result<(String, watch::Receiver<bool>, Arc<Notify>), String> {
         let mut transfers = self.transfers.lock();
         let active = transfers
             .values()
@@ -321,6 +337,7 @@ impl RemoteOperationManager {
             transfer_id.clone(),
             TransferSlot {
                 generation,
+                resumable_download,
                 cancel,
                 progress: TransferProgress {
                     transfer_id: transfer_id.clone(),
@@ -354,11 +371,17 @@ impl RemoteOperationManager {
     }
 
     pub fn cancel_generation(&self, generation: u64, reason: &str) {
+        self.interrupt_generation(generation, reason, false);
+    }
+
+    pub fn interrupt_generation(&self, generation: u64, reason: &str, reconnecting: bool) {
         let mut transfers = self.transfers.lock();
-        for slot in transfers
-            .values_mut()
-            .filter(|slot| slot.generation == generation)
-        {
+        for slot in transfers.values_mut().filter(|slot| {
+            slot.generation == generation || (!reconnecting && slot.resumable_download)
+        }) {
+            if reconnecting && slot.resumable_download {
+                continue;
+            }
             if matches!(
                 slot.progress.state,
                 TransferState::Pending | TransferState::Running

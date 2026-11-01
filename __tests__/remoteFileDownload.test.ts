@@ -1,4 +1,4 @@
-import { cacheRemoteFile, downloadRemoteEntry, saveCachedRemoteText } from '../src/services/remoteFileTransfer';
+import { cacheRemoteFile, copyCachedRemoteFileToPickedDirectory, downloadRemoteEntry, RemoteFileDownloadError, saveCachedRemoteText } from '../src/services/remoteFileTransfer';
 import { Directory, File, Paths } from 'expo-file-system';
 import type { RemoteFileClient } from '../src/services/remoteFileTransfer';
 
@@ -6,6 +6,7 @@ jest.mock('expo-file-system', () => {
   const copy = jest.fn().mockResolvedValue(undefined);
   const remove = jest.fn();
   const write = jest.fn().mockResolvedValue(undefined);
+  const list = jest.fn().mockReturnValue([]);
   class Entry {
     uri: string;
     constructor(...parts: (string | Entry)[]) { this.uri = parts.map(part => typeof part === 'string' ? part : part.uri).join('/'); }
@@ -15,6 +16,7 @@ jest.mock('expo-file-system', () => {
     delete = remove;
     copy = copy;
     write = write;
+    list = list;
   }
   class MockDirectory extends Entry { static readonly pickDirectoryAsync = jest.fn(); }
   return { Directory: MockDirectory, File: Entry, Paths: { cache: 'file:///cache', info: jest.fn() } };
@@ -43,6 +45,7 @@ beforeEach(() => {
   };
   jest.mocked(source().copy).mockResolvedValue(undefined);
   jest.mocked(source().write).mockReset().mockResolvedValue(undefined);
+  jest.mocked(new Directory(Paths.cache).list).mockReturnValue([]);
 });
 
 it('finishes writing edited text before starting its upload', async () => {
@@ -101,6 +104,60 @@ it.each(['transfer', 'copy'])('reports %s errors and removes staging', async pha
   else jest.mocked(source().copy).mockRejectedValue(new Error('Destination already exists'));
   await expect(downloadRemoteEntry(client(), '/repo/source', jest.fn())).rejects.toThrow(phase === 'transfer' ? 'SSH disconnected' : 'Destination already exists');
   expect(source().delete).toHaveBeenCalledTimes(1);
+});
+
+it.each(['transfer', 'save'] as const)('retains the %s error phase and transfer ID', async phase => {
+  const cause = new Error(phase === 'save' ? 'Provider write failed' : 'Remote read interrupted');
+  if (phase === 'transfer') native.startDownload.mockReturnValue({ id: 'transfer', result: Promise.reject(cause) });
+  else jest.mocked(source().copy).mockRejectedValue(cause);
+  const error = await downloadRemoteEntry(client(), '/repo/source', jest.fn()).catch(value => value);
+  expect(error).toBeInstanceOf(RemoteFileDownloadError);
+  expect(error).toMatchObject({ phase, transferId: 'transfer', cause });
+  if (phase === 'save') expect(error.message).toContain('Download finished, but saving');
+  else expect(source().copy).not.toHaveBeenCalled();
+});
+
+it('rejects a staging file removed after network completion without copying it', async () => {
+  jest.mocked(Paths.info).mockReturnValue({ exists: false, isDirectory: false });
+  await expect(downloadRemoteEntry(client(), '/repo/source', jest.fn())).rejects.toThrow('staging file is missing');
+  expect(source().copy).not.toHaveBeenCalled();
+});
+
+it('distinguishes network and destination errors for the file-manager preview download', async () => {
+  const network = new Error('Remote read interrupted');
+  native.startDownload.mockReturnValueOnce({ id: 'network-transfer', result: Promise.reject(network) });
+  await expect(cacheRemoteFile(client(), '/repo/source')).rejects.toMatchObject({
+    phase: 'transfer', transferId: 'network-transfer', cause: network,
+  });
+  const cached = await cacheRemoteFile(client(), '/repo/source');
+  const save = new Error('Destination provider unavailable');
+  jest.mocked(cached.file.copy).mockRejectedValueOnce(save);
+  await expect(copyCachedRemoteFileToPickedDirectory(cached)).rejects.toMatchObject({
+    phase: 'save', transferId: 'transfer', cause: save,
+  });
+  cached.dispose();
+});
+
+it('expires abandoned staging after app termination while preserving active previews and unrelated cache', async () => {
+  const clock = jest.spyOn(Date, 'now').mockReturnValue(100_000);
+  try {
+    native.readRemoteText.mockResolvedValue('preview');
+    const preview = await cacheRemoteFile(client(), '/repo/notes', { utf8: true });
+    const active = new Directory(preview.file.uri.slice(0, preview.file.uri.lastIndexOf('/')));
+    const abandoned = new Directory('file:///cache/whip-download-100000-1');
+    const unrelated = new Directory('file:///cache/other-cache-100000-1');
+    const fresh = new Directory('file:///cache/whip-download-300000000-2');
+    jest.mocked(new Directory(Paths.cache).list).mockReturnValue([active, abandoned, unrelated, fresh]);
+    clock.mockReturnValue(300_000_000);
+    await downloadRemoteEntry(client(), '/repo/source', jest.fn());
+    const removed = () => jest.mocked(source().delete).mock.contexts.map(context => (context as Directory).uri);
+    expect(removed()).toContain(abandoned.uri);
+    expect(removed()).not.toContain(active.uri);
+    expect(removed()).not.toContain(unrelated.uri);
+    expect(removed()).not.toContain(fresh.uri);
+    preview.dispose();
+    expect(removed()).toContain(active.uri);
+  } finally { clock.mockRestore(); }
 });
 
 it('polls native transfer progress while awaiting completion', async () => {

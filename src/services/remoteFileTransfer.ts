@@ -8,6 +8,7 @@ export interface CachedRemoteFile {
   file: File;
   nativePath: string;
   uri: string;
+  transferId?: string;
   dispose: () => void;
 }
 
@@ -18,6 +19,55 @@ export interface CachedLocalUpload {
 }
 
 let transferSequence = 0;
+const STAGING_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const DOWNLOAD_PREFIX = 'whip-download-';
+const CACHE_PREFIX = 'herdr-remote-file-';
+const activeDirectories = new Set<string>();
+
+export class RemoteFileDownloadError extends Error {
+  constructor(
+    readonly phase: 'transfer' | 'save',
+    readonly transferId: string | undefined,
+    cause: unknown,
+  ) {
+    const reason = cause instanceof Error ? cause.message : String(cause);
+    super(`${phase === 'save' ? 'Download finished, but saving to the selected folder failed' : 'Remote download failed'}: ${reason}`, { cause });
+    this.name = 'RemoteFileDownloadError';
+  }
+}
+
+function createDownloadDirectory(prefix: string): Directory {
+  // Recover space after process termination without reusing unverifiable files.
+  // Names encode creation time; an active preview or transfer is never expired.
+  try {
+    for (const entry of new Directory(Paths.cache).list()) {
+      if (!(entry instanceof Directory) || activeDirectories.has(entry.uri)) continue;
+      const knownPrefix = [DOWNLOAD_PREFIX, CACHE_PREFIX].find(value => entry.name.startsWith(value));
+      if (!knownPrefix) continue;
+      const created = Number(entry.name.slice(knownPrefix.length).split('-')[0]);
+      if (Number.isFinite(created) && created > 0 && Date.now() - created > STAGING_MAX_AGE_MS) {
+        entry.delete();
+      }
+    }
+  } catch {
+    // Cache expiry is best effort. Creating the new directory still reports
+    // permission or no-space failures for the requested download.
+  }
+  const directory = new Directory(Paths.cache, `${prefix}${Date.now()}-${++transferSequence}`);
+  directory.create();
+  activeDirectories.add(directory.uri);
+  return directory;
+}
+
+function disposeDownloadDirectory(directory: Directory): void {
+  activeDirectories.delete(directory.uri);
+  try {
+    if (directory.exists) directory.delete();
+  } catch {
+    // Never replace a transfer/save error with an unrelated cleanup error.
+    // A later download expires abandoned staging directories.
+  }
+}
 
 /** Download into private staging, then publish without replacing local data. */
 export async function downloadRemoteEntry(
@@ -35,11 +85,11 @@ export async function downloadRemoteEntry(
     if (error instanceof Error && /cancel|dismiss/i.test(error.message)) return false;
     throw error;
   }
-  const directory = new Directory(Paths.cache, `whip-download-${Date.now()}-${++transferSequence}`);
-  directory.create();
+  const directory = createDownloadDirectory(DOWNLOAD_PREFIX);
   const native = client.native;
   let transfer: ReturnType<typeof native.startDownload> | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
+  let phase: 'transfer' | 'save' = 'transfer';
   const cancel = () => { if (transfer) native.cancelTransfer(transfer.id); };
   try {
     if (signal?.aborted) throw new Error('Download cancelled');
@@ -53,20 +103,27 @@ export async function downloadRemoteEntry(
       if (progress) onProgress(progress.bytesTransferred);
     }, 250);
     const result = await transfer.result;
+    if (timer) { clearInterval(timer); timer = undefined; }
     if (signal?.aborted) throw new Error('Download cancelled');
     if (!result.localPath) throw new Error('Native download returned no local path');
     const info = Paths.info(fileUri(result.localPath));
+    if (!info.exists) throw new Error('The downloaded staging file is missing; retry the download');
     const source = info.isDirectory ? new Directory(fileUri(result.localPath)) : new File(fileUri(result.localPath));
     // Let Expo resolve children of the picked directory. Android SAF URIs
     // cannot be joined as ordinary filesystem paths. Its copy operation checks
     // conflicts and recurses only over the safe, native-created staging tree.
+    phase = 'save';
     await source.copy(destination, { overwrite: false });
+    if (signal?.aborted) throw new Error('Download cancelled');
     return true;
+  } catch (error) {
+    if (signal?.aborted) throw new Error('Download cancelled', { cause: error });
+    throw new RemoteFileDownloadError(phase, transfer?.id, error);
   } finally {
     signal?.removeEventListener('abort', cancel);
     if (timer) clearInterval(timer);
     if (transfer) native.cancelTransfer(transfer.id);
-    if (directory.exists) directory.delete();
+    disposeDownloadDirectory(directory);
   }
 }
 
@@ -75,11 +132,8 @@ export async function cacheRemoteFile(
   remotePath: string,
   options: { utf8?: boolean } = {},
 ): Promise<CachedRemoteFile> {
-  const directory = new Directory(
-    Paths.cache,
-    `herdr-remote-file-${Date.now()}-${++transferSequence}`,
-  );
-  directory.create({ idempotent: true });
+  const directory = createDownloadDirectory(CACHE_PREFIX);
+  let transferId: string | undefined;
   try {
     let file: File;
     if (options.utf8) {
@@ -90,7 +144,9 @@ export async function cacheRemoteFile(
       await file.write(content);
     } else {
       const nativeDirectoryPath = `${nativePath(directory.uri)}/`;
-      const result = await client.native.startDownload(remotePath, nativeDirectoryPath).result;
+      const transfer = client.native.startDownload(remotePath, nativeDirectoryPath);
+      transferId = transfer.id;
+      const result = await transfer.result;
       const downloadedPath = result.localPath;
       if (!downloadedPath) throw new Error('Native download returned no local path');
       file = new File(fileUri(downloadedPath));
@@ -99,13 +155,14 @@ export async function cacheRemoteFile(
       file,
       nativePath: nativePath(file.uri),
       uri: file.uri,
+      transferId,
       dispose: () => {
-        if (directory.exists) directory.delete();
+        disposeDownloadDirectory(directory);
       },
     };
   } catch (error) {
-    if (directory.exists) directory.delete();
-    throw error;
+    disposeDownloadDirectory(directory);
+    throw new RemoteFileDownloadError('transfer', transferId, error);
   }
 }
 
@@ -121,7 +178,11 @@ export async function saveCachedRemoteText(
 
 export async function copyCachedRemoteFileToPickedDirectory(cached: CachedRemoteFile): Promise<string> {
   const destination = await Directory.pickDirectoryAsync();
-  await cached.file.copy(destination, { overwrite: true });
+  try {
+    await cached.file.copy(destination, { overwrite: true });
+  } catch (error) {
+    throw new RemoteFileDownloadError('save', cached.transferId, error);
+  }
   return destination.uri;
 }
 
