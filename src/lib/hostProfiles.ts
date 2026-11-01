@@ -26,7 +26,7 @@ export const emptyConnectionProfile = (): ConnectionProfile => {
     secret: '',
     passphrase: '',
     herdrEnabled: true,
-    herdrBackend: 'auto',
+    herdrBackend: 'legacy',
     herdrCommand: DEFAULT_HERDR_COMMAND,
     herdrSocketPath: '',
     sessionName: '',
