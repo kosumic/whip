@@ -87,7 +87,7 @@ def buildRustArm64 = tasks.register("buildRustArm64", Exec) {
     file("../../../scripts/instrument-terminal-bindings.ts"),
     file("../../../patches/uniffi-bindgen-react-native+0.31.0-3.patch"),
   )
-  ["agent-browser-control", "agent-transcript-core", "tailcat-client", "whipair-protocol"].each { crate ->
+  ["agent-browser-control", "agent-transcript-core", "herdr-protocol", "tailcat-client", "whipair-protocol"].each { crate ->
     def crateDirectory = file("${rustDirectory}/../../../crates/${crate}")
     inputs.files(
       fileTree("${crateDirectory}/src") { include "**/*.rs", "**/*.js" },

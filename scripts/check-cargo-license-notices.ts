@@ -103,7 +103,7 @@ for (const rustPackage of packages) {
     if (notice.name === 'turso') {
       notice.licenseText += `\n\n${await productionTransitiveNotices(rustPackage, 'turso')}`;
     }
-    if (['agent-browser-control', 'agent-transcript-core', 'whip-notify', 'whipair-protocol', 'tailcat-client'].includes(notice.name)) {
+    if (['agent-browser-control', 'agent-transcript-core', 'herdr-protocol', 'whip-notify', 'whipair-protocol', 'tailcat-client'].includes(notice.name)) {
       notice.licenseText += `\n\n${await productionTransitiveNotices(rustPackage, notice.name)}`;
     }
     const key = `${notice.name}@${notice.version}`;

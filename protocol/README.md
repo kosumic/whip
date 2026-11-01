@@ -1,5 +1,9 @@
 # Herdr API schema
 
+The reusable Rust wire codec, typed API and bounded event parser live in
+[`crates/herdr-protocol`](../crates/herdr-protocol), published under MIT.
+Whip's connection, subscription and native adapters consume that crate.
+
 The versioned `herdr-api-v*.schema.json` files are the official JSON Schemas
 published by Herdr for every local socket API protocol Whip supports:
 

@@ -775,6 +775,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/203736a37d023024.txt"),
   },
   {
+    id: "cargo-herdr-protocol-0-1-0",
+    category: "cargo",
+    projectName: "herdr-protocol",
+    sourceUrl: "https://github.com/kosumic/whip",
+    attribution: "Direct Rust dependency · version 0.1.0 · used by whip-ssh",
+    licenseName: "MIT",
+    licenseAsset: require("../../assets/licenses/generated/30b2447ba8d6f924.txt"),
+  },
+  {
     id: "cargo-hmac-0-12-1",
     category: "cargo",
     projectName: "hmac",
