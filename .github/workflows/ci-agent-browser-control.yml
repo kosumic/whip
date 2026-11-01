@@ -1,0 +1,60 @@
+name: Agent browser control CI
+
+on:
+  push:
+    branches: [main]
+    paths: &browser-paths
+      - 'crates/agent-browser-control/**'
+      - '.github/workflows/ci-agent-browser-control.yml'
+      - '.github/workflows/publish-agent-browser-control.yml'
+      - 'rust-toolchain.toml'
+  pull_request:
+    branches: [main]
+    paths: *browser-paths
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-agent-browser-control-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Standalone crate (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04-arm, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: crates/agent-browser-control
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: crates/agent-browser-control
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Lint
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Test without a browser or repository fixtures
+        run: cargo test --locked
+
+      - name: Run the in-memory bridge example
+        run: cargo run --locked --example memory
+
+      - name: Verify crates.io package
+        run: cargo publish --locked --dry-run

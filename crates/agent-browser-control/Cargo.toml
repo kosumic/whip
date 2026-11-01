@@ -1,0 +1,54 @@
+[package]
+name = "agent-browser-control"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT"
+description = "Validated browser agent actions, bounded results, and a platform-neutral execution engine"
+repository = "https://github.com/kosumic/whip"
+documentation = "https://docs.rs/agent-browser-control"
+readme = "README.md"
+keywords = ["browser", "agent", "automation", "webview"]
+categories = ["asynchronous", "web-programming"]
+
+[dependencies]
+futures = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "sync", "time"] }
+url = "2"
+
+[dev-dependencies]
+parking_lot = "0.12"
+tokio = { version = "1", features = ["rt", "test-util"] }
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+allow_attributes_without_reason = "deny"
+dbg_macro = "deny"
+excessive_nesting = "warn"
+expect_used = "deny"
+large_futures = "warn"
+large_stack_arrays = "warn"
+doc_markdown = "allow"
+ignored_unit_patterns = "allow"
+if_not_else = "allow"
+map_unwrap_or = "allow"
+missing_errors_doc = "allow"
+multiple_unsafe_ops_per_block = "deny"
+mutex_atomic = "warn"
+mutex_integer = "warn"
+must_use_candidate = "allow"
+needless_pass_by_value = "allow"
+needless_collect = "deny"
+redundant_clone = "deny"
+similar_names = "allow"
+significant_drop_tightening = "warn"
+single_match_else = "allow"
+struct_excessive_bools = "allow"
+todo = "deny"
+undocumented_unsafe_blocks = "deny"
+unimplemented = "deny"
+unwrap_used = "deny"
+wildcard_imports = "deny"

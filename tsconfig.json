@@ -24,6 +24,7 @@
     "build",
     "scripts",
     "**/node_modules",
+    "**/target",
     "**/.cloudflare",
     "feedback-worker",
     "notify-relay",

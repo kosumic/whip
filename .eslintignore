@@ -20,3 +20,4 @@ artifacts/
 
 notify-relay/worker-configuration.d.ts
 whip-notify/target/
+**/target/

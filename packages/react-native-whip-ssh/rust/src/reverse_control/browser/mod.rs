@@ -1,7 +1,7 @@
-pub mod engine;
-pub mod model;
+#[cfg(test)]
+pub use agent_browser_control::programs;
+pub use agent_browser_control::{engine, model};
 pub mod operations;
-pub mod programs;
 
 #[cfg(test)]
 mod tests;

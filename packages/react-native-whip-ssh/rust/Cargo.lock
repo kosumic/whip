@@ -91,6 +91,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "agent-browser-control"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5746,6 +5758,7 @@ dependencies = [
 name = "whip-ssh"
 version = "0.1.0"
 dependencies = [
+ "agent-browser-control",
  "async-trait",
  "axum",
  "base64 0.22.1",

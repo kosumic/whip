@@ -4,6 +4,7 @@ module.exports = [
   'android/app/build',
   'android/build',
   'build',
+  'crates/agent-browser-control/target',
   'crates/tailcat-client/target',
   'crates/whipair-protocol/target',
   'ios/Pods',

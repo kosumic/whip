@@ -25,6 +25,10 @@ const unknownLicenseValues = new Set(['', 'n/a', 'none', 'unknown', 'unlicensed'
 
 const noticeSources = [
   {
+    id: 'tailcat',
+    asset: 'assets/licenses/tailcat-dependencies.txt',
+  },
+  {
     id: 'shizuku-api',
     asset: 'assets/licenses/shizuku-MIT.txt',
     sha256: '64870037f294b6f2b75c8ebe77cc0702acb3b64f86b4b0e58bf8558525303686',

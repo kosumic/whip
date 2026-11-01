@@ -2,7 +2,7 @@
 import { TextDecoder, TextEncoder } from 'node:util';
 import { readFileSync } from 'node:fs';
 const runtime = readFileSync(
-  require.resolve('../packages/react-native-whip-ssh/rust/src/reverse_control/browser/dom.js'),
+  require.resolve('../crates/agent-browser-control/src/dom.js'),
   'utf8',
 );
 import type { JSDOM as Dom } from 'jsdom';
