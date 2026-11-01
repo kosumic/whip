@@ -919,6 +919,10 @@ export const en = {
   'rail.newWorkspace': 'New space',
   'rail.closeWorkspace': 'Close {{workspace}} space',
   'rail.space': 'Space',
+  'rail.actions': 'Actions',
+  'rail.actionsHint': 'Touch and hold for actions, or use accessibility actions.',
+  'rail.rename': 'Rename',
+  'rail.disconnect': 'Disconnect',
   'rail.workspaceStatus': '{{workspace}}, {{status}}',
 
   'session.backToHerd': 'Back to herd',

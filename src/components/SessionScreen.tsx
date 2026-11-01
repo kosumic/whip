@@ -127,12 +127,12 @@ import type { TerminalPreferences } from '../services/devicePreferences';
 import { addTerminalVolumeKeyListener } from '../services/volumeKeys';
 import {
   sessionTabGlassStyle,
-  sessionTabStatusColor,
   statusColor,
   useTheme,
 } from '../theme';
-import type { AgentStatus, HerdrSnapshot, PaneInfo, TabInfo } from '../types';
-import { AnimatedAgentStatusGlyph, hapticPress } from './app-ui';
+import type { HerdrSnapshot, PaneInfo, TabInfo } from '../types';
+import { hapticPress } from './app-ui';
+import { TerminalTabRail, type TerminalTab } from './TerminalTabRail';
 import { AgentIdentityWarningSheet } from './AgentIdentityWarningSheet';
 import { AppAlertPopup, type AppAlertContent } from './AppAlertPopup';
 import { AppBackground, FrostedAppBackground } from './AppBackground';
@@ -255,14 +255,6 @@ function savedChatReducer(state: SavedChatViewState, action: SavedChatAction): S
   }
 }
 
-interface TerminalTab {
-  id: string;
-  label: string;
-  agentStatus: AgentStatus;
-  status?: TerminalSessionStatus;
-  paneCount: number;
-  herdrTab?: TabInfo;
-}
 type PendingFocus = {
   previousId: string | null;
 };
@@ -311,7 +303,6 @@ export function SessionScreen({
   const { t } = useTranslation();
   const appGlassEnabled = useAppGlassEnabled();
   const safeAreaInsets = useSafeAreaInsets();
-  const isIpad = Platform.OS === 'ios' && Platform.isPad;
   const focusedWorkspace =
     snapshot.workspaces.find(item => item.focused) || snapshot.workspaces[0];
   const [workspaceId, setWorkspaceId] = useState(
@@ -1581,92 +1572,17 @@ export function SessionScreen({
               color={colors.text}
             />
           </Button>
-          <ScrollView
-            className="min-w-0 flex-1"
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerClassName="items-center px-1.5 gap-[5px]"
-          >
-            {visibleTabs.map(item => {
-              const active = item.id === selectedVisibleTabId;
-              const label = item.label;
-              return (
-                <View
-                  key={item.id}
-                  className={cn(
-                    'h-11 max-w-[170px] flex-row items-center overflow-hidden rounded-full border',
-                    isIpad && 'max-w-[230px]',
-                  )}
-                  style={sessionTabGlassStyle(active, colors)}
-                >
-                  <Button
-                    accessibilityLabel={t('session.openTab', {
-                      tab: label,
-                    })}
-                    className={cn(
-                      'h-11 min-w-0 flex-shrink justify-start gap-2 rounded-none px-[11px] py-0 pr-1 active:bg-transparent active:opacity-70 dark:active:bg-transparent',
-                      isIpad && 'px-3',
-                    )}
-                    variant="ghost"
-                    onPress={hapticPress(() => chooseVisibleTab(item))}
-                    onLongPress={client ? hapticPress(() => item.herdrTab
-                      ? openRenameTab(item.herdrTab) : openRenameSshTab(item)) : undefined}
-                  >
-                    {item.herdrTab ? <AnimatedAgentStatusGlyph
-                      status={item.agentStatus}
-                      color={sessionTabStatusColor(
-                        item.agentStatus,
-                        item.status,
-                        colors,
-                      )}
-                      size={isIpad ? 16 : 12}
-                    /> : <SquareTerminal
-                      size={isIpad ? 16 : 12}
-                      color={sessionTabStatusColor(item.agentStatus, item.status, colors)}
-                    />}
-                    <Text
-                      numberOfLines={1}
-                      className={cn(
-                        'max-w-[94px] pb-0.5 text-[11px] font-semibold leading-[18px] text-muted-foreground',
-                        isIpad && 'max-w-[140px] text-[14px] leading-5',
-                        active && 'text-primary-foreground',
-                      )}
-                    >
-                      {label}
-                    </Text>
-                    {item.paneCount > 1 && (
-                      <Text
-                        className={cn(
-                          'font-mono text-[8px] text-muted-foreground',
-                          isIpad && 'text-[11px]',
-                          active && 'text-primary-foreground',
-                        )}
-                      >
-                        {item.paneCount}
-                      </Text>
-                    )}
-                  </Button>
-                  <Button
-                    accessibilityLabel={t('session.closeTab', {
-                      tab: label,
-                    })}
-                    className="size-11 rounded-none px-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent"
-                    disabled={!client}
-                    variant="ghost"
-                    onPress={hapticPress(() => item.herdrTab
-                      ? closeTab(item.herdrTab) : onCloseTerminal(item.id))}
-                  >
-                    <X
-                      size={isIpad ? 18 : 14}
-                      color={
-                        active ? colors.onPrimary : colors.textSecondary
-                      }
-                    />
-                  </Button>
-                </View>
-              );
-            })}
-          </ScrollView>
+          <TerminalTabRail
+            tabs={visibleTabs}
+            selectedTabId={selectedVisibleTabId}
+            readOnly={!client || !visible}
+            busy={busy}
+            onSelect={chooseVisibleTab}
+            onRenameTab={openRenameTab}
+            onRenameSshTab={openRenameSshTab}
+            onCloseTab={closeTab}
+            onCloseTerminal={onCloseTerminal}
+          />
           {browserRuntimeIdRef.current && (
             <OpenBrowserButton
               disabled={!client}
