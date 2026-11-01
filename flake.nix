@@ -71,12 +71,20 @@
         rustc = rustToolchain;
       }).buildRustPackage {
         pname = "whipair";
-        version = "0.1.4";
+        version = "0.1.5";
         src = pkgs.lib.cleanSourceWith {
-          src = ./whipair;
+          src = ./.;
           filter = path: type:
-            type != "directory" || builtins.baseNameOf path != "target";
+            let
+              relative = pkgs.lib.removePrefix "${toString ./.}/" (toString path);
+              sources = ["whipair" "crates/tailcat-client" "crates/whipair-protocol"];
+            in
+              (toString path == toString ./. || relative == "crates"
+                || builtins.any (source: relative == source || pkgs.lib.hasPrefix "${source}/" relative) sources)
+              && (type != "directory" || !builtins.elem (builtins.baseNameOf path) ["target" "node_modules" "dist"]);
         };
+        cargoRoot = "whipair";
+        buildAndTestSubdir = "whipair";
         cargoLock.lockFile = ./whipair/Cargo.lock;
         nativeBuildInputs = [pkgs.makeWrapper];
 
@@ -87,7 +95,7 @@
 
         meta = {
           description = "Direct, QR-based SSH public-key enrollment prototype for Whip";
-          license = pkgs.lib.licenses.agpl3Plus;
+          license = pkgs.lib.licenses.mit;
           mainProgram = "whipair";
           platforms = pkgs.lib.platforms.unix;
         };

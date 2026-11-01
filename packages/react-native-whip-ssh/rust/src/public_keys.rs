@@ -52,9 +52,7 @@ pub fn public_key_verification_code(public_key: String) -> Result<String, HostRu
         .fingerprint(HashAlg::Sha256)
         .sha256()
         .ok_or_else(|| invalid_key("SSH public key is malformed"))?;
-    let value = u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]]) % 1_000_000;
-    let digits = format!("{value:06}");
-    Ok(format!("{}-{}", &digits[..3], &digits[3..]))
+    Ok(whipair_protocol::verification_code_sha256(&digest))
 }
 
 /// Accept bare OpenSSH keys from the clipboard, or a versioned Whip sharing QR.

@@ -201,21 +201,19 @@ impl Fixture {
     }
 
     fn code(&self, via_jump: bool, pinned_key: &ssh_key::PublicKey) -> String {
-        let mut payload = if via_jump {
-            let mut address = vec![ADDRESS_HOSTNAME, u8::try_from(INTERNAL_HOST.len()).unwrap()];
-            address.extend_from_slice(INTERNAL_HOST.as_bytes());
-            address.extend_from_slice(&22_u16.to_be_bytes());
-            address
-        } else {
-            let mut address = vec![ADDRESS_IPV4, 127, 0, 0, 1];
-            address.extend_from_slice(&self.address.port().to_be_bytes());
-            address
-        };
-        payload.push(5);
-        payload.extend_from_slice(b"alice");
-        payload.extend_from_slice(&[7; ED25519_SEED_BYTES]);
-        payload.extend_from_slice(&Sha256::digest(pinned_key.to_bytes().unwrap()));
-        format!("{ENVELOPE_PREFIX}{}", super::tests::base45_encode(&payload))
+        whipair_protocol::encode_pairing_code(&whipair_protocol::PairingPayload {
+            ssh_host: if via_jump {
+                INTERNAL_HOST.into()
+            } else {
+                "127.0.0.1".into()
+            },
+            tailcat: false,
+            ssh_port: if via_jump { 22 } else { self.address.port() },
+            ssh_user: "alice".into(),
+            temporary_private_key_seed: [7; ED25519_SEED_BYTES],
+            ssh_host_key_sha256: Sha256::digest(pinned_key.to_bytes().unwrap()).into(),
+        })
+        .unwrap()
     }
 }
 
@@ -223,7 +221,7 @@ impl Fixture {
 fn rejects_tailcat_pairing_with_a_jump_host_before_connecting()
 -> Result<(), Box<dyn std::error::Error>> {
     let fixture: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../../whipair/tests/fixtures/tailcat-pairing.json"
+        "../../../../../crates/whipair-protocol/tests/fixtures/tailcat-pairing.json"
     ))?;
     let jump = Fixture::jump_config("unreachable.invalid", 22);
     let error = crate::runtime()?

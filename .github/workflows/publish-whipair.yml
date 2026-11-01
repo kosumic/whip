@@ -9,7 +9,7 @@ on:
       version:
         description: Version from whipair/Cargo.toml, without a leading v
         required: true
-        default: 0.1.4
+        default: 0.1.5
         type: string
       bootstrap_with_token:
         description: Bootstrap first release with API token
@@ -72,6 +72,15 @@ jobs:
 
       - name: Test
         run: cargo test --locked
+
+      - name: Check shared pairing protocol
+        working-directory: crates/whipair-protocol
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/whipair/target
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
 
       - name: Verify crates.io package
         run: cargo publish --locked --dry-run

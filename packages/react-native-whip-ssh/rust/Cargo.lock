@@ -4711,7 +4711,7 @@ dependencies = [
 
 [[package]]
 name = "tailcat-client"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -5776,6 +5776,17 @@ dependencies = [
  "url",
  "uuid",
  "whip-notify",
+ "whipair-protocol",
+]
+
+[[package]]
+name = "whipair-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "ssh-key",
+ "tailcat-client",
+ "thiserror",
 ]
 
 [[package]]

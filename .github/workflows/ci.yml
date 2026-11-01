@@ -22,6 +22,7 @@ on:
       - '!.github/workflows/publish-whipair.yml'
       - '!.github/workflows/publish-whipair-packages.yml'
       - '!.github/workflows/publish-tailcat-client.yml'
+      - '!.github/workflows/publish-whipair-protocol.yml'
       - '!.github/workflows/release-whip-notify.yml'
       - '!scripts/prepare-notify-install-tag.sh'
       # The app imports this library and embeds its platform detection script.
@@ -95,6 +96,15 @@ jobs:
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked
           bash tests/interop.sh
+
+      - name: Check shared pairing protocol
+        working-directory: crates/whipair-protocol
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/packages/react-native-whip-ssh/rust/target
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7

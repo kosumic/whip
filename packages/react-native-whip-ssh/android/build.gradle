@@ -81,15 +81,20 @@ def buildRustArm64 = tasks.register("buildRustArm64", Exec) {
     file("${rustDirectory}/../../../whip-notify/platform.sh"),
     file("${rustDirectory}/Cargo.toml"),
     file("${rustDirectory}/Cargo.lock"),
-    fileTree("${rustDirectory}/../../../crates/tailcat-client/src") { include "**/*.rs" },
-    file("${rustDirectory}/../../../crates/tailcat-client/Cargo.toml"),
-    file("${rustDirectory}/../../../crates/tailcat-client/README.md"),
     file("${rustDirectory}/rust-toolchain.toml"),
     file("../../../package-lock.json"),
     rustBuildScript,
     file("../../../scripts/instrument-terminal-bindings.ts"),
     file("../../../patches/uniffi-bindgen-react-native+0.31.0-3.patch"),
   )
+  ["tailcat-client", "whipair-protocol"].each { crate ->
+    def crateDirectory = file("${rustDirectory}/../../../crates/${crate}")
+    inputs.files(
+      fileTree("${crateDirectory}/src") { include "**/*.rs" },
+      file("${crateDirectory}/Cargo.toml"),
+      file("${crateDirectory}/README.md"),
+    )
+  }
   outputs.files(rustArchive, generatedRustBindings)
   doLast { verifyAppSources() }
 }
