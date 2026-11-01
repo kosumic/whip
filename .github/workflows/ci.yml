@@ -231,6 +231,7 @@ jobs:
       security-events: write
     env:
       NODE_ENV: production
+      CARGO_INCREMENTAL: '0'
 
     steps:
       - name: Check out repository
@@ -273,6 +274,40 @@ jobs:
 
       - name: Install dependencies
         run: npm ci --include=dev
+
+      - name: Compute Android Rust cache key
+        id: android-rust-key
+        env:
+          RUST_CACHE_ENVIRONMENT: ${{ hashFiles('flake.nix', 'flake.lock', 'packages/react-native-whip-ssh/rust/rust-toolchain.toml') }}
+          RUST_CACHE_DEPENDENCIES: ${{ hashFiles('packages/react-native-whip-ssh/rust/Cargo.toml', 'packages/react-native-whip-ssh/rust/Cargo.lock', 'crates/*/Cargo.toml', 'whip-notify/Cargo.toml', 'package-lock.json', 'patches/uniffi-bindgen-react-native+*.patch') }}
+        run: |
+          android_cache_prefix="android-rust-v1-$RUNNER_OS-$RUNNER_ARCH-$RUST_CACHE_ENVIRONMENT"
+          echo "cache-prefix=$android_cache_prefix" >> "$GITHUB_OUTPUT"
+          echo "cache-key=$android_cache_prefix-$RUST_CACHE_DEPENDENCIES-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+      # Restore after npm ci, which replaces the UniFFI generator's directory.
+      - name: Restore Android Rust builds
+        id: android-rust-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: &android-rust-cache-paths |
+            ~/.cargo/registry
+            ~/.cargo/git
+            packages/react-native-whip-ssh/rust/target
+            node_modules/uniffi-bindgen-react-native/target
+          key: ${{ steps.android-rust-key.outputs.cache-key }}
+          restore-keys: ${{ steps.android-rust-key.outputs.cache-prefix }}-
+
+      - name: Build Android Rust library and bindings
+        run: nix develop .#default -c bash packages/react-native-whip-ssh/rust/build-android.sh
+
+      # Preserve completed Rust builds even if Gradle later fails or times out.
+      - name: Save Android Rust builds
+        if: steps.android-rust-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: *android-rust-cache-paths
+          key: ${{ steps.android-rust-cache.outputs.cache-primary-key }}
 
       - name: Initialize Java and Kotlin CodeQL
         if: github.event.repository.visibility == 'public'
