@@ -231,6 +231,7 @@ jobs:
     env:
       NODE_ENV: production
       CARGO_INCREMENTAL: '0'
+      WHIP_CONFIGURATION_CACHE: ${{ secrets.GRADLE_ENCRYPTION_KEY != '' && 'true' || 'false' }}
 
     steps:
       - &android-checkout
@@ -270,6 +271,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
         with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
           dependency-graph: ${{ github.ref == 'refs/heads/main' && 'generate-and-upload' || 'disabled' }}
           dependency-graph-include-projects: '^:app$'
           dependency-graph-include-configurations: '^releaseRuntimeClasspath$'
@@ -314,6 +316,33 @@ jobs:
           path: *android-rust-cache-paths
           key: ${{ steps.android-rust-cache.outputs.cache-primary-key }}
 
+      - name: Compute Android configuration cache key
+        if: env.WHIP_CONFIGURATION_CACHE == 'true'
+        id: android-configuration-key
+        env:
+          GRADLE_CONFIGURATION_ENVIRONMENT: ${{ hashFiles('flake.nix', 'flake.lock', 'package-lock.json', 'android/gradle/wrapper/gradle-wrapper.properties', 'android/gradle.properties', 'android/*.gradle', 'android/app/build.gradle', 'packages/*/android/*.gradle', '.github/gradle/*.gradle', 'patches/*.patch') }}
+        run: |
+          android_configuration_prefix="android-configuration-v1-$RUNNER_OS-$RUNNER_ARCH-$GRADLE_CONFIGURATION_ENVIRONMENT"
+          echo "cache-prefix=$android_configuration_prefix" >> "$GITHUB_OUTPUT"
+          echo "cache-key=$android_configuration_prefix-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+      # Included plugin builds must accompany the encrypted task graph on a fresh runner.
+      - name: Restore Android configuration cache
+        if: env.WHIP_CONFIGURATION_CACHE == 'true'
+        id: android-configuration-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: &android-configuration-cache-paths |
+            android/.gradle/configuration-cache
+            node_modules/@react-native/gradle-plugin/.gradle
+            node_modules/@react-native/gradle-plugin/**/build
+            node_modules/expo-modules-autolinking/android/expo-gradle-plugin/.gradle
+            node_modules/expo-modules-autolinking/android/expo-gradle-plugin/**/build
+            node_modules/expo-modules-core/expo-module-gradle-plugin/.gradle
+            node_modules/expo-modules-core/expo-module-gradle-plugin/build
+          key: ${{ steps.android-configuration-key.outputs.cache-key }}
+          restore-keys: ${{ steps.android-configuration-key.outputs.cache-prefix }}-
+
       - name: Run Android lint and build
         id: android-build
         # Avoid overlapping native builds and leave memory for Clang and lint.
@@ -334,8 +363,17 @@ jobs:
             -Dorg.gradle.jvmargs="-Xmx2g -XX:MaxMetaspaceSize=1g" \
             --max-workers=2 \
             --no-parallel \
+            -Dorg.gradle.configuration-cache="$WHIP_CONFIGURATION_CACHE" \
+            --configuration-cache-problems=fail \
             --build-cache \
             --no-daemon
+
+      - name: Save Android configuration cache
+        if: env.WHIP_CONFIGURATION_CACHE == 'true' && steps.android-configuration-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: *android-configuration-cache-paths
+          key: ${{ steps.android-configuration-cache.outputs.cache-primary-key }}
 
       - name: Verify release dependency snapshot
         if: github.ref == 'refs/heads/main'

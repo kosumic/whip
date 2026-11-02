@@ -1,11 +1,22 @@
+abstract class WhipCiMemoryBudget implements org.gradle.api.services.BuildService<org.gradle.api.services.BuildServiceParameters.None> {}
+
+// Configuration caching enables parallel task execution even with --no-parallel.
+// Share one memory budget so independent native/lint builds cannot multiply it.
+def memoryBudget = gradle.sharedServices.registerIfAbsent('whipCiMemoryBudget', WhipCiMemoryBudget) {
+    maxParallelUsages.set(1)
+}
+
 // Gradle's worker limit does not constrain Ninja's compiler processes.
-// Use these pools with --no-parallel so native builds in different projects
-// cannot each start another independent pool of memory-heavy C++ compilers.
 def compilePool = 'whip_ci_compile'
 def linkPool = 'whip_ci_link'
 def compileJobs = gradle.startParameter.maxWorkerCount
 
 gradle.beforeProject { project ->
+    project.tasks.configureEach { task ->
+        if (task.name.startsWith('buildCMake') || task.name.startsWith('lint') || task.name == 'buildRustArm64') {
+            task.usesService memoryBudget
+        }
+    }
     ['com.android.application', 'com.android.library'].each { pluginId ->
         project.pluginManager.withPlugin(pluginId) {
             project.extensions.getByName('android').defaultConfig.externalNativeBuild.cmake.arguments(
