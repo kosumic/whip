@@ -21,7 +21,7 @@ jest.mock('react-i18next', () => ({
 jest.mock('../src/theme', () => ({
   useTheme: () => ({ colors: { primary: 'blue' } }),
 }));
-jest.mock('lucide-react-native', () => ({ Globe2: 'Globe2' }));
+jest.mock('lucide-react-native/icons/earth', () => ('Globe2'));
 
 test('Open Browser appears only for this explicitly authorized launch and closes with its session', async () => {
   let view!: ReactTestRenderer;

@@ -1,4 +1,5 @@
-import { Server, ServerOff } from 'lucide-react-native';
+import Server from 'lucide-react-native/icons/server';
+import ServerOff from 'lucide-react-native/icons/server-off';
 import { Platform, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 

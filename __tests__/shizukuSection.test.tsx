@@ -37,13 +37,11 @@ jest.mock('react-i18next', () => {
     }),
   };
 });
-jest.mock('lucide-react-native', () => ({
-  Link: 'Link',
-  ShieldQuestion: 'ShieldQuestion',
-  Unlink: 'Unlink',
-  ChevronDown: 'ChevronDown',
-  ChevronUp: 'ChevronUp',
-}));
+jest.mock('lucide-react-native/icons/chevron-down', () => ('ChevronDown'));
+jest.mock('lucide-react-native/icons/chevron-up', () => ('ChevronUp'));
+jest.mock('lucide-react-native/icons/link', () => ('Link'));
+jest.mock('lucide-react-native/icons/shield-question-mark', () => ('ShieldQuestion'));
+jest.mock('lucide-react-native/icons/unlink', () => ('Unlink'));
 jest.mock('../src/components/GlassSurface', () => ({
   GlassSurface: 'GlassSurface',
 }));

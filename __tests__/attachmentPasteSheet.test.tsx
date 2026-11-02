@@ -13,7 +13,12 @@ jest.mock('react-native', () => ({
   Pressable: 'Pressable',
   View: 'View',
 }));
-jest.mock('lucide-react-native', () => new Proxy({}, { get: (_target, name) => String(name) }));
+jest.mock('lucide-react-native/icons/camera', () => ('Camera'));
+jest.mock('lucide-react-native/icons/clipboard', () => ('Clipboard'));
+jest.mock('lucide-react-native/icons/file-up', () => ('FileUp'));
+jest.mock('lucide-react-native/icons/image', () => ('Image'));
+jest.mock('lucide-react-native/icons/paperclip', () => ('Paperclip'));
+jest.mock('lucide-react-native/icons/x', () => ('X'));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 jest.mock('../src/services/attachmentPaste', () => ({

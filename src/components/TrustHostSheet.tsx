@@ -1,4 +1,7 @@
-import { Fingerprint, Server, ShieldCheck, TriangleAlert } from 'lucide-react-native';
+import Fingerprint from 'lucide-react-native/icons/fingerprint-pattern';
+import Server from 'lucide-react-native/icons/server';
+import ShieldCheck from 'lucide-react-native/icons/shield-check';
+import TriangleAlert from 'lucide-react-native/icons/triangle-alert';
 import { Modal, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';

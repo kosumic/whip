@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { FlatList, Modal, Pressable, View } from 'react-native';
-import { Check, ChevronRight, Trash2 } from 'lucide-react-native';
+import Check from 'lucide-react-native/icons/check';
+import ChevronRight from 'lucide-react-native/icons/chevron-right';
+import Trash2 from 'lucide-react-native/icons/trash';
 import { useTranslation } from 'react-i18next';
 import { formatRemoteFileSize } from '../lib/remoteFiles';
 import { hapticPress } from '../services/interactionFeedback';

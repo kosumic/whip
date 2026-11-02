@@ -1,5 +1,14 @@
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import { ArrowDown, ArrowUp, Maximize2, PanelBottomOpen, PanelRightOpen, RefreshCw, SquareTerminal, Trash2, X, type LucideIcon } from 'lucide-react-native';
+import ArrowDown from 'lucide-react-native/icons/arrow-down';
+import ArrowUp from 'lucide-react-native/icons/arrow-up';
+import Maximize2 from 'lucide-react-native/icons/maximize-2';
+import PanelBottomOpen from 'lucide-react-native/icons/panel-bottom-open';
+import PanelRightOpen from 'lucide-react-native/icons/panel-right-open';
+import RefreshCw from 'lucide-react-native/icons/refresh-cw';
+import SquareTerminal from 'lucide-react-native/icons/square-terminal';
+import Trash2 from 'lucide-react-native/icons/trash';
+import X from 'lucide-react-native/icons/x';
+import type { LucideIcon } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, View } from 'react-native';
 import { useTranslation } from 'react-i18next';

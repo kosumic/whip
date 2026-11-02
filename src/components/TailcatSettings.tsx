@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { tailcatServerCommand } from 'react-native-whip-ssh';
-import { ChevronDown, ChevronUp, ExternalLink } from 'lucide-react-native';
+import ChevronDown from 'lucide-react-native/icons/chevron-down';
+import ChevronUp from 'lucide-react-native/icons/chevron-up';
+import ExternalLink from 'lucide-react-native/icons/external-link';
 import { Alert, Linking, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 

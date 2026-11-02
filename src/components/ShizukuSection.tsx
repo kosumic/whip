@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, Linking, Platform, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { Link, ShieldQuestion, Unlink } from 'lucide-react-native';
+import Link from 'lucide-react-native/icons/link';
+import ShieldQuestion from 'lucide-react-native/icons/shield-question-mark';
+import Unlink from 'lucide-react-native/icons/unlink';
 
 import { CollapsibleSectionCard } from './CollapsibleSectionCard';
 import { hapticPress } from './app-ui';

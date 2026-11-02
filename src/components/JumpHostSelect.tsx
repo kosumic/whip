@@ -1,4 +1,7 @@
-import { ArrowRight, Check, ChevronDown, Network } from 'lucide-react-native';
+import ArrowRight from 'lucide-react-native/icons/arrow-right';
+import Check from 'lucide-react-native/icons/check';
+import ChevronDown from 'lucide-react-native/icons/chevron-down';
+import Network from 'lucide-react-native/icons/network';
 import { useState } from 'react';
 import { Modal, Pressable, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';

@@ -1,4 +1,4 @@
-import { CircleAlert } from 'lucide-react-native';
+import CircleAlert from 'lucide-react-native/icons/circle-alert';
 import { Modal, Pressable, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 

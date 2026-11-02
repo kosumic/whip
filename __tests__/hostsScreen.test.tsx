@@ -26,12 +26,21 @@ jest.mock('react-native-safe-area-context', () => ({
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
-jest.mock('lucide-react-native', () => ({
-  Globe2: 'Globe2',
-  KeyRound: 'KeyRound',
-  Plus: 'Plus',
-  Server: 'Server',
-}));
+jest.mock('lucide-react-native/icons/bell', () => (undefined));
+jest.mock('lucide-react-native/icons/bot', () => (undefined));
+jest.mock('lucide-react-native/icons/cat', () => (undefined));
+jest.mock('lucide-react-native/icons/circle-alert', () => (undefined));
+jest.mock('lucide-react-native/icons/earth', () => ('Globe2'));
+jest.mock('lucide-react-native/icons/ellipsis', () => (undefined));
+jest.mock('lucide-react-native/icons/key-round', () => ('KeyRound'));
+jest.mock('lucide-react-native/icons/lock-keyhole', () => (undefined));
+jest.mock('lucide-react-native/icons/log-in', () => (undefined));
+jest.mock('lucide-react-native/icons/log-out', () => (undefined));
+jest.mock('lucide-react-native/icons/network', () => (undefined));
+jest.mock('lucide-react-native/icons/plus', () => ('Plus'));
+jest.mock('lucide-react-native/icons/server', () => ('Server'));
+jest.mock('lucide-react-native/icons/server-off', () => (undefined));
+jest.mock('lucide-react-native/icons/trash', () => (undefined));
 jest.mock('../src/theme', () => ({
   useTheme: () => ({ colors: {} }),
 }));

@@ -10,10 +10,11 @@ jest.mock('../src/services/composerFont', () => ({ watchComposerFont: jest.fn(()
 jest.mock('../src/services/composerImagePaste', () => ({ watchComposerImagePaste: jest.fn() }));
 jest.mock('../src/services/attachmentPaste', () => ({ discardClipboardAttachment: jest.fn() }));
 
-jest.mock(
-  'lucide-react-native',
-  () => new Proxy({}, { get: (_target, name) => String(name) }),
-);
+jest.mock('lucide-react-native/icons/maximize-2', () => ('Maximize2'));
+jest.mock('lucide-react-native/icons/mic', () => ('Mic'));
+jest.mock('lucide-react-native/icons/paperclip', () => ('Paperclip'));
+jest.mock('lucide-react-native/icons/send', () => ('Send'));
+jest.mock('lucide-react-native/icons/square', () => ('Square'));
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );

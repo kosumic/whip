@@ -1,4 +1,7 @@
-import { Check, Heart, MessageSquare, Send } from 'lucide-react-native';
+import Check from 'lucide-react-native/icons/check';
+import Heart from 'lucide-react-native/icons/heart';
+import MessageSquare from 'lucide-react-native/icons/message-square';
+import Send from 'lucide-react-native/icons/send';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { useTranslation } from 'react-i18next';

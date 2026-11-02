@@ -3,7 +3,7 @@ import { Text } from 'react-native';
 import { MermaidPreview } from '../src/components/MermaidPreview';
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
-jest.mock('lucide-react-native', () => ({ FileWarning: 'FileWarning' }));
+jest.mock('lucide-react-native/icons/file-exclamation-point', () => ('FileWarning'));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
 jest.mock('../src/services/terminalAssets', () => ({ IOS_TERMINAL_ASSETS: null }));
 jest.mock('react-i18next', () => {

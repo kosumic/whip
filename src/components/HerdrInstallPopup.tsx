@@ -1,4 +1,5 @@
-import { Download, ExternalLink } from 'lucide-react-native';
+import Download from 'lucide-react-native/icons/download';
+import ExternalLink from 'lucide-react-native/icons/external-link';
 import { useState } from 'react';
 import { Linking, Modal, Pressable, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';

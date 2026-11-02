@@ -13,7 +13,8 @@ jest.mock('react-native', () => ({
   Alert: { alert: jest.fn() },
   Linking: { openURL: jest.fn(async () => undefined) },
 }));
-jest.mock('lucide-react-native', () => ({ Download: 'Download', RefreshCw: 'RefreshCw' }));
+jest.mock('lucide-react-native/icons/download', () => ('Download'));
+jest.mock('lucide-react-native/icons/refresh-cw', () => ('RefreshCw'));
 jest.mock('react-native-whip-ssh', () => ({ evaluateAppUpdate: jest.fn() }));
 jest.mock('react-i18next', () => {
   const { en: translations } = jest.requireActual<typeof import('../src/locales/en')>('../src/locales/en');

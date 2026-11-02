@@ -1,5 +1,8 @@
 import Clipboard from '@react-native-clipboard/clipboard';
-import { ClipboardPaste, KeyRound, ScanLine, X } from 'lucide-react-native';
+import ClipboardPaste from 'lucide-react-native/icons/clipboard-paste';
+import KeyRound from 'lucide-react-native/icons/key-round';
+import ScanLine from 'lucide-react-native/icons/scan-line';
+import X from 'lucide-react-native/icons/x';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,

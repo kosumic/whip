@@ -18,11 +18,16 @@ jest.mock('expo-camera', () => ({
   CameraView: 'CameraView',
   useCameraPermissions: () => [{ granted: mockCameraGranted }, mockRequestPermission],
 }));
-jest.mock('lucide-react-native', () => ({
-  ArrowRight: 'ArrowRight', Check: 'Check', ChevronDown: 'ChevronDown', Network: 'Network',
-  ChevronLeft: 'ChevronLeft', ChevronRight: 'ChevronRight', Keyboard: 'Keyboard', ScanLine: 'ScanLine', X: 'X',
-  ExternalLink: 'ExternalLink', Copy: 'Copy', ChevronUp: 'ChevronUp',
-}));
+jest.mock('lucide-react-native/icons/arrow-right', () => ('ArrowRight'));
+jest.mock('lucide-react-native/icons/check', () => ('Check'));
+jest.mock('lucide-react-native/icons/chevron-down', () => ('ChevronDown'));
+jest.mock('lucide-react-native/icons/chevron-left', () => ('ChevronLeft'));
+jest.mock('lucide-react-native/icons/chevron-right', () => ('ChevronRight'));
+jest.mock('lucide-react-native/icons/external-link', () => ('ExternalLink'));
+jest.mock('lucide-react-native/icons/keyboard', () => ('Keyboard'));
+jest.mock('lucide-react-native/icons/network', () => ('Network'));
+jest.mock('lucide-react-native/icons/scan-line', () => ('ScanLine'));
+jest.mock('lucide-react-native/icons/x', () => ('X'));
 jest.mock('react-native-whip-ssh', () => ({
   publicKeyVerificationCode: () => '610-862',
   generateKeyPair: () => ({ privateKey: 'PRIVATE', publicKey: 'ssh-ed25519 AAAA' }),

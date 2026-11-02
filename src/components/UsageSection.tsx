@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChartColumn } from 'lucide-react-native';
+import ChartColumn from 'lucide-react-native/icons/chart-column';
 import { Animated, AppState, Pressable, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { usageChart, usageSummary } from 'react-native-whip-ssh';

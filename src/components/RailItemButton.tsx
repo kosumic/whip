@@ -1,4 +1,7 @@
-import { Pencil, Plus, Unplug, X } from 'lucide-react-native';
+import Pencil from 'lucide-react-native/icons/pencil';
+import Plus from 'lucide-react-native/icons/plus';
+import Unplug from 'lucide-react-native/icons/unplug';
+import X from 'lucide-react-native/icons/x';
 import { useEffect, useRef, useState } from 'react';
 import { Modal, Platform, Pressable, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
