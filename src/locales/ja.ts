@@ -724,6 +724,8 @@ export const ja = {
   'herd.copyAgent': "コピー",
   'herd.agentActions': "エージェントの操作",
   'herd.pinAgent': 'エージェントを固定',
+  'herd.toggleChildren': '子エージェントを展開・折りたたむ',
+  'herd.childCount': '子エージェント {{count}} 件',
   'herd.markUnread': '未読にする',
   'herd.sessionId': 'セッションID',
   'herd.sessionPath': 'セッションのパス',

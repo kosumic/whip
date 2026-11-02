@@ -10149,6 +10149,67 @@ const FfiConverterTypeCodeSyntax = (() => {
   return new FFIConverter();
 })();
 
+export type CoreAgentHierarchy = {
+  parentTerminalId?: string;
+  ancestors: Array<string>;
+  depth: number;
+  descendantCount: number;
+  groupStatus: HerdrAgentStatus;
+  delegated: boolean;
+};
+
+/**
+ * Generated factory for {@link CoreAgentHierarchy} record objects.
+ */
+export const CoreAgentHierarchy = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<CoreAgentHierarchy, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<CoreAgentHierarchy>,
+  });
+})();
+
+const FfiConverterTypeCoreAgentHierarchy = (() => {
+  type TypeName = CoreAgentHierarchy;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        parentTerminalId: FfiConverterOptionalString.read(from),
+        ancestors: FfiConverterSequenceString.read(from),
+        depth: FfiConverterUInt32.read(from),
+        descendantCount: FfiConverterUInt32.read(from),
+        groupStatus: FfiConverterTypeHerdrAgentStatus.read(from),
+        delegated: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterOptionalString.write(value.parentTerminalId, into);
+      FfiConverterSequenceString.write(value.ancestors, into);
+      FfiConverterUInt32.write(value.depth, into);
+      FfiConverterUInt32.write(value.descendantCount, into);
+      FfiConverterTypeHerdrAgentStatus.write(value.groupStatus, into);
+      FfiConverterBool.write(value.delegated, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterOptionalString.allocationSize(value.parentTerminalId) +
+        FfiConverterSequenceString.allocationSize(value.ancestors) +
+        FfiConverterUInt32.allocationSize(value.depth) +
+        FfiConverterUInt32.allocationSize(value.descendantCount) +
+        FfiConverterTypeHerdrAgentStatus.allocationSize(value.groupStatus) +
+        FfiConverterBool.allocationSize(value.delegated)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 /**
  * Ephemeral secure-store payload. Never included in a published projection,
  * a transaction journal, diagnostics, or a Debug implementation.
@@ -12160,6 +12221,7 @@ export type HerdAgentView = {
   primaryLabel: string;
   control?: AgentControlView;
   corePinned?: boolean;
+  coreHierarchy?: CoreAgentHierarchy;
 };
 
 /**
@@ -12192,6 +12254,7 @@ const FfiConverterTypeHerdAgentView = (() => {
         primaryLabel: FfiConverterString.read(from),
         control: FfiConverterOptionalTypeAgentControlView.read(from),
         corePinned: FfiConverterOptionalBoolean.read(from),
+        coreHierarchy: FfiConverterOptionalTypeCoreAgentHierarchy.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
@@ -12203,6 +12266,10 @@ const FfiConverterTypeHerdAgentView = (() => {
       FfiConverterString.write(value.primaryLabel, into);
       FfiConverterOptionalTypeAgentControlView.write(value.control, into);
       FfiConverterOptionalBoolean.write(value.corePinned, into);
+      FfiConverterOptionalTypeCoreAgentHierarchy.write(
+        value.coreHierarchy,
+        into,
+      );
     }
     allocationSize(value: TypeName): number {
       return (
@@ -12213,7 +12280,10 @@ const FfiConverterTypeHerdAgentView = (() => {
         FfiConverterString.allocationSize(value.tabLabel) +
         FfiConverterString.allocationSize(value.primaryLabel) +
         FfiConverterOptionalTypeAgentControlView.allocationSize(value.control) +
-        FfiConverterOptionalBoolean.allocationSize(value.corePinned)
+        FfiConverterOptionalBoolean.allocationSize(value.corePinned) +
+        FfiConverterOptionalTypeCoreAgentHierarchy.allocationSize(
+          value.coreHierarchy,
+        )
       );
     }
   }
@@ -60260,6 +60330,11 @@ const FfiConverterOptionalTypeAgentControlView = new FfiConverterOptional(
   FfiConverterTypeAgentControlView,
 );
 
+// FfiConverter for CoreAgentHierarchy | undefined
+const FfiConverterOptionalTypeCoreAgentHierarchy = new FfiConverterOptional(
+  FfiConverterTypeCoreAgentHierarchy,
+);
+
 // FfiConverter for Array<HerdHostView>
 const FfiConverterSequenceTypeHerdHostView = new FfiConverterArray(
   FfiConverterTypeHerdHostView,
@@ -64505,6 +64580,7 @@ export default Object.freeze({
     FfiConverterTypeChatSpeechUtterance,
     FfiConverterTypeCodeSyntax,
     FfiConverterTypeComposerDictation,
+    FfiConverterTypeCoreAgentHierarchy,
     FfiConverterTypeCredentialCommand,
     FfiConverterTypeCredentialCoordinator,
     FfiConverterTypeCredentialEffect,

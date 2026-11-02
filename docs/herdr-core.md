@@ -48,13 +48,23 @@ metadata. Label writes are last-writer-wins in Core; Whip checks the current
 turn/seen value before writing and never replays an unacknowledged write.
 Legacy hosts retain their existing ordering, status, and API traffic.
 
+Herd groups Core terminals by the authoritative `Terminal.parent` metadata,
+including recursive children without desktop panes. Group badges aggregate
+descendant attention while each row retains its own status and terminal target.
+Unattached children inherit their parent's workspace only for Herd filtering;
+the shared desktop document and actual pane/tab addresses remain unchanged.
+Groups can be collapsed locally. Delegated rows do not offer tab-wide close
+gestures, which could otherwise stop sibling terminals. Missing parents remain
+standalone, and cycles or excessively deep chains are split into reachable
+groups. Legacy hosts keep their flat agent lists.
+
 Core setup displays the official `https://releases.herdr.dev/core/install.sh`
 command for confirmation. Legacy agent integration installers are unavailable
 on core; core agent launches use `terminal.run` and the host's core templates.
 
 For native interoperability tests, obtain the pinned binary with
 `bash scripts/fetch-herdr-core-test.sh DESTINATION`, set `WHIP_HC_TEST_BINARY` to
-the printed path, then run the ignored `hc_transport::tests` test through
+the printed path, then run the ignored `hc_transport::tests` scenarios through
 `cargo test --lib hc_transport::tests -- --ignored --test-threads=1` from the
 native Rust crate. Tests create isolated HOME/XDG/session/socket state and a real
 loopback SSH server. They never use the user's running core.
