@@ -7,7 +7,7 @@ import ScanLine from 'lucide-react-native/icons/scan-line';
 import X from 'lucide-react-native/icons/x';
 import { generateKeyPair, getKeyDetails } from 'react-native-whip-ssh';
 import { useEffect, useReducer, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -23,6 +23,7 @@ import { appGlassControlStyle, useTheme } from '@/src/theme';
 import type { GlobalSshKeyMaterial, HostProfile } from '@/src/types';
 import { hapticPress, IconButton, ScreenHeader, WhipMark } from './app-ui';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
+import { GoogleQrScanner } from './GoogleQrScanner';
 import { JumpHostSelect } from './JumpHostSelect';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
@@ -99,11 +100,13 @@ export function NewHostScreen({ hosts, onCancel, onManual, onPaired, onAuthentic
     preparing.current = true;
     dispatch({ type: 'preparing' });
     try {
-      let granted = permission?.granted;
-      if (!granted) granted = (await requestPermission()).granted;
-      if (!granted) {
-        Alert.alert(t('pairing.cameraDeniedTitle'), t('pairing.cameraDeniedCopy'));
-        return;
+      if (Platform.OS !== 'android') {
+        let granted = permission?.granted;
+        if (!granted) granted = (await requestPermission()).granted;
+        if (!granted) {
+          Alert.alert(t('pairing.cameraDeniedTitle'), t('pairing.cameraDeniedCopy'));
+          return;
+        }
       }
 
       const generated = generateKeyPair('ed25519', '', 256, 'whip');
@@ -131,7 +134,7 @@ export function NewHostScreen({ hosts, onCancel, onManual, onPaired, onAuthentic
   const operationAbort = useRef<AbortController | null>(null);
   useEffect(() => () => { operationAbort.current?.abort(); }, [jumpHostId]);
 
-  const handleScan = async ({ data }: BarcodeScanningResult) => {
+  const handleScan = async ({ data }: Pick<BarcodeScanningResult, 'data'>) => {
     if (scanHandled.current || state.phase !== 'scanning') return;
     const selectedKey = state.key;
     scanHandled.current = true;
@@ -164,6 +167,14 @@ export function NewHostScreen({ hosts, onCancel, onManual, onPaired, onAuthentic
   };
 
   if (state.phase === 'scanning') {
+    if (Platform.OS === 'android') {
+      return <GoogleQrScanner
+        title={t('pairing.scan')}
+        instruction={t('pairing.scanCopy')}
+        onClose={() => dispatch({ type: 'scanner-closed' })}
+        onScan={data => handleScan({ data })}
+      />;
+    }
     return (
       <View className="flex-1 bg-black">
         <CameraView

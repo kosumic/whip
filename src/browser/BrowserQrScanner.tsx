@@ -4,6 +4,7 @@ import {
   AppState,
   Linking,
   Modal,
+  Platform,
   StyleSheet,
   View,
 } from 'react-native';
@@ -17,6 +18,7 @@ import Flashlight from 'lucide-react-native/icons/flashlight';
 import X from 'lucide-react-native/icons/x';
 import { Button } from '../components/ui/button';
 import { Text } from '../components/ui/text';
+import { GoogleQrScanner } from '../components/GoogleQrScanner';
 
 const QR_SETTINGS = { barcodeTypes: ['qr' as const] };
 const SCANNER_COLOR = '#ffffff';
@@ -31,6 +33,18 @@ export function BrowserQrScanner({
   onScan: (data: string) => void;
   title?: string;
   instruction?: string;
+}) {
+  if (Platform.OS === 'android') {
+    return <GoogleQrScanner onClose={onClose} onScan={onScan} title={title} instruction={instruction} />;
+  }
+  return <CameraQrScanner onClose={onClose} onScan={onScan} title={title} instruction={instruction} />;
+}
+
+function CameraQrScanner({ onClose, onScan, title, instruction }: {
+  onClose: () => void;
+  onScan: (data: string) => void;
+  title: string;
+  instruction: string;
 }) {
   const [permission, requestPermission, getPermission] = useCameraPermissions();
   const [error, setError] = useState<string | null>(null);

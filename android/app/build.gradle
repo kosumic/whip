@@ -252,6 +252,12 @@ gradle.taskGraph.whenReady { taskGraph ->
     }
 }
 
+// Expo Camera also checks for ML Kit's API when launching Google's scanner UI.
+// Keep that API through Play services, without packaging the native model.
+configurations.configureEach {
+    exclude group: "com.google.mlkit", module: "barcode-scanning"
+}
+
 dependencies {
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
@@ -275,6 +281,7 @@ dependencies {
     implementation("dev.rikka.shizuku:api:${shizukuVersion}")
     implementation("dev.rikka.shizuku:provider:${shizukuVersion}")
     implementation("com.google.android.gms:play-services-auth-blockstore:16.4.0")
+    implementation("com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.1")
     // 21.4.0 requires Kotlin 2.3 metadata; Expo currently uses Kotlin 2.1.
     implementation("com.google.android.gms:play-services-location:21.4.0")
 
