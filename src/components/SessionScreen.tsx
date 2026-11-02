@@ -20,7 +20,6 @@ import { ScreenUpdates } from './ScreenUpdates';
 import {
   ChevronLeft,
   Globe2,
-  Plus,
   SquareTerminal,
   X,
 } from 'lucide-react-native';
@@ -1586,6 +1585,7 @@ export function SessionScreen({
             readOnly={!client || !visible}
             busy={busy}
             onSelect={chooseVisibleTab}
+            onNew={() => dispatchEditor({ type: 'opened', target: { mode: sshTabsVisible ? 'ssh-tab' : 'tab' } })}
             onRenameTab={openRenameTab}
             onRenameSshTab={openRenameSshTab}
             onCloseTab={closeTab}
@@ -1598,22 +1598,6 @@ export function SessionScreen({
               paneId={activePane?.pane_id}
             />
           )}
-          <Button
-            accessibilityLabel={t('session.newTab')}
-            className={cn(
-              'h-[55px] items-center justify-center rounded-none px-0 py-0',
-              Platform.OS === 'ios' ? 'w-14' : 'w-11',
-            )}
-            disabled={!client || busy}
-            size="content"
-            variant="ghost"
-            onPress={hapticPress(() => dispatchEditor({ type: 'opened', target: { mode: sshTabsVisible ? 'ssh-tab' : 'tab' } }))}
-          >
-            <Plus
-              size={Platform.OS === 'ios' ? 23 : 16}
-              color={colors.text}
-            />
-          </Button>
         </SessionChromeRow>
 
         <ResourceEditorSheet

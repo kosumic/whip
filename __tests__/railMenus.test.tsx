@@ -94,14 +94,18 @@ test('host taps select, while long press opens Disconnect without selecting or d
   expect(onClose).toHaveBeenCalledWith(host.hostId);
 });
 
-test('All Hosts has no destructive actions and still selects the aggregate view', () => {
+test('All Hosts selects the aggregate view and offers a new host session without destructive actions', async () => {
   const onSelect = jest.fn();
-  mount(<LiveSessionRail sessions={[host]} activeHostId={host.hostId} onSelect={onSelect} onClose={jest.fn()} onNew={jest.fn()} />);
+  const onNew = jest.fn();
+  mount(<LiveSessionRail sessions={[host]} activeHostId={host.hostId} onSelect={onSelect} onClose={jest.fn()} onNew={onNew} />);
   const all = button('Show All hosts, Idle');
-  expect(all.props.onLongPress).toBeUndefined();
-  expect(all.props.accessibilityActions).toBeUndefined();
+  expect(hasButton('New host session')).toBe(false);
   act(() => { all.props.onPress(); });
   expect(onSelect).toHaveBeenCalledWith(null);
+  longPress('Show All hosts, Idle');
+  expect(hasButton('Disconnect Dev')).toBe(false);
+  await selectAction('New host session');
+  expect(onNew).toHaveBeenCalledTimes(1);
 });
 
 test('a screen reader can disconnect a host without a long press', () => {
@@ -138,17 +142,21 @@ test.each([{ readOnly: true, busy: false }, { readOnly: false, busy: true }])('s
   expect(onSelect).toHaveBeenCalledWith(workspace.workspace_id);
 });
 
-test('All Spaces offers no menu or destructive accessibility actions', () => {
-  mount(<WorkspaceRail workspaces={[workspace, { ...workspace, workspace_id: 'space-2' }]} selectedWorkspaceId={null} busy={false} onSelect={jest.fn()} onNew={jest.fn()} onRename={jest.fn()} onClose={jest.fn()} />);
-  const all = button('All spaces, idle');
-  expect(all.props.onLongPress).toBeUndefined();
-  expect(all.props.accessibilityActions).toBeUndefined();
+test('All Spaces offers a new space without destructive actions', async () => {
+  const onNew = jest.fn();
+  mount(<WorkspaceRail workspaces={[workspace, { ...workspace, workspace_id: 'space-2' }]} selectedWorkspaceId={null} busy={false} onSelect={jest.fn()} onNew={onNew} onRename={jest.fn()} onClose={jest.fn()} />);
+  expect(hasButton('New space')).toBe(false);
+  longPress('All spaces, idle');
+  expect(hasButton('Rename space')).toBe(false);
+  expect(hasButton('Close Project space')).toBe(false);
+  await selectAction('New space');
+  expect(onNew).toHaveBeenCalledTimes(1);
 });
 
 function terminalProps() {
   return {
     tabs, selectedTabId: null, readOnly: false, busy: false,
-    onSelect: jest.fn(), onRenameTab: jest.fn(), onRenameSshTab: jest.fn(),
+    onSelect: jest.fn(), onNew: jest.fn(), onRenameTab: jest.fn(), onRenameSshTab: jest.fn(),
     onCloseTab: jest.fn().mockResolvedValue(undefined), onCloseTerminal: jest.fn(),
   };
 }
@@ -205,11 +213,16 @@ test('screen-reader actions rename and close the correct terminal tab', () => {
   expect(props.onSelect).not.toHaveBeenCalled();
 });
 
-test('a screen reader can open the same action menu without a long press', () => {
-  mount(<TerminalTabRail {...terminalProps()} />);
+test('a screen reader can open the same action menu and create a tab without a long press', async () => {
+  const props = terminalProps();
+  mount(<TerminalTabRail {...props} />);
+  expect(hasButton('New tab')).toBe(false);
   accessibilityAction('Open Shell tab', 'rail-menu');
   expect(hasButton('Rename tab')).toBe(true);
   expect(hasButton('Close Shell tab')).toBe(true);
+  await selectAction('New tab');
+  expect(props.onNew).toHaveBeenCalledTimes(1);
+  expect(props.onSelect).not.toHaveBeenCalled();
 });
 
 test('Cancel and Android Back dismiss the menu without taking action; a later tap selects normally', () => {
