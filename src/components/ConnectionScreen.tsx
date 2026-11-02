@@ -456,7 +456,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
             {herdrEnabled ? <View className="mt-4">
               <Text className="mb-2 text-xs text-muted-foreground">{t('connection.herdrBackend')}</Text>
               <View className="mb-3 flex-row gap-2">
-                {(['auto','core','legacy'] as const).map(backend => (
+                {(['legacy','core'] as const).map(backend => (
                   <Pressable key={backend} accessibilityRole="radio" accessibilityState={{checked:(profile.herdrBackend ?? 'legacy')===backend}}
                     onPress={() => dispatchCredentials({type:'profile-changed',changes:{herdrBackend:backend,herdrCommand:['herdr','hc',''].includes(profile.herdrCommand) ? backend==='core' ? 'hc' : 'herdr' : profile.herdrCommand}})}
                     className={cn('flex-1 rounded-lg border px-2 py-2',(profile.herdrBackend ?? 'legacy')===backend ? 'border-primary bg-primary/10' : 'border-border')}>
@@ -465,7 +465,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
                 ))}
               </View>
               <View className="flex-row gap-2.5"><Field label={t('connection.command')} value={profile.herdrCommand} onChangeText={value => update('herdrCommand', value)} className="flex-1" autoCapitalize="none" /><Field label={t('connection.session')} value={profile.sessionName} placeholder="default" onChangeText={value => update('sessionName', value)} className="w-[118px]" autoCapitalize="none" /></View>
-              <Field className="mt-2.5" label={t('connection.socket')} value={profile.herdrSocketPath || ''} placeholder={t('connection.socketAuto')} onChangeText={value => update('herdrSocketPath', value)} autoCapitalize="none" />
+              <Field className="mt-2.5" label={t('connection.socket')} value={profile.herdrSocketPath || ''} placeholder="auto (~/.config/herdr/herdr.sock)" onChangeText={value => update('herdrSocketPath', value)} autoCapitalize="none" />
             </View> : null}
           </View>
           {savedHost && herdrEnabled ? (
