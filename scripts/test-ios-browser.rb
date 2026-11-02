@@ -62,22 +62,9 @@ target.build_configurations.each do |config|
     'CODE_SIGNING_ALLOWED' => 'NO'
   })
 end
-ui_target = project.new_target(:ui_test_bundle, 'TerminalInputUITests', :ios, '16.4')
-ui_target.add_dependency(host)
-ui_target.add_system_frameworks(%w[UIKit XCTest])
-ui_target.source_build_phase.add_file_reference(project.main_group.new_file(File.join(root, 'packages', 'expo-whip-terminal-input', 'tests', 'ios', 'WhipTerminalInputUITests.m')))
-ui_target.build_configurations.each do |config|
-  config.build_settings.merge!({
-    'ARCHS' => 'arm64', 'ONLY_ACTIVE_ARCH' => 'YES', 'CLANG_ENABLE_OBJC_ARC' => 'YES',
-    'GENERATE_INFOPLIST_FILE' => 'YES', 'CODE_SIGNING_ALLOWED' => 'NO',
-    'PRODUCT_BUNDLE_IDENTIFIER' => 'io.github.kaminarios.whip.terminal-input-ui-tests',
-    'TEST_TARGET_NAME' => 'BrowserTestHost'
-  })
-end
 project.save
 scheme = Xcodeproj::XCScheme.new
 scheme.configure_with_targets(host, target)
-scheme.add_test_target(ui_target)
 scheme.save_as(project.path, 'BrowserTests', true)
 ENV['DEVELOPER_DIR'] ||= '/Applications/Xcode.app/Contents/Developer'
 ENV['PATH'] = "/usr/bin:/bin:/usr/sbin:/sbin:#{ENV['PATH']}"

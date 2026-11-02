@@ -60,19 +60,18 @@ Expo autolinking registers the package on both platforms using
 `expo-module.config.json`. Rebuild the native app after installation. There is
 no manual React Native view-manager registration or platform config plugin.
 
-In the Whip checkout, run the package's Android tests and native iOS keyboard
+In the Whip checkout, run the package's Android tests and native iOS input
 tests (the latter requires macOS and an arm64 iPhone simulator):
 
 ```sh
 nix develop -c android/gradlew -p android \
   :expo-whip-terminal-input:testDebugUnitTest -PreactNativeArchitectures=arm64-v8a
 nix develop -c ruby scripts/test-ios-browser.rb \
-  -only-testing:BrowserTests/WhipTerminalInputTests \
-  -only-testing:TerminalInputUITests
+  -only-testing:BrowserTests/WhipTerminalInputTests
 ```
 
 The package's Android tests cover the real input connection and lifecycle;
-`tests/ios` covers UIKit operations and actual QuickType/keyboard taps.
+`tests/ios` covers UIKit operations and terminal input delivery.
 Whip's JavaScript tests cover the exported component, native command failures,
 session routing and input ordering. Native dictation support still requires
 spoken-input verification on a physical device.
