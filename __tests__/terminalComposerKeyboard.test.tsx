@@ -1630,3 +1630,17 @@ test.each([false, true])('Chat focus changes preserve the terminal keyboard pref
   expect(terminalHandle.focus).not.toHaveBeenCalled();
   expect(mockComposerHandle.focus).not.toHaveBeenCalled();
 });
+
+test.each([false, true])('GitHub discovery status stays actionable and hides with the keyboard (loading=%s)', loading => {
+  const onRequestGithub = jest.fn();
+  const label = 'GitHub discovery status';
+  mount({ onRequestGithub, githubStatusLabel: label, githubDiscovering: loading });
+  const statusButton = () => renderer.root.findAll(node => String(node.type) === 'Button' && node.props.accessibilityLabel === label);
+  expect(statusButton()).toHaveLength(1);
+  act(() => { statusButton()[0].props.onPress(); });
+  expect(onRequestGithub).toHaveBeenCalledTimes(1);
+  emitKeyboard(true);
+  expect(statusButton()).toHaveLength(0);
+  emitKeyboard(false);
+  expect(statusButton()).toHaveLength(1);
+});

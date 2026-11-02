@@ -1,4 +1,5 @@
 export const nativeGithubEnums = {
+  GithubDiscoveryStatus: { Found: 0, NotGithub: 1, MissingGh: 2, InvalidPath: 3 },
   GithubSection: { Issues: 0, PullRequests: 1, Actions: 2, Releases: 3, Commits: 4 },
   GithubCommentFormat: {
     Bold: 0,
@@ -36,5 +37,5 @@ export const nativeGithubEnums = {
   },
 } satisfies Pick<
   typeof import('../packages/react-native-whip-ssh/src/generated-entry'),
-  'GithubSection' | 'GithubCommentFormat' | 'GithubListState' | 'GithubResource' | 'GithubMutation'
+  'GithubDiscoveryStatus' | 'GithubSection' | 'GithubCommentFormat' | 'GithubListState' | 'GithubResource' | 'GithubMutation'
 >;

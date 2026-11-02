@@ -15,6 +15,7 @@ use crate::github::resources::{
     parse_resource, positive_id, resource_endpoint, validate_merge_response,
 };
 use crate::github::{
+    DISCOVERY_INVALID_PATH_EXIT, DISCOVERY_MISSING_GH_EXIT, GithubDiscovery, GithubDiscoveryStatus,
     GithubEntry, GithubFilesPage, GithubListState, GithubMutation, GithubPage, GithubRepository,
     GithubRepositoryCounts, GithubRepositoryDetails, GithubResource, GithubSection, api_script,
     comment_request, comments_endpoint, discovery_script, parse_comment, parse_comments,
@@ -55,8 +56,12 @@ async fn execute_github_read(
                 code: SshErrorCode::ChannelUnavailable | SshErrorCode::ConnectionTimeout, ..
             });
             let retry = transient && ssh.is_alive() && attempt < GITHUB_READ_ATTEMPTS;
+            let code = match &error {
+                HostRuntimeError::SshConnectionFailure { code, .. } => Some(code),
+                _ => None,
+            };
             log_lifecycle(format_args!(
-                "GitHub SSH read: runtime={} generation={generation} operation={operation} attempt={attempt}/{GITHUB_READ_ATTEMPTS} transport_alive={} retry={retry} error={error:?}",
+                "GitHub SSH read: runtime={} generation={generation} operation={operation} attempt={attempt}/{GITHUB_READ_ATTEMPTS} transport_alive={} retry={retry} code={code:?}",
                 inner.id, ssh.is_alive(),
             ));
             if !retry {
@@ -70,7 +75,7 @@ async fn execute_github_read(
     if let Err(error) = validate_generation(inner, generation) {
         let observed_generation = inner.state.lock().generation;
         log_lifecycle(format_args!(
-            "GitHub SSH read: runtime={} generation={generation} current_generation={observed_generation} operation={operation} error={error:?}",
+            "GitHub SSH read: runtime={} generation={generation} current_generation={observed_generation} operation={operation} stale=true",
             inner.id,
         ));
         return Err(error);
@@ -92,27 +97,49 @@ impl HostRuntime {
     pub async fn discover_github_repository(
         &self,
         path: String,
-    ) -> Result<Option<GithubRepository>, HostRuntimeError> {
+    ) -> Result<GithubDiscovery, HostRuntimeError> {
         let inner = self.inner.clone();
         let generation = current_generation(&inner)?;
         crate::runtime()
             .map_err(HostRuntimeError::SshTransportFailure)?
             .spawn(async move {
-                let directory = resolved_remote_path(&inner, Some(&path)).await?;
+                let directory = match resolved_remote_path(&inner, Some(&path)).await {
+                    Ok(directory) => directory,
+                    Err(HostRuntimeError::RemoteFileFailure(_)) => {
+                        return Ok(GithubDiscovery {
+                            status: GithubDiscoveryStatus::InvalidPath,
+                            repository: None,
+                        });
+                    }
+                    Err(error) => return Err(error),
+                };
                 validate_generation(&inner, generation)?;
                 let command = login_shell_command(&discovery_script(&directory));
                 let output = execute_github_read(&inner, generation, "discovery", &command).await?;
                 validate_generation(&inner, generation)?;
-                if output.exit_status != Some(0) || output.stdout_truncated {
-                    return Err(HostRuntimeError::GitFailure(command_failure(
-                        "GitHub discovery",
-                        &output,
-                    )));
-                }
-                Ok(parse_discovery(
-                    directory,
-                    &String::from_utf8_lossy(&output.stdout),
-                ))
+                let status = match output.exit_status {
+                    Some(DISCOVERY_MISSING_GH_EXIT) => GithubDiscoveryStatus::MissingGh,
+                    Some(DISCOVERY_INVALID_PATH_EXIT) => GithubDiscoveryStatus::InvalidPath,
+                    Some(0) if !output.stdout_truncated => GithubDiscoveryStatus::NotGithub,
+                    _ => {
+                        return Err(HostRuntimeError::GitFailure(
+                            "GitHub discovery probe failed".to_owned(),
+                        ));
+                    }
+                };
+                let repository = if status == GithubDiscoveryStatus::NotGithub {
+                    parse_discovery(directory, &String::from_utf8_lossy(&output.stdout))
+                } else {
+                    None
+                };
+                Ok(GithubDiscovery {
+                    status: if repository.is_some() {
+                        GithubDiscoveryStatus::Found
+                    } else {
+                        status
+                    },
+                    repository,
+                })
             })
             .await
             .map_err(|error| {

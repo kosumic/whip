@@ -41,6 +41,7 @@ import {
   HerdrTerminalControlEvent_Tags,
   HostConnectionState,
   HostAuthMode,
+  GithubDiscoveryStatus,
   GithubSection,
   GithubCommentFormat,
   GithubListState,
@@ -694,6 +695,16 @@ export type RuntimeRemoteDirectoryListing = {
 
 export type RuntimeGitRepository = { root: string; hasHead: boolean };
 export type RuntimeGithubRepository = GithubRepository;
+export type RuntimeGithubDiscovery = {
+  status: 'found' | 'not-github' | 'missing-gh' | 'invalid-path';
+  repository: RuntimeGithubRepository | null;
+};
+const githubDiscoveryStatuses = {
+  [GithubDiscoveryStatus.Found]: 'found',
+  [GithubDiscoveryStatus.NotGithub]: 'not-github',
+  [GithubDiscoveryStatus.MissingGh]: 'missing-gh',
+  [GithubDiscoveryStatus.InvalidPath]: 'invalid-path',
+} as const;
 export type RuntimeGithubRepositoryCounts = GithubRepositoryCounts;
 export type RuntimeGithubRepositoryDetails = GithubRepositoryDetails;
 export type RuntimeGithubPage = GithubPage;
@@ -2714,9 +2725,14 @@ const herdrTerminalEventSink: HerdrTerminalEventSink = {
   },
 };
 
+const shellDirectoryListeners = new Map<string, Set<() => void>>();
 const hostRuntimeEventSink = {
   event(event: HostRuntimeEvent): void {
     const { tag, inner } = event;
+    if (tag === HostRuntimeEvent_Tags.SshShellDirectoryChanged) {
+      shellDirectoryListeners.get(inner.runtimeId)?.forEach(listener => listener());
+      return;
+    }
     if (tag === HostRuntimeEvent_Tags.SshShellData) {
       runtimeSshShellHandlers
         .get(inner.runtimeId)
@@ -3690,8 +3706,26 @@ export class NativeHostRuntime {
     return (await this.runtime.discoverGitRepository(path)) ?? null;
   }
 
-  async discoverGithubRepository(path: string): Promise<RuntimeGithubRepository | null> {
-    return (await this.githubOperation('discoverGithubRepository', () => this.runtime.discoverGithubRepository(path))) ?? null;
+  async discoverGithubRepository(path: string): Promise<RuntimeGithubDiscovery> {
+    const result = await this.githubOperation('discoverGithubRepository', () => this.runtime.discoverGithubRepository(path));
+    return { status: githubDiscoveryStatuses[result.status], repository: result.repository ?? null };
+  }
+
+  sshShellDirectory(terminalId: string): string | undefined {
+    return this.runtime.sshShellDirectory(terminalId);
+  }
+
+  subscribeSshShellDirectory(listener: () => void): () => void {
+    let listeners = shellDirectoryListeners.get(this.runtimeId);
+    if (!listeners) {
+      listeners = new Set();
+      shellDirectoryListeners.set(this.runtimeId, listeners);
+    }
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+      if (!listeners.size) shellDirectoryListeners.delete(this.runtimeId);
+    };
   }
 
   githubRepositoryDetails(repository: RuntimeGithubRepository): Promise<RuntimeGithubRepositoryDetails> {

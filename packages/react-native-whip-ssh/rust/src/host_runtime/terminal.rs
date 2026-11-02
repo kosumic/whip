@@ -536,6 +536,7 @@ pub(super) fn apply_ssh_shell_close(
     if shell.operation_epoch != operation_epoch {
         return SshShellCloseDisposition::Ignored;
     }
+    shell.directory = super::shell_directory::ShellDirectory::default();
     shell.dispatched_geometry = None;
     shell.retry_running = false;
     if transport_lost && shell.desired_open {
@@ -584,6 +585,21 @@ pub(super) async fn open_ssh_shell_inner(
         RuntimeDiagnosticOperation::TerminalAttach
     };
     let ssh = current_ssh(&inner)?;
+    {
+        let mut state = inner.state.lock();
+        if !ssh_shell_open_is_current(&state, &terminal_id, epoch, generation, operation_epoch) {
+            return Err(HostRuntimeError::StaleOperation(
+                "SSH shell directory belongs to an old connection".into(),
+            ));
+        }
+        if let Some(shell) = state.ssh_shells.get_mut(&terminal_id) {
+            shell.directory = super::shell_directory::ShellDirectory::default();
+        }
+    }
+    emit(HostRuntimeEvent::SshShellDirectoryChanged {
+        runtime_id: inner.id.clone(),
+        terminal_id: terminal_id.clone(),
+    });
     let runtime_id = inner.id.clone();
     let data_terminal_id = terminal_id.clone();
     let data_inner = Arc::downgrade(&inner);
@@ -593,9 +609,9 @@ pub(super) async fn open_ssh_shell_inner(
         let Some(inner) = data_inner.upgrade() else {
             return;
         };
-        let current = {
-            let state = inner.state.lock();
-            state.epoch == epoch
+        let (current, directory_changed) = {
+            let mut state = inner.state.lock();
+            let current = state.epoch == epoch
                 && state.generation == generation
                 && state.connection == HostConnectionState::Connected
                 && state
@@ -610,9 +626,22 @@ pub(super) async fn open_ssh_shell_inner(
                                     | HostTerminalState::Attached
                                     | HostTerminalState::Restoring
                             )
-                    })
+                    });
+            let changed = current
+                && state
+                    .ssh_shells
+                    .get_mut(&data_terminal_id)
+                    .is_some_and(|shell| shell.directory.observe(&bytes));
+            drop(state);
+            (current, changed)
         };
         if current {
+            if directory_changed {
+                emit(HostRuntimeEvent::SshShellDirectoryChanged {
+                    runtime_id: runtime_id.clone(),
+                    terminal_id: data_terminal_id.clone(),
+                });
+            }
             super::herdr_setup::observe_terminal_output(&inner, &data_terminal_id, &bytes);
             if crate::terminal_delivery::deliver_bytes(
                 &runtime_id,
@@ -701,6 +730,10 @@ pub(super) async fn open_ssh_shell_inner(
                 reconnect_attempt: 0,
                 retrying: false,
                 error: None,
+            });
+            emit(HostRuntimeEvent::SshShellDirectoryChanged {
+                runtime_id: inner.id.clone(),
+                terminal_id: terminal_id.clone(),
             });
             emit_diagnostic(&inner, operation, started_at, None, Some(terminal_id), None);
             inner.terminal_settled.notify_waiters();
@@ -1522,6 +1555,7 @@ impl HostRuntime {
                         .ssh_shells
                         .entry(terminal_id.clone())
                         .or_insert_with(|| SshShellRuntime {
+                            directory: super::shell_directory::ShellDirectory::default(),
                             desired_open: true,
                             state: HostTerminalState::Closed,
                             geometry: requested_geometry,
@@ -1592,6 +1626,18 @@ impl HostRuntime {
         Ok(())
     }
 
+    pub fn ssh_shell_directory(&self, terminal_id: String) -> Option<String> {
+        let state = self.inner.state.lock();
+        if state.connection != HostConnectionState::Connected {
+            return None;
+        }
+        state
+            .ssh_shells
+            .get(&terminal_id)
+            .filter(|shell| shell.desired_open && shell.state == HostTerminalState::Attached)
+            .and_then(|shell| shell.directory.path.clone())
+    }
+
     pub fn resize_ssh_shell(
         &self,
         terminal_id: String,
@@ -1609,6 +1655,7 @@ impl HostRuntime {
                 .ssh_shells
                 .entry(terminal_id.clone())
                 .or_insert_with(|| SshShellRuntime {
+                    directory: super::shell_directory::ShellDirectory::default(),
                     desired_open: false,
                     state: HostTerminalState::Closed,
                     geometry,
