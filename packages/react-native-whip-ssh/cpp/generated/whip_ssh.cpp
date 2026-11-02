@@ -939,6 +939,8 @@ void uniffi_whip_ssh_fn_free_automaticchatspeechqueue(
     /*handle*/ uint64_t handle, RustCallStatus *uniffi_out_err);
 /*handle*/ uint64_t uniffi_whip_ssh_fn_constructor_automaticchatspeechqueue_new(
     RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_method_automaticchatspeechqueue_dismiss_current(
+    /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
 RustBuffer uniffi_whip_ssh_fn_method_automaticchatspeechqueue_next(
     /*handle*/ uint64_t ptr, uint64_t now_ms, RustCallStatus *uniffi_out_err);
 void uniffi_whip_ssh_fn_method_automaticchatspeechqueue_remove(
@@ -2342,6 +2344,8 @@ uint16_t uniffi_whip_ssh_checksum_method_knownhostoperation_result();
 uint16_t uniffi_whip_ssh_checksum_method_knownhostrepository_begin();
 uint16_t uniffi_whip_ssh_checksum_method_knownhostrepository_close();
 uint16_t uniffi_whip_ssh_checksum_method_knownhostrepository_view();
+uint16_t
+uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_dismiss_current();
 uint16_t uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_next();
 uint16_t uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_remove();
 uint16_t uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_reset();
@@ -20297,6 +20301,18 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_fn_constructor_automaticchatspeechqueue_new(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_dismiss_"
+        "current"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                    "automaticchatspeechqueue_dismiss_current"),
+      1,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_dismiss_current(
+                rt, thisVal, args, count);
+      });
   props["ubrn_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_next"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -28519,6 +28535,18 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_checksum_method_knownhostrepository_view(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_dismiss_"
+        "current"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "automaticchatspeechqueue_dismiss_current"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_dismiss_current(
+                rt, thisVal, args, count);
+      });
   props["ubrn_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_next"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -35708,6 +35736,21 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_fn_constructor_automaticchatspeechqueue_new(
 
   return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
                                                          value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_dismiss_current(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_method_automaticchatspeechqueue_dismiss_current(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
 }
 jsi::Value
 NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_next(
@@ -44224,6 +44267,15 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_knownhostrepository_view(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
   auto value = uniffi_whip_ssh_checksum_method_knownhostrepository_view();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_dismiss_current(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_dismiss_current();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }

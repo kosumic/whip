@@ -6,7 +6,7 @@ const mockReadResponse = jest.fn();
 const mockAvailable = jest.fn();
 const mockNext = jest.fn();
 const mockDestroy = jest.fn();
-const mockAutomatic = { update: jest.fn(), next: jest.fn(), remove: jest.fn(), reset: jest.fn(), uniffiDestroy: jest.fn() };
+const mockAutomatic = { update: jest.fn(), next: jest.fn(), dismissCurrent: jest.fn(), remove: jest.fn(), reset: jest.fn(), uniffiDestroy: jest.fn() };
 jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => {
   function part(tag: string) {
     return function (this: { tag: string; inner: unknown }, inner: unknown) {
@@ -38,6 +38,8 @@ test('global speech forwards transcript identity, tab name, readiness, and time 
     mockAutomatic.next.mockReturnValue({ key: 'transcript', text: 'Debug tab: Hello' });
     expect(queue.next()).toEqual({ key: 'transcript', text: 'Debug tab: Hello' });
     expect(mockAutomatic.next).toHaveBeenCalledWith(123n);
+    queue.dismissCurrent();
+    expect(mockAutomatic.dismissCurrent).toHaveBeenCalledTimes(1);
     queue.remove('transcript');
     expect(mockAutomatic.remove).toHaveBeenCalledWith('transcript');
     queue.reset();

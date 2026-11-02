@@ -60,7 +60,7 @@ object SpeechPlayback : SensorEventListener {
     .setUsage(AudioAttributes.USAGE_MEDIA)
     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
     .build()
-  var onChatStopped: ((String, String?) -> Unit)? = null
+  var onChatStopped: ((String, String, String?) -> Unit)? = null
   val active: Boolean get() = session != null
   val label: String? get() = session?.label
   private val timeout = Runnable { stop(error = "Speech engine timed out") }
@@ -75,8 +75,8 @@ object SpeechPlayback : SensorEventListener {
     val accepted = begin(context, SpeechPolicy.CHAT, owner, "", name, {
       initialized = true
       promise.resolve(null)
-    }) { _, error ->
-      onChatStopped?.invoke(owner, error)
+    }) { reason, error ->
+      onChatStopped?.invoke(owner, reason, error)
       if (!initialized) promise.reject(ERROR_CODE, error ?: "Speech stopped before initialization")
     }
     if (!accepted) promise.reject(ERROR_CODE, "Could not start chat speech")

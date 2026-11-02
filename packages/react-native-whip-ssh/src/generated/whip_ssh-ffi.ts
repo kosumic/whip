@@ -1302,6 +1302,10 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_fn_constructor_automaticchatspeechqueue_new(
     uniffi_out_err: UniffiRustCallStatus,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_dismiss_current(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_next(
     uniffiSelf: bigint,
     nowMs: bigint,
@@ -3057,6 +3061,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_appcore_update_terminal_lifecycle(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_view(): number;
   ubrn_uniffi_whip_ssh_checksum_constructor_automaticchatspeechqueue_new(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_dismiss_current(): number;
   ubrn_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_next(): number;
   ubrn_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_remove(): number;
   ubrn_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_reset(): number;

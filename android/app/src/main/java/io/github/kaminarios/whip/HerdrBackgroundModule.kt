@@ -54,9 +54,10 @@ class HerdrBackgroundModule(
   override fun getName(): String = "HerdrBackground"
 
   init {
-    SpeechPlayback.onChatStopped = { stoppedToken, error ->
+    SpeechPlayback.onChatStopped = { stoppedToken, reason, error ->
       val event = Arguments.createMap().apply {
         putString("token", stoppedToken)
+        putString("reason", reason)
         if (error != null) putString("error", error)
       }
       context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
