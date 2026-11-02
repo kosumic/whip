@@ -395,6 +395,46 @@ function toolTurn(part: TranscriptPart): TranscriptTurn {
   };
 }
 
+test('tool file changes show a file list first and expand only the selected diffs', () => {
+  const file = { file: 'src/demo.ts', patch: '@@ -1 +1 @@\n-old\n+new', additions: 1, deletions: 1 };
+  const otherFile = { ...file, file: 'src/other.ts' };
+  const part = SHELL_TURN.assistants[0].parts[0] as TranscriptToolPart;
+  const turn = toolTurn({ ...part, tool: 'patch', state: { ...part.state, files: [file, otherFile], output: undefined } });
+  const state = chatState([turn]);
+  state.transcript.info = { id: state.sessionId, directory: '/work/project' };
+  let renderer!: ReactTestRenderer;
+  let rows!: ReactTestRenderer;
+  try {
+    act(() => { renderer = create(chatView(state)); });
+    act(() => { rows = create(renderedBlocks(renderer)); });
+    const toggle = () => rows.root.find(isToolToggle);
+    const diffs = () => rows.root.findAllByType(ChatFileDiff);
+
+    expect(diffs()).toHaveLength(0);
+    act(() => { toggle().props.onPress(); });
+    act(() => { rows.update(renderedBlocks(renderer)); });
+    expect(diffs().map(node => node.props.file)).toEqual([file, otherFile]);
+    expect(diffs().map(node => node.props.directory)).toEqual(['/work/project', '/work/project']);
+    expect(diffs().map(node => node.props.expanded)).toEqual([false, false]);
+
+    act(() => { diffs()[1].props.onToggle(); });
+    expect(diffs().map(node => node.props.expanded)).toEqual([false, true]);
+    act(() => { diffs()[0].props.onToggle(); });
+    expect(diffs().map(node => node.props.expanded)).toEqual([true, true]);
+    act(() => { diffs()[1].props.onToggle(); });
+    expect(diffs().map(node => node.props.expanded)).toEqual([true, false]);
+
+    act(() => { toggle().props.onPress(); });
+    act(() => { rows.update(renderedBlocks(renderer)); });
+    expect(diffs()).toHaveLength(0);
+    act(() => { toggle().props.onPress(); });
+    act(() => { rows.update(renderedBlocks(renderer)); });
+    expect(diffs().map(node => node.props.expanded)).toEqual([true, false]);
+  } finally {
+    act(() => { rows?.unmount(); renderer?.unmount(); });
+  }
+});
+
 test('changed-files summaries reveal a file list with independently expandable diffs', () => {
   const file = { file: 'src/demo.ts', patch: '@@ -1 +1 @@\n-old\n+new', additions: 1, deletions: 1 };
   const otherFile = { ...file, file: 'src/other.ts' };

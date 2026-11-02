@@ -1,3 +1,4 @@
+import { setSshWorkflowLocked } from 'react-native-whip-ssh/src/sshWorkflows';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, AppState } from 'react-native';
 
@@ -47,6 +48,7 @@ export function useApplicationSecurity(options: ApplicationSecurityOptions) {
     setAuthenticating(true);
     try {
       await authenticateAppAccess();
+      setSshWorkflowLocked(false);
       setLocked(false);
     } catch (error) {
       // Cancellation and failed checks leave the app locked for an explicit retry.
@@ -97,7 +99,7 @@ export function useApplicationSecurity(options: ApplicationSecurityOptions) {
     async (enabled: boolean) => {
       await updateSecuritySetting(() => {
         onBiometricOnResumeChange(enabled);
-        if (!enabled) setLocked(false);
+        if (!enabled) { setSshWorkflowLocked(false); setLocked(false); }
       });
     },
     [onBiometricOnResumeChange, updateSecuritySetting],
@@ -114,8 +116,10 @@ export function useApplicationSecurity(options: ApplicationSecurityOptions) {
       );
       previousState = state;
       if (action === 'lock') {
+        setSshWorkflowLocked(true);
         setLocked(true);
       } else if (action === 'authenticate') {
+        setSshWorkflowLocked(true);
         setLocked(true);
         ignoreExpectedCancellation(authenticateLockedApp());
       }

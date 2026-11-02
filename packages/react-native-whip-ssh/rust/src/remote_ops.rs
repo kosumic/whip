@@ -54,45 +54,6 @@ pub struct TransferProgress {
     pub state: TransferState,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, uniffi::Enum)]
-pub enum DownloadPhase {
-    Connecting,
-    WaitingForConnection,
-    Metadata,
-    RemoteRead,
-    LocalWrite,
-    Verifying,
-    Publishing,
-    Completed,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, uniffi::Enum)]
-pub enum DownloadErrorCategory {
-    Cancelled,
-    Connection,
-    Timeout,
-    RemoteRead,
-    RemoteMetadata,
-    PermissionDenied,
-    NotFound,
-    LocalWrite,
-    NoSpace,
-    SourceChanged,
-    Incomplete,
-    Publish,
-}
-/// Path-free observations: never include remote/local names or server error text.
-#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
-pub struct DownloadDiagnostic {
-    pub transfer_id: String,
-    pub phase: DownloadPhase,
-    pub attempt: u32,
-    pub bytes_transferred: u64,
-    pub total_bytes: Option<u64>,
-    pub source_modified_at: Option<u64>,
-    pub ssh_generation: u64,
-    pub error_category: Option<DownloadErrorCategory>,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct TransferResult {
     pub transfer_id: String,
@@ -312,8 +273,8 @@ pub(crate) struct ManagedPreview {
 
 #[derive(Debug)]
 pub(crate) struct TransferSlot {
-    pub recover_download: bool,
     pub generation: u64,
+    pub resumable_download: bool,
     pub cancel: watch::Sender<bool>,
     pub progress: TransferProgress,
     pub result: Option<Result<TransferResult, String>>,
@@ -339,6 +300,21 @@ impl RemoteOperationManager {
         &self,
         generation: u64,
     ) -> Result<(String, watch::Receiver<bool>, Arc<Notify>), String> {
+        self.begin_transfer_with_recovery(generation, false)
+    }
+
+    pub fn begin_resumable_download(
+        &self,
+        generation: u64,
+    ) -> Result<(String, watch::Receiver<bool>, Arc<Notify>), String> {
+        self.begin_transfer_with_recovery(generation, true)
+    }
+
+    fn begin_transfer_with_recovery(
+        &self,
+        generation: u64,
+        resumable_download: bool,
+    ) -> Result<(String, watch::Receiver<bool>, Arc<Notify>), String> {
         let mut transfers = self.transfers.lock();
         let active = transfers
             .values()
@@ -360,8 +336,8 @@ impl RemoteOperationManager {
         transfers.insert(
             transfer_id.clone(),
             TransferSlot {
-                recover_download: false,
                 generation,
+                resumable_download,
                 cancel,
                 progress: TransferProgress {
                     transfer_id: transfer_id.clone(),
@@ -395,17 +371,17 @@ impl RemoteOperationManager {
     }
 
     pub fn cancel_generation(&self, generation: u64, reason: &str) {
-        self.invalidate_generation(generation, reason, false);
+        self.interrupt_generation(generation, reason, false);
     }
-    pub fn invalidate_generation(&self, generation: u64, reason: &str, preserve_downloads: bool) {
+
+    pub fn interrupt_generation(&self, generation: u64, reason: &str, reconnecting: bool) {
         let mut transfers = self.transfers.lock();
         for slot in transfers.values_mut().filter(|slot| {
-            if slot.recover_download {
-                !preserve_downloads
-            } else {
-                slot.generation == generation
-            }
+            slot.generation == generation || (!reconnecting && slot.resumable_download)
         }) {
+            if reconnecting && slot.resumable_download {
+                continue;
+            }
             if matches!(
                 slot.progress.state,
                 TransferState::Pending | TransferState::Running

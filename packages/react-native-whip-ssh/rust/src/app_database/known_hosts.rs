@@ -127,76 +127,7 @@ impl KnownHostRepository {
 
     /// Reserve native FIFO order before UniFFI async polling can reorder calls.
     pub fn begin(self: &Arc<Self>, command: KnownHostCommand) -> Arc<KnownHostOperation> {
-        let (sender, receiver) = oneshot::channel();
-        let mut state = self.core.state.lock();
-        let loading = matches!(command, KnownHostCommand::Load);
-        let admitted = self.check_owner(&state).and_then(|()| {
-            if loading {
-                state.generation = state.generation.saturating_add(1);
-                state.revision = state.revision.saturating_add(1);
-                state.status = KnownHostRepositoryStatus::Loading;
-                Ok(())
-            } else if state.status == KnownHostRepositoryStatus::Loaded {
-                Ok(())
-            } else {
-                Err(KnownHostRepositoryError::NotLoaded)
-            }
-        });
-        let request = Arc::new(Request {
-            repository: self.clone(),
-            generation: state.generation,
-            phase: AtomicU8::new(PENDING),
-        });
-        let operation = Arc::new(KnownHostOperation {
-            request: request.clone(),
-            response: Mutex::new(Some(receiver)),
-            unavailable: if loading {
-                KnownHostRepositoryError::StorageRead
-            } else {
-                KnownHostRepositoryError::StorageWrite
-            },
-        });
-        if let Err(error) = admitted {
-            request.phase.store(FINISHED, Ordering::Release);
-            let _ = sender.send(Err(error));
-            return operation;
-        }
-        // Hold only the admission lock while sending. Disk I/O runs exclusively
-        // on the database worker and never holds this UI-facing state mutex.
-        let db = self.database.clone().map_or_else(database, Ok);
-        let submitted = db.and_then(|db| {
-            db.sender
-                .send(Box::new(move |worker| {
-                    let result = request.check().and_then(|()| match worker.store() {
-                        Ok(store) => request.run(store, command),
-                        Err(_) if loading => {
-                            request.fail_load(KnownHostRepositoryError::StorageRead)
-                        }
-                        Err(_) => Err(KnownHostRepositoryError::StorageWrite),
-                    });
-                    request.phase.store(FINISHED, Ordering::Release);
-                    let _ = sender.send(result);
-                }))
-                .map_err(|_| {
-                    super::AppStorageError::Unavailable("application storage worker stopped".into())
-                })
-        });
-        drop(state);
-        if submitted.is_err() {
-            // Dropping the unsent job closes the channel. result() translates
-            // that failure, and loading remains closed to new trust mutations.
-            let mut state = self.core.state.lock();
-            if self.check_owner(&state).is_ok() && state.generation == operation.request.generation
-            {
-                if loading {
-                    state.status = KnownHostRepositoryStatus::ReadFailed;
-                    state.revision = state.revision.saturating_add(1);
-                }
-                drop(state);
-                operation.request.phase.store(FINISHED, Ordering::Release);
-            }
-        }
-        operation
+        self.begin_with_fence(command, None)
     }
 
     pub fn view(&self) -> Result<KnownHostRepositoryView> {
@@ -250,7 +181,13 @@ pub(crate) fn detach() {
     }
 }
 
+struct WorkflowTrustFence {
+    revision: u64,
+    generation: u64,
+    control: Arc<crate::ssh_workflows::Control>,
+}
 struct Request {
+    fence: Option<WorkflowTrustFence>,
     repository: Arc<KnownHostRepository>,
     generation: u64,
     phase: AtomicU8,
@@ -259,6 +196,13 @@ struct Request {
 impl Request {
     fn check_locked(&self, state: &State) -> Result<()> {
         self.repository.check_owner(state)?;
+        if self.fence.as_ref().is_some_and(|fence| {
+            state.revision != fence.revision
+                || state.generation != fence.generation
+                || fence.control.check().is_err()
+        }) {
+            return Err(KnownHostRepositoryError::Cancelled);
+        }
         if state.generation != self.generation || self.phase.load(Ordering::Acquire) == CANCELLED {
             return Err(KnownHostRepositoryError::Cancelled);
         }
@@ -426,3 +370,110 @@ impl KnownHostOperation {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+impl KnownHostRepository {
+    pub(crate) fn workflow_test_repository(path: std::path::PathBuf) -> Arc<Self> {
+        let database = AppDatabase::open(path).unwrap();
+        crate::runtime()
+            .unwrap()
+            .block_on(database.request(|store| store.write(vec![], true)))
+            .unwrap();
+        Self::attach(Arc::new(Core::default()), Some(database))
+    }
+}
+
+impl KnownHostRepository {
+    pub(crate) fn begin_workflow_trust(
+        self: &Arc<Self>,
+        challenge: HostKeyChallenge,
+        expected: &KnownHostRepositoryView,
+        control: Arc<crate::ssh_workflows::Control>,
+    ) -> Arc<KnownHostOperation> {
+        self.begin_with_fence(
+            KnownHostCommand::Trust { challenge },
+            Some(WorkflowTrustFence {
+                revision: expected.revision,
+                generation: expected.generation,
+                control,
+            }),
+        )
+    }
+    fn begin_with_fence(
+        self: &Arc<Self>,
+        command: KnownHostCommand,
+        fence: Option<WorkflowTrustFence>,
+    ) -> Arc<KnownHostOperation> {
+        let (sender, receiver) = oneshot::channel();
+        let mut state = self.core.state.lock();
+        let loading = matches!(command, KnownHostCommand::Load);
+        let admitted = self.check_owner(&state).and_then(|()| {
+            if loading {
+                state.generation = state.generation.saturating_add(1);
+                state.revision = state.revision.saturating_add(1);
+                state.status = KnownHostRepositoryStatus::Loading;
+                Ok(())
+            } else if state.status == KnownHostRepositoryStatus::Loaded {
+                Ok(())
+            } else {
+                Err(KnownHostRepositoryError::NotLoaded)
+            }
+        });
+        let request = Arc::new(Request {
+            repository: self.clone(),
+            fence,
+            generation: state.generation,
+            phase: AtomicU8::new(PENDING),
+        });
+        let operation = Arc::new(KnownHostOperation {
+            request: request.clone(),
+            response: Mutex::new(Some(receiver)),
+            unavailable: if loading {
+                KnownHostRepositoryError::StorageRead
+            } else {
+                KnownHostRepositoryError::StorageWrite
+            },
+        });
+        if let Err(error) = admitted {
+            request.phase.store(FINISHED, Ordering::Release);
+            let _ = sender.send(Err(error));
+            return operation;
+        }
+        // Hold only the admission lock while sending. Disk I/O runs exclusively
+        // on the database worker and never holds this UI-facing state mutex.
+        let db = self.database.clone().map_or_else(database, Ok);
+        let submitted = db.and_then(|db| {
+            db.sender
+                .send(Box::new(move |worker| {
+                    let result = request.check().and_then(|()| match worker.store() {
+                        Ok(store) => request.run(store, command),
+                        Err(_) if loading => {
+                            request.fail_load(KnownHostRepositoryError::StorageRead)
+                        }
+                        Err(_) => Err(KnownHostRepositoryError::StorageWrite),
+                    });
+                    request.phase.store(FINISHED, Ordering::Release);
+                    let _ = sender.send(result);
+                }))
+                .map_err(|_| {
+                    super::AppStorageError::Unavailable("application storage worker stopped".into())
+                })
+        });
+        drop(state);
+        if submitted.is_err() {
+            // Dropping the unsent job closes the channel. result() translates
+            // that failure, and loading remains closed to new trust mutations.
+            let mut state = self.core.state.lock();
+            if self.check_owner(&state).is_ok() && state.generation == operation.request.generation
+            {
+                if loading {
+                    state.status = KnownHostRepositoryStatus::ReadFailed;
+                    state.revision = state.revision.saturating_add(1);
+                }
+                drop(state);
+                operation.request.phase.store(FINISHED, Ordering::Release);
+            }
+        }
+        operation
+    }
+}

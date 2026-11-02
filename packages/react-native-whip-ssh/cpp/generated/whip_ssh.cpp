@@ -371,6 +371,24 @@ typedef void (*UniffiCallbackInterfaceWhipSshEventSinkMethod2)(
     uint64_t uniffi_handle, RustBuffer key, RustBuffer channel_id,
     RustBuffer bytes, void *uniffi_out_return,
     RustCallStatus *rust_call_status);
+typedef void (*UniffiCallbackInterfaceSshWorkflowPlatformMethod0)(
+    uint64_t uniffi_handle,
+    /*handle*/ uint64_t permit,
+    UniffiForeignFutureCompleteI8 uniffi_future_callback,
+    uint64_t uniffi_callback_data,
+    UniffiForeignFutureDroppedCallbackStruct *uniffi_out_dropped_callback);
+typedef void (*UniffiCallbackInterfaceSshWorkflowPlatformMethod1)(
+    uint64_t uniffi_handle,
+    /*handle*/ uint64_t permit, RustBuffer challenge,
+    UniffiForeignFutureCompleteI8 uniffi_future_callback,
+    uint64_t uniffi_callback_data,
+    UniffiForeignFutureDroppedCallbackStruct *uniffi_out_dropped_callback);
+typedef void (*UniffiCallbackInterfaceSshWorkflowPlatformMethod2)(
+    uint64_t uniffi_handle,
+    /*handle*/ uint64_t permit, RustBuffer challenge,
+    UniffiForeignFutureCompleteVoid uniffi_future_callback,
+    uint64_t uniffi_callback_data,
+    UniffiForeignFutureDroppedCallbackStruct *uniffi_out_dropped_callback);
 typedef void (*UniffiCallbackInterfaceTerminalDeliveryEventSinkMethod0)(
     uint64_t uniffi_handle, RustBuffer client_key, RustBuffer terminal_id,
     uint64_t generation, RustBuffer batch, void *uniffi_out_return,
@@ -497,6 +515,13 @@ typedef struct UniffiVTableCallbackInterfaceWhipSshEventSink {
   UniffiCallbackInterfaceWhipSshEventSinkMethod1 unix_socket_channel_data;
   UniffiCallbackInterfaceWhipSshEventSinkMethod2 exec_channel_data;
 } UniffiVTableCallbackInterfaceWhipSshEventSink;
+typedef struct UniffiVTableCallbackInterfaceSshWorkflowPlatform {
+  UniffiCallbackInterfaceFree uniffi_free;
+  UniffiCallbackInterfaceClone uniffi_clone;
+  UniffiCallbackInterfaceSshWorkflowPlatformMethod0 authenticate_private_key;
+  UniffiCallbackInterfaceSshWorkflowPlatformMethod1 confirm_host_key;
+  UniffiCallbackInterfaceSshWorkflowPlatformMethod2 host_key_trusted;
+} UniffiVTableCallbackInterfaceSshWorkflowPlatform;
 typedef struct UniffiVTableCallbackInterfaceTerminalDeliveryEventSink {
   UniffiCallbackInterfaceFree uniffi_free;
   UniffiCallbackInterfaceClone uniffi_clone;
@@ -1591,6 +1616,43 @@ void uniffi_whip_ssh_fn_method_whipssheventsink_unix_socket_channel_data(
 void uniffi_whip_ssh_fn_method_whipssheventsink_exec_channel_data(
     /*handle*/ uint64_t ptr, RustBuffer key, RustBuffer channel_id,
     RustBuffer bytes, RustCallStatus *uniffi_out_err);
+/*handle*/ uint64_t uniffi_whip_ssh_fn_clone_sshworkflow(
+    /*handle*/ uint64_t handle, RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_free_sshworkflow(
+    /*handle*/ uint64_t handle, RustCallStatus *uniffi_out_err);
+/*handle*/ uint64_t uniffi_whip_ssh_fn_constructor_sshworkflow_new(
+    RustBuffer request, RustBuffer hosts, int8_t biometric,
+    /*handle*/ uint64_t credentials,
+    /*handle*/ uint64_t known_hosts,
+    /*handle*/ uint64_t platform, RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_method_sshworkflow_cancel(
+    /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
+/*handle*/ uint64_t uniffi_whip_ssh_fn_method_sshworkflow_run(
+    /*handle*/ uint64_t ptr);
+/*handle*/ uint64_t uniffi_whip_ssh_fn_clone_sshworkflowpermit(
+    /*handle*/ uint64_t handle, RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_free_sshworkflowpermit(
+    /*handle*/ uint64_t handle, RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_method_sshworkflowpermit_check_active(
+    /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
+/*handle*/ uint64_t uniffi_whip_ssh_fn_clone_sshworkflowplatform(
+    /*handle*/ uint64_t handle, RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_free_sshworkflowplatform(
+    /*handle*/ uint64_t handle, RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_init_callback_vtable_sshworkflowplatform(
+    UniffiVTableCallbackInterfaceSshWorkflowPlatform *vtable);
+/*handle*/ uint64_t
+uniffi_whip_ssh_fn_method_sshworkflowplatform_authenticate_private_key(
+    /*handle*/ uint64_t ptr,
+    /*handle*/ uint64_t permit);
+/*handle*/ uint64_t
+uniffi_whip_ssh_fn_method_sshworkflowplatform_confirm_host_key(
+    /*handle*/ uint64_t ptr,
+    /*handle*/ uint64_t permit, RustBuffer challenge);
+/*handle*/ uint64_t
+uniffi_whip_ssh_fn_method_sshworkflowplatform_host_key_trusted(
+    /*handle*/ uint64_t ptr,
+    /*handle*/ uint64_t permit, RustBuffer challenge);
 /*handle*/ uint64_t uniffi_whip_ssh_fn_clone_terminaldeliveryeventsink(
     /*handle*/ uint64_t handle, RustCallStatus *uniffi_out_err);
 void uniffi_whip_ssh_fn_free_terminaldeliveryeventsink(
@@ -1865,6 +1927,8 @@ RustBuffer uniffi_whip_ssh_fn_func_generate_tailcat_identity(
 RustBuffer uniffi_whip_ssh_fn_func_tailcat_server_command(
     RustBuffer client_public_key, uint16_t port, int8_t builtin_ssh,
     RustBuffer ssh_public_key, RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_func_set_ssh_workflow_locked(
+    int8_t locked, RustCallStatus *uniffi_out_err);
 /*handle*/ uint64_t uniffi_whip_ssh_fn_func_highlight_code(RustBuffer content,
                                                            RustBuffer language);
 void uniffi_whip_ssh_fn_func_acknowledge_terminal_delivery_batch(
@@ -2105,6 +2169,7 @@ uint16_t uniffi_whip_ssh_checksum_func_write_shell_input();
 uint16_t uniffi_whip_ssh_checksum_func_write_unix_socket_channel();
 uint16_t uniffi_whip_ssh_checksum_func_generate_tailcat_identity();
 uint16_t uniffi_whip_ssh_checksum_func_tailcat_server_command();
+uint16_t uniffi_whip_ssh_checksum_func_set_ssh_workflow_locked();
 uint16_t uniffi_whip_ssh_checksum_func_highlight_code();
 uint16_t uniffi_whip_ssh_checksum_func_acknowledge_terminal_delivery_batch();
 uint16_t uniffi_whip_ssh_checksum_func_attach_terminal_delivery();
@@ -2483,6 +2548,13 @@ uint16_t uniffi_whip_ssh_checksum_method_whipssheventsink_emit();
 uint16_t
 uniffi_whip_ssh_checksum_method_whipssheventsink_unix_socket_channel_data();
 uint16_t uniffi_whip_ssh_checksum_method_whipssheventsink_exec_channel_data();
+uint16_t uniffi_whip_ssh_checksum_method_sshworkflow_cancel();
+uint16_t uniffi_whip_ssh_checksum_method_sshworkflow_run();
+uint16_t uniffi_whip_ssh_checksum_method_sshworkflowpermit_check_active();
+uint16_t
+uniffi_whip_ssh_checksum_method_sshworkflowplatform_authenticate_private_key();
+uint16_t uniffi_whip_ssh_checksum_method_sshworkflowplatform_confirm_host_key();
+uint16_t uniffi_whip_ssh_checksum_method_sshworkflowplatform_host_key_trusted();
 uint16_t uniffi_whip_ssh_checksum_method_terminaldeliveryeventsink_ready();
 uint16_t
 uniffi_whip_ssh_checksum_method_terminalsubmissionpermit_check_active();
@@ -2516,6 +2588,7 @@ uint16_t uniffi_whip_ssh_checksum_constructor_hostprofilestore_new();
 uint16_t uniffi_whip_ssh_checksum_constructor_browseroperationcoordinator_new();
 uint16_t uniffi_whip_ssh_checksum_constructor_browseroperationsession_new();
 uint16_t uniffi_whip_ssh_checksum_constructor_hostactioncoordinator_new();
+uint16_t uniffi_whip_ssh_checksum_constructor_sshworkflow_new();
 uint16_t uniffi_whip_ssh_checksum_constructor_terminalsubmissionqueue_new();
 uint32_t ffi_whip_ssh_uniffi_contract_version();
 }
@@ -4447,6 +4520,119 @@ static void cleanup() {
 }
 } // namespace
   // uniffi::whip_ssh::st::vtablecallbackinterfacewhipssheventsink::vtablecallbackinterfacewhipssheventsink::free
+
+// Callback function:
+// uniffi::whip_ssh::st::vtablecallbackinterfacesshworkflowplatform::vtablecallbackinterfacesshworkflowplatform::free::UniffiCallbackInterfaceFree
+//
+// We have the following constraints:
+// - we need to pass a function pointer to Rust.
+// - we need a jsi::Runtime and jsi::Function to call into JS.
+// - function pointers can't store state, so we can't use a lamda.
+//
+// For this, we store a lambda as a global, as `rsLambda`. The `callback`
+// function calls the lambda, which itself calls the `body` which then calls
+// into JS.
+//
+// We then give the `callback` function pointer to Rust which will call the
+// lambda sometime in the future.
+namespace uniffi::whip_ssh::st::vtablecallbackinterfacesshworkflowplatform::
+    vtablecallbackinterfacesshworkflowplatform::free {
+using namespace facebook;
+
+// We need to store a lambda in a global so we can call it from
+// a function pointer. The function pointer is passed to Rust.
+static std::function<void(uint64_t)> rsLambda = nullptr;
+
+// This is the main body of the callback. It's called from the lambda,
+// which itself is called from the callback function which is passed to Rust.
+static void body(jsi::Runtime &rt,
+                 std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
+                 std::shared_ptr<jsi::Value> callbackValue,
+                 uint64_t rs_handle) {
+
+  // Convert the arguments from Rust, into jsi::Values.
+  // We'll use the Bridging class to do this…
+  auto js_handle =
+      uniffi_jsi::Bridging<uint64_t>::toJs(rt, callInvoker, rs_handle);
+
+  // Now we are ready to call the callback.
+  // We are already on the JS thread, because this `body` function was
+  // invoked from the CallInvoker.
+  try {
+    // Getting the callback function
+    auto cb = callbackValue->asObject(rt).asFunction(rt);
+    auto uniffiResult = cb.call(rt, js_handle);
+
+  } catch (const jsi::JSError &error) {
+    std::cout << "Error in callback UniffiCallbackInterfaceFree: "
+              << error.what() << std::endl;
+    throw error;
+  }
+}
+
+static void callback(uint64_t rs_handle) {
+  // If the runtime has shutdown, then there is no point in trying to
+  // call into Javascript. BUT how do we tell if the runtime has shutdown?
+  //
+  // Answer: the module destructor calls into callback `cleanup` method,
+  // which nulls out the rsLamda.
+  //
+  // If rsLamda is null, then there is no runtime to call into.
+  if (rsLambda == nullptr) {
+    // No JavaScript converter will consume these transferred buffers.
+    // This only occurs when destructors are calling into Rust free/drop,
+    // which causes the JS callback to be dropped.
+    return;
+  }
+
+  // The runtime, the actual callback jsi::funtion, and the callInvoker
+  // are all in the lambda.
+  rsLambda(rs_handle);
+}
+
+[[maybe_unused]] static UniffiCallbackInterfaceFree
+makeCallbackFunction( // uniffi::whip_ssh::st::vtablecallbackinterfacesshworkflowplatform::vtablecallbackinterfacesshworkflowplatform::free
+    jsi::Runtime &rt,
+    std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
+    const jsi::Value &value) {
+  if (rsLambda != nullptr) {
+    // `makeCallbackFunction` is called in two circumstances:
+    //
+    // 1. at startup, when initializing callback interface vtables.
+    // 2. when polling futures. This happens at least once per future that is
+    //    exposed to Javascript. We know that this is always the same function,
+    //    `uniffiFutureContinuationCallback` in `async-rust-calls.ts`.
+    //
+    // We can therefore return the callback function without making anything
+    // new if we've been initialized already.
+    return callback;
+  }
+  auto callbackFunction = value.asObject(rt).asFunction(rt);
+  auto callbackValue = std::make_shared<jsi::Value>(rt, callbackFunction);
+  rsLambda = [&rt, callInvoker, callbackValue](uint64_t rs_handle) {
+    // We immediately make a lambda which will do the work of transforming the
+    // arguments into JSI values and calling the callback.
+    uniffi_runtime::UniffiCallFunc jsLambda =
+        [callInvoker, callbackValue, rs_handle](jsi::Runtime &rt) mutable {
+          body(rt, callInvoker, callbackValue, rs_handle);
+        };
+    // We'll then call that lambda from the callInvoker which will
+    // look after calling it on the correct thread.
+
+    callInvoker->invokeNonBlocking(rt, jsLambda);
+  };
+  return callback;
+}
+
+// This method is called from the destructor of NativeWhipSsh, which only
+// happens when the jsi::Runtime is being destroyed.
+static void cleanup() {
+  // The lambda holds a reference to the the Runtime, so when this is nulled
+  // out, then the pointer will no longer be left dangling.
+  rsLambda = nullptr;
+}
+} // namespace
+  // uniffi::whip_ssh::st::vtablecallbackinterfacesshworkflowplatform::vtablecallbackinterfacesshworkflowplatform::free
 
 // Callback function:
 // uniffi::whip_ssh::st::vtablecallbackinterfaceterminaldeliveryeventsink::vtablecallbackinterfaceterminaldeliveryeventsink::free::UniffiCallbackInterfaceFree
@@ -16755,6 +16941,636 @@ template <> struct Bridging<UniffiVTableCallbackInterfaceWhipSshEventSink> {
 
 } // namespace uniffi::whip_ssh
   // Implementation of CallbackInterfaceClone for vtable field uniffi_clone in
+  // VTableCallbackInterfaceSshWorkflowPlatform
+
+// Callback function:
+// uniffi::whip_ssh::cb::callbackinterfaceclone::vtablecallbackinterfacesshworkflowplatform::UniffiCallbackInterfaceClone
+//
+// We have the following constraints:
+// - we need to pass a function pointer to Rust.
+// - we need a jsi::Runtime and jsi::Function to call into JS.
+// - function pointers can't store state, so we can't use a lamda.
+//
+// For this, we store a lambda as a global, as `rsLambda`. The `callback`
+// function calls the lambda, which itself calls the `body` which then calls
+// into JS.
+//
+// We then give the `callback` function pointer to Rust which will call the
+// lambda sometime in the future.
+namespace uniffi::whip_ssh::cb::callbackinterfaceclone::
+    vtablecallbackinterfacesshworkflowplatform {
+using namespace facebook;
+
+// We need to store a lambda in a global so we can call it from
+// a function pointer. The function pointer is passed to Rust.
+static std::function<void(uint64_t, uint64_t *)> rsLambda = nullptr;
+
+// This is the main body of the callback. It's called from the lambda,
+// which itself is called from the callback function which is passed to Rust.
+static void body(jsi::Runtime &rt,
+                 std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
+                 std::shared_ptr<jsi::Value> callbackValue, uint64_t rs_handle,
+                 uint64_t *uniffi_direct_return) {
+
+  // Convert the arguments from Rust, into jsi::Values.
+  // We'll use the Bridging class to do this…
+  auto js_handle =
+      uniffi_jsi::Bridging<uint64_t>::toJs(rt, callInvoker, rs_handle);
+
+  // Now we are ready to call the callback.
+  // We are already on the JS thread, because this `body` function was
+  // invoked from the CallInvoker.
+  try {
+    // Getting the callback function
+    auto cb = callbackValue->asObject(rt).asFunction(rt);
+    auto uniffiResult = cb.call(rt, js_handle);
+
+    // Write the direct return value back to the caller.
+    if (uniffi_direct_return != nullptr) {
+      *uniffi_direct_return =
+          uniffi_jsi::Bridging<uint64_t>::fromJs(rt, callInvoker, uniffiResult);
+    }
+  } catch (const jsi::JSError &error) {
+    std::cout << "Error in callback UniffiCallbackInterfaceClone: "
+              << error.what() << std::endl;
+    throw error;
+  }
+}
+
+static uint64_t callback(uint64_t rs_handle) {
+  // If the runtime has shutdown, then there is no point in trying to
+  // call into Javascript. BUT how do we tell if the runtime has shutdown?
+  //
+  // Answer: the module destructor calls into callback `cleanup` method,
+  // which nulls out the rsLamda.
+  //
+  // If rsLamda is null, then there is no runtime to call into.
+  if (rsLambda == nullptr) {
+    // No JavaScript converter will consume these transferred buffers.
+    // This only occurs when destructors are calling into Rust free/drop,
+    // which causes the JS callback to be dropped.
+    return 0;
+  }
+  uint64_t uniffi_result = 0;
+
+  // The runtime, the actual callback jsi::funtion, and the callInvoker
+  // are all in the lambda.
+  rsLambda(rs_handle, &uniffi_result);
+  return uniffi_result;
+}
+
+[[maybe_unused]] static UniffiCallbackInterfaceClone
+makeCallbackFunction( // uniffi::whip_ssh::cb::callbackinterfaceclone::vtablecallbackinterfacesshworkflowplatform
+    jsi::Runtime &rt,
+    std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
+    const jsi::Value &value) {
+  if (rsLambda != nullptr) {
+    // `makeCallbackFunction` is called in two circumstances:
+    //
+    // 1. at startup, when initializing callback interface vtables.
+    // 2. when polling futures. This happens at least once per future that is
+    //    exposed to Javascript. We know that this is always the same function,
+    //    `uniffiFutureContinuationCallback` in `async-rust-calls.ts`.
+    //
+    // We can therefore return the callback function without making anything
+    // new if we've been initialized already.
+    return callback;
+  }
+  auto callbackFunction = value.asObject(rt).asFunction(rt);
+  auto callbackValue = std::make_shared<jsi::Value>(rt, callbackFunction);
+  rsLambda = [&rt, callInvoker, callbackValue](uint64_t rs_handle,
+                                               uint64_t *uniffi_direct_return) {
+    // We immediately make a lambda which will do the work of transforming the
+    // arguments into JSI values and calling the callback.
+    uniffi_runtime::UniffiCallFunc jsLambda =
+        [callInvoker, callbackValue, rs_handle,
+         uniffi_direct_return](jsi::Runtime &rt) mutable {
+          body(rt, callInvoker, callbackValue, rs_handle, uniffi_direct_return);
+        };
+    // We'll then call that lambda from the callInvoker which will
+    // look after calling it on the correct thread.
+    callInvoker->invokeBlocking(rt, jsLambda);
+  };
+  return callback;
+}
+
+// This method is called from the destructor of NativeWhipSsh, which only
+// happens when the jsi::Runtime is being destroyed.
+static void cleanup() {
+  // The lambda holds a reference to the the Runtime, so when this is nulled
+  // out, then the pointer will no longer be left dangling.
+  rsLambda = nullptr;
+}
+} // namespace
+  // uniffi::whip_ssh::cb::callbackinterfaceclone::vtablecallbackinterfacesshworkflowplatform
+  // Implementation of CallbackInterfaceSshWorkflowPlatformMethod0 for vtable
+  // field authenticate_private_key in
+  // VTableCallbackInterfaceSshWorkflowPlatform
+
+// Callback function:
+// uniffi::whip_ssh::cb::callbackinterfacesshworkflowplatformmethod0::vtablecallbackinterfacesshworkflowplatform::UniffiCallbackInterfaceSshWorkflowPlatformMethod0
+//
+// We have the following constraints:
+// - we need to pass a function pointer to Rust.
+// - we need a jsi::Runtime and jsi::Function to call into JS.
+// - function pointers can't store state, so we can't use a lamda.
+//
+// For this, we store a lambda as a global, as `rsLambda`. The `callback`
+// function calls the lambda, which itself calls the `body` which then calls
+// into JS.
+//
+// We then give the `callback` function pointer to Rust which will call the
+// lambda sometime in the future.
+namespace uniffi::whip_ssh::cb::callbackinterfacesshworkflowplatformmethod0::
+    vtablecallbackinterfacesshworkflowplatform {
+using namespace facebook;
+
+// We need to store a lambda in a global so we can call it from
+// a function pointer. The function pointer is passed to Rust.
+static std::function<void(uint64_t, /*handle*/ uint64_t,
+                          UniffiForeignFutureCompleteI8, uint64_t,
+                          UniffiForeignFutureDroppedCallbackStruct *)>
+    rsLambda = nullptr;
+
+// This is the main body of the callback. It's called from the lambda,
+// which itself is called from the callback function which is passed to Rust.
+static void
+body(jsi::Runtime &rt,
+     std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
+     std::shared_ptr<jsi::Value> callbackValue, uint64_t rs_uniffiHandle,
+     /*handle*/ uint64_t rs_permit,
+     UniffiForeignFutureCompleteI8 rs_uniffiFutureCallback,
+     uint64_t rs_uniffiCallbackData,
+     UniffiForeignFutureDroppedCallbackStruct *rs_uniffiOutDroppedCallback) {
+
+  // Convert the arguments from Rust, into jsi::Values.
+  // We'll use the Bridging class to do this…
+  auto js_uniffiHandle =
+      uniffi_jsi::Bridging<uint64_t>::toJs(rt, callInvoker, rs_uniffiHandle);
+  auto js_permit = uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(
+      rt, callInvoker, rs_permit);
+  auto js_uniffiFutureCallback =
+      uniffi::whip_ssh::Bridging<UniffiForeignFutureCompleteI8>::toJs(
+          rt, callInvoker, rs_uniffiFutureCallback);
+  auto js_uniffiCallbackData = uniffi_jsi::Bridging<uint64_t>::toJs(
+      rt, callInvoker, rs_uniffiCallbackData);
+
+  // Now we are ready to call the callback.
+  // We are already on the JS thread, because this `body` function was
+  // invoked from the CallInvoker.
+  try {
+    // Getting the callback function
+    auto cb = callbackValue->asObject(rt).asFunction(rt);
+    auto uniffiResult = cb.call(rt, js_uniffiHandle, js_permit,
+                                js_uniffiFutureCallback, js_uniffiCallbackData);
+
+    // return type is Struct("ForeignFutureDroppedCallbackStruct")
+    // Finally, we need to copy the return value back into the Rust pointer.
+    *rs_uniffiOutDroppedCallback = uniffi::whip_ssh::Bridging<
+        UniffiForeignFutureDroppedCallbackStruct>::fromJs(rt, callInvoker,
+                                                          uniffiResult);
+  } catch (const jsi::JSError &error) {
+    std::cout << "Error in callback "
+                 "UniffiCallbackInterfaceSshWorkflowPlatformMethod0: "
+              << error.what() << std::endl;
+    throw error;
+  }
+}
+
+static void callback(
+    uint64_t rs_uniffiHandle, /*handle*/ uint64_t rs_permit,
+    UniffiForeignFutureCompleteI8 rs_uniffiFutureCallback,
+    uint64_t rs_uniffiCallbackData,
+    UniffiForeignFutureDroppedCallbackStruct *rs_uniffiOutDroppedCallback) {
+  // If the runtime has shutdown, then there is no point in trying to
+  // call into Javascript. BUT how do we tell if the runtime has shutdown?
+  //
+  // Answer: the module destructor calls into callback `cleanup` method,
+  // which nulls out the rsLamda.
+  //
+  // If rsLamda is null, then there is no runtime to call into.
+  if (rsLambda == nullptr) {
+    // No JavaScript converter will consume these transferred buffers.
+    // This only occurs when destructors are calling into Rust free/drop,
+    // which causes the JS callback to be dropped.
+    return;
+  }
+
+  // The runtime, the actual callback jsi::funtion, and the callInvoker
+  // are all in the lambda.
+  rsLambda(rs_uniffiHandle, rs_permit, rs_uniffiFutureCallback,
+           rs_uniffiCallbackData, rs_uniffiOutDroppedCallback);
+}
+
+[[maybe_unused]] static UniffiCallbackInterfaceSshWorkflowPlatformMethod0
+makeCallbackFunction( // uniffi::whip_ssh::cb::callbackinterfacesshworkflowplatformmethod0::vtablecallbackinterfacesshworkflowplatform
+    jsi::Runtime &rt,
+    std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
+    const jsi::Value &value) {
+  if (rsLambda != nullptr) {
+    // `makeCallbackFunction` is called in two circumstances:
+    //
+    // 1. at startup, when initializing callback interface vtables.
+    // 2. when polling futures. This happens at least once per future that is
+    //    exposed to Javascript. We know that this is always the same function,
+    //    `uniffiFutureContinuationCallback` in `async-rust-calls.ts`.
+    //
+    // We can therefore return the callback function without making anything
+    // new if we've been initialized already.
+    return callback;
+  }
+  auto callbackFunction = value.asObject(rt).asFunction(rt);
+  auto callbackValue = std::make_shared<jsi::Value>(rt, callbackFunction);
+  rsLambda = [&rt, callInvoker, callbackValue](
+                 uint64_t rs_uniffiHandle, /*handle*/ uint64_t rs_permit,
+                 UniffiForeignFutureCompleteI8 rs_uniffiFutureCallback,
+                 uint64_t rs_uniffiCallbackData,
+                 UniffiForeignFutureDroppedCallbackStruct
+                     *rs_uniffiOutDroppedCallback) {
+    // We immediately make a lambda which will do the work of transforming the
+    // arguments into JSI values and calling the callback.
+    uniffi_runtime::UniffiCallFunc jsLambda =
+        [callInvoker, callbackValue, rs_uniffiHandle, rs_permit,
+         rs_uniffiFutureCallback, rs_uniffiCallbackData,
+         rs_uniffiOutDroppedCallback](jsi::Runtime &rt) mutable {
+          body(rt, callInvoker, callbackValue, rs_uniffiHandle, rs_permit,
+               rs_uniffiFutureCallback, rs_uniffiCallbackData,
+               rs_uniffiOutDroppedCallback);
+        };
+    // We'll then call that lambda from the callInvoker which will
+    // look after calling it on the correct thread.
+    callInvoker->invokeBlocking(rt, jsLambda);
+  };
+  return callback;
+}
+
+// This method is called from the destructor of NativeWhipSsh, which only
+// happens when the jsi::Runtime is being destroyed.
+static void cleanup() {
+  // The lambda holds a reference to the the Runtime, so when this is nulled
+  // out, then the pointer will no longer be left dangling.
+  rsLambda = nullptr;
+}
+} // namespace
+  // uniffi::whip_ssh::cb::callbackinterfacesshworkflowplatformmethod0::vtablecallbackinterfacesshworkflowplatform
+  // Implementation of CallbackInterfaceSshWorkflowPlatformMethod1 for vtable
+  // field confirm_host_key in VTableCallbackInterfaceSshWorkflowPlatform
+
+// Callback function:
+// uniffi::whip_ssh::cb::callbackinterfacesshworkflowplatformmethod1::vtablecallbackinterfacesshworkflowplatform::UniffiCallbackInterfaceSshWorkflowPlatformMethod1
+//
+// We have the following constraints:
+// - we need to pass a function pointer to Rust.
+// - we need a jsi::Runtime and jsi::Function to call into JS.
+// - function pointers can't store state, so we can't use a lamda.
+//
+// For this, we store a lambda as a global, as `rsLambda`. The `callback`
+// function calls the lambda, which itself calls the `body` which then calls
+// into JS.
+//
+// We then give the `callback` function pointer to Rust which will call the
+// lambda sometime in the future.
+namespace uniffi::whip_ssh::cb::callbackinterfacesshworkflowplatformmethod1::
+    vtablecallbackinterfacesshworkflowplatform {
+using namespace facebook;
+
+// We need to store a lambda in a global so we can call it from
+// a function pointer. The function pointer is passed to Rust.
+static std::function<void(uint64_t, /*handle*/ uint64_t, RustBuffer,
+                          UniffiForeignFutureCompleteI8, uint64_t,
+                          UniffiForeignFutureDroppedCallbackStruct *)>
+    rsLambda = nullptr;
+
+// This is the main body of the callback. It's called from the lambda,
+// which itself is called from the callback function which is passed to Rust.
+static void
+body(jsi::Runtime &rt,
+     std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
+     std::shared_ptr<jsi::Value> callbackValue, uint64_t rs_uniffiHandle,
+     /*handle*/ uint64_t rs_permit, RustBuffer rs_challenge,
+     UniffiForeignFutureCompleteI8 rs_uniffiFutureCallback,
+     uint64_t rs_uniffiCallbackData,
+     UniffiForeignFutureDroppedCallbackStruct *rs_uniffiOutDroppedCallback) {
+
+  // Convert the arguments from Rust, into jsi::Values.
+  // We'll use the Bridging class to do this…
+  auto js_uniffiHandle =
+      uniffi_jsi::Bridging<uint64_t>::toJs(rt, callInvoker, rs_uniffiHandle);
+  auto js_permit = uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(
+      rt, callInvoker, rs_permit);
+  auto js_challenge = uniffi::whip_ssh::Bridging<RustBuffer>::toJs(
+      rt, callInvoker, rs_challenge);
+  auto js_uniffiFutureCallback =
+      uniffi::whip_ssh::Bridging<UniffiForeignFutureCompleteI8>::toJs(
+          rt, callInvoker, rs_uniffiFutureCallback);
+  auto js_uniffiCallbackData = uniffi_jsi::Bridging<uint64_t>::toJs(
+      rt, callInvoker, rs_uniffiCallbackData);
+
+  // Now we are ready to call the callback.
+  // We are already on the JS thread, because this `body` function was
+  // invoked from the CallInvoker.
+  try {
+    // Getting the callback function
+    auto cb = callbackValue->asObject(rt).asFunction(rt);
+    auto uniffiResult = cb.call(rt, js_uniffiHandle, js_permit, js_challenge,
+                                js_uniffiFutureCallback, js_uniffiCallbackData);
+
+    // return type is Struct("ForeignFutureDroppedCallbackStruct")
+    // Finally, we need to copy the return value back into the Rust pointer.
+    *rs_uniffiOutDroppedCallback = uniffi::whip_ssh::Bridging<
+        UniffiForeignFutureDroppedCallbackStruct>::fromJs(rt, callInvoker,
+                                                          uniffiResult);
+  } catch (const jsi::JSError &error) {
+    std::cout << "Error in callback "
+                 "UniffiCallbackInterfaceSshWorkflowPlatformMethod1: "
+              << error.what() << std::endl;
+    throw error;
+  }
+}
+
+static void callback(
+    uint64_t rs_uniffiHandle, /*handle*/ uint64_t rs_permit,
+    RustBuffer rs_challenge,
+    UniffiForeignFutureCompleteI8 rs_uniffiFutureCallback,
+    uint64_t rs_uniffiCallbackData,
+    UniffiForeignFutureDroppedCallbackStruct *rs_uniffiOutDroppedCallback) {
+  // If the runtime has shutdown, then there is no point in trying to
+  // call into Javascript. BUT how do we tell if the runtime has shutdown?
+  //
+  // Answer: the module destructor calls into callback `cleanup` method,
+  // which nulls out the rsLamda.
+  //
+  // If rsLamda is null, then there is no runtime to call into.
+  if (rsLambda == nullptr) {
+    // No JavaScript converter will consume these transferred buffers.
+    Bridging<RustBuffer>::rustbuffer_free(rs_challenge);
+    // This only occurs when destructors are calling into Rust free/drop,
+    // which causes the JS callback to be dropped.
+    return;
+  }
+
+  // The runtime, the actual callback jsi::funtion, and the callInvoker
+  // are all in the lambda.
+  rsLambda(rs_uniffiHandle, rs_permit, rs_challenge, rs_uniffiFutureCallback,
+           rs_uniffiCallbackData, rs_uniffiOutDroppedCallback);
+}
+
+[[maybe_unused]] static UniffiCallbackInterfaceSshWorkflowPlatformMethod1
+makeCallbackFunction( // uniffi::whip_ssh::cb::callbackinterfacesshworkflowplatformmethod1::vtablecallbackinterfacesshworkflowplatform
+    jsi::Runtime &rt,
+    std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
+    const jsi::Value &value) {
+  if (rsLambda != nullptr) {
+    // `makeCallbackFunction` is called in two circumstances:
+    //
+    // 1. at startup, when initializing callback interface vtables.
+    // 2. when polling futures. This happens at least once per future that is
+    //    exposed to Javascript. We know that this is always the same function,
+    //    `uniffiFutureContinuationCallback` in `async-rust-calls.ts`.
+    //
+    // We can therefore return the callback function without making anything
+    // new if we've been initialized already.
+    return callback;
+  }
+  auto callbackFunction = value.asObject(rt).asFunction(rt);
+  auto callbackValue = std::make_shared<jsi::Value>(rt, callbackFunction);
+  rsLambda = [&rt, callInvoker, callbackValue](
+                 uint64_t rs_uniffiHandle, /*handle*/ uint64_t rs_permit,
+                 RustBuffer rs_challenge,
+                 UniffiForeignFutureCompleteI8 rs_uniffiFutureCallback,
+                 uint64_t rs_uniffiCallbackData,
+                 UniffiForeignFutureDroppedCallbackStruct
+                     *rs_uniffiOutDroppedCallback) {
+    // We immediately make a lambda which will do the work of transforming the
+    // arguments into JSI values and calling the callback.
+    uniffi_runtime::UniffiCallFunc jsLambda =
+        [callInvoker, callbackValue, rs_uniffiHandle, rs_permit, rs_challenge,
+         rs_uniffiFutureCallback, rs_uniffiCallbackData,
+         rs_uniffiOutDroppedCallback](jsi::Runtime &rt) mutable {
+          body(rt, callInvoker, callbackValue, rs_uniffiHandle, rs_permit,
+               rs_challenge, rs_uniffiFutureCallback, rs_uniffiCallbackData,
+               rs_uniffiOutDroppedCallback);
+        };
+    // We'll then call that lambda from the callInvoker which will
+    // look after calling it on the correct thread.
+    callInvoker->invokeBlocking(rt, jsLambda);
+  };
+  return callback;
+}
+
+// This method is called from the destructor of NativeWhipSsh, which only
+// happens when the jsi::Runtime is being destroyed.
+static void cleanup() {
+  // The lambda holds a reference to the the Runtime, so when this is nulled
+  // out, then the pointer will no longer be left dangling.
+  rsLambda = nullptr;
+}
+} // namespace
+  // uniffi::whip_ssh::cb::callbackinterfacesshworkflowplatformmethod1::vtablecallbackinterfacesshworkflowplatform
+  // Implementation of CallbackInterfaceSshWorkflowPlatformMethod2 for vtable
+  // field host_key_trusted in VTableCallbackInterfaceSshWorkflowPlatform
+
+// Callback function:
+// uniffi::whip_ssh::cb::callbackinterfacesshworkflowplatformmethod2::vtablecallbackinterfacesshworkflowplatform::UniffiCallbackInterfaceSshWorkflowPlatformMethod2
+//
+// We have the following constraints:
+// - we need to pass a function pointer to Rust.
+// - we need a jsi::Runtime and jsi::Function to call into JS.
+// - function pointers can't store state, so we can't use a lamda.
+//
+// For this, we store a lambda as a global, as `rsLambda`. The `callback`
+// function calls the lambda, which itself calls the `body` which then calls
+// into JS.
+//
+// We then give the `callback` function pointer to Rust which will call the
+// lambda sometime in the future.
+namespace uniffi::whip_ssh::cb::callbackinterfacesshworkflowplatformmethod2::
+    vtablecallbackinterfacesshworkflowplatform {
+using namespace facebook;
+
+// We need to store a lambda in a global so we can call it from
+// a function pointer. The function pointer is passed to Rust.
+static std::function<void(uint64_t, /*handle*/ uint64_t, RustBuffer,
+                          UniffiForeignFutureCompleteVoid, uint64_t,
+                          UniffiForeignFutureDroppedCallbackStruct *)>
+    rsLambda = nullptr;
+
+// This is the main body of the callback. It's called from the lambda,
+// which itself is called from the callback function which is passed to Rust.
+static void
+body(jsi::Runtime &rt,
+     std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
+     std::shared_ptr<jsi::Value> callbackValue, uint64_t rs_uniffiHandle,
+     /*handle*/ uint64_t rs_permit, RustBuffer rs_challenge,
+     UniffiForeignFutureCompleteVoid rs_uniffiFutureCallback,
+     uint64_t rs_uniffiCallbackData,
+     UniffiForeignFutureDroppedCallbackStruct *rs_uniffiOutDroppedCallback) {
+
+  // Convert the arguments from Rust, into jsi::Values.
+  // We'll use the Bridging class to do this…
+  auto js_uniffiHandle =
+      uniffi_jsi::Bridging<uint64_t>::toJs(rt, callInvoker, rs_uniffiHandle);
+  auto js_permit = uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(
+      rt, callInvoker, rs_permit);
+  auto js_challenge = uniffi::whip_ssh::Bridging<RustBuffer>::toJs(
+      rt, callInvoker, rs_challenge);
+  auto js_uniffiFutureCallback =
+      uniffi::whip_ssh::Bridging<UniffiForeignFutureCompleteVoid>::toJs(
+          rt, callInvoker, rs_uniffiFutureCallback);
+  auto js_uniffiCallbackData = uniffi_jsi::Bridging<uint64_t>::toJs(
+      rt, callInvoker, rs_uniffiCallbackData);
+
+  // Now we are ready to call the callback.
+  // We are already on the JS thread, because this `body` function was
+  // invoked from the CallInvoker.
+  try {
+    // Getting the callback function
+    auto cb = callbackValue->asObject(rt).asFunction(rt);
+    auto uniffiResult = cb.call(rt, js_uniffiHandle, js_permit, js_challenge,
+                                js_uniffiFutureCallback, js_uniffiCallbackData);
+
+    // return type is Struct("ForeignFutureDroppedCallbackStruct")
+    // Finally, we need to copy the return value back into the Rust pointer.
+    *rs_uniffiOutDroppedCallback = uniffi::whip_ssh::Bridging<
+        UniffiForeignFutureDroppedCallbackStruct>::fromJs(rt, callInvoker,
+                                                          uniffiResult);
+  } catch (const jsi::JSError &error) {
+    std::cout << "Error in callback "
+                 "UniffiCallbackInterfaceSshWorkflowPlatformMethod2: "
+              << error.what() << std::endl;
+    throw error;
+  }
+}
+
+static void callback(
+    uint64_t rs_uniffiHandle, /*handle*/ uint64_t rs_permit,
+    RustBuffer rs_challenge,
+    UniffiForeignFutureCompleteVoid rs_uniffiFutureCallback,
+    uint64_t rs_uniffiCallbackData,
+    UniffiForeignFutureDroppedCallbackStruct *rs_uniffiOutDroppedCallback) {
+  // If the runtime has shutdown, then there is no point in trying to
+  // call into Javascript. BUT how do we tell if the runtime has shutdown?
+  //
+  // Answer: the module destructor calls into callback `cleanup` method,
+  // which nulls out the rsLamda.
+  //
+  // If rsLamda is null, then there is no runtime to call into.
+  if (rsLambda == nullptr) {
+    // No JavaScript converter will consume these transferred buffers.
+    Bridging<RustBuffer>::rustbuffer_free(rs_challenge);
+    // This only occurs when destructors are calling into Rust free/drop,
+    // which causes the JS callback to be dropped.
+    return;
+  }
+
+  // The runtime, the actual callback jsi::funtion, and the callInvoker
+  // are all in the lambda.
+  rsLambda(rs_uniffiHandle, rs_permit, rs_challenge, rs_uniffiFutureCallback,
+           rs_uniffiCallbackData, rs_uniffiOutDroppedCallback);
+}
+
+[[maybe_unused]] static UniffiCallbackInterfaceSshWorkflowPlatformMethod2
+makeCallbackFunction( // uniffi::whip_ssh::cb::callbackinterfacesshworkflowplatformmethod2::vtablecallbackinterfacesshworkflowplatform
+    jsi::Runtime &rt,
+    std::shared_ptr<uniffi_runtime::UniffiCallInvoker> callInvoker,
+    const jsi::Value &value) {
+  if (rsLambda != nullptr) {
+    // `makeCallbackFunction` is called in two circumstances:
+    //
+    // 1. at startup, when initializing callback interface vtables.
+    // 2. when polling futures. This happens at least once per future that is
+    //    exposed to Javascript. We know that this is always the same function,
+    //    `uniffiFutureContinuationCallback` in `async-rust-calls.ts`.
+    //
+    // We can therefore return the callback function without making anything
+    // new if we've been initialized already.
+    return callback;
+  }
+  auto callbackFunction = value.asObject(rt).asFunction(rt);
+  auto callbackValue = std::make_shared<jsi::Value>(rt, callbackFunction);
+  rsLambda = [&rt, callInvoker, callbackValue](
+                 uint64_t rs_uniffiHandle, /*handle*/ uint64_t rs_permit,
+                 RustBuffer rs_challenge,
+                 UniffiForeignFutureCompleteVoid rs_uniffiFutureCallback,
+                 uint64_t rs_uniffiCallbackData,
+                 UniffiForeignFutureDroppedCallbackStruct
+                     *rs_uniffiOutDroppedCallback) {
+    // We immediately make a lambda which will do the work of transforming the
+    // arguments into JSI values and calling the callback.
+    uniffi_runtime::UniffiCallFunc jsLambda =
+        [callInvoker, callbackValue, rs_uniffiHandle, rs_permit, rs_challenge,
+         rs_uniffiFutureCallback, rs_uniffiCallbackData,
+         rs_uniffiOutDroppedCallback](jsi::Runtime &rt) mutable {
+          body(rt, callInvoker, callbackValue, rs_uniffiHandle, rs_permit,
+               rs_challenge, rs_uniffiFutureCallback, rs_uniffiCallbackData,
+               rs_uniffiOutDroppedCallback);
+        };
+    // We'll then call that lambda from the callInvoker which will
+    // look after calling it on the correct thread.
+    callInvoker->invokeBlocking(rt, jsLambda);
+  };
+  return callback;
+}
+
+// This method is called from the destructor of NativeWhipSsh, which only
+// happens when the jsi::Runtime is being destroyed.
+static void cleanup() {
+  // The lambda holds a reference to the the Runtime, so when this is nulled
+  // out, then the pointer will no longer be left dangling.
+  rsLambda = nullptr;
+}
+} // namespace
+  // uniffi::whip_ssh::cb::callbackinterfacesshworkflowplatformmethod2::vtablecallbackinterfacesshworkflowplatform
+namespace uniffi::whip_ssh {
+using namespace facebook;
+using CallInvoker = uniffi_runtime::UniffiCallInvoker;
+
+template <> struct Bridging<UniffiVTableCallbackInterfaceSshWorkflowPlatform> {
+  static UniffiVTableCallbackInterfaceSshWorkflowPlatform
+  fromJs(jsi::Runtime &rt, std::shared_ptr<CallInvoker> callInvoker,
+         const jsi::Value &jsValue) {
+    // Check if the input is an object
+    if (!jsValue.isObject()) {
+      throw jsi::JSError(rt,
+                         "Expected an object for "
+                         "UniffiVTableCallbackInterfaceSshWorkflowPlatform");
+    }
+
+    // Get the object from the jsi::Value
+    auto jsObject = jsValue.getObject(rt);
+
+    // Create the vtable struct
+    UniffiVTableCallbackInterfaceSshWorkflowPlatform rsObject;
+
+    // Create the vtable from the js callbacks.
+    rsObject.uniffi_free =
+        uniffi::whip_ssh::st::vtablecallbackinterfacesshworkflowplatform::
+            vtablecallbackinterfacesshworkflowplatform::free::
+                makeCallbackFunction(rt, callInvoker,
+                                     jsObject.getProperty(rt, "uniffi_free"));
+    rsObject.uniffi_clone = uniffi::whip_ssh::cb::callbackinterfaceclone::
+        vtablecallbackinterfacesshworkflowplatform::makeCallbackFunction(
+            rt, callInvoker, jsObject.getProperty(rt, "uniffi_clone"));
+    rsObject.authenticate_private_key =
+        uniffi::whip_ssh::cb::callbackinterfacesshworkflowplatformmethod0::
+            vtablecallbackinterfacesshworkflowplatform::makeCallbackFunction(
+                rt, callInvoker,
+                jsObject.getProperty(rt, "authenticate_private_key"));
+    rsObject.confirm_host_key =
+        uniffi::whip_ssh::cb::callbackinterfacesshworkflowplatformmethod1::
+            vtablecallbackinterfacesshworkflowplatform::makeCallbackFunction(
+                rt, callInvoker, jsObject.getProperty(rt, "confirm_host_key"));
+    rsObject.host_key_trusted =
+        uniffi::whip_ssh::cb::callbackinterfacesshworkflowplatformmethod2::
+            vtablecallbackinterfacesshworkflowplatform::makeCallbackFunction(
+                rt, callInvoker, jsObject.getProperty(rt, "host_key_trusted"));
+
+    return rsObject;
+  }
+};
+
+} // namespace uniffi::whip_ssh
+  // Implementation of CallbackInterfaceClone for vtable field uniffi_clone in
   // VTableCallbackInterfaceTerminalDeliveryEventSink
 
 // Callback function:
@@ -22731,6 +23547,167 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_fn_method_whipssheventsink_exec_channel_data(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_fn_clone_sshworkflow"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_clone_sshworkflow"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_clone_sshworkflow(rt, thisVal,
+                                                                  args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_free_sshworkflow"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt,
+                                    "ubrn_uniffi_whip_ssh_fn_free_sshworkflow"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_free_sshworkflow(rt, thisVal,
+                                                                 args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_constructor_sshworkflow_new"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_constructor_sshworkflow_new"),
+          6,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_constructor_sshworkflow_new(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_sshworkflow_cancel"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_method_sshworkflow_cancel"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_method_sshworkflow_cancel(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_sshworkflow_run"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_method_sshworkflow_run"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_method_sshworkflow_run(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_clone_sshworkflowpermit"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_clone_sshworkflowpermit"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_clone_sshworkflowpermit(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_free_sshworkflowpermit"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_free_sshworkflowpermit"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_free_sshworkflowpermit(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_sshworkflowpermit_check_active"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_whip_ssh_fn_method_sshworkflowpermit_check_active"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_sshworkflowpermit_check_active(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_clone_sshworkflowplatform"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_clone_sshworkflowplatform"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_clone_sshworkflowplatform(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_free_sshworkflowplatform"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_free_sshworkflowplatform"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_free_sshworkflowplatform(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_init_callback_vtable_sshworkflowplatform"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_init_callback_"
+                                        "vtable_sshworkflowplatform"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_init_callback_vtable_sshworkflowplatform(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_sshworkflowplatform_authenticate_"
+        "private_key"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt,
+                                "ubrn_uniffi_whip_ssh_fn_method_"
+                                "sshworkflowplatform_authenticate_private_key"),
+      2,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_fn_method_sshworkflowplatform_authenticate_private_key(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_fn_method_sshworkflowplatform_confirm_host_key"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                        "sshworkflowplatform_confirm_host_key"),
+          3,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_sshworkflowplatform_confirm_host_key(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_sshworkflowplatform_host_key_trusted"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                        "sshworkflowplatform_host_key_trusted"),
+          3,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_sshworkflowplatform_host_key_trusted(
+                    rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_fn_clone_terminaldeliveryeventsink"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -24049,6 +25026,17 @@ NativeWhipSsh::NativeWhipSsh(
           [this](jsi::Runtime &rt, const jsi::Value &thisVal,
                  const jsi::Value *args, size_t count) -> jsi::Value {
             return this->cpp_uniffi_whip_ssh_fn_func_tailcat_server_command(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_func_set_ssh_workflow_locked"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_func_set_ssh_workflow_locked"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_func_set_ssh_workflow_locked(
                 rt, thisVal, args, count);
           });
   props["ubrn_uniffi_whip_ssh_fn_func_highlight_code"] =
@@ -25826,6 +26814,18 @@ NativeWhipSsh::NativeWhipSsh(
                  const jsi::Value *args, size_t count) -> jsi::Value {
             return this
                 ->cpp_uniffi_whip_ssh_checksum_func_tailcat_server_command(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_func_set_ssh_workflow_locked"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_checksum_func_set_ssh_workflow_locked"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_func_set_ssh_workflow_locked(
                     rt, thisVal, args, count);
           });
   props["ubrn_uniffi_whip_ssh_checksum_func_highlight_code"] =
@@ -29908,6 +30908,77 @@ NativeWhipSsh::NativeWhipSsh(
             ->cpp_uniffi_whip_ssh_checksum_method_whipssheventsink_exec_channel_data(
                 rt, thisVal, args, count);
       });
+  props["ubrn_uniffi_whip_ssh_checksum_method_sshworkflow_cancel"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_checksum_method_sshworkflow_cancel"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_checksum_method_sshworkflow_cancel(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_method_sshworkflow_run"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_checksum_method_sshworkflow_run"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_checksum_method_sshworkflow_run(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_method_sshworkflowpermit_check_active"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                        "sshworkflowpermit_check_active"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_method_sshworkflowpermit_check_active(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_method_sshworkflowplatform_authenticate_"
+        "private_key"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt,
+                                "ubrn_uniffi_whip_ssh_checksum_method_"
+                                "sshworkflowplatform_authenticate_private_key"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_sshworkflowplatform_authenticate_private_key(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_checksum_method_sshworkflowplatform_confirm_host_"
+        "key"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "sshworkflowplatform_confirm_host_key"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_sshworkflowplatform_confirm_host_key(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_checksum_method_sshworkflowplatform_host_key_"
+        "trusted"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "sshworkflowplatform_host_key_trusted"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_sshworkflowplatform_host_key_trusted(
+                rt, thisVal, args, count);
+      });
   props["ubrn_uniffi_whip_ssh_checksum_method_terminaldeliveryeventsink_"
         "ready"] = jsi::Function::createFromHostFunction(
       rt,
@@ -30272,6 +31343,18 @@ NativeWhipSsh::NativeWhipSsh(
                  const jsi::Value *args, size_t count) -> jsi::Value {
             return this
                 ->cpp_uniffi_whip_ssh_checksum_constructor_hostactioncoordinator_new(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_constructor_sshworkflow_new"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_checksum_constructor_sshworkflow_new"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_constructor_sshworkflow_new(
                     rt, thisVal, args, count);
           });
   props["ubrn_uniffi_whip_ssh_checksum_constructor_terminalsubmissionqueue_"
@@ -30816,6 +31899,43 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_internal_fn_method_whipssheventsink_ffi__bless_pointer(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_internal_fn_method_sshworkflow_ffi__bless_pointer"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_internal_fn_method_sshworkflow_ffi__bless_pointer"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_internal_fn_method_sshworkflow_ffi__bless_pointer(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_internal_fn_method_sshworkflowpermit_ffi__bless_pointer"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_internal_fn_method_"
+                                        "sshworkflowpermit_ffi__bless_pointer"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_internal_fn_method_sshworkflowpermit_ffi__bless_pointer(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_internal_fn_method_sshworkflowplatform_ffi__bless_"
+        "pointer"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_internal_fn_method_"
+                                    "sshworkflowplatform_ffi__bless_pointer"),
+      1,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_internal_fn_method_sshworkflowplatform_ffi__bless_pointer(
+                rt, thisVal, args, count);
+      });
   props["ubrn_uniffi_internal_fn_method_terminaldeliveryeventsink_ffi__bless_"
         "pointer"] = jsi::Function::createFromHostFunction(
       rt,
@@ -31015,6 +32135,8 @@ NativeWhipSsh::~NativeWhipSsh() {
       vtablecallbackinterfacehostactionplatform::free::cleanup();
   uniffi::whip_ssh::st::vtablecallbackinterfacewhipssheventsink::
       vtablecallbackinterfacewhipssheventsink::free::cleanup();
+  uniffi::whip_ssh::st::vtablecallbackinterfacesshworkflowplatform::
+      vtablecallbackinterfacesshworkflowplatform::free::cleanup();
   uniffi::whip_ssh::st::vtablecallbackinterfaceterminaldeliveryeventsink::
       vtablecallbackinterfaceterminaldeliveryeventsink::free::cleanup();
   uniffi::whip_ssh::st::vtablecallbackinterfaceterminalsubmissionplatform::
@@ -31165,6 +32287,14 @@ NativeWhipSsh::~NativeWhipSsh() {
       vtablecallbackinterfacewhipssheventsink::cleanup();
   uniffi::whip_ssh::cb::callbackinterfacewhipssheventsinkmethod2::
       vtablecallbackinterfacewhipssheventsink::cleanup();
+  uniffi::whip_ssh::cb::callbackinterfaceclone::
+      vtablecallbackinterfacesshworkflowplatform::cleanup();
+  uniffi::whip_ssh::cb::callbackinterfacesshworkflowplatformmethod0::
+      vtablecallbackinterfacesshworkflowplatform::cleanup();
+  uniffi::whip_ssh::cb::callbackinterfacesshworkflowplatformmethod1::
+      vtablecallbackinterfacesshworkflowplatform::cleanup();
+  uniffi::whip_ssh::cb::callbackinterfacesshworkflowplatformmethod2::
+      vtablecallbackinterfacesshworkflowplatform::cleanup();
   uniffi::whip_ssh::cb::callbackinterfaceclone::
       vtablecallbackinterfaceterminaldeliveryeventsink::cleanup();
   uniffi::whip_ssh::cb::callbackinterfaceterminaldeliveryeventsinkmethod0::
@@ -31828,6 +32958,51 @@ jsi::Value NativeWhipSsh::
   auto static destructor = [](uint64_t p) {
     RustCallStatus status = {0};
     uniffi_whip_ssh_fn_free_whipssheventsink(p, &status);
+  };
+  auto ptrObj =
+      std::make_shared<uniffi_jsi::DestructibleObject>(pointer, destructor);
+  auto obj = jsi::Object::createFromHostObject(rt, ptrObj);
+  return jsi::Value(rt, obj);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_internal_fn_method_sshworkflow_ffi__bless_pointer(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto pointer =
+      uniffi_jsi::Bridging<uint64_t>::fromJs(rt, callInvoker, args[0]);
+  auto static destructor = [](uint64_t p) {
+    RustCallStatus status = {0};
+    uniffi_whip_ssh_fn_free_sshworkflow(p, &status);
+  };
+  auto ptrObj =
+      std::make_shared<uniffi_jsi::DestructibleObject>(pointer, destructor);
+  auto obj = jsi::Object::createFromHostObject(rt, ptrObj);
+  return jsi::Value(rt, obj);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_internal_fn_method_sshworkflowpermit_ffi__bless_pointer(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto pointer =
+      uniffi_jsi::Bridging<uint64_t>::fromJs(rt, callInvoker, args[0]);
+  auto static destructor = [](uint64_t p) {
+    RustCallStatus status = {0};
+    uniffi_whip_ssh_fn_free_sshworkflowpermit(p, &status);
+  };
+  auto ptrObj =
+      std::make_shared<uniffi_jsi::DestructibleObject>(pointer, destructor);
+  auto obj = jsi::Object::createFromHostObject(rt, ptrObj);
+  return jsi::Value(rt, obj);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_internal_fn_method_sshworkflowplatform_ffi__bless_pointer(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto pointer =
+      uniffi_jsi::Bridging<uint64_t>::fromJs(rt, callInvoker, args[0]);
+  auto static destructor = [](uint64_t p) {
+    RustCallStatus status = {0};
+    uniffi_whip_ssh_fn_free_sshworkflowplatform(p, &status);
   };
   auto ptrObj =
       std::make_shared<uniffi_jsi::DestructibleObject>(pointer, destructor);
@@ -38360,6 +39535,210 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_whipssheventsink_exec_channel_data(
 
   return jsi::Value::undefined();
 }
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_clone_sshworkflow(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_clone_sshworkflow(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_free_sshworkflow(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_free_sshworkflow(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_constructor_sshworkflow_new(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_constructor_sshworkflow_new(
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      uniffi_jsi::Bridging<int8_t>::fromJs(rt, callInvoker, args[2]),
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[3]),
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[4]),
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[5]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_sshworkflow_cancel(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_method_sshworkflow_cancel(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_sshworkflow_run(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_fn_method_sshworkflow_run(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]));
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_clone_sshworkflowpermit(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_clone_sshworkflowpermit(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_free_sshworkflowpermit(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_free_sshworkflowpermit(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_sshworkflowpermit_check_active(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_method_sshworkflowpermit_check_active(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_clone_sshworkflowplatform(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_clone_sshworkflowplatform(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_free_sshworkflowplatform(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_free_sshworkflowplatform(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_init_callback_vtable_sshworkflowplatform(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto vtableInstance = uniffi::whip_ssh::Bridging<
+      UniffiVTableCallbackInterfaceSshWorkflowPlatform>::fromJs(rt, callInvoker,
+                                                                args[0]);
+
+  std::lock_guard<std::mutex> lock(uniffi::whip_ssh::registry::vtableMutex);
+  uniffi_whip_ssh_fn_init_callback_vtable_sshworkflowplatform(
+      uniffi::whip_ssh::registry::putTable(
+          "UniffiVTableCallbackInterfaceSshWorkflowPlatform", vtableInstance));
+  return jsi::Value::undefined();
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_fn_method_sshworkflowplatform_authenticate_private_key(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_fn_method_sshworkflowplatform_authenticate_private_key(
+          uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                            args[0]),
+          uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                            args[1]));
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_fn_method_sshworkflowplatform_confirm_host_key(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value = uniffi_whip_ssh_fn_method_sshworkflowplatform_confirm_host_key(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[1]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[2]));
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_fn_method_sshworkflowplatform_host_key_trusted(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value = uniffi_whip_ssh_fn_method_sshworkflowplatform_host_key_trusted(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[1]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[2]));
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
 jsi::Value
 NativeWhipSsh::cpp_uniffi_whip_ssh_fn_clone_terminaldeliveryeventsink(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
@@ -39891,6 +41270,18 @@ jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_tailcat_server_command(
 
   return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
 }
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_set_ssh_workflow_locked(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_func_set_ssh_workflow_locked(
+      uniffi_jsi::Bridging<int8_t>::fromJs(rt, callInvoker, args[0]), &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
+}
 jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_highlight_code(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
@@ -41322,6 +42713,14 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_tailcat_server_command(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
   auto value = uniffi_whip_ssh_checksum_func_tailcat_server_command();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_set_ssh_workflow_locked(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_func_set_ssh_workflow_locked();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }
@@ -44131,6 +45530,56 @@ jsi::Value NativeWhipSsh::
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_sshworkflow_cancel(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_method_sshworkflow_cancel();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_sshworkflow_run(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_method_sshworkflow_run();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_sshworkflowpermit_check_active(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value = uniffi_whip_ssh_checksum_method_sshworkflowpermit_check_active();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_sshworkflowplatform_authenticate_private_key(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_sshworkflowplatform_authenticate_private_key();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_sshworkflowplatform_confirm_host_key(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_sshworkflowplatform_confirm_host_key();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_sshworkflowplatform_host_key_trusted(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_sshworkflowplatform_host_key_trusted();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
 jsi::Value NativeWhipSsh::
     cpp_uniffi_whip_ssh_checksum_method_terminaldeliveryeventsink_ready(
         jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
@@ -44378,6 +45827,14 @@ jsi::Value NativeWhipSsh::
         jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
         size_t count) {
   auto value = uniffi_whip_ssh_checksum_constructor_hostactioncoordinator_new();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_constructor_sshworkflow_new(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_constructor_sshworkflow_new();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }

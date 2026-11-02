@@ -484,6 +484,30 @@ interface NativeModuleInterface {
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_sshworkflow(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_sshworkflow(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_sshworkflowpermit(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_sshworkflowpermit(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_sshworkflowplatform(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_sshworkflowplatform(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_clone_startupsessionrestore(
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -567,6 +591,9 @@ interface NativeModuleInterface {
   ): void;
   ubrn_uniffi_whip_ssh_fn_init_callback_vtable_sessionrestoreplatform(
     vtable: UniffiVTableCallbackInterfaceWhipSshSessionRestorePlatform,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_init_callback_vtable_sshworkflowplatform(
+    vtable: UniffiVTableCallbackInterfaceWhipSshSshWorkflowPlatform,
   ): void;
   ubrn_uniffi_whip_ssh_fn_init_callback_vtable_terminaldeliveryeventsink(
     vtable: UniffiVTableCallbackInterfaceWhipSshTerminalDeliveryEventSink,
@@ -943,6 +970,10 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_fn_func_set_ssh_agent_forwarding(
     key: Uint8Array,
     enabled: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_func_set_ssh_workflow_locked(
+    locked: number,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
   ubrn_uniffi_whip_ssh_fn_func_set_terminal_delivery_event_sink(
@@ -2697,6 +2728,38 @@ interface NativeModuleInterface {
     sessionId: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_constructor_sshworkflow_new(
+    request: Uint8Array,
+    hosts: Uint8Array,
+    biometric: number,
+    credentials: bigint,
+    knownHosts: bigint,
+    platform: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_sshworkflow_cancel(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_sshworkflow_run(uniffiSelf: bigint): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_sshworkflowpermit_check_active(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_sshworkflowplatform_authenticate_private_key(
+    uniffiSelf: bigint,
+    permit: bigint,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_sshworkflowplatform_confirm_host_key(
+    uniffiSelf: bigint,
+    permit: bigint,
+    challenge: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_sshworkflowplatform_host_key_trusted(
+    uniffiSelf: bigint,
+    permit: bigint,
+    challenge: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_startupsessionrestore_wait(
     uniffiSelf: bigint,
   ): bigint;
@@ -2884,6 +2947,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_set_known_hosts(): number;
   ubrn_uniffi_whip_ssh_checksum_func_set_reverse_control_event_sink(): number;
   ubrn_uniffi_whip_ssh_checksum_func_set_ssh_agent_forwarding(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_set_ssh_workflow_locked(): number;
   ubrn_uniffi_whip_ssh_checksum_func_set_terminal_delivery_event_sink(): number;
   ubrn_uniffi_whip_ssh_checksum_func_set_trusted_host_keys(): number;
   ubrn_uniffi_whip_ssh_checksum_func_set_usage_foreground(): number;
@@ -3233,6 +3297,13 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_sessionrestoreplatform_state_changed(): number;
   ubrn_uniffi_whip_ssh_checksum_method_sessionrestoreplatform_host_failed(): number;
   ubrn_uniffi_whip_ssh_checksum_method_sessionrestoreplatform_terminal_ready(): number;
+  ubrn_uniffi_whip_ssh_checksum_constructor_sshworkflow_new(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_sshworkflow_cancel(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_sshworkflow_run(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_sshworkflowpermit_check_active(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_sshworkflowplatform_authenticate_private_key(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_sshworkflowplatform_confirm_host_key(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_sshworkflowplatform_host_key_trusted(): number;
   ubrn_uniffi_whip_ssh_checksum_method_startupsessionrestore_wait(): number;
   ubrn_uniffi_whip_ssh_checksum_method_terminaldeliveryeventsink_ready(): number;
   ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionpermit_check_active(): number;
@@ -3413,6 +3484,18 @@ interface NativeModuleInterface {
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
   ubrn_uniffi_internal_fn_method_sessionpersistenceplatform_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_sshworkflow_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_sshworkflowpermit_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_sshworkflowplatform_ffi__bless_pointer(
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
@@ -4002,6 +4085,39 @@ export type UniffiVTableCallbackInterfaceWhipSshSessionRestorePlatform = {
   state_changed: UniffiCallbackInterfaceWhipSshSessionRestorePlatformMethod3;
   host_failed: UniffiCallbackInterfaceWhipSshSessionRestorePlatformMethod4;
   terminal_ready: UniffiCallbackInterfaceWhipSshSessionRestorePlatformMethod5;
+};
+type UniffiCallbackInterfaceWhipSshSshWorkflowPlatformMethod0 = (
+  uniffiHandle: bigint,
+  permit: bigint,
+  uniffiFutureCallback: UniffiForeignFutureCompletei8,
+  uniffiCallbackData: bigint,
+) => UniffiForeignFutureDroppedCallbackStruct;
+type UniffiCallbackInterfaceWhipSshSshWorkflowPlatformMethod1 = (
+  uniffiHandle: bigint,
+  permit: bigint,
+  challenge: Uint8Array,
+  uniffiFutureCallback: UniffiForeignFutureCompletei8,
+  uniffiCallbackData: bigint,
+) => UniffiForeignFutureDroppedCallbackStruct;
+type UniffiCallbackInterfaceWhipSshSshWorkflowPlatformMethod2 = (
+  uniffiHandle: bigint,
+  permit: bigint,
+  challenge: Uint8Array,
+  uniffiFutureCallback: UniffiForeignFutureCompletevoid,
+  uniffiCallbackData: bigint,
+) => UniffiForeignFutureDroppedCallbackStruct;
+type UniffiCallbackInterfaceCloneWhipSshSshWorkflowPlatform = (
+  handle: bigint,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceFreeWhipSshSshWorkflowPlatform = (
+  handle: bigint,
+) => void;
+export type UniffiVTableCallbackInterfaceWhipSshSshWorkflowPlatform = {
+  uniffi_free: UniffiCallbackInterfaceFreeWhipSshSshWorkflowPlatform;
+  uniffi_clone: UniffiCallbackInterfaceCloneWhipSshSshWorkflowPlatform;
+  authenticate_private_key: UniffiCallbackInterfaceWhipSshSshWorkflowPlatformMethod0;
+  confirm_host_key: UniffiCallbackInterfaceWhipSshSshWorkflowPlatformMethod1;
+  host_key_trusted: UniffiCallbackInterfaceWhipSshSshWorkflowPlatformMethod2;
 };
 type UniffiCallbackInterfaceWhipSshTerminalDeliveryEventSinkMethod0 = (
   uniffiHandle: bigint,

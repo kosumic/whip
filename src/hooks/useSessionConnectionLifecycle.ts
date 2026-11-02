@@ -219,10 +219,6 @@ export function useSessionConnectionLifecycle({
         ) {
           return;
         }
-        if (event.type === 'download-diagnostic') {
-          recordNetworkDiagnostic(event.diagnostic.errorCategory ? 'warn' : 'info', 'sftp-download', { sessionId, ...event.diagnostic });
-          return;
-        }
         if (event.type === 'diagnostic') {
           handleRuntimeDiagnostic(sessionId, runtime, event.diagnostic);
           return;

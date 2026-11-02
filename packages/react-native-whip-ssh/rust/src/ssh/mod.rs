@@ -9,6 +9,7 @@ mod browser_proxy;
 pub(crate) mod known_hosts;
 mod reverse_forward;
 mod session;
+pub(crate) use session::SessionRoute;
 pub(crate) mod tailcat;
 
 pub(crate) use reverse_forward::RemoteForward;
@@ -34,7 +35,7 @@ use russh::client;
 use russh::keys::{PrivateKeyWithHashAlg, PublicKeyOrCertificate};
 use russh_sftp::client::SftpSession;
 mod directory_download;
-pub(crate) mod download;
+pub(crate) mod file_download;
 use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch};
@@ -200,11 +201,12 @@ const SFTP_HTTP_READ_SIZE: u64 = 256 * 1024;
 const SFTP_HTTP_SERVER_LIFETIME: Duration = Duration::from_hours(1);
 const REMOTE_HOME_COMMAND: &str = r#"printf %s "$HOME""#;
 const COMPATIBILITY_SHELL_ID: &str = "default";
+const TRANSFER_BUFFER_BYTES: usize = 64 * 1024;
+const TRANSFER_PROGRESS_BYTES: u64 = 256 * 1024;
+const TRANSFER_PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
 
 #[derive(Debug, thiserror::Error)]
-enum TransportError {
-    #[error("{0}")]
-    Download(#[from] download::Failure),
+pub(crate) enum TransportError {
     #[error("invalid request: {0}")]
     InvalidRequest(String),
     #[error("unknown client")]
@@ -385,7 +387,7 @@ fn transport_error_code(error: &TransportError) -> SshErrorCode {
         },
         TransportError::Key(_) | TransportError::SshKey(_) => SshErrorCode::InvalidPrivateKey,
         TransportError::Io(error) => io_error_code(error),
-        TransportError::Sftp(_) | TransportError::Download(_) => SshErrorCode::SftpFailure,
+        TransportError::Sftp(_) => SshErrorCode::SftpFailure,
     }
 }
 
@@ -1030,6 +1032,14 @@ async fn connect_inner(
     connection: &SshConnectionConfig,
     jump: Option<&Session>,
 ) -> Result<Arc<Session>, TransportError> {
+    connect_inner_guarded(connection, jump, None).await
+}
+async fn connect_inner_guarded(
+    connection: &SshConnectionConfig,
+    jump: Option<&Session>,
+    control: Option<&crate::ssh_workflows::Control>,
+) -> Result<Arc<Session>, TransportError> {
+    check_workflow_control(control)?;
     if connection.tailcat_ssh_server && connection.tailcat_address.is_none() {
         return Err(TransportError::InvalidRequest(
             "Tailcat's SSH server requires Tailcat mode".into(),
@@ -1088,10 +1098,11 @@ async fn connect_inner(
             .map_err(classify_direct_connect_error)?
     };
 
+    check_workflow_control(control)?;
     let mut forwarding_key = None;
     let authenticated = match &connection.credential {
         SshCredential::Password(password) => {
-            authenticate_password(&mut handle, &username, password).await?
+            authenticate_password(&mut handle, &username, password, control).await?
         }
         SshCredential::Key {
             private_key,
@@ -1102,6 +1113,7 @@ async fn connect_inner(
                 passphrase.as_deref(),
             )?);
             let hash_alg = handle.best_supported_rsa_hash().await?.flatten();
+            check_workflow_control(control)?;
             let auth_key = PrivateKeyWithHashAlg::new(key_pair.clone(), hash_alg);
             let result = handle
                 .authenticate_publickey(&username, auth_key)
@@ -1137,7 +1149,9 @@ async fn authenticate_password(
     handle: &mut client::Handle<RusshHandler>,
     username: &str,
     password: &str,
+    control: Option<&crate::ssh_workflows::Control>,
 ) -> Result<bool, TransportError> {
+    check_workflow_control(control)?;
     if handle
         .authenticate_password(username, password)
         .await?
@@ -1146,6 +1160,7 @@ async fn authenticate_password(
         return Ok(true);
     }
 
+    check_workflow_control(control)?;
     // macOS and other PAM-backed SSH servers commonly present a password
     // through keyboard-interactive authentication. OpenSSH clients fall back
     // automatically, so mirror that behavior without answering unknown MFA
@@ -1158,6 +1173,7 @@ async fn authenticate_password(
             client::KeyboardInteractiveAuthResponse::Success => return Ok(true),
             client::KeyboardInteractiveAuthResponse::Failure { .. } => return Ok(false),
             client::KeyboardInteractiveAuthResponse::InfoRequest { prompts, .. } => {
+                check_workflow_control(control)?;
                 let Some(responses) =
                     keyboard_interactive_password_responses(&prompts, username, password)
                 else {
@@ -1800,7 +1816,7 @@ fn transfer_cancelled(direction: &str) -> TransportError {
     TransportError::InvalidRequest(format!("SFTP {direction} cancelled"))
 }
 
-pub(crate) async fn wait_for_transfer_cancel(cancel: &mut watch::Receiver<bool>) {
+async fn wait_for_transfer_cancel(cancel: &mut watch::Receiver<bool>) {
     loop {
         if *cancel.borrow_and_update() {
             return;
@@ -1838,7 +1854,7 @@ async fn copy_sftp_stream(
     let mut copied = 0u64;
     let mut last_reported_bytes = 0u64;
     let mut last_report = Instant::now();
-    let mut buffer = vec![0u8; 64 * 1024];
+    let mut buffer = vec![0u8; TRANSFER_BUFFER_BYTES];
     progress(0, total);
     loop {
         let count = cancellable_transfer_io(cancel, direction, source.read(&mut buffer)).await?;
@@ -1847,8 +1863,8 @@ async fn copy_sftp_stream(
         }
         cancellable_transfer_io(cancel, direction, destination.write_all(&buffer[..count])).await?;
         copied = copied.saturating_add(count as u64);
-        if copied.saturating_sub(last_reported_bytes) >= 256 * 1024
-            || last_report.elapsed() >= Duration::from_millis(100)
+        if copied.saturating_sub(last_reported_bytes) >= TRANSFER_PROGRESS_BYTES
+            || last_report.elapsed() >= TRANSFER_PROGRESS_INTERVAL
         {
             progress(copied, total);
             last_reported_bytes = copied;
@@ -1957,15 +1973,15 @@ async fn sftp_transfer_file_on(
         }
         Ok(remote_path)
     } else {
-        download::download(
-            &download::FixedSource(sftp),
-            &remote_path,
-            &local_path,
+        file_download::download(
+            local_path,
+            remote_path,
+            "compatibility",
             cancel,
             progress,
+            || std::future::ready(Ok(sftp.clone())),
         )
         .await
-        .map_err(Into::into)
     }
 }
 
@@ -2023,24 +2039,24 @@ async fn sftp_transfer_on(
             (destination, remote_path)
         };
         let mut last_percent = None;
-        let mut report = |copied: u64, total: Option<u64>| {
-            let percent = copied
-                .saturating_mul(100)
-                .checked_div(total.unwrap_or_default())
-                .unwrap_or(100);
-            if last_percent != Some(percent) {
-                emit_event(json!({ "name": event, "key": key, "value": percent.to_string() }));
-                last_percent = Some(percent);
-            }
-        };
-        let destination = if upload {
-            sftp_transfer_file_on(sftp, local_path, remote_path, true, cancel, &mut report).await?
-        } else {
-            let source = session::SessionDownloadSource {
-                session: session_for_key(&key)?,
-            };
-            download::download(&source, &remote_path, &local_path, cancel, &mut report).await?
-        };
+        let destination = sftp_transfer_file_on(
+            sftp,
+            local_path,
+            remote_path,
+            upload,
+            cancel,
+            |copied, total| {
+                let percent = copied
+                    .saturating_mul(100)
+                    .checked_div(total.unwrap_or_default())
+                    .unwrap_or(100);
+                if last_percent != Some(percent) {
+                    emit_event(json!({ "name": event, "key": key, "value": percent.to_string() }));
+                    last_percent = Some(percent);
+                }
+            },
+        )
+        .await?;
         if last_percent != Some(100) {
             emit_event(json!({ "name": event, "key": key, "value": "100" }));
         }
@@ -3683,3 +3699,14 @@ pub fn shutdown() {
 
 #[cfg(test)]
 mod tests;
+
+fn check_workflow_control(
+    control: Option<&crate::ssh_workflows::Control>,
+) -> Result<(), TransportError> {
+    if let Some(control) = control {
+        control
+            .check()
+            .map_err(|_| TransportError::InvalidRequest("SSH operation cancelled".into()))?;
+    }
+    Ok(())
+}

@@ -319,10 +319,6 @@ pub enum HostRuntimeEvent {
         runtime_id: String,
         generation: u64,
     },
-    DownloadDiagnosticReported {
-        runtime_id: String,
-        diagnostic: crate::remote_ops::DownloadDiagnostic,
-    },
     TransferProgressChanged {
         runtime_id: String,
         progress: TransferProgress,
@@ -1059,4 +1055,27 @@ pub(crate) fn register_connected_test_runtime(id: &str) -> Arc<HostRuntime> {
     let inner = tests::connected_runtime_inner(id);
     runtimes().write().insert(id.to_owned(), inner.clone());
     Arc::new(HostRuntime { inner })
+}
+
+pub(crate) fn workflow_host_connected(host: &crate::HostProfileRecord) -> bool {
+    runtimes().read().values().any(|inner| {
+        let ssh = &inner.config.ssh;
+        let state = inner.state.lock();
+        inner.id == host.id
+            && ssh.host == host.host
+            && host.port.parse::<u16>() == Ok(ssh.port)
+            && ssh.username == host.username
+            && ssh.tailcat_address.is_some() == host.tailcat_enabled
+            && ssh.tailcat_ssh_server == (host.tailcat_enabled && host.tailcat_ssh_server)
+            && matches!(
+                (&ssh.credential, host.auth_mode),
+                (HostSshCredential::Key { .. }, crate::HostAuthMode::Key)
+                    | (
+                        HostSshCredential::Password { .. },
+                        crate::HostAuthMode::Password
+                    )
+            )
+            && !state.explicit_disconnect
+            && state.connection == HostConnectionState::Connected
+    })
 }

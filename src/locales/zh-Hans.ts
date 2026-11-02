@@ -1253,7 +1253,7 @@ export const zhHans = {
   'app.hostSessionUnavailable': '主机会话不可用',
   'alerts.channelName': '代理状态',
   'alerts.regularChannelName': '代理通知',
-  'alerts.needsYou': '{{name}} 需要你',
+  'alerts.needsAttention': '{{name}} 需要处理',
   'alerts.finished': '{{name}} 完成',
   'alerts.agentState': '代理是 {{status}}',
   'pane.ansiOutput': 'ANSI 窗格输出',

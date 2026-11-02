@@ -39,8 +39,6 @@ import {
   HerdrTabLaunchStage,
   HerdrTerminalNotificationKind,
   HerdrTerminalControlEvent_Tags,
-  DownloadPhase as NativeDownloadPhase,
-  DownloadErrorCategory as NativeDownloadErrorCategory,
   HostConnectionState,
   HostAuthMode,
   GithubSection,
@@ -595,7 +593,6 @@ export type RuntimeLifecycleEvent =
   | { type: 'event-stream-closed'; reason: string }
   | { type: 'event-stream-restored'; generation: number }
   | { type: 'transfer-progress'; progress: RuntimeTransferProgress }
-  | { type: 'download-diagnostic'; diagnostic: RuntimeDownloadDiagnostic }
   | {
       type: 'preview-state';
       previewId: string;
@@ -604,11 +601,6 @@ export type RuntimeLifecycleEvent =
     }
   | { type: 'diagnostic'; diagnostic: RuntimeDiagnostic }
   | { type: 'fatal-error'; message: string };
-
-export type RuntimeDownloadDiagnostic = {
-  transferId: string; phase: string; attempt: number; bytesTransferred: number;
-  totalBytes?: number; sourceModifiedAt?: number; sshGeneration: number; errorCategory?: string;
-};
 
 export type RuntimeDiagnosticOperation =
   | 'ssh-connect'
@@ -2833,18 +2825,6 @@ const hostRuntimeEventSink = {
           type: 'event-stream-restored',
           generation: Number(inner.generation),
         });
-        break;
-      case HostRuntimeEvent_Tags.DownloadDiagnosticReported:
-        handler({ type: 'download-diagnostic', diagnostic: {
-          transferId: inner.diagnostic.transferId,
-          phase: NativeDownloadPhase[inner.diagnostic.phase],
-          attempt: inner.diagnostic.attempt,
-          bytesTransferred: Number(inner.diagnostic.bytesTransferred),
-          totalBytes: inner.diagnostic.totalBytes === undefined ? undefined : Number(inner.diagnostic.totalBytes),
-          sourceModifiedAt: inner.diagnostic.sourceModifiedAt === undefined ? undefined : Number(inner.diagnostic.sourceModifiedAt),
-          sshGeneration: Number(inner.diagnostic.sshGeneration),
-          errorCategory: inner.diagnostic.errorCategory === undefined ? undefined : NativeDownloadErrorCategory[inner.diagnostic.errorCategory],
-        }});
         break;
       case HostRuntimeEvent_Tags.TransferProgressChanged:
         handler({

@@ -1,89 +1,94 @@
 # SFTP download recovery (#285)
 
-The original intermittent failure is not yet tied to one reproduced device event.
-There is no 100 MB file-size ceiling in the streaming engine. Real loopback SSH/SFTP
-transfers of 100 MiB and 500 MiB completed on arm64 mini with full SHA-256 verification.
+The reported intermittent failures around 100 MB do not establish a size limit.
+The downloader streams 64 KiB chunks. The previous implementation deleted the
+partial file after any read error and accepted EOF without comparing the copied
+byte count with the source size. Automatic SSH reconnects also failed every
+active transfer. Saving from private staging into iOS Files or Android SAF is a
+separate operation that can fail after SFTP completes.
 
-Confirmed failure paths in the previous implementation:
+## Recovery contract
 
-- russh-sftp 2.4 defaults to a 10-second request timeout. A failed read discarded
-  the private partial file, even when most of the transfer was complete.
-- Host generation invalidation failed every transfer on reconnect. A completed
-  local download could also be reported as failed merely because SSH disconnected.
-- EOF was accepted without checking the advertised remote size, so a short read
-  could reach local publication.
-- A destination-provider copy could fail after SFTP succeeded. Cleanup in a
-  finally block could replace the original failure with a cleanup exception.
+- Single-file downloads retain their private partial file for at most four
+  attempts. Each remote operation and reconnect wait has a 30-second timeout;
+  retries back off by 250, 500, and 750 milliseconds. Cancellation interrupts
+  blocked network operations and backoff.
+- An attempt opens a new SFTP subsystem on the current host connection. It seeks
+  to the acknowledged local offset only when source size and modification time
+  match. A changed source or unavailable modification time restarts at zero.
+- The downloader rejects premature EOF, growth, changes to the open source or
+  its path, local write failures, and local size mismatches. It flushes and syncs
+  local data before the existing atomic rename publishes the private file.
+- Automatic SSH generation changes preserve downloads. Explicit disconnect,
+  cancellation, and terminal errors remove partial files. Uploads retain their
+  existing disconnect behavior. Recursive downloads retain all-or-nothing
+  traversal and cleanup; they do not resume entire directory trees.
+- A process exit never publishes the partial file. Download/cache directories
+  older than 24 hours are expired before the next download, excluding active
+  transfers and previews. A restarted app does not reuse unverified partials.
+- Both remote-file-manager download paths distinguish transfer failures from
+  destination-save failures. Destination-copy overwrite policies are unchanged.
+  Copy/provider failures cannot return download success. Both entry points also
+  check a saved file against the staged byte count when sizes are available.
+  Android SAF children are resolved through the provider listing, not by joining
+  opaque content URI document IDs. Unavailable provider sizes are not treated as
+  a verified byte count.
 
-## Ownership and recovery
+Diagnostics record transfer ID, attempt, phase, bytes, source size/mtime, and SSH
+generation. They omit source/destination paths, credentials, and server error
+strings that can contain paths. A source fingerprint uses SFTP metadata rather
+than a remote content hash; files changed within the server timestamp resolution
+without changing size cannot always be detected.
 
-`ssh/download.rs` owns the single-file state machine over existing SFTP sessions.
-One logical request gets at most three attempts, including connection/metadata
-preparation. Recoverable remote-read, connection, timeout and short-EOF failures
-retain the private partial. A fresh SFTP subsystem/session seeks to the confirmed
-local byte offset when remote size and modification time still match. Changed or
-unverifiable identity restarts the file from zero. The final byte count, local size,
-opened-handle metadata and current-path metadata must agree before publication.
+## Automated checks
 
-Each chunk is flushed before it advances the retained offset, so a retry cannot
-race a still-buffered Tokio file write. Local writes, flush and sync failures do
-not retry. In particular, a timed-out write may
-still be settling in the OS and must not race another attempt. Explicit cancel or
-disconnect stops recovery. Automatic reconnection preserves the request and its
-transfer ID, while stale remote reads wake on native SSH lifecycle changes instead
-of waiting for the old SFTP request timeout. Uploads retain their existing policy;
-directory traversal retains collision checks and cleans an unsuccessful tree.
+The Rust tests use the actual SFTP protocol over a bounded duplex stream. They
+write and hash-check 100 MB and 500 MB local files, tear down the transport during
+a read, verify resumed offsets, replace source contents between attempts, change
+metadata at EOF, exhaust retries on premature EOF, cancel/abort tasks, and inject
+a real Linux ENOSPC write using `/dev/full`. Runtime tests cover generation
+changes, explicit disconnect during recovery, cancellation, and progress reset
+after a source change. JavaScript tests cover both download entry points,
+destination-provider errors, missing staging files, and cleanup after app exit.
 
-Partials use exclusive creation and mode 0600 beside the private destination.
-Rename remains the atomic publication point and is allowed to settle once admitted.
-Terminal failure/cancellation cleans the partial; incomplete jobs are never reused
-after app termination. The Expo adapter expires abandoned app-owned staging jobs
-after 24 hours and protects active previews. Provider errors are typed separately
-as `destination-save`; cleanup errors are recorded without replacing the outcome.
-Known destination byte counts are checked after copying without buffering the file
-in JavaScript. Existing per-entry-point overwrite/collision choices are preserved.
+Run from `nix develop`:
 
-SFTP metadata is server-supplied and modification-time precision varies. It is not
-a cryptographic snapshot of an actively rewritten remote file.
-
-## Diagnostics and tests
-
-`DownloadDiagnosticReported` carries transfer ID, phase, attempt, SFTP byte count,
-expected total, source modification time, SSH generation and a bounded error category.
-The application records these as `sftp-download`, with its runtime/session identity.
-The adapter records `remote-file-download` phases for SFTP, private staging and
-provider save. Paths, filenames, credentials and raw server/provider errors are
-excluded from these records.
-
-Behavioral tests cover actual SFTP interruption and offset reuse, early EOF,
-same-size/changed-size source replacement, bounded failure, blocked-read cancellation,
-local-storage failures, actual SSH session replacement, explicit disconnect,
-destination-copy failures/short copies, cleanup failure and expired/active jobs.
-The large-file test is explicit to keep routine CI I/O bounded:
-
-```bash
-nix develop -c bash -c 'cd packages/react-native-whip-ssh/rust && cargo test --locked --lib ssh::download -- --test-threads=1'
-nix develop -c bash -c 'cd packages/react-native-whip-ssh/rust && cargo test --locked --lib normal_100_and_500_mib_downloads_have_no_size_ceiling -- --ignored --test-threads=1'
-nix develop -c node_modules/.bin/jest --runInBand __tests__/remoteFileDownload.test.ts
+```sh
+cargo test --locked --manifest-path packages/react-native-whip-ssh/rust/Cargo.toml --lib -- --test-threads=1
+cargo clippy --locked --manifest-path packages/react-native-whip-ssh/rust/Cargo.toml --all-targets -- -D warnings
+npm test -- --runInBand __tests__/remoteFileDownload.test.ts
 ```
 
-Validation on 2026-11-01 used arm64 mini: 939 Rust tests passed (the large-file
-case was run separately), along with 3,338 JavaScript tests, TypeScript, ESLint,
-Clippy and generated C++ bridge checks.
+Use one Rust test thread, matching CI: host-runtime and reverse-control tests
+share process-wide event sinks and instruction context.
 
-After rebasing onto updated main on 2026-11-02, 948 Rust tests and 3,348 JavaScript
-tests passed. Cargo formatting, Clippy with all targets, TypeScript and changed-file
-ESLint also passed.
+On Thinkery, the serialized Rust library suite passed 941 tests with 10 ignored.
+Clippy passed for all targets. The download and remote-file-manager JavaScript
+suites passed 141 tests; TypeScript and ESLint checks also passed.
+The real OpenSSH interoperability matrix passed, using the pinned container image
+seeded into Thinkery's local cache. A slow-link regression test verifies progress
+arrives before completion even for transfers below the byte-reporting threshold.
 
-A saved SSH profile was then exercised on the iPhone 17 Pro simulator.
-A 100 MiB context-menu download and a 500 MiB preview download were saved through
-iOS Files into a temporary destination app. Both saved files matched the source
-SHA-256. The 500 MiB transfer included a two-second home/background transition
-and return to the app before destination selection. The original intermittent
-failure did not reproduce in these normal transfers. Physical lossy-mobile,
-iCloud-provider and Android-device runs were not performed; Android SAF failure
-classification is covered by the adapter tests.
+The Android Rust release library built for `aarch64-linux-android` in 4m58s.
+The GitHub-channel debug APK also built successfully on Thinkery (10m51s for the
+final Gradle run after initial dependency setup). Its packaged native libraries
+contain only `arm64-v8a`. The 184 MiB APK is at
+`android/app/build/outputs/apk/debug/app-debug.apk`; it has not been installed on
+a device.
 
-Simulator builds must preserve the app's existing Keychain access group in
-Xcode's simulated entitlements. An unsigned build can retain all app files while
-being unable to read the existing saved SSH credentials.
+## Device investigation
+
+Physical-device networking/provider validation is still needed to identify the
+cause of the original report. Use fixed 100 MB and 500 MB remote files and retain
+their checksums. Exercise stable Wi-Fi, mobile packet loss, SSH restart,
+foreground/background transitions, Android SAF, and iOS Files through both the
+context menu and preview download. Compare final checksums, confirm cancellation
+never announces success, and verify a failed destination save is identified as
+the save phase. Correlate transfer IDs with lifecycle diagnostics without adding
+private paths or credentials to reports.
+
+Destination-save and cleanup diagnostics include the runtime and transfer IDs,
+phase, outcome, and provider class. They exclude filenames, URIs, and raw
+provider/cleanup errors. Cleanup and native cancellation failures cannot replace
+the original result. A successful preview save keeps its cache available until
+the preview is disposed.

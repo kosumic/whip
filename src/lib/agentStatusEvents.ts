@@ -5,18 +5,22 @@ export function tabNameForAgent(
   tabs: TabInfo[],
 ): string {
   const label = tabs.find(tab => tab.tab_id === agent.tab_id)?.label.trim();
-  return label || agent.tab_id;
+  // Omit an unknown tab rather than exposing an internal identifier.
+  return label || '';
 }
 
 export function agentNotificationTitle(
   agent: AgentInfo,
   tabName?: string,
-  labels?: { needsYou: (name: string) => string; finished: (name: string) => string },
+  labels?: { needsAttention: (name: string) => string; finished: (name: string) => string },
+  nameOverride?: string,
 ): string {
-  const name = agent.display_agent || agent.name || agent.agent || agent.pane_id;
+  // Herdr's reported agent label identifies the actual agent. Its managed
+  // name may be derived from the tab label and is not a suitable display label.
+  const name = nameOverride?.trim() || agent.agent?.trim() || agent.display_agent?.trim() || 'Agent';
   const action = agent.agent_status === 'blocked'
-    ? labels?.needsYou(name) || `${name} needs you`
+    ? labels?.needsAttention(name) || `${name} needs attention`
     : labels?.finished(name) || `${name} finished`;
   const label = tabName?.trim();
-  return label ? `${label} · ${action}` : action;
+  return label && label !== name ? `${label} · ${action}` : action;
 }
