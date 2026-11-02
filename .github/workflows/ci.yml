@@ -567,9 +567,7 @@ jobs:
 
       - name: Test native browser, clipboard, and terminal input on iPhone simulator
         id: ios-native-tests
-        run: |
-          defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool NO
-          nix develop .#default -c ruby scripts/test-ios-browser.rb
+        run: nix develop .#default -c ruby scripts/test-ios-browser.rb
 
       - name: Upload failed iOS native test results
         if: failure() && steps.ios-native-tests.conclusion == 'failure'
