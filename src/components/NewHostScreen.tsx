@@ -1,7 +1,7 @@
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
 import { ChevronLeft, ChevronRight, ExternalLink, Keyboard, ScanLine, X } from 'lucide-react-native';
 import { generateKeyPair, getKeyDetails } from 'react-native-whip-ssh';
-import { useReducer, useRef, useState } from 'react';
+import { useEffect, useReducer, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
@@ -123,6 +123,9 @@ export function NewHostScreen({ hosts, onCancel, onManual, onPaired, onAuthentic
     }
   };
 
+  const operationAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => { operationAbort.current?.abort(); }, [jumpHostId]);
+
   const handleScan = async ({ data }: BarcodeScanningResult) => {
     if (scanHandled.current || state.phase !== 'scanning') return;
     const selectedKey = state.key;
@@ -135,15 +138,19 @@ export function NewHostScreen({ hosts, onCancel, onManual, onPaired, onAuthentic
     }
 
     dispatch({ type: 'pairing-started' });
+    const abort = new AbortController();
+    operationAbort.current?.abort();
+    operationAbort.current = abort;
     try {
       const result = await pairHostWithRoute(data.trim(), selectedKey.publicKey, t('pairing.deviceName'), {
         hosts,
+        signal: abort.signal,
         jumpHostId,
         onAuthenticatePrivateKey,
         onConfirmUnknownHost,
         onTrustHost,
       });
-      if (result) await onPaired(result, selectedKey, jumpHostId);
+      if (result && !abort.signal.aborted) await onPaired(result, selectedKey, jumpHostId);
     } catch (pairingError) {
       dispatch({ type: 'failed', error: t('pairing.pairError', { error: String(pairingError) }) });
     } finally {
