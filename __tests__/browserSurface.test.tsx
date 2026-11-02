@@ -1203,6 +1203,7 @@ describe('browser QR scanning and recent searches', () => {
   const press = async (label: string) =>
     act(async () => control(label).props.onPress());
   beforeEach(async () => {
+    Platform.OS = 'ios';
     mockCameraPermission = { granted: true, canAskAgain: true };
     mockRecentSearches = [];
     mockRequestCameraPermission.mockImplementation(
@@ -1226,6 +1227,7 @@ describe('browser QR scanning and recent searches', () => {
       view.unmount();
     });
     await browserPreferences.set(DEFAULT_BROWSER_PREFERENCES);
+    Platform.OS = 'android';
   });
 
   test('QR scan navigates the selected tab once and keeps the browser renderer mounted', async () => {

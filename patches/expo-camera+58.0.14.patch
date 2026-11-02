@@ -1,0 +1,51 @@
+diff --git a/node_modules/expo-camera/android/src/main/java/expo/modules/camera/CameraExceptions.kt b/node_modules/expo-camera/android/src/main/java/expo/modules/camera/CameraExceptions.kt
+index 1c66c94..5f49580 100644
+--- a/node_modules/expo-camera/android/src/main/java/expo/modules/camera/CameraExceptions.kt
++++ b/node_modules/expo-camera/android/src/main/java/expo/modules/camera/CameraExceptions.kt
+@@ -11,10 +11,10 @@ class CameraExceptions {
+     CodedException("Could not get the image from given url: '$url'")
+ 
+   class BarcodeScanningCancelledException() :
+-    CodedException("Barcode scanning was cancelled")
++    CodedException("ERR_BARCODE_SCANNING_CANCELLED", "Barcode scanning was cancelled", null)
+ 
+   class BarcodeScanningFailedException :
+-    CodedException("Barcode scanning failed")
++    CodedException("ERR_BARCODE_SCANNING_FAILED", "Barcode scanning failed", null)
+ 
+   class MLKitUnavailableException :
+     CodedException("MLKit is not available on this device. Barcode scanning requires Google Play Services.")
+diff --git a/node_modules/expo-camera/android/src/main/java/expo/modules/camera/CameraViewModule.kt b/node_modules/expo-camera/android/src/main/java/expo/modules/camera/CameraViewModule.kt
+index 62a1808..807e411 100644
+--- a/node_modules/expo-camera/android/src/main/java/expo/modules/camera/CameraViewModule.kt
++++ b/node_modules/expo-camera/android/src/main/java/expo/modules/camera/CameraViewModule.kt
+@@ -8,6 +8,7 @@ import android.net.Uri
+ import android.os.Bundle
+ import android.util.Base64
+ import android.util.Log
++import com.google.mlkit.common.MlKitException
+ import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+ import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
+ import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
+@@ -204,8 +205,19 @@ class CameraViewModule : Module() {
+           .addOnCanceledListener {
+             promise.reject(CameraExceptions.BarcodeScanningCancelledException())
+           }
+-          .addOnFailureListener {
+-            promise.reject(CameraExceptions.BarcodeScanningFailedException())
++          .addOnFailureListener { error ->
++            // Code scanner 16.1.0 converts a dismissal with no result Intent
++            // (Android Back) into INTERNAL rather than cancelling its task.
++            if (error is MlKitException && (
++                error.errorCode == MlKitException.CODE_SCANNER_CANCELLED ||
++                error.errorCode == MlKitException.INTERNAL
++              )) {
++              Log.d(TAG, "Google code scanner dismissed (ML Kit code ${error.errorCode})")
++              promise.reject(CameraExceptions.BarcodeScanningCancelledException())
++            } else {
++              Log.w(TAG, "Google code scanner failed (ML Kit code ${(error as? MlKitException)?.errorCode})", error)
++              promise.reject(CameraExceptions.BarcodeScanningFailedException())
++            }
+           }
+       } catch (_: Exception) {
+         promise.reject(CameraExceptions.GooglePlayServicesUnavailableException())
