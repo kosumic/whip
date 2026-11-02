@@ -125,22 +125,15 @@ jest.mock('../src/components/TerminalScreen', () => {
 jest.mock('../src/components/AgentChatView', () => ({
   AgentChatView: 'AgentChatView',
 }));
-jest.mock('../src/components/GithubViewer', () => ({
-  GithubViewer: 'GithubViewer',
-}));
 jest.mock('../src/components/GithubDiscoveryPopup', () => ({
   GithubDiscoveryPopup: 'GithubDiscoveryPopup',
 }));
+const mockGithubDiscovery: ReturnType<typeof import('../src/hooks/useGithubRepository').useGithubRepository> = {
+  status: 'inactive', repository: null, attempts: [], error: null,
+  generation: undefined, retrying: false, retry: () => {},
+};
 jest.mock('../src/hooks/useGithubRepository', () => ({
-  useGithubRepository: () => ({
-    status: 'inactive',
-    repository: null,
-    attempts: [],
-    error: null,
-    generation: undefined,
-    retrying: false,
-    retry: () => {},
-  } satisfies ReturnType<typeof import('../src/hooks/useGithubRepository').useGithubRepository>),
+  useGithubRepository: () => mockGithubDiscovery,
 }));
 jest.mock('../src/components/AgentIntegrationInstallSheet', () => ({
   AgentIntegrationInstallSheet: 'IntegrationSheet',
@@ -343,6 +336,8 @@ const navigationPhases = [
 
 beforeEach(() => {
   Platform.OS = 'android';
+  mockGithubDiscovery.status = 'inactive';
+  mockGithubDiscovery.repository = null;
   resetKeyboardController();
   mockChatFrames.length = 0;
   mockVolumeKeyListeners.clear();
@@ -353,6 +348,31 @@ beforeEach(() => {
   jest.mocked(Linking.openURL).mockReset().mockResolvedValue(undefined);
   jest.spyOn(console, 'info').mockImplementation(() => {});
   jest.mocked(readSavedAgentTranscript).mockReset().mockResolvedValue(undefined);
+});
+
+test.each(['android', 'ios'] as const)('GitHub button opens the active repository through the OS on %s', async platform => {
+  Platform.OS = platform;
+  const host = setup('codex');
+  const repository = { directory: '/repo', nameWithOwner: 'owner/repo', url: 'https://github.com/owner/repo' };
+  mockGithubDiscovery.status = 'found';
+  mockGithubDiscovery.repository = repository;
+  await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+  await act(async () => { ui('TerminalScreen').props.onRequestGithub(); });
+  expect(Linking.openURL).toHaveBeenCalledTimes(1);
+  expect(Linking.openURL).toHaveBeenCalledWith(repository.url);
+  expect(ui('Alert').props.visible).toBe(false);
+});
+
+test('GitHub button reports failures to open the repository', async () => {
+  const host = setup('codex');
+  mockGithubDiscovery.status = 'found';
+  mockGithubDiscovery.repository = { directory: '/repo', nameWithOwner: 'owner/repo', url: 'https://github.com/owner/repo' };
+  jest.mocked(Linking.openURL).mockRejectedValueOnce(new Error('No link handler available'));
+  await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+  await act(async () => { ui('TerminalScreen').props.onRequestGithub(); });
+  expect(ui('Alert').props.visible).toBe(true);
+  expect(ui('Alert').props.title).toBe('terminal.linkOpenFailed');
+  expect(ui('Alert').props.message).toContain('No link handler available');
 });
 
 test('attachment picker keeps the opening composer blur source and clears it for normal attachments', async () => {

@@ -1,5 +1,10 @@
 # GitHub discovery
 
+The terminal's GitHub button opens the discovered repository's HTTPS URL through
+the operating system. GitHub Mobile handles it when installed and enabled for
+GitHub links; otherwise the URL opens in the default browser. Whip does not host
+an in-app GitHub viewer. GitHub sign-in happens in the destination app or browser.
+
 Whip probes the active pane's foreground CWD, pane CWD, and workspace checkout,
 in that order, skipping duplicates. A foreground GitHub repository wins; a
 confirmed negative or inaccessible directory permits fallback. An SSH/probe

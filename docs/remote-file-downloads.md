@@ -28,8 +28,7 @@ Run the behavioral checks in the development environment:
 ```sh
 nix develop --command npm test -- --runInBand \
   __tests__/remoteFileDownload.test.ts \
-  __tests__/remoteFileManagerLoading.test.tsx \
-  __tests__/githubAssetDownload.test.ts
+  __tests__/remoteFileManagerLoading.test.tsx
 ```
 
 The tests cover large byte counts, known and unknown totals, filesystem and SAF
