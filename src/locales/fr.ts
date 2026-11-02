@@ -1,6 +1,16 @@
 import type { en } from './en';
 
 export const fr = {
+  "github.discovery.title": "Détection GitHub",
+  "github.discovery.retry": "Réessayer la détection",
+  "github.discovery.loading": "Recherche d’un dépôt GitHub…",
+  "github.discovery.missing-gh": "GitHub CLI (gh) est introuvable dans le PATH du shell de connexion de l’hôte. Installez-le ou modifiez le PATH, puis réessayez.",
+  "github.discovery.invalid-path": "Les répertoires du dépôt sont inaccessibles. Vérifiez le répertoire et réessayez.",
+  "github.discovery.probe-failure": "Impossible de vérifier le dépôt via le canal de commandes SSH. Réessayez la détection ; le terminal peut rester connecté.",
+  "github.discovery.unknown-cwd": "Ce shell SSH n’a pas indiqué son répertoire courant. Activez les rapports de répertoire OSC 7 dans le shell pour détecter les dépôts GitHub.",
+  "github.discovery.inactive": "La détection GitHub est indisponible hors connexion.",
+  "github.discovery.found": "Dépôt GitHub trouvé",
+  "github.discovery.not-github": "Aucun dépôt GitHub trouvé",
   'connection.herdrBackend': 'Moteur',
   'connection.herdrBackend.auto': 'Automatique',
   'connection.herdrBackend.core': 'Herdr Core',

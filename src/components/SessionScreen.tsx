@@ -11,6 +11,8 @@ import {
 } from 'react';
 import { useChatViewportRetention } from '../hooks/useChatViewportRetention';
 import { useGithubRepository } from '../hooks/useGithubRepository';
+import { GithubDiscoveryPopup } from './GithubDiscoveryPopup';
+import { useSshShellDirectory } from '../hooks/useSshShellDirectory';
 import { remoteConnectionRequest } from '../services/remoteGitQueries';
 import { GithubViewer, type GithubViewerRequest } from './GithubViewer';
 import { useTranscriptTabTitles } from '../hooks/useTranscriptTabTitles';
@@ -326,6 +328,7 @@ export function SessionScreen({
   const [linkScanRequest, setLinkScanRequest] = useState(0);
   const [linksOpen, setLinksOpen] = useState(false);
   const [githubRequest, setGithubRequest] = useState<GithubViewerRequest | null>(null);
+  const [githubStatusRequest, setGithubStatusRequest] = useState<string | null>(null);
   const [terminalLinks, setTerminalLinks] = useState<string[]>([]);
   const [linksBusy, setLinksBusy] = useState(false);
   const [linksError, setLinksError] = useState<string | null>(null);
@@ -509,9 +512,14 @@ export function SessionScreen({
   const activePaneId = activePane?.pane_id;
   const activePaneWorkspaceId = activePane?.workspace_id;
   const activePaneTabId = activePane?.tab_id;
-  const githubPath = activePane?.foreground_cwd || activePane?.cwd ||
-    snapshot.workspaces.find(item => item.workspace_id === activePane?.workspace_id)?.worktree?.checkout_path;
-  const githubRepository = useGithubRepository(client, githubPath, visible && activeTerminalSession?.status === 'connected');
+  const shellDirectory = useSshShellDirectory(client, activePane ? undefined : activeTerminalSession?.terminalId);
+  const github = useGithubRepository(client, activePane ? [
+    activePane.foreground_cwd,
+    activePane.cwd,
+    snapshot.workspaces.find(item => item.workspace_id === activePane.workspace_id)?.worktree?.checkout_path,
+  ] : [shellDirectory], visible && activeTerminalSession?.status === 'connected', activeTerminalSession?.terminalId);
+  const githubStatusLabel = t(`github.discovery.${github.status}`);
+  const githubStatusScope = `${hostSessionId}:${activeTerminalSession?.terminalId}`;
   useEffect(() => {
     if (client || !activePaneId) return;
     setWorkspaceId(activePaneWorkspaceId || '');
@@ -1755,10 +1763,15 @@ export function SessionScreen({
             }
             onRequestAttachment={openAttachments}
             onRequestFiles={openFileManager}
-            onRequestGithub={githubRepository && client ? () => setGithubRequest({
-              repository: githubRepository,
-              connection: remoteConnectionRequest(client),
-            }) : undefined}
+            githubStatusLabel={github.status === 'found' ? undefined : githubStatusLabel}
+            githubDiscovering={github.status !== 'found' && github.retrying}
+            onRequestGithub={github.status !== 'inactive' && github.status !== 'not-github' ? () => {
+              if (github.repository && client) {
+                setGithubRequest({ repository: github.repository, connection: remoteConnectionRequest(client) });
+              } else {
+                setGithubStatusRequest(githubStatusScope);
+              }
+            } : undefined}
             onRequestLinks={scanTerminalLinks}
             chatControl={
               activeChatControl
@@ -2243,6 +2256,13 @@ export function SessionScreen({
           </GlassSurface>
         </Modal>
       </View>
+      <GithubDiscoveryPopup
+        visible={visible && githubStatusRequest === githubStatusScope}
+        message={githubStatusLabel}
+        busy={github.retrying}
+        onRetry={github.status !== 'unknown-cwd' && github.status !== 'inactive' && github.status !== 'found' ? github.retry : undefined}
+        onClose={() => setGithubStatusRequest(null)}
+      />
       {githubRequest && visible && (
         <GithubViewer
           key={`${githubRequest.connection.native.runtimeId}:${githubRequest.repository.nameWithOwner}`}

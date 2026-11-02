@@ -86,6 +86,7 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
     Key: { new: jest.fn(inner => ({ tag: 'Key', inner })) },
   },
   HostRuntimeEvent_Tags: {
+    SshShellDirectoryChanged: 'SshShellDirectoryChanged',
     ConnectionStateChanged: 'ConnectionStateChanged',
     ReconnectScheduled: 'ReconnectScheduled',
     Reconnected: 'Reconnected',

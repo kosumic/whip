@@ -14,6 +14,8 @@ pub use resources::*;
 
 pub(crate) const GITHUB_PAGE_SIZE: usize = 10;
 const GITHUB_HOST: &str = "github.com";
+pub(crate) const DISCOVERY_MISSING_GH_EXIT: u32 = 41;
+pub(crate) const DISCOVERY_INVALID_PATH_EXIT: u32 = 42;
 pub(crate) const MAX_GITHUB_COMMENT_CHARS: usize = 65_536;
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
@@ -21,6 +23,20 @@ pub struct GithubRepository {
     pub directory: String,
     pub name_with_owner: String,
     pub url: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum GithubDiscoveryStatus {
+    Found,
+    NotGithub,
+    MissingGh,
+    InvalidPath,
+}
+
+#[derive(Debug, uniffi::Record)]
+pub struct GithubDiscovery {
+    pub status: GithubDiscoveryStatus,
+    pub repository: Option<GithubRepository>,
 }
 
 #[derive(Clone, Copy, Debug, uniffi::Enum)]
@@ -96,7 +112,16 @@ pub(crate) fn discovery_script(directory: &str) -> String {
     // This local probe deliberately requires neither authentication nor network.
     // Run through the host's login shell so Homebrew/Nix installations are found.
     format!(
-        "command -v gh >/dev/null 2>&1 || exit 0\ncd {} 2>/dev/null || exit 0\ngit rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0\ngit config --get-regexp '^remote\\..*\\.url$' || true",
+        r#"command -v gh >/dev/null 2>&1 || exit {DISCOVERY_MISSING_GH_EXIT}
+cd {} 2>/dev/null || exit {DISCOVERY_INVALID_PATH_EXIT}
+if ! probe=$(LC_ALL=C git rev-parse --is-inside-work-tree 2>&1); then
+    case "$probe" in
+        *"not a git repository (or any"*) exit 0;;
+        *) exit 1;;
+    esac
+fi
+[ "$probe" = true ] || exit 0
+git config --get-regexp '^remote\..*\.url$' || [ "$?" -eq 1 ]"#,
         shell_quote(directory),
     )
 }
@@ -725,14 +750,17 @@ mod tests {
                 .current_dir(temp.path())
                 .output()
                 .unwrap();
-            assert!(output.status.success());
-            parse_discovery(path.to_owned(), &String::from_utf8(output.stdout).unwrap())
+            (
+                output.status.code(),
+                parse_discovery(path.to_owned(), &String::from_utf8(output.stdout).unwrap()),
+            )
         };
-        assert!(probe(directory).is_none());
+        assert_eq!(probe(directory), (Some(41), None));
         // The probe only needs command discovery; it must never invoke gh.
         std::os::unix::fs::symlink(git.trim(), bin.join("gh")).unwrap();
-        assert_eq!(probe(directory).unwrap().name_with_owner, "owner/repo");
-        assert!(probe(temp.path().to_str().unwrap()).is_none());
+        assert_eq!(probe(directory).1.unwrap().name_with_owner, "owner/repo");
+        assert_eq!(probe("/nonexistent/whip-302"), (Some(42), None));
+        assert_eq!(probe(temp.path().to_str().unwrap()), (Some(0), None));
         let output = Command::new("git")
             .args([
                 "remote",
@@ -744,7 +772,14 @@ mod tests {
             .output()
             .unwrap();
         assert!(output.status.success());
-        assert!(probe(directory).is_none());
+        assert_eq!(probe(directory), (Some(0), None));
+        // Corrupt Git configuration is a failed probe, not an authoritative negative.
+        std::fs::write(
+            std::path::Path::new(directory).join(".git/config"),
+            "[invalid\n",
+        )
+        .unwrap();
+        assert_eq!(probe(directory).0, Some(1));
         assert!(!temp.path().join("injected").exists());
     }
 }
