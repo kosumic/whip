@@ -357,7 +357,6 @@ impl SshSession {
         };
         super::download::download_entry(&source, remote_path, destination_path, cancel, progress)
             .await
-            .map_err(|error| SshFailure::from(TransportError::Download(error)))
     }
     pub(crate) async fn download_sftp(
         &self,

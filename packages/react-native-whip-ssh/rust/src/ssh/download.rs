@@ -68,6 +68,11 @@ impl Failure {
     }
 }
 impl std::error::Error for Failure {}
+impl From<Failure> for super::SshFailure {
+    fn from(failure: Failure) -> Self {
+        super::TransportError::Download(failure).into()
+    }
+}
 impl fmt::Display for Failure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let message = match self.category {
@@ -483,7 +488,7 @@ pub(crate) async fn download_entry(
     local: &str,
     mut cancel: watch::Receiver<bool>,
     progress: Arc<dyn Fn(u64, Option<u64>) + Send + Sync>,
-) -> Result<String, Failure> {
+) -> Result<String, super::SshFailure> {
     for attempt in 1..=MAX_ATTEMPTS {
         let mut connection_cancel = cancel.clone();
         let prepared = async {
@@ -524,7 +529,6 @@ pub(crate) async fn download_entry(
         match prepared {
             Ok((connection, metadata)) => {
                 if metadata.file_type().is_dir() {
-                    let cancelled = cancel.clone();
                     return super::directory_download::download(
                         connection.sftp,
                         remote,
@@ -533,27 +537,14 @@ pub(crate) async fn download_entry(
                         progress,
                     )
                     .await
-                    .map_err(|error| {
-                        if *cancelled.borrow() {
-                            Failure::new(
-                                DownloadPhase::RemoteRead,
-                                DownloadErrorCategory::Cancelled,
-                            )
-                        } else if let super::TransportError::Download(failure) = error {
-                            failure
-                        } else {
-                            Failure::new(
-                                DownloadPhase::RemoteRead,
-                                DownloadErrorCategory::RemoteRead,
-                            )
-                        }
-                    });
+                    .map_err(Into::into);
                 }
                 if !metadata.file_type().is_file() {
                     return Err(Failure::new(
                         DownloadPhase::Metadata,
                         DownloadErrorCategory::RemoteMetadata,
-                    ));
+                    )
+                    .into());
                 }
                 return download_with_attempts(
                     source,
@@ -565,10 +556,11 @@ pub(crate) async fn download_entry(
                     },
                     attempt,
                 )
-                .await;
+                .await
+                .map_err(Into::into);
             }
             Err(error) if error.retryable() && attempt < MAX_ATTEMPTS => {}
-            Err(error) => return Err(error),
+            Err(error) => return Err(error.into()),
         }
     }
     unreachable!("bounded preparation loop always returns")

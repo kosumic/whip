@@ -335,3 +335,33 @@ fn normal_100_and_500_mib_downloads_have_no_size_ceiling() -> TestResult {
         Ok(())
     })
 }
+
+#[test]
+fn directory_download_preserves_the_server_failure_reason() -> TestResult {
+    crate::runtime()?.block_on(async {
+        let fixture = ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        let directory = tempfile::tempdir()?;
+        let remote = directory.path().join("remote-directory");
+        let local = directory.path().join("local-directory");
+        fs::create_dir(&remote).await?;
+        let source = TestSource::new(fixture.ssh.clone());
+        let (_sender, cancel) = watch::channel(false);
+        let error = download_entry(
+            &source,
+            remote.to_str().unwrap(),
+            local.to_str().unwrap(),
+            cancel,
+            Arc::new(|_, _| {}),
+        )
+        .await
+        .unwrap_err();
+        // This server deliberately lacks REALPATH. Surface its capability failure
+        // instead of turning directory failures into interrupted file reads.
+        assert!(
+            error.to_string().to_lowercase().contains("unsupported"),
+            "unexpected directory download failure: {error}"
+        );
+        assert!(!local.exists());
+        Ok(())
+    })
+}
