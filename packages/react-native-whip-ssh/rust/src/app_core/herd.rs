@@ -28,6 +28,8 @@ pub struct HerdHostView {
     pub workspaces: Vec<HerdrWorkspaceInfo>,
     pub tabs: Vec<HerdrTabInfo>,
     pub agent_controls: Vec<AgentControlView>,
+    pub core_backend: bool,
+    pub pinned_terminals: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
@@ -39,6 +41,7 @@ pub struct HerdAgentView {
     pub tab_label: String,
     pub primary_label: String,
     pub control: Option<AgentControlView>,
+    pub core_pinned: Option<bool>,
 }
 
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
@@ -80,6 +83,24 @@ pub(super) fn project(
             let session_view = session.view();
             let host_state = session_view.host_state.as_ref();
             let snapshot = host_state.and_then(|state| state.snapshot.as_ref());
+            let core_backend = session.core_backend();
+            let pinned_terminals =
+                snapshot
+                    .filter(|_| core_backend)
+                    .map_or_else(Vec::new, |snapshot| {
+                        snapshot
+                            .panes
+                            .iter()
+                            .filter(|pane| {
+                                pane.state_labels.as_ref().is_some_and(|labels| {
+                                    labels
+                                        .get(herdr_protocol::hc::attention::PINNED_LABEL)
+                                        .is_some_and(|value| !value.is_empty())
+                                })
+                            })
+                            .map(|pane| pane.terminal_id.clone())
+                            .collect::<Vec<_>>()
+                    });
             let meta = metadata.get(&session.id);
             let mut agents = snapshot.map_or_else(Vec::new, |snapshot| {
                 snapshot
@@ -106,6 +127,14 @@ pub(super) fn project(
             } else if follow_server_order {
                 agents.sort_by(compare_agent_priority);
             }
+            if core_backend {
+                agents.sort_by(|left, right| {
+                    pinned_terminals
+                        .contains(&right.terminal_id)
+                        .cmp(&pinned_terminals.contains(&left.terminal_id))
+                        .then_with(|| compare_agent_priority(left, right))
+                });
+            }
             HerdHostView {
                 id: session.id.clone(),
                 label: meta
@@ -124,6 +153,8 @@ pub(super) fn project(
                 workspaces: snapshot.map_or_else(Vec::new, |value| value.workspaces.clone()),
                 tabs: snapshot.map_or_else(Vec::new, |value| value.tabs.clone()),
                 agent_controls: session_view.agent_controls,
+                core_backend,
+                pinned_terminals,
             }
         })
         .collect::<Vec<_>>();
@@ -223,6 +254,9 @@ fn project_hosts(
                         workspace_label.clone()
                     };
                     HerdAgentView {
+                        core_pinned: host
+                            .core_backend
+                            .then(|| host.pinned_terminals.contains(&agent.terminal_id)),
                         control: host
                             .agent_controls
                             .iter()
@@ -241,6 +275,24 @@ fn project_hosts(
         .collect::<Vec<_>>();
     if !follow_server_order {
         agents.sort_by(|left, right| compare_agent_priority(&left.agent, &right.agent));
+    }
+    // Pinning changes positions only within this Core host's existing slots.
+    // Legacy rows keep their ordering even in a mixed-host queue.
+    for host in hosts.iter().filter(|host| host.core_backend) {
+        let positions = agents
+            .iter()
+            .enumerate()
+            .filter(|(_, agent)| agent.host_id == host.id)
+            .map(|(at, _)| at)
+            .collect::<Vec<_>>();
+        let mut ordered = positions
+            .iter()
+            .map(|at| agents[*at].clone())
+            .collect::<Vec<_>>();
+        ordered.sort_by_key(|agent| !agent.core_pinned.unwrap_or(false));
+        for (at, agent) in positions.into_iter().zip(ordered) {
+            agents[at] = agent;
+        }
     }
     HerdView {
         revision,
@@ -341,6 +393,8 @@ mod tests {
             workspaces: workspace_ids.iter().map(|id| workspace(id)).collect(),
             tabs: workspace_ids.iter().map(|id| tab(id)).collect(),
             agent_controls: Vec::new(),
+            core_backend: false,
+            pinned_terminals: Vec::new(),
         }
     }
 
@@ -349,6 +403,43 @@ mod tests {
             .iter()
             .map(|agent| agent.agent.workspace_id.as_str())
             .collect()
+    }
+
+    #[test]
+    fn core_pins_reorder_only_core_rows_and_legacy_rows_have_no_shared_attention() {
+        let mut core = host("core", &["a", "b"]);
+        core.core_backend = true;
+        core.pinned_terminals = vec!["b-terminal".into()];
+        let legacy = host("legacy", &["c", "d"]);
+        let view = project_hosts(1, vec![core, legacy], None, None, false);
+        assert_eq!(
+            view.agents
+                .iter()
+                .filter(|row| row.host_id == "core")
+                .map(|row| row.agent.terminal_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["b-terminal", "a-terminal"]
+        );
+        assert!(
+            view.agents
+                .iter()
+                .filter(|row| row.host_id == "core")
+                .all(|row| row.core_pinned.is_some())
+        );
+        assert_eq!(
+            view.agents
+                .iter()
+                .filter(|row| row.host_id == "legacy")
+                .map(|row| row.agent.terminal_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["c-terminal", "d-terminal"]
+        );
+        assert!(
+            view.agents
+                .iter()
+                .filter(|row| row.host_id == "legacy")
+                .all(|row| row.core_pinned.is_none())
+        );
     }
 
     #[test]

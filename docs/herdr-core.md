@@ -38,6 +38,16 @@ reliable provider session identity, currently explicit `whip.transcript.agent`,
 `whip.transcript.kind` (`id` or `path`) and `whip.transcript.value` labels. A core
 terminal address is never used as a provider session ID.
 
+Core agents share attention with the desktop through `herdr.seen` and
+`herdr.pinned` terminal labels. A valid seen turn distinguishes completed unread
+turns from idle agents; working and blocked/error reports take priority. Missing
+or invalid seen labels keep the existing Core fallback. Only a foreground,
+uncovered live agent view advances seen, once per viewed turn. Pin and Mark
+unread in the agent menu write the shared labels after checking fresh terminal
+metadata. Label writes are last-writer-wins in Core; Whip checks the current
+turn/seen value before writing and never replays an unacknowledged write.
+Legacy hosts retain their existing ordering, status, and API traffic.
+
 Core setup displays the official `https://releases.herdr.dev/core/install.sh`
 command for confirmation. Legacy agent integration installers are unavailable
 on core; core agent launches use `terminal.run` and the host's core templates.

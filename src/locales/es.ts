@@ -723,6 +723,8 @@ export const es = {
   'herd.restart': "Reiniciar",
   'herd.copyAgent': "Copiar",
   'herd.agentActions': "Acciones del agente",
+  'herd.pinAgent': 'Fijar agente',
+  'herd.markUnread': 'Marcar como no leído',
   'herd.sessionId': 'ID de sesión',
   'herd.sessionPath': 'Ruta de la sesión',
   'herd.copySession': 'Copiar detalles de la sesión',

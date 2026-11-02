@@ -8,6 +8,7 @@ import ChevronRight from 'lucide-react-native/icons/chevron-right';
 import History from 'lucide-react-native/icons/rotate-ccw-clock';
 import Layers3 from 'lucide-react-native/icons/layers';
 import Play from 'lucide-react-native/icons/play';
+import Pin from 'lucide-react-native/icons/pin';
 import Search from 'lucide-react-native/icons/search';
 import Sparkles from 'lucide-react-native/icons/sparkles';
 import SquareTerminal from 'lucide-react-native/icons/square-terminal';
@@ -92,6 +93,8 @@ const HERD_AGENT_CONTEXT_TEXT_CLASS_NAME =
   'min-w-0 shrink text-[11px] leading-[15px] text-muted-foreground/70';
 
 interface Props {
+  onSetAgentPinned?: (hostId: string, terminalId: string, pinned: boolean) => Promise<void>;
+  onMarkAgentUnread?: (hostId: string, terminalId: string) => Promise<void>;
   onSetAgentReverseControl?: (
     hostId: string,
     terminalId: string,
@@ -149,6 +152,8 @@ interface Props {
 }
 
 export function HerdScreen({
+  onSetAgentPinned,
+  onMarkAgentUnread,
   onSetAgentReverseControl,
   onRestartAgent,
   onCopyAgent,
@@ -951,6 +956,18 @@ export function HerdScreen({
         onClose={() => setAppAlert(null)}
       />
       <AgentActionsPopup
+        corePinned={menuItem?.corePinned}
+        onPinChange={menuItem && onSetAgentPinned
+          ? pinned => { void runAgentAction(menuItem, () =>
+              onSetAgentPinned(menuItem.hostId, menuItem.agent.terminal_id, pinned)); }
+          : undefined}
+        onMarkUnread={menuItem && onMarkAgentUnread
+          ? () => {
+              setAgentMenuTarget(null);
+              void runAgentAction(menuItem, () =>
+                onMarkAgentUnread(menuItem.hostId, menuItem.agent.terminal_id));
+            }
+          : undefined}
         visible={!!menuItem && !offline}
         label={menuItem?.tabLabel || ''}
         kind={menuItem?.agent.agent}
@@ -1299,6 +1316,7 @@ const AgentRow = memo(
                       className="text-muted-foreground"
                     />
                   ) : null}
+                  {item.corePinned ? <Icon as={Pin} size={14} className="text-muted-foreground" /> : null}
                   {agent.focused ? (
                     <Icon
                       as={Focus}
@@ -1365,6 +1383,7 @@ const AgentRow = memo(
     previous.item.hostLabel === next.item.hostLabel &&
     previous.item.workspaceLabel === next.item.workspaceLabel &&
     previous.item.tabLabel === next.item.tabLabel &&
+    previous.item.corePinned === next.item.corePinned &&
     previous.showHost === next.showHost &&
     previous.showSpace === next.showSpace &&
     previous.closing === next.closing &&

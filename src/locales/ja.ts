@@ -723,6 +723,8 @@ export const ja = {
   'herd.restart': "再起動",
   'herd.copyAgent': "コピー",
   'herd.agentActions': "エージェントの操作",
+  'herd.pinAgent': 'エージェントを固定',
+  'herd.markUnread': '未読にする',
   'herd.sessionId': 'セッションID',
   'herd.sessionPath': 'セッションのパス',
   'herd.copySession': 'セッション情報をコピー',

@@ -10,6 +10,7 @@ import {
   type RefObject,
 } from 'react';
 import { useChatViewportRetention } from '../hooks/useChatViewportRetention';
+import { useViewedAgent } from '../hooks/useViewedAgent';
 import { useGithubRepository } from '../hooks/useGithubRepository';
 import { GithubDiscoveryPopup } from './GithubDiscoveryPopup';
 import { useSshShellDirectory } from '../hooks/useSshShellDirectory';
@@ -151,6 +152,7 @@ import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { APP_FROSTED_GLASS_SURFACE_PROPS, appGlassBackgroundClassName, appGlassModalPresentation } from '../lib/appGlass';
 
 interface Props {
+  attentionVisible?: boolean;
   hostId: string;
   hostSessionId: string;
   visible: boolean;
@@ -266,6 +268,7 @@ export function SessionScreen({
   hostId,
   hostSessionId,
   visible,
+  attentionVisible = true,
   snapshot,
   client,
   terminalState,
@@ -599,6 +602,13 @@ export function SessionScreen({
   const cancelChatOpen = chatOpen.cancel;
   const pendingChatOpenTerminalId = chatOpen.pendingTerminalId;
   const visibleAppAlert = appAlert || (chatOpen.notice?.type === 'error' ? chatOpen.notice : null);
+  const viewedNative = activeTarget?.client.native;
+  const viewedTerminal = attentionVisible && visible && appActive && !browserUrl && !savedChatOpen && !attachmentsOpen &&
+    !linksOpen && editorMode === null && !chatOpen.notice && !visibleAppAlert &&
+    activeTarget?.session.kind === 'herdr' && activeTarget.session.status === 'connected' &&
+    (!activeTarget.session.chatSelected || chatPresentationVisible(activeChatView?.presentation))
+    ? activeTarget.session.terminalId : undefined;
+  useViewedAgent(viewedNative, viewedTerminal);
   const restoringChat = Boolean(activeTarget && chatRestoreIntents.has(activeTarget.key));
   const chatControlLoading =
     (restoringChat &&

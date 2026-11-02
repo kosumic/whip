@@ -734,6 +734,8 @@ export const en = {
   'herd.restart': "Restart",
   'herd.copyAgent': "Copy",
   'herd.agentActions': "Agent actions",
+  'herd.pinAgent': 'Pin agent',
+  'herd.markUnread': 'Mark unread',
   'herd.sessionId': 'Session ID',
   'herd.sessionPath': 'Session path',
   'herd.copySession': 'Copy session details',

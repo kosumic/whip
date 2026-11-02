@@ -723,6 +723,8 @@ export const zhHans = {
   'herd.restart': "重启",
   'herd.copyAgent': "复制",
   'herd.agentActions': "智能体操作",
+  'herd.pinAgent': '置顶智能体',
+  'herd.markUnread': '标为未读',
   'herd.sessionId': '会话 ID',
   'herd.sessionPath': '会话路径',
   'herd.copySession': '复制会话信息',

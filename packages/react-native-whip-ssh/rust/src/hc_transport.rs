@@ -93,6 +93,21 @@ pub(crate) fn control_error(error: Failure) -> HerdrControlError {
 }
 
 impl Core {
+    pub(crate) fn attention(&self, terminal: &str) -> Option<hc::attention::Attention> {
+        self.model.get()?.attention(terminal)
+    }
+    pub(crate) async fn update_attention(
+        &self,
+        terminal: &str,
+        change: hc::attention::Change,
+        allowed: impl Fn() -> bool + Send,
+    ) -> Result<(), HerdrControlError> {
+        self.model()
+            .map_err(control_error)?
+            .update_attention(self, terminal, change, allowed)
+            .await
+            .map_err(control_error)
+    }
     pub(crate) fn is_alive(&self) -> bool {
         self.routing.lock().failure.is_none()
             && self

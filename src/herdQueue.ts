@@ -22,6 +22,7 @@ export interface HerdQueueAgent {
   tabLabel: string;
   primaryLabel: string;
   control?: AgentControlView;
+  corePinned?: boolean;
 }
 
 export interface HerdProjectionRequest {

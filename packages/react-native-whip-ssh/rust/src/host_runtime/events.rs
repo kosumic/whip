@@ -334,6 +334,7 @@ pub(crate) fn core_state_changed(client_key: &str, revision: u64) {
     {
         return;
     }
+    super::core_attention::schedule(&runtime);
     schedule_state_resync(runtime, "core terminals or shared layout changed".into());
 }
 

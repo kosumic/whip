@@ -723,6 +723,8 @@ export const zhHant: Record<string, string> = {
   'herd.restart': "重新啟動",
   'herd.copyAgent': "複製",
   'herd.agentActions': "代理操作",
+  'herd.pinAgent': '置頂代理',
+  'herd.markUnread': '標為未讀',
   'herd.sessionId': '工作階段 ID',
   'herd.sessionPath': '工作階段路徑',
   'herd.copySession': '複製工作階段資訊',
