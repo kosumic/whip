@@ -7,6 +7,17 @@ const MIME_EXTENSIONS: Record<string, string> = {
   'image/png': 'png',
   'image/webp': 'webp',
   'text/plain': 'txt',
+  'video/3gpp': '3gp',
+  'video/3gpp2': '3g2',
+  'video/mp2t': 'ts',
+  'video/mp4': 'mp4',
+  'video/mpeg': 'mpeg',
+  'video/ogg': 'ogv',
+  'video/quicktime': 'mov',
+  'video/webm': 'webm',
+  'video/x-m4v': 'm4v',
+  'video/x-matroska': 'mkv',
+  'video/x-msvideo': 'avi',
 };
 
 function safeAttachmentNameParts(
