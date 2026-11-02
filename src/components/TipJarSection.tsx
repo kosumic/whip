@@ -1,4 +1,4 @@
-import { Heart } from 'lucide-react-native';
+import Heart from 'lucide-react-native/icons/heart';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { useTranslation } from 'react-i18next';

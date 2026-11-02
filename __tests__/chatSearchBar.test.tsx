@@ -10,7 +10,11 @@ jest.mock('../src/components/GlassSurface', () => ({
   GlassSurface: 'GlassSurface',
   useAppGlassEnabled: () => false,
 }));
-jest.mock('lucide-react-native', () => new Proxy({}, { get: (_target, name) => String(name) }));
+jest.mock('lucide-react-native/icons/chevron-down', () => ('ChevronDown'));
+jest.mock('lucide-react-native/icons/chevron-left', () => ('ChevronLeft'));
+jest.mock('lucide-react-native/icons/chevron-right', () => ('ChevronRight'));
+jest.mock('lucide-react-native/icons/chevron-up', () => ('ChevronUp'));
+jest.mock('lucide-react-native/icons/x', () => ('X'));
 
 const matches = Array.from({ length: 9 }, (_, index) => ({ before: `${index} `, matched: 'needle', after: '', leading: false, trailing: false }));
 let renderer: ReactTestRenderer;

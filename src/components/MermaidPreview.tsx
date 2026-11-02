@@ -1,4 +1,4 @@
-import { FileWarning } from 'lucide-react-native';
+import FileWarning from 'lucide-react-native/icons/file-exclamation-point';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 import WebView from 'react-native-webview';

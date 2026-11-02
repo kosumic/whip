@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { Check, RefreshCcw, X } from 'lucide-react-native';
+import Check from 'lucide-react-native/icons/check';
+import RefreshCcw from 'lucide-react-native/icons/refresh-ccw';
+import X from 'lucide-react-native/icons/x';
 import {
   ActivityIndicator,
   Alert,

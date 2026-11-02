@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef, type ReactNode, type Ref } from 'react';
-import { Maximize2, Mic, Paperclip, Send, Square } from 'lucide-react-native';
+import Maximize2 from 'lucide-react-native/icons/maximize-2';
+import Mic from 'lucide-react-native/icons/mic';
+import Paperclip from 'lucide-react-native/icons/paperclip';
+import Send from 'lucide-react-native/icons/send';
+import Square from 'lucide-react-native/icons/square';
 import type { ComposerDictationPhase } from 'react-native-whip-ssh/src/composerDictation';
 import {
   ActivityIndicator,

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Image } from 'react-native';
-import { Globe } from 'lucide-react-native';
+import Globe from 'lucide-react-native/icons/globe';
 import { browserFavicon } from './native';
 import { isSshTunnelHost } from '../lib/terminalLinks';
 import { useTheme } from '../theme';

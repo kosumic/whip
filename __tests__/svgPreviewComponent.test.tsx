@@ -3,7 +3,7 @@ import { Text } from 'react-native';
 import { SvgPreview } from '../src/components/SvgPreview';
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
-jest.mock('lucide-react-native', () => ({ FileWarning: 'FileWarning' }));
+jest.mock('lucide-react-native/icons/file-exclamation-point', () => ('FileWarning'));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
 jest.mock('react-native', () => ({ View: 'View', Text: 'Text' }));
 jest.mock('react-native-svg/lib/commonjs/xmlTags', () => ({

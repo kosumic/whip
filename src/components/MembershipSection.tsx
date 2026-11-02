@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Check, ChevronUp, RefreshCcw } from 'lucide-react-native';
+import Check from 'lucide-react-native/icons/check';
+import ChevronUp from 'lucide-react-native/icons/chevron-up';
+import RefreshCcw from 'lucide-react-native/icons/refresh-ccw';
 import { Alert, Image, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 

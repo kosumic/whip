@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, View } from 'react-native';
-import { Download, X } from 'lucide-react-native';
+import Download from 'lucide-react-native/icons/download';
+import X from 'lucide-react-native/icons/x';
 import { browserLibrary } from './library';
 import { downloadPresentation, isActiveDownload } from './downloadPresentation';
 import { BrowserDownloadProgress } from './BrowserDownloadProgress';

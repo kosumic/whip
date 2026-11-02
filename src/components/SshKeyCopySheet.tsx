@@ -1,4 +1,6 @@
-import { Copy, KeyRound, QrCode } from 'lucide-react-native';
+import Copy from 'lucide-react-native/icons/copy';
+import KeyRound from 'lucide-react-native/icons/key-round';
+import QrCode from 'lucide-react-native/icons/qr-code';
 import { useEffect, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';

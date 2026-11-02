@@ -24,13 +24,11 @@ jest.mock('../src/components/ui/input', () => ({ Input: 'Input' }));
 jest.mock('../src/theme', () => ({
   useTheme: () => ({ colors: { text: '#fff' } }),
 }));
-jest.mock('lucide-react-native', () => ({
-  ArrowLeft: 'ArrowLeft',
-  Download: 'Download',
-  File: 'File',
-  Trash2: 'Trash2',
-  X: 'X',
-}));
+jest.mock('lucide-react-native/icons/arrow-left', () => ('ArrowLeft'));
+jest.mock('lucide-react-native/icons/download', () => ('Download'));
+jest.mock('lucide-react-native/icons/file', () => ('File'));
+jest.mock('lucide-react-native/icons/trash', () => ('Trash2'));
+jest.mock('lucide-react-native/icons/x', () => ('X'));
 jest.mock('../src/browser/downloads', () => ({
   BROWSER_DOWNLOAD_STATE: jest.requireActual<
     typeof import('../src/browser/downloads')

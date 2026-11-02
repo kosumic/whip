@@ -1,6 +1,7 @@
 import { memo, useContext, useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { ChevronDown, ChevronRight } from 'lucide-react-native';
+import ChevronDown from 'lucide-react-native/icons/chevron-down';
+import ChevronRight from 'lucide-react-native/icons/chevron-right';
 import { isSmallJsonToolOutput, type JsonValue } from '../lib/toolOutput';
 import { useTheme } from '../theme';
 import { ChatSearchQuery, SearchCodeScope, SearchCodeToken, searchTextRanges } from './SearchText';

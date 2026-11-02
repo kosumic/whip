@@ -2,7 +2,11 @@ import { KeyboardAwareScrollView as ScrollView } from 'react-native-keyboard-con
 import { useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, Modal, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Download, File, Trash2, X } from 'lucide-react-native';
+import ArrowLeft from 'lucide-react-native/icons/arrow-left';
+import Download from 'lucide-react-native/icons/download';
+import File from 'lucide-react-native/icons/file';
+import Trash2 from 'lucide-react-native/icons/trash';
+import X from 'lucide-react-native/icons/x';
 import { browserLibrary } from './library';
 import { browserDownloads, BROWSER_DOWNLOAD_STATE } from './downloads';
 import { cancelSavedBrowserDownload, openSavedBrowserDownload } from './native';

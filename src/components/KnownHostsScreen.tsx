@@ -1,11 +1,9 @@
-import {
-  ChevronLeft,
-  CircleAlert,
-  Fingerprint,
-  RefreshCw,
-  ShieldCheck,
-  Trash2,
-} from 'lucide-react-native';
+import ChevronLeft from 'lucide-react-native/icons/chevron-left';
+import CircleAlert from 'lucide-react-native/icons/circle-alert';
+import Fingerprint from 'lucide-react-native/icons/fingerprint-pattern';
+import RefreshCw from 'lucide-react-native/icons/refresh-cw';
+import ShieldCheck from 'lucide-react-native/icons/shield-check';
+import Trash2 from 'lucide-react-native/icons/trash';
 import { useState } from 'react';
 import { Alert, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';

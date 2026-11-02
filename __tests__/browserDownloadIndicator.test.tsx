@@ -9,7 +9,8 @@ jest.mock('react-native', () => ({
   View: 'View',
   ActivityIndicator: 'ActivityIndicator',
 }));
-jest.mock('lucide-react-native', () => ({ Download: 'Download', X: 'X' }));
+jest.mock('lucide-react-native/icons/download', () => ('Download'));
+jest.mock('lucide-react-native/icons/x', () => ('X'));
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
 jest.mock('../src/theme', () => ({

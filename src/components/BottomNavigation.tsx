@@ -1,5 +1,8 @@
 import { BlurView } from 'expo-blur';
-import { CircleEllipsis, Server, SquareTerminal, type LucideIcon } from 'lucide-react-native';
+import CircleEllipsis from 'lucide-react-native/icons/circle-ellipsis';
+import Server from 'lucide-react-native/icons/server';
+import SquareTerminal from 'lucide-react-native/icons/square-terminal';
+import type { LucideIcon } from 'lucide-react-native';
 import { type RefObject } from 'react';
 import { Platform, StyleSheet, View, type ViewInstance } from 'react-native';
 import { useTranslation } from 'react-i18next';

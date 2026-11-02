@@ -1,6 +1,6 @@
 import { useState, useSyncExternalStore } from 'react';
 import { ScrollView, View } from 'react-native';
-import { Plus } from 'lucide-react-native';
+import Plus from 'lucide-react-native/icons/plus';
 import { browserLibrary } from './library';
 import { browserAddress } from './address';
 import { Button } from '../components/ui/button';

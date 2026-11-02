@@ -6,7 +6,8 @@ jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('reac
 jest.mock('react-native', () => ({ View: 'View', Text: 'Text', Pressable: 'Pressable' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
 jest.mock('../src/theme', () => ({ useTheme: () => ({ colors: { link: '#123', done: '#234', warning: '#345', primary: '#456', textTertiary: '#567' } }) }));
-jest.mock('lucide-react-native', () => ({ ChevronDown: 'ChevronDown', ChevronRight: 'ChevronRight' }));
+jest.mock('lucide-react-native/icons/chevron-down', () => ('ChevronDown'));
+jest.mock('lucide-react-native/icons/chevron-right', () => ('ChevronRight'));
 
 let renderer: ReactTestRenderer;
 afterEach(() => act(() => renderer?.unmount()));

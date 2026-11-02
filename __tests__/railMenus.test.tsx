@@ -22,7 +22,14 @@ jest.mock('react-i18next', () => ({ useTranslation: () => ({
     jest.requireActual<typeof import('../src/locales/en')>('../src/locales/en').en[key]
       .replace(/\{\{(\w+)\}\}/g, (_match: string, name: string) => values[name] ?? name),
 }) }));
-jest.mock('lucide-react-native', () => new Proxy({}, { get: (_target, name) => String(name) }));
+jest.mock('lucide-react-native/icons/layers', () => ('Layers3'));
+jest.mock('lucide-react-native/icons/pencil', () => ('Pencil'));
+jest.mock('lucide-react-native/icons/plus', () => ('Plus'));
+jest.mock('lucide-react-native/icons/server', () => ('Server'));
+jest.mock('lucide-react-native/icons/server-off', () => ('ServerOff'));
+jest.mock('lucide-react-native/icons/square-terminal', () => ('SquareTerminal'));
+jest.mock('lucide-react-native/icons/unplug', () => ('Unplug'));
+jest.mock('lucide-react-native/icons/x', () => ('X'));
 jest.mock('../src/theme', () => ({
   useTheme: () => ({ colors: { text: '#fff', error: '#f00' } }),
   appGlassControlStyle: jest.fn(), statusColor: jest.fn(), sessionTabGlassStyle: jest.fn(), sessionTabStatusColor: jest.fn(),

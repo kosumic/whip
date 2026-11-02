@@ -5,28 +5,26 @@ import {
   type FlashListRef,
   type ViewToken,
 } from '@shopify/flash-list';
-import {
-  ArrowDown,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  ChevronUp,
-  CircleAlert,
-  CircleCheck,
-  CircleHelp,
-  CircleX,
-  Copy,
-  ExternalLink,
-  File,
-  FileDiff,
-  FilePlus,
-  Link,
-  Search,
-  SquareTerminal,
-  Volume2,
-  VolumeX,
-  type LucideIcon,
-} from 'lucide-react-native';
+import ArrowDown from 'lucide-react-native/icons/arrow-down';
+import Check from 'lucide-react-native/icons/check';
+import ChevronDown from 'lucide-react-native/icons/chevron-down';
+import ChevronRight from 'lucide-react-native/icons/chevron-right';
+import ChevronUp from 'lucide-react-native/icons/chevron-up';
+import CircleAlert from 'lucide-react-native/icons/circle-alert';
+import CircleCheck from 'lucide-react-native/icons/circle-check';
+import CircleHelp from 'lucide-react-native/icons/circle-question-mark';
+import CircleX from 'lucide-react-native/icons/circle-x';
+import Copy from 'lucide-react-native/icons/copy';
+import ExternalLink from 'lucide-react-native/icons/external-link';
+import File from 'lucide-react-native/icons/file';
+import FileDiff from 'lucide-react-native/icons/file-diff';
+import FilePlus from 'lucide-react-native/icons/file-plus';
+import Link from 'lucide-react-native/icons/link';
+import Search from 'lucide-react-native/icons/search';
+import SquareTerminal from 'lucide-react-native/icons/square-terminal';
+import Volume2 from 'lucide-react-native/icons/volume-2';
+import VolumeX from 'lucide-react-native/icons/volume-x';
+import type { LucideIcon } from 'lucide-react-native';
 import {
   ActivityIndicator,
   Keyboard,

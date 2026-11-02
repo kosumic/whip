@@ -1,4 +1,7 @@
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp } from 'lucide-react-native';
+import ArrowDown from 'lucide-react-native/icons/arrow-down';
+import ArrowLeft from 'lucide-react-native/icons/arrow-left';
+import ArrowRight from 'lucide-react-native/icons/arrow-right';
+import ArrowUp from 'lucide-react-native/icons/arrow-up';
 import { useEffect, useReducer, useRef } from 'react';
 import { ActivityIndicator, ScrollView, View } from 'react-native';
 import type {

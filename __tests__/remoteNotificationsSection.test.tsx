@@ -39,11 +39,19 @@ jest.mock('expo-constants', () => ({
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (_key: string, { name }: { name: string }) => `${name} details` }),
 }));
-jest.mock('lucide-react-native', () => ({
-  ArrowUp: 'ArrowUp', BellRing: 'BellRing', Blocks: 'Blocks', Check: 'Check',
-  Copy: 'Copy', ExternalLink: 'ExternalLink', Info: 'Info', Link: 'Link',
-  Network: 'Network', RefreshCw: 'RefreshCw', ShieldCheck: 'ShieldCheck', Terminal: 'Terminal', Trash2: 'Trash2', Unlink: 'Unlink',
-}));
+jest.mock('lucide-react-native/icons/arrow-up', () => ('ArrowUp'));
+jest.mock('lucide-react-native/icons/blocks', () => ('Blocks'));
+jest.mock('lucide-react-native/icons/check', () => ('Check'));
+jest.mock('lucide-react-native/icons/copy', () => ('Copy'));
+jest.mock('lucide-react-native/icons/external-link', () => ('ExternalLink'));
+jest.mock('lucide-react-native/icons/info', () => ('Info'));
+jest.mock('lucide-react-native/icons/link', () => ('Link'));
+jest.mock('lucide-react-native/icons/network', () => ('Network'));
+jest.mock('lucide-react-native/icons/refresh-cw', () => ('RefreshCw'));
+jest.mock('lucide-react-native/icons/shield-check', () => ('ShieldCheck'));
+jest.mock('lucide-react-native/icons/terminal', () => ('Terminal'));
+jest.mock('lucide-react-native/icons/trash', () => ('Trash2'));
+jest.mock('lucide-react-native/icons/unlink', () => ('Unlink'));
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
 jest.mock('../src/components/ui/icon', () => ({ Icon: 'Icon' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));

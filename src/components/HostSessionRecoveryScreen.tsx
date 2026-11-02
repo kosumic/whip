@@ -1,4 +1,5 @@
-import { RefreshCw, ServerOff } from 'lucide-react-native';
+import RefreshCw from 'lucide-react-native/icons/refresh-cw';
+import ServerOff from 'lucide-react-native/icons/server-off';
 import { View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 

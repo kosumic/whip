@@ -23,14 +23,12 @@ jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
 jest.mock('../src/components/ConfirmationPopup', () => ({
   ConfirmationPopup: 'ConfirmationPopup',
 }));
-jest.mock('lucide-react-native', () => ({
-  Lock: 'Lock',
-  ShieldAlert: 'ShieldAlert',
-  Cookie: 'Cookie',
-  History: 'History',
-  SlidersHorizontal: 'SlidersHorizontal',
-  ChevronRight: 'ChevronRight',
-}));
+jest.mock('lucide-react-native/icons/chevron-right', () => ('ChevronRight'));
+jest.mock('lucide-react-native/icons/cookie', () => ('Cookie'));
+jest.mock('lucide-react-native/icons/lock', () => ('Lock'));
+jest.mock('lucide-react-native/icons/rotate-ccw-clock', () => ('History'));
+jest.mock('lucide-react-native/icons/shield-alert', () => ('ShieldAlert'));
+jest.mock('lucide-react-native/icons/sliders-horizontal', () => ('SlidersHorizontal'));
 jest.mock('../src/browser/library', () => ({
   browserLibrary: {
     subscribe: () => () => undefined,

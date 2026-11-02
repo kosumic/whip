@@ -1,5 +1,10 @@
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
-import { ChevronLeft, ChevronRight, ExternalLink, Keyboard, ScanLine, X } from 'lucide-react-native';
+import ChevronLeft from 'lucide-react-native/icons/chevron-left';
+import ChevronRight from 'lucide-react-native/icons/chevron-right';
+import ExternalLink from 'lucide-react-native/icons/external-link';
+import Keyboard from 'lucide-react-native/icons/keyboard';
+import ScanLine from 'lucide-react-native/icons/scan-line';
+import X from 'lucide-react-native/icons/x';
 import { generateKeyPair, getKeyDetails } from 'react-native-whip-ssh';
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, ScrollView, StyleSheet, View } from 'react-native';

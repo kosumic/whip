@@ -1,6 +1,6 @@
 import { createContext, useContext, useRef, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View, type ViewInstance } from 'react-native';
-import { Info } from 'lucide-react-native';
+import Info from 'lucide-react-native/icons/info';
 import { useTranslation } from 'react-i18next';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';

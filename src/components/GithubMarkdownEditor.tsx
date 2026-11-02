@@ -1,6 +1,13 @@
 import { useRef, useState } from 'react';
 import { ScrollView, View, type TextInputInstance } from 'react-native';
-import { Bold, Code, Italic, Link2, List, ListTodo, Quote, type LucideIcon } from 'lucide-react-native';
+import Bold from 'lucide-react-native/icons/letter-b';
+import Code from 'lucide-react-native/icons/code';
+import Italic from 'lucide-react-native/icons/italic';
+import Link2 from 'lucide-react-native/icons/link-2';
+import List from 'lucide-react-native/icons/list';
+import ListTodo from 'lucide-react-native/icons/list-todo';
+import Quote from 'lucide-react-native/icons/quote';
+import type { LucideIcon } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { formatGithubComment, type RuntimeGithubCommentFormat } from 'react-native-whip-ssh';
 import { cn } from '../lib/utils';

@@ -13,10 +13,8 @@ import {
 import { hostSessionRecoveryState } from '../src/lib/hostSessionRecovery';
 import type { HostProfile } from '../src/types';
 
-jest.mock('lucide-react-native', () => ({
-  RefreshCw: 'RefreshCw',
-  ServerOff: 'ServerOff',
-}));
+jest.mock('lucide-react-native/icons/refresh-cw', () => ('RefreshCw'));
+jest.mock('lucide-react-native/icons/server-off', () => ('ServerOff'));
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );

@@ -1,4 +1,7 @@
-import { Check, Circle as CircleIcon, RefreshCw, type LucideIcon } from 'lucide-react-native';
+import Check from 'lucide-react-native/icons/check';
+import CircleIcon from 'lucide-react-native/icons/circle';
+import RefreshCw from 'lucide-react-native/icons/refresh-cw';
+import type { LucideIcon } from 'lucide-react-native';
 import {
   createContext,
   useContext,

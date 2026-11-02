@@ -75,10 +75,47 @@ jest.mock('../src/components/ChatFileDiff', () => ({ ChatFileDiff: 'ChatFileDiff
 jest.mock('../src/components/GitHubMark', () => ({ GitHubMark: 'GitHubMark' }));
 jest.mock('../src/components/SelectableChatText', () => ({ SelectableChatText: 'SelectableChatText' }));
 jest.mock('../src/services/remoteFileTransfer', () => ({ cacheRemoteFile: jest.fn() }));
-jest.mock(
-  'lucide-react-native',
-  () => new Proxy({}, { get: (_target, name) => String(name) }),
-);
+jest.mock('lucide-react-native/icons/arrow-big-up', () => ('ArrowBigUp'));
+jest.mock('lucide-react-native/icons/arrow-down', () => ('ArrowDown'));
+jest.mock('lucide-react-native/icons/arrow-left', () => ('ArrowLeft'));
+jest.mock('lucide-react-native/icons/arrow-right', () => ('ArrowRight'));
+jest.mock('lucide-react-native/icons/arrow-right-to-line', () => ('ArrowRightToLine'));
+jest.mock('lucide-react-native/icons/arrow-up', () => ('ArrowUp'));
+jest.mock('lucide-react-native/icons/book-open', () => ('BookOpen'));
+jest.mock('lucide-react-native/icons/check', () => ('Check'));
+jest.mock('lucide-react-native/icons/chevron-down', () => ('ChevronDown'));
+jest.mock('lucide-react-native/icons/chevron-left', () => ('ChevronLeft'));
+jest.mock('lucide-react-native/icons/chevron-right', () => ('ChevronRight'));
+jest.mock('lucide-react-native/icons/chevron-up', () => ('ChevronUp'));
+jest.mock('lucide-react-native/icons/circle-alert', () => ('CircleAlert'));
+jest.mock('lucide-react-native/icons/circle-arrow-out-up-left', () => ('CircleArrowOutUpLeft'));
+jest.mock('lucide-react-native/icons/circle-check', () => ('CircleCheck'));
+jest.mock('lucide-react-native/icons/circle-question-mark', () => ('CircleHelp'));
+jest.mock('lucide-react-native/icons/circle-x', () => ('CircleX'));
+jest.mock('lucide-react-native/icons/clipboard-paste', () => ('ClipboardPaste'));
+jest.mock('lucide-react-native/icons/copy', () => ('Copy'));
+jest.mock('lucide-react-native/icons/corner-down-left', () => ('CornerDownLeft'));
+jest.mock('lucide-react-native/icons/earth', () => ('Globe2'));
+jest.mock('lucide-react-native/icons/external-link', () => ('ExternalLink'));
+jest.mock('lucide-react-native/icons/file', () => ('File'));
+jest.mock('lucide-react-native/icons/file-diff', () => ('FileDiff'));
+jest.mock('lucide-react-native/icons/file-plus', () => ('FilePlus'));
+jest.mock('lucide-react-native/icons/folder-open', () => ('FolderOpen'));
+jest.mock('lucide-react-native/icons/keyboard', () => ('Keyboard'));
+jest.mock('lucide-react-native/icons/link', () => ('Link'));
+jest.mock('lucide-react-native/icons/message-circle', () => ('MessageCircle'));
+jest.mock('lucide-react-native/icons/minimize-2', () => ('Minimize2'));
+jest.mock('lucide-react-native/icons/option', () => ('Option'));
+jest.mock('lucide-react-native/icons/paperclip', () => ('Paperclip'));
+jest.mock('lucide-react-native/icons/rotate-ccw-clock', () => ('History'));
+jest.mock('lucide-react-native/icons/search', () => ('Search'));
+jest.mock('lucide-react-native/icons/send', () => ('Send'));
+jest.mock('lucide-react-native/icons/square-terminal', () => ('SquareTerminal'));
+jest.mock('lucide-react-native/icons/triangle-alert', () => ('TriangleAlert'));
+jest.mock('lucide-react-native/icons/undo-2', () => ('Undo2'));
+jest.mock('lucide-react-native/icons/volume-2', () => ('Volume2'));
+jest.mock('lucide-react-native/icons/volume-x', () => ('VolumeX'));
+jest.mock('lucide-react-native/icons/x', () => ('X'));
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 34, left: 0, right: 0 }),
 }));

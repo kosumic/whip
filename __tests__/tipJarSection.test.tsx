@@ -15,11 +15,9 @@ jest.mock('react-native', () => ({
   View: 'View',
   ActivityIndicator: 'ActivityIndicator',
 }));
-jest.mock('lucide-react-native', () => ({
-  Heart: 'Heart',
-  ChevronDown: 'ChevronDown',
-  ChevronUp: 'ChevronUp',
-}));
+jest.mock('lucide-react-native/icons/chevron-down', () => ('ChevronDown'));
+jest.mock('lucide-react-native/icons/chevron-up', () => ('ChevronUp'));
+jest.mock('lucide-react-native/icons/heart', () => ('Heart'));
 jest.mock('react-i18next', () => {
   const { en: translations } =
     jest.requireActual<typeof import('../src/locales/en')>('../src/locales/en');

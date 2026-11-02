@@ -1,20 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Platform, View, TextInput } from 'react-native';
 import Constants from 'expo-constants';
-import {
-  ArrowUp,
-  Blocks,
-  Check,
-  Copy,
-  ExternalLink,
-  Link,
-  Network,
-  RefreshCw,
-  ShieldCheck,
-  Terminal,
-  Trash2,
-  Unlink,
-} from 'lucide-react-native';
+import ArrowUp from 'lucide-react-native/icons/arrow-up';
+import Blocks from 'lucide-react-native/icons/blocks';
+import Check from 'lucide-react-native/icons/check';
+import Copy from 'lucide-react-native/icons/copy';
+import ExternalLink from 'lucide-react-native/icons/external-link';
+import Link from 'lucide-react-native/icons/link';
+import Network from 'lucide-react-native/icons/network';
+import RefreshCw from 'lucide-react-native/icons/refresh-cw';
+import ShieldCheck from 'lucide-react-native/icons/shield-check';
+import Terminal from 'lucide-react-native/icons/terminal';
+import Trash2 from 'lucide-react-native/icons/trash';
+import Unlink from 'lucide-react-native/icons/unlink';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
