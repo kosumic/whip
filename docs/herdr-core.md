@@ -5,6 +5,11 @@ selector for herdr-core/hc and the new desktop app. Saved backend choices are
 preserved. The selector offers **Legacy Herdr** and **Herdr Core**.
 Disabling Herdr keeps plain SSH available.
 
+Server-side push notifications currently require Legacy Herdr's plugin API and
+event hooks. Host details hides push settings when Core is selected or the saved
+host uses Core. Switching a saved Core host to Legacy requires saving before
+push controls become available.
+
 Whip reuses its authenticated SSH connection, including ProxyJump and Tailcat.
 On Unix it discovers and forwards the core socket. Saved socket/session overrides
 take precedence; discovery reads `HC_SOCKET`, XDG paths and `core.lock`, which
