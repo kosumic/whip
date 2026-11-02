@@ -124,7 +124,7 @@ export const defaultDevicePreferences: DevicePreferences = {
   keepScreenOn: false,
   reopenTerminalOnLaunch: false,
   agentCommand: 'opencode',
-  reverseControlInstructions: '',
+  reverseControlInstructions: 'Use Whip MCP',
   lastTab: 'hosts',
   terminal: {
     fullscreen: true,
@@ -298,7 +298,7 @@ function parseDevicePreferences(
       reopenTerminalOnLaunch: parsed.reopenTerminalOnLaunch === true,
       reverseControlInstructions: typeof parsed.reverseControlInstructions === 'string'
         ? parsed.reverseControlInstructions
-        : '',
+        : defaultDevicePreferences.reverseControlInstructions,
       agentCommand: typeof parsed.agentCommand === 'string' && parsed.agentCommand.trim()
         ? parsed.agentCommand
         : defaultDevicePreferences.agentCommand,
