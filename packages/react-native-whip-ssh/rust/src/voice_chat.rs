@@ -27,7 +27,8 @@ const VAD_PAUSE_SAMPLES: usize = 16_000 * 800 / 1_000;
 const PROBE_INTERVAL: usize = 16_000 / 2;
 const MAX_UTTERANCE_SAMPLES: usize = 16_000 * 60;
 const MAX_TEXT_BYTES: usize = 64_000;
-const INTERRUPTION_SAMPLES: usize = FRAME_SAMPLES * 12;
+const INTERRUPTION_SAMPLES: usize = FRAME_SAMPLES * 16;
+const INTERRUPTION_CONFIDENCE_MARGIN: f32 = 0.25;
 const DEFAULT_VAD_SENSITIVITY: u8 = 50;
 const MAX_VAD_SENSITIVITY: u8 = 100;
 
@@ -82,6 +83,7 @@ struct Input {
     frame: Vec<f32>,
     audio: VecDeque<f32>,
     voiced: usize,
+    interruption_voiced: usize,
     silent: usize,
     samples: usize,
     speech_started: bool,
@@ -97,6 +99,7 @@ impl Default for Input {
             frame: Vec::with_capacity(FRAME_SAMPLES),
             audio: VecDeque::with_capacity(AUDIO_SAMPLES),
             voiced: 0,
+            interruption_voiced: 0,
             silent: 0,
             samples: 0,
             speech_started: false,
@@ -133,7 +136,21 @@ impl Input {
         let offset = (f32::from(DEFAULT_VAD_SENSITIVITY) - f32::from(sensitivity))
             / f32::from(MAX_VAD_SENSITIVITY)
             * 0.6;
-        let threshold = if self.speech_started { 0.35 } else { 0.6 } + offset;
+        let onset_threshold = 0.6 + offset;
+        // Derive interruption confidence from normal sensitivity, but keep it
+        // above onset even after listening hysteresis accepts quieter syllables.
+        let interruption_threshold =
+            onset_threshold + (1.0 - onset_threshold) * INTERRUPTION_CONFIDENCE_MARGIN;
+        if probability >= interruption_threshold {
+            self.interruption_voiced += FRAME_SAMPLES;
+        } else {
+            self.interruption_voiced = 0;
+        }
+        let threshold = if self.speech_started {
+            0.35 + offset
+        } else {
+            onset_threshold
+        };
         if probability >= threshold {
             self.voiced += FRAME_SAMPLES;
             self.silent = 0;
@@ -153,6 +170,10 @@ impl Input {
             && self.silent >= PAUSE_SAMPLES
             && !self.probing
             && (self.last_probe == 0 || self.samples - self.last_probe >= PROBE_INTERVAL)
+    }
+
+    fn should_interrupt(&self) -> bool {
+        self.interruption_voiced >= INTERRUPTION_SAMPLES
     }
 }
 
@@ -244,6 +265,7 @@ impl VoiceChat {
         if state.vad_sensitivity != sensitivity {
             state.vad_sensitivity = sensitivity;
             state.input.voiced = 0;
+            state.input.interruption_voiced = 0;
             state.input.silent = 0;
             state.input.revision += 1;
         }
@@ -330,7 +352,7 @@ impl VoiceChat {
             if matches!(
                 state.phase,
                 VoiceChatPhase::Speaking | VoiceChatPhase::Waiting
-            ) && state.input.voiced >= INTERRUPTION_SAMPLES
+            ) && state.input.should_interrupt()
             {
                 // Keep this recognizer and its buffered first words. Discard all
                 // remaining output from the interrupted response, including late updates.
@@ -754,6 +776,54 @@ mod tests {
         strict.probability(0.2, 0);
         assert_eq!(sensitive.silent, 0);
         assert_eq!(strict.silent, FRAME_SAMPLES);
+    }
+
+    #[test]
+    fn interruption_rejects_marginal_speech_that_normal_listening_accepts() {
+        let mut input = Input::default();
+        // Speech-like background noise can start listening, but must not gain
+        // permission to interrupt just because continuation uses a lower threshold.
+        for _ in 0..100 {
+            input.probability(0.65, DEFAULT_VAD_SENSITIVITY);
+        }
+        assert!(input.speech_started);
+        assert!(!input.should_interrupt());
+    }
+
+    #[test]
+    fn interruption_requires_sustained_speech_but_confirms_within_256_ms() {
+        let mut input = Input::default();
+        // Separate short bursts must not add up to an interruption.
+        for _ in 0..5 {
+            for _ in 0..10 {
+                input.probability(0.95, DEFAULT_VAD_SENSITIVITY);
+                assert!(!input.should_interrupt());
+            }
+            input.probability(0.1, DEFAULT_VAD_SENSITIVITY);
+        }
+        for _ in 0..15 {
+            input.probability(0.95, DEFAULT_VAD_SENSITIVITY);
+            assert!(!input.should_interrupt());
+        }
+        input.probability(0.95, DEFAULT_VAD_SENSITIVITY);
+        assert!(input.should_interrupt());
+    }
+
+    #[test]
+    fn interruption_tracks_normal_sensitivity_and_remains_stricter_at_the_extremes() {
+        for (sensitivity, marginal, clear) in [(0, 0.91, 0.95), (50, 0.65, 0.75), (100, 0.4, 0.55)]
+        {
+            let mut input = Input::default();
+            for _ in 0..20 {
+                input.probability(marginal, sensitivity);
+            }
+            assert!(input.speech_started, "sensitivity {sensitivity}");
+            assert!(!input.should_interrupt(), "sensitivity {sensitivity}");
+            for _ in 0..16 {
+                input.probability(clear, sensitivity);
+            }
+            assert!(input.should_interrupt(), "sensitivity {sensitivity}");
+        }
     }
 
     #[test]
