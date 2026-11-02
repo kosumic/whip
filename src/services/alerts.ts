@@ -184,7 +184,7 @@ function alertRequest(
   persistentAlertTimeoutMs: number,
 ): LocalAlertRequest {
   const labels = {
-    needsYou: (name: string) => i18n.t('alerts.needsYou', { name }),
+    needsAttention: (name: string) => i18n.t('alerts.needsAttention', { name }),
     finished: (name: string) => i18n.t('alerts.finished', { name }),
   };
   const title = agentNotificationTitle(agent, tabName, labels);
@@ -204,9 +204,10 @@ function alertRequest(
     announcement: speak
       ? sessionTitle
         ? agentNotificationTitle(
-            { ...agent, display_agent: sessionTitle },
+            agent,
             undefined,
             labels,
+            sessionTitle,
           )
         : title
       : undefined,
