@@ -189,7 +189,7 @@ pub fn notification_preview(
         .filter(|name| !name.is_empty())
         .unwrap_or_else(|| "Agent".into());
     let action = if event.status == "blocked" {
-        "needs you"
+        "needs attention"
     } else {
         "finished"
     };
@@ -200,8 +200,8 @@ pub fn notification_preview(
         .map(|tab| preview_text(tab, PREVIEW_LABEL_BYTES))
         .filter(|tab| !tab.is_empty());
     let title = match tab {
-        Some(tab) => format!("{tab} · {name} {action}"),
-        None => format!("{name} {action}"),
+        Some(tab) if tab != name => format!("{tab} · {name} {action}"),
+        _ => format!("{name} {action}"),
     };
     let body = event
         .title
