@@ -1,5 +1,3 @@
-const workerProjects = require('./scripts/worker-projects.cjs');
-
 const wireContractImports = {
   group: ['**/generated/**', '**/*herdrApiBridge*'],
   message: 'Keep generated wire contracts behind application services.',
@@ -7,7 +5,6 @@ const wireContractImports = {
 
 module.exports = {
   root: true,
-  ignorePatterns: workerProjects.paths,
   extends: '@react-native',
   overrides: [
     {
