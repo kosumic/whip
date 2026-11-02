@@ -317,6 +317,19 @@ test('chat speech controls are absent from the terminal control bar', () => {
   }
 });
 
+test.each([false, true])('voice chat is available when the transcript is ready in either view (chat=%s)', async chatViewEnabled => {
+  mount({ chatViewEnabled });
+  await press('compose');
+  expect(ui('MessageComposer').props.voiceChatLabel).toBeUndefined();
+  act(() => renderer.update(<TerminalScreen {...props} chatViewEnabled={chatViewEnabled} transcriptReady />));
+  expect(ui('MessageComposer').props.voiceChatLabel).toBe('terminal.voice.chat');
+
+  act(() => props.composerStore.addAttachment(target.key, {
+    id: 1, remotePath: '/remote/image.png', previewUri: null, dispose: () => {},
+  }));
+  expect(ui('MessageComposer').props.voiceChatLabel).toBeUndefined();
+});
+
 test('switching to chat hides terminal keys and retains Paste, History, and Scan links', () => {
   mount();
   expect(button('ctrlModifier')).toBeDefined();
