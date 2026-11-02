@@ -28,7 +28,11 @@ separate operation that can fail after SFTP completes.
   transfers and previews. A restarted app does not reuse unverified partials.
 - Both remote-file-manager download paths distinguish transfer failures from
   destination-save failures. Destination-copy overwrite policies are unchanged.
-  Copy/provider failures cannot return download success.
+  Copy/provider failures cannot return download success. Both entry points also
+  check a saved file against the staged byte count when sizes are available.
+  Android SAF children are resolved through the provider listing, not by joining
+  opaque content URI document IDs. Unavailable provider sizes are not treated as
+  a verified byte count.
 
 Diagnostics record transfer ID, attempt, phase, bytes, source size/mtime, and SSH
 generation. They omit source/destination paths, credentials, and server error
@@ -82,3 +86,9 @@ context menu and preview download. Compare final checksums, confirm cancellation
 never announces success, and verify a failed destination save is identified as
 the save phase. Correlate transfer IDs with lifecycle diagnostics without adding
 private paths or credentials to reports.
+
+Destination-save and cleanup diagnostics include the runtime and transfer IDs,
+phase, outcome, and provider class. They exclude filenames, URIs, and raw
+provider/cleanup errors. Cleanup and native cancellation failures cannot replace
+the original result. A successful preview save keeps its cache available until
+the preview is disposed.
