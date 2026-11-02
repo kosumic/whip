@@ -217,6 +217,24 @@ test.each([true, false])('push settings belong only to the saved host detail (sa
   await act(async () => { view.unmount(); });
 });
 
+test.each([undefined, 'legacy', 'core'] as const)('push settings require a saved Legacy host and Legacy selection (saved backend: %s)', async backend => {
+  const savedHost = { ...host, herdrBackend: backend };
+  let view!: ReactTestRenderer;
+  await act(async () => {
+    view = create(<ConnectionScreen {...route} hosts={[savedHost]} initialProfile={savedHost} connecting={false} connected error={null} onCancel={jest.fn()} onSave={jest.fn()} onConnect={jest.fn()} />);
+  });
+  const pushSettings = () => view.root.findAllByType('RemoteNotificationsSection' as never);
+  const selectBackend = (name: string) => view.root.findAllByProps({ accessibilityRole: 'radio' })
+    .find(node => node.findAllByType('Text' as never).some(text => text.props.children === `connection.herdrBackend.${name}`))!;
+  expect(pushSettings()).toHaveLength(backend === 'core' ? 0 : 1);
+  await act(async () => { selectBackend('core').props.onPress(); });
+  expect(pushSettings()).toHaveLength(0);
+  await act(async () => { selectBackend('legacy').props.onPress(); });
+  // Selecting Legacy cannot enable plugin operations on a still-saved Core host.
+  expect(pushSettings()).toHaveLength(backend === 'core' ? 0 : 1);
+  await act(async () => { view.unmount(); });
+});
+
 test('credential edits preserve profile edits queued before the next render', async () => {
   const onSave = jest.fn();
   let view!: ReactTestRenderer;
