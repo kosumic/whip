@@ -105,7 +105,6 @@ import {
   type AgentChatViewState,
 } from '../lib/agentChatReconciliation';
 import { useAgentChatOpen } from '../hooks/useAgentChatOpen';
-import { useFocusedChatSpeech } from '../hooks/useFocusedChatSpeech';
 import { useChatReadAloud } from '../hooks/useChatReadAloud';
 import type { AgentChatState } from '../agentChat';
 import type { HerdrClient } from '../services/HerdrClient';
@@ -268,7 +267,6 @@ export function SessionScreen({
   hostId,
   hostSessionId,
   visible,
-  ttsEnabled,
   snapshot,
   client,
   terminalState,
@@ -634,21 +632,9 @@ export function SessionScreen({
           hostId: hostSessionId,
           paneId: activePane.pane_id,
           label: chatAgentDisplayName(voiceChatAgent),
+          tabName: visibleTabs.find(tab => tab.id === activePane.tab_id)?.label,
         }
       : null,
-    onChatSpeechError,
-  );
-  useFocusedChatSpeech(
-    visible && activeChatView && chatPresentationVisible(activeChatView.presentation) && activePane
-      ? {
-          agent: activeChatView.binding.agent,
-          bindingToken: activeChatView.binding.bindingToken,
-          hostId: hostSessionId,
-          paneId: activePane.pane_id,
-          label: chatAgentDisplayName(activeChatView.binding.agent),
-        }
-      : null,
-    ttsEnabled && chatReadAloud.readingTurnId === null,
     onChatSpeechError,
   );
   const chatViewportMounted = Boolean(

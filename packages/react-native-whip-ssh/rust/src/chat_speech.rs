@@ -5,16 +5,28 @@ use std::{
     sync::Arc,
 };
 
-use crate::AgentTranscriptKind;
+use crate::{AgentQuestion, AgentTranscriptKind, agent_transcript::is_question_tool};
 use parking_lot::Mutex;
 
-#[derive(uniffi::Record)]
-pub struct ChatSpeechPart {
-    pub id: String,
-    pub text: String,
+#[derive(uniffi::Enum)]
+pub enum ChatSpeechPart {
+    Text {
+        id: String,
+        text: String,
+    },
+    Tool {
+        id: String,
+        tool: String,
+        summary: String,
+        questions: Vec<AgentQuestion>,
+    },
+    Notice {
+        id: String,
+        questions: Vec<AgentQuestion>,
+    },
 }
 
-/// The platform adapter projects only prose parts, never tools or reasoning.
+/// The platform adapter forwards prose and question payloads, without tool output.
 #[derive(uniffi::Record)]
 pub struct ChatSpeechMessage {
     pub id: String,
@@ -34,6 +46,59 @@ struct SpeechState {
 struct SpokenPart {
     spoken: String,
     finished: bool,
+}
+
+struct SpeechContent {
+    id: String,
+    text: String,
+    question: bool,
+}
+
+fn speech_content(part: ChatSpeechPart) -> Option<SpeechContent> {
+    let (id, text, question) = match part {
+        ChatSpeechPart::Text { id, text } => (id, text, false),
+        ChatSpeechPart::Tool {
+            id,
+            tool,
+            summary,
+            questions,
+        } if is_question_tool(&tool) => {
+            let text = if questions.is_empty() {
+                summary
+            } else {
+                spoken_questions(&questions)
+            };
+            (id, text, true)
+        }
+        ChatSpeechPart::Notice { id, questions } => (id, spoken_questions(&questions), true),
+        ChatSpeechPart::Tool { .. } => return None,
+    };
+    if text.trim().is_empty() {
+        return None;
+    }
+    Some(SpeechContent { id, text, question })
+}
+
+fn readable(agent: AgentTranscriptKind, completed: bool, content: &SpeechContent) -> bool {
+    content.question || completed || agent == AgentTranscriptKind::Codex
+}
+
+#[uniffi::export]
+pub fn chat_speech_response_available(
+    agent: AgentTranscriptKind,
+    messages: Vec<ChatSpeechMessage>,
+) -> bool {
+    messages.into_iter().any(|message| {
+        message.assistant
+            && message
+                .prose
+                .into_iter()
+                .filter_map(speech_content)
+                .any(|part| {
+                    readable(agent, message.completed, &part)
+                        && !spoken_prose(&part.text).is_empty()
+                })
+    })
 }
 
 #[derive(Default, uniffi::Object)]
@@ -61,15 +126,18 @@ impl ChatSpeechQueue {
             if !message.assistant {
                 continue;
             }
-            let part_count = message.prose.len();
-            for (index, part) in message.prose.into_iter().enumerate() {
+            let parts: Vec<_> = message
+                .prose
+                .into_iter()
+                .filter_map(speech_content)
+                .collect();
+            let part_count = parts.len();
+            for (index, part) in parts.into_iter().enumerate() {
                 let live = state.live;
                 // Baseline complete prose is history. Codex publishes finalized
                 // response items inside a growing turn; keep their existing
                 // immediate playback without freezing a part on its first update.
-                let finalized = message.completed
-                    || index + 1 < part_count
-                    || agent == AgentTranscriptKind::Codex;
+                let finalized = readable(agent, message.completed, &part) || index + 1 < part_count;
                 let progress = state
                     .parts
                     .entry((message.id.clone(), part.id))
@@ -116,8 +184,8 @@ impl ChatSpeechQueue {
         self.state.lock().pending.pop_front()
     }
 
-    /// Read all assistant prose in the selected response, in transcript order.
-    /// Tool calls and reasoning never enter the prose adapter.
+    /// Read assistant prose and questions in the selected response, in order.
+    /// Questions are speakable while the agent is still waiting for an answer.
     pub fn read_response(
         &self,
         agent: AgentTranscriptKind,
@@ -126,17 +194,62 @@ impl ChatSpeechQueue {
         let mut state = self.state.lock();
         state.pending.clear();
         for message in messages {
-            if !message.assistant || (agent != AgentTranscriptKind::Codex && !message.completed) {
+            if !message.assistant {
                 continue;
             }
             state.pending.extend(
                 message
                     .prose
-                    .iter()
+                    .into_iter()
+                    .filter_map(speech_content)
+                    .filter(|part| readable(agent, message.completed, part))
                     .flat_map(|part| speech_chunks(&spoken_prose(&part.text))),
             );
         }
         !state.pending.is_empty()
+    }
+}
+
+fn spoken_questions(questions: &[AgentQuestion]) -> String {
+    let mut sections = Vec::new();
+    for question in questions {
+        if let Some(header) = &question.header {
+            push_sentence(&mut sections, header);
+        }
+        push_sentence(&mut sections, &question.question);
+        if question.multiple {
+            push_sentence(&mut sections, "Choose one or more.");
+        }
+        let options = question
+            .options
+            .iter()
+            .filter_map(|option| {
+                let label = option.label.trim();
+                if label.is_empty() {
+                    return None;
+                }
+                Some(match option.description.as_deref().map(str::trim) {
+                    Some(description) if !description.is_empty() => {
+                        format!("{label}: {description}")
+                    }
+                    _ => label.to_owned(),
+                })
+            })
+            .collect::<Vec<_>>()
+            .join(" or ");
+        push_sentence(&mut sections, &options);
+    }
+    sections.join(" ")
+}
+
+fn push_sentence(sections: &mut Vec<String>, text: &str) {
+    let text = text.trim();
+    if !text.is_empty() {
+        sections.push(if text.ends_with(['.', '?', '!', '。', '？', '！']) {
+            text.to_owned()
+        } else {
+            format!("{text}.")
+        });
     }
 }
 
@@ -162,12 +275,16 @@ fn stable_prose_end(prose: &str, trailing_whitespace: bool) -> usize {
 const MAX_CHUNK_UNITS: usize = 3_000;
 
 fn speech_chunks(text: &str) -> Vec<String> {
+    speech_chunks_with_limit(text, MAX_CHUNK_UNITS)
+}
+
+pub(crate) fn speech_chunks_with_limit(text: &str, max_units: usize) -> Vec<String> {
     let mut chunks = Vec::new();
     let mut chunk = String::new();
     let mut units = 0;
     for word in text.split_whitespace() {
         let word_units = word.encode_utf16().count();
-        if !chunk.is_empty() && units + 1 + word_units > MAX_CHUNK_UNITS {
+        if !chunk.is_empty() && units + 1 + word_units > max_units {
             chunks.push(std::mem::take(&mut chunk));
             units = 0;
         }
@@ -176,14 +293,14 @@ fn speech_chunks(text: &str) -> Vec<String> {
             units += 1;
         }
         for character in word.chars() {
-            if units + character.len_utf16() > MAX_CHUNK_UNITS {
+            if units + character.len_utf16() > max_units {
                 chunks.push(std::mem::take(&mut chunk).trim().to_owned());
                 units = 0;
             }
             chunk.push(character);
             units += character.len_utf16();
         }
-        if units >= MAX_CHUNK_UNITS {
+        if units >= max_units {
             chunks.push(std::mem::take(&mut chunk));
             units = 0;
         }
@@ -247,13 +364,237 @@ fn spoken_prose(markdown: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::AgentQuestionOption;
+
+    const AGENTS: [AgentTranscriptKind; 4] = [
+        AgentTranscriptKind::Claude,
+        AgentTranscriptKind::Codex,
+        AgentTranscriptKind::OpenCode,
+        AgentTranscriptKind::Pi,
+    ];
+
+    fn question() -> AgentQuestion {
+        AgentQuestion {
+            header: None,
+            question: "Which approach?".into(),
+            multiple: false,
+            options: ["First", "Second", "Third"]
+                .into_iter()
+                .map(|label| AgentQuestionOption {
+                    label: label.into(),
+                    description: None,
+                })
+                .collect(),
+        }
+    }
+
+    fn question_message(tool: Option<&str>, questions: Vec<AgentQuestion>) -> ChatSpeechMessage {
+        ChatSpeechMessage {
+            id: "question".into(),
+            assistant: true,
+            completed: false,
+            prose: vec![match tool {
+                Some(tool) => ChatSpeechPart::Tool {
+                    id: "ask".into(),
+                    tool: tool.into(),
+                    summary: "Fallback summary".into(),
+                    questions,
+                },
+                None => ChatSpeechPart::Notice {
+                    id: "ask".into(),
+                    questions,
+                },
+            }],
+        }
+    }
+
+    #[test]
+    fn pending_questions_speak_options_with_or_once_for_every_agent() {
+        for agent in AGENTS {
+            for tool in [
+                Some("AskUserQuestion"),
+                Some("question"),
+                Some("functions.request_user_input"),
+                Some("functions · request_user_input_async"),
+                None,
+            ] {
+                let queue = ChatSpeechQueue::new();
+                assert!(chat_speech_response_available(
+                    agent,
+                    vec![question_message(tool, vec![question()])]
+                ));
+                queue.update(agent, true, vec![]);
+                for completed in [false, false, true] {
+                    let mut message = question_message(tool, vec![question()]);
+                    message.completed = completed;
+                    queue.update(agent, true, vec![message]);
+                }
+                assert_eq!(
+                    queue.next().as_deref(),
+                    Some("Which approach? First or Second or Third.")
+                );
+                assert_eq!(queue.next(), None);
+            }
+        }
+    }
+
+    #[test]
+    fn question_history_and_reconnect_catchup_are_silent() {
+        for agent in AGENTS {
+            let queue = ChatSpeechQueue::new();
+            queue.update(
+                agent,
+                true,
+                vec![question_message(Some("question"), vec![question()])],
+            );
+            queue.update(
+                agent,
+                true,
+                vec![question_message(Some("question"), vec![question()])],
+            );
+            assert_eq!(queue.next(), None);
+            queue.update(agent, false, vec![]);
+            let mut missed = question_message(None, vec![question()]);
+            missed.id = "missed".into();
+            queue.update(agent, true, vec![missed]);
+            assert_eq!(queue.next(), None);
+            let mut live = question_message(None, vec![question()]);
+            live.id = "live".into();
+            queue.update(agent, true, vec![live]);
+            assert_eq!(
+                queue.next().as_deref(),
+                Some("Which approach? First or Second or Third.")
+            );
+        }
+    }
+
+    #[test]
+    fn newly_available_question_flushes_preceding_prose_before_reading_options() {
+        for agent in AGENTS {
+            let queue = ChatSpeechQueue::new();
+            queue.update(agent, true, vec![]);
+            let waiting = || ChatSpeechMessage {
+                prose: vec![ChatSpeechPart::Tool {
+                    id: "ask".into(),
+                    tool: "AskUserQuestion".into(),
+                    summary: String::new(),
+                    questions: Vec::new(),
+                }],
+                ..question_message(None, Vec::new())
+            };
+            queue.update(agent, true, vec![waiting()]);
+            assert_eq!(queue.next(), None);
+            let with_intro = |mut ask: ChatSpeechMessage| {
+                ask.prose.insert(
+                    0,
+                    ChatSpeechPart::Text {
+                        id: "intro".into(),
+                        text: "Pick an approach".into(),
+                    },
+                );
+                ask
+            };
+            queue.update(agent, true, vec![with_intro(waiting())]);
+            if agent != AgentTranscriptKind::Codex {
+                assert_eq!(queue.next(), None);
+            }
+            queue.update(
+                agent,
+                true,
+                vec![with_intro(question_message(
+                    Some("AskUserQuestion"),
+                    vec![question()],
+                ))],
+            );
+            assert_eq!(queue.next().as_deref(), Some("Pick an approach"));
+            assert_eq!(
+                queue.next().as_deref(),
+                Some("Which approach? First or Second or Third.")
+            );
+            assert_eq!(queue.next(), None);
+        }
+    }
+
+    #[test]
+    fn manual_reading_accepts_pending_questions_and_preserves_response_order() {
+        for agent in AGENTS {
+            let messages = || {
+                let mut ask = question_message(Some("AskUserQuestion"), vec![question()]);
+                ask.prose.push(ChatSpeechPart::Notice {
+                    id: "next-question".into(),
+                    questions: vec![AgentQuestion {
+                        question: "Anything else?".into(),
+                        options: Vec::new(),
+                        ..question()
+                    }],
+                });
+                vec![
+                    message("intro", true, "Before the question."),
+                    ask,
+                    message("outro", true, "After the question."),
+                ]
+            };
+            let queue = ChatSpeechQueue::new();
+            assert!(chat_speech_response_available(agent, messages()));
+            for _ in 0..2 {
+                assert!(queue.read_response(agent, messages()));
+                assert_eq!(queue.next().as_deref(), Some("Before the question."));
+                assert_eq!(
+                    queue.next().as_deref(),
+                    Some("Which approach? First or Second or Third.")
+                );
+                assert_eq!(queue.next().as_deref(), Some("Anything else?"));
+                assert_eq!(queue.next().as_deref(), Some("After the question."));
+                assert_eq!(queue.next(), None);
+            }
+        }
+    }
+
+    #[test]
+    fn questions_include_headers_descriptions_and_multiple_selection() {
+        let mut question = question();
+        question.header = Some("Approach".into());
+        question.multiple = true;
+        question.options[0].description = Some("Quickest".into());
+        question.options[1].description = Some("   ".into());
+        question.options[2].label = "   ".into();
+        assert_eq!(
+            spoken_questions(&[question]),
+            "Approach. Which approach? Choose one or more. First: Quickest or Second."
+        );
+    }
+
+    #[test]
+    fn summary_fallback_is_read_but_non_question_tools_and_empty_notices_are_silent() {
+        for agent in AGENTS {
+            let queue = ChatSpeechQueue::new();
+            assert!(
+                queue.read_response(agent, vec![question_message(Some("question"), Vec::new())])
+            );
+            assert_eq!(queue.next().as_deref(), Some("Fallback summary"));
+            let ignored = || {
+                let mut user_question = question_message(Some("question"), vec![question()]);
+                user_question.assistant = false;
+                vec![
+                    question_message(Some("shell"), vec![question()]),
+                    question_message(None, Vec::new()),
+                    user_question,
+                ]
+            };
+            assert!(!chat_speech_response_available(agent, ignored()));
+            assert!(!queue.read_response(agent, ignored()));
+            queue.update(agent, true, vec![]);
+            queue.update(agent, true, ignored());
+            assert_eq!(queue.next(), None);
+        }
+    }
 
     fn message(id: &str, completed: bool, text: &str) -> ChatSpeechMessage {
         ChatSpeechMessage {
             id: id.into(),
             assistant: true,
             completed,
-            prose: vec![ChatSpeechPart {
+            prose: vec![ChatSpeechPart::Text {
                 id: id.into(),
                 text: text.into(),
             }],
@@ -304,7 +645,7 @@ mod tests {
         );
         assert_eq!(queue.next().as_deref(), Some("First."));
         let mut reply = message("reply", false, "First. Remaining tail");
-        reply.prose.push(ChatSpeechPart {
+        reply.prose.push(ChatSpeechPart::Text {
             id: "second".into(),
             text: "Next sentence. More".into(),
         });
@@ -435,6 +776,10 @@ mod tests {
     fn manual_reading_waits_for_completion_except_finalized_codex_parts() {
         for agent in [AgentTranscriptKind::Claude, AgentTranscriptKind::OpenCode] {
             let queue = ChatSpeechQueue::new();
+            assert!(!chat_speech_response_available(
+                agent,
+                vec![message("stream", false, "Partial")]
+            ));
             assert!(!queue.read_response(agent, vec![message("stream", false, "Partial")]));
             assert_eq!(queue.next(), None);
         }
@@ -455,7 +800,7 @@ mod tests {
             vec![message("turn", false, "Old progress")],
         );
         let mut turn = message("turn", false, "Old progress");
-        turn.prose.push(ChatSpeechPart {
+        turn.prose.push(ChatSpeechPart::Text {
             id: "final".into(),
             text: "Finished".into(),
         });

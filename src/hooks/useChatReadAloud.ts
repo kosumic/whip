@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Platform } from 'react-native';
+import { canReadChatResponse } from 'react-native-whip-ssh';
 
 import type { TranscriptTurn } from '../agentChat';
 import { readChatResponse, type ChatSpeechTarget } from '../services/chatSpeech';
@@ -30,9 +31,7 @@ export function useChatReadAloud(
 
   const disabled = !target || dictating || (Platform.OS !== 'android' && Platform.OS !== 'ios');
   const canRead = (turn: TranscriptTurn) => !disabled
-    && turn.assistants.some(message => message.role === 'assistant'
-      && (target?.agent === 'codex' || message.completedAt !== undefined)
-      && message.parts.some(part => part.type === 'text' && part.text.trim()));
+    && canReadChatResponse(target.agent, turn.assistants);
 
   const toggle = (turn: TranscriptTurn) => {
     if (readingTurnId === turn.id) {

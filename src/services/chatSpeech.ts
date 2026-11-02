@@ -1,5 +1,5 @@
 import { DeviceEventEmitter, NativeEventEmitter, Platform } from 'react-native';
-import { NativeChatSpeechQueue } from 'react-native-whip-ssh';
+import { NativeChatSpeechQueue, formatChatSpeech } from 'react-native-whip-ssh';
 
 import type { ChatAgent } from '../lib/agentChatSession';
 import type { TranscriptMessage } from '../agentChat';
@@ -15,6 +15,7 @@ export interface ChatSpeechTarget {
   hostId: string;
   paneId: string;
   label: string;
+  tabName?: string;
 }
 
 interface ListeningSession {
@@ -23,18 +24,28 @@ interface ListeningSession {
   silence: () => Promise<void>;
 }
 
-const CHAT_SPEECH_STOPPED = 'WhipChatSpeechStopped';
+export const CHAT_SPEECH_STOPPED = 'WhipChatSpeechStopped';
 type ChatSpeechEvents = {
   [CHAT_SPEECH_STOPPED]: [event: { token: string; error?: string }];
 };
 let active: ListeningSession | null = null;
 let generation = 0;
+interface AutomaticSpeechControl { pause: () => Promise<void>; resume: () => void }
+let automatic: AutomaticSpeechControl | null = null;
+
+export function registerAutomaticSpeech(control: AutomaticSpeechControl): () => void {
+  automatic = control;
+  return () => { if (automatic === control) automatic = null; };
+}
+
+export const isChatResponsePlaying = (): boolean => active !== null;
 
 /** Wait for native playback to release its audio session before recording. */
 export async function suspendChatSpeechForInput(): Promise<void> {
+  const automaticStopped = automatic?.pause();
   const stopped = active?.silence();
   setSpeechInputActive(true);
-  await Promise.all([stopped, getSpeechPlayback().stopSpeech()]);
+  await Promise.all([automaticStopped, stopped, getSpeechPlayback().stopSpeech()]);
 }
 
 /** One process-wide listener, independent of the chat viewport's lifecycle. */
@@ -69,6 +80,7 @@ function startChatSpeech(
     onStopped();
     return () => {};
   }
+  const automaticStopped = automatic?.pause();
   active?.stop();
   const token = `${target.bindingToken}:${++generation}`;
   let stopped = false;
@@ -89,6 +101,7 @@ function startChatSpeech(
     }
     stoppedPlayback = native.stopChatSpeech(token);
     reportBackgroundFailure(stoppedPlayback, 'chat-speech-stop');
+    reportBackgroundFailure(stoppedPlayback.then(() => automatic?.resume()), 'automatic-chat-speech-resume');
     onStopped();
   };
   const fail = (error: unknown) => {
@@ -116,7 +129,7 @@ function startChatSpeech(
       while (!stopped) {
         const text = queue.next();
         if (!text) break;
-        await native.speakChat(token, text);
+        await native.speakChat(token, target.tabName ? formatChatSpeech(target.tabName, text) : text);
       }
       if (messages) stop();
     } catch (error) {
@@ -141,6 +154,7 @@ function startChatSpeech(
   }
   // Rust admission replaces any announcement or device speech atomically.
   Promise.resolve()
+    .then(() => automaticStopped)
     .then(() => stopped ? undefined : native.startChatSpeech(token, target.label))
     .then(() => {
       if (stopped) return;

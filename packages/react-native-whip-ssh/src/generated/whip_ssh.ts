@@ -281,6 +281,51 @@ export function cancelSshSftpUpload(key: string): boolean {
   );
 }
 
+export function chatSpeechAnnouncement(tabName: string, text: string): string {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterString.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_chat_speech_announcement(
+          FfiConverterString.lower(tabName, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(text, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
+export function chatSpeechResponseAvailable(
+  agent: AgentTranscriptKind,
+  messages: Array<ChatSpeechMessage>,
+): boolean {
+  return FfiConverterBool.lift(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_chat_speech_response_available(
+          FfiConverterTypeAgentTranscriptKind.lower(
+            agent,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterSequenceTypeChatSpeechMessage.lower(
+            messages,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
 export async function chmodSshSftpPath(
   key: string,
   path: string,
@@ -9680,53 +9725,226 @@ const FfiConverterTypeChatSearchResults = (() => {
   return new FFIConverter();
 })();
 
-export type ChatSpeechPart = {
-  id: string;
-  text: string;
-};
-
-/**
- * Generated factory for {@link ChatSpeechPart} record objects.
- */
+// Enum: ChatSpeechPart
+export enum ChatSpeechPart_Tags {
+  Text = 'Text',
+  Tool = 'Tool',
+  Notice = 'Notice',
+}
 export const ChatSpeechPart = (() => {
-  const defaults = () => ({});
-  const create = (() => {
-    return uniffiCreateRecord<ChatSpeechPart, ReturnType<typeof defaults>>(
-      defaults,
-    );
-  })();
+  type Text__interface = {
+    tag: ChatSpeechPart_Tags.Text;
+    inner: Readonly<{ id: string; text: string }>;
+  };
+  class Text_ extends UniffiEnum implements Text__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'ChatSpeechPart';
+    readonly tag = ChatSpeechPart_Tags.Text;
+    readonly inner: Readonly<{ id: string; text: string }>;
+    constructor(inner: { id: string; text: string }) {
+      super('ChatSpeechPart', 'Text');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { id: string; text: string }): Text_ {
+      return new Text_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Text_ {
+      return obj.tag === ChatSpeechPart_Tags.Text;
+    }
+  }
+
+  type Tool__interface = {
+    tag: ChatSpeechPart_Tags.Tool;
+    inner: Readonly<{
+      id: string;
+      tool: string;
+      summary: string;
+      questions: Array<AgentQuestion>;
+    }>;
+  };
+  class Tool_ extends UniffiEnum implements Tool__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'ChatSpeechPart';
+    readonly tag = ChatSpeechPart_Tags.Tool;
+    readonly inner: Readonly<{
+      id: string;
+      tool: string;
+      summary: string;
+      questions: Array<AgentQuestion>;
+    }>;
+    constructor(inner: {
+      id: string;
+      tool: string;
+      summary: string;
+      questions: Array<AgentQuestion>;
+    }) {
+      super('ChatSpeechPart', 'Tool');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      id: string;
+      tool: string;
+      summary: string;
+      questions: Array<AgentQuestion>;
+    }): Tool_ {
+      return new Tool_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Tool_ {
+      return obj.tag === ChatSpeechPart_Tags.Tool;
+    }
+  }
+
+  type Notice__interface = {
+    tag: ChatSpeechPart_Tags.Notice;
+    inner: Readonly<{ id: string; questions: Array<AgentQuestion> }>;
+  };
+  class Notice_ extends UniffiEnum implements Notice__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'ChatSpeechPart';
+    readonly tag = ChatSpeechPart_Tags.Notice;
+    readonly inner: Readonly<{ id: string; questions: Array<AgentQuestion> }>;
+    constructor(inner: { id: string; questions: Array<AgentQuestion> }) {
+      super('ChatSpeechPart', 'Notice');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      id: string;
+      questions: Array<AgentQuestion>;
+    }): Notice_ {
+      return new Notice_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Notice_ {
+      return obj.tag === ChatSpeechPart_Tags.Notice;
+    }
+  }
+
+  function instanceOf(obj: any): obj is ChatSpeechPart {
+    return obj[uniffiTypeNameSymbol] === 'ChatSpeechPart';
+  }
+
   return Object.freeze({
-    create,
-    new: create,
-    defaults: () => Object.freeze(defaults()) as Partial<ChatSpeechPart>,
+    instanceOf,
+    Text: Text_,
+    Tool: Tool_,
+    Notice: Notice_,
   });
 })();
+export type ChatSpeechPart = InstanceType<
+  (typeof ChatSpeechPart)['Text' | 'Tool' | 'Notice']
+>;
 
+// FfiConverter for enum ChatSpeechPart
 const FfiConverterTypeChatSpeechPart = (() => {
+  const ordinalConverter = FfiConverterInt32;
   type TypeName = ChatSpeechPart;
   class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
     read(from: RustBuffer): TypeName {
-      return {
-        id: FfiConverterString.read(from),
-        text: FfiConverterString.read(from),
-      };
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new ChatSpeechPart.Text({
+            id: FfiConverterString.read(from),
+            text: FfiConverterString.read(from),
+          });
+        case 2:
+          return new ChatSpeechPart.Tool({
+            id: FfiConverterString.read(from),
+            tool: FfiConverterString.read(from),
+            summary: FfiConverterString.read(from),
+            questions: FfiConverterSequenceTypeAgentQuestion.read(from),
+          });
+        case 3:
+          return new ChatSpeechPart.Notice({
+            id: FfiConverterString.read(from),
+            questions: FfiConverterSequenceTypeAgentQuestion.read(from),
+          });
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
     }
     write(value: TypeName, into: RustBuffer): void {
-      FfiConverterString.write(value.id, into);
-      FfiConverterString.write(value.text, into);
+      switch (value.tag) {
+        case ChatSpeechPart_Tags.Text: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.id, into);
+          FfiConverterString.write(inner.text, into);
+          return;
+        }
+        case ChatSpeechPart_Tags.Tool: {
+          ordinalConverter.write(2, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.id, into);
+          FfiConverterString.write(inner.tool, into);
+          FfiConverterString.write(inner.summary, into);
+          FfiConverterSequenceTypeAgentQuestion.write(inner.questions, into);
+          return;
+        }
+        case ChatSpeechPart_Tags.Notice: {
+          ordinalConverter.write(3, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.id, into);
+          FfiConverterSequenceTypeAgentQuestion.write(inner.questions, into);
+          return;
+        }
+        default:
+          // Throwing from here means that ChatSpeechPart_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
     }
     allocationSize(value: TypeName): number {
-      return (
-        FfiConverterString.allocationSize(value.id) +
-        FfiConverterString.allocationSize(value.text)
-      );
+      switch (value.tag) {
+        case ChatSpeechPart_Tags.Text: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterString.allocationSize(inner.id);
+          size += FfiConverterString.allocationSize(inner.text);
+          return size;
+        }
+        case ChatSpeechPart_Tags.Tool: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
+          size += FfiConverterString.allocationSize(inner.id);
+          size += FfiConverterString.allocationSize(inner.tool);
+          size += FfiConverterString.allocationSize(inner.summary);
+          size += FfiConverterSequenceTypeAgentQuestion.allocationSize(
+            inner.questions,
+          );
+          return size;
+        }
+        case ChatSpeechPart_Tags.Notice: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(3);
+          size += FfiConverterString.allocationSize(inner.id);
+          size += FfiConverterSequenceTypeAgentQuestion.allocationSize(
+            inner.questions,
+          );
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
     }
   }
   return new FFIConverter();
 })();
 
 /**
- * The platform adapter projects only prose parts, never tools or reasoning.
+ * The platform adapter forwards prose and question payloads, without tool output.
  */
 export type ChatSpeechMessage = {
   id: string;
@@ -9775,6 +9993,51 @@ const FfiConverterTypeChatSpeechMessage = (() => {
         FfiConverterBool.allocationSize(value.assistant) +
         FfiConverterBool.allocationSize(value.completed) +
         FfiConverterSequenceTypeChatSpeechPart.allocationSize(value.prose)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type ChatSpeechUtterance = {
+  key: string;
+  text: string;
+};
+
+/**
+ * Generated factory for {@link ChatSpeechUtterance} record objects.
+ */
+export const ChatSpeechUtterance = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<ChatSpeechUtterance, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<ChatSpeechUtterance>,
+  });
+})();
+
+const FfiConverterTypeChatSpeechUtterance = (() => {
+  type TypeName = ChatSpeechUtterance;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        key: FfiConverterString.read(from),
+        text: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.key, into);
+      FfiConverterString.write(value.text, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.key) +
+        FfiConverterString.allocationSize(value.text)
       );
     }
   }
@@ -49235,6 +49498,210 @@ const FfiConverterTypeAppCore = new FfiConverterObject(
   uniffiTypeAppCoreObjectFactory,
 );
 
+export interface AutomaticChatSpeechQueueLike {
+  next(nowMs: bigint): ChatSpeechUtterance | undefined;
+  remove(key: string): void;
+  reset(): void;
+  update(
+    key: string,
+    agent: AgentTranscriptKind,
+    tabName: string,
+    live: boolean,
+    baseline: boolean,
+    messages: Array<ChatSpeechMessage>,
+    nowMs: bigint,
+  ): void;
+}
+/**
+ * @deprecated Use `AutomaticChatSpeechQueueLike` instead.
+ */
+export type AutomaticChatSpeechQueueInterface = AutomaticChatSpeechQueueLike;
+
+export class AutomaticChatSpeechQueue
+  extends UniffiAbstractObject
+  implements AutomaticChatSpeechQueueLike
+{
+  readonly [uniffiTypeNameSymbol] = 'AutomaticChatSpeechQueue';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  constructor() {
+    super();
+    const pointer = uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_constructor_automaticchatspeechqueue_new(
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeAutomaticChatSpeechQueueObjectFactory.bless(pointer);
+  }
+
+  next(nowMs: bigint): ChatSpeechUtterance | undefined {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterOptionalTypeChatSpeechUtterance.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_next(
+            uniffiTypeAutomaticChatSpeechQueueObjectFactory.clonePointer(this),
+            FfiConverterUInt64.lower(nowMs, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  remove(key: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_remove(
+          uniffiTypeAutomaticChatSpeechQueueObjectFactory.clonePointer(this),
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  reset(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_reset(
+          uniffiTypeAutomaticChatSpeechQueueObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  update(
+    key: string,
+    agent: AgentTranscriptKind,
+    tabName: string,
+    live: boolean,
+    baseline: boolean,
+    messages: Array<ChatSpeechMessage>,
+    nowMs: bigint,
+  ): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_update(
+          uniffiTypeAutomaticChatSpeechQueueObjectFactory.clonePointer(this),
+          FfiConverterString.lower(key, nativeModule().rustbuffer_alloc),
+          FfiConverterTypeAgentTranscriptKind.lower(
+            agent,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterString.lower(tabName, nativeModule().rustbuffer_alloc),
+          FfiConverterBool.lower(live, nativeModule().rustbuffer_alloc),
+          FfiConverterBool.lower(baseline, nativeModule().rustbuffer_alloc),
+          FfiConverterSequenceTypeChatSpeechMessage.lower(
+            messages,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterUInt64.lower(nowMs, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeAutomaticChatSpeechQueueObjectFactory.pointer(this);
+      uniffiTypeAutomaticChatSpeechQueueObjectFactory.freePointer(pointer);
+      uniffiTypeAutomaticChatSpeechQueueObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is AutomaticChatSpeechQueue {
+    return uniffiTypeAutomaticChatSpeechQueueObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeAutomaticChatSpeechQueueObjectFactory: UniffiObjectFactory<AutomaticChatSpeechQueueLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): AutomaticChatSpeechQueueLike {
+        const instance = Object.create(AutomaticChatSpeechQueue.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'AutomaticChatSpeechQueue';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_automaticchatspeechqueue_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: AutomaticChatSpeechQueueLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: AutomaticChatSpeechQueueLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_automaticchatspeechqueue(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_automaticchatspeechqueue(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is AutomaticChatSpeechQueueLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'AutomaticChatSpeechQueue'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeAutomaticChatSpeechQueue = new FfiConverterObject(
+  uniffiTypeAutomaticChatSpeechQueueObjectFactory,
+);
+
 export interface BrowserEffectPermitLike {
   checkActive() /*throws*/ : void;
   effectId(): string;
@@ -51127,8 +51594,8 @@ const FfiConverterTypeBrowserSearchHistory = new FfiConverterObject(
 export interface ChatSpeechQueueLike {
   next(): string | undefined;
   /**
-   * Read all assistant prose in the selected response, in transcript order.
-   * Tool calls and reasoning never enter the prose adapter.
+   * Read assistant prose and questions in the selected response, in order.
+   * Questions are speakable while the agent is still waiting for an answer.
    */
   readResponse(
     agent: AgentTranscriptKind,
@@ -51192,8 +51659,8 @@ export class ChatSpeechQueue
   }
 
   /**
-   * Read all assistant prose in the selected response, in transcript order.
-   * Tool calls and reasoning never enter the prose adapter.
+   * Read assistant prose and questions in the selected response, in order.
+   * Questions are speakable while the agent is still waiting for an answer.
    */
   readResponse(
     agent: AgentTranscriptKind,
@@ -59748,6 +60215,11 @@ const FfiConverterOptionalTypeTerminalSubmissionFailure =
 // FfiConverter for Array<bigint>
 const FfiConverterSequenceUInt64 = new FfiConverterArray(FfiConverterUInt64);
 
+// FfiConverter for Array<ChatSpeechMessage>
+const FfiConverterSequenceTypeChatSpeechMessage = new FfiConverterArray(
+  FfiConverterTypeChatSpeechMessage,
+);
+
 // FfiConverter for Array<CredentialStorageKey>
 const FfiConverterSequenceTypeCredentialStorageKey = new FfiConverterArray(
   FfiConverterTypeCredentialStorageKey,
@@ -59885,6 +60357,11 @@ const FfiConverterSequenceTypeStartupSessionHost = new FfiConverterArray(
   FfiConverterTypeStartupSessionHost,
 );
 
+// FfiConverter for ChatSpeechUtterance | undefined
+const FfiConverterOptionalTypeChatSpeechUtterance = new FfiConverterOptional(
+  FfiConverterTypeChatSpeechUtterance,
+);
+
 // FfiConverter for Array<BrowserSite>
 const FfiConverterSequenceTypeBrowserSite = new FfiConverterArray(
   FfiConverterTypeBrowserSite,
@@ -59898,11 +60375,6 @@ const FfiConverterSequenceTypeBrowserSavedDownload = new FfiConverterArray(
 // FfiConverter for Array<BrowserTabProjection>
 const FfiConverterSequenceTypeBrowserTabProjection = new FfiConverterArray(
   FfiConverterTypeBrowserTabProjection,
-);
-
-// FfiConverter for Array<ChatSpeechMessage>
-const FfiConverterSequenceTypeChatSpeechMessage = new FfiConverterArray(
-  FfiConverterTypeChatSpeechMessage,
 );
 
 // FfiConverter for Array<LocalAlertEffect>
@@ -60051,6 +60523,22 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_upload',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_chat_speech_announcement() !==
+    52501
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_chat_speech_announcement',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_chat_speech_response_available() !==
+    17606
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_chat_speech_response_available',
     );
   }
   if (
@@ -61118,6 +61606,46 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_automaticchatspeechqueue_new() !==
+    22976
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_constructor_automaticchatspeechqueue_new',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_next() !==
+    41080
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_next',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_remove() !==
+    26293
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_remove',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_reset() !==
+    43517
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_reset',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_update() !==
+    13376
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_update',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_browsereffectpermit_check_active() !==
     65052
   ) {
@@ -61559,7 +62087,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_chatspeechqueue_read_response() !==
-    15936
+    7123
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_chatspeechqueue_read_response',
@@ -63760,6 +64288,7 @@ export default Object.freeze({
     FfiConverterTypeAppStorageError,
     FfiConverterTypeAppUpdateCheck,
     FfiConverterTypeAppUpdateError,
+    FfiConverterTypeAutomaticChatSpeechQueue,
     FfiConverterTypeBillingAccessReason,
     FfiConverterTypeBillingCapability,
     FfiConverterTypeBillingChannel,
@@ -63796,6 +64325,7 @@ export default Object.freeze({
     FfiConverterTypeChatSpeechMessage,
     FfiConverterTypeChatSpeechPart,
     FfiConverterTypeChatSpeechQueue,
+    FfiConverterTypeChatSpeechUtterance,
     FfiConverterTypeCodeSyntax,
     FfiConverterTypeComposerDictation,
     FfiConverterTypeCredentialCommand,
