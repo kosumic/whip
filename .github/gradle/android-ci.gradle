@@ -1,0 +1,18 @@
+// Gradle's worker limit does not constrain Ninja's compiler processes.
+// Use these pools with --no-parallel so native builds in different projects
+// cannot each start another independent pool of memory-heavy C++ compilers.
+def compilePool = 'whip_ci_compile'
+def linkPool = 'whip_ci_link'
+def compileJobs = gradle.startParameter.maxWorkerCount
+
+gradle.beforeProject { project ->
+    ['com.android.application', 'com.android.library'].each { pluginId ->
+        project.pluginManager.withPlugin(pluginId) {
+            project.extensions.getByName('android').defaultConfig.externalNativeBuild.cmake.arguments(
+                "-DCMAKE_JOB_POOLS=${compilePool}=${compileJobs};${linkPool}=1",
+                "-DCMAKE_JOB_POOL_COMPILE=${compilePool}",
+                "-DCMAKE_JOB_POOL_LINK=${linkPool}"
+            )
+        }
+    }
+}
