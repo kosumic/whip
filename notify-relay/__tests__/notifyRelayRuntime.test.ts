@@ -1,12 +1,8 @@
 /** @jest-environment node */
 import { readFileSync } from 'node:fs';
-import { performance as nodePerformance } from 'node:perf_hooks';
 import { build } from 'esbuild';
 
-// The React Native Jest preset replaces performance with an incomplete mock.
-// Undici captures markResourceTiming when Miniflare is first imported.
-Object.defineProperty(globalThis, 'performance', { configurable: true, value: nodePerformance });
-const { Miniflare, Response: WorkerResponse, convertV4MiniflareOptions } = require('miniflare') as typeof import('miniflare');
+import { Miniflare, Response as WorkerResponse, convertV4MiniflareOptions } from 'miniflare';
 
 const DEVICE = 'runtime-device-0000000001';
 const OWNER = 'owner'.repeat(12);
@@ -16,7 +12,8 @@ const KEY = 'key'.repeat(15);
 
 test('real Workers runtime enrolls, routes ciphertext, revokes, and rejects provider redirects', async () => {
   const output = await build({
-    entryPoints: ['notify-relay/src/index.ts'],
+    entryPoints: ['src/index.ts'],
+    tsconfig: 'tsconfig.json',
     bundle: true,
     format: 'esm',
     write: false,
@@ -42,7 +39,7 @@ test('real Workers runtime enrolls, routes ciphertext, revokes, and rejects prov
   try {
     const database = await runtime.getD1Database('DB');
     for (const file of ['0001.sql', '0002_public_registration.sql', '0003_device_message_rate.sql']) {
-      const sql = readFileSync(`notify-relay/migrations/${file}`, 'utf8').replace(/^--.*$/gm, '');
+      const sql = readFileSync(`migrations/${file}`, 'utf8').replace(/^--.*$/gm, '');
       for (const statement of sql.split(';').filter(part => part.trim())) {
         await database.prepare(statement).run();
       }

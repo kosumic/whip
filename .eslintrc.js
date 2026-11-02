@@ -120,10 +120,6 @@ module.exports = {
         'sonarjs/synchronous-suite-callback': 'off',
       },
     },
-    ...workerProjects.projects.map(({ directory, testPrefix, tsconfig }) => ({
-      files: [`${directory}/**/*.ts`, `__tests__/${testPrefix}*.test.ts`],
-      parserOptions: { project: `./${directory}/${tsconfig}` },
-    })),
     {
       files: ['scripts/**/*.ts'],
       env: { node: true },
@@ -134,12 +130,6 @@ module.exports = {
         // Developer tools intentionally resolve cargo, npx, and image tools
         // from the user's development environment.
         'sonarjs/no-os-command-from-path': 'off',
-      },
-    },
-    {
-      files: ['notify-relay/cloudflare.config.ts'],
-      parserOptions: {
-        project: './notify-relay/tsconfig.json',
       },
     },
     {
