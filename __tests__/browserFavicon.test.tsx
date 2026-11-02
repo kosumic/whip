@@ -5,7 +5,7 @@ jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );
 jest.mock('react-native', () => ({ Image: 'Image' }));
-jest.mock('lucide-react-native', () => ({ Globe: 'Globe' }));
+jest.mock('lucide-react-native/icons/globe', () => ('Globe'));
 jest.mock('../src/theme', () => ({
   useTheme: () => ({ colors: { text: 'black' } }),
 }));

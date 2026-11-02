@@ -1,4 +1,5 @@
-import { Download, SquareTerminal } from 'lucide-react-native';
+import Download from 'lucide-react-native/icons/download';
+import SquareTerminal from 'lucide-react-native/icons/square-terminal';
 import { useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { useTranslation } from 'react-i18next';

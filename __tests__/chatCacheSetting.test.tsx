@@ -9,7 +9,8 @@ jest.mock('react-native-whip-ssh', () => ({ clearAgentTranscriptCache: jest.fn()
 jest.mock('react-i18next', () => ({ useTranslation: () => ({
   t: (key: string, values?: { size?: string }) => values?.size ? `${key}: ${values.size}` : key,
 }) }));
-jest.mock('lucide-react-native', () => ({ ChevronDown: 'ChevronDown', ChevronUp: 'ChevronUp' }));
+jest.mock('lucide-react-native/icons/chevron-down', () => ('ChevronDown'));
+jest.mock('lucide-react-native/icons/chevron-up', () => ('ChevronUp'));
 jest.mock('../src/components/app-ui', () => ({ hapticPress: (action: () => void) => action }));
 jest.mock('../src/components/ui/icon', () => ({ Icon: 'Icon' }));
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));

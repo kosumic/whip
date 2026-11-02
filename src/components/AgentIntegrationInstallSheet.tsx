@@ -1,4 +1,6 @@
-import { SquareTerminal, TriangleAlert, Wrench } from 'lucide-react-native';
+import SquareTerminal from 'lucide-react-native/icons/square-terminal';
+import TriangleAlert from 'lucide-react-native/icons/triangle-alert';
+import Wrench from 'lucide-react-native/icons/wrench';
 import { Modal, Pressable, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 

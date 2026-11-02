@@ -1,20 +1,18 @@
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import {
-  BookOpen,
-  Bot,
-  Copy,
-  Focus,
-  Gamepad2,
-  ChevronRight,
-  History,
-  Layers3,
-  Play,
-  Search,
-  Sparkles,
-  SquareTerminal,
-  X,
-  type LucideIcon,
-} from 'lucide-react-native';
+import BookOpen from 'lucide-react-native/icons/book-open';
+import Bot from 'lucide-react-native/icons/bot';
+import Copy from 'lucide-react-native/icons/copy';
+import Focus from 'lucide-react-native/icons/focus';
+import Gamepad2 from 'lucide-react-native/icons/gamepad-2';
+import ChevronRight from 'lucide-react-native/icons/chevron-right';
+import History from 'lucide-react-native/icons/rotate-ccw-clock';
+import Layers3 from 'lucide-react-native/icons/layers';
+import Play from 'lucide-react-native/icons/play';
+import Search from 'lucide-react-native/icons/search';
+import Sparkles from 'lucide-react-native/icons/sparkles';
+import SquareTerminal from 'lucide-react-native/icons/square-terminal';
+import X from 'lucide-react-native/icons/x';
+import type { LucideIcon } from 'lucide-react-native';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,

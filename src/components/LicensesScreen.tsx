@@ -1,10 +1,8 @@
-import {
-  ChevronDown,
-  ChevronLeft,
-  ChevronUp,
-  ExternalLink,
-  Scale,
-} from 'lucide-react-native';
+import ChevronDown from 'lucide-react-native/icons/chevron-down';
+import ChevronLeft from 'lucide-react-native/icons/chevron-left';
+import ChevronUp from 'lucide-react-native/icons/chevron-up';
+import ExternalLink from 'lucide-react-native/icons/external-link';
+import Scale from 'lucide-react-native/icons/scale';
 import { Asset } from 'expo-asset';
 import { File } from 'expo-file-system';
 import { Fragment, useState } from 'react';

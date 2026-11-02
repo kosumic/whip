@@ -1,4 +1,5 @@
-import { Server, Trash2 } from 'lucide-react-native';
+import Server from 'lucide-react-native/icons/server';
+import Trash2 from 'lucide-react-native/icons/trash';
 import { useTranslation } from 'react-i18next';
 
 import { DEFAULT_SSH_PORT, hostDisplayName } from '../lib/hostProfiles';

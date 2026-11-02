@@ -16,34 +16,32 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
-import {
-  ArrowBigUp,
-  ArrowDown,
-  ArrowLeft,
-  ArrowRight,
-  ArrowRightToLine,
-  ArrowUp,
-  BookOpen,
-  ChevronUp,
-  CircleArrowOutUpLeft,
-  ClipboardPaste,
-  CornerDownLeft,
-  FolderOpen,
-  Globe2,
-  History,
-  Keyboard as KeyboardIcon,
-  MessageCircle,
-  Minimize2,
-  Option,
-  Paperclip,
-  Search,
-  Send,
-  SquareTerminal,
-  TriangleAlert,
-  Undo2,
-  X,
-  type LucideIcon,
-} from 'lucide-react-native';
+import ArrowBigUp from 'lucide-react-native/icons/arrow-big-up';
+import ArrowDown from 'lucide-react-native/icons/arrow-down';
+import ArrowLeft from 'lucide-react-native/icons/arrow-left';
+import ArrowRight from 'lucide-react-native/icons/arrow-right';
+import ArrowRightToLine from 'lucide-react-native/icons/arrow-right-to-line';
+import ArrowUp from 'lucide-react-native/icons/arrow-up';
+import BookOpen from 'lucide-react-native/icons/book-open';
+import ChevronUp from 'lucide-react-native/icons/chevron-up';
+import CircleArrowOutUpLeft from 'lucide-react-native/icons/circle-arrow-out-up-left';
+import ClipboardPaste from 'lucide-react-native/icons/clipboard-paste';
+import CornerDownLeft from 'lucide-react-native/icons/corner-down-left';
+import FolderOpen from 'lucide-react-native/icons/folder-open';
+import Globe2 from 'lucide-react-native/icons/earth';
+import History from 'lucide-react-native/icons/rotate-ccw-clock';
+import KeyboardIcon from 'lucide-react-native/icons/keyboard';
+import MessageCircle from 'lucide-react-native/icons/message-circle';
+import Minimize2 from 'lucide-react-native/icons/minimize-2';
+import Option from 'lucide-react-native/icons/option';
+import Paperclip from 'lucide-react-native/icons/paperclip';
+import Search from 'lucide-react-native/icons/search';
+import Send from 'lucide-react-native/icons/send';
+import SquareTerminal from 'lucide-react-native/icons/square-terminal';
+import TriangleAlert from 'lucide-react-native/icons/triangle-alert';
+import Undo2 from 'lucide-react-native/icons/undo-2';
+import X from 'lucide-react-native/icons/x';
+import type { LucideIcon } from 'lucide-react-native';
 import {
   ActivityIndicator,
   AppState,

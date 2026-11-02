@@ -1,7 +1,16 @@
 import { useMemo, useRef, useState } from 'react';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ActivityIndicator, FlatList, Modal, ScrollView, View, type ScrollViewInstance } from 'react-native';
-import { Check, ChevronLeft, ChevronRight, CircleDashed, CircleDot, CircleHelp, Download, FileCode2, RefreshCw, X } from 'lucide-react-native';
+import Check from 'lucide-react-native/icons/check';
+import ChevronLeft from 'lucide-react-native/icons/chevron-left';
+import ChevronRight from 'lucide-react-native/icons/chevron-right';
+import CircleDashed from 'lucide-react-native/icons/circle-dashed';
+import CircleDot from 'lucide-react-native/icons/circle-dot';
+import CircleHelp from 'lucide-react-native/icons/circle-question-mark';
+import Download from 'lucide-react-native/icons/download';
+import FileCode2 from 'lucide-react-native/icons/file-code-corner';
+import RefreshCw from 'lucide-react-native/icons/refresh-cw';
+import X from 'lucide-react-native/icons/x';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { githubFileDiff, type RuntimeGithubEntry, type RuntimeGithubFile, type RuntimeGithubMutation, type RuntimeGithubResource, type RuntimeGithubSection } from 'react-native-whip-ssh';

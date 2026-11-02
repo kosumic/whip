@@ -7,7 +7,7 @@ import {
 
 import { AppAlertPopup } from '../src/components/AppAlertPopup';
 
-jest.mock('lucide-react-native', () => ({ CircleAlert: 'CircleAlert' }));
+jest.mock('lucide-react-native/icons/circle-alert', () => ('CircleAlert'));
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );

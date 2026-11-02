@@ -26,25 +26,23 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import WebView from 'react-native-webview';
-import {
-  ArrowLeft,
-  Bookmark,
-  ArrowRight,
-  ArrowUpLeft,
-  Check,
-  ChevronDown,
-  Download,
-  ExternalLink,
-  Globe,
-  History,
-  MoreVertical,
-  Plus,
-  RotateCw,
-  QrCode,
-  Settings as SettingsIcon,
-  SlidersHorizontal,
-  X,
-} from 'lucide-react-native';
+import ArrowLeft from 'lucide-react-native/icons/arrow-left';
+import Bookmark from 'lucide-react-native/icons/bookmark';
+import ArrowRight from 'lucide-react-native/icons/arrow-right';
+import ArrowUpLeft from 'lucide-react-native/icons/arrow-up-left';
+import Check from 'lucide-react-native/icons/check';
+import ChevronDown from 'lucide-react-native/icons/chevron-down';
+import Download from 'lucide-react-native/icons/download';
+import ExternalLink from 'lucide-react-native/icons/external-link';
+import Globe from 'lucide-react-native/icons/globe';
+import History from 'lucide-react-native/icons/rotate-ccw-clock';
+import MoreVertical from 'lucide-react-native/icons/ellipsis-vertical';
+import Plus from 'lucide-react-native/icons/plus';
+import RotateCw from 'lucide-react-native/icons/rotate-cw';
+import QrCode from 'lucide-react-native/icons/qr-code';
+import SettingsIcon from 'lucide-react-native/icons/settings';
+import SlidersHorizontal from 'lucide-react-native/icons/sliders-horizontal';
+import X from 'lucide-react-native/icons/x';
 import { subscribeReverseControlEvents } from 'react-native-whip-ssh';
 import {
   browserRegistry,

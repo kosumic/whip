@@ -1,4 +1,4 @@
-import { FileWarning } from 'lucide-react-native';
+import FileWarning from 'lucide-react-native/icons/file-exclamation-point';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react';
 import { Platform, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';

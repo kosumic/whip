@@ -16,7 +16,9 @@ jest.mock('react-i18next', () => ({
     require('../src/locales/en').en[key].replace(/\{\{(\w+)\}\}/g, (_match: string, name: string) => values[name] ?? name)
   ) }),
 }));
-jest.mock('lucide-react-native', () => new Proxy({}, { get: (_, name) => String(name) }));
+jest.mock('lucide-react-native/icons/download', () => ('Download'));
+jest.mock('lucide-react-native/icons/external-link', () => ('ExternalLink'));
+jest.mock('lucide-react-native/icons/square-terminal', () => ('SquareTerminal'));
 jest.mock('../src/theme', () => ({ useTheme: () => ({ colors: { primary: '#fff' } }) }));
 jest.mock('../src/components/app-ui', () => ({ hapticPress: (handler: () => void) => handler }));
 jest.mock('../src/components/GlassSurface', () => ({ GlassSurface: 'GlassSurface' }));

@@ -1,5 +1,9 @@
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
-import { AudioLines, Pause, Play, RotateCcw, RotateCw } from 'lucide-react-native';
+import AudioLines from 'lucide-react-native/icons/audio-lines';
+import Pause from 'lucide-react-native/icons/pause';
+import Play from 'lucide-react-native/icons/play';
+import RotateCcw from 'lucide-react-native/icons/rotate-ccw';
+import RotateCw from 'lucide-react-native/icons/rotate-cw';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Pressable, View } from 'react-native';
 import { useTranslation } from 'react-i18next';

@@ -1,6 +1,6 @@
 import { useRef, useSyncExternalStore } from 'react';
 import { Platform, View } from 'react-native';
-import { Globe2 } from 'lucide-react-native';
+import Globe2 from 'lucide-react-native/icons/earth';
 import { useTranslation } from 'react-i18next';
 import { browserRegistry } from './registry';
 import { Button } from '../components/ui/button';

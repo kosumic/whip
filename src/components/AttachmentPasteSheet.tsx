@@ -1,5 +1,10 @@
 import type { HostRuntimeConnection } from 'react-native-whip-ssh';
-import { Camera, Clipboard, FileUp, Image as ImageIcon, Paperclip, X } from 'lucide-react-native';
+import Camera from 'lucide-react-native/icons/camera';
+import Clipboard from 'lucide-react-native/icons/clipboard';
+import FileUp from 'lucide-react-native/icons/file-up';
+import ImageIcon from 'lucide-react-native/icons/image';
+import Paperclip from 'lucide-react-native/icons/paperclip';
+import X from 'lucide-react-native/icons/x';
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, View, type ViewInstance } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

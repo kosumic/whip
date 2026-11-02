@@ -1,14 +1,12 @@
-import {
-  ArrowDown,
-  ArrowUp,
-  FileWarning,
-  FileCode2,
-  GitCompareArrows,
-  MessageSquare,
-  ListChecks,
-  X,
-  RefreshCw,
-} from 'lucide-react-native';
+import ArrowDown from 'lucide-react-native/icons/arrow-down';
+import ArrowUp from 'lucide-react-native/icons/arrow-up';
+import FileWarning from 'lucide-react-native/icons/file-exclamation-point';
+import FileCode2 from 'lucide-react-native/icons/file-code-corner';
+import GitCompareArrows from 'lucide-react-native/icons/git-compare-arrows';
+import MessageSquare from 'lucide-react-native/icons/message-square';
+import ListChecks from 'lucide-react-native/icons/list-checks';
+import X from 'lucide-react-native/icons/x';
+import RefreshCw from 'lucide-react-native/icons/refresh-cw';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,

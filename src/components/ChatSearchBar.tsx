@@ -1,4 +1,8 @@
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, X } from 'lucide-react-native';
+import ChevronDown from 'lucide-react-native/icons/chevron-down';
+import ChevronLeft from 'lucide-react-native/icons/chevron-left';
+import ChevronRight from 'lucide-react-native/icons/chevron-right';
+import ChevronUp from 'lucide-react-native/icons/chevron-up';
+import X from 'lucide-react-native/icons/x';
 import { Pressable, View } from 'react-native';
 import type { ReactNode } from 'react';
 import { useTheme } from '../theme';

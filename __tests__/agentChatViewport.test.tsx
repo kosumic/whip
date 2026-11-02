@@ -58,10 +58,27 @@ beforeEach(() => {
   mockSearchDispose.mockClear();
 });
 
-jest.mock(
-  'lucide-react-native',
-  () => new Proxy({}, { get: (_target, name) => String(name) }),
-);
+jest.mock('lucide-react-native/icons/arrow-down', () => ('ArrowDown'));
+jest.mock('lucide-react-native/icons/check', () => ('Check'));
+jest.mock('lucide-react-native/icons/chevron-down', () => ('ChevronDown'));
+jest.mock('lucide-react-native/icons/chevron-left', () => ('ChevronLeft'));
+jest.mock('lucide-react-native/icons/chevron-right', () => ('ChevronRight'));
+jest.mock('lucide-react-native/icons/chevron-up', () => ('ChevronUp'));
+jest.mock('lucide-react-native/icons/circle-alert', () => ('CircleAlert'));
+jest.mock('lucide-react-native/icons/circle-check', () => ('CircleCheck'));
+jest.mock('lucide-react-native/icons/circle-question-mark', () => ('CircleHelp'));
+jest.mock('lucide-react-native/icons/circle-x', () => ('CircleX'));
+jest.mock('lucide-react-native/icons/copy', () => ('Copy'));
+jest.mock('lucide-react-native/icons/external-link', () => ('ExternalLink'));
+jest.mock('lucide-react-native/icons/file', () => ('File'));
+jest.mock('lucide-react-native/icons/file-diff', () => ('FileDiff'));
+jest.mock('lucide-react-native/icons/file-plus', () => ('FilePlus'));
+jest.mock('lucide-react-native/icons/link', () => ('Link'));
+jest.mock('lucide-react-native/icons/search', () => ('Search'));
+jest.mock('lucide-react-native/icons/square-terminal', () => ('SquareTerminal'));
+jest.mock('lucide-react-native/icons/volume-2', () => ('Volume2'));
+jest.mock('lucide-react-native/icons/volume-x', () => ('VolumeX'));
+jest.mock('lucide-react-native/icons/x', () => ('X'));
 jest.mock('@shopify/flash-list', () => {
   const React = jest.requireActual<typeof import('react')>('react');
   return {

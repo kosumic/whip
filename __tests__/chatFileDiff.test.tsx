@@ -38,10 +38,11 @@ jest.mock('react-native', () => ({
       Array.isArray(value) ? Object.assign({}, ...value) : value,
   },
 }));
-jest.mock(
-  'lucide-react-native',
-  () => new Proxy({}, { get: (_target, name) => String(name) }),
-);
+jest.mock('lucide-react-native/icons/check', () => ('Check'));
+jest.mock('lucide-react-native/icons/chevron-down', () => ('ChevronDown'));
+jest.mock('lucide-react-native/icons/chevron-right', () => ('ChevronRight'));
+jest.mock('lucide-react-native/icons/copy', () => ('Copy'));
+jest.mock('lucide-react-native/icons/file', () => ('File'));
 jest.mock('../src/components/ui/text', () => ({ Text: 'UiText' }));
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),

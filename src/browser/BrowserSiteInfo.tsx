@@ -1,13 +1,11 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, Linking, Platform, View } from 'react-native';
-import {
-  ChevronRight,
-  Cookie,
-  History,
-  Lock,
-  ShieldAlert,
-  SlidersHorizontal,
-} from 'lucide-react-native';
+import ChevronRight from 'lucide-react-native/icons/chevron-right';
+import Cookie from 'lucide-react-native/icons/cookie';
+import History from 'lucide-react-native/icons/rotate-ccw-clock';
+import Lock from 'lucide-react-native/icons/lock';
+import ShieldAlert from 'lucide-react-native/icons/shield-alert';
+import SlidersHorizontal from 'lucide-react-native/icons/sliders-horizontal';
 import type { BrowserTab } from './controller';
 import type {
   BrowserPermissionState,

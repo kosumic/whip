@@ -9,10 +9,15 @@ import { chatCjkFontFamily } from '../src/lib/guiFonts';
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );
-jest.mock(
-  'lucide-react-native',
-  () => new Proxy({}, { get: (_target, name) => String(name) }),
-);
+jest.mock('lucide-react-native/icons/arrow-down', () => ('ArrowDown'));
+jest.mock('lucide-react-native/icons/arrow-up', () => ('ArrowUp'));
+jest.mock('lucide-react-native/icons/file-code-corner', () => ('FileCode2'));
+jest.mock('lucide-react-native/icons/file-exclamation-point', () => ('FileWarning'));
+jest.mock('lucide-react-native/icons/git-compare-arrows', () => ('GitCompareArrows'));
+jest.mock('lucide-react-native/icons/list-checks', () => ('ListChecks'));
+jest.mock('lucide-react-native/icons/message-square', () => ('MessageSquare'));
+jest.mock('lucide-react-native/icons/refresh-cw', () => ('RefreshCw'));
+jest.mock('lucide-react-native/icons/x', () => ('X'));
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
 jest.mock('../src/components/app-ui', () => ({

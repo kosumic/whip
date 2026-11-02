@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import { View } from 'react-native';
-import { ChevronDown, ChevronUp, type LucideIcon } from 'lucide-react-native';
+import ChevronDown from 'lucide-react-native/icons/chevron-down';
+import ChevronUp from 'lucide-react-native/icons/chevron-up';
+import type { LucideIcon } from 'lucide-react-native';
 
 import { cn } from '../lib/utils';
 import { hapticPress } from './app-ui';

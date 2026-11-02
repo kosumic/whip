@@ -1,4 +1,4 @@
-import { Layers3 } from 'lucide-react-native';
+import Layers3 from 'lucide-react-native/icons/layers';
 import { Platform, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 

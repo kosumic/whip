@@ -4,7 +4,7 @@ import { CodeEditor, CodePreview, type CodeEditorHandle } from '../src/component
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
 jest.mock('react-native', () => ({ View: 'View', Platform: { OS: 'android', select: (options: { android: unknown }) => options.android } }));
-jest.mock('lucide-react-native', () => ({ FileWarning: 'FileWarning' }));
+jest.mock('lucide-react-native/icons/file-exclamation-point', () => ('FileWarning'));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 jest.mock('../src/hooks/useAppFontScale', () => ({ useAppFontScale: () => 1 }));

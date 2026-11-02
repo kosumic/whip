@@ -33,10 +33,26 @@ jest.mock('react-i18next', () => {
   const t = (key: string) => key;
   return { useTranslation: () => ({ t }) };
 });
-jest.mock('lucide-react-native', () => ({
-  ChevronLeft: 'ChevronLeft', ClipboardPaste: 'ClipboardPaste', Copy: 'Copy', Link: 'Link', Save: 'Save',
-  FileUp: 'FileUp', KeyRound: 'KeyRound', Plus: 'Plus', ShieldCheck: 'ShieldCheck', QrCode: 'QrCode', ScanLine: 'ScanLine', Sparkles: 'Sparkles', Trash2: 'Trash2', X: 'X',
-}));
+jest.mock('lucide-react-native/icons/chevron-down', () => (undefined));
+jest.mock('lucide-react-native/icons/chevron-left', () => ('ChevronLeft'));
+jest.mock('lucide-react-native/icons/chevron-up', () => (undefined));
+jest.mock('lucide-react-native/icons/clipboard-paste', () => ('ClipboardPaste'));
+jest.mock('lucide-react-native/icons/copy', () => ('Copy'));
+jest.mock('lucide-react-native/icons/external-link', () => (undefined));
+jest.mock('lucide-react-native/icons/file-text', () => (undefined));
+jest.mock('lucide-react-native/icons/file-up', () => ('FileUp'));
+jest.mock('lucide-react-native/icons/info', () => (undefined));
+jest.mock('lucide-react-native/icons/key-round', () => ('KeyRound'));
+jest.mock('lucide-react-native/icons/link', () => ('Link'));
+jest.mock('lucide-react-native/icons/plus', () => ('Plus'));
+jest.mock('lucide-react-native/icons/qr-code', () => ('QrCode'));
+jest.mock('lucide-react-native/icons/save', () => ('Save'));
+jest.mock('lucide-react-native/icons/scan-line', () => ('ScanLine'));
+jest.mock('lucide-react-native/icons/shield-check', () => ('ShieldCheck'));
+jest.mock('lucide-react-native/icons/sparkles', () => ('Sparkles'));
+jest.mock('lucide-react-native/icons/square-terminal', () => (undefined));
+jest.mock('lucide-react-native/icons/trash', () => ('Trash2'));
+jest.mock('lucide-react-native/icons/x', () => ('X'));
 jest.mock('../src/theme', () => ({
   useTheme: () => ({ colors: {} }),
   appGlassControlStyle: () => ({ backgroundColor: 'transparent' }),

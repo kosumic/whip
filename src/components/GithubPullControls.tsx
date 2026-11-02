@@ -1,7 +1,15 @@
 import { useState } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { View } from 'react-native';
-import { CheckCircle2, ChevronDown, ChevronRight, FileCode2, GitCommitHorizontal, GitMerge, ListChecks, Users, XCircle } from 'lucide-react-native';
+import CheckCircle2 from 'lucide-react-native/icons/circle-check';
+import ChevronDown from 'lucide-react-native/icons/chevron-down';
+import ChevronRight from 'lucide-react-native/icons/chevron-right';
+import FileCode2 from 'lucide-react-native/icons/file-code-corner';
+import GitCommitHorizontal from 'lucide-react-native/icons/git-commit-horizontal';
+import GitMerge from 'lucide-react-native/icons/git-merge';
+import ListChecks from 'lucide-react-native/icons/list-checks';
+import Users from 'lucide-react-native/icons/users';
+import XCircle from 'lucide-react-native/icons/circle-x';
 import { useTranslation } from 'react-i18next';
 import type { RuntimeGithubEntry, RuntimeGithubMutation } from 'react-native-whip-ssh';
 import { githubResourceQueryOptions } from '../services/remoteGithubQueries';

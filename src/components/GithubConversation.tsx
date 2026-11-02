@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { ActivityIndicator, View } from 'react-native';
-import { RefreshCw } from 'lucide-react-native';
+import RefreshCw from 'lucide-react-native/icons/refresh-cw';
 import { useTranslation } from 'react-i18next';
 import { type RuntimeGithubEntry } from 'react-native-whip-ssh';
 

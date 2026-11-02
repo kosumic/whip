@@ -1,5 +1,17 @@
 import { KeyboardAvoidingView, KeyboardController } from 'react-native-keyboard-controller';
-import { ChevronDown, ChevronLeft, ChevronUp, ClipboardPaste, FileText, FileUp, KeyRound, Link, Save, Sparkles, SquareTerminal, Trash2, X } from 'lucide-react-native';
+import ChevronDown from 'lucide-react-native/icons/chevron-down';
+import ChevronLeft from 'lucide-react-native/icons/chevron-left';
+import ChevronUp from 'lucide-react-native/icons/chevron-up';
+import ClipboardPaste from 'lucide-react-native/icons/clipboard-paste';
+import FileText from 'lucide-react-native/icons/file-text';
+import FileUp from 'lucide-react-native/icons/file-up';
+import KeyRound from 'lucide-react-native/icons/key-round';
+import Link from 'lucide-react-native/icons/link';
+import Save from 'lucide-react-native/icons/save';
+import Sparkles from 'lucide-react-native/icons/sparkles';
+import SquareTerminal from 'lucide-react-native/icons/square-terminal';
+import Trash2 from 'lucide-react-native/icons/trash';
+import X from 'lucide-react-native/icons/x';
 import { generateKeyPair, getKeyDetails } from 'react-native-whip-ssh';
 import { useEffect, useReducer, useRef, useState } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';

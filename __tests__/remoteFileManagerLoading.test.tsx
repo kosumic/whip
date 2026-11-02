@@ -27,7 +27,31 @@ jest.mock('react-native-whip-ssh', () => ({ formatGitDiffSelection: jest.fn() })
 jest.mock('@react-native-clipboard/clipboard', () => ({ setString: jest.fn() }));
 jest.mock('../src/components/ui/input', () => ({ Input: 'Input' }));
 jest.mock('expo-web-browser', () => ({}));
-jest.mock('lucide-react-native', () => new Proxy({}, { get: (_target, name) => String(name) }));
+jest.mock('lucide-react-native/icons/arrow-down', () => ('ArrowDown'));
+jest.mock('lucide-react-native/icons/arrow-up', () => ('ArrowUp'));
+jest.mock('lucide-react-native/icons/check', () => ('Check'));
+jest.mock('lucide-react-native/icons/chevron-down', () => ('ChevronDown'));
+jest.mock('lucide-react-native/icons/chevron-left', () => ('ChevronLeft'));
+jest.mock('lucide-react-native/icons/chevron-right', () => ('ChevronRight'));
+jest.mock('lucide-react-native/icons/copy', () => ('Copy'));
+jest.mock('lucide-react-native/icons/download', () => ('Download'));
+jest.mock('lucide-react-native/icons/external-link', () => ('ExternalLink'));
+jest.mock('lucide-react-native/icons/file-code-corner', () => ('FileCode2'));
+jest.mock('lucide-react-native/icons/file-music', () => ('FileMusic'));
+jest.mock('lucide-react-native/icons/file-play', () => ('FileVideo'));
+jest.mock('lucide-react-native/icons/file-text', () => ('FileText'));
+jest.mock('lucide-react-native/icons/folder', () => ('Folder'));
+jest.mock('lucide-react-native/icons/folder-input', () => ('FolderInput'));
+jest.mock('lucide-react-native/icons/folder-open', () => ('FolderOpen'));
+jest.mock('lucide-react-native/icons/git-compare-arrows', () => ('GitCompareArrows'));
+jest.mock('lucide-react-native/icons/image', () => ('Image'));
+jest.mock('lucide-react-native/icons/info', () => ('Info'));
+jest.mock('lucide-react-native/icons/pencil', () => ('Pencil'));
+jest.mock('lucide-react-native/icons/refresh-cw', () => ('RefreshCw'));
+jest.mock('lucide-react-native/icons/sliders-horizontal', () => ('SlidersHorizontal'));
+jest.mock('lucide-react-native/icons/trash', () => ('Trash2'));
+jest.mock('lucide-react-native/icons/upload', () => ('Upload'));
+jest.mock('lucide-react-native/icons/x', () => ('X'));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 jest.mock('react-native-reanimated', () => ({
   __esModule: true,

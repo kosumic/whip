@@ -232,10 +232,31 @@ jest.mock('../src/browser/BrowserSettings', () => ({
 jest.mock('../src/theme', () => ({
   useTheme: () => ({ colors: { text: 'black', primary: 'blue' } }),
 }));
-jest.mock(
-  'lucide-react-native',
-  () => new Proxy({}, { get: (_, name) => String(name) }),
-);
+jest.mock('lucide-react-native/icons/arrow-left', () => ('ArrowLeft'));
+jest.mock('lucide-react-native/icons/arrow-right', () => ('ArrowRight'));
+jest.mock('lucide-react-native/icons/arrow-up-left', () => ('ArrowUpLeft'));
+jest.mock('lucide-react-native/icons/bookmark', () => ('Bookmark'));
+jest.mock('lucide-react-native/icons/check', () => ('Check'));
+jest.mock('lucide-react-native/icons/chevron-down', () => ('ChevronDown'));
+jest.mock('lucide-react-native/icons/chevron-right', () => ('ChevronRight'));
+jest.mock('lucide-react-native/icons/cookie', () => ('Cookie'));
+jest.mock('lucide-react-native/icons/copy', () => ('Copy'));
+jest.mock('lucide-react-native/icons/download', () => ('Download'));
+jest.mock('lucide-react-native/icons/ellipsis-vertical', () => ('MoreVertical'));
+jest.mock('lucide-react-native/icons/external-link', () => ('ExternalLink'));
+jest.mock('lucide-react-native/icons/flashlight', () => ('Flashlight'));
+jest.mock('lucide-react-native/icons/globe', () => ('Globe'));
+jest.mock('lucide-react-native/icons/lock', () => ('Lock'));
+jest.mock('lucide-react-native/icons/pencil', () => ('Pencil'));
+jest.mock('lucide-react-native/icons/plus', () => ('Plus'));
+jest.mock('lucide-react-native/icons/qr-code', () => ('QrCode'));
+jest.mock('lucide-react-native/icons/rotate-ccw-clock', () => ('History'));
+jest.mock('lucide-react-native/icons/rotate-cw', () => ('RotateCw'));
+jest.mock('lucide-react-native/icons/settings', () => ('Settings'));
+jest.mock('lucide-react-native/icons/share-2', () => ('Share2'));
+jest.mock('lucide-react-native/icons/shield-alert', () => ('ShieldAlert'));
+jest.mock('lucide-react-native/icons/sliders-horizontal', () => ('SlidersHorizontal'));
+jest.mock('lucide-react-native/icons/x', () => ('X'));
 
 async function layoutBrowserViews(view: ReactTestRenderer) {
   await act(async () => {

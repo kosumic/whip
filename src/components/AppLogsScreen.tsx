@@ -1,4 +1,8 @@
-import { Check, ChevronRight, Copy, FileText, X } from 'lucide-react-native';
+import Check from 'lucide-react-native/icons/check';
+import ChevronRight from 'lucide-react-native/icons/chevron-right';
+import Copy from 'lucide-react-native/icons/copy';
+import FileText from 'lucide-react-native/icons/file-text';
+import X from 'lucide-react-native/icons/x';
 import {
   useEffect,
   useMemo,
