@@ -137,3 +137,33 @@ fn github_cli_failures_and_unconfirmed_writes_are_not_replayed() -> TestResult {
         Ok(())
     })
 }
+
+#[test]
+fn discovery_distinguishes_local_negatives_from_probe_and_ssh_failures() -> TestResult {
+    crate::runtime()?.block_on(async {
+        let fixture = ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        let inner = connected_runtime_inner("github-discovery-status");
+        inner.herdr.install(1, fixture.ssh.clone());
+        let runtime = HostRuntime { inner };
+        for (status, stdout, expected) in [
+            (0, "remote.origin.url git@github.com:owner/repo.git\n", GithubDiscoveryStatus::Found),
+            (0, "", GithubDiscoveryStatus::NotGithub),
+            (41, "", GithubDiscoveryStatus::MissingGh),
+            (42, "", GithubDiscoveryStatus::InvalidPath),
+        ] {
+            fixture.respond_next_exec(stdout.as_bytes(), b"", Some(status));
+            let result = runtime.discover_github_repository("/repo".into()).await?;
+            assert_eq!(result.status, expected);
+            assert_eq!(result.repository.is_some(), expected == GithubDiscoveryStatus::Found);
+        }
+        fixture.respond_next_exec(b"sensitive stdout", b"sensitive stderr", Some(1));
+        let error = runtime.discover_github_repository("/repo".into()).await.unwrap_err();
+        assert!(matches!(error, HostRuntimeError::GitFailure(message) if message == "GitHub discovery probe failed"));
+        fixture.reject_session_channels(10);
+        let error = runtime.discover_github_repository("/repo".into()).await.unwrap_err();
+        assert!(matches!(error, HostRuntimeError::SshConnectionFailure { code: SshErrorCode::ChannelUnavailable, .. }));
+        assert_eq!(runtime.status().generation, 1);
+        assert!(fixture.ssh.is_alive());
+        Ok(())
+    })
+}

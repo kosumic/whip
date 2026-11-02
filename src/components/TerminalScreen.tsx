@@ -196,6 +196,8 @@ interface Props {
   onRequestAttachment?: (blurTarget?: RefObject<ViewInstance | null>) => void;
   onRequestFiles?: () => void;
   onRequestGithub?: () => void;
+  githubStatusLabel?: string;
+  githubDiscovering?: boolean;
   onRequestLinks?: () => void;
   chatControl?: {
     accessibilityLabel: string;
@@ -417,6 +419,8 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       onRequestAttachment,
       onRequestFiles,
       onRequestGithub,
+      githubStatusLabel,
+      githubDiscovering,
       onRequestLinks,
       chatControl,
       chatViewEnabled,
@@ -1689,7 +1693,8 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         return (
           <TerminalControlButton
             key={control}
-            accessibilityLabel={t('terminal.openGithub')}
+            accessibilityLabel={githubStatusLabel ?? t('terminal.openGithub')}
+            accessibilityHint={githubStatusLabel ? t('github.discovery.retry') : undefined}
             className={TERMINAL_ICON_CONTROL_CLASS}
             disabled={status !== 'connected'}
             variant="secondary"
@@ -1699,7 +1704,8 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             }}
           >
             <View className={TERMINAL_ICON_BOX_CLASS}>
-              <GitHubMark size={TERMINAL_ICON_SIZE} />
+              {githubDiscovering ? <ActivityIndicator size="small" color={appColors.text} /> : <GitHubMark size={TERMINAL_ICON_SIZE} />}
+              {githubStatusLabel && !githubDiscovering && <Text className="absolute -right-1 -top-1 text-xs">!</Text>}
             </View>
           </TerminalControlButton>
         );

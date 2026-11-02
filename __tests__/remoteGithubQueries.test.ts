@@ -8,7 +8,7 @@ const repositoryDetails = { description: 'Repository', stars: 42, website: 'http
 function setup() {
   const native = {
     runtimeId: 'github-test',
-    discoverGithubRepository: jest.fn().mockResolvedValue(repository),
+    discoverGithubRepository: jest.fn().mockResolvedValue({ status: 'found', repository }),
     githubRepositoryDetails: jest.fn().mockResolvedValue(repositoryDetails),
     githubRepositoryCounts: jest.fn().mockResolvedValue({ openIssues: 8, openPullRequests: 7 }),
     githubPage: jest.fn().mockResolvedValue({ entries: [], hasMore: false }),
@@ -93,12 +93,12 @@ test('isolates conversations and posts once without losing an acknowledged resul
 
 test('rejects stale discoveries and API results after a host is replaced', async () => {
   const { native, connection } = setup();
-  let finish!: (value: typeof repository) => void;
+  let finish!: (value: { status: string; repository: typeof repository }) => void;
   native.discoverGithubRepository.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
   const options = githubDiscoveryQueryOptions(connection, '/repo');
   const pending = appQueryClient.fetchQuery(options);
   jest.mocked(connection.isCurrent).mockReturnValue(false);
-  finish(repository);
+  finish({ status: 'found', repository });
   await expect(pending).rejects.toThrow('Host connection changed');
   expect(appQueryClient.getQueryData(options.queryKey)).toBeUndefined();
   await expect(appQueryClient.fetchQuery(githubDetailsQueryOptions(connection, repository))).rejects.toThrow('Host connection changed');
@@ -117,13 +117,33 @@ test('fetches each section independently and advances only when another page exi
   expect(options.getNextPageParam({ entries: [], hasMore: false }, [], 2, [1, 2])).toBeUndefined();
 });
 
-test('keeps missing GitHub/gh results hidden and allows API failures to be retried', async () => {
+test('keeps confirmed non-GitHub results distinct and allows API failures to be retried', async () => {
   const { native, connection } = setup();
-  native.discoverGithubRepository.mockResolvedValueOnce(null);
-  await expect(appQueryClient.fetchQuery(githubDiscoveryQueryOptions(connection, '/plain'))).resolves.toBeNull();
+  native.discoverGithubRepository.mockResolvedValueOnce({ status: 'not-github', repository: null });
+  await expect(appQueryClient.fetchQuery(githubDiscoveryQueryOptions(connection, '/plain'))).resolves.toMatchObject({ status: 'not-github', repository: null });
   native.githubRepositoryDetails.mockRejectedValueOnce(new Error('gh auth login required'));
   const options = githubDetailsQueryOptions(connection, repository);
   await expect(appQueryClient.fetchQuery(options)).rejects.toThrow('gh auth login required');
   await expect(appQueryClient.fetchQuery(options)).resolves.toMatchObject({ stars: 42 });
   expect(native.githubRepositoryDetails).toHaveBeenCalledTimes(2);
+});
+
+test('discovery diagnostics are sanitized, deduplicated, and retain the original structured error', async () => {
+  const { native, connection } = setup();
+  const diagnostics = jest.spyOn(require('../src/services/diagnosticFormatting'), 'recordDiagnostic');
+  const error = Object.assign(new Error('secret command and stdout'), { code: 'CHANNEL_UNAVAILABLE', generation: 1n });
+  native.discoverGithubRepository.mockRejectedValue(error);
+  const options = { ...githubDiscoveryQueryOptions(connection, ['/private/user/token\nsecret']), staleTime: 0 };
+  try {
+    await expect(appQueryClient.fetchQuery(options)).rejects.toBe(error);
+    await expect(appQueryClient.fetchQuery(options)).rejects.toBe(error);
+    expect(diagnostics).toHaveBeenCalledTimes(1);
+    const details = JSON.stringify(diagnostics.mock.calls);
+    expect(details).toContain('CHANNEL_UNAVAILABLE');
+    expect(details).toContain('candidatePathIds');
+    expect(details).not.toContain('/private');
+    expect(details).not.toContain('secret');
+  } finally {
+    diagnostics.mockRestore();
+  }
 });

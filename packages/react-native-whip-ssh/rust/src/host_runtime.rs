@@ -21,6 +21,7 @@ mod git_discovery;
 mod github;
 mod herdr_setup;
 mod host_latency;
+mod shell_directory;
 pub use herdr_setup::{HerdrInstallOutcome, HerdrInstallationStatus, HerdrSetup};
 mod interaction;
 pub use interaction::{AgentInteractionChoice, AgentInteractionKind, AgentInteractionPrompt};
@@ -291,6 +292,10 @@ pub enum HostRuntimeEvent {
         retrying: bool,
         error: Option<String>,
     },
+    SshShellDirectoryChanged {
+        runtime_id: String,
+        terminal_id: String,
+    },
     SshShellData {
         runtime_id: String,
         terminal_id: String,
@@ -421,6 +426,7 @@ struct TerminalRuntime {
 
 #[derive(Clone, Debug)]
 struct SshShellRuntime {
+    directory: shell_directory::ShellDirectory,
     desired_open: bool,
     state: HostTerminalState,
     geometry: HostTerminalGeometry,
@@ -554,6 +560,7 @@ impl RuntimeState {
                 .insert(terminal_id.clone(), false);
         }
         for shell in self.ssh_shells.values_mut() {
+            shell.directory = shell_directory::ShellDirectory::default();
             if shell.desired_open {
                 shell.operation_epoch = shell.operation_epoch.wrapping_add(1);
                 shell.state = HostTerminalState::Restoring;

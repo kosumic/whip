@@ -654,6 +654,7 @@ fn desired_ssh_shell(
     operation_epoch: u64,
 ) -> SshShellRuntime {
     SshShellRuntime {
+        directory: shell_directory::ShellDirectory::default(),
         desired_open: true,
         state,
         geometry,
@@ -3503,6 +3504,7 @@ fn ssh_shell_notify_wakes_concurrent_open_waiter() {
         inner.state.lock().ssh_shells.insert(
             "ssh-shell-1".to_owned(),
             SshShellRuntime {
+                directory: shell_directory::ShellDirectory::default(),
                 desired_open: true,
                 state: HostTerminalState::Opening,
                 geometry: HostTerminalGeometry::normalized(100, 30, 8, 16),
@@ -4073,6 +4075,7 @@ fn disconnect_closes_terminal_intent_and_event_subscription() {
     state.ssh_shells.insert(
         "ssh-shell-1".to_owned(),
         SshShellRuntime {
+            directory: shell_directory::ShellDirectory::default(),
             desired_open: true,
             state: HostTerminalState::Attached,
             geometry,
@@ -4573,4 +4576,40 @@ fn foreground_service_policy_changes_never_disconnect_registered_runtime() {
         .unwrap()
         .block_on(runtime.disconnect())
         .unwrap();
+}
+
+#[test]
+fn standalone_shell_directory_is_scoped_and_cleared_across_reconnects() {
+    let runtime = HostRuntime {
+        inner: connected_runtime_inner("shell-directory"),
+    };
+    let mut shell = desired_ssh_shell(
+        HostTerminalState::Attached,
+        HostTerminalGeometry::normalized(80, 24, 8, 16),
+        1,
+    );
+    shell.directory.observe(b"\x1b]7;file://host/repo\x07");
+    runtime
+        .inner
+        .state
+        .lock()
+        .ssh_shells
+        .insert("shell-1".into(), shell);
+    assert_eq!(
+        runtime.ssh_shell_directory("shell-1".into()).as_deref(),
+        Some("/repo")
+    );
+    assert_eq!(runtime.ssh_shell_directory("shell-2".into()), None);
+    {
+        let mut state = runtime.inner.state.lock();
+        state.begin_reconnect(Some(1), "test reconnect");
+    }
+    assert_eq!(runtime.ssh_shell_directory("shell-1".into()), None);
+    {
+        let mut state = runtime.inner.state.lock();
+        state.connection = HostConnectionState::Connected;
+        state.generation = 2;
+        state.ssh_shells.get_mut("shell-1").unwrap().state = HostTerminalState::Attached;
+    }
+    assert_eq!(runtime.ssh_shell_directory("shell-1".into()), None);
 }

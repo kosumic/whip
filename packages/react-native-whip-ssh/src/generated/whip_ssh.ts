@@ -11129,6 +11129,146 @@ const FfiConverterTypeGithubCommentEdit = (() => {
   return new FFIConverter();
 })();
 
+export enum GithubDiscoveryStatus {
+  Found,
+  NotGithub,
+  MissingGh,
+  InvalidPath,
+}
+
+const FfiConverterTypeGithubDiscoveryStatus = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = GithubDiscoveryStatus;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return GithubDiscoveryStatus.Found;
+        case 2:
+          return GithubDiscoveryStatus.NotGithub;
+        case 3:
+          return GithubDiscoveryStatus.MissingGh;
+        case 4:
+          return GithubDiscoveryStatus.InvalidPath;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case GithubDiscoveryStatus.Found:
+          return ordinalConverter.write(1, into);
+        case GithubDiscoveryStatus.NotGithub:
+          return ordinalConverter.write(2, into);
+        case GithubDiscoveryStatus.MissingGh:
+          return ordinalConverter.write(3, into);
+        case GithubDiscoveryStatus.InvalidPath:
+          return ordinalConverter.write(4, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type GithubRepository = {
+  directory: string;
+  nameWithOwner: string;
+  url: string;
+};
+
+/**
+ * Generated factory for {@link GithubRepository} record objects.
+ */
+export const GithubRepository = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<GithubRepository, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<GithubRepository>,
+  });
+})();
+
+const FfiConverterTypeGithubRepository = (() => {
+  type TypeName = GithubRepository;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        directory: FfiConverterString.read(from),
+        nameWithOwner: FfiConverterString.read(from),
+        url: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.directory, into);
+      FfiConverterString.write(value.nameWithOwner, into);
+      FfiConverterString.write(value.url, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.directory) +
+        FfiConverterString.allocationSize(value.nameWithOwner) +
+        FfiConverterString.allocationSize(value.url)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type GithubDiscovery = {
+  status: GithubDiscoveryStatus;
+  repository?: GithubRepository;
+};
+
+/**
+ * Generated factory for {@link GithubDiscovery} record objects.
+ */
+export const GithubDiscovery = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<GithubDiscovery, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<GithubDiscovery>,
+  });
+})();
+
+const FfiConverterTypeGithubDiscovery = (() => {
+  type TypeName = GithubDiscovery;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        status: FfiConverterTypeGithubDiscoveryStatus.read(from),
+        repository: FfiConverterOptionalTypeGithubRepository.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterTypeGithubDiscoveryStatus.write(value.status, into);
+      FfiConverterOptionalTypeGithubRepository.write(value.repository, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterTypeGithubDiscoveryStatus.allocationSize(value.status) +
+        FfiConverterOptionalTypeGithubRepository.allocationSize(
+          value.repository,
+        )
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type GithubPullRequest = {
   headSha: string;
   headBranch: string;
@@ -11461,55 +11601,6 @@ const FfiConverterTypeGithubPage = (() => {
       return (
         FfiConverterSequenceTypeGithubEntry.allocationSize(value.entries) +
         FfiConverterBool.allocationSize(value.hasMore)
-      );
-    }
-  }
-  return new FFIConverter();
-})();
-
-export type GithubRepository = {
-  directory: string;
-  nameWithOwner: string;
-  url: string;
-};
-
-/**
- * Generated factory for {@link GithubRepository} record objects.
- */
-export const GithubRepository = (() => {
-  const defaults = () => ({});
-  const create = (() => {
-    return uniffiCreateRecord<GithubRepository, ReturnType<typeof defaults>>(
-      defaults,
-    );
-  })();
-  return Object.freeze({
-    create,
-    new: create,
-    defaults: () => Object.freeze(defaults()) as Partial<GithubRepository>,
-  });
-})();
-
-const FfiConverterTypeGithubRepository = (() => {
-  type TypeName = GithubRepository;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
-    read(from: RustBuffer): TypeName {
-      return {
-        directory: FfiConverterString.read(from),
-        nameWithOwner: FfiConverterString.read(from),
-        url: FfiConverterString.read(from),
-      };
-    }
-    write(value: TypeName, into: RustBuffer): void {
-      FfiConverterString.write(value.directory, into);
-      FfiConverterString.write(value.nameWithOwner, into);
-      FfiConverterString.write(value.url, into);
-    }
-    allocationSize(value: TypeName): number {
-      return (
-        FfiConverterString.allocationSize(value.directory) +
-        FfiConverterString.allocationSize(value.nameWithOwner) +
-        FfiConverterString.allocationSize(value.url)
       );
     }
   }
@@ -32273,6 +32364,7 @@ export enum HostRuntimeEvent_Tags {
   ReconnectScheduled = 'ReconnectScheduled',
   Reconnected = 'Reconnected',
   TerminalStateChanged = 'TerminalStateChanged',
+  SshShellDirectoryChanged = 'SshShellDirectoryChanged',
   SshShellData = 'SshShellData',
   SshShellClosed = 'SshShellClosed',
   HostStateChanged = 'HostStateChanged',
@@ -32462,6 +32554,38 @@ export const HostRuntimeEvent = (() => {
 
     static instanceOf(obj: any): obj is TerminalStateChanged_ {
       return obj.tag === HostRuntimeEvent_Tags.TerminalStateChanged;
+    }
+  }
+
+  type SshShellDirectoryChanged__interface = {
+    tag: HostRuntimeEvent_Tags.SshShellDirectoryChanged;
+    inner: Readonly<{ runtimeId: string; terminalId: string }>;
+  };
+  class SshShellDirectoryChanged_
+    extends UniffiEnum
+    implements SshShellDirectoryChanged__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeEvent';
+    readonly tag = HostRuntimeEvent_Tags.SshShellDirectoryChanged;
+    readonly inner: Readonly<{ runtimeId: string; terminalId: string }>;
+    constructor(inner: { runtimeId: string; terminalId: string }) {
+      super('HostRuntimeEvent', 'SshShellDirectoryChanged');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      runtimeId: string;
+      terminalId: string;
+    }): SshShellDirectoryChanged_ {
+      return new SshShellDirectoryChanged_(inner);
+    }
+
+    static instanceOf(obj: any): obj is SshShellDirectoryChanged_ {
+      return obj.tag === HostRuntimeEvent_Tags.SshShellDirectoryChanged;
     }
   }
 
@@ -32848,6 +32972,7 @@ export const HostRuntimeEvent = (() => {
     ReconnectScheduled: ReconnectScheduled_,
     Reconnected: Reconnected_,
     TerminalStateChanged: TerminalStateChanged_,
+    SshShellDirectoryChanged: SshShellDirectoryChanged_,
     SshShellData: SshShellData_,
     SshShellClosed: SshShellClosed_,
     HostStateChanged: HostStateChanged_,
@@ -32866,6 +32991,7 @@ export type HostRuntimeEvent = InstanceType<
     | 'ReconnectScheduled'
     | 'Reconnected'
     | 'TerminalStateChanged'
+    | 'SshShellDirectoryChanged'
     | 'SshShellData'
     | 'SshShellClosed'
     | 'HostStateChanged'
@@ -32913,18 +33039,23 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
             error: FfiConverterOptionalString.read(from),
           });
         case 5:
+          return new HostRuntimeEvent.SshShellDirectoryChanged({
+            runtimeId: FfiConverterString.read(from),
+            terminalId: FfiConverterString.read(from),
+          });
+        case 6:
           return new HostRuntimeEvent.SshShellData({
             runtimeId: FfiConverterString.read(from),
             terminalId: FfiConverterString.read(from),
             bytes: FfiConverterArrayBuffer.read(from),
           });
-        case 6:
+        case 7:
           return new HostRuntimeEvent.SshShellClosed({
             runtimeId: FfiConverterString.read(from),
             terminalId: FfiConverterString.read(from),
             reason: FfiConverterString.read(from),
           });
-        case 7:
+        case 8:
           return new HostRuntimeEvent.HostStateChanged({
             runtimeId: FfiConverterString.read(from),
             state: FfiConverterTypeHostStateSnapshot.read(from),
@@ -32933,39 +33064,39 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
             transcriptRetention:
               FfiConverterOptionalTypeAgentTranscriptRetention.read(from),
           });
-        case 8:
+        case 9:
           return new HostRuntimeEvent.LatencyMeasured({
             runtimeId: FfiConverterString.read(from),
             measurement: FfiConverterTypeHostLatencyMeasurement.read(from),
           });
-        case 9:
+        case 10:
           return new HostRuntimeEvent.EventSubscriptionClosed({
             runtimeId: FfiConverterString.read(from),
             reason: FfiConverterString.read(from),
           });
-        case 10:
+        case 11:
           return new HostRuntimeEvent.EventSubscriptionRestored({
             runtimeId: FfiConverterString.read(from),
             generation: FfiConverterUInt64.read(from),
           });
-        case 11:
+        case 12:
           return new HostRuntimeEvent.TransferProgressChanged({
             runtimeId: FfiConverterString.read(from),
             progress: FfiConverterTypeTransferProgress.read(from),
           });
-        case 12:
+        case 13:
           return new HostRuntimeEvent.PreviewStateChanged({
             runtimeId: FfiConverterString.read(from),
             previewId: FfiConverterString.read(from),
             state: FfiConverterTypePreviewState.read(from),
             error: FfiConverterOptionalString.read(from),
           });
-        case 13:
+        case 14:
           return new HostRuntimeEvent.Diagnostic({
             runtimeId: FfiConverterString.read(from),
             diagnostic: FfiConverterTypeRuntimeDiagnostic.read(from),
           });
-        case 14:
+        case 15:
           return new HostRuntimeEvent.FatalError({
             runtimeId: FfiConverterString.read(from),
             message: FfiConverterString.read(from),
@@ -33011,8 +33142,15 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           FfiConverterOptionalString.write(inner.error, into);
           return;
         }
-        case HostRuntimeEvent_Tags.SshShellData: {
+        case HostRuntimeEvent_Tags.SshShellDirectoryChanged: {
           ordinalConverter.write(5, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.runtimeId, into);
+          FfiConverterString.write(inner.terminalId, into);
+          return;
+        }
+        case HostRuntimeEvent_Tags.SshShellData: {
+          ordinalConverter.write(6, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterString.write(inner.terminalId, into);
@@ -33020,7 +33158,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           return;
         }
         case HostRuntimeEvent_Tags.SshShellClosed: {
-          ordinalConverter.write(6, into);
+          ordinalConverter.write(7, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterString.write(inner.terminalId, into);
@@ -33028,7 +33166,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           return;
         }
         case HostRuntimeEvent_Tags.HostStateChanged: {
-          ordinalConverter.write(7, into);
+          ordinalConverter.write(8, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterTypeHostStateSnapshot.write(inner.state, into);
@@ -33043,35 +33181,35 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           return;
         }
         case HostRuntimeEvent_Tags.LatencyMeasured: {
-          ordinalConverter.write(8, into);
+          ordinalConverter.write(9, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterTypeHostLatencyMeasurement.write(inner.measurement, into);
           return;
         }
         case HostRuntimeEvent_Tags.EventSubscriptionClosed: {
-          ordinalConverter.write(9, into);
+          ordinalConverter.write(10, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterString.write(inner.reason, into);
           return;
         }
         case HostRuntimeEvent_Tags.EventSubscriptionRestored: {
-          ordinalConverter.write(10, into);
+          ordinalConverter.write(11, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterUInt64.write(inner.generation, into);
           return;
         }
         case HostRuntimeEvent_Tags.TransferProgressChanged: {
-          ordinalConverter.write(11, into);
+          ordinalConverter.write(12, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterTypeTransferProgress.write(inner.progress, into);
           return;
         }
         case HostRuntimeEvent_Tags.PreviewStateChanged: {
-          ordinalConverter.write(12, into);
+          ordinalConverter.write(13, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterString.write(inner.previewId, into);
@@ -33080,14 +33218,14 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           return;
         }
         case HostRuntimeEvent_Tags.Diagnostic: {
-          ordinalConverter.write(13, into);
+          ordinalConverter.write(14, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterTypeRuntimeDiagnostic.write(inner.diagnostic, into);
           return;
         }
         case HostRuntimeEvent_Tags.FatalError: {
-          ordinalConverter.write(14, into);
+          ordinalConverter.write(15, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterString.write(inner.message, into);
@@ -33137,9 +33275,16 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           size += FfiConverterOptionalString.allocationSize(inner.error);
           return size;
         }
-        case HostRuntimeEvent_Tags.SshShellData: {
+        case HostRuntimeEvent_Tags.SshShellDirectoryChanged: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(5);
+          size += FfiConverterString.allocationSize(inner.runtimeId);
+          size += FfiConverterString.allocationSize(inner.terminalId);
+          return size;
+        }
+        case HostRuntimeEvent_Tags.SshShellData: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(6);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterString.allocationSize(inner.terminalId);
           size += FfiConverterArrayBuffer.allocationSize(inner.bytes);
@@ -33147,7 +33292,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
         }
         case HostRuntimeEvent_Tags.SshShellClosed: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(6);
+          let size = ordinalConverter.allocationSize(7);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterString.allocationSize(inner.terminalId);
           size += FfiConverterString.allocationSize(inner.reason);
@@ -33155,7 +33300,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
         }
         case HostRuntimeEvent_Tags.HostStateChanged: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(7);
+          let size = ordinalConverter.allocationSize(8);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterTypeHostStateSnapshot.allocationSize(inner.state);
           size += FfiConverterSequenceTypeAgentStatusTransition.allocationSize(
@@ -33169,7 +33314,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
         }
         case HostRuntimeEvent_Tags.LatencyMeasured: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(8);
+          let size = ordinalConverter.allocationSize(9);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterTypeHostLatencyMeasurement.allocationSize(
             inner.measurement,
@@ -33178,21 +33323,21 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
         }
         case HostRuntimeEvent_Tags.EventSubscriptionClosed: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(9);
+          let size = ordinalConverter.allocationSize(10);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterString.allocationSize(inner.reason);
           return size;
         }
         case HostRuntimeEvent_Tags.EventSubscriptionRestored: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(10);
+          let size = ordinalConverter.allocationSize(11);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterUInt64.allocationSize(inner.generation);
           return size;
         }
         case HostRuntimeEvent_Tags.TransferProgressChanged: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(11);
+          let size = ordinalConverter.allocationSize(12);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterTypeTransferProgress.allocationSize(
             inner.progress,
@@ -33201,7 +33346,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
         }
         case HostRuntimeEvent_Tags.PreviewStateChanged: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(12);
+          let size = ordinalConverter.allocationSize(13);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterString.allocationSize(inner.previewId);
           size += FfiConverterTypePreviewState.allocationSize(inner.state);
@@ -33210,7 +33355,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
         }
         case HostRuntimeEvent_Tags.Diagnostic: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(13);
+          let size = ordinalConverter.allocationSize(14);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterTypeRuntimeDiagnostic.allocationSize(
             inner.diagnostic,
@@ -33219,7 +33364,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
         }
         case HostRuntimeEvent_Tags.FatalError: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(14);
+          let size = ordinalConverter.allocationSize(15);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterString.allocationSize(inner.message);
           return size;
@@ -40378,7 +40523,7 @@ export interface HostRuntimeLike {
   discoverGithubRepository(
     path: string,
     asyncOpts_?: { signal: AbortSignal },
-  ) /*throws*/ : Promise<GithubRepository | undefined>;
+  ) /*throws*/ : Promise<GithubDiscovery>;
   execute(
     command: string,
     asyncOpts_?: { signal: AbortSignal },
@@ -40622,6 +40767,7 @@ export interface HostRuntimeLike {
     hostsVisible: boolean,
     accessLocked: boolean,
   ): void;
+  sshShellDirectory(terminalId: string): string | undefined;
   sshShellGeometry(terminalId: string): HostTerminalGeometry | undefined;
   sshShellInput(terminalId: string, bytes: ArrayBuffer) /*throws*/ : void;
   startAgentChat(
@@ -41591,7 +41737,7 @@ export class HostRuntime
   async discoverGithubRepository(
     path: string,
     asyncOpts_?: { signal: AbortSignal },
-  ): Promise<GithubRepository | undefined> /*throws*/ {
+  ): Promise<GithubDiscovery> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
       return await uniffiRustCallAsync(
@@ -41617,7 +41763,7 @@ export class HostRuntime
         // here using the per-callable return-type converter.
         /*liftFunc:*/ (__rb: Uint8Array) => {
           try {
-            return FfiConverterOptionalTypeGithubRepository.lift(__rb);
+            return FfiConverterTypeGithubDiscovery.lift(__rb);
           } finally {
             nativeModule().rustbuffer_free(__rb);
           }
@@ -43888,6 +44034,30 @@ export class HostRuntime
         );
       },
       /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  sshShellDirectory(terminalId: string): string | undefined {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterOptionalString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_ssh_shell_directory(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              terminalId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
     );
   }
 
@@ -59443,6 +59613,11 @@ const FfiConverterSequenceTypeGitDiffSyntaxLine = new FfiConverterArray(
   FfiConverterTypeGitDiffSyntaxLine,
 );
 
+// FfiConverter for GithubRepository | undefined
+const FfiConverterOptionalTypeGithubRepository = new FfiConverterOptional(
+  FfiConverterTypeGithubRepository,
+);
+
 // FfiConverter for GithubPullRequest | undefined
 const FfiConverterOptionalTypeGithubPullRequest = new FfiConverterOptional(
   FfiConverterTypeGithubPullRequest,
@@ -59640,11 +59815,6 @@ const FfiConverterOptionalTypeAgentChatBinding = new FfiConverterOptional(
 // FfiConverter for GitRepository | undefined
 const FfiConverterOptionalTypeGitRepository = new FfiConverterOptional(
   FfiConverterTypeGitRepository,
-);
-
-// FfiConverter for GithubRepository | undefined
-const FfiConverterOptionalTypeGithubRepository = new FfiConverterOptional(
-  FfiConverterTypeGithubRepository,
 );
 
 // FfiConverter for Array<GitDiffExpansion>
@@ -61997,7 +62167,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_discover_github_repository() !==
-    53768
+    52121
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_discover_github_repository',
@@ -62449,6 +62619,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_set_monitoring_state',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_ssh_shell_directory() !==
+    22130
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_ssh_shell_directory',
     );
   }
   if (
@@ -63655,6 +63833,8 @@ export default Object.freeze({
     FfiConverterTypeGithubAuthor,
     FfiConverterTypeGithubCommentEdit,
     FfiConverterTypeGithubCommentFormat,
+    FfiConverterTypeGithubDiscovery,
+    FfiConverterTypeGithubDiscoveryStatus,
     FfiConverterTypeGithubEntry,
     FfiConverterTypeGithubFile,
     FfiConverterTypeGithubFilesPage,
