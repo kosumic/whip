@@ -1,0 +1,92 @@
+require 'json'
+require 'tmpdir'
+require 'xcodeproj'
+
+opt_out_usage
+skip_docs
+default_platform(:ios)
+
+platform :ios do
+  private_lane :release_context do
+    root = File.expand_path('..', __dir__)
+    version = JSON.parse(File.read(File.join(root, 'package.json'))).fetch('version')
+    config = JSON.parse(File.read(File.join(root, 'app.json'))).fetch('expo')
+    project = Xcodeproj::Project.open(File.join(root, 'ios/HerdR.xcodeproj'))
+    target = project.targets.find { |candidate| candidate.name == 'HerdR' }
+    UI.user_error!('HerdR app target is missing') unless target
+    build_numbers = target.build_configurations.map do |configuration|
+      configuration.build_settings.fetch('CURRENT_PROJECT_VERSION').to_s
+    end.uniq
+    UI.user_error!('All iOS configurations must use the same build number') unless build_numbers.length == 1
+
+    key = JSON.parse(ENV.fetch('APP_STORE_CONNECT_API_KEY_JSON'), symbolize_names: true)
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(**key)
+    app_identifier = config.fetch('ios').fetch('bundleIdentifier')
+    app = Spaceship::ConnectAPI::App.find(app_identifier)
+    UI.user_error!("App Store Connect app #{app_identifier} was not found") unless app
+
+    {root: root, version: version, build_number: build_numbers.first, app: app, api_key: key}
+  end
+
+  desc 'Validate App Store credentials and the release version without submitting'
+  lane :validate_release do
+    release = release_context
+    UI.success("App Store access verified: #{release[:app].bundle_id}, #{release[:version]} (#{release[:build_number]})")
+  end
+
+  desc 'Verify that the exact release build was submitted to App Review'
+  lane :verify_submission do
+    release = release_context
+    version = release[:app].get_app_store_versions(
+      filter: {platform: Spaceship::ConnectAPI::Platform::IOS, versionString: release[:version]},
+      includes: 'build'
+    ).first
+    state = version && (version.app_version_state || version.app_store_state)
+    submitted_states = %w[WAITING_FOR_REVIEW IN_REVIEW ACCEPTED PENDING_APPLE_RELEASE PROCESSING_FOR_DISTRIBUTION READY_FOR_DISTRIBUTION PROCESSING_FOR_APP_STORE READY_FOR_SALE]
+    unless version && version.build && version.build.version == release[:build_number] &&
+           version.release_type == 'AFTER_APPROVAL' && submitted_states.include?(state)
+      UI.user_error!("#{release[:version]} (#{release[:build_number]}) has not reached App Review with automatic release: #{state || 'missing'}")
+    end
+    UI.success("App Review verified: #{release[:version]} (#{release[:build_number]}) is #{state}")
+  end
+
+  desc 'Submit the exact uploaded iOS version and build to App Review'
+  lane :submit_review do
+    release = release_context
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 30 * 60
+    loop do
+      builds = Spaceship::ConnectAPI::Build.all(
+        app_id: release[:app].id,
+        version: release[:version],
+        build_number: release[:build_number],
+        platform: Spaceship::ConnectAPI::Platform::IOS
+      )
+      build = builds.first
+      UI.user_error!('Apple rejected the uploaded build during processing') if build && %w[FAILED INVALID].include?(build.processing_state)
+      break if build && build.processing_state == 'VALID'
+      UI.user_error!('Timed out waiting for Apple to process the release build') if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+      UI.message("Waiting for Apple to process #{release[:version]} (#{release[:build_number]})...")
+      sleep(30)
+    end
+
+    metadata = File.join(release[:root], 'fastlane/metadata/ios/en-US')
+    Dir.mktmpdir('whip-ios-metadata') do |directory|
+      upload_to_app_store(
+        api_key: release[:api_key],
+        app_identifier: release[:app].bundle_id,
+        app_version: release[:version],
+        build_number: release[:build_number],
+        skip_binary_upload: true,
+        skip_screenshots: true,
+        metadata_path: directory,
+        release_notes: {'en-US' => File.read(File.join(metadata, 'release_notes.txt')).strip},
+        promotional_text: {'en-US' => File.read(File.join(metadata, 'promotional_text.txt')).strip},
+        submit_for_review: true,
+        automatic_release: true,
+        force: true,
+        precheck_include_in_app_purchases: false
+      )
+    end
+    verify_submission
+  end
+end
