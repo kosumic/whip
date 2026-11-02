@@ -1,6 +1,7 @@
 //! Compact Herd projection over authoritative runtime snapshots.
 
-use std::collections::HashMap;
+use herdr_protocol::hc::hierarchy;
+use std::collections::{HashMap, HashSet};
 
 use crate::herdr_api::{HerdrAgentInfo, HerdrAgentStatus, HerdrTabInfo, HerdrWorkspaceInfo};
 use crate::host_runtime::AgentControlView;
@@ -42,6 +43,17 @@ pub struct HerdAgentView {
     pub primary_label: String,
     pub control: Option<AgentControlView>,
     pub core_pinned: Option<bool>,
+    pub core_hierarchy: Option<CoreAgentHierarchy>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct CoreAgentHierarchy {
+    pub parent_terminal_id: Option<String>,
+    pub ancestors: Vec<String>,
+    pub depth: u32,
+    pub descendant_count: u32,
+    pub group_status: HerdrAgentStatus,
+    pub delegated: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
@@ -209,6 +221,7 @@ fn project_hosts(
     let mut agents = scoped_hosts
         .into_iter()
         .flat_map(|host| {
+            let hierarchy = host.core_backend.then(|| hierarchy::project(&host.agents));
             let tabs = host
                 .tabs
                 .iter()
@@ -228,11 +241,12 @@ fn project_hosts(
                 .filter(|agent| {
                     selected_workspace_id
                         .as_ref()
-                        .is_none_or(|id| &agent.workspace_id == id)
+                        .is_none_or(|id| grouping_workspace(hierarchy.as_ref(), agent) == id)
                 })
                 .map(|agent| {
+                    let grouping_workspace = grouping_workspace(hierarchy.as_ref(), agent);
                     let workspace_label = workspaces
-                        .get(agent.workspace_id.as_str())
+                        .get(grouping_workspace)
                         .map(|workspace| workspace.label.trim())
                         .filter(|label| !label.is_empty())
                         .unwrap_or(&agent.workspace_id)
@@ -254,6 +268,7 @@ fn project_hosts(
                         workspace_label.clone()
                     };
                     HerdAgentView {
+                        core_hierarchy: None,
                         core_pinned: host
                             .core_backend
                             .then(|| host.pinned_terminals.contains(&agent.terminal_id)),
@@ -276,8 +291,14 @@ fn project_hosts(
     if !follow_server_order {
         agents.sort_by(|left, right| compare_agent_priority(&left.agent, &right.agent));
     }
-    // Pinning changes positions only within this Core host's existing slots.
-    // Legacy rows keep their ordering even in a mixed-host queue.
+    // A terminal can be drawn in several desktop panes. Herd lists it once;
+    // legacy hosts keep their existing pane-oriented rows.
+    let mut seen = HashSet::new();
+    agents.retain(|row| {
+        row.core_pinned.is_none()
+            || seen.insert((row.host_id.clone(), row.agent.terminal_id.clone()))
+    });
+    // Core task groups occupy only their own host's slots in mixed queues.
     for host in hosts.iter().filter(|host| host.core_backend) {
         let positions = agents
             .iter()
@@ -285,13 +306,32 @@ fn project_hosts(
             .filter(|(_, agent)| agent.host_id == host.id)
             .map(|(at, _)| at)
             .collect::<Vec<_>>();
-        let mut ordered = positions
+        let mut by_terminal = positions
             .iter()
-            .map(|at| agents[*at].clone())
-            .collect::<Vec<_>>();
-        ordered.sort_by_key(|agent| !agent.core_pinned.unwrap_or(false));
-        for (at, agent) in positions.into_iter().zip(ordered) {
-            agents[at] = agent;
+            .map(|at| (agents[*at].agent.terminal_id.clone(), agents[*at].clone()))
+            .collect::<HashMap<_, _>>();
+        let all = hierarchy::project(&host.agents);
+        let visible = hierarchy::project(
+            &positions
+                .iter()
+                .map(|at| agents[*at].agent.clone())
+                .collect::<Vec<_>>(),
+        );
+        for (at, terminal) in positions.into_iter().zip(&visible.order) {
+            if let (Some(mut row), Some(node)) =
+                (by_terminal.remove(terminal), visible.nodes.get(terminal))
+            {
+                let group = all.nodes.get(terminal).unwrap_or(node);
+                row.core_hierarchy = Some(CoreAgentHierarchy {
+                    parent_terminal_id: node.parent.clone(),
+                    ancestors: node.ancestors.clone(),
+                    depth: node.depth,
+                    descendant_count: group.descendants,
+                    group_status: group.status,
+                    delegated: node.delegated,
+                });
+                agents[at] = row;
+            }
         }
     }
     HerdView {
@@ -301,6 +341,15 @@ fn project_hosts(
         hosts,
         agents,
     }
+}
+
+fn grouping_workspace<'a>(
+    hierarchy: Option<&'a hierarchy::Forest>,
+    agent: &'a HerdrAgentInfo,
+) -> &'a str {
+    hierarchy
+        .and_then(|forest| forest.nodes.get(&agent.terminal_id))
+        .map_or(&agent.workspace_id, |node| &node.workspace)
 }
 
 fn compare_agent_priority(left: &HerdrAgentInfo, right: &HerdrAgentInfo) -> std::cmp::Ordering {
@@ -405,11 +454,140 @@ mod tests {
             .collect()
     }
 
+    fn delegation_host() -> HerdHostView {
+        let mut core = host("core", &["a", "b", "fallback"]);
+        core.core_backend = true;
+        core.agents[1].state_labels = Some(
+            [(
+                herdr_protocol::hc::projection::PARENT_LABEL.into(),
+                "a-terminal".into(),
+            )]
+            .into(),
+        );
+        core.agents[2].agent_status = HerdrAgentStatus::Blocked;
+        core.agents[2].state_labels = Some(
+            [
+                (
+                    herdr_protocol::hc::projection::PARENT_LABEL.into(),
+                    "a-terminal".into(),
+                ),
+                (hierarchy::VIRTUAL_LAYOUT_LABEL.into(), "1".into()),
+            ]
+            .into(),
+        );
+        core
+    }
+
+    #[test]
+    fn core_workspace_filter_inherits_only_unattached_child_locations_and_keeps_targets() {
+        let core = delegation_host();
+        let view = project_hosts(
+            1,
+            vec![core.clone()],
+            Some("core".into()),
+            Some("a".into()),
+            false,
+        );
+        assert_eq!(
+            view.agents
+                .iter()
+                .map(|row| row.agent.terminal_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["a-terminal", "fallback-terminal"]
+        );
+        let parent = &view.agents[0];
+        assert_eq!(parent.agent.agent_status, HerdrAgentStatus::Idle);
+        assert_eq!(
+            parent.core_hierarchy.as_ref().map(|node| node.group_status),
+            Some(HerdrAgentStatus::Blocked)
+        );
+        assert_eq!(
+            parent
+                .core_hierarchy
+                .as_ref()
+                .map(|node| node.descendant_count),
+            Some(2)
+        );
+        let child = &view.agents[1];
+        assert_eq!(child.workspace_label, "a");
+        assert_eq!(child.agent.pane_id, "fallback-pane");
+        assert_eq!(child.agent.tab_id, "fallback-tab");
+        assert_eq!(child.agent.workspace_id, "fallback");
+        assert_eq!(
+            child.core_hierarchy.as_ref().map(|node| node.depth),
+            Some(1)
+        );
+        let view = project_hosts(2, vec![core], Some("core".into()), Some("b".into()), false);
+        assert_eq!(view.agents.len(), 1);
+        assert_eq!(view.agents[0].agent.terminal_id, "b-terminal");
+        assert_eq!(
+            view.agents[0]
+                .core_hierarchy
+                .as_ref()
+                .map(|node| node.depth),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn legacy_parent_labels_and_duplicate_panes_keep_their_flat_behavior_in_mixed_hosts() {
+        let core = delegation_host();
+        let mut legacy = core.clone();
+        legacy.id = "legacy".into();
+        legacy.core_backend = false;
+        let mut duplicate = core.agents[0].clone();
+        duplicate.pane_id = "another-view".into();
+        legacy.agents.push(duplicate.clone());
+        let mut core = core;
+        core.agents.push(duplicate);
+        let baseline = project_hosts(1, vec![legacy.clone()], None, None, false);
+        let mixed = project_hosts(2, vec![core, legacy], None, None, false);
+        assert_eq!(
+            mixed
+                .agents
+                .iter()
+                .filter(|row| row.host_id == "legacy")
+                .map(|row| &row.agent)
+                .collect::<Vec<_>>(),
+            baseline
+                .agents
+                .iter()
+                .map(|row| &row.agent)
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            mixed
+                .agents
+                .iter()
+                .filter(|row| row.host_id == "legacy")
+                .all(|row| row.core_hierarchy.is_none())
+        );
+        let core = mixed
+            .agents
+            .iter()
+            .filter(|row| row.host_id == "core")
+            .collect::<Vec<_>>();
+        assert_eq!(core.len(), 3);
+        assert_eq!(core[0].agent.terminal_id, "a-terminal");
+        assert!(core[1..].iter().all(|row| {
+            row.core_hierarchy
+                .as_ref()
+                .is_some_and(|node| node.parent_terminal_id.as_deref() == Some("a-terminal"))
+        }));
+    }
+
     #[test]
     fn core_pins_reorder_only_core_rows_and_legacy_rows_have_no_shared_attention() {
         let mut core = host("core", &["a", "b"]);
         core.core_backend = true;
         core.pinned_terminals = vec!["b-terminal".into()];
+        core.agents[1].state_labels = Some(
+            [(
+                herdr_protocol::hc::attention::PINNED_LABEL.into(),
+                "1".into(),
+            )]
+            .into(),
+        );
         let legacy = host("legacy", &["c", "d"]);
         let view = project_hosts(1, vec![core, legacy], None, None, false);
         assert_eq!(

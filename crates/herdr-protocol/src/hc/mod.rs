@@ -9,6 +9,7 @@ pub mod edits;
 pub mod endpoint;
 pub mod events;
 pub mod generated;
+pub mod hierarchy;
 pub mod projection;
 pub mod session;
 pub mod terminal;

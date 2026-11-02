@@ -738,6 +738,8 @@ export const fr = {
   'herd.copyAgent': "Copier",
   'herd.agentActions': "Actions de l’agent",
   'herd.pinAgent': 'Épingler l’agent',
+  'herd.toggleChildren': 'Développer ou réduire les agents enfants',
+  'herd.childCount': '{{count}} agents enfants',
   'herd.markUnread': 'Marquer comme non lu',
   'herd.sessionId': 'ID de session',
   'herd.sessionPath': 'Chemin de la session',

@@ -1153,6 +1153,16 @@ export type HerdAgentProjection = {
   primaryLabel: string;
   control?: AgentControlView;
   corePinned?: boolean;
+  coreHierarchy?: CoreAgentHierarchy;
+};
+
+export type CoreAgentHierarchy = {
+  parentTerminalId?: string;
+  ancestors: string[];
+  depth: number;
+  descendantCount: number;
+  groupStatus: WhipAgentStatus;
+  delegated: boolean;
 };
 
 export type HerdProjection = {
@@ -1189,6 +1199,10 @@ function herdProjection(value: NativeHerdView): HerdProjection {
       primaryLabel: item.primaryLabel,
       control: item.control,
       corePinned: item.corePinned,
+      coreHierarchy: item.coreHierarchy ? {
+        ...item.coreHierarchy,
+        groupStatus: agentStatus(item.coreHierarchy.groupStatus),
+      } : undefined,
     })),
   };
 }

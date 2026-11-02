@@ -1,4 +1,4 @@
-import type { AgentControlView } from 'react-native-whip-ssh';
+import type { AgentControlView, CoreAgentHierarchy } from 'react-native-whip-ssh';
 import { agentStatusPriority } from './lib/agentStatusPriority';
 import type { AgentInfo, AgentStatus, TabInfo, WorkspaceInfo } from './types';
 
@@ -23,6 +23,7 @@ export interface HerdQueueAgent {
   primaryLabel: string;
   control?: AgentControlView;
   corePinned?: boolean;
+  coreHierarchy?: CoreAgentHierarchy;
 }
 
 export interface HerdProjectionRequest {

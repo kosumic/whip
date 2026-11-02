@@ -393,6 +393,11 @@ impl Builder<'_> {
                 focused,
                 self.state.seq(),
             );
+            if location.virtual_tab {
+                info.state_labels
+                    .get_or_insert_default()
+                    .insert(super::hierarchy::VIRTUAL_LAYOUT_LABEL.into(), "1".into());
+            }
             if let Some(title) = self.titles.get(&pane_key) {
                 info.label = Some(title.clone());
             }
@@ -520,6 +525,9 @@ fn project_pane(
     let app = status.and_then(|s| s.app.as_deref());
     let agent = app.map(|app| agent_kind(app).unwrap_or(app).to_owned());
     let mut labels: HashMap<_, _> = terminal.labels.clone().into_iter().collect();
+    // These are projection metadata, never user-supplied terminal labels.
+    labels.remove(PARENT_LABEL);
+    labels.remove(super::hierarchy::VIRTUAL_LAYOUT_LABEL);
     labels.insert(
         super::attention::TURN_LABEL.into(),
         terminal.turn.unwrap_or(0).to_string(),

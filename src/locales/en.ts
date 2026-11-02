@@ -735,6 +735,8 @@ export const en = {
   'herd.copyAgent': "Copy",
   'herd.agentActions': "Agent actions",
   'herd.pinAgent': 'Pin agent',
+  'herd.toggleChildren': 'Expand or collapse child agents',
+  'herd.childCount': '{{count}} child agents',
   'herd.markUnread': 'Mark unread',
   'herd.sessionId': 'Session ID',
   'herd.sessionPath': 'Session path',

@@ -724,6 +724,8 @@ export const es = {
   'herd.copyAgent': "Copiar",
   'herd.agentActions': "Acciones del agente",
   'herd.pinAgent': 'Fijar agente',
+  'herd.toggleChildren': 'Expandir o contraer agentes secundarios',
+  'herd.childCount': '{{count}} agentes secundarios',
   'herd.markUnread': 'Marcar como no leído',
   'herd.sessionId': 'ID de sesión',
   'herd.sessionPath': 'Ruta de la sesión',

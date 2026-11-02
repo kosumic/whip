@@ -724,6 +724,8 @@ export const zhHans = {
   'herd.copyAgent': "复制",
   'herd.agentActions': "智能体操作",
   'herd.pinAgent': '置顶智能体',
+  'herd.toggleChildren': '展开或折叠子智能体',
+  'herd.childCount': '{{count}} 个子智能体',
   'herd.markUnread': '标为未读',
   'herd.sessionId': '会话 ID',
   'herd.sessionPath': '会话路径',

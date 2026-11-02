@@ -352,3 +352,146 @@ fn real_core_socket_multiplex_documents_reconnect_and_exec_fallback() {
         connection.clear(3);
     });
 }
+
+#[test]
+#[ignore = "requires WHIP_HC_TEST_BINARY; starts an isolated core and loopback SSH server"]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one isolated scenario verifies labels, delegation, reconnect, and unchanged desktop data"
+)]
+fn real_core_shared_attention_and_delegated_children() {
+    use herdr_protocol::hc::{
+        attention::{Change, PINNED_LABEL, SEEN_LABEL},
+        hierarchy,
+        projection::PARENT_LABEL,
+    };
+    let server = Server::start();
+    crate::runtime().unwrap().block_on(async {
+        let ssh = Fixture::with_commands(true, Duration::ZERO, Some(server.environment.clone()))
+            .await
+            .unwrap();
+        let connection = server.connection(ssh.ssh.clone());
+        let core = connection.core().await.unwrap();
+        let HerdrControlResult::WorkspaceCreated { root_pane, .. } = core
+            .control(
+                HerdrControlRequest::WorkspaceCreate {
+                    label: Some("Delegation".into()),
+                    cwd: Some(server.root.to_str().unwrap().into()),
+                },
+                "parent",
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("wrong create result")
+        };
+        let Response::DocGet(document) = core
+            .rpc(Request::doc_get(api::DocGetParams {
+                name: "herdr-app".into(),
+                on: None,
+            }))
+            .await
+            .unwrap()
+        else {
+            panic!("wrong document")
+        };
+        let Response::TerminalRun(child) = core
+            .rpc(Request::terminal_run(api::TerminalRunParams {
+                parent: Some(root_pane.terminal_id.clone()),
+                argv: Some(vec!["sh".into(), "-c".into(), "exec sleep 60".into()]),
+                wait: Some(false),
+                ..Default::default()
+            }))
+            .await
+            .unwrap()
+        else {
+            panic!("wrong child result")
+        };
+        core.update_attention(&child.address, Change::Seen(0), || true)
+            .await
+            .unwrap();
+        core.update_attention(&child.address, Change::Pinned(true), || true)
+            .await
+            .unwrap();
+        let Response::TerminalGet(record) = core
+            .rpc(Request::terminal_get(api::TerminalGetParams {
+                terminal: child.address.clone(),
+                ..Default::default()
+            }))
+            .await
+            .unwrap()
+        else {
+            panic!("wrong terminal")
+        };
+        assert_eq!(
+            record.parent.as_deref(),
+            Some(root_pane.terminal_id.as_str())
+        );
+        assert_eq!(record.labels[SEEN_LABEL], "0");
+        assert_eq!(record.labels[PINNED_LABEL], "1");
+        // A new subscription must reconstruct labels and hierarchy without
+        // adopting the child into the desktop document.
+        connection.clear(1);
+        connection.install(2, ssh.ssh.clone());
+        let reconnected = connection.core().await.unwrap();
+        let HerdrControlResult::SessionSnapshot { snapshot } = reconnected
+            .control(HerdrControlRequest::SessionSnapshot, "reconnect")
+            .await
+            .unwrap()
+        else {
+            panic!("wrong snapshot")
+        };
+        let child_agent = snapshot
+            .agents
+            .iter()
+            .find(|agent| agent.terminal_id == child.address)
+            .unwrap();
+        assert_eq!(child_agent.agent_status, crate::HerdrAgentStatus::Unknown);
+        assert_eq!(
+            child_agent.state_labels.as_ref().unwrap()[PARENT_LABEL],
+            root_pane.terminal_id
+        );
+        assert_eq!(
+            child_agent.state_labels.as_ref().unwrap()[hierarchy::VIRTUAL_LAYOUT_LABEL],
+            "1"
+        );
+        let groups = hierarchy::project(&snapshot.agents);
+        assert_eq!(
+            groups.nodes[&child.address].parent.as_deref(),
+            Some(root_pane.terminal_id.as_str())
+        );
+        assert_eq!(
+            groups.nodes[&child.address].workspace,
+            root_pane.workspace_id
+        );
+        assert_eq!(groups.nodes[&root_pane.terminal_id].descendants, 1);
+        assert!(groups.nodes[&child.address].pinned);
+        let Response::DocGet(after) = reconnected
+            .rpc(Request::doc_get(api::DocGetParams {
+                name: "herdr-app".into(),
+                on: None,
+            }))
+            .await
+            .unwrap()
+        else {
+            panic!("wrong document")
+        };
+        assert_eq!(after.value, document.value);
+        reconnected
+            .update_attention(&child.address, Change::Pinned(false), || true)
+            .await
+            .unwrap();
+        let Response::TerminalGet(record) = reconnected
+            .rpc(Request::terminal_get(api::TerminalGetParams {
+                terminal: child.address.clone(),
+                ..Default::default()
+            }))
+            .await
+            .unwrap()
+        else {
+            panic!("wrong terminal")
+        };
+        assert!(!record.labels.contains_key(PINNED_LABEL));
+        connection.clear(2);
+    });
+}
