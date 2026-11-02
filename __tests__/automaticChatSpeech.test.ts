@@ -1,6 +1,7 @@
 import { listenToAllTranscripts } from '../src/services/automaticChatSpeech';
 import { setSpeechInputActive } from '../src/services/speechInputFocus';
 import type { ObservedAgentTranscript } from '../src/services/NativeTranscriptService';
+import type { ChatSpeechStoppedEvent } from '../src/services/chatSpeech';
 
 const mockNative = {
   startChatSpeech: jest.fn(async () => {}),
@@ -11,15 +12,16 @@ const mockPending: { key: string; text: string }[] = [];
 const mockQueue = {
   update: jest.fn(), next: jest.fn(() => mockPending.shift()),
   remove: jest.fn(), reset: jest.fn(() => { mockPending.length = 0; }), dispose: jest.fn(),
+  dismissCurrent: jest.fn(),
 };
 let mockObserve: (event: ObservedAgentTranscript) => void;
 const mockUnsubscribe = jest.fn();
 let mockControl: { pause: () => Promise<void>; resume: () => void };
 let mockManual = false;
-const mockEvents = new Set<(event: { token: string; error?: string }) => void>();
+const mockEvents = new Set<(event: ChatSpeechStoppedEvent) => void>();
 jest.mock('react-native', () => ({
   Platform: { OS: 'android' },
-  DeviceEventEmitter: { addListener: (_name: string, listener: (event: { token: string; error?: string }) => void) => {
+  DeviceEventEmitter: { addListener: (_name: string, listener: (event: ChatSpeechStoppedEvent) => void) => {
     mockEvents.add(listener);
     return { remove: () => mockEvents.delete(listener) };
   } },
@@ -129,7 +131,7 @@ test('manual reading and dictation flush automatic backlog and resume with fresh
   expect(mockNative.speakChat).not.toHaveBeenCalled();
 });
 
-test('native stop silences all automatic speech until the setting starts a new listener', async () => {
+test('native Stop still silences automatic speech until the setting starts a new listener', async () => {
   mockObserve(event('debug', 'live', true));
   let finish!: () => void;
   mockNative.speakChat.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
@@ -137,12 +139,73 @@ test('native stop silences all automatic speech until the setting starts a new l
   mockObserve(event('debug'));
   await flush();
   const token = mockNative.speakChat.mock.calls[0][0];
-  for (const listener of mockEvents) listener({ token });
+  for (const listener of mockEvents) listener({ token, reason: 'stopped' });
   finish();
   await flush();
   mockObserve(event('build'));
   expect(mockQueue.update).toHaveBeenLastCalledWith('build', 'codex', 'build tab', false, false, []);
   expect(mockNative.speakChat).toHaveBeenCalledTimes(1);
+});
+
+test('shake dismisses the current update, pauses one second, and preserves queued and future speech', async () => {
+  jest.useFakeTimers();
+  try {
+    mockObserve(event('debug', 'live', true));
+    mockObserve(event('build', 'live', true));
+    let finish!: () => void;
+    mockNative.speakChat.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    mockPending.push({ key: 'debug', text: 'debug tab: Current update.' });
+    mockObserve(event('debug'));
+    await flush();
+    mockPending.push({ key: 'build', text: 'build tab: Queued update.' });
+    mockObserve(event('build'));
+    const token = mockNative.speakChat.mock.calls[0][0];
+    for (const listener of mockEvents) listener({ token, reason: 'shake' });
+    expect(mockQueue.dismissCurrent).toHaveBeenCalledTimes(1);
+    expect(mockQueue.reset).not.toHaveBeenCalled();
+    expect(mockPending).toHaveLength(1);
+    finish();
+    await flush();
+    jest.advanceTimersByTime(999);
+    await flush();
+    expect(mockNative.speakChat).toHaveBeenCalledTimes(1);
+    jest.advanceTimersByTime(1);
+    await flush();
+    expect(mockNative.speakChat.mock.calls.map(call => call[1])).toEqual([
+      'debug tab: Current update.', 'build tab: Queued update.',
+    ]);
+    mockPending.push({ key: 'debug', text: 'debug tab: Future update.' });
+    mockObserve(event('debug'));
+    await flush();
+    expect(mockQueue.update).toHaveBeenLastCalledWith('debug', 'codex', 'debug tab', true, false, []);
+    expect(mockNative.speakChat).toHaveBeenLastCalledWith(expect.any(String), 'debug tab: Future update.');
+    expect(onError).not.toHaveBeenCalled();
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test('disabling speech during the shake pause cancels delayed continuation', async () => {
+  jest.useFakeTimers();
+  try {
+    mockObserve(event('debug', 'live', true));
+    let finish!: () => void;
+    mockNative.speakChat.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    mockPending.push({ key: 'debug', text: 'debug tab: Current.' });
+    mockObserve(event('debug'));
+    await flush();
+    const token = mockNative.speakChat.mock.calls[0][0];
+    for (const listener of mockEvents) listener({ token, reason: 'shake' });
+    mockPending.push({ key: 'debug', text: 'Must not play after disabling.' });
+    stop();
+    finish();
+    jest.advanceTimersByTime(1000);
+    await flush();
+    expect(mockNative.speakChat).toHaveBeenCalledTimes(1);
+    expect(jest.getTimerCount()).toBe(0);
+  } finally {
+    jest.useRealTimers();
+  }
 });
 
 test('disabling automatic speech unsubscribes, disposes queues, and stops its active lease', async () => {

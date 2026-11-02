@@ -39,7 +39,13 @@ pub struct ChatSpeechMessage {
 struct SpeechState {
     live: bool,
     parts: HashMap<(String, String), SpokenPart>,
-    pending: VecDeque<String>,
+    pending: VecDeque<ChatSpeechChunk>,
+}
+
+pub(crate) struct ChatSpeechChunk {
+    pub message_id: String,
+    pub part_id: String,
+    pub text: String,
 }
 
 #[derive(Default)]
@@ -138,6 +144,7 @@ impl ChatSpeechQueue {
                 // response items inside a growing turn; keep their existing
                 // immediate playback without freezing a part on its first update.
                 let finalized = readable(agent, message.completed, &part) || index + 1 < part_count;
+                let part_id = part.id.clone();
                 let progress = state
                     .parts
                     .entry((message.id.clone(), part.id))
@@ -174,14 +181,24 @@ impl ChatSpeechQueue {
                 let tail = prose[progress.spoken.len()..end].trim().to_owned();
                 prose[..end].clone_into(&mut progress.spoken);
                 progress.finished = message.completed;
-                state.pending.extend(speech_chunks(&tail));
+                state
+                    .pending
+                    .extend(
+                        speech_chunks(&tail)
+                            .into_iter()
+                            .map(|text| ChatSpeechChunk {
+                                message_id: message.id.clone(),
+                                part_id: part_id.clone(),
+                                text,
+                            }),
+                    );
             }
         }
         state.live = true;
     }
 
     pub fn next(&self) -> Option<String> {
-        self.state.lock().pending.pop_front()
+        self.next_content().map(|chunk| chunk.text)
     }
 
     /// Read assistant prose and questions in the selected response, in order.
@@ -197,16 +214,30 @@ impl ChatSpeechQueue {
             if !message.assistant {
                 continue;
             }
-            state.pending.extend(
-                message
-                    .prose
-                    .into_iter()
-                    .filter_map(speech_content)
-                    .filter(|part| readable(agent, message.completed, part))
-                    .flat_map(|part| speech_chunks(&spoken_prose(&part.text))),
-            );
+            for part in message.prose.into_iter().filter_map(speech_content) {
+                if !readable(agent, message.completed, &part) {
+                    continue;
+                }
+                state
+                    .pending
+                    .extend(
+                        speech_chunks(&spoken_prose(&part.text))
+                            .into_iter()
+                            .map(|text| ChatSpeechChunk {
+                                message_id: message.id.clone(),
+                                part_id: part.id.clone(),
+                                text,
+                            }),
+                    );
+            }
         }
         !state.pending.is_empty()
+    }
+}
+
+impl ChatSpeechQueue {
+    pub(crate) fn next_content(&self) -> Option<ChatSpeechChunk> {
+        self.state.lock().pending.pop_front()
     }
 }
 

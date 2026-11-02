@@ -7,7 +7,7 @@ import { agentTranscriptService } from './NativeTranscriptService';
 import { reportBackgroundFailure } from './backgroundOperations';
 import { setChatSpeechFocus } from './chatSpeechFocus';
 import { setSpeechInputActive } from './speechInputFocus';
-import { getSpeechPlayback } from './speechPlayback';
+import { getSpeechPlayback, type SpeechEndReason } from './speechPlayback';
 
 export interface ChatSpeechTarget {
   agent: ChatAgent;
@@ -25,8 +25,9 @@ interface ListeningSession {
 }
 
 export const CHAT_SPEECH_STOPPED = 'WhipChatSpeechStopped';
+export interface ChatSpeechStoppedEvent { token: string; reason?: SpeechEndReason; error?: string }
 type ChatSpeechEvents = {
-  [CHAT_SPEECH_STOPPED]: [event: { token: string; error?: string }];
+  [CHAT_SPEECH_STOPPED]: [event: ChatSpeechStoppedEvent];
 };
 let active: ListeningSession | null = null;
 let generation = 0;
