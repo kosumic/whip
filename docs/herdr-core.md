@@ -2,8 +2,7 @@
 
 New hosts default to **Legacy Herdr**. Choose **Herdr Core** in a host's backend
 selector for herdr-core/hc and the new desktop app. Saved backend choices are
-preserved. **Automatic** is also available: it prefers installed hc, then
-installed legacy Herdr; when neither is installed it offers core setup.
+preserved. The selector offers **Legacy Herdr** and **Herdr Core**.
 Disabling Herdr keeps plain SSH available.
 
 Whip reuses its authenticated SSH connection, including ProxyJump and Tailcat.
