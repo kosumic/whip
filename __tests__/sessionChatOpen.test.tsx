@@ -124,8 +124,19 @@ jest.mock('../src/components/AgentChatView', () => ({
 jest.mock('../src/components/GithubViewer', () => ({
   GithubViewer: 'GithubViewer',
 }));
+jest.mock('../src/components/GithubDiscoveryPopup', () => ({
+  GithubDiscoveryPopup: 'GithubDiscoveryPopup',
+}));
 jest.mock('../src/hooks/useGithubRepository', () => ({
-  useGithubRepository: () => null,
+  useGithubRepository: () => ({
+    status: 'inactive',
+    repository: null,
+    attempts: [],
+    error: null,
+    generation: undefined,
+    retrying: false,
+    retry: () => {},
+  } satisfies ReturnType<typeof import('../src/hooks/useGithubRepository').useGithubRepository>),
 }));
 jest.mock('../src/components/AgentIntegrationInstallSheet', () => ({
   AgentIntegrationInstallSheet: 'IntegrationSheet',
@@ -206,6 +217,8 @@ function setup(agent: ChatAgent) {
   } as unknown as HerdrSnapshot;
   const native = {
     runtimeId: 'runtime-1',
+    sshShellDirectory: jest.fn(() => undefined),
+    subscribeSshShellDirectory: jest.fn(() => () => {}),
     requestHerdrApi: jest.fn(async () => ({})),
     reverseControlSessions: () => [],
     reverseControlReply: jest.fn(),
