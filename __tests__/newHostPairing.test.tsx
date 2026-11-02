@@ -1,5 +1,5 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import { Alert } from 'react-native';
+import { Alert, Platform } from 'react-native';
 
 import { NewHostScreen } from '../src/components/NewHostScreen';
 import { JumpHostSelect } from '../src/components/JumpHostSelect';
@@ -13,6 +13,7 @@ jest.mock('react-native', () => ({
   Linking: { openURL: jest.fn().mockResolvedValue(undefined) },
   Modal: 'Modal', Pressable: 'Pressable', ScrollView: 'ScrollView', View: 'View',
   StyleSheet: { absoluteFill: {} },
+  Platform: { OS: 'ios' },
 }));
 jest.mock('expo-camera', () => ({
   CameraView: 'CameraView',
@@ -48,6 +49,7 @@ jest.mock('../src/components/app-ui', () => ({
 }));
 jest.mock('../src/components/GlassSurface', () => ({ GlassSurface: 'GlassSurface', useAppGlassEnabled: () => false }));
 jest.mock('../src/services/sshPairing', () => ({ pairHostWithRoute: jest.fn() }));
+jest.mock('../src/components/GoogleQrScanner', () => ({ GoogleQrScanner: 'GoogleQrScanner' }));
 
 const bastion = { id: 'bastion', name: 'Bastion', host: 'bastion.test', port: '22', username: 'alice' } as HostProfile;
 const result = { sshHost: 'target.internal' } as NonNullable<Awaited<ReturnType<typeof pairHostWithRoute>>>;
@@ -57,6 +59,7 @@ const mockRequestPermission = jest.fn();
 beforeEach(() => {
   jest.clearAllMocks();
   mockCameraGranted = true;
+  Platform.OS = 'ios';
   jest.mocked(pairHostWithRoute).mockReset().mockResolvedValue(result);
 });
 
@@ -144,6 +147,32 @@ test('camera denial returns to setup and allows another permission attempt', asy
   expect(view.root.findByType(JumpHostSelect).props.disabled).toBe(false);
   await openScanner(view);
   expect(view.root.findAllByType('CameraView' as never)).toHaveLength(1);
+  await act(async () => { view.unmount(); });
+});
+
+test('Android pairing uses the Google scanner without requesting camera permission', async () => {
+  Platform.OS = 'android';
+  mockCameraGranted = false;
+  const onPaired = jest.fn(async () => {});
+  const view = await mountSetup(onPaired);
+  await openScanner(view);
+  expect(mockRequestPermission).not.toHaveBeenCalled();
+  expect(view.root.findAllByType('CameraView' as never)).toHaveLength(0);
+  const scanner = view.root.findByType('GoogleQrScanner' as never);
+  await act(async () => { await scanner.props.onScan('WP4:android'); });
+  expect(pairHostWithRoute).toHaveBeenCalledWith('WP4:android', 'ssh-ed25519 AAAA', 'pairing.deviceName', expect.objectContaining({ hosts: [bastion] }));
+  expect(onPaired).toHaveBeenCalledWith(result, expect.objectContaining({ privateKey: 'PRIVATE' }), undefined);
+  await act(async () => { view.unmount(); });
+});
+
+test('cancelling the Android scanner returns to pairing setup and permits a new scan', async () => {
+  Platform.OS = 'android';
+  const view = await mountSetup();
+  await openScanner(view);
+  await act(async () => { view.root.findByType('GoogleQrScanner' as never).props.onClose(); });
+  expect(view.root.findByType(JumpHostSelect).props.disabled).toBe(false);
+  await openScanner(view);
+  expect(view.root.findAllByType('GoogleQrScanner' as never)).toHaveLength(1);
   await act(async () => { view.unmount(); });
 });
 
