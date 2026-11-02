@@ -231,6 +231,7 @@ jobs:
     env:
       NODE_ENV: production
       CARGO_INCREMENTAL: '0'
+      SCCACHE_GHA_ENABLED: 'true'
 
     steps:
       - &android-checkout
@@ -313,6 +314,11 @@ jobs:
         with:
           path: *android-rust-cache-paths
           key: ${{ steps.android-rust-cache.outputs.cache-primary-key }}
+
+      - name: Set up native compiler cache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        with:
+          version: v0.16.0
 
       - name: Run Android lint and build
         id: android-build
