@@ -263,8 +263,8 @@ jobs:
         name: Install Android SDK packages
         run: >-
           "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          "platforms;android-36"
-          "build-tools;36.0.0"
+          "platforms;android-37"
+          "build-tools;37.0.0"
           "ndk;27.1.12297006"
           "cmake;3.22.1"
 
@@ -412,6 +412,11 @@ jobs:
 
       - *android-dependencies
 
+      - name: Prepare CodeQL JVM build tools
+        run: |
+          df -h .
+          nix develop --file .github/nix/codeql.nix -c java -version
+
       - name: Initialize Java and Kotlin CodeQL
         uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
         with:
@@ -423,12 +428,13 @@ jobs:
       # Disable task-output caching so CodeQL observes the compiler invocations.
       - name: Compile Java and Kotlin for CodeQL
         run: >-
-          nix develop .#default -c
+          nix develop --file .github/nix/codeql.nix -c
           android/gradlew -p android
           :app:compileDebugJavaWithJavac
           -x :react-native-whip-ssh:buildRustArm64
           -PreactNativeArchitectures=arm64-v8a
           --no-build-cache
+          --no-configuration-cache
           --no-daemon
 
       - name: Analyze Java and Kotlin
