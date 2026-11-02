@@ -28,8 +28,6 @@
     "**/.cloudflare",
     "feedback-worker",
     "notify-relay",
-    "__tests__/feedbackWorker*.test.ts",
-    "__tests__/notifyRelay*.test.ts",
     "**/Pods",
     "launch-videos"
   ]
