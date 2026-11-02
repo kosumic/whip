@@ -11,7 +11,7 @@ export async function downloadGithubAsset(connection: RemoteGitConnection, repos
       remotePath = await connection.native.githubPrepareAsset(repository, asset.id, asset.title);
       if (!connection.isCurrent()) throw new Error('Host connection changed during asset download');
       return remotePath;
-    }, onProgress);
+    }, progress => onProgress(progress.bytesTransferred));
   } finally {
     if (remotePath && connection.isCurrent()) {
       const directory = remotePath.slice(0, remotePath.lastIndexOf('/'));

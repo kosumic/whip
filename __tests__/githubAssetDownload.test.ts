@@ -38,3 +38,14 @@ test('rejects a stale host before starting the download', async () => {
   await expect(downloadGithubAsset(connection, repository, asset, jest.fn())).rejects.toThrow('Host connection changed');
   expect(native.githubPrepareAsset).not.toHaveBeenCalled();
 });
+
+test('preserves the GitHub viewer byte-progress callback when the shared API reports phases and totals', async () => {
+  jest.mocked(downloadRemoteEntry).mockImplementationOnce(async (_client, prepare, progress) => {
+    await (prepare as () => Promise<string>)();
+    progress({ phase: 'downloading', bytesTransferred: 123, totalBytes: 456 });
+    return true;
+  });
+  const progress = jest.fn();
+  await downloadGithubAsset(connection, repository, asset, progress);
+  expect(progress).toHaveBeenCalledWith(123);
+});

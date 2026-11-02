@@ -3,7 +3,19 @@ import { Directory, File, Paths } from 'expo-file-system';
 import type { HerdrClient } from './HerdrClient';
 import { recordNetworkDiagnostic } from './networkDiagnostics';
 
-export type RemoteFileClient = Pick<HerdrClient, 'native'>;
+export type RemoteFileClient = Pick<HerdrClient, 'native'> & Partial<Pick<HerdrClient, 'activeNative'>>;
+
+export type RemoteDownloadPhase = 'selecting' | 'downloading' | 'saving' | 'completed' | 'failed' | 'cancelled';
+
+export interface RemoteDownloadProgress {
+  phase: RemoteDownloadPhase;
+  bytesTransferred: number;
+  totalBytes?: number;
+  failedPhase?: RemoteDownloadPhase;
+  error?: string;
+}
+
+const TRANSFER_POLL_INTERVAL_MS = 250;
 
 export interface CachedRemoteFile {
   file: File;
@@ -125,69 +137,125 @@ async function saveDownloadedEntry(
 export async function downloadRemoteEntry(
   client: RemoteFileClient,
   remotePath: string | (() => Promise<string>),
-  onProgress: (bytes: number) => void,
+  onProgress: (progress: RemoteDownloadProgress) => void,
   signal?: AbortSignal,
 ): Promise<boolean> {
-  // Ask before starting a potentially large transfer. iOS picker scopes remain
-  // alive until the copy completes; Android may return a SAF content URI.
-  let destination: Directory;
-  try {
-    destination = await Directory.pickDirectoryAsync();
-  } catch (error) {
-    if (error instanceof Error && /cancel|dismiss/i.test(error.message)) return false;
-    throw error;
-  }
-  const directory = createDownloadDirectory(DOWNLOAD_PREFIX);
   const native = client.native;
   const context: DownloadContext = { runtimeId: native.runtimeId };
+  let admitted = false;
+  let progress: RemoteDownloadProgress = { phase: 'selecting', bytesTransferred: 0 };
+  const report = (update: Partial<RemoteDownloadProgress>) => {
+    progress = { ...progress, ...update };
+    onProgress(progress);
+  };
+  let directory: Directory | undefined;
   let transfer: ReturnType<typeof native.startDownload> | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
-  let phase: 'transfer' | 'save' = 'transfer';
+  let connectionError: Error | undefined;
+  const stopPolling = () => {
+    if (timer !== undefined) clearInterval(timer);
+    timer = undefined;
+  };
   const cancel = () => {
-    if (!transfer) return;
-    try {
-      native.cancelTransfer(transfer.id);
-    } catch {
-      recordDownloadOutcome(context, 'cleanup', 'failed');
+    stopPolling();
+    signal?.removeEventListener('abort', cancel);
+    if (transfer) {
+      try { native.cancelTransfer(transfer.id); }
+      catch { recordDownloadOutcome(context, 'cleanup', 'failed'); }
     }
   };
+  const checkConnection = () => {
+    if (('activeNative' in client && client.activeNative !== native)
+      || (!admitted && native.status().state !== 'connected')) {
+      throw new Error('Host connection changed during download');
+    }
+    // After admission, native owns reconnects and explicit disconnect failure.
+    // A new generation on the same runtime must not cancel a resumable download.
+  };
+  const check = () => {
+    if (signal?.aborted) throw new Error('Download cancelled');
+    if (connectionError) throw connectionError;
+    checkConnection();
+  };
   try {
-    if (signal?.aborted) throw new Error('Download cancelled');
+    report({});
+    check();
+    // Keep the picker scope alive through the destination copy (including SAF).
+    let destination: Directory;
+    try {
+      destination = await Directory.pickDirectoryAsync();
+    } catch (error) {
+      if (error instanceof Error && /cancel|dismiss/i.test(error.message)) {
+        report({ phase: 'cancelled' });
+        return false;
+      }
+      throw error;
+    }
+    check();
+    report({ phase: 'downloading' });
     const sourcePath = typeof remotePath === 'string' ? remotePath : await remotePath();
-    if (signal?.aborted) throw new Error('Download cancelled');
+    check();
+    directory = createDownloadDirectory(DOWNLOAD_PREFIX);
     transfer = native.startDownload(sourcePath, `${nativePath(directory.uri)}/`);
+    admitted = true;
     context.transferId = transfer.id;
     signal?.addEventListener('abort', cancel);
-    // Admission can synchronously abort before the listener is attached.
-    if (signal?.aborted) cancel();
     const id = transfer.id;
-    timer = setInterval(() => {
-      const progress = native.transferProgress(id);
-      if (progress) onProgress(progress.bytesTransferred);
-    }, 250);
-    const result = await transfer.result;
-    if (timer) { clearInterval(timer); timer = undefined; }
-    if (signal?.aborted) throw new Error('Download cancelled');
+    if (signal?.aborted) cancel();
+    else timer = setInterval(() => {
+      try {
+        check();
+        const value = native.transferProgress(id);
+        if (value) report({ bytesTransferred: value.bytesTransferred, totalBytes: value.totalBytes });
+      } catch (error) {
+        connectionError = error instanceof Error ? error : new Error(String(error));
+        cancel();
+      }
+    }, TRANSFER_POLL_INTERVAL_MS);
+    let result: Awaited<typeof transfer.result>;
+    try {
+      result = await transfer.result;
+    } finally {
+      stopPolling();
+      signal?.removeEventListener('abort', cancel);
+      transfer = undefined;
+    }
+    check();
     if (!result.localPath) throw new Error('Native download returned no local path');
     const info = Paths.info(fileUri(result.localPath));
     if (!info.exists) throw new Error('The downloaded staging file is missing; retry the download');
     const source = info.isDirectory ? new Directory(fileUri(result.localPath)) : new File(fileUri(result.localPath));
+    if (!info.isDirectory) {
+      const size = (source as File).size;
+      if (typeof size === 'number' && Number.isFinite(size) && size >= 0) report({ phase: 'saving', bytesTransferred: size, totalBytes: size });
+      else report({ phase: 'saving' });
+    } else report({ phase: 'saving' });
     // Let Expo resolve children of the picked directory. Android SAF URIs
     // cannot be joined as ordinary filesystem paths. Its copy operation checks
     // conflicts and recurses only over the safe, native-created staging tree.
-    phase = 'save';
-    await saveDownloadedEntry(source, destination, false, context, signal);
-    if (signal?.aborted) throw new Error('Download cancelled');
+    await saveDownloadedEntry(source, destination, false, context);
+    // Expo's asynchronous copy cannot be interrupted. Once it starts, wait for
+    // its real outcome, even if the owning UI goes away, before deleting staging.
+    report({ phase: 'completed' });
     return true;
   } catch (error) {
-    if (signal?.aborted) throw new Error('Download cancelled', { cause: error });
-    if (error instanceof RemoteFileDownloadError) throw error;
-    throw new RemoteFileDownloadError(phase, transfer?.id, error);
+    if (signal?.aborted && progress.phase !== 'saving') {
+      report({ phase: 'cancelled' });
+      return false;
+    }
+    const cause = connectionError && error !== connectionError
+      ? new Error(connectionError.message + ': ' + String(error))
+      : error;
+    const reason = error instanceof RemoteFileDownloadError && !connectionError
+      ? error
+      : new RemoteFileDownloadError(progress.phase === 'saving' ? 'save' : 'transfer', context.transferId, cause);
+    report({ phase: 'failed', failedPhase: progress.phase, error: String(reason) });
+    throw reason;
   } finally {
     signal?.removeEventListener('abort', cancel);
-    if (timer) clearInterval(timer);
+    stopPolling();
     cancel();
-    disposeDownloadDirectory(directory, context);
+    if (directory) disposeDownloadDirectory(directory, context);
   }
 }
 

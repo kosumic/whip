@@ -1,6 +1,6 @@
 import { cacheRemoteFile, copyCachedRemoteFileToPickedDirectory, downloadRemoteEntry, RemoteFileDownloadError, saveCachedRemoteText } from '../src/services/remoteFileTransfer';
 import { Directory, File, Paths } from 'expo-file-system';
-import type { RemoteFileClient } from '../src/services/remoteFileTransfer';
+import type { RemoteFileClient, RemoteDownloadProgress } from '../src/services/remoteFileTransfer';
 import { recordNetworkDiagnostic } from '../src/services/networkDiagnostics';
 
 const mockFileMetadata = new Map<string, { exists: boolean; size?: number | null }>();
@@ -30,6 +30,7 @@ jest.mock('expo-file-system', () => {
 const picker = jest.mocked(Directory.pickDirectoryAsync);
 let native: {
   runtimeId: string;
+  status: jest.Mock;
   startDownload: jest.Mock;
   transferProgress: jest.Mock;
   cancelTransfer: jest.Mock;
@@ -41,13 +42,16 @@ const source = () => new File('file:///cache/source');
 beforeEach(() => {
   jest.clearAllMocks();
   mockFileMetadata.clear();
+  mockFileMetadata.set('file:///cache/source', { exists: true, size: 123 });
+  mockFileMetadata.set('file:///picked/source', { exists: true, size: 123 });
   jest.mocked(source().delete).mockReset();
   picker.mockResolvedValue(new Directory('file:///picked'));
   jest.mocked(Paths.info).mockReturnValue({ exists: true, isDirectory: false });
   native = {
     runtimeId: 'download-runtime',
+    status: jest.fn(() => ({ state: 'connected', generation: 1n })),
     startDownload: jest.fn(() => ({ id: 'transfer', result: Promise.resolve({ localPath: '/cache/source' }) })),
-    transferProgress: jest.fn(() => ({ bytesTransferred: 123 })),
+    transferProgress: jest.fn(() => ({ bytesTransferred: 123, totalBytes: 456 })),
     cancelTransfer: jest.fn(),
     readRemoteText: jest.fn(),
     startUpload: jest.fn(() => ({ result: Promise.resolve({}) })),
@@ -178,7 +182,7 @@ it('polls native transfer progress while awaiting completion', async () => {
     const download = downloadRemoteEntry(client(), '/repo/source', progress);
     await Promise.resolve();
     jest.advanceTimersByTime(250);
-    expect(progress).toHaveBeenCalledWith(123);
+    expect(progress).toHaveBeenCalledWith(expect.objectContaining({ phase: 'downloading', bytesTransferred: 123, totalBytes: 456 }));
     finish({ localPath: '/cache/source' });
     await download;
     expect(jest.getTimerCount()).toBe(0);
@@ -194,7 +198,7 @@ it('cancels the native transfer and avoids publishing after abort', async () => 
   abort.abort();
   expect(native.cancelTransfer).toHaveBeenCalledWith('transfer');
   finish({ localPath: '/cache/source' });
-  await expect(download).rejects.toThrow('Download cancelled');
+  await expect(download).resolves.toBe(false);
   expect(source().copy).not.toHaveBeenCalled();
   expect(source().delete).toHaveBeenCalledTimes(1);
 });
@@ -300,7 +304,182 @@ it('cancels a native transfer if abort occurs during admission', async () => {
     return { id: 'transfer', result };
   });
   native.cancelTransfer.mockImplementation(() => { reject(new Error('Native download cancelled')); });
-  await expect(downloadRemoteEntry(client(), '/repo/source', jest.fn(), abort.signal)).rejects.toThrow('Download cancelled');
+  await expect(downloadRemoteEntry(client(), '/repo/source', jest.fn(), abort.signal)).resolves.toBe(false);
   expect(native.cancelTransfer).toHaveBeenCalledWith('transfer');
   expect(source().copy).not.toHaveBeenCalled();
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
+}
+
+it.each([128 * 1024 * 1024, undefined])('reports steady byte progress with total %s and stops polling before saving', async totalBytes => {
+  jest.useFakeTimers();
+  try {
+    const transfer = deferred<{ localPath: string }>();
+    const copy = deferred<undefined>();
+    native.startDownload.mockReturnValue({ id: 'transfer', result: transfer.promise });
+    jest.mocked(source().copy).mockReturnValueOnce(copy.promise);
+    const progress = jest.fn<undefined, [RemoteDownloadProgress]>();
+    const download = downloadRemoteEntry(client(), '/repo/source', progress);
+    await Promise.resolve();
+    for (const bytesTransferred of [1024, 64 * 1024 * 1024, 100 * 1024 * 1024]) {
+      native.transferProgress.mockReturnValue({ bytesTransferred, totalBytes });
+      jest.advanceTimersByTime(250);
+      expect(progress).toHaveBeenLastCalledWith({ phase: 'downloading', bytesTransferred, totalBytes });
+    }
+    transfer.resolve({ localPath: '/cache/source' });
+    await Promise.resolve();
+    expect(progress.mock.calls.at(-1)![0].phase).toBe('saving');
+    expect(jest.getTimerCount()).toBe(0);
+    expect(source().delete).not.toHaveBeenCalled();
+    copy.resolve(undefined);
+    await expect(download).resolves.toBe(true);
+    expect(progress.mock.calls.at(-1)![0].phase).toBe('completed');
+  } finally { jest.useRealTimers(); }
+});
+
+it('keeps a directory transfer indeterminate through saving', async () => {
+  jest.mocked(Paths.info).mockReturnValue({ exists: true, isDirectory: true });
+  const progress = jest.fn();
+  await downloadRemoteEntry(client(), '/repo/directory', progress);
+  expect(progress).toHaveBeenCalledWith({ phase: 'saving', bytesTransferred: 0 });
+});
+
+it.each(['transfer', 'copy'])('preserves %s failure context and permits retry', async phase => {
+  const failure = new Error(phase === 'copy' ? 'Provider denied destination write' : 'SSH transport failed');
+  if (phase === 'transfer') native.startDownload.mockReturnValueOnce({ id: 'failed', result: Promise.reject(failure) });
+  else jest.mocked(source().copy).mockRejectedValueOnce(failure);
+  const progress = jest.fn();
+  await expect(downloadRemoteEntry(client(), '/repo/source', progress)).rejects.toMatchObject({ cause: failure });
+  expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({
+    phase: 'failed', failedPhase: phase === 'copy' ? 'saving' : 'downloading', error: expect.stringContaining(failure.message),
+  }));
+  expect(progress.mock.calls.some(([value]) => value.phase === 'completed')).toBe(false);
+  await expect(downloadRemoteEntry(client(), '/repo/source', progress)).resolves.toBe(true);
+});
+
+it('stops polling immediately on abort but retains staging until native cancellation settles', async () => {
+  jest.useFakeTimers();
+  try {
+    const transfer = deferred<{ localPath: string }>();
+    native.startDownload.mockReturnValue({ id: 'transfer', result: transfer.promise });
+    const abort = new AbortController();
+    const progress = jest.fn();
+    const download = downloadRemoteEntry(client(), '/repo/source', progress, abort.signal);
+    await Promise.resolve();
+    abort.abort();
+    expect(jest.getTimerCount()).toBe(0);
+    expect(source().delete).not.toHaveBeenCalled();
+    transfer.reject(new Error('Native transfer cancelled'));
+    await expect(download).resolves.toBe(false);
+    expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'cancelled' }));
+    expect(source().copy).not.toHaveBeenCalled();
+    expect(source().delete).toHaveBeenCalledTimes(1);
+  } finally { jest.useRealTimers(); }
+});
+
+it('does not start SSH if cancelled while the location picker is open', async () => {
+  const destination = deferred<Directory>();
+  picker.mockReturnValueOnce(destination.promise);
+  const abort = new AbortController();
+  const download = downloadRemoteEntry(client(), '/repo/source', jest.fn(), abort.signal);
+  abort.abort();
+  destination.resolve(new Directory('file:///picked'));
+  await expect(download).resolves.toBe(false);
+  expect(native.startDownload).not.toHaveBeenCalled();
+});
+
+it.each([true, false])('waits for the real copy outcome after unmount/abort (success=%s)', async success => {
+  const copy = deferred<undefined>();
+  jest.mocked(source().copy).mockReturnValueOnce(copy.promise);
+  const abort = new AbortController();
+  const progress = jest.fn();
+  const download = downloadRemoteEntry(client(), '/repo/source', progress, abort.signal);
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'saving' }));
+  abort.abort();
+  expect(source().delete).not.toHaveBeenCalled();
+  if (success) {
+    copy.resolve(undefined);
+    await expect(download).resolves.toBe(true);
+    expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'completed' }));
+  } else {
+    copy.reject(new Error('No space left'));
+    await expect(download).rejects.toThrow('No space left');
+    expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'failed', failedPhase: 'saving' }));
+  }
+  expect(source().delete).toHaveBeenCalledTimes(1);
+});
+
+it('cancels SSH and refuses to publish when the active host is replaced', async () => {
+  jest.useFakeTimers();
+  try {
+    const transfer = deferred<{ localPath: string }>();
+    native.startDownload.mockReturnValue({ id: 'transfer', result: transfer.promise });
+    const host = { native, activeNative: native } as unknown as RemoteFileClient;
+    const progress = jest.fn();
+    const download = downloadRemoteEntry(host, '/repo/source', progress);
+    await Promise.resolve();
+    Object.assign(host, { activeNative: {} });
+    jest.advanceTimersByTime(250);
+    expect(native.cancelTransfer).toHaveBeenCalledWith('transfer');
+    expect(jest.getTimerCount()).toBe(0);
+    transfer.reject(new Error('Native transfer cancelled'));
+    await expect(download).rejects.toThrow('Host connection changed');
+    expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'failed', failedPhase: 'downloading' }));
+    expect(source().copy).not.toHaveBeenCalled();
+  } finally { jest.useRealTimers(); }
+});
+
+it('allows automatic reconnect on the same runtime to finish a resumable download', async () => {
+  jest.useFakeTimers();
+  try {
+    const transfer = deferred<{ localPath: string }>();
+    native.startDownload.mockReturnValue({ id: 'transfer', result: transfer.promise });
+    const host = { native, activeNative: native } as unknown as RemoteFileClient;
+    const download = downloadRemoteEntry(host, '/repo/source', jest.fn());
+    await Promise.resolve();
+    native.status.mockReturnValue({ state: 'reconnecting', generation: 2n });
+    jest.advanceTimersByTime(250);
+    expect(native.cancelTransfer).not.toHaveBeenCalled();
+    expect(source().copy).not.toHaveBeenCalled();
+    native.status.mockReturnValue({ state: 'connected', generation: 3n });
+    transfer.resolve({ localPath: '/cache/source' });
+    await expect(download).resolves.toBe(true);
+    expect(jest.getTimerCount()).toBe(0);
+    expect(native.cancelTransfer).not.toHaveBeenCalled();
+  } finally { jest.useRealTimers(); }
+});
+
+it('reports an explicit native disconnect without publishing a destination', async () => {
+  const transfer = deferred<{ localPath: string }>();
+  native.startDownload.mockReturnValue({ id: 'transfer', result: transfer.promise });
+  const progress = jest.fn();
+  const download = downloadRemoteEntry(client(), '/repo/source', progress);
+  await Promise.resolve();
+  native.status.mockReturnValue({ state: 'disconnected', generation: 2n });
+  const cause = new Error('Native disconnect interrupted transfer');
+  transfer.reject(cause);
+  await expect(download).rejects.toMatchObject({ phase: 'transfer', transferId: 'transfer', cause });
+  expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'failed', failedPhase: 'downloading' }));
+  expect(source().copy).not.toHaveBeenCalled();
+});
+
+it('keeps cancellation errors from escaping an abort callback', async () => {
+  const transfer = deferred<{ localPath: string }>();
+  native.startDownload.mockReturnValue({ id: 'transfer', result: transfer.promise });
+  native.cancelTransfer.mockImplementation(() => { throw new Error('Native cleanup failed'); });
+  const abort = new AbortController();
+  const download = downloadRemoteEntry(client(), '/repo/source', jest.fn(), abort.signal);
+  await Promise.resolve();
+  expect(() => abort.abort()).not.toThrow();
+  transfer.reject(new Error('Native cancellation settled'));
+  await expect(download).resolves.toBe(false);
+  expect(source().copy).not.toHaveBeenCalled();
+  expect(source().delete).toHaveBeenCalledTimes(1);
 });
