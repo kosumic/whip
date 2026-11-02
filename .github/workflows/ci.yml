@@ -232,6 +232,7 @@ jobs:
       NODE_ENV: production
       CARGO_INCREMENTAL: '0'
       WHIP_CONFIGURATION_CACHE: ${{ secrets.GRADLE_ENCRYPTION_KEY != '' && 'true' || 'false' }}
+      SCCACHE_GHA_ENABLED: 'true'
 
     steps:
       - &android-checkout
@@ -342,6 +343,11 @@ jobs:
             node_modules/expo-modules-core/expo-module-gradle-plugin/build
           key: ${{ steps.android-configuration-key.outputs.cache-key }}
           restore-keys: ${{ steps.android-configuration-key.outputs.cache-prefix }}-
+
+      - name: Set up native compiler cache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        with:
+          version: v0.16.0
 
       - name: Run Android lint and build
         id: android-build

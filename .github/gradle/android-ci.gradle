@@ -10,6 +10,7 @@ def memoryBudget = gradle.sharedServices.registerIfAbsent('whipCiMemoryBudget', 
 def compilePool = 'whip_ci_compile'
 def linkPool = 'whip_ci_link'
 def compileJobs = gradle.startParameter.maxWorkerCount
+def compilerLauncher = System.getenv('SCCACHE_PATH') ?: 'sccache'
 
 gradle.beforeProject { project ->
     project.tasks.configureEach { task ->
@@ -22,7 +23,9 @@ gradle.beforeProject { project ->
             project.extensions.getByName('android').defaultConfig.externalNativeBuild.cmake.arguments(
                 "-DCMAKE_JOB_POOLS=${compilePool}=${compileJobs};${linkPool}=1",
                 "-DCMAKE_JOB_POOL_COMPILE=${compilePool}",
-                "-DCMAKE_JOB_POOL_LINK=${linkPool}"
+                "-DCMAKE_JOB_POOL_LINK=${linkPool}",
+                "-DCMAKE_C_COMPILER_LAUNCHER=${compilerLauncher}",
+                "-DCMAKE_CXX_COMPILER_LAUNCHER=${compilerLauncher}"
             )
         }
     }
