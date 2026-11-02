@@ -46,6 +46,7 @@ mod terminal_submissions;
 mod test_allocations;
 mod transcript_database;
 mod usage;
+mod voice_chat;
 
 pub use agent_sessions::*;
 pub use agent_transcript::*;
@@ -87,6 +88,7 @@ pub use transcript_database::{
     delete_agent_transcripts_for_host, list_saved_agent_transcripts, read_saved_agent_transcript,
 };
 pub use usage::*;
+pub use voice_chat::*;
 
 use std::sync::OnceLock;
 

@@ -1,4 +1,11 @@
 export const es = {
+  'voiceChat.vadSensitivity': "Sensibilidad de VAD",
+  'voiceChat.vadSensitivityDescription': "Una sensibilidad alta detecta voces más suaves. Una sensibilidad baja filtra más ruido de fondo. Se aplica al chat de voz y a la interrupción de respuestas.",
+  'voiceChat.smartTurn': "Smart Turn (opcional)",
+  'voiceChat.smartTurnDescription': "Detecta cuándo terminas de hablar. El chat de voz funciona sin él mediante detección de silencio. Descarga única: 32 MB.",
+  'voiceChat.smartTurnInstalled': "Instalado · disponible sin conexión",
+  'voiceChat.smartTurnProgress': "Descargando {{progress}}%",
+  'voiceChat.compose': "Pregunta a {{agent}}",
   'voiceChat.starting': "Iniciando llamada de voz…",
   'voiceChat.minimize': "Minimizar chat de voz",
   'voiceChat.reopen': "Volver al chat de voz",

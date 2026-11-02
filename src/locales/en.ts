@@ -1,4 +1,11 @@
 export const en = {
+  'voiceChat.vadSensitivity': "VAD sensitivity",
+  'voiceChat.vadSensitivityDescription': "Higher sensitivity picks up softer speech. Lower sensitivity rejects more background noise. Applies to voice chat and reply interruption.",
+  'voiceChat.smartTurn': "Smart Turn (optional)",
+  'voiceChat.smartTurnDescription': "Detects when you have finished speaking. Voice chat works without it using silence detection. Download once: 32 MB.",
+  'voiceChat.smartTurnInstalled': "Installed · available offline",
+  'voiceChat.smartTurnProgress': "Downloading {{progress}}%",
+  'voiceChat.compose': "Ask {{agent}}",
   'voiceChat.starting': "Starting voice call…",
   'voiceChat.speaker': "Speaker",
   'voiceChat.title': "Voice chat",

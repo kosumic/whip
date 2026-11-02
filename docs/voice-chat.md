@@ -5,10 +5,16 @@ uses the existing agent connection and send queue. No speech API, API key, or
 separate assistant session is involved. The agent still needs its usual remote
 connection. Saved transcripts cannot start a voice conversation.
 
-Speak normally. Earshot VAD detects speech on the device. By default, 800 ms of
+Speak normally. Earshot VAD detects speech on the device. Settings → Voice →
+VAD sensitivity adjusts speech detection from 0–100%. Higher values pick up
+softer speech; lower values reject more background noise. The saved setting
+applies immediately to voice chat, including reply interruption, with or without
+Smart Turn. The default 50% preserves the original detection thresholds.
+By default, 800 ms of
 silence after speech finishes the turn. No model download is required.
 
-Smart Turn v3.2 is an optional 32 MB download from the voice screen. When it is
+Smart Turn v3.2 is an optional 32 MB download in Settings → Voice. Calls never
+download a model. When it is
 installed, it checks whether the utterance is complete after 256 ms of silence. If it is incomplete,
 Whip checks again as silence continues. If an optional download fails, voice
 chat continues with basic VAD. Resumed speech invalidates an in-flight
@@ -36,6 +42,19 @@ the transcript button minimize the voice screen while the call continues.
 A floating orb above the composer follows the keyboard and reopens the same call.
 The hang-up button or changing pane/binding ends the voice conversation.
 Ending voice chat does not cancel work already submitted to the agent.
+
+Routine transcript refreshes (`loading` / `stale`, including “Agent activity
+resumed”) keep the same call connected. Snapshot resyncs for the same transcript
+session preserve the pending turn. A different transcript session is treated as
+a conversation replacement, so another conversation's replies cannot be spoken.
+Stopping the speech player by shaking the phone or changing its route skips the
+current reply and keeps the call available for the next turn. Speech-engine
+errors remain visible without hanging up the system call.
+
+The orb renders a local WebGL cloud field with flowing detail and microphone
+level response, using the existing WebView dependency. It loads no assets and
+makes no network requests. Reduced Motion freezes the flow; hidden scenes stop
+their animation loop. It does not own audio or conversation state.
 
 The transcript button returns to the existing chat with the call minimized.
 Tool output and reasoning are not read as ordinary assistant prose. If the
@@ -70,6 +89,13 @@ hints, final-result draining, and cancellation behavior as composer dictation.
 Voice requests set `requiresOnDeviceRecognition: true`. Unsupported local
 recognition fails visibly; there is no network-recognizer fallback. Ordinary
 composer dictation keeps its existing behavior.
+
+Android ends an injected-audio turn by closing its audio source and waiting for
+`onEndOfSegmentedSession`, preserving final segments. Calling `stopListening`
+instead interrupts Google's source reader and can produce `ERROR_CLIENT` after
+valid recognition. A client cancellation during a deliberate local stop drains
+the transcript without ending the call; active-capture failures still surface.
+See [Android's audio-source session contract](https://developer.android.com/reference/android/speech/RecognizerIntent#EXTRA_AUDIO_SOURCE).
 
 The patch to `expo-speech-recognition` adds opt-in `audiochunk` events containing
 16 kHz mono PCM16LE from its existing microphone stream. Android needs Android

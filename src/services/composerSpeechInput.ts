@@ -4,7 +4,9 @@ import type { NativeComposerDictation, ComposerDictationPhase } from 'react-nati
 import { setSpeechInputActive } from './speechInputFocus';
 
 type Recognizer = Pick<typeof import('expo-speech-recognition').ExpoSpeechRecognitionModule,
-  'addListener' | 'start' | 'stop' | 'abort' | 'isRecognitionAvailable' | 'requestPermissionsAsync'>;
+  'addListener' | 'start' | 'stop' | 'abort' | 'isRecognitionAvailable' | 'requestPermissionsAsync'> &
+  Partial<Pick<typeof import('expo-speech-recognition').ExpoSpeechRecognitionModule,
+    'supportsOnDeviceRecognition' | 'supportsAudioChunkEvents' | 'supportsEchoCancellation'>>;
 type RecognitionOptions = Parameters<Recognizer['start']>[0];
 type Subscription = { remove: () => void };
 export type SpeechInputError = 'permission' | 'unavailable' | 'noSpeech' | 'network' | 'interrupted' | 'failed';
@@ -19,7 +21,11 @@ interface Request {
   readDraft: () => string;
   context: () => Promise<string[]>;
   append: (text: string) => void;
-  onError: (error: SpeechInputError) => void;
+  onError: (error: SpeechInputError, message?: string) => void;
+  localOnly?: boolean;
+  managedCall?: boolean;
+  duringPlayback?: boolean;
+  onAudio?: (pcm: string) => void;
 }
 interface Dependencies {
   recognizer: Recognizer;
@@ -45,6 +51,7 @@ interface Session {
   timeout?: ReturnType<typeof setTimeout>;
   restart?: ReturnType<typeof setTimeout>;
   restartDelay: number;
+  audioToken?: string;
 }
 
 const IDLE: SpeechInputSnapshot = { owner: null, phase: 'idle', interimText: '' };
@@ -56,6 +63,7 @@ const ANDROID_CONTINUOUS_API = 33;
 const RESTART_DELAY_MS = 250;
 const MAX_RESTART_DELAY_MS = 2_000;
 const EMPTY_ERRORS = new Set(['no-speech', 'speech-timeout']);
+const LOCAL_UNAVAILABLE = 'This build or device does not support on-device voice chat. Install an updated Whip build and an offline speech language.';
 const CONTINUOUS_ERRORS = new Set(['client', 'audio-capture']);
 const ERROR_REASONS: Record<string, SpeechInputError> = {
   'not-allowed': 'permission',
@@ -105,6 +113,8 @@ export class ComposerSpeechInput {
   private snapshot: SpeechInputSnapshot = IDLE;
   private readonly listeners = new Set<() => void>();
   private androidContinuousFailed = false;
+  private reservation: string | null = null;
+  private nextAudioToken = 0;
 
   constructor(private readonly load = loadDependencies) {}
 
@@ -114,8 +124,40 @@ export class ComposerSpeechInput {
   };
   getSnapshot = (): SpeechInputSnapshot => this.snapshot;
 
+  /** Reuse the same capability and permission path before opening a system call. */
+  async authorizeLocal(): Promise<void> {
+    const { recognizer } = await this.load();
+    if (!this.supportsLocal(recognizer)) throw new Error(LOCAL_UNAVAILABLE);
+    const permission = await recognizer.requestPermissionsAsync();
+    if (!permission.granted) throw new Error('Allow microphone access in Settings to use voice chat.');
+  }
+
+  async supportsPlaybackMonitoring(): Promise<boolean> {
+    const { recognizer } = await this.load();
+    return Platform.OS === 'ios' || recognizer.supportsEchoCancellation?.() === true;
+  }
+
+  private supportsLocal(recognizer: Recognizer): boolean {
+    return Boolean(recognizer.supportsOnDeviceRecognition?.() && recognizer.supportsAudioChunkEvents?.() &&
+      (Platform.OS === 'ios' || (Platform.OS === 'android' && Platform.Version >= ANDROID_CONTINUOUS_API)));
+  }
+
+  /** Voice conversations reserve the existing microphone across listen/reply turns. */
+  reserve(owner: string): boolean {
+    if (this.current || this.reservation) return false;
+    this.reservation = owner;
+    return true;
+  }
+
+  releaseReservation(owner: string): void {
+    if (this.reservation !== owner) return;
+    this.reservation = null;
+    if (!this.current) setSpeechInputActive(false);
+  }
+
   async start(request: Request): Promise<void> {
-    if (this.current || (Platform.OS !== 'android' && Platform.OS !== 'ios')) return;
+    if (this.current || (this.reservation && this.reservation !== request.owner) ||
+        (Platform.OS !== 'android' && Platform.OS !== 'ios')) return;
     const session: Session = {
       request, subscriptions: [], android: Platform.OS === 'android',
       started: false, cancelled: false, stopping: false, ending: false,
@@ -124,7 +166,7 @@ export class ComposerSpeechInput {
     this.current = session;
     this.publish({ owner: request.owner, phase: 'preparing', interimText: '' });
     session.subscriptions.push(AppState.addEventListener('change', state => {
-      if (state === 'background') this.cancel(request.owner);
+      if (state === 'background' && !request.managedCall) this.cancel(request.owner);
     }));
     // Freeze view context at the tap, alongside the existing draft.
     const context = boundedContext(request.context);
@@ -132,6 +174,11 @@ export class ComposerSpeechInput {
       const dependencies = await this.load();
       if (this.current !== session) return;
       const { recognizer } = dependencies;
+      if (request.localOnly && !this.supportsLocal(recognizer)) {
+        request.onError('unavailable', LOCAL_UNAVAILABLE);
+        this.release(session);
+        return;
+      }
       if (!recognizer.isRecognitionAvailable()) {
         request.onError('unavailable');
         this.release(session);
@@ -149,7 +196,9 @@ export class ComposerSpeechInput {
       }
       const recent = await context;
       if (this.current !== session) return;
-      const stoppedPlayback = dependencies.suspendPlayback();
+      // Only a reserved, local system call can capture alongside its own reply.
+      const monitoring = request.duringPlayback && request.localOnly && request.managedCall && this.reservation === request.owner;
+      const stoppedPlayback = monitoring ? Promise.resolve() : dependencies.suspendPlayback();
       setSpeechInputActive(true);
       await stoppedPlayback;
       if (this.current !== session) return;
@@ -183,12 +232,17 @@ export class ComposerSpeechInput {
           if (!session.stopping) clearTimeout(session.timeout);
           if (session.android && !session.stopping &&
               (EMPTY_ERRORS.has(event.error) ||
-                (session.options!.continuous && CONTINUOUS_ERRORS.has(event.error)))) {
+                (!request.localOnly && session.options!.continuous && CONTINUOUS_ERRORS.has(event.error)))) {
             this.disableContinuous(session);
             return;
           }
-          if (!session.stopping || !EMPTY_ERRORS.has(event.error)) {
-            request.onError(ERROR_REASONS[event.error] || 'failed');
+          // An injected-audio provider may report cancellation while draining a
+          // deliberate stop. Keep its finalized segment (or pending hypothesis).
+          const stoppedLocalClient = session.android && request.localOnly && session.stopping && event.error === 'client';
+          if (!stoppedLocalClient && (!session.stopping || !EMPTY_ERRORS.has(event.error))) {
+            const reason = ERROR_REASONS[event.error] || 'failed';
+            if (request.localOnly) request.onError(reason, event.message);
+            else request.onError(reason);
           }
           // Keep ownership until end, which the native API emits after errors.
           // A manual stop still drains its pending hypothesis on error.
@@ -219,15 +273,22 @@ export class ComposerSpeechInput {
           this.release(session);
         }),
       );
+      if (request.onAudio) session.subscriptions.push(recognizer.addListener('audiochunk', event => {
+        if (this.current === session && event.token === session.audioToken &&
+            !session.cancelled && !session.stopping && !session.ending) request.onAudio?.(event.pcm);
+      }));
       session.options = {
         lang: dependencies.locale,
         interimResults: true,
         maxAlternatives: 1,
-        continuous: !session.android ||
+        continuous: request.localOnly || !session.android ||
           (Number(Platform.Version) >= ANDROID_CONTINUOUS_API && !this.androidContinuousFailed),
         contextualStrings: dependencies.context(request.draft, recent),
         iosTaskHint: 'dictation',
         recordingOptions: { persist: false },
+        ...(request.localOnly ? { requiresOnDeviceRecognition: true, audioChunkEvents: true } : {}),
+        ...(request.managedCall ? { iosAudioSessionManaged: true, iosVoiceProcessingEnabled: true } : {}),
+        ...(monitoring ? { androidEchoCancellation: true } : {}),
       };
       this.startRecognition(session);
     } catch {
@@ -282,7 +343,8 @@ export class ComposerSpeechInput {
       if (this.current !== session || session.cancelled || session.ending) return;
       if (!this.fallback(session)) this.fail(session);
     }, FINAL_RESULT_TIMEOUT_MS);
-    try { session.dependencies!.recognizer.start({ ...session.options! }); } catch {
+    session.audioToken = `${session.request.owner}:${++this.nextAudioToken}`;
+    try { session.dependencies!.recognizer.start({ ...session.options!, ...(session.request.onAudio ? { audioChunkToken: session.audioToken } : {}) }); } catch {
       if (!this.fallback(session)) this.fail(session);
     }
   }
@@ -290,7 +352,7 @@ export class ComposerSpeechInput {
   /** Downgrade the injected-audio path once, then let the service own the mic.
    * Restart only after end: Expo's events do not carry native session IDs. */
   private fallback(session: Session): boolean {
-    if (!session.android || !session.options!.continuous || session.stopping) return false;
+    if (session.request.localOnly || !session.android || !session.options!.continuous || session.stopping) return false;
     this.disableContinuous(session);
     session.ending = true;
     clearTimeout(session.timeout);
@@ -299,6 +361,7 @@ export class ComposerSpeechInput {
   }
 
   private disableContinuous(session: Session): void {
+    if (session.request.localOnly) return;
     if (!session.options!.continuous) return;
     session.options!.continuous = false;
     this.androidContinuousFailed = true;
@@ -327,7 +390,7 @@ export class ComposerSpeechInput {
     clearTimeout(session.restart);
     for (const subscription of session.subscriptions) subscription.remove();
     session.core?.dispose();
-    setSpeechInputActive(false);
+    if (!this.reservation) setSpeechInputActive(false);
     this.publish(IDLE);
   }
 

@@ -1,6 +1,13 @@
 import type { en } from './en';
 
 export const fr = {
+  'voiceChat.vadSensitivity': "Sensibilité VAD",
+  'voiceChat.vadSensitivityDescription': "Une sensibilité élevée détecte les voix plus douces. Une sensibilité faible filtre davantage le bruit ambiant. S’applique au chat vocal et à l’interruption des réponses.",
+  'voiceChat.smartTurn': "Smart Turn (facultatif)",
+  'voiceChat.smartTurnDescription': "Détecte la fin de votre prise de parole. Sans ce modèle, le chat vocal utilise la détection de silence. Téléchargement unique : 32 Mo.",
+  'voiceChat.smartTurnInstalled': "Installé · disponible hors ligne",
+  'voiceChat.smartTurnProgress': "Téléchargement : {{progress}} %",
+  'voiceChat.compose': "Demander à {{agent}}",
   'voiceChat.starting': "Démarrage de l’appel vocal…",
   'voiceChat.minimize': "Réduire le chat vocal",
   'voiceChat.reopen': "Revenir au chat vocal",

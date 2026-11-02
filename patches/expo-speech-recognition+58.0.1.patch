@@ -1,0 +1,425 @@
+diff --git a/node_modules/expo-speech-recognition/android/src/main/java/expo/modules/speechrecognition/ExpoAudioRecorder.kt b/node_modules/expo-speech-recognition/android/src/main/java/expo/modules/speechrecognition/ExpoAudioRecorder.kt
+index ae17503..7873eef 100644
+--- a/node_modules/expo-speech-recognition/android/src/main/java/expo/modules/speechrecognition/ExpoAudioRecorder.kt
++++ b/node_modules/expo-speech-recognition/android/src/main/java/expo/modules/speechrecognition/ExpoAudioRecorder.kt
+@@ -33,8 +33,11 @@ class ExpoAudioRecorder(
+     private val context: Context,
+     // Optional output file path
+     private val outputFilePath: String?,
++    private val onAudioChunk: ((String) -> Unit)? = null,
++    private val echoCancellation: Boolean = false,
+ ) : AudioRecorder {
+     private var audioRecorder: AudioRecord? = null
++    private var echoCanceler: android.media.audiofx.AcousticEchoCanceler? = null
+ 
+     var outputFile: File? = null
+     val outputFileUri = outputFilePath?.let { "file://$it" }
+@@ -63,7 +66,7 @@ class ExpoAudioRecorder(
+     private val bufferSizeInBytes = AudioRecord.getMinBufferSize(sampleRateInHz, channelConfig, audioFormat)
+ 
+     private var recordingThread: Thread? = null
+-    private var isRecordingAudio = false
++    @Volatile private var isRecordingAudio = false
+ 
+     /** Epoch milliseconds when the microphone stopped */
+     var stoppedAtMillis: Long? = null
+@@ -138,7 +141,8 @@ class ExpoAudioRecorder(
+     @SuppressLint("MissingPermission")
+     private fun createRecorder(): AudioRecord =
+         AudioRecord(
+-            MediaRecorder.AudioSource.VOICE_RECOGNITION,
++            if (context.getSystemService(android.media.AudioManager::class.java).mode == android.media.AudioManager.MODE_IN_COMMUNICATION)
++                MediaRecorder.AudioSource.VOICE_COMMUNICATION else MediaRecorder.AudioSource.VOICE_RECOGNITION,
+             sampleRateInHz,
+             channelConfig,
+             AudioFormat.ENCODING_PCM_16BIT,
+@@ -154,7 +158,20 @@ class ExpoAudioRecorder(
+                 return
+             }
+ 
+-            this.startRecording()
++            try {
++                if (echoCancellation) {
++                    echoCanceler = checkNotNull(android.media.audiofx.AcousticEchoCanceler.create(audioSessionId)) {
++                        "Echo cancellation is unavailable for voice interruption."
++                    }
++                    check(echoCanceler!!.setEnabled(true) == android.media.audiofx.AudioEffect.SUCCESS) {
++                        "Echo cancellation could not be enabled."
++                    }
++                }
++                this.startRecording()
++            } catch (error: Exception) {
++                stop()
++                throw error
++            }
+             isRecordingAudio = true
+ 
+             // Start thread
+@@ -167,8 +184,10 @@ class ExpoAudioRecorder(
+ 
+     override fun stop() {
+         isRecordingAudio = false
+-        audioRecorder?.stop()
++        if (audioRecorder?.recordingState == AudioRecord.RECORDSTATE_RECORDING) audioRecorder?.stop()
+         stoppedAtMillis = System.currentTimeMillis()
++        echoCanceler?.release()
++        echoCanceler = null
+         audioRecorder?.release()
+         audioRecorder = null
+         recordingThread = null
+@@ -203,6 +222,7 @@ class ExpoAudioRecorder(
+     private fun streamAudioToPipe() {
+         val tempFileOutputStream = FileOutputStream(tempPcmFile)
+         val data = ByteArray(bufferSizeInBytes)
++        val pending = java.io.ByteArrayOutputStream()
+ 
+         while (isRecordingAudio) {
+             val recorder = audioRecorder ?: break
+@@ -218,6 +238,13 @@ class ExpoAudioRecorder(
+             when {
+                 read > 0 -> {
+                     try {
++                        if (onAudioChunk != null && isRecordingAudio) {
++                            pending.write(data, 0, read)
++                            if (pending.size() >= 4096) {
++                                onAudioChunk.invoke(android.util.Base64.encodeToString(pending.toByteArray(), android.util.Base64.NO_WRAP))
++                                pending.reset()
++                            }
++                        }
+                         outputStream?.write(data, 0, read)
+                         outputStream?.flush()
+ 
+diff --git a/node_modules/expo-speech-recognition/android/src/main/java/expo/modules/speechrecognition/ExpoSpeechRecognitionModule.kt b/node_modules/expo-speech-recognition/android/src/main/java/expo/modules/speechrecognition/ExpoSpeechRecognitionModule.kt
+index 25786d5..0ee8d14 100644
+--- a/node_modules/expo-speech-recognition/android/src/main/java/expo/modules/speechrecognition/ExpoSpeechRecognitionModule.kt
++++ b/node_modules/expo-speech-recognition/android/src/main/java/expo/modules/speechrecognition/ExpoSpeechRecognitionModule.kt
+@@ -96,6 +96,7 @@ class ExpoSpeechRecognitionModule : Module() {
+                 "languagedetection",
+                 // Fired when the input volume changes
+                 "volumechange",
++                "audiochunk",
+             )
+ 
+             Function("getDefaultRecognitionService") {
+@@ -237,6 +238,9 @@ class ExpoSpeechRecognitionModule : Module() {
+                 SpeechRecognizer.isRecognitionAvailable(appContext.reactContext!!)
+             }
+ 
++            Function("supportsAudioChunkEvents") { Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU }
++            Function("supportsEchoCancellation") { android.media.audiofx.AcousticEchoCanceler.isAvailable() }
++
+             Function("supportsRecording") {
+                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+             }
+diff --git a/node_modules/expo-speech-recognition/android/src/main/java/expo/modules/speechrecognition/ExpoSpeechRecognitionOptions.kt b/node_modules/expo-speech-recognition/android/src/main/java/expo/modules/speechrecognition/ExpoSpeechRecognitionOptions.kt
+index 6832c29..d60d994 100644
+--- a/node_modules/expo-speech-recognition/android/src/main/java/expo/modules/speechrecognition/ExpoSpeechRecognitionOptions.kt
++++ b/node_modules/expo-speech-recognition/android/src/main/java/expo/modules/speechrecognition/ExpoSpeechRecognitionOptions.kt
+@@ -26,6 +26,15 @@ class SpeechRecognitionOptions : Record {
+     @Field
+     var requiresOnDeviceRecognition: Boolean? = false
+ 
++    @Field
++    val audioChunkEvents: Boolean = false
++
++    @Field
++    val androidEchoCancellation: Boolean = false
++
++    @Field
++    val audioChunkToken: String = ""
++
+     @Field
+     var addsPunctuation: Boolean? = false
+ 
+diff --git a/node_modules/expo-speech-recognition/android/src/main/java/expo/modules/speechrecognition/ExpoSpeechService.kt b/node_modules/expo-speech-recognition/android/src/main/java/expo/modules/speechrecognition/ExpoSpeechService.kt
+index 4a0604a..e1b0038 100644
+--- a/node_modules/expo-speech-recognition/android/src/main/java/expo/modules/speechrecognition/ExpoSpeechService.kt
++++ b/node_modules/expo-speech-recognition/android/src/main/java/expo/modules/speechrecognition/ExpoSpeechService.kt
+@@ -95,6 +95,7 @@ class ExpoSpeechService(
+                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && options.requiresOnDeviceRecognition == true -> {
+                     SpeechRecognizer.createOnDeviceSpeechRecognizer(reactContext)
+                 }
++                options.requiresOnDeviceRecognition == true -> throw IllegalStateException("On-device recognition requires Android 13 or later")
+                 // Custom service package, e.g. "com.google.android.googlequicksearchbox"
+                 // Note: requires to be listed in AppManifest <queries> for this intent (android.speech.RecognitionService)
+                 // Otherwise it will throw "Bind to system recognition service failed with error 10"
+@@ -208,7 +209,14 @@ class ExpoSpeechService(
+         mainHandler.post {
+             recognitionState = RecognitionState.STOPPING
+             try {
+-                speech?.stopListening()
++                if (options.audioChunkEvents && options.continuous == true && audioRecorder != null) {
++                    // EXTRA_AUDIO_SOURCE segmented sessions finish at EOF. stopListening()
++                    // cancels Google's injected-audio reader with ERROR_CLIENT instead.
++                    log("Finishing segmented audio by closing source")
++                    stopRecording()
++                } else {
++                    speech?.stopListening()
++                }
+             } catch (e: Exception) {
+                 // do nothing
+             }
+@@ -294,7 +302,9 @@ class ExpoSpeechService(
+             } else if (options.continuous == true) {
+                 // Feature: Continuous transcription from microphone using `RecognizerIntent.EXTRA_AUDIO_SOURCE`
+                 // This also has the side effect of not playing the "beep" sound when starting and stopping recognition
+-                audioRecorder = ExpoAudioRecorder(reactContext, null)
++                audioRecorder = ExpoAudioRecorder(reactContext, null,
++                    if (options.audioChunkEvents) { pcm: String -> sendEvent("audiochunk", mapOf("pcm" to pcm, "token" to options.audioChunkToken)) } else null,
++                    options.androidEchoCancellation)
+             }
+ 
+             // Set common intent extras if audioRecorder is initialized
+@@ -688,7 +698,7 @@ class ExpoSpeechService(
+         log("onSegmentResults(), transcriptions: $resultsList")
+ 
+         // If the user opted to stop
+-        if (recognitionState == RecognitionState.STOPPING) {
++        if (recognitionState == RecognitionState.STOPPING && !options.audioChunkEvents) {
+             teardownAndEnd()
+         }
+     }
+diff --git a/node_modules/expo-speech-recognition/build/ExpoSpeechRecognitionModule.types.d.ts b/node_modules/expo-speech-recognition/build/ExpoSpeechRecognitionModule.types.d.ts
+index 4643d99..c64f024 100644
+--- a/node_modules/expo-speech-recognition/build/ExpoSpeechRecognitionModule.types.d.ts
++++ b/node_modules/expo-speech-recognition/build/ExpoSpeechRecognitionModule.types.d.ts
+@@ -167,7 +167,8 @@ export type ExpoSpeechRecognitionNativeEventMap = {
+     soundstart: null;
+     soundend: null;
+     languagedetection: LanguageDetectionEvent;
+-    volumechange: {
++    audiochunk: { pcm: string; token: string };
++  volumechange: {
+         /**
+          * A float value between -2 and 10 indicating the volume of the input audio
+          *
+@@ -207,6 +208,12 @@ export type ExpoSpeechRecognitionOptions = {
+      * Use `getSupportedLocales()` to verify if the locale is installed on the device prior to enabling this option.
+      */
+     requiresOnDeviceRecognition?: boolean;
++  /** Whip: emit 16 kHz mono PCM16LE packets from the existing capture stream. */
++  audioChunkEvents?: boolean;
++  androidEchoCancellation?: boolean;
++  audioChunkToken?: string;
++  /** CallKit owns audio activation and routing for this request. */
++  iosAudioSessionManaged?: boolean;
+     /**
+      * [Default: false] Include punctuation in the recognition results. This applies to full stops and commas.
+      *
+@@ -665,6 +672,8 @@ export declare class ExpoSpeechRecognitionModuleType extends NativeModule<ExpoSp
+      * Whether the on-device speech recognition is available on the device.
+      */
+     supportsOnDeviceRecognition(): boolean;
++  supportsAudioChunkEvents(): boolean;
++  supportsEchoCancellation(): boolean;
+     /**
+      * Whether the recording feature is available on the device.
+      *
+diff --git a/node_modules/expo-speech-recognition/ios/ExpoSpeechRecognitionModule.swift b/node_modules/expo-speech-recognition/ios/ExpoSpeechRecognitionModule.swift
+index 9dc9082..96bcdaf 100644
+--- a/node_modules/expo-speech-recognition/ios/ExpoSpeechRecognitionModule.swift
++++ b/node_modules/expo-speech-recognition/ios/ExpoSpeechRecognitionModule.swift
+@@ -101,7 +101,8 @@ public class ExpoSpeechRecognitionModule: Module {
+       // Called when the language detection (and switching) results are available.
+       "languagedetection",
+       // Fired when the input volume changes
+-      "volumechange"
++      "volumechange",
++      "audiochunk"
+     )
+ 
+     OnCreate {
+@@ -256,6 +257,9 @@ public class ExpoSpeechRecognitionModule: Module {
+                 self?.sendEvent("audioend", ["uri": nil, "timestamp": timestamp])
+               }
+             },
++            audioChunkHandler: { [weak self] pcm, token in
++              self?.sendEvent("audiochunk", ["pcm": pcm, "token": token])
++            },
+             volumeChangeHandler: { [weak self] value in
+               self?.sendEvent("volumechange", ["value": value])
+             }
+@@ -354,6 +358,9 @@ public class ExpoSpeechRecognitionModule: Module {
+       return recognizer?.supportsOnDeviceRecognition ?? false
+     }
+ 
++    Function("supportsAudioChunkEvents") { true }
++    Function("supportsEchoCancellation") { true }
++
+     Function("supportsRecording") { () -> Bool in
+       return true
+     }
+diff --git a/node_modules/expo-speech-recognition/ios/ExpoSpeechRecognizer.swift b/node_modules/expo-speech-recognition/ios/ExpoSpeechRecognizer.swift
+index b278425..cb08d3e 100644
+--- a/node_modules/expo-speech-recognition/ios/ExpoSpeechRecognizer.swift
++++ b/node_modules/expo-speech-recognition/ios/ExpoSpeechRecognizer.swift
+@@ -50,6 +50,7 @@ actor ExpoSpeechRecognizer: ObservableObject {
+ 
+   @MainActor var endHandler: (() -> Void)?
+   @MainActor var audioEndHandler: ((String?, Double) -> Void)?
++  @MainActor var audioChunkHandler: ((String, String) -> Void)?
+   @MainActor var volumeChangeHandler: ((Float) -> Void)?
+   @MainActor var errorHandler: ((Error) -> Void)?
+ 
+@@ -133,11 +134,13 @@ actor ExpoSpeechRecognizer: ObservableObject {
+     speechStartHandler: @escaping (() -> Void),
+     audioStartHandler: @escaping (String?, Double) -> Void,
+     audioEndHandler: @escaping (String?, Double) -> Void,
++    audioChunkHandler: @escaping (String, String) -> Void,
+     volumeChangeHandler: @escaping (Float) -> Void
+   ) {
+     self.endHandler = endHandler
+     self.audioEndHandler = audioEndHandler
+     self.volumeChangeHandler = volumeChangeHandler
++    self.audioChunkHandler = audioChunkHandler
+     self.errorHandler = errorHandler
+     Task {
+       await startRecognizer(
+@@ -221,6 +224,11 @@ actor ExpoSpeechRecognizer: ObservableObject {
+       return
+     }
+ 
++    guard !options.requiresOnDeviceRecognition || recognizer.supportsOnDeviceRecognition else {
++      errorHandler(RecognizerError.recognizerIsUnavailable)
++      reset(andEmitEnd: true)
++      return
++    }
+     do {
+       let request = Self.prepareRequest(
+         options: options,
+@@ -338,7 +346,7 @@ actor ExpoSpeechRecognizer: ObservableObject {
+     request: SFSpeechRecognitionRequest,
+     options: SpeechRecognitionOptions
+   ) throws {
+-    try Self.setupAudioSession(options.iosCategory)
++    if !options.iosAudioSessionManaged { try Self.setupAudioSession(options.iosCategory) }
+     registerAudioSessionObservers()
+     self.audioEngine = AVAudioEngine()
+ 
+@@ -392,6 +400,9 @@ actor ExpoSpeechRecognizer: ObservableObject {
+       options: options,
+       request: request,
+       audioFileRef: self.audioFileRef,
++      audioChunkHandler: { pcm, token in
++        Task { @MainActor in self.audioChunkHandler?(pcm, token) }
++      },
+       volumeChangeHandler: { volume in
+         Task { @MainActor in
+           self.volumeChangeHandler?(volume)
+@@ -645,6 +656,7 @@ actor ExpoSpeechRecognizer: ObservableObject {
+     options: SpeechRecognitionOptions,
+     request: SFSpeechRecognitionRequest,
+     audioFileRef: ExtAudioFileRef?,
++    audioChunkHandler: ((String, String) -> Void)?,
+     volumeChangeHandler: ((Float) -> Void)?
+   ) throws {
+     guard let audioBufferRequest = request as? SFSpeechAudioBufferRecognitionRequest else {
+@@ -669,6 +681,10 @@ actor ExpoSpeechRecognizer: ObservableObject {
+       // converter?.channelMap = [0]
+     }
+ 
++    let chunkFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)!
++    let chunkConverter = options.audioChunkEvents ? AVAudioConverter(from: audioFormat, to: chunkFormat) : nil
++    let pendingChunks = NSMutableData()
++    if options.audioChunkEvents && chunkConverter == nil { throw RecognizerError.invalidAudioSource }
+     mixerNode.installTap(
+       onBus: 0,
+       bufferSize: 1024,
+@@ -676,6 +692,24 @@ actor ExpoSpeechRecognizer: ObservableObject {
+     ) {
+       (buffer: AVAudioPCMBuffer, when: AVAudioTime) in
+       audioBufferRequest.append(buffer)
++      if let chunkConverter = chunkConverter {
++        let capacity = AVAudioFrameCount(ceil(Double(buffer.frameLength) * 16000 / audioFormat.sampleRate)) + 32
++        if let converted = AVAudioPCMBuffer(pcmFormat: chunkFormat, frameCapacity: capacity) {
++          var supplied = false
++          var conversionError: NSError?
++          let status = chunkConverter.convert(to: converted, error: &conversionError) { _, inputStatus in
++            if supplied { inputStatus.pointee = .noDataNow; return nil }
++            supplied = true; inputStatus.pointee = .haveData; return buffer
++          }
++          if status != .error, let samples = converted.int16ChannelData {
++            pendingChunks.append(samples[0], length: Int(converted.frameLength) * 2)
++            if pendingChunks.length >= 4096 {
++              audioChunkHandler?(pendingChunks.base64EncodedString(options: []), options.audioChunkToken)
++              pendingChunks.length = 0
++            }
++          }
++        }
++      }
+ 
+       // Feature: Record to a file
+       guard let audioFileRef = audioFileRef else {
+@@ -772,7 +806,7 @@ actor ExpoSpeechRecognizer: ObservableObject {
+       // App deactivation can emit a route change while the audio session is
+       // being torn down. In that case we should stop recognition instead of
+       // trying to reconnect the engine again.
+-      guard appState == .active else {
++      guard appState == .active || options?.iosAudioSessionManaged == true else {
+         emitError(.audioSessionInterrupted)
+         stopListening()
+         reset(andEmitEnd: true)
+@@ -819,6 +853,9 @@ actor ExpoSpeechRecognizer: ObservableObject {
+         options: options,
+         request: request,
+         audioFileRef: self.audioFileRef,
++        audioChunkHandler: { pcm, token in
++          Task { @MainActor in self.audioChunkHandler?(pcm, token) }
++        },
+         volumeChangeHandler: { volume in
+           Task { @MainActor in
+             self.volumeChangeHandler?(volume)
+diff --git a/node_modules/expo-speech-recognition/ios/SpeechRecognitionOptions.swift b/node_modules/expo-speech-recognition/ios/SpeechRecognitionOptions.swift
+index d38a050..8db6285 100644
+--- a/node_modules/expo-speech-recognition/ios/SpeechRecognitionOptions.swift
++++ b/node_modules/expo-speech-recognition/ios/SpeechRecognitionOptions.swift
+@@ -20,6 +20,15 @@ struct SpeechRecognitionOptions: Record {
+   @Field
+   var requiresOnDeviceRecognition: Bool = false
+ 
++  @Field
++  var audioChunkEvents: Bool = false
++
++  @Field
++  var audioChunkToken: String = ""
++
++  @Field
++  var iosAudioSessionManaged: Bool = false
++
+   @Field
+   var addsPunctuation: Bool = false
+ 
+diff --git a/node_modules/expo-speech-recognition/src/ExpoSpeechRecognitionModule.types.ts b/node_modules/expo-speech-recognition/src/ExpoSpeechRecognitionModule.types.ts
+index 4a55ac7..f5ad549 100644
+--- a/node_modules/expo-speech-recognition/src/ExpoSpeechRecognitionModule.types.ts
++++ b/node_modules/expo-speech-recognition/src/ExpoSpeechRecognitionModule.types.ts
+@@ -187,6 +187,7 @@ export type ExpoSpeechRecognitionNativeEventMap = {
+   soundstart: null;
+   soundend: null;
+   languagedetection: LanguageDetectionEvent;
++  audiochunk: { pcm: string; token: string };
+   volumechange: {
+     /**
+      * A float value between -2 and 10 indicating the volume of the input audio
+@@ -228,6 +229,12 @@ export type ExpoSpeechRecognitionOptions = {
+    * Use `getSupportedLocales()` to verify if the locale is installed on the device prior to enabling this option.
+    */
+   requiresOnDeviceRecognition?: boolean;
++  /** Whip: emit 16 kHz mono PCM16LE packets from the existing capture stream. */
++  audioChunkEvents?: boolean;
++  androidEchoCancellation?: boolean;
++  audioChunkToken?: string;
++  /** CallKit owns audio activation and routing for this request. */
++  iosAudioSessionManaged?: boolean;
+   /**
+    * [Default: false] Include punctuation in the recognition results. This applies to full stops and commas.
+    *
+@@ -711,6 +718,8 @@ export declare class ExpoSpeechRecognitionModuleType extends NativeModule<ExpoSp
+    * Whether the on-device speech recognition is available on the device.
+    */
+   supportsOnDeviceRecognition(): boolean;
++  supportsAudioChunkEvents(): boolean;
++  supportsEchoCancellation(): boolean;
+   /**
+    * Whether the recording feature is available on the device.
+    *

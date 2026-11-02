@@ -1,4 +1,11 @@
 export const ja = {
+  'voiceChat.vadSensitivity': "VAD感度",
+  'voiceChat.vadSensitivityDescription': "感度を上げると小さな声を検出しやすくなります。下げると周囲の雑音を拾いにくくなります。音声チャットと応答の割り込みに適用されます。",
+  'voiceChat.smartTurn': "Smart Turn（任意）",
+  'voiceChat.smartTurnDescription': "発話の終了を検出します。未導入でも無音検出で音声チャットを利用できます。初回ダウンロード：32 MB。",
+  'voiceChat.smartTurnInstalled': "インストール済み・オフラインで利用可能",
+  'voiceChat.smartTurnProgress': "ダウンロード中 {{progress}}%",
+  'voiceChat.compose': "{{agent}} に質問",
   'voiceChat.starting': "音声通話を開始中…",
   'voiceChat.minimize': "音声チャットを最小化",
   'voiceChat.reopen': "音声チャットに戻る",

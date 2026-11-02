@@ -1,4 +1,11 @@
 export const zhHans = {
+  'voiceChat.vadSensitivity': "VAD 灵敏度",
+  'voiceChat.vadSensitivityDescription': "提高灵敏度可检测更轻的说话声，降低灵敏度可过滤更多背景噪音。适用于语音聊天和打断回复。",
+  'voiceChat.smartTurn': "Smart Turn（可选）",
+  'voiceChat.smartTurnDescription': "检测您是否已说完。不安装也可使用静音检测进行语音聊天。一次性下载：32 MB。",
+  'voiceChat.smartTurnInstalled': "已安装 · 可离线使用",
+  'voiceChat.smartTurnProgress': "下载中 {{progress}}%",
+  'voiceChat.compose': "询问 {{agent}}",
   'voiceChat.starting': "正在启动语音通话…",
   'voiceChat.minimize': "最小化语音聊天",
   'voiceChat.reopen': "返回语音聊天",

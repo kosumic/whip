@@ -2179,6 +2179,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           <Suspense fallback={null}>
             <VoiceChatScreen target={voiceChatTarget} send={text => activeTargetRef.current?.key === activeTarget?.key && enqueueComposeMessage(text, [])}
               visible={visible} expanded={voiceChatExpanded} floatingStyle={voiceChatFloatingStyle}
+              onCompose={openCompose} onAttach={() => onRequestAttachment?.()}
               onMinimize={() => setVoiceChatExpanded(false)} onExpand={openVoiceChat} onClose={() => setVoiceChatOpen(null)} />
           </Suspense>
         )}
