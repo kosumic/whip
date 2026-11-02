@@ -109,7 +109,7 @@ function WorkspacePill({
   return (
     <View
       className={cn(
-        'h-11 max-w-[190px] flex-row items-center rounded-full',
+        'h-11 max-w-[190px] flex-row items-center overflow-hidden rounded-full',
         isIpad && 'max-w-[240px]',
         appGlassEnabled && 'border',
         !appGlassEnabled && 'bg-muted',
@@ -117,7 +117,7 @@ function WorkspacePill({
         !appGlassEnabled && active && 'bg-primary',
       )}
       style={appGlassEnabled ? appGlassControlStyle(active, colors) : undefined}>
-      <RailItemButton label={label} accessibilityLabel={t('rail.workspaceStatus', { workspace: label, status })} accessibilityRole="radio" accessibilityState={{ selected: active }} className={cn('h-11 min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2.5 py-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent', isIpad && 'gap-2 px-3')} variant="ghost" onPress={onPress}
+      <RailItemButton label={label} accessibilityLabel={t('rail.workspaceStatus', { workspace: label, status })} accessibilityRole="radio" accessibilityState={{ selected: active }} className={cn('h-11 justify-start gap-1.5 rounded-none px-2.5 py-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent', isIpad && 'gap-2 px-3')} variant="ghost" onPress={onPress}
         actionsDisabled={busy}
         actions={[
           ...(onNew ? [{ id: RailAction.NewWorkspace, accessibilityLabel: t('rail.newWorkspace'), onPress: onNew }] : []),
@@ -128,9 +128,9 @@ function WorkspacePill({
         {aggregate ? (
           <Layers3 size={isIpad ? 19 : 15} color={active ? (appGlassEnabled ? colors.primary : colors.onPrimary) : colors.text} />
         ) : (
-          <Text numberOfLines={1} className={cn('shrink pb-0.5 text-[11px] font-semibold leading-[18px] text-muted-foreground', isIpad && 'text-[17px] leading-6', activeTextClass)}>{label}</Text>
+          <Text numberOfLines={1} ellipsizeMode="tail" className={cn('min-w-0 shrink pb-0.5 text-[11px] font-semibold leading-[18px] text-muted-foreground', isIpad && 'text-[17px] leading-6', activeTextClass)}>{label}</Text>
         )}
-        <Text className={cn('font-mono text-[8px] leading-[18px] text-muted-foreground', isIpad && 'text-[13px] leading-6', activeTextClass)}>{count}</Text>
+        <Text numberOfLines={1} className={cn('shrink-0 font-mono text-[8px] leading-[18px] text-muted-foreground', isIpad && 'text-[13px] leading-6', activeTextClass)}>{count}</Text>
       </RailItemButton>
     </View>
   );

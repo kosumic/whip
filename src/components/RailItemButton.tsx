@@ -7,6 +7,7 @@ import { Modal, Platform, Pressable, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { APP_FROSTED_GLASS_SURFACE_PROPS } from '../lib/appGlass';
+import { cn } from '../lib/utils';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { useTheme } from '../theme';
 import { hapticPress } from './app-ui';
@@ -48,7 +49,7 @@ type Props = Omit<ButtonProps, 'onPress' | 'onPressIn' | 'onLongPress' | 'access
   onPress: () => unknown;
 };
 
-export function RailItemButton({ label, actions = EMPTY_ACTIONS, actionsDisabled = false, onPress, disabled, children, ...props }: Props) {
+export function RailItemButton({ label, actions = EMPTY_ACTIONS, actionsDisabled = false, onPress, disabled, children, className, ...props }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -110,6 +111,7 @@ export function RailItemButton({ label, actions = EMPTY_ACTIONS, actionsDisabled
     <>
       <Button
         {...props}
+        className={cn('min-w-0 max-w-full shrink', className)}
         disabled={disabled}
         accessibilityHint={canOpen ? t('rail.actionsHint') : undefined}
         accessibilityActions={canOpen ? [
