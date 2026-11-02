@@ -933,6 +933,22 @@ void uniffi_whip_ssh_fn_method_knownhostrepository_close(
     /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
 RustBuffer uniffi_whip_ssh_fn_method_knownhostrepository_view(
     /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
+/*handle*/ uint64_t uniffi_whip_ssh_fn_clone_automaticchatspeechqueue(
+    /*handle*/ uint64_t handle, RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_free_automaticchatspeechqueue(
+    /*handle*/ uint64_t handle, RustCallStatus *uniffi_out_err);
+/*handle*/ uint64_t uniffi_whip_ssh_fn_constructor_automaticchatspeechqueue_new(
+    RustCallStatus *uniffi_out_err);
+RustBuffer uniffi_whip_ssh_fn_method_automaticchatspeechqueue_next(
+    /*handle*/ uint64_t ptr, uint64_t now_ms, RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_method_automaticchatspeechqueue_remove(
+    /*handle*/ uint64_t ptr, RustBuffer key, RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_method_automaticchatspeechqueue_reset(
+    /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_method_automaticchatspeechqueue_update(
+    /*handle*/ uint64_t ptr, RustBuffer key, RustBuffer agent,
+    RustBuffer tab_name, int8_t live, int8_t baseline, RustBuffer messages,
+    uint64_t now_ms, RustCallStatus *uniffi_out_err);
 /*handle*/ uint64_t uniffi_whip_ssh_fn_clone_browserlibrary(
     /*handle*/ uint64_t handle, RustCallStatus *uniffi_out_err);
 void uniffi_whip_ssh_fn_free_browserlibrary(
@@ -1735,12 +1751,16 @@ RustBuffer
 uniffi_whip_ssh_fn_func_evaluate_app_update(RustBuffer installed_version,
                                             RustBuffer release_json,
                                             RustCallStatus *uniffi_out_err);
+RustBuffer uniffi_whip_ssh_fn_func_chat_speech_announcement(
+    RustBuffer tab_name, RustBuffer text, RustCallStatus *uniffi_out_err);
 RustBuffer uniffi_whip_ssh_fn_func_billing_rollout_policy(
     RustBuffer channel, int8_t developer_options_requested,
     RustCallStatus *uniffi_out_err);
 RustBuffer
 uniffi_whip_ssh_fn_func_evaluate_billing_policy(RustBuffer input,
                                                 RustCallStatus *uniffi_out_err);
+int8_t uniffi_whip_ssh_fn_func_chat_speech_response_available(
+    RustBuffer agent, RustBuffer messages, RustCallStatus *uniffi_out_err);
 RustBuffer uniffi_whip_ssh_fn_func_append_composer_dictation(
     RustBuffer draft, RustBuffer text, RustCallStatus *uniffi_out_err);
 RustBuffer uniffi_whip_ssh_fn_func_composer_dictation_context(
@@ -2090,8 +2110,10 @@ uint16_t uniffi_whip_ssh_checksum_func_read_app_data();
 uint16_t uniffi_whip_ssh_checksum_func_select_legacy_app_data_keys();
 uint16_t uniffi_whip_ssh_checksum_func_write_app_data();
 uint16_t uniffi_whip_ssh_checksum_func_evaluate_app_update();
+uint16_t uniffi_whip_ssh_checksum_func_chat_speech_announcement();
 uint16_t uniffi_whip_ssh_checksum_func_billing_rollout_policy();
 uint16_t uniffi_whip_ssh_checksum_func_evaluate_billing_policy();
+uint16_t uniffi_whip_ssh_checksum_func_chat_speech_response_available();
 uint16_t uniffi_whip_ssh_checksum_func_append_composer_dictation();
 uint16_t uniffi_whip_ssh_checksum_func_composer_dictation_context();
 uint16_t uniffi_whip_ssh_checksum_func_prepare_chat_diff();
@@ -2320,6 +2342,10 @@ uint16_t uniffi_whip_ssh_checksum_method_knownhostoperation_result();
 uint16_t uniffi_whip_ssh_checksum_method_knownhostrepository_begin();
 uint16_t uniffi_whip_ssh_checksum_method_knownhostrepository_close();
 uint16_t uniffi_whip_ssh_checksum_method_knownhostrepository_view();
+uint16_t uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_next();
+uint16_t uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_remove();
+uint16_t uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_reset();
+uint16_t uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_update();
 uint16_t uniffi_whip_ssh_checksum_method_browserlibrary_add_shortcut();
 uint16_t uniffi_whip_ssh_checksum_method_browserlibrary_bookmark();
 uint16_t uniffi_whip_ssh_checksum_method_browserlibrary_bookmarks();
@@ -2581,6 +2607,7 @@ uint16_t uniffi_whip_ssh_checksum_constructor_notificationmanager_new();
 uint16_t uniffi_whip_ssh_checksum_constructor_sessionpersistence_new();
 uint16_t uniffi_whip_ssh_checksum_constructor_appcore_new();
 uint16_t uniffi_whip_ssh_checksum_constructor_knownhostrepository_new();
+uint16_t uniffi_whip_ssh_checksum_constructor_automaticchatspeechqueue_new();
 uint16_t uniffi_whip_ssh_checksum_constructor_browserlibrary_new();
 uint16_t uniffi_whip_ssh_checksum_constructor_browsersearchhistory_new();
 uint16_t uniffi_whip_ssh_checksum_constructor_agentchatrows_for_saved();
@@ -20236,6 +20263,92 @@ NativeWhipSsh::NativeWhipSsh(
             return this->cpp_uniffi_whip_ssh_fn_method_knownhostrepository_view(
                 rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_fn_clone_automaticchatspeechqueue"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_clone_automaticchatspeechqueue"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_clone_automaticchatspeechqueue(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_free_automaticchatspeechqueue"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_free_automaticchatspeechqueue"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_free_automaticchatspeechqueue(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_constructor_automaticchatspeechqueue_new"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_constructor_"
+                                        "automaticchatspeechqueue_new"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_constructor_automaticchatspeechqueue_new(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_next"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_next"),
+          2,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_next(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_remove"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_remove"),
+          2,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_remove(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_reset"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_reset"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_reset(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_update"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_update"),
+          8,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_update(
+                    rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_fn_clone_browserlibrary"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -24143,6 +24256,17 @@ NativeWhipSsh::NativeWhipSsh(
             return this->cpp_uniffi_whip_ssh_fn_func_evaluate_app_update(
                 rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_fn_func_chat_speech_announcement"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_func_chat_speech_announcement"),
+          2,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_func_chat_speech_announcement(
+                rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_fn_func_billing_rollout_policy"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -24164,6 +24288,19 @@ NativeWhipSsh::NativeWhipSsh(
                  const jsi::Value *args, size_t count) -> jsi::Value {
             return this->cpp_uniffi_whip_ssh_fn_func_evaluate_billing_policy(
                 rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_func_chat_speech_response_available"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_whip_ssh_fn_func_chat_speech_response_available"),
+          2,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_func_chat_speech_response_available(
+                    rt, thisVal, args, count);
           });
   props["ubrn_uniffi_whip_ssh_fn_func_append_composer_dictation"] =
       jsi::Function::createFromHostFunction(
@@ -25891,6 +26028,19 @@ NativeWhipSsh::NativeWhipSsh(
             return this->cpp_uniffi_whip_ssh_checksum_func_evaluate_app_update(
                 rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_checksum_func_chat_speech_announcement"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_whip_ssh_checksum_func_chat_speech_announcement"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_func_chat_speech_announcement(
+                    rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_checksum_func_billing_rollout_policy"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -25913,6 +26063,18 @@ NativeWhipSsh::NativeWhipSsh(
                  const jsi::Value *args, size_t count) -> jsi::Value {
             return this
                 ->cpp_uniffi_whip_ssh_checksum_func_evaluate_billing_policy(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_func_chat_speech_response_available"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_func_"
+                                        "chat_speech_response_available"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_func_chat_speech_response_available(
                     rt, thisVal, args, count);
           });
   props["ubrn_uniffi_whip_ssh_checksum_func_append_composer_dictation"] =
@@ -28357,6 +28519,54 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_checksum_method_knownhostrepository_view(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_next"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                        "automaticchatspeechqueue_next"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_next(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_"
+        "remove"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "automaticchatspeechqueue_remove"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_remove(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_reset"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                        "automaticchatspeechqueue_reset"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_reset(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_"
+        "update"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "automaticchatspeechqueue_update"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_update(
+                rt, thisVal, args, count);
+      });
   props["ubrn_uniffi_whip_ssh_checksum_method_browserlibrary_add_shortcut"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -31236,6 +31446,18 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_checksum_constructor_knownhostrepository_new(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_checksum_constructor_automaticchatspeechqueue_"
+        "new"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_constructor_"
+                                    "automaticchatspeechqueue_new"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_constructor_automaticchatspeechqueue_new(
+                rt, thisVal, args, count);
+      });
   props["ubrn_uniffi_whip_ssh_checksum_constructor_browserlibrary_new"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -31619,6 +31841,19 @@ NativeWhipSsh::NativeWhipSsh(
              const jsi::Value *args, size_t count) -> jsi::Value {
         return this
             ->cpp_uniffi_internal_fn_method_knownhostrepository_ffi__bless_pointer(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_internal_fn_method_automaticchatspeechqueue_ffi__bless_"
+        "pointer"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt,
+                                "ubrn_uniffi_internal_fn_method_"
+                                "automaticchatspeechqueue_ffi__bless_pointer"),
+      1,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_internal_fn_method_automaticchatspeechqueue_ffi__bless_pointer(
                 rt, thisVal, args, count);
       });
   props["ubrn_uniffi_internal_fn_method_browserlibrary_ffi__bless_pointer"] =
@@ -32612,6 +32847,21 @@ jsi::Value NativeWhipSsh::
   auto static destructor = [](uint64_t p) {
     RustCallStatus status = {0};
     uniffi_whip_ssh_fn_free_knownhostrepository(p, &status);
+  };
+  auto ptrObj =
+      std::make_shared<uniffi_jsi::DestructibleObject>(pointer, destructor);
+  auto obj = jsi::Object::createFromHostObject(rt, ptrObj);
+  return jsi::Value(rt, obj);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_internal_fn_method_automaticchatspeechqueue_ffi__bless_pointer(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto pointer =
+      uniffi_jsi::Bridging<uint64_t>::fromJs(rt, callInvoker, args[0]);
+  auto static destructor = [](uint64_t p) {
+    RustCallStatus status = {0};
+    uniffi_whip_ssh_fn_free_automaticchatspeechqueue(p, &status);
   };
   auto ptrObj =
       std::make_shared<uniffi_jsi::DestructibleObject>(pointer, destructor);
@@ -35415,6 +35665,118 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_knownhostrepository_view(
       rt, callInvoker, status, args[count - 1]);
 
   return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_clone_automaticchatspeechqueue(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_clone_automaticchatspeechqueue(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_free_automaticchatspeechqueue(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_free_automaticchatspeechqueue(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_constructor_automaticchatspeechqueue_new(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value =
+      uniffi_whip_ssh_fn_constructor_automaticchatspeechqueue_new(&status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi_jsi::Bridging</*handle*/ uint64_t>::toJs(rt, callInvoker,
+                                                         value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_next(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_method_automaticchatspeechqueue_next(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi_jsi::Bridging<uint64_t>::fromJs(rt, callInvoker, args[1]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_remove(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_method_automaticchatspeechqueue_remove(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_reset(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_method_automaticchatspeechqueue_reset(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_update(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_method_automaticchatspeechqueue_update(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[2]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[3]),
+      uniffi_jsi::Bridging<int8_t>::fromJs(rt, callInvoker, args[4]),
+      uniffi_jsi::Bridging<int8_t>::fromJs(rt, callInvoker, args[5]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[6]),
+      uniffi_jsi::Bridging<uint64_t>::fromJs(rt, callInvoker, args[7]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
 }
 jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_clone_browserlibrary(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
@@ -40287,6 +40649,20 @@ jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_evaluate_app_update(
 
   return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
 }
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_chat_speech_announcement(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_func_chat_speech_announcement(
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
 jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_billing_rollout_policy(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
@@ -40312,6 +40688,21 @@ jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_evaluate_billing_policy(
       rt, callInvoker, status, args[count - 1]);
 
   return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_chat_speech_response_available(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_func_chat_speech_response_available(
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi_jsi::Bridging<int8_t>::toJs(rt, callInvoker, value);
 }
 jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_append_composer_dictation(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
@@ -42147,6 +42538,14 @@ jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_evaluate_app_update(
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }
 jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_chat_speech_announcement(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_func_chat_speech_announcement();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value
 NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_billing_rollout_policy(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
@@ -42159,6 +42558,14 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_evaluate_billing_policy(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
   auto value = uniffi_whip_ssh_checksum_func_evaluate_billing_policy();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_chat_speech_response_available(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_func_chat_speech_response_available();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }
@@ -43817,6 +44224,40 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_knownhostrepository_view(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
   auto value = uniffi_whip_ssh_checksum_method_knownhostrepository_view();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_next(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value = uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_next();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_remove(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_remove();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_reset(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value = uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_reset();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_update(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_update();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }
@@ -45791,6 +46232,15 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_constructor_knownhostrepository_new(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
   auto value = uniffi_whip_ssh_checksum_constructor_knownhostrepository_new();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_constructor_automaticchatspeechqueue_new(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_constructor_automaticchatspeechqueue_new();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }

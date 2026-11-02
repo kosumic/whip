@@ -1,4 +1,5 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { canReadChatResponse } from 'react-native-whip-ssh';
 
 import { useChatReadAloud } from '../src/hooks/useChatReadAloud';
 import { readChatResponse, type ChatSpeechTarget } from '../src/services/chatSpeech';
@@ -8,6 +9,7 @@ import type { TranscriptMessage, TranscriptTurn } from '../src/agentChat';
 jest.mock('react-native', () => ({ Platform: { OS: 'android' } }));
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
 jest.mock('../src/services/chatSpeech', () => ({ readChatResponse: jest.fn() }));
+jest.mock('react-native-whip-ssh', () => ({ canReadChatResponse: jest.fn() }));
 
 const target: ChatSpeechTarget = {
   agent: 'claude', bindingToken: 'binding', hostId: 'host', paneId: 'pane', label: 'Claude',
@@ -32,6 +34,7 @@ function Harness({ selected = target }: {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  jest.mocked(canReadChatResponse).mockReturnValue(true);
   jest.mocked(readChatResponse).mockImplementation((_target, _messages, onStopped) => {
     stop.mockImplementation(onStopped);
     return stop;
@@ -87,9 +90,29 @@ test('disables reading when the transcript contains only a user prompt or tool o
     { ...messages[0], role: 'user' },
     { ...messages[0], id: 'tool-only', parts: [] },
   ] };
+  jest.mocked(canReadChatResponse).mockReturnValue(false);
   expect(control.canRead(emptyResponse)).toBe(false);
   act(() => control.toggle(emptyResponse));
   expect(readChatResponse).not.toHaveBeenCalled();
+});
+
+test('enables manual speech for a pending response containing only a structured question', () => {
+  const pending: TranscriptTurn = {
+    ...turn,
+    status: 'working',
+    assistants: [{
+      ...messages[0],
+      completedAt: undefined,
+      parts: [{
+        type: 'notice', id: 'question', level: 'info', text: 'Question requested',
+        questions: [{ question: 'Which approach?', multiple: false, options: [{ label: 'First' }, { label: 'Second' }] }],
+      }],
+    }],
+  };
+  expect(control.canRead(pending)).toBe(true);
+  expect(canReadChatResponse).toHaveBeenLastCalledWith(target.agent, pending.assistants);
+  act(() => control.toggle(pending));
+  expect(readChatResponse).toHaveBeenCalledWith(target, pending.assistants, expect.any(Function), onError);
 });
 
 test('reports unavailable speech without leaving the button active', () => {

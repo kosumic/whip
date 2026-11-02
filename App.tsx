@@ -17,6 +17,7 @@ import { chatCjkFontAsset } from './src/services/chatFontAsset';
 import { terminalFontFamily } from './src/lib/terminalFonts';
 import { reportBackgroundFailure } from './src/services/backgroundOperations';
 import { useAgentNotifications } from './src/hooks/useAgentNotifications';
+import { useAutomaticChatSpeech } from './src/hooks/useAutomaticChatSpeech';
 import { useUsageTracking } from './src/hooks/useUsageTracking';
 import { useAppNavigation } from './src/hooks/useAppNavigation';
 import { useApplicationSecurity } from './src/hooks/useApplicationSecurity';
@@ -93,6 +94,7 @@ function AppContent() {
   const startupStorage = useStartupStorage();
   const preferences = useDevicePreferences(startupStorage);
   const preferencesLoaded = preferences.hydration.status !== 'loading';
+  useAutomaticChatSpeech(preferencesLoaded && preferences.value.ttsEnabled);
   const entitlements = useWhipEntitlements(
     preferencesLoaded,
     preferences.value.developerOptionsEnabled,

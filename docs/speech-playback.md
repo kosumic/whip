@@ -6,8 +6,30 @@ tool share one native player per platform. `SpeechPlayback.kt` and
 watchdog. `speech_playback.rs` owns admission, session ownership, and deadlines;
 `chat_speech.rs` selects, formats, and queues chat prose.
 
-Explicitly starting chat replaces the previous speaker and reserves playback
-between replies. Announcements may replace earlier announcements, but skip
+Chat speech also reads structured agent questions from question tools and
+question notices, including while the agent is waiting for an answer. It reads
+the question and its options in order, joining options with "or" and including
+their descriptions. Questions that allow multiple selections also say "Choose
+one or more."
+Automatic speech suppresses historical questions and repeated snapshots; manual
+read-aloud can replay a response containing only questions. Routine tool output
+and reasoning remain excluded.
+
+The shared voice setting reads new updates from every ready, bound transcript,
+across hosts and screens, even when its chat viewport is closed. Initial loads,
+reconnect catchup, and cached/stale snapshots stay silent. Each automatic chunk
+starts with its tab name, such as "Debug tab: ". When chats compete, updates share
+a FIFO queue with at most four waiting chunks and 800 UTF-16 units in total.
+Content chunks contain at most 300 UTF-16 units before the tab prefix. Overload
+drops the oldest waiting chunks; competing waiting speech expires after 15 seconds.
+A single speaking chat can finish without trimming or expiry, even if other ready
+chats are idle. A new competing speaker brings that backlog under the limits.
+Manual read-aloud and dictation
+flush automatic backlog and resume with fresh baselines. Native Stop or shake
+silences automatic reading until the voice setting is toggled again.
+
+Explicitly starting chat replaces the previous speaker. Automatic reading releases
+playback when its queue empties. Announcements may replace earlier announcements, but skip
 speech when chat or a device tool owns playback. Device speech may replace an
 utterance from the same reverse-control session; other owners receive
 `device_unavailable`. Notifications still arrive when their announcement skips

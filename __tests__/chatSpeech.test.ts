@@ -1,5 +1,5 @@
 import type { AgentChatState } from '../src/agentChat';
-import { listenToChat, readChatResponse, suspendChatSpeechForInput, type ChatSpeechTarget } from '../src/services/chatSpeech';
+import { listenToChat, readChatResponse, suspendChatSpeechForInput, registerAutomaticSpeech, type ChatSpeechTarget } from '../src/services/chatSpeech';
 import { isSpeechInputActive, setSpeechInputActive } from '../src/services/speechInputFocus';
 import { isChatSpeechActive } from '../src/services/chatSpeechFocus';
 import { NativeEventEmitter, Platform } from 'react-native';
@@ -30,6 +30,7 @@ function mockAddListener(_name: string, callback: (event: { token: string; error
   return { remove: () => mockEvents.delete(callback) };
 }
 jest.mock('react-native-whip-ssh', () => ({
+  formatChatSpeech: (tabName: string, text: string) => `${tabName} tab: ${text}`,
   NativeChatSpeechQueue: jest.fn().mockImplementation(() => {
     const queue = { update: jest.fn(), readResponse: jest.fn(() => mockReadable), next: jest.fn(), dispose: jest.fn() };
     mockQueues.push(queue);
@@ -90,8 +91,29 @@ test('dictation waits for announcement or device playback even without a chat se
   expect(released).toBe(true);
 });
 
+test('manual playback pauses global automatic speech and resumes it after releasing native playback', async () => {
+  const pause = jest.fn(async () => {});
+  const resume = jest.fn();
+  const unregister = registerAutomaticSpeech({ pause, resume });
+  try {
+    stop = readChatResponse(target, [], jest.fn(), jest.fn());
+    await flush();
+    expect(pause).toHaveBeenCalledTimes(1);
+    expect(resume).toHaveBeenCalledTimes(1);
+  } finally {
+    unregister();
+  }
+});
+
 describe.each(['android', 'ios'] as const)('%s chat speech', platform => {
   beforeEach(() => { Platform.OS = platform; });
+
+  test('manual speech starts with the selected tab name', async () => {
+    stop = readChatResponse({ ...target, tabName: 'Debug' }, [], jest.fn(), jest.fn());
+    mockQueues[0].next.mockReturnValueOnce('Which approach? First or Second.');
+    await flush();
+    expect(mockNative.speakChat).toHaveBeenCalledWith(expect.any(String), 'Debug tab: Which approach? First or Second.');
+  });
 
   test('manual playback reads the Rust response queue once and releases playback on completion', async () => {
     let finishSpeech!: () => void;
