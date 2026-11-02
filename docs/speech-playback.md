@@ -25,8 +25,11 @@ drops the oldest waiting chunks; competing waiting speech expires after 15 secon
 A single speaking chat can finish without trimming or expiry, even if other ready
 chats are idle. A new competing speaker brings that backlog under the limits.
 Manual read-aloud and dictation
-flush automatic backlog and resume with fresh baselines. Native Stop or shake
-silences automatic reading until the voice setting is toggled again.
+flush automatic backlog and resume with fresh baselines. Shaking dismisses the
+currently spoken update, including its remaining chunks, then pauses for one
+second before reading other queued or future updates. It preserves automatic
+reading and the rest of the queue. Native Stop silences automatic reading until
+the voice setting is toggled again.
 
 Explicitly starting chat replaces the previous speaker. Automatic reading releases
 playback when its queue empties. Announcements may replace earlier announcements, but skip

@@ -2,13 +2,14 @@ import { DeviceEventEmitter, NativeEventEmitter, Platform } from 'react-native';
 import { NativeAutomaticChatSpeechQueue } from 'react-native-whip-ssh';
 
 import { agentTranscriptService, type ObservedAgentTranscript } from './NativeTranscriptService';
-import { CHAT_SPEECH_STOPPED, isChatResponsePlaying, registerAutomaticSpeech } from './chatSpeech';
+import { CHAT_SPEECH_STOPPED, isChatResponsePlaying, registerAutomaticSpeech, type ChatSpeechStoppedEvent } from './chatSpeech';
 import { isSpeechInputActive, subscribeSpeechInput } from './speechInputFocus';
 import { setChatSpeechFocus } from './chatSpeechFocus';
 import { getSpeechPlayback } from './speechPlayback';
 
 let generation = 0;
-type SpeechEvents = { [CHAT_SPEECH_STOPPED]: [event: { token: string; error?: string }] };
+const SHAKE_PAUSE_MS = 1_000;
+type SpeechEvents = { [CHAT_SPEECH_STOPPED]: [event: ChatSpeechStoppedEvent] };
 
 /** One bounded native queue and player for all ready transcripts, across screens. */
 export function listenToAllTranscripts(onError: (error: unknown) => void): () => void {
@@ -22,6 +23,8 @@ export function listenToAllTranscripts(onError: (error: unknown) => void): () =>
   let version = 0;
   let lease: { token: string; key: string } | null = null;
   let stopping = Promise.resolve();
+  let resumeAt = 0;
+  let resumeTimer: ReturnType<typeof setTimeout> | undefined;
 
   const allowed = () => !disposed && !silenced && !paused;
   const stopLease = (): Promise<void> => {
@@ -59,20 +62,22 @@ export function listenToAllTranscripts(onError: (error: unknown) => void): () =>
     }
   };
   const drain = async () => {
-    if (!allowed() || draining) return;
+    if (!allowed() || draining || Date.now() < resumeAt) return;
     draining = true;
     let observedVersion = version;
     let playingToken: string | null = null;
     try {
-      while (allowed()) {
+      while (allowed() && Date.now() >= resumeAt) {
         observedVersion = version;
+        if (!lease) {
+          await stopping;
+          if (!allowed() || Date.now() < resumeAt) break;
+        }
         const next = queue.next();
         if (!next) break;
         const target = transcripts.get(next.key);
         if (target?.state?.status !== 'live') continue;
         if (!lease) {
-          await stopping;
-          if (!allowed()) break;
           const current = { token: `all-transcripts:${++generation}`, key: next.key };
           lease = current;
           playingToken = current.token;
@@ -102,8 +107,20 @@ export function listenToAllTranscripts(onError: (error: unknown) => void): () =>
 
   const emitter: Pick<NativeEventEmitter<SpeechEvents>, 'addListener'> =
     Platform.OS === 'ios' ? new NativeEventEmitter<SpeechEvents>(native) : DeviceEventEmitter;
-  const subscription = emitter.addListener(CHAT_SPEECH_STOPPED, (event: { token: string; error?: string }) => {
+  const subscription = emitter.addListener(CHAT_SPEECH_STOPPED, event => {
     if (event.token !== lease?.token) return;
+    if (event.reason === 'shake' && !event.error) {
+      queue.dismissCurrent();
+      version++;
+      resumeAt = Date.now() + SHAKE_PAUSE_MS;
+      if (resumeTimer !== undefined) clearTimeout(resumeTimer);
+      resumeTimer = setTimeout(() => {
+        resumeTimer = undefined;
+        void drain();
+      }, SHAKE_PAUSE_MS);
+      void stopLease();
+      return;
+    }
     silenced = true;
     queue.reset();
     void stopLease();
@@ -118,6 +135,7 @@ export function listenToAllTranscripts(onError: (error: unknown) => void): () =>
   return () => {
     if (disposed) return;
     disposed = true;
+    if (resumeTimer !== undefined) clearTimeout(resumeTimer);
     unregister();
     unsubscribeInput();
     unsubscribe();

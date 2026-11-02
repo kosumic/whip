@@ -5,7 +5,7 @@ use crate::{
 };
 use parking_lot::Mutex;
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     sync::Arc,
 };
 
@@ -22,14 +22,20 @@ pub struct ChatSpeechUtterance {
 
 struct Pending {
     utterance: ChatSpeechUtterance,
+    message_id: String,
+    part_id: String,
     queued_at: u64,
 }
+
+type SpeechIdentity = (String, String, String);
 
 #[derive(Default)]
 struct State {
     transcripts: HashMap<String, Arc<ChatSpeechQueue>>,
     pending: VecDeque<Pending>,
     playing_key: Option<String>,
+    playing_part: Option<SpeechIdentity>,
+    dismissed: HashSet<SpeechIdentity>,
 }
 
 impl State {
@@ -92,13 +98,22 @@ impl AutomaticChatSpeechQueue {
         }
         queue.update(agent, live, messages);
         let competing = state.competing_with(&key);
-        while let Some(text) = queue.next() {
-            for text in speech_chunks_with_limit(&text, MAX_CONTENT_UNITS) {
+        while let Some(chunk) = queue.next_content() {
+            if state.dismissed.contains(&(
+                key.clone(),
+                chunk.message_id.clone(),
+                chunk.part_id.clone(),
+            )) {
+                continue;
+            }
+            for text in speech_chunks_with_limit(&chunk.text, MAX_CONTENT_UNITS) {
                 state.pending.push_back(Pending {
                     utterance: ChatSpeechUtterance {
                         key: key.clone(),
                         text: chat_speech_announcement(tab_name.clone(), text),
                     },
+                    message_id: chunk.message_id.clone(),
+                    part_id: chunk.part_id.clone(),
                     queued_at: now_ms,
                 });
                 if competing {
@@ -117,19 +132,40 @@ impl AutomaticChatSpeechQueue {
         while let Some(item) = state.pending.pop_front() {
             if !competing || now_ms.saturating_sub(item.queued_at) <= MAX_AGE_MS {
                 state.playing_key = Some(item.utterance.key.clone());
+                state.playing_part =
+                    Some((item.utterance.key.clone(), item.message_id, item.part_id));
                 return Some(item.utterance);
             }
         }
         state.playing_key = None;
+        state.playing_part = None;
         None
+    }
+
+    /// Dismiss the whole currently spoken update, including its remaining chunks.
+    /// Other queued updates and transcript history baselines remain intact.
+    pub fn dismiss_current(&self) {
+        let mut state = self.state.lock();
+        let Some(identity) = state.playing_part.take() else {
+            return;
+        };
+        state.pending.retain(|item| {
+            item.utterance.key != identity.0
+                || item.message_id != identity.1
+                || item.part_id != identity.2
+        });
+        state.playing_key = None;
+        state.dismissed.insert(identity);
     }
 
     pub fn remove(&self, key: String) {
         let mut state = self.state.lock();
         state.transcripts.remove(&key);
         state.pending.retain(|item| item.utterance.key != key);
+        state.dismissed.retain(|identity| identity.0 != key);
         if state.playing_key.as_deref() == Some(&key) {
             state.playing_key = None;
+            state.playing_part = None;
         }
     }
 
@@ -299,6 +335,83 @@ mod tests {
         update(&queue, "two", "another", 3);
         queue.remove("two".into());
         assert!(queue.next(3).is_none());
+    }
+
+    #[test]
+    fn dismissing_an_update_drops_only_its_remaining_chunks_and_continuations() {
+        let queue = AutomaticChatSpeechQueue::new();
+        update(&queue, "one", "history", 0);
+        update(&queue, "two", "history", 0);
+        let current = |length| {
+            let mut response = messages("current", &"a".repeat(length));
+            response[0].completed = false;
+            response
+        };
+        queue.update(
+            "one".into(),
+            AgentTranscriptKind::Codex,
+            "Debug".into(),
+            true,
+            false,
+            current(600),
+            1,
+        );
+        let first = take(&queue, 1);
+        assert_eq!(
+            first.text,
+            format!("Debug tab: {}", "a".repeat(MAX_CONTENT_UNITS))
+        );
+        update(&queue, "one", "Later update", 2);
+        update(&queue, "two", "Other chat", 2);
+        queue.dismiss_current();
+        queue.update(
+            "one".into(),
+            AgentTranscriptKind::Codex,
+            "Debug".into(),
+            true,
+            false,
+            current(900),
+            3,
+        );
+        assert_eq!(take(&queue, 3).text, "Debug tab: Later update");
+        assert_eq!(take(&queue, 3).text, "Debug tab: Other chat");
+        assert!(queue.next(3).is_none());
+        update(&queue, "one", "Future update", 4);
+        assert_eq!(take(&queue, 4).text, "Debug tab: Future update");
+        assert!(queue.next(4).is_none());
+    }
+
+    #[test]
+    fn dismissal_preserves_later_parts_in_the_same_response() {
+        let queue = AutomaticChatSpeechQueue::new();
+        update(&queue, "one", "history", 0);
+        let mut response = messages("response", &"a".repeat(600));
+        response[0].prose.push(ChatSpeechPart::Text {
+            id: "later-part".into(),
+            text: "Next part.".into(),
+        });
+        queue.update(
+            "one".into(),
+            AgentTranscriptKind::Codex,
+            "Debug".into(),
+            true,
+            false,
+            response,
+            1,
+        );
+        let _ = take(&queue, 1);
+        queue.dismiss_current();
+        assert_eq!(take(&queue, 1).text, "Debug tab: Next part.");
+        assert!(queue.next(1).is_none());
+    }
+
+    #[test]
+    fn dismissing_without_a_current_utterance_preserves_waiting_updates() {
+        let queue = AutomaticChatSpeechQueue::new();
+        update(&queue, "one", "history", 0);
+        update(&queue, "one", "Waiting update", 1);
+        queue.dismiss_current();
+        assert_eq!(take(&queue, 1).text, "Debug tab: Waiting update");
     }
 
     #[test]
