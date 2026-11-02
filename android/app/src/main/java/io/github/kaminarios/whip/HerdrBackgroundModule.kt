@@ -54,6 +54,19 @@ class HerdrBackgroundModule(
   override fun getName(): String = "HerdrBackground"
 
   init {
+    SpeechPlayback.onChatStarted = { token ->
+      context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+        .emit(CHAT_SPEECH_STARTED, Arguments.createMap().apply { putString("token", token) })
+    }
+    VoiceCallService.onEvent = { token, type, muted, speaker, error ->
+      val event = Arguments.createMap().apply {
+        putString("token", token); putString("type", type)
+        if (muted != null) putBoolean("muted", muted)
+        if (speaker != null) putBoolean("speaker", speaker)
+        if (error != null) putString("error", error)
+      }
+      context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java).emit(VoiceCallService.EVENT, event)
+    }
     SpeechPlayback.onChatStopped = { stoppedToken, reason, error ->
       val event = Arguments.createMap().apply {
         putString("token", stoppedToken)
@@ -63,6 +76,26 @@ class HerdrBackgroundModule(
       context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
         .emit(CHAT_SPEECH_STOPPED, event)
     }
+  }
+
+  @ReactMethod
+  fun startVoiceCall(token: String, label: String, promise: Promise) {
+    mainHandler.post { VoiceCallService.start(context, token, label, promise) }
+  }
+
+  @ReactMethod
+  fun endVoiceCall(token: String, promise: Promise) {
+    mainHandler.post { VoiceCallService.end(token, promise) }
+  }
+
+  @ReactMethod
+  fun setVoiceCallMuted(token: String, muted: Boolean, promise: Promise) {
+    mainHandler.post { VoiceCallService.setMuted(token, muted, promise) }
+  }
+
+  @ReactMethod
+  fun setVoiceCallSpeaker(token: String, speaker: Boolean, promise: Promise) {
+    mainHandler.post { VoiceCallService.setSpeaker(token, speaker, promise) }
   }
 
   @ReactMethod
@@ -78,6 +111,18 @@ class HerdrBackgroundModule(
       } catch (error: Throwable) {
         SpeechPlayback.stopOwner(SpeechPolicy.CHAT, token)
         promise.reject("E_CHAT_SPEECH_START", error)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun startLocalChatSpeech(token: String, label: String, promise: Promise) {
+    mainHandler.post {
+      try {
+        SpeechPlayback.startChat(context, token, label, promise, localOnly = true)
+      } catch (error: Throwable) {
+        SpeechPlayback.stopOwner(SpeechPolicy.CHAT, token)
+        promise.reject("E_LOCAL_CHAT_SPEECH", error)
       }
     }
   }
@@ -227,7 +272,10 @@ class HerdrBackgroundModule(
 
   override fun invalidate() {
     mainHandler.post {
+      VoiceCallService.onEvent = null
+      VoiceCallService.invalidate()
       SpeechPlayback.onChatStopped = null
+      SpeechPlayback.onChatStarted = null
       SpeechPlayback.stop()
       stopPersistentAlert()
     }
@@ -367,6 +415,7 @@ class HerdrBackgroundModule(
 
   companion object {
     private const val CHAT_SPEECH_STOPPED = "WhipChatSpeechStopped"
+    private const val CHAT_SPEECH_STARTED = "WhipChatSpeechStarted"
     private const val TAG = "HerdrPersistentAlert"
     private const val EXPO_NOTIFICATION_ID = 0
     private const val SHAKE_GRAVITY_THRESHOLD = 2.7f

@@ -143,14 +143,17 @@ describe('MessageComposer actions', () => {
     expect(renderer.root.findAllByProps({ accessibilityLabel: 'Expand' })).toHaveLength(0);
   });
 
-  test('shows the inert voice chat action only for an empty, unfocused chat composer', () => {
+  test('opens voice chat only from an empty, unfocused chat composer', () => {
     const onFocus = jest.fn();
     const onBlur = jest.fn();
-    const props = { actions, onFocus, onBlur, voiceChatLabel: 'Voice chat' };
+    const onVoiceChat = jest.fn();
+    const props = { actions, onFocus, onBlur, voiceChatLabel: 'Voice chat', onVoiceChat };
     act(() => { renderer = create(<MessageComposer {...props} initialValue="" />); });
     const input = renderer.root.find(node => String(node.type) === 'Input');
     const voiceChat = renderer.root.findByProps({ accessibilityLabel: 'Voice chat' });
-    expect(voiceChat.props.onPress).toBeUndefined();
+    act(() => { voiceChat.props.onPress(); });
+    expect(onVoiceChat).toHaveBeenCalledTimes(1);
+    expect(actions.onSend).not.toHaveBeenCalled();
     expect(renderer.root.findAllByProps({ accessibilityLabel: 'Send' })).toHaveLength(0);
 
     act(() => { input.props.onFocus({ nativeEvent: {} }); });

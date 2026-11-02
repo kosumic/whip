@@ -54,6 +54,19 @@ const mockRemoveBackground = jest.mocked(removeTerminalBackgroundImage);
 const mockMigrateAppBackground = jest.mocked(migrateAppBackgroundImage);
 const mockRemoveAppBackground = jest.mocked(removeAppBackgroundImage);
 
+test('VAD sensitivity defaults to the existing behavior and survives saving', async () => {
+  mockGetItem.mockResolvedValue('{}');
+  expect((await loadDevicePreferences()).vadSensitivity).toBe(50);
+  await saveDevicePreferences({ ...defaultDevicePreferences, vadSensitivity: 75 });
+  mockGetItem.mockResolvedValue(mockSetItem.mock.calls.at(-1)![1]);
+  expect((await loadDevicePreferences()).vadSensitivity).toBe(75);
+});
+
+test.each([[-10, 0], [120, 100], ['high', 50], [null, 50]])('normalizes stored VAD sensitivity %p to %p', async (stored, expected) => {
+  mockGetItem.mockResolvedValue(JSON.stringify({ vadSensitivity: stored }));
+  expect((await loadDevicePreferences()).vadSensitivity).toBe(expected);
+});
+
 test('global AGENTS.md defaults to Use Whip MCP and preserves Markdown across persistence', async () => {
   mockGetItem.mockResolvedValue(null);
   expect((await loadDevicePreferences()).reverseControlInstructions).toBe('Use Whip MCP');
@@ -194,6 +207,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
     agentAlertLevel: 'persistent',
     persistentAlertDurationSeconds: 30,
     ttsEnabled: true,
+    vadSensitivity: 50,
     biometricForKeys: false,
     biometricOnResume: false,
     appearance: 'system',

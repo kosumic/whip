@@ -1,4 +1,11 @@
 export const zhHant: Record<string, string> = {
+  'voiceChat.vadSensitivity': "VAD 靈敏度",
+  'voiceChat.vadSensitivityDescription': "提高靈敏度可偵測更輕的說話聲，降低靈敏度可過濾更多背景噪音。適用於語音聊天和打斷回覆。",
+  'voiceChat.smartTurn': "Smart Turn（選用）",
+  'voiceChat.smartTurnDescription': "偵測您是否已說完。未安裝時仍可透過靜音偵測進行語音聊天。一次下載：32 MB。",
+  'voiceChat.smartTurnInstalled': "已安裝 · 可離線使用",
+  'voiceChat.smartTurnProgress': "下載中 {{progress}}%",
+  'voiceChat.compose': "詢問 {{agent}}",
   'voiceChat.starting': "正在啟動語音通話…",
   'voiceChat.minimize': "最小化語音聊天",
   'voiceChat.reopen': "返回語音聊天",

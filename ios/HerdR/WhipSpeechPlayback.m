@@ -1,9 +1,11 @@
 #import "WhipSpeechPlayback.h"
+#import "../../packages/react-native-whip-ssh/ios/WhipVoiceCall.h"
 #import <AVFoundation/AVFoundation.h>
 #import <CoreMotion/CoreMotion.h>
 #import <math.h>
 
 NSString *const WhipChatSpeechStopped = @"WhipChatSpeechStopped";
+NSString *const WhipChatSpeechStarted = @"WhipChatSpeechStarted";
 static NSString *const WhipSpeechError = @"E_SPEECH";
 static NSString *const WhipSpeechCompleted = @"completed";
 static NSString *const WhipSpeechStopped = @"stopped";
@@ -129,6 +131,8 @@ static bool WhipConsumePhonon(void *context, const float *samples, uintptr_t cou
 @property(nonatomic) BOOL audioActive;
 @property(nonatomic, strong) WhipPhononAudio *phonon;
 @property(nonatomic, copy) NSString *systemVoice;
+@property(nonatomic) BOOL localOnly;
+@property(nonatomic) BOOL reportedStart;
 @end
 
 @implementation WhipSpeechPlayback
@@ -199,6 +203,8 @@ static bool WhipConsumePhonon(void *context, const float *samples, uintptr_t cou
   if (!lease) return NO;
   [self clear:@"replaced" error:nil];
   self.lease = lease;
+  self.localOnly = NO;
+  self.reportedStart = NO;
   self.kind = kind;
   self.owner = owner;
   self.ended = ended;
@@ -212,6 +218,11 @@ static bool WhipConsumePhonon(void *context, const float *samples, uintptr_t cou
     return;
   }
   resolve(nil);
+}
+- (void)startLocalChat:(NSString *)owner label:(NSString *)label resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
+{
+  [self startChat:owner label:label resolve:resolve reject:reject];
+  if ([self.owner isEqualToString:owner]) self.localOnly = YES;
 }
 - (void)speakChat:(NSString *)owner text:(NSString *)text resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
@@ -270,6 +281,10 @@ static bool WhipConsumePhonon(void *context, const float *samples, uintptr_t cou
   BOOL local = whip_phonon_enabled(requestedLanguage.UTF8String);
   AVSpeechSynthesisVoice *voice = [AVSpeechSynthesisVoice voiceWithLanguage:requestedLanguage];
   AVSpeechSynthesisVoice *selected = self.systemVoice.length ? [AVSpeechSynthesisVoice voiceWithIdentifier:self.systemVoice] : nil;
+  if (self.localOnly && !local && self.systemVoice.length && !selected) {
+    [self stopWithReason:WhipSpeechStopped error:@"The voice selected in Settings is unavailable. Select an installed voice."];
+    return NO;
+  }
   if (selected && (!language.length ||
       [[selected.language componentsSeparatedByString:@"-"].firstObject caseInsensitiveCompare:
        [requestedLanguage componentsSeparatedByString:@"-"].firstObject] == NSOrderedSame)) voice = selected;
@@ -279,8 +294,8 @@ static bool WhipConsumePhonon(void *context, const float *samples, uintptr_t cou
   }
   AVAudioSession *audio = AVAudioSession.sharedInstance;
   NSError *error = nil;
-  if (![audio setCategory:AVAudioSessionCategoryPlayback mode:AVAudioSessionModeSpokenAudio
-         options:AVAudioSessionCategoryOptionDuckOthers error:&error] || ![audio setActive:YES error:&error]) {
+  if (!WhipVoiceCall.shared.active && (![audio setCategory:AVAudioSessionCategoryPlayback mode:AVAudioSessionModeSpokenAudio
+         options:AVAudioSessionCategoryOptionDuckOthers error:&error] || ![audio setActive:YES error:&error])) {
     [self stopWithReason:WhipSpeechStopped error:error.localizedDescription ?: @"Could not activate speech audio"];
     return NO;
   }
@@ -315,11 +330,15 @@ static bool WhipConsumePhonon(void *context, const float *samples, uintptr_t cou
       [NSRunLoop.mainRunLoop addTimer:playback.timer forMode:NSRunLoopCommonModes];
       if (started) started();
     };
-    player.onStarted = playbackStarted;
+    player.onStarted = ^{
+      if (weakSelf.lease == lease && weakSelf.utterance == utterance) [weakSelf reportStarted];
+      playbackStarted();
+    };
     self.phonon = player;
     if (![player open:rate error:&error]) {
       whip_phonon_playback_failed();
       [player stop]; self.phonon = nil;
+      if (self.localOnly) { [self stopWithReason:WhipSpeechStopped error:error.localizedDescription ?: @"The selected local voice could not start."]; return NO; }
       [self.speech speakUtterance:utterance];
       playbackStarted();
       return YES;
@@ -333,7 +352,7 @@ static bool WhipConsumePhonon(void *context, const float *samples, uintptr_t cou
         if (completed && whip_speech_complete(lease)) {
           if (playback.kind == WhipSpeechChat) [playback finishUtterance:nil];
           else [playback clear:WhipSpeechCompleted error:nil];
-        } else if (result < 0 && !player.started) {
+        } else if (result < 0 && !player.started && !playback.localOnly) {
           [player stop]; playback.phonon = nil;
           [playback.speech speakUtterance:utterance];
           playbackStarted();
@@ -368,6 +387,7 @@ static bool WhipConsumePhonon(void *context, const float *samples, uintptr_t cou
 {
   if (!self.audioActive) return;
   self.audioActive = NO;
+  if (WhipVoiceCall.shared.active) return; // CallKit retains the session between conversation turns.
   NSError *error = nil;
   if (![AVAudioSession.sharedInstance setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:&error])
     NSLog(@"[SpeechPlayback] Could not release audio session: %@", error.localizedDescription);
@@ -439,6 +459,16 @@ static bool WhipConsumePhonon(void *context, const float *samples, uintptr_t cou
     if (self.kind == WhipSpeechChat) [self finishUtterance:nil];
     else [self clear:WhipSpeechCompleted error:nil];
   });
+}
+- (void)reportStarted
+{
+  if (self.kind != WhipSpeechChat || self.reportedStart || !self.owner) return;
+  self.reportedStart = YES;
+  [NSNotificationCenter.defaultCenter postNotificationName:WhipChatSpeechStarted object:self userInfo:@{@"token": self.owner}];
+}
+- (void)speechSynthesizer:(AVSpeechSynthesizer *)synthesizer didStartSpeechUtterance:(AVSpeechUtterance *)utterance
+{
+  dispatch_async(dispatch_get_main_queue(), ^{ if (self.utterance == utterance) [self reportStarted]; });
 }
 - (void)speechSynthesizer:(AVSpeechSynthesizer *)synthesizer didCancelSpeechUtterance:(AVSpeechUtterance *)utterance
 {

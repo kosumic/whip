@@ -1,0 +1,411 @@
+import { AppState, DeviceEventEmitter, NativeEventEmitter, Platform } from 'react-native';
+import type { NativeVoiceChat, VoiceChatView } from 'react-native-whip-ssh/src/voiceChat';
+import type { AgentChatState } from '../agentChat';
+import { agentTranscriptService } from './NativeTranscriptService';
+import { suspendChatSpeechForInput, type ChatSpeechTarget, type ChatSpeechStoppedEvent } from './chatSpeech';
+import { composerSpeechInput } from './composerSpeechInput';
+import { getSpeechPlayback, type NativeSpeechPlayback } from './speechPlayback';
+import { recordDiagnostic } from './diagnosticFormatting';
+import { voiceChatModelRoot } from './voiceChatModel';
+import { DEFAULT_VAD_SENSITIVITY } from '../lib/voiceVadSensitivity';
+
+export interface VoiceConversationView {
+  phase: VoiceChatView['phase'] | 'error' | 'starting';
+  muted: boolean;
+  smartTurn: boolean;
+  speaker: boolean;
+  text: string;
+  level: number;
+  progress: number;
+  error: string | null;
+  transcript: AgentChatState | null;
+}
+const STOPPED = 'WhipChatSpeechStopped';
+const STARTED = 'WhipChatSpeechStarted';
+const CALL_EVENT = 'WhipVoiceCall';
+const WATCHDOG_MS = 10_000;
+let nextSession = 0;
+let active: string | null = null;
+type CallEvent = { token: string; type: 'ended' | 'muted' | 'route' | 'audioInactive'; muted?: boolean; speaker?: boolean; error?: string };
+type VoiceSpeechEvents = { [STOPPED]: [event: ChatSpeechStoppedEvent]; [STARTED]: [event: { token: string }]; [CALL_EVENT]: [event: CallEvent] };
+async function loadCore(root: string): Promise<NativeVoiceChat> {
+  const { NativeVoiceChat } = await import('react-native-whip-ssh/src/voiceChat');
+  return new NativeVoiceChat(root);
+}
+function failureMessage(error: unknown): string {
+  if (typeof error === 'object' && error !== null && 'inner' in error) {
+    const inner = error.inner;
+    if (typeof inner === 'object' && inner !== null && 'message' in inner && typeof inner.message === 'string') return inner.message;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** I/O adapter over Whip's shared STT owner, shared TTS player, and Rust turn controller. */
+export class VoiceConversation {
+  private core?: NativeVoiceChat;
+  private vadSensitivity = DEFAULT_VAD_SENSITIVITY;
+  private playback?: NativeSpeechPlayback;
+  private readonly session = `voice-chat:${++nextSession}`;
+  private input?: { id: bigint; finishing: boolean; started: boolean; monitor: boolean };
+  private draft = '';
+  private speechToken?: string;
+  private playing?: string;
+  private readySpeech?: string;
+  private wakeSpeech?: () => void;
+  private canInterrupt = false;
+  private timing?: { boundary: number; speechEnd: number; submitted?: number; prose?: number; synthesis?: number; played?: number };
+  private callToken?: string;
+  private callActivated = false;
+  private closed = false;
+  private analyzing = false;
+  private captureQueue = Promise.resolve();
+  private cleanup: (() => void)[] = [];
+  private watchdog?: ReturnType<typeof setTimeout>;
+  private progressTimer?: ReturnType<typeof setInterval>;
+  private preparing = false;
+  private view: VoiceConversationView = {
+    phase: 'starting', muted: false, smartTurn: false, speaker: false, text: '', level: 0, progress: 0, error: null, transcript: null,
+  };
+
+  constructor(
+    private readonly target: ChatSpeechTarget,
+    private readonly send: (text: string) => boolean,
+    private readonly changed: (view: VoiceConversationView) => void,
+    private readonly load = loadCore,
+  ) {}
+
+  async start(): Promise<void> {
+    try {
+      if (active || !composerSpeechInput.reserve(this.session)) throw new Error('Finish the current speech session before starting voice chat.');
+      active = this.session;
+      this.playback = getSpeechPlayback();
+      if (!this.playback.startLocalChatSpeech || !this.playback.startVoiceCall) throw new Error('Install an updated Whip build for system voice calls.');
+      await composerSpeechInput.authorizeLocal();
+      this.canInterrupt = await composerSpeechInput.supportsPlaybackMonitoring();
+      if (this.closed) return;
+      if (AppState.currentState === 'background') throw new Error('Return to Whip to start voice chat.');
+      await suspendChatSpeechForInput();
+      if (this.closed) return;
+      const root = voiceChatModelRoot();
+      const core = await this.load(root);
+      if (this.closed) return;
+      this.core = core;
+      core.setVadSensitivity(this.vadSensitivity);
+      const speechEmitter: Pick<NativeEventEmitter<VoiceSpeechEvents>, 'addListener'> =
+        Platform.OS === 'ios' ? new NativeEventEmitter<VoiceSpeechEvents>(this.playback) : DeviceEventEmitter;
+      const speech = speechEmitter.addListener(STOPPED, event => {
+        if (event.token !== this.speechToken) return;
+        recordDiagnostic('warn', 'VoiceChat', 'playback-stopped', { reason: event.reason, error: event.error });
+        this.view = { ...this.view, error: event.error ?? null };
+        // A shake, route change, or speech-player failure stops this reply.
+        // The system call and the next conversational turn stay available.
+        void this.skip();
+      });
+      const call = speechEmitter.addListener(CALL_EVENT, event => this.callChanged(event));
+      const started = speechEmitter.addListener(STARTED, event => this.playbackStarted(event.token));
+      this.cleanup.push(() => speech.remove(), () => started.remove(), () => call.remove(), composerSpeechInput.subscribe(() => this.recognitionChanged()));
+      const unsubscribe = agentTranscriptService.subscribe(this.target.bindingToken, (state, baseline) => {
+        if (this.closed) return;
+        try {
+          if (!state) throw new Error('The agent transcript is no longer available.');
+          this.view = { ...this.view, transcript: state };
+          this.core!.transcript(this.target.agent, state, Boolean(baseline));
+          this.apply();
+        } catch (error) { this.fail(error); }
+      });
+      if (this.closed) { unsubscribe(); return; }
+      this.cleanup.push(unsubscribe);
+      this.callToken = this.session;
+      await this.playback.startVoiceCall(this.session, this.target.label);
+      if (this.closed) { await this.playback.endVoiceCall(this.session); return; }
+      this.callActivated = true;
+      await this.prepare();
+    } catch (error) { this.fail(error); }
+  }
+
+  setVadSensitivity(value: number): void {
+    this.vadSensitivity = value;
+    if (!this.closed) this.core?.setVadSensitivity(value);
+  }
+
+  toggleMuted = (): void => {
+    if (!this.core || this.closed || !this.callToken) return;
+    void this.playback!.setVoiceCallMuted(this.callToken, !this.view.muted).catch(error => this.fail(error));
+  };
+  toggleSpeaker = (): void => {
+    if (this.closed || !this.callToken) return;
+    void this.playback!.setVoiceCallSpeaker(this.callToken, !this.view.speaker)
+      .catch(error => { if (!this.closed) { this.view = { ...this.view, error: failureMessage(error) }; this.changed(this.view); } });
+  };
+  finish = (): void => { if (!this.closed) { this.core?.finish(); this.apply(); } };
+  skip = async (): Promise<void> => {
+    const token = this.playing;
+    this.speechToken = undefined;
+    this.readySpeech = undefined;
+    this.signalSpeech();
+    this.cancelInput();
+    try {
+      if (token) await this.playback?.stopChatSpeech(token);
+      if (this.closed) return;
+      if (this.playing === token) this.playing = undefined;
+      this.core?.skipResponse();
+      this.apply();
+    } catch (error) { this.fail(error); }
+  };
+
+  private async prepare(): Promise<void> {
+    if (this.preparing || !this.core || this.closed) return;
+    this.preparing = true;
+    this.changed({ ...this.view, phase: 'preparing' });
+    this.progressTimer = setInterval(() => { if (!this.closed) this.changed({ ...this.view, phase: 'preparing', progress: this.core!.view().progress }); }, 250);
+    try {
+      await this.core.prepare(false);
+      if (!this.closed) this.apply();
+    } catch (error) {
+      this.fail(error);
+    }
+    finally { clearInterval(this.progressTimer); this.preparing = false; }
+  }
+
+  private recognitionChanged(): void {
+    const input = this.input;
+    if (this.closed || !input || !this.core) return;
+    const snapshot = composerSpeechInput.getSnapshot();
+    try {
+      if (snapshot.owner === this.session) {
+        if (snapshot.phase === 'listening') { input.started = true; clearTimeout(this.watchdog); }
+        this.core.recognition(input.id, [this.draft, snapshot.interimText].filter(Boolean).join(' '));
+      } else if (snapshot.phase === 'idle' && input.started) {
+        clearTimeout(this.watchdog);
+        this.input = undefined;
+        this.core.ended(input.id);
+      }
+      this.apply();
+    } catch (error) { this.fail(error); }
+  }
+
+  private callChanged(event: CallEvent): void {
+    if (this.closed || event.token !== this.session) return;
+    if (event.type === 'muted' && event.muted !== undefined) {
+      this.core?.setMuted(event.muted);
+      this.apply();
+    } else if (event.type === 'route' && event.speaker !== undefined) {
+      this.view = { ...this.view, speaker: event.speaker };
+      this.changed(this.view);
+    } else if (event.type === 'audioInactive' || event.error) {
+      this.fail(new Error(event.error || 'The system interrupted voice chat for another call.'));
+    } else if (event.type === 'ended') {
+      this.view = { ...this.view, phase: 'closed', level: 0 };
+      this.changed(this.view);
+      void this.close();
+    }
+  }
+
+  private apply(): void {
+    if (this.closed || !this.core) return;
+    const view = this.core.view();
+    this.signalSpeech();
+    if (view.phase === 'finishing' && this.view.phase !== 'finishing') {
+      const now = performance.now();
+      this.timing = { boundary: now, speechEnd: now - view.silenceMs };
+    }
+    if (view.phase === 'speaking' && this.timing && this.timing.prose === undefined) this.timing.prose = performance.now();
+    this.view = { ...this.view, phase: this.callActivated ? view.phase : 'starting', muted: view.muted, smartTurn: view.smartTurn, text: view.text, level: view.level, progress: view.progress };
+    this.changed(this.view);
+    if ((view.phase === 'listening' || view.phase === 'finishing') && this.playing && this.input?.monitor) {
+      this.stopInterruptedPlayback();
+    }
+    if (view.phase === 'listening') {
+      if (this.input?.id !== view.inputId) this.listen(view.inputId);
+      if (view.analyze && !this.analyzing) {
+        this.analyzing = true;
+        void this.core.analyze(view.inputId).then(() => { this.analyzing = false; this.apply(); }, error => { this.analyzing = false; this.fail(error); });
+      }
+    } else if (view.phase === 'finishing') {
+      const input = this.input;
+      if (input && !input.finishing && composerSpeechInput.getSnapshot().phase === 'listening') {
+        input.finishing = true;
+        this.armWatchdog('The local recognizer did not finish. Reopen voice chat to try again.');
+        composerSpeechInput.stop(this.session);
+      }
+    } else if (view.phase === 'speaking') {
+      if (view.muted || (this.input && !this.input.monitor)) this.cancelInput();
+      else if (this.canInterrupt && this.readySpeech && this.readySpeech === this.speechToken && this.input?.id !== view.inputId) this.listen(view.inputId, true);
+      if (!this.playing) void this.speak(view.inputId);
+    } else {
+      if (view.phase !== 'waiting' || view.muted) this.cancelInput();
+      if (view.phase === 'waiting') {
+        const prompt = this.core.takePrompt();
+        if (prompt) {
+          if (this.timing) this.timing.submitted = performance.now();
+          if (!this.send(prompt)) this.fail(new Error('The voice message could not be queued for this agent.'));
+        }
+        if (this.canInterrupt && !view.muted && this.input?.id !== view.inputId) this.listen(view.inputId, true);
+      }
+    }
+  }
+
+  private listen(id: bigint, monitor = false): void {
+    this.cancelInput();
+    this.input = { id, finishing: false, started: false, monitor };
+    this.draft = '';
+    this.captureQueue = this.captureQueue.then(async () => {
+      await this.waitForInputRelease();
+      if (this.closed || this.input?.id !== id) return;
+      this.armWatchdog('The on-device recognizer did not start. Check the offline speech language in device settings.');
+      await composerSpeechInput.start({
+        owner: this.session, draft: '', localOnly: true, managedCall: true, duringPlayback: monitor,
+        readDraft: () => this.draft,
+        context: () => Promise.resolve(this.view.transcript?.transcript.messages.slice(-10).flatMap(message =>
+          message.parts.flatMap(part => part.type === 'text' ? [part.text] : [])) ?? []),
+        append: text => {
+          if (this.closed || this.input?.id !== id) return;
+          this.draft = text;
+          this.core!.recognition(id, text);
+        },
+        onAudio: pcm => {
+          if (this.closed || this.input?.id !== id) return;
+          try { this.core!.audio(id, pcm); this.apply(); } catch (error) { this.fail(error); }
+        },
+        onError: (error, message) => {
+          const phase = this.core?.view().phase;
+          if (monitor && (phase === 'speaking' || phase === 'waiting')) {
+            this.canInterrupt = false;
+            this.cancelInput();
+            this.view = { ...this.view, error: 'Voice interruption is unavailable on this device. Use Skip to stop a reply.' };
+            recordDiagnostic('warn', 'VoiceChat', 'interruption-unavailable', { reason: error });
+            this.apply();
+          } else this.fail(new Error(message || 'On-device recognition is unavailable. Install a supported offline speech language in device settings.'));
+        },
+      });
+    }).catch(error => this.fail(error));
+  }
+  private cancelInput(): void {
+    if (!this.input) return;
+    this.input = undefined;
+    clearTimeout(this.watchdog);
+    composerSpeechInput.cancel(this.session);
+  }
+  private waitForInputRelease(): Promise<void> {
+    if (composerSpeechInput.getSnapshot().owner !== this.session) return Promise.resolve();
+    return new Promise(resolve => {
+      const unsubscribe = composerSpeechInput.subscribe(() => {
+        if (composerSpeechInput.getSnapshot().owner !== this.session) { unsubscribe(); resolve(); }
+      });
+    });
+  }
+  private armWatchdog(message: string): void {
+    clearTimeout(this.watchdog);
+    this.watchdog = setTimeout(() => this.fail(new Error(message)), WATCHDOG_MS);
+  }
+
+  private signalSpeech(): void {
+    const wake = this.wakeSpeech;
+    this.wakeSpeech = undefined;
+    wake?.();
+  }
+
+  private stopInterruptedPlayback(): void {
+    const token = this.playing;
+    if (!token || this.speechToken !== token) return;
+    this.speechToken = undefined;
+    this.readySpeech = undefined;
+    this.signalSpeech();
+    void this.playback!.stopChatSpeech(token).then(() => {
+      if (this.playing === token) this.playing = undefined;
+      this.apply();
+    }, error => this.fail(error));
+  }
+
+  private playbackStarted(token: string): void {
+    const timing = this.timing;
+    if (this.closed || token !== this.speechToken || !timing || timing.played !== undefined) return;
+    const now = performance.now();
+    timing.played = now;
+    recordDiagnostic('info', 'VoiceChat', 'response-latency', {
+      endpointMs: Math.round(timing.boundary - timing.speechEnd),
+      recognitionMs: timing.submitted === undefined ? undefined : Math.round(timing.submitted - timing.boundary),
+      agentMs: timing.prose === undefined || timing.submitted === undefined ? undefined : Math.round(timing.prose - timing.submitted),
+      proseToPlaybackMs: timing.prose === undefined ? undefined : Math.round(now - timing.prose),
+      ttsMs: timing.synthesis === undefined ? undefined : Math.round(now - timing.synthesis),
+      speechEndToPlaybackMs: Math.round(now - timing.speechEnd),
+    });
+  }
+
+  private async speak(id: bigint): Promise<void> {
+    const token = `${this.session}:speech:${id}`;
+    this.playing = token;
+    this.speechToken = token;
+    const current = () => !this.closed && this.speechToken === token;
+    try {
+      await this.captureQueue;
+      if (!this.input?.monitor) await this.waitForInputRelease();
+      if (!current()) return;
+      await this.playback!.startLocalChatSpeech(token, this.target.label);
+      if (!current()) { await this.playback!.stopChatSpeech(token); return; }
+      this.readySpeech = token;
+      this.apply();
+      while (current()) {
+        const text = this.core!.nextSpeech();
+        if (!text) {
+          if (this.core!.speechFinished()) break;
+          await new Promise<void>(resolve => { this.wakeSpeech = resolve; });
+          continue;
+        }
+        if (this.timing && this.timing.synthesis === undefined) this.timing.synthesis = performance.now();
+        await this.playback!.speakChat(token, text);
+      }
+      if (!current()) return;
+      this.speechToken = undefined;
+      this.readySpeech = undefined;
+      await this.playback!.stopChatSpeech(token);
+      if (this.closed) return;
+      if (this.playing === token) this.playing = undefined;
+      this.core!.playbackEnded();
+      this.apply();
+    } catch (error) {
+      if (!current()) return;
+      this.view = { ...this.view, error: failureMessage(error) };
+      recordDiagnostic('warn', 'VoiceChat', 'playback-failed', { error: this.view.error });
+      await this.skip();
+    }
+  }
+
+  private fail(error: unknown): void {
+    if (this.closed) return;
+    recordDiagnostic('warn', 'VoiceChat', 'session-failed', { phase: this.view.phase, error: failureMessage(error) });
+    this.view = { ...this.view, phase: 'error', level: 0, error: failureMessage(error) };
+    this.changed(this.view);
+    void this.close();
+  }
+
+  async close(): Promise<void> {
+    if (this.closed) return;
+    this.closed = true;
+    this.signalSpeech();
+    this.core?.close();
+    clearTimeout(this.watchdog);
+    clearInterval(this.progressTimer);
+    for (const cleanup of this.cleanup.splice(0)) cleanup();
+    this.cancelInput();
+    const speech = this.speechToken;
+    this.speechToken = undefined;
+    this.playing = undefined;
+    this.readySpeech = undefined;
+    const call = this.callToken;
+    this.callToken = undefined;
+    // Hang up immediately, including when recognizer shutdown is still draining.
+    // CallKit deactivation may itself be what releases a stalled audio engine.
+    const endedCall = Promise.allSettled(call && this.playback ? [this.playback.endVoiceCall(call)] : []);
+    try {
+      if (speech) await this.playback?.stopChatSpeech(speech);
+      await this.captureQueue;
+      await this.waitForInputRelease();
+    } catch { /* Cleanup must still release the shared input reservation. */ }
+    finally {
+      await endedCall;
+      // UniFFI retains the Rust object until in-flight model futures finish.
+      if (active === this.session) { active = null; composerSpeechInput.releaseReservation(this.session); }
+    }
+  }
+}

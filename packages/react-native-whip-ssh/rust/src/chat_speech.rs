@@ -122,6 +122,78 @@ impl ChatSpeechQueue {
     /// Every initial load/reconnect establishes a baseline before accepting new
     /// completions. An unfinished message at the baseline may finish later.
     pub fn update(&self, agent: AgentTranscriptKind, live: bool, messages: Vec<ChatSpeechMessage>) {
+        self.update_stream(agent, live, messages, false);
+    }
+
+    pub fn next(&self) -> Option<String> {
+        self.next_content().map(|chunk| chunk.text)
+    }
+
+    /// Read assistant prose and questions in the selected response, in order.
+    /// Questions are speakable while the agent is still waiting for an answer.
+    pub fn read_response(
+        &self,
+        agent: AgentTranscriptKind,
+        messages: Vec<ChatSpeechMessage>,
+    ) -> bool {
+        let mut state = self.state.lock();
+        state.pending.clear();
+        for message in messages {
+            if !message.assistant {
+                continue;
+            }
+            for part in message.prose.into_iter().filter_map(speech_content) {
+                if !readable(agent, message.completed, &part) {
+                    continue;
+                }
+                state
+                    .pending
+                    .extend(
+                        speech_chunks(&spoken_prose(&part.text))
+                            .into_iter()
+                            .map(|text| ChatSpeechChunk {
+                                message_id: message.id.clone(),
+                                part_id: part.id.clone(),
+                                text,
+                            }),
+                    );
+            }
+        }
+        !state.pending.is_empty()
+    }
+}
+
+impl ChatSpeechQueue {
+    pub(crate) fn next_content(&self) -> Option<ChatSpeechChunk> {
+        self.state.lock().pending.pop_front()
+    }
+    pub(crate) fn reset_voice(&self) {
+        *self.state.lock() = SpeechState {
+            live: true,
+            ..SpeechState::default()
+        };
+    }
+    pub(crate) fn has_pending(&self) -> bool {
+        !self.state.lock().pending.is_empty()
+    }
+    pub(crate) fn update_voice(
+        &self,
+        agent: AgentTranscriptKind,
+        mut messages: Vec<ChatSpeechMessage>,
+        completed: bool,
+    ) {
+        for message in &mut messages {
+            message.completed |= completed;
+        }
+        self.update_stream(agent, true, messages, true);
+    }
+    fn update_stream(
+        &self,
+        agent: AgentTranscriptKind,
+        live: bool,
+        messages: Vec<ChatSpeechMessage>,
+        voice: bool,
+    ) {
         let mut state = self.state.lock();
         if !live {
             state.live = false;
@@ -143,7 +215,10 @@ impl ChatSpeechQueue {
                 // Baseline complete prose is history. Codex publishes finalized
                 // response items inside a growing turn; keep their existing
                 // immediate playback without freezing a part on its first update.
-                let finalized = readable(agent, message.completed, &part) || index + 1 < part_count;
+                let finalized = message.completed
+                    || part.question
+                    || index + 1 < part_count
+                    || (!voice && readable(agent, message.completed, &part));
                 let part_id = part.id.clone();
                 let progress = state
                     .parts
@@ -196,49 +271,6 @@ impl ChatSpeechQueue {
         }
         state.live = true;
     }
-
-    pub fn next(&self) -> Option<String> {
-        self.next_content().map(|chunk| chunk.text)
-    }
-
-    /// Read assistant prose and questions in the selected response, in order.
-    /// Questions are speakable while the agent is still waiting for an answer.
-    pub fn read_response(
-        &self,
-        agent: AgentTranscriptKind,
-        messages: Vec<ChatSpeechMessage>,
-    ) -> bool {
-        let mut state = self.state.lock();
-        state.pending.clear();
-        for message in messages {
-            if !message.assistant {
-                continue;
-            }
-            for part in message.prose.into_iter().filter_map(speech_content) {
-                if !readable(agent, message.completed, &part) {
-                    continue;
-                }
-                state
-                    .pending
-                    .extend(
-                        speech_chunks(&spoken_prose(&part.text))
-                            .into_iter()
-                            .map(|text| ChatSpeechChunk {
-                                message_id: message.id.clone(),
-                                part_id: part.id.clone(),
-                                text,
-                            }),
-                    );
-            }
-        }
-        !state.pending.is_empty()
-    }
-}
-
-impl ChatSpeechQueue {
-    pub(crate) fn next_content(&self) -> Option<ChatSpeechChunk> {
-        self.state.lock().pending.pop_front()
-    }
 }
 
 fn spoken_questions(questions: &[AgentQuestion]) -> String {
@@ -289,11 +321,15 @@ fn push_sentence(sections: &mut Vec<String>, text: &str) {
 fn stable_prose_end(prose: &str, trailing_whitespace: bool) -> usize {
     let mut end = 0;
     for (index, character) in prose.char_indices() {
-        if !matches!(character, '.' | '?' | '!' | ';' | ':') {
+        if !matches!(
+            character,
+            '.' | '?' | '!' | ';' | ':' | '。' | '？' | '！' | '；'
+        ) {
             continue;
         }
         let next = index + character.len_utf8();
         if prose[next..].starts_with(char::is_whitespace)
+            || (matches!(character, '。' | '？' | '！' | '；') && next < prose.len())
             || (next == prose.len() && trailing_whitespace)
         {
             end = next;
