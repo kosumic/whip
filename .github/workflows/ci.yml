@@ -316,15 +316,25 @@ jobs:
 
       - name: Run Android lint and build
         id: android-build
-        run: >-
-          nix develop .#default -c
-          android/gradlew -p android
-          :expo-whip-terminal-input:testDebugUnitTest
-          app:checkAppVersion app:lintRelease app:assembleDebug
-          app:dependencies --configuration releaseRuntimeClasspath
-          -PreactNativeArchitectures=arm64-v8a
-          --build-cache
-          --no-daemon
+        # Avoid overlapping native builds and leave memory for Clang and lint.
+        # Log resource usage so a runner shutdown retains useful diagnostics.
+        run: |
+          free -h
+          df -h .
+          vmstat -w -t 60 &
+          monitor_pid=$!
+          trap 'kill "$monitor_pid" 2>/dev/null || true' EXIT
+          nix develop .#default -c \
+            android/gradlew -p android \
+            :expo-whip-terminal-input:testDebugUnitTest \
+            app:checkAppVersion app:lintRelease app:assembleDebug \
+            app:dependencies --configuration releaseRuntimeClasspath \
+            -PreactNativeArchitectures=arm64-v8a \
+            -Dorg.gradle.jvmargs="-Xmx2g -XX:MaxMetaspaceSize=1g" \
+            --max-workers=2 \
+            --no-parallel \
+            --build-cache \
+            --no-daemon
 
       - name: Verify release dependency snapshot
         if: github.ref == 'refs/heads/main'
