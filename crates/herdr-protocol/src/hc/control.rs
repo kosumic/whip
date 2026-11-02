@@ -434,8 +434,12 @@ impl Client {
     async fn spawn<T: Transport>(
         &self,
         io: &T,
-        params: api::TerminalRunParams,
+        mut params: api::TerminalRunParams,
     ) -> Result<String, CallError<T::Failure>> {
+        params
+            .labels
+            .get_or_insert_default()
+            .insert(super::attention::SEEN_LABEL.into(), "0".into());
         let Response::TerminalRun(result) = io.rpc(Request::terminal_run(params)).await? else {
             return Err(Error::InvalidMessage("expected terminal.run result".into()).into());
         };

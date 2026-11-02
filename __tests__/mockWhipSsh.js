@@ -234,6 +234,9 @@ function createMockWhipSshModule() {
       },
       status() { return { state: clients.length ? 'connected' : 'disconnected', generation }; },
       setMonitoringState() {},
+      setViewedAgent() {},
+      async setAgentPinned() {},
+      async markAgentUnread() {},
       detach() { lifecycleHandler = undefined; },
       hostState() { return hostState; },
       async refreshState() {

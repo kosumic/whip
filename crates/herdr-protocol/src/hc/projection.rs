@@ -487,13 +487,7 @@ pub fn agent_kind(app: &str) -> Option<&'static str> {
     }
 }
 fn agent_status(terminal: &Terminal) -> HerdrAgentStatus {
-    match reported_status(terminal).map(|s| s.state.as_str()) {
-        Some("blocked" | "error") => HerdrAgentStatus::Blocked,
-        Some("done") => HerdrAgentStatus::Done,
-        Some("working") => HerdrAgentStatus::Working,
-        Some("idle") => HerdrAgentStatus::Idle,
-        _ => HerdrAgentStatus::Unknown,
-    }
+    super::attention::status(terminal)
 }
 fn transcript(terminal: &Terminal) -> Option<HerdrAgentSessionInfo> {
     let agent = agent_kind(terminal.labels.get("whip.transcript.agent")?)?;
@@ -526,6 +520,10 @@ fn project_pane(
     let app = status.and_then(|s| s.app.as_deref());
     let agent = app.map(|app| agent_kind(app).unwrap_or(app).to_owned());
     let mut labels: HashMap<_, _> = terminal.labels.clone().into_iter().collect();
+    labels.insert(
+        super::attention::TURN_LABEL.into(),
+        terminal.turn.unwrap_or(0).to_string(),
+    );
     labels.insert(
         "hc.reported".into(),
         terminal.reported.unwrap_or(false).to_string(),

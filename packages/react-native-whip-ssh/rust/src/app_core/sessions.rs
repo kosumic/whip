@@ -85,6 +85,11 @@ impl AppSession {
             .as_ref()
             .and_then(|runtime| runtime.herd_agent_order())
     }
+    pub(super) fn core_backend(&self) -> bool {
+        self.runtime
+            .as_ref()
+            .is_some_and(|runtime| runtime.core_backend())
+    }
 
     pub(super) fn view(&self) -> AppSessionView {
         let (live_host_state, connection_status, connection_error, reconnect_attempt) =
