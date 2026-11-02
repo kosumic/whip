@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import * as Haptics from 'expo-haptics';
 
@@ -12,8 +13,9 @@ jest.mock('../src/services/attachmentPaste', () => ({ discardClipboardAttachment
 
 jest.mock('lucide-react-native/icons/maximize-2', () => ('Maximize2'));
 jest.mock('lucide-react-native/icons/mic', () => ('Mic'));
-jest.mock('lucide-react-native/icons/paperclip', () => ('Paperclip'));
-jest.mock('lucide-react-native/icons/send', () => ('Send'));
+jest.mock('lucide-react-native/icons/plus', () => ('Plus'));
+jest.mock('lucide-react-native/icons/arrow-up', () => ('ArrowUp'));
+jest.mock('lucide-react-native/icons/audio-lines', () => ('AudioLines'));
 jest.mock('lucide-react-native/icons/square', () => ('Square'));
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
@@ -39,7 +41,6 @@ jest.mock('../src/theme', () => ({
 }));
 
 const actions = {
-  actionClassName: 'bg-terminal-surface',
   actionColor: '#aaaaaa',
   attachLabel: 'Attach',
   voiceLabel: 'Voice input',
@@ -54,14 +55,14 @@ const actions = {
   sendLabel: 'Send',
 };
 
-function renderComposer(glass: boolean): ReactTestRenderer {
+function renderComposer(glass: boolean, initialValue = ''): ReactTestRenderer {
   let renderer: ReactTestRenderer;
   act(() => {
     renderer = create(
       <MessageComposer
         actions={actions}
         glass={glass}
-        initialValue=""
+        initialValue={initialValue}
       />,
     );
   });
@@ -84,7 +85,7 @@ describe('MessageComposer actions', () => {
       expect(Haptics.impactAsync).not.toHaveBeenCalled();
       return accepted;
     });
-    renderer = renderComposer(glass);
+    renderer = renderComposer(glass, 'Draft');
 
     act(() => { renderer.root.findByProps({ accessibilityLabel: 'Send' }).props.onPress(); });
 
@@ -95,7 +96,7 @@ describe('MessageComposer actions', () => {
   });
 
   test.each([true, false])('routes utility actions to their callbacks (glass=%s)', glass => {
-    renderer = renderComposer(glass);
+    renderer = renderComposer(glass, 'Draft');
 
     for (const [label, handler] of [
       ['Attach', actions.onAttach],
@@ -109,6 +110,85 @@ describe('MessageComposer actions', () => {
       expect(handler).toHaveBeenCalledTimes(1);
     }
     expect(actions.onSend).not.toHaveBeenCalled();
+  });
+
+  test('expands on focus or draft text and keeps the same native input while typing', () => {
+    const nativeInput = { focus: jest.fn(), blur: jest.fn() };
+    const inputRef = jest.fn();
+    function Editor() {
+      const [draft, setDraft] = useState('');
+      return <MessageComposer initialValue={draft} onChangeText={setDraft} actions={actions} inputRef={inputRef} />;
+    }
+    act(() => { renderer = create(<Editor />, { createNodeMock: () => nativeInput }); });
+    const input = renderer.root.find(node => String(node.type) === 'Input');
+    expect(renderer.root.findAllByProps({ accessibilityLabel: 'Expand' })).toHaveLength(0);
+
+    act(() => { input.props.onFocus({ nativeEvent: {} }); });
+    expect(renderer.root.findByProps({ accessibilityLabel: 'Expand' })).toBeDefined();
+    for (const draft of ['h', 'he', 'hel', 'hell', 'hello']) {
+      act(() => { input.props.onChangeText(draft); });
+      expect(renderer.root.find(node => String(node.type) === 'Input')).toBe(input);
+      expect(renderer.root.findByProps({ accessibilityLabel: 'Expand' })).toBeDefined();
+    }
+    expect(inputRef).toHaveBeenCalledTimes(1);
+    expect(inputRef).toHaveBeenCalledWith(nativeInput);
+    expect(input.props.value).toBeUndefined();
+    expect(input.props.defaultValue).toBe('');
+
+    act(() => { input.props.onBlur({ nativeEvent: {} }); });
+    expect(renderer.root.findByProps({ accessibilityLabel: 'Expand' })).toBeDefined();
+
+    act(() => { input.props.onChangeText(''); });
+    expect(renderer.root.find(node => String(node.type) === 'Input')).toBe(input);
+    expect(renderer.root.findAllByProps({ accessibilityLabel: 'Expand' })).toHaveLength(0);
+  });
+
+  test('shows the inert voice chat action only for an empty, unfocused chat composer', () => {
+    const onFocus = jest.fn();
+    const onBlur = jest.fn();
+    const props = { actions, onFocus, onBlur, voiceChatLabel: 'Voice chat' };
+    act(() => { renderer = create(<MessageComposer {...props} initialValue="" />); });
+    const input = renderer.root.find(node => String(node.type) === 'Input');
+    const voiceChat = renderer.root.findByProps({ accessibilityLabel: 'Voice chat' });
+    expect(voiceChat.props.onPress).toBeUndefined();
+    expect(renderer.root.findAllByProps({ accessibilityLabel: 'Send' })).toHaveLength(0);
+
+    act(() => { input.props.onFocus({ nativeEvent: {} }); });
+    expect(onFocus).toHaveBeenCalledTimes(1);
+    expect(renderer.root.findAllByProps({ accessibilityLabel: 'Voice chat' })).toHaveLength(0);
+    expect(renderer.root.findByProps({ accessibilityLabel: 'Send' })).toBeDefined();
+
+    act(() => { input.props.onBlur({ nativeEvent: {} }); });
+    expect(onBlur).toHaveBeenCalledTimes(1);
+    expect(renderer.root.findByProps({ accessibilityLabel: 'Voice chat' })).toBeDefined();
+
+    act(() => renderer.update(<MessageComposer {...props} initialValue="Draft" />));
+    expect(renderer.root.findAllByProps({ accessibilityLabel: 'Voice chat' })).toHaveLength(0);
+    expect(renderer.root.findByProps({ accessibilityLabel: 'Send' })).toBeDefined();
+
+    act(() => renderer.update(<MessageComposer actions={actions} initialValue="" />));
+    expect(renderer.root.findAllByProps({ accessibilityLabel: 'Voice chat' })).toHaveLength(0);
+    expect(renderer.root.findByProps({ accessibilityLabel: 'Send' })).toBeDefined();
+    expect(actions.onSend).not.toHaveBeenCalled();
+    expect(actions.onVoiceInput).not.toHaveBeenCalled();
+  });
+
+  test('grows with draft content, scrolls long drafts, and shrinks after clearing', () => {
+    renderer = renderComposer(false, 'Draft');
+    const input = renderer.root.find(node => String(node.type) === 'Input');
+    const initialHeight = input.props.style.at(-1).height;
+    act(() => { input.props.onContentSizeChange({ nativeEvent: { contentSize: { height: 120 } } }); });
+    expect(input.props.style.at(-1).height).toBe(120);
+    expect(input.props.scrollEnabled).toBe(false);
+
+    act(() => { input.props.onContentSizeChange({ nativeEvent: { contentSize: { height: 1000 } } }); });
+    expect(input.props.style.at(-1).height).toBeGreaterThan(initialHeight);
+    expect(input.props.style.at(-1).height).toBeLessThan(1000);
+    expect(input.props.scrollEnabled).toBe(true);
+
+    act(() => renderer.update(<MessageComposer initialValue="" actions={actions} />));
+    expect(input.props.style.at(-1).height).toBe(initialHeight);
+    expect(input.props.scrollEnabled).toBe(false);
   });
 
   test.each(['idle', 'listening', 'preparing', 'finishing'] as const)('renders the %s voice action', phase => {

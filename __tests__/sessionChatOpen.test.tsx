@@ -1142,6 +1142,7 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     act(() => { control().onPress(); });
     expect(control().loading).toBe(true);
     expect(ui('TerminalScreen').props.renderViewportOverlay).toBeUndefined();
+    expect(ui('TerminalScreen').props.transcriptReady).toBe(false);
     act(() => {
       binding.state = { ...binding.state, status: 'live', revision: 1 };
       host.handlers.get(binding.terminalId)?.({
@@ -1150,6 +1151,7 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
       });
     });
     expect(control().loading).toBe(true);
+    expect(ui('TerminalScreen').props.transcriptReady).toBe(true);
     revealChat();
     expect(host.native.openAgentChat).toHaveBeenCalledTimes(1);
     expect(host.native.startAgentChat).toHaveBeenCalledTimes(1);
@@ -1310,6 +1312,7 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     act(() => { control().onPress(); });
     expect(ui('AgentChatView')).toBe(viewport);
     expect(ui('TerminalScreen').props.chatViewEnabled).toBe(false);
+    expect(ui('TerminalScreen').props.transcriptReady).toBe(true);
     expect(control()).toMatchObject({ active: false, loading: false, disabled: false });
     expect(viewport.parent?.props).toMatchObject({
       collapsable: false,
