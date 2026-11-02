@@ -1,4 +1,4 @@
-import { Pencil, Unplug, X } from 'lucide-react-native';
+import { Pencil, Plus, Unplug, X } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { Modal, Platform, Pressable, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -12,6 +12,9 @@ import { Button, type ButtonProps } from './ui/button';
 import { Text } from './ui/text';
 
 export const RailAction = {
+  NewHost: 'new-host',
+  NewWorkspace: 'new-workspace',
+  NewTab: 'new-tab',
   Rename: 'rename',
   Close: 'close',
   Disconnect: 'disconnect',
@@ -19,6 +22,9 @@ export const RailAction = {
 export type RailAction = (typeof RailAction)[keyof typeof RailAction];
 
 const ACTION_APPEARANCE = {
+  [RailAction.NewHost]: { label: 'rail.newHostSession', icon: Plus },
+  [RailAction.NewWorkspace]: { label: 'rail.newWorkspace', icon: Plus },
+  [RailAction.NewTab]: { label: 'session.newTab', icon: Plus },
   [RailAction.Rename]: { label: 'rail.rename', icon: Pencil },
   [RailAction.Close]: { label: 'common.close', icon: X },
   [RailAction.Disconnect]: { label: 'rail.disconnect', icon: Unplug },
@@ -132,7 +138,7 @@ export function RailItemButton({ label, actions = EMPTY_ACTIONS, actionsDisabled
               {actions.map(action => {
                 const appearance = ACTION_APPEARANCE[action.id];
                 const ActionIcon = appearance.icon;
-                const destructive = action.id !== RailAction.Rename;
+                const destructive = action.id === RailAction.Close || action.id === RailAction.Disconnect;
                 return (
                   <Button key={action.id} accessibilityLabel={action.accessibilityLabel} className="h-12 justify-start rounded-xl px-3" variant="ghost" onPress={hapticPress(() => runAction(action.id, true))}>
                     <ActionIcon size={18} color={destructive ? colors.error : colors.text} />
