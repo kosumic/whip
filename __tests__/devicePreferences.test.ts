@@ -54,9 +54,9 @@ const mockRemoveBackground = jest.mocked(removeTerminalBackgroundImage);
 const mockMigrateAppBackground = jest.mocked(migrateAppBackgroundImage);
 const mockRemoveAppBackground = jest.mocked(removeAppBackgroundImage);
 
-test('global AGENTS.md defaults to empty and preserves Markdown across persistence', async () => {
+test('global AGENTS.md defaults to Use Whip MCP and preserves Markdown across persistence', async () => {
   mockGetItem.mockResolvedValue(null);
-  expect((await loadDevicePreferences()).reverseControlInstructions).toBe('');
+  expect((await loadDevicePreferences()).reverseControlInstructions).toBe('Use Whip MCP');
   const instructions = '# Global\n\nUse `nix develop`.\n先读主机说明。\n';
   await saveDevicePreferences({ ...defaultDevicePreferences, reverseControlInstructions: instructions });
   const stored = mockSetItem.mock.calls.at(-1)![1];
@@ -190,7 +190,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
 
   await expect(loadDevicePreferences()).resolves.toEqual({
     alertsEnabled: false,
-    reverseControlInstructions: '',
+    reverseControlInstructions: 'Use Whip MCP',
     agentAlertLevel: 'persistent',
     persistentAlertDurationSeconds: 30,
     ttsEnabled: true,
