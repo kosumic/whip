@@ -135,6 +135,69 @@ function openedToken(
 }
 
 describe('Rust-owned agent Chat projection', () => {
+  test('global observers receive existing and future transcripts without opening chat or subscribing a viewport', async () => {
+    const service = new NativeTranscriptService();
+    const remote = fakeTransport();
+    openedToken(service, remote.value);
+    await flush();
+    const listener = jest.fn();
+    const stop = service.observe(listener);
+    expect(remote.value.openAgentChat).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({
+      key: `1\n${transcriptKey}`, hostSessionId: 'host', baseline: true,
+      binding: expect.objectContaining({ bindingToken: 'binding-1' }),
+      state: expect.objectContaining({ status: 'live' }),
+    }));
+    remote.emit({ revision: 2, deltas: [{ type: 'status-changed', status: 'stale' }] });
+    expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({ baseline: false, state: expect.objectContaining({ status: 'stale' }) }));
+    service.closeTerminal('host', 'terminal-1', remote.value);
+    expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({ state: null }));
+    stop();
+    listener.mockClear();
+    openedToken(service, remote.value);
+    await flush();
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  test('global speech metadata uses the current tab label without loading another transcript', async () => {
+    const service = new NativeTranscriptService();
+    const remote = fakeTransport();
+    remote.value.hostState = jest.fn(() => ({
+      revision: 1, connectionGeneration: 1, syncGeneration: 1, syncStatus: 'synced',
+      freshness: 'fresh', needsResync: false, focus: {},
+      snapshot: {
+        version: 'test', protocol: 1, agents: [], workspaces: [], layouts: [],
+        tabs: [{ tab_id: 'tab', workspace_id: 'workspace', label: 'debug', label_is_custom: true, number: 1, focused: false, pane_count: 1, agent_status: 'working' }],
+        panes: [{ pane_id: 'pane-terminal-1', terminal_id: 'terminal-1', workspace_id: 'workspace', tab_id: 'tab', focused: false, agent_status: 'working', revision: 1 }],
+      },
+    }));
+    const listener = jest.fn();
+    service.observe(listener);
+    openedToken(service, remote.value);
+    await flush();
+    expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({ tabName: 'debug' }));
+    expect(remote.value.openAgentChat).toHaveBeenCalledTimes(1);
+    expect(remote.value.agentTranscript).not.toHaveBeenCalled();
+  });
+
+  test('global observers deduplicate shared transcript bindings and retain them until the last pane closes', async () => {
+    const service = new NativeTranscriptService();
+    const first = fakeTransport();
+    const second = fakeTransport();
+    second.rebind(binding('terminal-2', 'binding-2'));
+    openedToken(service, first.value);
+    service.activate('host', 'terminal-2', second.value);
+    await flush();
+    const listener = jest.fn();
+    service.observe(listener);
+    expect(listener).toHaveBeenCalledTimes(1);
+    service.closeTerminal('host', 'terminal-1', first.value);
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({ binding: expect.objectContaining({ bindingToken: 'binding-2' }) }));
+    service.closeTerminal('host', 'terminal-2', second.value);
+    expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({ state: null }));
+  });
+
   test('loaded metadata populates card titles without a Chat subscriber and survives unloading', async () => {
     const initial = { ...state(), info: { id: sessionId, title: 'Loaded title' } };
     const remote = fakeTransport(initial);

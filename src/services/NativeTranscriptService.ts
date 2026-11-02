@@ -26,7 +26,16 @@ export type NativeTranscriptTransport = Pick<
   | 'detachAgentChat'
   | 'openAgentChat'
   | 'startAgentChat'
->;
+> & Partial<Pick<HostRuntimeConnection, 'hostState'>>;
+
+export interface ObservedAgentTranscript {
+  key: string;
+  hostSessionId: string;
+  binding: NativeAgentChatBinding;
+  state: AgentChatState | null;
+  baseline: boolean;
+  tabName: string;
+}
 
 type Listener = (state: AgentChatState | null, baseline?: boolean) => void;
 
@@ -73,6 +82,45 @@ export class NativeTranscriptService {
   private readonly entries = new Map<string, TranscriptEntry>();
   private readonly terminalBindings = new Map<string, string>();
   private readonly retentionVersions = new Map<string, NativeAgentTranscriptRetention>();
+  private readonly observers = new Set<(event: ObservedAgentTranscript) => void>();
+
+  /** One event per native transcript, shared by all of its pane bindings. */
+  observe(listener: (event: ObservedAgentTranscript) => void): () => void {
+    this.observers.add(listener);
+    for (const entry of this.entries.values()) {
+      const event = this.observed(entry, true);
+      if (event) listener(event);
+    }
+    return () => { this.observers.delete(listener); };
+  }
+
+  private observed(entry: TranscriptEntry, baseline: boolean): ObservedAgentTranscript | null {
+    const binding = entry.bindings.values().next().value;
+    if (!binding) return null;
+    let tabName = '';
+    try {
+      const snapshot = entry.transport.hostState?.().snapshot;
+      const pane = snapshot?.panes.find(item => item.pane_id === binding.paneId);
+      const tab = snapshot?.tabs.find(item => item.tab_id === pane?.tab_id);
+      if (tab && snapshot) tabName = this.titles.label(entry.hostSessionId, tab, snapshot.panes, binding.terminalId);
+    } catch {
+      // A host replacement may race the final transcript event.
+    }
+    return {
+      key: this.entryKey(entry.runtimeIncarnation, entry.nativeKey),
+      hostSessionId: entry.hostSessionId,
+      binding,
+      state: entry.deleted ? null : entry.state,
+      baseline,
+      tabName,
+    };
+  }
+
+  private notifyObservers(entry: TranscriptEntry, baseline = false): void {
+    if (this.observers.size === 0) return;
+    const event = this.observed(entry, baseline);
+    if (event) for (const observer of this.observers) observer(event);
+  }
 
   /** Speculative opening only: no remediation, and no restart of an existing binding. */
   preload(
@@ -227,6 +275,7 @@ export class NativeTranscriptService {
     }
     this.terminalBindings.set(terminalKey, binding.bindingToken);
     boundEntry.current = entry;
+    this.notifyObservers(entry, isNewEntry);
 
     if (explicitOpen || previousToken !== binding.bindingToken) {
       recordAgentChatDiagnostic('binding-adopted', {
@@ -279,6 +328,8 @@ export class NativeTranscriptService {
 
   reset(): void {
     for (const entry of this.entries.values()) {
+      entry.deleted = true;
+      this.notifyObservers(entry);
       for (const listeners of entry.listeners.values()) listeners.clear();
       entry.bindings.clear();
     }
@@ -391,6 +442,7 @@ export class NativeTranscriptService {
     for (const listeners of entry.listeners.values()) {
       for (const listener of listeners) listener(state, baseline);
     }
+    this.notifyObservers(entry, baseline);
   }
 
   private forgetBinding(terminalKey: string): void {
@@ -409,6 +461,10 @@ export class NativeTranscriptService {
     }
     entry.listeners.get(bindingToken)?.clear();
     entry.listeners.delete(bindingToken);
+    if (entry.bindings.size === 1) {
+      entry.deleted = true;
+      this.notifyObservers(entry);
+    }
     entry.bindings.delete(bindingToken);
     for (const [terminalKey, token] of this.terminalBindings) {
       if (token === bindingToken) this.terminalBindings.delete(terminalKey);
@@ -424,6 +480,8 @@ export class NativeTranscriptService {
       this.entries.delete(
         this.entryKey(entry.runtimeIncarnation, entry.nativeKey),
       );
+    } else {
+      this.notifyObservers(entry);
     }
   }
 

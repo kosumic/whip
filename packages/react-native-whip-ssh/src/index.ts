@@ -7,7 +7,6 @@ import {
   AppConnectionStatus,
   AppCore as RustAppCore,
   SessionRestoreError as RustSessionRestoreError,
-  ChatSpeechQueue as RustChatSpeechQueue,
   type ChatSearchIndexLike,
   AgentDiagnosticSeverity,
   AgentMessageRole,
@@ -4049,35 +4048,7 @@ export class NativeAppCore {
   }
 }
 
-/** Rust owns history baselines, completion deduplication, formatting and order. */
-export class NativeChatSpeechQueue {
-  private readonly queue = new RustChatSpeechQueue();
-
-  update(kind: RuntimeAgentKind, live: boolean, messages: readonly NativeAgentTranscriptMessage[]): void {
-    this.queue.update(CHAT_AGENT_TO_NATIVE[kind], live, this.speechMessages(messages));
-  }
-
-  readResponse(kind: RuntimeAgentKind, messages: readonly NativeAgentTranscriptMessage[]): boolean {
-    return this.queue.readResponse(CHAT_AGENT_TO_NATIVE[kind], this.speechMessages(messages));
-  }
-
-  private speechMessages(messages: readonly NativeAgentTranscriptMessage[]) {
-    return messages.map(message => ({
-      id: message.id,
-      assistant: message.role === 'assistant',
-      completed: message.completedAt !== undefined,
-      prose: message.parts.flatMap(part => part.type === 'text' ? [{ id: part.id, text: part.text }] : []),
-    }));
-  }
-
-  next(): string | undefined {
-    return this.queue.next();
-  }
-
-  dispose(): void {
-    this.queue.uniffiDestroy();
-  }
-}
+export { NativeChatSpeechQueue, NativeAutomaticChatSpeechQueue, canReadChatResponse, formatChatSpeech } from './chatSpeech';
 
 /** Canonical Rust host metadata and jump-host graph; secrets never enter it. */
 export class NativeHostProfileStore {

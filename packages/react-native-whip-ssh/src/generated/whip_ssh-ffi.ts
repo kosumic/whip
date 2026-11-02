@@ -188,6 +188,14 @@ interface NativeModuleInterface {
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_automaticchatspeechqueue(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_automaticchatspeechqueue(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_clone_browsereffectpermit(
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -634,6 +642,16 @@ interface NativeModuleInterface {
   ): number;
   ubrn_uniffi_whip_ssh_fn_func_cancel_ssh_sftp_upload(
     key: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): number;
+  ubrn_uniffi_whip_ssh_fn_func_chat_speech_announcement(
+    tabName: Uint8Array,
+    text: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_func_chat_speech_response_available(
+    agent: Uint8Array,
+    messages: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): number;
   ubrn_uniffi_whip_ssh_fn_func_chmod_ssh_sftp_path(
@@ -1281,6 +1299,34 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_constructor_automaticchatspeechqueue_new(
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_next(
+    uniffiSelf: bigint,
+    nowMs: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_remove(
+    uniffiSelf: bigint,
+    key: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_reset(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_update(
+    uniffiSelf: bigint,
+    key: Uint8Array,
+    agent: Uint8Array,
+    tabName: Uint8Array,
+    live: number,
+    baseline: number,
+    messages: Uint8Array,
+    nowMs: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_method_browsereffectpermit_check_active(
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -2873,6 +2919,8 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_billing_rollout_policy(): number;
   ubrn_uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_download(): number;
   ubrn_uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_upload(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_chat_speech_announcement(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_chat_speech_response_available(): number;
   ubrn_uniffi_whip_ssh_checksum_func_chmod_ssh_sftp_path(): number;
   ubrn_uniffi_whip_ssh_checksum_func_clear_agent_transcript_cache(): number;
   ubrn_uniffi_whip_ssh_checksum_func_clear_agent_transcript_event_sink(): number;
@@ -3008,6 +3056,11 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_appcore_start_session_restore(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_update_terminal_lifecycle(): number;
   ubrn_uniffi_whip_ssh_checksum_method_appcore_view(): number;
+  ubrn_uniffi_whip_ssh_checksum_constructor_automaticchatspeechqueue_new(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_next(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_remove(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_reset(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_update(): number;
   ubrn_uniffi_whip_ssh_checksum_method_browsereffectpermit_check_active(): number;
   ubrn_uniffi_whip_ssh_checksum_method_browsereffectpermit_effect_id(): number;
   ubrn_uniffi_whip_ssh_checksum_constructor_browserlibrary_new(): number;
@@ -3394,6 +3447,10 @@ interface NativeModuleInterface {
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
   ubrn_uniffi_internal_fn_method_appcore_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_automaticchatspeechqueue_ffi__bless_pointer(
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;

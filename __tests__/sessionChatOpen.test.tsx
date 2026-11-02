@@ -49,9 +49,10 @@ jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );
 jest.mock('react-native-reanimated', () => require('../test-support/keyboardAnimation').reanimatedKeyboardMock);
-jest.mock('react-native-whip-ssh', () =>
-  require('./mockWhipSsh').createMockWhipSshModule(),
-);
+jest.mock('react-native-whip-ssh', () => ({
+  ...require('./mockWhipSsh').createMockWhipSshModule(),
+  canReadChatResponse: jest.fn(() => true),
+}));
 jest.mock('../src/services/chatSpeech', () => ({
   listenToChat: jest.fn(() => jest.fn()),
   readChatResponse: jest.fn((_target, _messages, onStopped) => jest.fn(onStopped)),
@@ -1467,7 +1468,7 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     expect(agentTranscriptService.getState(binding.bindingToken)).toBeNull();
   });
 
-  test('manual reading pauses automatic listening and resumes it after playback', async () => {
+  test('manual reading stays available independently of automatic speech', async () => {
     const host = setup(agent);
     host.props.ttsEnabled = true;
     const binding = await openReadyChat(host, agent);
@@ -1487,59 +1488,18 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
         revision: 2, deltas: [{ type: 'reset', state: binding.state }],
       });
     });
-    const automaticStop = jest.mocked(listenToChat).mock.results[0].value;
     const turn = { id: 'selected-response', status: 'idle' as const, assistants: binding.state.messages, diffs: [] };
     expect(ui('AgentChatView').props.readAloud.canRead(turn)).toBe(true);
     expect(ui('TerminalScreen').props.chatReadAloud).toBeUndefined();
     act(() => { ui('AgentChatView').props.readAloud.toggle(turn); });
     expect(ui('AgentChatView').props.readAloud.readingTurnId).toBe(turn.id);
-    expect(automaticStop).toHaveBeenCalledTimes(1);
     expect(readChatResponse).toHaveBeenCalledWith(
       expect.objectContaining({ agent, bindingToken: binding.bindingToken }),
       binding.state.messages, expect.any(Function), expect.any(Function),
     );
     act(() => { jest.mocked(readChatResponse).mock.calls[0][2](); });
     expect(ui('AgentChatView').props.readAloud.readingTurnId).toBeNull();
-    expect(listenToChat).toHaveBeenCalledTimes(2);
-  });
-
-  test.each(['terminal', 'host', 'pane'] as const)('keeps focused chat speech in background and stops on leaving the %s', async destination => {
-    const host = setup(agent);
-    host.props.ttsEnabled = true;
-    const binding = await openReadyChat(host, agent);
-    revealChat();
-    expect(listenToChat).toHaveBeenCalledWith(expect.objectContaining({
-      bindingToken: binding.bindingToken, hostId: 'host-1', paneId: 'pane-1', agent,
-    }), expect.any(Function), expect.any(Function));
-    const stop = jest.mocked(listenToChat).mock.results[0].value;
-    act(() => { for (const listener of mockAppStateListeners) listener('background'); });
-    expect(listenToChat).toHaveBeenCalledTimes(1);
-    expect(stop).not.toHaveBeenCalled();
-    if (destination === 'terminal') act(() => { control().onPress(); });
-    if (destination === 'host') act(() => renderer.update(<SessionScreen {...host.props} visible={false} />));
-    if (destination === 'pane') act(() => renderer.update(<SessionScreen {...host.props}
-      terminalState={{ ...host.props.terminalState, activeTerminalId: null }} />));
-    expect(stop).toHaveBeenCalledTimes(1);
-    expect(listenToChat).toHaveBeenCalledTimes(1);
-  });
-
-  test.each(['android', 'ios'] as const)('the shared TTS setting starts and stops reading the selected chat on %s', async platform => {
-    Platform.OS = platform;
-    const host = setup(agent);
-    await openReadyChat(host, agent);
-    revealChat();
     expect(listenToChat).not.toHaveBeenCalled();
-
-    act(() => renderer.update(<SessionScreen {...host.props} ttsEnabled />));
-    expect(listenToChat).toHaveBeenCalledTimes(1);
-    const stop = jest.mocked(listenToChat).mock.results[0].value;
-
-    act(() => renderer.update(<SessionScreen {...host.props} ttsEnabled={false} />));
-    expect(stop).toHaveBeenCalledTimes(1);
-    expect(listenToChat).toHaveBeenCalledTimes(1);
-
-    act(() => renderer.update(<SessionScreen {...host.props} ttsEnabled />));
-    expect(listenToChat).toHaveBeenCalledTimes(2);
   });
 
   test.each(['unavailable', 'replaced'] as const)('restores an evicted chat after its host was %s on return', async reason => {
