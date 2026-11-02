@@ -109,8 +109,8 @@ function WorkspacePill({
   return (
     <View
       className={cn(
-        'h-11 max-w-[190px] flex-row items-center overflow-hidden rounded-full',
-        isIpad && 'max-w-[240px]',
+        'h-11 flex-row items-center overflow-hidden rounded-full',
+        !active && (isIpad ? 'max-w-[240px]' : 'max-w-[190px]'),
         appGlassEnabled && 'border',
         !appGlassEnabled && 'bg-muted',
         !appGlassEnabled && !active && 'border border-border',
