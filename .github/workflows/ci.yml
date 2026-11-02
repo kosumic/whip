@@ -263,7 +263,7 @@ jobs:
         name: Install Android SDK packages
         run: >-
           "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          "platforms;android-37"
+          "platforms;android-37.0"
           "build-tools;37.0.0"
           "ndk;27.1.12297006"
           "cmake;3.22.1"
