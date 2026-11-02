@@ -743,3 +743,17 @@ Clients use the managed relay by default without an enrollment code or shared cl
 Herdr 0.9.5 uses the dotted subscription above but serializes the hook envelope as `pane_agent_status_changed`; a captured real-hook fixture checks that boundary. The Worker uses manual redirects and rejects non-success responses because Workers does not implement Fetch's `error` redirect mode. Simulator push registration explicitly selects APNs sandbox; production devices retain provisioning-profile detection. Real Expo/APNs simulator acceptance covers terminated-app delivery, authenticated cold navigation with a fresh snapshot, active leases, and remote fallback after iOS backgrounding.
 
 [Remote notification documentation](docs/remote-notifications.md) specifies the wire format, compatibility checks, optional server installation, native push provisioning, deployment, per-device enable/revoke/rotation/uninstall lifecycle, tests and limitations.
+
+## Recoverable remote downloads
+
+Single-file SFTP recovery belongs to Rust (`ssh/download.rs`), including a bounded
+attempt budget, private partial ownership, offset reads, source size/mtime checks,
+byte-count verification and atomic publication. The runtime preserves downloads
+through automatic SSH generation changes and revokes them on explicit cancellation
+or disconnect. A lifecycle signal interrupts stale remote I/O without dropping a
+local write that may still be settling. Upload and directory policies remain separate.
+
+The platform adapter owns cache/provider I/O, expired staging cleanup and typed
+`destination-save` errors. Native path-free download diagnostics correlate transfer
+phase, bytes, source metadata and SSH generation with platform publication outcomes.
+See `docs/sftp-download-recovery.md` for the evidence and regression matrix for #285.

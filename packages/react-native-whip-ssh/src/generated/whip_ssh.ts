@@ -10364,6 +10364,231 @@ const FfiConverterTypeDictationView = (() => {
   return new FFIConverter();
 })();
 
+export enum DownloadPhase {
+  Connecting,
+  WaitingForConnection,
+  Metadata,
+  RemoteRead,
+  LocalWrite,
+  Verifying,
+  Publishing,
+  Completed,
+}
+
+const FfiConverterTypeDownloadPhase = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = DownloadPhase;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return DownloadPhase.Connecting;
+        case 2:
+          return DownloadPhase.WaitingForConnection;
+        case 3:
+          return DownloadPhase.Metadata;
+        case 4:
+          return DownloadPhase.RemoteRead;
+        case 5:
+          return DownloadPhase.LocalWrite;
+        case 6:
+          return DownloadPhase.Verifying;
+        case 7:
+          return DownloadPhase.Publishing;
+        case 8:
+          return DownloadPhase.Completed;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case DownloadPhase.Connecting:
+          return ordinalConverter.write(1, into);
+        case DownloadPhase.WaitingForConnection:
+          return ordinalConverter.write(2, into);
+        case DownloadPhase.Metadata:
+          return ordinalConverter.write(3, into);
+        case DownloadPhase.RemoteRead:
+          return ordinalConverter.write(4, into);
+        case DownloadPhase.LocalWrite:
+          return ordinalConverter.write(5, into);
+        case DownloadPhase.Verifying:
+          return ordinalConverter.write(6, into);
+        case DownloadPhase.Publishing:
+          return ordinalConverter.write(7, into);
+        case DownloadPhase.Completed:
+          return ordinalConverter.write(8, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum DownloadErrorCategory {
+  Cancelled,
+  Connection,
+  Timeout,
+  RemoteRead,
+  RemoteMetadata,
+  PermissionDenied,
+  NotFound,
+  LocalWrite,
+  NoSpace,
+  SourceChanged,
+  Incomplete,
+  Publish,
+}
+
+const FfiConverterTypeDownloadErrorCategory = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = DownloadErrorCategory;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return DownloadErrorCategory.Cancelled;
+        case 2:
+          return DownloadErrorCategory.Connection;
+        case 3:
+          return DownloadErrorCategory.Timeout;
+        case 4:
+          return DownloadErrorCategory.RemoteRead;
+        case 5:
+          return DownloadErrorCategory.RemoteMetadata;
+        case 6:
+          return DownloadErrorCategory.PermissionDenied;
+        case 7:
+          return DownloadErrorCategory.NotFound;
+        case 8:
+          return DownloadErrorCategory.LocalWrite;
+        case 9:
+          return DownloadErrorCategory.NoSpace;
+        case 10:
+          return DownloadErrorCategory.SourceChanged;
+        case 11:
+          return DownloadErrorCategory.Incomplete;
+        case 12:
+          return DownloadErrorCategory.Publish;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case DownloadErrorCategory.Cancelled:
+          return ordinalConverter.write(1, into);
+        case DownloadErrorCategory.Connection:
+          return ordinalConverter.write(2, into);
+        case DownloadErrorCategory.Timeout:
+          return ordinalConverter.write(3, into);
+        case DownloadErrorCategory.RemoteRead:
+          return ordinalConverter.write(4, into);
+        case DownloadErrorCategory.RemoteMetadata:
+          return ordinalConverter.write(5, into);
+        case DownloadErrorCategory.PermissionDenied:
+          return ordinalConverter.write(6, into);
+        case DownloadErrorCategory.NotFound:
+          return ordinalConverter.write(7, into);
+        case DownloadErrorCategory.LocalWrite:
+          return ordinalConverter.write(8, into);
+        case DownloadErrorCategory.NoSpace:
+          return ordinalConverter.write(9, into);
+        case DownloadErrorCategory.SourceChanged:
+          return ordinalConverter.write(10, into);
+        case DownloadErrorCategory.Incomplete:
+          return ordinalConverter.write(11, into);
+        case DownloadErrorCategory.Publish:
+          return ordinalConverter.write(12, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+/**
+ * Path-free observations: never include remote/local names or server error text.
+ */
+export type DownloadDiagnostic = {
+  transferId: string;
+  phase: DownloadPhase;
+  attempt: number;
+  bytesTransferred: bigint;
+  totalBytes?: bigint;
+  sourceModifiedAt?: bigint;
+  sshGeneration: bigint;
+  errorCategory?: DownloadErrorCategory;
+};
+
+/**
+ * Generated factory for {@link DownloadDiagnostic} record objects.
+ */
+export const DownloadDiagnostic = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<DownloadDiagnostic, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<DownloadDiagnostic>,
+  });
+})();
+
+const FfiConverterTypeDownloadDiagnostic = (() => {
+  type TypeName = DownloadDiagnostic;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        transferId: FfiConverterString.read(from),
+        phase: FfiConverterTypeDownloadPhase.read(from),
+        attempt: FfiConverterUInt32.read(from),
+        bytesTransferred: FfiConverterUInt64.read(from),
+        totalBytes: FfiConverterOptionalUInt64.read(from),
+        sourceModifiedAt: FfiConverterOptionalUInt64.read(from),
+        sshGeneration: FfiConverterUInt64.read(from),
+        errorCategory: FfiConverterOptionalTypeDownloadErrorCategory.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.transferId, into);
+      FfiConverterTypeDownloadPhase.write(value.phase, into);
+      FfiConverterUInt32.write(value.attempt, into);
+      FfiConverterUInt64.write(value.bytesTransferred, into);
+      FfiConverterOptionalUInt64.write(value.totalBytes, into);
+      FfiConverterOptionalUInt64.write(value.sourceModifiedAt, into);
+      FfiConverterUInt64.write(value.sshGeneration, into);
+      FfiConverterOptionalTypeDownloadErrorCategory.write(
+        value.errorCategory,
+        into,
+      );
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.transferId) +
+        FfiConverterTypeDownloadPhase.allocationSize(value.phase) +
+        FfiConverterUInt32.allocationSize(value.attempt) +
+        FfiConverterUInt64.allocationSize(value.bytesTransferred) +
+        FfiConverterOptionalUInt64.allocationSize(value.totalBytes) +
+        FfiConverterOptionalUInt64.allocationSize(value.sourceModifiedAt) +
+        FfiConverterUInt64.allocationSize(value.sshGeneration) +
+        FfiConverterOptionalTypeDownloadErrorCategory.allocationSize(
+          value.errorCategory,
+        )
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export enum GitDiffKind {
   Text,
   Binary,
@@ -32266,6 +32491,7 @@ export enum HostRuntimeEvent_Tags {
   LatencyMeasured = 'LatencyMeasured',
   EventSubscriptionClosed = 'EventSubscriptionClosed',
   EventSubscriptionRestored = 'EventSubscriptionRestored',
+  DownloadDiagnosticReported = 'DownloadDiagnosticReported',
   TransferProgressChanged = 'TransferProgressChanged',
   PreviewStateChanged = 'PreviewStateChanged',
   Diagnostic = 'Diagnostic',
@@ -32686,6 +32912,41 @@ export const HostRuntimeEvent = (() => {
     }
   }
 
+  type DownloadDiagnosticReported__interface = {
+    tag: HostRuntimeEvent_Tags.DownloadDiagnosticReported;
+    inner: Readonly<{ runtimeId: string; diagnostic: DownloadDiagnostic }>;
+  };
+  class DownloadDiagnosticReported_
+    extends UniffiEnum
+    implements DownloadDiagnosticReported__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeEvent';
+    readonly tag = HostRuntimeEvent_Tags.DownloadDiagnosticReported;
+    readonly inner: Readonly<{
+      runtimeId: string;
+      diagnostic: DownloadDiagnostic;
+    }>;
+    constructor(inner: { runtimeId: string; diagnostic: DownloadDiagnostic }) {
+      super('HostRuntimeEvent', 'DownloadDiagnosticReported');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: {
+      runtimeId: string;
+      diagnostic: DownloadDiagnostic;
+    }): DownloadDiagnosticReported_ {
+      return new DownloadDiagnosticReported_(inner);
+    }
+
+    static instanceOf(obj: any): obj is DownloadDiagnosticReported_ {
+      return obj.tag === HostRuntimeEvent_Tags.DownloadDiagnosticReported;
+    }
+  }
+
   type TransferProgressChanged__interface = {
     tag: HostRuntimeEvent_Tags.TransferProgressChanged;
     inner: Readonly<{ runtimeId: string; progress: TransferProgress }>;
@@ -32841,6 +33102,7 @@ export const HostRuntimeEvent = (() => {
     LatencyMeasured: LatencyMeasured_,
     EventSubscriptionClosed: EventSubscriptionClosed_,
     EventSubscriptionRestored: EventSubscriptionRestored_,
+    DownloadDiagnosticReported: DownloadDiagnosticReported_,
     TransferProgressChanged: TransferProgressChanged_,
     PreviewStateChanged: PreviewStateChanged_,
     Diagnostic: Diagnostic_,
@@ -32859,6 +33121,7 @@ export type HostRuntimeEvent = InstanceType<
     | 'LatencyMeasured'
     | 'EventSubscriptionClosed'
     | 'EventSubscriptionRestored'
+    | 'DownloadDiagnosticReported'
     | 'TransferProgressChanged'
     | 'PreviewStateChanged'
     | 'Diagnostic'
@@ -32936,23 +33199,28 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
             generation: FfiConverterUInt64.read(from),
           });
         case 11:
+          return new HostRuntimeEvent.DownloadDiagnosticReported({
+            runtimeId: FfiConverterString.read(from),
+            diagnostic: FfiConverterTypeDownloadDiagnostic.read(from),
+          });
+        case 12:
           return new HostRuntimeEvent.TransferProgressChanged({
             runtimeId: FfiConverterString.read(from),
             progress: FfiConverterTypeTransferProgress.read(from),
           });
-        case 12:
+        case 13:
           return new HostRuntimeEvent.PreviewStateChanged({
             runtimeId: FfiConverterString.read(from),
             previewId: FfiConverterString.read(from),
             state: FfiConverterTypePreviewState.read(from),
             error: FfiConverterOptionalString.read(from),
           });
-        case 13:
+        case 14:
           return new HostRuntimeEvent.Diagnostic({
             runtimeId: FfiConverterString.read(from),
             diagnostic: FfiConverterTypeRuntimeDiagnostic.read(from),
           });
-        case 14:
+        case 15:
           return new HostRuntimeEvent.FatalError({
             runtimeId: FfiConverterString.read(from),
             message: FfiConverterString.read(from),
@@ -33050,15 +33318,22 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           FfiConverterUInt64.write(inner.generation, into);
           return;
         }
-        case HostRuntimeEvent_Tags.TransferProgressChanged: {
+        case HostRuntimeEvent_Tags.DownloadDiagnosticReported: {
           ordinalConverter.write(11, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.runtimeId, into);
+          FfiConverterTypeDownloadDiagnostic.write(inner.diagnostic, into);
+          return;
+        }
+        case HostRuntimeEvent_Tags.TransferProgressChanged: {
+          ordinalConverter.write(12, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterTypeTransferProgress.write(inner.progress, into);
           return;
         }
         case HostRuntimeEvent_Tags.PreviewStateChanged: {
-          ordinalConverter.write(12, into);
+          ordinalConverter.write(13, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterString.write(inner.previewId, into);
@@ -33067,14 +33342,14 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           return;
         }
         case HostRuntimeEvent_Tags.Diagnostic: {
-          ordinalConverter.write(13, into);
+          ordinalConverter.write(14, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterTypeRuntimeDiagnostic.write(inner.diagnostic, into);
           return;
         }
         case HostRuntimeEvent_Tags.FatalError: {
-          ordinalConverter.write(14, into);
+          ordinalConverter.write(15, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterString.write(inner.message, into);
@@ -33177,9 +33452,18 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           size += FfiConverterUInt64.allocationSize(inner.generation);
           return size;
         }
-        case HostRuntimeEvent_Tags.TransferProgressChanged: {
+        case HostRuntimeEvent_Tags.DownloadDiagnosticReported: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(11);
+          size += FfiConverterString.allocationSize(inner.runtimeId);
+          size += FfiConverterTypeDownloadDiagnostic.allocationSize(
+            inner.diagnostic,
+          );
+          return size;
+        }
+        case HostRuntimeEvent_Tags.TransferProgressChanged: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(12);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterTypeTransferProgress.allocationSize(
             inner.progress,
@@ -33188,7 +33472,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
         }
         case HostRuntimeEvent_Tags.PreviewStateChanged: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(12);
+          let size = ordinalConverter.allocationSize(13);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterString.allocationSize(inner.previewId);
           size += FfiConverterTypePreviewState.allocationSize(inner.state);
@@ -33197,7 +33481,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
         }
         case HostRuntimeEvent_Tags.Diagnostic: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(13);
+          let size = ordinalConverter.allocationSize(14);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterTypeRuntimeDiagnostic.allocationSize(
             inner.diagnostic,
@@ -33206,7 +33490,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
         }
         case HostRuntimeEvent_Tags.FatalError: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(14);
+          let size = ordinalConverter.allocationSize(15);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterString.allocationSize(inner.message);
           return size;
@@ -57602,6 +57886,11 @@ const FfiConverterSequenceTypeHostProfileRecord = new FfiConverterArray(
   FfiConverterTypeHostProfileRecord,
 );
 
+// FfiConverter for DownloadErrorCategory | undefined
+const FfiConverterOptionalTypeDownloadErrorCategory = new FfiConverterOptional(
+  FfiConverterTypeDownloadErrorCategory,
+);
+
 // FfiConverter for Array<GitDiffRow>
 const FfiConverterSequenceTypeGitDiffRow = new FfiConverterArray(
   FfiConverterTypeGitDiffRow,
@@ -61760,6 +62049,9 @@ export default Object.freeze({
     FfiConverterTypeCredentialTransactionError,
     FfiConverterTypeDictationPhase,
     FfiConverterTypeDictationView,
+    FfiConverterTypeDownloadDiagnostic,
+    FfiConverterTypeDownloadErrorCategory,
+    FfiConverterTypeDownloadPhase,
     FfiConverterTypeGitDiff,
     FfiConverterTypeGitDiffContext,
     FfiConverterTypeGitDiffExpansion,

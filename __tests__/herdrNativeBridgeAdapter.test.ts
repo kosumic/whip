@@ -95,8 +95,11 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
     EventSubscriptionClosed: 'EventSubscriptionClosed',
     EventSubscriptionRestored: 'EventSubscriptionRestored',
     Diagnostic: 'Diagnostic',
+    DownloadDiagnosticReported: 'DownloadDiagnosticReported',
     FatalError: 'FatalError',
   },
+  DownloadPhase: { 2: 'RemoteRead', RemoteRead: 2 },
+  DownloadErrorCategory: { 2: 'Timeout', Timeout: 2 },
   RuntimeDiagnosticOperation: {
     SshConnect: 0,
     SshReconnect: 1,
@@ -698,6 +701,27 @@ describe('native HostRuntime adapter', () => {
         outcome: 'succeeded',
         terminalId: undefined,
         error: undefined,
+      },
+    });
+
+    mockRuntimeEventSink.event({
+      tag: 'DownloadDiagnosticReported',
+      inner: {
+        runtimeId: 'runtime-1',
+        diagnostic: {
+          transferId: 'download-1', phase: mockGenerated.DownloadPhase.RemoteRead,
+          attempt: 2, bytesTransferred: 1048576n, totalBytes: 524288000n,
+          sourceModifiedAt: 12345n, sshGeneration: 4n,
+          errorCategory: mockGenerated.DownloadErrorCategory.Timeout,
+        },
+      },
+    });
+    expect(handler).toHaveBeenLastCalledWith({
+      type: 'download-diagnostic',
+      diagnostic: {
+        transferId: 'download-1', phase: 'RemoteRead', attempt: 2,
+        bytesTransferred: 1048576, totalBytes: 524288000,
+        sourceModifiedAt: 12345, sshGeneration: 4, errorCategory: 'Timeout',
       },
     });
 

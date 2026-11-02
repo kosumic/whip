@@ -34,6 +34,7 @@ use russh::client;
 use russh::keys::{PrivateKeyWithHashAlg, PublicKeyOrCertificate};
 use russh_sftp::client::SftpSession;
 mod directory_download;
+pub(crate) mod download;
 use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch};
@@ -202,6 +203,8 @@ const COMPATIBILITY_SHELL_ID: &str = "default";
 
 #[derive(Debug, thiserror::Error)]
 enum TransportError {
+    #[error("{0}")]
+    Download(#[from] download::Failure),
     #[error("invalid request: {0}")]
     InvalidRequest(String),
     #[error("unknown client")]
@@ -382,7 +385,7 @@ fn transport_error_code(error: &TransportError) -> SshErrorCode {
         },
         TransportError::Key(_) | TransportError::SshKey(_) => SshErrorCode::InvalidPrivateKey,
         TransportError::Io(error) => io_error_code(error),
-        TransportError::Sftp(_) => SshErrorCode::SftpFailure,
+        TransportError::Sftp(_) | TransportError::Download(_) => SshErrorCode::SftpFailure,
     }
 }
 
@@ -1797,7 +1800,7 @@ fn transfer_cancelled(direction: &str) -> TransportError {
     TransportError::InvalidRequest(format!("SFTP {direction} cancelled"))
 }
 
-async fn wait_for_transfer_cancel(cancel: &mut watch::Receiver<bool>) {
+pub(crate) async fn wait_for_transfer_cancel(cancel: &mut watch::Receiver<bool>) {
     loop {
         if *cancel.borrow_and_update() {
             return;
@@ -1954,37 +1957,15 @@ async fn sftp_transfer_file_on(
         }
         Ok(remote_path)
     } else {
-        let source = sftp.open(&remote_path).await?;
-        let total = source.metadata().await?.size;
-        let temp_path = format!(
-            "{local_path}.whip-download-{}",
-            NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed)
-        );
-        let destination = fs::File::create(&temp_path).await?;
-        let copied = copy_sftp_stream(
-            source,
-            destination,
-            total,
-            direction,
-            &mut cancel,
-            &mut progress,
+        download::download(
+            &download::FixedSource(sftp),
+            &remote_path,
+            &local_path,
+            cancel,
+            progress,
         )
-        .await;
-        if let Err(error) = copied {
-            let _ = fs::remove_file(temp_path).await;
-            return Err(error);
-        }
-        if *cancel.borrow() {
-            let _ = fs::remove_file(temp_path).await;
-            return Err(transfer_cancelled(direction));
-        }
-        if let Err(error) = fs::rename(&temp_path, &local_path).await {
-            let _ = fs::remove_file(temp_path).await;
-            return Err(error.into());
-        }
-        // Local rename atomically commits the download. After this point the
-        // previous destination is gone; keep the committed file on late cancellation.
-        Ok(local_path)
+        .await
+        .map_err(Into::into)
     }
 }
 
@@ -2042,24 +2023,24 @@ async fn sftp_transfer_on(
             (destination, remote_path)
         };
         let mut last_percent = None;
-        let destination = sftp_transfer_file_on(
-            sftp,
-            local_path,
-            remote_path,
-            upload,
-            cancel,
-            |copied, total| {
-                let percent = copied
-                    .saturating_mul(100)
-                    .checked_div(total.unwrap_or_default())
-                    .unwrap_or(100);
-                if last_percent != Some(percent) {
-                    emit_event(json!({ "name": event, "key": key, "value": percent.to_string() }));
-                    last_percent = Some(percent);
-                }
-            },
-        )
-        .await?;
+        let mut report = |copied: u64, total: Option<u64>| {
+            let percent = copied
+                .saturating_mul(100)
+                .checked_div(total.unwrap_or_default())
+                .unwrap_or(100);
+            if last_percent != Some(percent) {
+                emit_event(json!({ "name": event, "key": key, "value": percent.to_string() }));
+                last_percent = Some(percent);
+            }
+        };
+        let destination = if upload {
+            sftp_transfer_file_on(sftp, local_path, remote_path, true, cancel, &mut report).await?
+        } else {
+            let source = session::SessionDownloadSource {
+                session: session_for_key(&key)?,
+            };
+            download::download(&source, &remote_path, &local_path, cancel, &mut report).await?
+        };
         if last_percent != Some(100) {
             emit_event(json!({ "name": event, "key": key, "value": "100" }));
         }

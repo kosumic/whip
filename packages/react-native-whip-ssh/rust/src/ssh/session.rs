@@ -61,7 +61,7 @@ use super::{
     Session, SftpEntry, SftpFileServer, SftpMetadata, ShellCommand, ShellDelivery,
     SshConnectionConfig, SshFailure, SshSession, SshShellClose, StreamCommand, TransportError,
     UnixSocketDelivery, browser_proxy, close_local_forward_for_key, connect_inner, connect_sftp_on,
-    directory_download, disconnect_key, exec_channel_command_for_key, execute_on, latency_on,
+    disconnect_key, exec_channel_command_for_key, execute_on, latency_on,
     open_exec_channel_with_delivery, open_local_forward_on, open_unix_socket_channel_with_framing,
     request_unix_socket_bytes_on, reverse_forward, sessions, sftp_create_dir_all_on,
     sftp_file_servers, sftp_list_on, sftp_transfer_file_on, shell_command_for_id, shells,
@@ -344,6 +344,7 @@ impl SshSession {
         .map_err(Into::into)
     }
 
+    #[cfg(test)]
     pub(crate) async fn transfer_download(
         &self,
         remote_path: &str,
@@ -351,52 +352,26 @@ impl SshSession {
         cancel: watch::Receiver<bool>,
         progress: Arc<dyn Fn(u64, Option<u64>) + Send + Sync>,
     ) -> Result<String, SshFailure> {
-        let sftp = self.ensure_sftp().await?;
-        let mut metadata = sftp
-            .symlink_metadata(remote_path)
+        let source = SessionDownloadSource {
+            session: self.inner.clone(),
+        };
+        super::download::download_entry(&source, remote_path, destination_path, cancel, progress)
             .await
-            .map_err(TransportError::from)?;
-        // Explicitly opening a file link remains supported by previews. Tree
-        // traversal never follows links; a selected link to a directory is refused.
-        if metadata.file_type().is_symlink() {
-            metadata = sftp
-                .metadata(remote_path)
-                .await
-                .map_err(TransportError::from)?;
-            if !metadata.file_type().is_file() {
-                return Err(TransportError::InvalidRequest(
-                    "Cannot recursively download a directory symlink".to_owned(),
-                )
-                .into());
-            }
+            .map_err(|error| SshFailure::from(TransportError::Download(error)))
+    }
+    pub(crate) async fn download_sftp(
+        &self,
+        renew: bool,
+    ) -> Result<Arc<SftpSession>, super::download::Failure> {
+        if renew {
+            self.inner.lifecycle.sftp.write().take();
         }
-        if metadata.file_type().is_dir() {
-            return directory_download::download(
-                sftp,
-                remote_path,
-                destination_path,
-                cancel,
-                progress,
+        connect_sftp_on(&self.inner).await.map_err(|_| {
+            super::download::Failure::new(
+                crate::remote_ops::DownloadPhase::Connecting,
+                crate::remote_ops::DownloadErrorCategory::Connection,
             )
-            .await
-            .map_err(Into::into);
-        }
-        if !metadata.file_type().is_file() {
-            return Err(TransportError::InvalidRequest(
-                "Cannot download a symlink or special file".to_owned(),
-            )
-            .into());
-        }
-        sftp_transfer_file_on(
-            sftp,
-            destination_path.to_owned(),
-            remote_path.to_owned(),
-            false,
-            cancel,
-            move |copied, total| progress(copied, total),
-        )
-        .await
-        .map_err(Into::into)
+        })
     }
 
     pub(crate) async fn start_sftp_file_server(
@@ -621,5 +596,31 @@ impl Session {
         // Keep returning the command's original output. Path callers perform
         // their existing validation and report their existing path errors.
         Ok(home)
+    }
+}
+
+pub(super) struct SessionDownloadSource {
+    pub(super) session: Arc<Session>,
+}
+#[async_trait::async_trait]
+impl super::download::Source for SessionDownloadSource {
+    async fn connect(
+        &self,
+        renew: bool,
+        _: &mut watch::Receiver<bool>,
+    ) -> Result<super::download::Connection, super::download::Failure> {
+        if renew {
+            self.session.lifecycle.sftp.write().take();
+        }
+        let sftp = connect_sftp_on(&self.session).await.map_err(|_| {
+            super::download::Failure::new(
+                crate::remote_ops::DownloadPhase::Connecting,
+                crate::remote_ops::DownloadErrorCategory::Connection,
+            )
+        })?;
+        Ok(super::download::Connection {
+            sftp,
+            generation: 0,
+        })
     }
 }

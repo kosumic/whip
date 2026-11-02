@@ -319,6 +319,10 @@ pub enum HostRuntimeEvent {
         runtime_id: String,
         generation: u64,
     },
+    DownloadDiagnosticReported {
+        runtime_id: String,
+        diagnostic: crate::remote_ops::DownloadDiagnostic,
+    },
     TransferProgressChanged {
         runtime_id: String,
         progress: TransferProgress,

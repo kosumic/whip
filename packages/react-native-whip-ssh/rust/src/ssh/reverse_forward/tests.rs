@@ -18,8 +18,21 @@ enum ExecFault {
     },
 }
 
+enum ReadFaultKind {
+    Connection,
+    Eof,
+    Replace(Vec<u8>),
+    Pause(Arc<Semaphore>),
+}
+struct ReadFault {
+    offset: u64,
+    remaining: usize,
+    kind: ReadFaultKind,
+}
 #[derive(Default)]
 struct ServerState {
+    read_fault: parking_lot::Mutex<Option<ReadFault>>,
+    read_offsets: parking_lot::Mutex<Vec<u64>>,
     listeners: RwLock<HashMap<u16, watch::Sender<bool>>>,
     handle: RwLock<Option<server::Handle>>,
     allocated: AtomicUsize,
@@ -107,6 +120,40 @@ impl Fixture {
         for channel in channels {
             let _ = handle.close(channel).await;
         }
+    }
+
+    pub(crate) fn fail_reads_after(&self, offset: u64, count: usize) {
+        *self.state.read_fault.lock() = Some(ReadFault {
+            offset,
+            remaining: count,
+            kind: ReadFaultKind::Connection,
+        });
+    }
+    pub(crate) fn short_read_once_after(&self, offset: u64) {
+        *self.state.read_fault.lock() = Some(ReadFault {
+            offset,
+            remaining: 1,
+            kind: ReadFaultKind::Eof,
+        });
+    }
+    pub(crate) fn replace_source_after(&self, offset: u64, bytes: Vec<u8>) {
+        *self.state.read_fault.lock() = Some(ReadFault {
+            offset,
+            remaining: 1,
+            kind: ReadFaultKind::Replace(bytes),
+        });
+    }
+    pub(crate) fn pause_read_after(&self, offset: u64) -> Arc<Semaphore> {
+        let gate = Arc::new(Semaphore::new(0));
+        *self.state.read_fault.lock() = Some(ReadFault {
+            offset,
+            remaining: 1,
+            kind: ReadFaultKind::Pause(gate.clone()),
+        });
+        gate
+    }
+    pub(crate) fn read_offsets(&self) -> Vec<u64> {
+        self.state.read_offsets.lock().clone()
     }
 
     pub(crate) fn reject_session_channels(&self, count: usize) {
@@ -644,6 +691,19 @@ impl russh_sftp::server::Handler for SftpServer {
         })
     }
 
+    async fn lstat(
+        &mut self,
+        id: u32,
+        path: String,
+    ) -> Result<russh_sftp::protocol::Attrs, Self::Error> {
+        let metadata = tokio::fs::symlink_metadata(path)
+            .await
+            .map_err(|_| russh_sftp::protocol::StatusCode::NoSuchFile)?;
+        Ok(russh_sftp::protocol::Attrs {
+            id,
+            attrs: (&metadata).into(),
+        })
+    }
     async fn open(
         &mut self,
         id: u32,
@@ -675,6 +735,48 @@ impl russh_sftp::server::Handler for SftpServer {
         offset: u64,
         len: u32,
     ) -> Result<russh_sftp::protocol::Data, Self::Error> {
+        self.0.read_offsets.lock().push(offset);
+        let fault = {
+            let mut slot = self.0.read_fault.lock();
+            let pending = if slot
+                .as_ref()
+                .is_some_and(|fault| offset >= fault.offset && fault.remaining > 0)
+            {
+                let mut fault = slot.take().unwrap();
+                fault.remaining -= 1;
+                if fault.remaining > 0 {
+                    *slot = Some(ReadFault {
+                        offset: fault.offset,
+                        remaining: fault.remaining,
+                        kind: ReadFaultKind::Connection,
+                    });
+                }
+                Some(fault.kind)
+            } else {
+                None
+            };
+            drop(slot);
+            pending
+        };
+        match fault {
+            Some(ReadFaultKind::Connection) => {
+                return Err(russh_sftp::protocol::StatusCode::ConnectionLost);
+            }
+            Some(ReadFaultKind::Eof) => return Err(russh_sftp::protocol::StatusCode::Eof),
+            Some(ReadFaultKind::Replace(bytes)) => {
+                tokio::fs::write(&handle, bytes)
+                    .await
+                    .map_err(|_| russh_sftp::protocol::StatusCode::Failure)?;
+                std::fs::File::options()
+                    .write(true)
+                    .open(&handle)
+                    .unwrap()
+                    .set_modified(std::time::UNIX_EPOCH + Duration::from_secs(12345))
+                    .unwrap();
+            }
+            Some(ReadFaultKind::Pause(gate)) => gate.acquire().await.unwrap().forget(),
+            None => {}
+        }
         let mut file = tokio::fs::File::open(handle)
             .await
             .map_err(|_| russh_sftp::protocol::StatusCode::NoSuchFile)?;

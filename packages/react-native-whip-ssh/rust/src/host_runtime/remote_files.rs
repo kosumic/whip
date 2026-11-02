@@ -89,7 +89,11 @@ pub(super) fn update_transfer_progress(
             return;
         }
         slot.progress.state = TransferState::Running;
-        slot.progress.bytes_transferred = slot.progress.bytes_transferred.max(bytes_transferred);
+        slot.progress.bytes_transferred = if slot.recover_download {
+            bytes_transferred
+        } else {
+            slot.progress.bytes_transferred.max(bytes_transferred)
+        };
         slot.progress.total_bytes = total_bytes;
         let progress = slot.progress.clone();
         drop(transfers);
@@ -109,6 +113,7 @@ pub(super) fn finish_transfer(
 ) {
     let current_generation = inner.state.lock().generation;
     let connected = inner.state.lock().connection == HostConnectionState::Connected;
+    let explicitly_disconnected = inner.state.lock().explicit_disconnect;
     let (progress, notify) = {
         let mut transfers = inner.operations.transfers.lock();
         let Some(slot) = transfers.get_mut(transfer_id) else {
@@ -120,9 +125,14 @@ pub(super) fn finish_transfer(
         ) {
             return;
         }
-        if slot.progress.state == TransferState::Cancelled {
+        if slot.progress.state == TransferState::Cancelled
+            || (slot.recover_download && explicitly_disconnected)
+        {
+            slot.progress.state = TransferState::Cancelled;
             slot.result = Some(Err("transfer cancelled".to_owned()));
-        } else if slot.generation != generation || current_generation != generation || !connected {
+        } else if !slot.recover_download
+            && (slot.generation != generation || current_generation != generation || !connected)
+        {
             slot.progress.state = TransferState::Failed;
             slot.result = Some(Err("host connection changed during transfer".to_owned()));
         } else {
@@ -150,7 +160,14 @@ pub(super) fn invalidate_remote_operations(
     reason: &str,
 ) {
     inner.directory_cache.lock().clear();
-    inner.operations.cancel_generation(generation, reason);
+    let preserve_downloads = !inner.state.lock().explicit_disconnect;
+    if preserve_downloads {
+        inner
+            .operations
+            .invalidate_generation(generation, reason, true);
+    } else {
+        inner.operations.cancel_generation(generation, reason);
+    }
     let previews = inner.operations.disconnect_previews(generation);
     for (preview_id, _) in &previews {
         emit(HostRuntimeEvent::PreviewStateChanged {
@@ -660,24 +677,66 @@ impl HostRuntime {
         remote_path: String,
         local_directory: String,
     ) -> Result<String, HostRuntimeError> {
-        start_transfer(&self.inner, move |ssh, mut cancel, progress| async move {
-            let remote_path =
-                transfer_setup_step(&mut cancel, resolved_ssh_path(&ssh, Some(&remote_path)))
+        let generation = current_generation(&self.inner)?;
+        let (transfer_id, cancel, _) = self
+            .inner
+            .operations
+            .begin_transfer(generation)
+            .map_err(HostRuntimeError::TransferFailure)?;
+        if let Some(slot) = self.inner.operations.transfers.lock().get_mut(&transfer_id) {
+            slot.recover_download = true;
+        }
+        let inner = self.inner.clone();
+        let id = transfer_id.clone();
+        crate::runtime()
+            .map_err(HostRuntimeError::SshTransportFailure)?
+            .spawn(async move {
+                let source = RuntimeDownloadSource {
+                    active_generation: std::sync::atomic::AtomicU64::new(generation),
+                    inner: inner.clone(),
+                    id: id.clone(),
+                };
+                let result = async {
+                    let mut setup_cancel = cancel.clone();
+                    let connection = source
+                        .connected_session(&mut setup_cancel)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    let remote = transfer_setup_step(
+                        &mut setup_cancel,
+                        resolved_ssh_path(&connection, Some(&remote_path)),
+                    )
                     .await?;
-            let filename = remote_filename(&remote_path)?;
-            let local_path = std::path::Path::new(&local_directory)
-                .join(filename)
-                .to_str()
-                .ok_or_else(|| "local download path is not UTF-8".to_owned())?
-                .to_owned();
-            ssh.transfer_download(&remote_path, &local_path, cancel, progress)
-                .await
-                .map_err(|error| error.to_string())?;
-            Ok(TransferPaths {
-                local_path,
-                remote_path,
-            })
-        })
+                    let name = remote_filename(&remote)?;
+                    let local = std::path::Path::new(&local_directory)
+                        .join(name)
+                        .to_str()
+                        .ok_or_else(|| "local download path is not UTF-8".to_owned())?
+                        .to_owned();
+                    let progress_inner = inner.clone();
+                    let progress_id = id.clone();
+                    crate::ssh::download::download_entry(
+                        &source,
+                        &remote,
+                        &local,
+                        cancel,
+                        Arc::new(move |bytes, total| {
+                            update_transfer_progress(&progress_inner, &progress_id, bytes, total);
+                        }),
+                    )
+                    .await
+                    .map_err(|error| error.to_string())?;
+                    Ok(TransferResult {
+                        transfer_id: id.clone(),
+                        local_path: Some(local),
+                        remote_path: Some(remote),
+                    })
+                }
+                .await;
+                let completed_generation = inner.state.lock().generation;
+                finish_transfer(&inner, &id, completed_generation, result);
+            });
+        Ok(transfer_id)
     }
 
     pub fn transfer_progress(&self, transfer_id: String) -> Option<TransferProgress> {
@@ -1017,5 +1076,110 @@ impl HostRuntime {
             .map_err(|error| {
                 HostRuntimeError::PreviewFailure(format!("preview stop task failed: {error}"))
             })?
+    }
+}
+
+struct RuntimeDownloadSource {
+    active_generation: std::sync::atomic::AtomicU64,
+    inner: Arc<RuntimeInner>,
+    id: String,
+}
+impl RuntimeDownloadSource {
+    async fn connected_session(
+        &self,
+        cancel: &mut watch::Receiver<bool>,
+    ) -> Result<Arc<SshSession>, crate::ssh::download::Failure> {
+        use crate::remote_ops::{DownloadErrorCategory, DownloadPhase};
+        use crate::ssh::download::Failure;
+        let mut status = self.inner.status_tx.subscribe();
+        let deadline = tokio::time::sleep(Duration::from_secs(25));
+        tokio::pin!(deadline);
+        loop {
+            if *cancel.borrow() || self.inner.state.lock().explicit_disconnect {
+                return Err(Failure::new(
+                    DownloadPhase::WaitingForConnection,
+                    DownloadErrorCategory::Cancelled,
+                ));
+            }
+            if let Ok(ssh) = current_ssh(&self.inner)
+                && ssh.is_alive()
+            {
+                return Ok(ssh);
+            }
+            tokio::select! {
+                biased;
+                ()=crate::ssh::wait_for_transfer_cancel(cancel)=>return Err(Failure::new(DownloadPhase::WaitingForConnection,DownloadErrorCategory::Cancelled)),
+                ()=&mut deadline=>return Err(Failure::new(DownloadPhase::WaitingForConnection,DownloadErrorCategory::Timeout)),
+                changed=status.changed()=>{ if changed.is_err() { return Err(Failure::new(DownloadPhase::WaitingForConnection,DownloadErrorCategory::Connection)); } },
+            }
+        }
+    }
+}
+#[async_trait::async_trait]
+impl crate::ssh::download::Source for RuntimeDownloadSource {
+    fn check(&self) -> Result<(), crate::ssh::download::Failure> {
+        if self.inner.state.lock().explicit_disconnect {
+            Err(crate::ssh::download::Failure::new(
+                crate::remote_ops::DownloadPhase::Connecting,
+                crate::remote_ops::DownloadErrorCategory::Cancelled,
+            ))
+        } else {
+            Ok(())
+        }
+    }
+    async fn connect(
+        &self,
+        renew: bool,
+        cancel: &mut watch::Receiver<bool>,
+    ) -> Result<crate::ssh::download::Connection, crate::ssh::download::Failure> {
+        let ssh = self.connected_session(cancel).await?;
+        let generation = self.inner.state.lock().generation;
+        let sftp = ssh.download_sftp(renew).await?;
+        self.active_generation
+            .store(generation, std::sync::atomic::Ordering::Release);
+        if let Some(slot) = self.inner.operations.transfers.lock().get_mut(&self.id) {
+            slot.generation = generation;
+        }
+        Ok(crate::ssh::download::Connection { sftp, generation })
+    }
+    async fn interrupted(&self) -> crate::ssh::download::Failure {
+        use crate::remote_ops::{DownloadErrorCategory, DownloadPhase};
+        let mut status = self.inner.status_tx.subscribe();
+        loop {
+            let failed = {
+                let state = self.inner.state.lock();
+                if state.explicit_disconnect {
+                    Some(DownloadErrorCategory::Cancelled)
+                } else if state.connection != HostConnectionState::Connected
+                    || state.generation
+                        != self
+                            .active_generation
+                            .load(std::sync::atomic::Ordering::Acquire)
+                {
+                    Some(DownloadErrorCategory::Connection)
+                } else {
+                    None
+                }
+            };
+            if let Some(category) = failed {
+                return crate::ssh::download::Failure::new(DownloadPhase::RemoteRead, category);
+            }
+            if status.changed().await.is_err() {
+                return crate::ssh::download::Failure::new(
+                    DownloadPhase::RemoteRead,
+                    DownloadErrorCategory::Connection,
+                );
+            }
+        }
+    }
+    fn diagnostic(&self, mut diagnostic: crate::remote_ops::DownloadDiagnostic) {
+        diagnostic.transfer_id.clone_from(&self.id);
+        if diagnostic.ssh_generation == 0 {
+            diagnostic.ssh_generation = self.inner.state.lock().generation;
+        }
+        emit(HostRuntimeEvent::DownloadDiagnosticReported {
+            runtime_id: self.inner.id.clone(),
+            diagnostic,
+        });
     }
 }

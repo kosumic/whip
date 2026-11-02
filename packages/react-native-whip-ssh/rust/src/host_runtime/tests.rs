@@ -4425,3 +4425,96 @@ fn foreground_service_policy_changes_never_disconnect_registered_runtime() {
         .block_on(runtime.disconnect())
         .unwrap();
 }
+
+#[test]
+fn download_survives_automatic_ssh_generation_change_with_its_verified_prefix()
+-> Result<(), Box<dyn std::error::Error>> {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    crate::runtime()?.block_on(async {
+        let first = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        let replacement = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
+        let directory = tempfile::tempdir()?;
+        let remote = directory.path().join("source.bin");
+        let destination = directory.path().join("downloads");
+        tokio::fs::create_dir(&destination).await?;
+        let bytes = (0..2 * 1024 * 1024)
+            .map(|index| u8::try_from(index % 251).unwrap())
+            .collect::<Vec<_>>();
+        tokio::fs::write(&remote, &bytes).await?;
+        let gate = first.pause_read_after(1024 * 1024);
+        let inner = connected_runtime_inner("recoverable-download");
+        inner.herdr.install(1, first.ssh.clone());
+        let runtime = HostRuntime {
+            inner: inner.clone(),
+        };
+        let id = runtime.start_download(
+            remote.to_str().unwrap().into(),
+            destination.to_str().unwrap().into(),
+        )?;
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !first
+                .read_offsets()
+                .iter()
+                .any(|&offset| offset >= 1024 * 1024)
+            {
+                tokio::time::sleep(Duration::from_millis(2)).await;
+            }
+        })
+        .await?;
+        assert_eq!(
+            runtime
+                .transfer_progress(id.clone())
+                .unwrap()
+                .bytes_transferred,
+            1024 * 1024
+        );
+        inner.state.lock().connection = HostConnectionState::Reconnecting;
+        inner.herdr.clear(1);
+        invalidate_remote_operations(&inner, 1, "simulated connection loss");
+        assert!(
+            !*inner
+                .operations
+                .transfers
+                .lock()
+                .get(&id)
+                .unwrap()
+                .cancel
+                .borrow()
+        );
+        first.ssh.disconnect().await;
+        gate.add_permits(1);
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        {
+            let mut state = inner.state.lock();
+            state.generation = 2;
+            state.connection = HostConnectionState::Connected;
+        }
+        inner.herdr.install(2, replacement.ssh.clone());
+        inner.status_tx.send_replace(inner.state.lock().status());
+        let result =
+            tokio::time::timeout(Duration::from_secs(5), runtime.await_transfer(id)).await??;
+        assert_eq!(tokio::fs::read(result.local_path.unwrap()).await?, bytes);
+        assert_eq!(replacement.read_offsets().first(), Some(&(1024 * 1024)));
+        Ok(())
+    })
+}
+
+#[test]
+fn explicit_disconnect_cancels_recoverable_downloads_from_an_older_generation() {
+    let manager = crate::remote_ops::RemoteOperationManager::default();
+    let (id, cancel, _) = manager.begin_transfer(1).unwrap();
+    manager
+        .transfers
+        .lock()
+        .get_mut(&id)
+        .unwrap()
+        .recover_download = true;
+    manager.invalidate_generation(1, "automatic reconnect", true);
+    assert!(!*cancel.borrow());
+    manager.cancel_generation(2, "explicit disconnect");
+    assert!(*cancel.borrow());
+    assert_eq!(
+        manager.transfers.lock().get(&id).unwrap().progress.state,
+        TransferState::Failed
+    );
+}

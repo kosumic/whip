@@ -54,6 +54,45 @@ pub struct TransferProgress {
     pub state: TransferState,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, uniffi::Enum)]
+pub enum DownloadPhase {
+    Connecting,
+    WaitingForConnection,
+    Metadata,
+    RemoteRead,
+    LocalWrite,
+    Verifying,
+    Publishing,
+    Completed,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, uniffi::Enum)]
+pub enum DownloadErrorCategory {
+    Cancelled,
+    Connection,
+    Timeout,
+    RemoteRead,
+    RemoteMetadata,
+    PermissionDenied,
+    NotFound,
+    LocalWrite,
+    NoSpace,
+    SourceChanged,
+    Incomplete,
+    Publish,
+}
+/// Path-free observations: never include remote/local names or server error text.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct DownloadDiagnostic {
+    pub transfer_id: String,
+    pub phase: DownloadPhase,
+    pub attempt: u32,
+    pub bytes_transferred: u64,
+    pub total_bytes: Option<u64>,
+    pub source_modified_at: Option<u64>,
+    pub ssh_generation: u64,
+    pub error_category: Option<DownloadErrorCategory>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct TransferResult {
     pub transfer_id: String,
@@ -273,6 +312,7 @@ pub(crate) struct ManagedPreview {
 
 #[derive(Debug)]
 pub(crate) struct TransferSlot {
+    pub recover_download: bool,
     pub generation: u64,
     pub cancel: watch::Sender<bool>,
     pub progress: TransferProgress,
@@ -320,6 +360,7 @@ impl RemoteOperationManager {
         transfers.insert(
             transfer_id.clone(),
             TransferSlot {
+                recover_download: false,
                 generation,
                 cancel,
                 progress: TransferProgress {
@@ -354,11 +395,17 @@ impl RemoteOperationManager {
     }
 
     pub fn cancel_generation(&self, generation: u64, reason: &str) {
+        self.invalidate_generation(generation, reason, false);
+    }
+    pub fn invalidate_generation(&self, generation: u64, reason: &str, preserve_downloads: bool) {
         let mut transfers = self.transfers.lock();
-        for slot in transfers
-            .values_mut()
-            .filter(|slot| slot.generation == generation)
-        {
+        for slot in transfers.values_mut().filter(|slot| {
+            if slot.recover_download {
+                !preserve_downloads
+            } else {
+                slot.generation == generation
+            }
+        }) {
             if matches!(
                 slot.progress.state,
                 TransferState::Pending | TransferState::Running
