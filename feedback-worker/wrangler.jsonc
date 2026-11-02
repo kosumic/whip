@@ -1,7 +1,8 @@
 {
-  "$schema": "../node_modules/wrangler/config-schema.json",
+  "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "whip-feedback-api",
   "main": "src/index.ts",
+  "tsconfig": "tsconfig.json",
   "compatibility_date": "2026-08-25",
   "compatibility_flags": ["nodejs_compat"],
   "secrets": {

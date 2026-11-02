@@ -3,7 +3,7 @@ import { timingSafeEqual } from 'node:crypto';
 import {
   handleFeedbackRequest,
   type FeedbackRepository,
-} from '../feedback-worker/src';
+} from '../src';
 
 type RequestRecord = Parameters<FeedbackRepository['createRequest']>[0];
 type IntentRecord = Parameters<FeedbackRepository['createTipIntent']>[0];
