@@ -69,7 +69,7 @@ function HostPill({ session, active, onSelect, onClose, onNew }: { session: Live
   return (
     <View
       className={cn(
-        'h-11 max-w-[190px] flex-row items-center rounded-full',
+        'h-11 max-w-[190px] flex-row items-center overflow-hidden rounded-full',
         isIpad && 'max-w-[240px]',
         appGlassEnabled && 'border',
         !appGlassEnabled && 'bg-muted',
@@ -77,7 +77,7 @@ function HostPill({ session, active, onSelect, onClose, onNew }: { session: Live
         !appGlassEnabled && active && 'bg-primary',
       )}
       style={appGlassEnabled ? appGlassControlStyle(active, colors) : undefined}>
-      <RailItemButton label={session.label} accessibilityLabel={t(session.hostId ? 'rail.openHost' : 'rail.showHosts', { host: session.label, status: accessibilityStatus })} accessibilityRole="radio" accessibilityState={{ selected: active }} className="h-11 min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2.5 py-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent" variant="ghost" onPress={onSelect}
+      <RailItemButton label={session.label} accessibilityLabel={t(session.hostId ? 'rail.openHost' : 'rail.showHosts', { host: session.label, status: accessibilityStatus })} accessibilityRole="radio" accessibilityState={{ selected: active }} className="h-11 justify-start gap-1.5 rounded-none px-2.5 py-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent" variant="ghost" onPress={onSelect}
         actions={[
           { id: RailAction.NewHost, accessibilityLabel: t('rail.newHostSession'), onPress: onNew },
           ...(onClose ? [{ id: RailAction.Disconnect, accessibilityLabel: t('rail.disconnectHost', { host: session.label }), onPress: onClose }] : []),
@@ -90,11 +90,11 @@ function HostPill({ session, active, onSelect, onClose, onNew }: { session: Live
           <AnimatedAgentStatusGlyph status={session.agentStatus} color={indicatorColor} size={12} />
         )}
         {session.hostId ? (
-          <Text className={cn('shrink pb-0.5 text-[11px] font-semibold leading-[18px] text-foreground', isIpad && 'text-[17px] leading-6', activeTextClass)} numberOfLines={1}>{session.label}</Text>
+          <Text className={cn('min-w-0 shrink pb-0.5 text-[11px] font-semibold leading-[18px] text-foreground', isIpad && 'text-[17px] leading-6', activeTextClass)} numberOfLines={1} ellipsizeMode="tail">{session.label}</Text>
         ) : (
           <Server size={15} color={active ? (appGlassEnabled ? colors.primary : colors.onPrimary) : colors.text} />
         )}
-        {session.terminalCount > 0 ? <Text className={cn('text-[10px] leading-[18px] text-muted-foreground', activeTextClass)}>{session.terminalCount}</Text> : null}
+        {session.terminalCount > 0 ? <Text className={cn('shrink-0 text-[10px] leading-[18px] text-muted-foreground', activeTextClass)} numberOfLines={1}>{session.terminalCount}</Text> : null}
       </RailItemButton>
     </View>
   );

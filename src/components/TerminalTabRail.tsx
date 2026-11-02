@@ -53,7 +53,7 @@ export function TerminalTabRail({ tabs, selectedTabId, readOnly, busy, onSelect,
               accessibilityLabel={t('session.openTab', { tab: item.label })}
               accessibilityRole="radio"
               accessibilityState={{ selected: active }}
-              className={cn('h-11 min-w-0 flex-shrink justify-start gap-2 rounded-none px-[11px] py-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent', isIpad && 'px-3')}
+              className={cn('h-11 justify-start gap-2 rounded-none px-[11px] py-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent', isIpad && 'px-3')}
               variant="ghost"
               onPress={() => onSelect(item)}
               actionsDisabled={readOnly || busy}
@@ -65,8 +65,8 @@ export function TerminalTabRail({ tabs, selectedTabId, readOnly, busy, onSelect,
             >
               {item.herdrTab ? <AnimatedAgentStatusGlyph status={item.agentStatus} color={sessionTabStatusColor(item.agentStatus, item.status, colors)} size={isIpad ? 16 : 12} />
                 : <SquareTerminal size={isIpad ? 16 : 12} color={sessionTabStatusColor(item.agentStatus, item.status, colors)} />}
-              <Text numberOfLines={1} className={cn('shrink pb-0.5 text-[11px] font-semibold leading-[18px] text-muted-foreground', isIpad && 'text-[14px] leading-5', active && 'text-primary-foreground')}>{item.label}</Text>
-              {item.paneCount > 1 && <Text className={cn('font-mono text-[8px] text-muted-foreground', isIpad && 'text-[11px]', active && 'text-primary-foreground')}>{item.paneCount}</Text>}
+              <Text numberOfLines={1} ellipsizeMode="tail" className={cn('min-w-0 shrink pb-0.5 text-[11px] font-semibold leading-[18px] text-muted-foreground', isIpad && 'text-[14px] leading-5', active && 'text-primary-foreground')}>{item.label}</Text>
+              {item.paneCount > 1 && <Text numberOfLines={1} className={cn('shrink-0 font-mono text-[8px] text-muted-foreground', isIpad && 'text-[11px]', active && 'text-primary-foreground')}>{item.paneCount}</Text>}
             </RailItemButton>
           </View>
         );
