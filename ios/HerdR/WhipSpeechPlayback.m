@@ -401,6 +401,7 @@ static bool WhipConsumePhonon(void *context, const float *samples, uintptr_t cou
   // Publish the stop before resolving the chunk so JS cannot drain another.
   if (owner && kind == WhipSpeechChat) {
     NSMutableDictionary *event = [@{@"token": owner} mutableCopy];
+    if (reason) event[@"reason"] = reason;
     if (error) event[@"error"] = error;
     [NSNotificationCenter.defaultCenter postNotificationName:WhipChatSpeechStopped object:self userInfo:event];
   }

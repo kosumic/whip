@@ -57,6 +57,7 @@ export class NativeAutomaticChatSpeechQueue {
   }
 
   next(): { key: string; text: string } | undefined { return this.queue.next(BigInt(Date.now())); }
+  dismissCurrent(): void { this.queue.dismissCurrent(); }
   remove(key: string): void { this.queue.remove(key); }
   reset(): void { this.queue.reset(); }
   dispose(): void { this.queue.uniffiDestroy(); }

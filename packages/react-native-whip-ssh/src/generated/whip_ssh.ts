@@ -49499,6 +49499,11 @@ const FfiConverterTypeAppCore = new FfiConverterObject(
 );
 
 export interface AutomaticChatSpeechQueueLike {
+  /**
+   * Dismiss the whole currently spoken update, including its remaining chunks.
+   * Other queued updates and transcript history baselines remain intact.
+   */
+  dismissCurrent(): void;
   next(nowMs: bigint): ChatSpeechUtterance | undefined;
   remove(key: string): void;
   reset(): void;
@@ -49537,6 +49542,22 @@ export class AutomaticChatSpeechQueue
     this[pointerLiteralSymbol] = pointer;
     this[destructorGuardSymbol] =
       uniffiTypeAutomaticChatSpeechQueueObjectFactory.bless(pointer);
+  }
+
+  /**
+   * Dismiss the whole currently spoken update, including its remaining chunks.
+   * Other queued updates and transcript history baselines remain intact.
+   */
+  dismissCurrent(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_automaticchatspeechqueue_dismiss_current(
+          uniffiTypeAutomaticChatSpeechQueueObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
   }
 
   next(nowMs: bigint): ChatSpeechUtterance | undefined {
@@ -61611,6 +61632,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_constructor_automaticchatspeechqueue_new',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_dismiss_current() !==
+    15150
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_dismiss_current',
     );
   }
   if (
