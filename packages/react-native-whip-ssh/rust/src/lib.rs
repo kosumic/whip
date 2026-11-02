@@ -37,6 +37,7 @@ mod rich_text_html;
 mod secure_id;
 mod speech_playback;
 mod ssh;
+mod ssh_workflows;
 mod syntax_highlighting;
 mod terminal_delivery;
 mod terminal_submissions;
@@ -75,6 +76,7 @@ pub use secure_id::*;
 pub use ssh::tailcat::{
     TailcatIdentity, TailcatIdentityError, generate_tailcat_identity, tailcat_server_command,
 };
+pub use ssh_workflows::*;
 pub use syntax_highlighting::*;
 pub use terminal_delivery::*;
 pub use terminal_submissions::*;

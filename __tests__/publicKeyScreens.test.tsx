@@ -306,7 +306,7 @@ test.each([false, true])('clipboard selection requires review and explicit insta
   expect(installPublicKeyForHost).not.toHaveBeenCalled();
   expect(view.root.findAllByType('Text' as never).some(node => node.props.children === share.fingerprint)).toBe(true);
   await act(async () => { await button(view, 'publicKeys.install').props.onPress(); });
-  expect(installPublicKeyForHost).toHaveBeenCalledWith(host, PUBLIC_KEY, route);
+  expect(installPublicKeyForHost).toHaveBeenCalledWith(host, PUBLIC_KEY, { ...route, signal: expect.any(AbortSignal) });
   expect(view.root.findAllByType('Text' as never).some(node => node.props.children === 'publicKeys.installed')).toBe(true);
   await act(async () => { view.unmount(); });
 });

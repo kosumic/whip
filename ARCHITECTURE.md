@@ -743,3 +743,36 @@ Clients use the managed relay by default without an enrollment code or shared cl
 Herdr 0.9.5 uses the dotted subscription above but serializes the hook envelope as `pane_agent_status_changed`; a captured real-hook fixture checks that boundary. The Worker uses manual redirects and rejects non-success responses because Workers does not implement Fetch's `error` redirect mode. Simulator push registration explicitly selects APNs sandbox; production devices retain provisioning-profile detection. Real Expo/APNs simulator acceptance covers terminated-app delivery, authenticated cold navigation with a fresh snapshot, active leases, and remote fallback after iOS backgrounding.
 
 [Remote notification documentation](docs/remote-notifications.md) specifies the wire format, compatibility checks, optional server installation, native push provisioning, deployment, per-device enable/revoke/rotation/uninstall lifecycle, tests and limitations.
+
+## Pairing and authorized-key application workflows
+
+Issue #269: `ssh_workflows` is the Rust application owner for WP4 pairing
+and authorized-key installation. TypeScript services submit immutable typed
+requests and map results for the UI. Rust resolves canonical profiles outermost
+first, validates route identities and prior-connection eligibility, asks for
+biometric authorization before reading private keys, and obtains credentials and
+Tailcat identities through the existing credential transaction coordinator.
+
+Each operation has a native identity and generation. Credential edits invalidate
+operations on admission to the native FIFO and block new workflows until the edit
+settles. App lock and bridge detachment revoke the generation. A screen's
+AbortSignal cancels its operation. Every prompt receives a short-lived native
+permit, checked on entry and after its asynchronous response. Platform exceptions
+become bounded typed errors without forwarding credential or private-key text.
+
+Typed unknown-host challenges are bound to the exact route endpoint, algorithm,
+public key and fingerprint. Rust allows at most one approval/retry per endpoint.
+Changed keys have no approval path. Rust commits approvals through the shared
+durable known-host repository, verifies the committed projection, and only then
+retries. The post-commit platform effect refreshes UI trust state; it cannot
+authorize a retry. Credentials, selected key and route remain pinned. Workflow
+admission serializes prompts and mutations while existing SSH/ProxyJump/Tailcat
+transports perform the I/O.
+
+The transport checks the operation before authentication and seals mutation
+dispatch against revocation. Only typed unknown-key failures before dispatch can
+retry. Transport loss, timeout or cancellation after dispatch returns a typed
+`OutcomeUnknown` containing the operation identity; enrollment and authorized_keys
+commands are never automatically replayed. Authenticated hops close on
+cancellation. Rust tests use fake platform and transport effects; adapter tests
+cover callback permits, cancellation and result mapping.

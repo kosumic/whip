@@ -1,108 +1,73 @@
-import { pairHost } from 'react-native-whip-ssh';
-
+import {
+  SshWorkflowRequest_Tags,
+  SshWorkflowResult,
+} from 'react-native-whip-ssh/src/sshWorkflows';
+import { SshWorkflow, workflowResult } from '../test-support/mockSshWorkflows';
 import { pairHostWithRoute } from '../src/services/sshPairing';
-import { loadJumpHostConnectionProfiles } from '../src/services/hostProfiles';
-import type { ConnectionProfile } from '../src/types';
+import type { HostProfile } from '../src/types';
 
-jest.mock('react-native-whip-ssh', () => ({
-  ...require('./mockWhipSsh').createMockWhipSshModule(),
-  pairHost: jest.fn(),
-}));
-jest.mock('../src/services/appStorage', () => ({ __esModule: true, appStorage: {} }));
-jest.mock('../src/services/hostProfiles', () => ({ ensureTailcatIdentity: jest.fn(async profile => profile), loadJumpHostConnectionProfiles: jest.fn() }));
-jest.mock('../src/lib/hostProfiles', () => ({ hostDisplayName: (profile: ConnectionProfile) => profile.name }));
-
-const result = { sshHost: 'target.internal', alreadyPresent: false };
-const challenge = {
-  host: 'bastion.example.test', port: 22, keyType: 'ssh-ed25519',
-  publicKey: 'ssh-ed25519 AAAA', fingerprint: 'SHA256:test',
-};
-const hostKeyError = { code: 'HOST_KEY_UNKNOWN', details: challenge };
-const profile = {
-  id: 'outer', name: 'Outer', host: ' bastion.example.test ', port: '2222',
-  username: ' alice ', authMode: 'password', secret: 'password', passphrase: '',
-} as ConnectionProfile;
+jest.mock('react-native-whip-ssh', () =>
+  require('./mockWhipSsh').createMockWhipSshModule(),
+);
+jest.mock('../src/services/appStorage', () => ({ appStorage: {} }));
+const result = { sshHost: 'target.test', alreadyPresent: false };
+const host = {
+  id: 'outer',
+  host: 'outer.test',
+  port: '22',
+  username: 'user',
+  authMode: 'password',
+  tailcatEnabled: true,
+} as HostProfile;
 const route = {
-  hosts: [],
-  onAuthenticatePrivateKey: jest.fn(async () => true),
+  hosts: [host],
   onConfirmUnknownHost: jest.fn(async () => true),
   onTrustHost: jest.fn(async () => {}),
 };
-
 beforeEach(() => {
   jest.clearAllMocks();
-  jest.mocked(loadJumpHostConnectionProfiles).mockResolvedValue([]);
-  jest.mocked(pairHost).mockReset().mockResolvedValue(result as Awaited<ReturnType<typeof pairHost>>);
-  route.onAuthenticatePrivateKey.mockResolvedValue(true);
-  route.onConfirmUnknownHost.mockResolvedValue(true);
+  SshWorkflow.instances.length = 0;
 });
-
-test('pairs directly without unlocking saved private keys', async () => {
-  await expect(pairHostWithRoute('WP4:code', 'public-key', 'phone', route)).resolves.toBe(result);
-  expect(pairHost).toHaveBeenCalledWith('WP4:code', 'public-key', 'phone', []);
-  expect(route.onAuthenticatePrivateKey).not.toHaveBeenCalled();
+test.each([undefined, 'outer'])(
+  'submits the pinned pairing request and selected direct/ProxyJump route (%s)',
+  async jumpHostId => {
+    workflowResult.mockResolvedValueOnce(
+      new SshWorkflowResult.Paired({ result: result as never }),
+    );
+    await expect(
+      pairHostWithRoute('WP4:code', 'public-key', 'phone', {
+        ...route,
+        jumpHostId,
+      }),
+    ).resolves.toBe(result);
+    const operation = SshWorkflow.instances[0];
+    expect(operation.request).toMatchObject({
+      tag: SshWorkflowRequest_Tags.Pair,
+      inner: {
+        code: 'WP4:code',
+        publicKey: 'public-key',
+        deviceName: 'phone',
+        jumpHostId,
+      },
+    });
+    expect(operation.hosts).toEqual([
+      expect.objectContaining({ id: 'outer', tailcatEnabled: true }),
+    ]);
+    expect(operation.run).toHaveBeenCalledTimes(1);
+    expect(route.onConfirmUnknownHost).not.toHaveBeenCalled();
+  },
+);
+test('native cancellation maps to no pairing result', async () => {
+  workflowResult.mockResolvedValueOnce(new SshWorkflowResult.Cancelled());
+  await expect(
+    pairHostWithRoute('code', 'key', 'phone', route),
+  ).resolves.toBeNull();
 });
-
-test('passes the resolved jump chain in order and unlocks its private keys before pairing', async () => {
-  const privateKey = '-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----';
-  jest.mocked(loadJumpHostConnectionProfiles).mockResolvedValue([
-    profile,
-    { ...profile, id: 'inner', host: 'inner.internal', authMode: 'key', secret: privateKey, passphrase: 'passphrase' },
-  ]);
-  await pairHostWithRoute('WP4:code', 'public-key', 'phone', { ...route, jumpHostId: 'inner' });
-  expect(loadJumpHostConnectionProfiles).toHaveBeenCalledWith([], expect.objectContaining({ jumpHostId: 'inner' }));
-  expect(pairHost).toHaveBeenCalledWith('WP4:code', 'public-key', 'phone', [
-    { host: 'bastion.example.test', port: 2222, username: 'alice', authMode: 'password', secret: 'password', tailcatSshServer: false },
-    { host: 'inner.internal', port: 2222, username: 'alice', authMode: 'key', secret: privateKey, passphrase: 'passphrase', tailcatSshServer: false },
-  ]);
-  expect(route.onAuthenticatePrivateKey.mock.invocationCallOrder[0]).toBeLessThan(jest.mocked(pairHost).mock.invocationCallOrder[0]);
-});
-
-test.each([false, true])('Tailcat jump hosts retain their saved client identity and SSH server selection (%s)', async tailcatSshServer => {
-  jest.mocked(loadJumpHostConnectionProfiles).mockResolvedValue([{ ...profile,
-    tailcatEnabled: true, tailcatSshServer, tailcatAddress: 'tc-host', tailcatPrivateKey: 'privkey:host', tailcatPublicKey: 'nodekey:host',
-    authMode: 'key', secret: '-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----',
-  }]);
-  await pairHostWithRoute('code', 'public-key', 'phone', route);
-  expect(pairHost).toHaveBeenCalledWith('code', 'public-key', 'phone', [expect.objectContaining({
-    tailcatAddress: 'tc-host', tailcatPrivateKey: 'privkey:host', tailcatSshServer,
-  })]);
-});
-
-test('cancelling biometric authentication prevents network pairing', async () => {
-  jest.mocked(loadJumpHostConnectionProfiles).mockResolvedValue([{ ...profile, authMode: 'key' }]);
-  route.onAuthenticatePrivateKey.mockResolvedValue(false);
-  await expect(pairHostWithRoute('code', 'key', 'phone', route)).resolves.toBeNull();
-  expect(pairHost).not.toHaveBeenCalled();
-});
-
-test('trusts an unknown jump host only after confirmation, then retries enrollment', async () => {
-  jest.mocked(loadJumpHostConnectionProfiles).mockResolvedValue([profile]);
-  jest.mocked(pairHost).mockRejectedValueOnce(hostKeyError);
-  await expect(pairHostWithRoute('code', 'key', 'phone', route)).resolves.toBe(result);
-  expect(route.onConfirmUnknownHost).toHaveBeenCalledWith(challenge);
-  expect(route.onTrustHost).toHaveBeenCalledWith(challenge);
-  expect(pairHost).toHaveBeenCalledTimes(2);
-});
-
-test('declining trust stops pairing without trusting the key', async () => {
-  jest.mocked(loadJumpHostConnectionProfiles).mockResolvedValue([profile]);
-  jest.mocked(pairHost).mockRejectedValueOnce(hostKeyError);
-  route.onConfirmUnknownHost.mockResolvedValue(false);
-  await expect(pairHostWithRoute('code', 'key', 'phone', route)).resolves.toBeNull();
-  expect(route.onTrustHost).not.toHaveBeenCalled();
-  expect(pairHost).toHaveBeenCalledTimes(1);
-});
-
-test('a changed jump host key fails without offering to trust its replacement', async () => {
-  const changed = { ...hostKeyError, code: 'HOST_KEY_CHANGED' };
-  jest.mocked(pairHost).mockRejectedValueOnce(changed);
-  await expect(pairHostWithRoute('code', 'key', 'phone', route)).rejects.toBe(changed);
-  expect(route.onConfirmUnknownHost).not.toHaveBeenCalled();
-});
-
-test('missing jump credentials fail before enrollment', async () => {
-  jest.mocked(loadJumpHostConnectionProfiles).mockResolvedValue([{ ...profile, secret: '' }]);
-  await expect(pairHostWithRoute('code', 'key', 'phone', route)).rejects.toThrow('Outer needs a saved SSH credential');
-  expect(pairHost).not.toHaveBeenCalled();
+test('native transport errors are propagated without replay', async () => {
+  const error = new Error('remote outcome unknown');
+  workflowResult.mockRejectedValueOnce(error);
+  await expect(pairHostWithRoute('code', 'key', 'phone', route)).rejects.toBe(
+    error,
+  );
+  expect(workflowResult).toHaveBeenCalledTimes(1);
 });
