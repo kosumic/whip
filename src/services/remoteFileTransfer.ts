@@ -1,6 +1,7 @@
 import { Directory, File, Paths } from 'expo-file-system';
 
 import type { HerdrClient } from './HerdrClient';
+import { recordNetworkDiagnostic } from './networkDiagnostics';
 
 export type RemoteFileClient = Pick<HerdrClient, 'native'>;
 
@@ -9,6 +10,7 @@ export interface CachedRemoteFile {
   nativePath: string;
   uri: string;
   transferId?: string;
+  runtimeId?: string;
   dispose: () => void;
 }
 
@@ -23,6 +25,23 @@ const STAGING_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const DOWNLOAD_PREFIX = 'whip-download-';
 const CACHE_PREFIX = 'herdr-remote-file-';
 const activeDirectories = new Set<string>();
+const DOWNLOAD_DIAGNOSTIC_SOURCE = 'remote-file-download';
+interface DownloadContext {
+  transferId?: string;
+  runtimeId?: string;
+}
+function recordDownloadOutcome(
+  context: DownloadContext,
+  phase: 'destination-save' | 'cleanup',
+  outcome: 'completed' | 'failed' | 'cancelled',
+  provider?: 'android-saf' | 'filesystem',
+): void {
+  recordNetworkDiagnostic(
+    outcome === 'failed' ? (phase === 'cleanup' ? 'warn' : 'error') : 'info',
+    DOWNLOAD_DIAGNOSTIC_SOURCE,
+    { ...context, phase, outcome, provider },
+  );
+}
 
 export class RemoteFileDownloadError extends Error {
   constructor(
@@ -59,13 +78,46 @@ function createDownloadDirectory(prefix: string): Directory {
   return directory;
 }
 
-function disposeDownloadDirectory(directory: Directory): void {
+function disposeDownloadDirectory(directory: Directory, context: DownloadContext = {}): void {
   activeDirectories.delete(directory.uri);
   try {
     if (directory.exists) directory.delete();
   } catch {
     // Never replace a transfer/save error with an unrelated cleanup error.
     // A later download expires abandoned staging directories.
+    recordDownloadOutcome(context, 'cleanup', 'failed');
+  }
+}
+
+
+/** Check provider metadata without buffering large downloads in JavaScript. */
+async function saveDownloadedEntry(
+  source: File | Directory,
+  destination: Directory,
+  overwrite: boolean,
+  context: DownloadContext,
+  signal?: AbortSignal,
+): Promise<void> {
+  const provider = destination.uri.startsWith('content://') ? 'android-saf' : 'filesystem';
+  try {
+    const expectedSize = source instanceof Directory ? undefined : source.size;
+    await source.copy(destination, { overwrite });
+    if (signal?.aborted) throw new Error('Download cancelled');
+    if (typeof expectedSize === 'number' && Number.isFinite(expectedSize) && expectedSize >= 0) {
+      // SAF document IDs are opaque. Let Expo enumerate the actual child URI
+      // instead of appending a filename to the picked tree's content URI.
+      const saved = provider === 'android-saf'
+        ? destination.list().find((entry): entry is File => entry instanceof File && !(entry instanceof Directory) && entry.name === source.name)
+        : new File(destination, source.name);
+      const actualSize = saved?.size;
+      if (!saved?.exists || (typeof actualSize === 'number' && Number.isFinite(actualSize) && actualSize >= 0 && actualSize !== expectedSize)) {
+        throw new Error('The destination file has an unexpected byte count or is missing');
+      }
+    }
+    recordDownloadOutcome(context, 'destination-save', 'completed', provider);
+  } catch (error) {
+    recordDownloadOutcome(context, 'destination-save', signal?.aborted ? 'cancelled' : 'failed', provider);
+    throw new RemoteFileDownloadError('save', context.transferId, error);
   }
 }
 
@@ -87,16 +139,27 @@ export async function downloadRemoteEntry(
   }
   const directory = createDownloadDirectory(DOWNLOAD_PREFIX);
   const native = client.native;
+  const context: DownloadContext = { runtimeId: native.runtimeId };
   let transfer: ReturnType<typeof native.startDownload> | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
   let phase: 'transfer' | 'save' = 'transfer';
-  const cancel = () => { if (transfer) native.cancelTransfer(transfer.id); };
+  const cancel = () => {
+    if (!transfer) return;
+    try {
+      native.cancelTransfer(transfer.id);
+    } catch {
+      recordDownloadOutcome(context, 'cleanup', 'failed');
+    }
+  };
   try {
     if (signal?.aborted) throw new Error('Download cancelled');
     const sourcePath = typeof remotePath === 'string' ? remotePath : await remotePath();
     if (signal?.aborted) throw new Error('Download cancelled');
     transfer = native.startDownload(sourcePath, `${nativePath(directory.uri)}/`);
+    context.transferId = transfer.id;
     signal?.addEventListener('abort', cancel);
+    // Admission can synchronously abort before the listener is attached.
+    if (signal?.aborted) cancel();
     const id = transfer.id;
     timer = setInterval(() => {
       const progress = native.transferProgress(id);
@@ -113,17 +176,18 @@ export async function downloadRemoteEntry(
     // cannot be joined as ordinary filesystem paths. Its copy operation checks
     // conflicts and recurses only over the safe, native-created staging tree.
     phase = 'save';
-    await source.copy(destination, { overwrite: false });
+    await saveDownloadedEntry(source, destination, false, context, signal);
     if (signal?.aborted) throw new Error('Download cancelled');
     return true;
   } catch (error) {
     if (signal?.aborted) throw new Error('Download cancelled', { cause: error });
+    if (error instanceof RemoteFileDownloadError) throw error;
     throw new RemoteFileDownloadError(phase, transfer?.id, error);
   } finally {
     signal?.removeEventListener('abort', cancel);
     if (timer) clearInterval(timer);
-    if (transfer) native.cancelTransfer(transfer.id);
-    disposeDownloadDirectory(directory);
+    cancel();
+    disposeDownloadDirectory(directory, context);
   }
 }
 
@@ -134,6 +198,7 @@ export async function cacheRemoteFile(
 ): Promise<CachedRemoteFile> {
   const directory = createDownloadDirectory(CACHE_PREFIX);
   let transferId: string | undefined;
+  const context: DownloadContext = { runtimeId: client.native.runtimeId };
   try {
     let file: File;
     if (options.utf8) {
@@ -146,6 +211,7 @@ export async function cacheRemoteFile(
       const nativeDirectoryPath = `${nativePath(directory.uri)}/`;
       const transfer = client.native.startDownload(remotePath, nativeDirectoryPath);
       transferId = transfer.id;
+      context.transferId = transfer.id;
       const result = await transfer.result;
       const downloadedPath = result.localPath;
       if (!downloadedPath) throw new Error('Native download returned no local path');
@@ -156,12 +222,13 @@ export async function cacheRemoteFile(
       nativePath: nativePath(file.uri),
       uri: file.uri,
       transferId,
+      runtimeId: context.runtimeId,
       dispose: () => {
-        disposeDownloadDirectory(directory);
+        disposeDownloadDirectory(directory, context);
       },
     };
   } catch (error) {
-    disposeDownloadDirectory(directory);
+    disposeDownloadDirectory(directory, context);
     throw new RemoteFileDownloadError('transfer', transferId, error);
   }
 }
@@ -178,11 +245,10 @@ export async function saveCachedRemoteText(
 
 export async function copyCachedRemoteFileToPickedDirectory(cached: CachedRemoteFile): Promise<string> {
   const destination = await Directory.pickDirectoryAsync();
-  try {
-    await cached.file.copy(destination, { overwrite: true });
-  } catch (error) {
-    throw new RemoteFileDownloadError('save', cached.transferId, error);
-  }
+  await saveDownloadedEntry(cached.file, destination, true, {
+    transferId: cached.transferId,
+    runtimeId: cached.runtimeId,
+  });
   return destination.uri;
 }
 
