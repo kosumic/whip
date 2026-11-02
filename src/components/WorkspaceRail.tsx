@@ -1,4 +1,4 @@
-import { Layers3, Plus } from 'lucide-react-native';
+import { Layers3 } from 'lucide-react-native';
 import { Platform, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
@@ -7,10 +7,9 @@ import { aggregateAgentStatus } from '@/src/lib/agentStatusAggregate';
 import { cn } from '@/src/lib/utils';
 import { appGlassControlStyle, statusColor, useTheme } from '@/src/theme';
 import type { WorkspaceInfo } from '@/src/types';
-import { AnimatedAgentStatusGlyph, hapticPress } from './app-ui';
+import { AnimatedAgentStatusGlyph } from './app-ui';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { RailAction, RailItemButton } from './RailItemButton';
-import { Button } from './ui/button';
 import { Text } from './ui/text';
 
 interface Props {
@@ -34,7 +33,6 @@ export function WorkspaceRail({
   onRename,
   onClose,
 }: Props) {
-  const { colors } = useTheme();
   const { t } = useTranslation();
   const allStatus = aggregateAgentStatus(workspaces.map(workspace => workspace.agent_status), 'unknown');
   const totalTabs = workspaces.reduce((total, workspace) => total + workspace.tab_count, 0);
@@ -45,7 +43,7 @@ export function WorkspaceRail({
   return (
     <GlassSurface className="h-[62px] flex-row border-b border-white/30 dark:border-white/10">
       <ScrollView horizontal showsHorizontalScrollIndicator={false} className="min-w-0 flex-1" contentContainerClassName="items-center px-1 gap-1.5">
-        {workspaces.length > 1 ? (
+        {workspaces.length !== 1 ? (
           <WorkspacePill
             label={t('rail.allSpaces')}
             status={allStatus}
@@ -54,6 +52,7 @@ export function WorkspaceRail({
             aggregate
             busy={busy}
             onPress={() => onSelect(null)}
+            onNew={readOnly ? undefined : onNew}
           />
         ) : null}
         {orderedWorkspaces.map(workspace => (
@@ -65,20 +64,12 @@ export function WorkspaceRail({
             active={workspace.workspace_id === selectedWorkspaceId}
             busy={busy}
             onPress={() => onSelect(workspace.workspace_id)}
+            onNew={readOnly ? undefined : onNew}
             onRename={readOnly ? undefined : () => onRename(workspace)}
             onClose={readOnly ? undefined : () => onClose(workspace)}
           />
         ))}
       </ScrollView>
-      {!readOnly && <Button
-        accessibilityLabel={t('rail.newWorkspace')}
-        className={cn('h-[62px] items-center justify-center rounded-none px-0 py-0', Platform.OS === 'ios' ? 'w-14' : 'w-12')}
-        disabled={busy}
-        size="content"
-        variant="ghost"
-        onPress={hapticPress(onNew)}>
-        <Plus size={Platform.OS === 'ios' ? 23 : 17} color={colors.text} />
-      </Button>}
     </GlassSurface>
   );
 }
@@ -91,6 +82,7 @@ function WorkspacePill({
   aggregate = false,
   busy,
   onPress,
+  onNew,
   onRename,
   onClose,
 }: {
@@ -101,6 +93,7 @@ function WorkspacePill({
   aggregate?: boolean;
   busy: boolean;
   onPress: () => void;
+  onNew?: () => void;
   onRename?: () => void;
   onClose?: () => void;
 }) {
@@ -127,6 +120,7 @@ function WorkspacePill({
       <RailItemButton label={label} accessibilityLabel={t('rail.workspaceStatus', { workspace: label, status })} accessibilityRole="radio" accessibilityState={{ selected: active }} className={cn('h-11 min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2.5 py-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent', isIpad && 'gap-2 px-3')} variant="ghost" onPress={onPress}
         actionsDisabled={busy}
         actions={[
+          ...(onNew ? [{ id: RailAction.NewWorkspace, accessibilityLabel: t('rail.newWorkspace'), onPress: onNew }] : []),
           ...(onRename ? [{ id: RailAction.Rename, accessibilityLabel: t('herd.renameSpace'), onPress: onRename }] : []),
           ...(onClose ? [{ id: RailAction.Close, accessibilityLabel: t('rail.closeWorkspace', { workspace: label }), onPress: onClose }] : []),
         ]}>
