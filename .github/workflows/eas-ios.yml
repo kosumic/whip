@@ -7,15 +7,20 @@ permissions:
   contents: read
 
 concurrency:
-  group: eas-ios-${{ github.ref }}
+  group: eas-ios-app-store
   cancel-in-progress: false
 
 jobs:
   build:
     name: Build and submit production iOS app
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
+    # This existing shared environment also holds EXPO_TOKEN for iOS builds.
     environment: google-play
+    env:
+      BUNDLE_GEMFILE: ${{ github.workspace }}/fastlane/Gemfile
+      FASTLANE_SKIP_UPDATE_CHECK: '1'
+      FASTLANE_HIDE_CHANGELOG: '1'
 
     steps:
       - name: Check out repository
@@ -39,6 +44,18 @@ jobs:
       - name: Check app version configuration
         run: npm run check:app-version
 
+      - name: Set up App Store submission tools
+        uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+          working-directory: fastlane
+
+      - name: Verify App Store access before building
+        env:
+          APP_STORE_CONNECT_API_KEY_JSON: ${{ secrets.APP_STORE_CONNECT_API_KEY_JSON }}
+        run: bundle exec fastlane ios validate_release
+
       - name: Build production iOS app
         id: build
         env:
@@ -55,7 +72,7 @@ jobs:
           build_id="$(jq -er '.[0].id' "$RUNNER_TEMP/eas-ios-build.json")"
           echo "build_id=$build_id" >> "$GITHUB_OUTPUT"
 
-      - name: Submit iOS app to App Store Connect
+      - name: Upload iOS build to App Store Connect
         env:
           EAS_BUILD_ID: ${{ steps.build.outputs.build_id }}
         run: >-
@@ -65,3 +82,8 @@ jobs:
           --id "$EAS_BUILD_ID"
           --non-interactive
           --wait
+
+      - name: Submit release to App Review
+        env:
+          APP_STORE_CONNECT_API_KEY_JSON: ${{ secrets.APP_STORE_CONNECT_API_KEY_JSON }}
+        run: bundle exec fastlane ios submit_review

@@ -1,5 +1,7 @@
-Follow your remote agents with clearer Herd tab names and conversation titles.
+Set up encrypted push notifications for each host, with clearer setup guidance and detailed plugin installation progress.
 
-This update improves native Chat View performance, terminal delivery, reconnection, and session restoration. It also refines dictation, remote file browsing, and Git review workflows.
+Edit remote files with the new code editor, including pinch-to-zoom, and view Mermaid diagrams in Markdown. Adjust the app's font size in Settings.
+
+This update also adds Pi agent support in Chat View and improves host details, plugin upgrades, terminal scrolling, and SVG rendering.
 
 Core SSH, SFTP, terminal, and Herdr features remain free.

@@ -13,17 +13,26 @@ if (file("google-services.json").isFile()) apply plugin: "com.google.gms.google-
 
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
 def appVersion = new groovy.json.JsonSlurper().parse(file("${projectRoot}/package.json")).version
+def nodeOutput = { List<String> arguments ->
+    providers.exec {
+        workingDir rootDir
+        commandLine(['node'] + arguments)
+    }.standardOutput.asText.get().trim()
+}
+def reactNativeDirectory = new File(nodeOutput(["--print", "require.resolve('react-native/package.json')"])).getParentFile().getAbsoluteFile()
+// Native dependencies can share this resolution instead of launching Node again.
+ext.REACT_NATIVE_NODE_MODULES_DIR = reactNativeDirectory
 
 /**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
  */
 react {
-    entryFile = file(["node", "-e", "require('expo/scripts/resolveAppEntry')", projectRoot, "android", "absolute"].execute(null, rootDir).text.trim())
-    reactNativeDir = new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim()).getParentFile().getAbsoluteFile()
-    hermesCommand = new File(["node", "--print", "require.resolve('hermes-compiler/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim()).getParentFile().getAbsolutePath() + "/hermesc/%OS-BIN%/hermesc"
-    codegenDir = new File(["node", "--print", "require.resolve('@react-native/codegen/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim()).getParentFile().getAbsoluteFile()
-    cliFile = new File(["node", "--print", "require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })"].execute(null, rootDir).text.trim())
+    entryFile = file(nodeOutput(["-e", "require('expo/scripts/resolveAppEntry')", projectRoot, "android", "absolute"]))
+    reactNativeDir = reactNativeDirectory
+    hermesCommand = new File(nodeOutput(["--print", "require.resolve('hermes-compiler/package.json', { paths: [require.resolve('react-native/package.json')] })"])).getParentFile().getAbsolutePath() + "/hermesc/%OS-BIN%/hermesc"
+    codegenDir = new File(nodeOutput(["--print", "require.resolve('@react-native/codegen/package.json', { paths: [require.resolve('react-native/package.json')] })"])).getParentFile().getAbsoluteFile()
+    cliFile = new File(nodeOutput(["--print", "require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })"]))
     bundleCommand = "export:embed"
     /* Folders */
     //   The root of your project, i.e. where "package.json" lives. Default is '../..'
@@ -212,13 +221,20 @@ tasks.named('preBuild').configure {
 
 // Evaluate the Android model without compiling an APK, including any future
 // flavor/build-type overrides and versionNameSuffix values.
+def appVariantVersions = [:]
+android.applicationVariants.all { variant ->
+    appVariantVersions[variant.name] = [name: variant.versionName, code: variant.versionCode]
+}
 tasks.register('checkAppVersion') {
-    doLast {
-        android.applicationVariants.all { variant ->
-            if (variant.versionName != appVersion) {
-                throw new GradleException("${variant.name} versionName: expected ${appVersion}, actual ${variant.versionName}")
+    inputs.property('expectedVersion', appVersion)
+    inputs.property('variants', appVariantVersions)
+    doLast { task ->
+        def expected = task.inputs.properties.expectedVersion
+        task.inputs.properties.variants.each { name, version ->
+            if (version.name != expected) {
+                throw new GradleException("${name} versionName: expected ${expected}, actual ${version.name}")
             }
-            println "Android ${variant.name} versionName: ${variant.versionName} (versionCode ${variant.versionCode})"
+            println "Android ${name} versionName: ${version.name} (versionCode ${version.code})"
         }
     }
 }

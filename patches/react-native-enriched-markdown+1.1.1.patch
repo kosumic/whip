@@ -1061,3 +1061,31 @@ diff --git a/node_modules/react-native-enriched-markdown/cpp/parser/MD4CParser.c
      // Handle text content (normal text, code text, LaTeX math, etc.)
      if (type == MD_TEXT_NORMAL || type == MD_TEXT_CODE || type == MD_TEXT_LATEXMATH) {
        impl->currentText.append(text, size);
+diff --git a/node_modules/react-native-enriched-markdown/android/build.gradle b/node_modules/react-native-enriched-markdown/android/build.gradle
+index 4ad8312e..871e7798 100644
+--- a/node_modules/react-native-enriched-markdown/android/build.gradle
++++ b/node_modules/react-native-enriched-markdown/android/build.gradle
+@@ -255,16 +255,16 @@ if (codeHighlightActive) {
+     if (genScript == null) {
+       throw new GradleException("enrichedMarkdown.codeHighlightLanguages is customized but vendor/gen-registry.mjs was not found. Use the default language set or build from the monorepo.")
+     }
+-    // Run node directly via ProcessBuilder rather than Project.exec {}, which was
+-    // removed in Gradle 9. Runs at configuration time (before the native build),
+-    // and surfaces gen-registry's own stderr on failure.
++    // Track this process as a configuration input so cached graphs validate it.
+     def genCmd = ["node", genScript.canonicalPath, "--vendor-dir", vendorDir,
+                   "--languages", codeHighlightLanguages.join(","), "--out", generatedDir.canonicalPath]
+-    def genProc = new ProcessBuilder(genCmd).redirectErrorStream(true).start()
+-    def genOut = genProc.inputStream.text
+-    def genExit = genProc.waitFor()
++    def generator = providers.exec {
++      commandLine genCmd
++      ignoreExitValue = true
++    }
++    def genExit = generator.result.get().exitValue
+     if (genExit != 0) {
+-      throw new GradleException("[code-highlight] gen-registry.mjs failed (exit ${genExit}):\n${genOut}")
++      throw new GradleException("[code-highlight] gen-registry.mjs failed (exit ${genExit}):\n${generator.standardOutput.asText.get()}${generator.standardError.asText.get()}")
+     }
+   }
+   highlightConfigFile.text = """\

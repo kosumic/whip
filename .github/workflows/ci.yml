@@ -231,6 +231,7 @@ jobs:
     env:
       NODE_ENV: production
       CARGO_INCREMENTAL: '0'
+      WHIP_CONFIGURATION_CACHE: ${{ secrets.GRADLE_ENCRYPTION_KEY != '' && 'true' || 'false' }}
       SCCACHE_GHA_ENABLED: 'true'
 
     steps:
@@ -263,14 +264,15 @@ jobs:
         name: Install Android SDK packages
         run: >-
           "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          "platforms;android-36"
-          "build-tools;36.0.0"
+          "platforms;android-37.0"
+          "build-tools;37.0.0"
           "ndk;27.1.12297006"
           "cmake;3.22.1"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
         with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
           dependency-graph: ${{ github.ref == 'refs/heads/main' && 'generate-and-upload' || 'disabled' }}
           dependency-graph-include-projects: '^:app$'
           dependency-graph-include-configurations: '^releaseRuntimeClasspath$'
@@ -315,6 +317,33 @@ jobs:
           path: *android-rust-cache-paths
           key: ${{ steps.android-rust-cache.outputs.cache-primary-key }}
 
+      - name: Compute Android configuration cache key
+        if: env.WHIP_CONFIGURATION_CACHE == 'true'
+        id: android-configuration-key
+        env:
+          GRADLE_CONFIGURATION_ENVIRONMENT: ${{ hashFiles('flake.nix', 'flake.lock', 'package-lock.json', 'android/gradle/wrapper/gradle-wrapper.properties', 'android/gradle.properties', 'android/*.gradle', 'android/app/build.gradle', 'packages/*/android/*.gradle', '.github/gradle/*.gradle', 'patches/*.patch') }}
+        run: |
+          android_configuration_prefix="android-configuration-v1-$RUNNER_OS-$RUNNER_ARCH-$GRADLE_CONFIGURATION_ENVIRONMENT"
+          echo "cache-prefix=$android_configuration_prefix" >> "$GITHUB_OUTPUT"
+          echo "cache-key=$android_configuration_prefix-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+      # Included plugin builds must accompany the encrypted task graph on a fresh runner.
+      - name: Restore Android configuration cache
+        if: env.WHIP_CONFIGURATION_CACHE == 'true'
+        id: android-configuration-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: &android-configuration-cache-paths |
+            android/.gradle/configuration-cache
+            node_modules/@react-native/gradle-plugin/.gradle
+            node_modules/@react-native/gradle-plugin/**/build
+            node_modules/expo-modules-autolinking/android/expo-gradle-plugin/.gradle
+            node_modules/expo-modules-autolinking/android/expo-gradle-plugin/**/build
+            node_modules/expo-modules-core/expo-module-gradle-plugin/.gradle
+            node_modules/expo-modules-core/expo-module-gradle-plugin/build
+          key: ${{ steps.android-configuration-key.outputs.cache-key }}
+          restore-keys: ${{ steps.android-configuration-key.outputs.cache-prefix }}-
+
       - name: Set up native compiler cache
         uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
         with:
@@ -340,8 +369,17 @@ jobs:
             -Dorg.gradle.jvmargs="-Xmx2g -XX:MaxMetaspaceSize=1g" \
             --max-workers=2 \
             --no-parallel \
+            -Dorg.gradle.configuration-cache="$WHIP_CONFIGURATION_CACHE" \
+            --configuration-cache-problems=fail \
             --build-cache \
             --no-daemon
+
+      - name: Save Android configuration cache
+        if: env.WHIP_CONFIGURATION_CACHE == 'true' && steps.android-configuration-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: *android-configuration-cache-paths
+          key: ${{ steps.android-configuration-cache.outputs.cache-primary-key }}
 
       - name: Verify release dependency snapshot
         if: github.ref == 'refs/heads/main'
@@ -380,6 +418,11 @@ jobs:
 
       - *android-dependencies
 
+      - name: Prepare CodeQL JVM build tools
+        run: |
+          df -h .
+          nix develop --file .github/nix/codeql.nix -c java -version
+
       - name: Initialize Java and Kotlin CodeQL
         uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
         with:
@@ -391,12 +434,13 @@ jobs:
       # Disable task-output caching so CodeQL observes the compiler invocations.
       - name: Compile Java and Kotlin for CodeQL
         run: >-
-          nix develop .#default -c
+          nix develop --file .github/nix/codeql.nix -c
           android/gradlew -p android
           :app:compileDebugJavaWithJavac
           -x :react-native-whip-ssh:buildRustArm64
           -PreactNativeArchitectures=arm64-v8a
           --no-build-cache
+          --no-configuration-cache
           --no-daemon
 
       - name: Analyze Java and Kotlin
@@ -433,6 +477,7 @@ jobs:
       # preserves the restored Rust library and UniFFI generator.
       CARGO_TARGET_DIR: ${{ github.workspace }}/build/ios-rust-target
       CARGO_INCREMENTAL: '0'
+      WHIP_IOS_DERIVED_DATA: ${{ github.workspace }}/build/ios-device
 
     steps:
       - name: Check out repository
@@ -454,6 +499,7 @@ jobs:
           printf '%s\n' "$ios_xcode_version"
           swift --version
           ios_xcode_hash="$(printf '%s\n' "$ios_xcode_version" | shasum -a 256 | cut -d ' ' -f 1)"
+          echo "xcode-hash=$ios_xcode_hash" >> "$GITHUB_OUTPUT"
           ios_cache_prefix="ios-rust-v1-$RUNNER_OS-$RUNNER_ARCH-$RUST_CACHE_ENVIRONMENT-$ios_xcode_hash"
           echo "cache-prefix=$ios_cache_prefix" >> "$GITHUB_OUTPUT"
           echo "cache-key=$ios_cache_prefix-$RUST_CACHE_DEPENDENCIES-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
@@ -534,12 +580,38 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+      - name: Compute iOS Xcode cache key
+        id: ios-xcode-key
+        env:
+          XCODE_CACHE_TOOLCHAIN: ${{ steps.apple-toolchain.outputs.xcode-hash }}
+          XCODE_CACHE_CONFIGURATION: ${{ hashFiles('ios/Podfile', 'ios/Podfile.lock', 'ios/Podfile.properties.json', 'ios/HerdR.xcodeproj/project.pbxproj', 'package-lock.json', 'Gemfile.lock', 'flake.nix', 'flake.lock', 'scripts/build-ios-app.sh') }}
+        run: |
+          ios_xcode_cache_prefix="ios-xcode-v1-$RUNNER_OS-$RUNNER_ARCH-$XCODE_CACHE_TOOLCHAIN-$XCODE_CACHE_CONFIGURATION"
+          echo "cache-prefix=$ios_xcode_cache_prefix" >> "$GITHUB_OUTPUT"
+          echo "cache-key=$ios_xcode_cache_prefix-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+      # Restore after code generation and pod install, which recreate build inputs.
+      - name: Restore Xcode build outputs and input timestamps
+        uses: irgaly/xcode-cache@4141f139f00e335c6e1031fb93e667181f86146f # v1.9.2
+        with:
+          key: ${{ steps.ios-xcode-key.outputs.cache-key }}
+          restore-keys: ${{ steps.ios-xcode-key.outputs.cache-prefix }}-
+          deriveddata-directory: ${{ env.WHIP_IOS_DERIVED_DATA }}
+          restore-mtime-targets: |
+            **/*.pbxproj
+            **/*.xcconfig
+            **/*.xcfilelist
+            **/*.xcworkspacedata
+            **/*.modulemap
+            **/*.pch
+            ios/**/*.sh
+            !**/target/**
+            !build/**
+
       - name: Compile and validate unsigned iOS device app
         run: |
-          scripts/build-ios-app.sh \
-            --unsigned \
-            --derived-data "$RUNNER_TEMP/WhipDerivedData"
-          app_path="$RUNNER_TEMP/WhipDerivedData/Build/Products/Release-iphoneos/HerdR.app"
+          scripts/build-ios-app.sh --unsigned
+          app_path="$WHIP_IOS_DERIVED_DATA/Build/Products/Release-iphoneos/HerdR.app"
           ditto -c -k --sequesterRsrc --keepParent \
             "$app_path" \
             "$RUNNER_TEMP/Whip-iOS-unsigned-compile-only.app.zip"
