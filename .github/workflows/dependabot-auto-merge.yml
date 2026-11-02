@@ -53,8 +53,8 @@ jobs:
           # A shared-library or mixed-project PR can start several CI workflows.
           # The last successful workflow retries this check when the others finish.
           ci_passed="$(gh api --paginate --slurp \
-            "repos/$GITHUB_REPOSITORY/actions/runs?event=pull_request&head_sha=$TESTED_HEAD_SHA&per_page=100" \
-            --jq '[.[].workflow_runs[] | select(
+            "repos/$GITHUB_REPOSITORY/actions/runs?event=pull_request&head_sha=$TESTED_HEAD_SHA&per_page=100" |
+            jq -r '[.[].workflow_runs[] | select(
               .path == ".github/workflows/ci.yml" or
               .path == ".github/workflows/ci-whipair.yml" or
               .path == ".github/workflows/ci-whip-notify.yml" or
