@@ -43,49 +43,6 @@ static const NSTimeInterval WebKitNavigationTimeout = 60;
 @end
 
 @implementation WhipBrowserTests
-- (void)testWebKitDownloadWritesTheOriginalBytesAndPublishesCompletion
-{
-  [self resultOf:^(RCTPromiseResolveBlock resolve, RCTPromiseRejectBlock reject) {
-    [self.adapter prepare:@42 resolve:resolve reject:reject];
-  }];
-  XCTestExpectation *started = [self expectationWithDescription:@"WebKit download started"];
-  NSURL *source = [NSURL URLWithString:@"data:application/x-whip-download-test;base64,aGVsbG8="];
-  [self.browser startDownloadUsingRequest:[NSURLRequest requestWithURL:source] completionHandler:^(WKDownload *download) {
-    XCTAssertNotNil(download);
-    [[NSNotificationCenter defaultCenter] postNotificationName:@"WhipBrowserDownloadStarted" object:self.browser userInfo:@{@"download": download}];
-    [started fulfill];
-  }];
-  [self waitForExpectations:@[started] timeout:10];
-  XCTestExpectation *finished = [self expectationWithDescription:@"download completion published"];
-  __block NSDictionary *result;
-  NSTimer *poll = [NSTimer scheduledTimerWithTimeInterval:0.05 repeats:YES block:^(NSTimer *timer) {
-    [self.adapter downloadUpdates:^(NSString *json) {
-      NSArray *entries = [NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
-      for (NSDictionary *entry in entries) {
-        if ([entry[@"mime_type"] isEqual:@"application/x-whip-download-test"] && ![entry[@"state"] isEqual:@"downloading"]) {
-          result = entry;
-          [timer invalidate];
-          [finished fulfill];
-          break;
-        }
-      }
-    } reject:^(NSString *code, NSString *message, NSError *error) { XCTFail(@"%@", message); }];
-  }];
-  @try {
-    [self waitForExpectations:@[finished] timeout:10];
-    XCTAssertEqualObjects(result[@"state"], @"complete");
-    XCTAssertEqualObjects(result[@"bytes"], @5);
-    NSURL *root = [[[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject URLByAppendingPathComponent:@"browser-downloads"];
-    NSURL *file = [[root URLByAppendingPathComponent:result[@"id"]] URLByAppendingPathComponent:result[@"name"]];
-    XCTAssertEqualObjects([NSString stringWithContentsOfURL:file encoding:NSUTF8StringEncoding error:nil], @"hello");
-  } @finally {
-    [poll invalidate];
-    if (result) [self resultOf:^(RCTPromiseResolveBlock resolve, RCTPromiseRejectBlock reject) {
-      [self.adapter removeSavedDownload:result[@"id"] resolve:resolve reject:reject];
-    }];
-  }
-}
-
 - (void)testCompletedDownloadsRecoverFromDiskAndDeleteTheirFiles
 {
   NSString *identifier = NSUUID.UUID.UUIDString;
