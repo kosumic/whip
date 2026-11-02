@@ -205,6 +205,7 @@ interface Props {
     onPress: () => void;
   };
   chatViewEnabled: boolean;
+  transcriptReady?: boolean;
   voiceContext?: { key: string; messages: readonly TranscriptMessage[] };
   renderViewportOverlay?: (
     insets: VisualContentInsets,
@@ -422,6 +423,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       onRequestLinks,
       chatControl,
       chatViewEnabled,
+      transcriptReady = false,
       voiceContext,
       renderViewportOverlay,
       viewportOverlayBackground,
@@ -2164,7 +2166,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           <GlassPortal name={`terminal-composer-${terminalId}`}>
             <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
               <Animated.View
-                className="absolute inset-x-0 border-t border-terminal-divider bg-transparent p-2"
+                className="absolute inset-x-0 bg-transparent px-3 py-2"
                 style={composerStyle}
                 onLayout={event => {
                   const height = Math.round(event.nativeEvent.layout.height);
@@ -2179,18 +2181,10 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                   {...composerInputProps}
                   glass={appGlassEnabled}
                   inputRef={composeInputRef}
-                  numberOfLines={3}
-                  inputClassName={cn(
-                    'h-[76px] px-4 py-3 font-mono text-[12px] leading-[17px]',
-                    appGlassEnabled ? 'text-foreground' : 'text-terminal-text',
-                  )}
-                  surfaceClassName={cn(
-                    'rounded-[38px]',
-                    !appGlassEnabled &&
-                      'border-terminal-divider bg-terminal-canvas',
-                  )}
+                  voiceChatLabel={transcriptReady && !composer.attachments.length ? t('terminal.voice.chat') : undefined}
+                  inputClassName={appGlassEnabled ? 'text-foreground' : 'text-terminal-text'}
+                  surfaceClassName={appGlassEnabled ? undefined : 'border-terminal-divider bg-terminal-surface'}
                   actions={{
-                    actionClassName: 'bg-terminal-surface',
                     actionColor: colors.text,
                     attachLabel: t('terminal.attach'),
                     voiceLabel,
@@ -2203,8 +2197,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                     onSend: submitCompose,
                     sendDisabled: imagePastePending || speechInput.busy,
                     sending: imagePastePending,
-                    sendClassName: 'bg-white',
-                    sendColor: colors.ink,
+                    sendColor: appColors.onPrimary,
                     sendLabel: t('terminal.sendBufferedInput'),
                   }}
                   beforeInput={composerQueueAndAttachments}
