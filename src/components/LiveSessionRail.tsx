@@ -1,4 +1,4 @@
-import { Plus, Server, ServerOff } from 'lucide-react-native';
+import { Server, ServerOff } from 'lucide-react-native';
 import { Platform, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
@@ -9,10 +9,9 @@ import { type LiveHostConnectionStatus } from '@/src/liveHostSessions';
 import { aggregateAgentStatus } from '@/src/lib/agentStatusAggregate';
 import { appGlassControlStyle, statusColor as agentStatusColor, useTheme, type ThemeColors } from '@/src/theme';
 import type { AgentStatus } from '@/src/types';
-import { AnimatedAgentStatusGlyph, AnimatedStatusIndicator, hapticPress } from './app-ui';
+import { AnimatedAgentStatusGlyph, AnimatedStatusIndicator } from './app-ui';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { RailAction, RailItemButton } from './RailItemButton';
-import { Button } from './ui/button';
 import { Text } from './ui/text';
 
 export interface LiveSessionRailItem {
@@ -26,7 +25,6 @@ export interface LiveSessionRailItem {
 interface Props { sessions: LiveSessionRailItem[]; activeHostId: string | null; onSelect: (hostId: string | null) => void; onClose: (hostId: string) => void; onNew: () => void }
 
 export function LiveSessionRail({ sessions, activeHostId, onSelect, onClose, onNew }: Props) {
-  const { colors } = useTheme();
   const { t } = useTranslation();
   const allHosts: LiveSessionRailItem = {
     hostId: '',
@@ -42,18 +40,17 @@ export function LiveSessionRail({ sessions, activeHostId, onSelect, onClose, onN
   return (
     <GlassSurface className="h-[62px] flex-row items-stretch border-b border-white/30 dark:border-white/10">
       <ScrollView className="min-w-0 flex-1" contentContainerClassName="items-center px-1 gap-1.5" horizontal showsHorizontalScrollIndicator={false}>
-        <HostPill session={allHosts} active={activeHostId === null} onSelect={() => onSelect(null)} />
+        <HostPill session={allHosts} active={activeHostId === null} onSelect={() => onSelect(null)} onNew={onNew} />
         {orderedSessions.map(session => {
           const active = session.hostId === activeHostId;
-          return <HostPill key={session.hostId} session={session} active={active} onSelect={() => onSelect(session.hostId)} onClose={() => onClose(session.hostId)} />;
+          return <HostPill key={session.hostId} session={session} active={active} onSelect={() => onSelect(session.hostId)} onClose={() => onClose(session.hostId)} onNew={onNew} />;
         })}
       </ScrollView>
-      <Button accessibilityLabel={t('rail.newHostSession')} className="h-[62px] w-[46px] rounded-none px-0" variant="ghost" onPress={hapticPress(onNew)}><Plus size={22} color={colors.text} /></Button>
     </GlassSurface>
   );
 }
 
-function HostPill({ session, active, onSelect, onClose }: { session: LiveSessionRailItem; active: boolean; onSelect: () => void; onClose?: () => void }) {
+function HostPill({ session, active, onSelect, onClose, onNew }: { session: LiveSessionRailItem; active: boolean; onSelect: () => void; onClose?: () => void; onNew: () => void }) {
   const { colors } = useTheme();
   const appGlassEnabled = useAppGlassEnabled();
   const isIpad = Platform.OS === 'ios' && Platform.isPad;
@@ -80,7 +77,10 @@ function HostPill({ session, active, onSelect, onClose }: { session: LiveSession
       )}
       style={appGlassEnabled ? appGlassControlStyle(active, colors) : undefined}>
       <RailItemButton label={session.label} accessibilityLabel={t(session.hostId ? 'rail.openHost' : 'rail.showHosts', { host: session.label, status: accessibilityStatus })} accessibilityRole="radio" accessibilityState={{ selected: active }} className="h-11 min-w-0 flex-shrink justify-start gap-1.5 rounded-none px-2.5 py-0 active:bg-transparent active:opacity-70 dark:active:bg-transparent" variant="ghost" onPress={onSelect}
-        actions={onClose ? [{ id: RailAction.Disconnect, accessibilityLabel: t('rail.disconnectHost', { host: session.label }), onPress: onClose }] : undefined}>
+        actions={[
+          { id: RailAction.NewHost, accessibilityLabel: t('rail.newHostSession'), onPress: onNew },
+          ...(onClose ? [{ id: RailAction.Disconnect, accessibilityLabel: t('rail.disconnectHost', { host: session.label }), onPress: onClose }] : []),
+        ]}>
         {indicator === 'progress' ? (
           <AnimatedStatusIndicator status={session.status} color={indicatorColor} size={12} />
         ) : indicator === 'offline' ? (

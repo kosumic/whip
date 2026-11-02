@@ -6,8 +6,9 @@ import { cn } from '../lib/utils';
 import type { TerminalSessionStatus } from '../terminalSessions';
 import { sessionTabGlassStyle, sessionTabStatusColor, useTheme } from '../theme';
 import type { AgentStatus, TabInfo } from '../types';
-import { AnimatedAgentStatusGlyph } from './app-ui';
+import { AnimatedAgentStatusGlyph, hapticPress } from './app-ui';
 import { RailAction, RailItemButton } from './RailItemButton';
+import { Button } from './ui/button';
 import { Text } from './ui/text';
 
 export interface TerminalTab {
@@ -25,18 +26,24 @@ interface Props {
   readOnly: boolean;
   busy: boolean;
   onSelect: (tab: TerminalTab) => void;
+  onNew: () => void;
   onRenameTab: (tab: TabInfo) => void;
   onRenameSshTab: (tab: TerminalTab) => void;
   onCloseTab: (tab: TabInfo) => Promise<void>;
   onCloseTerminal: (terminalId: string) => void;
 }
 
-export function TerminalTabRail({ tabs, selectedTabId, readOnly, busy, onSelect, onRenameTab, onRenameSshTab, onCloseTab, onCloseTerminal }: Props) {
+export function TerminalTabRail({ tabs, selectedTabId, readOnly, busy, onSelect, onNew, onRenameTab, onRenameSshTab, onCloseTab, onCloseTerminal }: Props) {
   const { colors } = useTheme();
   const { t } = useTranslation();
   const isIpad = Platform.OS === 'ios' && Platform.isPad;
   return (
     <ScrollView className="min-w-0 flex-1" horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="items-center px-1.5 gap-[5px]">
+      {tabs.length === 0 && !readOnly && (
+        <Button accessibilityLabel={t('session.newTab')} disabled={busy} variant="ghost" onPress={hapticPress(onNew)}>
+          <Text>{t('session.newTab')}</Text>
+        </Button>
+      )}
       {tabs.map(item => {
         const active = item.id === selectedTabId;
         return (
@@ -51,6 +58,7 @@ export function TerminalTabRail({ tabs, selectedTabId, readOnly, busy, onSelect,
               onPress={() => onSelect(item)}
               actionsDisabled={readOnly || busy}
               actions={readOnly ? undefined : [
+                { id: RailAction.NewTab, accessibilityLabel: t('session.newTab'), onPress: onNew },
                 { id: RailAction.Rename, accessibilityLabel: t('session.renameTab'), onPress: () => item.herdrTab ? onRenameTab(item.herdrTab) : onRenameSshTab(item) },
                 { id: RailAction.Close, accessibilityLabel: t('session.closeTab', { tab: item.label }), onPress: () => item.herdrTab ? onCloseTab(item.herdrTab) : onCloseTerminal(item.id) },
               ]}
