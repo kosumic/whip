@@ -61,8 +61,8 @@ export function SmartTurnSetting() {
     <Text className="text-[15px] font-semibold">{t('voiceChat.smartTurn')}</Text>
     <Text className="text-xs leading-[17px] text-muted-foreground">{t('voiceChat.smartTurnDescription')}</Text>
     {installed ? <Text className="text-xs text-muted-foreground">{t('voiceChat.smartTurnInstalled')}</Text>
-      : <GlassButton variant="secondary" disabled={loading || downloading} onPress={download}>
-        <Text>{downloading ? t('voiceChat.smartTurnProgress', { progress }) : t('voiceChat.download')}</Text>
+      : <GlassButton variant="secondary" size="content" className="px-4 py-3" disabled={loading || downloading} onPress={download}>
+        <Text className="flex-shrink text-center">{downloading ? t('voiceChat.smartTurnProgress', { progress }) : t('voiceChat.download')}</Text>
       </GlassButton>}
     {error && <Text accessibilityRole="alert" className="text-xs text-destructive">{error}</Text>}
   </View>;
