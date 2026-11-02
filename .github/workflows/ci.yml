@@ -228,34 +228,38 @@ jobs:
     permissions:
       contents: read
       packages: read
-      security-events: write
     env:
       NODE_ENV: production
       CARGO_INCREMENTAL: '0'
 
     steps:
-      - name: Check out repository
+      - &android-checkout
+        name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Install Nix
+      - &android-nix
+        name: Install Nix
         uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
-      - name: Set up Node.js
+      - &android-node
+        name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24
           cache: npm
 
-      - name: Set up Java
+      - &android-java
+        name: Set up Java
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: 17
 
-      - name: Install Android SDK packages
+      - &android-sdk
+        name: Install Android SDK packages
         run: >-
           "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
           "platforms;android-36"
@@ -272,7 +276,8 @@ jobs:
           dependency-graph-continue-on-failure: false
           artifact-retention-days: 1
 
-      - name: Install dependencies
+      - &android-dependencies
+        name: Install dependencies
         run: npm ci --include=dev
 
       - name: Compute Android Rust cache key
@@ -309,13 +314,6 @@ jobs:
           path: *android-rust-cache-paths
           key: ${{ steps.android-rust-cache.outputs.cache-primary-key }}
 
-      - name: Initialize Java and Kotlin CodeQL
-        if: github.event.repository.visibility == 'public'
-        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
-        with:
-          languages: java-kotlin
-          build-mode: manual
-
       - name: Run Android lint and build
         id: android-build
         run: >-
@@ -325,7 +323,7 @@ jobs:
           app:checkAppVersion app:lintRelease app:assembleDebug
           app:dependencies --configuration releaseRuntimeClasspath
           -PreactNativeArchitectures=arm64-v8a
-          --no-build-cache
+          --build-cache
           --no-daemon
 
       - name: Verify release dependency snapshot
@@ -339,8 +337,52 @@ jobs:
           nix develop .#default -c bash scripts/verify-android-version.sh
           android/app/build/outputs/apk/debug/app-debug.apk
 
+  android-codeql:
+    name: Analyze Java and Kotlin
+    if: github.event.repository.visibility == 'public'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    env:
+      NODE_ENV: production
+
+    steps:
+      - *android-checkout
+      - *android-nix
+      - *android-node
+      - *android-java
+      - *android-sdk
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
+        with:
+          cache-read-only: true
+
+      - *android-dependencies
+
+      - name: Initialize Java and Kotlin CodeQL
+        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        with:
+          languages: java-kotlin
+          build-mode: manual
+
+      # Compile JVM sources and their generated Java dependencies without building
+      # the APK or native libraries. The Rust bridge's bindings are checked in.
+      # Disable task-output caching so CodeQL observes the compiler invocations.
+      - name: Compile Java and Kotlin for CodeQL
+        run: >-
+          nix develop .#default -c
+          android/gradlew -p android
+          :app:compileDebugJavaWithJavac
+          -x :react-native-whip-ssh:buildRustArm64
+          -PreactNativeArchitectures=arm64-v8a
+          --no-build-cache
+          --no-daemon
+
       - name: Analyze Java and Kotlin
-        if: github.event.repository.visibility == 'public'
         uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
         with:
           category: /language:java-kotlin
