@@ -13,8 +13,6 @@ import { useChatViewportRetention } from '../hooks/useChatViewportRetention';
 import { useGithubRepository } from '../hooks/useGithubRepository';
 import { GithubDiscoveryPopup } from './GithubDiscoveryPopup';
 import { useSshShellDirectory } from '../hooks/useSshShellDirectory';
-import { remoteConnectionRequest } from '../services/remoteGitQueries';
-import { GithubViewer, type GithubViewerRequest } from './GithubViewer';
 import { useTranscriptTabTitles } from '../hooks/useTranscriptTabTitles';
 import { ScreenUpdates } from './ScreenUpdates';
 import ChevronLeft from 'lucide-react-native/icons/chevron-left';
@@ -24,6 +22,7 @@ import X from 'lucide-react-native/icons/x';
 import {
   ActivityIndicator,
   AppState,
+  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -322,7 +321,6 @@ export function SessionScreen({
   const [appAlert, setAppAlert] = useState<AppAlertContent | null>(null);
   const [linkScanRequest, setLinkScanRequest] = useState(0);
   const [linksOpen, setLinksOpen] = useState(false);
-  const [githubRequest, setGithubRequest] = useState<GithubViewerRequest | null>(null);
   const [githubStatusRequest, setGithubStatusRequest] = useState<string | null>(null);
   const [terminalLinks, setTerminalLinks] = useState<string[]>([]);
   const [linksBusy, setLinksBusy] = useState(false);
@@ -1734,8 +1732,10 @@ export function SessionScreen({
             githubStatusLabel={github.status === 'found' ? undefined : githubStatusLabel}
             githubDiscovering={github.status !== 'found' && github.retrying}
             onRequestGithub={github.status !== 'inactive' && github.status !== 'not-github' ? () => {
-              if (github.repository && client) {
-                setGithubRequest({ repository: github.repository, connection: remoteConnectionRequest(client) });
+              if (github.repository) {
+                Linking.openURL(github.repository.url).catch(error => {
+                  showAppAlert(t('terminal.linkOpenFailed'), error);
+                });
               } else {
                 setGithubStatusRequest(githubStatusScope);
               }
@@ -2232,14 +2232,6 @@ export function SessionScreen({
         onRetry={github.status !== 'unknown-cwd' && github.status !== 'inactive' && github.status !== 'found' ? github.retry : undefined}
         onClose={() => setGithubStatusRequest(null)}
       />
-      {githubRequest && visible && (
-        <GithubViewer
-          key={`${githubRequest.connection.native.runtimeId}:${githubRequest.repository.nameWithOwner}`}
-          {...githubRequest}
-          connection={client?.activeNative?.runtimeId === githubRequest.connection.native.runtimeId ? remoteConnectionRequest(client) : githubRequest.connection}
-          onClose={() => setGithubRequest(null)}
-        />
-      )}
       <AppAlertPopup
         message={visibleAppAlert?.message}
         title={visibleAppAlert?.title || ''}
