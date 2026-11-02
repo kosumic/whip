@@ -56,6 +56,8 @@ export function InstallPublicKeySheet({
   );
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
+  const operationAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => { operationAbort.current?.abort(); }, [host.id, host.updatedAt]);
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener(
@@ -108,12 +110,15 @@ export function InstallPublicKeySheet({
   const install = async () => {
     if (!key || inFlight.current) return;
     inFlight.current = true;
+    const abort = new AbortController();
+    operationAbort.current = abort;
     setBusy(true);
     setError(null);
     try {
-      setResult(await installPublicKeyForHost(host, key.publicKey, route));
+      const outcome = await installPublicKeyForHost(host, key.publicKey, { ...route, signal: abort.signal });
+      if (!abort.signal.aborted) setResult(outcome);
     } catch (reason) {
-      setError(t('publicKeys.installError', { error: String(reason) }));
+      if (!abort.signal.aborted) setError(t('publicKeys.installError', { error: String(reason) }));
     } finally {
       inFlight.current = false;
       setBusy(false);

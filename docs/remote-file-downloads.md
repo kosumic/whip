@@ -14,6 +14,13 @@ detaches the UI, but staging stays alive until the copy resolves. Copy failures
 retain their error and may leave a partial destination; check that location
 before retrying. Existing destination files are never overwritten.
 
+Automatic SSH reconnects on the same host runtime remain owned by the native
+recovery engine and do not cancel the UI operation. Replacing the active host
+cancels the old transfer; explicit native disconnects surface as transfer failures.
+Both entry points keep typed transfer/save errors and the staging-cache expiry
+policy. Completion follows the real destination copy and checks available file
+size metadata; SAF files use the provider's actual child document URI.
+
 ## Verification
 
 Run the behavioral checks in the development environment:

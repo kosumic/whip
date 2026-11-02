@@ -14,7 +14,7 @@ utterance from the same reverse-control session; other owners receive
 speech.
 
 Agent status announcements use the current conversation's cached session title,
-for example, "Fix keyboard latency finished" or "Fix keyboard latency needs you".
+for example, "Fix keyboard latency finished" or "Fix keyboard latency needs attention".
 Without a title for that exact host, pane, terminal, and session, they retain the
 tab-and-agent announcement. Reading the cache does not open or load a transcript.
 

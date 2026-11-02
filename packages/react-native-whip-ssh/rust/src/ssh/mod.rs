@@ -9,6 +9,7 @@ mod browser_proxy;
 pub(crate) mod known_hosts;
 mod reverse_forward;
 mod session;
+pub(crate) use session::SessionRoute;
 pub(crate) mod tailcat;
 
 pub(crate) use reverse_forward::RemoteForward;
@@ -34,6 +35,7 @@ use russh::client;
 use russh::keys::{PrivateKeyWithHashAlg, PublicKeyOrCertificate};
 use russh_sftp::client::SftpSession;
 mod directory_download;
+pub(crate) mod file_download;
 use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch};
@@ -199,9 +201,12 @@ const SFTP_HTTP_READ_SIZE: u64 = 256 * 1024;
 const SFTP_HTTP_SERVER_LIFETIME: Duration = Duration::from_hours(1);
 const REMOTE_HOME_COMMAND: &str = r#"printf %s "$HOME""#;
 const COMPATIBILITY_SHELL_ID: &str = "default";
+const TRANSFER_BUFFER_BYTES: usize = 64 * 1024;
+const TRANSFER_PROGRESS_BYTES: u64 = 256 * 1024;
+const TRANSFER_PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
 
 #[derive(Debug, thiserror::Error)]
-enum TransportError {
+pub(crate) enum TransportError {
     #[error("invalid request: {0}")]
     InvalidRequest(String),
     #[error("unknown client")]
@@ -1027,6 +1032,14 @@ async fn connect_inner(
     connection: &SshConnectionConfig,
     jump: Option<&Session>,
 ) -> Result<Arc<Session>, TransportError> {
+    connect_inner_guarded(connection, jump, None).await
+}
+async fn connect_inner_guarded(
+    connection: &SshConnectionConfig,
+    jump: Option<&Session>,
+    control: Option<&crate::ssh_workflows::Control>,
+) -> Result<Arc<Session>, TransportError> {
+    check_workflow_control(control)?;
     if connection.tailcat_ssh_server && connection.tailcat_address.is_none() {
         return Err(TransportError::InvalidRequest(
             "Tailcat's SSH server requires Tailcat mode".into(),
@@ -1085,10 +1098,11 @@ async fn connect_inner(
             .map_err(classify_direct_connect_error)?
     };
 
+    check_workflow_control(control)?;
     let mut forwarding_key = None;
     let authenticated = match &connection.credential {
         SshCredential::Password(password) => {
-            authenticate_password(&mut handle, &username, password).await?
+            authenticate_password(&mut handle, &username, password, control).await?
         }
         SshCredential::Key {
             private_key,
@@ -1099,6 +1113,7 @@ async fn connect_inner(
                 passphrase.as_deref(),
             )?);
             let hash_alg = handle.best_supported_rsa_hash().await?.flatten();
+            check_workflow_control(control)?;
             let auth_key = PrivateKeyWithHashAlg::new(key_pair.clone(), hash_alg);
             let result = handle
                 .authenticate_publickey(&username, auth_key)
@@ -1134,7 +1149,9 @@ async fn authenticate_password(
     handle: &mut client::Handle<RusshHandler>,
     username: &str,
     password: &str,
+    control: Option<&crate::ssh_workflows::Control>,
 ) -> Result<bool, TransportError> {
+    check_workflow_control(control)?;
     if handle
         .authenticate_password(username, password)
         .await?
@@ -1143,6 +1160,7 @@ async fn authenticate_password(
         return Ok(true);
     }
 
+    check_workflow_control(control)?;
     // macOS and other PAM-backed SSH servers commonly present a password
     // through keyboard-interactive authentication. OpenSSH clients fall back
     // automatically, so mirror that behavior without answering unknown MFA
@@ -1155,6 +1173,7 @@ async fn authenticate_password(
             client::KeyboardInteractiveAuthResponse::Success => return Ok(true),
             client::KeyboardInteractiveAuthResponse::Failure { .. } => return Ok(false),
             client::KeyboardInteractiveAuthResponse::InfoRequest { prompts, .. } => {
+                check_workflow_control(control)?;
                 let Some(responses) =
                     keyboard_interactive_password_responses(&prompts, username, password)
                 else {
@@ -1835,7 +1854,7 @@ async fn copy_sftp_stream(
     let mut copied = 0u64;
     let mut last_reported_bytes = 0u64;
     let mut last_report = Instant::now();
-    let mut buffer = vec![0u8; 64 * 1024];
+    let mut buffer = vec![0u8; TRANSFER_BUFFER_BYTES];
     progress(0, total);
     loop {
         let count = cancellable_transfer_io(cancel, direction, source.read(&mut buffer)).await?;
@@ -1844,8 +1863,8 @@ async fn copy_sftp_stream(
         }
         cancellable_transfer_io(cancel, direction, destination.write_all(&buffer[..count])).await?;
         copied = copied.saturating_add(count as u64);
-        if copied.saturating_sub(last_reported_bytes) >= 256 * 1024
-            || last_report.elapsed() >= Duration::from_millis(100)
+        if copied.saturating_sub(last_reported_bytes) >= TRANSFER_PROGRESS_BYTES
+            || last_report.elapsed() >= TRANSFER_PROGRESS_INTERVAL
         {
             progress(copied, total);
             last_reported_bytes = copied;
@@ -1954,37 +1973,15 @@ async fn sftp_transfer_file_on(
         }
         Ok(remote_path)
     } else {
-        let source = sftp.open(&remote_path).await?;
-        let total = source.metadata().await?.size;
-        let temp_path = format!(
-            "{local_path}.whip-download-{}",
-            NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed)
-        );
-        let destination = fs::File::create(&temp_path).await?;
-        let copied = copy_sftp_stream(
-            source,
-            destination,
-            total,
-            direction,
-            &mut cancel,
-            &mut progress,
+        file_download::download(
+            local_path,
+            remote_path,
+            "compatibility",
+            cancel,
+            progress,
+            || std::future::ready(Ok(sftp.clone())),
         )
-        .await;
-        if let Err(error) = copied {
-            let _ = fs::remove_file(temp_path).await;
-            return Err(error);
-        }
-        if *cancel.borrow() {
-            let _ = fs::remove_file(temp_path).await;
-            return Err(transfer_cancelled(direction));
-        }
-        if let Err(error) = fs::rename(&temp_path, &local_path).await {
-            let _ = fs::remove_file(temp_path).await;
-            return Err(error.into());
-        }
-        // Local rename atomically commits the download. After this point the
-        // previous destination is gone; keep the committed file on late cancellation.
-        Ok(local_path)
+        .await
     }
 }
 
@@ -3702,3 +3699,14 @@ pub fn shutdown() {
 
 #[cfg(test)]
 mod tests;
+
+fn check_workflow_control(
+    control: Option<&crate::ssh_workflows::Control>,
+) -> Result<(), TransportError> {
+    if let Some(control) = control {
+        control
+            .check()
+            .map_err(|_| TransportError::InvalidRequest("SSH operation cancelled".into()))?;
+    }
+    Ok(())
+}
