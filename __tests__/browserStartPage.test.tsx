@@ -11,7 +11,7 @@ jest.mock('../src/theme', () => ({
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
 jest.mock('../src/components/ui/input', () => ({ Input: 'Input' }));
-jest.mock('lucide-react-native', () => ({ Plus: 'Plus' }));
+jest.mock('lucide-react-native/icons/plus', () => ('Plus'));
 jest.mock('../src/browser/BrowserFavicon', () => ({
   BrowserFavicon: 'BrowserFavicon',
 }));

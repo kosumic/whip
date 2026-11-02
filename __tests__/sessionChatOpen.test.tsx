@@ -56,10 +56,13 @@ jest.mock('../src/services/chatSpeech', () => ({
   listenToChat: jest.fn(() => jest.fn()),
   readChatResponse: jest.fn((_target, _messages, onStopped) => jest.fn(onStopped)),
 }));
-jest.mock(
-  'lucide-react-native',
-  () => new Proxy({}, { get: (_target, name) => String(name) }),
-);
+jest.mock('lucide-react-native/icons/chevron-left', () => ('ChevronLeft'));
+jest.mock('lucide-react-native/icons/earth', () => ('Globe2'));
+jest.mock('lucide-react-native/icons/pencil', () => ('Pencil'));
+jest.mock('lucide-react-native/icons/plus', () => ('Plus'));
+jest.mock('lucide-react-native/icons/square-terminal', () => ('SquareTerminal'));
+jest.mock('lucide-react-native/icons/unplug', () => ('Unplug'));
+jest.mock('lucide-react-native/icons/x', () => ('X'));
 jest.mock('react-native-webview', () => 'WebView');
 jest.mock('../src/browser/BrowserTunnelingSetting', () => ({
   BrowserTunnelingSetting: 'BrowserTunnelingSetting',

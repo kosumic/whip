@@ -1,4 +1,5 @@
-import { Download, RefreshCw } from 'lucide-react-native';
+import Download from 'lucide-react-native/icons/download';
+import RefreshCw from 'lucide-react-native/icons/refresh-cw';
 import { useQuery } from '@tanstack/react-query';
 import { ActivityIndicator, Alert, Linking, View } from 'react-native';
 import { useTranslation } from 'react-i18next';

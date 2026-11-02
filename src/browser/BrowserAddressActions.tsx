@@ -1,5 +1,7 @@
 import { Share, View } from 'react-native';
-import { Copy, Pencil, Share2 } from 'lucide-react-native';
+import Copy from 'lucide-react-native/icons/copy';
+import Pencil from 'lucide-react-native/icons/pencil';
+import Share2 from 'lucide-react-native/icons/share-2';
 import { Button } from '../components/ui/button';
 import { Text } from '../components/ui/text';
 import { bestEffortCleanup } from '../services/backgroundOperations';

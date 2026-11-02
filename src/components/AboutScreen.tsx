@@ -1,4 +1,8 @@
-import { ChevronRight, ExternalLink, Info, Scale, Share2 } from 'lucide-react-native';
+import ChevronRight from 'lucide-react-native/icons/chevron-right';
+import ExternalLink from 'lucide-react-native/icons/external-link';
+import Info from 'lucide-react-native/icons/info';
+import Scale from 'lucide-react-native/icons/scale';
+import Share2 from 'lucide-react-native/icons/share-2';
 import * as Application from 'expo-application';
 import Constants from 'expo-constants';
 import { useEffect, useState } from 'react';

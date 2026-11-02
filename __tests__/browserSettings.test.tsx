@@ -73,12 +73,9 @@ jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
 jest.mock('../src/components/ui/input', () => ({ Input: 'Input' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
 jest.mock('../src/components/ui/icon', () => ({ Icon: 'Icon' }));
-jest.mock('lucide-react-native', () => ({
-  Globe: 'Globe',
-  Check: 'Check',
-  ChevronDown: 'ChevronDown',
-  ChevronUp: 'ChevronUp',
-}));
+jest.mock('lucide-react-native/icons/check', () => ('Check'));
+jest.mock('lucide-react-native/icons/chevron-down', () => ('ChevronDown'));
+jest.mock('lucide-react-native/icons/chevron-up', () => ('ChevronUp'));
 
 let view: ReactTestRenderer;
 const mockTunneledHosts = new Set<string>();

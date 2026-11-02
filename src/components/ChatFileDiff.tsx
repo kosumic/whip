@@ -1,10 +1,8 @@
-import {
-  Check,
-  ChevronDown,
-  ChevronRight,
-  Copy,
-  File,
-} from 'lucide-react-native';
+import Check from 'lucide-react-native/icons/check';
+import ChevronDown from 'lucide-react-native/icons/chevron-down';
+import ChevronRight from 'lucide-react-native/icons/chevron-right';
+import Copy from 'lucide-react-native/icons/copy';
+import File from 'lucide-react-native/icons/file';
 import { memo, useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text as NativeText, View } from 'react-native';
 import { useTranslation } from 'react-i18next';

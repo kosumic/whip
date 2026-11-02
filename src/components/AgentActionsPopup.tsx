@@ -1,5 +1,7 @@
 import type { AgentControlView } from 'react-native-whip-ssh';
-import { Copy, RotateCcw, X } from 'lucide-react-native';
+import Copy from 'lucide-react-native/icons/copy';
+import RotateCcw from 'lucide-react-native/icons/rotate-ccw';
+import X from 'lucide-react-native/icons/x';
 import { Modal, Pressable, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 

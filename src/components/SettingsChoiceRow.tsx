@@ -1,4 +1,4 @@
-import { Check } from 'lucide-react-native';
+import Check from 'lucide-react-native/icons/check';
 
 import { cn } from '../lib/utils';
 import { hapticPress } from '../services/interactionFeedback';

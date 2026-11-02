@@ -17,12 +17,10 @@ import { remoteConnectionRequest } from '../services/remoteGitQueries';
 import { GithubViewer, type GithubViewerRequest } from './GithubViewer';
 import { useTranscriptTabTitles } from '../hooks/useTranscriptTabTitles';
 import { ScreenUpdates } from './ScreenUpdates';
-import {
-  ChevronLeft,
-  Globe2,
-  SquareTerminal,
-  X,
-} from 'lucide-react-native';
+import ChevronLeft from 'lucide-react-native/icons/chevron-left';
+import Globe2 from 'lucide-react-native/icons/earth';
+import SquareTerminal from 'lucide-react-native/icons/square-terminal';
+import X from 'lucide-react-native/icons/x';
 import {
   ActivityIndicator,
   AppState,

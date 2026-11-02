@@ -1,6 +1,14 @@
 import { KeyboardAwareScrollView as ScrollView } from 'react-native-keyboard-controller';
 import { generateKeyPair, getKeyDetails } from 'react-native-whip-ssh';
-import { ChevronLeft, ClipboardPaste, FileUp, KeyRound, Plus, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react-native';
+import ChevronLeft from 'lucide-react-native/icons/chevron-left';
+import ClipboardPaste from 'lucide-react-native/icons/clipboard-paste';
+import FileUp from 'lucide-react-native/icons/file-up';
+import KeyRound from 'lucide-react-native/icons/key-round';
+import Plus from 'lucide-react-native/icons/plus';
+import ShieldCheck from 'lucide-react-native/icons/shield-check';
+import Sparkles from 'lucide-react-native/icons/sparkles';
+import Trash2 from 'lucide-react-native/icons/trash';
+import X from 'lucide-react-native/icons/x';
 import { useEffect, useState } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { Alert, Pressable, View } from 'react-native';

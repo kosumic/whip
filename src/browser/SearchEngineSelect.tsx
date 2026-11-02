@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { View } from 'react-native';
-import { Check, ChevronDown, ChevronUp } from 'lucide-react-native';
+import Check from 'lucide-react-native/icons/check';
+import ChevronDown from 'lucide-react-native/icons/chevron-down';
+import ChevronUp from 'lucide-react-native/icons/chevron-up';
 import { BROWSER_SEARCH_ENGINES, type BrowserSearchEngine } from './search';
 import { Button } from '../components/ui/button';
 import { Icon } from '../components/ui/icon';

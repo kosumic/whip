@@ -1,4 +1,5 @@
-import { CircleCheckBig, Server } from 'lucide-react-native';
+import CircleCheckBig from 'lucide-react-native/icons/circle-check-big';
+import Server from 'lucide-react-native/icons/server';
 import { Modal, Pressable, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 

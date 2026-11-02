@@ -30,10 +30,24 @@ jest.mock('../src/components/ui/switch', () => ({ Switch: 'Switch' }));
 jest.mock('../src/browser/native', () => ({
   supportsBrowserControl: () => true,
 }));
-jest.mock(
-  'lucide-react-native',
-  () => new Proxy({}, { get: (_, name) => String(name) }),
-);
+jest.mock('lucide-react-native/icons/book-open', () => ('BookOpen'));
+jest.mock('lucide-react-native/icons/bot', () => ('Bot'));
+jest.mock('lucide-react-native/icons/chevron-right', () => ('ChevronRight'));
+jest.mock('lucide-react-native/icons/circle-ellipsis', () => ('CircleEllipsis'));
+jest.mock('lucide-react-native/icons/copy', () => ('Copy'));
+jest.mock('lucide-react-native/icons/download', () => ('Download'));
+jest.mock('lucide-react-native/icons/external-link', () => ('ExternalLink'));
+jest.mock('lucide-react-native/icons/focus', () => ('Focus'));
+jest.mock('lucide-react-native/icons/gamepad-2', () => ('Gamepad2'));
+jest.mock('lucide-react-native/icons/layers', () => ('Layers3'));
+jest.mock('lucide-react-native/icons/play', () => ('Play'));
+jest.mock('lucide-react-native/icons/rotate-ccw', () => ('RotateCcw'));
+jest.mock('lucide-react-native/icons/rotate-ccw-clock', () => ('History'));
+jest.mock('lucide-react-native/icons/search', () => ('Search'));
+jest.mock('lucide-react-native/icons/server', () => ('Server'));
+jest.mock('lucide-react-native/icons/sparkles', () => ('Sparkles'));
+jest.mock('lucide-react-native/icons/square-terminal', () => ('SquareTerminal'));
+jest.mock('lucide-react-native/icons/x', () => ('X'));
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );

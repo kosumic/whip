@@ -13,7 +13,8 @@ import {
   useCameraPermissions,
   type BarcodeScanningResult,
 } from 'expo-camera';
-import { Flashlight, X } from 'lucide-react-native';
+import Flashlight from 'lucide-react-native/icons/flashlight';
+import X from 'lucide-react-native/icons/x';
 import { Button } from '../components/ui/button';
 import { Text } from '../components/ui/text';
 

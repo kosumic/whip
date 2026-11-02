@@ -1,6 +1,13 @@
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import Clipboard from '@react-native-clipboard/clipboard';
-import { Check, ChevronLeft, Copy, Download, FileText, Folder, FolderInput, Info } from 'lucide-react-native';
+import Check from 'lucide-react-native/icons/check';
+import ChevronLeft from 'lucide-react-native/icons/chevron-left';
+import Copy from 'lucide-react-native/icons/copy';
+import Download from 'lucide-react-native/icons/download';
+import FileText from 'lucide-react-native/icons/file-text';
+import Folder from 'lucide-react-native/icons/folder';
+import FolderInput from 'lucide-react-native/icons/folder-input';
+import Info from 'lucide-react-native/icons/info';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Keyboard, Pressable, ScrollView, View, type TextInputInstance } from 'react-native';
 import { useTranslation } from 'react-i18next';

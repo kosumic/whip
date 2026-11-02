@@ -1,4 +1,4 @@
-import { SquareTerminal } from 'lucide-react-native';
+import SquareTerminal from 'lucide-react-native/icons/square-terminal';
 import { Platform, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
