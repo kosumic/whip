@@ -1,5 +1,4 @@
 import type {
-  HostRuntimeState,
   NativeAgentChatBinding,
   NativeAgentTranscriptState,
   NativeAgentTranscriptUpdate,
@@ -8,6 +7,7 @@ import type {
 import {
   agentTranscriptReadiness,
   NativeTranscriptService,
+  type TranscriptCacheTarget,
   type NativeTranscriptTransport,
 } from '../src/services/NativeTranscriptService';
 import {
@@ -135,23 +135,107 @@ function openedToken(
   return result.binding.bindingToken;
 }
 
+function cacheRemote(index: number, hostSessionId = 'host', sharedSession = `session-${index}`) {
+  const remote = fakeTransport();
+  const terminalId = `terminal-${index}`;
+  const next = {
+    ...binding(terminalId, `binding-${hostSessionId}-${index}`, { ...state('loading'), sessionId: sharedSession }),
+    sessionId: sharedSession,
+    transcriptKey: `${hostSessionId}\ncodex\n${sharedSession}`,
+  };
+  remote.rebind(next);
+  const target: TranscriptCacheTarget = {
+    hostSessionId, terminalId, sessionId: sharedSession, agent: 'codex', transport: remote.value,
+  };
+  return { ...remote, target, binding: next };
+}
+
+describe('attention-ranked transcript cache', () => {
+  test('loads only the highest ranked transcripts across hosts and promotes newly urgent tabs', () => {
+    const service = new NativeTranscriptService();
+    const remotes = [cacheRemote(1), cacheRemote(2, 'other-host'), cacheRemote(3), cacheRemote(4), cacheRemote(5)];
+    const targets = remotes.map(remote => remote.target);
+    service.reconcileCache(3, targets, []);
+    expect(remotes.map(remote => service.getState(remote.binding.bindingToken) !== null))
+      .toEqual([true, true, true, false, false]);
+    expect(remotes[3].value.startAgentChat).not.toHaveBeenCalled();
+    service.reconcileCache(3, [targets[3], ...targets.slice(0, 3), targets[4]], []);
+    expect(remotes.map(remote => service.getState(remote.binding.bindingToken) !== null))
+      .toEqual([true, true, false, true, false]);
+    expect(remotes[2].value.detachAgentChat).toHaveBeenCalledWith(targets[2].terminalId);
+    expect(jest.mocked(remotes[2].value.detachAgentChat).mock.invocationCallOrder[0])
+      .toBeLessThan(jest.mocked(remotes[3].value.startAgentChat).mock.invocationCallOrder[0]);
+    service.reconcileCache(3, [targets[3], ...targets.slice(0, 3), targets[4]], []);
+    expect(remotes[3].value.startAgentChat).toHaveBeenCalledTimes(1);
+  });
+
+  test('a shared conversation consumes one slot and evicts all its bindings together', () => {
+    const service = new NativeTranscriptService();
+    const remotes = [cacheRemote(1), cacheRemote(2, 'host', 'session-1'), cacheRemote(3), cacheRemote(4), cacheRemote(5)];
+    const targets = remotes.map(remote => remote.target);
+    service.reconcileCache(3, targets, []);
+    expect(remotes.map(remote => service.getState(remote.binding.bindingToken) !== null))
+      .toEqual([true, true, true, true, false]);
+    service.reconcileCache(3, [targets[4], targets[3], targets[2], targets[0], targets[1]], []);
+    expect(service.getState(remotes[0].binding.bindingToken)).toBeNull();
+    expect(service.getState(remotes[1].binding.bindingToken)).toBeNull();
+    expect(remotes[1].value.detachAgentChat).toHaveBeenCalledWith(targets[0].terminalId);
+    expect(remotes[1].value.detachAgentChat).toHaveBeenCalledWith(targets[1].terminalId);
+  });
+
+  test('the visible chat uses a slot and stays protected until its viewport detaches', () => {
+    const service = new NativeTranscriptService();
+    const remotes = Array.from({ length: 4 }, (_, index) => cacheRemote(index + 1));
+    const targets = remotes.map(remote => remote.target);
+    service.reconcileCache(3, targets, []);
+    expect(service.preload('host', targets[3].terminalId, remotes[3].value)).toBeNull();
+    service.activate('host', targets[3].terminalId, remotes[3].value);
+    const stop = service.subscribe(remotes[3].binding.bindingToken, jest.fn());
+    service.reconcileCache(3, targets, []);
+    expect(remotes.map(remote => service.getState(remote.binding.bindingToken) !== null))
+      .toEqual([true, true, false, true]);
+    stop();
+    service.reconcileCache(3, targets, []);
+    expect(remotes.map(remote => service.getState(remote.binding.bindingToken) !== null))
+      .toEqual([true, true, true, false]);
+  });
+
+  test('shrinking the configured limit archives the lowest priorities and growing it admits more', () => {
+    const service = new NativeTranscriptService();
+    const remotes = Array.from({ length: 5 }, (_, index) => cacheRemote(index + 1));
+    const targets = remotes.map(remote => remote.target);
+    service.reconcileCache(5, targets, []);
+    service.reconcileCache(3, targets, []);
+    expect(remotes.map(remote => service.getState(remote.binding.bindingToken) !== null))
+      .toEqual([true, true, true, false, false]);
+    service.reconcileCache(4, targets, []);
+    expect(remotes.map(remote => service.getState(remote.binding.bindingToken) !== null))
+      .toEqual([true, true, true, true, false]);
+    expect(remotes[4].value.startAgentChat).toHaveBeenCalledTimes(1);
+    expect(remotes[3].value.startAgentChat).toHaveBeenCalledTimes(2);
+  });
+
+  test('unavailable transcripts do not consume capacity or prevent lower-ranked available tabs from loading', () => {
+    const service = new NativeTranscriptService();
+    const remotes = Array.from({ length: 5 }, (_, index) => cacheRemote(index + 1));
+    remotes[0].noChat();
+    service.reconcileCache(3, remotes.map(remote => remote.target), []);
+    expect(remotes.map(remote => service.getState(remote.binding.bindingToken) !== null))
+      .toEqual([false, true, true, true, false]);
+  });
+});
+
 describe('Rust-owned agent Chat projection', () => {
   test('host updates observe unopened transcripts without reopening or restarting them', () => {
     const service = new NativeTranscriptService();
     const remote = fakeTransport();
-    const host: HostRuntimeState = {
-      revision: 1, connectionGeneration: 1, syncGeneration: 1, syncStatus: 'synced',
-      freshness: 'fresh', needsResync: false, focus: {},
-      snapshot: {
-        version: 'test', protocol: 1, agents: [], workspaces: [], layouts: [], tabs: [],
-        panes: [{ pane_id: 'pane-terminal-1', terminal_id: 'terminal-1', workspace_id: 'workspace', tab_id: 'tab', focused: false, agent_status: 'done', revision: 1 }],
-      },
+    const target: TranscriptCacheTarget = {
+      hostSessionId: 'host', terminalId: 'terminal-1', agent: 'codex', sessionId,
+      transport: remote.value,
     };
     const listener = jest.fn();
     service.observe(listener);
-    service.reconcileHost('host', { ...host, freshness: 'stale' }, remote.value);
-    expect(listener).not.toHaveBeenCalled();
-    service.reconcileHost('host', host, remote.value);
+    service.reconcileCache(3, [target], []);
     expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({
       binding: expect.objectContaining({ terminalId: 'terminal-1' }),
       state: expect.objectContaining({ status: 'live' }),
@@ -160,11 +244,11 @@ describe('Rust-owned agent Chat projection', () => {
     expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({
       state: expect.objectContaining({ status: 'stale' }),
     }));
-    service.reconcileHost('host', host, remote.value);
+    service.reconcileCache(3, [target], []);
     expect(remote.value.openAgentChat).not.toHaveBeenCalled();
     expect(remote.value.startAgentChat).not.toHaveBeenCalled();
     remote.noChat();
-    service.reconcileHost('host', host, remote.value);
+    service.reconcileCache(3, [target], []);
     expect(service.getState('binding-1')).toBeNull();
   });
 

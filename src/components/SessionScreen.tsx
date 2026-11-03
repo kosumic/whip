@@ -6,6 +6,7 @@ import {
   useReducer,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
   type RefObject,
 } from 'react';
@@ -336,6 +337,9 @@ export function SessionScreen({
   >(null);
   const [chatViews, setChatViews] = useState(
     () => new Map<string, AgentChatViewState>(),
+  );
+  const transcriptResidency = useSyncExternalStore(
+    agentTranscriptService.subscribeResidency, agentTranscriptService.residencyVersion,
   );
   const [appActive, setAppActive] = useState(() => AppState.currentState !== 'background');
   useEffect(() => {
@@ -891,6 +895,21 @@ export function SessionScreen({
     setChatViews(next);
     agentTranscriptService.closeTerminal(target.hostSessionId, terminalId, target.client.native);
   }, [updateChatRestoreIntent]);
+
+  useEffect(() => {
+    const next = new Map(chatViewsRef.current);
+    for (const [key, view] of next) {
+      if (key === activeChatKey || agentTranscriptService.getState(view.binding.bindingToken)) continue;
+      if (chatPresentationRequested(view.presentation)) {
+        updateChatRestoreIntent(key, view.binding.transcriptKey);
+      }
+      next.delete(key);
+    }
+    if (next.size !== chatViewsRef.current.size) {
+      chatViewsRef.current = next;
+      setChatViews(next);
+    }
+  }, [activeChatKey, transcriptResidency, updateChatRestoreIntent]);
 
   useEffect(() => {
     const activeId = visible ? activeTarget?.key : null;

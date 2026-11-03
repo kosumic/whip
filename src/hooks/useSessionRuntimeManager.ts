@@ -25,6 +25,7 @@ import { useSessionConnectionLifecycle } from './useSessionConnectionLifecycle';
 import { useSessionRuntimeTelemetry } from './useSessionRuntimeTelemetry';
 import { useSessionStartupRestore } from './useSessionStartupRestore';
 import { useSessionOfflineRestore } from './useSessionOfflineRestore';
+import { useTranscriptCache } from './useTranscriptCache';
 import { useSessionTerminalLifecycle } from './useSessionTerminalLifecycle';
 import {
   useHerdrInstallation,
@@ -66,6 +67,7 @@ interface SessionRuntimeManagerOptions {
   ttsEnabled: boolean;
   appAccessLocked: boolean;
   hostsVisible: boolean;
+  transcriptCacheCapacity: number;
   t: TFunction;
   hosts: HostManagementController;
   navigation: AppNavigationController;
@@ -163,6 +165,7 @@ export function useSessionRuntimeManager({
   ttsEnabled,
   appAccessLocked,
   hostsVisible,
+  transcriptCacheCapacity,
   t,
   hosts,
   navigation,
@@ -197,6 +200,7 @@ export function useSessionRuntimeManager({
     sessionProfilesRef,
     commitAppCore,
   };
+  useTranscriptCache(store, appCore, transcriptCacheCapacity);
   useSessionOfflineRestore(store);
 
   useNotificationLeases(alertsEnabled && notifications.ready);
