@@ -5,6 +5,8 @@ import { VoiceChatScreen, type VoiceChatHandle } from '../src/components/VoiceCh
 import { VoiceConversation, type VoiceConversationView } from '../src/services/voiceConversation';
 import type { ChatSpeechTarget } from '../src/services/chatSpeech';
 import { VoiceVadSensitivityContext } from '../src/lib/voiceVadSensitivity';
+import { useReducedMotion } from '../src/components/app-ui';
+import { VoiceOrb } from '../src/components/VoiceOrb';
 
 jest.mock('../src/services/voiceConversation', () => ({ VoiceConversation: jest.fn() }));
 jest.mock('../src/components/VoiceOrb', () => ({ VoiceOrb: 'VoiceOrb' }));
@@ -16,7 +18,7 @@ jest.mock('react-native', () => ({
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 jest.mock('../src/theme', () => ({ useTheme: () => ({ colors: { canvas: '#000', text: '#fff', primary: '#acf', onPrimary: '#000' } }) }));
-jest.mock('../src/components/app-ui', () => ({ useReducedMotion: () => true }));
+jest.mock('../src/components/app-ui', () => ({ useReducedMotion: jest.fn(() => true) }));
 jest.mock('../src/components/GlassSurface', () => ({ GlassPortal: 'GlassPortal' }));
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
@@ -30,6 +32,7 @@ jest.mock('react-native-reanimated', () => ({
   useAnimatedStyle: (style: () => unknown) => style(),
   useAnimatedProps: (props: () => unknown) => props(),
   cancelAnimation: jest.fn(), withTiming: (value: number) => value, withRepeat: (value: number) => value,
+  Easing: { cubic: 'cubic', inOut: (easing: unknown) => easing },
 }));
 jest.mock('lucide-react-native/icons/mic', () => 'Mic');
 jest.mock('lucide-react-native/icons/plus', () => 'Plus');
@@ -94,11 +97,13 @@ test('a new agent receives its transcript binding without restarting voice chat'
 });
 
 test.each(['voiceChat.minimize', 'voiceChat.transcript', 'back'])('%s returns to chat without hanging up; the orb reopens the same call', action => {
+  const startedAt = renderer.root.findByType(VoiceOrb).props.startedAt;
   if (action === 'back') act(() => { renderer.root.findByType(Modal).props.onRequestClose(); });
   else press(action);
 
   expect(renderer.root.findByType(Modal).props.visible).toBe(false);
   expect(renderer.root.findByProps({ accessibilityLabel: 'voiceChat.reopen' })).toBeDefined();
+  expect(renderer.root.findByType(VoiceOrb).props.startedAt).toBe(startedAt);
   expect(session.close).not.toHaveBeenCalled();
   expect(onClose).not.toHaveBeenCalled();
 
@@ -108,8 +113,27 @@ test.each(['voiceChat.minimize', 'voiceChat.transcript', 'back'])('%s returns to
 
   expect(renderer.root.findByType(Modal).props.visible).toBe(true);
   expect(renderer.root.findAllByProps({ accessibilityLabel: 'voiceChat.reopen' })).toHaveLength(0);
+  expect(renderer.root.findByType(VoiceOrb).props.startedAt).toBe(startedAt);
   expect(session.start).toHaveBeenCalledTimes(1);
   expect(session.close).not.toHaveBeenCalled();
+});
+
+test('minimizing finishes the orb transition before handing control back to chat', () => {
+  jest.useFakeTimers();
+  jest.mocked(useReducedMotion).mockReturnValue(false);
+  try {
+    act(() => renderer.update(<Call />));
+    press('voiceChat.minimize');
+    expect(renderer.root.findByType(Modal).props.visible).toBe(true);
+    expect(session.close).not.toHaveBeenCalled();
+    act(() => jest.runOnlyPendingTimers());
+    expect(renderer.root.findByType(Modal).props.visible).toBe(false);
+    expect(renderer.root.findByProps({ accessibilityLabel: 'voiceChat.reopen' })).toBeDefined();
+    expect(session.start).toHaveBeenCalledTimes(1);
+  } finally {
+    jest.mocked(useReducedMotion).mockReturnValue(true);
+    jest.useRealTimers();
+  }
 });
 
 test('hiding and restoring the host screen preserves the minimized call', () => {
