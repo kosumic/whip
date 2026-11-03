@@ -34,9 +34,12 @@ export class TranscriptTabTitles {
   observeBinding(host: string, binding: TranscriptTitleIdentity, state: AgentChatState): boolean {
     const key = identityKey(host, binding);
     const info = state.transcript.info;
-    const title = state.sessionId === binding.sessionId &&
-      state.transcript.sessionId === binding.sessionId && info?.id === binding.sessionId
-      ? info.title?.trim() : undefined;
+    if (state.sessionId !== binding.sessionId || state.transcript.sessionId !== binding.sessionId ||
+      (info && info.id !== binding.sessionId)) return this.remove(key);
+    const title = info?.title?.trim();
+    // Loading/rebinding may temporarily omit metadata for the same session.
+    // A live reset or explicit title removal still clears the override.
+    if (info?.title === undefined && (state.status === 'loading' || state.status === 'stale')) return false;
     if (!title) return this.remove(key);
     if (this.titles.get(key)?.title === title) return false;
     this.titles.set(key, { host, title });

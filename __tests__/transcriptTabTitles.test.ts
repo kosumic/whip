@@ -115,3 +115,28 @@ test('card subscribers update only for their conversation and only when its titl
   cache.observeBinding('host', first.binding, first.state('After unsubscribe'));
   expect(listener).toHaveBeenCalledTimes(2);
 });
+
+test.each(['loading', 'stale'] as const)('a %s projection without metadata retains the same identity title', status => {
+  const cache = new TranscriptTabTitles();
+  const { tab, pane, binding, state } = conversation('codex', 'session');
+  const listener = jest.fn();
+  cache.observeBinding('host', binding, state('Known title'));
+  cache.subscribe(transcriptTitleKey('host', pane), listener);
+  const transient = { ...state(), status };
+  expect(cache.observeBinding('host', binding, transient)).toBe(false);
+  transient.transcript.info = undefined;
+  expect(cache.observeBinding('host', binding, transient)).toBe(false);
+  expect(cache.label('host', tab, [pane], null)).toBe('Known title');
+  expect(listener).not.toHaveBeenCalled();
+  cache.retain('host', [{ ...pane, agent_session: { ...pane.agent_session!, value: 'replacement' } }]);
+  expect(cache.title(transcriptTitleKey('host', pane))).toBeUndefined();
+  expect(listener).toHaveBeenCalledTimes(1);
+});
+
+test.each(['loading', 'stale'] as const)('an explicit empty title still clears a %s projection', status => {
+  const cache = new TranscriptTabTitles();
+  const { pane, binding, state } = conversation('codex', 'session');
+  cache.observeBinding('host', binding, state('Known title'));
+  cache.observeBinding('host', binding, { ...state(''), status });
+  expect(cache.title(transcriptTitleKey('host', pane))).toBeUndefined();
+});
