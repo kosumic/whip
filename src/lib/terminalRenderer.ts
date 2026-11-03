@@ -1,6 +1,6 @@
 import type { HerdrClient } from '../services/HerdrClient';
 import type { TerminalSession } from '../terminalSessions';
-import type { PaneScrollInfo } from '../types';
+import type { AgentStatus, PaneScrollInfo } from '../types';
 import type { VisualContentInsets } from './floatingChrome';
 import {
   terminalBoundaryVisualOffset,
@@ -51,6 +51,8 @@ export interface TerminalRenderTarget {
   session: TerminalSession;
   /** Eligible for preparation within the renderer cache before selection. */
   prewarm?: boolean;
+  /** Matches the tab's status, falling back to the pane if tab metadata is absent. */
+  agentStatus?: AgentStatus;
   scroll?: PaneScrollInfo;
 }
 

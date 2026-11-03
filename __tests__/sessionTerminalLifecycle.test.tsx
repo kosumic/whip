@@ -185,6 +185,45 @@ test('cached terminals can be selected before SSH attaches without creating rend
   expect(client.activeNative).toBeNull();
 });
 
+test('renderer targets follow the displayed tab status and fall back to the pane when tab metadata is absent', async () => {
+  const client = new HerdrClient();
+  nativeRuntime();
+  await client.connect(profile);
+  const update = setup(client, jest.fn(), [{
+    terminalId: 'terminal', paneId: 'pane', title: 'Agent', kind: 'herdr',
+    status: 'connected', reconnectAttempt: 0,
+  }]);
+  const pane: PaneInfo = {
+    pane_id: 'pane', terminal_id: 'terminal', workspace_id: 'workspace', tab_id: 'tab',
+    focused: true, agent_status: 'idle', revision: 1,
+  };
+  const snapshot = {
+    version: 'test', protocol: 1, agents: [], workspaces: [], panes: [pane], layouts: [],
+    tabs: [{
+      tab_id: 'tab', workspace_id: 'workspace', label: 'Agent', number: 1,
+      focused: true, pane_count: 2, label_is_custom: false, agent_status: 'blocked' as const,
+    }],
+  };
+  const session = update.options.state.sessions[0];
+  session.connectionStatus = 'ready';
+  session.selection = { workspaceId: 'workspace' };
+  session.hostState = {
+    revision: 1, connectionGeneration: 1, syncGeneration: 1, syncStatus: 'synced',
+    freshness: 'fresh', needsResync: false, focus: {}, snapshot,
+  };
+  await update();
+  expect(lifecycle.terminalTargets).toEqual([expect.objectContaining({
+    agentStatus: 'blocked', prewarm: true,
+  })]);
+
+  snapshot.tabs = [];
+  pane.agent_status = 'done';
+  await update();
+  expect(lifecycle.terminalTargets).toEqual([expect.objectContaining({
+    agentStatus: 'done', prewarm: true,
+  })]);
+});
+
 test('opening a workspace displays the native-selected pane before SSH attaches', async () => {
   const client = new HerdrClient();
   const pane = {

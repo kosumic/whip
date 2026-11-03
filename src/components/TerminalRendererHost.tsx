@@ -27,6 +27,7 @@ import {
   type TerminalInputActivity,
 } from '../lib/terminalArbitration';
 import { arrayBufferToBase64 } from '../lib/base64';
+import { agentStatusPriority } from '../lib/agentStatusPriority';
 import {
   isOfflineTerminalNavigationInput,
   nativeTerminalInputWrites,
@@ -456,6 +457,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       [...entries.current.keys()],
       preferences.xtermCacheCapacity,
       retainedKeys,
+      key => agentStatusPriority(entries.current.get(key)?.target.agentStatus ?? 'unknown'),
     );
     for (const key of evictions) {
       const entry = entries.current.get(key);
@@ -1278,7 +1280,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         && target.hostSessionId === activeTarget.hostSessionId;
       const shells = [...entries.current.values()].filter(entry => entry.target.session.kind === 'ssh').length;
       const budget = Math.max(1, terminalCacheCapacity(preferences.xtermCacheCapacity) - shells);
-      // Keep recently used workspace renderers ahead of unvisited candidates.
+      // Within each status, keep recently used renderers ahead of unvisited candidates.
       const candidates = new Map([
         ...[...entries.current.keys()].reverse().flatMap(key => {
           const target = valid.get(key);
@@ -1286,7 +1288,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         }),
         ...targets.filter(eligible).map(target => [target.key, target] as const),
       ]);
-      for (const [key, target] of candidates) {
+      const rankedCandidates = [...candidates].sort(([, left], [, right]) =>
+        agentStatusPriority(left.agentStatus ?? 'unknown') - agentStatusPriority(right.agentStatus ?? 'unknown'));
+      for (const [key, target] of rankedCandidates) {
         if (protectedKeys.size >= budget) break;
         if (protectedKeys.has(key)) continue;
         if (!entries.current.has(key)) ensureEntry(target);

@@ -18,6 +18,7 @@ import { MIN_XTERM_CACHE_CAPACITY } from '../src/lib/terminalRendererLru';
 import type { TerminalPreferences } from '../src/services/devicePreferences';
 import type { TerminalBatchRenderer } from '../src/services/TerminalBridgeController';
 import type { TerminalSubmissionPermitLike } from 'react-native-whip-ssh/src/terminalSubmissions';
+import type { AgentStatus } from '../src/types';
 
 jest.mock('expo/virtual/env', () => ({ env: {} }));
 jest.mock('react-native-css-interop/jsx-runtime', () =>
@@ -412,6 +413,64 @@ describe('TerminalRendererHost lifecycle', () => {
     const other = { ...createTarget('term-2', client, scroll), hostSessionId: 'other-host', prewarm: true };
     const { injected } = await mountReadyHost(first, [first, other]);
     expect(injected.join('\n')).not.toContain('window.herdrCreate(' + JSON.stringify(other.key));
+  });
+
+  test('workspace preparation follows status priority while protecting the selected idle tab', async () => {
+    const client = createClient({});
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const statuses: AgentStatus[] = ['idle', 'idle', 'unknown', 'working', 'done', 'blocked'];
+    const targets = statuses.map((agentStatus, index) => ({
+      ...createTarget(`term-${index}`, client, scroll), prewarm: true, agentStatus,
+    }));
+    const { injected } = await mountReadyHost(targets[0], targets);
+
+    for (const index of [0, 3, 4, 5]) {
+      expect(injected.join('\n')).toContain('window.herdrCreate(' + JSON.stringify(targets[index].key));
+    }
+    for (const index of [1, 2]) {
+      expect(injected.join('\n')).not.toContain('window.herdrCreate(' + JSON.stringify(targets[index].key));
+    }
+  });
+
+  test('status changes rebalance workspace preparation, with recency breaking status ties', async () => {
+    const client = createClient({});
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const targets: TerminalRenderTarget[] = Array.from({ length: 4 }, (_, index) => ({
+      ...createTarget(`term-${index}`, client, scroll), prewarm: true, agentStatus: 'working',
+    }));
+    const { activateTarget, injected } = await mountReadyHost(targets[0], targets, true, MIN_XTERM_CACHE_CAPACITY);
+    await activateTarget(targets[1]);
+    await activateTarget(targets[0]);
+    injected.length = 0;
+
+    targets[3] = { ...targets[3], agentStatus: 'blocked' };
+    await activateTarget({ ...targets[0] });
+
+    expect(injected.join('\n')).toContain('window.herdrCreate(' + JSON.stringify(targets[3].key));
+    expect(injected.join('\n')).toContain('window.herdrRemove(' + JSON.stringify(targets[2].key));
+    expect(injected.join('\n')).not.toContain('window.herdrRemove(' + JSON.stringify(targets[1].key));
+    injected.length = 0;
+    await activateTarget({ ...targets[0] });
+    expect(injected.join('\n')).not.toContain('window.herdrCreate');
+    expect(injected.join('\n')).not.toContain('window.herdrRemove');
+  });
+
+  test('eviction retains higher status tabs outside the prepared workspace', async () => {
+    const client = createClient({});
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const statuses: AgentStatus[] = ['blocked', 'done', 'working', 'idle', 'unknown'];
+    const targets = statuses.map(agentStatus => ({
+      ...createTarget(agentStatus, client, scroll), agentStatus,
+    }));
+    const { activateTarget, injected } = await mountReadyHost(targets[0], targets, true, MIN_XTERM_CACHE_CAPACITY);
+    for (const target of targets.slice(1)) await activateTarget(target);
+
+    for (const index of [2, 3]) {
+      expect(injected.join('\n')).toContain('window.herdrRemove(' + JSON.stringify(targets[index].key));
+    }
+    for (const index of [0, 1, 4]) {
+      expect(injected.join('\n')).not.toContain('window.herdrRemove(' + JSON.stringify(targets[index].key));
+    }
   });
 
   test('credits only the current renderer generation after a completed batch', async () => {

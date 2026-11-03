@@ -21,6 +21,7 @@ export function terminalRendererEvictionKeys(
   keys: readonly string[],
   capacity: number,
   protectedKeys: ReadonlySet<string>,
+  priority: (key: string) => number = () => 0,
 ): string[] {
   const normalizedCapacity = terminalCacheCapacity(capacity);
   const protectedCount = keys.reduce(
@@ -30,7 +31,8 @@ export function terminalRendererEvictionKeys(
   const targetSize = Math.max(normalizedCapacity, protectedCount);
   let remaining = keys.length;
   const evictions: string[] = [];
-  for (const key of keys) {
+  // Lower priority values are retained first; stable sorting preserves LRU ties.
+  for (const key of [...keys].sort((left, right) => priority(right) - priority(left))) {
     if (remaining <= targetSize) break;
     if (protectedKeys.has(key)) continue;
     evictions.push(key);

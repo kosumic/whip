@@ -358,19 +358,20 @@ export function useSessionTerminalLifecycle({
         if (!runtime?.client.activeNative) return [];
         const snapshot = sessionSnapshot(session);
         const sessionTerminals = terminals.get(session.id, state).sessions;
-        return sessionTerminals.map(terminal => ({
-          key: terminalRendererKey(session.id, terminal.terminalId),
-          hostSessionId: session.id,
-          client: runtime.client,
-          session: terminal,
-          prewarm: session.connectionStatus === 'ready' && snapshot.panes.some(
-            pane => pane.terminal_id === terminal.terminalId && pane.workspace_id === session.selection.workspaceId,
-          ),
-          scroll:
-            snapshot.panes.find(
-              pane => pane.terminal_id === terminal.terminalId,
-            )?.scroll ?? undefined,
-        }));
+        return sessionTerminals.map(terminal => {
+          const pane = snapshot.panes.find(item => item.terminal_id === terminal.terminalId);
+          const tab = snapshot.tabs.find(item => item.tab_id === pane?.tab_id);
+          return {
+            key: terminalRendererKey(session.id, terminal.terminalId),
+            hostSessionId: session.id,
+            client: runtime.client,
+            session: terminal,
+            prewarm: session.connectionStatus === 'ready' && pane !== undefined
+              && pane.workspace_id === session.selection.workspaceId,
+            agentStatus: tab?.agent_status ?? pane?.agent_status,
+            scroll: pane?.scroll ?? undefined,
+          };
+        });
       }),
     [runtimesRef, state, terminals],
   );
