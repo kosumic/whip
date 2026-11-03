@@ -55,7 +55,7 @@ import { runWithInFlightGuard } from '@/src/lib/inFlightSubmission';
 import { terminalFontFamily } from '@/src/lib/terminalFonts';
 import { cn } from '@/src/lib/utils';
 import { APP_FROSTED_GLASS_SURFACE_PROPS, appGlassBackgroundClassName } from '@/src/lib/appGlass';
-import { appGlassControlStyle, statusColor, useTheme } from '@/src/theme';
+import { appGlassControlStyle, sessionTabStatusColor, statusColor, useTheme } from '@/src/theme';
 import type { AgentInfo, WorkspaceInfo } from '@/src/types';
 import type { TabLaunchIntent } from '@/src/lib/herdrCreationFlows';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
@@ -1097,7 +1097,9 @@ const AgentRow = memo(
     const stateLabel = busy
       ? t('herd.applyingAgentAction')
       : agent.state_labels?.[agent.agent_status] || agent.agent_status;
-    const tone = statusColor(agent.agent_status, colors);
+    const tone = agent.agent_status === 'idle'
+      ? sessionTabStatusColor(agent.agent_status, item.terminalStatus, colors)
+      : statusColor(agent.agent_status, colors);
     const reverseControlLabel = readOnly
       ? t('hosts.offline')
       : reverseControlStateLabel(preference, t);
