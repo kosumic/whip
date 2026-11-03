@@ -19,11 +19,14 @@ The shared voice setting reads new updates from every ready, bound transcript,
 across hosts and screens, even when its chat viewport is closed. Initial loads,
 reconnect catchup, and cached/stale snapshots stay silent. Each automatic chunk
 starts with its tab name, such as "Debug tab: ". When chats compete, updates share
-a FIFO queue with at most four waiting chunks and 800 UTF-16 units in total.
+a FIFO queue with at most four unstarted waiting chunks and 800 UTF-16 units in total.
 Content chunks contain at most 300 UTF-16 units before the tab prefix. Overload
-drops the oldest waiting chunks; competing waiting speech expires after 15 seconds.
+drops the oldest unstarted waiting chunks; competing waiting speech expires after 15 seconds.
+Once an update starts, its remaining chunks and streamed continuations finish
+before other waiting updates. They are excluded from waiting limits and expiry,
+so time spent speaking the beginning cannot discard the ending.
 A single speaking chat can finish without trimming or expiry, even if other ready
-chats are idle. A new competing speaker brings that backlog under the limits.
+chats are idle. A new competing speaker brings unstarted backlog under the limits.
 Manual read-aloud and dictation
 flush automatic backlog and resume with fresh baselines. Shaking dismisses the
 currently spoken update, including its remaining chunks, then pauses for one

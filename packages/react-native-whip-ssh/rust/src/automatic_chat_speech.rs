@@ -30,6 +30,18 @@ struct Pending {
 
 type SpeechIdentity = (String, String, String);
 
+impl Pending {
+    fn continues(&self, identity: Option<&SpeechIdentity>) -> bool {
+        identity.is_some_and(|(key, message, part)| {
+            self.utterance.key == *key && self.message_id == *message && self.part_id == *part
+        })
+    }
+
+    fn units(&self) -> usize {
+        self.utterance.text.encode_utf16().count() + self.tab_prefix.encode_utf16().count()
+    }
+}
+
 #[derive(Default)]
 struct State {
     transcripts: HashMap<String, Arc<ChatSpeechQueue>>,
@@ -50,20 +62,31 @@ impl State {
     }
 
     fn trim_competing(&mut self, now_ms: u64) {
-        self.pending
-            .retain(|item| now_ms.saturating_sub(item.queued_at) <= MAX_AGE_MS);
-        while self.pending.len() > MAX_PENDING
-            || self
+        let playing = self.playing_part.as_ref();
+        // Finishing the current update is playback, not a waiting backlog.
+        // Otherwise its first chunk's playback time can expire its own ending.
+        self.pending.retain(|item| {
+            item.continues(playing) || now_ms.saturating_sub(item.queued_at) <= MAX_AGE_MS
+        });
+        let (mut count, mut units) = self
+            .pending
+            .iter()
+            .filter(|item| !item.continues(playing))
+            .fold((0, 0), |(count, units), item| {
+                (count + 1, units + item.units())
+            });
+        while count > MAX_PENDING || units > MAX_PENDING_UNITS {
+            let Some(index) = self
                 .pending
                 .iter()
-                .map(|item| {
-                    item.utterance.text.encode_utf16().count()
-                        + item.tab_prefix.encode_utf16().count()
-                })
-                .sum::<usize>()
-                > MAX_PENDING_UNITS
-        {
-            self.pending.pop_front();
+                .position(|item| !item.continues(playing))
+            else {
+                break;
+            };
+            if let Some(item) = self.pending.remove(index) {
+                count -= 1;
+                units -= item.units();
+            }
         }
     }
 }
@@ -137,8 +160,21 @@ impl AutomaticChatSpeechQueue {
             .pending
             .front()
             .is_some_and(|first| state.competing_with(&first.utterance.key));
-        while let Some(mut item) = state.pending.pop_front() {
-            if !competing || now_ms.saturating_sub(item.queued_at) <= MAX_AGE_MS {
+        loop {
+            // A streamed continuation can arrive after another tab's update.
+            // Finish the current part before moving to waiting updates in FIFO order.
+            let index = state
+                .pending
+                .iter()
+                .position(|item| item.continues(state.playing_part.as_ref()))
+                .unwrap_or(0);
+            let Some(mut item) = state.pending.remove(index) else {
+                break;
+            };
+            if item.continues(state.playing_part.as_ref())
+                || !competing
+                || now_ms.saturating_sub(item.queued_at) <= MAX_AGE_MS
+            {
                 let same_source = state
                     .last_spoken_source
                     .as_ref()
@@ -372,7 +408,55 @@ mod tests {
     }
 
     #[test]
-    fn another_speaking_chat_bounds_and_expires_the_solo_backlog() {
+    fn a_started_response_keeps_its_ending_when_another_chat_is_waiting() {
+        for (response, ending, competing_at) in [
+            (
+                "The code doesn’t document why. Likely it’s to keep phrases together: commas can create very short chunks, giving TTS less context for natural intonation and potentially adding gaps. But commas could reduce the delay before speech starts. A reasonable compromise is to allow comma boundaries once enough words have accumulated.",
+                "enough words have accumulated.",
+                2,
+            ),
+            (
+                "That narrows it down: the automatic reader splits my reply exactly before “enough words have accumulated.” Its queue can expire that second chunk after 15 seconds when other chats have pending speech—even while it’s reading the first chunk. I’ll protect the remainder of a reply once reading has started, and add a regression using that exact response.",
+                "started, and add a regression using that exact response.",
+                MAX_AGE_MS + 2,
+            ),
+        ] {
+            let queue = AutomaticChatSpeechQueue::new();
+            for key in ["one", "two"] {
+                update(&queue, key, "history", 0);
+            }
+            queue.update(
+                "one".into(),
+                AgentTranscriptKind::Codex,
+                "Debug".into(),
+                true,
+                false,
+                messages("response", response),
+                1,
+            );
+            let first = take(&queue, 1);
+            update(&queue, "two", "Other chat", competing_at);
+
+            // The first chunk takes longer to speak than the waiting expiry.
+            let tail = take(&queue, MAX_AGE_MS + 3);
+            assert_eq!(tail.text, ending);
+            assert_eq!(
+                format!(
+                    "{} {}",
+                    first.text.trim_start_matches("Debug tab: "),
+                    tail.text
+                ),
+                response
+            );
+            if competing_at > MAX_AGE_MS {
+                assert_eq!(take(&queue, MAX_AGE_MS + 3).key, "two");
+            }
+            assert!(queue.next(MAX_AGE_MS + 3).is_none());
+        }
+    }
+
+    #[test]
+    fn another_speaking_chat_bounds_and_expires_an_unstarted_solo_backlog() {
         let queue = AutomaticChatSpeechQueue::new();
         update(&queue, "one", "history", 0);
         update(&queue, "two", "history", 0);
@@ -385,12 +469,63 @@ mod tests {
             messages("long", &"a".repeat(5000)),
             1,
         );
-        assert_eq!(take(&queue, 1).key, "one");
         update(&queue, "two", "Recent update", MAX_AGE_MS + 2);
         let next = take(&queue, MAX_AGE_MS + 2);
         assert_eq!(next.key, "two");
         assert_eq!(next.text, "Debug tab: Recent update");
         assert!(queue.next(MAX_AGE_MS + 2).is_none());
+    }
+
+    #[test]
+    fn overload_preserves_started_speech_and_prioritizes_its_streamed_continuation() {
+        let queue = AutomaticChatSpeechQueue::new();
+        for key in ["one", "two"] {
+            update(&queue, key, "history", 0);
+        }
+        let response = |length| {
+            let mut messages = messages("response", &"a".repeat(length));
+            messages[0].completed = false;
+            messages
+        };
+        queue.update(
+            "one".into(),
+            AgentTranscriptKind::Codex,
+            "Debug".into(),
+            true,
+            false,
+            response(MAX_CONTENT_UNITS * 6),
+            1,
+        );
+        assert_eq!(take(&queue, 1).key, "one");
+        for index in 2..12 {
+            update(&queue, "two", &format!("Waiting update {index}"), index);
+        }
+        queue.update(
+            "one".into(),
+            AgentTranscriptKind::Codex,
+            "Debug".into(),
+            true,
+            false,
+            response(MAX_CONTENT_UNITS * 7),
+            12,
+        );
+        // All six remaining chunks finish, including the continuation that
+        // arrived after the other tab. Only unstarted updates are trimmed.
+        for _ in 0..6 {
+            let next = take(&queue, 12);
+            assert_eq!(next.key, "one");
+            assert_eq!(next.text, "a".repeat(MAX_CONTENT_UNITS));
+        }
+        for index in 8..12 {
+            assert_eq!(
+                take(&queue, 12).text,
+                format!(
+                    "{}Waiting update {index}",
+                    if index == 8 { "Debug tab: " } else { "" }
+                )
+            );
+        }
+        assert!(queue.next(12).is_none());
     }
 
     #[test]
