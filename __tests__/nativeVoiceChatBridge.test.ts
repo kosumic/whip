@@ -33,6 +33,25 @@ test('the first transcript can arrive after submitting a new agent’s first pro
   expect(() => call.transcript('codex', state, false)).not.toThrow();
 });
 
+test.each(['claude', 'codex', 'opencode', 'pi'] as const)('%s waits for the whole turn outcome through idle gaps between assistant segments', agent => {
+  const call = new NativeVoiceChat('/model-cache');
+  const turn = {
+    id: 'current-turn', status: 'idle' as const, diffs: [],
+    assistants: [{ id: 'reply', role: 'assistant' as const, parts: [], diffs: [], completedAt: 1 }],
+  };
+  const update = (outcome?: 'completed') => ({
+    ...state,
+    transcript: { ...state.transcript, turns: [{ ...turn, details: { outcome } }] },
+  });
+  call.transcript(agent, update(), true);
+  expect(mockTranscript).toHaveBeenLastCalledWith(expect.any(Number), true, true, [expect.objectContaining({ completed: false })]);
+  mockWaiting = true;
+  call.transcript(agent, update(), false);
+  expect(mockTranscript).toHaveBeenLastCalledWith(expect.any(Number), true, false, [expect.objectContaining({ completed: false })]);
+  call.transcript(agent, update('completed'), false);
+  expect(mockTranscript).toHaveBeenLastCalledWith(expect.any(Number), true, false, [expect.objectContaining({ completed: true })]);
+});
+
 test('an actual conversation replacement still prevents speaking another conversation’s reply', () => {
   const call = new NativeVoiceChat('/model-cache');
   call.transcript('codex', state, true);

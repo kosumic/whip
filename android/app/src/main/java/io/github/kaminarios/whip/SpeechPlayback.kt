@@ -34,7 +34,6 @@ object SpeechPlayback : SensorEventListener {
   private const val TAG = "SpeechPlayback"
   private const val INITIALIZATION_TIMEOUT_MS = 10_000L
   private const val MODEL_INITIALIZATION_TIMEOUT_MS = 60_000L
-  private const val SHAKE_GRAVITY_THRESHOLD = 2.7f
 
   private data class Session(
     val id: Long,
@@ -58,6 +57,7 @@ object SpeechPlayback : SensorEventListener {
   private var sequence = 0L
   private var audioManager: AudioManager? = null
   private var sensorManager: SensorManager? = null
+  private val shakeDetector = SpeechShakeDetector()
   private var focusRequest: AudioFocusRequest? = null
   private var focusListener: AudioManager.OnAudioFocusChangeListener? = null
   private var receiverContext: Context? = null
@@ -130,6 +130,7 @@ object SpeechPlayback : SensorEventListener {
     if (id == 0L) return false
     clear(REPLACED, null)
     session = Session(id, kind, owner, name, ready, ended)
+    shakeDetector.reset()
     try {
       val app = context.applicationContext
       audioManager = app.getSystemService(AudioManager::class.java)
@@ -370,6 +371,7 @@ object SpeechPlayback : SensorEventListener {
     receiverContext = null
     sensorManager?.unregisterListener(this)
     sensorManager = null
+    shakeDetector.reset()
     val completed = utterance
     utterance = null
     // Notify first, before JS can drain another queued chat chunk.
@@ -409,7 +411,10 @@ object SpeechPlayback : SensorEventListener {
     val y = event.values[1] / SensorManager.GRAVITY_EARTH
     val z = event.values[2] / SensorManager.GRAVITY_EARTH
     val gravity = sqrt(x * x + y * y + z * z)
-    if (gravity.isFinite() && gravity >= SHAKE_GRAVITY_THRESHOLD) stop(reason = SHAKE)
+    if (shakeDetector.update(gravity, event.timestamp / 1_000_000L)) {
+      Log.i(TAG, "Stopping speech after a repeated shake gesture")
+      stop(reason = SHAKE)
+    }
   }
   override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
 }

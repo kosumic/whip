@@ -131,6 +131,7 @@ object PhononPlayback {
           error = failure.message ?: "Local speech playback failed"
         }
       } finally {
+        Log.i("Phonon", "playback_finished lease=$lease completed=$completed ${next.statistics()}")
         next.close()
       }
       val finished = completed
@@ -159,6 +160,8 @@ object PhononPlayback {
     private val lifecycle = Any()
     private var track: AudioTrack? = null
     @Volatile private var frames = 0L
+    private var playing = false
+    private var peakRms = 0f
     var started = false
 
     fun open() = synchronized(lifecycle) {
@@ -176,7 +179,6 @@ object PhononPlayback {
           }
           // Native sample-rate conversion also preserves the device.speak rate contract.
           check(it.setPlaybackRate((SAMPLE_RATE * rate).toInt()) == AudioTrack.SUCCESS) { "Requested speech rate is unavailable" }
-          it.play()
         }
     }
 
@@ -188,13 +190,23 @@ object PhononPlayback {
         val end = minOf(samples.size, offset + LEVEL_SAMPLES)
         var sum = 0.0
         for (index in offset until end) sum += samples[index].toDouble() * samples[index]
-        levels.add(Level(frames, kotlin.math.sqrt(sum / (end - offset)).toFloat().coerceIn(0f, 1f)))
+        val rms = kotlin.math.sqrt(sum / (end - offset)).toFloat().coerceIn(0f, 1f)
+        peakRms = maxOf(peakRms, rms)
+        levels.add(Level(frames, rms))
         while (offset < end) {
-          val count = output.write(samples, offset, end - offset, AudioTrack.WRITE_BLOCKING)
+          // Prime with real PCM before starting the clock so synthesis startup
+          // cannot leave an empty, underrunning track on the first reply.
+          val count = output.write(samples, offset, end - offset,
+            if (playing) AudioTrack.WRITE_BLOCKING else AudioTrack.WRITE_NON_BLOCKING)
           if (cancelled.get()) return false
           check(count > 0) { "Streaming audio write failed ($count)" }
           frames += count
           offset += count
+          if (!playing) synchronized(lifecycle) {
+            if (cancelled.get() || !SpeechPolicy.isCurrent(lease)) return false
+            output.play()
+            playing = true
+          }
         }
       }
       return true
@@ -212,6 +224,12 @@ object PhononPlayback {
     }
 
     fun hasPlayed(): Boolean = synchronized(lifecycle) { (track?.playbackHeadPosition ?: 0) > 0 }
+
+    fun statistics(): String = synchronized(lifecycle) {
+      val output = track
+      "frames=$frames played=${output?.let { Integer.toUnsignedLong(it.playbackHeadPosition) } ?: 0} " +
+        "peak_rms=$peakRms underruns=${output?.underrunCount ?: 0} device=${output?.routedDevice?.type ?: 0}"
+    }
 
     fun playbackLevel(): Float {
       val position = synchronized(lifecycle) { track?.let { Integer.toUnsignedLong(it.playbackHeadPosition) } } ?: return 0f

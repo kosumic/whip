@@ -1,4 +1,5 @@
 import { AppState, DeviceEventEmitter, NativeEventEmitter, Platform } from 'react-native';
+import { retainVoiceCallBackground } from './voiceCallBackground';
 import type { NativeVoiceChat, VoiceChatView } from 'react-native-whip-ssh/src/voiceChat';
 import type { AgentChatState } from '../agentChat';
 import { agentTranscriptService } from './NativeTranscriptService';
@@ -29,6 +30,7 @@ const STARTED = 'WhipChatSpeechStarted';
 const LEVEL = 'WhipChatSpeechLevel';
 const CALL_EVENT = 'WhipVoiceCall';
 const WATCHDOG_MS = 10_000;
+const TRANSCRIPT_RECOVERY_MS = 30_000;
 let nextSession = 0;
 let active: string | null = null;
 type CallEvent = { token: string; type: 'ended' | 'muted' | 'route' | 'audioInactive'; muted?: boolean; speaker?: boolean; error?: string };
@@ -70,6 +72,10 @@ export class VoiceConversation {
   private preparing = false;
   private transcriptBinding?: string;
   private unsubscribeTranscript?: () => void;
+  private transcriptRecovery?: ReturnType<typeof setTimeout>;
+  private releaseBackground?: () => void;
+  private captureChunks = 0;
+  private captureDiagnosticAt = 0;
   private readonly startedWithoutTranscript: boolean;
   private view: VoiceConversationView = {
     phase: 'starting', muted: false, smartTurn: false, speaker: false, text: '', level: 0, progress: 0, error: null, transcript: null,
@@ -89,6 +95,7 @@ export class VoiceConversation {
     try {
       if (active || !composerSpeechInput.reserve(this.session)) throw new Error('Finish the current speech session before starting voice chat.');
       active = this.session;
+      if (Platform.OS === 'android') this.releaseBackground = retainVoiceCallBackground(this.session);
       this.cleanup.push(suppressAgentAlertsForTab(this.session, this.target.hostId, this.target.tabId));
       this.playback = getSpeechPlayback();
       if (!this.playback.startLocalChatSpeech || !this.playback.startVoiceCall) throw new Error('Install an updated Whip build for system voice calls.');
@@ -136,7 +143,20 @@ export class VoiceConversation {
     this.unsubscribeTranscript?.();
     this.unsubscribeTranscript = undefined;
     this.transcriptBinding = bindingToken;
-    if (this.core) this.subscribeTranscript();
+    if (this.core) {
+      if (bindingToken) this.subscribeTranscript();
+      else this.waitForTranscript();
+    }
+  }
+
+  private waitForTranscript(): void {
+    // Null invalidates a subscription token, not the remote conversation.
+    // Keep the pending prompt and speech queue while presentation rebinds.
+    if (this.transcriptRecovery === undefined) {
+      this.transcriptRecovery = setTimeout(() => this.fail(new Error('The agent transcript did not reconnect. Reopen voice chat to try again.')), TRANSCRIPT_RECOVERY_MS);
+    }
+    this.view = { ...this.view, transcript: null };
+    this.changed(this.view);
   }
 
   private subscribeTranscript(): void {
@@ -144,7 +164,9 @@ export class VoiceConversation {
     const unsubscribe = agentTranscriptService.subscribe(this.transcriptBinding, (state, baseline) => {
       if (this.closed) return;
       try {
-        if (!state) throw new Error('The agent transcript is no longer available.');
+        if (!state) { this.waitForTranscript(); return; }
+        clearTimeout(this.transcriptRecovery);
+        this.transcriptRecovery = undefined;
         this.view = { ...this.view, transcript: state };
         // A new agent creates its transcript after our first prompt. Its first
         // snapshot can already contain that reply, so it is not prior history.
@@ -223,9 +245,13 @@ export class VoiceConversation {
     const snapshot = composerSpeechInput.getSnapshot();
     try {
       if (snapshot.owner === this.session) {
-        if (snapshot.phase === 'listening') { input.started = true; clearTimeout(this.watchdog); }
+        if (snapshot.phase === 'listening') {
+          if (!input.started) recordDiagnostic('info', 'VoiceChat', 'capture-started', { inputId: input.id.toString(), appState: AppState.currentState });
+          input.started = true; clearTimeout(this.watchdog);
+        }
         this.core.recognition(input.id, [this.draft, snapshot.interimText].filter(Boolean).join(' '));
       } else if (snapshot.phase === 'idle' && input.started) {
+        recordDiagnostic('info', 'VoiceChat', 'capture-ended', { inputId: input.id.toString(), appState: AppState.currentState });
         clearTimeout(this.watchdog);
         this.input = undefined;
         this.core.ended(input.id);
@@ -254,6 +280,9 @@ export class VoiceConversation {
   private apply(): void {
     if (this.closed || !this.core) return;
     const view = this.core.view();
+    if (this.callActivated && view.phase !== this.view.phase) recordDiagnostic('info', 'VoiceChat', 'phase-changed', {
+      from: this.view.phase, to: view.phase, inputId: view.inputId.toString(), appState: AppState.currentState,
+    });
     this.signalSpeech();
     if (view.phase === 'finishing' && this.view.phase !== 'finishing') {
       const now = performance.now();
@@ -287,6 +316,7 @@ export class VoiceConversation {
       if (view.phase === 'waiting') {
         const prompt = this.core.takePrompt();
         if (prompt) {
+          recordDiagnostic('info', 'VoiceChat', 'prompt-queued', { inputId: view.inputId.toString(), characters: prompt.length, appState: AppState.currentState });
           if (this.timing) this.timing.submitted = performance.now();
           if (!this.send(prompt)) this.fail(new Error('The voice message could not be queued for this agent.'));
         }
@@ -302,6 +332,7 @@ export class VoiceConversation {
     this.captureQueue = this.captureQueue.then(async () => {
       await this.waitForInputRelease();
       if (this.closed || this.input?.id !== id) return;
+      recordDiagnostic('info', 'VoiceChat', 'capture-starting', { inputId: id.toString(), monitor, appState: AppState.currentState });
       this.armWatchdog('The on-device recognizer did not start. Check the offline speech language in device settings.');
       await composerSpeechInput.start({
         owner: this.session, draft: '', localOnly: true, managedCall: true, duringPlayback: monitor,
@@ -311,11 +342,23 @@ export class VoiceConversation {
         append: text => {
           if (this.closed || this.input?.id !== id) return;
           this.draft = text;
+          recordDiagnostic('info', 'VoiceChat', 'recognized-segment', { inputId: id.toString(), characters: text.length, appState: AppState.currentState });
           this.core!.recognition(id, text);
         },
         onAudio: pcm => {
           if (this.closed || this.input?.id !== id) return;
-          try { this.core!.audio(id, pcm); this.apply(); } catch (error) { this.fail(error); }
+          try {
+            this.core!.audio(id, pcm);
+            this.captureChunks++;
+            const now = performance.now();
+            if (now >= this.captureDiagnosticAt) {
+              this.captureDiagnosticAt = now + 5_000;
+              const view = this.core!.view();
+              recordDiagnostic('info', 'VoiceChat', 'capture-progress', { inputId: id.toString(), chunks: this.captureChunks,
+                phase: view.phase, level: view.level, silenceMs: view.silenceMs, characters: view.text.length, appState: AppState.currentState });
+            }
+            this.apply();
+          } catch (error) { this.fail(error); }
         },
         onError: (error, message) => {
           const phase = this.core?.view().phase;
@@ -437,6 +480,7 @@ export class VoiceConversation {
     this.core?.close();
     clearTimeout(this.watchdog);
     clearInterval(this.progressTimer);
+    clearTimeout(this.transcriptRecovery);
     for (const cleanup of this.cleanup.splice(0)) cleanup();
     this.unsubscribeTranscript?.();
     this.unsubscribeTranscript = undefined;
@@ -457,6 +501,8 @@ export class VoiceConversation {
     } catch { /* Cleanup must still release the shared input reservation. */ }
     finally {
       await endedCall;
+      this.releaseBackground?.();
+      this.releaseBackground = undefined;
       // UniFFI retains the Rust object until in-flight model futures finish.
       if (active === this.session) { active = null; composerSpeechInput.releaseReservation(this.session); }
     }

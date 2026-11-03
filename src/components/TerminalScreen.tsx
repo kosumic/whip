@@ -1,4 +1,6 @@
 import { ChatSearchBar } from './ChatSearchBar';
+import { prepareTerminalPaste } from '../lib/terminalPaste';
+import { recordDiagnostic } from '../services/diagnosticFormatting';
 import { FLOATING_WARNING_BANNER_HEIGHT, FloatingWarningBanner, FloatingWarningOffsetContext } from './FloatingWarningBanner';
 import { GitHubMark } from './GitHubMark';
 import { EMPTY_TERMINAL_SEARCH } from '../lib/terminalSearch';
@@ -447,6 +449,8 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const [voiceChatExpanded, setVoiceChatExpanded] = useState(true);
     const voiceChatRef = useRef<VoiceChatHandle>(null);
     const voiceChatIdentity = voiceChatTarget ? JSON.stringify([activeTarget?.key, voiceChatTarget.agent]) : null;
+    const voiceSubmissionTarget = useRef<string | undefined>(undefined);
+    voiceSubmissionTarget.current = voiceChatOpen && voiceChatOpen === voiceChatIdentity ? activeTarget?.key : undefined;
     useEffect(() => { setVoiceChatOpen(null); }, [voiceChatIdentity]);
     const openVoiceChat = () => { Keyboard.dismiss(); setVoiceChatExpanded(true); setVoiceChatOpen(voiceChatIdentity); };
     const appGlassEnabled = useAppGlassEnabled();
@@ -1190,9 +1194,19 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
 
     useEffect(() => composerStore.attachSubmissions(async (permit, key, parts, firstAttempt) => {
       const target = targetsRef.current.find(item => item.key === key);
-      const terminalRenderer = renderer.current;
-      if (!target || !terminalRenderer) throw new Error('Terminal renderer is unavailable');
-      await terminalRenderer.submitPastes(target, parts, firstAttempt, permit);
+      const voice = voiceSubmissionTarget.current === key;
+      if (voice) recordDiagnostic('info', 'VoiceChat', 'prompt-dispatch-start', { appState: AppState.currentState });
+      if (target && target.session.kind !== 'ssh' && voice && AppState.currentState !== 'active') {
+        // A paused terminal cannot acknowledge its IME barrier or attach a
+        // viewport. The native queue still owns ordering and destination fencing.
+        permit.checkActive();
+        await permit.dispatch(parts.map(prepareTerminalPaste));
+      } else {
+        const terminalRenderer = renderer.current;
+        if (!target || !terminalRenderer) throw new Error('Terminal renderer is unavailable');
+        await terminalRenderer.submitPastes(target, parts, firstAttempt, permit);
+      }
+      if (voice) recordDiagnostic('info', 'VoiceChat', 'prompt-dispatch-complete', { appState: AppState.currentState });
     }, entry => onHistoryEntryRef.current(entry)), [composerStore]);
 
     useEffect(() => { composerStore.updateSubmissionTargets(targets); }, [composerStore, targets]);

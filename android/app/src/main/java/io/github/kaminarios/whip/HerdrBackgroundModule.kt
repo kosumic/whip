@@ -14,7 +14,6 @@ import android.media.RingtoneManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.os.SystemClock
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
@@ -37,7 +36,7 @@ class HerdrBackgroundModule(
   private var activeAlertChannelId: String? = null
   private var mediaPlayer: MediaPlayer? = null
   private var shakeListening = false
-  private var lastShakeAtMs = 0L
+  private val shakeDetector = SpeechShakeDetector()
   private val startSoundRunnable = Runnable { startLoopingSound() }
   private val stopAlertRunnable = Runnable { stopPersistentAlert("Agent alert timed out") }
   private val notificationWatchRunnable = object : Runnable {
@@ -258,9 +257,7 @@ class HerdrBackgroundModule(
     val y = event.values[1] / SensorManager.GRAVITY_EARTH
     val z = event.values[2] / SensorManager.GRAVITY_EARTH
     val gravityForce = sqrt(x * x + y * y + z * z)
-    val now = SystemClock.elapsedRealtime()
-    if (gravityForce < SHAKE_GRAVITY_THRESHOLD || now - lastShakeAtMs < SHAKE_SLOP_MS) return
-    lastShakeAtMs = now
+    if (!shakeDetector.update(gravityForce, event.timestamp / 1_000_000L)) return
 
     // Stop playback before notifying JS so queued chat cannot keep speaking
     // while the app is backgrounded or the JS thread is busy.
@@ -383,11 +380,12 @@ class HerdrBackgroundModule(
     if (!needed) {
       if (shakeListening) sensorManager.unregisterListener(this)
       shakeListening = false
+      shakeDetector.reset()
       return true
     }
     if (shakeListening) return true
     val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) ?: return false
-    lastShakeAtMs = 0L
+    shakeDetector.reset()
     shakeListening = sensorManager.registerListener(
       this,
       accelerometer,
@@ -424,8 +422,6 @@ class HerdrBackgroundModule(
     private const val CHAT_SPEECH_LEVEL = "WhipChatSpeechLevel"
     private const val TAG = "HerdrPersistentAlert"
     private const val EXPO_NOTIFICATION_ID = 0
-    private const val SHAKE_GRAVITY_THRESHOLD = 2.7f
-    private const val SHAKE_SLOP_MS = 750L
     private const val SOUND_START_DELAY_MS = 800L
     private const val NOTIFICATION_POST_GRACE_MS = 1_500L
     private const val NOTIFICATION_CHECK_INTERVAL_MS = 300L

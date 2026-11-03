@@ -53,7 +53,9 @@ cannot stop a newer speaker. Device tools still acknowledge speech when it
 starts and retain ownership until completion or cancellation.
 
 A firm phone shake stops every speech kind directly in native code, including
-while JavaScript is busy. Shaking during an announcement also cancels pending
+while JavaScript is busy. Android requires two distinct acceleration impulses
+within 700 ms, separated by a release, so a single impact does not cancel speech.
+Shaking during an announcement also cancels pending
 agent alerts when JavaScript resumes, so the announcement is not replaced by
 ringing. Headphone disconnection and audio interruptions stop the current
 session. Dictation waits for all playback to release its audio resources.
