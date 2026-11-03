@@ -45,6 +45,9 @@ const TRANSCRIPT_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 const OPENCODE_POLL_DELAY: Duration = Duration::from_millis(1_200);
 const TRANSCRIPT_DRAIN_DELAY: Duration = Duration::from_secs(5);
 const IDLE_TRANSCRIPT_POLL_DELAY: Duration = Duration::from_secs(60);
+// Leave SSH session slots for SFTP, shells and short commands. Additional file
+// transcripts use bounded reads rather than waiting for a persistent tail.
+const MAX_FILE_STREAMS: usize = 4;
 const FILE_CHECKPOINT_BYTES: u64 = 256 * 1024;
 const OPENCODE_CHECKPOINT_EVENTS: u64 = 64;
 const OPENCODE_V2_PAGE_SIZE: usize = 200;
@@ -366,6 +369,7 @@ struct AgentSessionManagerInner {
     runtime_id: String,
     runtime_incarnation: u64,
     connection: Arc<HerdrConnection>,
+    file_stream_slots: Arc<tokio::sync::Semaphore>,
     state: Mutex<ManagerState>,
     database: Option<TranscriptDatabase>,
     rows: Mutex<HashMap<TranscriptKey, Vec<Weak<crate::AgentChatRows>>>>,
@@ -456,6 +460,7 @@ impl AgentSessionManager {
                 runtime_id,
                 runtime_incarnation,
                 connection,
+                file_stream_slots: Arc::new(tokio::sync::Semaphore::new(MAX_FILE_STREAMS)),
                 database,
                 state: Mutex::new(ManagerState {
                     connected: false,
@@ -1404,11 +1409,58 @@ impl AgentSessionManager {
         if let Some(title) = &metadata.codex_title {
             self.update_codex_title(&key, operation_epoch, &session_id, title.title.as_deref());
         }
+        self.follow_file(
+            key,
+            operation_epoch,
+            (agent == AgentTranscriptKind::Codex).then_some(session_id),
+            path,
+            metadata,
+            (opened.0, opened.1),
+        )
+        .await;
+    }
+
+    async fn follow_file(
+        &self,
+        key: TranscriptKey,
+        operation_epoch: u64,
+        session_id: Option<SessionId>,
+        path: String,
+        metadata: FileSourceMetadata,
+        opened: (u64, u64),
+    ) {
+        let connection = self.inner.connection.clone();
         let size = metadata.size;
+        let Ok(permit) = self.inner.file_stream_slots.clone().try_acquire_owned() else {
+            diagnostics::record(
+                &self.inner,
+                &key,
+                operation_epoch,
+                "polling-fallback",
+                "persistent stream budget reached; using bounded reads",
+            );
+            match file_source::read_available(self, &key, operation_epoch, &path, size).await {
+                Ok(()) => {
+                    self.monitor_file_source(key, operation_epoch, path, metadata, session_id);
+                }
+                Err(error) => self.fail_session(
+                    key,
+                    operation_epoch,
+                    error.to_string(),
+                    SessionFailureKind::Transient,
+                ),
+            }
+            return;
+        };
         let command = file_stream_command(&path, opened.1);
         let context = opened.0;
         let data = Arc::new(move |bytes| stream_data(context, bytes));
-        let closed = Arc::new(move |reason| stream_failed(context, reason));
+        let closed = Arc::new(move |reason| {
+            // The SSH reader owns this callback until the channel closes,
+            // including cancellation and stale-operation cleanup.
+            let _permit = &permit;
+            stream_failed(context, reason);
+        });
         let stream_requested = match connection
             .open_exec_stream("agent-transcript", &command, data, closed)
             .await
@@ -1445,13 +1497,7 @@ impl AgentSessionManager {
             }
         };
         if stream_requested {
-            self.monitor_file_source(
-                key.clone(),
-                operation_epoch,
-                path,
-                metadata,
-                (agent == AgentTranscriptKind::Codex).then_some(session_id),
-            );
+            self.monitor_file_source(key.clone(), operation_epoch, path, metadata, session_id);
         }
         if stream_requested && size == opened.1 {
             let emission = {

@@ -199,3 +199,34 @@ These commands were run through `nix develop`. Final output is in ignored
 `.codex-diagnostics/issue-280-final-{full-tests,fish-tests,clippy}.log`.
 Android device installation and observation remain pending; no device was
 connected during this work.
+
+## November 2: confirmed SSH session exhaustion
+
+Whip MCP and authorized Shizuku log access captured `ChannelUnavailable` with
+`Failed to open channel (ConnectFailed)` for the Voicelost transcript. The
+matching SSH server connection on thinker logged `error: no more sessions`;
+its configured `MaxSessions` is 10. Existing terminal transports remained usable.
+Four transcript tails remained open while metadata requests failed. This
+establishes session exhaustion, but does not account for every occupied slot or
+prove an SSH channel leak.
+
+Idle cleanup previously ran only after successful metadata polling. It now
+runs before polling, using the last observed source size and the existing
+history-catch-up and quiet-period guards. Thus an exhausted server cannot block
+idle-tail release. Unread and partial records retain their cursor/replay rules.
+
+Each host retains at most four persistent file-transcript streams. Additional
+transcripts read bounded ranges through the same JSONL ingestion and metadata
+monitor, including append, source-replacement and idle/wake handling. SSH
+commands share a per-connection limit of two in-flight commands for their entire
+lifetime, leaving headroom for SFTP and other session users under the observed
+server limit. These limits do not change the server configuration.
+
+Real SSH fixture regressions cover a full one-session server recovering after
+idle-tail release, partial-record replay after wake, twelve transcripts updating
+under a ten-session limit, rollout replacement for an overflow reader, and mixed
+concurrent SSH commands under a two-session limit.
+
+Validation: Rust library suite **1,010 passed, 11 ignored**; all six file-source
+tests also passed under Fish; strict all-target Clippy and Rust formatting passed.
+No new mobile build was installed during this fix.
