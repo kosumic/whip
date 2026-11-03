@@ -26,6 +26,12 @@ into the existing local speech queue as the transcript grows. A single native
 player stays open through generation gaps; completion flushes the last fragment.
 It does not replay history or already spoken prefixes when a transcript is edited.
 Normal turn-taking resumes after generation and playback have both drained.
+If the first reply takes more than eight seconds, Whip speaks a short, randomly
+selected filler such as “Hmm” or “One moment” using the selected local voice.
+Further fillers are spaced at least 20 seconds apart without consecutive repeats.
+They stay out of the transcript and never complete or skip the pending reply.
+The actual reply, user interruption, Skip, or hang-up cuts them off. Filler audio
+does not count toward response-latency diagnostics.
 Idle prompt acknowledgements and gaps between assistant segments do not finish
 a voice turn. The agent's final outcome completes generation, and the last
 queued speech fragment must finish playing before listening resumes.
