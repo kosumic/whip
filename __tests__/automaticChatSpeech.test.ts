@@ -147,6 +147,49 @@ test('native Stop still silences automatic speech until the setting starts a new
   expect(mockNative.speakChat).toHaveBeenCalledTimes(1);
 });
 
+test.each(['initialization', 'playback'] as const)('a failed %s does not silence later replies', async stage => {
+  const error = new Error('Speech engine unavailable');
+  if (stage === 'initialization') mockNative.startChatSpeech.mockRejectedValueOnce(error);
+  else mockNative.speakChat.mockRejectedValueOnce(error);
+  mockObserve(event('debug', 'live', true));
+  mockPending.push({ key: 'debug', text: 'Failed reply.' });
+  mockObserve(event('debug'));
+  await flush();
+  expect(onError).toHaveBeenCalledTimes(1);
+  expect(onError).toHaveBeenCalledWith(error);
+
+  mockPending.push({ key: 'debug', text: 'Later reply.' });
+  mockObserve(event('debug'));
+  await flush();
+  expect(mockNative.speakChat).toHaveBeenLastCalledWith(expect.any(String), 'Later reply.');
+  expect(mockNative.startChatSpeech).toHaveBeenCalledTimes(2);
+});
+
+test.each([
+  { name: 'audio interruption', reason: 'interrupted' as const },
+  { name: 'playback failure', reason: 'stopped' as const, error: 'Speech playback failed' },
+])('a native $name stops the current reply and permits later replies', async interruption => {
+  let finish!: () => void;
+  mockNative.speakChat.mockImplementationOnce(() => new Promise((resolve, reject) => {
+    finish = () => interruption.error ? reject(new Error(interruption.error)) : resolve();
+  }));
+  mockObserve(event('debug', 'live', true));
+  mockPending.push({ key: 'debug', text: 'Interrupted reply.' });
+  mockObserve(event('debug'));
+  await flush();
+  mockPending.push({ key: 'debug', text: 'Remaining interrupted reply.' });
+  const token = mockNative.speakChat.mock.calls[0][0];
+  for (const listener of mockEvents) listener({ token, ...interruption });
+  finish();
+  await flush();
+  expect(mockNative.speakChat).toHaveBeenCalledTimes(1);
+  mockPending.push({ key: 'debug', text: 'Later reply.' });
+  mockObserve(event('debug'));
+  await flush();
+  expect(mockNative.speakChat.mock.calls.map(call => call[1])).toEqual(['Interrupted reply.', 'Later reply.']);
+  expect(onError).toHaveBeenCalledTimes(interruption.error ? 1 : 0);
+});
+
 test('shake dismisses the current update, pauses one second, and preserves queued and future speech', async () => {
   jest.useFakeTimers();
   try {

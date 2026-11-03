@@ -29,7 +29,10 @@ flush automatic backlog and resume with fresh baselines. Shaking dismisses the
 currently spoken update, including its remaining chunks, then pauses for one
 second before reading other queued or future updates. It preserves automatic
 reading and the rest of the queue. Native Stop silences automatic reading until
-the voice setting is toggled again.
+the voice setting is toggled again. Speech engine failures and audio interruptions
+discard the affected playback backlog, then allow new replies to start a fresh
+player without toggling the voice setting. Existing transcript content is
+baselined during recovery so a partially heard reply is not replayed.
 
 Explicitly starting chat replaces the previous speaker. Automatic reading releases
 playback when its queue empties. Announcements may replace earlier announcements, but skip
