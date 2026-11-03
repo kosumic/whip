@@ -43,7 +43,7 @@ jest.mock('lucide-react-native/icons/volume-2', () => 'Volume2');
 
 const target: ChatSpeechTarget = { agent: 'codex', bindingToken: 'chat', hostId: 'host', paneId: 'pane', label: 'Codex' };
 const listening: VoiceConversationView = { phase: 'listening', muted: false, smartTurn: false, speaker: false, text: '', level: 0, progress: 0, error: null, transcript: null };
-const session = { submitted: jest.fn(), start: jest.fn(), close: jest.fn(), toggleMuted: jest.fn(), toggleSpeaker: jest.fn(), skip: jest.fn(), finish: jest.fn(), install: jest.fn(), setVadSensitivity: jest.fn() };
+const session = { submitted: jest.fn(), start: jest.fn(), close: jest.fn(), toggleMuted: jest.fn(), toggleSpeaker: jest.fn(), skip: jest.fn(), finish: jest.fn(), install: jest.fn(), setVadSensitivity: jest.fn(), setTranscriptBinding: jest.fn() };
 const controller = createRef<VoiceChatHandle>();
 const onClose = jest.fn();
 const onCompose = jest.fn();
@@ -78,6 +78,17 @@ test('settings changes update the existing call without restarting it', () => {
   jest.clearAllMocks();
   act(() => { renderer.update(<VoiceVadSensitivityContext value={25}><Call /></VoiceVadSensitivityContext>); });
   expect(session.setVadSensitivity).toHaveBeenLastCalledWith(25);
+  expect(session.start).not.toHaveBeenCalled();
+  expect(session.close).not.toHaveBeenCalled();
+});
+
+test('a new agent receives its transcript binding without restarting voice chat', () => {
+  const renderCall = (bindingToken?: string) => <VoiceChatScreen target={{ ...target, bindingToken }} send={() => true}
+    visible expanded floatingStyle={{}} onMinimize={() => {}} onExpand={() => {}} onClose={onClose} />;
+  act(() => { renderer.update(renderCall()); });
+  jest.clearAllMocks();
+  act(() => { renderer.update(renderCall('first-transcript')); });
+  expect(session.setTranscriptBinding).toHaveBeenLastCalledWith('first-transcript');
   expect(session.start).not.toHaveBeenCalled();
   expect(session.close).not.toHaveBeenCalled();
 });
