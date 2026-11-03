@@ -1,0 +1,32 @@
+name: Set up cached Android Nix environment
+description: Restore the Android toolchain and retain its development closure for later builds.
+
+runs:
+  using: composite
+  steps:
+    - name: Install Nix
+      uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31
+      with:
+        extra_nix_config: |
+          experimental-features = nix-command flakes
+          keep-env-derivations = true
+          keep-outputs = true
+
+    - name: Restore Android Nix toolchain
+      id: nix-cache
+      uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+      with:
+        primary-key: nix-android-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock', 'packages/react-native-whip-ssh/rust/rust-toolchain.toml', '.github/actions/setup-android-nix/action.yml') }}
+
+    - name: Prepare Android Nix environment
+      shell: bash
+      run: nix develop .#default --profile "$RUNNER_TEMP/whip-android-nix" -c true
+
+    # Save before compilation so a later test failure does not discard a warm
+    # toolchain. The profile roots its closure while garbage is collected.
+    - name: Save Android Nix toolchain
+      if: steps.nix-cache.outputs.hit-primary-key != 'true'
+      uses: nix-community/cache-nix-action/save@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+      with:
+        primary-key: ${{ steps.nix-cache.outputs.primary-key }}
+        gc-max-store-size-linux: 0
