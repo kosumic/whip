@@ -899,14 +899,12 @@ export function SessionScreen({
   }, []);
 
   const onTerminalResidencyEnd: TerminalResidencyEnd = useCallback((target, reason) => {
+    // Transcript residency is owned by its cache, independently of the renderer.
+    if (reason === TerminalResidencyEndReason.Evicted) return;
     const terminalId = target.session.terminalId;
     const key = target.key;
-    const view = chatViewsRef.current.get(key);
-    if (reason === TerminalResidencyEndReason.Closed) updateChatRestoreIntent(key);
-    if (!view) return;
-    if (reason === TerminalResidencyEndReason.Evicted && chatPresentationRequested(view.presentation)) {
-      updateChatRestoreIntent(key, view.binding.transcriptKey);
-    }
+    updateChatRestoreIntent(key);
+    if (!chatViewsRef.current.has(key)) return;
     const next = new Map(chatViewsRef.current);
     next.delete(key);
     chatViewsRef.current = next;

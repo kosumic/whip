@@ -701,7 +701,7 @@ test('a title remains after transcript eviction without reloading, and never sur
   const openCount = host.native.openAgentChat.mock.calls.length;
   const startCount = host.native.startAgentChat.mock.calls.length;
   await act(async () => { renderer.update(<SessionScreen {...host.props} visible={false} />); });
-  act(() => { ui('TerminalScreen').props.onResidencyEnd(host.props.terminalTargets[0], TerminalResidencyEndReason.Evicted); });
+  act(() => agentTranscriptService.reconcileCache(3, [], []));
   expect(tabLabels()).toContain('Retained conversation');
   const snapshot = { ...host.props.snapshot, panes: [{
     ...host.pane, agent_session: { ...host.pane.agent_session!, value: 'resumed-session' },
@@ -1326,7 +1326,7 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     expect(host.native.startAgentChat).toHaveBeenCalledTimes(1);
   });
 
-  test.each(['dormant', 'warm'] as const)('%s preload is released on real residency eviction', async phase => {
+  test.each(['dormant', 'warm'] as const)('%s preload keeps receiving updates after renderer eviction', async phase => {
     const host = setup(agent);
     const binding = await openReadyChat(host, agent);
     revealChat();
@@ -1339,10 +1339,25 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
       }));
     }
     const visits = addCachePressure(host);
+    host.injected.length = 0;
     for (const visit of visits) act(visit);
-    expect(host.native.detachAgentChat).toHaveBeenCalledTimes(1);
-    expect(agentTranscriptService.getState(binding.bindingToken)).toBeNull();
-    expect(renderer.root.findAll(node => String(node.type) === 'AgentChatView')).toHaveLength(0);
+    expect(host.injected.join('\n')).toContain('window.herdrRemove("target")');
+    expect(host.native.detachAgentChat).not.toHaveBeenCalled();
+    act(() => {
+      binding.state = { ...binding.state, status: 'live', revision: 3 };
+      host.handlers.get(binding.terminalId)?.({
+        key: binding.transcriptKey, runtimeIncarnation: binding.runtimeIncarnation,
+        revision: 3, deltas: [{ type: 'reset', state: binding.state }],
+      });
+    });
+    expect(agentTranscriptService.getState(binding.bindingToken)?.revision).toBe(3);
+    act(() => renderer.update(<SessionScreen {...host.props} />));
+    expect(control().active).toBe(false);
+    act(() => { control().onPress(); });
+    expect(ui('AgentChatView').props.state.revision).toBe(3);
+    revealChat();
+    expect(host.native.openAgentChat).toHaveBeenCalledTimes(1);
+    expect(host.native.startAgentChat).toHaveBeenCalledTimes(1);
   });
 
   test('A → B → A keeps pending preloads tied to their terminal and starts each only once', async () => {
@@ -1431,7 +1446,7 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     expect(host.client.snapshot).toHaveBeenCalledTimes(1);
   });
 
-  test('unmount while Rust restoration is pending discards its completion', async () => {
+  test('a stale Rust restoration completion is discarded after screen unmount', async () => {
     const host = setup(agent);
     const binding = bindChat(host, agent);
     let restore!: () => void;
@@ -1441,7 +1456,7 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     act(() => { renderer = create(<SessionScreen {...host.props} />); });
     act(() => renderer.unmount());
     await act(async () => { restore(); });
-    expect(host.native.detachAgentChat).toHaveBeenCalledTimes(1);
+    expect(host.native.detachAgentChat).not.toHaveBeenCalled();
     expect(host.native.startAgentChat).toHaveBeenCalledWith(binding.bindingToken);
     expect(agentTranscriptService.getState(binding.bindingToken)).toBeNull();
   });
@@ -1485,7 +1500,7 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     await openReadyChat(host, agent);
     revealChat();
     act(() => renderer.update(<SessionScreen {...host.props} visible={false} />));
-    act(() => { ui('TerminalScreen').props.onResidencyEnd(host.props.terminalTargets[0], TerminalResidencyEndReason.Evicted); });
+    act(() => agentTranscriptService.reconcileCache(3, [], []));
     host.native.openAgentChat.mockImplementationOnce(() => {
       if (reason === 'replaced') throw new Error('runtime replaced during reconnect');
       return { type: 'no-chat', terminalId: 'terminal-1', reason: 'host-state-unavailable' };
@@ -1611,6 +1626,8 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     const binding = await openReadyChat(host, agent);
     revealChat();
     act(() => renderer.update(<SessionScreen {...host.props} visible={false} />));
+    act(() => { ui('TerminalScreen').props.onResidencyEnd(host.props.terminalTargets[0], TerminalResidencyEndReason.Evicted); });
+    expect(host.native.detachAgentChat).not.toHaveBeenCalled();
     act(() => agentTranscriptService.reconcileCache(3, [], []));
     expect(host.native.detachAgentChat).toHaveBeenCalledWith(binding.terminalId);
     expect(agentTranscriptService.getState(binding.bindingToken)).toBeNull();
@@ -1649,15 +1666,26 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     const host = setup(agent);
     const binding = await openReadyChat(host, agent);
     revealChat();
-    const stopVoice = agentTranscriptService.subscribe(binding.bindingToken, jest.fn());
+    const onTranscript = jest.fn();
+    let stopVoice!: () => void;
+    act(() => { stopVoice = agentTranscriptService.subscribe(binding.bindingToken, onTranscript); });
     try {
       act(() => { for (const listener of mockAppStateListeners) listener('background'); });
+      act(() => { ui('TerminalScreen').props.onResidencyEnd(host.props.terminalTargets[0], TerminalResidencyEndReason.Evicted); });
       act(() => { agentTranscriptService.reconcileCache(3, [], []); });
       expect(agentTranscriptService.getState(binding.bindingToken)).not.toBeNull();
       expect(host.native.detachAgentChat).not.toHaveBeenCalled();
       expect(host.native.openAgentChat).toHaveBeenCalledTimes(1);
+      act(() => {
+        binding.state = { ...binding.state, revision: 2 };
+        host.handlers.get(binding.terminalId)?.({
+          key: binding.transcriptKey, runtimeIncarnation: binding.runtimeIncarnation,
+          revision: 2, deltas: [{ type: 'reset', state: binding.state }],
+        });
+      });
+      expect(onTranscript.mock.calls.at(-1)?.[0]).toMatchObject({ revision: 2 });
     } finally {
-      stopVoice();
+      act(stopVoice);
     }
     await act(async () => { agentTranscriptService.reconcileCache(3, [], []); });
     expect(agentTranscriptService.getState(binding.bindingToken)).toBeNull();
@@ -1665,7 +1693,7 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     expect(host.native.startAgentChat).toHaveBeenCalledTimes(1);
   });
 
-  test('LRU eviction archives Chat with its terminal and restores persisted history without a terminal frame', async () => {
+  test('renderer LRU eviction preserves live Chat updates and returns without restarting its transcript', async () => {
     const host = setup(agent);
     const binding = await openReadyChat(host, agent);
     revealChat();
@@ -1678,35 +1706,45 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
 
     act(visits[2]);
     expect(host.injected.join('\n')).toContain('window.herdrRemove("target")');
+    expect(host.native.detachAgentChat).not.toHaveBeenCalled();
+    expect(agentTranscriptService.getState(binding.bindingToken)).not.toBeNull();
+    act(() => {
+      binding.state = { ...binding.state, revision: 2 };
+      host.handlers.get(binding.terminalId)?.({
+        key: binding.transcriptKey, runtimeIncarnation: binding.runtimeIncarnation,
+        revision: 2, deltas: [{ type: 'reset', state: binding.state }],
+      });
+    });
+    expect(agentTranscriptService.getState(binding.bindingToken)?.revision).toBe(2);
+    mockChatFrames.length = 0;
+    act(() => renderer.update(<SessionScreen {...host.props} />));
+    expect(control().loading).toBe(false);
+    expect(ui('AgentChatView').props.state.revision).toBe(2);
+    expect(ui('TerminalScreen').props.chatViewEnabled).toBe(true);
+    expect(mockChatFrames.length).toBeGreaterThan(0);
+    expect(host.native.detachAgentChat).not.toHaveBeenCalled();
+    expect(host.native.openAgentChat).toHaveBeenCalledTimes(1);
+    expect(host.native.startAgentChat).toHaveBeenCalledTimes(1);
+  });
+
+  test('closing a tab after renderer eviction releases its transcript', async () => {
+    const host = setup(agent);
+    const binding = await openReadyChat(host, agent);
+    revealChat();
+    const visits = addCachePressure(host);
+    for (const visit of visits) act(visit);
+    expect(host.native.detachAgentChat).not.toHaveBeenCalled();
+
+    const snapshot = { ...host.props.snapshot, panes: [], tabs: [] };
+    host.setSnapshot(snapshot);
+    act(() => renderer.update(<SessionScreen {...host.props}
+      snapshot={snapshot} terminalTargets={[]} terminalState={{ sessions: [], activeTerminalId: null }}
+    />));
+
     expect(host.native.detachAgentChat).toHaveBeenCalledTimes(1);
     expect(host.native.detachAgentChat).toHaveBeenCalledWith(binding.terminalId);
     expect(agentTranscriptService.getState(binding.bindingToken)).toBeNull();
     expect(renderer.root.findAll(node => String(node.type) === 'AgentChatView')).toHaveLength(0);
-
-    binding.state = { ...binding.state, status: 'loading', revision: 0 };
-    let finishRestore!: () => void;
-    host.native.startAgentChat.mockImplementationOnce(() => new Promise(resolve => {
-      finishRestore = () => {
-        binding.state = {...binding.state,status:'stale',revision:1};
-        resolve({type:'started',state:binding.state});
-      };
-    }));
-    mockChatFrames.length = 0;
-    act(() => renderer.update(<SessionScreen {...host.props} />));
-    expect(control().loading).toBe(true);
-    expect(ui('TerminalScreen').props.chatViewEnabled).toBe(true);
-    expect(ui('TerminalScreen').props.renderViewportOverlay).toBeUndefined();
-    expect(host.native.startAgentChat).toHaveBeenCalledTimes(2);
-
-    await act(async () => { finishRestore(); });
-    expect(host.native.startAgentChat).toHaveBeenLastCalledWith(binding.bindingToken);
-    expect(control().loading).toBe(true);
-    revealChat();
-    expect(control().loading).toBe(false);
-    expect(mockChatFrames.length).toBeGreaterThan(0);
-    expect(mockChatFrames.every(frame => frame.chat)).toBe(true);
-    expect(host.native.openAgentChat).toHaveBeenCalledTimes(2);
-    expect(host.native.startAgentChat).toHaveBeenCalledTimes(2);
   });
 
   test.each(navigationPhases)(
@@ -1795,12 +1833,22 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     expect(other.native.startAgentChat).not.toHaveBeenCalled();
   });
 
-  test('unmounting the terminal cache releases its attached Chat resources', async () => {
+  test('unmounting the terminal cache leaves transcript updates running until transcript cache eviction', async () => {
     const host = setup(agent);
     const binding = await openReadyChat(host, agent);
     revealChat();
     act(() => renderer.unmount());
-    expect(host.native.detachAgentChat).toHaveBeenCalledTimes(1);
+    expect(host.native.detachAgentChat).not.toHaveBeenCalled();
+    act(() => {
+      binding.state = { ...binding.state, revision: 2 };
+      host.handlers.get(binding.terminalId)?.({
+        key: binding.transcriptKey, runtimeIncarnation: binding.runtimeIncarnation,
+        revision: 2, deltas: [{ type: 'reset', state: binding.state }],
+      });
+    });
+    expect(agentTranscriptService.getState(binding.bindingToken)?.revision).toBe(2);
+    act(() => agentTranscriptService.reconcileCache(3, [], []));
+    expect(host.native.detachAgentChat).toHaveBeenCalledWith(binding.terminalId);
     expect(agentTranscriptService.getState(binding.bindingToken)).toBeNull();
   });
 

@@ -27,6 +27,13 @@ loading binding instead of repeatedly detaching it and restarting discovery.
 Selection retention ends when the app backgrounds, the selection changes, or
 the screen unmounts; active transcript subscribers retain their own entries.
 
+Terminal renderers and transcripts have independent cache lifecycles. Evicting
+a renderer or releasing its terminal bridge preserves the transcript binding
+and its updates. The transcript cache controls its own eviction; closing the
+tab or invalidating its host or agent-session identity still releases the
+affected binding. Returning to a cached chat reuses its latest transcript
+without restarting the stream.
+
 Rust normalizes input/output counts to include their respective subsets:
 
 | Source | Input | Output | Outcome |

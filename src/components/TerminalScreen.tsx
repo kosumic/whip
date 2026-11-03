@@ -161,7 +161,7 @@ import { Button, type ButtonProps } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
 
-import { TerminalResidencyEndReason, type TerminalResidencyEnd } from '../lib/terminalResidency';
+import type { TerminalResidencyEnd } from '../lib/terminalResidency';
 import type { ComposerDraftRequest } from '../lib/composerDraftRequest';
 import { ChatComposerSelection } from './ChatComposerSelection';
 
@@ -2025,12 +2025,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             <TerminalRendererHost
               onAddToComposer={(target, text) => addToComposer(text, target.key)}
               addToComposerLabel={t('terminal.addToChatComposer')}
-              onResidencyEnd={voiceChatOpen ? (target, reason) => {
-                // The voice subscriber keeps its transcript alive independently
-                // of the terminal renderer's cache residency.
-                if (target.key === voiceChatOpen.targetKey && reason === TerminalResidencyEndReason.Evicted) return;
-                onResidencyEnd?.(target, reason);
-              } : onResidencyEnd}
+              onResidencyEnd={onResidencyEnd}
               ref={renderer}
               activeTarget={activeTarget}
               targets={targets}

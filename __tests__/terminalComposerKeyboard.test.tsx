@@ -640,7 +640,7 @@ test('the voice transcript survives renderer eviction while closing its tab stil
   await act(async () => { ui('MessageComposer').props.onVoiceChat(); });
   act(() => renderer.update(<TerminalScreen {...props} targets={[target, other]} activeTarget={other} onResidencyEnd={onResidencyEnd} />));
   act(() => { ui('TerminalRendererHost').props.onResidencyEnd(target, TerminalResidencyEndReason.Evicted); });
-  expect(onResidencyEnd).not.toHaveBeenCalled();
+  expect(onResidencyEnd).toHaveBeenCalledWith(target, TerminalResidencyEndReason.Evicted);
   expect(renderer.root.findAll(node => String(node.type) === 'VoiceChatScreen')).toHaveLength(1);
   act(() => { ui('TerminalRendererHost').props.onResidencyEnd(other, TerminalResidencyEndReason.Evicted); });
   expect(onResidencyEnd).toHaveBeenCalledWith(other, TerminalResidencyEndReason.Evicted);
