@@ -57,7 +57,7 @@ let renderer: ReactTestRenderer;
 function Call({ visible = true }: { visible?: boolean }) {
   const [expanded, setExpanded] = useState(true);
   const [active, setActive] = useState(true);
-  return active && <VoiceChatScreen ref={controller} target={target} send={() => true} visible={visible} expanded={expanded} floatingStyle={{ bottom: 120 }}
+  return active && <VoiceChatScreen ref={controller} target={target} send={() => true} visible={visible} expanded={expanded} dockStyle={{ bottom: 120 }}
     onMinimize={() => setExpanded(false)} onExpand={() => setExpanded(true)} onClose={() => { onClose(); setActive(false); }} onCompose={onCompose} onAttach={onAttach} />;
 }
 
@@ -87,7 +87,7 @@ test('settings changes update the existing call without restarting it', () => {
 
 test('a new agent receives its transcript binding without restarting voice chat', () => {
   const renderCall = (bindingToken?: string) => <VoiceChatScreen target={{ ...target, bindingToken }} send={() => true}
-    visible expanded floatingStyle={{}} onMinimize={() => {}} onExpand={() => {}} onClose={onClose} />;
+    visible expanded dockStyle={{}} onMinimize={() => {}} onExpand={() => {}} onClose={onClose} />;
   act(() => { renderer.update(renderCall()); });
   jest.clearAllMocks();
   act(() => { renderer.update(renderCall('first-transcript')); });
@@ -148,11 +148,22 @@ test('hiding and restoring the host screen preserves the minimized call', () => 
   expect(session.start).toHaveBeenCalledTimes(1);
 });
 
-test('the explicit hang-up control ends the call', () => {
+test.each([false, true])('the explicit hang-up control ends the call (minimized=%s)', minimized => {
+  if (minimized) press('voiceChat.minimize');
   press('voiceChat.end');
   expect(session.close).toHaveBeenCalled();
   expect(onClose).toHaveBeenCalledTimes(1);
   expect(renderer.root.findAllByType(Modal)).toHaveLength(0);
+});
+
+test('the minimized composer can mute and unmute the ongoing call', () => {
+  press('voiceChat.minimize');
+  press('voiceChat.mute');
+  expect(session.toggleMuted).toHaveBeenCalledTimes(1);
+  act(() => publish({ ...listening, phase: 'muted', muted: true }));
+  press('voiceChat.unmute');
+  expect(session.toggleMuted).toHaveBeenCalledTimes(2);
+  expect(session.start).toHaveBeenCalledTimes(1);
 });
 
 test.each(['voiceChat.compose', 'terminal.attach'])('%s returns to the existing composer while keeping the call active', action => {
