@@ -30,11 +30,13 @@ const STARTED = 'WhipChatSpeechStarted';
 const LEVEL = 'WhipChatSpeechLevel';
 const CALL_EVENT = 'WhipVoiceCall';
 const WATCHDOG_MS = 10_000;
+const FILLER_POLL_MS = 1_000;
 const TRANSCRIPT_RECOVERY_MS = 30_000;
 let nextSession = 0;
 const voiceCalls: { active: VoiceConversation | null } = { active: null };
 type CallEvent = { token: string; type: 'ended' | 'muted' | 'route' | 'audioInactive'; muted?: boolean; speaker?: boolean; error?: string };
 type VoiceSpeechEvents = { [STOPPED]: [event: ChatSpeechStoppedEvent]; [STARTED]: [event: { token: string }]; [LEVEL]: [event: { token: string; level: number }]; [CALL_EVENT]: [event: CallEvent] };
+type FillerPlayback = { token: string; cancelled: boolean; done?: Promise<void> };
 async function loadCore(root: string): Promise<NativeVoiceChat> {
   const { NativeVoiceChat } = await import('react-native-whip-ssh/src/voiceChat');
   return new NativeVoiceChat(root);
@@ -58,6 +60,9 @@ export class VoiceConversation {
   private speechToken?: string;
   private playing?: string;
   private readySpeech?: string;
+  private filler?: FillerPlayback;
+  private fillerTimer?: ReturnType<typeof setInterval>;
+  private fillerSequence = 0;
   private wakeSpeech?: () => void;
   private canInterrupt = false;
   private timing?: { boundary: number; speechEnd: number; submitted?: number; prose?: number; synthesis?: number; played?: number };
@@ -123,6 +128,7 @@ export class VoiceConversation {
       const speechEmitter: Pick<NativeEventEmitter<VoiceSpeechEvents>, 'addListener'> =
         Platform.OS === 'ios' ? new NativeEventEmitter<VoiceSpeechEvents>(this.playback) : DeviceEventEmitter;
       const speech = speechEmitter.addListener(STOPPED, event => {
+        if (event.token === this.filler?.token) { this.cancelFiller(); return; }
         if (event.token !== this.speechToken) return;
         recordDiagnostic('warn', 'VoiceChat', 'playback-stopped', { reason: event.reason, error: event.error });
         this.view = { ...this.view, error: event.error ?? null };
@@ -133,7 +139,7 @@ export class VoiceConversation {
       const call = speechEmitter.addListener(CALL_EVENT, event => this.callChanged(event));
       const started = speechEmitter.addListener(STARTED, event => this.playbackStarted(event.token));
       const level = speechEmitter.addListener(LEVEL, event => {
-        if (this.closed || event.token !== this.speechToken) return;
+        if (this.closed || (event.token !== this.speechToken && event.token !== this.filler?.token)) return;
         this.view = { ...this.view, playbackLevel: Number.isFinite(event.level) ? Math.max(0, Math.min(1, event.level)) : 0 };
         this.changed(this.view);
       });
@@ -208,6 +214,7 @@ export class VoiceConversation {
     try { this.core.submitText(text); }
     catch (error) { this.view = { ...this.view, error: failureMessage(error) }; this.changed(this.view); return; }
     this.timing = undefined;
+    this.cancelFiller();
     this.cancelInput();
     const token = this.playing;
     this.speechToken = undefined;
@@ -221,6 +228,7 @@ export class VoiceConversation {
     this.apply();
   }
   skip = async (): Promise<void> => {
+    this.cancelFiller();
     const token = this.playing;
     this.speechToken = undefined;
     this.readySpeech = undefined;
@@ -290,6 +298,13 @@ export class VoiceConversation {
   private apply(): void {
     if (this.closed || !this.core) return;
     const view = this.core.view();
+    if (view.phase === 'waiting') {
+      this.fillerTimer ??= setInterval(() => this.fillSilence(), FILLER_POLL_MS);
+    } else {
+      clearInterval(this.fillerTimer);
+      this.fillerTimer = undefined;
+      this.cancelFiller();
+    }
     if (this.callActivated && view.phase !== this.view.phase) recordDiagnostic('info', 'VoiceChat', 'phase-changed', {
       from: this.view.phase, to: view.phase, inputId: view.inputId.toString(), appState: AppState.currentState,
     });
@@ -320,7 +335,7 @@ export class VoiceConversation {
     } else if (view.phase === 'speaking') {
       if (view.muted || (this.input && !this.input.monitor)) this.cancelInput();
       else if (this.canInterrupt && this.readySpeech && this.readySpeech === this.speechToken && this.input?.id !== view.inputId) this.listen(view.inputId, true);
-      if (!this.playing) void this.speak(view.inputId);
+      if (!this.playing && !this.filler) void this.speak(view.inputId);
     } else {
       if (view.phase !== 'waiting' || view.muted) this.cancelInput();
       if (view.phase === 'waiting') {
@@ -408,6 +423,49 @@ export class VoiceConversation {
     wake?.();
   }
 
+  private fillSilence(): void {
+    if (this.closed || this.filler || this.playing || this.core?.view().phase !== 'waiting') return;
+    try {
+      // Rust owns the delay, spacing, random phrase, and skipped-reply policy.
+      const text = this.core.nextSpeech();
+      if (!text) return;
+      const filler: FillerPlayback = { token: `${this.session}:filler:${++this.fillerSequence}`, cancelled: false };
+      this.filler = filler;
+      filler.done = this.speakFiller(filler, text);
+    } catch (error) { this.fail(error); }
+  }
+
+  private cancelFiller(): void {
+    const filler = this.filler;
+    if (!filler || filler.cancelled) return;
+    filler.cancelled = true;
+    // Stop audible output immediately. The owner remains until startup and
+    // cleanup settle, so a late TTS start cannot replace the real reply.
+    void this.playback!.stopChatSpeech(filler.token).catch(error => {
+      recordDiagnostic('warn', 'VoiceChat', 'filler-stop-failed', { error: failureMessage(error) });
+    });
+  }
+
+  private async speakFiller(filler: FillerPlayback, text: string): Promise<void> {
+    const current = () => !this.closed && !filler.cancelled && this.core?.view().phase === 'waiting';
+    try {
+      await this.captureQueue;
+      if (!this.input?.monitor) await this.waitForInputRelease();
+      if (!current()) return;
+      await this.playback!.startLocalChatSpeech(filler.token, this.target.label);
+      if (!current()) return;
+      await this.playback!.speakChat(filler.token, text);
+    } catch (error) {
+      if (current()) recordDiagnostic('warn', 'VoiceChat', 'filler-playback-failed', { error: failureMessage(error) });
+    } finally {
+      // Also stop after a cancelled asynchronous startup has settled.
+      try { await this.playback!.stopChatSpeech(filler.token); }
+      catch (error) { recordDiagnostic('warn', 'VoiceChat', 'filler-stop-failed', { error: failureMessage(error) }); }
+      if (this.filler === filler) this.filler = undefined;
+      if (!this.closed) this.apply();
+    }
+  }
+
   private stopInterruptedPlayback(): void {
     const token = this.playing;
     if (!token || this.speechToken !== token) return;
@@ -491,10 +549,12 @@ export class VoiceConversation {
   private async closeSession(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    this.cancelFiller();
     this.signalSpeech();
     this.core?.close();
     clearTimeout(this.watchdog);
     clearInterval(this.progressTimer);
+    clearInterval(this.fillerTimer);
     clearTimeout(this.transcriptRecovery);
     for (const cleanup of this.cleanup.splice(0)) cleanup();
     this.unsubscribeTranscript?.();
@@ -511,6 +571,7 @@ export class VoiceConversation {
     const endedCall = Promise.allSettled(call && this.playback ? [this.playback.endVoiceCall(call)] : []);
     try {
       if (speech) await this.playback?.stopChatSpeech(speech);
+      await this.filler?.done;
       await this.captureQueue;
       await this.waitForInputRelease();
     } catch { /* Cleanup must still release the shared input reservation. */ }

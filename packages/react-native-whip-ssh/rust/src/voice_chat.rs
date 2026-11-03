@@ -2,6 +2,7 @@
 //! Platform adapters own speech recognition and audio devices; no speech API is used.
 
 mod smart_turn;
+mod waiting_filler;
 
 use crate::{AgentTranscriptKind, ChatSpeechMessage, ChatSpeechQueue};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -15,7 +16,9 @@ use std::{
         Arc,
         atomic::{AtomicU64, Ordering},
     },
+    time::Instant,
 };
+use waiting_filler::WaitingFiller;
 
 const MODEL_FILE: &str = "smart-turn-v3.2-gpu.onnx";
 const MODEL_BYTES: u64 = 32_411_198;
@@ -193,6 +196,7 @@ struct State {
     turn_id: Option<String>,
     response_completed: bool,
     response_skipped: bool,
+    waiting_filler: Option<WaitingFiller>,
 }
 impl Default for State {
     fn default() -> Self {
@@ -212,6 +216,7 @@ impl Default for State {
             turn_id: None,
             response_completed: false,
             response_skipped: false,
+            waiting_filler: None,
         }
     }
 }
@@ -224,6 +229,7 @@ impl State {
         self.turn_id = None;
         self.response_completed = false;
         self.response_skipped = false;
+        self.waiting_filler = Some(WaitingFiller::new(Instant::now()));
         self.input_id += 1;
         self.input = Input::default();
         self.text.clear();
@@ -244,6 +250,7 @@ impl State {
         self.turn_id = None;
         self.response_completed = false;
         self.response_skipped = false;
+        self.waiting_filler = None;
     }
 }
 
@@ -596,6 +603,7 @@ impl VoiceChat {
             }
             if state.phase == VoiceChatPhase::Waiting && self.speech.has_pending() {
                 state.phase = VoiceChatPhase::Speaking;
+                state.waiting_filler = None;
             } else if state.phase == VoiceChatPhase::Waiting && state.response_completed {
                 state.listen();
             }
@@ -605,10 +613,16 @@ impl VoiceChat {
     }
 
     pub fn next_speech(&self) -> Option<String> {
-        if self.state.lock().phase != VoiceChatPhase::Speaking {
-            return None;
+        let mut state = self.state.lock();
+        match state.phase {
+            VoiceChatPhase::Waiting if !state.response_skipped => state
+                .waiting_filler
+                .as_mut()
+                .and_then(|filler| filler.next(Instant::now()))
+                .map(str::to_owned),
+            VoiceChatPhase::Speaking => self.speech.next(),
+            _ => None,
         }
-        self.speech.next()
     }
 
     pub fn speech_finished(&self) -> bool {
@@ -977,6 +991,55 @@ mod tests {
         assert!(session.take_prompt().is_none());
         assert_eq!(session.view().phase, VoiceChatPhase::Waiting);
     }
+
+    fn make_filler_due(session: &VoiceChat) {
+        session.state.lock().waiting_filler = Some(WaitingFiller::new(
+            Instant::now()
+                .checked_sub(std::time::Duration::from_secs(8))
+                .unwrap(),
+        ));
+    }
+
+    #[test]
+    fn waiting_filler_does_not_submit_or_complete_the_agent_reply() {
+        let session = conversation();
+        submit(&session, "Hello");
+        assert!(session.next_speech().is_none());
+        make_filler_due(&session);
+        assert!(session.next_speech().is_some());
+        assert_eq!(session.view().phase, VoiceChatPhase::Waiting);
+        assert_eq!(session.take_prompt().as_deref(), Some("Hello"));
+        assert!(session.next_speech().is_none());
+        session
+            .transcript(
+                AgentTranscriptKind::Codex,
+                true,
+                false,
+                vec![turn("reply", "Hello", true)],
+            )
+            .unwrap();
+        assert_eq!(session.next_speech().as_deref(), Some("A spoken reply."));
+        assert!(session.next_speech().is_none());
+        session.playback_ended();
+        assert_eq!(session.view().phase, VoiceChatPhase::Listening);
+    }
+
+    #[test]
+    fn skipping_or_closing_suppresses_fillers_and_a_new_prompt_restarts_the_delay() {
+        let session = conversation();
+        submit(&session, "First");
+        make_filler_due(&session);
+        session.skip_response();
+        assert!(session.next_speech().is_none());
+        session.submit_text("Follow up".into()).unwrap();
+        assert!(session.next_speech().is_none());
+        make_filler_due(&session);
+        assert!(session.next_speech().is_some());
+        make_filler_due(&session);
+        session.close();
+        assert!(session.next_speech().is_none());
+    }
+
     #[test]
     fn recognizer_final_without_a_turn_boundary_cannot_send() {
         let session = conversation();
