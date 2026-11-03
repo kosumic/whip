@@ -4515,7 +4515,9 @@ mod tests {
             let bytes = b"{\"type\":\"session_meta\",\"payload\":{}}\n{\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\",\"message\":\"Hello\"}}\n";
             let source = file.bind_source("/rollout".into(), "1:2".into(), bytes.len() as u64);
             file.ingest(source.source_generation, bytes).unwrap();
-            session.core.state().messages
+            let messages = session.core.state().messages;
+            drop(state);
+            messages
         };
         assert!(!expected.is_empty());
         manager.detach_terminal(&"terminal".into()).unwrap();
