@@ -304,6 +304,31 @@ test('hangs up the system call while recognition shutdown is still draining', as
   expect(mockInput.releaseReservation).toHaveBeenCalledTimes(1);
 });
 
+test('a replacement call waits for the previous call to release its microphone', async () => {
+  await session.start(); await flush();
+  mockInput.cancel.mockImplementationOnce(() => {});
+  const replaced = session;
+  session = new VoiceConversation({ ...target, bindingToken: 'other-chat', paneId: 'other-pane', tabId: 'other-tab' }, send, jest.fn(), () => Promise.resolve(mockCore as unknown as NativeVoiceChat));
+  const starting = session.start();
+  await flush();
+  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'closed' }));
+  expect(mockSpeech.endVoiceCall).toHaveBeenCalledTimes(1);
+  expect(mockSpeech.startVoiceCall).toHaveBeenCalledTimes(1);
+  expect(mockInput.reserve).toHaveBeenCalledTimes(1);
+
+  let released = false;
+  const closing = replaced.close().then(() => { released = true; });
+  await flush();
+  expect(released).toBe(false);
+  mockInputSnapshot = { owner: null, phase: 'idle', interimText: '' };
+  for (const listener of mockInputListeners) listener();
+  await closing; await starting; await flush();
+  expect(mockInput.releaseReservation).toHaveBeenCalledTimes(1);
+  expect(mockSpeech.startVoiceCall).toHaveBeenCalledTimes(2);
+  expect(mockInput.reserve).toHaveBeenCalledTimes(2);
+  expect(mockInput.releaseReservation.mock.invocationCallOrder[0]).toBeLessThan(mockInput.reserve.mock.invocationCallOrder[1]);
+});
+
 test('the system mute control drives Rust capture state', async () => {
   await session.start(); await flush();
   const token = (mockSpeech.startVoiceCall.mock.calls[0] as unknown as [string])[0];

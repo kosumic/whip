@@ -107,7 +107,7 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
   latestTarget.current = target;
   useEffect(() => {
     let mounted = true;
-    const session = new VoiceConversation(latestTarget.current, text => callbacks.current.send(text), next => { if (mounted) setView(next); });
+    const session = new VoiceConversation(latestTarget.current, callbacks.current.send, next => { if (mounted) setView(next); });
     conversation.current = session;
     session.setVadSensitivity(callbacks.current.vadSensitivity);
     void session.start();
