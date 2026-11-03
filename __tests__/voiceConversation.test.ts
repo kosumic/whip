@@ -665,7 +665,7 @@ describe('spoken waiting filler', () => {
     await session.start(); await flush();
     mockView.phase = 'waiting'; mockView.inputId += 1n;
     for (const listener of mockTranscriptListeners) listener(state);
-    await jest.advanceTimersByTimeAsync(7_000);
+    await jest.advanceTimersByTimeAsync(1_000);
     expect(mockSpeech.speakChat).not.toHaveBeenCalled();
   };
 

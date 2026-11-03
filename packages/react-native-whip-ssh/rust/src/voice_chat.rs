@@ -1014,7 +1014,7 @@ mod tests {
     fn make_filler_due(session: &VoiceChat) {
         session.state.lock().waiting_filler = Some(WaitingFiller::new(
             Instant::now()
-                .checked_sub(std::time::Duration::from_secs(8))
+                .checked_sub(waiting_filler::INITIAL_DELAY)
                 .unwrap(),
         ));
     }

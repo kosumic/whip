@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-const INITIAL_DELAY: Duration = Duration::from_secs(8);
+pub(super) const INITIAL_DELAY: Duration = Duration::from_secs(2);
 const REPEAT_DELAY: Duration = Duration::from_secs(20);
 const PHRASES: [&str; 5] = ["Hmm.", "Uh.", "One moment.", "Let me think.", "Just a sec."];
 
@@ -44,8 +44,10 @@ mod tests {
     fn long_waits_get_spaced_phrases_without_consecutive_repeats() {
         let start = Instant::now();
         let mut filler = WaitingFiller::new(start);
-        assert!(filler.next(start + Duration::from_secs(7)).is_none());
-        let mut now = start + INITIAL_DELAY;
+        let first_due = start + Duration::from_secs(2);
+        let before_due = first_due.checked_sub(Duration::from_millis(1)).unwrap();
+        assert!(filler.next(before_due).is_none());
+        let mut now = first_due;
         let mut previous = filler.next(now).unwrap();
         assert!(PHRASES.contains(&previous));
         for _ in 0..20 {
