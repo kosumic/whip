@@ -673,6 +673,9 @@ impl VoiceChat {
 
     pub fn set_muted(&self, muted: bool) -> VoiceChatView {
         let mut state = self.state.lock();
+        if state.muted == muted {
+            return self.view_unlocked(&state);
+        }
         state.muted = muted;
         if matches!(
             state.phase,
@@ -1082,6 +1085,40 @@ mod tests {
         assert!(session.next_speech().is_none());
         session.set_muted(false);
         assert_eq!(session.view().phase, VoiceChatPhase::Listening);
+    }
+
+    #[test]
+    fn unchanged_unmuted_notifications_preserve_capture_and_the_pending_turn() {
+        let session = conversation();
+        let id = session.view().input_id;
+        // Telecom can report the same mute value again when the initial
+        // Bluetooth route connects. This must not replace a starting capture.
+        for _ in 0..2 {
+            assert_eq!(session.set_muted(false).input_id, id);
+        }
+        session.recognition(id, "Can you hear me".into());
+        assert_eq!(session.set_muted(false).text, "Can you hear me");
+        session.finish();
+        let finishing = session.set_muted(false);
+        assert_eq!(finishing.phase, VoiceChatPhase::Finishing);
+        assert_eq!(finishing.input_id, id);
+        session.recognition_ended(id).unwrap();
+        let waiting = session.view();
+        assert_eq!(session.set_muted(false).input_id, waiting.input_id);
+        assert_eq!(session.take_prompt().as_deref(), Some("Can you hear me"));
+        assert!(session.take_prompt().is_none());
+    }
+
+    #[test]
+    fn unchanged_muted_notifications_do_not_create_another_input() {
+        let session = conversation();
+        let muted = session.set_muted(true);
+        assert_eq!(muted.phase, VoiceChatPhase::Muted);
+        assert_eq!(session.set_muted(true).input_id, muted.input_id);
+        let listening = session.set_muted(false);
+        assert_eq!(listening.phase, VoiceChatPhase::Listening);
+        assert_ne!(listening.input_id, muted.input_id);
+        assert_eq!(session.set_muted(false).input_id, listening.input_id);
     }
     #[test]
     fn only_a_new_matching_completed_turn_is_read_and_repeated_prompts_stay_distinct() {

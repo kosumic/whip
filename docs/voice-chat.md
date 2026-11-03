@@ -89,7 +89,11 @@ existing chat or terminal controls to handle it.
 Voice chat starts a local audio call through Android Telecom or iOS CallKit.
 The operating system owns call activation and routing. The voice screen offers
 mute, speaker, and end controls; system hang-up and mute controls also update
-the conversation. Connected wired or Bluetooth headsets take priority at startup;
+the conversation. Repeated system notifications of the same mute state preserve
+the current capture and pending speech. Android can repeat these notifications
+while connecting the initial Bluetooth route; they must not cancel and reopen a
+recognizer that is still starting. Connected wired or Bluetooth headsets take
+priority at startup;
 otherwise playback starts on speaker. No phone number is dialed.
 Android startup resolves when Telecom activates the call. Audio routes have one
 collector and default route selection runs separately; waiting for another route
