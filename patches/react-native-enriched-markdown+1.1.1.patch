@@ -1089,3 +1089,106 @@ index 4ad8312e..871e7798 100644
      }
    }
    highlightConfigFile.text = """\
+diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/MeasurementStore.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/MeasurementStore.kt
+--- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/MeasurementStore.kt
++++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/MeasurementStore.kt
+@@ -2,8 +2,9 @@
+
+ import android.content.Context
+ import android.graphics.Typeface
+ import android.os.Build
++import android.text.Layout
+ import android.text.Spannable
+ import android.text.Spanned
+ import android.text.StaticLayout
+ import android.text.TextPaint
+@@ -712,42 +713,9 @@
+     maxWidth: Float,
+     text: CharSequence?,
+     paint: TextPaint,
+     viewId: Int?,
+-  ): Long {
+-    val content = text ?: ""
+-    val safeWidth = ceil(maxWidth).toInt().coerceAtLeast(1)
+-    prepareImageSpansForMeasurement(content, safeWidth)
+-
+-    val builder =
+-      StaticLayout.Builder
+-        .obtain(content, 0, content.length, paint, safeWidth)
+-        .setIncludePad(false)
+-        .setLineSpacing(0f, 1f)
+-
+-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+-      @Suppress("WrongConstant")
+-      builder.setBreakStrategy(resolveBreakStrategy(viewId))
+-    }
+-
+-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+-      builder.setUseLineSpacingFromFallbacks(true)
+-    }
+-
+-    applyLineLimit(builder, viewId)
+-
+-    val layout = builder.build()
+-    val visibleLineCount = visibleLineCount(layout, viewId)
+-    val measuredHeight = truncatedHeight(layout, visibleLineCount, content)
+-
+-    // Calculate actual content width (widest visible line)
+-    val measuredWidth = (0 until visibleLineCount).maxOfOrNull { layout.getLineWidth(it) } ?: 0f
+-
+-    return YogaMeasureOutput.make(
+-      PixelUtil.toDIPFromPixel(ceil(measuredWidth)),
+-      PixelUtil.toDIPFromPixel(measuredHeight),
+-    )
+-  }
++  ): Long = measureWithLayout(maxWidth, text, paint, viewId).first
+
+   // Applies the per-view numberOfLines / ellipsizeMode clamp to a builder, matching
+   // RN's TextLayoutManager.buildLayout: only when a line limit is set.
+   private fun applyLineLimit(
+@@ -820,10 +788,15 @@
+     paint: TextPaint,
+     viewId: Int?,
+   ): Pair<Long, StaticLayout> {
+     val content = text ?: ""
+-    val widthPx = ceil(maxWidth).toInt().coerceAtLeast(1)
+-    prepareImageSpansForMeasurement(content, widthPx)
++    val availableWidthPx = ceil(maxWidth).toInt().coerceAtLeast(1)
++    prepareImageSpansForMeasurement(content, availableWidthPx)
++    // Measure height at the width we return to Yoga. Shrinking to the widest
++    // laid-out line afterward can wrap the display text onto an unmeasured line.
++    // Match RN Text: use the desired width for short text and the available
++    // width for wrapping text, rather than tightening a completed layout.
++    val widthPx = ceil(Layout.getDesiredWidth(content, paint)).toInt().coerceIn(1, availableWidthPx)
+
+     val layout =
+       StaticLayout.Builder
+         .obtain(content, 0, content.length, paint, widthPx)
+@@ -836,21 +809,21 @@
+           }
+           if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+             setUseLineSpacingFromFallbacks(true)
+           }
++          // TextView uses glyph bounds for line breaking when targeting API 35+.
++          // Match it so a final word cannot wrap into an unmeasured extra line.
++          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
++            setUseBoundsForWidth(true)
++          }
+           applyLineLimit(this, viewId)
+         }.build()
+
+     val visibleLineCount = visibleLineCount(layout, viewId)
+
+-    // Find the widest visible line to get the actual content width
+-    val maxLineWidth =
+-      (0 until visibleLineCount)
+-        .maxOfOrNull { layout.getLineWidth(it) } ?: 0f
+-
+     val size =
+       YogaMeasureOutput.make(
+-        PixelUtil.toDIPFromPixel(ceil(maxLineWidth)),
++        PixelUtil.toDIPFromPixel(widthPx.toFloat()),
+         PixelUtil.toDIPFromPixel(truncatedHeight(layout, visibleLineCount, content)),
+       )
+
+     return size to layout
