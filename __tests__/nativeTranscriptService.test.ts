@@ -1,4 +1,5 @@
 import type {
+  HostRuntimeState,
   NativeAgentChatBinding,
   NativeAgentTranscriptState,
   NativeAgentTranscriptUpdate,
@@ -135,6 +136,38 @@ function openedToken(
 }
 
 describe('Rust-owned agent Chat projection', () => {
+  test('host updates observe unopened transcripts without reopening or restarting them', () => {
+    const service = new NativeTranscriptService();
+    const remote = fakeTransport();
+    const host: HostRuntimeState = {
+      revision: 1, connectionGeneration: 1, syncGeneration: 1, syncStatus: 'synced',
+      freshness: 'fresh', needsResync: false, focus: {},
+      snapshot: {
+        version: 'test', protocol: 1, agents: [], workspaces: [], layouts: [], tabs: [],
+        panes: [{ pane_id: 'pane-terminal-1', terminal_id: 'terminal-1', workspace_id: 'workspace', tab_id: 'tab', focused: false, agent_status: 'done', revision: 1 }],
+      },
+    };
+    const listener = jest.fn();
+    service.observe(listener);
+    service.reconcileHost('host', { ...host, freshness: 'stale' }, remote.value);
+    expect(listener).not.toHaveBeenCalled();
+    service.reconcileHost('host', host, remote.value);
+    expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({
+      binding: expect.objectContaining({ terminalId: 'terminal-1' }),
+      state: expect.objectContaining({ status: 'live' }),
+    }));
+    remote.emit({ revision: 2, deltas: [{ type: 'status-changed', status: 'stale' }] });
+    expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({
+      state: expect.objectContaining({ status: 'stale' }),
+    }));
+    service.reconcileHost('host', host, remote.value);
+    expect(remote.value.openAgentChat).not.toHaveBeenCalled();
+    expect(remote.value.startAgentChat).not.toHaveBeenCalled();
+    remote.noChat();
+    service.reconcileHost('host', host, remote.value);
+    expect(service.getState('binding-1')).toBeNull();
+  });
+
   test('global observers receive existing and future transcripts without opening chat or subscribing a viewport', async () => {
     const service = new NativeTranscriptService();
     const remote = fakeTransport();

@@ -824,6 +824,7 @@ test('a recreated HerdrClient adopts a live native runtime without reconnecting 
     matchesSshConfig: jest.fn(() => true),
     runtimeIncarnation: 7,
     status: () => ({ state: 'connected', generation: 4 }),
+    hostState: () => ({ syncStatus: 'idle', freshness: 'loading' }),
     connect: jest.fn(async () => {}),
     disconnect: jest.fn(async () => {}),
     detach: jest.fn(),
@@ -867,6 +868,7 @@ test('detaching during an initial connect does not disconnect the process runtim
   const runtime = {
     runtimeIncarnation: 1,
     status: () => ({ state: 'disconnected', generation: 0 }),
+    hostState: () => ({ syncStatus: 'idle', freshness: 'loading' }),
     connect: jest.fn(() => {
       started();
       return new Promise<void>((_resolve, reject) => { failConnect = reject; });
