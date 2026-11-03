@@ -565,6 +565,7 @@ impl LocalAlertCoordinator {
             effects
         } else {
             state.suppressions.remove(&token);
+            drop(state);
             Vec::new()
         }
     }
