@@ -34,6 +34,7 @@ import { ChatComposerSelection } from '../src/components/ChatComposerSelection';
 import { FLOATING_WARNING_BANNER_HEIGHT } from '../src/components/FloatingWarningBanner';
 import { useAppGlassEnabled } from '../src/components/GlassSurface';
 import type { TerminalSubmissionPermitLike } from 'react-native-whip-ssh/src/terminalSubmissions';
+import { TerminalResidencyEndReason } from '../src/lib/terminalResidency';
 
 jest.mock('../src/services/composerImagePaste', () => ({ uploadPastedComposerImage: jest.fn() }));
 jest.mock('../src/services/attachmentPaste', () => ({ discardClipboardAttachment: jest.fn() }));
@@ -594,6 +595,85 @@ test('background voice prompts finish sending while the terminal renderer is pau
   } finally {
     terminalHandle.submitPastes.mockImplementation(submitPastes);
   }
+});
+
+test('switching tabs preserves the call, sends to its original agent, and restores its orb', async () => {
+  const voiceChatTarget = { agent: 'opencode' as const, bindingToken: 'original-chat', hostId: 'host-1', paneId: 'pane-1', tabId: 'tab', label: 'OpenCode' };
+  const other = { ...target, key: 'target-2', session: { ...target.session, terminalId: 'terminal-2', paneId: 'pane-2' } };
+  const otherVoiceTarget = { ...voiceChatTarget, bindingToken: 'other-chat', paneId: 'pane-2', tabId: 'other-tab' };
+  const targets = [target, other];
+  mount({ targets, voiceChatTarget });
+  await press('compose');
+  await act(async () => { ui('MessageComposer').props.onVoiceChat(); });
+  const call = ui('VoiceChatScreen');
+  act(() => { call.props.onMinimize(); });
+
+  act(() => renderer.update(<TerminalScreen {...props} targets={targets} activeTarget={other} voiceChatTarget={otherVoiceTarget} />));
+  expect(ui('VoiceChatScreen')).toBe(call);
+  expect(call.props.target).toEqual(voiceChatTarget);
+  expect(call.props.visible).toBe(false);
+  const submissions = terminalHandle.submitPastes.mock.calls.length;
+  await act(async () => { expect(call.props.send('Continue the original conversation')).toBe(true); });
+  expect(terminalHandle.submitPastes).toHaveBeenCalledTimes(submissions);
+  expect(props.composerStore.snapshot(target.key).queue).toHaveLength(0);
+  expect(props.composerStore.snapshot(other.key).queue).toHaveLength(0);
+  expect(props.onHistoryEntry).toHaveBeenCalledWith('Continue the original conversation');
+
+  act(() => renderer.update(<TerminalScreen {...props} targets={targets} voiceChatTarget={voiceChatTarget} />));
+  expect(ui('VoiceChatScreen')).toBe(call);
+  expect(call.props.visible).toBe(true);
+  expect(call.props.expanded).toBe(false);
+  act(() => { call.props.onExpand(); });
+  expect(call.props.expanded).toBe(true);
+  act(() => { call.props.onClose(); });
+  expect(renderer.root.findAll(node => String(node.type) === 'VoiceChatScreen')).toHaveLength(0);
+});
+
+test('the voice transcript survives renderer eviction while closing its tab still ends the call', async () => {
+  const voiceChatTarget = { agent: 'codex' as const, hostId: 'host-1', paneId: 'pane-1', tabId: 'tab', label: 'Codex' };
+  const other = { ...target, key: 'target-2', session: { ...target.session, terminalId: 'terminal-2', paneId: 'pane-2' } };
+  const onResidencyEnd = jest.fn();
+  mount({ targets: [target, other], voiceChatTarget, onResidencyEnd });
+  await press('compose');
+  await act(async () => { ui('MessageComposer').props.onVoiceChat(); });
+  act(() => renderer.update(<TerminalScreen {...props} targets={[target, other]} activeTarget={other} onResidencyEnd={onResidencyEnd} />));
+  act(() => { ui('TerminalRendererHost').props.onResidencyEnd(target, TerminalResidencyEndReason.Evicted); });
+  expect(onResidencyEnd).not.toHaveBeenCalled();
+  expect(renderer.root.findAll(node => String(node.type) === 'VoiceChatScreen')).toHaveLength(1);
+  act(() => { ui('TerminalRendererHost').props.onResidencyEnd(other, TerminalResidencyEndReason.Evicted); });
+  expect(onResidencyEnd).toHaveBeenCalledWith(other, TerminalResidencyEndReason.Evicted);
+
+  const send = ui('VoiceChatScreen').props.send;
+  act(() => {
+    ui('TerminalRendererHost').props.onResidencyEnd(target, TerminalResidencyEndReason.Closed);
+    renderer.update(<TerminalScreen {...props} targets={[other]} activeTarget={other} onResidencyEnd={onResidencyEnd} />);
+  });
+  expect(onResidencyEnd).toHaveBeenCalledWith(target, TerminalResidencyEndReason.Closed);
+  expect(renderer.root.findAll(node => String(node.type) === 'VoiceChatScreen')).toHaveLength(0);
+  expect(send('Late recognition')).toBe(false);
+});
+
+test('starting voice chat in another tab replaces the previous call and its destination', async () => {
+  const voiceChatTarget = { agent: 'codex' as const, bindingToken: 'first-chat', hostId: 'host-1', paneId: 'pane-1', tabId: 'tab', label: 'Codex' };
+  const other = { ...target, key: 'target-2', session: { ...target.session, terminalId: 'terminal-2', paneId: 'pane-2' } };
+  const otherVoiceTarget = { ...voiceChatTarget, bindingToken: 'second-chat', paneId: 'pane-2', tabId: 'other-tab' };
+  const targets = [target, other];
+  mount({ targets, voiceChatTarget });
+  await press('compose');
+  await act(async () => { ui('MessageComposer').props.onVoiceChat(); });
+  act(() => { ui('VoiceChatScreen').props.onMinimize(); });
+  act(() => renderer.update(<TerminalScreen {...props} targets={targets} activeTarget={other} voiceChatTarget={otherVoiceTarget} />));
+  await press('compose');
+  await act(async () => { ui('MessageComposer').props.onVoiceChat(); });
+  expect(renderer.root.findAll(node => String(node.type) === 'VoiceChatScreen')).toHaveLength(1);
+  expect(ui('VoiceChatScreen').props.target).toEqual(otherVoiceTarget);
+  expect(ui('VoiceChatScreen').props.visible).toBe(true);
+  expect(ui('VoiceChatScreen').props.expanded).toBe(true);
+  await act(async () => { expect(ui('VoiceChatScreen').props.send('Talk to the second agent')).toBe(true); });
+  expect(terminalHandle.submitPastes).toHaveBeenLastCalledWith(other, ['Talk to the second agent'], true, expect.anything());
+  act(() => renderer.update(<TerminalScreen {...props} targets={targets} voiceChatTarget={voiceChatTarget} />));
+  expect(ui('VoiceChatScreen').props.target).toEqual(otherVoiceTarget);
+  expect(ui('VoiceChatScreen').props.visible).toBe(false);
 });
 
 test('batched native edits submit the latest text and keep the next draft', async () => {

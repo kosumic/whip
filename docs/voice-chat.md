@@ -71,6 +71,9 @@ Pending turn IDs remain eligible when their user text arrives in a later update,
 so an early turn placeholder cannot silently consume its response.
 
 The transcript button returns to the existing chat with the call minimized.
+Switching tabs keeps the call listening and speaking with its original agent;
+returning to that tab restores the orb. Starting voice chat in another tab ends
+the previous call before opening the new one. Closing the call's tab ends it.
 Tool output and reasoning are not read as ordinary assistant prose. If the
 agent is awaiting a permission or another interactive action, return to the
 existing chat or terminal controls to handle it.

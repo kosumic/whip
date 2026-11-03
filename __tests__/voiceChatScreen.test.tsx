@@ -96,6 +96,24 @@ test('a new agent receives its transcript binding without restarting voice chat'
   expect(session.close).not.toHaveBeenCalled();
 });
 
+test('replacing a call keeps any late prompt from its old session bound to the original agent', () => {
+  const firstSend = jest.fn(() => true);
+  const secondSend = jest.fn(() => true);
+  const renderCall = (paneId: string, send: (text: string) => boolean) => <VoiceChatScreen target={{ ...target, paneId }} send={send}
+    visible expanded dockStyle={{}} onMinimize={() => {}} onExpand={() => {}} onClose={onClose} />;
+  act(() => renderer.update(renderCall('first-pane', firstSend)));
+  const previousSend = jest.mocked(VoiceConversation).mock.calls.at(-1)![1];
+  jest.clearAllMocks();
+  act(() => renderer.update(renderCall('second-pane', secondSend)));
+  expect(session.close).toHaveBeenCalledTimes(1);
+  expect(session.start).toHaveBeenCalledTimes(1);
+  previousSend('Late prompt from the first call');
+  expect(firstSend).toHaveBeenCalledWith('Late prompt from the first call');
+  expect(secondSend).not.toHaveBeenCalled();
+  jest.mocked(VoiceConversation).mock.calls.at(-1)![1]('New prompt');
+  expect(secondSend).toHaveBeenCalledWith('New prompt');
+});
+
 test.each(['voiceChat.minimize', 'voiceChat.transcript', 'back'])('%s returns to chat without hanging up; the orb reopens the same call', action => {
   const startedAt = renderer.root.findByType(VoiceOrb).props.startedAt;
   if (action === 'back') act(() => { renderer.root.findByType(Modal).props.onRequestClose(); });

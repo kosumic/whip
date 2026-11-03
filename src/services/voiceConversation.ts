@@ -32,7 +32,7 @@ const CALL_EVENT = 'WhipVoiceCall';
 const WATCHDOG_MS = 10_000;
 const TRANSCRIPT_RECOVERY_MS = 30_000;
 let nextSession = 0;
-let active: string | null = null;
+const voiceCalls: { active: VoiceConversation | null } = { active: null };
 type CallEvent = { token: string; type: 'ended' | 'muted' | 'route' | 'audioInactive'; muted?: boolean; speaker?: boolean; error?: string };
 type VoiceSpeechEvents = { [STOPPED]: [event: ChatSpeechStoppedEvent]; [STARTED]: [event: { token: string }]; [LEVEL]: [event: { token: string; level: number }]; [CALL_EVENT]: [event: CallEvent] };
 async function loadCore(root: string): Promise<NativeVoiceChat> {
@@ -64,6 +64,7 @@ export class VoiceConversation {
   private callToken?: string;
   private callActivated = false;
   private closed = false;
+  private closing?: Promise<void>;
   private analyzing = false;
   private captureQueue = Promise.resolve();
   private cleanup: (() => void)[] = [];
@@ -93,8 +94,17 @@ export class VoiceConversation {
 
   async start(): Promise<void> {
     try {
-      if (active || !composerSpeechInput.reserve(this.session)) throw new Error('Finish the current speech session before starting voice chat.');
-      active = this.session;
+      while (!this.closed && voiceCalls.active && voiceCalls.active !== this) {
+        const previous = voiceCalls.active;
+        if (!previous.closed) {
+          previous.view = { ...previous.view, phase: 'closed', level: 0 };
+          previous.changed(previous.view);
+        }
+        await previous.close();
+      }
+      if (this.closed) return;
+      if (voiceCalls.active || !composerSpeechInput.reserve(this.session)) throw new Error('Finish the current speech session before starting voice chat.');
+      voiceCalls.active = this;
       if (Platform.OS === 'android') this.releaseBackground = retainVoiceCallBackground(this.session);
       this.cleanup.push(suppressAgentAlertsForTab(this.session, this.target.hostId, this.target.tabId));
       this.playback = getSpeechPlayback();
@@ -473,7 +483,12 @@ export class VoiceConversation {
     void this.close();
   }
 
-  async close(): Promise<void> {
+  close(): Promise<void> {
+    if (!this.closing) this.closing = this.closeSession();
+    return this.closing;
+  }
+
+  private async closeSession(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
     this.signalSpeech();
@@ -504,7 +519,7 @@ export class VoiceConversation {
       this.releaseBackground?.();
       this.releaseBackground = undefined;
       // UniFFI retains the Rust object until in-flight model futures finish.
-      if (active === this.session) { active = null; composerSpeechInput.releaseReservation(this.session); }
+      if (voiceCalls.active === this) { voiceCalls.active = null; composerSpeechInput.releaseReservation(this.session); }
     }
   }
 }

@@ -159,7 +159,7 @@ import { Button, type ButtonProps } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
 
-import type { TerminalResidencyEnd } from '../lib/terminalResidency';
+import { TerminalResidencyEndReason, type TerminalResidencyEnd } from '../lib/terminalResidency';
 import type { ComposerDraftRequest } from '../lib/composerDraftRequest';
 import { ChatComposerSelection } from './ChatComposerSelection';
 
@@ -445,16 +445,28 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     ref,
   ) {
     const { colors: appColors } = useTheme();
-    const [voiceChatOpen, setVoiceChatOpen] = useState<string | null>(null);
+    const [voiceChatOpen, setVoiceChatOpen] = useState<{ targetKey: string; target: VoiceChatTarget } | null>(null);
     const [voiceChatExpanded, setVoiceChatExpanded] = useState(true);
     const [voiceChatComposing, setVoiceChatComposing] = useState(false);
     const voiceChatRef = useRef<VoiceChatHandle>(null);
-    const voiceChatIdentity = voiceChatTarget ? JSON.stringify([activeTarget?.key, voiceChatTarget.agent]) : null;
-    const voiceChatActive = Boolean(voiceChatOpen && voiceChatOpen === voiceChatIdentity);
+    const voiceChatActive = Boolean(voiceChatOpen && voiceChatOpen.targetKey === activeTarget?.key);
+    const callTarget = voiceChatActive && voiceChatTarget ? voiceChatTarget : voiceChatOpen?.target;
     const voiceSubmissionTarget = useRef<string | undefined>(undefined);
-    voiceSubmissionTarget.current = voiceChatActive ? activeTarget?.key : undefined;
-    useEffect(() => { setVoiceChatOpen(null); }, [voiceChatIdentity]);
-    const openVoiceChat = () => { Keyboard.dismiss(); setVoiceChatComposing(false); setVoiceChatExpanded(true); setVoiceChatOpen(voiceChatIdentity); };
+    voiceSubmissionTarget.current = voiceChatOpen?.targetKey;
+    useEffect(() => {
+      if (voiceChatOpen && !targets.some(target => target.key === voiceChatOpen.targetKey)) setVoiceChatOpen(null);
+    }, [targets, voiceChatOpen]);
+    useEffect(() => {
+      if (voiceChatActive && voiceChatTarget) {
+        setVoiceChatOpen(current => current && current.target !== voiceChatTarget
+          ? { ...current, target: voiceChatTarget } : current);
+      }
+    }, [voiceChatActive, voiceChatTarget]);
+    const openVoiceChat = () => {
+      if (!activeTarget || !voiceChatTarget) return;
+      Keyboard.dismiss(); setVoiceChatComposing(false); setVoiceChatExpanded(true);
+      setVoiceChatOpen({ targetKey: activeTarget.key, target: voiceChatTarget });
+    };
     const appGlassEnabled = useAppGlassEnabled();
     useClipboardCopyFeedback(visible);
     const { t } = useTranslation();
@@ -1203,7 +1215,8 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       const target = targetsRef.current.find(item => item.key === key);
       const voice = voiceSubmissionTarget.current === key;
       if (voice) recordDiagnostic('info', 'VoiceChat', 'prompt-dispatch-start', { appState: AppState.currentState });
-      if (target && target.session.kind !== 'ssh' && voice && AppState.currentState !== 'active') {
+      if (target && target.session.kind !== 'ssh' && voice &&
+          (AppState.currentState !== 'active' || activeTargetRef.current?.key !== key)) {
         // A paused terminal cannot acknowledge its IME barrier or attach a
         // viewport. The native queue still owns ordering and destination fencing.
         permit.checkActive();
@@ -1376,10 +1389,11 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const enqueueComposeMessage = (
       text: string,
       attachments: readonly ComposeAttachment[],
+      targetKey = activeTargetRef.current?.key,
     ): boolean => {
-      const target = activeTargetRef.current;
+      const target = targetsRef.current.find(item => item.key === targetKey);
       if (!target) return false;
-      onInteraction?.(target);
+      if (target.key === activeTargetRef.current?.key) onInteraction?.(target);
       if (!composerStore.enqueue(target.key, text, attachments)) return false;
       publishQueuedMessages(target.key);
       composerStore.startSubmissions();
@@ -1407,7 +1421,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         reportBackgroundFailure(sendInput(ENTER_INPUT), TERMINAL_INPUT_CONTEXT);
         return false;
       }
-      voiceChatRef.current?.submitted(submitted.text);
+      if (voiceChatActive) voiceChatRef.current?.submitted(submitted.text);
       composeInputRef.current?.clear();
       publishQueuedMessages(target.key);
       composerStore.startSubmissions();
@@ -1983,7 +1997,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             <TerminalRendererHost
               onAddToComposer={(target, text) => addToComposer(text, target.key)}
               addToComposerLabel={t('terminal.addToChatComposer')}
-              onResidencyEnd={onResidencyEnd}
+              onResidencyEnd={voiceChatOpen ? (target, reason) => {
+                // The voice subscriber keeps its transcript alive independently
+                // of the terminal renderer's cache residency.
+                if (target.key === voiceChatOpen.targetKey && reason === TerminalResidencyEndReason.Evicted) return;
+                onResidencyEnd?.(target, reason);
+              } : onResidencyEnd}
               ref={renderer}
               activeTarget={activeTarget}
               targets={targets}
@@ -2202,10 +2221,10 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             </View>
           </View>
         )}
-        {voiceChatActive && voiceChatTarget && (
+        {voiceChatOpen && callTarget && (
           <Suspense fallback={null}>
-            <VoiceChatScreen ref={voiceChatRef} target={voiceChatTarget} send={text => activeTargetRef.current?.key === activeTarget?.key && enqueueComposeMessage(text, [])}
-              visible={visible && (voiceChatExpanded || !composeExpanded)} expanded={voiceChatExpanded} dockStyle={voiceChatDockStyle}
+            <VoiceChatScreen key={voiceChatOpen.targetKey} ref={voiceChatRef} target={callTarget} send={text => enqueueComposeMessage(text, [], voiceChatOpen.targetKey)}
+              visible={visible && voiceChatActive && (voiceChatExpanded || !composeExpanded)} expanded={voiceChatExpanded} dockStyle={voiceChatDockStyle}
               compactComposer={voiceComposerVisible} onComposerHeightChange={setComposerHeight}
               onCompose={openCompose} onAttach={() => onRequestAttachment?.()}
               onMinimize={() => { setVoiceChatComposing(false); setVoiceChatExpanded(false); }} onExpand={openVoiceChat} onClose={() => setVoiceChatOpen(null)} />
