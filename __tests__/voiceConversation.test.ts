@@ -38,6 +38,7 @@ const mockSpeech = {
   startVoiceCall: jest.fn(() => Promise.resolve()), endVoiceCall: jest.fn(() => Promise.resolve()),
   setVoiceCallMuted: jest.fn(() => Promise.resolve()), setVoiceCallSpeaker: jest.fn(() => Promise.resolve()),
   startLocalChatSpeech: jest.fn(() => Promise.resolve()), speakChat: jest.fn((_token: string, _text: string) => Promise.resolve()),
+  enqueueChatSpeech: undefined as jest.Mock<Promise<void>, [string, string]> | undefined,
   stopChatSpeech: jest.fn(() => Promise.resolve()),
 };
 const mockInput = {
@@ -86,11 +87,12 @@ let changed: jest.Mock<void, [VoiceConversationView]>;
 let send: jest.Mock<boolean, [string]>;
 beforeEach(() => {
   jest.clearAllMocks();
+  mockSpeech.enqueueChatSpeech = undefined;
   mockInputSnapshot = { owner: null, phase: 'idle', interimText: '' };
   mockView = { phase: 'preparing', inputId: 1n, muted: false, smartTurn: false, text: '', level: 0, silenceMs: 800, progress: 0, analyze: false };
   mockRequest = undefined;
   mockCore.speechFinished.mockReturnValue(true);
-  mockCore.nextSpeech.mockReturnValue(undefined);
+  mockCore.nextSpeech.mockReset().mockReturnValue(undefined);
   mockCore.takePrompt.mockReturnValue(undefined);
   changed = jest.fn(); send = jest.fn<boolean, [string]>(() => true);
   session = new VoiceConversation(target, send, changed, () => Promise.resolve(mockCore as unknown as NativeVoiceChat));
@@ -580,6 +582,79 @@ test('a typed follow-up cancels pending playback and speaks only the new reply',
   expect(mockSpeech.speakChat.mock.calls.map(call => call[1])).toEqual(['Old reply.', 'New reply.']);
   expect(send).not.toHaveBeenCalled();
   expect(mockSpeech.endVoiceCall).not.toHaveBeenCalled();
+});
+
+test('prepares one following utterance while audio plays and waits for every played fragment', async () => {
+  const played: (() => void)[] = [];
+  mockSpeech.enqueueChatSpeech = jest.fn<Promise<void>, [string, string]>(() => new Promise<void>(resolve => { played.push(resolve); }));
+  await session.start(); await flush();
+  mockView.phase = 'speaking'; mockView.inputId += 1n;
+  mockCore.nextSpeech.mockReturnValueOnce('First.').mockReturnValueOnce('Second.').mockReturnValueOnce('Third.');
+  for (const listener of mockTranscriptListeners) listener(state);
+  await flush();
+  expect(mockSpeech.enqueueChatSpeech.mock.calls.map(([, text]) => text)).toEqual(['First.', 'Second.']);
+  expect(mockSpeech.speakChat).not.toHaveBeenCalled();
+  expect(mockCore.playbackEnded).not.toHaveBeenCalled();
+  played[0](); await flush();
+  expect(mockSpeech.enqueueChatSpeech.mock.calls.map(([, text]) => text)).toEqual(['First.', 'Second.', 'Third.']);
+  played[1](); await flush();
+  expect(mockCore.playbackEnded).not.toHaveBeenCalled();
+  played[2](); await flush();
+  expect(mockCore.playbackEnded).toHaveBeenCalledTimes(1);
+  expect(mockSpeech.startLocalChatSpeech).toHaveBeenCalledTimes(1);
+});
+
+test('new streamed prose is prepared before the current utterance finishes playing', async () => {
+  const played: (() => void)[] = [];
+  mockSpeech.enqueueChatSpeech = jest.fn<Promise<void>, [string, string]>(() => new Promise<void>(resolve => { played.push(resolve); }));
+  mockCore.speechFinished.mockReturnValue(false);
+  await session.start(); await flush();
+  mockView.phase = 'speaking'; mockView.inputId += 1n;
+  mockCore.nextSpeech.mockReturnValueOnce('First.');
+  for (const listener of mockTranscriptListeners) listener(state);
+  await flush();
+  expect(played).toHaveLength(1);
+  mockCore.nextSpeech.mockReturnValueOnce('Arrived later.');
+  for (const listener of mockTranscriptListeners) listener(state);
+  await flush();
+  expect(mockSpeech.enqueueChatSpeech.mock.calls.map(([, text]) => text)).toEqual(['First.', 'Arrived later.']);
+  mockCore.speechFinished.mockReturnValue(true);
+  played.forEach(resolve => resolve());
+  await flush();
+  expect(mockCore.playbackEnded).toHaveBeenCalledTimes(1);
+});
+
+test('skip cancels prepared speech and late playback completions cannot restart the reply', async () => {
+  const played: (() => void)[] = [];
+  mockSpeech.enqueueChatSpeech = jest.fn<Promise<void>, [string, string]>(() => new Promise<void>(resolve => { played.push(resolve); }));
+  await session.start(); await flush();
+  mockView.phase = 'speaking'; mockView.inputId += 1n;
+  mockCore.nextSpeech.mockReturnValueOnce('First.').mockReturnValueOnce('Prepared.').mockReturnValueOnce('Never submit.');
+  for (const listener of mockTranscriptListeners) listener(state);
+  await flush();
+  await session.skip();
+  played.forEach(resolve => resolve());
+  await flush();
+  expect(mockSpeech.enqueueChatSpeech).toHaveBeenCalledTimes(2);
+  expect(mockSpeech.stopChatSpeech).toHaveBeenCalledTimes(1);
+  expect(mockCore.playbackEnded).not.toHaveBeenCalled();
+});
+
+test('a failed prepared utterance stops the reply without leaving unhandled playback promises', async () => {
+  const played: (() => void)[] = [];
+  let fail!: (error: Error) => void;
+  mockSpeech.enqueueChatSpeech = jest.fn<Promise<void>, [string, string]>()
+    .mockImplementationOnce(() => new Promise<void>(resolve => { played.push(resolve); }))
+    .mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { fail = reject; }));
+  await session.start(); await flush();
+  mockView.phase = 'speaking'; mockView.inputId += 1n;
+  mockCore.nextSpeech.mockReturnValueOnce('First.').mockReturnValueOnce('Failed preparation.');
+  for (const listener of mockTranscriptListeners) listener(state);
+  await flush();
+  fail(new Error('Synthesis failed')); await flush();
+  played[0](); await flush();
+  expect(mockSpeech.stopChatSpeech).toHaveBeenCalledTimes(1);
+  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ error: 'Synthesis failed' }));
 });
 
 describe('spoken waiting filler', () => {

@@ -1,13 +1,14 @@
 use ptts::{
     checkpoint::{Checkpoint, ResolveOptions},
     preprocess::Lang,
-    synth::{DeviceKind, Quant, SpeechOptions, Synth},
+    synth::{DeviceKind, Quant, Session, SpeechOptions, Synth},
 };
 use std::path::{Path, PathBuf};
 
 pub(super) struct Engine {
     synth: Synth,
     root: PathBuf,
+    session: Option<(String, Session)>,
 }
 
 pub(super) fn load(path: &Path) -> Result<Engine, String> {
@@ -35,6 +36,7 @@ pub(super) fn load(path: &Path) -> Result<Engine, String> {
     }
     Ok(Engine {
         synth,
+        session: None,
         root: path.parent().ok_or("Invalid model path")?.into(),
     })
 }
@@ -54,11 +56,24 @@ pub(super) fn speak(
             .add_voice_file(voice, &path)
             .map_err(|e| e.to_string())?;
     }
-    for pcm in engine
-        .synth
-        .stream_with(text, &SpeechOptions::default().voice(voice))
-        .map_err(|e| e.to_string())?
+    if engine
+        .session
+        .as_ref()
+        .is_none_or(|(name, _)| name != voice)
     {
+        let session = engine
+            .synth
+            .session_default(&SpeechOptions::default().voice(voice))
+            .map_err(|e| e.to_string())?;
+        engine.session = Some((voice.to_owned(), session));
+    }
+    let (_, session) = engine
+        .session
+        .as_ref()
+        .ok_or("Speech session is unavailable")?;
+    // Phonon already runs bounded synthesis/decode workers. Reuse its primed
+    // session; finish or drop this stream before starting the next utterance.
+    for pcm in session.stream(text).map_err(|e| e.to_string())? {
         if !sink(&pcm.map_err(|e| e.to_string())?) {
             break;
         }

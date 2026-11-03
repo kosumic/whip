@@ -15,17 +15,24 @@ import com.whipssh.SpeechPolicy
 import org.json.JSONObject
 import org.json.JSONArray
 import java.io.File
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** PCM never crosses JS. AudioTrack resamples 24 kHz mono to the device output. */
 object PhononPlayback {
   private const val SAMPLE_RATE = 24_000
-  private const val BUFFER_SAMPLES = SAMPLE_RATE / 5
+  private const val BUFFER_SAMPLES = SAMPLE_RATE * 2 / 5
+  private const val PREFILL_SAMPLES = SAMPLE_RATE / 4
+  private const val PCM_SAMPLES = SAMPLE_RATE * 80 / 1_000
+  private const val PCM_PACKETS = 20 // At most 1.6 seconds of JNI PCM.
   private const val LEVEL_SAMPLES = SAMPLE_RATE / 25
   private const val LEVEL_INTERVAL_MS = 40L
   private val main = Handler(Looper.getMainLooper())
   private val audioWorker = Executors.newSingleThreadExecutor()
+  private val synthesisWorker = Executors.newSingleThreadExecutor()
   private val settingsWorker = Executors.newSingleThreadExecutor()
   private var player: Player? = null // Main-thread ownership; Player.stop is thread safe.
   @Volatile var systemVoice: String = ""
@@ -82,68 +89,37 @@ object PhononPlayback {
   }
 
   fun start(lease: Long, text: String, rate: Double, attributes: AudioAttributes,
+            started: () -> Unit, ended: (Boolean, Boolean, String?) -> Unit) =
+    start(lease, text, rate, attributes, started, {}, ended)
+
+  fun start(lease: Long, text: String, rate: Double, attributes: AudioAttributes,
             started: () -> Unit, level: (Float) -> Unit, ended: (Boolean, Boolean, String?) -> Unit) {
     stop()
-    val next = Player(lease, rate, attributes)
+    begin(lease, rate, attributes, retained = false).enqueue(text, started, level, ended)
+  }
+
+  /** Voice chat may prepare one following utterance while this track is playing. */
+  fun enqueue(lease: Long, text: String, attributes: AudioAttributes,
+              started: () -> Unit, level: (Float) -> Unit, ended: (Boolean, Boolean, String?) -> Unit) {
+    val current = player?.takeIf { it.lease == lease && it.retained && !it.cancelled.get() }
+      ?: run { stop(); begin(lease, 1.0, attributes, retained = true) }
+    current.enqueue(text, started, level, ended)
+  }
+
+  private fun begin(lease: Long, rate: Double, attributes: AudioAttributes, retained: Boolean): Player {
+    val next = Player(lease, rate, attributes, retained)
     player = next
-    val began = SystemClock.elapsedRealtime()
-    var acknowledged = false // Main thread only.
-    val levels = object : Runnable {
+    audioWorker.execute { next.consume() }
+    val poll = object : Runnable {
       override fun run() {
-        if (player !== next || !SpeechPolicy.isCurrent(lease)) return
-        level(next.playbackLevel())
-        main.postDelayed(this, LEVEL_INTERVAL_MS)
+        if (player !== next) return
+        if (!SpeechPolicy.isCurrent(lease)) { stop(); return }
+        next.reportProgress()
+        if (player === next) main.postDelayed(this, if (next.hasPending()) 5 else LEVEL_INTERVAL_MS)
       }
     }
-    val firstAudio = object : Runnable {
-      override fun run() {
-        if (player !== next || !SpeechPolicy.isCurrent(lease) || acknowledged) return
-        if (next.hasPlayed()) {
-          acknowledged = true
-          Log.i("Phonon", "first_output_ms=${SystemClock.elapsedRealtime() - began}")
-          started()
-          levels.run()
-        } else main.postDelayed(this, 5)
-      }
-    }
-    audioWorker.execute {
-      var completed = false
-      var error: String? = null
-      try {
-        if (!next.cancelled.get() && SpeechPolicy.isCurrent(lease)) {
-          next.open()
-          val result = SpeechPolicy.phononSpeak(lease, text, object : SpeechPolicy.PcmSink {
-            override fun write(samples: FloatArray): Boolean {
-              if (!next.write(samples)) return false
-              if (!next.started) {
-                next.started = true
-                main.post(firstAudio)
-              }
-              return true
-            }
-          })
-          if (result < 0) error = "Phonon synthesis failed"
-          if (result > 0) completed = next.drain()
-        }
-      } catch (failure: Exception) {
-        if (!next.cancelled.get()) {
-          SpeechPolicy.phononPlaybackFailed()
-          error = failure.message ?: "Local speech playback failed"
-        }
-      } finally {
-        Log.i("Phonon", "playback_finished lease=$lease completed=$completed ${next.statistics()}")
-        next.close()
-      }
-      val finished = completed
-      val failure = error
-      main.post {
-        if (player === next && SpeechPolicy.isCurrent(lease)) {
-          if (finished && next.started && !acknowledged) { acknowledged = true; started() }
-          player = null
-          ended(finished, next.started, failure)
-        }
-      }
-    }
+    main.post(poll)
+    return next
   }
 
   fun stop() {
@@ -152,7 +128,123 @@ object PhononPlayback {
     stopped?.stop()
   }
 
-  private class Player(val lease: Long, val rate: Double, val attributes: AudioAttributes) {
+  private class Player(val lease: Long, val rate: Double, val attributes: AudioAttributes, val retained: Boolean) {
+    private class Utterance(
+      val started: () -> Unit,
+      val level: (Float) -> Unit,
+      val ended: (Boolean, Boolean, String?) -> Unit,
+    ) {
+      val began = SystemClock.elapsedRealtime()
+      @Volatile var firstFrame: Long? = null
+      @Volatile var endFrame: Long? = null
+      @Volatile var error: String? = null
+      var acknowledged = false // Main thread only.
+    }
+    private sealed interface Packet {
+      data class Begin(val utterance: Utterance) : Packet
+      data class Audio(val samples: FloatArray) : Packet
+      data class End(val utterance: Utterance, val error: String?) : Packet
+    }
+    private val packets = ArrayBlockingQueue<Packet>(PCM_PACKETS)
+    private val utterances = ConcurrentLinkedQueue<Utterance>()
+    private var levelAt = 0L
+    @Volatile private var starvationCount = 0
+
+    fun enqueue(text: String, started: () -> Unit, level: (Float) -> Unit, ended: (Boolean, Boolean, String?) -> Unit) {
+      check(utterances.size < SpeechPlayback.MAX_CHAT_UTTERANCES) { "Speech lookahead is full" }
+      val utterance = Utterance(started, level, ended)
+      utterances.add(utterance)
+      synthesisWorker.execute {
+        if (!offer(Packet.Begin(utterance))) return@execute
+        var error: String? = null
+        try {
+          val result = SpeechPolicy.phononSpeak(lease, text, object : SpeechPolicy.PcmSink {
+            override fun write(samples: FloatArray): Boolean {
+              // Cap individual packets as well as queue capacity. Phonon owns
+              // its generation workers; this handoff only decouples their sink.
+              for (offset in samples.indices step PCM_SAMPLES) {
+                if (!offer(Packet.Audio(samples.copyOfRange(offset, minOf(samples.size, offset + PCM_SAMPLES))))) return false
+              }
+              return true
+            }
+          })
+          if (result <= 0 && current()) error = "Phonon synthesis failed"
+        } catch (failure: Exception) {
+          error = failure.message ?: "Local speech synthesis failed"
+        }
+        offer(Packet.End(utterance, error))
+      }
+    }
+
+    private fun current() = !cancelled.get() && SpeechPolicy.isCurrent(lease)
+
+    private fun offer(packet: Packet): Boolean {
+      while (current()) if (packets.offer(packet, 25, TimeUnit.MILLISECONDS)) return true
+      return false
+    }
+
+    fun consume() {
+      try {
+        if (!current()) return
+        open()
+        while (current()) {
+          when (val packet = packets.poll(5, TimeUnit.MILLISECONDS)) {
+            is Packet.Begin -> packet.utterance.firstFrame = frames
+            is Packet.Audio -> if (!write(packet.samples)) return
+            is Packet.End -> {
+              packet.utterance.error = packet.error
+              packet.utterance.endFrame = frames
+              playBuffered() // Short speech need not fill the prebuffer.
+            }
+            null -> if (playing && playedFrames() >= frames) {
+              val waiting = utterances.peek()
+              if (waiting != null && waiting.endFrame == null) starvationCount++
+              synchronized(lifecycle) { track?.pause(); playing = false }
+            }
+          }
+        }
+      } catch (failure: Exception) {
+        if (current()) {
+          SpeechPolicy.phononPlaybackFailed()
+          main.post {
+            if (player === this && current()) {
+              val pending = utterances.peek()
+              PhononPlayback.stop()
+              pending?.ended?.invoke(false, pending.acknowledged, failure.message ?: "Local speech playback failed")
+            }
+          }
+        }
+      } finally {
+        Log.i("Phonon", "stream_closed lease=$lease ${statistics()} starvations=$starvationCount")
+        close()
+      }
+    }
+
+    fun hasPending() = utterances.isNotEmpty()
+
+    fun reportProgress() {
+      val position = playedFrames()
+      while (current()) {
+        val utterance = utterances.peek() ?: return
+        val first = utterance.firstFrame ?: return
+        if (!utterance.acknowledged && position > first) {
+          utterance.acknowledged = true
+          Log.i("Phonon", "first_output_ms=${SystemClock.elapsedRealtime() - utterance.began}")
+          utterance.started()
+        }
+        if (SystemClock.elapsedRealtime() >= levelAt) {
+          levelAt = SystemClock.elapsedRealtime() + LEVEL_INTERVAL_MS
+          utterance.level(playbackLevel())
+        }
+        val end = utterance.endFrame ?: return
+        if (position < end) return
+        utterances.poll()
+        val completed = utterance.error == null && end > first
+        Log.i("Phonon", "playback_finished lease=$lease completed=$completed segment_frames=${end - first} ${statistics()} starvations=$starvationCount")
+        if (!retained) PhononPlayback.stop()
+        utterance.ended(completed, utterance.acknowledged, utterance.error)
+      }
+    }
     private data class Level(val frame: Long, val rms: Float)
     private val levels = java.util.concurrent.ConcurrentLinkedQueue<Level>()
     private var currentLevel = 0f // Main thread only.
@@ -162,7 +254,6 @@ object PhononPlayback {
     @Volatile private var frames = 0L
     private var playing = false
     private var peakRms = 0f
-    var started = false
 
     fun open() = synchronized(lifecycle) {
       if (cancelled.get() || !SpeechPolicy.isCurrent(lease)) return@synchronized
@@ -174,6 +265,7 @@ object PhononPlayback {
         .setTransferMode(AudioTrack.MODE_STREAM)
         .setBufferSizeInBytes(maxOf(minimum, BUFFER_SAMPLES * Float.SIZE_BYTES)).build().also {
           check(it.state == AudioTrack.STATE_INITIALIZED) { "Could not initialize streaming audio" }
+          Log.i("Phonon", "stream_opened lease=$lease session=${it.audioSessionId} retained=$retained")
           if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             it.setStartThresholdInFrames(minOf(SAMPLE_RATE / 50, it.bufferSizeInFrames))
           }
@@ -194,36 +286,31 @@ object PhononPlayback {
         peakRms = maxOf(peakRms, rms)
         levels.add(Level(frames, rms))
         while (offset < end) {
-          // Prime with real PCM before starting the clock so synthesis startup
-          // cannot leave an empty, underrunning track on the first reply.
           val count = output.write(samples, offset, end - offset,
             if (playing) AudioTrack.WRITE_BLOCKING else AudioTrack.WRITE_NON_BLOCKING)
           if (cancelled.get()) return false
-          check(count > 0) { "Streaming audio write failed ($count)" }
+          check(count >= 0) { "Streaming audio write failed ($count)" }
           frames += count
           offset += count
-          if (!playing) synchronized(lifecycle) {
-            if (cancelled.get() || !SpeechPolicy.isCurrent(lease)) return false
-            output.play()
-            playing = true
-          }
+          if (!playing && (count == 0 || frames - playedFrames() >= PREFILL_SAMPLES)) playBuffered()
         }
       }
       return true
     }
 
-    fun drain(): Boolean {
-      val output = synchronized(lifecycle) { track } ?: return false
-      // Generation completing leaves samples in AudioTrack. Keep ownership and
-      // audio focus until the hardware has consumed them, including the final tail.
-      while (!cancelled.get() && SpeechPolicy.isCurrent(lease)) {
-        if (Integer.toUnsignedLong(output.playbackHeadPosition) >= frames) return true
-        SystemClock.sleep(5)
+    private fun playBuffered() = synchronized(lifecycle) {
+      val output = track ?: return@synchronized
+      val buffered = frames - Integer.toUnsignedLong(output.playbackHeadPosition)
+      if (!playing && current() && buffered > 0) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) output.setStartThresholdInFrames(minOf(buffered, PREFILL_SAMPLES.toLong()).toInt())
+        output.play()
+        playing = true
       }
-      return false
     }
 
-    fun hasPlayed(): Boolean = synchronized(lifecycle) { (track?.playbackHeadPosition ?: 0) > 0 }
+    private fun playedFrames(): Long = synchronized(lifecycle) {
+      track?.let { Integer.toUnsignedLong(it.playbackHeadPosition) } ?: 0
+    }
 
     fun statistics(): String = synchronized(lifecycle) {
       val output = track
@@ -243,6 +330,8 @@ object PhononPlayback {
 
     fun stop() = synchronized(lifecycle) {
       cancelled.set(true)
+      packets.clear()
+      utterances.clear()
       track?.let {
         try { it.pause(); it.flush() } catch (_: IllegalStateException) { /* Worker is closing. */ }
       }

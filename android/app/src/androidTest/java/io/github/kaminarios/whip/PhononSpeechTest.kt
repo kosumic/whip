@@ -192,4 +192,69 @@ class PhononSpeechTest {
       Log.i("PhononAcceptance", "baseline_pss_kb=$baselinePss peak_pss_kb=${peakPss.get()}")
     }
   }
+
+  @Test fun queuedSpeechKeepsOrderAndCancelsPreparedAudio() {
+    val initial = command("status")
+    assumeTrue("Use already-installed speech weights", initial.optBoolean("installed") && !initial.optBoolean("downloading"))
+    val attributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
+    val callbacks = java.util.concurrent.CopyOnWriteArrayList<String>()
+    val errors = java.util.concurrent.CopyOnWriteArrayList<String>()
+    val done = CountDownLatch(2)
+    val firstEnd = AtomicLong()
+    val nextStart = AtomicLong()
+    var lease = 0L
+    try {
+      main { SpeechPlayback.stop() }
+      command("phonon")
+      lease = SpeechPolicy.claim(SpeechPolicy.CHAT, "phonon-queued-check", "")
+      main {
+        PhononPlayback.enqueue(lease,
+          "The first segment keeps speaking while the following sentence is prepared in advance.", attributes,
+          { callbacks.add("first-start") }, {}, { completed, spoke, error ->
+            if (!completed || !spoke || error != null) errors.add(error ?: "First segment did not drain")
+            firstEnd.set(SystemClock.elapsedRealtime()); callbacks.add("first-end"); done.countDown()
+          })
+        PhononPlayback.enqueue(lease,
+          "The second segment follows using the same audio stream.", attributes,
+          { nextStart.set(SystemClock.elapsedRealtime()); callbacks.add("second-start") }, {}, { completed, spoke, error ->
+            if (!completed || !spoke || error != null) errors.add(error ?: "Second segment did not drain")
+            callbacks.add("second-end"); done.countDown()
+          })
+        try {
+          PhononPlayback.enqueue(lease, "This must not be admitted.", attributes, {}, {}, { _, _, _ -> fail("Over-capacity audio was played") })
+          fail("Lookahead must be bounded")
+        } catch (_: IllegalStateException) { /* The current and following utterance own capacity. */ }
+      }
+      assertTrue("Both queued segments drain", done.await(120, TimeUnit.SECONDS))
+      assertEquals(emptyList<String>(), errors.toList())
+      assertEquals(listOf("first-start", "first-end", "second-start", "second-end"), callbacks.toList())
+      Log.i("PhononAcceptance", "queued_inter_segment_callback_gap_ms=${nextStart.get() - firstEnd.get()}")
+
+      val speaking = CountDownLatch(1)
+      val cancelledCallbacks = AtomicBoolean(false)
+      main {
+        PhononPlayback.enqueue(lease, "This audio and its prepared continuation will be cancelled. ".repeat(8), attributes,
+          { speaking.countDown() }, {}, { _, _, _ -> cancelledCallbacks.set(true) })
+        PhononPlayback.enqueue(lease, "The old prepared continuation must never finish after stop.", attributes,
+          {}, {}, { _, _, _ -> cancelledCallbacks.set(true) })
+      }
+      assertTrue(speaking.await(60, TimeUnit.SECONDS))
+      main { SpeechPolicy.stop(lease); PhononPlayback.stop() }
+      val replacement = SpeechPolicy.claim(SpeechPolicy.CHAT, "phonon-queued-replacement", "")
+      lease = replacement
+      val replaced = CountDownLatch(1)
+      main {
+        PhononPlayback.enqueue(replacement, "Replacement audio is ready.", attributes, {}, {}, { completed, spoke, error ->
+          if (!completed || !spoke || error != null) errors.add(error ?: "Replacement did not drain")
+          replaced.countDown()
+        })
+      }
+      assertTrue(replaced.await(60, TimeUnit.SECONDS))
+      assertEquals(emptyList<String>(), errors.toList())
+      assertFalse("Cancelled audio cannot complete into its replacement", cancelledCallbacks.get())
+    } finally {
+      main { SpeechPolicy.stop(lease); PhononPlayback.stop() }
+      command(initial.getString("backend"))
+    }
+  }
 }
