@@ -1,0 +1,146 @@
+import { VoiceSessionManager, type VoiceSessionAdapter } from '../src/services/voiceSessionManager';
+import type { VoiceChatTarget, VoiceConversationView } from '../src/services/voiceConversation';
+import { DEFAULT_VOICE_CONVERSATION_SETTINGS as defaults } from '../src/lib/voiceConversationSettings';
+
+const target: VoiceChatTarget = { agent: 'codex', hostId: 'host', tabId: 'tab', paneId: 'pane', label: 'Codex' };
+const view: VoiceConversationView = { phase: 'listening', muted: false, smartTurn: false, speaker: false, text: '', level: 0, progress: 0, error: null, transcript: null };
+const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+function setup() {
+  const adapters: (VoiceSessionAdapter & { publish: (view: VoiceConversationView) => void; send: (text: string) => boolean })[] = [];
+  const create = jest.fn(async (_target: VoiceChatTarget, send: (text: string) => boolean, publish: (view: VoiceConversationView) => void) => {
+    const adapter = { start: jest.fn(() => Promise.resolve()), close: jest.fn(() => Promise.resolve()),
+      setTranscriptBinding: jest.fn(), setVadSensitivity: jest.fn(), submitted: jest.fn(), toggleMuted: jest.fn(),
+      toggleSpeaker: jest.fn(), finish: jest.fn(), skip: jest.fn(() => Promise.resolve()), publish, send };
+    adapters.push(adapter);
+    return adapter;
+  });
+  return { manager: new VoiceSessionManager(create), create, adapters };
+}
+
+test('remounting and changing preferences retain one call and its original settings snapshot', async () => {
+  const { manager, create, adapters } = setup();
+  const session = manager.start({ kind: 'Agent', target }, () => true);
+  const listener = jest.fn();
+  const detach = session.subscribe(listener);
+  await flush();
+  adapters[0].publish(view);
+  detach();
+  const reattached = manager.start({ kind: 'Agent', target: { ...target, label: 'Renamed', bindingToken: 'rebound' } }, () => true,
+    { ...defaults, provider: 'openai', mode: 'Live', liveVoice: 'quartz' });
+  expect(reattached).toBe(session);
+  expect(reattached.mode).toBe('TurnBased');
+  expect(reattached.settings.liveVoice).toBe('marin');
+  const resumed = jest.fn();
+  reattached.subscribe(resumed);
+  expect(resumed).toHaveBeenLastCalledWith(view);
+  expect(create).toHaveBeenCalledTimes(1);
+  expect(adapters[0].close).not.toHaveBeenCalled();
+  await manager.hangup();
+});
+
+test('replacement waits for hangup and rejects stale views, sends and control actions', async () => {
+  const { manager, adapters } = setup();
+  const firstSend = jest.fn(() => true), secondSend = jest.fn(() => true);
+  const first = manager.start({ kind: 'Agent', target }, firstSend);
+  await flush();
+  let release!: () => void;
+  jest.mocked(adapters[0].close).mockImplementation(() => new Promise<void>(resolve => { release = resolve; }));
+  const second = manager.start({ kind: 'Agent', target: { ...target, paneId: 'other' } }, secondSend);
+  await flush();
+  expect(adapters).toHaveLength(1);
+  expect(adapters[0].send('stale')).toBe(false);
+  first.toggleMuted();
+  expect(adapters[0].toggleMuted).not.toHaveBeenCalled();
+  adapters[0].publish({ ...view, phase: 'closed' });
+  expect(second.getSnapshot().phase).toBe('starting');
+  release(); await flush();
+  expect(adapters).toHaveLength(2);
+  expect(adapters[1].send('current')).toBe(true);
+  expect(firstSend).not.toHaveBeenCalled();
+  expect(secondSend).toHaveBeenCalledWith('current');
+  await manager.hangup();
+});
+
+test('rapid target replacements cancel intermediate calls before they acquire native resources', async () => {
+  const { manager, create } = setup();
+  const first = manager.start({ kind: 'Agent', target }, () => true);
+  const second = manager.start({ kind: 'Agent', target: { ...target, tabId: 'second' } }, () => true);
+  const third = manager.start({ kind: 'Agent', target: { ...target, tabId: 'third' } }, () => true);
+  await flush();
+  expect(first.ended).toBe(true); expect(second.ended).toBe(true);
+  expect(manager.active).toBe(third);
+  expect(create).toHaveBeenCalledTimes(1);
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({ tabId: 'third' }), expect.any(Function), expect.any(Function));
+  await manager.hangup();
+});
+
+test('app lock cancels pending startup, blocks sends and prevents new calls until unlock', async () => {
+  const { manager, create, adapters } = setup();
+  manager.start({ kind: 'Agent', target }, () => true);
+  await flush();
+  const closing = manager.setLocked(true);
+  expect(adapters[0].send('locked')).toBe(false);
+  await closing;
+  expect(adapters[0].close).toHaveBeenCalledTimes(1);
+  const blocked = manager.start({ kind: 'Agent', target }, () => true);
+  await flush();
+  expect(blocked.getSnapshot().phase).toBe('error');
+  expect(create).toHaveBeenCalledTimes(1);
+  await manager.setLocked(false);
+  expect(create).toHaveBeenCalledTimes(1);
+  manager.start({ kind: 'Agent', target }, () => true); await flush();
+  expect(create).toHaveBeenCalledTimes(2);
+  await manager.hangup();
+});
+
+test('hanging up before adapter loading finishes closes it without starting audio', async () => {
+  const { adapters, create } = setup();
+  let loaded!: (adapter: VoiceSessionAdapter) => void;
+  const manager = new VoiceSessionManager(() => new Promise(resolve => { loaded = resolve; }));
+  manager.start({ kind: 'Agent', target }, () => true); await flush();
+  const closing = manager.hangup();
+  const adapter = await create(target, () => true, () => {});
+  loaded(adapter); await closing;
+  expect(adapters[0].start).not.toHaveBeenCalled();
+  expect(adapters[0].close).toHaveBeenCalledTimes(1);
+});
+
+test.each(['Realtime', 'Live'] as const)('%s is unavailable and never falls back to local speech', async mode => {
+  const { manager, create } = setup();
+  const session = manager.start({ kind: 'Agent', target }, () => true, { ...defaults, provider: 'openai', mode });
+  await flush();
+  expect(session.mode).toBe(mode);
+  expect(session.getSnapshot()).toMatchObject({ phase: 'error', error: expect.stringContaining('not available') });
+  expect(create).not.toHaveBeenCalled();
+});
+
+test('global scope is modeled but never acquires an agent adapter', async () => {
+  const { manager, create } = setup();
+  const session = manager.start({ kind: 'Global' }, () => true);
+  await flush();
+  expect(session.getSnapshot().phase).toBe('error');
+  expect(create).not.toHaveBeenCalled();
+});
+
+test('system hangup releases ownership, and stale hangup cannot close the replacement', async () => {
+  const { manager, adapters } = setup();
+  const first = manager.start({ kind: 'Agent', target }, () => true); await flush();
+  adapters[0].publish({ ...view, phase: 'closed' }); await flush();
+  const second = manager.start({ kind: 'Agent', target }, () => true); await flush();
+  await manager.hangup(first);
+  expect(manager.active).toBe(second);
+  expect(second.ended).toBe(false);
+  expect(adapters[1].close).not.toHaveBeenCalled();
+  await manager.hangup();
+});
+
+test('removing the call host hangs up, while switching between retained hosts preserves the call', async () => {
+  const { manager, adapters } = setup();
+  const session = manager.start({ kind: 'Agent', target }, () => true); await flush();
+  await manager.retainAgentHosts(['other', 'host']);
+  expect(session.ended).toBe(false);
+  expect(adapters[0].close).not.toHaveBeenCalled();
+  await manager.retainAgentHosts(['other']);
+  expect(adapters[0].close).toHaveBeenCalledTimes(1);
+  expect(manager.active).toBeUndefined();
+});

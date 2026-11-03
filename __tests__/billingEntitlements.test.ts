@@ -1,3 +1,4 @@
+import { DEFAULT_VOICE_CONVERSATION_SETTINGS } from '../src/lib/voiceConversationSettings';
 import { effectiveDevicePreferences } from '../src/billing/effectiveSettings';
 import { revenueCatPublicSdkKey } from '../src/billing/revenueCatConfiguration';
 import type { DevicePreferences } from '../src/services/devicePreferences';
@@ -10,6 +11,7 @@ describe('billing presentation adapters', () => {
       persistentAlertDurationSeconds: 30,
       ttsEnabled: false,
       vadSensitivity: 50,
+      voiceConversation: DEFAULT_VOICE_CONVERSATION_SETTINGS,
       biometricForKeys: false,
       biometricOnResume: false,
       appearance: 'system',

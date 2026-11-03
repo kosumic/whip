@@ -224,8 +224,8 @@ class VoiceCallService : Service() {
       session.start?.reject("E_VOICE_CALL", "The system stopped voice chat.")
       if (!session.ending) emit(session, "ended")
       session.endings.forEach { it.resolve(null) }
+      calls.release(session)
     }
-    current = null
     HostRuntimeMonitoring.setOwnerActive(this, false)
     wakeLock?.let { if (it.isHeld) it.release() }; wakeLock = null
     scope.cancel()
@@ -256,7 +256,7 @@ class VoiceCallService : Service() {
       if (service != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) service.finish(this, "The system voice call did not start.")
       else if (current === this) {
         finishBackgroundTask()
-        current = null
+        calls.release(this)
         start?.reject("E_VOICE_CALL", "The system voice call service did not start.")
         start = null
         emit(this, "ended", error = "The system voice call service did not start.")
@@ -274,7 +274,8 @@ class VoiceCallService : Service() {
     private const val ROUTE_TIMEOUT_MS = 5_000L
     private val main = Handler(Looper.getMainLooper())
     private var instance: VoiceCallService? = null
-    private var current: Session? = null
+    private val calls = VoiceCallOwner<Session>()
+    private val current: Session? get() = calls.active
     var onEvent: ((String, String, Boolean?, Boolean?, String?) -> Unit)? = null
     val active: Boolean get() = current?.let { it.ready && !it.ending } == true
     val audioAttributes: AudioAttributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
@@ -286,7 +287,7 @@ class VoiceCallService : Service() {
         promise.reject("E_VOICE_CALL", "Microphone permission and Android 13 or later are required."); return
       }
       val session = Session(token, label, promise)
-      current = session
+      if (!calls.reserve(session)) { promise.reject("E_VOICE_CALL", "A voice call is already active."); return }
       try {
         // Foreground service protection does not keep React Native timers alive.
         // Recognizer restarts and reply draining must run with the activity paused.
@@ -296,7 +297,7 @@ class VoiceCallService : Service() {
         ))
         context.startForegroundService(Intent(context, VoiceCallService::class.java).setAction(START).putExtra(TOKEN, token))
         main.postDelayed(session.timeout, 15_000)
-      } catch (error: Exception) { session.finishBackgroundTask(); current = null; promise.reject("E_VOICE_CALL", error) }
+      } catch (error: Exception) { session.finishBackgroundTask(); calls.release(session); promise.reject("E_VOICE_CALL", error) }
     }
     fun end(token: String, promise: Promise? = null) {
       if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) { promise?.resolve(null); return }
@@ -308,7 +309,7 @@ class VoiceCallService : Service() {
       else {
         session.finishBackgroundTask()
         main.removeCallbacks(session.timeout)
-        current = null
+        calls.release(session)
         session.start?.reject("E_VOICE_CALL", "Voice call was cancelled.")
         session.endings.forEach { it.resolve(null) }
       }

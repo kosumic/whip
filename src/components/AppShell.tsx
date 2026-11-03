@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { BlurTargetView } from 'expo-blur';
 import { Platform, StyleSheet, View, type ViewInstance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -46,6 +46,8 @@ import { BottomNavigation } from './BottomNavigation';
 import { ConnectRequiredScreen } from './ConnectRequiredScreen';
 import { GlassProvider } from './GlassSurface';
 import { VoiceVadSensitivityContext } from '../lib/voiceVadSensitivity';
+import { VoiceConversationSettingsContext } from '../lib/voiceConversationSettingsContext';
+import { voiceSessionManager } from '../services/voiceSessionManager';
 import { HerdScreen } from './HerdScreen';
 import { HostsScreen } from './HostsScreen';
 import { LiveSessionView } from './LiveSessionView';
@@ -108,6 +110,9 @@ export function AppShell({
     terminalControlUsage,
   } = effectivePreferences;
   const activeSession = sessions.activeSession;
+  useEffect(() => {
+    if (sessions.restoreComplete) void voiceSessionManager.retainAgentHosts(sessions.presentationSessions.map(session => session.id));
+  }, [sessions.restoreComplete, sessions.presentationSessions]);
   // Snapshot refreshes temporarily project connected while SSH remains usable.
   const liveClient =
     activeSession && isLiveHostSshConnected(activeSession.connectionStatus)
@@ -267,6 +272,7 @@ export function AppShell({
     navigation.licensesOpen;
 
   return (
+    <VoiceConversationSettingsContext value={{ settings: storedPreferences.voiceConversation, onChange: value => preferences.setPreference('voiceConversation', value) }}>
     <VoiceVadSensitivityContext value={storedPreferences.vadSensitivity}>
       <StableStatusBar
         hidden={fullscreenVisible}
@@ -709,6 +715,7 @@ export function AppShell({
         </GlassProvider>
       </SafeAreaView>
     </VoiceVadSensitivityContext>
+    </VoiceConversationSettingsContext>
   );
 }
 

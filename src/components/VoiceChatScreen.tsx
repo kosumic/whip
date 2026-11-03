@@ -11,7 +11,9 @@ import Volume2 from 'lucide-react-native/icons/volume-2';
 import Plus from 'lucide-react-native/icons/plus';
 import AudioLines from 'lucide-react-native/icons/audio-lines';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
-import { VoiceConversation, type VoiceChatTarget, type VoiceConversationView } from '../services/voiceConversation';
+import type { VoiceChatTarget, VoiceConversationView } from '../services/voiceConversation';
+import { voiceSessionManager, type VoiceSession } from '../services/voiceSessionManager';
+import { VoiceConversationSettingsContext } from '../lib/voiceConversationSettingsContext';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
 import { GlassPortal } from './GlassSurface';
@@ -51,12 +53,12 @@ interface VoiceChatScreenProps {
 
 export interface VoiceChatHandle { submitted: (text: string) => void }
 
-/** Owns the call independently of its full-screen or docked presentation. */
+/** Presents the app-wide call without owning its lifetime. */
 export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyle, compactComposer = true, onComposerHeightChange, onMinimize, onExpand, onClose, onCompose, onAttach }: VoiceChatScreenProps) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
-  const startedAt = useRef(Date.now()).current;
+  const [startedAt, setStartedAt] = useState(Date.now);
   const fullOrb = useRef<ViewInstance>(null);
   const compactOrb = useRef<ViewInstance>(null);
   const presentation = useSharedValue(expanded ? 1 : 0);
@@ -97,26 +99,30 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
     }, PRESENTATION_DURATION_MS);
   };
   const vadSensitivity = useContext(VoiceVadSensitivityContext);
+  const { settings } = useContext(VoiceConversationSettingsContext);
   const [view, setView] = useState(INITIAL);
-  const conversation = useRef<VoiceConversation | null>(null);
+  const conversation = useRef<VoiceSession | null>(null);
   useImperativeHandle(ref, () => ({ submitted: text => conversation.current?.submitted(text) }), []);
-  const callbacks = useRef({ send, onClose, vadSensitivity });
-  callbacks.current = { send, onClose, vadSensitivity };
-  const { agent, bindingToken, hostId, label, paneId } = target;
+  const callbacks = useRef({ send, onClose, vadSensitivity, settings });
+  callbacks.current = { send, onClose, vadSensitivity, settings };
+  const { agent, bindingToken, hostId, paneId, tabId } = target;
   const latestTarget = useRef(target);
   latestTarget.current = target;
   useEffect(() => {
-    let mounted = true;
-    const session = new VoiceConversation(latestTarget.current, callbacks.current.send, next => { if (mounted) setView(next); });
+    const session = voiceSessionManager.start({ kind: 'Agent', target: latestTarget.current }, callbacks.current.send, callbacks.current.settings);
     conversation.current = session;
+    setStartedAt(session.startedAt);
     session.setVadSensitivity(callbacks.current.vadSensitivity);
-    void session.start();
-    return () => { mounted = false; void session.close(); conversation.current = null; };
-  }, [agent, hostId, label, paneId]);
+    const unsubscribe = session.subscribe(setView);
+    return () => { unsubscribe(); conversation.current = null; };
+  }, [agent, hostId, paneId, tabId]);
   useEffect(() => { conversation.current?.setTranscriptBinding(bindingToken); }, [bindingToken]);
   useEffect(() => { conversation.current?.setVadSensitivity(vadSensitivity); }, [vadSensitivity]);
   useEffect(() => { if (view.phase === 'closed') callbacks.current.onClose(); }, [view.phase]);
-  const close = () => { void conversation.current?.close(); callbacks.current.onClose(); };
+  const close = () => {
+    if (conversation.current) { void voiceSessionManager.hangup(conversation.current); }
+    callbacks.current.onClose();
+  };
   const interactive = ['listening', 'muted', 'waiting', 'speaking'].includes(view.phase);
   const compose = () => minimize(onCompose);
   const composer = <VoiceComposer label={t('voiceChat.compose', { agent: target.label })}
