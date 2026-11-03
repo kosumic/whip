@@ -1721,6 +1721,62 @@ fn install_agent_chat_snapshot(inner: &Arc<RuntimeInner>, snapshot: HerdrSession
 }
 
 #[test]
+fn host_status_updates_do_not_open_transcripts_before_cache_admission() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    for status in [
+        HerdrAgentStatus::Working,
+        HerdrAgentStatus::Blocked,
+        HerdrAgentStatus::Done,
+        HerdrAgentStatus::Idle,
+        HerdrAgentStatus::Unknown,
+    ] {
+        let inner = connected_runtime_inner("transcript-preload");
+        let runtime = HostRuntime {
+            inner: inner.clone(),
+        };
+        let original = "11111111-1111-4111-8111-111111111111";
+        let replacement_id = "22222222-2222-4222-8222-222222222222";
+        let mut snapshot = agent_chat_snapshot(Some(("codex", original)), Some("codex"));
+        // Only the bounded cache may admit an unfocused transcript.
+        snapshot.panes[0].focused = false;
+        snapshot.panes[0].agent_status = status;
+        snapshot.panes[1].agent_status = status;
+        snapshot.panes[1].display_agent = Some("codex".to_owned());
+        install_agent_chat_snapshot(&inner, snapshot.clone());
+        assert!(
+            runtime
+                .current_agent_chat("terminal-pane-1".to_owned())
+                .is_none()
+        );
+        assert!(
+            runtime
+                .current_agent_chat("terminal-pane-2".to_owned())
+                .is_none()
+        );
+        let binding = bound(
+            runtime
+                .open_agent_chat("terminal-pane-1".to_owned())
+                .unwrap(),
+        );
+        install_agent_chat_snapshot(&inner, snapshot.clone());
+        assert_eq!(
+            runtime
+                .current_agent_chat("terminal-pane-1".to_owned())
+                .unwrap()
+                .binding_token,
+            binding.binding_token
+        );
+        snapshot.panes[0].agent_session.as_mut().unwrap().value = replacement_id.to_owned();
+        install_agent_chat_snapshot(&inner, snapshot);
+        let replacement = runtime
+            .current_agent_chat("terminal-pane-1".to_owned())
+            .unwrap();
+        assert_eq!(replacement.session_id, replacement_id);
+        assert_ne!(replacement.binding_token, binding.binding_token);
+    }
+}
+
+#[test]
 fn typed_agent_controls_restore_through_app_core_and_herd_without_a_host_revision_change()
 -> Result<(), Box<dyn std::error::Error>> {
     use crate::reverse_control::ReverseControlState;

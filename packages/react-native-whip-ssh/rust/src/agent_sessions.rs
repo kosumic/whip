@@ -241,14 +241,16 @@ struct SessionRuntime {
 #[derive(Debug)]
 struct TranscriptActivity {
     active: bool,
+    done: bool,
     quiet_since: Instant,
     paused: bool,
 }
 
 impl TranscriptActivity {
-    fn new(active: bool) -> Self {
+    fn new(active: bool, done: bool) -> Self {
         Self {
             active,
+            done,
             quiet_since: Instant::now(),
             paused: false,
         }
@@ -268,6 +270,7 @@ impl TranscriptActivity {
     }
 
     fn pause_if_quiet(&mut self, now: Instant) -> bool {
+        // Done can arrive before the final transcript write or its SSH bytes.
         if !self.active && now.saturating_duration_since(self.quiet_since) >= TRANSCRIPT_DRAIN_DELAY
         {
             self.paused = true;
@@ -297,6 +300,19 @@ fn transcript_active(
             HerdrAgentStatus::Working | HerdrAgentStatus::Unknown
         )
     })
+}
+
+fn transcript_done(
+    terminals: &HashSet<TerminalId>,
+    statuses: &HashMap<TerminalId, HerdrAgentStatus>,
+    previously_done: bool,
+) -> bool {
+    !terminals.is_empty()
+        && terminals.iter().all(|terminal| {
+            statuses
+                .get(terminal)
+                .map_or(previously_done, |status| *status == HerdrAgentStatus::Done)
+        })
 }
 
 impl SessionRuntime {
@@ -486,7 +502,7 @@ impl AgentSessionManager {
             state
                 .sessions
                 .iter()
-                .filter(|(_, session)| session.started)
+                .filter(|(_, session)| session.started && !session.activity.done)
                 .map(|(key, _)| key.clone())
                 .collect::<Vec<_>>()
         };
@@ -616,10 +632,14 @@ impl AgentSessionManager {
                     session_id: identity.session_id.clone(),
                 }
             });
-            let active = transcript_active(
-                &HashSet::from([identity.terminal_id.clone()]),
-                &state.agent_statuses,
-            );
+            let mut terminals = state
+                .sessions
+                .get(&key)
+                .map(|session| session.terminals.clone())
+                .unwrap_or_default();
+            terminals.insert(identity.terminal_id.clone());
+            let active = transcript_active(&terminals, &state.agent_statuses);
+            let done = transcript_done(&terminals, &state.agent_statuses, false);
             let session = state.sessions.entry(key.clone()).or_insert_with(|| {
                 let core = match identity.agent {
                     AgentTranscriptKind::Pi => AgentSessionCore::Pi(Box::new(PiSessionCore::new(
@@ -650,10 +670,12 @@ impl AgentSessionManager {
                     closed: false,
                     explicit_restart_pending: false,
                     opencode_protocol: None,
-                    activity: TranscriptActivity::new(active),
+                    activity: TranscriptActivity::new(active, done),
                 }
             });
             session.terminals.insert(identity.terminal_id.clone());
+            session.activity.active = active;
+            session.activity.done = done;
             if session.closed || session.core.status() == AgentTranscriptStatus::Closed {
                 session.closed = false;
                 session.explicit_restart_pending = true;
@@ -843,15 +865,26 @@ impl AgentSessionManager {
             let now = Instant::now();
             let mut wake = Vec::new();
             for session in state.sessions.values_mut() {
-                let active = transcript_active(&session.terminals, &statuses);
+                // A stale host snapshot is not an authoritative status change.
+                let done = transcript_done(&session.terminals, &statuses, session.activity.done);
+                let active = !done && transcript_active(&session.terminals, &statuses);
+                let resumed_done = session.activity.done && !done;
+                let became_done = !session.activity.done && done;
+                session.activity.done = done;
                 let became_active = active && !session.activity.active;
-                let was_paused = session.activity.set_active(active, now);
+                let mut was_paused = session.activity.set_active(active, now);
+                if resumed_done || became_done {
+                    was_paused |= session.activity.touch(now);
+                }
+                if done {
+                    session.pause_file_if_quiet(0, now);
+                }
                 let unavailable = became_active
                     && matches!(
                         session.core.status(),
                         AgentTranscriptStatus::Unavailable | AgentTranscriptStatus::Error
                     );
-                if was_paused || unavailable {
+                if resumed_done || was_paused || unavailable {
                     if became_active {
                         session.discovery_retries = 0;
                     }
@@ -1431,6 +1464,28 @@ impl AgentSessionManager {
     ) {
         let connection = self.inner.connection.clone();
         let size = metadata.size;
+        let done = {
+            let mut state = self.inner.state.lock();
+            current_session_mut(&mut state, &key, operation_epoch)
+                .is_some_and(|session| session.activity.done)
+        };
+        if done {
+            // Read without a persistent tail, then monitor through the drain
+            // period so writes following the Done event still reach speech.
+            if let Err(error) =
+                file_source::read_available(self, &key, operation_epoch, &path, size).await
+            {
+                self.fail_session(
+                    key,
+                    operation_epoch,
+                    error.to_string(),
+                    SessionFailureKind::Transient,
+                );
+            } else {
+                self.monitor_file_source(key, operation_epoch, path, metadata, session_id);
+            }
+            return;
+        }
         let Ok(permit) = self.inner.file_stream_slots.clone().try_acquire_owned() else {
             diagnostics::record(
                 &self.inner,
@@ -1974,7 +2029,7 @@ impl AgentSessionManager {
             let Some(session) = current_session_mut(&mut state, &key, operation_epoch) else {
                 return;
             };
-            if session.retry_running || session.terminals.is_empty() {
+            if session.retry_running || session.terminals.is_empty() || session.activity.done {
                 None
             } else {
                 session.retry_running = true;
@@ -1996,7 +2051,7 @@ impl AgentSessionManager {
                         return;
                     };
                     session.retry_running = false;
-                    !session.terminals.is_empty() && !session.closed
+                    !session.terminals.is_empty() && !session.closed && !session.activity.done
                 };
                 if should_poll {
                     manager
@@ -2038,6 +2093,12 @@ impl AgentSessionManager {
                 return;
             }
             let result = match (&mut session.core, kind) {
+                (core, SessionFailureKind::SourceUnavailable) if session.activity.done => {
+                    (core.mark_unavailable_update(reason), None)
+                }
+                (core, SessionFailureKind::Transient) if session.activity.done => {
+                    (core.mark_stale_update(reason), None)
+                }
                 (AgentSessionCore::Codex(core), SessionFailureKind::SourceUnavailable)
                     if session.discovery_retries < CODEX_DISCOVERY_RETRY_DELAYS.len() =>
                 {
@@ -2065,6 +2126,17 @@ impl AgentSessionManager {
         if let Ok(runtime) = crate::runtime() {
             runtime.spawn(async move {
                 tokio::time::sleep(retry_delay).await;
+                {
+                    let mut state = manager.inner.state.lock();
+                    let Some(session) = current_session_mut(&mut state, &key, operation_epoch)
+                    else {
+                        return;
+                    };
+                    if session.activity.done {
+                        session.retry_running = false;
+                        return;
+                    }
+                }
                 // Validate and replace the epoch under one lock. An explicit
                 // open, reconnect, or detach supersedes this pending retry.
                 manager.restart_operation(
@@ -3167,7 +3239,7 @@ mod tests {
     #[test]
     fn idle_transcripts_drain_late_writes_and_use_slow_fallback() {
         let now = Instant::now();
-        let mut activity = TranscriptActivity::new(true);
+        let mut activity = TranscriptActivity::new(true, false);
         activity.set_active(false, now);
         assert!(!activity.pause_if_quiet(now + TRANSCRIPT_DRAIN_DELAY / 2));
         let late_write = now + TRANSCRIPT_DRAIN_DELAY / 2;
@@ -4428,6 +4500,47 @@ mod tests {
             agent: AgentTranscriptKind::Codex,
             session_id: session_id.into(),
         }
+    }
+
+    #[test]
+    fn admitted_transcript_preload_restores_retained_history() {
+        let (_directory, manager) = persisted_test_manager("host");
+        let binding = manager
+            .bind_codex("terminal".into(), SESSION.into())
+            .unwrap();
+        let expected = {
+            let mut state = manager.inner.state.lock();
+            let session = state.sessions.get_mut(&binding.transcript_key).unwrap();
+            let file = session.core.file().unwrap();
+            let bytes = b"{\"type\":\"session_meta\",\"payload\":{}}\n{\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\",\"message\":\"Hello\"}}\n";
+            let source = file.bind_source("/rollout".into(), "1:2".into(), bytes.len() as u64);
+            file.ingest(source.source_generation, bytes).unwrap();
+            let messages = session.core.state().messages;
+            drop(state);
+            messages
+        };
+        assert!(!expected.is_empty());
+        manager.detach_terminal(&"terminal".into()).unwrap();
+        manager.update_agent_statuses(
+            HashMap::from([("terminal".into(), HerdrAgentStatus::Done)]),
+            1,
+        );
+        manager.reconcile_authoritative_bindings(
+            &HashMap::from([("terminal".into(), identity("terminal", SESSION))]),
+            1,
+        );
+        assert!(manager.terminal_binding("terminal").is_none());
+        let admitted = manager
+            .bind_authoritative(identity("terminal", SESSION))
+            .unwrap();
+        crate::runtime()
+            .unwrap()
+            .block_on(manager.start_bound(&admitted.binding_token))
+            .unwrap();
+        assert_eq!(
+            manager.state(&binding.transcript_key).unwrap().messages,
+            expected
+        );
     }
 
     #[test]

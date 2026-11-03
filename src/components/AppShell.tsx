@@ -184,7 +184,12 @@ export function AppShell({
     return (
       <HerdScreen
         queues={herdQueues}
-        agents={herdProjection.agents}
+        agents={herdProjection.agents.map(item => ({
+          ...item,
+          terminalStatus: terminals.get(item.hostId, sessions.state).sessions.find(
+            terminal => terminal.terminalId === item.agent.terminal_id,
+          )?.status,
+        }))}
         sessions={railSessions}
         selectedHostId={herdProjection.selectedHostId ?? null}
         workspaceFilterId={herdProjection.selectedWorkspaceId ?? null}

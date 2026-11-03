@@ -155,6 +155,7 @@ function AppContent() {
     ttsEnabled: preferences.value.ttsEnabled,
     appAccessLocked: security.locked,
     hostsVisible: navigation.state.tab === 'hosts',
+    transcriptCacheCapacity: preferences.value.terminal.xtermCacheCapacity,
     t,
     hosts,
     navigation,

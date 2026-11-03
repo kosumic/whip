@@ -50,7 +50,9 @@ export class NativeVoiceChat {
     this.core.transcript(AGENT[agent], available, replaced || (initial && baseline), state.transcript.turns.map(turn => ({
       id: turn.id,
       userText: turn.user?.parts.flatMap(part => part.type === 'text' ? [part.text] : []).join('\n') ?? '',
-      completed: turn.status === 'idle',
+      // Idle can cover prompt acknowledgements and gaps between assistant
+      // segments. Only the provider's final outcome completes the whole reply.
+      completed: turn.status === 'idle' && turn.details?.outcome === 'completed',
       failed: turn.status === 'error' || turn.status === 'interrupted',
       messages: speechMessages(turn.assistants),
     })));

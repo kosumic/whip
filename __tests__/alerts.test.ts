@@ -21,6 +21,7 @@ const mockNative = {
   transition: jest.fn(),
   dismiss: jest.fn(),
   setRuntime: jest.fn(),
+  setSuppression: jest.fn(),
   beginEffect: jest.fn(),
   completeEffect: jest.fn(),
 };
@@ -88,6 +89,7 @@ import {
   dismissAgentAlertsForPane,
   dismissAgentAlertsForTab,
   prepareAlerts,
+  suppressAgentAlertsForTab,
 } from '../src/services/alerts';
 import {
   armPersistentAgentAlert,
@@ -159,6 +161,7 @@ beforeEach(() => {
   mockNative.transition.mockReturnValue([]);
   mockNative.dismiss.mockReturnValue([]);
   mockNative.setRuntime.mockReturnValue([]);
+  mockNative.setSuppression.mockReturnValue([]);
   mockNative.beginEffect.mockReturnValue(LocalAlertEffectAdmission.Run);
   mockNative.completeEffect.mockReturnValue([]);
   mockPlayback.speakAnnouncement.mockResolvedValue('completed');
@@ -201,6 +204,19 @@ test('shows the real Herdr agent kind even when its managed name matches the tab
   await alertAgent({ ...agent, name: 'rev', display_agent: 'rev', agent_status: 'done' }, false, target, 'rev');
   expect(jest.mocked(Notifications.scheduleNotificationAsync).mock.calls[0][0].content.title)
     .toBe('rev · codex finished');
+});
+
+test('voice chat dismisses existing tab alerts and releases only its own suppression', async () => {
+  mockNative.setSuppression.mockReturnValueOnce([
+    effect('dismiss', new LocalAlertAction.DismissNotification({ notificationId: 'existing' })),
+  ]);
+  const release = suppressAgentAlertsForTab('call', target.hostId, agent.tab_id);
+  expect(mockNative.setSuppression).toHaveBeenCalledWith('call', expect.objectContaining({
+    tag: 'Tab', inner: { hostId: target.hostId, tabId: agent.tab_id },
+  }));
+  expect(Notifications.dismissNotificationAsync).toHaveBeenCalledWith('existing');
+  release();
+  expect(mockNative.setSuppression).toHaveBeenLastCalledWith('call', undefined);
 });
 
 test.each(['persistent', 'brief', 'regular'] as const)(

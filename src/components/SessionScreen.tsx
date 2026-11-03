@@ -6,6 +6,7 @@ import {
   useReducer,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
   type RefObject,
 } from 'react';
@@ -340,6 +341,9 @@ export function SessionScreen({
   const [chatViews, setChatViews] = useState(
     () => new Map<string, AgentChatViewState>(),
   );
+  const transcriptResidency = useSyncExternalStore(
+    agentTranscriptService.subscribeResidency, agentTranscriptService.residencyVersion,
+  );
   const [appActive, setAppActive] = useState(() => AppState.currentState !== 'background');
   useEffect(() => {
     const subscription = AppState.addEventListener('change', state => setAppActive(state === 'active'));
@@ -629,6 +633,14 @@ export function SessionScreen({
   const voiceChatState = savedChatOpen ? activeSavedChat?.state : activeChatView?.state;
   const voiceChatKey = savedChatOpen ? activeSavedChat?.state.sessionId : activeChatView?.binding.bindingToken;
   const voiceChatAgent = savedChatOpen ? activeSavedChat?.agent : activeChatView?.binding.agent;
+  const liveVoiceChatAgent = chatAgentForPane(activePane);
+  const foregroundTranscriptHost = visible && appActive && liveVoiceChatAgent && activeTarget?.session.kind !== 'ssh'
+    ? activeTarget?.hostSessionId : undefined;
+  const foregroundTranscriptTerminal = foregroundTranscriptHost ? activeTarget?.session.terminalId : undefined;
+  useLayoutEffect(() => {
+    if (!foregroundTranscriptHost || !foregroundTranscriptTerminal) return;
+    return agentTranscriptService.retainForegroundTerminal(foregroundTranscriptHost, foregroundTranscriptTerminal);
+  }, [foregroundTranscriptHost, foregroundTranscriptTerminal]);
   const onChatSpeechError = useCallback((error: unknown) => {
     setAppAlert({ title: 'Could not read chat aloud', message: String(error) });
   }, []);
@@ -901,6 +913,21 @@ export function SessionScreen({
     setChatViews(next);
     agentTranscriptService.closeTerminal(target.hostSessionId, terminalId, target.client.native);
   }, [updateChatRestoreIntent]);
+
+  useEffect(() => {
+    const next = new Map(chatViewsRef.current);
+    for (const [key, view] of next) {
+      if (key === activeChatKey || agentTranscriptService.getState(view.binding.bindingToken)) continue;
+      if (chatPresentationRequested(view.presentation)) {
+        updateChatRestoreIntent(key, view.binding.transcriptKey);
+      }
+      next.delete(key);
+    }
+    if (next.size !== chatViewsRef.current.size) {
+      chatViewsRef.current = next;
+      setChatViews(next);
+    }
+  }, [activeChatKey, transcriptResidency, updateChatRestoreIntent]);
 
   useEffect(() => {
     const activeId = visible ? activeTarget?.key : null;
@@ -1775,14 +1802,15 @@ export function SessionScreen({
                 : undefined
             }
             chatViewEnabled={chatVisible}
-            transcriptReady={Boolean(voiceChatState && voiceChatKey && agentTranscriptReadiness(voiceChatState) === 'usable')}
-            voiceChatTarget={!savedChatOpen && activeChatView && activePane
+            voiceChatTarget={!savedChatOpen && liveVoiceChatAgent && activePane && activeTarget && activeTarget.session.kind !== 'ssh' &&
+              (!activeChatView || agentTranscriptReadiness(activeChatView.state) !== 'failed')
               ? {
-                  agent: activeChatView.binding.agent,
-                  bindingToken: activeChatView.binding.bindingToken,
+                  agent: liveVoiceChatAgent,
+                  bindingToken: activeChatView?.binding.bindingToken,
                   hostId: hostSessionId,
                   paneId: activePane.pane_id,
-                  label: chatAgentDisplayName(activeChatView.binding.agent),
+                  tabId: activePane.tab_id,
+                  label: chatAgentDisplayName(liveVoiceChatAgent),
                 }
               : undefined}
             voiceContext={chatVisible && voiceChatState && voiceChatKey

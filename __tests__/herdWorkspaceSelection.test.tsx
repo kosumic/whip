@@ -147,6 +147,7 @@ jest.mock(
     appGlassControlStyle: () => undefined,
     colorWithAlpha: (color: string) => color,
     statusColor: () => '#000',
+    sessionTabStatusColor: jest.requireActual('../src/theme').sessionTabStatusColor,
     useTheme: () => ({
       colors: {
         error: '#f00',

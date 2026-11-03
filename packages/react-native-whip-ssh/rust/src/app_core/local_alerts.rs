@@ -161,6 +161,7 @@ struct Persistent {
 #[derive(Default)]
 struct CoordinatorState {
     alerts: BTreeMap<String, Alert>,
+    suppressions: HashMap<String, LocalAlertScope>,
     effects: HashMap<String, PendingEffect>,
     runtimes: HashMap<String, Option<LocalAlertRuntime>>,
     announcement: Option<String>,
@@ -246,7 +247,12 @@ impl CoordinatorState {
 
     fn admit(&mut self, request: LocalAlertRequest) -> Vec<LocalAlertEffect> {
         let mut output = Vec::new();
-        if !self.runtime_current(&request) {
+        if !self.runtime_current(&request)
+            || self
+                .suppressions
+                .values()
+                .any(|scope| scope.matches(&request))
+        {
             return output;
         }
         let speak = request.announcement.is_some();
@@ -543,6 +549,25 @@ impl LocalAlertCoordinator {
 
     pub fn dismiss(&self, scope: LocalAlertScope) -> Vec<LocalAlertEffect> {
         self.state.lock().dismiss(&scope)
+    }
+
+    /// A call owns its suppression token until hangup, independent of UI focus.
+    /// Dismiss first so pending platform completions cannot revive old alerts.
+    pub fn set_suppression(
+        &self,
+        token: String,
+        scope: Option<LocalAlertScope>,
+    ) -> Vec<LocalAlertEffect> {
+        let mut state = self.state.lock();
+        if let Some(scope) = scope {
+            let effects = state.dismiss(&scope);
+            state.suppressions.insert(token, scope);
+            effects
+        } else {
+            state.suppressions.remove(&token);
+            drop(state);
+            Vec::new()
+        }
     }
 
     pub fn set_runtime(

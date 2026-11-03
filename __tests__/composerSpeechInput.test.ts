@@ -23,6 +23,7 @@ function setup() {
     }),
     isRecognitionAvailable: jest.fn(() => true),
     requestPermissionsAsync: jest.fn(async () => ({ granted: true })),
+    getPermissionsAsync: jest.fn(async () => ({ granted: true })),
     start: jest.fn(), stop: jest.fn(), abort: jest.fn(),
   };
   let phase: ComposerDictationPhase = 'idle';
@@ -576,6 +577,40 @@ test('a system-managed call retains shared local capture when the app background
   expect(controller.getSnapshot().phase).toBe('listening');
   expect(recognizer.start).toHaveBeenCalledWith(expect.objectContaining({ iosAudioSessionManaged: true }));
   controller.cancel(request.owner); emit('end');
+});
+
+test('an authorized call starts background segments without another activity permission request', async () => {
+  const { controller, request, recognizer, emit } = setup();
+  Object.assign(recognizer, { supportsOnDeviceRecognition: () => true, supportsAudioChunkEvents: () => true });
+  controller.reserve(request.owner);
+  await controller.authorizeLocal();
+  // Android cannot deliver an activity permission result until Whip resumes.
+  recognizer.requestPermissionsAsync.mockImplementation(() => new Promise(() => {}));
+  for (let turn = 0; turn < 2; turn++) {
+    await controller.start({ ...request, localOnly: true, managedCall: true });
+    emit('start');
+    for (const listener of mockAppListeners) listener('background');
+    expect(controller.getSnapshot().phase).toBe('listening');
+    controller.stop(request.owner);
+    emit('end');
+  }
+  expect(recognizer.requestPermissionsAsync).toHaveBeenCalledTimes(1);
+  expect(recognizer.getPermissionsAsync).toHaveBeenCalledTimes(2);
+  expect(recognizer.start).toHaveBeenCalledTimes(2);
+  controller.releaseReservation(request.owner);
+});
+
+test('a call stops recording when its previously granted microphone permission is revoked', async () => {
+  const { controller, request, recognizer } = setup();
+  Object.assign(recognizer, { supportsOnDeviceRecognition: () => true, supportsAudioChunkEvents: () => true });
+  controller.reserve(request.owner);
+  await controller.authorizeLocal();
+  recognizer.getPermissionsAsync.mockResolvedValueOnce({ granted: false });
+  await controller.start({ ...request, localOnly: true, managedCall: true });
+  expect(recognizer.start).not.toHaveBeenCalled();
+  expect(request.onError).toHaveBeenCalledWith('permission');
+  expect(controller.getSnapshot().phase).toBe('idle');
+  controller.releaseReservation(request.owner);
 });
 
 test('only a reserved local system call can monitor speech without suspending playback', async () => {

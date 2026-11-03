@@ -8,7 +8,6 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Person
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
@@ -28,6 +27,11 @@ import androidx.core.telecom.CallControlScope
 import androidx.core.telecom.CallEndpointCompat
 import androidx.core.telecom.CallsManager
 import com.facebook.react.bridge.Promise
+import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.ReactApplicationContext
+import com.facebook.react.jstasks.HeadlessJsTaskConfig
+import com.facebook.react.jstasks.HeadlessJsTaskContext
+import com.whipssh.HostRuntimeMonitoring
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -85,6 +89,7 @@ class VoiceCallService : Service() {
   @RequiresApi(Build.VERSION_CODES.TIRAMISU)
   @SuppressLint("MissingPermission", "WakelockTimeout")
   private fun connect(session: Session) {
+    HostRuntimeMonitoring.setOwnerActive(this, true)
     wakeLock = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:voice-call")
       .apply { acquire() } // Released with this user-started system call, including every failure path.
     session.job = scope.launch {
@@ -131,6 +136,7 @@ class VoiceCallService : Service() {
                 if (current !== session || session.ending) { disconnect(DisconnectCause(DisconnectCause.LOCAL)); return@launch }
                 session.ready = true
                 main.removeCallbacks(session.timeout)
+                SpeechPlayback.warmUp(this@VoiceCallService)
                 session.start?.resolve(null)
                 session.start = null
                 promote(session)
@@ -211,13 +217,16 @@ class VoiceCallService : Service() {
   }
 
   override fun onDestroy() {
+    SpeechPlayback.shutdown()
     current?.let { session ->
+      session.finishBackgroundTask()
       main.removeCallbacks(session.timeout)
       session.start?.reject("E_VOICE_CALL", "The system stopped voice chat.")
       if (!session.ending) emit(session, "ended")
       session.endings.forEach { it.resolve(null) }
     }
     current = null
+    HostRuntimeMonitoring.setOwnerActive(this, false)
     wakeLock?.let { if (it.isHeld) it.release() }; wakeLock = null
     scope.cancel()
     instance = null
@@ -225,6 +234,13 @@ class VoiceCallService : Service() {
   }
 
   private class Session(val token: String, val label: String, var start: Promise?) {
+    var taskContext: HeadlessJsTaskContext? = null
+    var taskId: Int? = null
+    fun finishBackgroundTask() {
+      taskId?.let { taskContext?.finishTask(it) }
+      taskId = null
+      taskContext = null
+    }
     var control: CallControlScope? = null
     var job: Job? = null
     var ready = false
@@ -239,6 +255,7 @@ class VoiceCallService : Service() {
       val service = instance
       if (service != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) service.finish(this, "The system voice call did not start.")
       else if (current === this) {
+        finishBackgroundTask()
         current = null
         start?.reject("E_VOICE_CALL", "The system voice call service did not start.")
         start = null
@@ -263,7 +280,7 @@ class VoiceCallService : Service() {
     val audioAttributes: AudioAttributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
       .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
 
-    fun start(context: Context, token: String, label: String, promise: Promise) {
+    fun start(context: ReactApplicationContext, token: String, label: String, promise: Promise) {
       if (current != null) { promise.reject("E_VOICE_CALL", "A voice call is already active."); return }
       if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
         promise.reject("E_VOICE_CALL", "Microphone permission and Android 13 or later are required."); return
@@ -271,9 +288,15 @@ class VoiceCallService : Service() {
       val session = Session(token, label, promise)
       current = session
       try {
+        // Foreground service protection does not keep React Native timers alive.
+        // Recognizer restarts and reply draining must run with the activity paused.
+        session.taskContext = HeadlessJsTaskContext.getInstance(context)
+        session.taskId = session.taskContext!!.startTask(HeadlessJsTaskConfig(
+          EVENT, Arguments.createMap().apply { putString("token", token) }, 0, true,
+        ))
         context.startForegroundService(Intent(context, VoiceCallService::class.java).setAction(START).putExtra(TOKEN, token))
         main.postDelayed(session.timeout, 15_000)
-      } catch (error: Exception) { current = null; promise.reject("E_VOICE_CALL", error) }
+      } catch (error: Exception) { session.finishBackgroundTask(); current = null; promise.reject("E_VOICE_CALL", error) }
     }
     fun end(token: String, promise: Promise? = null) {
       if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) { promise?.resolve(null); return }
@@ -283,6 +306,7 @@ class VoiceCallService : Service() {
       val service = instance
       if (service != null) service.finish(session, null)
       else {
+        session.finishBackgroundTask()
         main.removeCallbacks(session.timeout)
         current = null
         session.start?.reject("E_VOICE_CALL", "Voice call was cancelled.")

@@ -1,11 +1,37 @@
 import { TerminalComposerStore, type ComposeAttachment } from '../src/lib/terminalComposerStore';
 import { terminalRendererKey } from '../src/lib/terminalRenderer';
+import type { TerminalRenderTarget } from '../src/lib/terminalRenderer';
 import { TerminalSubmissionQueue, TerminalSubmissionStatus, TerminalSubmissionFailure } from '../test-support/mockTerminalSubmissions';
 
 const first = terminalRendererKey('host-1', 'terminal-1');
 const second = terminalRendererKey('host-2', 'terminal-1');
 const attachment = (id: number): ComposeAttachment => ({
   id, remotePath: `/remote/file-${id}`, previewUri: null, dispose: jest.fn(),
+});
+
+test('Herdr messages wait for the host connection and can send with a released viewport', async () => {
+  const store = new TerminalComposerStore();
+  let connected = false;
+  const target = {
+    key: first,
+    client: { native: { runtimeId: 'host-1', runtimeIncarnation: 1, status: () => ({ state: connected ? 'connected' : 'disconnected' }) } },
+    session: { terminalId: 'terminal-1', paneId: 'pane-1', kind: 'herdr', status: 'disconnected' },
+  } as unknown as TerminalRenderTarget;
+  const history = jest.fn();
+  store.updateSubmissionTargets([target]);
+  store.attachSubmissions(async (permit, _key, parts) => { await permit.dispatch(parts); }, history);
+  store.enqueue(first, 'Voice prompt', []);
+  store.startSubmissions();
+  await Promise.resolve();
+  expect(store.snapshot(first).queue).toHaveLength(1);
+  expect(history).not.toHaveBeenCalled();
+
+  connected = true;
+  store.updateSubmissionTargets([target]);
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(store.snapshot(first).queue).toHaveLength(0);
+  expect(history).toHaveBeenCalledWith('Voice prompt');
 });
 
 test('submitting transfers the complete draft to its queue in one notification', () => {

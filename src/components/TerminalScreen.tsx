@@ -1,4 +1,6 @@
 import { ChatSearchBar } from './ChatSearchBar';
+import { prepareTerminalPaste } from '../lib/terminalPaste';
+import { recordDiagnostic } from '../services/diagnosticFormatting';
 import { FLOATING_WARNING_BANNER_HEIGHT, FloatingWarningBanner, FloatingWarningOffsetContext } from './FloatingWarningBanner';
 import { GitHubMark } from './GitHubMark';
 import { EMPTY_TERMINAL_SEARCH } from '../lib/terminalSearch';
@@ -146,7 +148,7 @@ import {
   type TerminalRendererHandle,
 } from './TerminalRendererHost';
 import { ComposerInput, ComposerVoiceButton, MessageComposer } from './MessageComposer';
-import type { ChatSpeechTarget } from '../services/chatSpeech';
+import type { VoiceChatTarget } from '../services/voiceConversation';
 import { GlassOverlayHost, GlassPortal, GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import {
   OverlayScrollbar,
@@ -211,8 +213,7 @@ interface Props {
     onPress: () => void;
   };
   chatViewEnabled: boolean;
-  transcriptReady?: boolean;
-  voiceChatTarget?: ChatSpeechTarget;
+  voiceChatTarget?: VoiceChatTarget;
   voiceContext?: { key: string; messages: readonly TranscriptMessage[] };
   renderViewportOverlay?: (
     insets: VisualContentInsets,
@@ -430,7 +431,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       onRequestLinks,
       chatControl,
       chatViewEnabled,
-      transcriptReady = false,
       voiceChatTarget,
       voiceContext,
       renderViewportOverlay,
@@ -447,10 +447,14 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const { colors: appColors } = useTheme();
     const [voiceChatOpen, setVoiceChatOpen] = useState<string | null>(null);
     const [voiceChatExpanded, setVoiceChatExpanded] = useState(true);
+    const [voiceChatComposing, setVoiceChatComposing] = useState(false);
     const voiceChatRef = useRef<VoiceChatHandle>(null);
-    const voiceChatIdentity = voiceChatTarget ? JSON.stringify([activeTarget?.key, voiceChatTarget.bindingToken]) : null;
+    const voiceChatIdentity = voiceChatTarget ? JSON.stringify([activeTarget?.key, voiceChatTarget.agent]) : null;
+    const voiceChatActive = Boolean(voiceChatOpen && voiceChatOpen === voiceChatIdentity);
+    const voiceSubmissionTarget = useRef<string | undefined>(undefined);
+    voiceSubmissionTarget.current = voiceChatActive ? activeTarget?.key : undefined;
     useEffect(() => { setVoiceChatOpen(null); }, [voiceChatIdentity]);
-    const openVoiceChat = () => { Keyboard.dismiss(); setVoiceChatExpanded(true); setVoiceChatOpen(voiceChatIdentity); };
+    const openVoiceChat = () => { Keyboard.dismiss(); setVoiceChatComposing(false); setVoiceChatExpanded(true); setVoiceChatOpen(voiceChatIdentity); };
     const appGlassEnabled = useAppGlassEnabled();
     useClipboardCopyFeedback(visible);
     const { t } = useTranslation();
@@ -505,6 +509,10 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       () => composerStore.snapshot(activeTarget?.key || ''),
     );
     const { composeOpen, composeExpanded } = composer;
+    const voiceComposerVisible = voiceChatActive && !voiceChatComposing && !composeExpanded
+      && !composer.text && !composer.attachments.length && !composer.queue.length && !composer.imagePastes.size;
+    const normalComposerVisible = composeOpen && !voiceComposerVisible;
+    const anyComposerVisible = normalComposerVisible || voiceComposerVisible;
     const composeOpenRef = useRef(composeOpen);
     // Each visit gets its own identity, including A -> B -> A and hide/show.
     const composerContextRef = useRef({ targetKey: activeTarget?.key, visible, restoration: composer.restoration, chatViewEnabled });
@@ -601,7 +609,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         terminalViewportLayout({
           composerExpanded: composeExpanded,
           composerHeight,
-          composerVisible: composeOpen,
+          composerVisible: anyComposerVisible,
           controlBarHeight,
           cursorBottom,
           keyboardInset: keyboardOffset,
@@ -612,7 +620,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         }),
       [
         composeExpanded,
-        composeOpen,
+        anyComposerVisible,
         composerHeight,
         controlBarHeight,
         cursorBottom,
@@ -632,15 +640,16 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     });
     const composerStyle = useAnimatedStyle(() => ({ bottom: animatedComposerBottom.value }));
     const animatedOverlayBottom = useDerivedValue(() => animatedComposerBottom.value
-      + (composeOpen && !composeExpanded ? Math.max(0, composerHeight) : 0));
-    const voiceChatFloatingStyle = useAnimatedStyle(() => ({ bottom: animatedOverlayBottom.value + 12 }));
+      + (anyComposerVisible && !composeExpanded ? Math.max(0, composerHeight) : 0));
+    const voiceChatDockStyle = useAnimatedStyle(() => ({ bottom: voiceComposerVisible
+      ? animatedComposerBottom.value : animatedOverlayBottom.value }));
     const expandedComposerStyle = useAnimatedStyle(() => ({
       paddingTop: topSafeAreaInset,
       paddingBottom: Math.max(bottomSafeAreaInset, animatedHeight.value),
     }));
     const terminalCanvasStyle = useAnimatedStyle(() => ({
       transform: [{ translateY: terminalViewportLayout({
-        composerExpanded: composeExpanded, composerHeight, composerVisible: composeOpen,
+        composerExpanded: composeExpanded, composerHeight, composerVisible: anyComposerVisible,
         controlBarHeight, keyboardInset: terminalKeyboardOffset(animatedKeyboardInset.value, bottomSafeAreaInset), topInset: 0,
         restingInputClearance,
         sessionChromeInset,
@@ -1192,9 +1201,19 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
 
     useEffect(() => composerStore.attachSubmissions(async (permit, key, parts, firstAttempt) => {
       const target = targetsRef.current.find(item => item.key === key);
-      const terminalRenderer = renderer.current;
-      if (!target || !terminalRenderer) throw new Error('Terminal renderer is unavailable');
-      await terminalRenderer.submitPastes(target, parts, firstAttempt, permit);
+      const voice = voiceSubmissionTarget.current === key;
+      if (voice) recordDiagnostic('info', 'VoiceChat', 'prompt-dispatch-start', { appState: AppState.currentState });
+      if (target && target.session.kind !== 'ssh' && voice && AppState.currentState !== 'active') {
+        // A paused terminal cannot acknowledge its IME barrier or attach a
+        // viewport. The native queue still owns ordering and destination fencing.
+        permit.checkActive();
+        await permit.dispatch(parts.map(prepareTerminalPaste));
+      } else {
+        const terminalRenderer = renderer.current;
+        if (!target || !terminalRenderer) throw new Error('Terminal renderer is unavailable');
+        await terminalRenderer.submitPastes(target, parts, firstAttempt, permit);
+      }
+      if (voice) recordDiagnostic('info', 'VoiceChat', 'prompt-dispatch-complete', { appState: AppState.currentState });
     }, entry => onHistoryEntryRef.current(entry)), [composerStore]);
 
     useEffect(() => { composerStore.updateSubmissionTargets(targets); }, [composerStore, targets]);
@@ -1315,6 +1334,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       await closeComposerKeyboard();
       if (!isComposerCurrent() || transition !== composeTransitionRef.current) return;
       composerStore.setToggles(targetKey, false);
+      setVoiceChatComposing(false);
       restoreKeyboardAfterCompose();
       afterClose?.();
     };
@@ -1322,6 +1342,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const openCompose = () => {
       const targetKey = composerContext.targetKey;
       if (!targetKey || !isComposerCurrent()) return;
+      setVoiceChatComposing(true);
       composeTransitionRef.current += 1;
       setSearchOpen(false);
       setHistoryOpen(false);
@@ -1866,8 +1887,10 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       },
       onBlur: () => {
         if (composerContextRef.current === composerContext &&
-            composerStore.snapshot(activeTarget?.key || '').composeExpanded === composeExpanded)
+            composerStore.snapshot(activeTarget?.key || '').composeExpanded === composeExpanded) {
           requestKeyboardFocus(false);
+          setVoiceChatComposing(false);
+        }
       },
       onSelectionChange: ({ nativeEvent: { selection } }) => {
         if (composerContextRef.current === composerContext)
@@ -2179,15 +2202,16 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             </View>
           </View>
         )}
-        {voiceChatOpen && voiceChatOpen === voiceChatIdentity && voiceChatTarget && (
+        {voiceChatActive && voiceChatTarget && (
           <Suspense fallback={null}>
             <VoiceChatScreen ref={voiceChatRef} target={voiceChatTarget} send={text => activeTargetRef.current?.key === activeTarget?.key && enqueueComposeMessage(text, [])}
-              visible={visible} expanded={voiceChatExpanded} floatingStyle={voiceChatFloatingStyle}
+              visible={visible && (voiceChatExpanded || !composeExpanded)} expanded={voiceChatExpanded} dockStyle={voiceChatDockStyle}
+              compactComposer={voiceComposerVisible} onComposerHeightChange={setComposerHeight}
               onCompose={openCompose} onAttach={() => onRequestAttachment?.()}
-              onMinimize={() => setVoiceChatExpanded(false)} onExpand={openVoiceChat} onClose={() => setVoiceChatOpen(null)} />
+              onMinimize={() => { setVoiceChatComposing(false); setVoiceChatExpanded(false); }} onExpand={openVoiceChat} onClose={() => setVoiceChatOpen(null)} />
           </Suspense>
         )}
-        {visible && composeOpen && !composeExpanded && (
+        {visible && normalComposerVisible && !composeExpanded && (
           <GlassPortal name={`terminal-composer-${terminalId}`}>
             <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
               <Animated.View
@@ -2206,7 +2230,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                   {...composerInputProps}
                   glass={appGlassEnabled}
                   inputRef={composeInputRef}
-                  voiceChatLabel={voiceChatTarget && transcriptReady && !composer.attachments.length ? t('terminal.voice.chat') : undefined}
+                  voiceChatLabel={voiceChatTarget && !composer.attachments.length ? t('terminal.voice.chat') : undefined}
                   onVoiceChat={openVoiceChat}
                   inputClassName={appGlassEnabled ? 'text-foreground' : 'text-terminal-text'}
                   surfaceClassName={appGlassEnabled ? undefined : 'border-terminal-divider bg-terminal-surface'}
@@ -2261,6 +2285,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                   control,
                   keyboardVisible,
                   chatViewEnabled,
+                  composeOpen,
                 ),
               )
               .map(renderTerminalControl)}
