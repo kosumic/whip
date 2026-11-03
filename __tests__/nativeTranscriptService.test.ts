@@ -151,6 +151,44 @@ function cacheRemote(index: number, hostSessionId = 'host', sharedSession = `ses
 }
 
 describe('attention-ranked transcript cache', () => {
+  test('a selected new transcript finishes loading before its viewport subscribes', async () => {
+    const service = new NativeTranscriptService();
+    const remotes = Array.from({ length: 4 }, (_, index) => cacheRemote(index + 1));
+    const ranked = remotes.slice(0, 3).map(remote => remote.target);
+    service.reconcileCache(3, ranked, []);
+    const selected = remotes[3];
+    const releaseSelection = service.retainForegroundTerminal('host', selected.target.terminalId);
+    const projection = service.preload('host', selected.target.terminalId, selected.value);
+    expect(projection?.type).toBe('bound');
+    for (let render = 0; render < 5; render++) service.reconcileCache(3, ranked, []);
+    await flush();
+    expect(selected.value.startAgentChat).toHaveBeenCalledTimes(1);
+    expect(selected.value.detachAgentChat).not.toHaveBeenCalled();
+    expect(service.getState(selected.binding.bindingToken)).not.toBeNull();
+
+    const stop = service.subscribe(selected.binding.bindingToken, jest.fn());
+    releaseSelection();
+    service.reconcileCache(3, ranked, []);
+    expect(service.getState(selected.binding.bindingToken)).not.toBeNull();
+    stop();
+    service.reconcileCache(3, ranked, []);
+    expect(service.getState(selected.binding.bindingToken)).toBeNull();
+  });
+
+  test('overlapping foreground owners release their selected transcript independently', () => {
+    const service = new NativeTranscriptService();
+    const selected = cacheRemote(1);
+    const first = service.retainForegroundTerminal('host', selected.target.terminalId);
+    const second = service.retainForegroundTerminal('host', selected.target.terminalId);
+    service.preload('host', selected.target.terminalId, selected.value);
+    first(); first();
+    service.reconcileCache(3, [], []);
+    expect(service.getState(selected.binding.bindingToken)).not.toBeNull();
+    second();
+    service.reconcileCache(3, [], []);
+    expect(service.getState(selected.binding.bindingToken)).toBeNull();
+  });
+
   test('loads only the highest ranked transcripts across hosts and promotes newly urgent tabs', () => {
     const service = new NativeTranscriptService();
     const remotes = [cacheRemote(1), cacheRemote(2, 'other-host'), cacheRemote(3), cacheRemote(4), cacheRemote(5)];

@@ -1090,6 +1090,26 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     }
   });
 
+  test('an unranked selected transcript keeps loading until Chat subscribes or the app backgrounds', async () => {
+    const host = setup(agent);
+    const binding = bindChat(host, agent);
+    host.native.startAgentChat.mockImplementation(() => ({ type: 'started', state: binding.state }));
+    agentTranscriptService.reconcileCache(3, [], []);
+    await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+    expect(ui('TerminalScreen').props.chatViewEnabled).toBe(false);
+    for (let update = 0; update < 5; update++) {
+      await act(async () => { agentTranscriptService.reconcileCache(3, [], []); });
+    }
+    expect(agentTranscriptService.getState(binding.bindingToken)?.status).toBe('loading');
+    expect(host.native.startAgentChat).toHaveBeenCalledTimes(1);
+    expect(host.native.detachAgentChat).not.toHaveBeenCalled();
+
+    act(() => { for (const listener of mockAppStateListeners) listener('background'); });
+    act(() => { agentTranscriptService.reconcileCache(3, [], []); });
+    expect(agentTranscriptService.getState(binding.bindingToken)).toBeNull();
+    expect(host.native.detachAgentChat).toHaveBeenCalledWith(binding.terminalId);
+  });
+
   test('Chat can request a preloaded binding while remote synchronization is still loading', async () => {
     const host = setup(agent);
     const binding = bindChat(host, agent);

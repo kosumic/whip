@@ -20,6 +20,13 @@ Reference inspected: OpenCode commit
 
 ## Accounting and lifecycle
 
+The selected foreground agent retains its transcript cache entry before the
+chat viewport subscribes. This also permits an idle or brand-new agent to
+preload outside the attention ranking. Cache reconciliation preserves that
+loading binding instead of repeatedly detaching it and restarting discovery.
+Selection retention ends when the app backgrounds, the selection changes, or
+the screen unmounts; active transcript subscribers retain their own entries.
+
 Rust normalizes input/output counts to include their respective subsets:
 
 | Source | Input | Output | Outcome |

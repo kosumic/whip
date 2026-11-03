@@ -624,6 +624,13 @@ export function SessionScreen({
   const voiceChatKey = savedChatOpen ? activeSavedChat?.state.sessionId : activeChatView?.binding.bindingToken;
   const voiceChatAgent = savedChatOpen ? activeSavedChat?.agent : activeChatView?.binding.agent;
   const liveVoiceChatAgent = chatAgentForPane(activePane);
+  const foregroundTranscriptHost = visible && appActive && liveVoiceChatAgent && activeTarget?.session.kind !== 'ssh'
+    ? activeTarget?.hostSessionId : undefined;
+  const foregroundTranscriptTerminal = foregroundTranscriptHost ? activeTarget?.session.terminalId : undefined;
+  useLayoutEffect(() => {
+    if (!foregroundTranscriptHost || !foregroundTranscriptTerminal) return;
+    return agentTranscriptService.retainForegroundTerminal(foregroundTranscriptHost, foregroundTranscriptTerminal);
+  }, [foregroundTranscriptHost, foregroundTranscriptTerminal]);
   const onChatSpeechError = useCallback((error: unknown) => {
     setAppAlert({ title: 'Could not read chat aloud', message: String(error) });
   }, []);
