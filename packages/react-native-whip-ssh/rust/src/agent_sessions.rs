@@ -288,13 +288,6 @@ impl TranscriptActivity {
     }
 }
 
-fn transcript_preload_status(status: &HerdrAgentStatus) -> bool {
-    matches!(
-        status,
-        HerdrAgentStatus::Working | HerdrAgentStatus::Blocked | HerdrAgentStatus::Done
-    )
-}
-
 fn transcript_active(
     terminals: &HashSet<TerminalId>,
     statuses: &HashMap<TerminalId, HerdrAgentStatus>,
@@ -1113,7 +1106,7 @@ impl AgentSessionManager {
         identities: &HashMap<TerminalId, AuthoritativeAgentChatIdentity>,
         revision: u64,
     ) -> Option<AgentTranscriptRetention> {
-        let reconciliation = self.inner.reconciliation.lock();
+        let _reconciliation = self.inner.reconciliation.lock();
         let retained: HashSet<_> = identities
             .values()
             .map(|identity| self.transcript_key(identity))
@@ -1135,7 +1128,7 @@ impl AgentSessionManager {
                 return None;
             }
             state.retention_revision = Some(revision);
-            let mut changes = state
+            state
                 .terminal_bindings
                 .iter()
                 .filter_map(|(terminal_id, binding)| {
@@ -1151,44 +1144,14 @@ impl AgentSessionManager {
                         Some((terminal_id.clone(), current.cloned()))
                     }
                 })
-                .collect::<Vec<_>>();
-            // Only authoritative, supported session identities can get here.
-            // Preload active and completed agents even without a terminal UI.
-            changes.extend(
-                identities
-                    .iter()
-                    .filter(|(terminal_id, _)| {
-                        !state.terminal_bindings.contains_key(*terminal_id)
-                            && state
-                                .agent_statuses
-                                .get(*terminal_id)
-                                .is_some_and(transcript_preload_status)
-                    })
-                    .map(|(terminal_id, identity)| (terminal_id.clone(), Some(identity.clone()))),
-            );
-            changes
+                .collect::<Vec<_>>()
         };
-        let mut preloads = Vec::new();
         for (terminal_id, identity) in changes {
             if let Some(identity) = identity {
                 // `bind_authoritative` replaces the terminal mapping under one
                 // manager lock, then releases an orphaned old transcript.
-                match self.bind_authoritative_inner(identity) {
-                    Ok(binding) => {
-                        if self
-                            .inner
-                            .state
-                            .lock()
-                            .agent_statuses
-                            .get(&terminal_id)
-                            .is_some_and(transcript_preload_status)
-                        {
-                            preloads.push(binding.binding_token);
-                        }
-                    }
-                    Err(_) => {
-                        self.close_terminal_inner(&terminal_id);
-                    }
+                if self.bind_authoritative_inner(identity).is_err() {
+                    self.close_terminal_inner(&terminal_id);
                 }
             } else {
                 self.close_terminal_inner(&terminal_id);
@@ -1212,17 +1175,6 @@ impl AgentSessionManager {
                 revision,
                 retained_keys.iter().cloned().collect(),
             );
-        }
-        drop(reconciliation);
-        if let Ok(runtime) = crate::runtime() {
-            for token in preloads {
-                let manager = self.clone();
-                runtime.spawn(async move {
-                    if let Err(error) = manager.start_bound(&token).await {
-                        crate::host_runtime::record_transcript_cache_failure(&error.to_string());
-                    }
-                });
-            }
         }
         Some(AgentTranscriptRetention {
             namespace: self.inner.runtime_id.clone(),
@@ -4550,7 +4502,7 @@ mod tests {
     }
 
     #[test]
-    fn transcript_preloading_restores_history_without_an_explicit_open() {
+    fn admitted_transcript_preload_restores_retained_history() {
         let (_directory, manager) = persisted_test_manager("host");
         let binding = manager
             .bind_codex("terminal".into(), SESSION.into())
@@ -4574,18 +4526,18 @@ mod tests {
             &HashMap::from([("terminal".into(), identity("terminal", SESSION))]),
             1,
         );
-        crate::runtime().unwrap().block_on(async {
-            tokio::time::timeout(Duration::from_secs(5), async {
-                loop {
-                    if manager.state(&binding.transcript_key).unwrap().messages == expected {
-                        break;
-                    }
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                }
-            })
-            .await
+        assert!(manager.terminal_binding("terminal").is_none());
+        let admitted = manager
+            .bind_authoritative(identity("terminal", SESSION))
             .unwrap();
-        });
+        crate::runtime()
+            .unwrap()
+            .block_on(manager.start_bound(&admitted.binding_token))
+            .unwrap();
+        assert_eq!(
+            manager.state(&binding.transcript_key).unwrap().messages,
+            expected
+        );
     }
 
     #[test]

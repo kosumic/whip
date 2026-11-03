@@ -1565,6 +1565,21 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     },
   );
 
+  test('attention cache eviction releases background Chat UI and restores its selection on return', async () => {
+    const host = setup(agent);
+    const binding = await openReadyChat(host, agent);
+    revealChat();
+    act(() => renderer.update(<SessionScreen {...host.props} visible={false} />));
+    act(() => agentTranscriptService.reconcileCache(3, [], []));
+    expect(host.native.detachAgentChat).toHaveBeenCalledWith(binding.terminalId);
+    expect(agentTranscriptService.getState(binding.bindingToken)).toBeNull();
+    expect(renderer.root.findAll(node => String(node.type) === 'AgentChatView')).toHaveLength(0);
+    await act(async () => renderer.update(<SessionScreen {...host.props} visible />));
+    revealChat();
+    expect(ui('AgentChatView').props.state.sessionId).toBe(binding.sessionId);
+    expect(agentTranscriptService.getState(binding.bindingToken)).not.toBeNull();
+  });
+
   test('LRU eviction archives Chat with its terminal and restores persisted history without a terminal frame', async () => {
     const host = setup(agent);
     const binding = await openReadyChat(host, agent);
