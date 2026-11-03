@@ -12,7 +12,11 @@ import {
   parseAgentNotificationTarget,
   restoreAgentNotificationTarget,
 } from '../lib/notificationNavigation';
-import { transitionAgentAlert } from '../services/alerts';
+import {
+  transitionAgentAlert,
+  retainAgentAlertSpeech,
+  setAgentAlertSpeechEnabled,
+} from '../services/alerts';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import {
   defaultDevicePreferences,
@@ -24,6 +28,7 @@ import type { HerdrSnapshot, PaneInfo } from '../types';
 interface AgentStateChange {
   sessionId: string;
   snapshot: HerdrSnapshot;
+  fresh: boolean;
   transitions: RuntimeAgentStatusTransition[];
 }
 
@@ -49,24 +54,42 @@ export function useAgentNotificationSideEffects({
   persistentAlertDurationSecondsRef.current = persistentAlertDurationSeconds;
   ttsEnabledRef.current = ttsEnabled;
 
+  useEffect(() => {
+    reportBackgroundFailure(
+      setAgentAlertSpeechEnabled(alertsEnabled && ttsEnabled),
+      'agent-alert-speech-preferences',
+    );
+  }, [alertsEnabled, ttsEnabled]);
+
   return useCallback(
-    ({
-      sessionId,
-      snapshot,
-      transitions,
-    }: AgentStateChange): void => {
+    ({ sessionId, snapshot, transitions, fresh }: AgentStateChange): void => {
+      reportBackgroundFailure(
+        retainAgentAlertSpeech(
+          sessionId,
+          snapshot.agents,
+          fresh && alertsEnabledRef.current && ttsEnabledRef.current,
+        ),
+        'agent-alert-speech-snapshot',
+      );
       for (const transition of transitions) {
         const { paneId, current: status } = transition;
         const agent = snapshot.agents.find(item => item.pane_id === paneId);
         reportBackgroundFailure(
-          transitionAgentAlert(agent, status, { hostId: sessionId, paneId }, {
-            enabled: alertsEnabledRef.current,
-            speak: ttsEnabledRef.current,
-            foreground: AppState.currentState === 'active',
-            delivery: agentAlertLevelRef.current,
-            timeoutMs: persistentAlertDurationSecondsRef.current * 1_000,
-            tabName: agent ? tabNameForAgent(agent, snapshot.tabs) : undefined,
-          }),
+          transitionAgentAlert(
+            agent,
+            status,
+            { hostId: sessionId, paneId },
+            {
+              enabled: alertsEnabledRef.current,
+              speak: fresh && ttsEnabledRef.current,
+              foreground: AppState.currentState === 'active',
+              delivery: agentAlertLevelRef.current,
+              timeoutMs: persistentAlertDurationSecondsRef.current * 1_000,
+              tabName: agent
+                ? tabNameForAgent(agent, snapshot.tabs)
+                : undefined,
+            },
+          ),
           'agent-alert-transition',
         );
         recordNetworkDiagnostic('info', 'agent-status-state-change', {
@@ -105,28 +128,47 @@ export function useAgentNotificationNavigation({
 }): void {
   const openNotificationTarget = useEffectEvent(async () => {
     if (!notifications.response) return;
-    const target = parseAgentNotificationTarget(notifications.response, Notifications.DEFAULT_ACTION_IDENTIFIER);
+    const target = parseAgentNotificationTarget(
+      notifications.response,
+      Notifications.DEFAULT_ACTION_IDENTIFIER,
+    );
     if (!target || notifications.wasHandled(target.notificationId)) return;
     try {
       const host = hosts.getHosts().find(item => item.id === target.hostId);
-      if (!host) { hosts.setError('This notification belongs to a removed host'); return; }
+      if (!host) {
+        hosts.setError('This notification belongs to a removed host');
+        return;
+      }
       const resolved = await restoreAgentNotificationTarget({
-        target, getState,
+        target,
+        getState,
         connect: () => connectSavedHost(host),
         refresh: async sessionId => {
           const runtime = runtimesRef.current.get(sessionId);
-          if (!runtime) throw new Error('Connect to the notification host to open this pane');
+          if (!runtime)
+            throw new Error(
+              'Connect to the notification host to open this pane',
+            );
           const native = runtime.client.native;
           const ensureCurrent = () => {
-            if (runtimesRef.current.get(sessionId) !== runtime || runtime.client.activeNative !== native) {
-              throw new Error('The notification connection changed; open this host again');
+            if (
+              runtimesRef.current.get(sessionId) !== runtime ||
+              runtime.client.activeNative !== native
+            ) {
+              throw new Error(
+                'The notification connection changed; open this host again',
+              );
             }
           };
           if (native.status().state !== 'connected') {
             await native.recover(true, 'notification target opened');
           }
           if (target.remoteDeviceId) {
-            await verifyRemoteNotificationHost(target.hostId, target.remoteDeviceId, native);
+            await verifyRemoteNotificationHost(
+              target.hostId,
+              target.remoteDeviceId,
+              native,
+            );
           }
           ensureCurrent();
           const state = await runtime.client.refreshHostState();
@@ -138,11 +180,16 @@ export function useAgentNotificationNavigation({
       hosts.setError(null);
       openPaneTerminal(resolved.sessionId, resolved.pane, true);
       notifications.consume(target.notificationId);
-    } catch (error) { hosts.setError(String(error)); }
+    } catch (error) {
+      hosts.setError(String(error));
+    }
   });
 
   useEffect(() => {
     if (!restoreComplete || !notifications.response) return;
-    reportBackgroundFailure(openNotificationTarget(), 'notification-navigation');
+    reportBackgroundFailure(
+      openNotificationTarget(),
+      'notification-navigation',
+    );
   }, [notifications.response, restoreComplete]);
 }

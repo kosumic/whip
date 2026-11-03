@@ -21,6 +21,7 @@ import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.whipssh.SpeechPolicy
 import java.util.Locale
+import org.json.JSONObject
 import kotlin.math.sqrt
 
 /** One main-thread OS player. Rust owns admission, session ownership, and chat ordering. */
@@ -52,6 +53,96 @@ object SpeechPlayback : SensorEventListener {
 
   private val handler = Handler(Looper.getMainLooper())
   private var session: Session? = null
+  private var appContext: Context? = null
+  // Callback bookkeeping only. Rust owns queue contents, expiry and priority.
+  private val statusCallbacks = mutableMapOf<String, Promise>()
+  private var suspendedChat: Session? = null
+  private var boundaryCompletion: Promise? = null
+  private var deferredChat: QueuedChat? = null
+  private var statusOwner: String? = null
+
+  // Native adapter tests script admission while exercising the OS player.
+  internal var statusPolicy: (String, String, Long) -> String = SpeechPolicy::alertSpeech
+
+  private fun alertCommand(action: String, token: String = "", lease: Long = 0L) =
+    statusPolicy(action, token, lease)
+
+  fun announceStatus(context: Context, owner: String, promise: Promise) {
+    appContext = context.applicationContext
+    if (alertCommand("register", owner) != "true") { promise.resolve("busy"); return }
+    statusCallbacks[owner] = promise
+    drainStatus()
+  }
+
+  fun refreshStatus() { drainStatus() }
+
+  private fun drainStatus(): Boolean {
+    val invalid = statusCallbacks.keys.filter { it != statusOwner && alertCommand("valid", it) != "true" }
+    for (token in invalid) statusCallbacks.remove(token)?.resolve("busy")
+    val current = session
+    if (utteranceId != null || queuedChat.isNotEmpty() ||
+        current != null && (current.kind != SpeechPolicy.CHAT || !current.readyReported)) return false
+    // Voice-call output may have prepared PCM. Calls keep their explicit priority.
+    if (VoiceCallService.active) return false
+    val json = alertCommand("take", lease = current?.id ?: 0L)
+    if (json == "null") { resumeChat(); return false }
+    val next = JSONObject(json)
+    val context = appContext ?: return false
+    if (current != null) {
+      suspendedChat = current
+      // Detach the listening session without publishing a user stop. Its last
+      // chunk promise remains held until playback is restored.
+      session = null
+      clear(COMPLETED, null)
+    }
+    val token = next.getString("token")
+    statusOwner = token
+    begin(context, SpeechPolicy.ANNOUNCEMENT, token, "", context.getString(R.string.app_name), {
+      session?.let { speak(it, next.getString("text"), next.getString("language"), 1.0) }
+    }, claimedLease = next.getLong("lease"), ended = { reason, error ->
+      statusOwner = null
+      // Shake completion must remain current until JS dismisses notification
+      // state. Other completions release the queue synchronously in Rust.
+      if (reason != SHAKE) alertCommand("finish", token)
+      val callback = statusCallbacks.remove(token)
+      if (error != null) callback?.reject(ERROR_CODE, error) else callback?.resolve(reason)
+      handler.post { drainStatus() }
+    })
+    return true
+  }
+
+  private fun resumeChat() {
+    val previous = suspendedChat ?: return
+    if (session != null) return
+    suspendedChat = null
+    val completed = boundaryCompletion
+    boundaryCompletion = null
+    val pending = deferredChat
+    deferredChat = null
+    val context = appContext ?: return
+    val accepted = begin(context, SpeechPolicy.CHAT, previous.owner, "", previous.label, {
+      completed?.resolve(null)
+      if (pending != null) speakChat(previous.owner, pending.text, pending.promise)
+    }, ended = previous.ended)
+    if (accepted) session?.localOnly = previous.localOnly
+    else {
+      previous.ended(INTERRUPTED, "Could not resume chat speech")
+      completed?.reject(ERROR_CODE, "Could not resume chat speech")
+      pending?.promise?.reject(ERROR_CODE, "Could not resume chat speech")
+    }
+  }
+
+  private fun discardSuspendedChat(reason: String, error: String?) {
+    val previous = suspendedChat ?: return
+    suspendedChat = null
+    previous.ended(reason, error)
+    val completed = boundaryCompletion
+    boundaryCompletion = null
+    val pending = deferredChat
+    deferredChat = null
+    if (error != null) { completed?.reject(ERROR_CODE, error); pending?.promise?.reject(ERROR_CODE, error) }
+    else { completed?.resolve(null); pending?.promise?.resolve(null) }
+  }
   private var engine: TextToSpeech? = null
   private var engineReady = false
   private var engineGeneration = 0L
@@ -96,6 +187,10 @@ object SpeechPlayback : SensorEventListener {
   }
 
   fun speakChat(owner: String, text: String, promise: Promise) {
+    if (suspendedChat?.owner == owner && deferredChat == null) {
+      deferredChat = QueuedChat(text, promise)
+      return
+    }
     val current = session
     if (current?.kind != SpeechPolicy.CHAT || current.owner != owner || !current.readyReported || utteranceId != null || queuedChat.isNotEmpty()) {
       promise.reject(ERROR_CODE, "Chat listening is no longer available for this utterance")
@@ -175,9 +270,11 @@ object SpeechPlayback : SensorEventListener {
     if (!accepted) promise.reject("device_unavailable", "Another speech session is active")
   }
 
-  private fun begin(context: Context, kind: Int, owner: String, request: String, name: String, ready: () -> Unit, ended: (String, String?) -> Unit): Boolean {
-    val id = SpeechPolicy.claim(kind, owner, request)
+  private fun begin(context: Context, kind: Int, owner: String, request: String, name: String, ready: () -> Unit, claimedLease: Long? = null, ended: (String, String?) -> Unit): Boolean {
+    val id = claimedLease ?: SpeechPolicy.claim(kind, owner, request)
     if (id == 0L) return false
+    if (claimedLease == null) discardSuspendedChat(REPLACED, null)
+    appContext = context.applicationContext
     clear(REPLACED, null)
     session = Session(id, kind, owner, name, ready, ended)
     shakeDetector.reset()
@@ -232,6 +329,9 @@ object SpeechPlayback : SensorEventListener {
     current.readyReported = true
     handler.removeCallbacks(timeout)
     current.ready()
+    // A reader still initializing must settle its start promise before yielding.
+    // Revisit an idle reader after startChat has applied its local-only setting.
+    if (current.kind == SpeechPolicy.CHAT) handler.post { if (session === current) drainStatus() }
   }
 
   private fun initialize(generation: Long, status: Int) {
@@ -291,7 +391,9 @@ object SpeechPlayback : SensorEventListener {
     val id = "speech-${current.id}-${++sequence}"
     utteranceId = id
     val listener = AudioManager.OnAudioFocusChangeListener { change ->
-      if (change < AudioManager.AUDIOFOCUS_GAIN) handler.post {
+      // Immediate agent notifications may duck audio; their sound must not
+      // turn deferred status delivery into an interruption of the current chunk.
+      if (change < AudioManager.AUDIOFOCUS_GAIN && change != AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) handler.post {
         if (session?.id == current.id && utteranceId == id) stop(reason = INTERRUPTED)
       }
     }
@@ -376,8 +478,18 @@ object SpeechPlayback : SensorEventListener {
     return true
   }
 
-  fun stopOwner(kind: Int, owner: String): Boolean = stopLease(SpeechPolicy.stopOwner(kind, owner))
-  fun cancelDeviceRequest(request: String) { stopLease(SpeechPolicy.cancelRequest(SpeechPolicy.DEVICE, request)) }
+  fun stopOwner(kind: Int, owner: String): Boolean {
+    if (kind == SpeechPolicy.CHAT && suspendedChat?.owner == owner) {
+      discardSuspendedChat(STOPPED, null)
+      return true
+    }
+    val stopped = stopLease(SpeechPolicy.stopOwner(kind, owner))
+    handler.post { drainStatus() }
+    return stopped
+  }
+  fun cancelDeviceRequest(request: String) {
+    if (stopLease(SpeechPolicy.cancelRequest(SpeechPolicy.DEVICE, request))) handler.post { drainStatus() }
+  }
   fun stopDevice() { session?.takeIf { it.kind == SpeechPolicy.DEVICE }?.let { stopOwner(it.kind, it.owner) } }
 
   private fun stopLease(id: Long): Boolean {
@@ -387,6 +499,12 @@ object SpeechPlayback : SensorEventListener {
   }
 
   fun stop(reason: String = STOPPED, error: String? = null) {
+    alertCommand("clear")
+    discardSuspendedChat(reason, error)
+    for ((token, callback) in statusCallbacks.toMap()) if (token != statusOwner) {
+      statusCallbacks.remove(token)
+      callback.resolve(reason)
+    }
     val current = session ?: return
     if (SpeechPolicy.stop(current.id)) clear(reason, error)
   }
@@ -442,6 +560,7 @@ object SpeechPlayback : SensorEventListener {
     reportLevel(current, 0f)
     if (current.kind != SpeechPolicy.CHAT) {
       clear(COMPLETED, null)
+      handler.post { drainStatus() }
       return
     }
     handler.removeCallbacks(timeout)
@@ -450,6 +569,11 @@ object SpeechPlayback : SensorEventListener {
     utterance = null
     if (queuedChat.firstOrNull()?.promise === completed) queuedChat.removeFirst()
     releaseFocus()
+    if (queuedChat.isEmpty() && !VoiceCallService.active) {
+      boundaryCompletion = completed
+      if (drainStatus()) return
+      boundaryCompletion = null
+    }
     completed?.resolve(null)
     if (queuedChat.isNotEmpty()) playQueuedChat(current)
   }

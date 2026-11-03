@@ -1,37 +1,57 @@
-//! Fake-platform tests hold acknowledgements at the real async boundaries.
+//! Fake platform acknowledgements are deliberately held at async boundaries.
 #![allow(clippy::unwrap_used, reason = "Assertions stop immediately on failure")]
-
 use super::*;
-use std::collections::HashSet;
 
-fn request(host: &str, pane: &str, tab: &str, speak: bool) -> LocalAlertRequest {
+fn request(host: &str, pane: &str, status: HerdrAgentStatus, speak: bool) -> LocalAlertRequest {
     LocalAlertRequest {
         host_id: host.into(),
         pane_id: pane.into(),
-        tab_id: tab.into(),
+        tab_id: "tab".into(),
         runtime: None,
-        title: "Agent needs you".into(),
-        body: "Blocked".into(),
-        announcement: speak.then(|| "Task needs you".into()),
+        status,
+        session_identity: "terminal/session".into(),
+        title: "Agent".into(),
+        body: "Status".into(),
+        announcement: speak.then(|| format!("{pane} {status:?}")),
         language: "en-US".into(),
         delivery: LocalAlertDelivery::Persistent,
         persistent_timeout_ms: 45_000,
         android: true,
     }
 }
-
+fn done(pane: &str) -> LocalAlertRequest {
+    request("host", pane, HerdrAgentStatus::Done, true)
+}
 fn one(mut effects: Vec<LocalAlertEffect>) -> LocalAlertEffect {
     assert_eq!(effects.len(), 1, "{effects:?}");
     effects.pop().unwrap()
 }
-
+fn schedule(effects: &[LocalAlertEffect]) -> LocalAlertEffect {
+    effects
+        .iter()
+        .find(|e| matches!(e.action, LocalAlertAction::Schedule { .. }))
+        .unwrap()
+        .clone()
+}
+fn speech(effects: &[LocalAlertEffect]) -> LocalAlertEffect {
+    effects
+        .iter()
+        .find(|e| matches!(e.action, LocalAlertAction::Speak { .. }))
+        .unwrap()
+        .clone()
+}
+fn token(effect: &LocalAlertEffect) -> String {
+    let LocalAlertAction::Speak { token, .. } = &effect.action else {
+        panic!()
+    };
+    token.clone()
+}
 fn begin(owner: &LocalAlertCoordinator, effect: &LocalAlertEffect) {
     assert_eq!(
         owner.begin_effect(effect.id.clone()),
         LocalAlertEffectAdmission::Run
     );
 }
-
 fn complete(
     owner: &LocalAlertCoordinator,
     effect: &LocalAlertEffect,
@@ -39,7 +59,6 @@ fn complete(
 ) -> Vec<LocalAlertEffect> {
     owner.complete_effect(effect.id.clone(), outcome).unwrap()
 }
-
 fn scheduled(
     owner: &LocalAlertCoordinator,
     effect: &LocalAlertEffect,
@@ -53,678 +72,510 @@ fn scheduled(
         },
     )
 }
-
+fn register(owner: &LocalAlertCoordinator, effect: &LocalAlertEffect) {
+    begin(owner, effect);
+    owner
+        .state
+        .lock()
+        .alerts
+        .get_mut(&token(effect))
+        .unwrap()
+        .speech_ready = true;
+}
+fn take(owner: &LocalAlertCoordinator) -> Option<NativeAnnouncement> {
+    owner.state.lock().take_speech(0, Instant::now(), |_, _| 1)
+}
+fn ended(
+    owner: &LocalAlertCoordinator,
+    effect: &LocalAlertEffect,
+    reason: LocalAlertSpeechEnd,
+) -> Vec<LocalAlertEffect> {
+    complete(owner, effect, LocalAlertOutcome::SpeechEnded { reason })
+}
 fn scopes() -> Vec<LocalAlertScope> {
     vec![
         LocalAlertScope::All,
         LocalAlertScope::Host {
-            host_id: "h".into(),
+            host_id: "host".into(),
         },
         LocalAlertScope::Tab {
-            host_id: "h".into(),
-            tab_id: "t".into(),
+            host_id: "host".into(),
+            tab_id: "tab".into(),
         },
         LocalAlertScope::Pane {
-            host_id: "h".into(),
-            pane_id: "p".into(),
+            host_id: "host".into(),
+            pane_id: "a".into(),
         },
     ]
 }
 
 #[test]
-fn voice_call_suppresses_the_whole_tab_and_resumes_after_hangup() {
-    let owner = LocalAlertCoordinator::new();
-    assert!(
-        owner
-            .set_suppression(
-                "call".into(),
-                Some(LocalAlertScope::Tab {
-                    host_id: "h".into(),
-                    tab_id: "t".into(),
-                })
-            )
-            .is_empty()
-    );
-    for pane in ["p", "other-pane"] {
-        for status in [HerdrAgentStatus::Blocked, HerdrAgentStatus::Done] {
+fn notification_and_persistent_feedback_do_not_wait_for_speech() {
+    for status in [HerdrAgentStatus::Done, HerdrAgentStatus::Blocked] {
+        for android in [false, true] {
+            let owner = LocalAlertCoordinator::new();
+            let mut request = request("host", "a", status, true);
+            request.android = android;
+            let effects = owner.alert(request);
+            let notification = schedule(&effects);
+            let voice = speech(&effects);
+            register(&owner, &voice);
+            // A busy native owner denies admission without affecting delivery.
             assert!(
                 owner
-                    .transition(LocalAlertTransition {
-                        host_id: "h".into(),
-                        pane_id: pane.into(),
-                        runtime: None,
-                        status: Some(status),
-                        request: Some(request("h", pane, "t", true)),
-                        enabled: true,
-                        foreground: false,
-                    })
-                    .is_empty()
+                    .state
+                    .lock()
+                    .take_speech(42, Instant::now(), |_, _| 0)
+                    .is_none()
             );
-        }
-    }
-    assert!(
-        !owner
-            .alert(request("h", "p", "other-tab", false))
-            .is_empty()
-    );
-    assert!(
-        !owner
-            .alert(request("other-host", "p", "t", false))
-            .is_empty()
-    );
-    assert!(owner.set_suppression("call".into(), None).is_empty());
-    // Ending a call does not replay the status changes suppressed during it.
-    assert!(!owner.alert(request("h", "p", "t", true)).is_empty());
-}
-
-#[test]
-fn voice_call_cancels_pending_and_active_alerts_without_reviving_late_results() {
-    let owner = LocalAlertCoordinator::new();
-    let mut platform = Platform::default();
-    platform.drain(&owner, owner.alert(request("h", "active", "t", false)));
-    let pending = one(owner.alert(request("h", "pending", "t", false)));
-    begin(&owner, &pending);
-    let speech = one(owner.alert(request("h", "speaking", "t", true)));
-    let cleanup = owner.set_suppression(
-        "call".into(),
-        Some(LocalAlertScope::Tab {
-            host_id: "h".into(),
-            tab_id: "t".into(),
-        }),
-    );
-    platform.drain(&owner, cleanup);
-    assert!(platform.notifications.is_empty());
-    assert!(platform.persistent.is_none());
-    assert_eq!(
-        owner.begin_effect(speech.id.clone()),
-        LocalAlertEffectAdmission::Skip
-    );
-    assert!(complete(&owner, &speech, LocalAlertOutcome::Skipped).is_empty());
-    owner.set_suppression("call".into(), None);
-    let late = one(scheduled(&owner, &pending, "late"));
-    assert!(
-        matches!(late.action, LocalAlertAction::DismissNotification { ref notification_id } if notification_id == "late")
-    );
-}
-
-#[test]
-fn old_call_cleanup_does_not_release_another_calls_suppression() {
-    let owner = LocalAlertCoordinator::new();
-    for token in ["old", "new"] {
-        owner.set_suppression(
-            token.into(),
-            Some(LocalAlertScope::Tab {
-                host_id: "h".into(),
-                tab_id: "t".into(),
-            }),
-        );
-    }
-    owner.set_suppression("old".into(), None);
-    assert!(owner.alert(request("h", "p", "t", false)).is_empty());
-    owner.set_suppression("new".into(), None);
-    assert!(!owner.alert(request("h", "p", "t", false)).is_empty());
-}
-
-#[derive(Default)]
-struct Platform {
-    notifications: HashSet<String>,
-    persistent: Option<String>,
-    speech: HashSet<String>,
-}
-
-impl Platform {
-    fn drain(&mut self, owner: &LocalAlertCoordinator, effects: Vec<LocalAlertEffect>) {
-        for effect in effects {
-            let outcome = match owner.begin_effect(effect.id.clone()) {
-                LocalAlertEffectAdmission::Skip => LocalAlertOutcome::Skipped,
-                LocalAlertEffectAdmission::Duplicate => continue,
-                LocalAlertEffectAdmission::Run => match &effect.action {
-                    LocalAlertAction::Schedule { .. } => {
-                        self.notifications.insert(effect.id.clone());
-                        LocalAlertOutcome::Scheduled {
-                            notification_id: effect.id.clone(),
-                        }
-                    }
-                    LocalAlertAction::Speak { token, .. } => {
-                        self.speech.insert(token.clone());
-                        LocalAlertOutcome::SpeechEnded {
-                            reason: LocalAlertSpeechEnd::Completed,
-                        }
-                    }
-                    LocalAlertAction::StopSpeech { token } => {
-                        self.speech.remove(token);
-                        LocalAlertOutcome::Done
-                    }
-                    LocalAlertAction::DismissNotification { notification_id } => {
-                        self.notifications.remove(notification_id);
-                        LocalAlertOutcome::Done
-                    }
+            begin(&owner, &notification);
+            let feedback = scheduled(&owner, &notification, "notification");
+            assert_eq!(feedback.len(), usize::from(android));
+            if android {
+                let arm = one(feedback);
+                assert!(matches!(
+                    arm.action,
                     LocalAlertAction::ArmPersistent {
-                        notification_id, ..
-                    } => {
-                        assert!(self.notifications.contains(notification_id));
-                        self.persistent = Some(notification_id.clone());
-                        LocalAlertOutcome::Done
+                        timeout_ms: 45_000,
+                        ..
                     }
-                    LocalAlertAction::DismissPersistent { notification_id } => {
-                        if notification_id.is_none() || self.persistent == *notification_id {
-                            self.persistent = None;
-                        }
-                        LocalAlertOutcome::Done
-                    }
-                },
-            };
-            self.drain(owner, complete(owner, &effect, outcome));
+                ));
+                begin(&owner, &arm);
+                complete(&owner, &arm, LocalAlertOutcome::Done);
+            }
+            assert_eq!(take(&owner).unwrap().token, token(&voice));
+            assert!(ended(&owner, &voice, LocalAlertSpeechEnd::Completed).is_empty());
         }
     }
 }
 
 #[test]
-fn every_dismissal_scope_fences_a_pending_schedule_and_cleans_up_its_late_id() {
+fn unrelated_admissions_do_not_preempt_and_waiting_blocked_outranks_done_fifo() {
+    let owner = LocalAlertCoordinator::new();
+    let a = speech(&owner.alert(done("a")));
+    register(&owner, &a);
+    assert_eq!(take(&owner).unwrap().token, token(&a));
+    let b_effects = owner.alert(done("b"));
+    let b = speech(&b_effects);
+    register(&owner, &b);
+    assert!(
+        !b_effects
+            .iter()
+            .any(|e| matches!(e.action, LocalAlertAction::StopSpeech { .. }))
+    );
+    let c = speech(&owner.alert(request("other-host", "c", HerdrAgentStatus::Blocked, true)));
+    register(&owner, &c);
+    let d = speech(&owner.alert(request("host", "d", HerdrAgentStatus::Blocked, true)));
+    register(&owner, &d);
+    assert!(take(&owner).is_none());
+    ended(&owner, &a, LocalAlertSpeechEnd::Completed);
+    for expected in [&c, &d, &b] {
+        assert_eq!(take(&owner).unwrap().token, token(expected));
+        ended(&owner, expected, LocalAlertSpeechEnd::Completed);
+    }
+    assert!(take(&owner).is_none());
+}
+
+#[test]
+fn same_pane_coalesces_to_latest_status_session_and_tab_without_stopping_other_panes() {
+    let owner = LocalAlertCoordinator::new();
+    let a = speech(&owner.alert(done("a")));
+    register(&owner, &a);
+    take(&owner).unwrap();
+    let old = speech(&owner.alert(done("b")));
+    register(&owner, &old);
+    let mut latest = request("host", "b", HerdrAgentStatus::Blocked, true);
+    latest.session_identity = "new-session".into();
+    latest.tab_id = "new-tab".into();
+    let replacement = owner.alert(latest);
+    assert!(
+        !replacement
+            .iter()
+            .any(|e| matches!(e.action, LocalAlertAction::StopSpeech { .. }))
+    );
+    let new = speech(&replacement);
+    register(&owner, &new);
+    ended(&owner, &old, LocalAlertSpeechEnd::Busy);
+    ended(&owner, &a, LocalAlertSpeechEnd::Completed);
+    assert_eq!(take(&owner).unwrap().token, token(&new));
+    // A delayed old shake cannot dismiss the replacement or its notification.
+    assert!(ended(&owner, &old, LocalAlertSpeechEnd::Shake).is_empty());
+    assert!(
+        owner
+            .state
+            .lock()
+            .speech_valid(&token(&new), Instant::now())
+    );
+}
+
+#[test]
+fn currently_obsolete_status_is_stopped_by_token_and_late_results_do_not_stop_next_speaker() {
+    let owner = LocalAlertCoordinator::new();
+    let a = speech(&owner.alert(done("a")));
+    register(&owner, &a);
+    take(&owner).unwrap();
+    let b = speech(&owner.alert(done("b")));
+    register(&owner, &b);
+    let effects = owner.transition(LocalAlertTransition {
+        host_id: "host".into(),
+        pane_id: "a".into(),
+        runtime: None,
+        status: Some(HerdrAgentStatus::Working),
+        request: None,
+        enabled: false,
+        foreground: false,
+    });
+    assert!(effects.iter().any(|e| matches!(&e.action, LocalAlertAction::StopSpeech { token: stopped } if stopped == &token(&a))));
+    assert_eq!(take(&owner).unwrap().token, token(&b));
+    assert!(ended(&owner, &a, LocalAlertSpeechEnd::Shake).is_empty());
+    assert!(owner.state.lock().speech_valid(&token(&b), Instant::now()));
+}
+
+#[test]
+fn queue_is_bounded_preserves_priority_and_expires_without_a_new_status_edge() {
+    let owner = LocalAlertCoordinator::new();
+    let mut voices = Vec::new();
+    for pane in ["a", "b", "c", "d", "e", "f"] {
+        let status = if pane == "a" {
+            HerdrAgentStatus::Blocked
+        } else {
+            HerdrAgentStatus::Done
+        };
+        let voice = speech(&owner.alert(request("host", pane, status, true)));
+        register(&owner, &voice);
+        voices.push(voice);
+    }
+    assert_eq!(owner.state.lock().waiting.len(), MAX_WAITING);
+    for voice in &voices[1..3] {
+        assert!(
+            !owner
+                .state
+                .lock()
+                .speech_valid(&token(voice), Instant::now())
+        );
+    }
+    assert_eq!(take(&owner).unwrap().token, token(&voices[0]));
+    ended(&owner, &voices[0], LocalAlertSpeechEnd::Completed);
+    let expired = Instant::now() + MAX_WAIT;
+    assert!(
+        owner
+            .state
+            .lock()
+            .take_speech(0, expired, |_, _| panic!(
+                "expired speech must not claim playback"
+            ))
+            .is_none()
+    );
+}
+
+#[test]
+fn delayed_registration_and_denied_lease_claim_do_not_lose_waiting_speech() {
+    let owner = LocalAlertCoordinator::new();
+    let a = speech(&owner.alert(done("a")));
+    assert!(take(&owner).is_none());
+    register(&owner, &a);
+    assert!(
+        owner
+            .state
+            .lock()
+            .take_speech(99, Instant::now(), |_, lease| {
+                assert_eq!(lease, 99);
+                0
+            })
+            .is_none()
+    );
+    assert_eq!(take(&owner).unwrap().token, token(&a));
+    // Native completion releases the next item even if JS completion is delayed.
+    owner.state.lock().finish_speech(&token(&a));
+    let b = speech(&owner.alert(done("b")));
+    register(&owner, &b);
+    assert_eq!(take(&owner).unwrap().token, token(&b));
+    ended(&owner, &a, LocalAlertSpeechEnd::Completed);
+    assert!(owner.state.lock().speech_valid(&token(&b), Instant::now()));
+}
+
+#[test]
+fn every_dismissal_scope_fences_pending_admission_and_cleans_up_late_notifications() {
     for scope in scopes() {
         let owner = LocalAlertCoordinator::new();
-        let mut platform = Platform::default();
-        let schedule = one(owner.alert(request("h", "p", "t", false)));
-        begin(&owner, &schedule);
-        platform.drain(&owner, owner.dismiss(scope));
-        platform.notifications.insert("late".into());
-        let cleanup = one(scheduled(&owner, &schedule, "late"));
-        assert!(
-            matches!(&cleanup.action, LocalAlertAction::DismissNotification { notification_id } if notification_id == "late")
+        let effects = owner.alert(done("a"));
+        let notification = schedule(&effects);
+        let voice = speech(&effects);
+        begin(&owner, &notification);
+        owner.dismiss(scope);
+        assert_eq!(
+            owner.begin_effect(voice.id.clone()),
+            LocalAlertEffectAdmission::Skip
         );
-        platform.drain(&owner, vec![cleanup]);
-        assert!(platform.notifications.is_empty());
-        assert!(platform.persistent.is_none());
-    }
-}
-
-#[test]
-fn dismissal_before_effect_admission_never_calls_the_platform() {
-    for speak in [false, true] {
-        for scope in scopes() {
-            let owner = LocalAlertCoordinator::new();
-            let pending = one(owner.alert(request("h", "p", "t", speak)));
-            Platform::default().drain(&owner, owner.dismiss(scope));
-            assert_eq!(
-                owner.begin_effect(pending.id.clone()),
-                LocalAlertEffectAdmission::Skip
-            );
-            assert!(complete(&owner, &pending, LocalAlertOutcome::Skipped).is_empty());
-        }
-    }
-}
-
-#[test]
-fn same_target_alerts_and_other_hosts_tabs_and_panes_have_independent_ownership() {
-    for scope in [
-        LocalAlertScope::Pane {
-            host_id: "h".into(),
-            pane_id: "p".into(),
-        },
-        LocalAlertScope::Tab {
-            host_id: "h".into(),
-            tab_id: "t".into(),
-        },
-    ] {
-        let owner = LocalAlertCoordinator::new();
-        let mut platform = Platform::default();
-        for (host, pane, tab) in [
-            ("h", "p", "t"),
-            ("h", "p", "t"),
-            ("other", "p", "t"),
-            ("h", "q", "t"),
-            ("h", "z", "u"),
-        ] {
-            platform.drain(&owner, owner.alert(request(host, pane, tab, false)));
-        }
-        assert_eq!(platform.notifications.len(), 5);
-        let expected = if matches!(scope, LocalAlertScope::Pane { .. }) {
-            3
-        } else {
-            2
-        };
-        platform.drain(&owner, owner.dismiss(scope));
-        assert_eq!(platform.notifications.len(), expected);
-        platform.drain(&owner, owner.dismiss(LocalAlertScope::All));
-        assert!(platform.notifications.is_empty());
-        assert!(platform.persistent.is_none());
-    }
-}
-
-#[test]
-fn every_dismissal_scope_stops_only_its_speech_and_rejects_the_late_completion() {
-    for scope in scopes() {
-        let owner = LocalAlertCoordinator::new();
-        let speech = one(owner.alert(request("h", "p", "t", true)));
-        begin(&owner, &speech);
-        let token = match &speech.action {
-            LocalAlertAction::Speak { token, .. } => token.clone(),
-            _ => panic!(),
-        };
-        let effects = owner.dismiss(scope);
-        assert!(effects.iter().any(|e| matches!(&e.action, LocalAlertAction::StopSpeech { token: stopped } if *stopped == token)));
-        Platform::default().drain(&owner, effects);
+        complete(&owner, &voice, LocalAlertOutcome::Skipped);
+        let cleanup = one(scheduled(&owner, &notification, "late"));
         assert!(
-            complete(
-                &owner,
-                &speech,
-                LocalAlertOutcome::SpeechEnded {
-                    reason: LocalAlertSpeechEnd::Completed
-                }
-            )
-            .is_empty()
+            matches!(cleanup.action, LocalAlertAction::DismissNotification { notification_id } if notification_id == "late")
         );
+        assert!(take(&owner).is_none());
     }
 }
 
 #[test]
-fn replacing_speech_waits_for_stop_and_old_results_cannot_cancel_the_new_owner() {
-    for reason in [LocalAlertSpeechEnd::Replaced, LocalAlertSpeechEnd::Shake] {
+fn every_scope_stops_its_current_speech_and_preserves_unrelated_waiting_speech() {
+    for scope in scopes().into_iter().skip(1) {
         let owner = LocalAlertCoordinator::new();
-        let old = one(owner.alert(request("h", "p", "t", true)));
-        begin(&owner, &old);
-        let stop = one(owner.alert(request("other", "p", "t", true)));
-        assert!(matches!(&stop.action, LocalAlertAction::StopSpeech { .. }));
-        begin(&owner, &stop);
-        let new = one(complete(&owner, &stop, LocalAlertOutcome::Done));
-        begin(&owner, &new);
-        let old_result = complete(&owner, &old, LocalAlertOutcome::SpeechEnded { reason });
-        if reason == LocalAlertSpeechEnd::Shake {
-            assert!(old_result.is_empty());
-        } else {
-            assert!(matches!(
-                one(old_result).action,
-                LocalAlertAction::Schedule { .. }
-            ));
-        }
-        let dismiss = owner.dismiss(LocalAlertScope::Pane {
-            host_id: "other".into(),
-            pane_id: "p".into(),
-        });
-        let LocalAlertAction::Speak {
-            token: new_token, ..
-        } = new.action
-        else {
-            panic!()
-        };
-        assert!(dismiss.iter().any(
-            |e| matches!(&e.action, LocalAlertAction::StopSpeech { token } if *token == new_token)
-        ));
+        let a = speech(&owner.alert(done("a")));
+        register(&owner, &a);
+        take(&owner).unwrap();
+        let b = speech(&owner.alert(request("other", "b", HerdrAgentStatus::Done, true)));
+        register(&owner, &b);
+        let cleanup = owner.dismiss(scope);
+        assert!(cleanup.iter().any(|e| matches!(&e.action, LocalAlertAction::StopSpeech { token: stopped } if stopped == &token(&a))));
+        assert_eq!(take(&owner).unwrap().token, token(&b));
+        assert!(ended(&owner, &a, LocalAlertSpeechEnd::Completed).is_empty());
     }
 }
 
 #[test]
-fn three_overlapping_announcements_do_not_orphan_a_waiting_alert() {
+fn current_shake_dismisses_all_notifications_and_fences_pending_schedules() {
     let owner = LocalAlertCoordinator::new();
-    let first = one(owner.alert(request("h", "p", "t", true)));
-    begin(&owner, &first);
-    let stop_first = one(owner.alert(request("h", "q", "t", true)));
-    let stop_second = one(owner.alert(request("h", "r", "t", true)));
-    begin(&owner, &stop_second);
-    let third = one(complete(&owner, &stop_second, LocalAlertOutcome::Done));
-    begin(&owner, &third);
-    begin(&owner, &stop_first);
-    assert!(
-        matches!(one(complete(&owner, &stop_first, LocalAlertOutcome::Done)).action,
-        LocalAlertAction::Schedule { request } if request.pane_id == "q")
-    );
-    assert!(
-        matches!(one(complete(&owner, &first, LocalAlertOutcome::SpeechEnded { reason: LocalAlertSpeechEnd::Replaced })).action,
-        LocalAlertAction::Schedule { request } if request.pane_id == "p")
-    );
-    assert!(
-        matches!(one(complete(&owner, &third, LocalAlertOutcome::SpeechEnded { reason: LocalAlertSpeechEnd::Completed })).action,
-        LocalAlertAction::Schedule { request } if request.pane_id == "r")
-    );
-}
-
-#[test]
-fn shake_cancels_active_alerts_and_all_pending_schedules() {
-    let owner = LocalAlertCoordinator::new();
-    let mut platform = Platform::default();
-    platform.drain(&owner, owner.alert(request("other", "p", "t", false)));
-    let schedule = one(owner.alert(request("h", "q", "t", false)));
-    begin(&owner, &schedule);
-    let speech = one(owner.alert(request("h", "p", "t", true)));
-    begin(&owner, &speech);
-    platform.drain(
-        &owner,
-        complete(
-            &owner,
-            &speech,
-            LocalAlertOutcome::SpeechEnded {
-                reason: LocalAlertSpeechEnd::Shake,
-            },
-        ),
-    );
-    assert!(platform.notifications.is_empty());
-    assert!(platform.persistent.is_none());
-    let cleanup = one(scheduled(&owner, &schedule, "late"));
+    let effects = owner.alert(done("a"));
+    let notification = schedule(&effects);
+    let voice = speech(&effects);
+    begin(&owner, &notification);
+    register(&owner, &voice);
+    take(&owner).unwrap();
+    let b = speech(&owner.alert(done("b")));
+    register(&owner, &b);
+    ended(&owner, &voice, LocalAlertSpeechEnd::Shake);
+    assert!(take(&owner).is_none());
     assert!(matches!(
-        cleanup.action,
+        one(scheduled(&owner, &notification, "late")).action,
         LocalAlertAction::DismissNotification { .. }
     ));
 }
 
 #[test]
-fn a_late_arm_is_cleaned_up_and_never_disarms_a_newer_alert() {
-    let owner = LocalAlertCoordinator::new();
-    let old = one(owner.alert(request("h", "p", "t", false)));
-    begin(&owner, &old);
-    let arm_old = one(scheduled(&owner, &old, "old"));
-    begin(&owner, &arm_old);
-    let dismiss = owner.dismiss(LocalAlertScope::Pane {
-        host_id: "h".into(),
-        pane_id: "p".into(),
-    });
-    assert!(
-        dismiss
-            .iter()
-            .all(|e| !matches!(e.action, LocalAlertAction::DismissPersistent { .. }))
-    );
-    let new = one(owner.alert(request("other", "p", "t", false)));
-    begin(&owner, &new);
-    assert!(scheduled(&owner, &new, "new").is_empty());
-    let arm_new = one(complete(&owner, &arm_old, LocalAlertOutcome::Done));
-    assert!(
-        matches!(&arm_new.action, LocalAlertAction::ArmPersistent { notification_id, timeout_ms: 45_000 } if notification_id == "new")
-    );
-    begin(&owner, &arm_new);
-    assert!(complete(&owner, &arm_new, LocalAlertOutcome::Done).is_empty());
-    assert!(complete(&owner, &arm_old, LocalAlertOutcome::Done).is_empty());
-    assert!(
-        owner
-            .dismiss(LocalAlertScope::Pane {
-                host_id: "h".into(),
-                pane_id: "p".into()
-            })
-            .is_empty()
-    );
-}
-
-#[test]
-fn dismissal_during_an_arm_waits_for_its_ack_then_targets_that_notification() {
-    let owner = LocalAlertCoordinator::new();
-    let schedule = one(owner.alert(request("h", "p", "t", false)));
-    begin(&owner, &schedule);
-    let arm = one(scheduled(&owner, &schedule, "late-arm"));
-    begin(&owner, &arm);
-    owner.dismiss(LocalAlertScope::All);
-    let cleanup = one(complete(&owner, &arm, LocalAlertOutcome::Done));
-    assert!(
-        matches!(cleanup.action, LocalAlertAction::DismissPersistent { notification_id: Some(id) } if id == "late-arm")
-    );
-}
-
-#[test]
-fn a_skipped_arm_preserves_a_newer_desired_owner() {
-    let owner = LocalAlertCoordinator::new();
-    let old = one(owner.alert(request("h", "p", "t", false)));
-    begin(&owner, &old);
-    let arm = one(scheduled(&owner, &old, "old"));
-    let new = one(owner.alert(request("h", "q", "t", false)));
-    begin(&owner, &new);
-    assert!(scheduled(&owner, &new, "new").is_empty());
-    assert_eq!(
-        owner.begin_effect(arm.id.clone()),
-        LocalAlertEffectAdmission::Skip
-    );
-    let replacement = one(complete(&owner, &arm, LocalAlertOutcome::Skipped));
-    assert!(
-        matches!(replacement.action, LocalAlertAction::ArmPersistent { notification_id, .. } if notification_id == "new")
-    );
-}
-
-#[test]
-fn failures_release_pending_state_and_speech_errors_still_deliver() {
-    let owner = LocalAlertCoordinator::new();
-    let failure = || LocalAlertOutcome::Failed {
-        message: "backend unavailable".into(),
-    };
-    let speech = one(owner.alert(request("h", "p", "t", true)));
-    begin(&owner, &speech);
-    let schedule = one(complete(&owner, &speech, failure()));
-    begin(&owner, &schedule);
-    assert!(complete(&owner, &schedule, failure()).is_empty());
-    assert!(
-        owner
-            .dismiss(LocalAlertScope::Pane {
-                host_id: "h".into(),
-                pane_id: "p".into()
-            })
-            .is_empty()
-    );
-    let schedule = one(owner.alert(request("h", "p", "t", false)));
-    begin(&owner, &schedule);
-    let arm = one(scheduled(&owner, &schedule, "failed-arm"));
-    begin(&owner, &arm);
-    assert!(complete(&owner, &arm, failure()).is_empty());
-    let cleanup = one(owner
-        .dismiss(LocalAlertScope::All)
-        .into_iter()
-        .filter(|e| matches!(e.action, LocalAlertAction::DismissPersistent { .. }))
-        .collect());
-    begin(&owner, &cleanup);
-    assert!(complete(&owner, &cleanup, failure()).is_empty());
-    // The backend can recover for the next alert; there is no retry spin.
-    Platform::default().drain(&owner, owner.alert(request("h", "p", "t", false)));
-}
-
-#[test]
-fn busy_interrupted_and_stopped_speech_preserve_notification_delivery() {
-    for reason in [
-        LocalAlertSpeechEnd::Busy,
-        LocalAlertSpeechEnd::Interrupted,
-        LocalAlertSpeechEnd::Stopped,
-    ] {
-        let owner = LocalAlertCoordinator::new();
-        let speech = one(owner.alert(request("h", "p", "t", true)));
-        begin(&owner, &speech);
-        assert!(matches!(
-            one(complete(
-                &owner,
-                &speech,
-                LocalAlertOutcome::SpeechEnded { reason }
-            ))
-            .action,
-            LocalAlertAction::Schedule { .. }
-        ));
-    }
-}
-
-#[test]
-fn runtime_replacement_fences_old_callbacks_and_does_not_touch_other_hosts() {
-    for speak in [false, true] {
-        let owner = LocalAlertCoordinator::new();
-        let old_runtime = LocalAlertRuntime {
-            runtime_id: "runtime".into(),
-            incarnation: 1,
-        };
-        let new_runtime = LocalAlertRuntime {
-            runtime_id: "runtime".into(),
-            incarnation: 2,
-        };
-        owner.set_runtime("h".into(), Some(old_runtime.clone()));
-        let mut old_request = request("h", "p", "t", speak);
-        old_request.runtime = Some(old_runtime);
-        let pending = one(owner.alert(old_request.clone()));
-        begin(&owner, &pending);
-        let mut platform = Platform::default();
-        platform.drain(&owner, owner.alert(request("other", "p", "t", false)));
-        platform.drain(
-            &owner,
-            owner.set_runtime("h".into(), Some(new_runtime.clone())),
-        );
-        assert_eq!(platform.notifications.len(), 1);
-        assert!(owner.alert(old_request.clone()).is_empty());
-        let result = if speak {
-            LocalAlertOutcome::SpeechEnded {
-                reason: LocalAlertSpeechEnd::Completed,
-            }
-        } else {
-            LocalAlertOutcome::Scheduled {
-                notification_id: "late".into(),
-            }
-        };
-        let late = complete(&owner, &pending, result);
-        assert_eq!(late.len(), usize::from(!speak));
-        let mut new_request = old_request;
-        new_request.runtime = Some(new_runtime);
-        platform.drain(&owner, owner.alert(new_request.clone()));
-        assert_eq!(platform.notifications.len(), 2);
-        platform.drain(&owner, owner.set_runtime("h".into(), None));
-        assert_eq!(platform.notifications.len(), 1);
-        assert!(owner.alert(new_request).is_empty());
-    }
-}
-
-#[test]
-fn transition_admission_preserves_foreground_background_modes_and_resolutions() {
-    for foreground in [false, true] {
-        for delivery in [LocalAlertDelivery::Persistent, LocalAlertDelivery::Regular] {
-            let owner = LocalAlertCoordinator::new();
-            let mut request = request("h", "p", "t", false);
-            request.delivery = delivery;
-            let transition = |status, enabled, request| LocalAlertTransition {
-                host_id: "h".into(),
-                pane_id: "p".into(),
-                runtime: None,
-                status,
-                enabled,
-                foreground,
-                request,
-            };
-            assert!(
-                owner
-                    .transition(transition(
-                        Some(HerdrAgentStatus::Blocked),
-                        false,
-                        Some(request.clone())
-                    ))
-                    .is_empty()
-            );
-            assert!(
-                owner
-                    .transition(transition(Some(HerdrAgentStatus::Done), true, None))
-                    .is_empty()
-            );
-            let effect = one(owner.transition(transition(
-                Some(HerdrAgentStatus::Blocked),
-                true,
-                Some(request.clone()),
-            )));
-            let expected = if foreground && delivery == LocalAlertDelivery::Persistent {
-                LocalAlertDelivery::Brief
-            } else {
-                delivery
-            };
-            assert!(
-                matches!(&effect.action, LocalAlertAction::Schedule { request } if request.delivery == expected)
-            );
-            begin(&owner, &effect);
-            let mut platform = Platform::default();
-            platform.notifications.insert("notification".into());
-            platform.drain(&owner, scheduled(&owner, &effect, "notification"));
-            assert_eq!(
-                platform.persistent.is_some(),
-                expected == LocalAlertDelivery::Persistent
-            );
-            platform.drain(
-                &owner,
-                owner.transition(transition(
-                    Some(HerdrAgentStatus::Working),
-                    false,
-                    Some(request),
-                )),
-            );
-            assert!(platform.notifications.is_empty());
-            assert!(platform.persistent.is_none());
-        }
-    }
-}
-
-#[test]
-fn ios_never_arms_android_persistent_feedback() {
-    let owner = LocalAlertCoordinator::new();
-    let mut request = request("h", "p", "t", false);
-    request.android = false;
-    let effect = one(owner.alert(request));
-    begin(&owner, &effect);
-    assert!(scheduled(&owner, &effect, "ios").is_empty());
-}
-
-#[test]
-fn duplicate_or_mistyped_callbacks_cannot_steal_an_inflight_operation() {
-    let owner = LocalAlertCoordinator::new();
-    let effect = one(owner.alert(request("h", "p", "t", false)));
-    begin(&owner, &effect);
-    assert_eq!(
-        owner.begin_effect(effect.id.clone()),
-        LocalAlertEffectAdmission::Duplicate
-    );
-    assert!(matches!(
-        owner.complete_effect(effect.id.clone(), LocalAlertOutcome::Done),
-        Err(LocalAlertError::InvalidCompletion)
-    ));
-    let arm = one(scheduled(&owner, &effect, "notification"));
-    assert!(scheduled(&owner, &effect, "duplicate").is_empty());
-    begin(&owner, &arm);
-}
-
-#[test]
-fn stale_runtime_transitions_cannot_dismiss_the_replacement_runtimes_alert() {
+fn runtime_incarnation_and_disconnect_invalidate_queue_but_old_events_cannot_dismiss_new_owner() {
     let owner = LocalAlertCoordinator::new();
     let old = LocalAlertRuntime {
         runtime_id: "runtime".into(),
         incarnation: 1,
     };
-    let current = LocalAlertRuntime {
+    let new = LocalAlertRuntime {
         incarnation: 2,
         ..old.clone()
     };
-    owner.set_runtime("h".into(), Some(current.clone()));
-    let mut request = request("h", "p", "t", false);
-    request.runtime = Some(current);
-    let mut platform = Platform::default();
-    platform.drain(&owner, owner.alert(request));
-    let stale = LocalAlertTransition {
-        host_id: "h".into(),
-        pane_id: "p".into(),
-        runtime: Some(old),
-        status: Some(HerdrAgentStatus::Working),
-        request: None,
-        enabled: true,
-        foreground: true,
-    };
-    assert!(owner.transition(stale).is_empty());
-    assert_eq!(platform.notifications.len(), 1);
-    assert!(platform.persistent.is_some());
+    owner.set_runtime("host".into(), Some(old.clone()));
+    let mut first = done("a");
+    first.runtime = Some(old.clone());
+    let a = speech(&owner.alert(first));
+    register(&owner, &a);
+    owner.set_runtime("host".into(), Some(new.clone()));
+    let mut next = done("a");
+    next.runtime = Some(new);
+    let b = speech(&owner.alert(next.clone()));
+    register(&owner, &b);
+    assert!(
+        owner
+            .transition(LocalAlertTransition {
+                host_id: "host".into(),
+                pane_id: "a".into(),
+                runtime: Some(old),
+                status: None,
+                request: None,
+                enabled: false,
+                foreground: false
+            })
+            .is_empty()
+    );
+    assert_eq!(take(&owner).unwrap().token, token(&b));
+    owner.set_runtime("host".into(), None);
+    assert!(take(&owner).is_none());
+    assert!(owner.alert(next).is_empty());
 }
 
 #[test]
-fn missing_idle_unknown_and_working_transitions_dismiss_even_when_alerts_are_disabled() {
-    for status in [
-        None,
-        Some(HerdrAgentStatus::Idle),
-        Some(HerdrAgentStatus::Working),
-        Some(HerdrAgentStatus::Unknown),
-    ] {
+fn snapshot_identity_status_tab_and_preferences_revalidate_even_without_transition() {
+    for change in 0..5 {
         let owner = LocalAlertCoordinator::new();
-        let mut platform = Platform::default();
-        platform.drain(&owner, owner.alert(request("h", "p", "t", false)));
-        platform.drain(
-            &owner,
-            owner.transition(LocalAlertTransition {
-                host_id: "h".into(),
-                pane_id: "p".into(),
-                runtime: None,
-                status,
-                request: None,
-                enabled: false,
-                foreground: false,
+        let original = done("a");
+        let a = speech(&owner.alert(original.clone()));
+        register(&owner, &a);
+        let mut current = original;
+        match change {
+            0 => current.session_identity = "different-session".into(),
+            1 => current.tab_id = "different-tab".into(),
+            2 => current.status = HerdrAgentStatus::Working,
+            3 => current.announcement = None,
+            _ => {}
+        }
+        owner.retain_speech(
+            "host".into(),
+            None,
+            if change == 4 { vec![] } else { vec![current] },
+        );
+        assert!(take(&owner).is_none());
+    }
+    let owner = LocalAlertCoordinator::new();
+    let a = speech(&owner.alert(done("a")));
+    register(&owner, &a);
+    take(&owner).unwrap();
+    assert!(matches!(
+        one(owner.set_speech_enabled(false)).action,
+        LocalAlertAction::StopSpeech { .. }
+    ));
+    assert!(take(&owner).is_none());
+}
+
+#[test]
+fn independent_suppression_tokens_cancel_matching_speech_and_do_not_replay_on_release() {
+    let owner = LocalAlertCoordinator::new();
+    let a = speech(&owner.alert(done("a")));
+    register(&owner, &a);
+    take(&owner).unwrap();
+    for token in ["old-call", "new-call"] {
+        owner.set_suppression(
+            token.into(),
+            Some(LocalAlertScope::Tab {
+                host_id: "host".into(),
+                tab_id: "tab".into(),
             }),
         );
-        assert!(platform.notifications.is_empty());
-        assert!(platform.persistent.is_none());
     }
+    owner.set_suppression("old-call".into(), None);
+    assert!(owner.alert(done("b")).is_empty());
+    owner.set_suppression("new-call".into(), None);
+    assert!(take(&owner).is_none());
+    let b = speech(&owner.alert(done("b")));
+    register(&owner, &b);
+    assert_eq!(take(&owner).unwrap().token, token(&b));
+}
+
+#[test]
+fn pending_arm_is_serialized_and_late_completion_cannot_disarm_a_newer_notification() {
+    let owner = LocalAlertCoordinator::new();
+    let first = schedule(&owner.alert(done("a")));
+    begin(&owner, &first);
+    let arm_old = one(scheduled(&owner, &first, "old"));
+    begin(&owner, &arm_old);
+    owner.dismiss(LocalAlertScope::Pane {
+        host_id: "host".into(),
+        pane_id: "a".into(),
+    });
+    let second = schedule(&owner.alert(done("b")));
+    begin(&owner, &second);
+    assert!(scheduled(&owner, &second, "new").is_empty());
+    let arm_new = one(complete(&owner, &arm_old, LocalAlertOutcome::Done));
+    assert!(
+        matches!(&arm_new.action, LocalAlertAction::ArmPersistent { notification_id, .. } if notification_id == "new")
+    );
+    begin(&owner, &arm_new);
+    assert!(complete(&owner, &arm_new, LocalAlertOutcome::Done).is_empty());
+    assert!(complete(&owner, &arm_old, LocalAlertOutcome::Done).is_empty());
+}
+
+#[test]
+fn notification_failure_and_speech_failure_have_independent_lifetimes() {
+    let owner = LocalAlertCoordinator::new();
+    let effects = owner.alert(done("a"));
+    let a = speech(&effects);
+    let notification = schedule(&effects);
+    register(&owner, &a);
+    begin(&owner, &notification);
+    complete(
+        &owner,
+        &notification,
+        LocalAlertOutcome::Failed {
+            message: "notification backend failed".into(),
+        },
+    );
+    assert_eq!(take(&owner).unwrap().token, token(&a));
+    assert!(
+        complete(
+            &owner,
+            &a,
+            LocalAlertOutcome::Failed {
+                message: "engine failed".into()
+            }
+        )
+        .is_empty()
+    );
+    let effects = owner.alert(done("b"));
+    let a = speech(&effects);
+    let notification = schedule(&effects);
+    register(&owner, &a);
+    take(&owner).unwrap();
+    complete(
+        &owner,
+        &a,
+        LocalAlertOutcome::Failed {
+            message: "engine failed".into(),
+        },
+    );
+    begin(&owner, &notification);
+    assert!(matches!(
+        one(scheduled(&owner, &notification, "notification")).action,
+        LocalAlertAction::ArmPersistent { .. }
+    ));
+}
+
+#[test]
+fn duplicate_and_invalid_completions_do_not_steal_inflight_operations() {
+    let owner = LocalAlertCoordinator::new();
+    let effects = owner.alert(done("a"));
+    let notification = schedule(&effects);
+    begin(&owner, &notification);
+    assert_eq!(
+        owner.begin_effect(notification.id.clone()),
+        LocalAlertEffectAdmission::Duplicate
+    );
+    assert!(matches!(
+        owner.complete_effect(notification.id.clone(), LocalAlertOutcome::Done),
+        Err(LocalAlertError::InvalidCompletion)
+    ));
+    scheduled(&owner, &notification, "notification");
+    assert!(scheduled(&owner, &notification, "duplicate").is_empty());
+}
+
+#[test]
+fn foreground_and_disabled_voice_preserve_notification_delivery_modes() {
+    for foreground in [false, true] {
+        let owner = LocalAlertCoordinator::new();
+        let mut request = done("a");
+        request.announcement = None;
+        let effect = one(owner.transition(LocalAlertTransition {
+            host_id: "host".into(),
+            pane_id: "a".into(),
+            runtime: None,
+            status: Some(HerdrAgentStatus::Done),
+            request: Some(request),
+            enabled: true,
+            foreground,
+        }));
+        assert!(
+            matches!(effect.action, LocalAlertAction::Schedule { request } if request.delivery == if foreground { LocalAlertDelivery::Brief } else { LocalAlertDelivery::Persistent })
+        );
+    }
+}
+
+#[test]
+fn concurrent_admissions_remain_bounded_and_each_notification_can_start() {
+    let owner = Arc::new(LocalAlertCoordinator::new());
+    let barrier = Arc::new(std::sync::Barrier::new(8));
+    let mut handles = Vec::new();
+    // Spawn every barrier participant before joining any of them.
+    for index in 0..8 {
+        let owner = owner.clone();
+        let barrier = barrier.clone();
+        handles.push(std::thread::spawn(move || {
+            barrier.wait();
+            let effects = owner.alert(done(&format!("pane-{index}")));
+            let notification = schedule(&effects);
+            begin(&owner, &notification);
+            notification.id
+        }));
+    }
+    let notifications: std::collections::HashSet<_> = handles
+        .into_iter()
+        .map(|handle| handle.join().unwrap())
+        .collect();
+    assert_eq!(notifications.len(), 8);
+    assert_eq!(owner.state.lock().waiting.len(), MAX_WAITING);
 }

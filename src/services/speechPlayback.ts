@@ -14,6 +14,8 @@ export interface NativeSpeechPlayback {
   enqueueChatSpeech?(token: string, text: string): Promise<void>;
   speakChat(token: string, text: string): Promise<void>;
   stopChatSpeech(token: string): Promise<void>;
+  speakStatusAnnouncement(token: string): Promise<SpeechEndReason>;
+  refreshStatusAnnouncements(): Promise<void>;
   speakAnnouncement(token: string, text: string, language: string): Promise<SpeechEndReason>;
   speakPreview(token: string, text: string, language: string): Promise<SpeechEndReason>;
   stopAnnouncement(token: string): Promise<void>;

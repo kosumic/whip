@@ -35,11 +35,27 @@ player without toggling the voice setting. Existing transcript content is
 baselined during recovery so a partially heard reply is not replayed.
 
 Explicitly starting chat replaces the previous speaker. Automatic reading releases
-playback when its queue empties. Announcements may replace earlier announcements, but skip
-speech when chat or a device tool owns playback. Device speech may replace an
-utterance from the same reverse-control session; other owners receive
-`device_unavailable`. Notifications still arrive when their announcement skips
-speech.
+playback when its queue empties. Agent status speech waits for the current
+utterance to finish. `local_alerts.rs` owns a queue shared across hosts and panes:
+one waiting entry per pane, at most four waiting entries, and a 15-second waiting
+expiry. Blocked entries precede done entries; each tier preserves FIFO. Overload
+drops the oldest entry in the lowest priority tier. A pane's new status replaces
+its waiting entry and promptly stops its own obsolete announcement. Other panes
+and device-tool speech are never stopped by a status transition.
+
+Both native players ask Rust for the next valid announcement at completion,
+before allowing chat's next chunk to drain. They hold the completed chat promise
+and restore the reader with a new lease after announcements finish. This works
+with suspended JavaScript and prevents starvation behind a growing chat backlog.
+Voice-call output retains its explicit priority. Snapshot updates revalidate
+host/runtime incarnation, pane, tab, terminal/session identity, status, freshness,
+and voice preferences; dismissal, suppression and disconnect discard matching
+entries. Native Stop, shake, dictation and audio interruption discard waiting
+status speech immediately. Notification scheduling, vibration, and persistent
+feedback start independently of speech and its errors.
+
+Device speech may replace an utterance from the same reverse-control session;
+other owners receive `device_unavailable`.
 
 Agent status announcements use the current conversation's cached session title,
 for example, "Fix keyboard latency finished" or "Fix keyboard latency needs attention".
@@ -64,7 +80,19 @@ Android's foreground notification exposes a Stop action for every speech kind.
 The small C ABI in `WhipSpeechPolicy.h` lets native events synchronously update
 Rust ownership without depending on the JavaScript runtime. Its kind values
 must agree with `SpeechPolicy.kt` and `SpeechKind` in Rust. Expo Speech is no
-longer used.
+longer used. Native status adapters retain only effect callbacks and a suspended
+chat session; queue selection and validity remain in the Rust coordinator. The
+`whip_alert_speech_command` result is owned by its caller and freed with
+`whip_alert_speech_free`.
+
+Coordinator and lease races run with `cargo test --lib local_alerts` and
+`cargo test --lib speech_playback` in the Rust crate. TypeScript delivery tests
+are in `__tests__/alerts.test.ts`. `nix develop -c ruby scripts/test-ios-speech.rb`
+runs standalone arm64 simulator adapter tests on macOS without model downloads
+or a simulator Rust build. Android's `StatusSpeechTest` uses real playback and a
+scripted admission boundary; run it only on an idle device after compiling the
+arm64 app and test APK. These adapter suites cover safe boundaries, restoration,
+and owner-scoped cancellation; queue and lease decisions are covered in Rust.
 
 ## Optional local speech (#263)
 

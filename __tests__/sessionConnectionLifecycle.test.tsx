@@ -231,6 +231,7 @@ function setup() {
     openSshShell,
     setError,
     navigate,
+    handleAgentStateChange: options.handleAgentStateChange,
   };
 }
 
@@ -285,7 +286,7 @@ test('projects native connecting changes and cancels admission on unmount', () =
   act(() => renderer.unmount());
   expect(cancel).toHaveBeenCalled();
 });
-test('schedules native cache exports from fresh live updates', async () => {
+test('fresh updates export cache and stale updates invalidate queued alert speech', async () => {
   mockHostState = {
     revision: 0,
     connectionGeneration: 1,
@@ -295,7 +296,7 @@ test('schedules native cache exports from fresh live updates', async () => {
     needsResync: false,
     focus: {},
   };
-  setup();
+  const { handleAgentStateChange } = setup();
   await act(async () => {
     jest.mocked(runSessionConnection).mockImplementationOnce(async () => {
       const adapter = jest.mocked(sessionConnectionPlatform).mock.calls.at(-1)![0];
@@ -323,6 +324,7 @@ test('schedules native cache exports from fresh live updates', async () => {
     mockClients[0].native,
   );
   expect(herdrSnapshotCache.schedule).toHaveBeenCalledTimes(1);
+  expect(handleAgentStateChange).toHaveBeenLastCalledWith(expect.objectContaining({ fresh: true }));
 
   await act(async () => {
     handler({
@@ -332,6 +334,7 @@ test('schedules native cache exports from fresh live updates', async () => {
     });
   });
   expect(herdrSnapshotCache.schedule).toHaveBeenCalledTimes(1);
+  expect(handleAgentStateChange).toHaveBeenLastCalledWith(expect.objectContaining({ fresh: false }));
 });
 
 test('flushes pending metadata on backgrounding and before UI detachment', async () => {

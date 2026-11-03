@@ -24,6 +24,8 @@ const mockNative = {
   setSuppression: jest.fn(),
   beginEffect: jest.fn(),
   completeEffect: jest.fn(),
+  retainSpeech: jest.fn(),
+  setSpeechEnabled: jest.fn(),
 };
 jest.mock('react-native-whip-ssh', () => ({
   ...jest.requireActual(
@@ -32,11 +34,9 @@ jest.mock('react-native-whip-ssh', () => ({
   LocalAlertCoordinator: jest.fn(() => mockNative),
 }));
 const mockPlayback = {
-  speakAnnouncement: jest.fn<
-    Promise<SpeechEndReason>,
-    [string, string, string]
-  >(),
+  speakStatusAnnouncement: jest.fn<Promise<SpeechEndReason>, [string]>(),
   stopAnnouncement: jest.fn<Promise<void>, [string]>(),
+  refreshStatusAnnouncements: jest.fn<Promise<void>, []>(),
 };
 jest.mock('../src/services/speechPlayback', () => ({
   getSpeechPlayback: () => mockPlayback,
@@ -60,7 +60,8 @@ jest.mock('../src/i18n', () => ({
   default: {
     resolvedLanguage: 'en',
     t: (key: string, options?: { name?: string; status?: string }) => {
-      if (key === 'alerts.needsAttention') return `${options?.name} needs attention`;
+      if (key === 'alerts.needsAttention')
+        return `${options?.name} needs attention`;
       if (key === 'alerts.finished') return `${options?.name} finished`;
       if (key === 'alerts.agentState') return `Agent is ${options?.status}`;
       return key;
@@ -90,6 +91,8 @@ import {
   dismissAgentAlertsForTab,
   prepareAlerts,
   suppressAgentAlertsForTab,
+  retainAgentAlertSpeech,
+  setAgentAlertSpeechEnabled,
 } from '../src/services/alerts';
 import {
   armPersistentAgentAlert,
@@ -162,9 +165,12 @@ beforeEach(() => {
   mockNative.dismiss.mockReturnValue([]);
   mockNative.setRuntime.mockReturnValue([]);
   mockNative.setSuppression.mockReturnValue([]);
+  mockNative.retainSpeech.mockReturnValue([]);
+  mockNative.setSpeechEnabled.mockReturnValue([]);
+  mockPlayback.refreshStatusAnnouncements.mockResolvedValue();
   mockNative.beginEffect.mockReturnValue(LocalAlertEffectAdmission.Run);
   mockNative.completeEffect.mockReturnValue([]);
-  mockPlayback.speakAnnouncement.mockResolvedValue('completed');
+  mockPlayback.speakStatusAnnouncement.mockResolvedValue('completed');
   mockPlayback.stopAnnouncement.mockResolvedValue();
   jest
     .mocked(Notifications.scheduleNotificationAsync)
@@ -201,20 +207,40 @@ test('registration proofs are silent and local notifications retain foreground p
 });
 
 test('shows the real Herdr agent kind even when its managed name matches the tab', async () => {
-  await alertAgent({ ...agent, name: 'rev', display_agent: 'rev', agent_status: 'done' }, false, target, 'rev');
-  expect(jest.mocked(Notifications.scheduleNotificationAsync).mock.calls[0][0].content.title)
-    .toBe('rev · codex finished');
+  await alertAgent(
+    { ...agent, name: 'rev', display_agent: 'rev', agent_status: 'done' },
+    false,
+    target,
+    'rev',
+  );
+  expect(
+    jest.mocked(Notifications.scheduleNotificationAsync).mock.calls[0][0]
+      .content.title,
+  ).toBe('rev · codex finished');
 });
 
 test('voice chat dismisses existing tab alerts and releases only its own suppression', async () => {
   mockNative.setSuppression.mockReturnValueOnce([
-    effect('dismiss', new LocalAlertAction.DismissNotification({ notificationId: 'existing' })),
+    effect(
+      'dismiss',
+      new LocalAlertAction.DismissNotification({ notificationId: 'existing' }),
+    ),
   ]);
-  const release = suppressAgentAlertsForTab('call', target.hostId, agent.tab_id);
-  expect(mockNative.setSuppression).toHaveBeenCalledWith('call', expect.objectContaining({
-    tag: 'Tab', inner: { hostId: target.hostId, tabId: agent.tab_id },
-  }));
-  expect(Notifications.dismissNotificationAsync).toHaveBeenCalledWith('existing');
+  const release = suppressAgentAlertsForTab(
+    'call',
+    target.hostId,
+    agent.tab_id,
+  );
+  expect(mockNative.setSuppression).toHaveBeenCalledWith(
+    'call',
+    expect.objectContaining({
+      tag: 'Tab',
+      inner: { hostId: target.hostId, tabId: agent.tab_id },
+    }),
+  );
+  expect(Notifications.dismissNotificationAsync).toHaveBeenCalledWith(
+    'existing',
+  );
   release();
   expect(mockNative.setSuppression).toHaveBeenLastCalledWith('call', undefined);
 });
@@ -323,12 +349,10 @@ test.each([
   'acknowledges %s speech without inventing lifecycle decisions',
   async (reason, nativeReason) => {
     mockNative.alert.mockImplementation(speak);
-    mockPlayback.speakAnnouncement.mockResolvedValue(reason);
+    mockPlayback.speakStatusAnnouncement.mockResolvedValue(reason);
     await alertAgent(agent, true, target, 'work');
-    expect(mockPlayback.speakAnnouncement).toHaveBeenCalledWith(
+    expect(mockPlayback.speakStatusAnnouncement).toHaveBeenCalledWith(
       'native-token',
-      'work · codex needs attention',
-      'en-US',
     );
     expect(mockNative.completeEffect).toHaveBeenCalledWith(
       'speech',
@@ -339,15 +363,19 @@ test.each([
   },
 );
 
-test('chat speech claims playback between dispatch and platform admission', async () => {
+test('chat activity still forwards the status token for Rust/native deferred admission', async () => {
   mockNative.alert.mockImplementation(speak);
   const pending = alertAgent(agent, true, target);
   setChatSpeechFocus(target);
   await pending;
-  expect(mockPlayback.speakAnnouncement).not.toHaveBeenCalled();
+  expect(mockPlayback.speakStatusAnnouncement).toHaveBeenCalledWith(
+    'native-token',
+  );
   expect(mockNative.completeEffect).toHaveBeenCalledWith(
     'speech',
-    new LocalAlertOutcome.SpeechEnded({ reason: LocalAlertSpeechEnd.Busy }),
+    new LocalAlertOutcome.SpeechEnded({
+      reason: LocalAlertSpeechEnd.Completed,
+    }),
   );
 });
 
@@ -387,10 +415,16 @@ test('preserves conversation title and language and rejects the prior session ti
     target,
     'work',
   );
-  expect(mockPlayback.speakAnnouncement).toHaveBeenLastCalledWith(
-    'native-token',
-    'Fix keyboard latency needs attention',
-    'zh-TW',
+  expect(mockNative.alert).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      announcement: 'Fix keyboard latency needs attention',
+      language: 'zh-TW',
+      status: HerdrAgentStatus.Blocked,
+      sessionIdentity: JSON.stringify([
+        agent.terminal_id,
+        ['codex', 'herdr', 'id', 'conversation'],
+      ]),
+    }),
   );
   await alertAgent(
     {
@@ -406,32 +440,60 @@ test('preserves conversation title and language and rejects the prior session ti
     target,
     'work',
   );
-  expect(mockPlayback.speakAnnouncement).toHaveBeenLastCalledWith(
-    'native-token',
-    'work · codex needs attention',
-    'zh-TW',
+  expect(mockNative.alert).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      announcement: 'work · codex needs attention',
+      language: 'zh-TW',
+    }),
   );
 });
 
-test('waits for speech completion before executing Rust scheduling effects', async () => {
-  const playback = deferred<SpeechEndReason>();
-  let request!: LocalAlertRequest;
-  mockNative.alert.mockImplementation(value => {
-    request = value;
-    return speak(value);
-  });
-  mockPlayback.speakAnnouncement.mockReturnValue(playback.promise);
-  mockNative.completeEffect.mockImplementation(id =>
-    id === 'speech'
-      ? [effect('schedule', new LocalAlertAction.Schedule({ request }))]
-      : [],
+test.each(['android', 'ios'] as const)(
+  'delivers %s notification and vibration while native speech is waiting',
+  async platform => {
+    Platform.OS = platform;
+    const playback = deferred<SpeechEndReason>();
+    mockNative.alert.mockImplementation(request => [
+      effect('schedule', new LocalAlertAction.Schedule({ request })),
+      ...speak(request),
+    ]);
+    mockPlayback.speakStatusAnnouncement.mockReturnValue(playback.promise);
+    const pending = alertAgent(agent, true, target);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledTimes(1);
+    expect(Vibration.vibrate).toHaveBeenCalledTimes(platform === 'ios' ? 1 : 0);
+    expect(mockPlayback.speakStatusAnnouncement).toHaveBeenCalledWith(
+      'native-token',
+    );
+    expect(mockNative.completeEffect).toHaveBeenCalledWith(
+      'schedule',
+      new LocalAlertOutcome.Scheduled({ notificationId: 'notification-1' }),
+    );
+    playback.resolve('completed');
+    await pending;
+  },
+);
+
+test('revalidates snapshot session identity and current preferences without admitting another notification', async () => {
+  await retainAgentAlertSpeech(target.hostId, [agent], false);
+  expect(mockNative.retainSpeech).toHaveBeenCalledWith(
+    target.hostId,
+    undefined,
+    [
+      expect.objectContaining({
+        paneId: agent.pane_id,
+        tabId: agent.tab_id,
+        status: HerdrAgentStatus.Blocked,
+        sessionIdentity: JSON.stringify([agent.terminal_id, null]),
+        announcement: undefined,
+      }),
+    ],
   );
-  const pending = alertAgent(agent, true, target);
-  await Promise.resolve();
+  await setAgentAlertSpeechEnabled(false);
+  expect(mockNative.setSpeechEnabled).toHaveBeenCalledWith(false);
+  expect(mockPlayback.refreshStatusAnnouncements).toHaveBeenCalled();
   expect(Notifications.scheduleNotificationAsync).not.toHaveBeenCalled();
-  playback.resolve('completed');
-  await pending;
-  expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledTimes(1);
 });
 
 test.each(['all', 'pane', 'tab'] as const)(
@@ -475,7 +537,7 @@ test.each(['all', 'pane', 'tab'] as const)(
   async scope => {
     const playback = deferred<SpeechEndReason>();
     mockNative.alert.mockImplementation(speak);
-    mockPlayback.speakAnnouncement.mockReturnValue(playback.promise);
+    mockPlayback.speakStatusAnnouncement.mockReturnValue(playback.promise);
     mockPlayback.stopAnnouncement.mockImplementation(async () => {
       playback.resolve('stopped');
     });
@@ -501,7 +563,7 @@ test('honors cancelled admission before starting TTS and ignores duplicate effec
   mockNative.alert.mockImplementation(speak);
   mockNative.beginEffect.mockReturnValueOnce(LocalAlertEffectAdmission.Skip);
   await alertAgent(agent, true, target);
-  expect(mockPlayback.speakAnnouncement).not.toHaveBeenCalled();
+  expect(mockPlayback.speakStatusAnnouncement).not.toHaveBeenCalled();
   expect(mockNative.completeEffect).toHaveBeenCalledWith(
     'speech',
     new LocalAlertOutcome.Skipped(),
@@ -613,7 +675,7 @@ test.each(['schedule', 'speech', 'arm'] as const)(
         .mockRejectedValue(error);
     else if (stage === 'speech') {
       mockNative.alert.mockImplementation(speak);
-      mockPlayback.speakAnnouncement.mockRejectedValue(error);
+      mockPlayback.speakStatusAnnouncement.mockRejectedValue(error);
     } else {
       mockNative.alert.mockReturnValue([
         effect(
@@ -711,6 +773,20 @@ test('a failed speech stop does not block unrelated notification cleanup', async
   expect(mockNative.completeEffect).toHaveBeenCalledWith(
     'cleanup',
     new LocalAlertOutcome.Done(),
+  );
+  log.mockRestore();
+});
+
+test('a native speech wake failure cannot prevent notification delivery', async () => {
+  const log = jest.spyOn(console, 'error').mockImplementation();
+  mockPlayback.refreshStatusAnnouncements.mockRejectedValueOnce(
+    new Error('speech unavailable'),
+  );
+  await alertAgent(agent, false, target);
+  expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledTimes(1);
+  expect(notificationDeliveryAvailable()).toBe(true);
+  expect(log).toHaveBeenCalledWith(
+    expect.stringContaining('background-operation-failed'),
   );
   log.mockRestore();
 });

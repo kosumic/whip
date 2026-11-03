@@ -26,7 +26,6 @@ import {
   dismissPersistentAgentAlert,
 } from './backgroundMonitoring';
 import i18n from '../i18n';
-import { isChatSpeechActive } from './chatSpeechFocus';
 import { getSpeechPlayback, type SpeechEndReason } from './speechPlayback';
 import { setNotificationDeliveryAvailable } from './notificationPipelineHealth';
 import {
@@ -197,18 +196,21 @@ function alertRequest(
     ...target,
     tabId: agent.tab_id,
     runtime: runtimeFor(target.hostId),
+    status: STATUS[agent.agent_status],
+    sessionIdentity: JSON.stringify([
+      agent.terminal_id,
+      agent.agent_session
+        ? [agent.agent_session.agent, agent.agent_session.source,
+          agent.agent_session.kind, agent.agent_session.value]
+        : null,
+    ]),
     title,
     body:
       agent.title ||
       i18n.t('alerts.agentState', { status: agent.agent_status }),
     announcement: speak
       ? sessionTitle
-        ? agentNotificationTitle(
-            agent,
-            undefined,
-            labels,
-            sessionTitle,
-          )
+        ? agentNotificationTitle(agent, undefined, labels, sessionTitle)
         : title
       : undefined,
     language:
@@ -335,10 +337,49 @@ export function dismissAgentAlertsForPane(
   );
 }
 
+/** Snapshot identity and voice preferences also change without a status edge. */
+export function retainAgentAlertSpeech(
+  hostId: string,
+  agents: AgentInfo[],
+  speak: boolean,
+): Promise<void> {
+  const owner = native();
+  return runEffects(
+    owner,
+    owner.retainSpeech(
+      hostId,
+      runtimeFor(hostId),
+      agents.map(agent =>
+        alertRequest(
+          agent,
+          speak,
+          { hostId, paneId: agent.pane_id },
+          undefined,
+          'regular',
+          DEFAULT_PERSISTENT_ALERT_TIMEOUT_MS,
+        ),
+      ),
+    ),
+  );
+}
+
+export function setAgentAlertSpeechEnabled(enabled: boolean): Promise<void> {
+  const owner = native();
+  return runEffects(owner, owner.setSpeechEnabled(enabled));
+}
+
 async function runEffects(
   owner: LocalAlertCoordinator,
   effects: LocalAlertEffect[],
 ): Promise<void> {
+  // Wake the native adapter after synchronous Rust invalidation, including
+  // queued-only dismissals that produce no StopSpeech effect.
+  reportBackgroundFailure(
+    Promise.resolve().then(() =>
+      getSpeechPlayback().refreshStatusAnnouncements(),
+    ),
+    'agent-speech-refresh',
+  );
   await Promise.all(
     effects.map(async effect => {
       // Yield before native TTS admission so an immediate dismissal can fence it.
@@ -373,10 +414,9 @@ async function performEffect({
 }: LocalAlertEffect): Promise<LocalAlertOutcome> {
   switch (action.tag) {
     case LocalAlertAction_Tags.Speak: {
-      const { token, text, language } = action.inner;
-      const reason = isChatSpeechActive()
-        ? 'busy'
-        : await getSpeechPlayback().speakAnnouncement(token, text, language);
+      const reason = await getSpeechPlayback().speakStatusAnnouncement(
+        action.inner.token,
+      );
       return new LocalAlertOutcome.SpeechEnded({ reason: SPEECH_END[reason] });
     }
     case LocalAlertAction_Tags.StopSpeech:
