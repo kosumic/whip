@@ -31,6 +31,7 @@ const PROBE_INTERVAL: usize = 16_000 / 2;
 const MAX_UTTERANCE_SAMPLES: usize = 16_000 * 60;
 const MAX_TEXT_BYTES: usize = 64_000;
 const INTERRUPTION_SAMPLES: usize = FRAME_SAMPLES * 16;
+const INTERRUPTION_RECOGNITION_SAMPLES: usize = 16_000 * 2;
 const INTERRUPTION_CONFIDENCE_MARGIN: f32 = 0.25;
 const DEFAULT_VAD_SENSITIVITY: u8 = 50;
 const MAX_VAD_SENSITIVITY: u8 = 100;
@@ -87,6 +88,7 @@ struct Input {
     audio: VecDeque<f32>,
     voiced: usize,
     interruption_voiced: usize,
+    interruption_detected_at: Option<usize>,
     silent: usize,
     samples: usize,
     speech_started: bool,
@@ -103,6 +105,7 @@ impl Default for Input {
             audio: VecDeque::with_capacity(AUDIO_SAMPLES),
             voiced: 0,
             interruption_voiced: 0,
+            interruption_detected_at: None,
             silent: 0,
             samples: 0,
             speech_started: false,
@@ -146,6 +149,11 @@ impl Input {
             onset_threshold + (1.0 - onset_threshold) * INTERRUPTION_CONFIDENCE_MARGIN;
         if probability >= interruption_threshold {
             self.interruption_voiced += FRAME_SAMPLES;
+            // Keep recent evidence for delayed recognition, but never interrupt
+            // on microphone activity alone.
+            if self.interruption_voiced >= INTERRUPTION_SAMPLES {
+                self.interruption_detected_at = Some(self.samples);
+            }
         } else {
             self.interruption_voiced = 0;
         }
@@ -176,7 +184,9 @@ impl Input {
     }
 
     fn should_interrupt(&self) -> bool {
-        self.interruption_voiced >= INTERRUPTION_SAMPLES
+        self.interruption_detected_at.is_some_and(|detected| {
+            self.samples.saturating_sub(detected) <= INTERRUPTION_RECOGNITION_SAMPLES
+        })
     }
 }
 
@@ -371,19 +381,7 @@ impl VoiceChat {
             }
             let sensitivity = state.vad_sensitivity;
             state.input.push(&samples, sensitivity);
-            if matches!(
-                state.phase,
-                VoiceChatPhase::Speaking | VoiceChatPhase::Waiting
-            ) && state.input.should_interrupt()
-            {
-                // Keep this recognizer and its buffered first words. Discard all
-                // remaining output from the interrupted response, including late updates.
-                state.phase = VoiceChatPhase::Listening;
-                state.expected.clear();
-                state.turn_id = None;
-                state.response_completed = false;
-                self.speech.reset_voice();
-            }
+            self.interrupt_if_recognized(&mut state);
             if state.phase == VoiceChatPhase::Listening
                 && state.input.speech_started
                 && (state.input.samples - state.input.speech_started_at >= MAX_UTTERANCE_SAMPLES
@@ -483,6 +481,7 @@ impl VoiceChat {
             && text.len() <= MAX_TEXT_BYTES
         {
             state.text = text;
+            self.interrupt_if_recognized(&mut state);
         }
     }
 
@@ -703,6 +702,25 @@ impl VoiceChat {
 }
 
 impl VoiceChat {
+    fn interrupt_if_recognized(&self, state: &mut State) {
+        if !state.muted
+            && matches!(
+                state.phase,
+                VoiceChatPhase::Speaking | VoiceChatPhase::Waiting
+            )
+            && !state.text.trim().is_empty()
+            && state.input.should_interrupt()
+        {
+            // Background noise must not discard the reply before the recognizer
+            // confirms words. Keep this capture and the user's buffered first words.
+            state.phase = VoiceChatPhase::Listening;
+            state.expected.clear();
+            state.turn_id = None;
+            state.response_completed = false;
+            self.speech.reset_voice();
+        }
+    }
+
     fn view_unlocked(&self, s: &State) -> VoiceChatView {
         VoiceChatView {
             phase: s.phase,
@@ -1469,25 +1487,7 @@ mod tests {
             .unwrap();
         let id = session.view().input_id;
         session.recognition(id, "Actually stop".into());
-        let samples = include_bytes!("../tests/fixtures/voice-counting-16k.f32");
-        #[allow(
-            clippy::cast_possible_truncation,
-            reason = "Fixture values are clamped PCM16 samples"
-        )]
-        let pcm: Vec<u8> = samples
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .flat_map(|b| {
-                ((f32::from_le_bytes(*b).clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes()
-            })
-            .collect();
-        for packet in pcm.chunks(4096) {
-            session.audio(id, STANDARD.encode(packet)).unwrap();
-            if session.view().phase == VoiceChatPhase::Listening {
-                break;
-            }
-        }
+        feed_microphone_fixture(&session, id);
         assert_eq!(session.view().phase, VoiceChatPhase::Listening);
         assert_eq!(session.view().input_id, id);
         assert_eq!(session.view().text, "Actually stop");
@@ -1517,6 +1517,165 @@ mod tests {
             .unwrap();
         assert_eq!(session.next_speech().as_deref(), Some("New response."));
     }
+    fn awaiting_or_playing_reply(speaking: bool) -> Arc<VoiceChat> {
+        let session = conversation();
+        submit(&session, "Hello");
+        session.take_prompt();
+        if speaking {
+            session
+                .transcript(
+                    AgentTranscriptKind::Codex,
+                    true,
+                    false,
+                    vec![streamed_turn(
+                        "one",
+                        "Hello",
+                        "First sentence. Draft",
+                        false,
+                    )],
+                )
+                .unwrap();
+        }
+        session
+    }
+
+    fn feed_microphone_fixture(session: &VoiceChat, id: u64) {
+        let samples = include_bytes!("../tests/fixtures/voice-counting-16k.f32");
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "Fixture values are clamped PCM16 samples"
+        )]
+        let pcm: Vec<u8> = samples
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .flat_map(|b| {
+                ((f32::from_le_bytes(*b).clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes()
+            })
+            .collect();
+        for packet in pcm.chunks(4096) {
+            session.audio(id, STANDARD.encode(packet)).unwrap();
+            if session.view().phase == VoiceChatPhase::Listening {
+                break;
+            }
+        }
+    }
+
+    #[test]
+    fn unrecognized_audio_preserves_pending_and_playing_replies() {
+        for speaking in [false, true] {
+            let session = awaiting_or_playing_reply(speaking);
+            let id = session.view().input_id;
+            session.recognition(id, "   ".into());
+            feed_microphone_fixture(&session, id);
+            assert_eq!(
+                session.view().phase,
+                if speaking {
+                    VoiceChatPhase::Speaking
+                } else {
+                    VoiceChatPhase::Waiting
+                }
+            );
+            session
+                .transcript(
+                    AgentTranscriptKind::Codex,
+                    true,
+                    false,
+                    vec![streamed_turn(
+                        "one",
+                        "Hello",
+                        "First sentence. Complete reply.",
+                        true,
+                    )],
+                )
+                .unwrap();
+            assert_eq!(session.view().phase, VoiceChatPhase::Speaking);
+            assert!(session.next_speech().is_some());
+        }
+    }
+
+    #[test]
+    fn delayed_recognition_confirms_an_interruption_without_another_audio_packet() {
+        for speaking in [false, true] {
+            let session = awaiting_or_playing_reply(speaking);
+            let id = session.view().input_id;
+            feed_microphone_fixture(&session, id);
+            session.recognition(id, "Actually stop".into());
+            assert_eq!(session.view().phase, VoiceChatPhase::Listening);
+            assert_eq!(session.view().input_id, id);
+            assert_eq!(session.view().text, "Actually stop");
+            assert!(session.next_speech().is_none());
+            session
+                .transcript(
+                    AgentTranscriptKind::Codex,
+                    true,
+                    false,
+                    vec![streamed_turn("one", "Hello", "Late old response.", true)],
+                )
+                .unwrap();
+            assert_eq!(session.view().phase, VoiceChatPhase::Listening);
+            session.finish();
+            session.recognition_ended(id).unwrap();
+            assert_eq!(session.take_prompt().as_deref(), Some("Actually stop"));
+        }
+    }
+
+    #[test]
+    fn old_microphone_noise_cannot_prime_a_later_interruption() {
+        for speaking in [false, true] {
+            let session = awaiting_or_playing_reply(speaking);
+            let id = session.view().input_id;
+            feed_microphone_fixture(&session, id);
+            for _ in 0..24 {
+                session.audio(id, STANDARD.encode([0_u8; 4096])).unwrap();
+            }
+            session.recognition(id, "You".into());
+            assert_eq!(
+                session.view().phase,
+                if speaking {
+                    VoiceChatPhase::Speaking
+                } else {
+                    VoiceChatPhase::Waiting
+                }
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "Set WHIP_VOICE_NOISE_PCM to a 16 kHz mono PCM16LE recording"]
+    fn recorded_noise_preserves_pending_and_playing_replies() {
+        let pcm = std::fs::read(std::env::var("WHIP_VOICE_NOISE_PCM").unwrap()).unwrap();
+        assert!(!pcm.is_empty());
+        for sensitivity in [50, 75, 100] {
+            for speaking in [false, true] {
+                let session = awaiting_or_playing_reply(speaking);
+                session.set_vad_sensitivity(sensitivity);
+                let expected = session.view().phase;
+                let id = session.view().input_id;
+                for packet in pcm.chunks(4096) {
+                    session.audio(id, STANDARD.encode(packet)).unwrap();
+                }
+                assert_eq!(session.view().phase, expected, "sensitivity {sensitivity}");
+                session
+                    .transcript(
+                        AgentTranscriptKind::Codex,
+                        true,
+                        false,
+                        vec![streamed_turn(
+                            "one",
+                            "Hello",
+                            "First sentence. Complete reply.",
+                            true,
+                        )],
+                    )
+                    .unwrap();
+                assert_eq!(session.view().phase, VoiceChatPhase::Speaking);
+                assert!(session.next_speech().is_some());
+                println!("sensitivity={sensitivity} phase={expected:?}: reply preserved");
+            }
+        }
+    }
+
     #[test]
     fn silence_and_muted_input_cannot_interrupt_a_reply() {
         let session = conversation();
