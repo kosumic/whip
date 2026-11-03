@@ -35,6 +35,7 @@ import { FLOATING_WARNING_BANNER_HEIGHT } from '../src/components/FloatingWarnin
 import { useAppGlassEnabled } from '../src/components/GlassSurface';
 import type { TerminalSubmissionPermitLike } from 'react-native-whip-ssh/src/terminalSubmissions';
 import { TerminalResidencyEndReason } from '../src/lib/terminalResidency';
+import { browserRegistry } from '../src/browser/registry';
 
 jest.mock('../src/services/composerImagePaste', () => ({ uploadPastedComposerImage: jest.fn() }));
 jest.mock('../src/services/attachmentPaste', () => ({ discardClipboardAttachment: jest.fn() }));
@@ -769,6 +770,142 @@ test('draft text stays with its tab across switches and screen remounts', async 
   mount({ targets });
   expect(ui('MessageComposer').props.initialValue).toBe('first tab');
   expect(props.composerStore.snapshot(other.key).text).toBe('second tab');
+});
+
+describe.each(['android', 'ios'] as const)('browser foreground on %s', platform => {
+  beforeEach(() => { Platform.OS = platform; });
+  afterEach(async () => {
+    act(() => renderer.unmount());
+    await act(async () => {
+      await Promise.all([...browserRegistry.entries.keys()].map(id => browserRegistry.close(id)));
+    });
+    Platform.OS = 'android';
+  });
+
+  test.each([
+    { expanded: false, chatViewEnabled: false },
+    { expanded: true, chatViewEnabled: false },
+    { expanded: false, chatViewEnabled: true },
+    { expanded: true, chatViewEnabled: true },
+  ])('suspends and restores the draft without focus (expanded=$expanded, chat=$chatViewEnabled)', async ({ expanded, chatViewEnabled }) => {
+    mockHostStatus.mockReturnValue({ state: 'disconnected' });
+    mount({ chatViewEnabled });
+    await press('compose');
+    act(() => {
+      ui('MessageComposer').props.onChangeText('queued text');
+      ui('MessageComposer').props.actions.onSend();
+      ui('MessageComposer').props.onChangeText('unsent draft');
+      props.composerStore.addAttachment(target.key, {
+        id: 1, remotePath: '/remote/image.png', previewUri: 'file:///image.png', dispose: jest.fn(),
+      });
+    });
+    if (expanded) act(() => { ui('MessageComposer').props.actions.onExpand(); });
+    const input = ui(expanded ? 'ComposerInput' : 'MessageComposer');
+    const staleFocus = input.props.onFocus;
+    const staleModalShow = expanded ? ui('GlassOverlayHost').parent!.props.onShow : undefined;
+    if (expanded) act(() => { staleModalShow(); });
+    const draft = props.composerStore.snapshot(target.key);
+    const cancelPaste = jest.fn();
+    act(() => { props.composerStore.beginImagePaste(target.key, cancelPaste); });
+    const pendingDraft = props.composerStore.snapshot(target.key);
+    mockComposerHandle.focus.mockClear();
+    terminalHandle.focus.mockClear();
+    jest.mocked(Keyboard.dismiss).mockClear();
+
+    // The toolbar uses this same registry, including the phone-local browser.
+    await act(async () => { await browserRegistry.openLocal(); });
+    expect(renderer.root.findAllByType(MockMessageComposer)).toHaveLength(0);
+    expect(renderer.root.findAll(node => String(node.type) === 'ComposerInput')).toHaveLength(0);
+    expect(renderer.root.findAll(node => String(node.type) === 'Modal' && node.props.visible)).toHaveLength(0);
+    const controls = renderer.root.findByProps({ testID: 'terminal-control-bar' });
+    expect(controls.parent!.props.pointerEvents).toBe('none');
+    expect(controls.parent!.props.accessibilityElementsHidden).toBe(true);
+    // A browser input can show the shared IME while late terminal scroll events
+    // are still arriving. Those events must not dismiss the browser keyboard.
+    emitKeyboard(true);
+    act(() => { ui('TerminalRendererHost').props.onScrollActivity(target, true); });
+    act(() => { staleFocus(); staleModalShow?.(); jest.advanceTimersByTime(1100); });
+    expect(Keyboard.dismiss).not.toHaveBeenCalled();
+    expect(mockComposerHandle.focus).not.toHaveBeenCalled();
+    expect(terminalHandle.focus).not.toHaveBeenCalled();
+    expect(props.composerStore.snapshot(target.key)).toBe(pendingDraft);
+
+    act(() => { browserRegistry.hide(); });
+    const restored = ui(expanded ? 'ComposerInput' : 'MessageComposer');
+    expect(restored.props.initialValue).toBe('unsent draft');
+    expect(restored.props.autoFocus).toBe(false);
+    if (expanded) act(() => { ui('GlassOverlayHost').parent!.props.onShow(); });
+    act(() => jest.advanceTimersByTime(1100));
+    expect(props.composerStore.snapshot(target.key)).toBe(pendingDraft);
+    expect(pendingDraft).toMatchObject({ composeOpen: true, composeExpanded: expanded, queue: draft.queue, attachments: draft.attachments });
+    expect(cancelPaste).not.toHaveBeenCalled();
+    expect(draft.attachments[0].dispose).not.toHaveBeenCalled();
+    expect(terminalHandle.submitPastes).not.toHaveBeenCalled();
+    expect(mockComposerHandle.focus).not.toHaveBeenCalled();
+    expect(terminalHandle.focus).not.toHaveBeenCalled();
+
+    // The restored input still accepts an explicit tap/focus.
+    act(() => { restored.props.onFocus(); });
+    expect(ui(expanded ? 'ComposerInput' : 'MessageComposer').props.autoFocus).toBe(!chatViewEnabled);
+    expect(ui(expanded ? 'ComposerInput' : 'MessageComposer').props.showSoftInputOnFocus).toBe(true);
+  });
+
+  test('switching panes while browsing preserves independent presentations and the browser keyboard', async () => {
+    const other = { ...target, key: 'target-2', session: { ...target.session, terminalId: 'terminal-2' } };
+    const targets = [target, other];
+    const select = (activeTarget: Props['activeTarget']) => {
+      act(() => renderer.update(<TerminalScreen {...props} targets={targets} activeTarget={activeTarget} />));
+    };
+    mount({ targets });
+    await press('compose');
+    act(() => { ui('MessageComposer').props.onChangeText('first pane'); ui('MessageComposer').props.actions.onExpand(); });
+    await act(async () => { await browserRegistry.openLocal(); });
+    jest.mocked(Keyboard.dismiss).mockClear();
+    mockComposerHandle.focus.mockClear();
+    select(other);
+    // A draft arriving from another app-wide flow must stay suspended too.
+    act(() => props.composerStore.restore(other.key, { text: 'second pane', composeOpen: true, composeExpanded: false }));
+    select(target);
+    act(() => jest.advanceTimersByTime(1100));
+    expect(renderer.root.findAllByType(MockMessageComposer)).toHaveLength(0);
+    expect(renderer.root.findAll(node => String(node.type) === 'ComposerInput')).toHaveLength(0);
+    expect(Keyboard.dismiss).not.toHaveBeenCalled();
+    expect(mockComposerHandle.focus).not.toHaveBeenCalled();
+
+    act(() => browserRegistry.hide());
+    expect(ui('ComposerInput').props.initialValue).toBe('first pane');
+    expect(ui('ComposerInput').props.autoFocus).toBe(false);
+    select(other);
+    expect(ui('MessageComposer').props.initialValue).toBe('second pane');
+    expect(ui('MessageComposer').props.autoFocus).toBe(false);
+  });
+
+  test('agent links and reopening an agent browser suspend the voice composer and its modal', async () => {
+    const voiceChatTarget = { agent: 'codex' as const, hostId: 'host', paneId: 'pane', tabId: 'tab', label: 'Codex' };
+    mount({ chatViewEnabled: true, voiceChatTarget });
+    await press('compose');
+    act(() => { ui('MessageComposer').props.onVoiceChat(); });
+    expect(ui('VoiceChatScreen').props.visible).toBe(true);
+    expect(ui('VoiceChatScreen').props.expanded).toBe(true);
+
+    const identity = { runtimeId: 'host', sessionId: 'agent-browser', paneId: 'pane', terminalId: 'terminal-1' };
+    const entry = browserRegistry.ensure(identity, {
+      startWebPreview: jest.fn(), stopPreview: jest.fn(),
+    });
+    // Reuse a page as the agent-link picker does, without needing a native WebView.
+    const tab = entry.controller.tab();
+    entry.controller.navigation(tab.id, { url: 'https://example.test/', title: 'Example', canGoBack: false, canGoForward: false });
+    await act(async () => { await browserRegistry.openLink(identity.sessionId, tab.url); });
+    expect(ui('VoiceChatScreen').props.visible).toBe(false);
+    act(() => browserRegistry.hide());
+    expect(ui('VoiceChatScreen').props.visible).toBe(true);
+
+    act(() => browserRegistry.open(identity.sessionId));
+    expect(ui('VoiceChatScreen').props.visible).toBe(false);
+    act(() => browserRegistry.hide());
+    expect(ui('VoiceChatScreen').props.visible).toBe(true);
+    expect(ui('VoiceChatScreen').props.expanded).toBe(true);
+  });
 });
 
 describe('per-pane composer toggles', () => {

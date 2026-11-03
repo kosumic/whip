@@ -69,6 +69,7 @@ import { useClipboardCopyFeedback } from '../hooks/useClipboardCopyFeedback';
 import { useScrollActivity } from '../hooks/useScrollActivity';
 import { useSynchronousState } from '../hooks/useSynchronousState';
 import { useComposerSpeechInput } from '../hooks/useComposerSpeechInput';
+import { browserRegistry } from '../browser/registry';
 import type { TranscriptMessage } from '../agentChat';
 import {
   contentInsetsWithSessionChrome,
@@ -406,7 +407,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       activeTarget,
       onResidencyEnd,
       targets,
-      visible,
+      visible: screenVisible,
       preferences,
       controlUsage,
       historyEntries,
@@ -447,6 +448,13 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const { colors: appColors } = useTheme();
     const [voiceChatOpen, setVoiceChatOpen] = useState<{ targetKey: string; target: VoiceChatTarget } | null>(null);
     const [voiceChatExpanded, setVoiceChatExpanded] = useState(true);
+    const browserVisible = useSyncExternalStore(
+      browserRegistry.subscribe,
+      () => browserRegistry.visibleId !== null,
+    );
+    // Suspend presentation and invalidate pending focus callbacks without changing
+    // the per-pane draft, queue, keyboard preference, or expanded state.
+    const visible = screenVisible && !browserVisible;
     const [voiceChatComposing, setVoiceChatComposing] = useState(false);
     const voiceChatRef = useRef<VoiceChatHandle>(null);
     const voiceChatActive = Boolean(voiceChatOpen && voiceChatOpen.targetKey === activeTarget?.key);
@@ -564,7 +572,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       requestKeyboardFocus(false);
       renderer.current?.blur();
       composeInputRef.current?.blur();
-      Keyboard.dismiss();
+      if (composerContextRef.current.visible) Keyboard.dismiss();
     }, [requestKeyboardFocus]);
     const [cursorGeometry, setCursorGeometry] = useState<{
       targetKey: string;
@@ -782,8 +790,10 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       keyboardEnabledBeforeComposeRef.current = null;
       composeInputRef.current?.blur();
       renderer.current?.blur();
-      Keyboard.dismiss();
-    }, [composerContext]);
+      // Only blur our inputs while browsing: a global dismiss can steal the
+      // keyboard from the browser's address field or a page input.
+      if (!browserVisible) Keyboard.dismiss();
+    }, [browserVisible, composerContext]);
 
     const cacheTargetKey = activeTarget?.key || '';
     const offlineSnapshot = useSyncExternalStore(
@@ -2407,7 +2417,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           onRequestClose={() => setHistoryOpen(false)}
           statusBarTranslucent
           transparent
-          visible={historyOpen}
+          visible={visible && historyOpen}
         >
           <View className="flex-1 justify-end bg-black/50">
             <Pressable
