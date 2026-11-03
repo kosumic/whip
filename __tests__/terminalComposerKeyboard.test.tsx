@@ -41,6 +41,9 @@ jest.mock('../src/services/attachmentPaste', () => ({ discardClipboardAttachment
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );
+// Voice chat is a leaf UI in these composer tests; avoid loading it through
+// Jest's VM, which does not implement Metro's dynamic-import path.
+jest.mock('react', () => ({ ...jest.requireActual('react'), lazy: () => 'VoiceChatScreen' }));
 jest.mock('react-native', () => ({
   View: 'View',
   ScrollView: 'ScrollView',
@@ -170,10 +173,11 @@ function MockMessageComposer(composerProps: { inputRef: Ref<unknown>; beforeInpu
   useImperativeHandle(composerProps.inputRef, () => mockComposerHandle);
   return require('react/jsx-runtime').jsx('MessageComposer', { ...composerProps, children: composerProps.beforeInput });
 }
+const submitPastes = async (_target: unknown, parts: readonly string[], _first: boolean, permit: TerminalSubmissionPermitLike): Promise<void> => { await permit.dispatch([...parts]); };
 const terminalHandle = {
   paste: jest.fn(),
   input: jest.fn(() => true),
-  submitPastes: jest.fn(async (_target: unknown, parts: readonly string[], _first: boolean, permit: TerminalSubmissionPermitLike): Promise<void> => { await permit.dispatch([...parts]); }),
+  submitPastes: jest.fn(submitPastes),
   fit: jest.fn(),
   focus: jest.fn(),
   blur: jest.fn(),
@@ -195,10 +199,11 @@ const keyboardOcclusion = 300;
 const keyboardHeight = keyboardOcclusion - 34;
 const controlBarHeight = terminalControlBarInset(34);
 type Props = ComponentProps<typeof TerminalScreen>;
+const mockHostStatus = jest.fn(() => ({ state: 'connected' }));
 const target = {
   key: 'target-1',
   hostSessionId: 'host-1',
-  client: { native: { runtimeId: 'host-1', runtimeIncarnation: 1 } },
+  client: { native: { runtimeId: 'host-1', runtimeIncarnation: 1, status: mockHostStatus } },
   session: {
     terminalId: 'terminal-1',
     paneId: 'pane-1',
@@ -207,7 +212,7 @@ const target = {
     status: 'connected',
     reconnectAttempt: 0,
   },
-} as Props['targets'][number];
+} as unknown as Props['targets'][number];
 const props: Props = {
   activeTarget: target,
   targets: [target],
@@ -304,6 +309,7 @@ beforeEach(() => {
   props.composerStore = new TerminalComposerStore();
   jest.useFakeTimers();
   jest.clearAllMocks();
+  mockHostStatus.mockReturnValue({ state: 'connected' });
   jest.mocked(useAppGlassEnabled).mockReturnValue(false);
   mockVolumeKeyListeners.clear();
   AppState.currentState = 'active';
@@ -317,18 +323,42 @@ test('chat speech controls are absent from the terminal control bar', () => {
   }
 });
 
-test.each([false, true])('voice chat is available when the transcript is ready in either view (chat=%s)', async chatViewEnabled => {
+test.each([false, true])('voice chat is available before the first transcript in either view (chat=%s)', async chatViewEnabled => {
   mount({ chatViewEnabled });
   await press('compose');
   expect(ui('MessageComposer').props.voiceChatLabel).toBeUndefined();
-  act(() => renderer.update(<TerminalScreen {...props} chatViewEnabled={chatViewEnabled} transcriptReady
-    voiceChatTarget={{ agent: 'codex', bindingToken: 'live-chat', hostId: 'host', paneId: 'pane', label: 'Codex' }} />));
+  const voiceChatTarget = { agent: 'codex' as const, hostId: 'host', paneId: 'pane', tabId: 'tab', label: 'Codex' };
+  act(() => renderer.update(<TerminalScreen {...props} chatViewEnabled={chatViewEnabled} voiceChatTarget={voiceChatTarget} />));
+  expect(ui('MessageComposer').props.voiceChatLabel).toBe('terminal.voice.chat');
+  act(() => renderer.update(<TerminalScreen {...props} chatViewEnabled={chatViewEnabled}
+    voiceChatTarget={{ ...voiceChatTarget, bindingToken: 'live-chat' }} />));
   expect(ui('MessageComposer').props.voiceChatLabel).toBe('terminal.voice.chat');
 
   act(() => props.composerStore.addAttachment(target.key, {
     id: 1, remotePath: '/remote/image.png', previewUri: null, dispose: () => {},
   }));
   expect(ui('MessageComposer').props.voiceChatLabel).toBeUndefined();
+});
+
+test('the voice composer opens the text editor and preserves a draft when it loses focus', async () => {
+  const voiceChatTarget = { agent: 'codex' as const, hostId: 'host', paneId: 'pane', tabId: 'tab', label: 'Codex' };
+  mount({ chatViewEnabled: true, voiceChatTarget });
+  await press('compose');
+  act(() => { ui('MessageComposer').props.onVoiceChat(); });
+  act(() => { ui('VoiceChatScreen').props.onMinimize(); });
+  expect(ui('VoiceChatScreen').props.compactComposer).toBe(true);
+  expect(renderer.root.findAllByType(MockMessageComposer)).toHaveLength(0);
+
+  act(() => { ui('VoiceChatScreen').props.onCompose(); });
+  expect(ui('VoiceChatScreen').props.compactComposer).toBe(false);
+  act(() => { ui('MessageComposer').props.onChangeText('Keep my draft'); });
+  act(() => { ui('MessageComposer').props.onBlur(); });
+  expect(ui('MessageComposer').props.initialValue).toBe('Keep my draft');
+  expect(ui('VoiceChatScreen').props.compactComposer).toBe(false);
+
+  act(() => { ui('MessageComposer').props.onChangeText(''); });
+  expect(ui('VoiceChatScreen').props.compactComposer).toBe(true);
+  expect(renderer.root.findAllByType(MockMessageComposer)).toHaveLength(0);
 });
 
 test('switching to chat hides terminal keys and retains Paste, History, and Scan links', () => {
@@ -542,6 +572,28 @@ test.each([false, true])('composer reports message acceptance in terminal and ch
 
   expect(terminalHandle.submitPastes).toHaveBeenCalledTimes(1);
   expect(props.composerStore.snapshot(target.key).text).toBe('');
+});
+
+test('background voice prompts finish sending while the terminal renderer is paused', async () => {
+  const voiceChatTarget = { agent: 'opencode' as const, hostId: 'host-1', paneId: 'pane-1', tabId: 'tab', label: 'OpenCode' };
+  mount({ voiceChatTarget });
+  await press('compose');
+  await act(async () => { ui('MessageComposer').props.onVoiceChat(); });
+  terminalHandle.submitPastes.mockImplementation(() => new Promise<void>(() => {}));
+  try {
+    changeAppState('background');
+    const releasedTarget = { ...target, session: { ...target.session, status: 'disconnected' as const } };
+    act(() => renderer.update(<TerminalScreen {...props} activeTarget={releasedTarget} targets={[releasedTarget]} voiceChatTarget={voiceChatTarget} />));
+    await act(async () => {
+      const voice = ui('VoiceChatScreen');
+      expect(voice.props.send('First voice prompt')).toBe(true);
+      expect(voice.props.send('Second voice prompt')).toBe(true);
+    });
+    expect(props.composerStore.snapshot(target.key).queue).toHaveLength(0);
+    expect(jest.mocked(props.onHistoryEntry).mock.calls.map(([entry]) => entry)).toEqual(['First voice prompt', 'Second voice prompt']);
+  } finally {
+    terminalHandle.submitPastes.mockImplementation(submitPastes);
+  }
 });
 
 test('batched native edits submit the latest text and keep the next draft', async () => {
@@ -760,6 +812,7 @@ describe('per-pane composer toggles', () => {
 });
 
 test('unqueue restores text and attachments into the current draft', async () => {
+  mockHostStatus.mockReturnValue({ state: 'disconnected' });
   const offline = { ...target, session: { ...target.session, status: 'disconnected' as const } };
   const dispose = jest.fn();
   props.composerStore.setText(target.key, 'queued text');

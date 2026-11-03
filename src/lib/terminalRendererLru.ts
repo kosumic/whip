@@ -1,6 +1,11 @@
 export const MIN_XTERM_CACHE_CAPACITY = 3;
 export const DEFAULT_XTERM_CACHE_CAPACITY = 20;
 
+export function terminalCacheCapacity(capacity: number): number {
+  return Number.isSafeInteger(capacity) && capacity >= MIN_XTERM_CACHE_CAPACITY
+    ? capacity : DEFAULT_XTERM_CACHE_CAPACITY;
+}
+
 export function touchTerminalRendererEntry<T>(
   entries: Map<string, T>,
   key: string,
@@ -17,10 +22,7 @@ export function terminalRendererEvictionKeys(
   capacity: number,
   protectedKeys: ReadonlySet<string>,
 ): string[] {
-  const normalizedCapacity = Number.isSafeInteger(capacity)
-    && capacity >= MIN_XTERM_CACHE_CAPACITY
-    ? capacity
-    : DEFAULT_XTERM_CACHE_CAPACITY;
+  const normalizedCapacity = terminalCacheCapacity(capacity);
   const protectedCount = keys.reduce(
     (count, key) => count + (protectedKeys.has(key) ? 1 : 0),
     0,

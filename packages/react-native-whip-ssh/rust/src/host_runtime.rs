@@ -716,24 +716,6 @@ fn emit_host_state(inner: &RuntimeInner) {
     {
         inner.reverse_control.reconcile(&snapshot.panes);
     }
-    let transcript_retention = if state.sync_status == HostSyncStatus::Synced
-        && state.freshness == HostFreshness::Fresh
-        && let Some(snapshot) = state.snapshot.as_ref()
-    {
-        let identities = snapshot
-            .panes
-            .iter()
-            .filter_map(|pane| {
-                authoritative_agent_chat_identity(pane)
-                    .map(|identity| (identity.terminal_id.clone(), identity))
-            })
-            .collect::<HashMap<_, _>>();
-        inner
-            .agents
-            .reconcile_authoritative_bindings(&identities, state.revision)
-    } else {
-        None
-    };
     let statuses = if state.sync_status == HostSyncStatus::Synced
         && state.freshness == HostFreshness::Fresh
         && let Some(snapshot) = state.snapshot.as_ref()
@@ -761,6 +743,24 @@ fn emit_host_state(inner: &RuntimeInner) {
         HashMap::new()
     };
     inner.agents.update_agent_statuses(statuses, state.revision);
+    let transcript_retention = if state.sync_status == HostSyncStatus::Synced
+        && state.freshness == HostFreshness::Fresh
+        && let Some(snapshot) = state.snapshot.as_ref()
+    {
+        let identities = snapshot
+            .panes
+            .iter()
+            .filter_map(|pane| {
+                authoritative_agent_chat_identity(pane)
+                    .map(|identity| (identity.terminal_id.clone(), identity))
+            })
+            .collect::<HashMap<_, _>>();
+        inner
+            .agents
+            .reconcile_authoritative_bindings(&identities, state.revision)
+    } else {
+        None
+    };
     emit(HostRuntimeEvent::HostStateChanged {
         runtime_id: inner.id.clone(),
         state,

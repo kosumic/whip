@@ -2,11 +2,18 @@ import { VoiceConversation, type VoiceConversationView } from '../src/services/v
 import { recordDiagnostic } from '../src/services/diagnosticFormatting';
 import type { AgentChatState } from '../src/agentChat';
 import type { NativeVoiceChat } from 'react-native-whip-ssh/src/voiceChat';
+import { suppressAgentAlertsForTab } from '../src/services/alerts';
+import { runVoiceCallBackground } from '../src/services/voiceCallBackground';
+
+const mockReleaseAlerts = jest.fn();
+jest.mock('../src/services/alerts', () => ({
+  suppressAgentAlertsForTab: jest.fn(() => mockReleaseAlerts),
+}));
 
 const mockInputListeners = new Set<() => void>();
 const mockAppListeners = new Set<(state: string) => void>();
 const mockCallEvents = new Map<string, (event: { token: string; type: string; muted?: boolean; reason?: string; error?: string; level?: number }) => void>();
-const mockTranscriptListeners = new Set<(state: AgentChatState, baseline?: boolean) => void>();
+const mockTranscriptListeners = new Set<(state: AgentChatState | null, baseline?: boolean) => void>();
 let mockInputSnapshot = { owner: null as string | null, phase: 'idle', interimText: '' };
 let mockView = { phase: 'preparing', inputId: 1n, muted: false, smartTurn: false, text: '', level: 0, silenceMs: 800, progress: 0, analyze: false };
 let mockRequest: {
@@ -67,11 +74,11 @@ jest.mock('../src/services/speechPlayback', () => ({ getSpeechPlayback: () => mo
 jest.mock('../src/services/chatSpeech', () => ({ suspendChatSpeechForInput: jest.fn(() => Promise.resolve()) }));
 jest.mock('../src/services/composerSpeechInput', () => ({ get composerSpeechInput() { return mockInput; } }));
 jest.mock('../src/services/NativeTranscriptService', () => ({ agentTranscriptService: {
-  subscribe: (_binding: string, listener: (state: AgentChatState, baseline?: boolean) => void) => {
+  subscribe: (_binding: string, listener: (state: AgentChatState | null, baseline?: boolean) => void) => {
     mockTranscriptListeners.add(listener); return () => mockTranscriptListeners.delete(listener);
   },
 } }));
-const target = { agent: 'codex' as const, bindingToken: 'chat', hostId: 'host', paneId: 'pane', label: 'Codex' };
+const target = { agent: 'codex' as const, bindingToken: 'chat', hostId: 'host', paneId: 'pane', tabId: 'tab', label: 'Codex' };
 const state: AgentChatState = { sessionId: 'session', status: 'live', transcript: { sessionId: 'session', turns: [], messages: [] } };
 const flush = async () => { for (let i = 0; i < 16; i++) await Promise.resolve(); };
 let session: VoiceConversation;
@@ -101,6 +108,114 @@ test('starts without downloading and uses the shared strictly local recognizer',
   mockRequest!.append('Recognized words');
   expect(mockCore.recognition).toHaveBeenCalledWith(1n, 'Recognized words');
   expect(send).not.toHaveBeenCalled();
+});
+
+test('keeps background execution alive until voice call cleanup finishes', async () => {
+  await session.start(); await flush();
+  const token = (mockSpeech.startVoiceCall.mock.calls[0] as unknown as [string])[0];
+  const finished = jest.fn();
+  const background = runVoiceCallBackground({ token }).then(finished);
+  await flush();
+  expect(finished).not.toHaveBeenCalled();
+  await session.close();
+  await background;
+  expect(finished).toHaveBeenCalledTimes(1);
+});
+
+test('suppresses status alerts for the call tab until hangup', async () => {
+  await session.start(); await flush();
+  expect(suppressAgentAlertsForTab).toHaveBeenCalledWith(expect.any(String), target.hostId, target.tabId);
+  session.toggleMuted();
+  await flush();
+  expect(mockReleaseAlerts).not.toHaveBeenCalled();
+  await session.close();
+  expect(mockReleaseAlerts).toHaveBeenCalledTimes(1);
+});
+
+test('releases status alerts when starting the call fails', async () => {
+  mockSpeech.startVoiceCall.mockRejectedValueOnce(new Error('Call unavailable'));
+  await session.start(); await flush();
+  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'error' }));
+  expect(mockReleaseAlerts).toHaveBeenCalledTimes(1);
+});
+
+test('a new agent can receive its first spoken prompt before its transcript exists', async () => {
+  session = new VoiceConversation({ ...target, bindingToken: undefined }, send, changed, () => Promise.resolve(mockCore as unknown as NativeVoiceChat));
+  await session.start(); await flush();
+  expect(mockTranscriptListeners.size).toBe(0);
+  expect(mockInput.start).toHaveBeenCalled();
+  mockView.phase = 'waiting';
+  mockCore.takePrompt.mockReturnValueOnce('First spoken prompt');
+  mockRequest!.onAudio('AAAA');
+  expect(send).toHaveBeenCalledWith('First spoken prompt');
+
+  session.setTranscriptBinding('first-transcript');
+  for (const listener of mockTranscriptListeners) listener(state, true);
+  expect(mockCore.transcript).toHaveBeenLastCalledWith('codex', state, false);
+  expect(mockSpeech.startVoiceCall).toHaveBeenCalledTimes(1);
+  expect(mockSpeech.endVoiceCall).not.toHaveBeenCalled();
+  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'waiting', transcript: state, error: null }));
+  await session.close();
+  expect(mockTranscriptListeners.size).toBe(0);
+});
+
+test('a binding invalidation preserves the pending reply until the replacement transcript arrives', async () => {
+  await session.start(); await flush();
+  mockView.phase = 'waiting';
+  mockCore.takePrompt.mockReturnValueOnce('First spoken prompt');
+  mockRequest!.onAudio('AAAA');
+  for (const listener of mockTranscriptListeners) listener(null);
+  session.setTranscriptBinding();
+  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'waiting', error: null }));
+  expect(mockSpeech.endVoiceCall).not.toHaveBeenCalled();
+  expect(mockCore.close).not.toHaveBeenCalled();
+
+  session.setTranscriptBinding('replacement-transcript');
+  mockView.phase = 'speaking';
+  mockView.inputId += 1n;
+  mockCore.nextSpeech.mockReturnValueOnce('The first reply.');
+  for (const listener of mockTranscriptListeners) listener(state, true);
+  await flush();
+  expect(send).toHaveBeenCalledTimes(1);
+  expect(mockSpeech.speakChat).toHaveBeenCalledTimes(1);
+  expect(mockSpeech.speakChat).toHaveBeenCalledWith(expect.any(String), 'The first reply.');
+  expect(mockSpeech.startVoiceCall).toHaveBeenCalledTimes(1);
+  expect(mockSpeech.endVoiceCall).not.toHaveBeenCalled();
+});
+
+test('a binding that never returns ends the call after the recovery deadline', async () => {
+  jest.useFakeTimers();
+  try {
+    await session.start(); await flush();
+    mockView.phase = 'waiting';
+    mockRequest!.onAudio('AAAA');
+    for (const listener of mockTranscriptListeners) listener(null);
+    await jest.advanceTimersByTimeAsync(29_000);
+    expect(mockSpeech.endVoiceCall).not.toHaveBeenCalled();
+    await jest.advanceTimersByTimeAsync(1_000);
+    await flush();
+    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'error', error: expect.stringContaining('transcript did not reconnect') }));
+    expect(mockSpeech.endVoiceCall).toHaveBeenCalledTimes(1);
+  } finally {
+    await session.close();
+    jest.useRealTimers();
+  }
+});
+
+test('a replacement transcript clears the recovery deadline', async () => {
+  jest.useFakeTimers();
+  try {
+    await session.start(); await flush();
+    for (const listener of mockTranscriptListeners) listener(null);
+    session.setTranscriptBinding('replacement-transcript');
+    for (const listener of mockTranscriptListeners) listener(state, true);
+    await jest.advanceTimersByTimeAsync(30_000);
+    expect(mockSpeech.endVoiceCall).not.toHaveBeenCalled();
+    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'listening', error: null }));
+  } finally {
+    await session.close();
+    jest.useRealTimers();
+  }
 });
 
 test('applies the selected VAD sensitivity before capture and updates it during a call', async () => {
@@ -323,7 +438,7 @@ test('latency uses a native playback-start event rather than TTS submission', as
     mockCore.nextSpeech.mockReturnValueOnce('Reply.');
     for (const listener of mockTranscriptListeners) listener(state);
     await flush();
-    expect(recordDiagnostic).not.toHaveBeenCalled();
+    expect(recordDiagnostic).not.toHaveBeenCalledWith('info', 'VoiceChat', 'response-latency', expect.anything());
     now = 1_350;
     const token = (mockSpeech.startLocalChatSpeech.mock.calls[0] as unknown as [string])[0];
     mockCallEvents.get('WhipChatSpeechStarted')!({ token, type: '' });

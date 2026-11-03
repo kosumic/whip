@@ -26,6 +26,12 @@ into the existing local speech queue as the transcript grows. A single native
 player stays open through generation gaps; completion flushes the last fragment.
 It does not replay history or already spoken prefixes when a transcript is edited.
 Normal turn-taking resumes after generation and playback have both drained.
+Idle prompt acknowledgements and gaps between assistant segments do not finish
+a voice turn. The agent's final outcome completes generation, and the last
+queued speech fragment must finish playing before listening resumes.
+If a transcript subscription expires, the call keeps its pending reply while
+the same conversation is rebound. If no replacement arrives within 30 seconds, the call
+stops with a reconnect error.
 With device echo cancellation, local capture continues while the agent is
 thinking or speaking. Sustained user speech (about 192 ms) interrupts playback
 and discards the old response's remaining speech, including later transcript
@@ -82,6 +88,16 @@ event cannot block speech startup.
 
 An active conversation continues when Whip is backgrounded or the screen locks.
 Android keeps an ongoing call notification and a microphone foreground service.
+The call also holds a React Native background task so recognition restarts and
+speech draining keep running while the activity is paused. Connection monitoring
+stays enabled until both voice calls and any general monitoring service release it.
+Listening segments check the microphone grant directly; only foreground call
+setup requests permission through the activity.
+Background voice prompts dispatch through the native submission queue without
+waiting for a terminal viewport or editor acknowledgement. They retain the same
+ordering, destination checks, and history as foreground composer submissions.
+Herdr submission readiness follows the host connection; releasing its terminal
+viewport in the background does not mark the native send queue offline.
 iOS uses CallKit's activated audio session and the existing audio background mode.
 Another call taking audio control ends the conversation. Start voice chat while
 Whip is in the foreground, after granting microphone and speech permissions.

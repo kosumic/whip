@@ -586,7 +586,10 @@ impl VoiceChat {
             if turn.failed {
                 return Err("The agent turn was interrupted or failed. Check the transcript before continuing.".to_owned().into());
             }
-            state.response_completed |= turn.completed;
+            // OpenCode can publish an idle user-only turn before the assistant
+            // exists. That acknowledges our prompt, not a completed response.
+            state.response_completed |=
+                turn.completed && turn.messages.iter().any(|message| message.assistant);
             if !state.response_skipped {
                 self.speech
                     .update_voice(agent, turn.messages, state.response_completed);
@@ -1063,6 +1066,47 @@ mod tests {
             assert!(session.next_speech().is_none());
             session.playback_ended();
             assert_eq!(session.view().phase, VoiceChatPhase::Muted);
+        }
+    }
+    #[test]
+    fn idle_user_only_turn_waits_for_its_assistant_reply() {
+        for agent in [
+            AgentTranscriptKind::Claude,
+            AgentTranscriptKind::Codex,
+            AgentTranscriptKind::OpenCode,
+            AgentTranscriptKind::Pi,
+        ] {
+            let session = conversation();
+            session
+                .transcript(agent, true, true, vec![turn("history", "Hello", true)])
+                .unwrap();
+            submit(&session, "Hello");
+            session.take_prompt();
+            let mut user_only = turn("new", "Hello", true);
+            user_only.messages.clear();
+            session
+                .transcript(
+                    agent,
+                    true,
+                    false,
+                    vec![turn("history", "Hello", true), user_only],
+                )
+                .unwrap();
+            assert_eq!(session.view().phase, VoiceChatPhase::Waiting);
+            assert!(session.next_speech().is_none());
+            session
+                .transcript(
+                    agent,
+                    true,
+                    false,
+                    vec![turn("history", "Hello", true), turn("new", "Hello", true)],
+                )
+                .unwrap();
+            assert_eq!(session.view().phase, VoiceChatPhase::Speaking);
+            assert_eq!(session.next_speech().as_deref(), Some("A spoken reply."));
+            assert!(session.next_speech().is_none());
+            session.playback_ended();
+            assert_eq!(session.view().phase, VoiceChatPhase::Listening);
         }
     }
     #[test]

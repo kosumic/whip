@@ -27,12 +27,18 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import kotlin.math.roundToInt
 
+// Covers the Whip prompt regression and upstream enriched-markdown#1103/#1107.
 @RunWith(AndroidJUnit4::class)
 class ChatPromptTextTest {
   private companion object {
     const val FONT_FAMILY = "Inter-Regular"
     const val FONT_SIZE = 14.0
   }
+
+  private data class Prompt(
+    val text: String,
+    val markdown: String = text.codePoints().toArray().joinToString("") { "&#$it;" },
+  )
 
   @Test fun completePromptFitsTheMeasuredBubble() {
     val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -53,7 +59,9 @@ class ChatPromptTextTest {
         "backgroundColor", Color.TRANSPARENT, "borderColor", Color.TRANSPARENT, "underline", false)
       val styleMap = JavaOnlyMap().apply {
         for (name in listOf("paragraph", "h1", "h2", "h3", "h4", "h5", "h6")) putMap(name, paragraph)
-        for (name in listOf("strong", "em", "strikethrough", "link", "code", "highlight")) putMap(name, inline)
+        for (name in listOf("strikethrough", "link", "code", "highlight")) putMap(name, inline)
+        putMap("strong", JavaOnlyMap().apply { merge(inline); putString("fontWeight", "bold") })
+        putMap("em", JavaOnlyMap().apply { merge(inline); putString("fontStyle", "italic") })
         putMap("spoiler", JavaOnlyMap.of("color", Color.WHITE,
           "particles", JavaOnlyMap.of("density", 1.0, "speed", 1.0),
           "solid", JavaOnlyMap.of("borderRadius", 0.0)))
@@ -67,8 +75,13 @@ class ChatPromptTextTest {
       val flags = Md4cFlags(latexMath = false, hardSoftBreaks = true, preserveBlankLines = true)
       val style = StyleConfig(styleMap, context, true, 0f)
       val renderer = Renderer().apply { configure(style, context) }
-      for (prompt in listOf("just delete the test", "Phone connected", "A longer prompt that needs more than one line in its chat bubble.")) {
-        val markdown = prompt.codePoints().toArray().joinToString("") { "&#$it;" }
+      for (prompt in listOf(
+        Prompt("just delete the test"),
+        Prompt("Phone connected"),
+        Prompt("A longer prompt that needs more than one line in its chat bubble."),
+        Prompt("both then bold it bold then it bold it", "***both*** then **bold *it* bold** then *it **bold** it*"),
+      )) {
+        val markdown = prompt.markdown
         val ast = requireNotNull(Parser.shared.parseMarkdown(markdown, flags, false))
         val props = JavaOnlyMap.of("markdown", markdown, "markdownStyle", styleMap,
           "allowFontScaling", true, "allowTrailingMargin", false,
@@ -93,9 +106,9 @@ class ChatPromptTextTest {
             View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
           view.layout(0, 0, width, height)
           val layout = requireNotNull(view.layout)
-          Log.i("WhipChatTextTest", "prompt=$prompt frame=${width}x$height layout=${layout.width}x${layout.height} lines=${layout.lineCount} font=${view.textSize} desired=${Layout.getDesiredWidth(view.text, view.paint)} padding=${view.paddingLeft},${view.paddingRight}")
-          assertEquals(prompt, view.text.toString())
-          assertTrue("All lines of '$prompt' must fit inside the bubble", layout.height <= height)
+          Log.i("WhipChatTextTest", "prompt=${prompt.text} frame=${width}x$height layout=${layout.width}x${layout.height} lines=${layout.lineCount} font=${view.textSize} desired=${Layout.getDesiredWidth(view.text, view.paint)} padding=${view.paddingLeft},${view.paddingRight}")
+          assertEquals(prompt.text, view.text.toString())
+          assertTrue("All lines of '${prompt.text}' must fit inside the bubble", layout.height <= height)
         } finally { MeasurementStore.release(view.id) }
       }
     }

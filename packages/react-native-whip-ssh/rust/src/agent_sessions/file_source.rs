@@ -160,6 +160,10 @@ impl Monitor {
                 let Some(session) = current_session_mut(&mut state, &key, epoch) else {
                     return;
                 };
+                session.pause_file_if_quiet(self.previous_size, Instant::now());
+                if session.activity.done && session.activity.paused {
+                    return;
+                }
                 session.activity.poll_delay(self.retry_delay)
             };
             tokio::time::sleep(delay).await;
@@ -175,6 +179,9 @@ impl Monitor {
                 // Use the last successful observation before asking for another
                 // SSH slot. A failed poll must not prevent releasing an idle tail.
                 session.pause_file_if_quiet(self.previous_size, Instant::now());
+                if session.activity.done && session.activity.paused {
+                    return;
+                }
                 let paused = session.activity.paused;
                 let streaming = session.stream.is_some();
                 let Some(core) = session.core.file() else {

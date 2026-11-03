@@ -35,7 +35,7 @@ class HerdrBackgroundService : Service() {
       ?: preferences.getInt(EXTRA_HOST_COUNT, 1)
     preferences.edit { putInt(EXTRA_HOST_COUNT, hostCount) }
     promoteToForeground(hostCount)
-    HostRuntimeMonitoring.setBackgroundActive(true)
+    HostRuntimeMonitoring.setOwnerActive(this, true)
     Log.i(TAG, "Foreground monitoring enabled; SSH is process-owned")
     // Rust HostRuntime owns SSH connections; this service supplies foreground
     // execution protection, notification, and wake lock. Do not restart only the notification
@@ -46,7 +46,7 @@ class HerdrBackgroundService : Service() {
   override fun onBind(intent: Intent?): IBinder? = null
 
   override fun onDestroy() {
-    HostRuntimeMonitoring.setBackgroundActive(false)
+    HostRuntimeMonitoring.setOwnerActive(this, false)
     Log.i(TAG, "Foreground monitoring disabled; SSH remains process-owned")
     instance = null
     SpeechPlayback.stop()

@@ -105,12 +105,17 @@ are excluded from Git. Only the aggregate measurements are recorded here.
 
 ## Chat transcript retention
 
-Inactive chat transcripts have a zero-byte resident cache budget. Switching to
-another terminal or app section, returning to Terminal View, or backgrounding
-the app detaches the chat. Rust freezes the stream, admits its final checkpoint
-to the database worker, and removes the parsed session and pending tokens.
-The UI releases its transcript copies and remembers only the selected chat's
-identity. Shared transcripts stay active until their last view detaches.
+Loaded chat transcripts share the configured cached-terminal capacity across
+all hosts. Running, blocked and done agents with supported transcript sessions
+are admitted in the Rust-owned attention queue's order, including server-provided
+rankings. A visible chat uses a slot and is protected from background eviction.
+Shared conversations count once. Done transcripts load once and suspend polling
+and tails until their agent status changes.
+
+Eviction releases every binding of the selected conversation. Rust freezes its
+stream, admits the final checkpoint to the database worker, and removes the
+parsed session and pending tokens. The UI releases its transcript copies and
+remembers only a previously selected chat's identity so it can be restored.
 
 `conversations.db` retains the complete checkpoint for each agent still present
 on the host. The Rust Turso worker orders the final archive with other writes; an immediate
@@ -127,8 +132,9 @@ Native operation epochs also reject bridge events queued before a detach or
 replacement, so they cannot update a reopened chat or recreate obsolete history.
 Closing a local view preserves Turso history; it does not end the remote agent.
 
-The budget applies to retained inactive transcripts, not active history or
-temporary checkpoint/database buffers. Checkpoints remain in Rust throughout
+The capacity counts distinct loaded conversations, not bytes, individual history
+length or temporary checkpoint/database buffers. Persistent checkpoints are not
+limited by this setting. Checkpoints remain in Rust throughout
 persistence and restoration; JavaScript receives normalized views. Persistence failures are recorded in app
 diagnostics; reopening can recover from the remote transcript. Freeing objects
 does not guarantee an immediate RSS decrease because allocators may keep pages.
