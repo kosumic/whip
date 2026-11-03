@@ -59,7 +59,7 @@ pub(super) fn timing(
         key,
         epoch,
         "startup-timing",
-        &format!("stage={} elapsed_ms={elapsed:.3} {detail}", stage.label(),),
+        &format!("stage={} elapsed_ms={elapsed:.3} {detail}", stage.label()),
     );
 }
 

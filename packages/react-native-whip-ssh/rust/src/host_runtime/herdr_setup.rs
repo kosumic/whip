@@ -693,7 +693,7 @@ function, script file, or executable program."
                 .to_vec(),
             exit_status: Some(1),
             stdout_truncated: false,
-            timings: Default::default(),
+            timings: crate::ssh::CommandTimings::default(),
         };
         assert!(!reached_posix_shell(&powershell));
 
@@ -702,7 +702,7 @@ function, script file, or executable program."
             stderr: Vec::new(),
             exit_status: Some(MISSING_EXIT_STATUS),
             stdout_truncated: false,
-            timings: Default::default(),
+            timings: crate::ssh::CommandTimings::default(),
         };
         assert!(reached_posix_shell(&posix));
     }
