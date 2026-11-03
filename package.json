@@ -99,7 +99,7 @@
     "pele": "1.13.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "react-i18next": "^17.1.10",
+    "react-i18next": "^17.1.11",
     "react-native": "0.88.1",
     "react-native-enriched-markdown": "1.1.1",
     "react-native-keyboard-controller": "1.22.7",
