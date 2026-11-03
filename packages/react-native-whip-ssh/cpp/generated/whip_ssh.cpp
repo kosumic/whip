@@ -1770,6 +1770,8 @@ void uniffi_whip_ssh_fn_method_voicechat_skip_response(
     /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
 int8_t uniffi_whip_ssh_fn_method_voicechat_speech_finished(
     /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_method_voicechat_submit_text(
+    /*handle*/ uint64_t ptr, RustBuffer text, RustCallStatus *uniffi_out_err);
 RustBuffer uniffi_whip_ssh_fn_method_voicechat_take_prompt(
     /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
 RustBuffer uniffi_whip_ssh_fn_method_voicechat_transcript(
@@ -2667,6 +2669,7 @@ uint16_t uniffi_whip_ssh_checksum_method_voicechat_set_muted();
 uint16_t uniffi_whip_ssh_checksum_method_voicechat_set_vad_sensitivity();
 uint16_t uniffi_whip_ssh_checksum_method_voicechat_skip_response();
 uint16_t uniffi_whip_ssh_checksum_method_voicechat_speech_finished();
+uint16_t uniffi_whip_ssh_checksum_method_voicechat_submit_text();
 uint16_t uniffi_whip_ssh_checksum_method_voicechat_take_prompt();
 uint16_t uniffi_whip_ssh_checksum_method_voicechat_transcript();
 uint16_t uniffi_whip_ssh_checksum_method_voicechat_use_vad();
@@ -24413,6 +24416,17 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_fn_method_voicechat_speech_finished(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_fn_method_voicechat_submit_text"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_method_voicechat_submit_text"),
+          2,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_method_voicechat_submit_text(
+                rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_fn_method_voicechat_take_prompt"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -31880,6 +31894,18 @@ NativeWhipSsh::NativeWhipSsh(
                  const jsi::Value *args, size_t count) -> jsi::Value {
             return this
                 ->cpp_uniffi_whip_ssh_checksum_method_voicechat_speech_finished(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_method_voicechat_submit_text"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_checksum_method_voicechat_submit_text"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_method_voicechat_submit_text(
                     rt, thisVal, args, count);
           });
   props["ubrn_uniffi_whip_ssh_checksum_method_voicechat_take_prompt"] =
@@ -41372,6 +41398,21 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_voicechat_speech_finished(
 
   return uniffi_jsi::Bridging<int8_t>::toJs(rt, callInvoker, value);
 }
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_voicechat_submit_text(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_method_voicechat_submit_text(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
+}
 jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_voicechat_take_prompt(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
@@ -47208,6 +47249,14 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_voicechat_speech_finished(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
   auto value = uniffi_whip_ssh_checksum_method_voicechat_speech_finished();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_voicechat_submit_text(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_method_voicechat_submit_text();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }

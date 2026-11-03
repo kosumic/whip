@@ -39,6 +39,7 @@ export class NativeVoiceChat {
   recognition(input: bigint, text: string) { this.core.recognition(input, text); }
   ended(input: bigint) { this.core.recognitionEnded(input); }
   takePrompt() { return this.core.takePrompt(); }
+  submitText(text: string) { this.core.submitText(text); }
   transcript(agent: RuntimeAgentKind, state: AgentChatState, baseline: boolean) {
     // A resync snapshot and a brief "Agent activity resumed" stale status
     // still describe the same conversation. Only a session replacement resets

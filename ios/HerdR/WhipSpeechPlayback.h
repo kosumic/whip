@@ -4,6 +4,7 @@
 
 FOUNDATION_EXPORT NSString *const WhipChatSpeechStopped;
 FOUNDATION_EXPORT NSString *const WhipChatSpeechStarted;
+FOUNDATION_EXPORT NSString *const WhipChatSpeechLevel;
 
 /** Main-thread OS playback shared by chat, announcements, and device tools. */
 @interface WhipSpeechPlayback : NSObject

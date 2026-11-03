@@ -59899,6 +59899,11 @@ export interface VoiceChatLike {
   setVadSensitivity(sensitivity: number): void;
   skipResponse(): void;
   speechFinished(): boolean;
+  /**
+   * A composer message is already queued by the app. Follow its reply without
+   * submitting it again, using the same conversation and history boundary.
+   */
+  submitText(text: string) /*throws*/ : void;
   takePrompt(): string | undefined;
   /**
    * Existing turns establish history. Only a new, matching user turn may be read.
@@ -60248,6 +60253,26 @@ export class VoiceChat extends UniffiAbstractObject implements VoiceChatLike {
         },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
       ),
+    );
+  }
+
+  /**
+   * A composer message is already queued by the app. Follow its reply without
+   * submitting it again, using the same conversation and history boundary.
+   */
+  submitText(text: string): void /*throws*/ {
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeVoiceChatError.lift.bind(
+        FfiConverterTypeVoiceChatError,
+      ),
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_submit_text(
+          uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+          FfiConverterString.lower(text, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
     );
   }
 
@@ -65203,6 +65228,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_voicechat_speech_finished',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_submit_text() !==
+    21105
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_submit_text',
     );
   }
   if (

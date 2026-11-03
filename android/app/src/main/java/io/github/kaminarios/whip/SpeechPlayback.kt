@@ -65,6 +65,8 @@ object SpeechPlayback : SensorEventListener {
   private val attributes: AudioAttributes get() = if (VoiceCallService.active) VoiceCallService.audioAttributes else mediaAttributes
   var onChatStopped: ((String, String, String?) -> Unit)? = null
   var onChatStarted: ((String) -> Unit)? = null
+  var onChatLevel: ((String, Float) -> Unit)? = null
+  private val resetLevel = Runnable { session?.let { reportLevel(it, 0f) } }
   val active: Boolean get() = session != null
   val label: String? get() = session?.label
   private val timeout = Runnable { stop(error = "Speech engine timed out") }
@@ -170,6 +172,13 @@ object SpeechPlayback : SensorEventListener {
           if (utteranceId != null && utteranceId == SpeechPlayback.utteranceId) session?.let { reportStarted(it) }
         } }
         override fun onDone(utteranceId: String?) { handler.post { finish(utteranceId) } }
+        override fun onRangeStart(utteranceId: String?, start: Int, end: Int, frame: Int) { handler.post {
+          if (utteranceId != null && utteranceId == SpeechPlayback.utteranceId) session?.let {
+            reportLevel(it, 0.1f + minOf(end - start, 12) * 0.006f)
+            handler.removeCallbacks(resetLevel)
+            handler.postDelayed(resetLevel, 180)
+          }
+        } }
         @Deprecated("Android compatibility callback")
         override fun onError(utteranceId: String?) { handler.post {
           if (utteranceId != null && utteranceId == SpeechPlayback.utteranceId) stop(error = "Speech playback failed")
@@ -237,7 +246,7 @@ object SpeechPlayback : SensorEventListener {
           started()
         }
       }
-      PhononPlayback.start(current.id, text, rate, attributes, { reportStarted(current); playbackStarted() }) { completed, spoke, error ->
+      PhononPlayback.start(current.id, text, rate, attributes, { reportStarted(current); playbackStarted() }, { reportLevel(current, it) }) { completed, spoke, error ->
         if (session?.id == current.id && utteranceId == id) {
           when {
             completed -> finish(id)
@@ -268,6 +277,11 @@ object SpeechPlayback : SensorEventListener {
     if (session !== current || current.kind != SpeechPolicy.CHAT || current.reportedStart) return
     current.reportedStart = true
     onChatStarted?.invoke(current.owner)
+  }
+
+  private fun reportLevel(current: Session, level: Float) {
+    if (session === current && current.kind == SpeechPolicy.CHAT)
+      onChatLevel?.invoke(current.owner, if (level.isFinite()) level.coerceIn(0f, 1f) else 0f)
   }
 
   internal fun configureSystemVoice(tts: TextToSpeech, locale: Locale, languageExplicit: Boolean, rate: Double, localOnly: Boolean = false): Boolean {
@@ -303,6 +317,8 @@ object SpeechPlayback : SensorEventListener {
 
   private fun clear(reason: String, error: String?) {
     val stopped = session
+    handler.removeCallbacks(resetLevel)
+    stopped?.let { reportLevel(it, 0f) }
     session = null
     handler.removeCallbacks(timeout)
     utteranceId = null
@@ -327,6 +343,8 @@ object SpeechPlayback : SensorEventListener {
   private fun finish(id: String?) {
     val current = session ?: return
     if (id == null || id != utteranceId || !SpeechPolicy.complete(current.id)) return
+    handler.removeCallbacks(resetLevel)
+    reportLevel(current, 0f)
     if (current.kind != SpeechPolicy.CHAT) {
       clear(COMPLETED, null)
       return

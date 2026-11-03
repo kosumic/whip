@@ -54,6 +54,10 @@ class HerdrBackgroundModule(
   override fun getName(): String = "HerdrBackground"
 
   init {
+    SpeechPlayback.onChatLevel = { token, level ->
+      context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+        .emit(CHAT_SPEECH_LEVEL, Arguments.createMap().apply { putString("token", token); putDouble("level", level.toDouble()) })
+    }
     SpeechPlayback.onChatStarted = { token ->
       context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
         .emit(CHAT_SPEECH_STARTED, Arguments.createMap().apply { putString("token", token) })
@@ -276,6 +280,7 @@ class HerdrBackgroundModule(
       VoiceCallService.invalidate()
       SpeechPlayback.onChatStopped = null
       SpeechPlayback.onChatStarted = null
+      SpeechPlayback.onChatLevel = null
       SpeechPlayback.stop()
       stopPersistentAlert()
     }
@@ -416,6 +421,7 @@ class HerdrBackgroundModule(
   companion object {
     private const val CHAT_SPEECH_STOPPED = "WhipChatSpeechStopped"
     private const val CHAT_SPEECH_STARTED = "WhipChatSpeechStarted"
+    private const val CHAT_SPEECH_LEVEL = "WhipChatSpeechLevel"
     private const val TAG = "HerdrPersistentAlert"
     private const val EXPO_NOTIFICATION_ID = 0
     private const val SHAKE_GRAVITY_THRESHOLD = 2.7f

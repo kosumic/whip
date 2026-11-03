@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { createRef, useState } from 'react';
 import { Modal } from 'react-native';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import { VoiceChatScreen } from '../src/components/VoiceChatScreen';
+import { VoiceChatScreen, type VoiceChatHandle } from '../src/components/VoiceChatScreen';
 import { VoiceConversation, type VoiceConversationView } from '../src/services/voiceConversation';
 import type { ChatSpeechTarget } from '../src/services/chatSpeech';
 import { VoiceVadSensitivityContext } from '../src/lib/voiceVadSensitivity';
@@ -43,7 +43,8 @@ jest.mock('lucide-react-native/icons/volume-2', () => 'Volume2');
 
 const target: ChatSpeechTarget = { agent: 'codex', bindingToken: 'chat', hostId: 'host', paneId: 'pane', label: 'Codex' };
 const listening: VoiceConversationView = { phase: 'listening', muted: false, smartTurn: false, speaker: false, text: '', level: 0, progress: 0, error: null, transcript: null };
-const session = { start: jest.fn(), close: jest.fn(), toggleMuted: jest.fn(), toggleSpeaker: jest.fn(), skip: jest.fn(), finish: jest.fn(), install: jest.fn(), setVadSensitivity: jest.fn() };
+const session = { submitted: jest.fn(), start: jest.fn(), close: jest.fn(), toggleMuted: jest.fn(), toggleSpeaker: jest.fn(), skip: jest.fn(), finish: jest.fn(), install: jest.fn(), setVadSensitivity: jest.fn() };
+const controller = createRef<VoiceChatHandle>();
 const onClose = jest.fn();
 const onCompose = jest.fn();
 const onAttach = jest.fn();
@@ -53,7 +54,7 @@ let renderer: ReactTestRenderer;
 function Call({ visible = true }: { visible?: boolean }) {
   const [expanded, setExpanded] = useState(true);
   const [active, setActive] = useState(true);
-  return active && <VoiceChatScreen target={target} send={() => true} visible={visible} expanded={expanded} floatingStyle={{ bottom: 120 }}
+  return active && <VoiceChatScreen ref={controller} target={target} send={() => true} visible={visible} expanded={expanded} floatingStyle={{ bottom: 120 }}
     onMinimize={() => setExpanded(false)} onExpand={() => setExpanded(true)} onClose={() => { onClose(); setActive(false); }} onCompose={onCompose} onAttach={onAttach} />;
 }
 
@@ -131,4 +132,12 @@ test('a system hang-up removes the floating orb', () => {
   act(() => publish({ ...listening, phase: 'closed' }));
   expect(onClose).toHaveBeenCalledTimes(1);
   expect(renderer.root.findAllByProps({ accessibilityLabel: 'voiceChat.reopen' })).toHaveLength(0);
+});
+
+ test('typing through the minimized call handle preserves the active conversation', () => {
+  press('voiceChat.compose');
+  act(() => { controller.current?.submitted('Typed follow-up'); });
+  expect(session.submitted).toHaveBeenCalledWith('Typed follow-up');
+  expect(session.start).toHaveBeenCalledTimes(1);
+  expect(session.close).not.toHaveBeenCalled();
 });

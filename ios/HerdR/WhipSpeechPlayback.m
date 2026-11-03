@@ -6,6 +6,7 @@
 
 NSString *const WhipChatSpeechStopped = @"WhipChatSpeechStopped";
 NSString *const WhipChatSpeechStarted = @"WhipChatSpeechStarted";
+NSString *const WhipChatSpeechLevel = @"WhipChatSpeechLevel";
 static NSString *const WhipSpeechError = @"E_SPEECH";
 static NSString *const WhipSpeechCompleted = @"completed";
 static NSString *const WhipSpeechStopped = @"stopped";
@@ -33,6 +34,9 @@ static dispatch_queue_t WhipPhononWorker(void)
 @property(nonatomic) BOOL cancelled;
 @property(nonatomic) BOOL started;
 @property(nonatomic, copy) void (^onStarted)(void);
+@property(nonatomic, copy) void (^onLevel)(float);
+@property(nonatomic) NSTimeInterval lastLevelTime;
+@property(nonatomic) BOOL levelTapInstalled;
 - (BOOL)open:(double)rate error:(NSError **)error;
 - (BOOL)write:(const float *)samples count:(NSUInteger)count;
 - (BOOL)drain;
@@ -55,6 +59,26 @@ static dispatch_queue_t WhipPhononWorker(void)
   if (!self.format) return NO;
   [self.engine attachNode:self.node];
   [self.engine connect:self.node to:self.engine.mainMixerNode format:self.format];
+  __weak WhipPhononAudio *weakSelf = self;
+  [self.engine.mainMixerNode installTapOnBus:0 bufferSize:1024 format:nil block:^(AVAudioPCMBuffer *buffer, AVAudioTime *when) {
+    WhipPhononAudio *audio = weakSelf;
+    NSTimeInterval now = NSDate.timeIntervalSinceReferenceDate;
+    if (!audio || !buffer.floatChannelData || !buffer.frameLength || now - audio.lastLevelTime < 0.04) return;
+    audio.lastLevelTime = now;
+    double sum = 0;
+    for (AVAudioChannelCount channel = 0; channel < buffer.format.channelCount; channel++)
+      for (AVAudioFrameCount frame = 0; frame < buffer.frameLength; frame++) {
+        float sample = buffer.format.interleaved
+          ? buffer.floatChannelData[0][frame * buffer.format.channelCount + channel]
+          : buffer.floatChannelData[channel][frame];
+        sum += sample * sample;
+      }
+    float level = fmin(1, sqrt(sum / (buffer.frameLength * buffer.format.channelCount)));
+    dispatch_async(dispatch_get_main_queue(), ^{
+      if (!audio.cancelled && whip_speech_is_current(audio.lease) && audio.onLevel) audio.onLevel(level);
+    });
+  }];
+  self.levelTapInstalled = YES;
   if (![self.engine startAndReturnError:error]) return NO;
   [self.node play];
   return YES;
@@ -108,6 +132,7 @@ static dispatch_queue_t WhipPhononWorker(void)
   [self.condition broadcast];
   [self.condition unlock];
   [self.node stop];
+  if (self.levelTapInstalled) { [self.engine.mainMixerNode removeTapOnBus:0]; self.levelTapInstalled = NO; }
   [self.engine stop];
 }
 @end
@@ -133,6 +158,7 @@ static bool WhipConsumePhonon(void *context, const float *samples, uintptr_t cou
 @property(nonatomic, copy) NSString *systemVoice;
 @property(nonatomic) BOOL localOnly;
 @property(nonatomic) BOOL reportedStart;
+@property(nonatomic, strong) NSTimer *levelTimer;
 @end
 
 @implementation WhipSpeechPlayback
@@ -318,6 +344,9 @@ static bool WhipConsumePhonon(void *context, const float *samples, uintptr_t cou
   if (local) {
     WhipPhononAudio *player = [WhipPhononAudio new];
     player.lease = lease;
+    player.onLevel = ^(float level) {
+      if (weakSelf.lease == lease && weakSelf.utterance == utterance) [weakSelf reportLevel:level];
+    };
     void (^playbackStarted)(void) = ^{
       WhipSpeechPlayback *playback = weakSelf;
       if (playback.lease != lease || playback.utterance != utterance) return;
@@ -394,6 +423,8 @@ static bool WhipConsumePhonon(void *context, const float *samples, uintptr_t cou
 }
 - (void)finishUtterance:(NSString *)error
 {
+  [self.levelTimer invalidate]; self.levelTimer = nil;
+  [self reportLevel:0];
   [self.phonon stop];
   self.phonon = nil;
   [self.timer invalidate];
@@ -465,6 +496,22 @@ static bool WhipConsumePhonon(void *context, const float *samples, uintptr_t cou
   if (self.kind != WhipSpeechChat || self.reportedStart || !self.owner) return;
   self.reportedStart = YES;
   [NSNotificationCenter.defaultCenter postNotificationName:WhipChatSpeechStarted object:self userInfo:@{@"token": self.owner}];
+}
+- (void)reportLevel:(float)level
+{
+  if (self.kind == WhipSpeechChat && self.owner)
+    [NSNotificationCenter.defaultCenter postNotificationName:WhipChatSpeechLevel object:self userInfo:@{@"token": self.owner, @"level": @(level)}];
+}
+- (void)speechSynthesizer:(AVSpeechSynthesizer *)synthesizer willSpeakRangeOfSpeechString:(NSRange)range utterance:(AVSpeechUtterance *)utterance
+{
+  dispatch_async(dispatch_get_main_queue(), ^{
+    if (self.utterance != utterance) return;
+    [self reportLevel:0.1 + MIN(range.length, 12) * 0.006];
+    [self.levelTimer invalidate];
+    __weak WhipSpeechPlayback *weakSelf = self;
+    self.levelTimer = [NSTimer scheduledTimerWithTimeInterval:0.18 repeats:NO block:^(NSTimer *timer) { [weakSelf reportLevel:0]; }];
+    [NSRunLoop.mainRunLoop addTimer:self.levelTimer forMode:NSRunLoopCommonModes];
+  });
 }
 - (void)speechSynthesizer:(AVSpeechSynthesizer *)synthesizer didStartSpeechUtterance:(AVSpeechUtterance *)utterance
 {

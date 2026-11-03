@@ -2970,6 +2970,11 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): number;
+  ubrn_uniffi_whip_ssh_fn_method_voicechat_submit_text(
+    uniffiSelf: bigint,
+    text: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_method_voicechat_take_prompt(
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -3494,6 +3499,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_set_vad_sensitivity(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_skip_response(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_speech_finished(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_voicechat_submit_text(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_take_prompt(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_transcript(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_use_vad(): number;
