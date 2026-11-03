@@ -150,6 +150,7 @@ import {
 } from './TerminalRendererHost';
 import { ComposerInput, ComposerVoiceButton, MessageComposer } from './MessageComposer';
 import type { VoiceChatTarget } from '../services/voiceConversation';
+import { voiceSessionManager } from '../services/voiceSessionManager';
 import { GlassOverlayHost, GlassPortal, GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import {
   OverlayScrollbar,
@@ -446,7 +447,14 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     ref,
   ) {
     const { colors: appColors } = useTheme();
-    const [voiceChatOpen, setVoiceChatOpen] = useState<{ targetKey: string; target: VoiceChatTarget } | null>(null);
+    const [voiceChatOpen, setVoiceChatOpen] = useState<{ targetKey: string; target: VoiceChatTarget } | null>(() => {
+      const call = voiceSessionManager.active;
+      if (!call || call.ended || call.scope.kind !== 'Agent' || !activeTarget || !voiceChatTarget) return null;
+      const target = call.scope.target;
+      return target.hostId === voiceChatTarget.hostId && target.paneId === voiceChatTarget.paneId &&
+        target.tabId === voiceChatTarget.tabId && target.agent === voiceChatTarget.agent
+        ? { targetKey: activeTarget.key, target } : null;
+    });
     const [voiceChatExpanded, setVoiceChatExpanded] = useState(true);
     const browserVisible = useSyncExternalStore(
       browserRegistry.subscribe,
@@ -462,7 +470,14 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const voiceSubmissionTarget = useRef<string | undefined>(undefined);
     voiceSubmissionTarget.current = voiceChatOpen?.targetKey;
     useEffect(() => {
-      if (voiceChatOpen && !targets.some(target => target.key === voiceChatOpen.targetKey)) setVoiceChatOpen(null);
+      if (voiceChatOpen && !targets.some(target => target.key === voiceChatOpen.targetKey)) {
+        const call = voiceSessionManager.active;
+        if (call?.scope.kind === 'Agent' && call.scope.target.hostId === voiceChatOpen.target.hostId &&
+            call.scope.target.tabId === voiceChatOpen.target.tabId && call.scope.target.paneId === voiceChatOpen.target.paneId) {
+          void voiceSessionManager.hangup(call);
+        }
+        setVoiceChatOpen(null);
+      }
     }, [targets, voiceChatOpen]);
     useEffect(() => {
       if (voiceChatActive && voiceChatTarget) {

@@ -1,4 +1,5 @@
 import { appStorage } from './appStorage';
+import { DEFAULT_VOICE_CONVERSATION_SETTINGS, parseVoiceConversationSettings, type VoiceConversationSettings } from '../lib/voiceConversationSettings';
 import {
   DEFAULT_VAD_SENSITIVITY,
   MIN_VAD_SENSITIVITY,
@@ -91,6 +92,7 @@ export interface DevicePreferences {
   persistentAlertDurationSeconds: number;
   ttsEnabled: boolean;
   vadSensitivity: number;
+  voiceConversation: VoiceConversationSettings;
   biometricForKeys: boolean;
   biometricOnResume: boolean;
   appearance: AppearancePreference;
@@ -117,6 +119,7 @@ export const defaultDevicePreferences: DevicePreferences = {
   persistentAlertDurationSeconds: 30,
   ttsEnabled: false,
   vadSensitivity: DEFAULT_VAD_SENSITIVITY,
+  voiceConversation: DEFAULT_VOICE_CONVERSATION_SETTINGS,
   biometricForKeys: false,
   biometricOnResume: false,
   appearance: 'system',
@@ -270,6 +273,7 @@ function parseDevicePreferences(
         defaultDevicePreferences.persistentAlertDurationSeconds,
       ),
       ttsEnabled: parsed.ttsEnabled ?? defaultDevicePreferences.ttsEnabled,
+      voiceConversation: parseVoiceConversationSettings(parsed.voiceConversation),
       vadSensitivity: clampNumber(
         parsed.vadSensitivity,
         MIN_VAD_SENSITIVITY,

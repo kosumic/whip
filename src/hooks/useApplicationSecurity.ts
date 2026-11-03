@@ -9,6 +9,7 @@ import {
   recordAppAuthenticationFailure,
 } from '../services/appAuthentication';
 import { ignoreExpectedCancellation } from '../services/backgroundOperations';
+import { voiceSessionManager } from '../services/voiceSessionManager';
 
 interface ApplicationSecurityOptions {
   preferencesLoaded: boolean;
@@ -49,6 +50,7 @@ export function useApplicationSecurity(options: ApplicationSecurityOptions) {
     try {
       await authenticateAppAccess();
       setSshWorkflowLocked(false);
+      void voiceSessionManager.setLocked(false);
       setLocked(false);
     } catch (error) {
       // Cancellation and failed checks leave the app locked for an explicit retry.
@@ -99,7 +101,7 @@ export function useApplicationSecurity(options: ApplicationSecurityOptions) {
     async (enabled: boolean) => {
       await updateSecuritySetting(() => {
         onBiometricOnResumeChange(enabled);
-        if (!enabled) { setSshWorkflowLocked(false); setLocked(false); }
+        if (!enabled) { setSshWorkflowLocked(false); void voiceSessionManager.setLocked(false); setLocked(false); }
       });
     },
     [onBiometricOnResumeChange, updateSecuritySetting],
@@ -116,9 +118,11 @@ export function useApplicationSecurity(options: ApplicationSecurityOptions) {
       );
       previousState = state;
       if (action === 'lock') {
+        void voiceSessionManager.setLocked(true);
         setSshWorkflowLocked(true);
         setLocked(true);
       } else if (action === 'authenticate') {
+        void voiceSessionManager.setLocked(true);
         setSshWorkflowLocked(true);
         setLocked(true);
         ignoreExpectedCancellation(authenticateLockedApp());

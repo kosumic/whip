@@ -208,6 +208,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
     persistentAlertDurationSeconds: 30,
     ttsEnabled: true,
     vadSensitivity: 50,
+    voiceConversation: defaultDevicePreferences.voiceConversation,
     biometricForKeys: false,
     biometricOnResume: false,
     appearance: 'system',
@@ -659,4 +660,27 @@ test('Store builds ignore persisted developer settings without erasing them', ()
   expect(stored.developerOptionsEnabled).toBe(true);
   expect(stored.terminal.visualHints).toBe(true);
   expect(applyDeveloperOptionsPolicy(stored, true)).toBe(stored);
+});
+
+test('OpenAI provider and separate model voices survive a preferences restart', async () => {
+  const voiceConversation = { provider: 'openai' as const, mode: 'Live' as const, realtimeVoice: 'cedar', liveVoice: 'quartz' };
+  await saveDevicePreferences({ ...defaultDevicePreferences, voiceConversation });
+  mockGetItem.mockResolvedValue(mockSetItem.mock.calls.at(-1)![1]);
+  const loaded = await loadDevicePreferences();
+  expect(loaded.voiceConversation).toEqual(voiceConversation);
+  expect(loaded.ttsEnabled).toBe(defaultDevicePreferences.ttsEnabled);
+  expect(loaded.vadSensitivity).toBe(defaultDevicePreferences.vadSensitivity);
+});
+
+test('validates each model catalog independently and defaults old preferences to Local', async () => {
+  mockGetItem.mockResolvedValue('{}');
+  expect((await loadDevicePreferences()).voiceConversation).toEqual(defaultDevicePreferences.voiceConversation);
+  mockGetItem.mockResolvedValue(JSON.stringify({ voiceConversation: {
+    provider: 'openai', mode: 'Live', realtimeVoice: 'quartz', liveVoice: 'quartz',
+  } }));
+  expect((await loadDevicePreferences()).voiceConversation).toEqual({ provider: 'openai', mode: 'Live', realtimeVoice: 'marin', liveVoice: 'quartz' });
+  mockGetItem.mockResolvedValue(JSON.stringify({ voiceConversation: {
+    provider: 'invalid', mode: 'unknown', realtimeVoice: 'unknown', liveVoice: 'unknown',
+  } }));
+  expect((await loadDevicePreferences()).voiceConversation).toEqual(defaultDevicePreferences.voiceConversation);
 });

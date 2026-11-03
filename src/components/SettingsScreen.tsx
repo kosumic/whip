@@ -93,6 +93,7 @@ import { SettingsChoiceRow } from './SettingsChoiceRow';
 import { SpeechBackendSetting } from './SpeechBackendSetting';
 import { SmartTurnSetting } from './SmartTurnSetting';
 import { MIN_VAD_SENSITIVITY, MAX_VAD_SENSITIVITY, VAD_SENSITIVITY_STEP } from '../lib/voiceVadSensitivity';
+import { VoiceConversationSetting } from './VoiceConversationSetting';
 import { DetailsTitle, SettingsDetailsProvider } from './SettingsDetails';
 import { ShizukuSection } from './ShizukuSection';
 import { Button } from './ui/button';
@@ -303,6 +304,7 @@ export function SettingsSection(props: SettingsSectionProps) {
         icon={Volume2}
         expanded={voiceExpanded}
         onToggle={toggleVoice}>
+        <VoiceConversationSetting />
         <SpeechBackendSetting />
         <SmartTurnSetting />
         <SliderRow

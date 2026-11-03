@@ -7,8 +7,16 @@ import type { ChatSpeechTarget } from '../src/services/chatSpeech';
 import { VoiceVadSensitivityContext } from '../src/lib/voiceVadSensitivity';
 import { useReducedMotion } from '../src/components/app-ui';
 import { VoiceOrb } from '../src/components/VoiceOrb';
+import { voiceSessionManager } from '../src/services/voiceSessionManager';
 
 jest.mock('../src/services/voiceConversation', () => ({ VoiceConversation: jest.fn() }));
+jest.mock('../src/services/voiceSessionManager', () => {
+  const actual = jest.requireActual<typeof import('../src/services/voiceSessionManager')>('../src/services/voiceSessionManager');
+  return { ...actual, voiceSessionManager: new actual.VoiceSessionManager(async (target, send, changed) => {
+    const { VoiceConversation: Conversation } = jest.requireMock<typeof import('../src/services/voiceConversation')>('../src/services/voiceConversation');
+    return new Conversation(target, send, changed);
+  }) };
+});
 jest.mock('../src/components/VoiceOrb', () => ({ VoiceOrb: 'VoiceOrb' }));
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
 jest.mock('react-native', () => ({
@@ -46,7 +54,7 @@ jest.mock('lucide-react-native/icons/volume-2', () => 'Volume2');
 
 const target: ChatSpeechTarget & { tabId: string } = { agent: 'codex', bindingToken: 'chat', hostId: 'host', paneId: 'pane', tabId: 'tab', label: 'Codex' };
 const listening: VoiceConversationView = { phase: 'listening', muted: false, smartTurn: false, speaker: false, text: '', level: 0, progress: 0, error: null, transcript: null };
-const session = { submitted: jest.fn(), start: jest.fn(), close: jest.fn(), toggleMuted: jest.fn(), toggleSpeaker: jest.fn(), skip: jest.fn(), finish: jest.fn(), install: jest.fn(), setVadSensitivity: jest.fn(), setTranscriptBinding: jest.fn() };
+const session = { submitted: jest.fn(), start: jest.fn(() => Promise.resolve()), close: jest.fn(() => Promise.resolve()), toggleMuted: jest.fn(), toggleSpeaker: jest.fn(), skip: jest.fn(), finish: jest.fn(), install: jest.fn(), setVadSensitivity: jest.fn(), setTranscriptBinding: jest.fn() };
 const controller = createRef<VoiceChatHandle>();
 const onClose = jest.fn();
 const onCompose = jest.fn();
@@ -65,16 +73,16 @@ function press(label: string) {
   act(() => { renderer.root.findByProps({ accessibilityLabel: label }).props.onPress(); });
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   jest.clearAllMocks();
   jest.mocked(VoiceConversation).mockImplementation((_target, _send, changed) => {
     publish = changed;
     return session as unknown as VoiceConversation;
   });
-  act(() => { renderer = create(<Call />); });
+  await act(async () => { renderer = create(<Call />); });
   act(() => publish(listening));
 });
-afterEach(() => act(() => renderer.unmount()));
+afterEach(async () => { await act(async () => { renderer.unmount(); await voiceSessionManager.hangup(); }); });
 
 test('settings changes update the existing call without restarting it', () => {
   act(() => { renderer.update(<VoiceVadSensitivityContext value={75}><Call /></VoiceVadSensitivityContext>); });
@@ -96,19 +104,19 @@ test('a new agent receives its transcript binding without restarting voice chat'
   expect(session.close).not.toHaveBeenCalled();
 });
 
-test('replacing a call keeps any late prompt from its old session bound to the original agent', () => {
+test('replacing a call cancels late prompts from its old session', async () => {
   const firstSend = jest.fn(() => true);
   const secondSend = jest.fn(() => true);
   const renderCall = (paneId: string, send: (text: string) => boolean) => <VoiceChatScreen target={{ ...target, paneId }} send={send}
     visible expanded dockStyle={{}} onMinimize={() => {}} onExpand={() => {}} onClose={onClose} />;
-  act(() => renderer.update(renderCall('first-pane', firstSend)));
+  await act(async () => renderer.update(renderCall('first-pane', firstSend)));
   const previousSend = jest.mocked(VoiceConversation).mock.calls.at(-1)![1];
   jest.clearAllMocks();
-  act(() => renderer.update(renderCall('second-pane', secondSend)));
+  await act(async () => renderer.update(renderCall('second-pane', secondSend)));
   expect(session.close).toHaveBeenCalledTimes(1);
   expect(session.start).toHaveBeenCalledTimes(1);
   previousSend('Late prompt from the first call');
-  expect(firstSend).toHaveBeenCalledWith('Late prompt from the first call');
+  expect(firstSend).not.toHaveBeenCalled();
   expect(secondSend).not.toHaveBeenCalled();
   jest.mocked(VoiceConversation).mock.calls.at(-1)![1]('New prompt');
   expect(secondSend).toHaveBeenCalledWith('New prompt');
@@ -204,4 +212,16 @@ test('a system hang-up removes the floating orb', () => {
   expect(session.submitted).toHaveBeenCalledWith('Typed follow-up');
   expect(session.start).toHaveBeenCalledTimes(1);
   expect(session.close).not.toHaveBeenCalled();
+});
+
+test('unmounting and remounting a presentation preserves the call and elapsed time', async () => {
+  const startedAt = renderer.root.findByType(VoiceOrb).props.startedAt;
+  act(() => renderer.unmount());
+  expect(session.close).not.toHaveBeenCalled();
+  await act(async () => { renderer = create(<Call />); });
+  expect(session.start).toHaveBeenCalledTimes(1);
+  expect(session.close).not.toHaveBeenCalled();
+  expect(renderer.root.findByType(VoiceOrb).props.startedAt).toBe(startedAt);
+  press('voiceChat.end');
+  expect(session.close).toHaveBeenCalledTimes(1);
 });
