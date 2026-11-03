@@ -813,9 +813,23 @@ describe('AgentChatView tool output', () => {
     { name: 'leading executable with argument path', command: `${nixRg} pattern ${nixIp}`, collapsed: `rg pattern ${nixIp}` },
     { name: 'leading executable with pipeline', command: `${nixRg} --files | ${nixRg} tsx`, collapsed: `rg --files | ${nixRg} tsx` },
     { name: 'ordinary command', command: 'rg --files src', collapsed: 'rg --files src' },
-    { name: 'non-Nix absolute executable', command: '/usr/bin/rg --files', collapsed: '/usr/bin/rg --files' },
-    { name: 'unrecognized Nix directory', command: '/nix/store/abc-tool/libexec/tool', collapsed: '/nix/store/abc-tool/libexec/tool' },
+    { name: 'absolute executable', command: '/usr/bin/rg --files', collapsed: 'rg --files' },
+    { name: 'custom executable directory', command: '/opt/tools/custom/tool --flag', collapsed: 'tool --flag' },
+    { name: 'root executable', command: '/tool --flag', collapsed: 'tool --flag' },
+    { name: 'relative executable', command: './tools/tool --flag', collapsed: 'tool --flag' },
+    { name: 'parent relative executable', command: '../tools/tool --flag', collapsed: 'tool --flag' },
+    { name: 'local executable', command: 'tools/tool --flag', collapsed: 'tool --flag' },
+    { name: 'home executable', command: '~/tools/tool --flag', collapsed: 'tool --flag' },
+    { name: 'libexec executable', command: '/nix/store/abc-tool/libexec/tool', collapsed: 'tool' },
     { name: 'bare Nix bin directory', command: '/nix/store/abc-tool/bin/', collapsed: '/nix/store/abc-tool/bin/' },
+    { name: 'directory without executable', command: '/opt/tools/ --flag', collapsed: '/opt/tools/ --flag' },
+    { name: 'absolute argument path', command: 'cat /usr/local/bin/tool', collapsed: 'cat /usr/local/bin/tool' },
+    { name: 'relative argument path', command: 'cat ./tools/tool', collapsed: 'cat ./tools/tool' },
+    { name: 'absolute pipeline executable', command: 'printf text | /usr/bin/rg text', collapsed: 'printf text | /usr/bin/rg text' },
+    { name: 'absolute executable with pipeline', command: '/usr/bin/rg --files | /usr/bin/sort', collapsed: 'rg --files | /usr/bin/sort' },
+    { name: 'adjacent pipeline executable', command: '/usr/bin/rg text|/usr/bin/sort', collapsed: 'rg text|/usr/bin/sort' },
+    { name: 'environment assignment', command: 'PATH=/usr/bin rg --files', collapsed: 'PATH=/usr/bin rg --files' },
+    { name: 'command substitution', command: '$(/usr/bin/which rg) --files', collapsed: '$(/usr/bin/which rg) --files' },
     { name: 'long command', command: `${nixRg} ${'x'.repeat(180)}`, collapsed: `rg ${'x'.repeat(157)}…` },
   ])('preserves the original $name outside the collapsed shell header', ({ command, collapsed }) => {
     jest.useFakeTimers();
@@ -845,14 +859,14 @@ describe('AgentChatView tool output', () => {
     expect(header()).toBe(collapsed);
   });
 
-  test('leaves Nix paths in other tool headers unchanged', () => {
+  test.each([nixRg, '/usr/bin/rg', './tools/tool'])('leaves %s in other tool headers unchanged', path => {
     const tool = failedTool('shell');
     tool.tool = 'mcp__data';
-    tool.state = { ...tool.state, status: 'completed', input: { description: nixRg }, error: undefined };
+    tool.state = { ...tool.state, status: 'completed', input: { description: path }, error: undefined };
     act(() => { renderer = create(chatView(chatState([toolTurn(tool)]))); });
     act(() => { turnRenderer = create(renderedBlocks(renderer)); });
     expect(turnRenderer.root.find(isToolToggle).findAllByType(SearchText).map(node => node.props.text))
-      .toContain(nixRg);
+      .toContain(path);
   });
 
   test.each(['single line', 'heredoc'])('bounds a large %s command header while retaining expanded content, copy and search', async shape => {
