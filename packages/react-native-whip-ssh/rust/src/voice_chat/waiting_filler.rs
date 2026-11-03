@@ -2,13 +2,7 @@ use std::time::{Duration, Instant};
 
 const INITIAL_DELAY: Duration = Duration::from_secs(8);
 const REPEAT_DELAY: Duration = Duration::from_secs(20);
-const PHRASES: [&str; 5] = [
-    "Hmm.",
-    "Uh.",
-    "One moment.",
-    "Let me think.",
-    "Just a sec.",
-];
+const PHRASES: [&str; 5] = ["Hmm.", "Uh.", "One moment.", "Let me think.", "Just a sec."];
 
 /// Local reassurance only; never enters the agent transcript or reply queue.
 pub(super) struct WaitingFiller {
