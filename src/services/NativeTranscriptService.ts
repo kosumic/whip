@@ -41,12 +41,21 @@ export interface ObservedAgentTranscript {
 
 type Listener = (state: AgentChatState | null, baseline?: boolean) => void;
 
+export function transcriptCacheHostAvailability(state: HostRuntimeState): 'load' | 'retain' | 'unavailable' {
+  if (!state.snapshot) return 'unavailable';
+  if (state.syncStatus === 'synced' && state.freshness === 'fresh') return 'load';
+  const resyncing = state.syncStatus === 'syncing' || (state.syncStatus === 'synced' && state.needsResync);
+  return resyncing && state.freshness === 'stale' ? 'retain' : 'unavailable';
+}
+
 export interface TranscriptCacheTarget {
   hostSessionId: string;
   terminalId: string;
   agent: NativeAgentChatBinding['agent'];
   sessionId: string;
   transport: NativeTranscriptTransport;
+  /** Retained snapshots may rank resident transcripts, but must not start loads. */
+  preload?: boolean;
 }
 
 export interface TranscriptCacheHost {
@@ -111,7 +120,8 @@ export class NativeTranscriptService {
   private readonly foregroundTerminals = new Map<string, Set<symbol>>();
   private residencyRevision = 0;
   private readonly failedPreloads = new Map<string, string>();
-  private readonly cacheHostVersions = new Map<string, { revision: number; transport: NativeTranscriptTransport }>();
+  private readonly cacheHostVersions = new Map<string, { revision: number; connectionGeneration: number; transport: NativeTranscriptTransport }>();
+  private readonly cacheHostAvailability = new Map<string, ReturnType<typeof transcriptCacheHostAvailability>>();
 
   readonly residencyVersion = (): number => this.residencyRevision;
   readonly subscribeResidency = (listener: () => void): (() => void) => {
@@ -182,19 +192,76 @@ export class NativeTranscriptService {
     }
   }
 
+  private cachedTarget(target: TranscriptCacheTarget): Extract<AgentChatProjection, { type: 'bound' }> | null {
+    const token = this.terminalBindings.get(this.terminalKey(target.hostSessionId, target.terminalId));
+    const entry = token ? this.entryForBinding(token) : undefined;
+    const binding = token ? entry?.bindings.get(token) : undefined;
+    return entry && binding && entry.transport === target.transport &&
+      binding.agent === target.agent && binding.sessionId === target.sessionId
+      ? { type: 'bound', binding, state: entry.state } : null;
+  }
+
+  private reconcileCacheBindings(hosts: readonly TranscriptCacheHost[]): void {
+    const byId = new Map(hosts.map(host => [host.hostSessionId, host]));
+    const invalidHosts = new Set<string>();
+    for (const hostId of this.cacheHostAvailability.keys()) {
+      if (!byId.has(hostId)) {
+        this.cacheHostAvailability.set(hostId, 'unavailable');
+        this.titles.retain(hostId, []);
+      }
+    }
+    for (const host of hosts) {
+      const previous = this.cacheHostVersions.get(host.hostSessionId);
+      const availability = transcriptCacheHostAvailability(host.state);
+      if (availability === 'unavailable' || (previous &&
+        (previous.transport !== host.transport || previous.connectionGeneration !== host.state.connectionGeneration))) {
+        invalidHosts.add(host.hostSessionId);
+      }
+      this.cacheHostAvailability.set(host.hostSessionId, availability);
+      this.titles.retain(host.hostSessionId, invalidHosts.has(host.hostSessionId) ? [] : host.state.snapshot?.panes ?? []);
+    }
+    // Snapshot identity is authoritative even while syncing. Invalidate before
+    // selecting pinned entries so a visible but closed pane cannot retain a slot.
+    for (const entry of [...this.entries.values()]) {
+      const host = byId.get(entry.hostSessionId);
+      // Standalone projections may supply targets without host snapshots. Once
+      // a host has supplied state, its disappearance is an invalidation.
+      if (!host && !this.cacheHostAvailability.has(entry.hostSessionId)) continue;
+      for (const binding of [...entry.bindings.values()]) {
+        const pane = host?.state.snapshot?.panes.find(item =>
+          item.terminal_id === binding.terminalId && item.pane_id === binding.paneId);
+        const session = pane?.agent_session;
+        if (host && !invalidHosts.has(entry.hostSessionId) && host.transport === entry.transport &&
+          session?.agent.trim().toLowerCase() === binding.agent && session.value.trim() === binding.sessionId &&
+          (session.kind === 'id' || (binding.agent === 'pi' && session.kind === 'path'))) continue;
+        this.forgetBindingToken(binding.bindingToken, true);
+        try {
+          entry.transport.detachAgentChat(binding.terminalId);
+        } catch (error) {
+          recordAgentChatDiagnostic('cache-cleanup-unavailable', { error: String(error) });
+        }
+      }
+    }
+  }
+
   /** Targets arrive in Rust's unfiltered attention-queue order across all hosts. */
   reconcileCache(capacity: number, targets: readonly TranscriptCacheTarget[], hosts: readonly TranscriptCacheHost[]): void {
     this.capacity = terminalCacheCapacity(capacity);
     this.cacheManaged = true;
-    this.cacheTargets = targets;
+    this.reconcileCacheBindings(hosts);
+    const availableTargets = targets.filter(target => target.preload !== false || this.cachedTarget(target));
+    this.cacheTargets = availableTargets;
     const connectedHosts = new Set(hosts.map(host => host.hostSessionId));
     for (const hostId of this.cacheHostVersions.keys()) {
       if (!connectedHosts.has(hostId)) this.cacheHostVersions.delete(hostId);
     }
     for (const host of hosts) {
       const previous = this.cacheHostVersions.get(host.hostSessionId);
-      if (previous?.revision === host.state.revision && previous.transport === host.transport) continue;
-      this.cacheHostVersions.set(host.hostSessionId, { revision: host.state.revision, transport: host.transport });
+      if (previous?.revision === host.state.revision && previous.transport === host.transport &&
+        previous.connectionGeneration === host.state.connectionGeneration) continue;
+      this.cacheHostVersions.set(host.hostSessionId, {
+        revision: host.state.revision, connectionGeneration: host.state.connectionGeneration, transport: host.transport,
+      });
       for (const [key, hostId] of this.failedPreloads) {
         if (hostId === host.hostSessionId) this.failedPreloads.delete(key);
       }
@@ -207,7 +274,7 @@ export class NativeTranscriptService {
     }
     const selected = new Set([...this.entries.values()].filter(entry => this.pinned(entry)).map(entry => this.identity(entry)));
     const limit = Math.max(this.capacity, selected.size);
-    for (const target of targets) {
+    for (const target of availableTargets) {
       if (this.failedPreloads.has(this.terminalKey(target.hostSessionId, target.terminalId))) continue;
       const identity = cacheIdentity(target.hostSessionId, target.agent, target.sessionId);
       if (selected.size < limit) selected.add(identity);
@@ -216,7 +283,7 @@ export class NativeTranscriptService {
       if (!selected.has(this.identity(entry))) this.evict(entry);
     }
     this.admittedTerminals.clear();
-    for (const target of targets) {
+    for (const target of availableTargets) {
       if (selected.has(cacheIdentity(target.hostSessionId, target.agent, target.sessionId))) {
         this.admittedTerminals.add(this.terminalKey(target.hostSessionId, target.terminalId));
       }
@@ -235,7 +302,8 @@ export class NativeTranscriptService {
         }
       }
     }
-    for (const target of targets) {
+    for (const target of availableTargets) {
+      if (target.preload === false) continue;
       if (this.failedPreloads.has(this.terminalKey(target.hostSessionId, target.terminalId))) continue;
       const identity = cacheIdentity(target.hostSessionId, target.agent, target.sessionId);
       if (!selected.has(identity) && selected.size >= limit) continue;
@@ -294,6 +362,11 @@ export class NativeTranscriptService {
     terminalId: string,
     transport: NativeTranscriptTransport,
   ): AgentChatProjection | null {
+    const availability = this.cacheHostAvailability.get(hostSessionId);
+    if (this.cacheManaged && availability && availability !== 'load') {
+      const target = this.cacheTargets.find(item => item.hostSessionId === hostSessionId && item.terminalId === terminalId);
+      return target?.transport === transport ? this.cachedTarget(target) : null;
+    }
     const key = this.terminalKey(hostSessionId, terminalId);
     if (this.cacheManaged && !this.admittedTerminals.has(key) && !this.foregroundTerminals.has(key)) return null;
     return this.preloadTarget(hostSessionId, terminalId, transport);
@@ -526,6 +599,7 @@ export class NativeTranscriptService {
     this.capacity = DEFAULT_XTERM_CACHE_CAPACITY;
     this.failedPreloads.clear();
     this.cacheHostVersions.clear();
+    this.cacheHostAvailability.clear();
     this.titles.clear();
     this.residencyChanged();
   }
