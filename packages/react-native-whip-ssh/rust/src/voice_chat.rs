@@ -483,6 +483,7 @@ impl VoiceChat {
             state.text = text;
             self.interrupt_if_recognized(&mut state);
         }
+        drop(state);
     }
 
     /// Only an explicit stop or accepted Smart Turn verdict permits submission.

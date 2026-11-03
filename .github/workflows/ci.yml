@@ -41,7 +41,7 @@ on:
     branches: [main]
     paths: *app-paths
   schedule:
-    - cron: '17 9 * * 1'
+    - cron: '17 9 * * *'
   workflow_dispatch:
 
 permissions:
@@ -219,7 +219,9 @@ jobs:
 
   android:
     name: Android checks
-    if: github.event_name != 'schedule' || github.event.repository.visibility == 'public'
+    if: &native-builds-on-main >-
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+      github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -392,7 +394,9 @@ jobs:
 
   android-codeql:
     name: Analyze Java and Kotlin
-    if: github.event.repository.visibility == 'public'
+    if: >-
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+      github.ref == 'refs/heads/main' && github.event.repository.visibility == 'public'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -470,7 +474,7 @@ jobs:
 
   ios:
     name: iOS unsigned compile check
-    if: github.event_name != 'schedule'
+    if: *native-builds-on-main
     runs-on: macos-26
     timeout-minutes: 60
     env:
