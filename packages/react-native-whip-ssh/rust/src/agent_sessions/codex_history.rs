@@ -55,7 +55,7 @@ fn reference_path(output: &str, rollout_id: &str) -> Result<String, AgentSession
         .ok_or_else(|| invalid(format!("missing base rollout {rollout_id}")))
 }
 
-fn prefix_command(path: &str, offset: u64, length: u64) -> String {
+pub(super) fn prefix_command(path: &str, offset: u64, length: u64) -> String {
     let quoted = shell_quote(path);
     if compressed(path) {
         format!(

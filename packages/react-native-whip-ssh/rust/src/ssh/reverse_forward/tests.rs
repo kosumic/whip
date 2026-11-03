@@ -36,6 +36,8 @@ struct ServerState {
     deny_streamlocal: AtomicBool,
     reject_sessions: AtomicUsize,
     session_attempts: AtomicUsize,
+    session_limit: AtomicUsize,
+    session_channels: RwLock<std::collections::HashSet<russh::ChannelId>>,
     session_started: tokio::sync::Notify,
     exec_faults: parking_lot::Mutex<std::collections::VecDeque<ExecFault>>,
     command_cancellations: RwLock<HashMap<russh::ChannelId, watch::Sender<bool>>>,
@@ -105,6 +107,7 @@ impl Fixture {
         let channels = std::mem::take(&mut *self.state.tail_channels.write());
         let handle = self.state.handle.read().clone().unwrap();
         for channel in channels {
+            self.state.session_channels.write().remove(&channel);
             let _ = handle.close(channel).await;
         }
     }
@@ -115,6 +118,10 @@ impl Fixture {
 
     pub(crate) fn session_attempts(&self) -> usize {
         self.state.session_attempts.load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn limit_sessions(&self, limit: usize) {
+        self.state.session_limit.store(limit, Ordering::Relaxed);
     }
 
     pub(crate) async fn wait_for_session_attempts(&self, count: usize) {
@@ -292,6 +299,12 @@ impl server::Handler for ForwardServer {
                 .await;
             return Ok(());
         }
+        let limit = self.state.session_limit.load(Ordering::Relaxed);
+        if limit > 0 && self.state.session_channels.read().len() >= limit {
+            reply.reject(russh::ChannelOpenFailure::ConnectFailed).await;
+            return Ok(());
+        }
+        self.state.session_channels.write().insert(channel.id());
         self.channels.insert(channel.id(), channel);
         reply.accept().await;
         Ok(())
@@ -342,6 +355,7 @@ impl server::Handler for ForwardServer {
                         session.exit_status_request(channel, status)?;
                     }
                     session.eof(channel)?;
+                    self.state.session_channels.write().remove(&channel);
                     session.close(channel)?;
                 }
             }
@@ -364,6 +378,7 @@ impl server::Handler for ForwardServer {
                 .command_cancellations
                 .write()
                 .insert(channel, cancel);
+            let state = self.state.clone();
             tokio::spawn(async move {
                 let shell = environment
                     .get("WHIP_TEST_REMOTE_SHELL")
@@ -378,6 +393,7 @@ impl server::Handler for ForwardServer {
                     .stderr(std::process::Stdio::piped())
                     .spawn()
                 else {
+                    state.session_channels.write().remove(&channel);
                     let _ = handle.close(channel).await;
                     return;
                 };
@@ -437,6 +453,7 @@ impl server::Handler for ForwardServer {
                     )
                     .await;
                 let _ = handle.eof(channel).await;
+                state.session_channels.write().remove(&channel);
                 let _ = handle.close(channel).await;
                 drop(writer);
             });
@@ -453,6 +470,7 @@ impl server::Handler for ForwardServer {
         }
         session.exit_status_request(channel, u32::from(failed))?;
         session.eof(channel)?;
+        self.state.session_channels.write().remove(&channel);
         session.close(channel)?;
         Ok(())
     }
@@ -463,6 +481,7 @@ impl server::Handler for ForwardServer {
         _session: &mut server::Session,
     ) -> impl Future<Output = Result<(), Self::Error>> {
         self.channels.remove(&channel);
+        self.state.session_channels.write().remove(&channel);
         self.state.tail_channels.write().retain(|id| *id != channel);
         self.state.closed_commands.fetch_add(1, Ordering::Relaxed);
         if let Some(cancel) = self.state.command_cancellations.write().remove(&channel) {
