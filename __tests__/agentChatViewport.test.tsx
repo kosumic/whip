@@ -792,6 +792,8 @@ test.each(['opencode', 'codex', 'claude'] as const)('%s exposes turn accounting,
 describe('AgentChatView tool output', () => {
   let renderer: ReactTestRenderer;
   let turnRenderer: ReactTestRenderer;
+  const nixRg = '/nix/store/abc-ripgrep/bin/rg';
+  const nixIp = '/nix/store/def-iproute2/sbin/ip';
 
   afterEach(() => {
     act(() => renderer?.unmount());
@@ -799,6 +801,58 @@ describe('AgentChatView tool output', () => {
     mockIsDark = false;
     jest.useRealTimers();
     jest.restoreAllMocks();
+  });
+
+  test.each([
+    { name: 'leading bin executable', command: `${nixRg} --files`, collapsed: 'rg --files' },
+    { name: 'leading sbin executable', command: `${nixIp} route`, collapsed: 'ip route' },
+    { name: 'argument path', command: `cat ${nixRg}`, collapsed: `cat ${nixRg}` },
+    { name: 'quoted argument path', command: `echo "${nixRg}"`, collapsed: `echo "${nixRg}"` },
+    { name: 'later pipeline executable', command: `printf text | ${nixRg} text`, collapsed: `printf text | ${nixRg} text` },
+    { name: 'later chained command', command: `true && ${nixIp} route`, collapsed: `true && ${nixIp} route` },
+    { name: 'leading executable with argument path', command: `${nixRg} pattern ${nixIp}`, collapsed: `rg pattern ${nixIp}` },
+    { name: 'leading executable with pipeline', command: `${nixRg} --files | ${nixRg} tsx`, collapsed: `rg --files | ${nixRg} tsx` },
+    { name: 'ordinary command', command: 'rg --files src', collapsed: 'rg --files src' },
+    { name: 'non-Nix absolute executable', command: '/usr/bin/rg --files', collapsed: '/usr/bin/rg --files' },
+    { name: 'unrecognized Nix directory', command: '/nix/store/abc-tool/libexec/tool', collapsed: '/nix/store/abc-tool/libexec/tool' },
+    { name: 'bare Nix bin directory', command: '/nix/store/abc-tool/bin/', collapsed: '/nix/store/abc-tool/bin/' },
+    { name: 'long command', command: `${nixRg} ${'x'.repeat(180)}`, collapsed: `rg ${'x'.repeat(157)}…` },
+  ])('preserves the original $name outside the collapsed shell header', ({ command, collapsed }) => {
+    jest.useFakeTimers();
+    const output = `executable: ${nixRg}`;
+    const tool = failedTool('shell');
+    tool.state = { ...tool.state, status: 'completed', input: { command }, output, error: undefined };
+    act(() => { renderer = create(chatView(chatState([toolTurn(tool)]))); });
+    act(() => { turnRenderer = create(renderedBlocks(renderer)); });
+    const toggle = () => turnRenderer.root.find(isToolToggle);
+    const header = () => toggle().findByType(SearchText).props.text;
+    expect(header()).toBe(collapsed);
+    expect(toggle().props.accessibilityLabel).toBe(`Shell, ${collapsed}`);
+
+    act(() => { toggle().props.onPress(); });
+    act(() => { turnRenderer.update(renderedBlocks(renderer)); });
+    const expandedHeader = command.length > 160 ? `${command.slice(0, 160)}…` : command;
+    expect(header()).toBe(expandedHeader);
+    expect(toggle().props.accessibilityLabel).toBe(`Shell, ${expandedHeader}`);
+    expect(turnRenderer.root.findByType(NativeCodeBlock).props.content).toBe(command);
+    expect(turnRenderer.root.findAllByType(SearchText).some(node => node.props.text === output)).toBe(true);
+    act(() => { turnRenderer.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityLabel === 'Copy shell command and output').props.onPress(); });
+    expect(Clipboard.setString).toHaveBeenLastCalledWith(`$ ${command}\n\n${output}`);
+    expect(tool.state.input.command).toBe(command);
+
+    act(() => { toggle().props.onPress(); });
+    act(() => { turnRenderer.update(renderedBlocks(renderer)); });
+    expect(header()).toBe(collapsed);
+  });
+
+  test('leaves Nix paths in other tool headers unchanged', () => {
+    const tool = failedTool('shell');
+    tool.tool = 'mcp__data';
+    tool.state = { ...tool.state, status: 'completed', input: { description: nixRg }, error: undefined };
+    act(() => { renderer = create(chatView(chatState([toolTurn(tool)]))); });
+    act(() => { turnRenderer = create(renderedBlocks(renderer)); });
+    expect(turnRenderer.root.find(isToolToggle).findAllByType(SearchText).map(node => node.props.text))
+      .toContain(nixRg);
   });
 
   test.each(['single line', 'heredoc'])('bounds a large %s command header while retaining expanded content, copy and search', async shape => {
