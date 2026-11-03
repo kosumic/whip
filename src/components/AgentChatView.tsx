@@ -135,7 +135,7 @@ const CHAT_ACTIVITY_TINT_OPACITY = 0.6;
 const CHAT_WORKING_TICK_MS = 1_000;
 const CHAT_WORKING_LETTERS = Array.from(CHAT_WORKING_LABEL);
 const CHAT_WORKING_TEXT_CLASS = 'text-[12px] font-medium leading-4 text-foreground';
-const NIX_EXECUTABLE_PREFIX = /\/nix\/store\/[^/\s"'`]+\/s?bin\//g;
+const LEADING_EXECUTABLE_PATH = /^[^\s"'`\\|;&<>()=$]*\/([^/\s"'`\\|;&<>()=$]+)(?=\s|[|;&<>()]|$)/;
 const CHAT_MAINTAIN_VISIBLE_CONTENT_POSITION = {
   startRenderingFromBottom: true,
 } as const;
@@ -529,9 +529,11 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress, directory }: 
     || item.state.startedAt !== undefined || item.state.completedAt !== undefined || item.state.exitCode !== undefined || item.state.durationMs !== undefined);
   const subtitle = presentation.subtitle
     || (files.length === 1 ? filename(files[0].file) : files.length > 1 ? `${files.length} files` : undefined);
-  const displayedSubtitle = subtitle ? toolHeaderPreview(!expanded && presentation.kind === 'command'
-    ? subtitle.replace(NIX_EXECUTABLE_PREFIX, '')
-    : subtitle) : undefined;
+  // Shorten only the collapsed display; details and copy keep the original command.
+  const headerSubtitle = !expanded && presentation.kind === 'command'
+    ? subtitle?.replace(LEADING_EXECUTABLE_PATH, '$1')
+    : subtitle;
+  const displayedSubtitle = headerSubtitle ? toolHeaderPreview(headerSubtitle) : undefined;
   const displayedTitle = toolHeaderPreview(presentation.title);
   const displayedArgs = presentation.args.map(toolHeaderPreview);
   const TitleIcon = presentation.icon;
