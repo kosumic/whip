@@ -16,18 +16,20 @@ export interface VoiceConversationView {
   speaker: boolean;
   text: string;
   level: number;
+  playbackLevel?: number;
   progress: number;
   error: string | null;
   transcript: AgentChatState | null;
 }
 const STOPPED = 'WhipChatSpeechStopped';
 const STARTED = 'WhipChatSpeechStarted';
+const LEVEL = 'WhipChatSpeechLevel';
 const CALL_EVENT = 'WhipVoiceCall';
 const WATCHDOG_MS = 10_000;
 let nextSession = 0;
 let active: string | null = null;
 type CallEvent = { token: string; type: 'ended' | 'muted' | 'route' | 'audioInactive'; muted?: boolean; speaker?: boolean; error?: string };
-type VoiceSpeechEvents = { [STOPPED]: [event: ChatSpeechStoppedEvent]; [STARTED]: [event: { token: string }]; [CALL_EVENT]: [event: CallEvent] };
+type VoiceSpeechEvents = { [STOPPED]: [event: ChatSpeechStoppedEvent]; [STARTED]: [event: { token: string }]; [LEVEL]: [event: { token: string; level: number }]; [CALL_EVENT]: [event: CallEvent] };
 async function loadCore(root: string): Promise<NativeVoiceChat> {
   const { NativeVoiceChat } = await import('react-native-whip-ssh/src/voiceChat');
   return new NativeVoiceChat(root);
@@ -103,7 +105,12 @@ export class VoiceConversation {
       });
       const call = speechEmitter.addListener(CALL_EVENT, event => this.callChanged(event));
       const started = speechEmitter.addListener(STARTED, event => this.playbackStarted(event.token));
-      this.cleanup.push(() => speech.remove(), () => started.remove(), () => call.remove(), composerSpeechInput.subscribe(() => this.recognitionChanged()));
+      const level = speechEmitter.addListener(LEVEL, event => {
+        if (this.closed || event.token !== this.speechToken) return;
+        this.view = { ...this.view, playbackLevel: Number.isFinite(event.level) ? Math.max(0, Math.min(1, event.level)) : 0 };
+        this.changed(this.view);
+      });
+      this.cleanup.push(() => speech.remove(), () => started.remove(), () => level.remove(), () => call.remove(), composerSpeechInput.subscribe(() => this.recognitionChanged()));
       const unsubscribe = agentTranscriptService.subscribe(this.target.bindingToken, (state, baseline) => {
         if (this.closed) return;
         try {
@@ -138,6 +145,23 @@ export class VoiceConversation {
       .catch(error => { if (!this.closed) { this.view = { ...this.view, error: failureMessage(error) }; this.changed(this.view); } });
   };
   finish = (): void => { if (!this.closed) { this.core?.finish(); this.apply(); } };
+  submitted(text: string): void {
+    if (this.closed || !this.core || !this.callActivated || !text.trim()) return;
+    try { this.core.submitText(text); }
+    catch (error) { this.view = { ...this.view, error: failureMessage(error) }; this.changed(this.view); return; }
+    this.timing = undefined;
+    this.cancelInput();
+    const token = this.playing;
+    this.speechToken = undefined;
+    this.readySpeech = undefined;
+    this.signalSpeech();
+    this.view = { ...this.view, playbackLevel: 0, error: null };
+    if (token) void this.playback!.stopChatSpeech(token).then(() => {
+      if (this.playing === token) this.playing = undefined;
+      this.apply();
+    }, error => this.fail(error));
+    this.apply();
+  }
   skip = async (): Promise<void> => {
     const token = this.playing;
     this.speechToken = undefined;
@@ -210,7 +234,7 @@ export class VoiceConversation {
       this.timing = { boundary: now, speechEnd: now - view.silenceMs };
     }
     if (view.phase === 'speaking' && this.timing && this.timing.prose === undefined) this.timing.prose = performance.now();
-    this.view = { ...this.view, phase: this.callActivated ? view.phase : 'starting', muted: view.muted, smartTurn: view.smartTurn, text: view.text, level: view.level, progress: view.progress };
+    this.view = { ...this.view, phase: this.callActivated ? view.phase : 'starting', muted: view.muted, smartTurn: view.smartTurn, text: view.text, level: view.level, progress: view.progress, playbackLevel: view.phase === 'speaking' ? this.view.playbackLevel : 0 };
     this.changed(this.view);
     if ((view.phase === 'listening' || view.phase === 'finishing') && this.playing && this.input?.monitor) {
       this.stopInterruptedPlayback();
@@ -308,6 +332,7 @@ export class VoiceConversation {
   private stopInterruptedPlayback(): void {
     const token = this.playing;
     if (!token || this.speechToken !== token) return;
+    recordDiagnostic('info', 'VoiceChat', 'reply-interrupted', { inputId: this.input?.id.toString() });
     this.speechToken = undefined;
     this.readySpeech = undefined;
     this.signalSpeech();

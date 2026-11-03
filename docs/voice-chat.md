@@ -52,9 +52,17 @@ current reply and keeps the call available for the next turn. Speech-engine
 errors remain visible without hanging up the system call.
 
 The orb renders a local WebGL cloud field with flowing detail and microphone
-level response, using the existing WebView dependency. It loads no assets and
+level response, using the existing WebView dependency. Both its scale and cloud
+deformation follow microphone and playback activity. Phonon meters played PCM;
+system voices use their native word-timing callbacks. It loads no assets and
 makes no network requests. Reduced Motion freezes the flow; hidden scenes stop
 their animation loop. It does not own audio or conversation state.
+
+Messages typed into the composer during a call use the same reply tracking and
+are spoken through the selected voice. They are queued once by the composer;
+voice chat does not resend them. A new typed message interrupts the current reply.
+Pending turn IDs remain eligible when their user text arrives in a later update,
+so an early turn placeholder cannot silently consume its response.
 
 The transcript button returns to the existing chat with the call minimized.
 Tool output and reasoning are not read as ordinary assistant prose. If the

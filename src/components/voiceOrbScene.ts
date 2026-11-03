@@ -16,11 +16,11 @@ if(gl){
  void main(){
    vec2 p=(gl_FragCoord.xy/resolution-.5)*2.;float r=length(p);
    float z=sqrt(max(0.,1.-dot(p,p)));
-   vec2 q=p*(1.65+.28*z);float t=time*.16;
+   vec2 q=p*(1.65+.28*z+energy*.3);float t=time*.16;
    vec2 flow=vec2(fbm(q+vec2(t*.55,-t*.32)),fbm(q+vec2(5.2-t*.3,1.7+t*.48)));
    float cloud=fbm(q*2.2+flow*2.8+vec2(t*.65,-t*.7));
    float detail=fbm(q*5.1+flow*2.1+vec2(-t*.8,t*.4));
-   float horizon=-p.y+.26*p.x-.02+(cloud-.48)*(.85+energy*.35)+(detail-.5)*.22;
+   float horizon=-p.y+.26*p.x-.02+energy*.18+(cloud-.48)*(.85+energy*.65)+(detail-.5)*(.22+energy*.16);
    float mist=smoothstep(-.22,.16,horizon);
    float plume=smoothstep(-.04,.12,horizon+(detail-.5)*.32);
    vec3 violet=mix(vec3(.65,.32,.92),vec3(.73,.44,.97),.6+.25*p.x-.1*p.y);

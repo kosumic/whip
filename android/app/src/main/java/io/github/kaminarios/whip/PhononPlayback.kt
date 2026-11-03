@@ -22,6 +22,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 object PhononPlayback {
   private const val SAMPLE_RATE = 24_000
   private const val BUFFER_SAMPLES = SAMPLE_RATE / 5
+  private const val LEVEL_SAMPLES = SAMPLE_RATE / 25
+  private const val LEVEL_INTERVAL_MS = 40L
   private val main = Handler(Looper.getMainLooper())
   private val audioWorker = Executors.newSingleThreadExecutor()
   private val settingsWorker = Executors.newSingleThreadExecutor()
@@ -80,12 +82,19 @@ object PhononPlayback {
   }
 
   fun start(lease: Long, text: String, rate: Double, attributes: AudioAttributes,
-            started: () -> Unit, ended: (Boolean, Boolean, String?) -> Unit) {
+            started: () -> Unit, level: (Float) -> Unit, ended: (Boolean, Boolean, String?) -> Unit) {
     stop()
     val next = Player(lease, rate, attributes)
     player = next
     val began = SystemClock.elapsedRealtime()
     var acknowledged = false // Main thread only.
+    val levels = object : Runnable {
+      override fun run() {
+        if (player !== next || !SpeechPolicy.isCurrent(lease)) return
+        level(next.playbackLevel())
+        main.postDelayed(this, LEVEL_INTERVAL_MS)
+      }
+    }
     val firstAudio = object : Runnable {
       override fun run() {
         if (player !== next || !SpeechPolicy.isCurrent(lease) || acknowledged) return
@@ -93,6 +102,7 @@ object PhononPlayback {
           acknowledged = true
           Log.i("Phonon", "first_output_ms=${SystemClock.elapsedRealtime() - began}")
           started()
+          levels.run()
         } else main.postDelayed(this, 5)
       }
     }
@@ -142,10 +152,13 @@ object PhononPlayback {
   }
 
   private class Player(val lease: Long, val rate: Double, val attributes: AudioAttributes) {
+    private data class Level(val frame: Long, val rms: Float)
+    private val levels = java.util.concurrent.ConcurrentLinkedQueue<Level>()
+    private var currentLevel = 0f // Main thread only.
     val cancelled = AtomicBoolean(false)
     private val lifecycle = Any()
     private var track: AudioTrack? = null
-    private var frames = 0L
+    @Volatile private var frames = 0L
     var started = false
 
     fun open() = synchronized(lifecycle) {
@@ -172,11 +185,17 @@ object PhononPlayback {
       var offset = 0
       while (offset < samples.size) {
         if (cancelled.get() || !SpeechPolicy.isCurrent(lease)) return false
-        val count = output.write(samples, offset, samples.size - offset, AudioTrack.WRITE_BLOCKING)
-        if (cancelled.get()) return false
-        check(count > 0) { "Streaming audio write failed ($count)" }
-        frames += count
-        offset += count
+        val end = minOf(samples.size, offset + LEVEL_SAMPLES)
+        var sum = 0.0
+        for (index in offset until end) sum += samples[index].toDouble() * samples[index]
+        levels.add(Level(frames, kotlin.math.sqrt(sum / (end - offset)).toFloat().coerceIn(0f, 1f)))
+        while (offset < end) {
+          val count = output.write(samples, offset, end - offset, AudioTrack.WRITE_BLOCKING)
+          if (cancelled.get()) return false
+          check(count > 0) { "Streaming audio write failed ($count)" }
+          frames += count
+          offset += count
+        }
       }
       return true
     }
@@ -193,6 +212,16 @@ object PhononPlayback {
     }
 
     fun hasPlayed(): Boolean = synchronized(lifecycle) { (track?.playbackHeadPosition ?: 0) > 0 }
+
+    fun playbackLevel(): Float {
+      val position = synchronized(lifecycle) { track?.let { Integer.toUnsignedLong(it.playbackHeadPosition) } } ?: return 0f
+      while (true) {
+        val next = levels.peek() ?: break
+        if (next.frame > position) break
+        currentLevel = levels.poll()?.rms ?: currentLevel
+      }
+      return if (position >= frames) 0f else currentLevel
+    }
 
     fun stop() = synchronized(lifecycle) {
       cancelled.set(true)

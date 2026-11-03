@@ -189,6 +189,7 @@ struct State {
     prompt: Option<String>,
     expected: String,
     baseline: HashSet<String>,
+    observed_turns: HashSet<String>,
     turn_id: Option<String>,
     response_completed: bool,
     response_skipped: bool,
@@ -207,6 +208,7 @@ impl Default for State {
             prompt: None,
             expected: String::new(),
             baseline: HashSet::new(),
+            observed_turns: HashSet::new(),
             turn_id: None,
             response_completed: false,
             response_skipped: false,
@@ -214,6 +216,19 @@ impl Default for State {
     }
 }
 impl State {
+    fn await_reply(&mut self, text: String) {
+        self.phase = VoiceChatPhase::Waiting;
+        self.baseline = self.observed_turns.clone();
+        self.expected = text;
+        self.prompt = None;
+        self.turn_id = None;
+        self.response_completed = false;
+        self.response_skipped = false;
+        self.input_id += 1;
+        self.input = Input::default();
+        self.text.clear();
+    }
+
     fn listen(&mut self) {
         self.input_id += 1;
         self.phase = if self.muted {
@@ -483,13 +498,9 @@ impl VoiceChat {
             if text.is_empty() {
                 state.listen();
             } else {
-                state.phase = VoiceChatPhase::Waiting;
-                state.expected.clone_from(&text);
+                state.await_reply(text.clone());
                 state.prompt = Some(text);
                 self.speech.reset_voice();
-                state.input_id += 1;
-                state.input = Input::default();
-                state.text.clear();
             }
         }
         drop(state);
@@ -498,6 +509,20 @@ impl VoiceChat {
 
     pub fn take_prompt(&self) -> Option<String> {
         self.state.lock().prompt.take()
+    }
+
+    /// A composer message is already queued by the app. Follow its reply without
+    /// submitting it again, using the same conversation and history boundary.
+    pub fn submit_text(&self, text: String) -> Result<(), VoiceChatError> {
+        if text.len() > MAX_TEXT_BYTES {
+            return Err("Voice chat message is too long".to_owned().into());
+        }
+        let mut state = self.state.lock();
+        if state.phase != VoiceChatPhase::Closed && !text.trim().is_empty() {
+            state.await_reply(text.trim().to_owned());
+            self.speech.reset_voice();
+        }
+        Ok(())
     }
 
     /// Existing turns establish history. Only a new, matching user turn may be read.
@@ -531,11 +556,12 @@ impl VoiceChat {
                     .into(),
             );
         }
+        state.observed_turns = turns.iter().map(|turn| turn.id.clone()).collect();
         if !matches!(
             state.phase,
             VoiceChatPhase::Waiting | VoiceChatPhase::Speaking
         ) {
-            state.baseline = turns.iter().map(|t| t.id.clone()).collect();
+            state.baseline = state.observed_turns.clone();
             return Ok(self.view_unlocked(&state));
         }
         if state.turn_id.is_none() {
@@ -544,7 +570,9 @@ impl VoiceChat {
                 .find(|t| !state.baseline.contains(&t.id) && t.user_text.trim() == state.expected)
                 .map(|t| t.id.clone());
         }
-        state.baseline = turns.iter().map(|t| t.id.clone()).collect();
+        // Keep the submission's history fixed while matching the reply. A
+        // turn-upsert may precede its user message; observing that placeholder
+        // must not turn the pending response into historical speech.
         if let Some(turn) = turns
             .into_iter()
             .find(|t| state.turn_id.as_ref() == Some(&t.id))
@@ -1091,6 +1119,72 @@ mod tests {
         }];
         result
     }
+    #[test]
+    fn typed_input_follows_its_reply_without_resending_and_supersedes_old_speech() {
+        let session = conversation();
+        submit(&session, "Hello");
+        session.take_prompt();
+        session
+            .transcript(
+                AgentTranscriptKind::Codex,
+                true,
+                false,
+                vec![turn("voice", "Hello", true)],
+            )
+            .unwrap();
+        assert_eq!(session.view().phase, VoiceChatPhase::Speaking);
+        session.submit_text("Typed follow-up".into()).unwrap();
+        assert_eq!(session.view().phase, VoiceChatPhase::Waiting);
+        assert!(session.take_prompt().is_none());
+        assert!(session.next_speech().is_none());
+        session
+            .transcript(
+                AgentTranscriptKind::Codex,
+                true,
+                false,
+                vec![
+                    turn("voice", "Hello", true),
+                    turn("typed", "Typed follow-up", true),
+                ],
+            )
+            .unwrap();
+        assert_eq!(session.next_speech().as_deref(), Some("A spoken reply."));
+        session.playback_ended();
+        assert_eq!(session.view().phase, VoiceChatPhase::Listening);
+    }
+
+    #[test]
+    fn an_incomplete_turn_reference_remains_eligible_when_its_user_message_arrives() {
+        for agent in [
+            AgentTranscriptKind::Claude,
+            AgentTranscriptKind::Codex,
+            AgentTranscriptKind::OpenCode,
+            AgentTranscriptKind::Pi,
+        ] {
+            let session = conversation();
+            session
+                .transcript(agent, true, true, vec![turn("history", "Hello", true)])
+                .unwrap();
+            submit(&session, "Hello");
+            session
+                .transcript(
+                    agent,
+                    true,
+                    false,
+                    vec![turn("history", "Hello", true), turn("reply", "", false)],
+                )
+                .unwrap();
+            assert_eq!(session.view().phase, VoiceChatPhase::Waiting);
+            assert!(session.next_speech().is_none());
+            let replies = || vec![turn("history", "Hello", true), turn("reply", "Hello", true)];
+            session.transcript(agent, true, false, replies()).unwrap();
+            assert_eq!(session.view().phase, VoiceChatPhase::Speaking);
+            assert_eq!(session.next_speech().as_deref(), Some("A spoken reply."));
+            session.transcript(agent, true, false, replies()).unwrap();
+            assert!(session.next_speech().is_none());
+        }
+    }
+
     #[test]
     fn streaming_speaks_coherent_prose_before_completion_and_waits_for_both_drains() {
         for agent in [

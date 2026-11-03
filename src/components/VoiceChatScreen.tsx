@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, useState, type ComponentProps } from 'react';
+import { useContext, useEffect, useImperativeHandle, useRef, useState, type ComponentProps, type Ref } from 'react';
 import { ActivityIndicator, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -32,6 +32,7 @@ const STATUS = {
 } as const;
 
 interface VoiceChatScreenProps {
+  ref?: Ref<VoiceChatHandle>;
   target: ChatSpeechTarget;
   send: (text: string) => boolean;
   visible: boolean;
@@ -44,13 +45,16 @@ interface VoiceChatScreenProps {
   onAttach?: () => void;
 }
 
+export interface VoiceChatHandle { submitted: (text: string) => void }
+
 /** Owns the call independently of its full-screen or floating presentation. */
-export function VoiceChatScreen({ target, send, visible, expanded, floatingStyle, onMinimize, onExpand, onClose, onCompose, onAttach }: VoiceChatScreenProps) {
+export function VoiceChatScreen({ ref, target, send, visible, expanded, floatingStyle, onMinimize, onExpand, onClose, onCompose, onAttach }: VoiceChatScreenProps) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const vadSensitivity = useContext(VoiceVadSensitivityContext);
   const [view, setView] = useState(INITIAL);
   const conversation = useRef<VoiceConversation | null>(null);
+  useImperativeHandle(ref, () => ({ submitted: text => conversation.current?.submitted(text) }), []);
   const callbacks = useRef({ send, onClose, vadSensitivity });
   callbacks.current = { send, onClose, vadSensitivity };
   const { agent, bindingToken, hostId, label, paneId } = target;

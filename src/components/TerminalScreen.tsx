@@ -166,6 +166,7 @@ const VOICE_CONTEXT_MESSAGES = 10;
 const VOICE_CONTEXT_CHARACTERS = 12_000;
 
 const VoiceChatScreen = lazy(() => import('./VoiceChatScreen').then(module => ({ default: module.VoiceChatScreen })));
+type VoiceChatHandle = import('./VoiceChatScreen').VoiceChatHandle;
 
 interface Props {
   onResidencyEnd?: TerminalResidencyEnd;
@@ -446,6 +447,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const { colors: appColors } = useTheme();
     const [voiceChatOpen, setVoiceChatOpen] = useState<string | null>(null);
     const [voiceChatExpanded, setVoiceChatExpanded] = useState(true);
+    const voiceChatRef = useRef<VoiceChatHandle>(null);
     const voiceChatIdentity = voiceChatTarget ? JSON.stringify([activeTarget?.key, voiceChatTarget.bindingToken]) : null;
     useEffect(() => { setVoiceChatOpen(null); }, [voiceChatIdentity]);
     const openVoiceChat = () => { Keyboard.dismiss(); setVoiceChatExpanded(true); setVoiceChatOpen(voiceChatIdentity); };
@@ -1379,10 +1381,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       const target = activeTargetRef.current;
       if (!target || composerStore.snapshot(target.key).imagePastes.size) return false;
       onInteraction?.(target);
-      if (!composerStore.submitDraft(target.key)) {
+      const submitted = composerStore.submitDraft(target.key);
+      if (!submitted) {
         reportBackgroundFailure(sendInput(ENTER_INPUT), TERMINAL_INPUT_CONTEXT);
         return false;
       }
+      voiceChatRef.current?.submitted(submitted.text);
       composeInputRef.current?.clear();
       publishQueuedMessages(target.key);
       composerStore.startSubmissions();
@@ -2177,7 +2181,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         )}
         {voiceChatOpen && voiceChatOpen === voiceChatIdentity && voiceChatTarget && (
           <Suspense fallback={null}>
-            <VoiceChatScreen target={voiceChatTarget} send={text => activeTargetRef.current?.key === activeTarget?.key && enqueueComposeMessage(text, [])}
+            <VoiceChatScreen ref={voiceChatRef} target={voiceChatTarget} send={text => activeTargetRef.current?.key === activeTarget?.key && enqueueComposeMessage(text, [])}
               visible={visible} expanded={voiceChatExpanded} floatingStyle={voiceChatFloatingStyle}
               onCompose={openCompose} onAttach={() => onRequestAttachment?.()}
               onMinimize={() => setVoiceChatExpanded(false)} onExpand={openVoiceChat} onClose={() => setVoiceChatOpen(null)} />
