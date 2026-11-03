@@ -131,6 +131,7 @@ class VoiceCallService : Service() {
                 if (current !== session || session.ending) { disconnect(DisconnectCause(DisconnectCause.LOCAL)); return@launch }
                 session.ready = true
                 main.removeCallbacks(session.timeout)
+                SpeechPlayback.warmUp(this@VoiceCallService)
                 session.start?.resolve(null)
                 session.start = null
                 promote(session)
@@ -211,6 +212,7 @@ class VoiceCallService : Service() {
   }
 
   override fun onDestroy() {
+    SpeechPlayback.shutdown()
     current?.let { session ->
       main.removeCallbacks(session.timeout)
       session.start?.reject("E_VOICE_CALL", "The system stopped voice chat.")

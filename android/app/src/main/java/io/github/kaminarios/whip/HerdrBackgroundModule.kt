@@ -281,7 +281,7 @@ class HerdrBackgroundModule(
       SpeechPlayback.onChatStopped = null
       SpeechPlayback.onChatStarted = null
       SpeechPlayback.onChatLevel = null
-      SpeechPlayback.stop()
+      SpeechPlayback.shutdown()
       stopPersistentAlert()
     }
     super.invalidate()
