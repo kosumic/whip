@@ -91,6 +91,8 @@ import { GlassButton, GlassIconBadge } from './GlassControls';
 import { CollapsibleSectionCard } from './CollapsibleSectionCard';
 import { SettingsChoiceRow } from './SettingsChoiceRow';
 import { SpeechBackendSetting } from './SpeechBackendSetting';
+import { SmartTurnSetting } from './SmartTurnSetting';
+import { MIN_VAD_SENSITIVITY, MAX_VAD_SENSITIVITY, VAD_SENSITIVITY_STEP } from '../lib/voiceVadSensitivity';
 import { DetailsTitle, SettingsDetailsProvider } from './SettingsDetails';
 import { ShizukuSection } from './ShizukuSection';
 import { Button } from './ui/button';
@@ -110,6 +112,8 @@ export interface SettingsSectionProps {
   backgroundMonitoringAvailable: boolean;
   persistentAlertDurationSeconds: number;
   ttsEnabled: boolean;
+  vadSensitivity: number;
+  onVadSensitivityChange: (value: number) => void;
   biometricForKeys: boolean;
   biometricOnResume: boolean;
   globalKeyCount: number;
@@ -300,6 +304,18 @@ export function SettingsSection(props: SettingsSectionProps) {
         expanded={voiceExpanded}
         onToggle={toggleVoice}>
         <SpeechBackendSetting />
+        <SmartTurnSetting />
+        <SliderRow
+          title={t('voiceChat.vadSensitivity')}
+          copy={t('voiceChat.vadSensitivityDescription')}
+          value={props.vadSensitivity}
+          minimumValue={MIN_VAD_SENSITIVITY}
+          maximumValue={MAX_VAD_SENSITIVITY}
+          step={VAD_SENSITIVITY_STEP}
+          formatValue={value => `${value}%`}
+          onChange={props.onVadSensitivityChange}
+          divided
+        />
         <SettingRow title={t('settings.speakChanges')} copy={t('settings.speakChangesCopy')} value={props.ttsEnabled} onChange={props.onTtsChange} divided />
       </CollapsibleSectionCard>
 
@@ -818,7 +834,7 @@ function ValueRow({ title, copy, value, onDecrease, onIncrease, divided = false,
   return <View className={rowClassName}><View className="min-w-0 flex-1 pr-2">{copy ? <DetailsTitle title={title} copy={copy} /> : <Text className="text-[15px] font-semibold leading-5">{title}</Text>}</View><View className="flex-row items-center"><IconButton icon={Minus} accessibilityLabel={t('settings.decrease', { name: title })} className="size-9" disabled={disabled} onPress={onDecrease} /><Text className={disabled ? 'min-w-[64px] text-center text-xs text-muted-foreground/50' : 'min-w-[64px] text-center text-xs text-muted-foreground'}>{value}</Text><IconButton icon={Plus} accessibilityLabel={t('settings.increase', { name: title })} className="size-9" disabled={disabled} onPress={onIncrease} /></View></View>;
 }
 
-function SliderRow({ title, icon, value, minimumValue, maximumValue, step, formatValue, onChange, fontPreview = false, divided = false, disabled = false, locked = false, onLockedPress }: { title: string; icon?: LucideIcon; value: number; minimumValue: number; maximumValue: number; step: number; formatValue: (value: number) => string; onChange: (value: number) => void; fontPreview?: boolean; divided?: boolean; disabled?: boolean; locked?: boolean; onLockedPress?: () => unknown }) {
+function SliderRow({ title, copy, icon, value, minimumValue, maximumValue, step, formatValue, onChange, fontPreview = false, divided = false, disabled = false, locked = false, onLockedPress }: { title: string; copy?: string; icon?: LucideIcon; value: number; minimumValue: number; maximumValue: number; step: number; formatValue: (value: number) => string; onChange: (value: number) => void; fontPreview?: boolean; divided?: boolean; disabled?: boolean; locked?: boolean; onLockedPress?: () => unknown }) {
   const { colors } = useTheme();
   const { t } = useTranslation();
   const formattedValue = formatValue(value);
@@ -839,6 +855,7 @@ function SliderRow({ title, icon, value, minimumValue, maximumValue, step, forma
         </View>
         <Text className="font-mono text-xs font-semibold text-primary">{formattedValue}</Text>
       </View>
+      {copy ? <Text className="mt-1 text-xs leading-[17px] text-muted-foreground">{copy}</Text> : null}
       <View
         accessibilityElementsHidden={locked}
         importantForAccessibility={locked ? 'no-hide-descendants' : 'auto'}

@@ -444,6 +444,7 @@ struct ConnectionLifecycle {
     disconnected: watch::Sender<Option<Arc<ConnectionDisconnect>>>,
     sftp_init: tokio::sync::Mutex<()>,
     timed_exec_open: tokio::sync::Mutex<()>,
+    commands: Semaphore,
     sftp: RwLock<Option<Arc<SftpSession>>>,
 }
 
@@ -455,6 +456,7 @@ impl Default for ConnectionLifecycle {
             disconnected,
             sftp_init: tokio::sync::Mutex::new(()),
             timed_exec_open: tokio::sync::Mutex::new(()),
+            commands: Semaphore::new(MAX_CONCURRENT_COMMANDS),
             sftp: RwLock::new(None),
         }
     }
@@ -1243,6 +1245,7 @@ async fn execute_with_input_on(
     input: Option<&[u8]>,
 ) -> Result<CommandOutput, TransportError> {
     session.ensure_alive()?;
+    let _slot = command_slot(session).await?;
     let mut channel = session.handle.channel_open_session().await?;
     let result = execute_channel(session, &mut channel, command, input).await;
     let _ = channel.close().await;
@@ -1276,6 +1279,9 @@ async fn execute_timed_command(
     timeout: Duration,
     reply: &mut tokio::sync::oneshot::Sender<Result<CommandOutput, TransportError>>,
 ) -> Result<CommandOutput, TransportError> {
+    let _slot = tokio::time::timeout_at(deadline, command_slot(session))
+        .await
+        .map_err(|_| exec_timeout("command-slot", timeout))??;
     // russh does not close a channel whose open-confirmation receiver was
     // dropped. Keep that request alive for cleanup, but allow at most one late
     // open per SSH connection. Later callers time out waiting for this gate.
@@ -1308,6 +1314,21 @@ fn exec_timeout(stage: &str, timeout: Duration) -> TransportError {
         format!("SSH exec {stage} timed out after {timeout:?}"),
     )
     .into()
+}
+
+// Metadata, Git and transcript reads share the same budget for the full command
+// lifetime, rather than only serializing channel-open handshakes.
+const MAX_CONCURRENT_COMMANDS: usize = 2;
+
+async fn command_slot(
+    session: &Session,
+) -> Result<tokio::sync::SemaphorePermit<'_>, TransportError> {
+    session
+        .lifecycle
+        .commands
+        .acquire()
+        .await
+        .map_err(|_| TransportError::SessionClosed("SSH command queue closed".into()))
 }
 
 async fn execute_channel(

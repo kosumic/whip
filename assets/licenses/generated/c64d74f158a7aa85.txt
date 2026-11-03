@@ -22,15 +22,13 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-Some files in the "tests/data" subdirectory of this repository are under other
-licences; see files named LICENSE.*.txt for details.
-
 
 zip production transitive dependency notices (Android/iOS)
 
 Apache License 2.0 (Apache-2.0)
 
 Used by:
+- bitflags 2.13.1
 - bumpalo 3.20.3
 - cfg-if 1.0.4
 - equivalent 1.0.2
@@ -456,6 +454,7 @@ Used by:
 Apache License 2.0 (Apache-2.0)
 
 Used by:
+- libc 0.2.189
 - miniz_oxide 0.8.9
 - proc-macro2 1.0.107
 - quote 1.0.47
@@ -463,6 +462,7 @@ Used by:
 - serde_core 1.0.229
 - serde_derive 1.0.229
 - syn 3.0.3
+- typed-path 0.12.4
 - unicode-ident 1.0.24
 
 Apache License
@@ -778,6 +778,35 @@ Used by:
 The MIT License (MIT)
 
 Copyright (c) 2015 Andrew Gallant
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+
+================================================================================
+MIT License (MIT)
+
+Used by:
+- nix 0.31.3
+
+The MIT License (MIT)
+
+Copyright (c) 2015 Carl Lerche + nix-rust Authors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

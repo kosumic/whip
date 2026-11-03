@@ -5,13 +5,36 @@
   "scripts": {
     "dev": "wrangler dev",
     "types": "wrangler types worker-configuration.d.ts --env-interface NotifyEnv --include-runtime false",
-    "check": "tsc --noEmit && cf deploy --dry-run",
+    "types:check": "wrangler types worker-configuration.d.ts --env-interface NotifyEnv --include-runtime false --check",
+    "typecheck": "tsc --project tsconfig.test.json",
+    "lint": "eslint . --max-warnings 0 --report-unused-disable-directives",
+    "test": "jest --runInBand",
+    "build": "wrangler deploy --dry-run",
+    "build:cf": "cf deploy --dry-run",
+    "check": "npm run typecheck && npm run lint && npm test && npm run types:check && npm run build && npm run build:cf",
     "deploy": "cf deploy"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20261026.1",
-    "cf": "1.0.0-beta.24",
+    "@babel/core": "^7.25.2",
+    "@babel/plugin-transform-modules-commonjs": "^7.29.7",
+    "@babel/preset-typescript": "^7.29.7",
+    "@cloudflare/workers-types": "^5.20261029.1",
+    "@types/jest": "30.0.0",
+    "@types/node": "^26.6.6",
+    "@typescript-eslint/eslint-plugin": "^8.70.1",
+    "@typescript-eslint/parser": "^8.68.0",
+    "babel-jest": "~30.5.2",
+    "cf": "1.0.0-beta.26",
+    "esbuild": "0.28.2",
+    "eslint": "^8.57.1",
+    "eslint-plugin-sonarjs": "^4.2.2",
+    "jest": "~30.5.2",
+    "miniflare": "5.20261023.2-beta",
     "typescript": "~6.0.3",
-    "wrangler": "^4.154.0"
-  }
+    "wrangler": "^4.156.1"
+  },
+  "engines": {
+    "node": ">=24.3.0"
+  },
+  "type": "module"
 }

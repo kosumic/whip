@@ -3,12 +3,76 @@
 use super::{
     AgentSessionError, AgentSessionManager, FILE_SOURCE_POLL_DELAY, FileSourceMetadata,
     SessionFailureKind, SessionId, TranscriptKey, current_session_mut, diagnostics, execute,
-    file_source_poll_command, parse_file_source_poll, shell_quote,
+    execute_bytes, file_source_poll_command, parse_file_source_poll, shell_quote, stream_data,
 };
 use std::time::{Duration, Instant};
 
 const MAX_POLL_DELAY: Duration = Duration::from_secs(30);
 const MISSING_SOURCE: &str = "__WHIP_TRANSCRIPT_SOURCE_MISSING__";
+const READ_BYTES: u64 = 1024 * 1024;
+
+/// Feed the same cursor/JSONL decoder as tail, without holding a session slot.
+pub(super) async fn read_available(
+    manager: &AgentSessionManager,
+    key: &TranscriptKey,
+    epoch: u64,
+    path: &str,
+    size: u64,
+) -> Result<(), AgentSessionError> {
+    loop {
+        let Some((context, received)) = ({
+            let mut state = manager.inner.state.lock();
+            current_session_mut(&mut state, key, epoch).and_then(|session| {
+                let context = session.stream_context?;
+                let received = session.core.file()?.received_offset();
+                Some((context, received))
+            })
+        }) else {
+            return Ok(());
+        };
+        let length = size.saturating_sub(received).min(READ_BYTES);
+        if length == 0 {
+            let emission = {
+                let mut state = manager.inner.state.lock();
+                current_session_mut(&mut state, key, epoch)
+                    .and_then(|session| session.core.file())
+                    .and_then(super::FileTranscriptCore::mark_live_update)
+            };
+            if let Some(update) = emission {
+                super::emit(&manager.inner, key.clone(), epoch, update);
+            }
+            return Ok(());
+        }
+        let command = super::codex_history::prefix_command(path, received, length);
+        let bytes = execute_bytes(&manager.inner.connection, command)
+            .await
+            .map_err(|error| {
+                diagnostics::read_error(
+                    &manager.inner,
+                    key,
+                    epoch,
+                    diagnostics::ReadPhase::HistoryRead,
+                    error,
+                )
+            })?;
+        if bytes.is_empty() {
+            // A concurrent truncation is resolved by the next metadata poll.
+            return Ok(());
+        }
+        stream_data(context, bytes);
+        let advanced = {
+            let mut state = manager.inner.state.lock();
+            current_session_mut(&mut state, key, epoch)
+                .and_then(|session| session.core.file())
+                .is_none_or(|core| core.received_offset() > received)
+        };
+        if !advanced {
+            return Err(AgentSessionError::ReadFailed(
+                "Transcript read did not advance its cursor".into(),
+            ));
+        }
+    }
+}
 
 pub(super) struct Monitor {
     path: String,
@@ -100,7 +164,7 @@ impl Monitor {
             };
             tokio::time::sleep(delay).await;
             // Capture BEFORE stat: appends during the request are not truncation.
-            let (received, paused) = {
+            let (received, paused, streaming) = {
                 let mut state = manager.inner.state.lock();
                 let Some(session) = current_session_mut(&mut state, &key, epoch) else {
                     return;
@@ -108,11 +172,15 @@ impl Monitor {
                 if session.retry_running || session.terminals.is_empty() {
                     return;
                 }
+                // Use the last successful observation before asking for another
+                // SSH slot. A failed poll must not prevent releasing an idle tail.
+                session.pause_file_if_quiet(self.previous_size, Instant::now());
                 let paused = session.activity.paused;
+                let streaming = session.stream.is_some();
                 let Some(core) = session.core.file() else {
                     return;
                 };
-                (core.received_offset(), paused)
+                (core.received_offset(), paused, streaming)
             };
             let metadata = match self.poll(&manager, &key, epoch, session_id.as_ref()).await {
                 Ok(Some(metadata)) => metadata,
@@ -171,6 +239,14 @@ impl Monitor {
             if let (Some(id), Some(title)) = (&session_id, metadata.codex_title) {
                 manager.update_codex_title(&key, epoch, id, title.title.as_deref());
                 self.title_stamp = Some(title.stamp);
+            }
+            if !streaming
+                && !paused
+                && let Err(error) =
+                    read_available(&manager, &key, epoch, &self.path, metadata.size).await
+            {
+                manager.fail_session(key, epoch, error.to_string(), SessionFailureKind::Transient);
+                return;
             }
             self.previous_size = metadata.size;
             let mut state = manager.inner.state.lock();

@@ -1,5 +1,5 @@
 import { DeviceEventEmitter, NativeEventEmitter, Platform } from 'react-native';
-import { NativeChatSpeechQueue, formatChatSpeech } from 'react-native-whip-ssh';
+import { NativeChatSpeechQueue } from 'react-native-whip-ssh';
 
 import type { ChatAgent } from '../lib/agentChatSession';
 import type { TranscriptMessage } from '../agentChat';
@@ -130,7 +130,7 @@ function startChatSpeech(
       while (!stopped) {
         const text = queue.next();
         if (!text) break;
-        await native.speakChat(token, target.tabName ? formatChatSpeech(target.tabName, text) : text);
+        await native.speakChat(token, text);
       }
       if (messages) stop();
     } catch (error) {

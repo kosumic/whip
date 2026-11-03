@@ -1,6 +1,7 @@
 use super::*;
 use crate::agent_sessions::tests::SESSION;
 use crate::agent_sessions::{AgentTranscriptState, AgentTranscriptStatus, BoundAgentChat};
+use crate::herdr_api::HerdrAgentStatus;
 use crate::herdr_connection::HerdrConnection;
 use crate::ssh::ReverseForwardFixture;
 use std::collections::BTreeMap;
@@ -51,6 +52,14 @@ fn user_line(text: &str) -> String {
     )
 }
 
+fn initial_contents(id: &str) -> String {
+    format!(
+        "{}\n{}",
+        serde_json::json!({"type":"session_meta","payload":{"id":id}}),
+        user_line("initial")
+    )
+}
+
 fn append(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     std::fs::OpenOptions::new()
         .append(true)
@@ -75,11 +84,7 @@ impl LiveSession {
         let sessions = home.join(".codex/sessions/2026/11/01");
         std::fs::create_dir_all(&sessions)?;
         let path = sessions.join(format!("rollout-2026-11-01T10-20-30-{SESSION}.jsonl"));
-        let initial = format!(
-            "{}\n{}",
-            serde_json::json!({"type":"session_meta","payload":{"id":SESSION}}),
-            user_line("initial")
-        );
+        let initial = initial_contents(SESSION);
         std::fs::write(&path, &initial)?;
         let shell = std::env::var("WHIP_TEST_REMOTE_SHELL").unwrap_or_else(|_| "bash".into());
         let environment = BTreeMap::from([
@@ -111,6 +116,18 @@ impl LiveSession {
         self.manager.state(&self.binding.transcript_key).unwrap()
     }
 
+    fn start_file(&self, id: &str) -> TestResult<(BoundAgentChat, PathBuf)> {
+        let path = self
+            .path
+            .parent()
+            .unwrap()
+            .join(format!("rollout-2026-11-01T10-20-30-{id}.jsonl"));
+        std::fs::write(&path, initial_contents(id))?;
+        let binding = self.manager.bind_codex(id.into(), id.into())?;
+        self.manager.start_restored(&binding.binding_token, None)?;
+        Ok((binding, path))
+    }
+
     async fn wait_live(&self, messages: usize) -> TestResult {
         wait_for(|| {
             let state = self.state();
@@ -127,6 +144,124 @@ impl LiveSession {
             "rollout-2026-11-01T10-21-30-{SESSION}_22222222-2222-4222-8222-222222222222.jsonl"
         ))
     }
+}
+
+#[test]
+fn idle_tail_releases_a_full_server_and_replays_partial_bytes_after_wake() -> TestResult {
+    crate::runtime()?.block_on(async {
+        let session = LiveSession::new().await?;
+        let history = session.state().messages;
+        let line = user_line("reply after idle pause");
+        let split = line.len() / 2;
+        append(&session.path, &line.as_bytes()[..split])?;
+        // Observe the partial bytes through the real SSH tail before going idle.
+        wait_for(|| {
+            let mut state = session.manager.inner.state.lock();
+            let received = state
+                .sessions
+                .get_mut(&session.binding.transcript_key)
+                .unwrap()
+                .core
+                .file()
+                .unwrap()
+                .received_offset();
+            drop(state);
+            received == (session.initial.len() + split) as u64
+        })
+        .await?;
+        session.manager.update_agent_statuses(
+            std::collections::HashMap::from([("terminal".into(), HerdrAgentStatus::Idle)]),
+            1,
+        );
+        // The existing tail fills this server. Discovery and metadata requests
+        // must fail until idle cleanup releases it, without reconnecting.
+        session.remote.limit_sessions(1);
+        let (other, _) = session.start_file("22222222-2222-4222-8222-222222222222")?;
+        wait_for(|| {
+            session
+                .manager
+                .state(&other.transcript_key)
+                .is_some_and(|state| state.status == AgentTranscriptStatus::Live)
+        })
+        .await?;
+        assert_eq!(session.state().messages.len(), 1);
+        assert!(session.remote.ssh.is_alive());
+
+        session.manager.detach_terminal(&other.terminal_id)?;
+        append(&session.path, &line.as_bytes()[split..])?;
+        session.manager.wake_pane(session.binding.pane_id.as_str());
+        session.wait_live(2).await?;
+        assert_eq!(session.state().messages[..history.len()], history);
+        Ok(())
+    })
+}
+
+#[test]
+fn more_transcripts_than_server_slots_keep_loading_and_following_appends() -> TestResult {
+    crate::runtime()?.block_on(async {
+        let session = LiveSession::new().await?;
+        session.remote.limit_sessions(10);
+        let mut files = vec![(session.binding.clone(), session.path.clone())];
+        for _ in 1..12 {
+            files.push(session.start_file(&uuid::Uuid::new_v4().to_string())?);
+            if files.len() == super::super::MAX_FILE_STREAMS {
+                wait_for(|| {
+                    files.iter().all(|(binding, _)| {
+                        session
+                            .manager
+                            .state(&binding.transcript_key)
+                            .is_some_and(|state| state.status == AgentTranscriptStatus::Live)
+                    })
+                })
+                .await?;
+            }
+        }
+        let all_live = |count| {
+            files.iter().all(|(binding, _)| {
+                session
+                    .manager
+                    .state(&binding.transcript_key)
+                    .is_some_and(|state| {
+                        state.status == AgentTranscriptStatus::Live && state.messages.len() == count
+                    })
+            })
+        };
+        wait_for(|| all_live(1)).await?;
+        let line = user_line("appended across the channel budget");
+        let split = line.len() / 2;
+        for (_, path) in &files {
+            append(path, &line.as_bytes()[..split])?;
+        }
+        tokio::time::sleep(FILE_SOURCE_POLL_DELAY + Duration::from_millis(200)).await;
+        assert!(all_live(1), "partial records must not create messages");
+        for (_, path) in &files {
+            append(path, &line.as_bytes()[split..])?;
+        }
+        wait_for(|| all_live(2)).await?;
+        assert!(session.remote.ssh.is_alive());
+        // Overflow readers also retain source-change detection and replace old
+        // messages when a rollout is truncated, instead of appending duplicates.
+        let (binding, path) = files.last().unwrap();
+        let replacement = format!(
+            "{}{}{}",
+            initial_contents(binding.session_id.as_str()),
+            user_line("replacement one"),
+            user_line("replacement two")
+        );
+        let temporary = path.with_extension("replacement");
+        std::fs::write(&temporary, replacement)?;
+        std::fs::rename(temporary, path)?;
+        wait_for(|| {
+            session
+                .manager
+                .state(&binding.transcript_key)
+                .is_some_and(|state| {
+                    state.status == AgentTranscriptStatus::Live && state.messages.len() == 3
+                })
+        })
+        .await?;
+        Ok(())
+    })
 }
 
 #[test]

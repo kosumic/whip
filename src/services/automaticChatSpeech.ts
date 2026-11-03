@@ -53,13 +53,16 @@ export function listenToAllTranscripts(onError: (error: unknown) => void): () =>
     if ((event.state?.status !== 'live' || event.baseline) && lease?.key === event.key) void stopLease();
     void drain();
   };
-  const resume = () => {
-    if (disposed || silenced || isSpeechInputActive() || isChatResponsePlaying()) return;
-    paused = false;
+  const resetBaseline = () => {
     queue.reset();
     for (const event of transcripts.values()) {
       if (event.state) queue.update(event.key, event.binding.agent, event.tabName, event.state.status === 'live', true, event.state.transcript.messages);
     }
+  };
+  const resume = () => {
+    if (disposed || silenced || isSpeechInputActive() || isChatResponsePlaying()) return;
+    paused = false;
+    resetBaseline();
   };
   const drain = async () => {
     if (!allowed() || draining || Date.now() < resumeAt) return;
@@ -94,8 +97,8 @@ export function listenToAllTranscripts(onError: (error: unknown) => void): () =>
       }
     } catch (error) {
       if (allowed() && lease?.token === playingToken) {
-        silenced = true;
-        queue.reset();
+        // Discard the failed reply without disabling future transcript updates.
+        resetBaseline();
         onError(error);
       }
     } finally {
@@ -121,8 +124,10 @@ export function listenToAllTranscripts(onError: (error: unknown) => void): () =>
       void stopLease();
       return;
     }
-    silenced = true;
-    queue.reset();
+    // Only an explicit Stop disables automatic reading. Engine failures and
+    // audio interruptions end this reply; later replies can start a fresh player.
+    silenced = event.reason === 'stopped' && !event.error;
+    resetBaseline();
     void stopLease();
     if (event.error) onError(new Error(event.error));
   });

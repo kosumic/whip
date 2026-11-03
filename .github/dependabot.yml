@@ -96,6 +96,28 @@ updates:
         versions:
           - '>= 10.0.0'
 
+  - package-ecosystem: npm
+    directory: /feedback-worker
+    cooldown:
+      default-days: 1
+    schedule:
+      interval: daily
+    groups:
+      typescript-eslint:
+        patterns:
+          - '@typescript-eslint/*'
+
+  - package-ecosystem: npm
+    directory: /notify-relay
+    cooldown:
+      default-days: 1
+    schedule:
+      interval: daily
+    groups:
+      typescript-eslint:
+        patterns:
+          - '@typescript-eslint/*'
+
   - package-ecosystem: gradle
     directory: /android
     cooldown:

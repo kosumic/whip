@@ -52,10 +52,12 @@ the RevenueCat pod is linked.
 
 ## Worker and D1 setup
 
-Run commands from the repository root inside the Nix development shell:
+Enter the Nix development shell from the repository root, then run commands inside the independent Worker package:
 
 ```bash
 nix develop
+cd feedback-worker
+npm ci
 npx wrangler login
 npx wrangler d1 create whip-feedback
 ```
@@ -65,9 +67,9 @@ ID printed by `d1 create`, then apply the migration:
 
 ```bash
 npx wrangler d1 migrations apply whip-feedback \
-  --config feedback-worker/wrangler.jsonc --local
+  --config wrangler.jsonc --local
 npx wrangler d1 migrations apply whip-feedback \
-  --config feedback-worker/wrangler.jsonc --remote
+  --config wrangler.jsonc --remote
 ```
 
 Generate a long random webhook authorization value. Store it locally in the
@@ -76,7 +78,7 @@ value in Cloudflare for deployment using the interactive prompt:
 
 ```bash
 npx wrangler secret put REVENUECAT_WEBHOOK_AUTHORIZATION \
-  --config feedback-worker/wrangler.jsonc
+  --config wrangler.jsonc
 ```
 
 No RevenueCat secret API key is required by this Worker because it does not call
@@ -86,9 +88,9 @@ Worker secret and must never be embedded in the app.
 Start or validate the Worker with:
 
 ```bash
-npm run worker:dev
-npm run worker:check
-npm run worker:deploy
+npm run dev
+npm run check
+npm run deploy
 ```
 
 In RevenueCat, add this HTTPS webhook URL:

@@ -169,6 +169,7 @@ interface MessageComposerProps extends ComposerInputProps {
   inputRef?: Ref<TextInputInstance>;
   surfaceClassName?: string;
   voiceChatLabel?: string;
+  onVoiceChat?: () => void;
 }
 
 /** Shared composer layout used by terminal and native agent chat. */
@@ -181,6 +182,7 @@ export function MessageComposer({
   inputRef,
   surfaceClassName,
   voiceChatLabel,
+  onVoiceChat,
   ...inputProps
 }: MessageComposerProps) {
   const { colors } = useTheme();
@@ -192,7 +194,7 @@ export function MessageComposer({
   const [focused, setFocused] = useState(false);
   const hasDraft = inputProps.initialValue.length > 0;
   const expanded = focused || hasDraft;
-  const showVoiceChat = Boolean(voiceChatLabel && !hasDraft && !focused && !actions.sendDisabled);
+  const showVoiceChat = Boolean(voiceChatLabel && onVoiceChat && !hasDraft && !focused && !actions.sendDisabled);
   const actionColor = glass ? colors.text : actions.actionColor;
   const inputHeight = expanded
     ? Math.max(minInputHeight, Math.min(contentHeight, maxInputHeight))
@@ -265,7 +267,7 @@ export function MessageComposer({
             className={COMPOSER_CONTROL_CLASS}
             disabled={actions.sendDisabled}
             variant="ghost"
-            onPress={showVoiceChat ? undefined : hapticSend(actions.onSend)}
+            onPress={showVoiceChat ? onVoiceChat : hapticSend(actions.onSend)}
           >
             <View className={cn('size-9 items-center justify-center rounded-full bg-primary', actions.sendClassName)}>
               {actions.sending ? (

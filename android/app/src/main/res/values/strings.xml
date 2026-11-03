@@ -1,4 +1,8 @@
 <resources>
+    <string name="voice_call_channel">Voice chat calls</string>
+    <string name="voice_call_ongoing">Voice chat</string>
+    <string name="voice_call_mute">Mute microphone</string>
+    <string name="voice_call_unmute">Unmute microphone</string>
     <string name="app_name">Whip</string>
     <string name="chat_speech_listening">Listening to %1$s</string>
     <string name="chat_speech_stop">Stop listening</string>

@@ -493,3 +493,99 @@ test('cancellation while finishing discards the pending hypothesis', async () =>
   emit('end');
   expect(request.append).not.toHaveBeenCalled();
 });
+
+describe('voice chat reuses the shared recognizer', () => {
+  test('a client cancellation after finishing a local turn preserves its transcript without ending the call', async () => {
+    const { controller, request, recognizer, core, emit } = setup();
+    Object.assign(recognizer, { supportsOnDeviceRecognition: () => true, supportsAudioChunkEvents: () => true });
+    await controller.start({ ...request, localOnly: true });
+    emit('start');
+    controller.stop(request.owner);
+    core.result.mockReturnValueOnce('Are you there');
+    emit('result', { isFinal: true, results: [{ transcript: 'Are you there' }] });
+    emit('error', { error: 'client', message: 'Other client side errors.' });
+    emit('end');
+    expect(request.append).toHaveBeenCalledTimes(1);
+    expect(request.append).toHaveBeenCalledWith('Edited draft Are you there');
+    expect(request.onError).not.toHaveBeenCalled();
+    expect(controller.getSnapshot().phase).toBe('idle');
+  });
+
+  test('requires local recognition and forwards PCM only while capture is active', async () => {
+    const { controller, request, recognizer, emit } = setup();
+    Object.assign(recognizer, { supportsOnDeviceRecognition: () => true, supportsAudioChunkEvents: () => true });
+    const onAudio = jest.fn();
+    await controller.start({ ...request, localOnly: true, onAudio });
+    expect(recognizer.start).toHaveBeenCalledWith(expect.objectContaining({
+      requiresOnDeviceRecognition: true, continuous: true, audioChunkEvents: true,
+      recordingOptions: { persist: false },
+    }));
+    emit('start');
+    const token = (recognizer.start.mock.calls[0] as unknown as [{ audioChunkToken: string }])[0].audioChunkToken;
+    emit('audiochunk', { pcm: 'AAAA', token });
+    expect(onAudio).toHaveBeenCalledWith('AAAA');
+    controller.cancel(request.owner);
+    emit('audiochunk', { pcm: 'late', token });
+    expect(onAudio).toHaveBeenCalledTimes(1);
+    emit('end');
+  });
+  test('a missing on-device recognizer fails before starting capture', async () => {
+    const { controller, request, recognizer } = setup();
+    Object.assign(recognizer, { supportsOnDeviceRecognition: () => false, supportsAudioChunkEvents: () => true });
+    await controller.start({ ...request, localOnly: true });
+    expect(recognizer.start).not.toHaveBeenCalled();
+    expect(request.onError).toHaveBeenCalledWith('unavailable', expect.any(String));
+    expect(controller.getSnapshot().phase).toBe('idle');
+  });
+  test('local input never downgrades to a recognizer without the shared audio feed', async () => {
+    const { controller, request, recognizer, emit } = setup();
+    Object.assign(recognizer, { supportsOnDeviceRecognition: () => true, supportsAudioChunkEvents: () => true });
+    await controller.start({ ...request, localOnly: true });
+    emit('start');
+    emit('error', { error: 'audio-capture', message: 'Local service rejected shared audio' });
+    emit('end');
+    jest.advanceTimersByTime(10_000);
+    expect(recognizer.start).toHaveBeenCalledTimes(1);
+    expect(request.onError).toHaveBeenCalledWith('failed', 'Local service rejected shared audio');
+  });
+  test('the conversation owns the microphone and playback focus between turns', async () => {
+    const { controller, request, recognizer, emit } = setup();
+    expect(controller.reserve(request.owner)).toBe(true);
+    expect(controller.reserve('another conversation')).toBe(false);
+    await controller.start({ ...request, owner: 'another composer' });
+    expect(recognizer.start).not.toHaveBeenCalled();
+    await controller.start(request);
+    emit('start');
+    controller.stop(request.owner);
+    emit('end');
+    expect(isSpeechInputActive()).toBe(true);
+    await controller.start({ ...request, owner: 'another composer' });
+    expect(recognizer.start).toHaveBeenCalledTimes(1);
+    controller.releaseReservation(request.owner);
+    expect(isSpeechInputActive()).toBe(false);
+  });
+});
+
+test('a system-managed call retains shared local capture when the app backgrounds', async () => {
+  const { controller, request, recognizer, emit } = setup();
+  Object.assign(recognizer, { supportsOnDeviceRecognition: () => true, supportsAudioChunkEvents: () => true });
+  await controller.start({ ...request, localOnly: true, managedCall: true });
+  emit('start');
+  for (const listener of mockAppListeners) listener('background');
+  expect(recognizer.abort).not.toHaveBeenCalled();
+  expect(controller.getSnapshot().phase).toBe('listening');
+  expect(recognizer.start).toHaveBeenCalledWith(expect.objectContaining({ iosAudioSessionManaged: true }));
+  controller.cancel(request.owner); emit('end');
+});
+
+test('only a reserved local system call can monitor speech without suspending playback', async () => {
+  const { controller, request, recognizer, dependencies, emit } = setup();
+  Object.assign(recognizer, { supportsOnDeviceRecognition: () => true, supportsAudioChunkEvents: () => true, supportsEchoCancellation: () => true });
+  expect(await controller.supportsPlaybackMonitoring()).toBe(true);
+  controller.reserve(request.owner);
+  await controller.start({ ...request, localOnly: true, managedCall: true, duringPlayback: true });
+  emit('start');
+  expect(dependencies.suspendPlayback).not.toHaveBeenCalled();
+  expect(recognizer.start).toHaveBeenCalledWith(expect.objectContaining({ requiresOnDeviceRecognition: true, androidEchoCancellation: true, iosVoiceProcessingEnabled: true }));
+  controller.cancel(request.owner); emit('end'); controller.releaseReservation(request.owner);
+});

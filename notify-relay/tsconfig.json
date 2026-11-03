@@ -6,7 +6,14 @@
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "types": ["@cloudflare/workers-types"]
+    "types": [
+      "@cloudflare/workers-types"
+    ]
   },
-  "include": ["src/**/*.ts", "worker-configuration.d.ts", "cloudflare.config.ts"]
+  "include": [
+    "src/**/*.ts",
+    "worker-configuration.d.ts",
+    "cloudflare.config.ts",
+    "wrangler.config.ts"
+  ]
 }
