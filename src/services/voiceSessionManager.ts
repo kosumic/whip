@@ -1,5 +1,7 @@
 import type { VoiceChatTarget, VoiceConversationView } from './voiceConversation';
 import { DEFAULT_VOICE_CONVERSATION_SETTINGS, parseVoiceConversationSettings, type VoiceConversationSettings, type VoiceMode } from '../lib/voiceConversationSettings';
+import { voiceUsageLedger } from './voiceUsage';
+import { settledPromise } from '../lib/promises';
 
 export type CallScope = { kind: 'Agent'; target: VoiceChatTarget } | { kind: 'Global' };
 export interface VoiceSessionAdapter {
@@ -15,6 +17,7 @@ export interface VoiceSessionAdapter {
 }
 type Send = (text: string) => boolean;
 type Factory = (target: VoiceChatTarget, send: Send, changed: (view: VoiceConversationView) => void) => Promise<VoiceSessionAdapter>;
+export interface VoiceUsageObserver { started(session: VoiceSession): void; ended(session: VoiceSession): void }
 const initialView = (): VoiceConversationView => ({ phase: 'starting', muted: false, smartTurn: false, speaker: false, text: '', level: 0, progress: 0, error: null, transcript: null });
 
 function sameTarget(left: CallScope, right: CallScope): boolean {
@@ -33,6 +36,7 @@ export class VoiceSession {
   bindingToken?: string;
   vadSensitivity?: number;
   closing?: Promise<void>;
+  usageId?: string;
   send?: Send;
   private view = initialView();
   private readonly listeners = new Set<(view: VoiceConversationView) => void>();
@@ -66,7 +70,12 @@ export class VoiceSessionManager {
   private current?: VoiceSession;
   private transition: Promise<void> = Promise.resolve();
   private locked = false;
-  constructor(private readonly createLocal: Factory) {}
+  constructor(private readonly createLocal: Factory, private readonly usage?: VoiceUsageObserver) {}
+
+  private observe(kind: keyof VoiceUsageObserver, session: VoiceSession): void {
+    // Accounting must never interrupt legacy call startup, audio or cleanup.
+    try { this.usage?.[kind](session); } catch { /* The ledger reports storage errors in settings. */ }
+  }
 
   get active(): VoiceSession | undefined { return this.current; }
 
@@ -89,6 +98,7 @@ export class VoiceSessionManager {
         session.publish({ ...initialView(), phase: 'error', error: this.locked ? 'Unlock Whip to start a call.' : 'This conversation mode is not available yet.' });
         return;
       }
+      this.observe('started', session);
       const adapter = await this.createLocal(scope.target,
         text => this.current === session && !session.ended && !this.locked && Boolean(session.send?.(text)),
         view => {
@@ -118,6 +128,7 @@ export class VoiceSessionManager {
   private end(session: VoiceSession, preserveError = false): Promise<void> {
     session.ended = true;
     if (!session.closing) session.closing = (async () => {
+      this.observe('ended', session);
       try {
         await session.adapter?.close();
         if (!preserveError) session.publish({ ...session.getSnapshot(), phase: 'closed', level: 0 });
@@ -150,8 +161,24 @@ export class VoiceSessionManager {
   }
 }
 
+export const localVoiceUsageObserver: VoiceUsageObserver = {
+  started(session) {
+    const { createSecureId } = require('../lib/secureId') as typeof import('../lib/secureId');
+    session.usageId = createSecureId('voice');
+    void settledPromise(voiceUsageLedger.record({ kind: 'started', call: {
+      session_id: session.usageId, provider: 'local', mode: 'turn_based',
+      model: null, voice: null, scope: session.scope.kind === 'Agent' ? 'agent' : 'global',
+      started_at_ms: session.startedAt,
+    } }));
+  },
+  ended(session) {
+    if (session.usageId) void settledPromise(voiceUsageLedger.record({ kind: 'ended', session_id: session.usageId,
+      ended_at_ms: Math.max(session.startedAt, Date.now()) }));
+  },
+};
+
 // Loading the manager alone creates no native owner, audio task, or cloud client.
 export const voiceSessionManager = new VoiceSessionManager(async (target, send, changed) => {
   const { VoiceConversation } = await import('./voiceConversation');
   return new VoiceConversation(target, send, changed);
-});
+}, localVoiceUsageObserver);
