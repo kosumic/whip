@@ -370,6 +370,50 @@ describe('TerminalRendererHost lifecycle', () => {
     };
   };
 
+  test('prepares a workspace tab before its first selection and switches without reopening it', async () => {
+    const client = createClient({});
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const first = { ...createTarget('term-1', client, scroll), prewarm: true };
+    const second = { ...createTarget('term-2', client, scroll), prewarm: true };
+    const { activateTarget, webView, injected } = await mountReadyHost(first, [first, second]);
+    expect(injected.join('\n')).toContain('window.herdrCreate(' + JSON.stringify(second.key));
+    await sendRendererMessage(webView, { type: 'terminal-ready', key: second.key });
+    await sendRendererMessage(webView, { type: 'resize', source: 'fit', key: second.key,
+      cols: 80, rows: 24, cellWidthPx: 8, cellHeightPx: 16 });
+    expect(client.isTerminalBridgeRetained('term-2')).toBe(true);
+    client.openTerminal.mockClear();
+    injected.length = 0;
+
+    await activateTarget(second);
+
+    expect(client.openTerminal).not.toHaveBeenCalled();
+    expect(injected.join('\n')).toContain('window.herdrActivate(' + JSON.stringify(second.key));
+    expect(injected.join('\n')).not.toContain('window.herdrCreate');
+  });
+
+  test('background preparation obeys the renderer budget without eviction churn', async () => {
+    const client = createClient({});
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const targets = Array.from({ length: 6 }, (_, index) => ({
+      ...createTarget(`term-${index}`, client, scroll), prewarm: true,
+    }));
+    const { activateTarget, injected } = await mountReadyHost(targets[0], targets, true, MIN_XTERM_CACHE_CAPACITY);
+    expect(injected.filter(script => script.includes('window.herdrCreate'))).toHaveLength(MIN_XTERM_CACHE_CAPACITY);
+    injected.length = 0;
+    await activateTarget({ ...targets[0] });
+    expect(injected.join('\n')).not.toContain('window.herdrCreate');
+    expect(injected.join('\n')).not.toContain('window.herdrRemove');
+  });
+
+  test('preparation leaves other hosts unopened', async () => {
+    const client = createClient({});
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const first = { ...createTarget('term-1', client, scroll), prewarm: true };
+    const other = { ...createTarget('term-2', client, scroll), hostSessionId: 'other-host', prewarm: true };
+    const { injected } = await mountReadyHost(first, [first, other]);
+    expect(injected.join('\n')).not.toContain('window.herdrCreate(' + JSON.stringify(other.key));
+  });
+
   test('credits only the current renderer generation after a completed batch', async () => {
     const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
     const client = createClient({ 'term-1': scroll });

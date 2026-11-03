@@ -49,6 +49,8 @@ export interface TerminalRenderTarget {
   hostSessionId: string;
   client: TerminalRuntimeClient;
   session: TerminalSession;
+  /** Eligible for preparation within the renderer cache before selection. */
+  prewarm?: boolean;
   scroll?: PaneScrollInfo;
 }
 

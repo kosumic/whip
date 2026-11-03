@@ -2200,16 +2200,14 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                       t('terminal.opening', { title })}
                 </Text>
               </View>
-              {status !== 'connecting' && (
-                <Button
-                  className="h-8 rounded-full bg-terminal-accent px-3"
-                  onPress={retryNow}
-                >
-                  <Text className="text-[10px] font-semibold text-terminal-ink">
-                    {t('terminal.retry')}
-                  </Text>
-                </Button>
-              )}
+              <Button
+                className="h-8 rounded-full bg-terminal-accent px-3"
+                onPress={retryNow}
+              >
+                <Text className="text-[10px] font-semibold text-terminal-ink">
+                  {t('terminal.retry')}
+                </Text>
+              </Button>
               <Button
                 accessibilityLabel={t('terminal.closeSession')}
                 className="size-8 rounded-full px-0"

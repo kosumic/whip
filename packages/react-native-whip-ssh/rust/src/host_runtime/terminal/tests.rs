@@ -14,6 +14,125 @@ const PROTOCOL: u32 = 22;
 const TERMINAL_ID: &str = "test-terminal";
 
 #[test]
+fn reopening_a_retained_bridge_republishes_readiness_without_reattaching() -> TestResult {
+    let _guard = super::super::tests::EVENT_SINK_TEST_LOCK.lock();
+    crate::runtime()?.block_on(async {
+        let fixture = TerminalFixture::new("retained-terminal-readiness").await?;
+        let _stream = fixture.open().await?;
+        let bridge = live_terminal_bridge_id(&fixture.runtime.inner, TERMINAL_ID);
+        let sink = Arc::new(super::super::tests::RecordingRuntimeSink {
+            events: parking_lot::Mutex::new(Vec::new()),
+        });
+        set_host_runtime_event_sink(sink.clone());
+
+        // A renderer can re-register after tab selection or resume, after the
+        // original Attached event has already been delivered to its predecessor.
+        fixture
+            .runtime
+            .open_terminal(TERMINAL_ID.into(), true, 80, 24, 8, 16)
+            .await?;
+
+        clear_host_runtime_event_sink();
+        assert_eq!(
+            live_terminal_bridge_id(&fixture.runtime.inner, TERMINAL_ID),
+            bridge
+        );
+        assert!(sink.events.lock().iter().any(|event| matches!(event,
+            HostRuntimeEvent::TerminalStateChanged {
+                terminal_id, state: HostTerminalState::Attached, retrying: false, ..
+            } if terminal_id == TERMINAL_ID
+        )));
+        assert!(fixture.ssh.ssh.latency_ms().await.is_ok());
+        fixture.runtime.disconnect().await?;
+        Ok(())
+    })
+}
+
+#[test]
+fn exhausted_terminal_setup_can_be_retried_instead_of_waiting_forever() -> TestResult {
+    let _guard = super::super::tests::EVENT_SINK_TEST_LOCK.lock();
+    clear_host_runtime_event_sink();
+    crate::runtime()?.block_on(async {
+        // Connected runtime metadata with no installed SSH transport makes
+        // ensure_herdr_server fail before a bridge can be created.
+        let inner = super::super::tests::connected_runtime_inner("terminal-setup-failure");
+        let runtime = HostRuntime {
+            inner: inner.clone(),
+        };
+        assert!(
+            runtime
+                .open_terminal(TERMINAL_ID.into(), true, 80, 24, 8, 16)
+                .await
+                .is_err()
+        );
+        let state = inner.state.lock().terminals[TERMINAL_ID].clone();
+        let retried = tokio::time::timeout(
+            Duration::from_secs(20),
+            runtime.open_terminal(TERMINAL_ID.into(), true, 80, 24, 8, 16),
+        )
+        .await;
+        runtime.close_terminal(TERMINAL_ID.into());
+        assert_eq!(state.state, HostTerminalState::Failed);
+        assert!(!state.retry_running);
+        assert!(
+            retried.is_ok(),
+            "retry must start a new attempt, not wait on a departed worker"
+        );
+        assert!(retried?.is_err());
+        Ok(())
+    })
+}
+
+#[test]
+fn retry_during_handshake_cannot_commit_the_released_attachment() -> TestResult {
+    let _guard = super::super::tests::EVENT_SINK_TEST_LOCK.lock();
+    clear_host_runtime_event_sink();
+    crate::runtime()?.block_on(async {
+        let fixture = TerminalFixture::new("terminal-retry-during-handshake").await?;
+        let runtime = fixture.runtime.clone();
+        let first = tokio::spawn(async move {
+            runtime
+                .open_terminal(TERMINAL_ID.into(), true, 80, 24, 8, 16)
+                .await
+        });
+        let (mut old_stream, _) = fixture.listener.accept().await?;
+        read_frame(&mut old_stream).await?;
+        let first_epoch = fixture.runtime.inner.state.lock().terminals[TERMINAL_ID].operation_epoch;
+        fixture.runtime.close_terminal(TERMINAL_ID.into());
+
+        let runtime = fixture.runtime.clone();
+        let second = tokio::spawn(async move {
+            runtime
+                .open_terminal(TERMINAL_ID.into(), true, 80, 24, 8, 16)
+                .await
+        });
+        let (mut new_stream, _) = fixture.listener.accept().await?;
+        read_frame(&mut new_stream).await?;
+        let second_epoch =
+            fixture.runtime.inner.state.lock().terminals[TERMINAL_ID].operation_epoch;
+        let welcome = [0, u8::try_from(PROTOCOL)?, 1, 0];
+        write_frame(&mut old_stream, &welcome).await?;
+        let old_result = tokio::time::timeout(Duration::from_secs(4), first).await??;
+        write_frame(&mut new_stream, &welcome).await?;
+        assert_eq!(
+            read_frame(&mut new_stream).await?,
+            crate::herdr_codec::attach(TERMINAL_ID, true)
+        );
+        tokio::time::timeout(Duration::from_secs(4), second).await???;
+
+        assert_ne!(first_epoch, second_epoch);
+        assert!(matches!(
+            old_result,
+            Err(HostRuntimeError::StaleOperation(_))
+        ));
+        assert!(fixture.runtime.has_terminal(TERMINAL_ID.into()));
+        assert_eq!(fixture.runtime.status().generation, 1);
+        fixture.runtime.disconnect().await?;
+        Ok(())
+    })
+}
+
+#[test]
 fn completion_credit_publishes_next_batch_off_the_calling_thread_and_detach_stops_it() {
     use crate::terminal_delivery::{self, TerminalDeliveryBatch, TerminalDeliveryEventSink};
     struct Sink(

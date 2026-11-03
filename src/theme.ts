@@ -157,7 +157,8 @@ export function sessionTabStatusColor(
   terminalStatus?: TerminalSessionStatus,
   palette: ThemeColors | typeof colors = colors,
 ): string {
-  if (terminalStatus && (terminalStatus !== 'connected' || agentStatus === 'idle')) {
+  if (!terminalStatus) return palette.idle;
+  if (terminalStatus !== 'connected' || agentStatus === 'idle') {
     return terminalStatusColor(terminalStatus, palette);
   }
   return statusColor(agentStatus, palette);

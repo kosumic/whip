@@ -273,16 +273,6 @@ export function useSessionConnectionLifecycle({
           return;
         }
         if (event.type === 'terminal-state') {
-          if (event.state === 'failed' || event.state === 'restoring') {
-            recordNetworkDiagnostic('warn', 'native-terminal-state', {
-              sessionId,
-              terminalId: event.terminalId,
-              state: event.state,
-              reconnectAttempt: event.reconnectAttempt,
-              retrying: event.retrying,
-              error: event.error,
-            });
-          }
           terminals.updateLifecycle(
             sessionId,
             event.terminalId,
@@ -290,6 +280,28 @@ export function useSessionConnectionLifecycle({
             event.retrying,
             event.error,
             event.reconnectAttempt,
+          );
+          const projected = findLiveHostSession(getState(), sessionId);
+          const pane = projected?.hostState?.snapshot?.panes.find(
+            item => item.terminal_id === event.terminalId,
+          );
+          recordNetworkDiagnostic(
+            event.state === 'failed' || event.state === 'restoring' ? 'warn' : 'info',
+            'native-terminal-state',
+            {
+              timestampMs: Date.now(),
+              sessionId,
+              tabId: pane?.tab_id,
+              paneId: pane?.pane_id,
+              terminalId: event.terminalId,
+              state: event.state,
+              projectedStatus: projected?.terminalRail.terminals.find(
+                item => item.terminalId === event.terminalId,
+              )?.status,
+              reconnectAttempt: event.reconnectAttempt,
+              retrying: event.retrying,
+              error: event.error,
+            },
           );
           if (event.state === 'failed' && !event.retrying) {
             recordNetworkDiagnostic('error', 'terminal-recovery-exhausted', {
@@ -321,6 +333,7 @@ export function useSessionConnectionLifecycle({
     [
       appCore,
       commitAppCore,
+      getState,
       clearLatency,
       handleAgentStateChange,
       handleLatencyMeasurement,
