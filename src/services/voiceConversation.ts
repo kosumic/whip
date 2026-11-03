@@ -30,6 +30,7 @@ const STARTED = 'WhipChatSpeechStarted';
 const LEVEL = 'WhipChatSpeechLevel';
 const CALL_EVENT = 'WhipVoiceCall';
 const WATCHDOG_MS = 10_000;
+const SPEECH_LOOKAHEAD = 2;
 const FILLER_POLL_MS = 1_000;
 const TRANSCRIPT_RECOVERY_MS = 30_000;
 let nextSession = 0;
@@ -507,15 +508,32 @@ export class VoiceConversation {
       if (!current()) { await this.playback!.stopChatSpeech(token); return; }
       this.readySpeech = token;
       this.apply();
+      const enqueue = this.playback!.enqueueChatSpeech?.bind(this.playback)
+        ?? this.playback!.speakChat.bind(this.playback);
+      const capacity = this.playback!.enqueueChatSpeech ? SPEECH_LOOKAHEAD : 1;
+      const pending = new Set<Promise<void>>();
+      const status: { failure?: { error: unknown } } = {};
+      const checkFailure = () => { if (status.failure) throw status.failure.error; };
       while (current()) {
+        checkFailure();
+        if (pending.size >= capacity) { await Promise.race(pending); continue; }
         const text = this.core!.nextSpeech();
         if (!text) {
-          if (this.core!.speechFinished()) break;
+          if (this.core!.speechFinished()) {
+            await Promise.all(pending);
+            checkFailure();
+            break;
+          }
           await new Promise<void>(resolve => { this.wakeSpeech = resolve; });
           continue;
         }
         if (this.timing && this.timing.synthesis === undefined) this.timing.synthesis = performance.now();
-        await this.playback!.speakChat(token, text);
+        const done = () => {
+          pending.delete(queued);
+          if (current()) this.signalSpeech();
+        };
+        const queued = enqueue(token, text).then(done, error => { status.failure = { error }; done(); });
+        pending.add(queued);
       }
       if (!current()) return;
       this.speechToken = undefined;

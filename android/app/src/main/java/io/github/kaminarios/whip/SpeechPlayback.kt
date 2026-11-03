@@ -34,6 +34,9 @@ object SpeechPlayback : SensorEventListener {
   private const val TAG = "SpeechPlayback"
   private const val INITIALIZATION_TIMEOUT_MS = 10_000L
   private const val MODEL_INITIALIZATION_TIMEOUT_MS = 60_000L
+  internal const val MAX_CHAT_UTTERANCES = 2
+  private data class QueuedChat(val text: String, val promise: Promise)
+  private val queuedChat = ArrayDeque<QueuedChat>()
 
   private data class Session(
     val id: Long,
@@ -94,12 +97,59 @@ object SpeechPlayback : SensorEventListener {
 
   fun speakChat(owner: String, text: String, promise: Promise) {
     val current = session
-    if (current?.kind != SpeechPolicy.CHAT || current.owner != owner || !current.readyReported || utteranceId != null) {
+    if (current?.kind != SpeechPolicy.CHAT || current.owner != owner || !current.readyReported || utteranceId != null || queuedChat.isNotEmpty()) {
       promise.reject(ERROR_CODE, "Chat listening is no longer available for this utterance")
       return
     }
     utterance = promise
     speak(current, text, null, 1.0)
+  }
+
+  /** Capability used by voice chat; older builds retain serial speakChat. */
+  fun enqueueChat(owner: String, text: String, promise: Promise) {
+    val current = session
+    if (current?.kind != SpeechPolicy.CHAT || current.owner != owner || !current.readyReported ||
+        utteranceId != null && queuedChat.isEmpty() || !SpeechPolicy.isCurrent(current.id)) {
+      promise.reject(ERROR_CODE, "Chat listening is no longer available for this utterance")
+      return
+    }
+    if (queuedChat.size >= MAX_CHAT_UTTERANCES || text.length > 4_000 || text.isBlank()) {
+      promise.reject(ERROR_CODE, "Speech lookahead is full or the utterance is invalid")
+      return
+    }
+    val local = VoiceCallService.active && SpeechPolicy.phononEnabled(Locale.getDefault().toLanguageTag())
+    val entry = QueuedChat(text, promise)
+    queuedChat.addLast(entry)
+    if (!local) {
+      if (queuedChat.size == 1) playQueuedChat(current)
+      return
+    }
+    if (queuedChat.size == 1) {
+      handler.removeCallbacks(timeout)
+      handler.postDelayed(timeout, MODEL_INITIALIZATION_TIMEOUT_MS)
+    }
+    PhononPlayback.enqueue(current.id, text, attributes, {
+      if (session === current && queuedChat.contains(entry)) {
+        reportStarted(current)
+        handler.removeCallbacks(timeout)
+        handler.postDelayed(timeout, SpeechPolicy.timeoutMs(SpeechPolicy.CHAT, text.length.toLong()))
+      }
+    }, { if (session === current) reportLevel(current, it) }) { completed, spoke, error ->
+      if (session !== current || !queuedChat.contains(entry)) return@enqueue
+      if (!completed || !spoke || error != null || !SpeechPolicy.complete(current.id)) {
+        stop(error = error ?: "Local speech did not finish")
+        return@enqueue
+      }
+      queuedChat.remove(entry)
+      if (queuedChat.isEmpty()) handler.removeCallbacks(timeout)
+      entry.promise.resolve(null)
+    }
+  }
+
+  private fun playQueuedChat(current: Session) {
+    val entry = queuedChat.firstOrNull() ?: return
+    utterance = entry.promise
+    speak(current, entry.text, null, 1.0)
   }
 
   fun announce(context: Context, owner: String, text: String, language: String?, promise: Promise, preview: Boolean = false) {
@@ -374,9 +424,14 @@ object SpeechPlayback : SensorEventListener {
     shakeDetector.reset()
     val completed = utterance
     utterance = null
+    val buffered = queuedChat.toList()
+    queuedChat.clear()
     // Notify first, before JS can drain another queued chat chunk.
     stopped?.ended?.invoke(reason, error)
     if (error != null) completed?.reject(ERROR_CODE, error) else completed?.resolve(null)
+    for (entry in buffered) if (entry.promise !== completed) {
+      if (error != null) entry.promise.reject(ERROR_CODE, error) else entry.promise.resolve(null)
+    }
     HerdrBackgroundService.refreshNotification()
   }
 
@@ -393,8 +448,10 @@ object SpeechPlayback : SensorEventListener {
     utteranceId = null
     val completed = utterance
     utterance = null
+    if (queuedChat.firstOrNull()?.promise === completed) queuedChat.removeFirst()
     releaseFocus()
     completed?.resolve(null)
+    if (queuedChat.isNotEmpty()) playQueuedChat(current)
   }
 
   @Suppress("DEPRECATION")

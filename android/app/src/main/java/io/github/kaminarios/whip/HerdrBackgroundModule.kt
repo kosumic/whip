@@ -143,6 +143,18 @@ class HerdrBackgroundModule(
   }
 
   @ReactMethod
+  fun enqueueChatSpeech(token: String, text: String, promise: Promise) {
+    mainHandler.post {
+      try {
+        SpeechPlayback.enqueueChat(token, text, promise)
+      } catch (error: Throwable) {
+        promise.reject("E_CHAT_SPEECH_PLAYBACK", error)
+        SpeechPlayback.stopOwner(SpeechPolicy.CHAT, token)
+      }
+    }
+  }
+
+  @ReactMethod
   fun stopChatSpeech(token: String, promise: Promise) {
     mainHandler.post {
       SpeechPlayback.stopOwner(SpeechPolicy.CHAT, token)

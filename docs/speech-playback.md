@@ -107,11 +107,31 @@ sample can finish beyond the ten-second status-announcement limit.
 Android arm64 uses `ptts = 0.6.0`, with the `hf` tokenizer feature and without
 `hub`, CLI, or audio-file features. CPU Q8 files are pinned to Hugging Face
 revision `8c64b55ec301728e2d1695bfea87a08a267d0c2d`; all four artifacts total
-65,049,306 bytes. A native audio worker reuses the loaded model and consumes
-`Synth::stream` directly. JNI transfers at most 1,920 Float32 samples per
-callback, never through JS. `AudioTrack` uses mono 24 kHz streaming PCM, a
-bounded platform buffer, blocking-write backpressure, and platform resampling.
-The speech promise resolves after the playback head consumes the final frame.
+65,049,306 bytes. The loaded model retains an upstream `Session` for the selected
+voice and consumes `Session::stream` directly. Phonon already supplies bounded
+background synthesis/decode workers; Whip does not implement another model
+generation engine. A voice change replaces the primed session after the previous
+stream has finished or been dropped. JNI transfers at most 1,920 Float32 samples
+per callback, never through JS.
+
+Android voice chat admits at most two utterances: the current one and one
+following fragment. A bounded standard-library `ArrayBlockingQueue` hands PCM
+from synthesis to a separate output worker, with at most twenty 80 ms packets.
+This is in addition to Phonon's own bounded internal queues. One mono 24 kHz
+`AudioTrack` remains open across fragments and transcript gaps. It uses at least
+400 ms of platform buffer, a 250 ms startup prefill (or the completed short
+utterance), blocking-write backpressure, and platform resampling. Empty drained
+tracks pause rather than running through silence; a pending fragment that runs
+out of PCM is counted as a starvation in diagnostics. Buffering cannot guarantee
+uninterrupted playback when synthesis remains slower than real time.
+
+Each speech promise resolves after the playback head consumes that utterance's
+final frame, even when the next fragment is already generating or playing. Stop,
+Skip, hangup, and lease replacement discard prepared PCM and settle queued
+promises; callbacks from the old lease cannot complete a replacement. The native
+`enqueueChatSpeech` capability enables lookahead. Older builds and iOS retain
+serial `speakChat` compatibility, and Android system voices retain their selected
+backend.
 
 On iOS 18+, the official 0.6.0 Core ML engine is pinned through `ptts-ffi` in
 Cargo.lock and linked into Whip's existing Rust archive. Only the platform's
@@ -189,3 +209,32 @@ replacement output 707 ms, and peak sampled PSS 278,432 KiB. The system picker
 returned 134 voices and successfully applied `en-GB-language`. Both tests
 restored the original backend and voice choices. These measurements include
 the instrumentation process and native engine initialization.
+
+## Streaming implementation choice
+
+The gap investigation compared the pinned Phonon source with Android playback
+solutions. Phonon already provides bounded streaming and reusable voice sessions;
+its [upstream implementation](https://github.com/gradium-ai/xn-ptts/blob/main/ptts/src/synth.rs)
+uses separate bounded synthesis and decode workers on CPU.
+[Oboe's FAQ](https://github.com/google/oboe/blob/main/docs/FAQ.md) also identifies
+`AudioTrack` as an appropriate Java/Kotlin playback option. This change keeps the
+existing output and call routing rather than adding another audio library.
+
+`VoiceConversation` tests cover one-fragment lookahead, newly arriving streamed
+prose, waiting for all played fragments, failures, and cancellation. The device
+`queuedSpeechKeepsOrderAndCancelsPreparedAudio` acceptance test checks ordered
+playback, rejection beyond capacity, and cancellation of prepared output before
+replacement. `stream_opened`, `playback_finished`, and `stream_closed` Phonon
+diagnostics correlate audio-session reuse, cumulative underruns, and starvation
+counts. Device acceptance changes speech ownership and must run after an active
+user call has ended.
+
+Live-call verification on Pixel 9 Pro used the upload-signed arm64 build with
+SHA-256 `fac7dbf8b24c52039c663fb2379e62f1b0e52b42a4137eb3a5561a2d17acc4e0`.
+A sustained 82.56-second PCM reply completed with no starvation events and no
+underruns reported at completion. The call stayed active during profiling.
+The device acceptance APK compiled, but its execution was intentionally skipped
+when the call guard detected an active call and the user chose passive profiling.
+These live replies each used one native text utterance; cross-utterance
+lookahead and cancellation are covered by adapter regressions, while the
+compiled device regression remains available for a later idle-phone check.
