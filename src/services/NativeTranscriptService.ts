@@ -5,6 +5,7 @@ import type {
   NativeAgentTranscriptState,
   NativeAgentTranscriptUpdate,
   NativeAgentTranscriptRetention,
+  HostRuntimeState,
 } from 'react-native-whip-ssh';
 
 import type { AgentChatState } from '../agentChat';
@@ -122,6 +123,24 @@ export class NativeTranscriptService {
     if (event) for (const observer of this.observers) observer(event);
   }
 
+  /** Attach presentation listeners to transcripts already opened by Rust. */
+  reconcileHost(
+    hostSessionId: string,
+    state: HostRuntimeState,
+    transport: NativeTranscriptTransport,
+  ): void {
+    if (state.syncStatus !== 'synced' || state.freshness !== 'fresh') return;
+    for (const pane of state.snapshot?.panes ?? []) {
+      try {
+        this.reconcile(hostSessionId, pane.terminal_id, transport, false);
+      } catch (error) {
+        recordAgentChatDiagnostic('reconcile-unavailable', {
+          terminalId: pane.terminal_id, error: String(error),
+        });
+      }
+    }
+  }
+
   /** Speculative opening only: no remediation, and no restart of an existing binding. */
   preload(
     hostSessionId: string,
@@ -181,6 +200,7 @@ export class NativeTranscriptService {
     hostSessionId: string,
     terminalId: string,
     transport: NativeTranscriptTransport,
+    startNewEntry = true,
   ): AgentChatProjection {
     const terminalKey = this.terminalKey(hostSessionId, terminalId);
     const previousToken = this.terminalBindings.get(terminalKey);
@@ -220,6 +240,7 @@ export class NativeTranscriptService {
       transport,
       boundEntry,
       false,
+      startNewEntry,
     );
   }
 
@@ -230,6 +251,7 @@ export class NativeTranscriptService {
     transport: NativeTranscriptTransport,
     boundEntry: { current?: TranscriptEntry },
     explicitOpen: boolean,
+    startNewEntry = true,
   ): Extract<AgentChatProjection, { type: 'bound' }> {
     const entryKey = this.entryKey(
       binding.runtimeIncarnation,
@@ -293,7 +315,7 @@ export class NativeTranscriptService {
       });
     }
 
-    if (isNewEntry || explicitOpen) void this.startNative(entry, binding);
+    if ((isNewEntry && startNewEntry) || explicitOpen) void this.startNative(entry, binding);
     return { type: 'bound', binding, state: entry.state };
   }
 

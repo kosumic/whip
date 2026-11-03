@@ -79,6 +79,10 @@ async fn wait_for(mut ready: impl FnMut() -> bool) -> TestResult {
 
 impl LiveSession {
     async fn new() -> TestResult<Self> {
+        Self::with_status(HerdrAgentStatus::Unknown).await
+    }
+
+    async fn with_status(status: HerdrAgentStatus) -> TestResult<Self> {
         let directory = tempfile::tempdir()?;
         let home = directory.path().join("home with 'quotes' and $dollars");
         let sessions = home.join(".codex/sessions/2026/11/01");
@@ -98,6 +102,10 @@ impl LiveSession {
         let _ = connection.install(1, remote.ssh.clone());
         let manager = AgentSessionManager::new(path.to_string_lossy().into_owned(), 1, connection);
         manager.connected();
+        manager.update_agent_statuses(
+            std::collections::HashMap::from([("terminal".into(), status)]),
+            1,
+        );
         let binding = manager.bind_codex("terminal".into(), SESSION.into())?;
         manager.start_restored(&binding.binding_token, None)?;
         let session = Self {
@@ -144,6 +152,47 @@ impl LiveSession {
             "rollout-2026-11-01T10-21-30-{SESSION}_22222222-2222-4222-8222-222222222222.jsonl"
         ))
     }
+}
+
+#[test]
+fn done_transcripts_load_once_and_resume_only_after_a_status_change() -> TestResult {
+    crate::runtime()?.block_on(async {
+        for initial_status in [HerdrAgentStatus::Working, HerdrAgentStatus::Done] {
+            let session = LiveSession::with_status(initial_status).await?;
+            session.manager.update_agent_statuses(
+                std::collections::HashMap::from([("terminal".into(), HerdrAgentStatus::Done)]),
+                2,
+            );
+            wait_for(|| {
+                session.manager.inner.state.lock().sessions[&session.binding.transcript_key]
+                    .activity
+                    .paused
+            })
+            .await?;
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            let commands = session.remote.closed_commands();
+            append(&session.path, user_line("after done").as_bytes())?;
+            // Losing freshness or reconnecting supplies no new agent status.
+            session
+                .manager
+                .update_agent_statuses(std::collections::HashMap::new(), 3);
+            session.manager.connected();
+            // Even repeated Done snapshots must leave both tail and polling stopped.
+            session.manager.update_agent_statuses(
+                std::collections::HashMap::from([("terminal".into(), HerdrAgentStatus::Done)]),
+                4,
+            );
+            tokio::time::sleep(FILE_SOURCE_POLL_DELAY * 2).await;
+            assert_eq!(session.state().messages.len(), 1);
+            assert_eq!(session.remote.closed_commands(), commands);
+            session.manager.update_agent_statuses(
+                std::collections::HashMap::from([("terminal".into(), HerdrAgentStatus::Blocked)]),
+                5,
+            );
+            session.wait_live(2).await?;
+        }
+        Ok(())
+    })
 }
 
 #[test]

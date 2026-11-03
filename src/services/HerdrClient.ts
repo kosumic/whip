@@ -125,6 +125,9 @@ export class HerdrClient {
           'agent-transcript-retention',
         );
       }
+      if (event.type === 'host-state') {
+        agentTranscriptService.reconcileHost(profile.id, event.state, runtime);
+      }
       this.runtimeEventHandler?.(event);
     };
     let existingRuntime = retryRuntime ?? getHostRuntime(profile.id, handleEvent);
@@ -149,6 +152,7 @@ export class HerdrClient {
     this.runtime = runtime;
     this.profile = profile;
     try {
+      agentTranscriptService.reconcileHost(profile.id, runtime.hostState(), runtime);
       const state = runtime.status().state;
       if (state !== 'connected' && state !== 'connecting' && state !== 'reconnecting') {
         await runtime.connect();
