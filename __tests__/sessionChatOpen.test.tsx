@@ -1621,6 +1621,50 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     expect(agentTranscriptService.getState(binding.bindingToken)).not.toBeNull();
   });
 
+  test.each(['inactive', 'background'] as const)('%s cache eviction waits for foreground before restoring selected Chat', async appState => {
+    const host = setup(agent);
+    const binding = await openReadyChat(host, agent);
+    revealChat();
+    act(() => { for (const listener of mockAppStateListeners) listener(appState); });
+    for (let update = 0; update < 5; update++) {
+      await act(async () => { agentTranscriptService.reconcileCache(3, [], []); });
+      await act(async () => { renderer.update(<SessionScreen {...host.props} />); });
+      expect(agentTranscriptService.getState(binding.bindingToken)).toBeNull();
+      expect(host.native.openAgentChat).toHaveBeenCalledTimes(1);
+      expect(host.native.startAgentChat).toHaveBeenCalledTimes(1);
+    }
+    expect(host.native.detachAgentChat).toHaveBeenCalledTimes(1);
+    expect(renderer.root.findAll(node => String(node.type) === 'AgentChatView')).toHaveLength(0);
+
+    await act(async () => { for (const listener of mockAppStateListeners) listener('active'); });
+    expect(host.native.openAgentChat).toHaveBeenCalledTimes(2);
+    expect(host.native.startAgentChat).toHaveBeenCalledTimes(2);
+    expect(agentTranscriptService.getState(binding.bindingToken)).not.toBeNull();
+    revealChat();
+    expect(ui('AgentChatView').props.state.sessionId).toBe(binding.sessionId);
+    expect(control().active).toBe(true);
+  });
+
+  test('an independent transcript subscriber retains background Chat until it releases ownership', async () => {
+    const host = setup(agent);
+    const binding = await openReadyChat(host, agent);
+    revealChat();
+    const stopVoice = agentTranscriptService.subscribe(binding.bindingToken, jest.fn());
+    try {
+      act(() => { for (const listener of mockAppStateListeners) listener('background'); });
+      act(() => { agentTranscriptService.reconcileCache(3, [], []); });
+      expect(agentTranscriptService.getState(binding.bindingToken)).not.toBeNull();
+      expect(host.native.detachAgentChat).not.toHaveBeenCalled();
+      expect(host.native.openAgentChat).toHaveBeenCalledTimes(1);
+    } finally {
+      stopVoice();
+    }
+    await act(async () => { agentTranscriptService.reconcileCache(3, [], []); });
+    expect(agentTranscriptService.getState(binding.bindingToken)).toBeNull();
+    expect(host.native.openAgentChat).toHaveBeenCalledTimes(1);
+    expect(host.native.startAgentChat).toHaveBeenCalledTimes(1);
+  });
+
   test('LRU eviction archives Chat with its terminal and restores persisted history without a terminal frame', async () => {
     const host = setup(agent);
     const binding = await openReadyChat(host, agent);
