@@ -127,10 +127,23 @@ separate timings to explain it further.
 The background rebind loop and crash are a higher-priority correctness issue
 than tuning the smaller foreground timing costs.
 
-No latency optimization was made as part of this profiling run. The changes
-add diagnostics and internal SSH timing metadata. Existing transcript and SSH
-behavior checks passed: 85 transcript tests, 35 SSH tests (one pre-existing
-ignored test), 183 chat UI tests, TypeScript, and targeted ESLint.
+No latency optimization was made as part of the original profiling run. Those
+changes add diagnostics and internal SSH timing metadata. Existing transcript
+and SSH behavior checks passed: 85 transcript tests, 35 SSH tests (one
+pre-existing ignored test), 183 chat UI tests, TypeScript, and targeted ESLint.
+
+## Background restoration correction
+
+The follow-up fix requires both screen visibility and an active app before
+restoring an evicted Chat binding. Inactive/background cache eviction keeps
+the selected conversation pending until foregrounding. Independent transcript
+subscribers, including an active voice call, still retain their cache entries.
+
+Nine new regression cases failed before this correction and pass afterward
+across Codex, OpenCode, and Pi. They cover inactive/background eviction,
+repeated cache reconciliation without reopening, one restoration on return,
+and retention until an independent subscriber releases ownership. The full
+targeted cache, Chat, and voice suite passes 269 tests, plus TypeScript and lint.
 
 ## Capture and analysis
 

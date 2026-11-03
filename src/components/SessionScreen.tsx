@@ -930,7 +930,8 @@ export function SessionScreen({
   }, [activeChatKey, transcriptResidency, updateChatRestoreIntent]);
 
   useEffect(() => {
-    const activeId = visible ? activeTarget?.key : null;
+    // Background cache eviction preserves selection without reopening its binding.
+    const activeId = visible && appActive ? activeTarget?.key : null;
     const targets = new Map(terminalTargets.map(target => [target.key, target]));
     const next = new Map(chatViewsRef.current);
     let changed = false;
@@ -972,7 +973,7 @@ export function SessionScreen({
       chatViewsRef.current = next;
       setChatViews(next);
     }
-  }, [visible, terminalState.activeTerminalId, terminalState.sessions, snapshot.panes,
+  }, [visible, appActive, terminalState.activeTerminalId, terminalState.sessions, snapshot.panes,
     client, hostSessionId, requestedChatPresentation, updateChatRestoreIntent, activeTarget, terminalTargets, chatViews]);
 
   useEffect(() => {
