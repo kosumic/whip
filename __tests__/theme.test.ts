@@ -50,6 +50,7 @@ describe('application theme', () => {
       expect(sessionTabStatusColor('blocked', 'connected', palette)).toBe(palette.blocked);
       expect(sessionTabStatusColor('working', 'connected', palette)).toBe(palette.working);
       expect(sessionTabStatusColor('done', 'connected', palette)).toBe(palette.done);
+      expect(sessionTabStatusColor('done', undefined, palette)).toBe(palette.idle);
       expect(sessionTabStatusColor('working', 'error', palette)).toBe(palette.blocked);
       expect(sessionTabStatusColor('working', 'disconnected', palette)).toBe(palette.idle);
     }

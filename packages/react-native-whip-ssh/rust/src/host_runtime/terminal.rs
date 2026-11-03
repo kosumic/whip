@@ -2,6 +2,7 @@
 
 use std::future::Future;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use super::{
@@ -24,6 +25,10 @@ use crate::ssh::SshShellClose;
 
 #[cfg(test)]
 mod tests;
+
+// Renderer release removes the terminal entry. Its next open must not reuse
+// an epoch still held by a cancelled attach or recovery worker.
+static NEXT_TERMINAL_OPERATION_EPOCH: AtomicU64 = AtomicU64::new(1);
 
 fn terminal_scroll_read_is_current(
     state: &RuntimeState,
@@ -774,10 +779,17 @@ pub(super) async fn open_terminal_with_retry(
     let mut last_error = None;
     for attempt in 1..=MAX_RECONNECT_ATTEMPTS {
         if attempt > 1 {
-            if let Some(terminal) = inner.state.lock().terminals.get_mut(&terminal_id) {
+            if let Some(terminal) = inner.state.lock().terminals.get_mut(&terminal_id)
+                && terminal.operation_epoch == operation_epoch
+                && terminal.state != HostTerminalState::Closed
+            {
                 terminal.state = HostTerminalState::Opening;
                 terminal.reconnect_attempt = attempt - 1;
                 terminal.bridge_id = None;
+            } else {
+                return Err(HostRuntimeError::StaleOperation(format!(
+                    "terminal {terminal_id} open was superseded"
+                )));
             }
             emit(HostRuntimeEvent::TerminalStateChanged {
                 runtime_id: inner.id.clone(),
@@ -814,8 +826,21 @@ pub(super) async fn open_terminal_with_retry(
             Err(error) => last_error = Some(error),
         }
     }
-    if let Some(terminal) = inner.state.lock().terminals.get_mut(&terminal_id) {
+    {
+        let mut state = inner.state.lock();
+        let Some(terminal) = state.terminals.get_mut(&terminal_id).filter(|terminal| {
+            terminal.operation_epoch == operation_epoch
+                && terminal.state != HostTerminalState::Closed
+        }) else {
+            return Err(HostRuntimeError::StaleOperation(format!(
+                "terminal {terminal_id} open was superseded"
+            )));
+        };
+        // Setup can fail before open_terminal_inner reaches its bridge error
+        // handler. Leave a settled state so the next open starts a new worker.
+        terminal.state = HostTerminalState::Failed;
         terminal.retry_running = false;
+        drop(state);
     }
     inner.terminal_settled.notify_waiters();
     let error = last_error.unwrap_or_else(|| {
@@ -1149,10 +1174,15 @@ pub(super) fn schedule_terminal_retry(
         runtime.spawn(async move {
             let mut last_error = reason;
             for attempt in 1..=MAX_RECONNECT_ATTEMPTS {
-                if let Some(terminal) = inner.state.lock().terminals.get_mut(&terminal_id) {
+                if let Some(terminal) = inner.state.lock().terminals.get_mut(&terminal_id)
+                    && terminal.operation_epoch == operation_epoch
+                    && terminal.state != HostTerminalState::Closed
+                {
                     terminal.state = HostTerminalState::Restoring;
                     terminal.reconnect_attempt = attempt;
                     terminal.bridge_id = None;
+                } else {
+                    return;
                 }
                 emit(HostRuntimeEvent::TerminalStateChanged {
                     runtime_id: inner.id.clone(),
@@ -1186,8 +1216,14 @@ pub(super) fn schedule_terminal_retry(
                     Err(error) => last_error = error.to_string(),
                 }
             }
-            if let Some(terminal) = inner.state.lock().terminals.get_mut(&terminal_id) {
+            if let Some(terminal) = inner.state.lock().terminals.get_mut(&terminal_id)
+                && terminal.operation_epoch == operation_epoch
+                && terminal.state != HostTerminalState::Closed
+            {
+                terminal.state = HostTerminalState::Failed;
                 terminal.retry_running = false;
+            } else {
+                return;
             }
             inner.terminal_settled.notify_waiters();
             emit(HostRuntimeEvent::TerminalStateChanged {
@@ -1223,7 +1259,7 @@ impl HostRuntime {
             .spawn(async move {
                 let requested_geometry =
                     HostTerminalGeometry::normalized(columns, rows, cell_width_px, cell_height_px);
-                let (operation_epoch, wait_for_existing) = {
+                let (operation_epoch, wait_for_existing, retained) = {
                     let mut state = inner.state.lock();
                     let open_state = if let Some(terminal) = state.terminals.get_mut(&terminal_id) {
                         terminal.takeover = takeover;
@@ -1231,23 +1267,21 @@ impl HostRuntime {
                         terminal.rows = requested_geometry.rows;
                         terminal.cell_width_px = requested_geometry.cell_width_px;
                         terminal.cell_height_px = requested_geometry.cell_height_px;
-                        if terminal.state == HostTerminalState::Attached {
-                            let bridge_is_live = terminal.bridge_id.is_some_and(|bridge_id| {
+                        let bridge_is_live = terminal.state == HostTerminalState::Attached
+                            && terminal.bridge_id.is_some_and(|bridge_id| {
                                 active_herdr_terminal_bridge_id(&inner.id, &terminal_id)
                                     == Some(bridge_id)
                             });
-                            if bridge_is_live {
-                                return Ok(());
-                            }
-                            terminal.bridge_id = None;
-                        }
-                        if matches!(
+                        if bridge_is_live {
+                            (terminal.operation_epoch, false, false)
+                        } else if matches!(
                             terminal.state,
                             HostTerminalState::Opening | HostTerminalState::Restoring
                         ) {
                             (terminal.operation_epoch, true, false)
                         } else {
-                            terminal.operation_epoch = terminal.operation_epoch.wrapping_add(1);
+                            terminal.operation_epoch =
+                                NEXT_TERMINAL_OPERATION_EPOCH.fetch_add(1, Ordering::Relaxed);
                             terminal.state = HostTerminalState::Opening;
                             terminal.reconnect_attempt = 0;
                             terminal.retry_running = true;
@@ -1255,6 +1289,8 @@ impl HostRuntime {
                             (terminal.operation_epoch, false, true)
                         }
                     } else {
+                        let operation_epoch =
+                            NEXT_TERMINAL_OPERATION_EPOCH.fetch_add(1, Ordering::Relaxed);
                         state.terminals.insert(
                             terminal_id.clone(),
                             TerminalRuntime {
@@ -1264,13 +1300,13 @@ impl HostRuntime {
                                 rows: requested_geometry.rows,
                                 cell_width_px: requested_geometry.cell_width_px,
                                 cell_height_px: requested_geometry.cell_height_px,
-                                operation_epoch: 1,
+                                operation_epoch,
                                 reconnect_attempt: 0,
                                 retry_running: true,
                                 bridge_id: None,
                             },
                         );
-                        (1, false, true)
+                        (operation_epoch, false, true)
                     };
                     if open_state.2 {
                         state.terminal_dispatched_geometries.remove(&terminal_id);
@@ -1279,8 +1315,21 @@ impl HostRuntime {
                             .insert(terminal_id.clone(), false);
                     }
                     drop(state);
-                    (open_state.0, open_state.1)
+                    (open_state.0, open_state.1, !open_state.1 && !open_state.2)
                 };
+                if retained {
+                    // Re-registering a renderer may follow a rail restore or a
+                    // missed event. Reaffirm readiness without replacing the PTY.
+                    emit(HostRuntimeEvent::TerminalStateChanged {
+                        runtime_id: inner.id.clone(),
+                        terminal_id,
+                        state: HostTerminalState::Attached,
+                        reconnect_attempt: 0,
+                        retrying: false,
+                        error: None,
+                    });
+                    return Ok(());
+                }
                 if wait_for_existing {
                     return wait_for_terminal_open(&inner, &terminal_id, operation_epoch).await;
                 }

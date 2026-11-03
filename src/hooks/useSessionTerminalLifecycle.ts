@@ -363,6 +363,9 @@ export function useSessionTerminalLifecycle({
           hostSessionId: session.id,
           client: runtime.client,
           session: terminal,
+          prewarm: session.connectionStatus === 'ready' && snapshot.panes.some(
+            pane => pane.terminal_id === terminal.terminalId && pane.workspace_id === session.selection.workspaceId,
+          ),
           scroll:
             snapshot.panes.find(
               pane => pane.terminal_id === terminal.terminalId,

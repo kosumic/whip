@@ -233,8 +233,24 @@ impl TerminalRail {
             .iter()
             .map(|pane| (pane.terminal_id.as_str(), pane))
             .collect();
+        let focused = snapshot
+            .focused_pane_id
+            .as_deref()
+            .and_then(|id| snapshot.panes.iter().find(|pane| pane.pane_id == id))
+            .or_else(|| snapshot.panes.iter().find(|pane| pane.focused));
+        // Storage can finish loading after a pane was opened. Keep its live
+        // lifecycle even when the saved list predates that selection.
+        let current_active = self
+            .active_terminal_id
+            .iter()
+            .filter(|id| panes_by_terminal.contains_key(id.as_str()))
+            .cloned();
         let mut terminals = Vec::new();
-        for terminal_id in terminal_ids {
+        for terminal_id in terminal_ids
+            .into_iter()
+            .chain(current_active)
+            .chain(focused.map(|pane| pane.terminal_id.clone()))
+        {
             if terminals
                 .iter()
                 .any(|terminal: &TerminalEntryView| terminal.terminal_id == terminal_id)
@@ -242,7 +258,19 @@ impl TerminalRail {
                 continue;
             }
             if let Some(pane) = panes_by_terminal.get(terminal_id.as_str()) {
-                terminals.push(entry_for_pane(pane));
+                // Storage restores identity and selection, never transport state.
+                // A live renderer may already have consumed its Attached event.
+                let mut entry = self
+                    .terminals
+                    .iter()
+                    .find(|entry| {
+                        entry.kind == TerminalKind::Herdr && entry.terminal_id == terminal_id
+                    })
+                    .cloned()
+                    .unwrap_or_else(|| entry_for_pane(pane));
+                entry.pane_id.clone_from(&pane.pane_id);
+                entry.title = title_for_pane(pane);
+                terminals.push(entry);
             }
         }
         let selected = active_terminal_id
@@ -258,19 +286,51 @@ impl TerminalRail {
             });
         self.terminals = terminals;
         self.active_terminal_id = selected;
-        if let Some(focused) = snapshot
-            .focused_pane_id
-            .as_deref()
-            .and_then(|id| snapshot.panes.iter().find(|pane| pane.pane_id == id))
-            .or_else(|| snapshot.panes.iter().find(|pane| pane.focused))
-        {
+        if let Some(focused) = focused {
             self.open_pane(focused);
         }
         self.terminals.extend(shells);
         if active_shell.is_some() {
             self.active_terminal_id = active_shell;
         }
+        let workspace_id = self
+            .active_terminal_id
+            .as_deref()
+            .and_then(|id| panes_by_terminal.get(id))
+            .map(|pane| pane.workspace_id.clone());
+        if let Some(workspace_id) = workspace_id {
+            self.prepare_workspace(snapshot, &workspace_id);
+        }
         true
+    }
+
+    /// Register the pane each visible tab will open, without changing selection.
+    /// Renderers decide how many of these candidates fit the user's cache budget.
+    pub(super) fn prepare_workspace(
+        &mut self,
+        snapshot: &HerdrSessionSnapshot,
+        workspace_id: &str,
+    ) -> bool {
+        let mut changed = false;
+        for tab in snapshot
+            .tabs
+            .iter()
+            .filter(|tab| tab.workspace_id == workspace_id)
+        {
+            let Some(pane) = crate::herdr_selection::preferred_pane(snapshot, tab) else {
+                continue;
+            };
+            if !pane.terminal_id.is_empty()
+                && !self
+                    .terminals
+                    .iter()
+                    .any(|entry| entry.terminal_id == pane.terminal_id)
+            {
+                self.terminals.push(entry_for_pane(pane));
+                changed = true;
+            }
+        }
+        changed
     }
 
     pub(super) fn open_pane(&mut self, pane: &HerdrPaneInfo) -> bool {
@@ -527,6 +587,52 @@ mod tests {
     }
 
     #[test]
+    fn workspace_preparation_keeps_selection_and_readiness_and_uses_each_tabs_preferred_pane() {
+        let one = pane("one", "pane-one", "one");
+        let mut two = pane("two", "pane-two", "two");
+        two.tab_id = "other-tab".into();
+        let mut split = pane("split", "pane-split", "split");
+        split.tab_id = "other-tab".into();
+        split.focused = true;
+        let mut foreign = pane("foreign", "pane-foreign", "foreign");
+        foreign.workspace_id = "other-workspace".into();
+        foreign.tab_id = "foreign-tab".into();
+        let mut host = snapshot(vec![one.clone(), two, split, foreign]);
+        host.tabs = [
+            ("tab", "workspace"),
+            ("other-tab", "workspace"),
+            ("foreign-tab", "other-workspace"),
+        ]
+        .into_iter()
+        .map(|(tab_id, workspace_id)| crate::herdr_api::HerdrTabInfo {
+            tab_id: tab_id.into(),
+            workspace_id: workspace_id.into(),
+            number: 1.0,
+            label: tab_id.into(),
+            label_is_custom: None,
+            focused: false,
+            pane_count: 1.0,
+            agent_status: HerdrAgentStatus::Idle,
+        })
+        .collect();
+        let mut rail = TerminalRail::default();
+        rail.open_pane(&one);
+        rail.update_lifecycle("one", HostTerminalState::Attached, false, None, 0);
+        assert!(rail.prepare_workspace(&host, "workspace"));
+        assert_eq!(rail.active_terminal_id.as_deref(), Some("one"));
+        assert_eq!(
+            rail.terminals
+                .iter()
+                .map(|entry| entry.terminal_id.as_str())
+                .collect::<Vec<_>>(),
+            ["one", "split"]
+        );
+        assert_eq!(rail.terminals[0].state, TerminalUiState::Connected);
+        assert_eq!(rail.terminals[1].state, TerminalUiState::Connecting);
+        assert!(!rail.prepare_workspace(&host, "workspace"));
+    }
+
+    #[test]
     fn reopening_existing_terminal_updates_metadata_and_selects_it() {
         let mut rail = TerminalRail::default();
         rail.open_pane(&pane("one", "pane-one", "old"));
@@ -604,6 +710,85 @@ mod tests {
         rail.close(&remaining);
         assert!(rail.terminals.is_empty());
         assert!(rail.active_terminal_id.is_none());
+    }
+
+    #[test]
+    fn restoring_single_pane_tabs_preserves_live_lifecycle_and_switching() {
+        for (state, retrying, error, attempt, expected) in [
+            (
+                HostTerminalState::Attached,
+                false,
+                None,
+                0,
+                TerminalUiState::Connected,
+            ),
+            (
+                HostTerminalState::Restoring,
+                true,
+                Some("retry".to_owned()),
+                2,
+                TerminalUiState::Disconnected,
+            ),
+            (
+                HostTerminalState::Failed,
+                false,
+                Some("attach failed".to_owned()),
+                5,
+                TerminalUiState::Error,
+            ),
+        ] {
+            let one = pane("one", "pane-one", "old title");
+            let mut two = pane("two", "pane-two", "two");
+            two.tab_id = "other-tab".to_owned();
+            let mut rail = TerminalRail::default();
+            rail.open_pane(&one);
+            rail.open_pane(&two);
+            rail.update_lifecycle("one", state, retrying, error.clone(), attempt);
+            let blob = rail.view().resume_blob;
+            let mut renamed = one.clone();
+            renamed.label = Some("new title".to_owned());
+
+            rail.restore_blob(Some(&blob), &snapshot(vec![renamed, two.clone()]));
+            assert_eq!(rail.terminals[0].title, "new title");
+            rail.open_pane(&one);
+
+            assert_eq!(rail.view().active_terminal_id.as_deref(), Some("one"));
+            assert_eq!(rail.terminals[0].state, expected);
+            assert_eq!(rail.terminals[0].error, error);
+            assert_eq!(rail.terminals[0].reconnect_attempt, attempt);
+            rail.open_pane(&two);
+            rail.open_pane(&one);
+            assert_eq!(rail.terminals[0].state, expected);
+        }
+    }
+
+    #[test]
+    fn late_resume_keeps_readiness_for_a_pane_missing_from_storage() {
+        let mut one = pane("one", "pane-one", "one");
+        one.focused = true;
+        let two = pane("two", "pane-two", "two");
+        let host = snapshot(vec![one.clone(), two.clone()]);
+        for selected in [&one, &two] {
+            let mut rail = TerminalRail::default();
+            rail.open_pane(selected);
+            rail.update_lifecycle(
+                &selected.terminal_id,
+                HostTerminalState::Attached,
+                false,
+                None,
+                0,
+            );
+            rail.restore_blob(None, &host);
+            rail.open_pane(selected);
+            assert_eq!(
+                rail.terminals
+                    .iter()
+                    .find(|entry| entry.terminal_id == selected.terminal_id)
+                    .unwrap()
+                    .state,
+                TerminalUiState::Connected
+            );
+        }
     }
 
     #[test]

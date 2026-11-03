@@ -10,6 +10,13 @@ jest.mock('react-native-css-interop/jsx-runtime', () =>
 jest.mock('../src/services/persistedTerminals', () => ({
   loadPersistedTerminals: jest.fn(),
 }));
+jest.mock('../src/services/appStorage', () => ({
+  appStorage: {
+    getItem: jest.fn(async () => null),
+    setItem: jest.fn(async () => undefined),
+    removeItem: jest.fn(async () => undefined),
+  },
+}));
 const mockSave = jest.fn(async () => true);
 const initial: AppCoreProjection = {
   revision: 1,

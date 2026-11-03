@@ -46,6 +46,7 @@ import type { TerminalSubmissionPermitLike } from 'react-native-whip-ssh/src/ter
 import { isUnknownRecord, stringArray } from '../lib/unknown';
 import {
   terminalRendererEvictionKeys,
+  terminalCacheCapacity,
   touchTerminalRendererEntry,
 } from '../lib/terminalRendererLru';
 import type { TerminalPreferences } from '../services/devicePreferences';
@@ -1271,8 +1272,29 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       disposeEntry(key, entry, true);
     }
     ensureEntry(activeTarget);
-    pruneEntries(new Set(activeTarget?.key ? [activeTarget.key] : []));
-  }, [activeTarget, configureEntry, disposeEntry, ensureEntry, pruneEntries, targets]);
+    const protectedKeys = new Set(activeTarget?.key ? [activeTarget.key] : []);
+    if (activeTarget?.session.kind === 'herdr' && visible && appState.current === 'active') {
+      const eligible = (target: TerminalRenderTarget) => target.prewarm
+        && target.hostSessionId === activeTarget.hostSessionId;
+      const shells = [...entries.current.values()].filter(entry => entry.target.session.kind === 'ssh').length;
+      const budget = Math.max(1, terminalCacheCapacity(preferences.xtermCacheCapacity) - shells);
+      // Keep recently used workspace renderers ahead of unvisited candidates.
+      const candidates = new Map([
+        ...[...entries.current.keys()].reverse().flatMap(key => {
+          const target = valid.get(key);
+          return target && eligible(target) ? [[key, target] as const] : [];
+        }),
+        ...targets.filter(eligible).map(target => [target.key, target] as const),
+      ]);
+      for (const [key, target] of candidates) {
+        if (protectedKeys.size >= budget) break;
+        if (protectedKeys.has(key)) continue;
+        if (!entries.current.has(key)) ensureEntry(target);
+        protectedKeys.add(key);
+      }
+    }
+    pruneEntries(protectedKeys);
+  }, [activeTarget, configureEntry, disposeEntry, ensureEntry, preferences.xtermCacheCapacity, pruneEntries, targets, visible]);
 
   const syncPresentation = useCallback(() => {
     if (!hostReady.current) return;

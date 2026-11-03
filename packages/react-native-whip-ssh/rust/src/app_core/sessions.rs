@@ -610,7 +610,14 @@ impl AppCore {
                 .or_else(|| Some(workspace.active_tab_id.clone()).filter(|id| !id.is_empty())),
             pane_id: pane.map(|pane| pane.pane_id.clone()),
         };
-        if session.selection != selection {
+        let prepared = session.terminal_rail.prepare_workspace(
+            &snapshot,
+            selection.workspace_id.as_deref().unwrap_or_default(),
+        );
+        if session.cached_host_state.is_some() {
+            session.terminal_rail.mark_cached();
+        }
+        if session.selection != selection || prepared {
             session.selection = selection;
             state.bump_revision();
         }
@@ -710,22 +717,23 @@ impl AppCore {
         else {
             return state.view();
         };
-        let pane = session
-            .host_state()
-            .and_then(|state| state.snapshot)
-            .and_then(|snapshot| {
-                snapshot
-                    .panes
-                    .into_iter()
-                    .find(|pane| pane.pane_id == pane_id)
-            });
+        let snapshot = session.host_state().and_then(|state| state.snapshot);
+        let pane = snapshot
+            .as_ref()
+            .and_then(|snapshot| snapshot.panes.iter().find(|pane| pane.pane_id == pane_id));
         if let Some(pane) = pane {
             let selection = SessionSelection {
                 workspace_id: Some(pane.workspace_id.clone()),
                 tab_id: Some(pane.tab_id.clone()),
                 pane_id: Some(pane.pane_id.clone()),
             };
-            let changed = session.terminal_rail.open_pane(&pane) || session.selection != selection;
+            let opened = session.terminal_rail.open_pane(pane);
+            let prepared = snapshot.as_ref().is_some_and(|snapshot| {
+                session
+                    .terminal_rail
+                    .prepare_workspace(snapshot, &pane.workspace_id)
+            });
+            let changed = opened || session.selection != selection || prepared;
             session.selection = selection;
             if session.cached_host_state.is_some() {
                 session.terminal_rail.mark_cached();
