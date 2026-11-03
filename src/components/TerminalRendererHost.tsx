@@ -1990,6 +1990,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         webView.current = value;
       }}
       source={TERMINAL_SOURCE}
+      // Isolate the transparent terminal from speech and blur overlay redraws.
+      androidLayerType="hardware"
       originWhitelist={['file://*', 'about:blank', 'data:*']}
       allowFileAccess
       allowingReadAccessToURL={Platform.OS === 'ios'
