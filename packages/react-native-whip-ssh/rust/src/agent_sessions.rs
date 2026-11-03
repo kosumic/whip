@@ -270,9 +270,8 @@ impl TranscriptActivity {
     }
 
     fn pause_if_quiet(&mut self, now: Instant) -> bool {
-        if self.done
-            || (!self.active
-                && now.saturating_duration_since(self.quiet_since) >= TRANSCRIPT_DRAIN_DELAY)
+        // Done can arrive before the final transcript write or its SSH bytes.
+        if !self.active && now.saturating_duration_since(self.quiet_since) >= TRANSCRIPT_DRAIN_DELAY
         {
             self.paused = true;
         }
@@ -870,11 +869,12 @@ impl AgentSessionManager {
                 let done = transcript_done(&session.terminals, &statuses, session.activity.done);
                 let active = !done && transcript_active(&session.terminals, &statuses);
                 let resumed_done = session.activity.done && !done;
+                let became_done = !session.activity.done && done;
                 session.activity.done = done;
                 let became_active = active && !session.activity.active;
-                let was_paused = session.activity.set_active(active, now);
-                if resumed_done {
-                    session.activity.touch(now);
+                let mut was_paused = session.activity.set_active(active, now);
+                if resumed_done || became_done {
+                    was_paused |= session.activity.touch(now);
                 }
                 if done {
                     session.pause_file_if_quiet(0, now);
@@ -1470,7 +1470,8 @@ impl AgentSessionManager {
                 .is_some_and(|session| session.activity.done)
         };
         if done {
-            // Load the available history once, without leaving a tail or poller.
+            // Read without a persistent tail, then monitor through the drain
+            // period so writes following the Done event still reach speech.
             if let Err(error) =
                 file_source::read_available(self, &key, operation_epoch, &path, size).await
             {

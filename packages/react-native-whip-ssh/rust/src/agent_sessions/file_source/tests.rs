@@ -155,6 +155,44 @@ impl LiveSession {
 }
 
 #[test]
+fn done_status_drains_the_final_reply_before_pausing() -> TestResult {
+    crate::runtime()?.block_on(async {
+        let session = LiveSession::with_status(HerdrAgentStatus::Working).await?;
+        session.manager.update_agent_statuses(
+            std::collections::HashMap::from([("terminal".into(), HerdrAgentStatus::Done)]),
+            2,
+        );
+        // The host status event can beat both the JSONL write and SSH delivery.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let reply = "Committed as 78677ad6. Working tree is clean.";
+        let line = format!(
+            "{}\n",
+            serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "message", "role": "assistant", "phase": "final_answer",
+                    "content": [{"type": "output_text", "text": reply}]
+                }
+            })
+        );
+        append(&session.path, line.as_bytes())?;
+        session.wait_live(2).await?;
+        assert!(session.state().messages.iter().any(|message| {
+            message.parts.iter().any(|part| {
+                matches!(part, crate::AgentTranscriptPart::Text { text, .. } if text == reply)
+            })
+        }));
+        wait_for(|| {
+            session.manager.inner.state.lock().sessions[&session.binding.transcript_key]
+                .activity
+                .paused
+        })
+        .await?;
+        Ok(())
+    })
+}
+
+#[test]
 fn done_transcripts_load_once_and_resume_only_after_a_status_change() -> TestResult {
     crate::runtime()?.block_on(async {
         for initial_status in [HerdrAgentStatus::Working, HerdrAgentStatus::Done] {
