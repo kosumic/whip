@@ -302,6 +302,28 @@ export function dismissAgentAlertsForTab(
   );
 }
 
+/** The call owns suppression independently of its screen presentation. */
+export function suppressAgentAlertsForTab(
+  token: string,
+  hostId: string,
+  tabId: string,
+): () => void {
+  const owner = native();
+  reportBackgroundFailure(
+    runEffects(
+      owner,
+      owner.setSuppression(token, new LocalAlertScope.Tab({ hostId, tabId })),
+    ),
+    'voice-chat-alert-suppression',
+  );
+  return () => {
+    reportBackgroundFailure(
+      runEffects(owner, owner.setSuppression(token, undefined)),
+      'voice-chat-alert-suppression-release',
+    );
+  };
+}
+
 export function dismissAgentAlertsForPane(
   hostId: string,
   paneId: string,

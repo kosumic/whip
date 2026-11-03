@@ -1012,6 +1012,7 @@ test.each(['claude', 'codex', 'opencode', 'pi'] as const)('a brand new %s agent 
   await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
   expect(ui('TerminalScreen').props.voiceChatTarget).toEqual({
     agent, hostId: 'host-1', paneId: host.pane.pane_id,
+    tabId: host.pane.tab_id,
     label: expect.any(String), bindingToken: undefined,
   });
   expect(ui('TerminalScreen').props.chatViewEnabled).toBe(false);

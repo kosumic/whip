@@ -1792,6 +1792,7 @@ export function SessionScreen({
                   bindingToken: activeChatView?.binding.bindingToken,
                   hostId: hostSessionId,
                   paneId: activePane.pane_id,
+                  tabId: activePane.tab_id,
                   label: chatAgentDisplayName(liveVoiceChatAgent),
                 }
               : undefined}

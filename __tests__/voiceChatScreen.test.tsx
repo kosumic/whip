@@ -41,7 +41,7 @@ jest.mock('lucide-react-native/icons/skip-forward', () => 'SkipForward');
 jest.mock('lucide-react-native/icons/x', () => 'X');
 jest.mock('lucide-react-native/icons/volume-2', () => 'Volume2');
 
-const target: ChatSpeechTarget = { agent: 'codex', bindingToken: 'chat', hostId: 'host', paneId: 'pane', label: 'Codex' };
+const target: ChatSpeechTarget & { tabId: string } = { agent: 'codex', bindingToken: 'chat', hostId: 'host', paneId: 'pane', tabId: 'tab', label: 'Codex' };
 const listening: VoiceConversationView = { phase: 'listening', muted: false, smartTurn: false, speaker: false, text: '', level: 0, progress: 0, error: null, transcript: null };
 const session = { submitted: jest.fn(), start: jest.fn(), close: jest.fn(), toggleMuted: jest.fn(), toggleSpeaker: jest.fn(), skip: jest.fn(), finish: jest.fn(), install: jest.fn(), setVadSensitivity: jest.fn(), setTranscriptBinding: jest.fn() };
 const controller = createRef<VoiceChatHandle>();

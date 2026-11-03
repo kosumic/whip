@@ -8,8 +8,9 @@ import { getSpeechPlayback, type NativeSpeechPlayback } from './speechPlayback';
 import { recordDiagnostic } from './diagnosticFormatting';
 import { voiceChatModelRoot } from './voiceChatModel';
 import { DEFAULT_VAD_SENSITIVITY } from '../lib/voiceVadSensitivity';
+import { suppressAgentAlertsForTab } from './alerts';
 
-export type VoiceChatTarget = Omit<ChatSpeechTarget, 'bindingToken'> & { bindingToken?: string };
+export type VoiceChatTarget = Omit<ChatSpeechTarget, 'bindingToken'> & { bindingToken?: string; tabId: string };
 
 export interface VoiceConversationView {
   phase: VoiceChatView['phase'] | 'error' | 'starting';
@@ -88,6 +89,7 @@ export class VoiceConversation {
     try {
       if (active || !composerSpeechInput.reserve(this.session)) throw new Error('Finish the current speech session before starting voice chat.');
       active = this.session;
+      this.cleanup.push(suppressAgentAlertsForTab(this.session, this.target.hostId, this.target.tabId));
       this.playback = getSpeechPlayback();
       if (!this.playback.startLocalChatSpeech || !this.playback.startVoiceCall) throw new Error('Install an updated Whip build for system voice calls.');
       await composerSpeechInput.authorizeLocal();

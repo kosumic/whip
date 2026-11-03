@@ -71,6 +71,100 @@ fn scopes() -> Vec<LocalAlertScope> {
     ]
 }
 
+#[test]
+fn voice_call_suppresses_the_whole_tab_and_resumes_after_hangup() {
+    let owner = LocalAlertCoordinator::new();
+    assert!(
+        owner
+            .set_suppression(
+                "call".into(),
+                Some(LocalAlertScope::Tab {
+                    host_id: "h".into(),
+                    tab_id: "t".into(),
+                })
+            )
+            .is_empty()
+    );
+    for pane in ["p", "other-pane"] {
+        for status in [HerdrAgentStatus::Blocked, HerdrAgentStatus::Done] {
+            assert!(
+                owner
+                    .transition(LocalAlertTransition {
+                        host_id: "h".into(),
+                        pane_id: pane.into(),
+                        runtime: None,
+                        status: Some(status),
+                        request: Some(request("h", pane, "t", true)),
+                        enabled: true,
+                        foreground: false,
+                    })
+                    .is_empty()
+            );
+        }
+    }
+    assert!(
+        !owner
+            .alert(request("h", "p", "other-tab", false))
+            .is_empty()
+    );
+    assert!(
+        !owner
+            .alert(request("other-host", "p", "t", false))
+            .is_empty()
+    );
+    assert!(owner.set_suppression("call".into(), None).is_empty());
+    // Ending a call does not replay the status changes suppressed during it.
+    assert!(!owner.alert(request("h", "p", "t", true)).is_empty());
+}
+
+#[test]
+fn voice_call_cancels_pending_and_active_alerts_without_reviving_late_results() {
+    let owner = LocalAlertCoordinator::new();
+    let mut platform = Platform::default();
+    platform.drain(&owner, owner.alert(request("h", "active", "t", false)));
+    let pending = one(owner.alert(request("h", "pending", "t", false)));
+    begin(&owner, &pending);
+    let speech = one(owner.alert(request("h", "speaking", "t", true)));
+    let cleanup = owner.set_suppression(
+        "call".into(),
+        Some(LocalAlertScope::Tab {
+            host_id: "h".into(),
+            tab_id: "t".into(),
+        }),
+    );
+    platform.drain(&owner, cleanup);
+    assert!(platform.notifications.is_empty());
+    assert!(platform.persistent.is_none());
+    assert_eq!(
+        owner.begin_effect(speech.id.clone()),
+        LocalAlertEffectAdmission::Skip
+    );
+    assert!(complete(&owner, &speech, LocalAlertOutcome::Skipped).is_empty());
+    owner.set_suppression("call".into(), None);
+    let late = one(scheduled(&owner, &pending, "late"));
+    assert!(
+        matches!(late.action, LocalAlertAction::DismissNotification { ref notification_id } if notification_id == "late")
+    );
+}
+
+#[test]
+fn old_call_cleanup_does_not_release_another_calls_suppression() {
+    let owner = LocalAlertCoordinator::new();
+    for token in ["old", "new"] {
+        owner.set_suppression(
+            token.into(),
+            Some(LocalAlertScope::Tab {
+                host_id: "h".into(),
+                tab_id: "t".into(),
+            }),
+        );
+    }
+    owner.set_suppression("old".into(), None);
+    assert!(owner.alert(request("h", "p", "t", false)).is_empty());
+    owner.set_suppression("new".into(), None);
+    assert!(!owner.alert(request("h", "p", "t", false)).is_empty());
+}
+
 #[derive(Default)]
 struct Platform {
     notifications: HashSet<String>,

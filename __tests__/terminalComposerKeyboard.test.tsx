@@ -321,7 +321,7 @@ test.each([false, true])('voice chat is available before the first transcript in
   mount({ chatViewEnabled });
   await press('compose');
   expect(ui('MessageComposer').props.voiceChatLabel).toBeUndefined();
-  const voiceChatTarget = { agent: 'codex' as const, hostId: 'host', paneId: 'pane', label: 'Codex' };
+  const voiceChatTarget = { agent: 'codex' as const, hostId: 'host', paneId: 'pane', tabId: 'tab', label: 'Codex' };
   act(() => renderer.update(<TerminalScreen {...props} chatViewEnabled={chatViewEnabled} voiceChatTarget={voiceChatTarget} />));
   expect(ui('MessageComposer').props.voiceChatLabel).toBe('terminal.voice.chat');
   act(() => renderer.update(<TerminalScreen {...props} chatViewEnabled={chatViewEnabled}
