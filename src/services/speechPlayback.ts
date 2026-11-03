@@ -8,6 +8,9 @@ export interface NativeSpeechPlayback {
   startLocalChatSpeech(token: string, label: string): Promise<void>;
   startVoiceCall(token: string, label: string): Promise<void>;
   endVoiceCall(token: string): Promise<void>;
+  /** Plays bundled cues without taking audio focus from an active call. */
+  playVoiceCallSound(uri: string, inCall: boolean): Promise<void>;
+  stopVoiceCallSound(): Promise<void>;
   setVoiceCallMuted(token: string, muted: boolean): Promise<void>;
   setVoiceCallSpeaker(token: string, speaker: boolean): Promise<void>;
   /** Bounded lookahead; each promise resolves only after its audio is played. */

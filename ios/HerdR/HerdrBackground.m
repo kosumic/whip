@@ -29,6 +29,10 @@ RCT_EXPORT_METHOD(startVoiceCall:(NSString *)token label:(NSString *)label resol
 { [WhipVoiceCall.shared start:token label:label resolve:resolve reject:reject]; }
 RCT_EXPORT_METHOD(endVoiceCall:(NSString *)token resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 { [WhipVoiceCall.shared end:token resolve:resolve reject:reject]; }
+RCT_EXPORT_METHOD(playVoiceCallSound:(NSString *)uri inCall:(BOOL)inCall resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{ [WhipVoiceCall.shared playSound:uri inCall:inCall resolve:resolve reject:reject]; }
+RCT_EXPORT_METHOD(stopVoiceCallSound:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{ [WhipVoiceCall.shared stopSound]; resolve(nil); }
 RCT_EXPORT_METHOD(setVoiceCallMuted:(NSString *)token muted:(BOOL)muted resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 { [WhipVoiceCall.shared mute:token muted:muted resolve:resolve reject:reject]; }
 RCT_EXPORT_METHOD(setVoiceCallSpeaker:(NSString *)token speaker:(BOOL)speaker resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)

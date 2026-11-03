@@ -5,7 +5,7 @@
 NSString *const WhipVoiceCallEvent = @"WhipVoiceCall";
 static NSString *const WhipCallError = @"E_VOICE_CALL";
 
-@interface WhipVoiceCall () <CXProviderDelegate>
+@interface WhipVoiceCall () <CXProviderDelegate, AVAudioPlayerDelegate>
 @property(nonatomic, strong) CXProvider *provider;
 @property(nonatomic, strong) CXCallController *controller;
 @property(nonatomic, strong) NSUUID *uuid;
@@ -17,6 +17,13 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
 @property(nonatomic, strong) NSTimer *timeout;
 @property(nonatomic, strong) NSMutableArray *endings;
 @property(nonatomic) BOOL ending;
+@property(nonatomic) BOOL audioActive;
+@property(nonatomic) BOOL soundOwnsSession;
+@property(nonatomic, strong) AVAudioPlayer *soundPlayer;
+@property(nonatomic, copy) NSString *pendingSoundURI;
+@property(nonatomic, copy) RCTPromiseResolveBlock soundDone;
+@property(nonatomic, copy) RCTPromiseRejectBlock soundFailed;
+@property(nonatomic, strong) NSTimer *soundTimeout;
 @end
 
 @implementation WhipVoiceCall
@@ -47,6 +54,7 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
 - (void)start:(NSString *)token label:(NSString *)label resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
   if (self.token) { reject(WhipCallError, @"A voice call is already active.", nil); return; }
+  [self stopSound];
   self.token = token; self.label = label; self.uuid = NSUUID.UUID;
   self.ready = resolve; self.failed = reject;
   CXStartCallAction *action = [[CXStartCallAction alloc] initWithCallUUID:self.uuid handle:[[CXHandle alloc] initWithType:CXHandleTypeGeneric value:label]];
@@ -78,6 +86,7 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
 }
 - (void)provider:(CXProvider *)provider didActivateAudioSession:(AVAudioSession *)audioSession
 {
+  self.audioActive = YES;
   if (!self.token) return;
   self.active = YES;
   // Start hands-free unless the user already has a headset connected. Leaving
@@ -97,9 +106,66 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
 }
 - (void)provider:(CXProvider *)provider didDeactivateAudioSession:(AVAudioSession *)audioSession
 {
+  self.audioActive = NO;
   self.active = NO;
   if (self.token) [self fail:@"The system interrupted voice chat for another call."];
+  if (self.pendingSoundURI) [self startSound:self.pendingSoundURI inCall:NO];
 }
+
+- (void)playSound:(NSString *)uri inCall:(BOOL)inCall resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
+{
+  [self stopSound];
+  if (inCall != self.active || (!inCall && self.token)) { resolve(nil); return; }
+  if (![NSURL URLWithString:uri].isFileURL) { reject(WhipCallError, @"Voice call sounds must be bundled local files.", nil); return; }
+  self.soundDone = resolve; self.soundFailed = reject;
+  __weak WhipVoiceCall *weakSelf = self;
+  self.soundTimeout = [NSTimer scheduledTimerWithTimeInterval:5 repeats:NO block:^(NSTimer *timer) {
+    [weakSelf finishSound:[NSError errorWithDomain:WhipCallError code:1 userInfo:@{NSLocalizedDescriptionKey: @"Voice call sound timed out."}]];
+  }];
+  // clear: resolves hang-up before CallKit deactivates audio. Wait for that
+  // callback so it cannot cut off the closing piano cue halfway through.
+  if (!inCall && self.audioActive) self.pendingSoundURI = uri;
+  else [self startSound:uri inCall:inCall];
+}
+- (void)startSound:(NSString *)uri inCall:(BOOL)inCall
+{
+  NSURL *url = [NSURL URLWithString:uri];
+  self.pendingSoundURI = nil;
+  NSError *error = nil;
+  AVAudioSession *audio = AVAudioSession.sharedInstance;
+  if (!inCall) {
+    if (![audio setCategory:AVAudioSessionCategoryPlayback mode:AVAudioSessionModeDefault
+        options:AVAudioSessionCategoryOptionMixWithOthers error:&error] || ![audio setActive:YES error:&error]) {
+      [self finishSound:error]; return;
+    }
+    self.soundOwnsSession = YES;
+  }
+  self.soundPlayer = [[AVAudioPlayer alloc] initWithContentsOfURL:url error:&error];
+  self.soundPlayer.delegate = self;
+  self.soundPlayer.volume = 0.5;
+  if (!self.soundPlayer || ![self.soundPlayer play]) {
+    [self finishSound:error ?: [NSError errorWithDomain:WhipCallError code:2 userInfo:@{NSLocalizedDescriptionKey: @"Voice call sound could not play."}]];
+  }
+}
+- (void)finishSound:(NSError *)error
+{
+  RCTPromiseResolveBlock done = self.soundDone;
+  RCTPromiseRejectBlock failed = self.soundFailed;
+  self.soundDone = nil; self.soundFailed = nil;
+  [self.soundTimeout invalidate]; self.soundTimeout = nil;
+  [self.soundPlayer stop]; self.soundPlayer = nil; self.pendingSoundURI = nil;
+  if (self.soundOwnsSession && !self.audioActive && !self.token) {
+    [AVAudioSession.sharedInstance setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:nil];
+  }
+  self.soundOwnsSession = NO;
+  if (error && failed) failed(WhipCallError, error.localizedDescription, error);
+  else if (done) done(nil);
+}
+- (void)stopSound { [self finishSound:nil]; }
+- (void)audioPlayerDidFinishPlaying:(AVAudioPlayer *)player successfully:(BOOL)flag
+{ if (player == self.soundPlayer) [self finishSound:nil]; }
+- (void)audioPlayerDecodeErrorDidOccur:(AVAudioPlayer *)player error:(NSError *)error
+{ if (player == self.soundPlayer) [self finishSound:error]; }
 - (void)end:(NSString *)token resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
   if (![self.token isEqualToString:token]) { resolve(nil); return; }
@@ -183,5 +249,5 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
 }
 - (void)providerDidReset:(CXProvider *)provider { [self fail:@"The system reset voice chat."]; }
 - (void)provider:(CXProvider *)provider timedOutPerformingAction:(CXAction *)action { [self fail:@"The system voice call timed out."]; }
-- (void)invalidate { if (self.token) [self fail:@"Voice chat ended."]; }
+- (void)invalidate { [self stopSound]; if (self.token) [self fail:@"Voice chat ended."]; }
 @end

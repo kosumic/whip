@@ -11,6 +11,7 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.RingtoneManager
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -35,6 +36,9 @@ class HerdrBackgroundModule(
   private var activeAlertIdentifier: String? = null
   private var activeAlertChannelId: String? = null
   private var mediaPlayer: MediaPlayer? = null
+  private var callSoundPlayer: MediaPlayer? = null
+  private var callSoundPromise: Promise? = null
+  private val callSoundTimeout = Runnable { finishVoiceCallSound("Voice call sound timed out") }
   private var shakeListening = false
   private val shakeDetector = SpeechShakeDetector()
   private val startSoundRunnable = Runnable { startLoopingSound() }
@@ -89,6 +93,54 @@ class HerdrBackgroundModule(
   @ReactMethod
   fun endVoiceCall(token: String, promise: Promise) {
     mainHandler.post { VoiceCallService.end(token, promise) }
+  }
+
+  @ReactMethod
+  fun playVoiceCallSound(uri: String, inCall: Boolean, promise: Promise) {
+    mainHandler.post {
+      finishVoiceCallSound()
+      // A stale cue must never change the route of a replacement call.
+      if (inCall != VoiceCallService.active) { promise.resolve(null); return@post }
+      try {
+        val source = Uri.parse(uri)
+        require(source.scheme == "file") { "Voice call sounds must be bundled local files" }
+        val player = MediaPlayer()
+        callSoundPlayer = player
+        callSoundPromise = promise
+        player.setAudioAttributes(if (inCall) VoiceCallService.audioAttributes else AudioAttributes.Builder()
+          .setUsage(AudioAttributes.USAGE_MEDIA)
+          .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
+        player.setDataSource(context, source)
+        player.setVolume(0.5f, 0.5f)
+        player.setOnCompletionListener { if (callSoundPlayer === it) finishVoiceCallSound() }
+        player.setOnErrorListener { failed, what, extra ->
+          if (callSoundPlayer === failed) finishVoiceCallSound("Voice call sound failed ($what/$extra)")
+          true
+        }
+        player.setOnPreparedListener { if (callSoundPlayer === it) it.start() }
+        // Telecom owns audio focus during calls; cues must not request it again.
+        player.prepareAsync()
+        mainHandler.postDelayed(callSoundTimeout, CALL_SOUND_TIMEOUT_MS)
+      } catch (error: Exception) {
+        if (callSoundPromise != null) finishVoiceCallSound(error.message ?: "Voice call sound failed")
+        else promise.reject(CALL_SOUND_ERROR, error)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun stopVoiceCallSound(promise: Promise) {
+    mainHandler.post { finishVoiceCallSound(); promise.resolve(null) }
+  }
+
+  private fun finishVoiceCallSound(error: String? = null) {
+    mainHandler.removeCallbacks(callSoundTimeout)
+    val player = callSoundPlayer
+    val promise = callSoundPromise
+    callSoundPlayer = null
+    callSoundPromise = null
+    player?.release()
+    if (error == null) promise?.resolve(null) else promise?.reject(CALL_SOUND_ERROR, error)
   }
 
   @ReactMethod
@@ -295,6 +347,7 @@ class HerdrBackgroundModule(
 
   override fun invalidate() {
     mainHandler.post {
+      finishVoiceCallSound()
       VoiceCallService.onEvent = null
       VoiceCallService.invalidate()
       SpeechPlayback.onChatStopped = null
@@ -439,6 +492,8 @@ class HerdrBackgroundModule(
   }
 
   companion object {
+    private const val CALL_SOUND_ERROR = "E_VOICE_CALL_SOUND"
+    private const val CALL_SOUND_TIMEOUT_MS = 5_000L
     private const val CHAT_SPEECH_STOPPED = "WhipChatSpeechStopped"
     private const val CHAT_SPEECH_STARTED = "WhipChatSpeechStarted"
     private const val CHAT_SPEECH_LEVEL = "WhipChatSpeechLevel"

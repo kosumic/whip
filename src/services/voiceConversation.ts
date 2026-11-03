@@ -10,6 +10,7 @@ import { recordDiagnostic } from './diagnosticFormatting';
 import { voiceChatModelRoot } from './voiceChatModel';
 import { DEFAULT_VAD_SENSITIVITY } from '../lib/voiceVadSensitivity';
 import { suppressAgentAlertsForTab } from './alerts';
+import { loadVoiceCallSound, type VoiceCallSound } from './voiceCallSounds';
 
 export type VoiceChatTarget = Omit<ChatSpeechTarget, 'bindingToken'> & { bindingToken?: string; tabId: string };
 
@@ -69,6 +70,10 @@ export class VoiceConversation {
   private timing?: { boundary: number; speechEnd: number; submitted?: number; prose?: number; synthesis?: number; played?: number };
   private callToken?: string;
   private callActivated = false;
+  private readySoundPlayed = false;
+  private readySoundPlaying = false;
+  private allowClosedSound = true;
+  private sounds?: Record<VoiceCallSound, Promise<string | undefined>>;
   private closed = false;
   private closing?: Promise<void>;
   private analyzing = false;
@@ -114,6 +119,10 @@ export class VoiceConversation {
       if (Platform.OS === 'android') this.releaseBackground = retainVoiceCallBackground(this.session);
       this.cleanup.push(suppressAgentAlertsForTab(this.session, this.target.hostId, this.target.tabId));
       this.playback = getSpeechPlayback();
+      this.sounds = {
+        ready: this.loadSound('ready'),
+        closed: this.loadSound('closed'),
+      };
       if (!this.playback.startLocalChatSpeech || !this.playback.startVoiceCall) throw new Error('Install an updated Whip build for system voice calls.');
       await composerSpeechInput.authorizeLocal();
       this.canInterrupt = await composerSpeechInput.supportsPlaybackMonitoring();
@@ -267,6 +276,10 @@ export class VoiceConversation {
         if (snapshot.phase === 'listening') {
           if (!input.started) recordDiagnostic('info', 'VoiceChat', 'capture-started', { inputId: input.id.toString(), appState: AppState.currentState });
           input.started = true; clearTimeout(this.watchdog);
+          if (!this.readySoundPlayed && !input.monitor && this.core.view().phase === 'listening') {
+            this.readySoundPlayed = true;
+            void this.playSound('ready');
+          }
         }
         this.core.recognition(input.id, [this.draft, snapshot.interimText].filter(Boolean).join(' '));
       } else if (snapshot.phase === 'idle' && input.started) {
@@ -288,6 +301,7 @@ export class VoiceConversation {
       this.view = { ...this.view, speaker: event.speaker };
       this.changed(this.view);
     } else if (event.type === 'audioInactive' || event.error) {
+      this.allowClosedSound = false;
       this.fail(new Error(event.error || 'The system interrupted voice chat for another call.'));
     } else if (event.type === 'ended') {
       this.view = { ...this.view, phase: 'closed', level: 0 };
@@ -299,6 +313,7 @@ export class VoiceConversation {
   private apply(): void {
     if (this.closed || !this.core) return;
     const view = this.core.view();
+    if (view.phase !== 'listening' && this.readySoundPlaying) void this.stopSound();
     if (view.phase === 'waiting') {
       this.fillerTimer ??= setInterval(() => this.fillSilence(), FILLER_POLL_MS);
     } else {
@@ -559,6 +574,27 @@ export class VoiceConversation {
     void this.close();
   }
 
+  private async loadSound(sound: VoiceCallSound): Promise<string | undefined> {
+    try { return await loadVoiceCallSound(sound); }
+    catch (error) { recordDiagnostic('warn', 'VoiceChat', 'sound-load-failed', { sound, error: failureMessage(error) }); }
+  }
+
+  private async playSound(sound: VoiceCallSound): Promise<void> {
+    try {
+      const uri = await this.sounds?.[sound];
+      if (!uri || (sound === 'ready' && (this.closed || this.core?.view().phase !== 'listening' || !this.input?.started))) return;
+      if (sound === 'ready') this.readySoundPlaying = true;
+      await this.playback?.playVoiceCallSound?.(uri, sound === 'ready');
+    } catch (error) { recordDiagnostic('warn', 'VoiceChat', 'sound-playback-failed', { sound, error: failureMessage(error) }); }
+    finally { if (sound === 'ready') this.readySoundPlaying = false; }
+  }
+
+  private async stopSound(): Promise<void> {
+    this.readySoundPlaying = false;
+    try { await this.playback?.stopVoiceCallSound?.(); }
+    catch (error) { recordDiagnostic('warn', 'VoiceChat', 'sound-stop-failed', { error: failureMessage(error) }); }
+  }
+
   close(): Promise<void> {
     if (!this.closing) this.closing = this.closeSession();
     return this.closing;
@@ -567,6 +603,7 @@ export class VoiceConversation {
   private async closeSession(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    const stoppedSound = this.stopSound();
     this.cancelFiller();
     this.signalSpeech();
     this.core?.close();
@@ -587,6 +624,10 @@ export class VoiceConversation {
     // Hang up immediately, including when recognizer shutdown is still draining.
     // CallKit deactivation may itself be what releases a stalled audio engine.
     const endedCall = Promise.allSettled(call && this.playback ? [this.playback.endVoiceCall(call)] : []);
+    const closingSound = endedCall.then(async () => {
+      await stoppedSound;
+      if (this.callActivated && this.allowClosedSound) await this.playSound('closed');
+    });
     try {
       if (speech) await this.playback?.stopChatSpeech(speech);
       await this.filler?.done;
@@ -594,7 +635,7 @@ export class VoiceConversation {
       await this.waitForInputRelease();
     } catch { /* Cleanup must still release the shared input reservation. */ }
     finally {
-      await endedCall;
+      await closingSound;
       this.releaseBackground?.();
       this.releaseBackground = undefined;
       // UniFFI retains the Rust object until in-flight model futures finish.

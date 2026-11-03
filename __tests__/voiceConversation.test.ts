@@ -4,6 +4,11 @@ import type { AgentChatState } from '../src/agentChat';
 import type { NativeVoiceChat } from 'react-native-whip-ssh/src/voiceChat';
 import { suppressAgentAlertsForTab } from '../src/services/alerts';
 import { runVoiceCallBackground } from '../src/services/voiceCallBackground';
+import { loadVoiceCallSound } from '../src/services/voiceCallSounds';
+
+jest.mock('../src/services/voiceCallSounds', () => ({
+  loadVoiceCallSound: jest.fn((sound: string) => Promise.resolve(`file:///${sound}.mp3`)),
+}));
 
 const mockReleaseAlerts = jest.fn();
 jest.mock('../src/services/alerts', () => ({
@@ -35,6 +40,8 @@ const mockCore = {
   setVadSensitivity: jest.fn(),
 };
 const mockSpeech = {
+  playVoiceCallSound: jest.fn((_uri: string, _inCall: boolean) => Promise.resolve()),
+  stopVoiceCallSound: jest.fn(() => Promise.resolve()),
   startVoiceCall: jest.fn(() => Promise.resolve()), endVoiceCall: jest.fn(() => Promise.resolve()),
   setVoiceCallMuted: jest.fn(() => Promise.resolve()), setVoiceCallSpeaker: jest.fn(() => Promise.resolve()),
   startLocalChatSpeech: jest.fn(() => Promise.resolve()), speakChat: jest.fn((_token: string, _text: string) => Promise.resolve()),
@@ -112,6 +119,74 @@ test('starts without downloading and uses the shared strictly local recognizer',
   expect(send).not.toHaveBeenCalled();
 });
 
+test('plays the ready piano once after the recognizer is listening', async () => {
+  mockInput.start.mockImplementationOnce(request => {
+    mockRequest = request;
+    mockInputSnapshot = { owner: request.owner, phase: 'preparing', interimText: '' };
+    for (const listener of mockInputListeners) listener();
+    return Promise.resolve();
+  });
+  await session.start(); await flush();
+  expect(mockSpeech.playVoiceCallSound).not.toHaveBeenCalled();
+  mockInputSnapshot.phase = 'listening';
+  for (const listener of mockInputListeners) listener();
+  await flush();
+  expect(mockSpeech.playVoiceCallSound.mock.calls).toEqual([['file:///ready.mp3', true]]);
+  for (const listener of mockInputListeners) listener();
+  await session.skip(); await flush();
+  expect(mockSpeech.playVoiceCallSound).toHaveBeenCalledTimes(1);
+});
+
+test('plays the closing piano once after hanging up and releasing capture', async () => {
+  await session.start(); await flush();
+  await Promise.all([session.close(), session.close()]);
+  expect(mockSpeech.playVoiceCallSound.mock.calls).toEqual([
+    ['file:///ready.mp3', true], ['file:///closed.mp3', false],
+  ]);
+  expect(mockSpeech.endVoiceCall.mock.invocationCallOrder[0]).toBeLessThan(mockSpeech.playVoiceCallSound.mock.invocationCallOrder[1]);
+  expect(mockInput.cancel.mock.invocationCallOrder[0]).toBeLessThan(mockSpeech.playVoiceCallSound.mock.invocationCallOrder[1]);
+});
+
+test('a ready sound still loading at hangup cannot play over the closing piano', async () => {
+  let loaded!: (uri: string) => void;
+  jest.mocked(loadVoiceCallSound).mockImplementationOnce(() => new Promise(resolve => { loaded = resolve; }));
+  await session.start(); await flush();
+  await session.close();
+  loaded('file:///late-ready.mp3'); await flush();
+  expect(mockSpeech.playVoiceCallSound.mock.calls).toEqual([['file:///closed.mp3', false]]);
+});
+
+test('a piano playback failure does not interrupt listening or prevent hangup', async () => {
+  mockSpeech.playVoiceCallSound.mockRejectedValueOnce(new Error('Audio unavailable'));
+  await session.start(); await flush();
+  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'listening', error: null }));
+  expect(mockSpeech.endVoiceCall).not.toHaveBeenCalled();
+  await session.close();
+  expect(mockInput.releaseReservation).toHaveBeenCalled();
+  expect(mockSpeech.playVoiceCallSound).toHaveBeenLastCalledWith('file:///closed.mp3', false);
+});
+
+test('stops a ready piano that is still playing when a prompt is submitted', async () => {
+  let finishSound!: () => void;
+  mockSpeech.playVoiceCallSound.mockImplementationOnce(() => new Promise(resolve => { finishSound = resolve; }));
+  await session.start(); await flush();
+  mockCore.submitText.mockImplementationOnce(() => { mockView.phase = 'waiting'; });
+  session.submitted('Hello');
+  await flush();
+  expect(mockSpeech.stopVoiceCallSound).toHaveBeenCalledTimes(1);
+  finishSound(); await flush();
+  expect(mockSpeech.playVoiceCallSound.mock.calls).toEqual([['file:///ready.mp3', true]]);
+});
+
+test('an audio interruption does not play the closing piano over another call', async () => {
+  await session.start(); await flush();
+  const token = (mockSpeech.startVoiceCall.mock.calls[0] as unknown as [string])[0];
+  mockCallEvents.get('WhipVoiceCall')!({ token, type: 'audioInactive' });
+  await session.close();
+  expect(mockSpeech.playVoiceCallSound.mock.calls).toEqual([['file:///ready.mp3', true]]);
+  expect(mockSpeech.stopVoiceCallSound).toHaveBeenCalled();
+});
+
 test('keeps background execution alive until voice call cleanup finishes', async () => {
   await session.start(); await flush();
   const token = (mockSpeech.startVoiceCall.mock.calls[0] as unknown as [string])[0];
@@ -139,6 +214,7 @@ test('releases status alerts when starting the call fails', async () => {
   await session.start(); await flush();
   expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'error' }));
   expect(mockReleaseAlerts).toHaveBeenCalledTimes(1);
+  expect(mockSpeech.playVoiceCallSound).not.toHaveBeenCalled();
 });
 
 test('a new agent can receive its first spoken prompt before its transcript exists', async () => {
@@ -300,6 +376,8 @@ test('hangs up the system call while recognition shutdown is still draining', as
   const closing = session.close();
   expect(mockSpeech.endVoiceCall).toHaveBeenCalledTimes(1);
   expect(mockInput.releaseReservation).not.toHaveBeenCalled();
+  await flush();
+  expect(mockSpeech.playVoiceCallSound).toHaveBeenLastCalledWith('file:///closed.mp3', false);
   mockInputSnapshot = { owner: null, phase: 'idle', interimText: '' };
   for (const listener of mockInputListeners) listener();
   await closing;
@@ -369,6 +447,7 @@ test('closing a call before activation prevents late activation from opening the
   expect(mockSpeech.endVoiceCall).toHaveBeenCalled();
   activate(); await starting; await flush();
   expect(mockInput.start).not.toHaveBeenCalled();
+  expect(mockSpeech.playVoiceCallSound).not.toHaveBeenCalled();
   expect(send).not.toHaveBeenCalled();
 });
 
