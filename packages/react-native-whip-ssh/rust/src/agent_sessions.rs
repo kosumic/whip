@@ -717,17 +717,21 @@ impl AgentSessionManager {
                 .values()
                 .find(|binding| binding.token == binding_token)
                 .and_then(|binding| {
-                    state
-                        .sessions
-                        .get(&binding.key)
-                        .map(|session| (binding.key.clone(), !session.started))
+                    state.sessions.get(&binding.key).map(|session| {
+                        (
+                            binding.key.clone(),
+                            !session.started,
+                            session.operation_epoch,
+                        )
+                    })
                 })
         };
-        let Some((key, first_start)) = restore else {
+        let Some((key, first_start, epoch)) = restore else {
             return Ok(AgentChatStartResult::StaleBinding);
         };
+        let lookup_started = Instant::now();
         let blob = if first_start && let Some(database) = &self.inner.database {
-            match database.load(key.into()).await {
+            match database.load(key.clone().into()).await {
                 Ok(blob) => blob,
                 Err(error) => {
                     crate::host_runtime::record_transcript_cache_failure(&error.to_string());
@@ -737,11 +741,30 @@ impl AgentSessionManager {
         } else {
             None
         };
+        diagnostics::timing(
+            &self.inner,
+            &key,
+            epoch,
+            diagnostics::StartupStage::CacheLookup,
+            lookup_started,
+            &format!("bytes={}", blob.as_ref().map_or(0, Vec::len)),
+        );
         let manager = self.clone();
         let token = binding_token.to_owned();
+        let scheduled = Instant::now();
         crate::runtime()
             .map_err(AgentSessionError::CacheStorage)?
-            .spawn_blocking(move || manager.start_restored(&token, blob))
+            .spawn_blocking(move || {
+                diagnostics::timing(
+                    &manager.inner,
+                    &key,
+                    epoch,
+                    diagnostics::StartupStage::CacheWorker,
+                    scheduled,
+                    "",
+                );
+                manager.start_restored(&token, blob)
+            })
             .await
             .map_err(|error| AgentSessionError::CacheStorage(error.to_string()))?
     }
@@ -751,6 +774,7 @@ impl AgentSessionManager {
         binding_token: &str,
         cache_blob: Option<Vec<u8>>,
     ) -> Result<AgentChatStartResult, AgentSessionError> {
+        let restore_started = Instant::now();
         let (key, state_snapshot, should_start, kind, cache_restored) = {
             let mut state = self.inner.state.lock();
             if state.closed {
@@ -804,6 +828,14 @@ impl AgentSessionManager {
             drop(state);
             result
         };
+        diagnostics::timing(
+            &self.inner,
+            &key,
+            0,
+            diagnostics::StartupStage::CacheRestore,
+            restore_started,
+            "",
+        );
         if let Some((restored, epoch)) = cache_restored {
             diagnostics::record(
                 &self.inner,
@@ -1302,14 +1334,21 @@ impl AgentSessionManager {
         session_id: SessionId,
         agent: AgentTranscriptKind,
     ) {
-        let connection = self.inner.connection.clone();
         let result = async {
             let command = match agent {
                 AgentTranscriptKind::Pi => pi_transcript_find_command(session_id.as_str()),
                 AgentTranscriptKind::Claude => claude_transcript_find_command(session_id.as_str()),
                 _ => codex_rollout_find_command(session_id.as_str()),
             };
-            let output = execute(&connection, command).await.map_err(|error| {
+            let output = diagnostics::execute(
+                &self.inner,
+                &key,
+                operation_epoch,
+                diagnostics::StartupStage::Discovery,
+                command,
+            )
+            .await
+            .map_err(|error| {
                 diagnostics::read_error(
                     &self.inner,
                     &key,
@@ -1347,17 +1386,23 @@ impl AgentSessionManager {
             } else {
                 metadata_command
             };
-            let metadata = execute(&connection, metadata_command)
-                .await
-                .map_err(|error| {
-                    diagnostics::read_error(
-                        &self.inner,
-                        &key,
-                        operation_epoch,
-                        diagnostics::ReadPhase::MetadataExec,
-                        error,
-                    )
-                })?;
+            let metadata = diagnostics::execute(
+                &self.inner,
+                &key,
+                operation_epoch,
+                diagnostics::StartupStage::Metadata,
+                metadata_command,
+            )
+            .await
+            .map_err(|error| {
+                diagnostics::read_error(
+                    &self.inner,
+                    &key,
+                    operation_epoch,
+                    diagnostics::ReadPhase::MetadataExec,
+                    error,
+                )
+            })?;
             let metadata = parse_file_source_poll(
                 &metadata,
                 (agent == AgentTranscriptKind::Codex).then_some(session_id.as_str()),
@@ -1371,6 +1416,7 @@ impl AgentSessionManager {
                     error,
                 )
             })?;
+            let history_started = Instant::now();
             let history = if agent == AgentTranscriptKind::Codex {
                 codex_history::load(
                     &path,
@@ -1386,7 +1432,15 @@ impl AgentSessionManager {
                         drop(state);
                         prefix
                     },
-                    |command| execute_bytes(&connection, command),
+                    |command| {
+                        diagnostics::execute_bytes(
+                            &self.inner,
+                            &key,
+                            operation_epoch,
+                            diagnostics::StartupStage::HistoryCommand,
+                            command,
+                        )
+                    },
                 )
                 .await
                 .map_err(|error| {
@@ -1401,6 +1455,14 @@ impl AgentSessionManager {
             } else {
                 None
             };
+            diagnostics::timing(
+                &self.inner,
+                &key,
+                operation_epoch,
+                diagnostics::StartupStage::History,
+                history_started,
+                "includes_history_commands=true",
+            );
             Ok::<_, AgentSessionError>((path, metadata, history))
         }
         .await;
@@ -1516,6 +1578,7 @@ impl AgentSessionManager {
             let _permit = &permit;
             stream_failed(context, reason);
         });
+        let stream_started = Instant::now();
         let stream_requested = match connection
             .open_exec_stream("agent-transcript", &command, data, closed)
             .await
@@ -1551,6 +1614,18 @@ impl AgentSessionManager {
                 accepted
             }
         };
+        diagnostics::timing(
+            &self.inner,
+            &key,
+            operation_epoch,
+            diagnostics::StartupStage::StreamOpen,
+            stream_started,
+            if stream_requested {
+                "outcome=ok"
+            } else {
+                "outcome=error"
+            },
+        );
         if stream_requested {
             self.monitor_file_source(key.clone(), operation_epoch, path, metadata, session_id);
         }
@@ -1879,8 +1954,11 @@ impl AgentSessionManager {
                 return Ok(protocol);
             }
         }
-        let version = execute(
-            &self.inner.connection,
+        let version = diagnostics::execute(
+            &self.inner,
+            key,
+            operation_epoch,
+            diagnostics::StartupStage::OpenCodeVersion,
             opencode_login_command("opencode --version"),
         )
         .await?;
@@ -1913,6 +1991,7 @@ impl AgentSessionManager {
             drop(state);
             cached
         };
+        let profile_startup = cached.is_none();
         opencode_v2::fetch(session_id.as_str(), cached, |command| async move {
             // Don't keep paging a transcript after the user switches sessions.
             {
@@ -1921,7 +2000,25 @@ impl AgentSessionManager {
                     return Err(AgentSessionError::StaleGeneration(key.to_string()));
                 }
             }
-            execute(&self.inner.connection, opencode_login_command(&command)).await
+            let stage = if command.contains("/log?") {
+                diagnostics::StartupStage::OpenCodeLog
+            } else if command.contains("/message") {
+                diagnostics::StartupStage::OpenCodeMessages
+            } else {
+                diagnostics::StartupStage::OpenCodeInfo
+            };
+            if profile_startup {
+                diagnostics::execute(
+                    &self.inner,
+                    key,
+                    operation_epoch,
+                    stage,
+                    opencode_login_command(&command),
+                )
+                .await
+            } else {
+                execute(&self.inner.connection, opencode_login_command(&command)).await
+            }
         })
         .await
     }
@@ -2305,6 +2402,7 @@ fn emit(
 }
 
 fn stream_data(context: u64, bytes: Vec<u8>) {
+    let ingest_started = Instant::now();
     let Some(context_value) = streams().read().get(&context).cloned() else {
         return;
     };
@@ -2313,6 +2411,7 @@ fn stream_data(context: u64, bytes: Vec<u8>) {
         return;
     };
     let mut became_live = false;
+    let initial_ingest;
     let mut parse_error = None;
     let emission = {
         let mut state = manager.state.lock();
@@ -2332,6 +2431,7 @@ fn stream_data(context: u64, bytes: Vec<u8>) {
                 session.activity.touch(Instant::now());
             }
             let was_live = session.core.status() == AgentTranscriptStatus::Live;
+            initial_ingest = !was_live;
             let Some(core) = session.core.file() else {
                 return;
             };
@@ -2390,6 +2490,16 @@ fn stream_data(context: u64, bytes: Vec<u8>) {
         drop(state);
         update
     };
+    if initial_ingest {
+        diagnostics::timing(
+            &manager,
+            &context_value.session_key,
+            context_value.operation_epoch,
+            diagnostics::StartupStage::InitialIngest,
+            ingest_started,
+            &format!("bytes={}", bytes.len()),
+        );
+    }
     if became_live {
         diagnostics::record(
             &manager,
@@ -2457,6 +2567,10 @@ async fn execute_bytes(
         .execute_with_timeout(&command, TRANSCRIPT_COMMAND_TIMEOUT)
         .await
         .map_err(|error| AgentSessionError::ReadFailed(format!("{error:?}")))?;
+    command_bytes(output)
+}
+
+fn command_bytes(output: crate::ssh::CommandOutput) -> Result<Vec<u8>, AgentSessionError> {
     if output.exit_status != Some(0) {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stderr = stderr.trim();

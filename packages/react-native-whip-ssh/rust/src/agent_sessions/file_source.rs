@@ -3,7 +3,7 @@
 use super::{
     AgentSessionError, AgentSessionManager, FILE_SOURCE_POLL_DELAY, FileSourceMetadata,
     SessionFailureKind, SessionId, TranscriptKey, current_session_mut, diagnostics, execute,
-    execute_bytes, file_source_poll_command, parse_file_source_poll, shell_quote, stream_data,
+    file_source_poll_command, parse_file_source_poll, shell_quote, stream_data,
 };
 use std::time::{Duration, Instant};
 
@@ -44,17 +44,23 @@ pub(super) async fn read_available(
             return Ok(());
         }
         let command = super::codex_history::prefix_command(path, received, length);
-        let bytes = execute_bytes(&manager.inner.connection, command)
-            .await
-            .map_err(|error| {
-                diagnostics::read_error(
-                    &manager.inner,
-                    key,
-                    epoch,
-                    diagnostics::ReadPhase::HistoryRead,
-                    error,
-                )
-            })?;
+        let bytes = diagnostics::execute_bytes(
+            &manager.inner,
+            key,
+            epoch,
+            diagnostics::StartupStage::BoundedRead,
+            command,
+        )
+        .await
+        .map_err(|error| {
+            diagnostics::read_error(
+                &manager.inner,
+                key,
+                epoch,
+                diagnostics::ReadPhase::HistoryRead,
+                error,
+            )
+        })?;
         if bytes.is_empty() {
             // A concurrent truncation is resolved by the next metadata poll.
             return Ok(());

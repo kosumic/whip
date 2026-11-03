@@ -1233,6 +1233,19 @@ pub(crate) struct CommandOutput {
     pub stderr: Vec<u8>,
     pub exit_status: Option<u32>,
     pub stdout_truncated: bool,
+    pub timings: CommandTimings,
+}
+
+/// Monotonic transport timings; these never contain commands or their output.
+#[derive(Default)]
+pub(crate) struct CommandTimings {
+    pub queue: Duration,
+    pub open_gate: Duration,
+    pub channel_open: Duration,
+    pub exec_request: Duration,
+    pub first_stdout: Option<Duration>,
+    pub read: Duration,
+    pub close: Duration,
 }
 
 async fn execute_on(session: &Session, command: &str) -> Result<CommandOutput, TransportError> {
@@ -1279,22 +1292,28 @@ async fn execute_timed_command(
     timeout: Duration,
     reply: &mut tokio::sync::oneshot::Sender<Result<CommandOutput, TransportError>>,
 ) -> Result<CommandOutput, TransportError> {
+    let queued = Instant::now();
     let _slot = tokio::time::timeout_at(deadline, command_slot(session))
         .await
         .map_err(|_| exec_timeout("command-slot", timeout))??;
+    let queue = queued.elapsed();
+    let gate_started = Instant::now();
     // russh does not close a channel whose open-confirmation receiver was
     // dropped. Keep that request alive for cleanup, but allow at most one late
     // open per SSH connection. Later callers time out waiting for this gate.
     let opening = tokio::time::timeout_at(deadline, session.lifecycle.timed_exec_open.lock())
         .await
         .map_err(|_| exec_timeout("channel-open", timeout))?;
+    let open_gate = gate_started.elapsed();
     if reply.is_closed() {
         return Err(exec_timeout("cancelled", timeout));
     }
+    let open_started = Instant::now();
     let channel = session.handle.channel_open_session().await;
+    let channel_open = open_started.elapsed();
     drop(opening);
     let mut channel = channel?;
-    let result = if reply.is_closed() || tokio::time::Instant::now() >= deadline {
+    let mut result = if reply.is_closed() || tokio::time::Instant::now() >= deadline {
         Err(exec_timeout("channel-open", timeout))
     } else {
         tokio::select! {
@@ -1304,7 +1323,14 @@ async fn execute_timed_command(
         }
     };
     // Only this command's channel is closed; other live channels keep working.
+    let close_started = Instant::now();
     let _ = channel.close().await;
+    if let Ok(output) = &mut result {
+        output.timings.queue = queue;
+        output.timings.open_gate = open_gate;
+        output.timings.channel_open = channel_open;
+        output.timings.close = close_started.elapsed();
+    }
     result
 }
 
@@ -1337,8 +1363,10 @@ async fn execute_channel(
     command: &str,
     input: Option<&[u8]>,
 ) -> Result<CommandOutput, TransportError> {
+    let exec_started = Instant::now();
     request_agent_forwarding(session, channel).await?;
     channel.exec(true, command).await?;
+    let exec_request = exec_started.elapsed();
     if let Some(input) = input {
         channel.data(input).await?;
         channel.eof().await?;
@@ -1348,9 +1376,14 @@ async fn execute_channel(
     let mut stdout_truncated = false;
     let mut stderr_truncated = false;
     let mut exit_status = None;
+    let read_started = Instant::now();
+    let mut first_stdout = None;
     while let Some(message) = channel.wait().await {
         match message {
             russh::ChannelMsg::Data { data } => {
+                if !data.is_empty() && first_stdout.is_none() {
+                    first_stdout = Some(read_started.elapsed());
+                }
                 stdout_truncated |= append_capped(&mut stdout, &data);
             }
             russh::ChannelMsg::ExtendedData { data, ext: 1 } => {
@@ -1390,6 +1423,12 @@ async fn execute_channel(
         stderr,
         exit_status,
         stdout_truncated,
+        timings: CommandTimings {
+            exec_request,
+            first_stdout,
+            read: read_started.elapsed(),
+            ..CommandTimings::default()
+        },
     })
 }
 

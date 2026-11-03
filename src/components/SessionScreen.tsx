@@ -1524,6 +1524,10 @@ export function SessionScreen({
   }, [activeTerminalSession, activeTarget, cancelChatOpen, hostSessionId, onTerminalChatSelect, savedChatOpen, updateChatRestoreIntent]);
 
   const openAgentChat = () => {
+    recordAgentChatDiagnostic('chat-open-pressed', {
+      terminalId: activeTerminalSession?.terminalId,
+      bindingToken: activeChatView?.binding.bindingToken,
+    });
     if (!client) return openSavedChat();
     if (activeChatView && chatPresentationRequested(activeChatView.presentation)) return;
     if (activeTarget && activeChatView) {

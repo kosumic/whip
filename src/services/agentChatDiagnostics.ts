@@ -14,7 +14,7 @@ export function recordAgentChatDiagnostic(
   details: AgentChatDiagnosticDetails = {},
 ): void {
   const populated = Object.fromEntries(
-    Object.entries(details).filter(([, value]) => value !== undefined),
+    Object.entries({ ...details, monotonicMs: performance.now() }).filter(([, value]) => value !== undefined),
   );
   const suffix = Object.keys(populated).length
     ? ` ${JSON.stringify(populated)}`
