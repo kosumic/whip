@@ -9,6 +9,8 @@ import { recordDiagnostic } from './diagnosticFormatting';
 import { voiceChatModelRoot } from './voiceChatModel';
 import { DEFAULT_VAD_SENSITIVITY } from '../lib/voiceVadSensitivity';
 
+export type VoiceChatTarget = Omit<ChatSpeechTarget, 'bindingToken'> & { bindingToken?: string };
+
 export interface VoiceConversationView {
   phase: VoiceChatView['phase'] | 'error' | 'starting';
   muted: boolean;
@@ -65,16 +67,22 @@ export class VoiceConversation {
   private watchdog?: ReturnType<typeof setTimeout>;
   private progressTimer?: ReturnType<typeof setInterval>;
   private preparing = false;
+  private transcriptBinding?: string;
+  private unsubscribeTranscript?: () => void;
+  private readonly startedWithoutTranscript: boolean;
   private view: VoiceConversationView = {
     phase: 'starting', muted: false, smartTurn: false, speaker: false, text: '', level: 0, progress: 0, error: null, transcript: null,
   };
 
   constructor(
-    private readonly target: ChatSpeechTarget,
+    private readonly target: VoiceChatTarget,
     private readonly send: (text: string) => boolean,
     private readonly changed: (view: VoiceConversationView) => void,
     private readonly load = loadCore,
-  ) {}
+  ) {
+    this.transcriptBinding = target.bindingToken;
+    this.startedWithoutTranscript = !target.bindingToken;
+  }
 
   async start(): Promise<void> {
     try {
@@ -111,23 +119,39 @@ export class VoiceConversation {
         this.changed(this.view);
       });
       this.cleanup.push(() => speech.remove(), () => started.remove(), () => level.remove(), () => call.remove(), composerSpeechInput.subscribe(() => this.recognitionChanged()));
-      const unsubscribe = agentTranscriptService.subscribe(this.target.bindingToken, (state, baseline) => {
-        if (this.closed) return;
-        try {
-          if (!state) throw new Error('The agent transcript is no longer available.');
-          this.view = { ...this.view, transcript: state };
-          this.core!.transcript(this.target.agent, state, Boolean(baseline));
-          this.apply();
-        } catch (error) { this.fail(error); }
-      });
-      if (this.closed) { unsubscribe(); return; }
-      this.cleanup.push(unsubscribe);
+      this.subscribeTranscript();
+      if (this.closed) return;
       this.callToken = this.session;
       await this.playback.startVoiceCall(this.session, this.target.label);
       if (this.closed) { await this.playback.endVoiceCall(this.session); return; }
       this.callActivated = true;
       await this.prepare();
     } catch (error) { this.fail(error); }
+  }
+
+  setTranscriptBinding(bindingToken?: string): void {
+    if (this.closed || this.transcriptBinding === bindingToken) return;
+    this.unsubscribeTranscript?.();
+    this.unsubscribeTranscript = undefined;
+    this.transcriptBinding = bindingToken;
+    if (this.core) this.subscribeTranscript();
+  }
+
+  private subscribeTranscript(): void {
+    if (!this.transcriptBinding) return;
+    const unsubscribe = agentTranscriptService.subscribe(this.transcriptBinding, (state, baseline) => {
+      if (this.closed) return;
+      try {
+        if (!state) throw new Error('The agent transcript is no longer available.');
+        this.view = { ...this.view, transcript: state };
+        // A new agent creates its transcript after our first prompt. Its first
+        // snapshot can already contain that reply, so it is not prior history.
+        this.core!.transcript(this.target.agent, state, Boolean(baseline) && !this.startedWithoutTranscript);
+        this.apply();
+      } catch (error) { this.fail(error); }
+    });
+    if (this.closed) unsubscribe();
+    else this.unsubscribeTranscript = unsubscribe;
   }
 
   setVadSensitivity(value: number): void {
@@ -412,6 +436,8 @@ export class VoiceConversation {
     clearTimeout(this.watchdog);
     clearInterval(this.progressTimer);
     for (const cleanup of this.cleanup.splice(0)) cleanup();
+    this.unsubscribeTranscript?.();
+    this.unsubscribeTranscript = undefined;
     this.cancelInput();
     const speech = this.speechToken;
     this.speechToken = undefined;

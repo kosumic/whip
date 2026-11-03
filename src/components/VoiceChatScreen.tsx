@@ -12,8 +12,7 @@ import Volume2 from 'lucide-react-native/icons/volume-2';
 import Plus from 'lucide-react-native/icons/plus';
 import AudioLines from 'lucide-react-native/icons/audio-lines';
 import Animated from 'react-native-reanimated';
-import type { ChatSpeechTarget } from '../services/chatSpeech';
-import { VoiceConversation, type VoiceConversationView } from '../services/voiceConversation';
+import { VoiceConversation, type VoiceChatTarget, type VoiceConversationView } from '../services/voiceConversation';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
 import { GlassPortal } from './GlassSurface';
@@ -33,7 +32,7 @@ const STATUS = {
 
 interface VoiceChatScreenProps {
   ref?: Ref<VoiceChatHandle>;
-  target: ChatSpeechTarget;
+  target: VoiceChatTarget;
   send: (text: string) => boolean;
   visible: boolean;
   expanded: boolean;
@@ -58,21 +57,24 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, floating
   const callbacks = useRef({ send, onClose, vadSensitivity });
   callbacks.current = { send, onClose, vadSensitivity };
   const { agent, bindingToken, hostId, label, paneId } = target;
+  const latestTarget = useRef(target);
+  latestTarget.current = target;
   useEffect(() => {
     let mounted = true;
-    const session = new VoiceConversation({ agent, bindingToken, hostId, label, paneId }, text => callbacks.current.send(text), next => { if (mounted) setView(next); });
+    const session = new VoiceConversation(latestTarget.current, text => callbacks.current.send(text), next => { if (mounted) setView(next); });
     conversation.current = session;
     session.setVadSensitivity(callbacks.current.vadSensitivity);
     void session.start();
     return () => { mounted = false; void session.close(); conversation.current = null; };
-  }, [agent, bindingToken, hostId, label, paneId]);
+  }, [agent, hostId, label, paneId]);
+  useEffect(() => { conversation.current?.setTranscriptBinding(bindingToken); }, [bindingToken]);
   useEffect(() => { conversation.current?.setVadSensitivity(vadSensitivity); }, [vadSensitivity]);
   useEffect(() => { if (view.phase === 'closed') callbacks.current.onClose(); }, [view.phase]);
   const close = () => { void conversation.current?.close(); callbacks.current.onClose(); };
   const interactive = ['listening', 'muted', 'waiting', 'speaking'].includes(view.phase);
   const compose = () => { onMinimize(); onCompose?.(); };
   return <>
-    {visible && !expanded && <GlassPortal name={`voice-chat-${bindingToken}`}>
+    {visible && !expanded && <GlassPortal name={`voice-chat-${hostId}-${paneId}`}>
       <Animated.View style={[styles.floating, floatingStyle]}>
         <Pressable accessibilityRole="button" accessibilityLabel={t('voiceChat.reopen')} accessibilityHint={t(STATUS[view.phase])} onPress={onExpand} style={styles.floatingTarget}>
           <VoiceOrb view={view} size={FLOATING_ORB_SIZE} />

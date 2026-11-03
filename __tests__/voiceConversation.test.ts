@@ -103,6 +103,26 @@ test('starts without downloading and uses the shared strictly local recognizer',
   expect(send).not.toHaveBeenCalled();
 });
 
+test('a new agent can receive its first spoken prompt before its transcript exists', async () => {
+  session = new VoiceConversation({ ...target, bindingToken: undefined }, send, changed, () => Promise.resolve(mockCore as unknown as NativeVoiceChat));
+  await session.start(); await flush();
+  expect(mockTranscriptListeners.size).toBe(0);
+  expect(mockInput.start).toHaveBeenCalled();
+  mockView.phase = 'waiting';
+  mockCore.takePrompt.mockReturnValueOnce('First spoken prompt');
+  mockRequest!.onAudio('AAAA');
+  expect(send).toHaveBeenCalledWith('First spoken prompt');
+
+  session.setTranscriptBinding('first-transcript');
+  for (const listener of mockTranscriptListeners) listener(state, true);
+  expect(mockCore.transcript).toHaveBeenLastCalledWith('codex', state, false);
+  expect(mockSpeech.startVoiceCall).toHaveBeenCalledTimes(1);
+  expect(mockSpeech.endVoiceCall).not.toHaveBeenCalled();
+  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'waiting', transcript: state, error: null }));
+  await session.close();
+  expect(mockTranscriptListeners.size).toBe(0);
+});
+
 test('applies the selected VAD sensitivity before capture and updates it during a call', async () => {
   session.setVadSensitivity(75);
   await session.start(); await flush();

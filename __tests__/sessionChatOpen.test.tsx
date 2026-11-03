@@ -1006,6 +1006,25 @@ function addCachePressure(host: ReturnType<typeof setup>) {
   ));
 }
 
+test.each(['claude', 'codex', 'opencode', 'pi'] as const)('a brand new %s agent offers voice chat before it has a session ID', async agent => {
+  const host = setup(agent);
+  host.pane.agent_session = undefined;
+  await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+  expect(ui('TerminalScreen').props.voiceChatTarget).toEqual({
+    agent, hostId: 'host-1', paneId: host.pane.pane_id,
+    label: expect.any(String), bindingToken: undefined,
+  });
+  expect(ui('TerminalScreen').props.chatViewEnabled).toBe(false);
+
+  const binding = bindChat(host, agent);
+  host.native.startAgentChat.mockImplementation(() => ({ type: 'started', state: binding.state }));
+  const pane = { ...host.pane, agent_session: { agent, source: `herdr:${agent}`, kind: 'id', value: binding.sessionId } };
+  const snapshot = { ...host.props.snapshot, panes: [pane] } as HerdrSnapshot;
+  host.setSnapshot(snapshot);
+  await act(async () => { renderer.update(<SessionScreen {...host.props} snapshot={snapshot} />); });
+  expect(ui('TerminalScreen').props.voiceChatTarget.bindingToken).toBe(binding.bindingToken);
+});
+
 describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent => {
   test.each([false, true])('restores Chat after remount (late storage=%s) and saves Terminal selection', async lateStorage => {
     const host = setup(agent);
@@ -1080,7 +1099,7 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     act(() => { control().onPress(); });
     expect(control().loading).toBe(true);
     expect(ui('TerminalScreen').props.renderViewportOverlay).toBeUndefined();
-    expect(ui('TerminalScreen').props.transcriptReady).toBe(false);
+    expect(ui('TerminalScreen').props.voiceChatTarget.bindingToken).toBe(binding.bindingToken);
     act(() => {
       binding.state = { ...binding.state, status: 'live', revision: 1 };
       host.handlers.get(binding.terminalId)?.({
@@ -1089,7 +1108,7 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
       });
     });
     expect(control().loading).toBe(true);
-    expect(ui('TerminalScreen').props.transcriptReady).toBe(true);
+    expect(ui('TerminalScreen').props.voiceChatTarget.bindingToken).toBe(binding.bindingToken);
     revealChat();
     expect(host.native.openAgentChat).toHaveBeenCalledTimes(1);
     expect(host.native.startAgentChat).toHaveBeenCalledTimes(1);
@@ -1250,7 +1269,7 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     act(() => { control().onPress(); });
     expect(ui('AgentChatView')).toBe(viewport);
     expect(ui('TerminalScreen').props.chatViewEnabled).toBe(false);
-    expect(ui('TerminalScreen').props.transcriptReady).toBe(true);
+    expect(ui('TerminalScreen').props.voiceChatTarget.bindingToken).toBe(binding.bindingToken);
     expect(control()).toMatchObject({ active: false, loading: false, disabled: false });
     expect(viewport.parent?.props).toMatchObject({
       collapsable: false,

@@ -146,7 +146,7 @@ import {
   type TerminalRendererHandle,
 } from './TerminalRendererHost';
 import { ComposerInput, ComposerVoiceButton, MessageComposer } from './MessageComposer';
-import type { ChatSpeechTarget } from '../services/chatSpeech';
+import type { VoiceChatTarget } from '../services/voiceConversation';
 import { GlassOverlayHost, GlassPortal, GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import {
   OverlayScrollbar,
@@ -211,8 +211,7 @@ interface Props {
     onPress: () => void;
   };
   chatViewEnabled: boolean;
-  transcriptReady?: boolean;
-  voiceChatTarget?: ChatSpeechTarget;
+  voiceChatTarget?: VoiceChatTarget;
   voiceContext?: { key: string; messages: readonly TranscriptMessage[] };
   renderViewportOverlay?: (
     insets: VisualContentInsets,
@@ -430,7 +429,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       onRequestLinks,
       chatControl,
       chatViewEnabled,
-      transcriptReady = false,
       voiceChatTarget,
       voiceContext,
       renderViewportOverlay,
@@ -448,7 +446,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const [voiceChatOpen, setVoiceChatOpen] = useState<string | null>(null);
     const [voiceChatExpanded, setVoiceChatExpanded] = useState(true);
     const voiceChatRef = useRef<VoiceChatHandle>(null);
-    const voiceChatIdentity = voiceChatTarget ? JSON.stringify([activeTarget?.key, voiceChatTarget.bindingToken]) : null;
+    const voiceChatIdentity = voiceChatTarget ? JSON.stringify([activeTarget?.key, voiceChatTarget.agent]) : null;
     useEffect(() => { setVoiceChatOpen(null); }, [voiceChatIdentity]);
     const openVoiceChat = () => { Keyboard.dismiss(); setVoiceChatExpanded(true); setVoiceChatOpen(voiceChatIdentity); };
     const appGlassEnabled = useAppGlassEnabled();
@@ -2206,7 +2204,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                   {...composerInputProps}
                   glass={appGlassEnabled}
                   inputRef={composeInputRef}
-                  voiceChatLabel={voiceChatTarget && transcriptReady && !composer.attachments.length ? t('terminal.voice.chat') : undefined}
+                  voiceChatLabel={voiceChatTarget && !composer.attachments.length ? t('terminal.voice.chat') : undefined}
                   onVoiceChat={openVoiceChat}
                   inputClassName={appGlassEnabled ? 'text-foreground' : 'text-terminal-text'}
                   surfaceClassName={appGlassEnabled ? undefined : 'border-terminal-divider bg-terminal-surface'}

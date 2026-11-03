@@ -317,12 +317,15 @@ test('chat speech controls are absent from the terminal control bar', () => {
   }
 });
 
-test.each([false, true])('voice chat is available when the transcript is ready in either view (chat=%s)', async chatViewEnabled => {
+test.each([false, true])('voice chat is available before the first transcript in either view (chat=%s)', async chatViewEnabled => {
   mount({ chatViewEnabled });
   await press('compose');
   expect(ui('MessageComposer').props.voiceChatLabel).toBeUndefined();
-  act(() => renderer.update(<TerminalScreen {...props} chatViewEnabled={chatViewEnabled} transcriptReady
-    voiceChatTarget={{ agent: 'codex', bindingToken: 'live-chat', hostId: 'host', paneId: 'pane', label: 'Codex' }} />));
+  const voiceChatTarget = { agent: 'codex' as const, hostId: 'host', paneId: 'pane', label: 'Codex' };
+  act(() => renderer.update(<TerminalScreen {...props} chatViewEnabled={chatViewEnabled} voiceChatTarget={voiceChatTarget} />));
+  expect(ui('MessageComposer').props.voiceChatLabel).toBe('terminal.voice.chat');
+  act(() => renderer.update(<TerminalScreen {...props} chatViewEnabled={chatViewEnabled}
+    voiceChatTarget={{ ...voiceChatTarget, bindingToken: 'live-chat' }} />));
   expect(ui('MessageComposer').props.voiceChatLabel).toBe('terminal.voice.chat');
 
   act(() => props.composerStore.addAttachment(target.key, {

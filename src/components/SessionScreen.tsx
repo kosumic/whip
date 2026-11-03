@@ -623,6 +623,7 @@ export function SessionScreen({
   const voiceChatState = savedChatOpen ? activeSavedChat?.state : activeChatView?.state;
   const voiceChatKey = savedChatOpen ? activeSavedChat?.state.sessionId : activeChatView?.binding.bindingToken;
   const voiceChatAgent = savedChatOpen ? activeSavedChat?.agent : activeChatView?.binding.agent;
+  const liveVoiceChatAgent = chatAgentForPane(activePane);
   const onChatSpeechError = useCallback((error: unknown) => {
     setAppAlert({ title: 'Could not read chat aloud', message: String(error) });
   }, []);
@@ -1784,14 +1785,14 @@ export function SessionScreen({
                 : undefined
             }
             chatViewEnabled={chatVisible}
-            transcriptReady={Boolean(voiceChatState && voiceChatKey && agentTranscriptReadiness(voiceChatState) === 'usable')}
-            voiceChatTarget={!savedChatOpen && activeChatView && activePane
+            voiceChatTarget={!savedChatOpen && liveVoiceChatAgent && activePane && activeTarget && activeTarget.session.kind !== 'ssh' &&
+              (!activeChatView || agentTranscriptReadiness(activeChatView.state) !== 'failed')
               ? {
-                  agent: activeChatView.binding.agent,
-                  bindingToken: activeChatView.binding.bindingToken,
+                  agent: liveVoiceChatAgent,
+                  bindingToken: activeChatView?.binding.bindingToken,
                   hostId: hostSessionId,
                   paneId: activePane.pane_id,
-                  label: chatAgentDisplayName(activeChatView.binding.agent),
+                  label: chatAgentDisplayName(liveVoiceChatAgent),
                 }
               : undefined}
             voiceContext={chatVisible && voiceChatState && voiceChatKey

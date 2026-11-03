@@ -27,6 +27,12 @@ test('agent activity refreshes and repeated snapshots keep the same conversation
   }
 });
 
+test('the first transcript can arrive after submitting a new agent’s first prompt', () => {
+  const call = new NativeVoiceChat('/model-cache');
+  mockWaiting = true;
+  expect(() => call.transcript('codex', state, false)).not.toThrow();
+});
+
 test('an actual conversation replacement still prevents speaking another conversation’s reply', () => {
   const call = new NativeVoiceChat('/model-cache');
   call.transcript('codex', state, true);
