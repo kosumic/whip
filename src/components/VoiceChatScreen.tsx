@@ -155,12 +155,17 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
         </View>
       </Animated.View>
       <View style={styles.orbSpace}>
-        <Pressable ref={fullOrb} onLayout={measureOrbs} accessibilityRole="button" accessibilityLabel={view.phase === 'speaking' ? t('voiceChat.skip') : t('voiceChat.finish')} disabled={view.phase !== 'listening' && view.phase !== 'speaking'} onPress={() => { if (view.phase === 'speaking') void conversation.current?.skip(); else conversation.current?.finish(); }} style={styles.orbTarget}>
+        <Pressable ref={fullOrb} onLayout={measureOrbs} accessibilityRole="button" accessibilityLabel={view.phase === 'speaking' ? t('voiceChat.skip') : t('voiceChat.finish')} disabled={view.phase !== 'speaking' && (view.phase !== 'listening' || view.provider === 'openai')} onPress={() => { if (view.phase === 'speaking') void conversation.current?.skip(); else conversation.current?.finish(); }} style={styles.orbTarget}>
           <Animated.View style={orbMotion}>{expanded && <VoiceOrb view={view} size={ORB_SIZE} startedAt={startedAt} />}</Animated.View>
         </Pressable>
       </View>
       <Animated.View className="items-center gap-3 px-8 pb-5" style={[styles.status, chromeMotion]}>
         <Text accessibilityLiveRegion="polite" className="text-center text-xs" style={styles.statusText}>{t(STATUS[view.phase])}</Text>
+        {view.provider === 'openai' && <>
+          <Text className="text-center text-xs" style={styles.statusText}>{t('voiceProvider.usage', { input: view.inputTokens ?? 0, output: view.outputTokens ?? 0 })}</Text>
+          {!!view.userText && <Text numberOfLines={2} className="text-center text-xs" style={styles.statusText}>{view.userText}</Text>}
+          {!!view.text && <Text numberOfLines={4} className="text-center text-sm" style={styles.statusText}>{view.text}</Text>}
+        </>}
         {(view.phase === 'starting' || view.phase === 'preparing') && <ActivityIndicator color={VOICE_COLORS.accent} />}
         {view.error && <Text accessibilityRole="alert" className="text-center text-sm leading-5" style={styles.statusText}>{view.error}</Text>}
       </Animated.View>

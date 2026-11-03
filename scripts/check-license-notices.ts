@@ -17,13 +17,33 @@ interface DependencyPackage {
   homepage?: string;
 }
 
+interface BundledNoticeSource {
+  id: string;
+  asset: string;
+  source?: string;
+  sha256?: string;
+  dependency?: string;
+}
+
 const execFileAsync = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const reportPath = resolve(root, 'build/npm-direct-licenses.json');
 const noticesPath = resolve(root, 'build/npm-direct-license-notices.json');
 const unknownLicenseValues = new Set(['', 'n/a', 'none', 'unknown', 'unlicensed']);
+const audioApacheLicense = {
+  asset: 'assets/licenses/phonon-Apache-2.0.txt',
+  sha256: 'cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30',
+};
 
-const noticeSources = [
+const noticeSources: BundledNoticeSource[] = [
+  { id: 'androidx-core-telecom', ...audioApacheLicense },
+  { id: 'phonon-31m-en', ...audioApacheLicense },
+  { id: 'phonon-voices', ...audioApacheLicense },
+  {
+    id: 'smart-turn-v3',
+    asset: 'assets/licenses/smart-turn-BSD-2-Clause.txt',
+    sha256: '5bcfb946e519e8e56ea2c34d2769c8a032a48a0b011b7f1b9864e0971f1d976d',
+  },
   {
     id: 'tailcat',
     asset: 'assets/licenses/tailcat-dependencies.txt',

@@ -1,6 +1,7 @@
 #import <React/RCTEventEmitter.h>
 #import "WhipSpeechPlayback.h"
 #import "../../packages/react-native-whip-ssh/ios/WhipVoiceCall.h"
+#import "../../packages/react-native-whip-ssh/ios/WhipRealtimeVoice.h"
 
 /** React bridge only; all speech paths share WhipSpeechPlayback. */
 @interface HerdrBackground : RCTEventEmitter
@@ -27,6 +28,14 @@ RCT_EXPORT_MODULE(HerdrBackground)
 - (void)callChanged:(NSNotification *)notification { [self sendEventWithName:WhipVoiceCallEvent body:notification.userInfo]; }
 RCT_EXPORT_METHOD(startVoiceCall:(NSString *)token label:(NSString *)label resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 { [WhipVoiceCall.shared start:token label:label resolve:resolve reject:reject]; }
+RCT_EXPORT_METHOD(startRealtimeVoice:(NSString *)token config:(NSString *)config key:(NSString *)key resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{ [WhipRealtimeVoice.shared start:token config:config key:key resolve:resolve reject:reject]; }
+RCT_EXPORT_METHOD(stopRealtimeVoice:(NSString *)token resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{ [WhipRealtimeVoice.shared stop:token resolve:resolve]; }
+RCT_EXPORT_METHOD(realtimeVoiceControl:(NSString *)token action:(NSInteger)action resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{ [WhipRealtimeVoice.shared control:token action:(uint8_t)action]; resolve(nil); }
+RCT_EXPORT_METHOD(realtimeVoiceView:(NSString *)token resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{ resolve([WhipRealtimeVoice.shared view:token]); }
 RCT_EXPORT_METHOD(endVoiceCall:(NSString *)token resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 { [WhipVoiceCall.shared end:token resolve:resolve reject:reject]; }
 RCT_EXPORT_METHOD(playVoiceCallSound:(NSString *)uri inCall:(BOOL)inCall resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)

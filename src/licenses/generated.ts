@@ -811,6 +811,24 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/d00aa65d7a05d267.txt"),
   },
   {
+    id: "cargo-log-0-4-33",
+    category: "cargo",
+    projectName: "log",
+    sourceUrl: "https://github.com/rust-lang/log",
+    attribution: "Direct Rust dependency · version 0.4.33 · used by whip-ssh",
+    licenseName: "Apache-2.0",
+    licenseAsset: require("../../assets/licenses/generated/d00aa65d7a05d267.txt"),
+  },
+  {
+    id: "cargo-oai-rt-rs-0-5-1",
+    category: "cargo",
+    projectName: "oai-rt-rs",
+    sourceUrl: "https://github.com/lukacf/oai-rt-rs",
+    attribution: "Direct Rust dependency · version 0.5.1 · used by whip-ssh",
+    licenseName: "MIT",
+    licenseAsset: require("../../assets/licenses/generated/267c69176591f372.txt"),
+  },
+  {
     id: "cargo-parking-lot-0-12-5",
     category: "cargo",
     projectName: "parking_lot",
@@ -853,7 +871,7 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     sourceUrl: "https://github.com/seanmonstar/reqwest",
     attribution: "Direct Rust dependency · version 0.12.28 · used by whip-ssh",
     licenseName: "Apache-2.0",
-    licenseAsset: require("../../assets/licenses/generated/b04820f24198a343.txt"),
+    licenseAsset: require("../../assets/licenses/generated/5e240308b40c74b3.txt"),
   },
   {
     id: "cargo-resvg-0-48-1",
@@ -979,7 +997,7 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     sourceUrl: "https://github.com/kosumic/whip",
     attribution: "Direct Rust dependency · version 0.1.1 · used by whip-ssh",
     licenseName: "MIT",
-    licenseAsset: require("../../assets/licenses/generated/e99569d30a0804d3.txt"),
+    licenseAsset: require("../../assets/licenses/generated/93fd69409722a443.txt"),
   },
   {
     id: "cargo-thiserror-2-0-21",
@@ -998,6 +1016,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     attribution: "Direct Rust dependency · version 1.53.1 · used by whip-ssh",
     licenseName: "MIT",
     licenseAsset: require("../../assets/licenses/generated/655fd7cc394526b5.txt"),
+  },
+  {
+    id: "cargo-tokio-tungstenite-0-26-2",
+    category: "cargo",
+    projectName: "tokio-tungstenite",
+    sourceUrl: "https://github.com/snapview/tokio-tungstenite",
+    attribution: "Direct Rust dependency · version 0.26.2 · used by whip-ssh",
+    licenseName: "MIT",
+    licenseAsset: require("../../assets/licenses/generated/28f212abb8a92db3.txt"),
   },
   {
     id: "cargo-tract-onnx-0-23-9",
@@ -1069,7 +1096,7 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     sourceUrl: "https://github.com/kosumic/whip",
     attribution: "Direct Rust dependency · version 0.1.0 · used by whip-ssh",
     licenseName: "MIT",
-    licenseAsset: require("../../assets/licenses/generated/076dfa03937d5a4e.txt"),
+    licenseAsset: require("../../assets/licenses/generated/ba6ae9a98449bb66.txt"),
   },
   {
     id: "cargo-zip-9-0-5",

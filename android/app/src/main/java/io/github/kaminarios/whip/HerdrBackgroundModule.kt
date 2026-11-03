@@ -91,6 +91,17 @@ class HerdrBackgroundModule(
   }
 
   @ReactMethod
+  fun startRealtimeVoice(token: String, config: String, key: String, promise: Promise) {
+    mainHandler.post { RealtimeVoice.start(token, config, key, promise) }
+  }
+  @ReactMethod
+  fun stopRealtimeVoice(token: String, promise: Promise) { mainHandler.post { RealtimeVoice.stop(token, promise) } }
+  @ReactMethod
+  fun realtimeVoiceControl(token: String, action: Int, promise: Promise) { mainHandler.post { RealtimeVoice.control(token, action); promise.resolve(null) } }
+  @ReactMethod
+  fun realtimeVoiceView(token: String, promise: Promise) { mainHandler.post { promise.resolve(RealtimeVoice.view(token)) } }
+
+  @ReactMethod
   fun endVoiceCall(token: String, promise: Promise) {
     mainHandler.post { VoiceCallService.end(token, promise) }
   }

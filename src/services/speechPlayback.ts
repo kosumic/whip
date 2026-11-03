@@ -8,6 +8,10 @@ export interface NativeSpeechPlayback {
   startLocalChatSpeech(token: string, label: string): Promise<void>;
   startVoiceCall(token: string, label: string): Promise<void>;
   endVoiceCall(token: string): Promise<void>;
+  startRealtimeVoice?(token: string, config: string, key: string): Promise<void>;
+  stopRealtimeVoice?(token: string): Promise<void>;
+  realtimeVoiceControl?(token: string, action: number): Promise<void>;
+  realtimeVoiceView?(token: string): Promise<string>;
   /** Plays bundled cues without taking audio focus from an active call. */
   playVoiceCallSound(uri: string, inCall: boolean): Promise<void>;
   stopVoiceCallSound(): Promise<void>;

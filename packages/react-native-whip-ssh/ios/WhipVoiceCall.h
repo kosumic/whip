@@ -6,6 +6,8 @@ FOUNDATION_EXPORT NSString *const WhipVoiceCallEvent;
 @interface WhipVoiceCall : NSObject
 + (instancetype)shared;
 @property(nonatomic, readonly) BOOL active;
+@property(nonatomic, readonly) BOOL muted;
+- (BOOL)owns:(NSString *)token;
 - (void)start:(NSString *)token label:(NSString *)label resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
 - (void)end:(NSString *)token resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
 - (void)mute:(NSString *)token muted:(BOOL)muted resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;

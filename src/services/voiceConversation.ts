@@ -25,6 +25,10 @@ export interface VoiceConversationView {
   progress: number;
   error: string | null;
   transcript: AgentChatState | null;
+  provider?: 'openai';
+  userText?: string;
+  inputTokens?: number;
+  outputTokens?: number;
 }
 const STOPPED = 'WhipChatSpeechStopped';
 const STARTED = 'WhipChatSpeechStarted';

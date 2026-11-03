@@ -1,11 +1,19 @@
 import * as Keychain from 'react-native-keychain';
-import { hasOpenAiVoiceKey, saveOpenAiVoiceKey, removeOpenAiVoiceKey } from '../src/services/openAiVoiceCredentials';
+import { hasOpenAiVoiceKey, saveOpenAiVoiceKey, removeOpenAiVoiceKey, readOpenAiVoiceKey } from '../src/services/openAiVoiceCredentials';
 jest.mock('react-native-keychain', () => ({
-  hasGenericPassword: jest.fn(), setGenericPassword: jest.fn(), resetGenericPassword: jest.fn(),
+  hasGenericPassword: jest.fn(), getGenericPassword: jest.fn(), setGenericPassword: jest.fn(), resetGenericPassword: jest.fn(),
   ACCESSIBLE: { WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'device-only-unlocked' },
   STORAGE_TYPE: { AES_GCM: 'KeystoreAESGCM' },
 }));
 beforeEach(() => jest.resetAllMocks());
+
+test('retrieves credentials only from the dedicated API slot and redacts native read failures', async () => {
+  jest.mocked(Keychain.getGenericPassword).mockResolvedValue({ username: 'openai-api', password: 'sk-private', service: 'voice', storage: Keychain.STORAGE_TYPE.AES_GCM });
+  expect(await readOpenAiVoiceKey()).toBe('sk-private');
+  expect(Keychain.getGenericPassword).toHaveBeenCalledWith({ service: 'io.github.kaminarios.whip.openai.voice' });
+  jest.mocked(Keychain.getGenericPassword).mockRejectedValue(new Error('native sk-private'));
+  await expect(readOpenAiVoiceKey()).rejects.not.toThrow('sk-private');
+});
 
 test('saves only in a dedicated native protected credential slot', async () => {
   jest.mocked(Keychain.setGenericPassword).mockResolvedValue({ service: 'voice', storage: Keychain.STORAGE_TYPE.AES_GCM });

@@ -9,6 +9,26 @@ jest.mock('../src/lib/secureId', () => ({ createSecureId: () => 'voice-stable-ra
 const target: VoiceChatTarget = { agent: 'codex', hostId: 'host', tabId: 'tab', paneId: 'pane', label: 'Codex' };
 const view: VoiceConversationView = { phase: 'listening', muted: false, smartTurn: false, speaker: false, text: '', level: 0, progress: 0, error: null, transcript: null };
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+
+test('Realtime selects its own adapter and keeps its initial voice and server VAD snapshot', async () => {
+  const local = jest.fn();
+  const cloud = { start: jest.fn(() => Promise.resolve()), close: jest.fn(() => Promise.resolve()), setTranscriptBinding: jest.fn(), setVadSensitivity: jest.fn(), submitted: jest.fn(), toggleMuted: jest.fn(), toggleSpeaker: jest.fn(), finish: jest.fn(), skip: jest.fn(() => Promise.resolve()) };
+  const realtime = jest.fn(() => Promise.resolve(cloud));
+  jest.mocked(voiceUsageLedger.record).mockClear();
+  const manager = new VoiceSessionManager(local, localVoiceUsageObserver, realtime);
+  const settings = { ...defaults, provider: 'openai' as const, realtimeVoice: 'cedar', realtimeVad: { type: 'semantic_vad' as const, eagerness: 'low' as const } };
+  const session = manager.start({ kind: 'Agent', target }, () => true, settings);
+  await flush();
+  expect(local).not.toHaveBeenCalled();
+  expect(realtime).toHaveBeenCalledWith(target, session.settings, expect.any(Function));
+  expect(cloud.start).toHaveBeenCalledTimes(1);
+  expect(manager.start({ kind: 'Agent', target }, () => true, { ...defaults, realtimeVoice: 'marin' })).toBe(session);
+  expect(session.settings.realtimeVoice).toBe('cedar');
+  expect(session.settings.realtimeVad).toEqual({ type: 'semantic_vad', eagerness: 'low' });
+  await manager.setLocked(true);
+  expect(cloud.close).toHaveBeenCalledTimes(1);
+  expect(voiceUsageLedger.record).not.toHaveBeenCalled();
+});
 function setup() {
   const adapters: (VoiceSessionAdapter & { publish: (view: VoiceConversationView) => void; send: (text: string) => boolean })[] = [];
   const create = jest.fn(async (_target: VoiceChatTarget, send: (text: string) => boolean, publish: (view: VoiceConversationView) => void) => {

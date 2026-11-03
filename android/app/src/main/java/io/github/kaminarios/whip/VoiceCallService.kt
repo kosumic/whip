@@ -197,6 +197,7 @@ class VoiceCallService : Service() {
   private fun finish(session: Session, error: String?) {
     if (current !== session || session.ending) return
     session.ending = true
+    RealtimeVoice.stop(session.token)
     session.ready = false
     main.removeCallbacks(session.timeout)
     session.start?.reject("E_VOICE_CALL", error ?: "Voice call ended before activation.")
@@ -217,6 +218,7 @@ class VoiceCallService : Service() {
   }
 
   override fun onDestroy() {
+    current?.let { RealtimeVoice.stop(it.token) }
     SpeechPlayback.shutdown()
     current?.let { session ->
       session.finishBackgroundTask()
@@ -278,6 +280,8 @@ class VoiceCallService : Service() {
     private val current: Session? get() = calls.active
     var onEvent: ((String, String, Boolean?, Boolean?, String?) -> Unit)? = null
     val active: Boolean get() = current?.let { it.ready && !it.ending } == true
+    internal fun owns(token: String): Boolean = current?.let { it.token == token && it.ready && !it.ending } == true
+    internal fun muted(token: String): Boolean = current?.takeIf { it.token == token }?.let { it.localMuted || it.systemMuted } == true
     val audioAttributes: AudioAttributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
       .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
 
@@ -325,6 +329,7 @@ class VoiceCallService : Service() {
     private fun publishMute(session: Session) {
       if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
       if (current !== session || session.ending) return
+      RealtimeVoice.muted(session.token, session.localMuted || session.systemMuted)
       emit(session, "muted", muted = session.localMuted || session.systemMuted)
       instance?.promote(session)
     }

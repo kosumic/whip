@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { VoiceConversationSetting } from '../src/components/VoiceConversationSetting';
+jest.mock('@react-native-community/slider', () => 'Slider');
 import { SpeechVoicePicker } from '../src/components/SpeechVoicePicker';
 import { Text } from '../src/components/ui/text';
 import { VoiceConversationSettingsContext } from '../src/lib/voiceConversationSettingsContext';
@@ -41,7 +42,7 @@ test('Local settings do not access cloud credentials or show a cloud voice picke
 
 test('switching cloud modes keeps separate saved voices and exposes an unavailable preview', async () => {
   await act(async () => pressText('voiceProvider.openai'));
-  expect(renderer.root.findAll(node => node.props.children === 'voiceProvider.unavailable').length).toBeGreaterThan(0);
+  expect(renderer.root.findAll(node => node.props.children === 'voiceProvider.realtimeNotice').length).toBeGreaterThan(0);
   await act(async () => renderer.root.findByType(SpeechVoicePicker).props.onSelect('cedar'));
   await act(async () => pressText('voiceProvider.Live'));
   expect(renderer.root.findByType(SpeechVoicePicker).props.selected).toBe('marin');

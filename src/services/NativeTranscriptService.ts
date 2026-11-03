@@ -595,6 +595,14 @@ export class NativeTranscriptService {
     return this.entryForBinding(bindingToken)?.state ?? null;
   }
 
+  /** A snapshot for native call pinning; cloud tools cannot resolve foreground focus. */
+  realtimeTarget(bindingToken: string) {
+    const entry = this.entryForBinding(bindingToken);
+    const binding = entry?.bindings.get(bindingToken);
+    if (!entry || !binding) return undefined;
+    return { runtimeId: entry.hostSessionId, terminalId: binding.terminalId, paneId: binding.paneId, bindingToken };
+  }
+
   closeTerminal(
     hostSessionId: string,
     terminalId: string,

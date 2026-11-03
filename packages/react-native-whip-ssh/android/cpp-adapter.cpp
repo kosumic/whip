@@ -4,6 +4,8 @@
 #include <ReactCommon/CallInvokerHolder.h>
 #include "react-native-whip-ssh.h"
 #include "WhipSpeechPolicy.h"
+#include "WhipRealtimeVoice.h"
+#include <array>
 #include <string>
 
 // JNI's modified UTF-8 differs from UTF-8 for NUL and non-BMP characters.
@@ -36,6 +38,50 @@ static jstring speechString(JNIEnv *env, const std::string &json) {
     env->DeleteLocalRef(charset);
     env->DeleteLocalRef(stringClass);
     return result;
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_whipssh_RealtimeVoiceNative_start(JNIEnv *env, jclass, jstring config, jstring key) {
+    const auto configValue = speechUtf8(env, config);
+    const auto keyValue = speechUtf8(env, key);
+    if (env->ExceptionCheck()) return 0;
+    return static_cast<jlong>(whip_realtime_start(configValue.c_str(), keyValue.c_str()));
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_whipssh_RealtimeVoiceNative_stop(JNIEnv *, jclass, jlong call) { whip_realtime_stop(call); }
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_whipssh_RealtimeVoiceNative_stopped(JNIEnv *, jclass, jlong call) { return whip_realtime_stopped(call); }
+extern "C" JNIEXPORT void JNICALL
+Java_com_whipssh_RealtimeVoiceNative_control(JNIEnv *, jclass, jlong call, jint action) { whip_realtime_control(call, static_cast<uint8_t>(action)); }
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_whipssh_RealtimeVoiceNative_capture(JNIEnv *env, jclass, jlong call, jshortArray samples, jint count) {
+    std::array<int16_t, WhipRealtimeMaxFrame> pcm;
+    if (count < 0 || count > static_cast<jint>(pcm.size()) || count > env->GetArrayLength(samples)) return false;
+    env->GetShortArrayRegion(samples, 0, count, pcm.data());
+    return !env->ExceptionCheck() && whip_realtime_capture(call, pcm.data(), count);
+}
+extern "C" JNIEXPORT jint JNICALL
+Java_com_whipssh_RealtimeVoiceNative_read(JNIEnv *env, jclass, jlong call, jshortArray samples, jlongArray epoch) {
+    std::array<int16_t, WhipRealtimeMaxFrame> pcm;
+    const auto capacity = env->GetArrayLength(samples);
+    if (capacity > static_cast<jsize>(pcm.size()) || env->GetArrayLength(epoch) < 1) return 0;
+    uint64_t generation = 0;
+    const auto count = whip_realtime_read(call, pcm.data(), capacity, &generation);
+    const auto value = static_cast<jlong>(generation);
+    env->SetLongArrayRegion(epoch, 0, 1, &value);
+    env->SetShortArrayRegion(samples, 0, count, pcm.data());
+    return static_cast<jint>(count);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_whipssh_RealtimeVoiceNative_played(JNIEnv *, jclass, jlong call, jlong epoch, jlong samples) { whip_realtime_played(call, epoch, samples); }
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_whipssh_RealtimeVoiceNative_epoch(JNIEnv *, jclass, jlong call) { return static_cast<jlong>(whip_realtime_epoch(call)); }
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_whipssh_RealtimeVoiceNative_view(JNIEnv *env, jclass, jlong call) {
+    auto *value = whip_realtime_view(call);
+    const std::string json(value ? value : "{\"phase\":\"closed\"}");
+    whip_realtime_free(value);
+    return speechString(env, json);
 }
 
 extern "C" JNIEXPORT jstring JNICALL

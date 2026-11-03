@@ -2,6 +2,15 @@ import * as Keychain from 'react-native-keychain';
 
 const SERVICE = 'io.github.kaminarios.whip.openai.voice';
 
+/** Read only when opening an OpenAI API session; never persist in app state. */
+export async function readOpenAiVoiceKey(): Promise<string> {
+  try {
+    const credential = await Keychain.getGenericPassword({ service: SERVICE });
+    if (credential && credential.password) return credential.password;
+  } catch { throw new Error('Could not access the OpenAI API credential.'); }
+  throw new Error('Save an OpenAI API key in voice conversation settings.');
+}
+
 /** Kept out of preferences, SSH profiles, diagnostics, and rendered input values. */
 export async function hasOpenAiVoiceKey(): Promise<boolean> {
   try { return await Keychain.hasGenericPassword({ service: SERVICE }); }

@@ -31,6 +31,7 @@ mod notification_crypto;
 mod pairing;
 mod phonon;
 mod public_keys;
+mod realtime_voice;
 mod remote_ops;
 mod remote_preview;
 mod reverse_control;
