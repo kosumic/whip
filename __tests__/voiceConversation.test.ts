@@ -2,6 +2,12 @@ import { VoiceConversation, type VoiceConversationView } from '../src/services/v
 import { recordDiagnostic } from '../src/services/diagnosticFormatting';
 import type { AgentChatState } from '../src/agentChat';
 import type { NativeVoiceChat } from 'react-native-whip-ssh/src/voiceChat';
+import { suppressAgentAlertsForTab } from '../src/services/alerts';
+
+const mockReleaseAlerts = jest.fn();
+jest.mock('../src/services/alerts', () => ({
+  suppressAgentAlertsForTab: jest.fn(() => mockReleaseAlerts),
+}));
 
 const mockInputListeners = new Set<() => void>();
 const mockAppListeners = new Set<(state: string) => void>();
@@ -71,7 +77,7 @@ jest.mock('../src/services/NativeTranscriptService', () => ({ agentTranscriptSer
     mockTranscriptListeners.add(listener); return () => mockTranscriptListeners.delete(listener);
   },
 } }));
-const target = { agent: 'codex' as const, bindingToken: 'chat', hostId: 'host', paneId: 'pane', label: 'Codex' };
+const target = { agent: 'codex' as const, bindingToken: 'chat', hostId: 'host', paneId: 'pane', tabId: 'tab', label: 'Codex' };
 const state: AgentChatState = { sessionId: 'session', status: 'live', transcript: { sessionId: 'session', turns: [], messages: [] } };
 const flush = async () => { for (let i = 0; i < 16; i++) await Promise.resolve(); };
 let session: VoiceConversation;
@@ -101,6 +107,23 @@ test('starts without downloading and uses the shared strictly local recognizer',
   mockRequest!.append('Recognized words');
   expect(mockCore.recognition).toHaveBeenCalledWith(1n, 'Recognized words');
   expect(send).not.toHaveBeenCalled();
+});
+
+test('suppresses status alerts for the call tab until hangup', async () => {
+  await session.start(); await flush();
+  expect(suppressAgentAlertsForTab).toHaveBeenCalledWith(expect.any(String), target.hostId, target.tabId);
+  session.toggleMuted();
+  await flush();
+  expect(mockReleaseAlerts).not.toHaveBeenCalled();
+  await session.close();
+  expect(mockReleaseAlerts).toHaveBeenCalledTimes(1);
+});
+
+test('releases status alerts when starting the call fails', async () => {
+  mockSpeech.startVoiceCall.mockRejectedValueOnce(new Error('Call unavailable'));
+  await session.start(); await flush();
+  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'error' }));
+  expect(mockReleaseAlerts).toHaveBeenCalledTimes(1);
 });
 
 test('a new agent can receive its first spoken prompt before its transcript exists', async () => {

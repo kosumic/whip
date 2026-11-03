@@ -55515,6 +55515,14 @@ export interface LocalAlertCoordinatorLike {
     hostId: string,
     runtime: LocalAlertRuntime | undefined,
   ): Array<LocalAlertEffect>;
+  /**
+   * A call owns its suppression token until hangup, independent of UI focus.
+   * Dismiss first so pending platform completions cannot revive old alerts.
+   */
+  setSuppression(
+    token: string,
+    scope: LocalAlertScope | undefined,
+  ): Array<LocalAlertEffect>;
   transition(transition: LocalAlertTransition): Array<LocalAlertEffect>;
 }
 /**
@@ -55666,6 +55674,38 @@ export class LocalAlertCoordinator
             FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
             FfiConverterOptionalTypeLocalAlertRuntime.lower(
               runtime,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  /**
+   * A call owns its suppression token until hangup, independent of UI focus.
+   * Dismiss first so pending platform completions cannot revive old alerts.
+   */
+  setSuppression(
+    token: string,
+    scope: LocalAlertScope | undefined,
+  ): Array<LocalAlertEffect> {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterSequenceTypeLocalAlertEffect.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_localalertcoordinator_set_suppression(
+            uniffiTypeLocalAlertCoordinatorObjectFactory.clonePointer(this),
+            FfiConverterString.lower(token, nativeModule().rustbuffer_alloc),
+            FfiConverterOptionalTypeLocalAlertScope.lower(
+              scope,
               nativeModule().rustbuffer_alloc,
             ),
             callStatus,
@@ -61290,6 +61330,11 @@ const FfiConverterSequenceTypeLocalAlertEffect = new FfiConverterArray(
   FfiConverterTypeLocalAlertEffect,
 );
 
+// FfiConverter for LocalAlertScope | undefined
+const FfiConverterOptionalTypeLocalAlertScope = new FfiConverterOptional(
+  FfiConverterTypeLocalAlertScope,
+);
+
 // FfiConverter for RemoteNotificationTarget | undefined
 const FfiConverterOptionalTypeRemoteNotificationTarget =
   new FfiConverterOptional(FfiConverterTypeRemoteNotificationTarget);
@@ -64364,6 +64409,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_localalertcoordinator_set_runtime',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_set_suppression() !==
+    24273
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_localalertcoordinator_set_suppression',
     );
   }
   if (

@@ -2463,6 +2463,12 @@ interface NativeModuleInterface {
     runtime: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_localalertcoordinator_set_suppression(
+    uniffiSelf: bigint,
+    token: Uint8Array,
+    scope: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_localalertcoordinator_transition(
     uniffiSelf: bigint,
     transition: Uint8Array,
@@ -3391,6 +3397,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_complete_effect(): number;
   ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_dismiss(): number;
   ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_set_runtime(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_set_suppression(): number;
   ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_transition(): number;
   ubrn_uniffi_whip_ssh_checksum_constructor_notificationmanager_new(): number;
   ubrn_uniffi_whip_ssh_checksum_method_notificationmanager_attach_runtime(): number;
