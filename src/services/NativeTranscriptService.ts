@@ -108,6 +108,7 @@ export class NativeTranscriptService {
   private cacheTargets: readonly TranscriptCacheTarget[] = [];
   private readonly admittedTerminals = new Set<string>();
   private readonly residencyListeners = new Set<() => void>();
+  private readonly foregroundTerminals = new Map<string, Set<symbol>>();
   private residencyRevision = 0;
   private readonly failedPreloads = new Map<string, string>();
   private readonly cacheHostVersions = new Map<string, { revision: number; transport: NativeTranscriptTransport }>();
@@ -124,7 +125,24 @@ export class NativeTranscriptService {
   }
 
   private pinned(entry: TranscriptEntry): boolean {
-    return [...entry.listeners.values()].some(listeners => listeners.size > 0);
+    return [...entry.listeners.values()].some(listeners => listeners.size > 0) ||
+      [...entry.bindings.values()].some(binding =>
+        this.foregroundTerminals.has(this.terminalKey(entry.hostSessionId, binding.terminalId)));
+  }
+
+  /** Protect selection before React mounts its transcript subscription. */
+  retainForegroundTerminal(hostSessionId: string, terminalId: string): () => void {
+    const key = this.terminalKey(hostSessionId, terminalId);
+    const owners = this.foregroundTerminals.get(key) ?? new Set<symbol>();
+    const owner = Symbol();
+    owners.add(owner);
+    this.foregroundTerminals.set(key, owners);
+    this.residencyChanged();
+    return () => {
+      if (!owners.delete(owner)) return;
+      if (owners.size === 0) this.foregroundTerminals.delete(key);
+      this.residencyChanged();
+    };
   }
 
   private failedPreload(entry: TranscriptEntry): boolean {
@@ -209,7 +227,7 @@ export class NativeTranscriptService {
       if (host.state.syncStatus !== 'synced' || host.state.freshness !== 'fresh') continue;
       for (const pane of host.state.snapshot?.panes ?? []) {
         const terminalKey = this.terminalKey(host.hostSessionId, pane.terminal_id);
-        if (this.admittedTerminals.has(terminalKey) || this.terminalBindings.has(terminalKey)) continue;
+        if (this.admittedTerminals.has(terminalKey) || this.terminalBindings.has(terminalKey) || this.foregroundTerminals.has(terminalKey)) continue;
         try {
           host.transport.detachAgentChat(pane.terminal_id);
         } catch (error) {
@@ -276,7 +294,8 @@ export class NativeTranscriptService {
     terminalId: string,
     transport: NativeTranscriptTransport,
   ): AgentChatProjection | null {
-    if (this.cacheManaged && !this.admittedTerminals.has(this.terminalKey(hostSessionId, terminalId))) return null;
+    const key = this.terminalKey(hostSessionId, terminalId);
+    if (this.cacheManaged && !this.admittedTerminals.has(key) && !this.foregroundTerminals.has(key)) return null;
     return this.preloadTarget(hostSessionId, terminalId, transport);
   }
 
