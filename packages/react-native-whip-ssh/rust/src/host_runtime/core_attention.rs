@@ -132,9 +132,7 @@ mod tests {
     -> Result<(), Box<dyn std::error::Error>> {
         let (inner, _) = super::super::tests::agent_view_test_core();
         assert!(!inner.herdr.is_core());
-        let runtime = HostRuntime {
-            inner: inner.clone(),
-        };
+        let runtime = HostRuntime { inner };
         let before = runtime.host_state();
         runtime.set_viewed_agent(Some("terminal-pane-1".into()));
         assert_eq!(runtime.host_state(), before);
