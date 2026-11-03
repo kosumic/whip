@@ -79,15 +79,11 @@ fn parse_prefix(bytes: &str, base: &HistoryPosition) -> Result<Vec<Value>, Agent
             "base prefix is truncated or does not end at a record boundary",
         ));
     }
-    let records = bytes
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(|line| serde_json::from_str::<Value>(line).map_err(|error| invalid(error.to_string())))
-        .collect::<Result<Vec<_>, _>>()?;
-    let header = records
-        .first()
-        .ok_or_else(|| invalid("empty base prefix"))?;
-    let meta = metadata(header)?;
+    let mut lines = bytes.lines().filter(|line| !line.trim().is_empty());
+    let header = lines.next().ok_or_else(|| invalid("empty base prefix"))?;
+    let header = serde_json::from_str::<Value>(header)
+        .map_err(|error| invalid(format!("incomplete or invalid SessionMeta: {error}")))?;
+    let meta = metadata(&header)?;
     if meta.history_mode != CodexHistoryMode::Paginated {
         return Err(invalid("base rollout is not paginated"));
     }
@@ -95,6 +91,12 @@ fn parse_prefix(bytes: &str, base: &HistoryPosition) -> Result<Vec<Value>, Agent
         .history_base
         .as_ref()
         .map_or(0, |base| base.end_ordinal_exclusive);
+    // Like the live JSONL reader, ignore incomplete writes followed by a retry.
+    // The ordinal checks below still require every retained record, including
+    // the complete replacement for a malformed fragment, at the exact cutoff.
+    let records = std::iter::once(header)
+        .chain(lines.filter_map(|line| serde_json::from_str::<Value>(line).ok()))
+        .collect::<Vec<_>>();
     for record in &records {
         if record.get("ordinal").and_then(Value::as_u64) != Some(ordinal) {
             return Err(invalid("base prefix has inconsistent ordinals"));
@@ -229,7 +231,7 @@ mod tests {
     use std::fmt::Write as _;
     use std::future::{Ready, ready};
 
-    use crate::agent_transcript::{AgentTranscriptStatus, CodexSessionCore};
+    use crate::agent_transcript::{AgentTranscriptPart, AgentTranscriptStatus, CodexSessionCore};
 
     use super::*;
 
@@ -278,6 +280,102 @@ mod tests {
         let path = root.join(name).join("quoted ' $directory");
         std::fs::create_dir_all(&path).unwrap();
         path
+    }
+
+    #[tokio::test]
+    async fn retried_partial_record_preserves_inherited_history_and_cache() {
+        let root = tempfile::tempdir().unwrap();
+        let active = directory(root.path(), "sessions");
+        let original = include_str!("../../../../../crates/agent-transcript-core/tests/fixtures/codex/paginated-rollout.jsonl")
+            .replace("thread-current", THREAD);
+        let lines = original.split_inclusive('\n').take(15).collect::<Vec<_>>();
+        let prefix = lines.concat();
+        let ancestor = active.join(format!("rollout-2026-08-26T10-20-30-{THREAD}.jsonl"));
+        let child = active.join(format!(
+            "rollout-2026-08-26T10-21-30-{THREAD}_{FIRST_REVERT}.jsonl"
+        ));
+        std::fs::write(&ancestor, &prefix).unwrap();
+        std::fs::write(&child, replacement_header(THREAD, 15, prefix.len())).unwrap();
+        let expected = load(
+            child.to_str().unwrap(),
+            |_| None,
+            |command| local_execute(root.path(), command),
+        )
+        .await
+        .unwrap();
+
+        // A failed write leaves a fragment; the retry uses the same ordinal.
+        let fragment = &lines[3][..lines[3].len() / 2];
+        let damaged = format!("{}{fragment}\n{}", lines[..3].concat(), lines[3..].concat());
+        std::fs::write(&ancestor, &damaged).unwrap();
+        let child_header = replacement_header(THREAD, 15, damaged.len());
+        std::fs::write(&child, &child_header).unwrap();
+        let history = load(
+            child.to_str().unwrap(),
+            |_| None,
+            |command| local_execute(root.path(), command),
+        )
+        .await
+        .unwrap();
+        assert_eq!(history.as_ref().unwrap().records, expected.unwrap().records);
+
+        let mut core = CodexSessionCore::new(THREAD);
+        let binding = core.bind_source(
+            ancestor.to_str().unwrap().into(),
+            "ancestor".into(),
+            damaged.len() as u64,
+        );
+        let ingested = core
+            .ingest(binding.source_generation, damaged.as_bytes())
+            .unwrap();
+        assert_eq!(ingested.malformed_records, 1);
+        let mut restored = CodexSessionCore::new(THREAD);
+        restored.restore_cache(&core.cache_blob().unwrap()).unwrap();
+        for cached in [&core, &restored] {
+            let cached_history = load(
+                child.to_str().unwrap(),
+                |position| cached_prefix(cached, position),
+                |command| local_execute(root.path(), command),
+            )
+            .await
+            .unwrap();
+            assert_eq!(cached_history, history);
+        }
+        let binding = core
+            .bind_source_with_history(
+                child.to_str().unwrap().into(),
+                "child".into(),
+                child_header.len() as u64,
+                history,
+            )
+            .unwrap();
+        core.ingest(binding.source_generation, child_header.as_bytes())
+            .unwrap();
+        core.mark_live();
+        assert_eq!(core.state().status, AgentTranscriptStatus::Live);
+        assert_eq!(core.state().turns.len(), 1);
+        assert_eq!(core.state().turns[0].id, "turn-current-1");
+        assert!(
+            core.state()
+                .messages
+                .iter()
+                .flat_map(|message| &message.parts)
+                .any(|part| matches!(part, AgentTranscriptPart::Text { text, .. }
+                    if text == "I am checking the protocol."))
+        );
+
+        // Without the complete retry, the missing ordinal must still fail.
+        let missing = format!("{}{fragment}\n{}", lines[..3].concat(), lines[4..].concat());
+        std::fs::write(&ancestor, &missing).unwrap();
+        std::fs::write(&child, replacement_header(THREAD, 15, missing.len())).unwrap();
+        let error = load(
+            child.to_str().unwrap(),
+            |_| None,
+            |command| local_execute(root.path(), command),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("inconsistent ordinals"));
     }
 
     #[tokio::test]
