@@ -6,7 +6,7 @@ import {
   handleRequest,
   checkReceipts,
   type RelayEnv,
-} from '../notify-relay/src';
+} from '../src';
 
 const DEVICE = 'device'.repeat(8);
 const OWNER = 'owner'.repeat(12);
@@ -134,14 +134,14 @@ beforeEach(() => {
       configurable: true,
     });
   database = new DatabaseSync(':memory:');
-  database.exec(readFileSync('notify-relay/migrations/0001.sql', 'utf8'));
+  database.exec(readFileSync('migrations/0001.sql', 'utf8'));
   database.exec(
     readFileSync(
-      'notify-relay/migrations/0002_public_registration.sql',
+      'migrations/0002_public_registration.sql',
       'utf8',
     ),
   );
-  database.exec(readFileSync('notify-relay/migrations/0003_device_message_rate.sql', 'utf8'));
+  database.exec(readFileSync('migrations/0003_device_message_rate.sql', 'utf8'));
   env = {
     DB: mockDatabase(),
     LIMITER: { limit: jest.fn().mockResolvedValue({ success: true }) },

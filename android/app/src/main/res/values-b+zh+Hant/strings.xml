@@ -1,4 +1,8 @@
 <resources>
+    <string name="voice_call_channel">語音通話</string>
+    <string name="voice_call_ongoing">語音聊天</string>
+    <string name="voice_call_mute">將麥克風靜音</string>
+    <string name="voice_call_unmute">取消麥克風靜音</string>
     <string name="app_name">Whip</string>
     <string name="chat_speech_listening">正在聆聽 %1$s</string>
     <string name="chat_speech_stop">停止聆聽</string>

@@ -45,6 +45,7 @@ import {
 import { BottomNavigation } from './BottomNavigation';
 import { ConnectRequiredScreen } from './ConnectRequiredScreen';
 import { GlassProvider } from './GlassSurface';
+import { VoiceVadSensitivityContext } from '../lib/voiceVadSensitivity';
 import { HerdScreen } from './HerdScreen';
 import { HostsScreen } from './HostsScreen';
 import { LiveSessionView } from './LiveSessionView';
@@ -261,7 +262,7 @@ export function AppShell({
     navigation.licensesOpen;
 
   return (
-    <>
+    <VoiceVadSensitivityContext value={storedPreferences.vadSensitivity}>
       <StableStatusBar
         hidden={fullscreenVisible}
         isDark={isDark}
@@ -444,6 +445,8 @@ export function AppShell({
                             persistentAlertDurationSeconds
                           }
                           ttsEnabled={ttsEnabled}
+                          vadSensitivity={storedPreferences.vadSensitivity}
+                          onVadSensitivityChange={value => preferences.setPreference('vadSensitivity', value)}
                           biometricForKeys={biometricForKeys}
                           biometricOnResume={biometricOnResume}
                           globalKeyCount={hosts.globalSshKeys.length}
@@ -700,7 +703,7 @@ export function AppShell({
           </View>
         </GlassProvider>
       </SafeAreaView>
-    </>
+    </VoiceVadSensitivityContext>
   );
 }
 

@@ -614,7 +614,7 @@ Used by:
 - regex-syntax 0.8.11
 - roaring 0.11.5
 - rustc_version 0.4.1
-- rustix 1.1.4
+- rustix 1.1.6
 - scopeguard 1.2.0
 - smallvec 1.15.2
 - stable_deref_trait 1.2.1

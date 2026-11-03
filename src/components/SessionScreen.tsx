@@ -1776,6 +1776,15 @@ export function SessionScreen({
             }
             chatViewEnabled={chatVisible}
             transcriptReady={Boolean(voiceChatState && voiceChatKey && agentTranscriptReadiness(voiceChatState) === 'usable')}
+            voiceChatTarget={!savedChatOpen && activeChatView && activePane
+              ? {
+                  agent: activeChatView.binding.agent,
+                  bindingToken: activeChatView.binding.bindingToken,
+                  hostId: hostSessionId,
+                  paneId: activePane.pane_id,
+                  label: chatAgentDisplayName(activeChatView.binding.agent),
+                }
+              : undefined}
             voiceContext={chatVisible && voiceChatState && voiceChatKey
               ? {
                   key: `${savedChatOpen ? 'saved' : 'live'}:${voiceChatKey}`,

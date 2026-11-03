@@ -45,6 +45,7 @@ import {
   FfiConverterArray,
   FfiConverterArrayBuffer,
   FfiConverterBool,
+  FfiConverterFloat32,
   FfiConverterFloat64,
   FfiConverterInt32,
   FfiConverterInt64,
@@ -18082,6 +18083,206 @@ const FfiConverterTypeUsageSummary = (() => {
         FfiConverterUInt64.allocationSize(value.monthMs) +
         FfiConverterUInt64.allocationSize(value.lifetimeMs) +
         FfiConverterOptionalUInt64.allocationSize(value.startedAtMs)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type VoiceChatTranscriptTurn = {
+  id: string;
+  userText: string;
+  completed: boolean;
+  failed: boolean;
+  messages: Array<ChatSpeechMessage>;
+};
+
+/**
+ * Generated factory for {@link VoiceChatTranscriptTurn} record objects.
+ */
+export const VoiceChatTranscriptTurn = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      VoiceChatTranscriptTurn,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<VoiceChatTranscriptTurn>,
+  });
+})();
+
+const FfiConverterTypeVoiceChatTranscriptTurn = (() => {
+  type TypeName = VoiceChatTranscriptTurn;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        id: FfiConverterString.read(from),
+        userText: FfiConverterString.read(from),
+        completed: FfiConverterBool.read(from),
+        failed: FfiConverterBool.read(from),
+        messages: FfiConverterSequenceTypeChatSpeechMessage.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.id, into);
+      FfiConverterString.write(value.userText, into);
+      FfiConverterBool.write(value.completed, into);
+      FfiConverterBool.write(value.failed, into);
+      FfiConverterSequenceTypeChatSpeechMessage.write(value.messages, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.id) +
+        FfiConverterString.allocationSize(value.userText) +
+        FfiConverterBool.allocationSize(value.completed) +
+        FfiConverterBool.allocationSize(value.failed) +
+        FfiConverterSequenceTypeChatSpeechMessage.allocationSize(value.messages)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export enum VoiceChatPhase {
+  Setup,
+  Preparing,
+  Listening,
+  Finishing,
+  Waiting,
+  Speaking,
+  Muted,
+  Closed,
+}
+
+const FfiConverterTypeVoiceChatPhase = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = VoiceChatPhase;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return VoiceChatPhase.Setup;
+        case 2:
+          return VoiceChatPhase.Preparing;
+        case 3:
+          return VoiceChatPhase.Listening;
+        case 4:
+          return VoiceChatPhase.Finishing;
+        case 5:
+          return VoiceChatPhase.Waiting;
+        case 6:
+          return VoiceChatPhase.Speaking;
+        case 7:
+          return VoiceChatPhase.Muted;
+        case 8:
+          return VoiceChatPhase.Closed;
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value) {
+        case VoiceChatPhase.Setup:
+          return ordinalConverter.write(1, into);
+        case VoiceChatPhase.Preparing:
+          return ordinalConverter.write(2, into);
+        case VoiceChatPhase.Listening:
+          return ordinalConverter.write(3, into);
+        case VoiceChatPhase.Finishing:
+          return ordinalConverter.write(4, into);
+        case VoiceChatPhase.Waiting:
+          return ordinalConverter.write(5, into);
+        case VoiceChatPhase.Speaking:
+          return ordinalConverter.write(6, into);
+        case VoiceChatPhase.Muted:
+          return ordinalConverter.write(7, into);
+        case VoiceChatPhase.Closed:
+          return ordinalConverter.write(8, into);
+      }
+    }
+    allocationSize(value: TypeName): number {
+      return ordinalConverter.allocationSize(0);
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type VoiceChatView = {
+  phase: VoiceChatPhase;
+  inputId: bigint;
+  muted: boolean;
+  smartTurn: boolean;
+  text: string;
+  level: number;
+  silenceMs: number;
+  analyze: boolean;
+  downloadedBytes: bigint;
+  totalBytes: bigint;
+};
+
+/**
+ * Generated factory for {@link VoiceChatView} record objects.
+ */
+export const VoiceChatView = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<VoiceChatView, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<VoiceChatView>,
+  });
+})();
+
+const FfiConverterTypeVoiceChatView = (() => {
+  type TypeName = VoiceChatView;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        phase: FfiConverterTypeVoiceChatPhase.read(from),
+        inputId: FfiConverterUInt64.read(from),
+        muted: FfiConverterBool.read(from),
+        smartTurn: FfiConverterBool.read(from),
+        text: FfiConverterString.read(from),
+        level: FfiConverterFloat32.read(from),
+        silenceMs: FfiConverterUInt32.read(from),
+        analyze: FfiConverterBool.read(from),
+        downloadedBytes: FfiConverterUInt64.read(from),
+        totalBytes: FfiConverterUInt64.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterTypeVoiceChatPhase.write(value.phase, into);
+      FfiConverterUInt64.write(value.inputId, into);
+      FfiConverterBool.write(value.muted, into);
+      FfiConverterBool.write(value.smartTurn, into);
+      FfiConverterString.write(value.text, into);
+      FfiConverterFloat32.write(value.level, into);
+      FfiConverterUInt32.write(value.silenceMs, into);
+      FfiConverterBool.write(value.analyze, into);
+      FfiConverterUInt64.write(value.downloadedBytes, into);
+      FfiConverterUInt64.write(value.totalBytes, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterTypeVoiceChatPhase.allocationSize(value.phase) +
+        FfiConverterUInt64.allocationSize(value.inputId) +
+        FfiConverterBool.allocationSize(value.muted) +
+        FfiConverterBool.allocationSize(value.smartTurn) +
+        FfiConverterString.allocationSize(value.text) +
+        FfiConverterFloat32.allocationSize(value.level) +
+        FfiConverterUInt32.allocationSize(value.silenceMs) +
+        FfiConverterBool.allocationSize(value.analyze) +
+        FfiConverterUInt64.allocationSize(value.downloadedBytes) +
+        FfiConverterUInt64.allocationSize(value.totalBytes)
       );
     }
   }
@@ -39961,6 +40162,99 @@ const FfiConverterTypeUsageError = (() => {
   return new FFIConverter();
 })();
 
+// Error type: VoiceChatError
+export enum VoiceChatError_Tags {
+  Failed = 'Failed',
+}
+export const VoiceChatError = (() => {
+  type Failed__interface = {
+    tag: VoiceChatError_Tags.Failed;
+    inner: Readonly<{ message: string }>;
+  };
+  class Failed_ extends UniffiError implements Failed__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'VoiceChatError';
+    readonly tag = VoiceChatError_Tags.Failed;
+    readonly inner: Readonly<{ message: string }>;
+    constructor(inner: { message: string }) {
+      super('VoiceChatError', 'Failed');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { message: string }): Failed_ {
+      return new Failed_(inner);
+    }
+
+    static instanceOf(obj: any): obj is Failed_ {
+      return obj.tag === VoiceChatError_Tags.Failed;
+    }
+    static hasInner(obj: any): obj is Failed_ {
+      return Failed_.instanceOf(obj);
+    }
+
+    static getInner(obj: Failed_): Readonly<{ message: string }> {
+      return obj.inner;
+    }
+  }
+
+  function instanceOf(obj: any): obj is VoiceChatError {
+    return obj[uniffiTypeNameSymbol] === 'VoiceChatError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    Failed: Failed_,
+  });
+})();
+export type VoiceChatError = InstanceType<(typeof VoiceChatError)['Failed']>;
+
+// FfiConverter for enum VoiceChatError
+const FfiConverterTypeVoiceChatError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = VoiceChatError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new VoiceChatError.Failed({
+            message: FfiConverterString.read(from),
+          });
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case VoiceChatError_Tags.Failed: {
+          ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.message, into);
+          return;
+        }
+        default:
+          // Throwing from here means that VoiceChatError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case VoiceChatError_Tags.Failed: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterString.allocationSize(inner.message);
+          return size;
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
 export interface AgentChatRowsLike {
   dispose(): void;
   /**
@@ -59759,6 +60053,599 @@ const FfiConverterTypeTerminalSubmissionQueue = new FfiConverterObject(
   uniffiTypeTerminalSubmissionQueueObjectFactory,
 );
 
+export interface VoiceChatLike {
+  /**
+   * Inference runs independently: capture keeps advancing and invalidates stale verdicts.
+   */
+  analyze(
+    inputId: bigint,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<VoiceChatView>;
+  /**
+   * PCM16LE mono, 16 kHz. Small capture packets keep VAD on the sample clock.
+   */
+  audio(inputId: bigint, pcm: string) /*throws*/ : VoiceChatView;
+  /**
+   * Optional model setup temporarily releases capture. Basic VAD remains usable.
+   */
+  beginPreparation(): void;
+  close(): void;
+  finish(): void;
+  nextSpeech(): string | undefined;
+  playbackEnded(): VoiceChatView;
+  /**
+   * Download is explicit. Once installed, neither VAD nor Smart Turn opens a network connection.
+   */
+  prepare(
+    install: boolean,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<VoiceChatView>;
+  recognition(inputId: bigint, text: string): void;
+  /**
+   * Only an explicit stop or accepted Smart Turn verdict permits submission.
+   * An early recognizer final may update the text, but cannot commit a turn.
+   */
+  recognitionEnded(inputId: bigint) /*throws*/ : VoiceChatView;
+  setMuted(muted: boolean): VoiceChatView;
+  /**
+   * Higher sensitivity accepts softer speech, including during reply interruption.
+   */
+  setVadSensitivity(sensitivity: number): void;
+  skipResponse(): void;
+  speechFinished(): boolean;
+  /**
+   * A composer message is already queued by the app. Follow its reply without
+   * submitting it again, using the same conversation and history boundary.
+   */
+  submitText(text: string) /*throws*/ : void;
+  takePrompt(): string | undefined;
+  /**
+   * Existing turns establish history. Only a new, matching user turn may be read.
+   */
+  transcript(
+    agent: AgentTranscriptKind,
+    live: boolean,
+    baseline: boolean,
+    turns: Array<VoiceChatTranscriptTurn>,
+  ) /*throws*/ : VoiceChatView;
+  useVad(): void;
+  view(): VoiceChatView;
+}
+/**
+ * @deprecated Use `VoiceChatLike` instead.
+ */
+export type VoiceChatInterface = VoiceChatLike;
+
+export class VoiceChat extends UniffiAbstractObject implements VoiceChatLike {
+  readonly [uniffiTypeNameSymbol] = 'VoiceChat';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  constructor(root: string) {
+    super();
+    const pointer = uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_constructor_voicechat_new(
+          FfiConverterString.lower(root, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeVoiceChatObjectFactory.bless(pointer);
+  }
+
+  /**
+   * Inference runs independently: capture keeps advancing and invalidates stale verdicts.
+   */
+  async analyze(
+    inputId: bigint,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<VoiceChatView> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_analyze(
+            uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+            FfiConverterUInt64.lower(inputId, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeVoiceChatView.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeVoiceChatError.lift.bind(
+          FfiConverterTypeVoiceChatError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  /**
+   * PCM16LE mono, 16 kHz. Small capture packets keep VAD on the sample clock.
+   */
+  audio(inputId: bigint, pcm: string): VoiceChatView /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeVoiceChatView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeVoiceChatError.lift.bind(
+          FfiConverterTypeVoiceChatError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_audio(
+            uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+            FfiConverterUInt64.lower(inputId, nativeModule().rustbuffer_alloc),
+            FfiConverterString.lower(pcm, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  /**
+   * Optional model setup temporarily releases capture. Basic VAD remains usable.
+   */
+  beginPreparation(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_begin_preparation(
+          uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  close(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_close(
+          uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  finish(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_finish(
+          uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  nextSpeech(): string | undefined {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterOptionalString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_next_speech(
+            uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  playbackEnded(): VoiceChatView {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeVoiceChatView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_playback_ended(
+            uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  /**
+   * Download is explicit. Once installed, neither VAD nor Smart Turn opens a network connection.
+   */
+  async prepare(
+    install: boolean,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<VoiceChatView> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_prepare(
+            uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+            FfiConverterBool.lower(install, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeVoiceChatView.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeVoiceChatError.lift.bind(
+          FfiConverterTypeVoiceChatError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  recognition(inputId: bigint, text: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_recognition(
+          uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+          FfiConverterUInt64.lower(inputId, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(text, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  /**
+   * Only an explicit stop or accepted Smart Turn verdict permits submission.
+   * An early recognizer final may update the text, but cannot commit a turn.
+   */
+  recognitionEnded(inputId: bigint): VoiceChatView /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeVoiceChatView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeVoiceChatError.lift.bind(
+          FfiConverterTypeVoiceChatError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_recognition_ended(
+            uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+            FfiConverterUInt64.lower(inputId, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  setMuted(muted: boolean): VoiceChatView {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeVoiceChatView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_set_muted(
+            uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+            FfiConverterBool.lower(muted, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  /**
+   * Higher sensitivity accepts softer speech, including during reply interruption.
+   */
+  setVadSensitivity(sensitivity: number): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_set_vad_sensitivity(
+          uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+          FfiConverterUInt8.lower(sensitivity, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  skipResponse(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_skip_response(
+          uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  speechFinished(): boolean {
+    return FfiConverterBool.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_speech_finished(
+            uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  /**
+   * A composer message is already queued by the app. Follow its reply without
+   * submitting it again, using the same conversation and history boundary.
+   */
+  submitText(text: string): void /*throws*/ {
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeVoiceChatError.lift.bind(
+        FfiConverterTypeVoiceChatError,
+      ),
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_submit_text(
+          uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+          FfiConverterString.lower(text, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  takePrompt(): string | undefined {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterOptionalString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_take_prompt(
+            uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  /**
+   * Existing turns establish history. Only a new, matching user turn may be read.
+   */
+  transcript(
+    agent: AgentTranscriptKind,
+    live: boolean,
+    baseline: boolean,
+    turns: Array<VoiceChatTranscriptTurn>,
+  ): VoiceChatView /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeVoiceChatView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeVoiceChatError.lift.bind(
+          FfiConverterTypeVoiceChatError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_transcript(
+            uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+            FfiConverterTypeAgentTranscriptKind.lower(
+              agent,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterBool.lower(live, nativeModule().rustbuffer_alloc),
+            FfiConverterBool.lower(baseline, nativeModule().rustbuffer_alloc),
+            FfiConverterSequenceTypeVoiceChatTranscriptTurn.lower(
+              turns,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  useVad(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_use_vad(
+          uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  view(): VoiceChatView {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterTypeVoiceChatView.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_view(
+            uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeVoiceChatObjectFactory.pointer(this);
+      uniffiTypeVoiceChatObjectFactory.freePointer(pointer);
+      uniffiTypeVoiceChatObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is VoiceChat {
+    return uniffiTypeVoiceChatObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeVoiceChatObjectFactory: UniffiObjectFactory<VoiceChatLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): VoiceChatLike {
+        const instance = Object.create(VoiceChat.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'VoiceChat';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_voicechat_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: VoiceChatLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: VoiceChatLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_voicechat(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_voicechat(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is VoiceChatLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'VoiceChat'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeVoiceChat = new FfiConverterObject(
+  uniffiTypeVoiceChatObjectFactory,
+);
+
 export interface WhipSshEventSink {
   emit(eventJson: string): void;
   unixSocketChannelData(
@@ -60435,6 +61322,11 @@ const FfiConverterOptionalTypeTerminalSubmissionFailure =
 // FfiConverter for Array<bigint>
 const FfiConverterSequenceUInt64 = new FfiConverterArray(FfiConverterUInt64);
 
+// FfiConverter for Array<ChatSpeechMessage>
+const FfiConverterSequenceTypeChatSpeechMessage = new FfiConverterArray(
+  FfiConverterTypeChatSpeechMessage,
+);
+
 // FfiConverter for Array<CredentialStorageKey>
 const FfiConverterSequenceTypeCredentialStorageKey = new FfiConverterArray(
   FfiConverterTypeCredentialStorageKey,
@@ -60577,11 +61469,6 @@ const FfiConverterOptionalTypeChatSpeechUtterance = new FfiConverterOptional(
   FfiConverterTypeChatSpeechUtterance,
 );
 
-// FfiConverter for Array<ChatSpeechMessage>
-const FfiConverterSequenceTypeChatSpeechMessage = new FfiConverterArray(
-  FfiConverterTypeChatSpeechMessage,
-);
-
 // FfiConverter for Array<BrowserSite>
 const FfiConverterSequenceTypeBrowserSite = new FfiConverterArray(
   FfiConverterTypeBrowserSite,
@@ -60627,6 +61514,11 @@ const FfiConverterSequenceTypeTerminalSubmissionMessage = new FfiConverterArray(
 // FfiConverter for Array<TerminalSubmissionTarget>
 const FfiConverterSequenceTypeTerminalSubmissionTarget = new FfiConverterArray(
   FfiConverterTypeTerminalSubmissionTarget,
+);
+
+// FfiConverter for Array<VoiceChatTranscriptTurn>
+const FfiConverterSequenceTypeVoiceChatTranscriptTurn = new FfiConverterArray(
+  FfiConverterTypeVoiceChatTranscriptTurn,
 );
 
 // FfiConverter for HostRuntimeLike | undefined
@@ -64442,6 +65334,166 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_voicechat_new() !==
+    8571
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_constructor_voicechat_new',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_analyze() !==
+    14990
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_analyze',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_audio() !==
+    14840
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_audio',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_begin_preparation() !==
+    28686
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_begin_preparation',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_close() !==
+    16290
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_close',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_finish() !==
+    58245
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_finish',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_next_speech() !==
+    33184
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_next_speech',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_playback_ended() !==
+    28728
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_playback_ended',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_prepare() !==
+    27216
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_prepare',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_recognition() !==
+    50608
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_recognition',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_recognition_ended() !==
+    47322
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_recognition_ended',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_set_muted() !==
+    27302
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_set_muted',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_set_vad_sensitivity() !==
+    55798
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_set_vad_sensitivity',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_skip_response() !==
+    22974
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_skip_response',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_speech_finished() !==
+    14257
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_speech_finished',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_submit_text() !==
+    21105
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_submit_text',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_take_prompt() !==
+    2988
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_take_prompt',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_transcript() !==
+    2142
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_transcript',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_use_vad() !==
+    50619
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_use_vad',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_view() !==
+    55810
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_view',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_whipssheventsink_emit() !==
     27595
   ) {
@@ -64839,6 +65891,11 @@ export default Object.freeze({
     FfiConverterTypeUsageChart,
     FfiConverterTypeUsageError,
     FfiConverterTypeUsageSummary,
+    FfiConverterTypeVoiceChat,
+    FfiConverterTypeVoiceChatError,
+    FfiConverterTypeVoiceChatPhase,
+    FfiConverterTypeVoiceChatTranscriptTurn,
+    FfiConverterTypeVoiceChatView,
     FfiConverterTypeWhipSshEventSink,
   },
 });

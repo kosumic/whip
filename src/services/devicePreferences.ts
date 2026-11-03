@@ -1,4 +1,9 @@
 import { appStorage } from './appStorage';
+import {
+  DEFAULT_VAD_SENSITIVITY,
+  MIN_VAD_SENSITIVITY,
+  MAX_VAD_SENSITIVITY,
+} from '../lib/voiceVadSensitivity';
 import type { SupportedLanguage } from '../i18n';
 import {
   DEFAULT_APP_FONT_SIZE_PERCENT,
@@ -85,6 +90,7 @@ export interface DevicePreferences {
   agentAlertLevel: AgentAlertLevel;
   persistentAlertDurationSeconds: number;
   ttsEnabled: boolean;
+  vadSensitivity: number;
   biometricForKeys: boolean;
   biometricOnResume: boolean;
   appearance: AppearancePreference;
@@ -110,6 +116,7 @@ export const defaultDevicePreferences: DevicePreferences = {
   agentAlertLevel: 'persistent',
   persistentAlertDurationSeconds: 30,
   ttsEnabled: false,
+  vadSensitivity: DEFAULT_VAD_SENSITIVITY,
   biometricForKeys: false,
   biometricOnResume: false,
   appearance: 'system',
@@ -124,7 +131,7 @@ export const defaultDevicePreferences: DevicePreferences = {
   keepScreenOn: false,
   reopenTerminalOnLaunch: false,
   agentCommand: 'opencode',
-  reverseControlInstructions: '',
+  reverseControlInstructions: 'Use Whip MCP',
   lastTab: 'hosts',
   terminal: {
     fullscreen: true,
@@ -263,6 +270,12 @@ function parseDevicePreferences(
         defaultDevicePreferences.persistentAlertDurationSeconds,
       ),
       ttsEnabled: parsed.ttsEnabled ?? defaultDevicePreferences.ttsEnabled,
+      vadSensitivity: clampNumber(
+        parsed.vadSensitivity,
+        MIN_VAD_SENSITIVITY,
+        MAX_VAD_SENSITIVITY,
+        DEFAULT_VAD_SENSITIVITY,
+      ),
       biometricForKeys: parsed.biometricForKeys === true,
       biometricOnResume: parsed.biometricOnResume === true,
       appearance: isAppearancePreference(parsed.appearance)
@@ -298,7 +311,7 @@ function parseDevicePreferences(
       reopenTerminalOnLaunch: parsed.reopenTerminalOnLaunch === true,
       reverseControlInstructions: typeof parsed.reverseControlInstructions === 'string'
         ? parsed.reverseControlInstructions
-        : '',
+        : defaultDevicePreferences.reverseControlInstructions,
       agentCommand: typeof parsed.agentCommand === 'string' && parsed.agentCommand.trim()
         ? parsed.agentCommand
         : defaultDevicePreferences.agentCommand,

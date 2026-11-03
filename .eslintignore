@@ -7,7 +7,7 @@ coverage/
 modules/whip-terminal-assets/ios/TerminalAssets/
 dist/
 launch-videos/
-feedback-worker/worker-configuration.d.ts
+feedback-worker/
 packages/react-native-whip-ssh/build/
 packages/react-native-whip-ssh/src/generated/
 packages/react-native-whip-ssh/src/generated-entry.tsx
@@ -18,6 +18,6 @@ nativewind-env.d.ts
 artifacts/
 .worktrees/
 
-notify-relay/worker-configuration.d.ts
+notify-relay/
 whip-notify/target/
 **/target/

@@ -4,6 +4,8 @@ import { GitHubMark } from './GitHubMark';
 import { EMPTY_TERMINAL_SEARCH } from '../lib/terminalSearch';
 import {
   forwardRef,
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -144,6 +146,7 @@ import {
   type TerminalRendererHandle,
 } from './TerminalRendererHost';
 import { ComposerInput, ComposerVoiceButton, MessageComposer } from './MessageComposer';
+import type { ChatSpeechTarget } from '../services/chatSpeech';
 import { GlassOverlayHost, GlassPortal, GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import {
   OverlayScrollbar,
@@ -161,6 +164,9 @@ import { ChatComposerSelection } from './ChatComposerSelection';
 const TERMINAL_INPUT_CONTEXT = 'terminal-input-send';
 const VOICE_CONTEXT_MESSAGES = 10;
 const VOICE_CONTEXT_CHARACTERS = 12_000;
+
+const VoiceChatScreen = lazy(() => import('./VoiceChatScreen').then(module => ({ default: module.VoiceChatScreen })));
+type VoiceChatHandle = import('./VoiceChatScreen').VoiceChatHandle;
 
 interface Props {
   onResidencyEnd?: TerminalResidencyEnd;
@@ -206,6 +212,7 @@ interface Props {
   };
   chatViewEnabled: boolean;
   transcriptReady?: boolean;
+  voiceChatTarget?: ChatSpeechTarget;
   voiceContext?: { key: string; messages: readonly TranscriptMessage[] };
   renderViewportOverlay?: (
     insets: VisualContentInsets,
@@ -424,6 +431,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       chatControl,
       chatViewEnabled,
       transcriptReady = false,
+      voiceChatTarget,
       voiceContext,
       renderViewportOverlay,
       viewportOverlayBackground,
@@ -437,6 +445,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     ref,
   ) {
     const { colors: appColors } = useTheme();
+    const [voiceChatOpen, setVoiceChatOpen] = useState<string | null>(null);
+    const [voiceChatExpanded, setVoiceChatExpanded] = useState(true);
+    const voiceChatRef = useRef<VoiceChatHandle>(null);
+    const voiceChatIdentity = voiceChatTarget ? JSON.stringify([activeTarget?.key, voiceChatTarget.bindingToken]) : null;
+    useEffect(() => { setVoiceChatOpen(null); }, [voiceChatIdentity]);
+    const openVoiceChat = () => { Keyboard.dismiss(); setVoiceChatExpanded(true); setVoiceChatOpen(voiceChatIdentity); };
     const appGlassEnabled = useAppGlassEnabled();
     useClipboardCopyFeedback(visible);
     const { t } = useTranslation();
@@ -619,6 +633,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const composerStyle = useAnimatedStyle(() => ({ bottom: animatedComposerBottom.value }));
     const animatedOverlayBottom = useDerivedValue(() => animatedComposerBottom.value
       + (composeOpen && !composeExpanded ? Math.max(0, composerHeight) : 0));
+    const voiceChatFloatingStyle = useAnimatedStyle(() => ({ bottom: animatedOverlayBottom.value + 12 }));
     const expandedComposerStyle = useAnimatedStyle(() => ({
       paddingTop: topSafeAreaInset,
       paddingBottom: Math.max(bottomSafeAreaInset, animatedHeight.value),
@@ -1366,10 +1381,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       const target = activeTargetRef.current;
       if (!target || composerStore.snapshot(target.key).imagePastes.size) return false;
       onInteraction?.(target);
-      if (!composerStore.submitDraft(target.key)) {
+      const submitted = composerStore.submitDraft(target.key);
+      if (!submitted) {
         reportBackgroundFailure(sendInput(ENTER_INPUT), TERMINAL_INPUT_CONTEXT);
         return false;
       }
+      voiceChatRef.current?.submitted(submitted.text);
       composeInputRef.current?.clear();
       publishQueuedMessages(target.key);
       composerStore.startSubmissions();
@@ -2162,6 +2179,14 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             </View>
           </View>
         )}
+        {voiceChatOpen && voiceChatOpen === voiceChatIdentity && voiceChatTarget && (
+          <Suspense fallback={null}>
+            <VoiceChatScreen ref={voiceChatRef} target={voiceChatTarget} send={text => activeTargetRef.current?.key === activeTarget?.key && enqueueComposeMessage(text, [])}
+              visible={visible} expanded={voiceChatExpanded} floatingStyle={voiceChatFloatingStyle}
+              onCompose={openCompose} onAttach={() => onRequestAttachment?.()}
+              onMinimize={() => setVoiceChatExpanded(false)} onExpand={openVoiceChat} onClose={() => setVoiceChatOpen(null)} />
+          </Suspense>
+        )}
         {visible && composeOpen && !composeExpanded && (
           <GlassPortal name={`terminal-composer-${terminalId}`}>
             <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
@@ -2181,7 +2206,8 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                   {...composerInputProps}
                   glass={appGlassEnabled}
                   inputRef={composeInputRef}
-                  voiceChatLabel={transcriptReady && !composer.attachments.length ? t('terminal.voice.chat') : undefined}
+                  voiceChatLabel={voiceChatTarget && transcriptReady && !composer.attachments.length ? t('terminal.voice.chat') : undefined}
+                  onVoiceChat={openVoiceChat}
                   inputClassName={appGlassEnabled ? 'text-foreground' : 'text-terminal-text'}
                   surfaceClassName={appGlassEnabled ? undefined : 'border-terminal-divider bg-terminal-surface'}
                   actions={{

@@ -321,7 +321,8 @@ test.each([false, true])('voice chat is available when the transcript is ready i
   mount({ chatViewEnabled });
   await press('compose');
   expect(ui('MessageComposer').props.voiceChatLabel).toBeUndefined();
-  act(() => renderer.update(<TerminalScreen {...props} chatViewEnabled={chatViewEnabled} transcriptReady />));
+  act(() => renderer.update(<TerminalScreen {...props} chatViewEnabled={chatViewEnabled} transcriptReady
+    voiceChatTarget={{ agent: 'codex', bindingToken: 'live-chat', hostId: 'host', paneId: 'pane', label: 'Codex' }} />));
   expect(ui('MessageComposer').props.voiceChatLabel).toBe('terminal.voice.chat');
 
   act(() => props.composerStore.addAttachment(target.key, {

@@ -1,8 +1,9 @@
 {
-  "$schema": "../node_modules/wrangler/config-schema.json",
+  "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "whip-notify",
   "account_id": "6347d293a37734d7acd6fabc1a432da4",
   "main": "src/index.ts",
+  "tsconfig": "tsconfig.json",
   "compatibility_date": "2026-10-28",
   "compatibility_flags": ["nodejs_compat"],
   "routes": [

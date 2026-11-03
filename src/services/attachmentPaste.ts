@@ -69,7 +69,7 @@ export async function pickLocalAttachment(source: AttachmentSource): Promise<Loc
   } else if (source === 'file') {
     const result = await File.pickFileAsync({ multipleFiles: false });
     if (!result.canceled && result.result) {
-      picked = { uri: result.result.uri, name: result.result.name };
+      picked = { uri: result.result.uri, name: result.result.name, mimeType: result.result.type };
     }
   } else {
     if (!clipboardAttachment) throw new Error('Clipboard attachments are unavailable in this build');

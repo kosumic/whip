@@ -1,6 +1,41 @@
 use super::*;
 
 #[test]
+fn concurrent_commands_fit_a_small_servers_session_limit() -> Result<(), Box<dyn std::error::Error>>
+{
+    runtime()?.block_on(async {
+        let fixture = ReverseForwardFixture::with_commands(
+            true,
+            Duration::ZERO,
+            Some(std::collections::BTreeMap::new()),
+        )
+        .await?;
+        fixture.limit_sessions(2);
+        let mut commands = Vec::new();
+        for index in 0..16 {
+            let ssh = fixture.shared_ssh();
+            commands.push(tokio::spawn(async move {
+                let command = format!("sleep 0.03; printf '{index}'");
+                let output = if index % 2 == 0 {
+                    ssh.execute(&command).await?
+                } else {
+                    ssh.execute_with_timeout(&command, Duration::from_secs(5))
+                        .await?
+                };
+                Ok::<_, SshFailure>((index, output))
+            }));
+        }
+        for command in commands {
+            let (index, output) = command.await??;
+            assert_eq!(output.exit_status, Some(0));
+            assert_eq!(output.stdout, index.to_string().as_bytes());
+        }
+        assert!(fixture.ssh.is_alive());
+        Ok(())
+    })
+}
+
+#[test]
 fn rejected_and_timed_out_execs_close_their_channels_and_allow_recovery()
 -> Result<(), Box<dyn std::error::Error>> {
     enum Failure {

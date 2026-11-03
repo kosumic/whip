@@ -5,6 +5,11 @@ export type SpeechEndReason = 'completed' | 'stopped' | 'shake' | 'replaced' | '
 export interface NativeSpeechPlayback {
   speechBackendCommand(action: SpeechBackendAction | 'system-voices'): Promise<string>;
   startChatSpeech(token: string, label: string): Promise<void>;
+  startLocalChatSpeech(token: string, label: string): Promise<void>;
+  startVoiceCall(token: string, label: string): Promise<void>;
+  endVoiceCall(token: string): Promise<void>;
+  setVoiceCallMuted(token: string, muted: boolean): Promise<void>;
+  setVoiceCallSpeaker(token: string, speaker: boolean): Promise<void>;
   speakChat(token: string, text: string): Promise<void>;
   stopChatSpeech(token: string): Promise<void>;
   speakAnnouncement(token: string, text: string, language: string): Promise<SpeechEndReason>;

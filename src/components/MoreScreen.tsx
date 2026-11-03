@@ -67,6 +67,8 @@ export function MoreScreen(props: Props) {
           backgroundMonitoringAvailable={props.backgroundMonitoringAvailable}
           persistentAlertDurationSeconds={props.persistentAlertDurationSeconds}
           ttsEnabled={props.ttsEnabled}
+          vadSensitivity={props.vadSensitivity}
+          onVadSensitivityChange={props.onVadSensitivityChange}
           biometricForKeys={props.biometricForKeys}
           biometricOnResume={props.biometricOnResume}
           globalKeyCount={props.globalKeyCount}

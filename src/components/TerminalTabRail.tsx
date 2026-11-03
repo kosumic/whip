@@ -47,7 +47,7 @@ export function TerminalTabRail({ tabs, selectedTabId, readOnly, busy, onSelect,
       {tabs.map(item => {
         const active = item.id === selectedTabId;
         return (
-          <View key={item.id} className={cn('h-11 max-w-[170px] flex-row items-center overflow-hidden rounded-full border', isIpad && 'max-w-[230px]')} style={sessionTabGlassStyle(active, colors)}>
+          <View key={item.id} className={cn('h-11 flex-row items-center overflow-hidden rounded-full border', !active && (isIpad ? 'max-w-[230px]' : 'max-w-[170px]'))} style={sessionTabGlassStyle(active, colors)}>
             <RailItemButton
               label={item.label}
               accessibilityLabel={t('session.openTab', { tab: item.label })}
