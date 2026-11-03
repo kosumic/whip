@@ -10150,6 +10150,67 @@ const FfiConverterTypeCodeSyntax = (() => {
   return new FFIConverter();
 })();
 
+export type CoreAgentHierarchy = {
+  parentTerminalId?: string;
+  ancestors: Array<string>;
+  depth: number;
+  descendantCount: number;
+  groupStatus: HerdrAgentStatus;
+  delegated: boolean;
+};
+
+/**
+ * Generated factory for {@link CoreAgentHierarchy} record objects.
+ */
+export const CoreAgentHierarchy = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<CoreAgentHierarchy, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<CoreAgentHierarchy>,
+  });
+})();
+
+const FfiConverterTypeCoreAgentHierarchy = (() => {
+  type TypeName = CoreAgentHierarchy;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        parentTerminalId: FfiConverterOptionalString.read(from),
+        ancestors: FfiConverterSequenceString.read(from),
+        depth: FfiConverterUInt32.read(from),
+        descendantCount: FfiConverterUInt32.read(from),
+        groupStatus: FfiConverterTypeHerdrAgentStatus.read(from),
+        delegated: FfiConverterBool.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterOptionalString.write(value.parentTerminalId, into);
+      FfiConverterSequenceString.write(value.ancestors, into);
+      FfiConverterUInt32.write(value.depth, into);
+      FfiConverterUInt32.write(value.descendantCount, into);
+      FfiConverterTypeHerdrAgentStatus.write(value.groupStatus, into);
+      FfiConverterBool.write(value.delegated, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterOptionalString.allocationSize(value.parentTerminalId) +
+        FfiConverterSequenceString.allocationSize(value.ancestors) +
+        FfiConverterUInt32.allocationSize(value.depth) +
+        FfiConverterUInt32.allocationSize(value.descendantCount) +
+        FfiConverterTypeHerdrAgentStatus.allocationSize(value.groupStatus) +
+        FfiConverterBool.allocationSize(value.delegated)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 /**
  * Ephemeral secure-store payload. Never included in a published projection,
  * a transaction journal, diagnostics, or a Debug implementation.
@@ -12160,6 +12221,8 @@ export type HerdAgentView = {
   tabLabel: string;
   primaryLabel: string;
   control?: AgentControlView;
+  corePinned?: boolean;
+  coreHierarchy?: CoreAgentHierarchy;
 };
 
 /**
@@ -12191,6 +12254,8 @@ const FfiConverterTypeHerdAgentView = (() => {
         tabLabel: FfiConverterString.read(from),
         primaryLabel: FfiConverterString.read(from),
         control: FfiConverterOptionalTypeAgentControlView.read(from),
+        corePinned: FfiConverterOptionalBoolean.read(from),
+        coreHierarchy: FfiConverterOptionalTypeCoreAgentHierarchy.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
@@ -12201,6 +12266,11 @@ const FfiConverterTypeHerdAgentView = (() => {
       FfiConverterString.write(value.tabLabel, into);
       FfiConverterString.write(value.primaryLabel, into);
       FfiConverterOptionalTypeAgentControlView.write(value.control, into);
+      FfiConverterOptionalBoolean.write(value.corePinned, into);
+      FfiConverterOptionalTypeCoreAgentHierarchy.write(
+        value.coreHierarchy,
+        into,
+      );
     }
     allocationSize(value: TypeName): number {
       return (
@@ -12210,7 +12280,11 @@ const FfiConverterTypeHerdAgentView = (() => {
         FfiConverterString.allocationSize(value.workspaceLabel) +
         FfiConverterString.allocationSize(value.tabLabel) +
         FfiConverterString.allocationSize(value.primaryLabel) +
-        FfiConverterOptionalTypeAgentControlView.allocationSize(value.control)
+        FfiConverterOptionalTypeAgentControlView.allocationSize(value.control) +
+        FfiConverterOptionalBoolean.allocationSize(value.corePinned) +
+        FfiConverterOptionalTypeCoreAgentHierarchy.allocationSize(
+          value.coreHierarchy,
+        )
       );
     }
   }
@@ -12229,6 +12303,8 @@ export type HerdHostView = {
   workspaces: Array<HerdrWorkspaceInfo>;
   tabs: Array<HerdrTabInfo>;
   agentControls: Array<AgentControlView>;
+  coreBackend: boolean;
+  pinnedTerminals: Array<string>;
 };
 
 /**
@@ -12264,6 +12340,8 @@ const FfiConverterTypeHerdHostView = (() => {
         workspaces: FfiConverterSequenceTypeHerdrWorkspaceInfo.read(from),
         tabs: FfiConverterSequenceTypeHerdrTabInfo.read(from),
         agentControls: FfiConverterSequenceTypeAgentControlView.read(from),
+        coreBackend: FfiConverterBool.read(from),
+        pinnedTerminals: FfiConverterSequenceString.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
@@ -12278,6 +12356,8 @@ const FfiConverterTypeHerdHostView = (() => {
       FfiConverterSequenceTypeHerdrWorkspaceInfo.write(value.workspaces, into);
       FfiConverterSequenceTypeHerdrTabInfo.write(value.tabs, into);
       FfiConverterSequenceTypeAgentControlView.write(value.agentControls, into);
+      FfiConverterBool.write(value.coreBackend, into);
+      FfiConverterSequenceString.write(value.pinnedTerminals, into);
     }
     allocationSize(value: TypeName): number {
       return (
@@ -12295,7 +12375,9 @@ const FfiConverterTypeHerdHostView = (() => {
         FfiConverterSequenceTypeHerdrTabInfo.allocationSize(value.tabs) +
         FfiConverterSequenceTypeAgentControlView.allocationSize(
           value.agentControls,
-        )
+        ) +
+        FfiConverterBool.allocationSize(value.coreBackend) +
+        FfiConverterSequenceString.allocationSize(value.pinnedTerminals)
       );
     }
   }
@@ -41188,6 +41270,10 @@ export interface HostRuntimeLike {
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<RemoteDirectoryListing>;
   localTerminalScrollback(): boolean;
+  markAgentUnread(
+    terminalId: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<void>;
   matchesSshConfig(config: HostSshConfig): boolean;
   measureHostLatency(asyncOpts_?: {
     signal: AbortSignal;
@@ -41313,6 +41399,11 @@ export interface HostRuntimeLike {
     row: number | undefined,
     modifiers: number,
   ) /*throws*/ : void;
+  setAgentPinned(
+    terminalId: string,
+    pinned: boolean,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<void>;
   setAgentReverseControl(
     terminalId: string,
     enabled: boolean,
@@ -41324,6 +41415,11 @@ export interface HostRuntimeLike {
     hostsVisible: boolean,
     accessLocked: boolean,
   ): void;
+  /**
+   * The caller supplies only the terminal actually displayed in the foreground.
+   * Monitoring state independently gates background/locked-app writes.
+   */
+  setViewedAgent(terminalId: string | undefined): void;
   sshShellDirectory(terminalId: string): string | undefined;
   sshShellGeometry(terminalId: string): HostTerminalGeometry | undefined;
   sshShellInput(terminalId: string, bytes: ArrayBuffer) /*throws*/ : void;
@@ -43474,6 +43570,44 @@ export class HostRuntime
     );
   }
 
+  async markAgentUnread(
+    terminalId: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_mark_agent_unread(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              terminalId,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHerdrControlError.lift.bind(
+          FfiConverterTypeHerdrControlError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
   matchesSshConfig(config: HostSshConfig): boolean {
     return FfiConverterBool.lift(
       uniffiCaller.rustCall(
@@ -44530,6 +44664,46 @@ export class HostRuntime
     );
   }
 
+  async setAgentPinned(
+    terminalId: string,
+    pinned: boolean,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<void> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_set_agent_pinned(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              terminalId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterBool.lower(pinned, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_poll_void,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_void,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_void,
+        /*freeFunc:*/ nativeModule().ubrn_ffi_whip_ssh_rust_future_free_void,
+        /*liftFunc:*/ _v => {},
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHerdrControlError.lift.bind(
+          FfiConverterTypeHerdrControlError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
   async setAgentReverseControl(
     terminalId: string,
     enabled: boolean,
@@ -44587,6 +44761,26 @@ export class HostRuntime
           FfiConverterBool.lower(appActive, nativeModule().rustbuffer_alloc),
           FfiConverterBool.lower(hostsVisible, nativeModule().rustbuffer_alloc),
           FfiConverterBool.lower(accessLocked, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  /**
+   * The caller supplies only the terminal actually displayed in the foreground.
+   * Monitoring state independently gates background/locked-app writes.
+   */
+  setViewedAgent(terminalId: string | undefined): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_set_viewed_agent(
+          uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+          FfiConverterOptionalString.lower(
+            terminalId,
+            nativeModule().rustbuffer_alloc,
+          ),
           callStatus,
         );
       },
@@ -61063,6 +61257,11 @@ const FfiConverterOptionalTypeAgentControlView = new FfiConverterOptional(
   FfiConverterTypeAgentControlView,
 );
 
+// FfiConverter for CoreAgentHierarchy | undefined
+const FfiConverterOptionalTypeCoreAgentHierarchy = new FfiConverterOptional(
+  FfiConverterTypeCoreAgentHierarchy,
+);
+
 // FfiConverter for Array<HerdHostView>
 const FfiConverterSequenceTypeHerdHostView = new FfiConverterArray(
   FfiConverterTypeHerdHostView,
@@ -63876,6 +64075,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_mark_agent_unread() !==
+    17669
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_mark_agent_unread',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_matches_ssh_config() !==
     30990
   ) {
@@ -64100,6 +64307,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_set_agent_pinned() !==
+    35003
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_set_agent_pinned',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_set_agent_reverse_control() !==
     12184
   ) {
@@ -64113,6 +64328,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_set_monitoring_state',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_set_viewed_agent() !==
+    47957
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_set_viewed_agent',
     );
   }
   if (
@@ -65462,6 +65685,7 @@ export default Object.freeze({
     FfiConverterTypeChatSpeechUtterance,
     FfiConverterTypeCodeSyntax,
     FfiConverterTypeComposerDictation,
+    FfiConverterTypeCoreAgentHierarchy,
     FfiConverterTypeCredentialCommand,
     FfiConverterTypeCredentialCoordinator,
     FfiConverterTypeCredentialEffect,

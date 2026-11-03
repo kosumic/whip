@@ -207,6 +207,7 @@ fn runtime_inner_with_state(
         status_tx,
         terminal_settled: Notify::new(),
         monitoring: Mutex::new(MonitoringState::default()),
+        core_attention: Mutex::new(core_attention::State::default()),
         monitoring_changed: Arc::new(Notify::new()),
         reconnect_wakeup: Arc::new(Notify::new()),
     })

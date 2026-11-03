@@ -232,6 +232,12 @@ export function AppShell({
           await Promise.all(ids.map(sessions.refresh));
         }}
         onOpenTerminal={sessions.openAgentTerminal}
+        onSetAgentPinned={async (hostId, terminalId, pinned) => {
+          await sessions.getClient(hostId)?.native.setAgentPinned(terminalId, pinned);
+        }}
+        onMarkAgentUnread={async (hostId, terminalId) => {
+          await sessions.getClient(hostId)?.native.markAgentUnread(terminalId);
+        }}
         onOpenFiles={(sessionId, agent) =>
           openAgentFiles(sessionId, agent.pane_id)
         }
@@ -621,6 +627,7 @@ export function AppShell({
                       session={activeSession}
                       client={liveClient}
                       visible={terminalVisible}
+                      attentionVisible={terminalVisible && !overlaysVisible}
                       ttsEnabled={ttsEnabled}
                       latencyMs={visibleLiveHostLatency(
                         activeSession.connectionStatus,

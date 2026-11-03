@@ -24,6 +24,7 @@ interface Props {
   session: SessionPresentation;
   client: HerdrClient | null;
   visible: boolean;
+  attentionVisible?: boolean;
   ttsEnabled: boolean;
   latencyMs: number | null;
   latencyWarningActive: boolean;
@@ -73,6 +74,7 @@ export function LiveSessionView({
   session,
   client,
   visible,
+  attentionVisible,
   ttsEnabled,
   latencyMs,
   latencyWarningActive,
@@ -141,6 +143,7 @@ export function LiveSessionView({
       hostId={session.hostId}
       hostSessionId={sessionId}
       visible={visible}
+      attentionVisible={attentionVisible}
       ttsEnabled={ttsEnabled}
       snapshot={session.snapshot}
       client={client}

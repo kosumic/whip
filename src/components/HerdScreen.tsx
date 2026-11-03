@@ -8,6 +8,7 @@ import ChevronRight from 'lucide-react-native/icons/chevron-right';
 import History from 'lucide-react-native/icons/rotate-ccw-clock';
 import Layers3 from 'lucide-react-native/icons/layers';
 import Play from 'lucide-react-native/icons/play';
+import Pin from 'lucide-react-native/icons/pin';
 import Search from 'lucide-react-native/icons/search';
 import Sparkles from 'lucide-react-native/icons/sparkles';
 import SquareTerminal from 'lucide-react-native/icons/square-terminal';
@@ -92,6 +93,8 @@ const HERD_AGENT_CONTEXT_TEXT_CLASS_NAME =
   'min-w-0 shrink text-[11px] leading-[15px] text-muted-foreground/70';
 
 interface Props {
+  onSetAgentPinned?: (hostId: string, terminalId: string, pinned: boolean) => Promise<void>;
+  onMarkAgentUnread?: (hostId: string, terminalId: string) => Promise<void>;
   onSetAgentReverseControl?: (
     hostId: string,
     terminalId: string,
@@ -149,6 +152,8 @@ interface Props {
 }
 
 export function HerdScreen({
+  onSetAgentPinned,
+  onMarkAgentUnread,
   onSetAgentReverseControl,
   onRestartAgent,
   onCopyAgent,
@@ -197,6 +202,16 @@ export function HerdScreen({
     workspace => workspace.workspace_id === selectedWorkspaceId,
   );
   const queueAgents = agents;
+  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(() => new Set());
+  const toggleGroup = useCallback((item: HerdQueueAgent) => {
+    setCollapsedGroups(current => {
+      const next = new Set(current);
+      const key = herdAgentKey(item);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
   const blocked = queueAgents.filter(
     item => item.agent.agent_status === 'blocked',
   ).length;
@@ -458,12 +473,16 @@ export function HerdScreen({
       queueAgents.filter(
         item =>
           closingTabKey !== `${item.hostId}:${item.agent.tab_id}` &&
+          (normalizedSearch || !item.coreHierarchy?.ancestors.some(terminal =>
+            collapsedGroups.has(`${item.hostId}:${terminal}`))) &&
           (!normalizedSearch ||
-            [item.tabLabel, item.agent.cwd, item.agent.foreground_cwd].some(
+            [item.tabLabel, item.agent.cwd, item.agent.foreground_cwd,
+              ...(item.coreHierarchy ? [herdAgentLabel(item), item.agent.terminal_id] : []),
+            ].some(
               value => value?.toLowerCase().includes(normalizedSearch),
             )),
       ),
-    [closingTabKey, normalizedSearch, queueAgents],
+    [closingTabKey, collapsedGroups, normalizedSearch, queueAgents],
   );
   const closeSearch = () => {
     setSearchOpen(false);
@@ -477,6 +496,8 @@ export function HerdScreen({
   const renderAgent = useCallback(
     ({ item }: ListRenderItemInfo<HerdQueueAgent>) => (
       <AgentRow
+        collapsed={collapsedGroups.has(herdAgentKey(item))}
+        onToggleGroup={toggleGroup}
         item={item}
         preference={item.control}
         showHost={resolvedHostId === null}
@@ -495,6 +516,8 @@ export function HerdScreen({
       agentActionKey,
       closeTab,
       closingTabKey,
+      collapsedGroups,
+      toggleGroup,
       offline,
       onOpenFiles,
       onOpenTerminal,
@@ -951,8 +974,20 @@ export function HerdScreen({
         onClose={() => setAppAlert(null)}
       />
       <AgentActionsPopup
+        corePinned={menuItem?.corePinned}
+        onPinChange={menuItem && onSetAgentPinned
+          ? pinned => { void runAgentAction(menuItem, () =>
+              onSetAgentPinned(menuItem.hostId, menuItem.agent.terminal_id, pinned)); }
+          : undefined}
+        onMarkUnread={menuItem && onMarkAgentUnread
+          ? () => {
+              setAgentMenuTarget(null);
+              void runAgentAction(menuItem, () =>
+                onMarkAgentUnread(menuItem.hostId, menuItem.agent.terminal_id));
+            }
+          : undefined}
         visible={!!menuItem && !offline}
-        label={menuItem?.tabLabel || ''}
+        label={menuItem ? herdAgentLabel(menuItem) : ''}
         kind={menuItem?.agent.agent}
         session={menuItem?.agent.agent_session}
         preference={menuPreference}
@@ -1051,6 +1086,8 @@ function commandSheetStyle(bottomInset: number) {
 const AgentRow = memo(
   function AgentRowComponent({
     item,
+    collapsed,
+    onToggleGroup,
     preference,
     showHost,
     showSpace,
@@ -1064,6 +1101,8 @@ const AgentRow = memo(
     actionPending,
   }: {
     item: HerdQueueAgent;
+    collapsed: boolean;
+    onToggleGroup: (item: HerdQueueAgent) => void;
     preference?: AgentControlView;
     showHost: boolean;
     showSpace: boolean;
@@ -1079,6 +1118,7 @@ const AgentRow = memo(
     const { colors } = useTheme();
     const { t } = useTranslation();
     const { agent } = item;
+    const rowLabel = herdAgentLabel(item);
     const conversationTitle = useTranscriptTitle(item.hostId, agent);
     const translateX = useSharedValue(0);
     // Let asynchronously loaded titles change the row's natural height.
@@ -1086,8 +1126,9 @@ const AgentRow = memo(
     const restingHeightRef = useRef(HERD_AGENT_ROW_MIN_HEIGHT);
     const rowWidthRef = useRef(0);
     const committingRef = useRef(false);
-    const gestureDisabledRef = useRef(readOnly || closing || actionPending);
-    gestureDisabledRef.current = readOnly || closing || actionPending;
+    const delegated = item.coreHierarchy?.delegated ?? false;
+    const gestureDisabledRef = useRef(readOnly || closing || actionPending || delegated);
+    gestureDisabledRef.current = readOnly || closing || actionPending || delegated;
     const agentLabel =
       agent.agent_session?.agent.trim() || agent.agent?.trim();
     const hasChatSession = Boolean(
@@ -1191,7 +1232,7 @@ const AgentRow = memo(
     ).current;
 
     return (
-      <Animated.View className="overflow-hidden rounded-xl" style={rowStyle}>
+      <Animated.View className="overflow-hidden rounded-xl" style={item.coreHierarchy ? [rowStyle, { marginLeft: Math.min(item.coreHierarchy.depth, 3) * 12 }] : rowStyle}>
         <View
           className="relative min-h-[92px] overflow-hidden rounded-xl"
           onLayout={event => {
@@ -1235,15 +1276,16 @@ const AgentRow = memo(
                         name: 'open-files',
                         label: t('terminal.openFiles'),
                       },
-                      {
+                      ...(!delegated ? [{
                         name: 'close-tab',
                         label: t('session.closeTab', { tab: item.tabLabel }),
-                      },
+                      }] : []),
+                      ...(item.coreHierarchy?.descendantCount ? [{ name: 'toggle-agent-children', label: t('herd.toggleChildren') }] : []),
                     ]
               }
               accessibilityLabel={
                 t('herd.openAgentTerminal', {
-                  agent: item.tabLabel,
+                  agent: rowLabel,
                   host: item.hostLabel,
                 }) +
                 (agent.focused ? `, ${t('herd.focused')}` : '') +
@@ -1255,13 +1297,15 @@ const AgentRow = memo(
               disabled={closing}
               variant="ghost"
               onAccessibilityAction={event => {
-                if (gestureDisabledRef.current) return;
+                if (readOnly || closing || actionPending) return;
                 if (event.nativeEvent.actionName === 'agent-actions') {
                   onActions(item);
                 } else if (event.nativeEvent.actionName === 'open-files') {
                   onOpenFiles(item.hostId, agent);
                 } else if (event.nativeEvent.actionName === 'close-tab') {
-                  commitClose();
+                  if (!delegated) commitClose();
+                } else if (event.nativeEvent.actionName === 'toggle-agent-children') {
+                  onToggleGroup(item);
                 }
               }}
               onPress={hapticPress(() => onOpenTerminal(item.hostId, agent))}
@@ -1271,8 +1315,19 @@ const AgentRow = memo(
                   : hapticPress(() => onActions(item))
               }
             >
+              {item.coreHierarchy?.descendantCount ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t('herd.toggleChildren')}
+                  accessibilityState={{ expanded: !collapsed }}
+                  className="p-2"
+                  onPress={event => { event.stopPropagation(); onToggleGroup(item); }}
+                >
+                  <Icon as={ChevronRight} size={16} style={{ transform: [{ rotate: collapsed ? '0deg' : '90deg' }] }} />
+                </Pressable>
+              ) : null}
               <AgentStatusMedallion
-                accessibilityLabel={`${item.tabLabel}: ${stateLabel}`}
+                accessibilityLabel={`${rowLabel}: ${stateLabel}`}
                 color={tone}
                 connected={!readOnly}
                 glyphSize={18}
@@ -1285,7 +1340,7 @@ const AgentRow = memo(
                     className="flex-1 text-base font-semibold"
                     numberOfLines={1}
                   >
-                    {item.tabLabel}
+                    {rowLabel}
                   </Text>
                   {hasChatSession ? (
                     <Icon
@@ -1301,6 +1356,10 @@ const AgentRow = memo(
                       className="text-muted-foreground"
                     />
                   ) : null}
+                  {item.coreHierarchy?.descendantCount ? (
+                    <StatusBadge status={item.coreHierarchy.groupStatus} label={t('herd.childCount', { count: item.coreHierarchy.descendantCount })} />
+                  ) : null}
+                  {item.corePinned ? <Icon as={Pin} size={14} className="text-muted-foreground" /> : null}
                   {agent.focused ? (
                     <Icon
                       as={Focus}
@@ -1367,6 +1426,10 @@ const AgentRow = memo(
     previous.item.hostLabel === next.item.hostLabel &&
     previous.item.workspaceLabel === next.item.workspaceLabel &&
     previous.item.tabLabel === next.item.tabLabel &&
+    previous.item.corePinned === next.item.corePinned &&
+    previous.item.coreHierarchy === next.item.coreHierarchy &&
+    previous.collapsed === next.collapsed &&
+    previous.onToggleGroup === next.onToggleGroup &&
     previous.showHost === next.showHost &&
     previous.showSpace === next.showSpace &&
     previous.closing === next.closing &&
@@ -1381,6 +1444,12 @@ const AgentRow = memo(
 
 function herdAgentKey(item: HerdQueueAgent): string {
   return `${item.hostId}:${item.agent.terminal_id}`;
+}
+
+function herdAgentLabel(item: HerdQueueAgent): string {
+  return item.coreHierarchy?.delegated
+    ? item.agent.name || item.agent.title || item.agent.terminal_title_stripped || item.agent.terminal_id
+    : item.tabLabel;
 }
 
 function AgentRowSeparator() {

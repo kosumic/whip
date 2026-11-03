@@ -1152,6 +1152,17 @@ export type HerdAgentProjection = {
   tabLabel: string;
   primaryLabel: string;
   control?: AgentControlView;
+  corePinned?: boolean;
+  coreHierarchy?: CoreAgentHierarchy;
+};
+
+export type CoreAgentHierarchy = {
+  parentTerminalId?: string;
+  ancestors: string[];
+  depth: number;
+  descendantCount: number;
+  groupStatus: WhipAgentStatus;
+  delegated: boolean;
 };
 
 export type HerdProjection = {
@@ -1187,6 +1198,11 @@ function herdProjection(value: NativeHerdView): HerdProjection {
       tabLabel: item.tabLabel,
       primaryLabel: item.primaryLabel,
       control: item.control,
+      corePinned: item.corePinned,
+      coreHierarchy: item.coreHierarchy ? {
+        ...item.coreHierarchy,
+        groupStatus: agentStatus(item.coreHierarchy.groupStatus),
+      } : undefined,
     })),
   };
 }
@@ -2951,6 +2967,19 @@ export class NativeHostRuntime {
   ): void {
     if (runtimeAttachments.get(this.runtimeId) !== this) return;
     this.runtime.setMonitoringState(appActive, hostsVisible, accessLocked);
+  }
+
+  setViewedAgent(terminalId?: string): void {
+    if (runtimeAttachments.get(this.runtimeId) !== this) return;
+    this.runtime.setViewedAgent(terminalId);
+  }
+
+  setAgentPinned(terminalId: string, pinned: boolean): Promise<void> {
+    return this.runtime.setAgentPinned(terminalId, pinned);
+  }
+
+  markAgentUnread(terminalId: string): Promise<void> {
+    return this.runtime.markAgentUnread(terminalId);
   }
 
   async createTabWithLaunch(

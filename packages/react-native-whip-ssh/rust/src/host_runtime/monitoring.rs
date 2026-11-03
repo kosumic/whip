@@ -82,6 +82,7 @@ pub(super) fn set_monitoring_state(
         (start_worker, became_active)
     };
     inner.monitoring_changed.notify_one();
+    super::core_attention::schedule(inner);
     if became_active {
         agent_view::request_refresh(inner);
         inner.reconnect_wakeup.notify_one();

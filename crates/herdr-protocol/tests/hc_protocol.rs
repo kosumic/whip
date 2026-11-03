@@ -473,7 +473,11 @@ fn core_projection_uses_shared_layouts_without_inventing_status_or_transcript_bi
         json!({"state":"working","app":"claude-code","session_id":"not-an-authoritative-binding"});
     let mut child = terminal("t2");
     child["parent"] = json!("t1");
-    let state = snapshot(2, vec![parent, child, terminal("t3")]);
+    let mut grandchild = terminal("t3");
+    grandchild["parent"] = json!("t2");
+    // User labels cannot invent parentage or turn a real desktop pane virtual.
+    parent["labels"] = json!({"hc.parent":"t3","hc.virtual-layout":"1"});
+    let state = snapshot(2, vec![parent, child, grandchild]);
     let key = DocumentKey {
         machine: None,
         name: "herdr-app".into(),
@@ -520,6 +524,20 @@ fn core_projection_uses_shared_layouts_without_inventing_status_or_transcript_bi
         .unwrap();
     assert_eq!(parent.agent_status, HerdrAgentStatus::Working);
     assert!(parent.agent_session.is_none());
+    assert!(
+        !parent
+            .state_labels
+            .as_ref()
+            .unwrap()
+            .contains_key(projection::PARENT_LABEL)
+    );
+    assert!(
+        !parent
+            .state_labels
+            .as_ref()
+            .unwrap()
+            .contains_key(herdr_protocol::hc::hierarchy::VIRTUAL_LAYOUT_LABEL)
+    );
     let child = projection
         .snapshot
         .agents
@@ -536,6 +554,10 @@ fn core_projection_uses_shared_layouts_without_inventing_status_or_transcript_bi
         document,
         "projection cannot rewrite desktop data or private focus"
     );
+    let groups = herdr_protocol::hc::hierarchy::project(&projection.snapshot.agents);
+    assert_eq!(groups.nodes["t1"].descendants, 2);
+    assert_eq!(groups.nodes["t3"].workspace, desktop.workspace_id);
+    assert_eq!(groups.nodes["t3"].ancestors, ["t1", "t2"]);
     assert_eq!(
         projection::project("0.1.16", &state, &Documents::default(), &View::default())
             .unwrap()
