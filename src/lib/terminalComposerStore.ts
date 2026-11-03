@@ -104,7 +104,11 @@ export class TerminalComposerStore {
           terminalId: target.session.terminalId,
           paneId: target.session.paneId,
           ssh: target.session.kind === 'ssh',
-          online: target.session.status === 'connected',
+          // Herdr control writes use the host connection. Its terminal viewport
+          // is intentionally released while the activity is in the background.
+          online: target.session.kind === 'ssh'
+            ? target.session.status === 'connected'
+            : runtime.status().state === 'connected',
         }];
       } catch { return []; }
     }));

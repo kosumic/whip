@@ -4,7 +4,7 @@ import type { NativeComposerDictation, ComposerDictationPhase } from 'react-nati
 import { setSpeechInputActive } from './speechInputFocus';
 
 type Recognizer = Pick<typeof import('expo-speech-recognition').ExpoSpeechRecognitionModule,
-  'addListener' | 'start' | 'stop' | 'abort' | 'isRecognitionAvailable' | 'requestPermissionsAsync'> &
+  'addListener' | 'start' | 'stop' | 'abort' | 'isRecognitionAvailable' | 'requestPermissionsAsync' | 'getPermissionsAsync'> &
   Partial<Pick<typeof import('expo-speech-recognition').ExpoSpeechRecognitionModule,
     'supportsOnDeviceRecognition' | 'supportsAudioChunkEvents' | 'supportsEchoCancellation'>>;
 type RecognitionOptions = Parameters<Recognizer['start']>[0];
@@ -187,7 +187,10 @@ export class ComposerSpeechInput {
       session.dependencies = dependencies;
       session.core = dependencies.createCore();
       session.core.begin();
-      const permission = await recognizer.requestPermissionsAsync();
+      const managedCall = Boolean(request.localOnly && request.managedCall && this.reservation === request.owner);
+      // The call was authorized before its foreground service started. Asking
+      // again routes through a paused activity and stalls background segments.
+      const permission = await (managedCall ? recognizer.getPermissionsAsync() : recognizer.requestPermissionsAsync());
       if (this.current !== session) return;
       if (!permission.granted) {
         request.onError('permission');
@@ -197,7 +200,7 @@ export class ComposerSpeechInput {
       const recent = await context;
       if (this.current !== session) return;
       // Only a reserved, local system call can capture alongside its own reply.
-      const monitoring = request.duringPlayback && request.localOnly && request.managedCall && this.reservation === request.owner;
+      const monitoring = request.duringPlayback && managedCall;
       const stoppedPlayback = monitoring ? Promise.resolve() : dependencies.suspendPlayback();
       setSpeechInputActive(true);
       await stoppedPlayback;
