@@ -36,6 +36,7 @@ import { useAppGlassEnabled } from '../src/components/GlassSurface';
 import type { TerminalSubmissionPermitLike } from 'react-native-whip-ssh/src/terminalSubmissions';
 import { TerminalResidencyEndReason } from '../src/lib/terminalResidency';
 import { browserRegistry } from '../src/browser/registry';
+import { composerSpeechInput } from '../src/services/composerSpeechInput';
 
 jest.mock('../src/services/composerImagePaste', () => ({ uploadPastedComposerImage: jest.fn() }));
 jest.mock('../src/services/attachmentPaste', () => ({ discardClipboardAttachment: jest.fn() }));
@@ -1050,6 +1051,50 @@ test('unqueue restores text and attachments into the current draft', async () =>
   await press('removeAttachment');
   expect(props.composerStore.snapshot(target.key).attachments).toEqual([]);
   expect(dispose).toHaveBeenCalledTimes(1);
+});
+
+test.each([
+  { chatViewEnabled: false, expanded: false },
+  { chatViewEnabled: true, expanded: false },
+  { chatViewEnabled: false, expanded: true },
+  { chatViewEnabled: true, expanded: true },
+])('sending dictated text clears the native draft (chat=$chatViewEnabled, expanded=$expanded)', async ({ chatViewEnabled, expanded }) => {
+  const dictatedText = 'Please fix the composer';
+  // Fabric retains setNativeProps separately from the visible text cleared by
+  // TextInput.clear(). Layout updates can reapply those retained text props.
+  const nativeProps = { text: '' };
+  const start = jest.spyOn(composerSpeechInput, 'start').mockImplementation(async request => {
+    request.append(dictatedText);
+  });
+  mockComposerHandle.setNativeProps.mockImplementation((next: { text: string }) => {
+    Object.assign(nativeProps, next);
+  });
+  try {
+    mount({ chatViewEnabled });
+    await press('compose');
+    if (expanded) act(() => { ui('MessageComposer').props.actions.onExpand(); });
+    const composer = () => ui(expanded ? 'ComposerInput' : 'MessageComposer');
+    await act(async () => {
+      if (expanded) ui('ComposerVoiceButton').props.onPress();
+      else composer().props.actions.onVoiceInput();
+    });
+    expect(nativeProps.text).toBe(dictatedText);
+    expect(props.composerStore.snapshot(target.key).text).toBe(dictatedText);
+
+    if (expanded) await press('sendBufferedInput');
+    else await act(async () => { expect(composer().props.actions.onSend()).toBe(true); });
+
+    expect(props.onHistoryEntry).toHaveBeenCalledWith(dictatedText);
+    expect(props.composerStore.snapshot(target.key).text).toBe('');
+    expect(nativeProps.text).toBe('');
+    expect(composer().props.initialValue).toBe('');
+
+    act(() => { composer().props.onChangeText('Next draft'); });
+    expect(props.composerStore.snapshot(target.key).text).toBe('Next draft');
+  } finally {
+    start.mockRestore();
+    mockComposerHandle.setNativeProps.mockReset();
+  }
 });
 
 function pendingImageUpload() {

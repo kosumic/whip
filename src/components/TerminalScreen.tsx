@@ -1447,6 +1447,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         return false;
       }
       if (voiceChatActive) voiceChatRef.current?.submitted(submitted.text);
+      // Clear the text prop retained by Fabric after dictation/paste as well as
+      // the native value; clear() alone lets a later layout restore that prop.
+      replaceComposeText(target.key, '');
       composeInputRef.current?.clear();
       publishQueuedMessages(target.key);
       composerStore.startSubmissions();
