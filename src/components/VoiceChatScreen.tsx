@@ -6,7 +6,6 @@ import Mic from 'lucide-react-native/icons/mic';
 import MicOff from 'lucide-react-native/icons/mic-off';
 import MessageSquare from 'lucide-react-native/icons/message-square';
 import ChevronDown from 'lucide-react-native/icons/chevron-down';
-import SkipForward from 'lucide-react-native/icons/skip-forward';
 import X from 'lucide-react-native/icons/x';
 import Volume2 from 'lucide-react-native/icons/volume-2';
 import Plus from 'lucide-react-native/icons/plus';
@@ -20,11 +19,12 @@ import { VoiceOrb } from './VoiceOrb';
 import { VoiceVadSensitivityContext } from '../lib/voiceVadSensitivity';
 import { useReducedMotion } from './app-ui';
 
-const ORB_SIZE = 256;
-const FLOATING_ORB_SIZE = 108;
+const ORB_SIZE = 208;
+const COMPACT_ORB_SIZE = 88;
+const CONTROL_SIZE = 44;
 const PRESENTATION_DURATION_MS = 380;
-const ORB_SIZE_RATIO = FLOATING_ORB_SIZE / ORB_SIZE;
-const VOICE_COLORS = { canvas: '#000000', text: '#ffffff', muted: '#a3a3a3', control: '#282828', accent: '#c797fa' };
+const ORB_SIZE_RATIO = COMPACT_ORB_SIZE / ORB_SIZE;
+const VOICE_COLORS = { canvas: '#000000', text: '#ffffff', muted: '#a3a3a3', control: '#303030', border: '#4b4b4b', accent: '#c797fa' };
 const INITIAL: VoiceConversationView = { phase: 'starting', muted: false, smartTurn: false, speaker: false, text: '', level: 0, progress: 0, error: null, transcript: null };
 const STATUS = {
   starting: 'voiceChat.starting',
@@ -39,7 +39,9 @@ interface VoiceChatScreenProps {
   send: (text: string) => boolean;
   visible: boolean;
   expanded: boolean;
-  floatingStyle: ComponentProps<typeof Animated.View>['style'];
+  dockStyle: ComponentProps<typeof Animated.View>['style'];
+  compactComposer?: boolean;
+  onComposerHeightChange?: (height: number) => void;
   onMinimize: () => void;
   onExpand: () => void;
   onClose: () => void;
@@ -49,8 +51,8 @@ interface VoiceChatScreenProps {
 
 export interface VoiceChatHandle { submitted: (text: string) => void }
 
-/** Owns the call independently of its full-screen or floating presentation. */
-export function VoiceChatScreen({ ref, target, send, visible, expanded, floatingStyle, onMinimize, onExpand, onClose, onCompose, onAttach }: VoiceChatScreenProps) {
+/** Owns the call independently of its full-screen or docked presentation. */
+export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyle, compactComposer = true, onComposerHeightChange, onMinimize, onExpand, onClose, onCompose, onAttach }: VoiceChatScreenProps) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
@@ -83,6 +85,7 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, floating
   ] }));
   const minimize = (after?: () => void) => {
     if (transitioning.current) return;
+    if (!expanded) { after?.(); return; }
     if (reducedMotion) { onMinimize(); after?.(); return; }
     transitioning.current = true;
     measureOrbs();
@@ -116,14 +119,22 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, floating
   const close = () => { void conversation.current?.close(); callbacks.current.onClose(); };
   const interactive = ['listening', 'muted', 'waiting', 'speaking'].includes(view.phase);
   const compose = () => minimize(onCompose);
+  const composer = <VoiceComposer label={t('voiceChat.compose', { agent: target.label })}
+    muted={view.muted} interactive={interactive} onCompose={compose}
+    onAttach={onAttach ? () => minimize(onAttach) : undefined}
+    onToggleMuted={() => conversation.current?.toggleMuted()} onClose={close} />;
   return <>
     {visible && <GlassPortal name={`voice-chat-${hostId}-${paneId}`}>
-      <Animated.View pointerEvents={expanded ? 'none' : 'box-none'} style={[styles.floating, floatingStyle, { opacity: expanded ? 0 : 1 }]}>
-        <View ref={compactOrb} collapsable={false} onLayout={measureOrbs} style={styles.floatingTarget}>
-          {!expanded && <Pressable accessibilityRole="button" accessibilityLabel={t('voiceChat.reopen')} accessibilityHint={t(STATUS[view.phase])} onPress={onExpand} style={styles.floatingTarget}>
-            <VoiceOrb view={view} size={FLOATING_ORB_SIZE} startedAt={startedAt} />
-          </Pressable>}
+      <Animated.View pointerEvents={expanded ? 'none' : 'box-none'} accessibilityElementsHidden={expanded} importantForAccessibility={expanded ? 'no-hide-descendants' : 'auto'}
+        style={[styles.dock, dockStyle, { opacity: expanded ? 0 : 1 }]}>
+        <View pointerEvents="box-none" style={styles.compactOrbRow}>
+          <View ref={compactOrb} collapsable={false} onLayout={measureOrbs} style={styles.compactTarget}>
+            {!expanded && <Pressable accessibilityRole="button" accessibilityLabel={t('voiceChat.reopen')} accessibilityHint={t(STATUS[view.phase])} onPress={onExpand} style={styles.compactTarget}>
+              <VoiceOrb view={view} size={COMPACT_ORB_SIZE} startedAt={startedAt} />
+            </Pressable>}
+          </View>
         </View>
+        {compactComposer && <View onLayout={event => onComposerHeightChange?.(Math.round(event.nativeEvent.layout.height))} style={styles.compactComposer}>{!expanded && composer}</View>}
       </Animated.View>
     </GlassPortal>}
     <Modal visible={visible && expanded} animationType="none" transparent statusBarTranslucent navigationBarTranslucent presentationStyle="overFullScreen" onShow={measureOrbs} onRequestClose={() => minimize()}>
@@ -147,36 +158,49 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, floating
         {(view.phase === 'starting' || view.phase === 'preparing') && <ActivityIndicator color={VOICE_COLORS.accent} />}
         {view.error && <Text accessibilityRole="alert" className="text-center text-sm leading-5" style={styles.statusText}>{view.error}</Text>}
       </Animated.View>
-      <Animated.View className="flex-row items-center gap-2 px-6" style={chromeMotion}>
-        <View style={styles.composer}>
-          {onAttach && <Button accessibilityLabel={t('terminal.attach')} variant="ghost" className="size-11 rounded-full p-0" onPress={() => minimize(onAttach)}><Plus size={20} color={VOICE_COLORS.muted} /></Button>}
-          <Pressable accessibilityRole="button" accessibilityLabel={t('voiceChat.compose', { agent: target.label })} onPress={compose} style={styles.composeTarget}><Text numberOfLines={1} style={styles.composeText}>{t('voiceChat.compose', { agent: target.label })}</Text></Pressable>
-          <AudioLines size={19} color={VOICE_COLORS.accent} style={styles.composerWave} />
-        </View>
-        <Button accessibilityLabel={view.muted ? t('voiceChat.unmute') : t('voiceChat.mute')} accessibilityState={{ selected: view.muted }} variant="ghost" className="size-11 rounded-full p-0" style={styles.control} disabled={!interactive} onPress={() => conversation.current?.toggleMuted()}>{view.muted ? <MicOff size={20} color={VOICE_COLORS.text} /> : <Mic size={20} color={VOICE_COLORS.text} />}</Button>
-        {view.phase === 'speaking' && <Button accessibilityLabel={t('voiceChat.skip')} variant="ghost" className="size-11 rounded-full p-0" style={styles.control} onPress={() => { void conversation.current?.skip(); }}><SkipForward size={20} color={VOICE_COLORS.text} /></Button>}
-        <Button accessibilityLabel={t('voiceChat.end')} variant="ghost" className="size-11 rounded-full p-0" style={styles.hangup} onPress={close}><X size={22} color={VOICE_COLORS.canvas} /></Button>
+      <Animated.View style={chromeMotion}>
+        {expanded && composer}
       </Animated.View>
     </View>
     </Modal>
   </>;
 }
 
+function VoiceComposer({ label, muted, interactive, onCompose, onAttach, onToggleMuted, onClose }: {
+  label: string; muted: boolean; interactive: boolean; onCompose: () => void; onAttach?: () => void;
+  onToggleMuted: () => void; onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  return <View style={styles.composerRow}>
+    <View style={styles.composer}>
+      {onAttach && <Button accessibilityLabel={t('terminal.attach')} variant="ghost" size="icon" className="rounded-full p-0" onPress={onAttach}><Plus size={24} color={VOICE_COLORS.text} /></Button>}
+      <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onCompose} style={styles.composeTarget}>
+        <Text numberOfLines={1} style={styles.composeText}>{label}</Text>
+        <View style={styles.composerActivity}><AudioLines size={16} color={VOICE_COLORS.text} /></View>
+      </Pressable>
+    </View>
+    <Button accessibilityLabel={muted ? t('voiceChat.unmute') : t('voiceChat.mute')} accessibilityState={{ selected: muted }} variant="ghost" size="icon" className="rounded-full p-0" style={styles.control} disabled={!interactive} onPress={onToggleMuted}>{muted ? <MicOff size={22} color={VOICE_COLORS.text} /> : <Mic size={22} color={VOICE_COLORS.text} />}</Button>
+    <Button accessibilityLabel={t('voiceChat.end')} variant="ghost" size="icon" className="rounded-full p-0" style={styles.hangup} onPress={onClose}><X size={24} color={VOICE_COLORS.canvas} /></Button>
+  </View>;
+}
+
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   backdrop: { backgroundColor: VOICE_COLORS.canvas },
-  control: { backgroundColor: VOICE_COLORS.control },
+  control: { backgroundColor: VOICE_COLORS.control, borderWidth: 1, borderColor: VOICE_COLORS.border },
   hangup: { backgroundColor: VOICE_COLORS.text },
   agentLabel: { flex: 1, marginHorizontal: 12, color: VOICE_COLORS.muted, fontSize: 12 },
   status: { minHeight: 48 },
   statusText: { color: VOICE_COLORS.muted },
-  composer: { flex: 1, height: 44, borderRadius: 24, backgroundColor: VOICE_COLORS.control, flexDirection: 'row', alignItems: 'center', overflow: 'hidden' },
-  composeTarget: { flex: 1, justifyContent: 'center', minHeight: 44, paddingLeft: 10 },
-  composeText: { color: VOICE_COLORS.muted, fontSize: 14 },
-  composerWave: { marginHorizontal: 12 },
+  composerRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 24 },
+  composer: { flex: 1, height: CONTROL_SIZE, borderRadius: CONTROL_SIZE / 2, borderWidth: 1, borderColor: VOICE_COLORS.border, backgroundColor: VOICE_COLORS.control, flexDirection: 'row', alignItems: 'center', overflow: 'hidden' },
+  composeTarget: { flex: 1, flexDirection: 'row', alignItems: 'center', minHeight: CONTROL_SIZE, paddingLeft: 4, paddingRight: 12, gap: 8 },
+  composeText: { flex: 1, color: VOICE_COLORS.muted, fontSize: 18 },
+  composerActivity: { width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, borderColor: VOICE_COLORS.accent, alignItems: 'center', justifyContent: 'center' },
   orbSpace: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: ORB_SIZE + 32, paddingTop: ORB_SIZE / 3 },
   orbTarget: { width: ORB_SIZE, height: ORB_SIZE, alignItems: 'center', justifyContent: 'center' },
-  orb: { overflow: 'hidden' },
-  floating: { position: 'absolute', left: 20, right: 20, alignItems: 'center' },
-  floatingTarget: { width: FLOATING_ORB_SIZE, height: FLOATING_ORB_SIZE, alignItems: 'center', justifyContent: 'center' },
+  dock: { position: 'absolute', left: 0, right: 0 },
+  compactOrbRow: { height: COMPACT_ORB_SIZE + 64, alignItems: 'center', justifyContent: 'center' },
+  compactTarget: { width: COMPACT_ORB_SIZE, height: COMPACT_ORB_SIZE, alignItems: 'center', justifyContent: 'center' },
+  compactComposer: { height: CONTROL_SIZE + 16, paddingBottom: 16 },
 });

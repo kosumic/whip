@@ -340,6 +340,27 @@ test.each([false, true])('voice chat is available before the first transcript in
   expect(ui('MessageComposer').props.voiceChatLabel).toBeUndefined();
 });
 
+test('the voice composer opens the text editor and preserves a draft when it loses focus', async () => {
+  const voiceChatTarget = { agent: 'codex' as const, hostId: 'host', paneId: 'pane', tabId: 'tab', label: 'Codex' };
+  mount({ chatViewEnabled: true, voiceChatTarget });
+  await press('compose');
+  act(() => { ui('MessageComposer').props.onVoiceChat(); });
+  act(() => { ui('VoiceChatScreen').props.onMinimize(); });
+  expect(ui('VoiceChatScreen').props.compactComposer).toBe(true);
+  expect(renderer.root.findAllByType(MockMessageComposer)).toHaveLength(0);
+
+  act(() => { ui('VoiceChatScreen').props.onCompose(); });
+  expect(ui('VoiceChatScreen').props.compactComposer).toBe(false);
+  act(() => { ui('MessageComposer').props.onChangeText('Keep my draft'); });
+  act(() => { ui('MessageComposer').props.onBlur(); });
+  expect(ui('MessageComposer').props.initialValue).toBe('Keep my draft');
+  expect(ui('VoiceChatScreen').props.compactComposer).toBe(false);
+
+  act(() => { ui('MessageComposer').props.onChangeText(''); });
+  expect(ui('VoiceChatScreen').props.compactComposer).toBe(true);
+  expect(renderer.root.findAllByType(MockMessageComposer)).toHaveLength(0);
+});
+
 test('switching to chat hides terminal keys and retains Paste, History, and Scan links', () => {
   mount();
   expect(button('ctrlModifier')).toBeDefined();
