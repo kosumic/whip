@@ -179,13 +179,13 @@ mod tests {
     fn whisper_features_match_the_upstream_reference() {
         let features = Features::new().extract(&reference_audio());
         for (index, expected) in [
-            (599, 0.74522996),
-            (630, 0.864995),
-            (680, 1.1089218),
-            (8639, 0.6534985),
-            (32639, 0.6930995),
-            (40639, 0.42226338),
-            (63839, 0.07282168),
+            (599, 0.745_229_96),
+            (630, 0.864_995),
+            (680, 1.108_921_8),
+            (8639, 0.653_498_5),
+            (32639, 0.693_099_5),
+            (40639, 0.422_263_38),
+            (63839, 0.072_821_68),
         ] {
             assert!(
                 (features[index] - expected).abs() < 5e-5,
@@ -202,6 +202,6 @@ mod tests {
             .unwrap()
             .predict(&reference_audio())
             .unwrap();
-        assert!((probability - 0.9903487).abs() < 1e-4, "{probability}");
+        assert!((probability - 0.990_348_7).abs() < 1e-4, "{probability}");
     }
 }

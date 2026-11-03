@@ -228,6 +228,9 @@ jobs:
     env:
       NODE_ENV: production
       CARGO_INCREMENTAL: '0'
+      # The host UniFFI generator does not need debug symbols. Keep cold builds
+      # within the hosted runner's disk budget alongside the Android toolchain.
+      CARGO_PROFILE_DEV_DEBUG: '0'
       WHIP_CONFIGURATION_CACHE: ${{ secrets.GRADLE_ENCRYPTION_KEY != '' && 'true' || 'false' }}
       SCCACHE_GHA_ENABLED: 'true'
 
@@ -286,7 +289,7 @@ jobs:
           RUST_CACHE_ENVIRONMENT: ${{ hashFiles('flake.nix', 'flake.lock', 'packages/react-native-whip-ssh/rust/rust-toolchain.toml') }}
           RUST_CACHE_DEPENDENCIES: ${{ hashFiles('packages/react-native-whip-ssh/rust/Cargo.toml', 'packages/react-native-whip-ssh/rust/Cargo.lock', 'crates/*/Cargo.toml', 'whip-notify/Cargo.toml', 'package-lock.json', 'patches/uniffi-bindgen-react-native+*.patch') }}
         run: |
-          android_cache_prefix="android-rust-v1-$RUNNER_OS-$RUNNER_ARCH-$RUST_CACHE_ENVIRONMENT"
+          android_cache_prefix="android-rust-v2-$RUNNER_OS-$RUNNER_ARCH-$RUST_CACHE_ENVIRONMENT"
           echo "cache-prefix=$android_cache_prefix" >> "$GITHUB_OUTPUT"
           echo "cache-key=$android_cache_prefix-$RUST_CACHE_DEPENDENCIES-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
 

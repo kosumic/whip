@@ -21,6 +21,7 @@ import android.os.Looper
 import android.os.PowerManager
 import android.telecom.DisconnectCause
 import android.util.Log
+import androidx.annotation.RequiresApi
 import androidx.core.telecom.CallAttributesCompat
 import androidx.core.telecom.CallControlResult
 import androidx.core.telecom.CallControlScope
@@ -46,12 +47,18 @@ class VoiceCallService : Service() {
   override fun onCreate() {
     super.onCreate()
     instance = this
-    getSystemService(NotificationManager::class.java).createNotificationChannel(
-      NotificationChannel(CHANNEL, getString(R.string.voice_call_channel), NotificationManager.IMPORTANCE_LOW)
-        .apply { setSound(null, null); setShowBadge(false) },
-    )
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      getSystemService(NotificationManager::class.java).createNotificationChannel(
+        NotificationChannel(CHANNEL, getString(R.string.voice_call_channel), NotificationManager.IMPORTANCE_LOW)
+          .apply { setSound(null, null); setShowBadge(false) },
+      )
+    }
   }
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+      stopSelf()
+      return START_NOT_STICKY
+    }
     val session = current
     // Even a cancelled start must satisfy Android's foreground-service deadline.
     try { promote(session) } catch (error: Exception) {
@@ -75,6 +82,7 @@ class VoiceCallService : Service() {
     return START_NOT_STICKY
   }
 
+  @RequiresApi(Build.VERSION_CODES.TIRAMISU)
   @SuppressLint("MissingPermission", "WakelockTimeout")
   private fun connect(session: Session) {
     wakeLock = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:voice-call")
@@ -142,6 +150,7 @@ class VoiceCallService : Service() {
     }
   }
 
+  @RequiresApi(Build.VERSION_CODES.O)
   private fun requestInitialRoute(session: Session) {
     if (current !== session || !session.ready || session.ending || session.initialRouteRequested) return
     val preferred = session.endpoints.firstOrNull { it.type == CallEndpointCompat.TYPE_BLUETOOTH || it.type == CallEndpointCompat.TYPE_WIRED_HEADSET }
@@ -156,6 +165,7 @@ class VoiceCallService : Service() {
     }
   }
 
+  @RequiresApi(Build.VERSION_CODES.S)
   private fun promote(session: Session?) {
     val name = session?.label ?: getString(R.string.app_name)
     val token = session?.token.orEmpty()
@@ -172,11 +182,12 @@ class VoiceCallService : Service() {
     if (session != null) builder.addAction(Notification.Action.Builder(null,
       getString(if (session.localMuted || session.systemMuted) R.string.voice_call_unmute else R.string.voice_call_mute), action(MUTE, token, 2)).build())
     val types = ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-    if (Build.VERSION.SDK_INT >= 29) startForeground(NOTIFICATION, builder.build(), types) else startForeground(NOTIFICATION, builder.build())
+    startForeground(NOTIFICATION, builder.build(), types)
   }
   private fun action(action: String, token: String, request: Int): PendingIntent = PendingIntent.getService(this, request,
     Intent(this, VoiceCallService::class.java).setAction(action).putExtra(TOKEN, token), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
+  @RequiresApi(Build.VERSION_CODES.O)
   private fun finish(session: Session, error: String?) {
     if (current !== session || session.ending) return
     session.ending = true
@@ -226,7 +237,7 @@ class VoiceCallService : Service() {
     val endings = mutableListOf<Promise>()
     val timeout = Runnable {
       val service = instance
-      if (service != null) service.finish(this, "The system voice call did not start.")
+      if (service != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) service.finish(this, "The system voice call did not start.")
       else if (current === this) {
         current = null
         start?.reject("E_VOICE_CALL", "The system voice call service did not start.")
@@ -254,7 +265,7 @@ class VoiceCallService : Service() {
 
     fun start(context: Context, token: String, label: String, promise: Promise) {
       if (current != null) { promise.reject("E_VOICE_CALL", "A voice call is already active."); return }
-      if (Build.VERSION.SDK_INT < 33 || context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
         promise.reject("E_VOICE_CALL", "Microphone permission and Android 13 or later are required."); return
       }
       val session = Session(token, label, promise)
@@ -265,6 +276,7 @@ class VoiceCallService : Service() {
       } catch (error: Exception) { current = null; promise.reject("E_VOICE_CALL", error) }
     }
     fun end(token: String, promise: Promise? = null) {
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) { promise?.resolve(null); return }
       val session = current?.takeIf { it.token == token }
       if (session == null) { promise?.resolve(null); return }
       if (promise != null) session.endings.add(promise)
@@ -286,11 +298,13 @@ class VoiceCallService : Service() {
       promise?.resolve(null)
     }
     private fun publishMute(session: Session) {
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
       if (current !== session || session.ending) return
       emit(session, "muted", muted = session.localMuted || session.systemMuted)
       instance?.promote(session)
     }
     fun setSpeaker(token: String, speaker: Boolean, promise: Promise) {
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) { promise.reject("E_VOICE_ROUTE", "Voice calls are unavailable on this Android version."); return }
       val session = current?.takeIf { it.token == token && it.ready && !it.ending }
       val service = instance
       if (session == null || service == null) { promise.reject("E_VOICE_CALL", "The voice call is not active."); return }
