@@ -239,12 +239,8 @@ jobs:
         name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - &android-nix
-        name: Install Nix
-        uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31
-        with:
-          extra_nix_config: |
-            experimental-features = nix-command flakes
+      - name: Set up cached Android Nix environment
+        uses: ./.github/actions/setup-android-nix
 
       - &android-node
         name: Set up Node.js
@@ -321,13 +317,14 @@ jobs:
         if: env.WHIP_CONFIGURATION_CACHE == 'true'
         id: android-configuration-key
         env:
-          GRADLE_CONFIGURATION_ENVIRONMENT: ${{ hashFiles('flake.nix', 'flake.lock', 'package-lock.json', 'android/gradle/wrapper/gradle-wrapper.properties', 'android/gradle.properties', 'android/*.gradle', 'android/app/build.gradle', 'packages/*/android/*.gradle', '.github/gradle/*.gradle', 'patches/*.patch') }}
+          GRADLE_CONFIGURATION_ENVIRONMENT: ${{ hashFiles('flake.nix', 'flake.lock', 'package.json', 'package-lock.json', 'app.json', 'app.config.js', 'react-native.config.*', 'android/gradle/wrapper/gradle-wrapper.properties', 'android/gradle.properties', 'android/*.gradle', 'android/app/build.gradle', 'packages/*/package.json', 'packages/*/expo-module.config.json', 'packages/*/react-native.config.*', 'packages/*/android/*.gradle', 'modules/*/package.json', 'modules/*/expo-module.config.json', 'modules/*/react-native.config.*', 'modules/*/android/*.gradle', '.github/gradle/*.gradle', 'patches/*.patch') }}
         run: |
-          android_configuration_prefix="android-configuration-v1-$RUNNER_OS-$RUNNER_ARCH-$GRADLE_CONFIGURATION_ENVIRONMENT"
+          android_configuration_prefix="android-configuration-v2-$RUNNER_OS-$RUNNER_ARCH-$GRADLE_CONFIGURATION_ENVIRONMENT"
           echo "cache-prefix=$android_configuration_prefix" >> "$GITHUB_OUTPUT"
           echo "cache-key=$android_configuration_prefix-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
 
-      # Included plugin builds must accompany the encrypted task graph on a fresh runner.
+      # Restore configuration inputs as well as included plugin builds. Gradle
+      # invalidates the encrypted task graph when generated autolinking is absent.
       - name: Restore Android configuration cache
         if: env.WHIP_CONFIGURATION_CACHE == 'true'
         id: android-configuration-cache
@@ -335,6 +332,7 @@ jobs:
         with:
           path: &android-configuration-cache-paths |
             android/.gradle/configuration-cache
+            android/build/generated/autolinking
             node_modules/@react-native/gradle-plugin/.gradle
             node_modules/@react-native/gradle-plugin/**/build
             node_modules/expo-modules-autolinking/android/expo-gradle-plugin/.gradle
@@ -406,7 +404,11 @@ jobs:
 
     steps:
       - *android-checkout
-      - *android-nix
+      - name: Install Nix
+        uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
       - *android-node
       - *android-java
       - *android-sdk
