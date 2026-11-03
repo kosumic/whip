@@ -71,6 +71,16 @@ test('chat hides terminal keys while retaining shared actions and keyboard visib
   ]);
 });
 
+test.each([false, true])('composer hides terminal keys and duplicate attachments (keyboard=%s)', keyboardVisible => {
+  const visibleControls = (chatViewEnabled: boolean) => defaultTerminalControlOrder
+    .filter(control => terminalControlIsVisible(control, keyboardVisible, chatViewEnabled, true));
+  const sharedControls = ['paste', 'history', 'compose', 'chat',
+    ...keyboardVisible ? [] : ['files', 'github', 'links'], 'find'];
+
+  expect(visibleControls(false)).toEqual(['keyboard', ...sharedControls]);
+  expect(visibleControls(true)).toEqual(sharedControls);
+});
+
 test('increments one persisted control without losing other usage', () => {
   expect(incrementTerminalControlUsage({ ctrl: 2 }, 'paste')).toEqual({ ctrl: 2, paste: 1 });
 });
