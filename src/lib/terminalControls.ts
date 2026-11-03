@@ -40,12 +40,11 @@ export const TERMINAL_TEXT_CONTROL_CLASS =
   `h-9 min-h-0 min-w-11 items-center justify-center rounded-sm border border-border px-2.5 py-0 ${APP_GLASS_FLOATING_CONTROL_CLASS}`;
 
 const terminalControlIds = new Set<string>(defaultTerminalControlOrder);
-const chatViewControls = new Set<TerminalControlId>([
+const sharedInputControls = new Set<TerminalControlId>([
   'paste',
   'history',
   'compose',
   'chat',
-  'attach',
   'files',
   'github',
   'links',
@@ -103,8 +102,10 @@ export function terminalControlIsVisible(
   control: TerminalControlId,
   keyboardVisible: boolean,
   chatViewEnabled = false,
+  composeOpen = false,
 ): boolean {
-  if (chatViewEnabled && !chatViewControls.has(control)) return false;
+  if (composeOpen && control !== 'keyboard' && !sharedInputControls.has(control)) return false;
+  if (chatViewEnabled && control !== 'attach' && !sharedInputControls.has(control)) return false;
   const hiddenControls = keyboardVisible
     ? terminalControlsHiddenWithKeyboard
     : terminalControlsHiddenWithoutKeyboard;

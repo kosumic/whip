@@ -2259,6 +2259,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                   control,
                   keyboardVisible,
                   chatViewEnabled,
+                  composeOpen,
                 ),
               )
               .map(renderTerminalControl)}
