@@ -20,6 +20,9 @@ import { Text } from './ui/text';
 import { ShizukuAccessToggle } from './ShizukuAccessToggle';
 
 interface Props {
+  corePinned?: boolean;
+  onPinChange?: (pinned: boolean) => void;
+  onMarkUnread?: () => void;
   visible: boolean;
   label: string;
   kind?: string;
@@ -33,6 +36,9 @@ interface Props {
 }
 
 export function AgentActionsPopup({
+  corePinned,
+  onPinChange,
+  onMarkUnread,
   visible,
   label,
   kind,
@@ -125,6 +131,15 @@ export function AgentActionsPopup({
               >
                 <Icon as={Copy} size={18} />
               </Button>
+            </View>
+          ) : null}
+          {corePinned !== undefined ? (
+            <View className="mt-5 gap-3">
+              <View className="flex-row items-center justify-between">
+                <Text>{t('herd.pinAgent')}</Text>
+                <Switch accessibilityLabel={t('herd.pinAgent')} checked={corePinned} disabled={busy || !onPinChange} onCheckedChange={pinned => onPinChange?.(pinned)} />
+              </View>
+              <Button variant="ghost" disabled={busy} onPress={onMarkUnread}><Text>{t('herd.markUnread')}</Text></Button>
             </View>
           ) : null}
           {showReverse ? (

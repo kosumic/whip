@@ -214,6 +214,7 @@ function setup(agent: ChatAgent) {
   } as unknown as HerdrSnapshot;
   const native = {
     runtimeId: 'runtime-1',
+    setViewedAgent: jest.fn(),
     sshShellDirectory: jest.fn(() => undefined),
     subscribeSshShellDirectory: jest.fn(() => () => {}),
     requestHerdrApi: jest.fn(async () => ({})),

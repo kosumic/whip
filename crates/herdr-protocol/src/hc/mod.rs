@@ -1,6 +1,7 @@
 //! Transport-neutral herdr-core generation-1 protocol.
 //!
 //! Source contracts and adapted algorithms are pinned in UPSTREAM.md.
+pub mod attention;
 pub mod client;
 pub mod control;
 pub mod documents;
@@ -8,6 +9,7 @@ pub mod edits;
 pub mod endpoint;
 pub mod events;
 pub mod generated;
+pub mod hierarchy;
 pub mod projection;
 pub mod session;
 pub mod terminal;

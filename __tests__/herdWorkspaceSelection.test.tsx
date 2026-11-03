@@ -41,6 +41,7 @@ jest.mock('lucide-react-native/icons/focus', () => ('Focus'));
 jest.mock('lucide-react-native/icons/gamepad-2', () => ('Gamepad2'));
 jest.mock('lucide-react-native/icons/layers', () => ('Layers3'));
 jest.mock('lucide-react-native/icons/play', () => ('Play'));
+jest.mock('lucide-react-native/icons/pin', () => ('Pin'));
 jest.mock('lucide-react-native/icons/rotate-ccw', () => ('RotateCcw'));
 jest.mock('lucide-react-native/icons/rotate-ccw-clock', () => ('History'));
 jest.mock('lucide-react-native/icons/search', () => ('Search'));
@@ -714,6 +715,77 @@ describe('Herd workspace selection intent', () => {
     expect(
       row.props.onMoveShouldSetPanResponderCapture(null, { dx: -30, dy: 1 }),
     ).toBe(true);
+  });
+
+  test('Core groups collapse recursively and child actions target only the selected terminal', () => {
+    const screenProps = agentTray();
+    const template = screenProps.agents[0];
+    const parent = {
+      ...template, corePinned: false,
+      coreHierarchy: { ancestors: [], depth: 0, descendantCount: 2, groupStatus: 'blocked' as const, delegated: false },
+    };
+    const child = {
+      ...template, corePinned: false,
+      agent: { ...template.agent, terminal_id: 'child', pane_id: 'child-pane', name: 'worker', agent_status: 'blocked' as const },
+      coreHierarchy: { parentTerminalId: parent.agent.terminal_id, ancestors: [parent.agent.terminal_id], depth: 1, descendantCount: 1, groupStatus: 'blocked' as const, delegated: true },
+    };
+    const grandchild = {
+      ...template, corePinned: false,
+      agent: { ...template.agent, terminal_id: 'grandchild', pane_id: 'grandchild-pane', agent_status: 'unknown' as const },
+      coreHierarchy: { parentTerminalId: 'child', ancestors: [parent.agent.terminal_id, 'child'], depth: 2, descendantCount: 0, groupStatus: 'unknown' as const, delegated: true },
+    };
+    screenProps.agents = [parent, child, grandchild];
+    act(() => { renderer = create(<HerdScreen {...screenProps} />); });
+    const toggles = () => renderer.root.findAll(node => String(node.type) === 'Pressable' && node.props.accessibilityLabel === 'herd.toggleChildren');
+    const openButtons = () => renderer.root.findAll(node => String(node.type) === 'Button' && node.props.accessibilityLabel?.startsWith('herd.openAgentTerminal'));
+    const list = () => findHost(renderer.root, 'FlatList').props.data;
+    expect(list()).toEqual([parent, child, grandchild]);
+    expect(renderer.root.findAll(node => String(node.type) === 'AgentStatusMedallion').map(node => node.props.status)).toEqual(['idle', 'blocked', 'unknown']);
+    expect(renderer.root.findAll(node => String(node.type) === 'StatusBadge' && node.props.label === 'herd.childCount').map(node => node.props.status)).toEqual(['blocked', 'blocked']);
+    expect(openButtons()[1].props.accessibilityActions.map((action: { name: string }) => action.name)).not.toContain('close-tab');
+    act(() => { openButtons()[1].props.onPress(); });
+    expect(screenProps.onOpenTerminal).toHaveBeenCalledWith('host-1', child.agent);
+    act(() => { openButtons()[1].props.onAccessibilityAction({ nativeEvent: { actionName: 'close-tab' } }); });
+    expect(screenProps.onCloseTab).not.toHaveBeenCalled();
+    act(() => { toggles()[1].props.onPress({ stopPropagation: jest.fn() }); });
+    expect(list()).toEqual([parent, child]);
+    act(() => { toggles()[0].props.onPress({ stopPropagation: jest.fn() }); });
+    expect(list()).toEqual([parent]);
+    expect(toggles()[0].props.accessibilityState.expanded).toBe(false);
+    act(() => { renderer.root.find(node => String(node.type) === 'Button' && node.props.accessibilityLabel === 'herd.searchAgents').props.onPress(); });
+    act(() => { renderer.root.find(node => String(node.type) === 'Input' && node.props.accessibilityLabel === 'herd.searchAgents').props.onChangeText('worker'); });
+    expect(list()).toEqual([child]);
+    act(() => { renderer.root.find(node => String(node.type) === 'Button' && node.props.accessibilityLabel === 'herd.closeSearch').props.onPress(); });
+    const orphan = { ...child, coreHierarchy: { ...child.coreHierarchy, parentTerminalId: undefined, ancestors: [], depth: 0 } };
+    act(() => { renderer.update(<HerdScreen {...screenProps} agents={[orphan]} />); });
+    expect(list()).toEqual([orphan]);
+  });
+
+  test('legacy parent-like labels never create a hierarchy or hide rows', () => {
+    const screenProps = agentTray();
+    const parent = screenProps.agents[0];
+    const child = { ...parent, agent: { ...parent.agent, terminal_id: 'child', pane_id: 'child-pane', state_labels: { 'hc.parent': parent.agent.terminal_id } } };
+    screenProps.agents = [parent, child];
+    act(() => { renderer = create(<HerdScreen {...screenProps} />); });
+    expect(findHost(renderer.root, 'FlatList').props.data).toEqual([parent, child]);
+    expect(renderer.root.findAll(node => String(node.type) === 'Pressable' && node.props.accessibilityLabel === 'herd.toggleChildren')).toHaveLength(0);
+  });
+
+  test('shared attention actions are present only on Core agent rows', async () => {
+    const onSetAgentPinned = jest.fn().mockResolvedValue(undefined);
+    const onMarkAgentUnread = jest.fn().mockResolvedValue(undefined);
+    const tray = agentTray({ onSetAgentPinned, onMarkAgentUnread });
+    act(() => { renderer = create(<HerdScreen {...tray} />); });
+    openAgentMenu();
+    expect(renderer.root.findByType(AgentActionsPopup).props.corePinned).toBeUndefined();
+    expect(renderer.root.findAll(node => String(node.type) === 'Switch' && node.props.accessibilityLabel === 'herd.pinAgent')).toHaveLength(0);
+    act(() => { renderer.update(<HerdScreen {...tray} agents={tray.agents.map(item => ({ ...item, corePinned: false }))} />); });
+    const menu = renderer.root.findByType(AgentActionsPopup);
+    expect(menu.props.corePinned).toBe(false);
+    await act(async () => menu.props.onPinChange(true));
+    expect(onSetAgentPinned).toHaveBeenCalledWith('host-1', tray.agents[0].agent.terminal_id, true);
+    await act(async () => menu.props.onMarkUnread());
+    expect(onMarkAgentUnread).toHaveBeenCalledWith('host-1', tray.agents[0].agent.terminal_id);
   });
 
   test('long press opens a glass actions menu instead of remote files', () => {

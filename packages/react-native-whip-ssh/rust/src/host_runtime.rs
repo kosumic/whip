@@ -7,6 +7,7 @@ mod agent_view;
 mod agents;
 mod chat_identity;
 mod connection;
+mod core_attention;
 #[cfg(test)]
 mod tailcat_proxyjump_tests;
 pub use connection::herdr_protocol_label;
@@ -631,6 +632,7 @@ struct RuntimeInner {
     status_tx: watch::Sender<HostRuntimeStatus>,
     terminal_settled: Notify,
     monitoring: Mutex<MonitoringState>,
+    core_attention: Mutex<core_attention::State>,
     monitoring_changed: Arc<Notify>,
     reconnect_wakeup: Arc<Notify>,
 }
@@ -955,6 +957,7 @@ pub fn create_host_runtime(
         status_tx,
         terminal_settled: Notify::new(),
         monitoring: Mutex::new(MonitoringState::default()),
+        core_attention: Mutex::new(core_attention::State::default()),
         monitoring_changed: Arc::new(Notify::new()),
         reconnect_wakeup: Arc::new(Notify::new()),
     });
@@ -1021,6 +1024,9 @@ impl HostRuntime {
 
     pub(crate) fn herd_agent_order(&self) -> Option<Vec<String>> {
         self.inner.state.lock().agent_order.clone()
+    }
+    pub(crate) fn core_backend(&self) -> bool {
+        self.inner.herdr.is_core()
     }
 }
 

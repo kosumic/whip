@@ -393,6 +393,11 @@ impl Builder<'_> {
                 focused,
                 self.state.seq(),
             );
+            if location.virtual_tab {
+                info.state_labels
+                    .get_or_insert_default()
+                    .insert(super::hierarchy::VIRTUAL_LAYOUT_LABEL.into(), "1".into());
+            }
             if let Some(title) = self.titles.get(&pane_key) {
                 info.label = Some(title.clone());
             }
@@ -487,13 +492,7 @@ pub fn agent_kind(app: &str) -> Option<&'static str> {
     }
 }
 fn agent_status(terminal: &Terminal) -> HerdrAgentStatus {
-    match reported_status(terminal).map(|s| s.state.as_str()) {
-        Some("blocked" | "error") => HerdrAgentStatus::Blocked,
-        Some("done") => HerdrAgentStatus::Done,
-        Some("working") => HerdrAgentStatus::Working,
-        Some("idle") => HerdrAgentStatus::Idle,
-        _ => HerdrAgentStatus::Unknown,
-    }
+    super::attention::status(terminal)
 }
 fn transcript(terminal: &Terminal) -> Option<HerdrAgentSessionInfo> {
     let agent = agent_kind(terminal.labels.get("whip.transcript.agent")?)?;
@@ -526,6 +525,13 @@ fn project_pane(
     let app = status.and_then(|s| s.app.as_deref());
     let agent = app.map(|app| agent_kind(app).unwrap_or(app).to_owned());
     let mut labels: HashMap<_, _> = terminal.labels.clone().into_iter().collect();
+    // These are projection metadata, never user-supplied terminal labels.
+    labels.remove(PARENT_LABEL);
+    labels.remove(super::hierarchy::VIRTUAL_LAYOUT_LABEL);
+    labels.insert(
+        super::attention::TURN_LABEL.into(),
+        terminal.turn.unwrap_or(0).to_string(),
+    );
     labels.insert(
         "hc.reported".into(),
         terminal.reported.unwrap_or(false).to_string(),
