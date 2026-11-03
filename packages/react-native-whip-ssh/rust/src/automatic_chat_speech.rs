@@ -22,6 +22,7 @@ pub struct ChatSpeechUtterance {
 
 struct Pending {
     utterance: ChatSpeechUtterance,
+    tab_prefix: String,
     message_id: String,
     part_id: String,
     queued_at: u64,
@@ -35,6 +36,8 @@ struct State {
     pending: VecDeque<Pending>,
     playing_key: Option<String>,
     playing_part: Option<SpeechIdentity>,
+    // Prefix history survives idle gaps and dismissal, independently of playback.
+    last_spoken_source: Option<(String, String)>,
     dismissed: HashSet<SpeechIdentity>,
 }
 
@@ -53,7 +56,10 @@ impl State {
             || self
                 .pending
                 .iter()
-                .map(|item| item.utterance.text.encode_utf16().count())
+                .map(|item| {
+                    item.utterance.text.encode_utf16().count()
+                        + item.tab_prefix.encode_utf16().count()
+                })
                 .sum::<usize>()
                 > MAX_PENDING_UNITS
         {
@@ -110,8 +116,9 @@ impl AutomaticChatSpeechQueue {
                 state.pending.push_back(Pending {
                     utterance: ChatSpeechUtterance {
                         key: key.clone(),
-                        text: chat_speech_announcement(tab_name.clone(), text),
+                        text,
                     },
+                    tab_prefix: chat_speech_prefix(&tab_name),
                     message_id: chunk.message_id.clone(),
                     part_id: chunk.part_id.clone(),
                     queued_at: now_ms,
@@ -129,8 +136,18 @@ impl AutomaticChatSpeechQueue {
             .pending
             .front()
             .is_some_and(|first| state.competing_with(&first.utterance.key));
-        while let Some(item) = state.pending.pop_front() {
+        while let Some(mut item) = state.pending.pop_front() {
             if !competing || now_ms.saturating_sub(item.queued_at) <= MAX_AGE_MS {
+                let same_source = state
+                    .last_spoken_source
+                    .as_ref()
+                    .is_some_and(|(key, prefix)| {
+                        key == &item.utterance.key && prefix == &item.tab_prefix
+                    });
+                if !same_source {
+                    item.utterance.text.insert_str(0, &item.tab_prefix);
+                }
+                state.last_spoken_source = Some((item.utterance.key.clone(), item.tab_prefix));
                 state.playing_key = Some(item.utterance.key.clone());
                 state.playing_part =
                     Some((item.utterance.key.clone(), item.message_id, item.part_id));
@@ -176,16 +193,20 @@ impl AutomaticChatSpeechQueue {
 
 #[uniffi::export]
 pub fn chat_speech_announcement(tab_name: String, text: String) -> String {
+    format!("{}{text}", chat_speech_prefix(&tab_name))
+}
+
+fn chat_speech_prefix(tab_name: &str) -> String {
     let name = tab_name.trim().chars().take(80).collect::<String>();
     if name.is_empty() {
-        return text;
+        return String::new();
     }
     let suffix = if name.to_ascii_lowercase().ends_with(" tab") {
         ""
     } else {
         " tab"
     };
-    format!("{name}{suffix}: {text}")
+    format!("{name}{suffix}: ")
 }
 
 #[cfg(test)]
@@ -241,6 +262,58 @@ mod tests {
     }
 
     #[test]
+    fn tab_prefix_follows_spoken_source_across_chunks_idle_gaps_and_switches() {
+        let queue = AutomaticChatSpeechQueue::new();
+        for key in ["one", "two"] {
+            update(&queue, key, "history", 0);
+        }
+        update(&queue, "one", "First update", 1);
+        update(&queue, "one", "Second update", 2);
+        assert_eq!(take(&queue, 2).text, "Debug tab: First update");
+        assert_eq!(take(&queue, 2).text, "Second update");
+        assert!(queue.next(2).is_none());
+
+        update(&queue, "one", "After idle", 3);
+        assert_eq!(take(&queue, 3).text, "After idle");
+        // Different sources still announce themselves when their labels match.
+        update(&queue, "two", "Other tab", 4);
+        update(&queue, "one", "Back again", 5);
+        assert_eq!(take(&queue, 5).text, "Debug tab: Other tab");
+        assert_eq!(take(&queue, 5).text, "Debug tab: Back again");
+
+        queue.reset();
+        update(&queue, "one", "history", 6);
+        update(&queue, "one", "After reset", 7);
+        assert_eq!(take(&queue, 7).text, "Debug tab: After reset");
+        queue.update(
+            "one".into(),
+            AgentTranscriptKind::Codex,
+            "Build".into(),
+            true,
+            false,
+            messages("renamed", "Renamed tab"),
+            8,
+        );
+        assert_eq!(take(&queue, 8).text, "Build tab: Renamed tab");
+    }
+
+    #[test]
+    fn expired_updates_do_not_change_the_previous_spoken_source() {
+        let queue = AutomaticChatSpeechQueue::new();
+        for key in ["one", "two"] {
+            update(&queue, key, "history", 0);
+        }
+        update(&queue, "one", "First update", 1);
+        assert_eq!(take(&queue, 1).text, "Debug tab: First update");
+        update(&queue, "two", "Expired other tab", 2);
+        update(&queue, "one", "Expired same tab", 3);
+        assert!(queue.next(MAX_AGE_MS + 4).is_none());
+
+        update(&queue, "one", "Fresh update", MAX_AGE_MS + 5);
+        assert_eq!(take(&queue, MAX_AGE_MS + 5).text, "Fresh update");
+    }
+
+    #[test]
     fn overload_drops_oldest_waiting_updates_and_stale_speech_expires() {
         let queue = AutomaticChatSpeechQueue::new();
         update(&queue, "one", "history", 0);
@@ -261,7 +334,7 @@ mod tests {
         update(&queue, "one", "stale", 10);
         update(&queue, "two", "history", 10);
         update(&queue, "two", "recent", MAX_AGE_MS + 11);
-        assert_eq!(take(&queue, MAX_AGE_MS + 11).text, "Debug tab: recent");
+        assert_eq!(take(&queue, MAX_AGE_MS + 11).text, "recent");
         assert!(queue.next(MAX_AGE_MS + 11).is_none());
     }
 
@@ -285,7 +358,12 @@ mod tests {
         while let Some(item) = queue.next(MAX_AGE_MS * 10) {
             let size = item.text.encode_utf16().count();
             assert!(size <= MAX_CONTENT_UNITS + "Debug tab: ".len());
-            spoken.push_str(item.text.strip_prefix("Debug tab: ").unwrap_or_default());
+            if count == 0 {
+                assert!(item.text.starts_with("Debug tab: "));
+            } else {
+                assert!(!item.text.starts_with("Debug tab: "));
+            }
+            spoken.push_str(item.text.strip_prefix("Debug tab: ").unwrap_or(&item.text));
             count += 1;
         }
         assert!(count > MAX_PENDING);
@@ -373,7 +451,7 @@ mod tests {
             current(900),
             3,
         );
-        assert_eq!(take(&queue, 3).text, "Debug tab: Later update");
+        assert_eq!(take(&queue, 3).text, "Later update");
         assert_eq!(take(&queue, 3).text, "Debug tab: Other chat");
         assert!(queue.next(3).is_none());
         update(&queue, "one", "Future update", 4);
@@ -401,7 +479,7 @@ mod tests {
         );
         let _ = take(&queue, 1);
         queue.dismiss_current();
-        assert_eq!(take(&queue, 1).text, "Debug tab: Next part.");
+        assert_eq!(take(&queue, 1).text, "Next part.");
         assert!(queue.next(1).is_none());
     }
 
