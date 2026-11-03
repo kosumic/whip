@@ -1090,44 +1090,80 @@ index 4ad8312e..871e7798 100644
    }
    highlightConfigFile.text = """\
 diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/MeasurementStore.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/MeasurementStore.kt
+index 7bb48f44..a53eaede 100644
 --- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/MeasurementStore.kt
 +++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/MeasurementStore.kt
-@@ -2,8 +2,9 @@
+@@ -1,6 +1,7 @@
+ package com.swmansion.enriched.markdown
 
  import android.content.Context
++import android.graphics.Paint
  import android.graphics.Typeface
  import android.os.Build
-+import android.text.Layout
  import android.text.Spannable
- import android.text.Spanned
- import android.text.StaticLayout
- import android.text.TextPaint
-@@ -712,42 +713,9 @@
-     maxWidth: Float,
-     text: CharSequence?,
-     paint: TextPaint,
+@@ -27,6 +28,7 @@ import com.swmansion.enriched.markdown.spans.MathMeasureRequest
+ import com.swmansion.enriched.markdown.spans.MathMetrics
+ import com.swmansion.enriched.markdown.spans.MathRenderMode
+ import com.swmansion.enriched.markdown.styles.StyleConfig
++import com.swmansion.enriched.markdown.utils.common.BoundsForWidthUtils
+ import com.swmansion.enriched.markdown.utils.common.BreakStrategyUtils
+ import com.swmansion.enriched.markdown.utils.common.CodeBlockStreamingMode
+ import com.swmansion.enriched.markdown.utils.common.EllipsizeUtils
+@@ -101,7 +103,9 @@ object MeasurementStore {
+     )
+   }
+
+-  private val measurePaint = TextPaint()
++  // TextView paints with ANTI_ALIAS_FLAG. On older Android a bare TextPaint lacks it, and the
++  // glyph hinting that differs between the two moves text widths by a few pixels.
++  private val measurePaint = TextPaint(Paint.ANTI_ALIAS_FLAG)
+   private val measureRenderer = Renderer()
+
+   @Volatile
+@@ -703,6 +707,7 @@ object MeasurementStore {
      viewId: Int?,
--  ): Long {
--    val content = text ?: ""
--    val safeWidth = ceil(maxWidth).toInt().coerceAtLeast(1)
--    prepareImageSpansForMeasurement(content, safeWidth)
--
--    val builder =
--      StaticLayout.Builder
+   ): Long {
+     measurePaint.reset()
++    measurePaint.isAntiAlias = true
+     measurePaint.typeface = paintParams.typeface
+     measurePaint.textSize = paintParams.fontSize
+     return measure(maxWidth, text, measurePaint, viewId)
+@@ -718,9 +723,28 @@ object MeasurementStore {
+     val safeWidth = ceil(maxWidth).toInt().coerceAtLeast(1)
+     prepareImageSpansForMeasurement(content, safeWidth)
+
++    val layout = buildMeasureLayout(content, paint, safeWidth, viewId)
++    val visibleLineCount = visibleLineCount(layout, viewId)
++    val measuredHeight = truncatedHeight(layout, visibleLineCount, content)
++
++    // Calculate actual content width (widest visible line)
++    val measuredWidth = (0 until visibleLineCount).maxOfOrNull { layout.getLineWidth(it) } ?: 0f
++
++    return YogaMeasureOutput.make(
++      PixelUtil.toDIPFromPixel(ceil(measuredWidth)),
++      PixelUtil.toDIPFromPixel(measuredHeight),
++    )
++  }
++
++  private fun buildMeasureLayout(
++    content: CharSequence,
++    paint: TextPaint,
++    widthPx: Int,
++    viewId: Int?,
++  ): StaticLayout {
+     val builder =
+       StaticLayout.Builder
 -        .obtain(content, 0, content.length, paint, safeWidth)
--        .setIncludePad(false)
--        .setLineSpacing(0f, 1f)
--
--    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
--      @Suppress("WrongConstant")
--      builder.setBreakStrategy(resolveBreakStrategy(viewId))
--    }
--
--    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
--      builder.setUseLineSpacingFromFallbacks(true)
--    }
--
--    applyLineLimit(builder, viewId)
++        .obtain(content, 0, content.length, paint, widthPx)
+         .setIncludePad(false)
+         .setLineSpacing(0f, 1f)
+
+@@ -733,19 +757,9 @@ object MeasurementStore {
+       builder.setUseLineSpacingFromFallbacks(true)
+     }
+
++    BoundsForWidthUtils.applyTo(builder)
+     applyLineLimit(builder, viewId)
 -
 -    val layout = builder.build()
 -    val visibleLineCount = visibleLineCount(layout, viewId)
@@ -1140,55 +1176,108 @@ diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/c
 -      PixelUtil.toDIPFromPixel(ceil(measuredWidth)),
 -      PixelUtil.toDIPFromPixel(measuredHeight),
 -    )
--  }
-+  ): Long = measureWithLayout(maxWidth, text, paint, viewId).first
++    return builder.build()
+   }
 
    // Applies the per-view numberOfLines / ellipsizeMode clamp to a builder, matching
-   // RN's TextLayoutManager.buildLayout: only when a line limit is set.
-   private fun applyLineLimit(
-@@ -820,10 +788,15 @@
-     paint: TextPaint,
-     viewId: Int?,
-   ): Pair<Long, StaticLayout> {
-     val content = text ?: ""
--    val widthPx = ceil(maxWidth).toInt().coerceAtLeast(1)
--    prepareImageSpansForMeasurement(content, widthPx)
-+    val availableWidthPx = ceil(maxWidth).toInt().coerceAtLeast(1)
-+    prepareImageSpansForMeasurement(content, availableWidthPx)
-+    // Measure height at the width we return to Yoga. Shrinking to the widest
-+    // laid-out line afterward can wrap the display text onto an unmeasured line.
-+    // Match RN Text: use the desired width for short text and the available
-+    // width for wrapping text, rather than tightening a completed layout.
-+    val widthPx = ceil(Layout.getDesiredWidth(content, paint)).toInt().coerceIn(1, availableWidthPx)
+@@ -824,21 +838,7 @@ object MeasurementStore {
+     val widthPx = ceil(maxWidth).toInt().coerceAtLeast(1)
+     prepareImageSpansForMeasurement(content, widthPx)
 
-     val layout =
-       StaticLayout.Builder
-         .obtain(content, 0, content.length, paint, widthPx)
-@@ -836,21 +809,21 @@
-           }
-           if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-             setUseLineSpacingFromFallbacks(true)
-           }
-+          // TextView uses glyph bounds for line breaking when targeting API 35+.
-+          // Match it so a final word cannot wrap into an unmeasured extra line.
-+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-+            setUseBoundsForWidth(true)
-+          }
-           applyLineLimit(this, viewId)
-         }.build()
+-    val layout =
+-      StaticLayout.Builder
+-        .obtain(content, 0, content.length, paint, widthPx)
+-        .setIncludePad(false)
+-        .setLineSpacing(0f, 1f)
+-        .apply {
+-          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+-            @Suppress("WrongConstant")
+-            setBreakStrategy(resolveBreakStrategy(viewId))
+-          }
+-          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+-            setUseLineSpacingFromFallbacks(true)
+-          }
+-          applyLineLimit(this, viewId)
+-        }.build()
++    val layout = buildMeasureLayout(content, paint, widthPx, viewId)
 
      val visibleLineCount = visibleLineCount(layout, viewId)
 
--    // Find the widest visible line to get the actual content width
--    val maxLineWidth =
--      (0 until visibleLineCount)
--        .maxOfOrNull { layout.getLineWidth(it) } ?: 0f
--
-     val size =
-       YogaMeasureOutput.make(
--        PixelUtil.toDIPFromPixel(ceil(maxLineWidth)),
-+        PixelUtil.toDIPFromPixel(widthPx.toFloat()),
-         PixelUtil.toDIPFromPixel(truncatedHeight(layout, visibleLineCount, content)),
-       )
+diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/segments/SegmentHeightMeasurer.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/segments/SegmentHeightMeasurer.kt
+index 58f34e97..43277b37 100644
+--- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/segments/SegmentHeightMeasurer.kt
++++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/segments/SegmentHeightMeasurer.kt
+@@ -7,6 +7,7 @@ import android.text.Layout
+ import android.text.StaticLayout
+ import android.text.TextPaint
+ import com.swmansion.enriched.markdown.styles.StyleConfig
++import com.swmansion.enriched.markdown.utils.common.BoundsForWidthUtils
+ import com.swmansion.enriched.markdown.utils.text.extensions.replaceMathSpansWithPlaceholders
+ import kotlin.math.ceil
 
-     return size to layout
+@@ -116,6 +117,7 @@ object SegmentHeightMeasurer {
+         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+           setUseLineSpacingFromFallbacks(true)
+         }
++        BoundsForWidthUtils.applyTo(this)
+       }.build()
+   }
+
+diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/utils/common/BoundsForWidthUtils.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/utils/common/BoundsForWidthUtils.kt
+new file mode 100644
+index 00000000..565daa33
+--- /dev/null
++++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/utils/common/BoundsForWidthUtils.kt
+@@ -0,0 +1,28 @@
++package com.swmansion.enriched.markdown.utils.common
++
++import android.os.Build
++import android.text.StaticLayout
++import android.widget.TextView
++
++/**
++ * Turns on bounds-based line widths for the markdown text views and for the
++ * StaticLayouts that measure them.
++ *
++ * TextView enables this on its own only for apps targeting API 35+, while the measure
++ * pass can't see the view, so both sides are pinned here. A line ending on an overhanging
++ * glyph, like italic, is wider than its advances. If the two disagree, the view comes out
++ * a pixel or two narrow and wraps a line it has no room for.
++ */
++object BoundsForWidthUtils {
++  fun applyTo(view: TextView) {
++    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
++      view.useBoundsForWidth = true
++    }
++  }
++
++  fun applyTo(builder: StaticLayout.Builder) {
++    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
++      builder.setUseBoundsForWidth(true)
++    }
++  }
++}
+diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/utils/text/view/TextViewSetup.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/utils/text/view/TextViewSetup.kt
+index 4b2ad015..5d75b83e 100644
+--- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/utils/text/view/TextViewSetup.kt
++++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/utils/text/view/TextViewSetup.kt
+@@ -10,6 +10,8 @@ import android.view.textclassifier.TextClassifier
+ import androidx.appcompat.widget.AppCompatTextView
+ import androidx.core.view.ViewCompat
+ import com.swmansion.enriched.markdown.accessibility.AccessibleMarkdownTextView
++import com.swmansion.enriched.markdown.utils.common.BoundsForWidthUtils
++import com.swmansion.enriched.markdown.utils.common.BreakStrategyUtils
+
+ /**
+  * Adopts the renderer's buffer instead of copying it: the default factory's copy is
+@@ -89,6 +91,10 @@ fun AccessibleMarkdownTextView.setupAsMarkdownTextView() {
+   setBackgroundColor(Color.TRANSPARENT)
+   setSpannableFactory(NoCopySpannableFactory)
+   includeFontPadding = false
++  // The textBreakStrategy setter runs only when the prop is passed, while MeasurementStore
++  // resolves a missing value to HIGH_QUALITY. Start from that value so both break lines alike.
++  breakStrategy = BreakStrategyUtils.resolveBreakStrategy(null)
++  BoundsForWidthUtils.applyTo(this)
+   movementMethod = LinkLongPressMovementMethod.createInstance()
+   setTextIsSelectable(true)
+   customSelectionActionModeCallback = createSelectionActionModeCallback(this)
