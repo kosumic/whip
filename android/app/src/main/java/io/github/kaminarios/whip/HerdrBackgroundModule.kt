@@ -168,6 +168,16 @@ class HerdrBackgroundModule(
   }
 
   @ReactMethod
+  fun speakStatusAnnouncement(token: String, promise: Promise) {
+    mainHandler.post { SpeechPlayback.announceStatus(context, token, promise) }
+  }
+
+  @ReactMethod
+  fun refreshStatusAnnouncements(promise: Promise) {
+    mainHandler.post { SpeechPlayback.refreshStatus(); promise.resolve(null) }
+  }
+
+  @ReactMethod
   fun speakPreview(token: String, text: String, language: String?, promise: Promise) {
     mainHandler.post { SpeechPlayback.announce(context, token, text, language, promise, preview = true) }
   }

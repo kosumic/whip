@@ -5,7 +5,7 @@
 //! cancelling a newer speaker. Chat transcript ordering remains in ChatSpeechQueue.
 
 use std::{
-    ffi::{CStr, c_char},
+    ffi::{CStr, CString, c_char},
     sync::LazyLock,
 };
 
@@ -86,6 +86,27 @@ impl SpeechPlayback {
         id
     }
 
+    fn claim_status_at_boundary(&mut self, owner: &str, observed_lease: u64) -> u64 {
+        match &self.active {
+            None if observed_lease == 0 => {}
+            Some(active) if active.id == observed_lease && active.kind == SpeechKind::Chat => {}
+            _ => return 0,
+        }
+        // The adapter certifies an idle chat/chunk boundary, and this lock
+        // fences any intervening takeover before transferring the lease.
+        let Some(id) = self.sequence.checked_add(1) else {
+            return 0;
+        };
+        self.sequence = id;
+        self.active = Some(Lease {
+            id,
+            kind: SpeechKind::Announcement,
+            owner: owner.into(),
+            request: String::new(),
+        });
+        id
+    }
+
     fn is_current(&self, id: u64) -> bool {
         self.active.as_ref().is_some_and(|active| active.id == id)
     }
@@ -134,6 +155,46 @@ impl SpeechPlayback {
 }
 
 static PLAYBACK: LazyLock<Mutex<SpeechPlayback>> = LazyLock::new(Mutex::default);
+
+pub(crate) fn claim_status_at_boundary(owner: &str, observed_lease: u64) -> u64 {
+    PLAYBACK
+        .lock()
+        .claim_status_at_boundary(owner, observed_lease)
+}
+
+/// # Safety
+/// Both string arguments must be live NUL-terminated UTF-8 for this call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn whip_alert_speech_command(
+    action: *const c_char,
+    token: *const c_char,
+    observed_lease: u64,
+) -> *mut c_char {
+    if action.is_null() || token.is_null() {
+        return std::ptr::null_mut();
+    }
+    // SAFETY: Both platform adapters supply live NUL-terminated strings.
+    let action = unsafe { CStr::from_ptr(action) }.to_string_lossy();
+    // SAFETY: Both platform adapters supply live NUL-terminated strings.
+    let token = unsafe { CStr::from_ptr(token) }.to_string_lossy();
+    CString::new(crate::app_core::native_speech_command(
+        &action,
+        &token,
+        observed_lease,
+    ))
+    .map_or(std::ptr::null_mut(), CString::into_raw)
+}
+
+/// # Safety
+/// The argument must be null or a live result of whip_alert_speech_command,
+/// and must be freed exactly once.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn whip_alert_speech_free(value: *mut c_char) {
+    if !value.is_null() {
+        // SAFETY: Ownership of this allocation is returned by the native caller.
+        drop(unsafe { CString::from_raw(value) });
+    }
+}
 
 pub(crate) fn is_current(lease: u64) -> bool {
     PLAYBACK.lock().is_current(lease)
@@ -229,6 +290,40 @@ mod tests {
         assert_eq!(speech.claim(Device, "launch", "request-2"), 0);
         assert!(speech.stop(chat));
         assert_ne!(speech.claim(Announcement, "alert", ""), 0);
+    }
+
+    #[test]
+    fn status_handoff_is_fenced_by_the_observed_chat_lease() {
+        let mut speech = SpeechPlayback::default();
+        let chat = speech.claim(Chat, "reader", "");
+        assert_eq!(speech.claim_status_at_boundary("alert", 0), 0);
+        assert!(speech.complete(chat));
+        let alert = speech.claim_status_at_boundary("alert", chat);
+        assert_ne!(alert, 0);
+        assert!(!speech.complete(chat));
+        assert_eq!(speech.stop_matching(Chat, Some("reader"), None), 0);
+        assert_eq!(speech.claim_status_at_boundary("another-alert", chat), 0);
+        assert!(speech.complete(alert));
+        let resumed = speech.claim(Chat, "reader", "");
+        assert_ne!(resumed, chat);
+        assert_eq!(speech.stop_matching(Announcement, Some("alert"), None), 0);
+        assert!(!speech.stop(alert));
+        assert!(speech.is_current(resumed));
+    }
+
+    #[test]
+    fn stale_boundary_cannot_displace_device_or_a_new_chat_owner() {
+        let mut speech = SpeechPlayback::default();
+        let old = speech.claim(Chat, "old", "");
+        let current = speech.claim(Chat, "current", "");
+        assert_eq!(speech.claim_status_at_boundary("alert", old), 0);
+        assert!(speech.stop(current));
+        let device = speech.claim(Device, "tool", "request");
+        assert_eq!(speech.claim_status_at_boundary("alert", device), 0);
+        assert_eq!(speech.claim_status_at_boundary("alert", 0), 0);
+        assert!(speech.is_current(device));
+        assert!(speech.complete(device));
+        assert_ne!(speech.claim_status_at_boundary("alert", 0), 0);
     }
 
     #[test]

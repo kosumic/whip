@@ -11,6 +11,7 @@ object SpeechPolicy {
 
   @JvmStatic external fun claim(kind: Int, owner: String, request: String): Long
   @JvmStatic external fun isCurrent(lease: Long): Boolean
+  @JvmStatic external fun alertSpeech(action: String, token: String, observedLease: Long): String
   @JvmStatic external fun complete(lease: Long): Boolean
   @JvmStatic external fun stop(lease: Long): Boolean
   @JvmStatic external fun timeoutMs(kind: Int, textUnits: Long): Long

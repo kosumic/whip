@@ -14445,6 +14445,8 @@ export type LocalAlertRequest = {
   paneId: string;
   tabId: string;
   runtime?: LocalAlertRuntime;
+  status: HerdrAgentStatus;
+  sessionIdentity: string;
   title: string;
   body: string;
   announcement?: string;
@@ -14480,6 +14482,8 @@ const FfiConverterTypeLocalAlertRequest = (() => {
         paneId: FfiConverterString.read(from),
         tabId: FfiConverterString.read(from),
         runtime: FfiConverterOptionalTypeLocalAlertRuntime.read(from),
+        status: FfiConverterTypeHerdrAgentStatus.read(from),
+        sessionIdentity: FfiConverterString.read(from),
         title: FfiConverterString.read(from),
         body: FfiConverterString.read(from),
         announcement: FfiConverterOptionalString.read(from),
@@ -14494,6 +14498,8 @@ const FfiConverterTypeLocalAlertRequest = (() => {
       FfiConverterString.write(value.paneId, into);
       FfiConverterString.write(value.tabId, into);
       FfiConverterOptionalTypeLocalAlertRuntime.write(value.runtime, into);
+      FfiConverterTypeHerdrAgentStatus.write(value.status, into);
+      FfiConverterString.write(value.sessionIdentity, into);
       FfiConverterString.write(value.title, into);
       FfiConverterString.write(value.body, into);
       FfiConverterOptionalString.write(value.announcement, into);
@@ -14510,6 +14516,8 @@ const FfiConverterTypeLocalAlertRequest = (() => {
         FfiConverterOptionalTypeLocalAlertRuntime.allocationSize(
           value.runtime,
         ) +
+        FfiConverterTypeHerdrAgentStatus.allocationSize(value.status) +
+        FfiConverterString.allocationSize(value.sessionIdentity) +
         FfiConverterString.allocationSize(value.title) +
         FfiConverterString.allocationSize(value.body) +
         FfiConverterOptionalString.allocationSize(value.announcement) +
@@ -37087,9 +37095,7 @@ export const SessionConnectionPlatformError = (() => {
       return Failed_.instanceOf(obj);
     }
 
-    static getInner(
-      obj: Failed_,
-    ): Readonly<{
+    static getInner(obj: Failed_): Readonly<{
       kind: SessionConnectionFailureKind;
       expectedProtocol?: string;
       receivedProtocol?: string;
@@ -55705,10 +55711,19 @@ export interface LocalAlertCoordinatorLike {
     outcome: LocalAlertOutcome,
   ) /*throws*/ : Array<LocalAlertEffect>;
   dismiss(scope: LocalAlertScope): Array<LocalAlertEffect>;
+  /**
+   * Revalidate every snapshot, including identity changes without a status edge.
+   */
+  retainSpeech(
+    hostId: string,
+    runtime: LocalAlertRuntime | undefined,
+    requests: Array<LocalAlertRequest>,
+  ): Array<LocalAlertEffect>;
   setRuntime(
     hostId: string,
     runtime: LocalAlertRuntime | undefined,
   ): Array<LocalAlertEffect>;
+  setSpeechEnabled(enabled: boolean): Array<LocalAlertEffect>;
   /**
    * A call owns its suppression token until hangup, independent of UI focus.
    * Dismiss first so pending platform completions cannot revive old alerts.
@@ -55850,6 +55865,42 @@ export class LocalAlertCoordinator
     );
   }
 
+  /**
+   * Revalidate every snapshot, including identity changes without a status edge.
+   */
+  retainSpeech(
+    hostId: string,
+    runtime: LocalAlertRuntime | undefined,
+    requests: Array<LocalAlertRequest>,
+  ): Array<LocalAlertEffect> {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterSequenceTypeLocalAlertEffect.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_localalertcoordinator_retain_speech(
+            uniffiTypeLocalAlertCoordinatorObjectFactory.clonePointer(this),
+            FfiConverterString.lower(hostId, nativeModule().rustbuffer_alloc),
+            FfiConverterOptionalTypeLocalAlertRuntime.lower(
+              runtime,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterSequenceTypeLocalAlertRequest.lower(
+              requests,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
   setRuntime(
     hostId: string,
     runtime: LocalAlertRuntime | undefined,
@@ -55870,6 +55921,27 @@ export class LocalAlertCoordinator
               runtime,
               nativeModule().rustbuffer_alloc,
             ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  setSpeechEnabled(enabled: boolean): Array<LocalAlertEffect> {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterSequenceTypeLocalAlertEffect.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_localalertcoordinator_set_speech_enabled(
+            uniffiTypeLocalAlertCoordinatorObjectFactory.clonePointer(this),
+            FfiConverterBool.lower(enabled, nativeModule().rustbuffer_alloc),
             callStatus,
           );
         },
@@ -61529,6 +61601,11 @@ const FfiConverterSequenceTypeLocalAlertEffect = new FfiConverterArray(
   FfiConverterTypeLocalAlertEffect,
 );
 
+// FfiConverter for Array<LocalAlertRequest>
+const FfiConverterSequenceTypeLocalAlertRequest = new FfiConverterArray(
+  FfiConverterTypeLocalAlertRequest,
+);
+
 // FfiConverter for LocalAlertScope | undefined
 const FfiConverterOptionalTypeLocalAlertScope = new FfiConverterOptional(
   FfiConverterTypeLocalAlertScope,
@@ -64627,11 +64704,27 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_retain_speech() !==
+    45662
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_localalertcoordinator_retain_speech',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_set_runtime() !==
     29707
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_localalertcoordinator_set_runtime',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_set_speech_enabled() !==
+    65344
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_localalertcoordinator_set_speech_enabled',
     );
   }
   if (

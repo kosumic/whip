@@ -1,6 +1,10 @@
 //! Local agent alert policy. Platform adapters execute effects and acknowledge
 //! their IDs; they never own alert lifetimes or decide whether a result is stale.
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, HashMap, VecDeque},
+    sync::{Arc, LazyLock, Weak},
+    time::{Duration, Instant},
+};
 
 use parking_lot::Mutex;
 
@@ -25,6 +29,8 @@ pub struct LocalAlertRequest {
     pub pane_id: String,
     pub tab_id: String,
     pub runtime: Option<LocalAlertRuntime>,
+    pub status: HerdrAgentStatus,
+    pub session_identity: String,
     pub title: String,
     pub body: String,
     pub announcement: Option<String>,
@@ -131,23 +137,16 @@ pub enum LocalAlertError {
     InvalidCompletion,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Phase {
-    Announcement,
-    Scheduling,
-    Active,
-}
-
 struct Alert {
     request: LocalAlertRequest,
-    phase: Phase,
     notification_id: Option<String>,
+    speech_created: Instant,
+    speech_ready: bool,
 }
 
 struct PendingEffect {
     action: LocalAlertAction,
     alert_id: Option<String>,
-    resume_announcement: Option<String>,
     started: bool,
 }
 
@@ -165,6 +164,7 @@ struct CoordinatorState {
     effects: HashMap<String, PendingEffect>,
     runtimes: HashMap<String, Option<LocalAlertRuntime>>,
     announcement: Option<String>,
+    waiting: VecDeque<String>,
     desired_persistent: Option<Persistent>,
     applied_persistent: Option<Persistent>,
     persistent_effect: Option<String>,
@@ -176,7 +176,6 @@ impl CoordinatorState {
         &mut self,
         action: LocalAlertAction,
         alert_id: Option<String>,
-        resume_announcement: Option<String>,
         output: &mut Vec<LocalAlertEffect>,
     ) -> String {
         let id = uuid::Uuid::new_v4().to_string();
@@ -185,7 +184,6 @@ impl CoordinatorState {
             PendingEffect {
                 action: action.clone(),
                 alert_id,
-                resume_announcement,
                 started: false,
             },
         );
@@ -206,82 +204,157 @@ impl CoordinatorState {
             .is_none_or(|runtime| runtime.is_some() && runtime.as_ref() == source)
     }
 
-    fn speak(&mut self, id: &str, output: &mut Vec<LocalAlertEffect>) {
-        let Some(alert) = self.alerts.get(id) else {
-            return;
-        };
-        if self.announcement.as_deref() != Some(id) || alert.phase != Phase::Announcement {
-            return;
-        }
-        let Some(text) = alert.request.announcement.clone() else {
-            return;
-        };
-        self.effect(
-            LocalAlertAction::Speak {
-                token: id.into(),
-                text,
-                language: alert.request.language.clone(),
-            },
-            Some(id.into()),
-            None,
-            output,
-        );
-    }
-
-    fn schedule(&mut self, id: &str, output: &mut Vec<LocalAlertEffect>) {
-        let Some(alert) = self.alerts.get_mut(id) else {
-            return;
-        };
-        if alert.phase != Phase::Announcement {
-            return;
-        }
-        alert.phase = Phase::Scheduling;
-        let request = alert.request.clone();
-        self.effect(
-            LocalAlertAction::Schedule { request },
-            Some(id.into()),
-            None,
-            output,
-        );
-    }
-
     fn admit(&mut self, request: LocalAlertRequest) -> Vec<LocalAlertEffect> {
-        let mut output = Vec::new();
         if !self.runtime_current(&request)
             || self
                 .suppressions
                 .values()
                 .any(|scope| scope.matches(&request))
         {
-            return output;
+            return Vec::new();
         }
-        let speak = request.announcement.is_some();
+        let mut output = Vec::new();
+        let previous: Vec<_> = self
+            .alerts
+            .iter()
+            .filter(|(_, alert)| {
+                alert.request.host_id == request.host_id && alert.request.pane_id == request.pane_id
+            })
+            .map(|(token, _)| token.clone())
+            .collect();
+        for token in previous {
+            self.cancel_speech(&token, &mut output);
+        }
         let id = uuid::Uuid::new_v4().to_string();
+        self.effect(
+            LocalAlertAction::Schedule {
+                request: request.clone(),
+            },
+            Some(id.clone()),
+            &mut output,
+        );
         self.alerts.insert(
             id.clone(),
             Alert {
-                request,
-                phase: Phase::Announcement,
+                request: request.clone(),
                 notification_id: None,
+                speech_created: Instant::now(),
+                speech_ready: false,
             },
         );
-        if speak {
-            if let Some(previous) = self.announcement.replace(id.clone()) {
-                // Token-scoped stop cannot interrupt chat speech or a newer
-                // announcement. Admit the replacement only after the stop ack.
-                self.effect(
-                    LocalAlertAction::StopSpeech { token: previous },
-                    None,
-                    Some(id),
-                    &mut output,
-                );
-            } else {
-                self.speak(&id, &mut output);
+        if let Some(text) = request.announcement.clone() {
+            self.waiting.push_back(id.clone());
+            // Retain higher-priority waiting items; discard the oldest in the
+            // lowest tier when overloaded. The current utterance is untouched.
+            if self.waiting.len() > MAX_WAITING {
+                let lowest = self
+                    .waiting
+                    .iter()
+                    .position(|token| {
+                        self.alerts
+                            .get(token)
+                            .is_none_or(|a| a.request.status != HerdrAgentStatus::Blocked)
+                    })
+                    .unwrap_or(0);
+                self.waiting.remove(lowest);
             }
-        } else {
-            self.schedule(&id, &mut output);
+            self.effect(
+                LocalAlertAction::Speak {
+                    token: id.clone(),
+                    text,
+                    language: request.language,
+                },
+                Some(id),
+                &mut output,
+            );
         }
+
         output
+    }
+
+    fn speech_valid(&self, token: &str, now: Instant) -> bool {
+        self.alerts.get(token).is_some_and(|alert| {
+            self.runtime_current(&alert.request)
+                && matches!(
+                    alert.request.status,
+                    HerdrAgentStatus::Blocked | HerdrAgentStatus::Done
+                )
+                && alert.request.announcement.is_some()
+                && (self.announcement.as_deref() == Some(token)
+                    || self.waiting.iter().any(|id| id == token)
+                        && now.duration_since(alert.speech_created) < MAX_WAIT)
+                && !self
+                    .suppressions
+                    .values()
+                    .any(|scope| scope.matches(&alert.request))
+        })
+    }
+
+    fn take_speech(
+        &mut self,
+        observed_lease: u64,
+        now: Instant,
+        claim: impl FnOnce(&str, u64) -> u64,
+    ) -> Option<NativeAnnouncement> {
+        self.waiting = self
+            .waiting
+            .iter()
+            .filter(|token| self.speech_valid(token, now))
+            .cloned()
+            .collect();
+        if self.announcement.is_some() {
+            return None;
+        }
+        let index = self
+            .waiting
+            .iter()
+            .position(|token| {
+                self.alerts
+                    .get(token)
+                    .is_some_and(|a| a.request.status == HerdrAgentStatus::Blocked)
+            })
+            .or_else(|| (!self.waiting.is_empty()).then_some(0))?;
+        let token = self.waiting.get(index)?.clone();
+        if !self.alerts.get(&token)?.speech_ready {
+            return None;
+        }
+        let lease = claim(&token, observed_lease);
+        if lease == 0 {
+            return None;
+        }
+        self.waiting.remove(index);
+        self.announcement = Some(token.clone());
+        let alert = self.alerts.get(&token)?;
+        Some(NativeAnnouncement {
+            token,
+            text: alert.request.announcement.clone()?,
+            language: alert.request.language.clone(),
+            lease,
+        })
+    }
+
+    fn finish_speech(&mut self, token: &str) {
+        if self.announcement.as_deref() == Some(token) {
+            self.announcement = None;
+        }
+        self.waiting.retain(|id| id != token);
+    }
+
+    fn cancel_speech(&mut self, token: &str, output: &mut Vec<LocalAlertEffect>) {
+        let active = self.announcement.as_deref() == Some(token);
+        self.finish_speech(token);
+        if let Some(alert) = self.alerts.get_mut(token) {
+            alert.request.announcement = None;
+        }
+        if active {
+            self.effect(
+                LocalAlertAction::StopSpeech {
+                    token: token.into(),
+                },
+                None,
+                output,
+            );
+        }
     }
 
     fn dismiss(&mut self, scope: &LocalAlertScope) -> Vec<LocalAlertEffect> {
@@ -301,14 +374,12 @@ impl CoordinatorState {
                 self.effect(
                     LocalAlertAction::StopSpeech { token: id.clone() },
                     None,
-                    None,
                     &mut output,
                 );
             }
             if let Some(notification_id) = alert.notification_id {
                 self.effect(
                     LocalAlertAction::DismissNotification { notification_id },
-                    None,
                     None,
                     &mut output,
                 );
@@ -321,6 +392,7 @@ impl CoordinatorState {
                 self.desired_persistent = None;
             }
         }
+        self.waiting.retain(|id| self.alerts.contains_key(id));
         if matches!(scope, LocalAlertScope::All) {
             // Also clean up platform state surviving a detached JS consumer.
             self.reset_persistent = true;
@@ -350,7 +422,7 @@ impl CoordinatorState {
             }
         };
         let alert_id = self.desired_persistent.as_ref().map(|p| p.alert_id.clone());
-        self.persistent_effect = Some(self.effect(action, alert_id, None, output));
+        self.persistent_effect = Some(self.effect(action, alert_id, output));
         self.reset_persistent = false;
     }
 
@@ -368,7 +440,7 @@ impl CoordinatorState {
         });
         let current = current
             && match &effect.action {
-                LocalAlertAction::Speak { token, .. } => self.announcement.as_ref() == Some(token),
+                LocalAlertAction::Speak { token, .. } => self.speech_valid(token, Instant::now()),
                 LocalAlertAction::ArmPersistent {
                     notification_id, ..
                 } => self
@@ -412,38 +484,23 @@ impl CoordinatorState {
         let mut output = Vec::new();
         match effect.action {
             LocalAlertAction::Speak { token, .. } => {
-                let shake = matches!(
-                    outcome,
-                    LocalAlertOutcome::SpeechEnded {
-                        reason: LocalAlertSpeechEnd::Shake
-                    }
-                );
-                if self.announcement.as_ref() == Some(&token) {
-                    self.announcement = None;
-                    if shake {
-                        return Ok(self.dismiss(&LocalAlertScope::All));
-                    }
-                }
-                if shake {
-                    self.alerts.remove(&token);
-                } else {
-                    self.schedule(&token, &mut output);
-                }
-            }
-            LocalAlertAction::StopSpeech { .. } => {
-                if let Some(next) = effect.resume_announcement {
-                    if self.announcement.as_ref() == Some(&next) {
-                        self.speak(&next, &mut output);
-                    } else {
-                        self.schedule(&next, &mut output);
-                    }
+                let was_current = self.announcement.as_deref() == Some(&token);
+                self.finish_speech(&token);
+                if was_current
+                    && matches!(
+                        outcome,
+                        LocalAlertOutcome::SpeechEnded {
+                            reason: LocalAlertSpeechEnd::Shake
+                        }
+                    )
+                {
+                    return Ok(self.dismiss(&LocalAlertScope::All));
                 }
             }
             LocalAlertAction::Schedule { .. } => {
                 let alert_id = effect.alert_id.unwrap_or_default();
                 if let LocalAlertOutcome::Scheduled { notification_id } = outcome {
                     if let Some(alert) = self.alerts.get_mut(&alert_id) {
-                        alert.phase = Phase::Active;
                         alert.notification_id = Some(notification_id.clone());
                         if alert.request.android
                             && alert.request.delivery == LocalAlertDelivery::Persistent
@@ -458,12 +515,9 @@ impl CoordinatorState {
                         self.effect(
                             LocalAlertAction::DismissNotification { notification_id },
                             None,
-                            None,
                             &mut output,
                         );
                     }
-                } else {
-                    self.alerts.remove(&alert_id);
                 }
             }
             LocalAlertAction::ArmPersistent {
@@ -490,7 +544,7 @@ impl CoordinatorState {
                 self.persistent_effect = None;
                 self.applied_persistent = None;
             }
-            LocalAlertAction::DismissNotification { .. } => {}
+            LocalAlertAction::StopSpeech { .. } | LocalAlertAction::DismissNotification { .. } => {}
         }
         self.reconcile_persistent(&mut output);
         Ok(output)
@@ -501,14 +555,16 @@ impl CoordinatorState {
 /// runs. No native timer certifies JS notification-consumer liveness.
 #[derive(Default, uniffi::Object)]
 pub struct LocalAlertCoordinator {
-    state: Mutex<CoordinatorState>,
+    state: Arc<Mutex<CoordinatorState>>,
 }
 
 #[uniffi::export]
 impl LocalAlertCoordinator {
     #[uniffi::constructor]
     pub fn new() -> Self {
-        Self::default()
+        let coordinator = Self::default();
+        *NATIVE_COORDINATOR.lock() = Arc::downgrade(&coordinator.state);
+        coordinator
     }
 
     pub fn alert(&self, request: LocalAlertRequest) -> Vec<LocalAlertEffect> {
@@ -530,7 +586,10 @@ impl LocalAlertCoordinator {
             });
         }
         if !transition.enabled {
-            return Vec::new();
+            return state.dismiss(&LocalAlertScope::Pane {
+                host_id: transition.host_id,
+                pane_id: transition.pane_id,
+            });
         }
         let Some(mut request) = transition.request else {
             return Vec::new();
@@ -538,6 +597,7 @@ impl LocalAlertCoordinator {
         if request.host_id != transition.host_id
             || request.pane_id != transition.pane_id
             || request.runtime != transition.runtime
+            || Some(request.status) != transition.status
         {
             return Vec::new();
         }
@@ -583,6 +643,52 @@ impl LocalAlertCoordinator {
         state.dismiss(&LocalAlertScope::Host { host_id })
     }
 
+    /// Revalidate every snapshot, including identity changes without a status edge.
+    pub fn retain_speech(
+        &self,
+        host_id: String,
+        runtime: Option<LocalAlertRuntime>,
+        requests: Vec<LocalAlertRequest>,
+    ) -> Vec<LocalAlertEffect> {
+        let mut state = self.state.lock();
+        if !state.source_current(&host_id, runtime.as_ref()) {
+            return Vec::new();
+        }
+        let invalid: Vec<_> = state
+            .alerts
+            .iter()
+            .filter(|(_, alert)| {
+                alert.request.host_id == host_id
+                    && !requests.iter().any(|request| {
+                        request.pane_id == alert.request.pane_id
+                            && request.tab_id == alert.request.tab_id
+                            && request.runtime == alert.request.runtime
+                            && request.session_identity == alert.request.session_identity
+                            && request.status == alert.request.status
+                            && request.announcement.is_some()
+                    })
+            })
+            .map(|(token, _)| token.clone())
+            .collect();
+        let mut output = Vec::new();
+        for token in invalid {
+            state.cancel_speech(&token, &mut output);
+        }
+        output
+    }
+
+    pub fn set_speech_enabled(&self, enabled: bool) -> Vec<LocalAlertEffect> {
+        let mut state = self.state.lock();
+        let mut output = Vec::new();
+        if !enabled {
+            let tokens: Vec<_> = state.alerts.keys().cloned().collect();
+            for token in tokens {
+                state.cancel_speech(&token, &mut output);
+            }
+        }
+        output
+    }
+
     pub fn begin_effect(&self, id: String) -> LocalAlertEffectAdmission {
         self.state.lock().begin(&id)
     }
@@ -598,3 +704,54 @@ impl LocalAlertCoordinator {
 
 #[cfg(test)]
 mod tests;
+
+const MAX_WAITING: usize = 4;
+const MAX_WAIT: Duration = Duration::from_secs(15);
+static NATIVE_COORDINATOR: LazyLock<Mutex<Weak<Mutex<CoordinatorState>>>> =
+    LazyLock::new(Mutex::default);
+
+#[derive(serde::Serialize)]
+struct NativeAnnouncement {
+    token: String,
+    text: String,
+    language: String,
+    lease: u64,
+}
+
+// Native owns callbacks and OS resources, while this coordinator owns all
+// selection and validity. No JS event or status update is needed at completion.
+pub(crate) fn native_speech_command(action: &str, token: &str, observed_lease: u64) -> String {
+    let Some(state) = NATIVE_COORDINATOR.lock().upgrade() else {
+        return "null".into();
+    };
+    let mut state = state.lock();
+    let result = match action {
+        "register" => {
+            let valid = state.speech_valid(token, Instant::now());
+            if valid && let Some(alert) = state.alerts.get_mut(token) {
+                alert.speech_ready = true;
+            }
+            valid.to_string()
+        }
+        "valid" => state.speech_valid(token, Instant::now()).to_string(),
+        "take" => serde_json::to_string(&state.take_speech(
+            observed_lease,
+            Instant::now(),
+            crate::speech_playback::claim_status_at_boundary,
+        ))
+        .unwrap_or_else(|_| "null".into()),
+        "finish" => {
+            state.finish_speech(token);
+            "null".into()
+        }
+        // Global native Stop, dictation and audio interruption discard waiting
+        // speech immediately, including while JS is suspended.
+        "clear" => {
+            state.waiting.clear();
+            "null".into()
+        }
+        _ => "null".into(),
+    };
+    drop(state);
+    result
+}

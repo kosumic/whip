@@ -2471,10 +2471,22 @@ interface NativeModuleInterface {
     scope: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_localalertcoordinator_retain_speech(
+    uniffiSelf: bigint,
+    hostId: Uint8Array,
+    runtime: Uint8Array,
+    requests: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_localalertcoordinator_set_runtime(
     uniffiSelf: bigint,
     hostId: Uint8Array,
     runtime: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_localalertcoordinator_set_speech_enabled(
+    uniffiSelf: bigint,
+    enabled: number,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_localalertcoordinator_set_suppression(
@@ -3413,7 +3425,9 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_begin_effect(): number;
   ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_complete_effect(): number;
   ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_dismiss(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_retain_speech(): number;
   ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_set_runtime(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_set_speech_enabled(): number;
   ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_set_suppression(): number;
   ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_transition(): number;
   ubrn_uniffi_whip_ssh_checksum_constructor_notificationmanager_new(): number;

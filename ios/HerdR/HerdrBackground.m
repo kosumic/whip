@@ -59,6 +59,15 @@ RCT_EXPORT_METHOD(speakAnnouncement:(NSString *)token text:(NSString *)text lang
 {
   [WhipSpeechPlayback.shared announce:token text:text language:language resolve:resolve reject:reject];
 }
+RCT_EXPORT_METHOD(speakStatusAnnouncement:(NSString *)token resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  [WhipSpeechPlayback.shared announceStatus:token resolve:resolve reject:reject];
+}
+RCT_EXPORT_METHOD(refreshStatusAnnouncements:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  [WhipSpeechPlayback.shared refreshStatus];
+  resolve(nil);
+}
 RCT_EXPORT_METHOD(speakPreview:(NSString *)token text:(NSString *)text language:(NSString *)language resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 {
   [WhipSpeechPlayback.shared preview:token text:text language:language resolve:resolve reject:reject];

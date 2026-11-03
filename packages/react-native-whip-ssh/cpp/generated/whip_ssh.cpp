@@ -662,9 +662,14 @@ RustBuffer uniffi_whip_ssh_fn_method_localalertcoordinator_complete_effect(
     RustCallStatus *uniffi_out_err);
 RustBuffer uniffi_whip_ssh_fn_method_localalertcoordinator_dismiss(
     /*handle*/ uint64_t ptr, RustBuffer scope, RustCallStatus *uniffi_out_err);
+RustBuffer uniffi_whip_ssh_fn_method_localalertcoordinator_retain_speech(
+    /*handle*/ uint64_t ptr, RustBuffer host_id, RustBuffer runtime,
+    RustBuffer requests, RustCallStatus *uniffi_out_err);
 RustBuffer uniffi_whip_ssh_fn_method_localalertcoordinator_set_runtime(
     /*handle*/ uint64_t ptr, RustBuffer host_id, RustBuffer runtime,
     RustCallStatus *uniffi_out_err);
+RustBuffer uniffi_whip_ssh_fn_method_localalertcoordinator_set_speech_enabled(
+    /*handle*/ uint64_t ptr, int8_t enabled, RustCallStatus *uniffi_out_err);
 RustBuffer uniffi_whip_ssh_fn_method_localalertcoordinator_set_suppression(
     /*handle*/ uint64_t ptr, RustBuffer token, RustBuffer scope,
     RustCallStatus *uniffi_out_err);
@@ -2315,7 +2320,10 @@ uint16_t uniffi_whip_ssh_checksum_method_localalertcoordinator_begin_effect();
 uint16_t
 uniffi_whip_ssh_checksum_method_localalertcoordinator_complete_effect();
 uint16_t uniffi_whip_ssh_checksum_method_localalertcoordinator_dismiss();
+uint16_t uniffi_whip_ssh_checksum_method_localalertcoordinator_retain_speech();
 uint16_t uniffi_whip_ssh_checksum_method_localalertcoordinator_set_runtime();
+uint16_t
+uniffi_whip_ssh_checksum_method_localalertcoordinator_set_speech_enabled();
 uint16_t
 uniffi_whip_ssh_checksum_method_localalertcoordinator_set_suppression();
 uint16_t uniffi_whip_ssh_checksum_method_localalertcoordinator_transition();
@@ -19161,6 +19169,18 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_fn_method_localalertcoordinator_dismiss(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_fn_method_localalertcoordinator_retain_speech"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                        "localalertcoordinator_retain_speech"),
+          4,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_localalertcoordinator_retain_speech(
+                    rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_fn_method_localalertcoordinator_set_runtime"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -19173,6 +19193,18 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_fn_method_localalertcoordinator_set_runtime(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_fn_method_localalertcoordinator_set_speech_"
+        "enabled"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                    "localalertcoordinator_set_speech_enabled"),
+      2,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_fn_method_localalertcoordinator_set_speech_enabled(
+                rt, thisVal, args, count);
+      });
   props["ubrn_uniffi_whip_ssh_fn_method_localalertcoordinator_set_"
         "suppression"] = jsi::Function::createFromHostFunction(
       rt,
@@ -27975,6 +28007,18 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_checksum_method_localalertcoordinator_dismiss(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_retain_"
+        "speech"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "localalertcoordinator_retain_speech"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_localalertcoordinator_retain_speech(
+                rt, thisVal, args, count);
+      });
   props["ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_set_"
         "runtime"] = jsi::Function::createFromHostFunction(
       rt,
@@ -27985,6 +28029,18 @@ NativeWhipSsh::NativeWhipSsh(
              const jsi::Value *args, size_t count) -> jsi::Value {
         return this
             ->cpp_uniffi_whip_ssh_checksum_method_localalertcoordinator_set_runtime(
+                rt, thisVal, args, count);
+      });
+  props["ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_set_speech_"
+        "enabled"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "localalertcoordinator_set_speech_enabled"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_localalertcoordinator_set_speech_enabled(
                 rt, thisVal, args, count);
       });
   props["ubrn_uniffi_whip_ssh_checksum_method_localalertcoordinator_set_"
@@ -34837,6 +34893,24 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_localalertcoordinator_dismiss(
 
   return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
 }
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_fn_method_localalertcoordinator_retain_speech(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_method_localalertcoordinator_retain_speech(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[2]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[3]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
 jsi::Value
 NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_localalertcoordinator_set_runtime(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
@@ -34849,6 +34923,23 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_localalertcoordinator_set_runtime(
       uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
       uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[2]),
       &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_fn_method_localalertcoordinator_set_speech_enabled(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value =
+      uniffi_whip_ssh_fn_method_localalertcoordinator_set_speech_enabled(
+          uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                            args[0]),
+          uniffi_jsi::Bridging<int8_t>::fromJs(rt, callInvoker, args[1]),
+          &status);
   uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
       rt, callInvoker, status, args[count - 1]);
 
@@ -44690,11 +44781,29 @@ jsi::Value NativeWhipSsh::
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }
 jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_localalertcoordinator_retain_speech(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_localalertcoordinator_retain_speech();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
     cpp_uniffi_whip_ssh_checksum_method_localalertcoordinator_set_runtime(
         jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
         size_t count) {
   auto value =
       uniffi_whip_ssh_checksum_method_localalertcoordinator_set_runtime();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_localalertcoordinator_set_speech_enabled(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_localalertcoordinator_set_speech_enabled();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }

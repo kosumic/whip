@@ -78,6 +78,7 @@ export function useSessionConnectionLifecycle({
   handleAgentStateChange: (change: {
     sessionId: string;
     snapshot: HerdrSnapshot;
+    fresh: boolean;
     transitions: RuntimeAgentStatusTransition[];
   }) => void;
   handleRuntimeDiagnostic: (
@@ -197,6 +198,7 @@ export function useSessionConnectionLifecycle({
         handleAgentStateChange({
           sessionId,
           snapshot,
+          fresh: hostState.freshness === 'fresh',
           transitions,
         });
         startTransition(() => {

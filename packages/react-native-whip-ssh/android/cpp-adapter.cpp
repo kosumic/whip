@@ -25,18 +25,9 @@ static std::string speechUtf8(JNIEnv *env, jstring text) {
     return result;
 }
 
-extern "C" JNIEXPORT jstring JNICALL
-Java_com_whipssh_SpeechPolicy_phononCommand(JNIEnv *env, jclass, jstring root, jstring action) {
-    const auto rootValue = speechUtf8(env, root);
-    const auto actionValue = speechUtf8(env, action);
-    if (env->ExceptionCheck()) return nullptr;
-    auto *value = whip_phonon_command(rootValue.c_str(), actionValue.c_str());
-    // Status strings contain JSON-escaped user data; decode standard UTF-8.
-    if (!value) return nullptr;
+static jstring speechString(JNIEnv *env, const std::string &json) {
     jclass stringClass = env->FindClass("java/lang/String");
     jmethodID constructor = env->GetMethodID(stringClass, "<init>", "([BLjava/lang/String;)V");
-    const std::string json(value);
-    whip_phonon_free(value);
     auto bytes = env->NewByteArray(static_cast<jsize>(json.size()));
     env->SetByteArrayRegion(bytes, 0, static_cast<jsize>(json.size()), reinterpret_cast<const jbyte *>(json.data()));
     jstring charset = env->NewStringUTF("UTF-8");
@@ -45,6 +36,19 @@ Java_com_whipssh_SpeechPolicy_phononCommand(JNIEnv *env, jclass, jstring root, j
     env->DeleteLocalRef(charset);
     env->DeleteLocalRef(stringClass);
     return result;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_whipssh_SpeechPolicy_phononCommand(JNIEnv *env, jclass, jstring root, jstring action) {
+    const auto rootValue = speechUtf8(env, root);
+    const auto actionValue = speechUtf8(env, action);
+    if (env->ExceptionCheck()) return nullptr;
+    auto *value = whip_phonon_command(rootValue.c_str(), actionValue.c_str());
+    // Status strings contain JSON-escaped user data; decode standard UTF-8.
+    if (!value) return nullptr;
+    const std::string json(value);
+    whip_phonon_free(value);
+    return speechString(env, json);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -99,6 +103,19 @@ Java_com_whipssh_SpeechPolicy_claim(JNIEnv *env, jclass, jint kind, jstring owne
     }
     env->ReleaseStringUTFChars(owner, ownerValue);
     return static_cast<jlong>(lease);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_whipssh_SpeechPolicy_alertSpeech(JNIEnv *env, jclass, jstring action, jstring token, jlong lease) {
+    const char *actionValue = env->GetStringUTFChars(action, nullptr);
+    if (!actionValue) return nullptr;
+    const char *tokenValue = env->GetStringUTFChars(token, nullptr);
+    char *value = tokenValue ? whip_alert_speech_command(actionValue, tokenValue, static_cast<uint64_t>(lease)) : nullptr;
+    if (tokenValue) env->ReleaseStringUTFChars(token, tokenValue);
+    env->ReleaseStringUTFChars(action, actionValue);
+    const std::string json(value ? value : "null");
+    whip_alert_speech_free(value);
+    return speechString(env, json);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
