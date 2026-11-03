@@ -522,6 +522,7 @@ impl VoiceChat {
             state.await_reply(text.trim().to_owned());
             self.speech.reset_voice();
         }
+        drop(state);
         Ok(())
     }
 
@@ -561,7 +562,12 @@ impl VoiceChat {
             state.phase,
             VoiceChatPhase::Waiting | VoiceChatPhase::Speaking
         ) {
-            state.baseline = state.observed_turns.clone();
+            let State {
+                baseline,
+                observed_turns,
+                ..
+            } = &mut *state;
+            baseline.clone_from(observed_turns);
             return Ok(self.view_unlocked(&state));
         }
         if state.turn_id.is_none() {
@@ -867,7 +873,9 @@ mod tests {
         for _ in 0..4 {
             state.input.probability(0.5, sensitivity);
         }
-        assert!(state.input.speech_started);
+        let speech_started = state.input.speech_started;
+        drop(state);
+        assert!(speech_started);
     }
     #[tokio::test]
     async fn a_missing_optional_model_starts_voice_chat_without_downloading() {

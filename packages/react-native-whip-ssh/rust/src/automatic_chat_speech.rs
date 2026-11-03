@@ -80,6 +80,10 @@ impl AutomaticChatSpeechQueue {
         Arc::new(Self::default())
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "UniFFI update accepts transcript identity, state, content, and timestamp independently"
+    )]
     pub fn update(
         &self,
         key: String,
@@ -94,11 +98,7 @@ impl AutomaticChatSpeechQueue {
         state
             .pending
             .retain(|item| item.utterance.key != key || (live && !baseline));
-        let queue = state
-            .transcripts
-            .entry(key.clone())
-            .or_insert_with(ChatSpeechQueue::new)
-            .clone();
+        let queue = state.transcripts.entry(key.clone()).or_default().clone();
         if baseline {
             queue.update(agent, false, Vec::new());
         }
@@ -128,6 +128,7 @@ impl AutomaticChatSpeechQueue {
                 }
             }
         }
+        drop(state);
     }
 
     pub fn next(&self, now_ms: u64) -> Option<ChatSpeechUtterance> {

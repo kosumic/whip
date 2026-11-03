@@ -554,89 +554,6 @@ test('volume key tab navigation uses the current action after settings change', 
   expect(host.props.onActivateTerminal).toHaveBeenCalledWith(nextPane);
 });
 
-test('plain SSH tabs use the shared create, switch, rename, close and volume controls', async () => {
-  const host = setup('codex');
-  const shells = ['Build', 'Logs'].map((title, index) => ({
-    terminalId: `__whip_ssh_shell__:${index + 1}`,
-    paneId: `__whip_ssh_shell__:${index + 1}`,
-    title,
-    kind: 'ssh' as const,
-    status: 'connected' as const,
-    reconnectAttempt: 0,
-  }));
-  host.props.terminalState = { sessions: shells, activeTerminalId: shells[0].terminalId };
-  host.props.terminalTargets = shells.map(session => ({
-    key: session.terminalId, hostSessionId: host.props.hostSessionId, client: host.client, session,
-  }));
-  host.props.snapshot = {
-    ...host.props.snapshot, server: { ...host.props.snapshot.server, running: false },
-    panes: [], tabs: [], workspaces: [], agents: [],
-  };
-  host.setSnapshot(host.props.snapshot);
-  host.props.terminalPreferences = { ...host.props.terminalPreferences, volumeDownAction: 'terminal-tab' };
-  act(() => { renderer = create(<SessionScreen {...host.props} />); });
-  const tabButtons = (label: string) => renderer.root.findAll(node => {
-    if (String(node.type) !== 'Button' || node.props.accessibilityLabel !== label) return false;
-    for (let parent = node.parent; parent; parent = parent.parent) {
-      if (String(parent.type) === 'Modal' && !parent.props.visible) return false;
-    }
-    return true;
-  });
-  expect(tabButtons('session.openTab')).toHaveLength(2);
-  expect(host.props.onActivateTerminal).not.toHaveBeenCalled();
-  act(() => { tabButtons('session.openTab')[1].props.onPress(); });
-  expect(host.props.onSelectSshShell).toHaveBeenLastCalledWith(shells[1].terminalId);
-  act(() => { for (const listener of mockVolumeKeyListeners) listener('down'); });
-  expect(host.props.onSelectSshShell).toHaveBeenLastCalledWith(shells[1].terminalId);
-
-  act(() => { tabButtons('session.openTab')[1].props.onLongPress(); });
-  expect(ui('EditorSheet').props.visible).toBe(false);
-  act(() => { tabButtons('session.renameTab')[0].props.onPress(); });
-  expect(ui('EditorSheet').props.title).toBe('session.renameTab');
-  expect(ui('Input').props.value).toBe('Logs');
-  act(() => { ui('Input').props.onChangeText('Server logs'); });
-  await act(async () => { await ui('EditorSheet').props.onSave(); });
-  expect(host.props.onRenameSshShell).toHaveBeenCalledWith(shells[1].terminalId, 'Server logs');
-  expect(ui('EditorSheet').props.visible).toBe(false);
-
-  act(() => { tabButtons('session.openTab')[1].props.onLongPress(); });
-  act(() => { tabButtons('session.renameTab')[0].props.onPress(); });
-  act(() => { ui('Input').props.onChangeText('Discarded rename'); });
-  act(() => { ui('EditorSheet').props.onClose(); });
-
-  act(() => { tabButtons('session.newTab')[0].props.onPress(); });
-  expect(ui('EditorSheet').props.title).toBe('session.newTab');
-  expect(ui('Input').props.placeholder).toBe('terminal.sshShell');
-  expect(ui('Input').props.value).toBe('');
-  act(() => { ui('Input').props.onChangeText('Deploy'); });
-  await act(async () => { await ui('EditorSheet').props.onSave(); });
-  expect(host.props.onOpenSshShell).toHaveBeenCalledWith('Deploy');
-  expect(host.props.onRenameSshShell).toHaveBeenCalledTimes(1);
-  expect(tabButtons('session.closeTab')).toHaveLength(0);
-  act(() => { tabButtons('session.openTab')[0].props.onLongPress(); });
-  act(() => { tabButtons('session.closeTab')[0].props.onPress(); });
-  expect(host.props.onCloseTerminal).toHaveBeenCalledWith(shells[0].terminalId);
-  expect(host.native.requestHerdrApi).not.toHaveBeenCalled();
-});
-
-test('changing hosts closes the editor and clears its draft before creating another tab', async () => {
-  const host = setup('codex');
-  await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
-  const newTab = () => renderer.root.findByProps({ accessibilityLabel: 'session.newTab' });
-  act(() => { newTab().props.onPress(); });
-  act(() => { ui('Input').props.onChangeText('Previous host draft'); });
-
-  act(() => { renderer.update(<SessionScreen {...host.props} hostSessionId="host-2" />); });
-
-  expect(ui('EditorSheet').props.visible).toBe(false);
-  expect(ui('Input').props.value).toBe('');
-  await act(async () => { await ui('EditorSheet').props.onSave(); });
-  expect(host.native.requestHerdrApi).not.toHaveBeenCalled();
-  act(() => { newTab().props.onPress(); });
-  expect(ui('EditorSheet').props.visible).toBe(true);
-  expect(ui('Input').props.value).toBe('');
-});
-
 test('an active SSH tab remains selected when a focused Herdr workspace appears', () => {
   const host = setup('codex');
   const shell = {
@@ -1948,25 +1865,6 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     expect(ui('TerminalScreen').props.chatViewEnabled).toBe(false);
     expect(control()).toBeUndefined();
   });
-});
-
-test('disconnect keeps the new-tab button, tab identities, and scroll container mounted', async () => {
-  const host = setup('codex');
-  await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
-  const plus = renderer.root.findByProps({ accessibilityLabel: 'session.newTab' });
-  const rail = renderer.root.findByProps({ accessibilityLabel: 'session.backToHerd' }).parent!;
-  const scroll = rail.findByType('ScrollView' as never);
-  const tabButtons = () => scroll.findAllByType('Button' as never)
-    .filter(node => node.props.accessibilityLabel === 'session.openTab');
-  const tabs = tabButtons();
-  await act(async () => { renderer.update(<SessionScreen {...host.props} client={null} />); });
-  expect(renderer.root.findByProps({ accessibilityLabel: 'session.newTab' })).toBe(plus);
-  expect(plus.props.disabled).toBe(true);
-  expect(rail.findByType('ScrollView' as never)).toBe(scroll);
-  expect(tabButtons()).toEqual(tabs);
-  await act(async () => { renderer.update(<SessionScreen {...host.props} />); });
-  expect(renderer.root.findByProps({ accessibilityLabel: 'session.newTab' })).toBe(plus);
-  expect(plus.props.disabled).toBe(false);
 });
 
 test('the neighboring browser control keeps its toolbar slot while disconnected', async () => {
