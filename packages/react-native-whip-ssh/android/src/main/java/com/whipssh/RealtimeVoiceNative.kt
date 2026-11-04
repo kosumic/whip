@@ -14,6 +14,9 @@ object RealtimeVoiceNative {
   @JvmStatic external fun stopped(call: Long): Boolean
   @JvmStatic external fun control(call: Long, action: Int)
   @JvmStatic external fun capture(call: Long, samples: ShortArray, count: Int): Boolean
+  @JvmStatic external fun inputGeneration(call: Long): Long
+  @JvmStatic external fun captureTimed(call: Long, samples: ShortArray, count: Int, generation: Long, ageNs: Long): Boolean
+  @JvmStatic external fun render(call: Long, epoch: Long, samples: ShortArray, offset: Int, count: Int, audio: Boolean, delayNs: Long): Boolean
   @JvmStatic external fun read(call: Long, samples: ShortArray, epoch: LongArray): Int
   @JvmStatic external fun played(call: Long, epoch: Long, samples: Long)
   @JvmStatic external fun epoch(call: Long): Long

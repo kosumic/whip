@@ -32,17 +32,26 @@ fixed UI errors do not depend on those wire logs.
 The fixed destination is `wss://api.openai.com/v1/realtime?model=gpt-realtime`;
 credentials are never part of agent requests or host configuration.
 
-Reviewed [openai/codex](https://github.com/openai/codex) at
-`ac558e2a32`:
+Ported the public-API-compatible audio processing and response lifecycle from
+[openai/codex](https://github.com/openai/codex) at
+`f2b94ef8b52196f127d162c6db71e390b9bb265c`:
 
-- `codex-rs/core/src/realtime_conversation.rs`: separate bounded audio, text,
-  handoff and output queues; cancellation tied to the conversation owner.
-- `codex-rs/voice-host/src/device_buffers.rs`: playback generations and discard
-  of incomplete/stale audio after interruption.
+- `codex-rs/core/src/realtime_conversation.rs`: queued response creation,
+  deferred continuation after an active-response race, and cancellation tied
+  to the conversation owner. Whip correlates asynchronous public API errors
+  through generated client event IDs rather than Codex's writer future.
+- `codex-rs/voice-host/src/processing.rs`: Rubato sinc resampling, 48-kHz/10-ms
+  Sonora AEC3/noise/gain processing, measured render/capture delay, and resets
+  after mute changes or capture gaps. Android device timestamps replace CPAL
+  callback timestamps. Processed audio returns to PCM24 for the WebSocket API.
+- `codex-rs/voice-host/src/device_buffers.rs` and `capture_worker.rs`: capture
+  generations, stale-frame rejection, and discarded pre-unmute callbacks.
 - `codex-rs/realtime-webrtc/src/session.rs`: transport/session ownership.
 
-These are architectural references. Whip does not use subscription credentials,
-Codex's private wire events, its provider stack, or its desktop audio helper.
+The adapted modules retain their Apache-2.0 attribution and bundled license.
+Whip keeps native mobile device ownership and the public Realtime WebSocket
+protocol. Codex's desktop helper, CPAL/GStreamer packaging, WebRTC/Opus transport,
+subscription credentials, and private wire events are not included in this port.
 
 Public API references:
 [WebSockets](https://developers.openai.com/api/docs/guides/voice-websockets),
@@ -59,11 +68,16 @@ backgrounding the presentation does not replace the call. App locking,
 host/session replacement, native interruption, and hangup stop it. Native owners
 stop PCM and Rust transport directly even when JS is suspended.
 
-Android uses `AudioRecord(VOICE_COMMUNICATION)` with an enabled native acoustic
-echo canceller, and a media `AudioTrack`. Volume buttons control media volume;
+Android uses `AudioRecord(VOICE_RECOGNITION)` with explicit software AEC3 and a
+media `AudioTrack`. Every submitted output sample, including silence between
+replies, feeds the render reference. Actual device timestamps determine delay;
+bounded queue timing supplies the estimate while device timestamps initialize.
+The native playback clock excludes synthetic silence from heard-audio counts.
+Volume buttons control media volume;
 the foreground microphone/media service owns media audio focus without Telecom
-registration or changing communication mode. Unsupported echo cancellation
-fails startup. iOS uses `AVAudioEngine` voice-processing I/O, an `AVAudioConverter`
+registration or changing communication mode. Android does not depend on a
+vendor echo effect that may be ineffective on a media route. iOS uses
+`AVAudioEngine` voice-processing I/O, an `AVAudioConverter`
 for the microphone's hardware format, and `AVAudioPlayerNode` playback. The
 existing iOS CallKit owner retains call audio routing and focus.
 
@@ -125,6 +139,16 @@ server-side occupant change between verification and dispatch. This is a
 remaining qualification limitation, not a guarantee of atomic remote pinning.
 
 ## Validation and remaining qualification
+
+The Codex port passes the full Rust suite (1,062 passed, 13 ignored), strict
+Clippy, formatting, TypeScript, changed-file lint, 176 affected JavaScript tests,
+and three license tests. The delayed-echo test disables noise suppression and
+gain control in both processors: providing the playback reference must reduce
+echo energy by at least 10 dB against the otherwise identical control. Separate
+tests preserve independent microphone speech, reject pre-unmute/stale capture,
+exclude synthetic playback silence from truncation, and serialize interrupted
+and competing responses. These synthetic checks do not establish physical
+loudspeaker performance; build/device results are recorded in the PR.
 
 Automated coverage includes ordered PCM, played-audio truncation, overflow,
 stale acknowledgements, server VAD configuration, tool deduplication/uncertainty,

@@ -7,6 +7,7 @@ use std::sync::{
     Arc, OnceLock,
     atomic::{AtomicU64, Ordering},
 };
+use std::time::{Duration, Instant};
 
 static NEXT: AtomicU64 = AtomicU64::new(1);
 static CALLS: OnceLock<Mutex<HashMap<u64, Arc<RealtimeVoiceAdapter>>>> = OnceLock::new();
@@ -75,6 +76,9 @@ pub extern "C" fn whip_realtime_stopped(id: u64) -> bool {
 #[unsafe(no_mangle)]
 pub extern "C" fn whip_realtime_control(id: u64, action: u8) {
     if let Some(call) = call(id) {
+        if (action == 3 || action == 4) && !call.input.set_muted(action == 3) {
+            return;
+        }
         if action == 3 {
             call.view.lock().muted = true;
         }
@@ -97,7 +101,47 @@ pub unsafe extern "C" fn whip_realtime_capture(id: u64, samples: *const i16, cou
     }
     // SAFETY: Native microphone passes a borrowed buffer of count samples.
     let samples = unsafe { std::slice::from_raw_parts(samples, count) };
-    call(id).is_some_and(|call| call.capture(samples))
+    call(id).is_some_and(|call| {
+        let generation = call.input.generation();
+        call.capture(samples, generation, Instant::now())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn whip_realtime_input_generation(id: u64) -> u64 {
+    call(id).map_or(0, |call| call.input.generation())
+}
+
+/// # Safety
+/// samples must reference count initialized PCM16 samples for this call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn whip_realtime_capture_timed(
+    id: u64,
+    samples: *const i16,
+    count: usize,
+    generation: u64,
+    age_ns: u64,
+) -> bool {
+    if samples.is_null() || count > FRAME * 4 {
+        return false;
+    }
+    let Some(call) = call(id) else {
+        return false;
+    };
+    let now = Instant::now();
+    let age = Duration::from_nanos(age_ns);
+    if age > super::processing::MAX_DELAY {
+        return true;
+    }
+    let Some(at) = now.checked_sub(age) else {
+        return false;
+    };
+    // SAFETY: Android supplies a borrowed microphone buffer for this call.
+    call.capture(
+        unsafe { std::slice::from_raw_parts(samples, count) },
+        generation,
+        at,
+    )
 }
 
 /// # Safety
@@ -137,10 +181,47 @@ pub unsafe extern "C" fn whip_realtime_read(
 #[unsafe(no_mangle)]
 pub extern "C" fn whip_realtime_played(id: u64, epoch: u64, samples: u64) {
     if let Some(call) = call(id) {
-        call.output
+        let samples = usize::try_from(samples).unwrap_or(usize::MAX);
+        let samples = call
+            .echo
             .lock()
-            .acknowledge(epoch, usize::try_from(samples).unwrap_or(usize::MAX));
+            .as_mut()
+            .map_or(samples, |echo| echo.played(epoch, samples));
+        call.output.lock().acknowledge(epoch, samples);
     }
+}
+
+/// Audio actually submitted to the device, including silence that keeps AEC clocked.
+/// # Safety
+/// samples must reference count initialized PCM16 samples for this call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn whip_realtime_render(
+    id: u64,
+    epoch: u64,
+    samples: *const i16,
+    count: usize,
+    audio: bool,
+    delay_ns: i64,
+) -> bool {
+    if samples.is_null() || count > FRAME * 4 || delay_ns.unsigned_abs() > 500_000_000 {
+        return false;
+    }
+    let Some(call) = call(id) else {
+        return false;
+    };
+    // SAFETY: Native playback supplies the borrowed buffer it just submitted.
+    let samples = unsafe { std::slice::from_raw_parts(samples, count) };
+    let result = call
+        .echo
+        .lock()
+        .as_mut()
+        .map(|echo| echo.render(epoch, samples, audio, delay_ns))
+        .transpose();
+    if let Err(error) = result {
+        call.fail(error);
+        return false;
+    }
+    true
 }
 
 #[unsafe(no_mangle)]

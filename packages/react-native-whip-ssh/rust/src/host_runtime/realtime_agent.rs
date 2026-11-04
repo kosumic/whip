@@ -70,6 +70,15 @@ impl PinnedAgent {
     }
 
     pub(crate) fn check(&self) -> Result<(), HerdrControlError> {
+        self.check_state(true)
+    }
+
+    /// A snapshot refresh is not a disconnect. Tools still require fresh state.
+    pub(crate) fn check_liveness(&self) -> Result<(), HerdrControlError> {
+        self.check_state(false)
+    }
+
+    fn check_state(&self, require_fresh: bool) -> Result<(), HerdrControlError> {
         if !super::runtimes()
             .read()
             .get(&self.runtime.inner.id)
@@ -92,11 +101,15 @@ impl PinnedAgent {
         }
         let state = self.runtime.inner.state.lock();
         let host = state.host_state.projection();
+        let fresh =
+            host.sync_status == HostSyncStatus::Synced && host.freshness == HostFreshness::Fresh;
+        let refreshing = host.freshness == HostFreshness::Stale
+            && (host.sync_status == HostSyncStatus::Syncing
+                || (host.sync_status == HostSyncStatus::Synced && host.needs_resync));
         if state.connection != HostConnectionState::Connected
             || state.generation != self.generation
             || state.herdr_recovery_revision != self.recovery
-            || host.sync_status != HostSyncStatus::Synced
-            || host.freshness != HostFreshness::Fresh
+            || !(fresh || !require_fresh && refreshing)
         {
             return Err(changed());
         }
@@ -198,6 +211,9 @@ impl PinnedAgent {
     }
 
     pub(crate) async fn execute(&self, name: &str, arguments: &str) -> Value {
+        if self.check_liveness().is_ok() && self.check().is_err() {
+            return json!({"error":"agent_syncing","guidance":"Wait for the connected host to refresh before using agent tools."});
+        }
         match self.execute_inner(name, arguments).await {
             Ok(value) if value.to_string().len() <= MAX_RESULT_BYTES => value,
             Ok(_) => {

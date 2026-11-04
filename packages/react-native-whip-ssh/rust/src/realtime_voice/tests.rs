@@ -117,6 +117,10 @@ fn public_session_configuration_preserves_voice_and_server_vad_settings()
         );
         assert_eq!(event["session"]["audio"]["output"]["voice"], "cedar");
         assert_eq!(
+            event["session"]["audio"]["input"]["noise_reduction"]["type"],
+            "near_field"
+        );
+        assert_eq!(
             event["session"]["audio"]["input"]["turn_detection"]["type"],
             vad["type"]
         );

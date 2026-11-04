@@ -15,6 +15,15 @@ export interface OpenSourceLicenseNotice {
 
 export const OPEN_SOURCE_LICENSES: readonly OpenSourceLicenseNotice[] = [
   {
+    id: 'codex-realtime-voice',
+    projectName: 'OpenAI Codex Realtime voice',
+    sourceUrl: 'https://github.com/openai/codex/tree/f2b94ef8b52196f127d162c6db71e390b9bb265c',
+    attribution: 'Realtime audio processing and response lifecycle adapted from Codex voice-host and core. Modified for native mobile devices and the public OpenAI Realtime API.',
+    licenseName: 'Apache-2.0',
+    copyright: 'Copyright OpenAI',
+    licenseAsset: bundledAsset(require('../../assets/licenses/codex-Apache-2.0.txt')),
+  },
+  {
     id: 'smart-turn-v3',
     projectName: 'Smart Turn v3.2',
     sourceUrl: 'https://huggingface.co/pipecat-ai/smart-turn-v3',

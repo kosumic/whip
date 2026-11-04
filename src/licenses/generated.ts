@@ -883,6 +883,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/fae70451618f664b.txt"),
   },
   {
+    id: "cargo-rubato-5-0-0",
+    category: "cargo",
+    projectName: "rubato",
+    sourceUrl: "https://github.com/HEnquist/rubato",
+    attribution: "Direct Rust dependency · version 5.0.0 · used by whip-ssh",
+    licenseName: "Apache-2.0",
+    licenseAsset: require("../../assets/licenses/generated/43e6ce72b0a3c03a.txt"),
+  },
+  {
     id: "cargo-russh-0-64-1",
     category: "cargo",
     projectName: "russh",
@@ -971,6 +980,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     attribution: "Direct Rust dependency · version 2.0.1 · used by whip-ssh",
     licenseName: "Apache-2.0",
     licenseAsset: require("../../assets/licenses/generated/fae70451618f664b.txt"),
+  },
+  {
+    id: "cargo-sonora-0-2-0",
+    category: "cargo",
+    projectName: "sonora",
+    sourceUrl: "https://github.com/dignifiedquire/sonora",
+    attribution: "Direct Rust dependency · version 0.2.0 · used by whip-ssh",
+    licenseName: "BSD-3-Clause",
+    licenseAsset: require("../../assets/licenses/generated/db0bda631a6c6c91.txt"),
   },
   {
     id: "cargo-ssh-key-0-7-0-rc-11",

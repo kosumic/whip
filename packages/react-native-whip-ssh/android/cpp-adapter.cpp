@@ -72,6 +72,23 @@ Java_com_whipssh_RealtimeVoiceNative_read(JNIEnv *env, jclass, jlong call, jshor
     env->SetShortArrayRegion(samples, 0, count, pcm.data());
     return static_cast<jint>(count);
 }
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_whipssh_RealtimeVoiceNative_render(JNIEnv *env, jclass, jlong call, jlong epoch, jshortArray samples, jint offset, jint count, jboolean audio, jlong delayNs) {
+    std::array<int16_t, WhipRealtimeMaxFrame> pcm;
+    const auto length = env->GetArrayLength(samples);
+    if (offset < 0 || count < 0 || count > static_cast<jint>(pcm.size()) || offset > length || count > length - offset) return false;
+    env->GetShortArrayRegion(samples, offset, count, pcm.data());
+    return !env->ExceptionCheck() && whip_realtime_render(call, epoch, pcm.data(), count, audio, delayNs);
+}
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_whipssh_RealtimeVoiceNative_inputGeneration(JNIEnv *, jclass, jlong call) { return static_cast<jlong>(whip_realtime_input_generation(call)); }
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_whipssh_RealtimeVoiceNative_captureTimed(JNIEnv *env, jclass, jlong call, jshortArray samples, jint count, jlong generation, jlong ageNs) {
+    std::array<int16_t, WhipRealtimeMaxFrame> pcm;
+    if (count < 0 || count > static_cast<jint>(pcm.size()) || count > env->GetArrayLength(samples) || ageNs < 0) return false;
+    env->GetShortArrayRegion(samples, 0, count, pcm.data());
+    return !env->ExceptionCheck() && whip_realtime_capture_timed(call, pcm.data(), count, generation, ageNs);
+}
 extern "C" JNIEXPORT void JNICALL
 Java_com_whipssh_RealtimeVoiceNative_played(JNIEnv *, jclass, jlong call, jlong epoch, jlong samples) { whip_realtime_played(call, epoch, samples); }
 extern "C" JNIEXPORT jlong JNICALL

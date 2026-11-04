@@ -33,6 +33,51 @@ fn fixture(id: &str) -> Result<Fixture, Box<dyn std::error::Error>> {
 }
 
 #[test]
+fn realtime_agent_snapshot_refresh_retains_call_but_blocks_tools_until_fresh()
+-> Result<(), Box<dyn std::error::Error>> {
+    let _guard = terminal_delivery_test_guard();
+    let (runtime, pinned, snapshot) = fixture("voice-refresh")?;
+    let token = {
+        let mut state = runtime.inner.state.lock();
+        state
+            .host_state
+            .mark_needs_resync("ordinary refresh".into());
+        let generation = state.generation;
+        state.host_state.begin_sync(generation)
+    };
+    pinned.check_liveness()?;
+    assert!(pinned.check().is_err());
+    runtime
+        .inner
+        .state
+        .lock()
+        .host_state
+        .complete_sync(token, snapshot, 2);
+    pinned.check_liveness()?;
+    pinned.check()?;
+    Ok(())
+}
+
+#[test]
+fn realtime_agent_failed_refresh_stops_call() -> Result<(), Box<dyn std::error::Error>> {
+    let _guard = terminal_delivery_test_guard();
+    let (runtime, pinned, _) = fixture("voice-refresh-failed")?;
+    let token = {
+        let mut state = runtime.inner.state.lock();
+        let generation = state.generation;
+        state.host_state.begin_sync(generation)
+    };
+    runtime
+        .inner
+        .state
+        .lock()
+        .host_state
+        .fail_sync(token, "refresh failed".into());
+    assert!(pinned.check_liveness().is_err());
+    Ok(())
+}
+
+#[test]
 fn realtime_agent_focus_changes_never_retarget_the_call() -> Result<(), Box<dyn std::error::Error>>
 {
     let _guard = terminal_delivery_test_guard();
@@ -64,6 +109,7 @@ fn realtime_agent_disconnect_reconnect_and_server_recovery_invalidate_the_origin
     let (runtime, pinned, _) = fixture("voice-disconnect")?;
     runtime.inner.state.lock().connection = HostConnectionState::Disconnected;
     assert!(pinned.check().is_err());
+    assert!(pinned.check_liveness().is_err());
     {
         let mut state = runtime.inner.state.lock();
         state.connection = HostConnectionState::Connected;
@@ -73,9 +119,11 @@ fn realtime_agent_disconnect_reconnect_and_server_recovery_invalidate_the_origin
     let (runtime, pinned, _) = fixture("voice-recovery")?;
     runtime.inner.state.lock().herdr_recovery_revision += 1;
     assert!(pinned.check().is_err());
+    assert!(pinned.check_liveness().is_err());
     let (_, pinned, _) = fixture("voice-runtime-rebind")?;
     let _replacement = register_connected_test_runtime("voice-runtime-rebind");
     assert!(pinned.check().is_err());
+    assert!(pinned.check_liveness().is_err());
     Ok(())
 }
 
@@ -91,8 +139,10 @@ fn realtime_agent_session_replacement_and_binding_detach_reject_late_results()
         .value = "22222222-2222-4222-8222-222222222222".into();
     install(&runtime, snapshot);
     assert!(pinned.check().is_err());
+    assert!(pinned.check_liveness().is_err());
     let (runtime, pinned, _) = fixture("voice-detached")?;
     runtime.detach_agent_chat("terminal-pane-1".into())?;
     assert!(pinned.check().is_err());
+    assert!(pinned.check_liveness().is_err());
     Ok(())
 }
