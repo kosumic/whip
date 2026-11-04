@@ -431,7 +431,7 @@ jobs:
           nix develop --file .github/nix/codeql.nix -c java -version
 
       - name: Initialize Java and Kotlin CodeQL
-        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        uses: github/codeql-action/init@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4
         with:
           languages: java-kotlin
           build-mode: manual
@@ -451,7 +451,7 @@ jobs:
           --no-daemon
 
       - name: Analyze Java and Kotlin
-        uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        uses: github/codeql-action/analyze@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4
         with:
           category: /language:java-kotlin
 
