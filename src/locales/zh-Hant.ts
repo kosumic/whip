@@ -97,6 +97,7 @@ export const zhHant: Record<string, string> = {
   'voiceChat.closed': "語音聊天已結束",
   'voiceChat.error': "語音聊天已暫停",
   'voiceChat.transcript': "顯示文字記錄",
+  'voiceChat.latest': "跟隨目前語音",
   'voiceChat.mute': "麥克風靜音",
   'voiceChat.unmute': "取消麥克風靜音",
   'voiceChat.end': "結束語音聊天",

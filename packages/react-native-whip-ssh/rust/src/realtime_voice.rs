@@ -11,6 +11,7 @@ mod processing;
 mod response;
 #[cfg(test)]
 mod tests;
+mod transcript;
 
 use std::collections::{HashSet, VecDeque};
 use std::sync::{
@@ -196,9 +197,11 @@ pub(super) struct View {
     estimated_usd: Option<f64>,
     tool: Option<String>,
     captions: Option<captions::Diagnostics>,
+    messages: Vec<transcript::Message>,
 }
 
 struct Output {
+    transcript: transcript::Transcript,
     epoch: u64,
     samples: VecDeque<i16>,
     item: Option<(String, u32)>,
@@ -209,6 +212,7 @@ struct Output {
 impl Default for Output {
     fn default() -> Self {
         Self {
+            transcript: transcript::Transcript::default(),
             epoch: 1,
             samples: VecDeque::new(),
             item: None,
@@ -220,6 +224,9 @@ impl Default for Output {
 }
 impl Output {
     fn clear(&mut self) {
+        if let Some((item, index)) = &self.item {
+            self.transcript.stop_item(item, *index);
+        }
         self.epoch += 1;
         self.samples.clear();
         self.item = None;
@@ -248,6 +255,9 @@ impl Output {
             return Err("Realtime playback fell behind. Please call again.");
         }
         self.generated += count;
+        if let Some((item, index)) = &self.item {
+            self.transcript.audio(item, *index, self.generated);
+        }
         self.samples.extend(
             pcm.as_chunks::<2>()
                 .0
@@ -268,9 +278,13 @@ impl Output {
     fn acknowledge(&mut self, epoch: u64, count: usize) {
         if epoch == self.epoch {
             self.played = self.played.max(count.min(self.delivered));
+            if let Some((item, index)) = &self.item {
+                self.transcript.played(item, *index, self.played);
+            }
         }
     }
     fn interrupt(&mut self) -> Option<ClientEvent> {
+        self.transcript.stop();
         let event = self.item.take().map(|(item_id, content_index)| {
             ClientEvent::ConversationItemTruncate {
                 event_id: None,
@@ -336,6 +350,7 @@ impl RealtimeVoiceAdapter {
                 input_tokens: 0,
                 output_tokens: 0,
                 estimated_usd: None,
+                messages: Vec::new(),
                 tool: None,
                 captions: (!config.preview)
                     .then(|| captions::Diagnostics::pending(config.language)),
@@ -592,6 +607,7 @@ impl RealtimeVoiceAdapter {
                     };
                     let event: ServerEvent = serde_json::from_str(&text).map_err(|_| "OpenAI returned an unsupported Realtime event.")?;
                     if costs.observe(&event) { self.view.lock().estimated_usd = costs.estimated_usd(); }
+                    self.output.lock().transcript.observe(&event, &ignored);
                     match event {
                         ServerEvent::SessionUpdated { session, .. } => {
                             let audio = session.config.audio.ok_or("OpenAI did not negotiate PCM audio.")?;

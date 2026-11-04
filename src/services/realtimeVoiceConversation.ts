@@ -16,7 +16,7 @@ import { suppressAgentAlertsForTab } from './alerts';
 const CONTROL = { skip: 1 } as const;
 let sequence = 0;
 type CallEvent = { token: string; type: string; muted?: boolean; speaker?: boolean };
-type NativeView = Pick<VoiceConversationView, 'phase' | 'muted' | 'level' | 'playbackLevel' | 'text' | 'userText' | 'error' | 'inputTokens' | 'outputTokens' | 'estimatedUsd'>;
+type NativeView = Pick<VoiceConversationView, 'phase' | 'muted' | 'level' | 'playbackLevel' | 'text' | 'userText' | 'error' | 'inputTokens' | 'outputTokens' | 'estimatedUsd' | 'messages'>;
 function requireForeground(): void { if (AppState.currentState !== 'active') throw new Error('Return to Whip to start the call.'); }
 
 /** Only call controls and presentation cross this bridge. PCM and tools stay native. */

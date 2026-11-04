@@ -99,6 +99,7 @@ export const fr = {
   'voiceChat.closed': "Conversation terminée",
   'voiceChat.error': "Conversation en pause",
   'voiceChat.transcript': "Afficher la transcription",
+  'voiceChat.latest': "Suivre la parole en cours",
   'voiceChat.mute': "Couper le micro",
   'voiceChat.unmute': "Activer le micro",
   'voiceChat.end': "Terminer la conversation",

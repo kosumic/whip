@@ -21,6 +21,22 @@ text, audio, prompts, keys or session identifiers. Short shared greetings can
 still be ambiguous to the separate transcriber; captions are not an exact
 record of what the speech-to-speech model understood.
 
+The call screen retains a bounded, streaming conversation: user speech appears
+in bubbles and assistant replies remain readable in full. Spoken text brightens,
+the current word is emphasized, and upcoming speech stays dim. Scrolling back
+pauses automatic following; **Follow current speech** resumes it. This history
+belongs to the call and survives minimizing or remounting its presentation.
+It is separate from the coding-agent transcript and is not persisted to disk.
+
+The public [Realtime transcript events](https://developers.openai.com/api/reference/resources/realtime/server-events)
+have no word timestamps. Whip estimates word timing within streamed text/audio
+chunks using acknowledged device playback, excluding silence used to clock AEC.
+Buffering does not advance the highlight; interrupting or skipping freezes it.
+These are approximate word boundaries, not forced alignment. Late input captions
+update the reserved user turn rather than appearing after the assistant reply.
+Local calls also retain captions, with spoken text acknowledged at TTS chunk
+boundaries rather than estimated word timing. Both paths bound retained text.
+
 **Preview voice** becomes available after saving an API key in Realtime mode.
 It plays one short AI-generated sample in the selected Realtime voice using
 `gpt-realtime`; API charges apply. Preview opens no microphone and sends no agent

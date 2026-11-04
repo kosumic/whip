@@ -14,7 +14,7 @@ const mockInput = { reserve: jest.fn(() => true), releaseReservation: jest.fn() 
 const mockNative = {
   startVoiceCall: jest.fn(() => Promise.resolve()), endVoiceCall: jest.fn(() => Promise.resolve()),
   startRealtimeVoice: jest.fn(() => Promise.resolve()), stopRealtimeVoice: jest.fn(() => Promise.resolve()),
-  realtimeVoiceView: jest.fn(() => Promise.resolve(JSON.stringify({ phase: 'listening', muted: false, level: 0.2, playbackLevel: 0, text: 'hello', error: null, inputTokens: 3, outputTokens: 4, estimatedUsd: 0.0123 }))),
+  realtimeVoiceView: jest.fn(() => Promise.resolve(JSON.stringify({ phase: 'listening', muted: false, level: 0.2, playbackLevel: 0, text: 'hello', error: null, inputTokens: 3, outputTokens: 4, estimatedUsd: 0.0123, messages: [{ id: 'reply', role: 'assistant', text: 'hello', spokenUtf16: 2, active: true }] }))),
   realtimeVoiceControl: jest.fn(() => Promise.resolve()),
   setVoiceCallMuted: jest.fn(() => Promise.resolve()), setVoiceCallSpeaker: jest.fn(() => Promise.resolve()),
 };
@@ -54,6 +54,7 @@ test('starts native Realtime with a pinned agent, selected voice, automatic lang
   expect(JSON.parse(config)).toEqual({ target: { runtimeId: 'runtime-1', terminalId: 'terminal-1', paneId: 'pane-1', bindingToken: 'binding-1' }, voice: 'cedar', vad: { type: 'server_vad', threshold: 0.5, prefix_padding_ms: 300, silence_duration_ms: 500 } });
   expect(key).toBe('sk-private-test');
   expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ provider: 'openai', text: 'hello', inputTokens: 3, outputTokens: 4, estimatedUsd: 0.0123 }));
+  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ messages: [{ id: 'reply', role: 'assistant', text: 'hello', spokenUtf16: 2, active: true }] }));
   call.toggleMuted();
   await call.skip();
   expect(mockNative.setVoiceCallMuted).toHaveBeenCalledWith(token, true);

@@ -97,6 +97,7 @@ export const zhHans = {
   'voiceChat.closed': "语音聊天已结束",
   'voiceChat.error': "语音聊天已暂停",
   'voiceChat.transcript': "显示文字记录",
+  'voiceChat.latest': "跟随当前语音",
   'voiceChat.mute': "麦克风静音",
   'voiceChat.unmute': "取消麦克风静音",
   'voiceChat.end': "结束语音聊天",

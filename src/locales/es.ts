@@ -97,6 +97,7 @@ export const es = {
   'voiceChat.closed': "Chat de voz finalizado",
   'voiceChat.error': "Chat de voz en pausa",
   'voiceChat.transcript': "Mostrar transcripción",
+  'voiceChat.latest': "Seguir la voz actual",
   'voiceChat.mute': "Silenciar micrófono",
   'voiceChat.unmute': "Activar micrófono",
   'voiceChat.end': "Finalizar chat de voz",

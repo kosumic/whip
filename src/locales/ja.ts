@@ -97,6 +97,7 @@ export const ja = {
   'voiceChat.closed': "音声チャット終了",
   'voiceChat.error': "音声チャットを一時停止",
   'voiceChat.transcript': "文字起こしを表示",
+  'voiceChat.latest': "現在の音声を追跡",
   'voiceChat.mute': "マイクをミュート",
   'voiceChat.unmute': "マイクのミュートを解除",
   'voiceChat.end': "音声チャットを終了",

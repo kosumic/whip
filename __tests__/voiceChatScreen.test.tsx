@@ -21,7 +21,7 @@ jest.mock('../src/services/voiceSessionManager', () => {
 jest.mock('../src/components/VoiceOrb', () => ({ VoiceOrb: 'VoiceOrb' }));
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
 jest.mock('react-native', () => ({
-  ActivityIndicator: 'ActivityIndicator', Modal: 'Modal', Pressable: 'Pressable', View: 'View',
+  ActivityIndicator: 'ActivityIndicator', Modal: 'Modal', Pressable: 'Pressable', View: 'View', ScrollView: 'ScrollView',
   StyleSheet: { create: (styles: unknown) => styles },
 }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
@@ -86,6 +86,20 @@ beforeEach(async () => {
   act(() => publish(listening));
 });
 afterEach(async () => { await act(async () => { renderer.unmount(); await voiceSessionManager.hangup(); }); });
+
+test('retains the streaming conversation when compacted and reopened', () => {
+  const messages = [
+    { id: 'user', role: 'user' as const, text: 'What is new?', active: false, spokenUtf16: 0 },
+    { id: 'assistant', role: 'assistant' as const, text: 'Here is the latest answer.', active: true, spokenUtf16: 10 },
+  ];
+  act(() => publish({ ...listening, provider: 'openai', phase: 'speaking', messages }));
+  expect(renderer.root.findByProps({ accessibilityLabel: messages[1].text }).props.numberOfLines).toBeUndefined();
+  press('voiceChat.minimize');
+  press('voiceChat.reopen');
+  expect(renderer.root.findByProps({ accessibilityLabel: messages[1].text })).toBeDefined();
+  expect(session.start).toHaveBeenCalledTimes(1);
+  expect(session.close).not.toHaveBeenCalled();
+});
 
 test('settings changes update the existing call without restarting it', () => {
   act(() => { renderer.update(<VoiceVadSensitivityContext value={75}><Call /></VoiceVadSensitivityContext>); });
