@@ -13,6 +13,7 @@ import { agentTranscriptService } from './NativeTranscriptService';
 import { retainVoiceCallBackground } from './voiceCallBackground';
 import { suppressAgentAlertsForTab } from './alerts';
 import { settledPromise } from '../lib/promises';
+import { VoiceCallSoundPlayer } from './voiceCallSoundPlayer';
 
 const CONTROL = { skip: 1 } as const;
 let sequence = 0;
@@ -26,6 +27,10 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
   private closed = false;
   private closing?: Promise<void>;
   private callStarted = false;
+  private callActivated = false;
+  private readySoundPlayed = false;
+  private allowClosedSound = true;
+  private sounds?: VoiceCallSoundPlayer;
   private startingMedia?: Promise<void>;
   private nativeMediaAttempted = false;
   private playback?: NativeSpeechPlayback;
@@ -42,6 +47,8 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
       if (!composerSpeechInput.reserve(this.token)) throw new Error('Finish the current speech session before starting a call.');
       this.cleanups.push(() => composerSpeechInput.releaseReservation(this.token));
       this.playback = getSpeechPlayback();
+      this.sounds = new VoiceCallSoundPlayer(this.playback, () => !this.closed && this.allowClosedSound && this.inputReady());
+      this.sounds.preload();
       if (!this.playback.startRealtimeVoice || !this.playback.realtimeVoiceView || !this.playback.stopRealtimeVoice) throw new Error('Install an updated Whip build for Realtime calls.');
       const binding = this.target.bindingToken;
       const target = binding ? agentTranscriptService.realtimeTarget(binding) : undefined;
@@ -60,6 +67,8 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
       const call = emitter.addListener('WhipVoiceCall', event => {
         if (this.closed || event.token !== this.token) return;
         if (event.type === 'ended' || event.type === 'audioInactive') {
+          if (event.type === 'audioInactive') this.allowClosedSound = false;
+          void this.sounds?.stop();
           // Native owners stop PCM immediately, including while JS is suspended.
           void this.poll(true).finally(() => {
             if (this.closed) return;
@@ -83,6 +92,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
       if (this.playback.startRealtimeVoiceCall) await this.playback.startRealtimeVoiceCall(this.token, this.target.label);
       else await this.playback.startVoiceCall(this.token, this.target.label);
       if (this.closed) { await this.playback.endVoiceCall(this.token); return; }
+      this.callActivated = true;
       requireForeground();
       const config = JSON.stringify({ clientElapsedMs: Math.max(0, Math.round(performance.now() - this.requestedAt)), target, model: this.settings.realtimeModel, voice: this.settings.realtimeVoice, vad: parseRealtimeVad(this.settings.realtimeVad ?? DEFAULT_REALTIME_VAD) });
       this.nativeMediaAttempted = true;
@@ -103,6 +113,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
     this.changed(this.view);
   }
   private fail(message: string): void { if (!this.closed) { this.publish({ phase: 'error', error: message, level: 0, playbackLevel: 0, estimatedUsd: null }); void this.close(); } }
+  private inputReady(): boolean { return this.view.phase === 'listening' || this.view.phase === 'muted'; }
   private async poll(final = false): Promise<void> {
     if (this.closed || !this.playback) return;
     clearTimeout(this.timer);
@@ -110,6 +121,12 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
       const view = JSON.parse(await this.playback.realtimeVoiceView!(this.token)) as NativeView;
       if (this.closed) return;
       this.publish(view);
+      if (!final && !this.closed) {
+        if (this.inputReady() && !this.readySoundPlayed) {
+          this.readySoundPlayed = true;
+          void this.sounds?.play('ready');
+        } else if (!this.inputReady() && this.sounds?.readyPlaying) void this.sounds.stop();
+      }
       if (view.phase === 'error' || view.phase === 'closed') { void this.close(); return; }
       if (!final) this.timer = setTimeout(() => { void this.poll(); }, 100);
     } catch { this.fail('Realtime call status is unavailable. Please call again.'); }
@@ -128,6 +145,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
   close(): Promise<void> {
     if (this.closing) return this.closing;
     this.closed = true;
+    const stoppedSound = this.sounds?.stop();
     clearTimeout(this.timer);
     this.closing = (async () => {
       try {
@@ -137,7 +155,11 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
         if (this.startingMedia) await Promise.allSettled([this.startingMedia]);
         await this.playback?.stopRealtimeVoice?.(this.token);
       } finally {
-        try { if (this.callStarted) await this.playback?.endVoiceCall(this.token); }
+        try {
+          if (this.callStarted) await this.playback?.endVoiceCall(this.token);
+          await stoppedSound;
+          if (this.callActivated && this.allowClosedSound) await this.sounds?.play('closed');
+        }
         finally { for (const cleanup of this.cleanups.splice(0).reverse()) cleanup(); }
       }
     })();

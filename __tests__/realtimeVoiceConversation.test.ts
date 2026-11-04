@@ -4,6 +4,7 @@ import { DEFAULT_VOICE_CONVERSATION_SETTINGS as defaults } from '../src/lib/voic
 import type { VoiceConversationView } from '../src/services/voiceConversation';
 import type { AgentChatState } from '../src/agentChat';
 import { request } from 'react-native-permissions';
+import { loadVoiceCallSound } from '../src/services/voiceCallSounds';
 
 const mockEvents = new Map<string, (event: unknown) => void>();
 const mockApp = { currentState: 'active' };
@@ -13,6 +14,8 @@ const mockRelease = jest.fn();
 const mockUnsubscribe = jest.fn();
 const mockInput = { reserve: jest.fn(() => true), releaseReservation: jest.fn() };
 const mockNative = {
+  playVoiceCallSound: jest.fn((_uri: string, _inCall: boolean) => Promise.resolve()),
+  stopVoiceCallSound: jest.fn(() => Promise.resolve()),
   startVoiceCall: jest.fn(() => Promise.resolve()), endVoiceCall: jest.fn(() => Promise.resolve()),
   startRealtimeVoice: jest.fn(() => Promise.resolve()), stopRealtimeVoice: jest.fn(() => Promise.resolve()),
   realtimeVoiceView: jest.fn(() => Promise.resolve(JSON.stringify({ phase: 'listening', muted: false, level: 0.2, playbackLevel: 0, text: 'hello', error: null, inputTokens: 3, outputTokens: 4, estimatedUsd: 0.0123, messages: [{ id: 'reply', role: 'assistant', text: 'hello', spokenUtf16: 2, active: true }] }))),
@@ -26,6 +29,8 @@ jest.mock('react-native', () => ({
 }));
 jest.mock('react-native-permissions', () => ({ PERMISSIONS: { IOS: { MICROPHONE: 'mic' }, ANDROID: { RECORD_AUDIO: 'mic' } }, RESULTS: { GRANTED: 'granted' }, request: jest.fn(() => Promise.resolve('granted')) }));
 jest.mock('../src/services/speechPlayback', () => ({ getSpeechPlayback: () => mockNative }));
+jest.mock('../src/services/voiceCallSounds', () => ({ loadVoiceCallSound: jest.fn((sound: string) => Promise.resolve(`file:///${sound}.mp3`)) }));
+jest.mock('../src/services/diagnosticFormatting', () => ({ recordDiagnostic: jest.fn() }));
 jest.mock('../src/services/composerSpeechInput', () => ({ get composerSpeechInput() { return mockInput; } }));
 jest.mock('../src/services/speechInputFocus', () => ({ setSpeechInputActive: jest.fn() }));
 jest.mock('../src/services/chatSpeech', () => ({ suspendChatSpeechForInput: jest.fn(() => Promise.resolve()) }));
@@ -45,6 +50,84 @@ function setup() {
 }
 beforeEach(() => { jest.useFakeTimers(); jest.clearAllMocks(); mockEvents.clear(); mockApp.currentState = 'active'; });
 afterEach(() => jest.useRealTimers());
+
+test('plays the ready piano once when native Realtime becomes ready for input', async () => {
+  mockNative.realtimeVoiceView.mockResolvedValueOnce(JSON.stringify({ phase: 'starting' }));
+  const { call } = setup();
+  await call.start();
+  expect(mockNative.playVoiceCallSound).not.toHaveBeenCalled();
+  await jest.advanceTimersByTimeAsync(300);
+  expect(mockNative.playVoiceCallSound.mock.calls).toEqual([['file:///ready.mp3', true]]);
+  await call.close();
+});
+
+test('plays the closing piano once after stopping media and ending the system call', async () => {
+  const { call } = setup();
+  await call.start();
+  let finished!: () => void;
+  mockNative.playVoiceCallSound.mockImplementationOnce(() => new Promise(resolve => { finished = resolve; }));
+  const closed = jest.fn();
+  const closing = Promise.all([call.close(), call.close()]).then(closed);
+  await flush();
+  expect(mockNative.playVoiceCallSound.mock.calls).toEqual([['file:///ready.mp3', true], ['file:///closed.mp3', false]]);
+  const cueOrder = mockNative.playVoiceCallSound.mock.invocationCallOrder[1];
+  expect(mockNative.stopRealtimeVoice.mock.invocationCallOrder.at(-1)).toBeLessThan(cueOrder);
+  expect(mockNative.endVoiceCall.mock.invocationCallOrder[0]).toBeLessThan(cueOrder);
+  expect(mockNative.stopVoiceCallSound.mock.invocationCallOrder[0]).toBeLessThan(cueOrder);
+  expect(closed).not.toHaveBeenCalled();
+  expect(mockInput.releaseReservation).not.toHaveBeenCalled();
+  finished();
+  await closing;
+  expect(mockInput.releaseReservation).toHaveBeenCalled();
+});
+
+test('a ready piano still loading at hangup cannot play after the closing cue', async () => {
+  let loaded!: (uri: string) => void;
+  jest.mocked(loadVoiceCallSound).mockImplementationOnce(() => new Promise(resolve => { loaded = resolve; }));
+  const { call } = setup();
+  await call.start();
+  await call.close();
+  loaded('file:///late-ready.mp3');
+  await flush();
+  expect(mockNative.playVoiceCallSound.mock.calls).toEqual([['file:///closed.mp3', false]]);
+});
+
+test('stops the ready piano when Realtime starts replying and does not replay it', async () => {
+  let finished!: () => void;
+  mockNative.playVoiceCallSound.mockImplementationOnce(() => new Promise(resolve => { finished = resolve; }));
+  const { call } = setup();
+  await call.start();
+  mockNative.realtimeVoiceView.mockResolvedValueOnce(JSON.stringify({ phase: 'speaking' }));
+  await jest.advanceTimersByTimeAsync(100);
+  expect(mockNative.stopVoiceCallSound).toHaveBeenCalledTimes(1);
+  finished();
+  await jest.advanceTimersByTimeAsync(200);
+  expect(mockNative.playVoiceCallSound.mock.calls).toEqual([['file:///ready.mp3', true]]);
+  await call.close();
+});
+
+test('an audio interruption suppresses the closing piano', async () => {
+  const { call } = setup();
+  await call.start();
+  const token = (mockNative.startVoiceCall.mock.calls[0] as unknown as [string])[0];
+  mockEvents.get('WhipVoiceCall')?.({ token, type: 'audioInactive' });
+  await flush();
+  await call.close();
+  expect(mockNative.playVoiceCallSound.mock.calls).toEqual([['file:///ready.mp3', true]]);
+  expect(mockNative.stopVoiceCallSound).toHaveBeenCalled();
+});
+
+test('cue failures do not interrupt Realtime or prevent releasing the call', async () => {
+  mockNative.playVoiceCallSound.mockRejectedValueOnce(new Error('Audio unavailable'));
+  const { call, changed } = setup();
+  await call.start();
+  await flush();
+  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'listening', error: null }));
+  expect(mockNative.stopRealtimeVoice).not.toHaveBeenCalled();
+  mockNative.playVoiceCallSound.mockRejectedValueOnce(new Error('Audio unavailable'));
+  await call.close();
+  expect(mockInput.releaseReservation).toHaveBeenCalled();
+});
 
 test('starts native Realtime with a pinned agent, selected voice, automatic language and server VAD', async () => {
   const { call, changed } = setup();
@@ -91,6 +174,7 @@ test('backgrounding during microphone authorization cannot start a new call', as
   await starting; await call.close();
   expect(mockNative.startVoiceCall).not.toHaveBeenCalled();
   expect(mockNative.startRealtimeVoice).not.toHaveBeenCalled();
+  expect(mockNative.playVoiceCallSound).not.toHaveBeenCalled();
   expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'error' }));
   expect(mockInput.releaseReservation).toHaveBeenCalled();
 });
