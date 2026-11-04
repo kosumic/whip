@@ -162,7 +162,6 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
       <Animated.View className="items-center gap-3 px-8 pb-5" style={[styles.status, chromeMotion]}>
         <Text accessibilityLiveRegion="polite" className="text-center text-xs" style={styles.statusText}>{t(STATUS[view.phase])}</Text>
         {view.provider === 'openai' && <>
-          <Text className="text-center text-xs" style={styles.statusText}>{t('voiceProvider.usage', { input: view.inputTokens ?? 0, output: view.outputTokens ?? 0 })}</Text>
           {!!view.userText && <Text numberOfLines={2} className="text-center text-xs" style={styles.statusText}>{view.userText}</Text>}
           {!!view.text && <Text numberOfLines={4} className="text-center text-sm" style={styles.statusText}>{view.text}</Text>}
         </>}

@@ -56,7 +56,6 @@ export const ja = {
   "voiceProvider.eagerness.medium": "標準",
   "voiceProvider.eagerness.high": "速い",
   "voiceProvider.eagerness.auto": "自動",
-  "voiceProvider.usage": "OpenAI API · 入力 {{input}} / 出力 {{output}} トークン",
   "voiceProvider.unavailable": "クラウド通話はまだ利用できません。通話するにはローカルを選択してください。",
   "voiceProvider.voice": "会話の音声",
   "voiceProvider.nextCall": "音声の変更は次の通話から適用されます。現在の通話は継続します。",

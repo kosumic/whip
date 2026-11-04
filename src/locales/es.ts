@@ -56,7 +56,6 @@ export const es = {
   "voiceProvider.eagerness.medium": "Equilibrado",
   "voiceProvider.eagerness.high": "Rápido",
   "voiceProvider.eagerness.auto": "Automático",
-  "voiceProvider.usage": "OpenAI API · {{input}} tokens de entrada / {{output}} de salida",
   "voiceProvider.unavailable": "Las llamadas en la nube aún no están disponibles. Selecciona Local para llamar.",
   "voiceProvider.voice": "Voz de conversación",
   "voiceProvider.nextCall": "Los cambios de voz se aplican a la próxima llamada. La llamada actual continúa sin cambios.",

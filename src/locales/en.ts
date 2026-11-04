@@ -57,7 +57,6 @@ export const en = {
   'voiceProvider.eagerness.medium': 'Balanced',
   'voiceProvider.eagerness.high': 'Quick',
   'voiceProvider.eagerness.auto': 'Automatic',
-  'voiceProvider.usage': 'OpenAI API · {{input}} input / {{output}} output tokens',
   'voiceProvider.voice': 'Conversation voice',
   'voiceProvider.nextCall': 'Voice changes apply to your next call. An active call will continue unchanged.',
   'voiceProvider.preview': 'Preview voice',

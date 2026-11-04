@@ -56,7 +56,6 @@ export const zhHant: Record<string, string> = {
   "voiceProvider.eagerness.medium": "均衡",
   "voiceProvider.eagerness.high": "快速",
   "voiceProvider.eagerness.auto": "自動",
-  "voiceProvider.usage": "OpenAI API · 輸入 {{input}} / 輸出 {{output}} token",
   "voiceProvider.unavailable": "雲端通話尚未開放。請選擇本機進行通話。",
   "voiceProvider.voice": "對話聲音",
   "voiceProvider.nextCall": "聲音變更將於下次通話時套用。目前通話保持不變。",

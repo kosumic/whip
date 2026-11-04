@@ -56,7 +56,6 @@ export const zhHans = {
   "voiceProvider.eagerness.medium": "均衡",
   "voiceProvider.eagerness.high": "快速",
   "voiceProvider.eagerness.auto": "自动",
-  "voiceProvider.usage": "OpenAI API · 输入 {{input}} / 输出 {{output}} token",
   "voiceProvider.unavailable": "云端通话尚不可用。请选择本地进行通话。",
   "voiceProvider.voice": "对话声音",
   "voiceProvider.nextCall": "声音更改将在下次通话时生效。当前通话保持不变。",
