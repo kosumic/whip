@@ -272,6 +272,7 @@ object PhononPlayback {
           // Native sample-rate conversion also preserves the device.speak rate contract.
           check(it.setPlaybackRate((SAMPLE_RATE * rate).toInt()) == AudioTrack.SUCCESS) { "Requested speech rate is unavailable" }
         }
+      track?.let { VoiceMediaAudio.attach(it) }
     }
 
     fun write(samples: FloatArray): Boolean {
@@ -338,6 +339,7 @@ object PhononPlayback {
     }
 
     fun close() = synchronized(lifecycle) {
+      track?.let { VoiceMediaAudio.detach(it) }
       track?.release()
       track = null
     }

@@ -36,7 +36,6 @@ const audioApacheLicense = {
 };
 
 const noticeSources: BundledNoticeSource[] = [
-  { id: 'androidx-core-telecom', ...audioApacheLicense },
   { id: 'phonon-31m-en', ...audioApacheLicense },
   { id: 'phonon-voices', ...audioApacheLicense },
   {

@@ -82,20 +82,20 @@ Tool output and reasoning are not read as ordinary assistant prose. If the
 agent is awaiting a permission or another interactive action, return to the
 existing chat or terminal controls to handle it.
 
-## System call integration
+## Audio ownership
 
-Voice chat starts a local audio call through Android Telecom or iOS CallKit.
-The operating system owns call activation and routing. The voice screen offers
-mute, speaker, and end controls; system hang-up and mute controls also update
-the conversation. Repeated system notifications of the same mute state preserve
-the current capture and pending speech. Android can repeat these notifications
-while connecting the initial Bluetooth route; they must not cancel and reopen a
-recognizer that is still starting. Connected wired or Bluetooth headsets take
-priority at startup;
-otherwise playback starts on speaker. No phone number is dialed.
-Android startup resolves when Telecom activates the call. Audio routes have one
-collector and default route selection runs separately; waiting for another route
-event cannot block speech startup.
+Android voice chat uses media audio focus and `USAGE_MEDIA` playback. Volume
+buttons adjust media volume, including while listening between replies. It does
+not register with Telecom or change Android's communication mode or volume
+levels. A microphone/media foreground service retains the notification's mute
+and end controls. System media routing selects connected wired/Bluetooth output
+by default, otherwise the speaker. Native PCM players support choosing speaker
+or a connected media headset without entering call-audio mode; System TTS uses
+Android's media output controls. Removing an active headset ends the conversation
+instead of unexpectedly playing private audio through the speaker.
+
+iOS uses CallKit for activation, routing, system hang-up and mute. Repeated mute
+notifications preserve capture and pending speech. No phone number is dialed.
 
 An active conversation continues when Whip is backgrounded or the screen locks.
 Android keeps an ongoing call notification and a microphone foreground service.
@@ -113,7 +113,8 @@ iOS uses CallKit's activated audio session and the existing audio background mod
 Another call taking audio control ends the conversation. Start voice chat while
 Whip is in the foreground, after granting microphone and speech permissions.
 
-Platform references: [Android Core-Telecom](https://developer.android.com/develop/connectivity/telecom/voip-app/telecom)
+Platform references: [Android media volume](https://developer.android.com/media/platform/output),
+[Android audio focus](https://developer.android.com/media/optimize/audio-focus)
 and [Apple CallKit](https://developer.apple.com/documentation/callkit).
 
 ## Existing speech infrastructure

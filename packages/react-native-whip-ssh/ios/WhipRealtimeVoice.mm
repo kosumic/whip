@@ -2,6 +2,7 @@
 #import "WhipVoiceCall.h"
 #import "../cpp/WhipRealtimeVoice.h"
 #import <AVFoundation/AVFoundation.h>
+#import <UIKit/UIKit.h>
 #include <atomic>
 
 @interface WhipRealtimeVoice () {
@@ -22,6 +23,7 @@
 @property(nonatomic) NSUInteger queued;
 @property(nonatomic) NSUInteger ticks;
 @property(nonatomic) uint64_t closingCall;
+@property(nonatomic) BOOL preview;
 @end
 
 @implementation WhipRealtimeVoice
@@ -32,33 +34,55 @@
     _media = dispatch_queue_create("whip.realtime.media", DISPATCH_QUEUE_SERIAL);
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(audioChanged:) name:AVAudioEngineConfigurationChangeNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(interrupted:) name:AVAudioSessionInterruptionNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(backgrounded:) name:UIApplicationDidEnterBackgroundNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(routeChanged:) name:AVAudioSessionRouteChangeNotification object:nil];
   }
   return self;
 }
 - (void)start:(NSString *)token config:(NSString *)config key:(NSString *)key resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {
-  if (self.token || ![WhipVoiceCall.shared owns:token]) { reject(@"E_REALTIME", @"The voice call is not active.", nil); return; }
+  [self start:token config:config key:key preview:NO resolve:resolve reject:reject];
+}
+- (void)preview:(NSString *)token voice:(NSString *)voice key:(NSString *)key resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {
+  if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) { reject(@"E_REALTIME", @"Return to Whip to preview a voice.", nil); return; }
+  NSData *data = [NSJSONSerialization dataWithJSONObject:@{@"preview":@YES, @"voice":voice} options:0 error:nil];
+  NSString *config = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+  [self start:token config:config key:key preview:YES resolve:resolve reject:reject];
+}
+- (void)start:(NSString *)token config:(NSString *)config key:(NSString *)key preview:(BOOL)preview resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {
+  if (self.token || (preview ? WhipVoiceCall.shared.active : ![WhipVoiceCall.shared owns:token])) { reject(@"E_REALTIME", @"The requested voice audio session is unavailable.", nil); return; }
   NSError *error = nil;
   AVAudioEngine *engine = [AVAudioEngine new];
-  AVAudioInputNode *input = engine.inputNode;
-  // Apple's voice-processing I/O supplies native echo cancellation for full duplex.
-  if (![input setVoiceProcessingEnabled:YES error:&error]) { reject(@"E_REALTIME", @"Native echo cancellation could not start.", nil); return; }
-  AVAudioFormat *source = [input outputFormatForBus:0];
   AVAudioFormat *format = [[AVAudioFormat alloc] initWithCommonFormat:AVAudioPCMFormatInt16 sampleRate:WhipRealtimeSampleRate channels:1 interleaved:NO];
-  AVAudioConverter *converter = [[AVAudioConverter alloc] initFromFormat:source toFormat:format];
-  if (!converter || source.sampleRate <= 0) { reject(@"E_REALTIME", @"The microphone audio format is unavailable.", nil); return; }
+  AVAudioInputNode *input = nil;
+  AVAudioFormat *source = nil;
+  AVAudioConverter *converter = nil;
+  if (preview) {
+    if (![AVAudioSession.sharedInstance setCategory:AVAudioSessionCategoryPlayback mode:AVAudioSessionModeDefault options:0 error:&error] ||
+        ![AVAudioSession.sharedInstance setActive:YES error:&error]) { reject(@"E_REALTIME", @"Media audio could not start.", nil); return; }
+  } else {
+    input = engine.inputNode;
+    // Apple's voice-processing I/O supplies native echo cancellation for full duplex.
+    if (![input setVoiceProcessingEnabled:YES error:&error]) { reject(@"E_REALTIME", @"Native echo cancellation could not start.", nil); return; }
+    source = [input outputFormatForBus:0];
+    converter = [[AVAudioConverter alloc] initFromFormat:source toFormat:format];
+    if (!converter || source.sampleRate <= 0) { reject(@"E_REALTIME", @"The microphone audio format is unavailable.", nil); return; }
+  }
   uint64_t call = whip_realtime_start(config.UTF8String, key.UTF8String);
-  if (!call) { reject(@"E_REALTIME", @"Realtime could not start. Open a connected agent chat and check the saved API credential.", nil); return; }
+  if (!call) {
+    if (preview) [AVAudioSession.sharedInstance setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:nil];
+    reject(@"E_REALTIME", @"Realtime could not start. Check the saved API credential and audio support.", nil); return;
+  }
   if (WhipVoiceCall.shared.muted) whip_realtime_control(call, WhipRealtimeMute);
-  self.token = token; _call.store(call);
+  self.token = token; self.preview = preview; _call.store(call);
   self.engine = engine; self.format = format; self.converter = converter;
-  self.capture = [[AVAudioPCMBuffer alloc] initWithPCMFormat:format frameCapacity:WhipRealtimeMaxFrame];
+  if (!preview) self.capture = [[AVAudioPCMBuffer alloc] initWithPCMFormat:format frameCapacity:WhipRealtimeMaxFrame];
   self.player = [AVAudioPlayerNode new];
   [engine attachNode:self.player];
   [engine connect:self.player to:engine.mainMixerNode format:format];
   __weak WhipRealtimeVoice *weakSelf = self;
   // The engine invokes its tap serially. PCM conversion and upload stay native.
   AVAudioPCMBuffer *capture = self.capture;
-  [input installTapOnBus:0 bufferSize:WhipRealtimeFrame * 2 format:source block:^(AVAudioPCMBuffer *buffer, AVAudioTime *when) {
+  if (!preview) [input installTapOnBus:0 bufferSize:WhipRealtimeFrame * 2 format:source block:^(AVAudioPCMBuffer *buffer, AVAudioTime *when) {
     WhipRealtimeVoice *owner = weakSelf;
     if (!owner || owner->_call.load() != call) return;
     __block BOOL supplied = NO;
@@ -95,11 +119,12 @@
     NSData *data = [NSData dataWithBytes:json length:strlen(json)];
     NSDictionary *view = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
     whip_realtime_free(json);
-    if ([view[@"phase"] isEqualToString:@"error"]) {
+    if ([view[@"phase"] isEqualToString:@"error"] || (self.preview && [view[@"phase"] isEqualToString:@"closed"])) {
       dispatch_async(dispatch_get_main_queue(), ^{
         if (self->_call.load() != call) return;
+        BOOL preview = self.preview;
         [self stop:token];
-        [WhipVoiceCall.shared end:token resolve:^(id value) {} reject:^(NSString *code, NSString *message, NSError *error) {}];
+        if (!preview) [WhipVoiceCall.shared end:token resolve:^(id value) {} reject:^(NSString *code, NSString *message, NSError *error) {}];
       });
       return;
     }
@@ -136,10 +161,18 @@
   char *view = whip_realtime_view(call);
   self.lastView = view ? [NSString stringWithUTF8String:view] : @"{\"phase\":\"closed\"}";
   whip_realtime_free(view);
+  if (self.preview) {
+    NSMutableDictionary *last = [[NSJSONSerialization JSONObjectWithData:[self.lastView dataUsingEncoding:NSUTF8StringEncoding] options:NSJSONReadingMutableContainers error:nil] mutableCopy];
+    if (![last[@"phase"] isEqualToString:@"error"]) {
+      last[@"phase"] = @"closed";
+      self.lastView = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:last options:0 error:nil] encoding:NSUTF8StringEncoding];
+    }
+  }
   if (self.timer) { dispatch_source_cancel(self.timer); self.timer = nil; }
-  [self.engine.inputNode removeTapOnBus:0];
+  if (!self.preview) [self.engine.inputNode removeTapOnBus:0];
   // Drain the media queue before releasing nodes or allowing a replacement.
   dispatch_sync(self.media, ^{ [self.player stop]; [self.engine stop]; });
+  if (self.preview) [AVAudioSession.sharedInstance setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:nil];
   whip_realtime_stop(call);
   self.closingCall = call;
   dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
@@ -168,5 +201,10 @@
 }
 - (void)interrupted:(NSNotification *)notification {
   if ([notification.userInfo[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue] == AVAudioSessionInterruptionTypeBegan) whip_realtime_control(_call.load(), WhipRealtimeAudioFailed);
+}
+- (void)backgrounded:(NSNotification *)notification { if (self.preview && self.token) [self stop:self.token]; }
+- (void)routeChanged:(NSNotification *)notification {
+  if (self.preview && [notification.userInfo[AVAudioSessionRouteChangeReasonKey] unsignedIntegerValue] == AVAudioSessionRouteChangeReasonOldDeviceUnavailable)
+    whip_realtime_control(_call.load(), WhipRealtimeAudioFailed);
 }
 @end

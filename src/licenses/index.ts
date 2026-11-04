@@ -15,15 +15,6 @@ export interface OpenSourceLicenseNotice {
 
 export const OPEN_SOURCE_LICENSES: readonly OpenSourceLicenseNotice[] = [
   {
-    id: 'androidx-core-telecom',
-    projectName: 'AndroidX Core Telecom',
-    sourceUrl: 'https://developer.android.com/jetpack/androidx/releases/core#core-telecom',
-    attribution: 'Android system call lifecycle, audio routing, and call control integration.',
-    licenseName: 'Apache-2.0',
-    copyright: 'Copyright 2023 The Android Open Source Project',
-    licenseAsset: bundledAsset(require('../../assets/licenses/phonon-Apache-2.0.txt')),
-  },
-  {
     id: 'smart-turn-v3',
     projectName: 'Smart Turn v3.2',
     sourceUrl: 'https://huggingface.co/pipecat-ai/smart-turn-v3',

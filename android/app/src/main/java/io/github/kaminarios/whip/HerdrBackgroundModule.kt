@@ -23,13 +23,15 @@ import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.LifecycleEventListener
+import com.facebook.react.common.LifecycleState
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.whipssh.SpeechPolicy
 import kotlin.math.sqrt
 
 class HerdrBackgroundModule(
   private val context: ReactApplicationContext,
-) : ReactContextBaseJavaModule(context), SensorEventListener {
+) : ReactContextBaseJavaModule(context), SensorEventListener, LifecycleEventListener {
   private val sensorManager = context.getSystemService(SensorManager::class.java)
   private val notificationManager = context.getSystemService(NotificationManager::class.java)
   private val mainHandler = Handler(Looper.getMainLooper())
@@ -94,6 +96,17 @@ class HerdrBackgroundModule(
   fun startRealtimeVoice(token: String, config: String, key: String, promise: Promise) {
     mainHandler.post { RealtimeVoice.start(token, config, key, promise) }
   }
+  @ReactMethod
+  fun startRealtimeVoicePreview(token: String, voice: String, key: String, promise: Promise) {
+    mainHandler.post {
+      if (context.lifecycleState != LifecycleState.RESUMED) promise.reject("E_REALTIME", "Return to Whip to preview a voice.")
+      else RealtimeVoice.preview(context, token, voice, key, promise)
+    }
+  }
+  override fun initialize() { super.initialize(); context.addLifecycleEventListener(this) }
+  override fun onHostResume() {}
+  override fun onHostPause() { mainHandler.post { RealtimeVoice.stopPreview() } }
+  override fun onHostDestroy() { mainHandler.post { RealtimeVoice.stopPreview() } }
   @ReactMethod
   fun stopRealtimeVoice(token: String, promise: Promise) { mainHandler.post { RealtimeVoice.stop(token, promise) } }
   @ReactMethod
@@ -357,6 +370,8 @@ class HerdrBackgroundModule(
   override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
 
   override fun invalidate() {
+    context.removeLifecycleEventListener(this)
+    mainHandler.post { RealtimeVoice.stopPreview() }
     mainHandler.post {
       finishVoiceCallSound()
       VoiceCallService.onEvent = null

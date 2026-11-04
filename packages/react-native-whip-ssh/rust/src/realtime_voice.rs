@@ -35,6 +35,10 @@ const MAX_TEXT: usize = 16 * 1024;
 const MAX_CALLS: usize = 128;
 const IO_TIMEOUT: Duration = Duration::from_secs(10);
 const MODEL: &str = "gpt-realtime";
+const PREVIEW_TIMEOUT: Duration = Duration::from_secs(30);
+const PREVIEW_TOKEN_LIMIT: u32 = 256;
+const PREVIEW_AUDIO_LIMIT: usize = RATE * 12;
+const PREVIEW_INSTRUCTIONS: &str = "Read this sample exactly once, without adding anything: Hello! I'm here to help. What would you like to work on?";
 const VOICES: &[&str] = &[
     "alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse", "marin", "cedar",
 ];
@@ -42,9 +46,11 @@ const VOICES: &[&str] = &[
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct Config {
-    target: AgentTarget,
+    target: Option<AgentTarget>,
     voice: String,
-    vad: Vad,
+    vad: Option<Vad>,
+    #[serde(default)]
+    preview: bool,
 }
 
 struct PreparedSession {
@@ -61,17 +67,6 @@ enum Vad {
         prefix_padding_ms: u32,
         silence_duration_ms: u32,
     },
-    SemanticVad {
-        eagerness: Eagerness,
-    },
-}
-#[derive(Clone, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-enum Eagerness {
-    Low,
-    Medium,
-    High,
-    Auto,
 }
 
 impl Config {
@@ -89,6 +84,16 @@ impl Config {
         }
         let accepted = serde_json::to_value(input.turn_detection)
             .map_err(|_| "Invalid Realtime VAD confirmation.")?;
+        if self.preview {
+            return if accepted["type"] == "server_vad"
+                && accepted["create_response"] == false
+                && accepted["interrupt_response"] == false
+            {
+                Ok(())
+            } else {
+                Err("OpenAI did not accept preview server VAD settings.")
+            };
+        }
         let requested =
             serde_json::to_value(&self.vad).map_err(|_| "Invalid Realtime VAD settings.")?;
         if !requested.as_object().is_some_and(|fields| {
@@ -107,11 +112,26 @@ impl Config {
         if !VOICES.contains(&self.voice.as_str()) {
             return Err("Choose a supported OpenAI Realtime voice.");
         }
-        if let Vad::ServerVad {
+        if self.preview {
+            if self.target.is_some() {
+                return Err("Voice previews cannot connect to an agent.");
+            }
+            return typed(json!({"type":"session.update","session":{
+                "type":"realtime", "output_modalities":["audio"], "max_output_tokens":PREVIEW_TOKEN_LIMIT,
+                "instructions":PREVIEW_INSTRUCTIONS,
+                "audio":{"input":{"format":{"type":"audio/pcm","rate":RATE},"turn_detection":{"type":"server_vad","create_response":false,"interrupt_response":false}},
+                    "output":{"format":{"type":"audio/pcm","rate":RATE},"voice":self.voice}},
+                "tools":[], "tool_choice":"none"
+            }}));
+        }
+        if self.target.is_none() || self.vad.is_none() {
+            return Err("Realtime calls require a bound agent and turn detection settings.");
+        }
+        if let Some(Vad::ServerVad {
             threshold,
             prefix_padding_ms,
             silence_duration_ms,
-        } = self.vad
+        }) = self.vad
             && (!threshold.is_finite()
                 || !(0.0..=1.0).contains(&threshold)
                 || prefix_padding_ms > 2000
@@ -256,22 +276,30 @@ pub(super) struct RealtimeVoiceAdapter {
     closed: AtomicBool,
     ready: AtomicBool,
     stopped: AtomicBool,
+    allow_input: bool,
+    speech: crate::speech_playback::RealtimeSpeechLease,
 }
 impl RealtimeVoiceAdapter {
     fn start(config: Config, key: String) -> Result<Arc<Self>, &'static str> {
         let update = config.session_update()?;
-        let agent = PinnedAgent::pin(config.target.clone())
+        let agent = config
+            .target
+            .clone()
+            .map(PinnedAgent::pin)
+            .transpose()
             .map_err(|_| "Open the connected agent chat before starting Realtime.")?;
         if key.is_empty() || key.len() > 1024 || key.chars().any(char::is_whitespace) {
             return Err("Save a valid OpenAI API key in Settings.");
         }
+        let speech = crate::speech_playback::RealtimeSpeechLease::claim(config.preview)
+            .ok_or("Another speech session is active. Finish it before previewing.")?;
         let (commands, command_rx) = mpsc::channel(8);
         let (audio, audio_rx) = mpsc::channel(32);
         let (cancel, mut cancellation) = watch::channel(false);
         let adapter = Arc::new(Self {
             view: Mutex::new(View {
                 phase: "starting",
-                muted: false,
+                muted: config.preview,
                 level: 0.0,
                 playback_level: 0.0,
                 text: String::new(),
@@ -288,6 +316,8 @@ impl RealtimeVoiceAdapter {
             closed: AtomicBool::new(false),
             ready: AtomicBool::new(false),
             stopped: AtomicBool::new(false),
+            allow_input: !config.preview,
+            speech,
         });
         let owner = adapter.clone();
         crate::runtime()
@@ -305,6 +335,7 @@ impl RealtimeVoiceAdapter {
                 }
                 owner.ready.store(false, Ordering::Release);
                 owner.output.lock().clear();
+                owner.speech.release();
                 owner.stopped.store(true, Ordering::Release);
             });
         Ok(adapter)
@@ -334,6 +365,9 @@ impl RealtimeVoiceAdapter {
         }
     }
     fn capture(&self, samples: &[i16]) -> bool {
+        if !self.allow_input {
+            return false;
+        }
         if self.closed.load(Ordering::Acquire) {
             return false;
         }
@@ -355,7 +389,7 @@ impl RealtimeVoiceAdapter {
     async fn run(
         &self,
         prepared: PreparedSession,
-        agent: Arc<PinnedAgent>,
+        agent: Option<Arc<PinnedAgent>>,
         mut commands: mpsc::Receiver<Command>,
         mut audio: mpsc::Receiver<Vec<i16>>,
         tools: &mut JoinSet<(String, bool, Value)>,
@@ -404,6 +438,7 @@ impl RealtimeVoiceAdapter {
         let mut pending_continue = false;
         let mut last_pong = tokio::time::Instant::now();
         let mut ping_at = last_pong;
+        let mut preview_done = false;
         loop {
             if self.closed.load(Ordering::Acquire) {
                 return Ok(());
@@ -428,14 +463,21 @@ impl RealtimeVoiceAdapter {
                 },
                 result = tools.join_next(), if !tools.is_empty() => {
                     let (call_id, mutation, value) = result.ok_or("Realtime tool task ended.")?.map_err(|_| "Realtime tool task failed.")?;
-                    agent.check().map_err(|_| "The bound agent disconnected or changed. Please call again.")?;
+                    agent.as_ref().ok_or("Voice previews cannot execute tools.")?.check().map_err(|_| "The bound agent disconnected or changed. Please call again.")?;
                     ledger.complete(mutation, value.get("error").and_then(Value::as_str) == Some("outcome_unknown"));
                     self.view.lock().tool = None;
                     send(&mut socket, function_output(call_id, value)).await?;
                     pending_continue = true;
                 },
                 _ = heartbeat.tick() => {
-                    agent.check().map_err(|_| "The bound agent disconnected or changed. Please call again.")?;
+                    if !self.speech.is_current() { return Err("Voice audio was replaced by another speech session."); }
+                    if let Some(agent) = &agent { agent.check().map_err(|_| "The bound agent disconnected or changed. Please call again.")?; }
+                    if config.preview && started.elapsed() > PREVIEW_TIMEOUT { return Err("Voice preview timed out. Please try again."); }
+                    if preview_done && { let output = self.output.lock(); output.generated == output.played } {
+                        self.view.lock().phase = "closed";
+                        self.closed.store(true, Ordering::Release);
+                        return Ok(());
+                    }
                     if !self.ready.load(Ordering::Acquire) && started.elapsed() > IO_TIMEOUT { return Err("OpenAI did not confirm the Realtime session settings."); }
                     if started.elapsed() > Duration::from_mins(55) { return Err("Realtime call time limit reached. Start a new call."); }
                     if last_pong.elapsed() > Duration::from_secs(45) { return Err("OpenAI Realtime stopped responding."); }
@@ -477,8 +519,12 @@ impl RealtimeVoiceAdapter {
                         ServerEvent::SessionUpdated { session, .. } => {
                             let audio = session.config.audio.ok_or("OpenAI did not negotiate PCM audio.")?;
                             config.validate_audio(audio)?;
-                            self.ready.store(true, Ordering::Release);
+                            let was_ready = self.ready.swap(true, Ordering::AcqRel);
                             self.view.lock().phase = "listening";
+                            if config.preview && !was_ready {
+                                send(&mut socket, preview_response()?).await?;
+                                response_requested = true;
+                            }
                         }
                         ServerEvent::ResponseCreated { response: created, .. } => { response = Some(created.id); response_requested = false; self.view.lock().text.clear(); }
                         ServerEvent::ResponseDone { response: done, .. } | ServerEvent::ResponseCancelled { response: done, .. } => {
@@ -489,11 +535,18 @@ impl RealtimeVoiceAdapter {
                                 view.output_tokens += u64::from(usage.output_tokens);
                             }
                             if matches!(done.status, oai_rt_rs::ResponseStatus::Failed) { return Err("OpenAI could not generate a response. Check quota and model access."); }
+                            if config.preview {
+                                if !matches!(done.status, oai_rt_rs::ResponseStatus::Completed) || self.output.lock().generated == 0 {
+                                    return Err("OpenAI did not complete the voice preview. Please try again.");
+                                }
+                                preview_done = true;
+                            }
                         }
                         ServerEvent::ResponseOutputAudioDelta { response_id, item_id, content_index, delta, .. } => {
                             if ignored.contains(&response_id) { continue; }
                             let pcm = STANDARD.decode(delta).map_err(|_| "OpenAI returned invalid audio.")?;
                             self.output.lock().append(item_id, content_index, pcm)?;
+                            if config.preview && self.output.lock().generated > PREVIEW_AUDIO_LIMIT { return Err("Voice preview exceeded its audio limit."); }
                         }
                         ServerEvent::InputAudioBufferSpeechStarted { item_id, .. } => {
                             input_item = item_id;
@@ -509,6 +562,7 @@ impl RealtimeVoiceAdapter {
                         ServerEvent::InputAudioTranscriptionCompleted { item_id, transcript, .. } => { if item_id == input_item { self.view.lock().user_text = limit_text(transcript); } }
                         ServerEvent::InputAudioTranscriptionFailed { .. } => { self.view.lock().error = Some("OpenAI could not transcribe this turn. Voice audio is still connected."); }
                         ServerEvent::ResponseFunctionCallArgumentsDone { call_id, name, arguments, response_id, .. } => {
+                            let agent = agent.as_ref().ok_or("Voice previews cannot execute tools.")?;
                             if ignored.contains(&response_id) { continue; }
                             match ledger.begin(&call_id, &name, &arguments) {
                                 Ok(mutation) => {
@@ -541,6 +595,13 @@ impl RealtimeVoiceAdapter {
             }
         }
     }
+}
+
+fn preview_response() -> Result<ClientEvent, &'static str> {
+    typed(json!({"type":"response.create","response":{
+        "conversation":"none", "input":[], "output_modalities":["audio"],
+        "instructions":PREVIEW_INSTRUCTIONS, "tools":[], "tool_choice":"none", "max_output_tokens":PREVIEW_TOKEN_LIMIT
+    }}))
 }
 
 async fn send<S>(

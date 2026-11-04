@@ -6,6 +6,13 @@ The existing Local provider remains the default. GPT-Live and Global calls
 remain unavailable. The selected voice and Realtime VAD configuration are
 snapshotted when the app-wide owner starts the call; edits affect the next call.
 
+**Preview voice** becomes available after saving an API key in Realtime mode.
+It plays one short AI-generated sample in the selected Realtime voice using
+`gpt-realtime`; API charges apply. Preview opens no microphone and sends no agent
+target, tools, chat history or transcription request. Stop, changing voices or
+providers, leaving settings, backgrounding and audio interruption cancel it.
+GPT-Live previews remain unavailable.
+
 This is an experimental WebSocket implementation. It has not completed live
 OpenAI or physical-device audio qualification. Do not treat the compile checks
 below as evidence that acoustic echo cancellation or Bluetooth works on devices.
@@ -46,17 +53,28 @@ Public API references:
 ## Ownership and media
 
 `VoiceSessionManager` serializes Local and Realtime adapters. Realtime reserves
-the shared speech-input owner and uses the existing CallKit/Telecom token,
+the shared speech-input owner and uses the existing native audio-owner token,
 Android foreground/headless task and host-monitoring lifetime. Navigating or
 backgrounding the presentation does not replace the call. App locking,
 host/session replacement, native interruption, and hangup stop it. Native owners
 stop PCM and Rust transport directly even when JS is suspended.
 
 Android uses `AudioRecord(VOICE_COMMUNICATION)` with an enabled native acoustic
-echo canceller, and a communication `AudioTrack`. Unsupported echo cancellation
+echo canceller, and a media `AudioTrack`. Volume buttons control media volume;
+the foreground microphone/media service owns media audio focus without Telecom
+registration or changing communication mode. Unsupported echo cancellation
 fails startup. iOS uses `AVAudioEngine` voice-processing I/O, an `AVAudioConverter`
 for the microphone's hardware format, and `AVAudioPlayerNode` playback. The
-existing native system call retains audio routing and focus.
+existing iOS CallKit owner retains call audio routing and focus.
+
+Output-only previews share the bounded Rust actor and native players, but skip
+recorders, microphone permission and CallKit/foreground call startup. They use
+media focus/playback sessions and the shared Rust speech lease, so local speech
+cannot overlap them. Every Realtime session uses `server_vad`; preview disables
+automatic responses and interruptions and exposes no tools.
+One `response.create` uses `conversation: "none"`, an empty input list and a
+256-token limit. The actor caps preview audio at 12 seconds and session work at
+30 seconds (plus connection timeout), and closes only after played audio drains.
 
 The public API format is mono PCM16 little-endian at 24 kHz. Session confirmation
 must accept the selected voice and both PCM formats before capture is uploaded.
@@ -79,8 +97,8 @@ Server speech-start and Skip invalidate the playback generation. Native players
 flush on that change, stale frames/acknowledgements are ignored, and
 `conversation.item.truncate` uses acknowledged playback samples. iOS completion
 callbacks count fully played buffers, so a partially played final buffer is
-conservatively omitted. Server and semantic VAD have independent settings; the
-local VAD/Smart Turn preferences never configure Realtime. In this prototype,
+conservatively omitted. Realtime always uses `server_vad`; saved semantic VAD
+preferences migrate to server VAD. Local VAD/Smart Turn preferences never configure Realtime. In this prototype,
 server VAD owns turn commits, so the listening orb does not manually finish a turn.
 
 ## Bound tools
@@ -109,7 +127,7 @@ remaining qualification limitation, not a guarantee of atomic remote pinning.
 ## Validation and remaining qualification
 
 Automated coverage includes ordered PCM, played-audio truncation, overflow,
-stale acknowledgements, both VAD configurations, tool deduplication/uncertainty,
+stale acknowledgements, server VAD configuration, tool deduplication/uncertainty,
 foreground focus changes, disconnect/reconnect/recovery and session replacement,
 pending-start cancellation, background ownership, system hangup, credentials,
 and native-error redaction. Existing local-call/security/settings tests remain
@@ -117,15 +135,16 @@ in the affected regression set.
 
 Validation on 2026-11-03:
 
-- TypeScript, script type checks, repository-wide ESLint and bundled-license
-  verification pass under `nix develop`; all 116 affected Jest tests pass.
-- The serial Rust suite passed 1,046 tests with 13 ignored; all nine focused
+- TypeScript, ESLint for all changed files and bundled-license verification
+  pass under `nix develop`; 111 affected voice/security Jest tests and three
+  license tests pass.
+- The serial Rust suite passed 1,050 tests with 13 ignored; all 12 focused
   Realtime tests pass on the final source, with strict Clippy and formatting checks.
 - Native iOS media source compiled against the real iOS arm64 SDK and cached
   React headers on mini in `build/realtime-stage2-validation` inside the reused
   persistent worktree. No source or app data was replaced there.
-- Android arm64 Rust release and Kotlin builds pass. APK/native linking results
-  are recorded in the PR.
+- Android arm64 release Kotlin compilation passes. Final Rust release,
+  APK/native linking and signing results are recorded in the PR.
 - No Android device was connected. mini's paired iPad was discovered, but its
   persistent worktree contains extensive unrelated changes and lacks Stage 1;
   no full app sync/install or microphone capture was performed.

@@ -115,6 +115,10 @@ pub unsafe extern "C" fn whip_realtime_read(
     let Some(call) = call(id) else {
         return 0;
     };
+    if !call.speech.is_current() {
+        call.fail("Voice audio was replaced by another speech session.");
+        return 0;
+    }
     // SAFETY: Native output worker owns these buffers throughout the call.
     let samples = unsafe { std::slice::from_raw_parts_mut(samples, capacity) };
     let mut output = call.output.lock();

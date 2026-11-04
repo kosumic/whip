@@ -6,7 +6,10 @@
 
 use std::{
     ffi::{CStr, CString, c_char},
-    sync::LazyLock,
+    sync::{
+        LazyLock,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use parking_lot::Mutex;
@@ -155,6 +158,35 @@ impl SpeechPlayback {
 }
 
 static PLAYBACK: LazyLock<Mutex<SpeechPlayback>> = LazyLock::new(Mutex::default);
+
+/// Realtime output shares admission with local previews, chat and device speech.
+pub(crate) struct RealtimeSpeechLease(AtomicU64);
+
+impl RealtimeSpeechLease {
+    pub(crate) fn claim(preview: bool) -> Option<Self> {
+        let kind = if preview {
+            SpeechKind::Announcement
+        } else {
+            SpeechKind::Chat
+        };
+        let id = PLAYBACK.lock().claim(kind, "openai-realtime", "");
+        (id != 0).then_some(Self(AtomicU64::new(id)))
+    }
+
+    pub(crate) fn is_current(&self) -> bool {
+        is_current(self.0.load(Ordering::Acquire))
+    }
+
+    pub(crate) fn release(&self) {
+        PLAYBACK.lock().stop(self.0.swap(0, Ordering::AcqRel));
+    }
+}
+
+impl Drop for RealtimeSpeechLease {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
 
 pub(crate) fn claim_status_at_boundary(owner: &str, observed_lease: u64) -> u64 {
     PLAYBACK

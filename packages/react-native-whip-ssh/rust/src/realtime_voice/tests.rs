@@ -90,11 +90,11 @@ fn tool_ids_cannot_repeat_and_uncertain_prompts_cannot_replay() {
 }
 
 #[test]
-fn public_session_configuration_preserves_voice_and_separate_vad_modes()
+fn public_session_configuration_preserves_voice_and_server_vad_settings()
 -> Result<(), Box<dyn std::error::Error>> {
     for vad in [
         json!({"type":"server_vad","threshold":0.6,"prefix_padding_ms":300,"silence_duration_ms":700}),
-        json!({"type":"semantic_vad","eagerness":"low"}),
+        json!({"type":"server_vad","threshold":0.0,"prefix_padding_ms":0,"silence_duration_ms":100}),
     ] {
         let config: Config = serde_json::from_value(
             json!({"target":{"runtimeId":"host","terminalId":"terminal","paneId":"pane","bindingToken":"binding"},"voice":"cedar","vad":vad}),
@@ -126,5 +126,61 @@ fn public_session_configuration_preserves_voice_and_separate_vad_modes()
         );
         assert_eq!(event["session"]["audio"]["output"]["format"]["rate"], RATE);
     }
+    Ok(())
+}
+
+#[test]
+fn preview_uses_selected_realtime_voice_without_microphone_turns_or_agent_tools()
+-> Result<(), Box<dyn std::error::Error>> {
+    let config: Config = serde_json::from_value(json!({"preview":true,"voice":"cedar"}))?;
+    let event = serde_json::to_value(config.session_update()?)?;
+    assert_eq!(event["session"]["audio"]["output"]["voice"], "cedar");
+    assert_eq!(
+        event["session"]["audio"]["input"]["turn_detection"]["type"],
+        "server_vad"
+    );
+    assert_eq!(
+        event["session"]["audio"]["input"]["turn_detection"]["create_response"],
+        false
+    );
+    assert_eq!(
+        event["session"]["audio"]["input"]["turn_detection"]["interrupt_response"],
+        false
+    );
+    assert_eq!(event["session"]["tools"], json!([]));
+    assert_eq!(event["session"]["tool_choice"], "none");
+    assert_eq!(event["session"]["max_output_tokens"], 256);
+    config.validate_audio(serde_json::from_value(event["session"]["audio"].clone())?)?;
+    let response = serde_json::to_value(preview_response()?)?;
+    assert_eq!(response["response"]["conversation"], "none");
+    assert_eq!(response["response"]["input"], json!([]));
+    assert_eq!(response["response"]["tool_choice"], "none");
+    assert_eq!(response["response"]["max_output_tokens"], 256);
+    Ok(())
+}
+
+#[test]
+fn realtime_rejects_semantic_turn_detection() {
+    let config = json!({"voice":"marin","target":{"runtimeId":"host","terminalId":"terminal","paneId":"pane","bindingToken":"binding"},"vad":{"type":"semantic_vad","eagerness":"low"}});
+    assert!(serde_json::from_value::<Config>(config).is_err());
+}
+
+#[test]
+fn previews_reject_agent_targets_and_calls_require_a_binding_and_vad()
+-> Result<(), Box<dyn std::error::Error>> {
+    let mut value = json!({"preview":true,"voice":"marin","target":{"runtimeId":"host","terminalId":"terminal","paneId":"pane","bindingToken":"binding"}});
+    assert!(
+        serde_json::from_value::<Config>(value.clone())?
+            .session_update()
+            .is_err()
+    );
+    value["preview"] = json!(false);
+    assert!(
+        serde_json::from_value::<Config>(value)?
+            .session_update()
+            .is_err()
+    );
+    let invalid_voice: Config = serde_json::from_value(json!({"preview":true,"voice":"quartz"}))?;
+    assert!(invalid_voice.session_update().is_err());
     Ok(())
 }
