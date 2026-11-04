@@ -387,9 +387,8 @@ impl TextTail {
                 (Escape::Start, b'[') => Escape::Csi,
                 (Escape::Start, b']' | b'P' | b'_' | b'^' | b'X') => Escape::String,
                 (Escape::Start, b'(' | b')' | b'*' | b'+') => Escape::Charset,
-                (Escape::Text, _)
+                (Escape::Text | Escape::Start | Escape::Charset, _)
                 | (Escape::Csi, 0x40..=0x7e)
-                | (Escape::Start | Escape::Charset, _)
                 | (Escape::String | Escape::StringEnd, 7)
                 | (Escape::StringEnd, b'\\') => Escape::Text,
                 (Escape::Csi, _) => Escape::Csi,
