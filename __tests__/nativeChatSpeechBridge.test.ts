@@ -77,7 +77,7 @@ test('automatic and manual speech forward question tools and notices without too
     id: 'reply', assistant: true, completed: false,
     prose: [
       { tag: 'Text', inner: { id: 'intro', text: 'Pick an approach.' } },
-      { tag: 'Tool', inner: { id: 'ask', tool: 'functions.request_user_input', summary: 'Which approach?', questions } },
+      { tag: 'Tool', inner: { id: 'call', tool: 'functions.request_user_input', summary: 'Which approach?', questions } },
       { tag: 'Notice', inner: { id: 'notice', questions } },
     ],
   }];
@@ -92,4 +92,22 @@ test('automatic and manual speech forward question tools and notices without too
   expect(mockAvailable).toHaveBeenCalledWith(0, expected);
   queue.dispose();
   expect(mockDestroy).toHaveBeenCalledTimes(1);
+});
+
+test('question speech keeps the call identity when a live tool becomes a completed item', () => {
+  const queue = new NativeChatSpeechQueue();
+  const questions = [{ question: 'Orange or apple?', multiple: false, options: [{ label: 'Orange' }, { label: 'Apple' }] }];
+  for (const [id, status] of [['raw-tool:call-fruit', 'running'], ['call-fruit', 'completed']] as const) {
+    queue.update('codex', true, [{
+      id: 'reply', role: 'assistant', diffs: [], parts: [{
+        type: 'tool', id, callId: 'call-fruit', tool: 'request_user_input_async',
+        state: { status, input: {}, files: [], diagnostics: [], loaded: [], questions },
+      }],
+    }]);
+  }
+  const speechParts = mockUpdate.mock.calls.map(call => call[2][0].prose);
+  expect(speechParts).toEqual([0, 1].map(() => [{
+    tag: 'Tool', inner: { id: 'call-fruit', tool: 'request_user_input_async', summary: '', questions },
+  }]));
+  queue.dispose();
 });

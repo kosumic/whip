@@ -20,7 +20,8 @@ function speechPart(part: NativeAgentTranscriptPart): ChatSpeechPart[] {
   switch (part.type) {
     case 'text': return [new ChatSpeechPart.Text({ id: part.id, text: part.text })];
     case 'tool': return [new ChatSpeechPart.Tool({
-      id: part.id,
+      // Codex replaces its temporary tool part when the persisted item arrives.
+      id: part.callId || part.id,
       tool: part.tool,
       summary: String(part.state.input.question_summary ?? ''),
       questions: part.state.questions ?? [],

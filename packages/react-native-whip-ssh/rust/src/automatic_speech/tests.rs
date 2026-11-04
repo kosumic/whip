@@ -100,6 +100,75 @@ fn authoritative_deltas_speak_for_every_provider_without_js_messages_or_drain() 
 }
 
 #[test]
+fn recorded_async_question_is_spoken_once_across_live_and_completed_items() {
+    let fixture = include_bytes!(
+        "../../../../../crates/agent-transcript-core/tests/fixtures/codex/async-question.jsonl"
+    );
+    let lines = fixture
+        .split_inclusive(|byte| *byte == b'\n')
+        .collect::<Vec<_>>();
+    for speak_while_running in [false, true] {
+        let mut core = crate::CodexSessionCore::new("thread-fruit");
+        let binding = core.bind_source("/rollout".into(), "1:2".into(), 0);
+        let mut coordinator = coordinator(AgentTranscriptKind::Codex);
+        core.ingest(binding.source_generation, &lines[..4].concat())
+            .unwrap();
+        coordinator.accept(
+            "one",
+            1,
+            2,
+            AgentTranscriptStatus::Live,
+            core.state().messages.iter(),
+            true,
+            0,
+        );
+        assert!(take(&mut coordinator).is_null());
+
+        for (index, line) in lines[4..7].iter().enumerate() {
+            core.ingest(binding.source_generation, line).unwrap();
+            coordinator.accept(
+                "one",
+                1,
+                index as u64 + 3,
+                AgentTranscriptStatus::Live,
+                core.state().messages.iter(),
+                false,
+                0,
+            );
+            if index == 0 && speak_while_running || index == 1 && !speak_while_running {
+                let speech = take(&mut coordinator);
+                assert_eq!(
+                    speech["text"],
+                    "Debug tab: Orange or apple? Orange or Apple."
+                );
+                coordinator.command(Command::Completed { id: id(&speech) }, 0);
+            }
+        }
+        assert!(take(&mut coordinator).is_null());
+
+        // A separate call may legitimately ask the same question again.
+        for (index, line) in lines[4..7].iter().enumerate() {
+            let next_call = String::from_utf8_lossy(line).replace("call-fruit", "call-next");
+            core.ingest(binding.source_generation, next_call.as_bytes())
+                .unwrap();
+            coordinator.accept(
+                "one",
+                1,
+                index as u64 + 6,
+                AgentTranscriptStatus::Live,
+                core.state().messages.iter(),
+                false,
+                0,
+            );
+        }
+        let speech = take(&mut coordinator);
+        assert_eq!(speech["text"], "Orange or apple? Orange or Apple.");
+        coordinator.command(Command::Completed { id: id(&speech) }, 0);
+        assert!(take(&mut coordinator).is_null());
+    }
+}
+
+#[test]
 fn disabled_readers_do_not_consume_prose_and_stale_baseline_jobs_cannot_reenable_them() {
     let mut coordinator = coordinator(AgentTranscriptKind::Codex);
     coordinator.command(Command::Enable { enabled: false }, 1);

@@ -317,7 +317,11 @@ fn speech_message(message: &AgentTranscriptMessage) -> ChatSpeechMessage {
                     text: text.clone(),
                 }),
                 AgentTranscriptPart::Tool {
-                    id, tool, state, ..
+                    id,
+                    call_id,
+                    tool,
+                    state,
+                    ..
                 } if crate::agent_transcript::is_question_tool(tool) => {
                     let summary = state
                         .input
@@ -329,7 +333,8 @@ fn speech_message(message: &AgentTranscriptMessage) -> ChatSpeechMessage {
                         })
                         .unwrap_or_default();
                     Some(ChatSpeechPart::Tool {
-                        id: id.clone(),
+                        // Raw activity and the persisted item share a call ID.
+                        id: if call_id.is_empty() { id } else { call_id }.clone(),
                         tool: tool.clone(),
                         summary,
                         questions: state.questions.clone(),
