@@ -7,7 +7,13 @@ use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
+use std::time::Duration;
 use tokio::sync::watch;
+
+// Server hangup precedes peer close. Keep the owned worker budget
+// longer than peer close (two seconds) plus the HTTP hangup deadline.
+pub(super) const HANGUP_TIMEOUT: Duration = Duration::from_secs(5);
+pub(super) const WORKER_DRAIN_TIMEOUT: Duration = Duration::from_secs(8);
 
 pub(super) const CANCELLED: &str = "Realtime startup was cancelled.";
 pub(super) const CLEANUP_FAILED: &str =

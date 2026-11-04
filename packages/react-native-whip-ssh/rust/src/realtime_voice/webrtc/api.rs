@@ -127,7 +127,7 @@ impl Call {
             .client
             .post(format!("{CALLS}/{}/hangup", self.id))
             .header(AUTHORIZATION, self.authorization.clone())
-            .timeout(std::time::Duration::from_secs(2))
+            .timeout(super::super::recovery::HANGUP_TIMEOUT)
             .send()
             .await
             .map_err(|_| super::super::recovery::CLEANUP_FAILED)?;
@@ -170,7 +170,7 @@ impl Drop for Call {
                 let _ = client
                     .post(format!("{CALLS}/{id}/hangup"))
                     .header(AUTHORIZATION, authorization)
-                    .timeout(std::time::Duration::from_secs(2))
+                    .timeout(super::super::recovery::HANGUP_TIMEOUT)
                     .send()
                     .await;
             });

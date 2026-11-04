@@ -34,7 +34,7 @@ impl Handle {
         self.stop.send_replace(true);
         let mut clean = true;
         for mut task in self.workers {
-            match tokio::time::timeout(std::time::Duration::from_secs(6), &mut task).await {
+            match tokio::time::timeout(recovery::WORKER_DRAIN_TIMEOUT, &mut task).await {
                 Ok(Ok(Ok(()))) => {}
                 Ok(_) => clean = false,
                 Err(_) => {
@@ -75,8 +75,9 @@ async fn retire(
                 false
             }
         };
-    let peer_clean = peer.close().await.is_ok();
+    // Ask the server to retire the call while its media transport still exists.
     let call_clean = call.hangup().await.is_ok();
+    let peer_clean = peer.close().await.is_ok();
     if worker_clean && peer_clean && call_clean {
         recovery::Failure { message, retryable }
     } else {
@@ -121,8 +122,8 @@ pub(super) async fn start(
         }
     };
     if !attempt.current() {
-        let _ = peer.close().await;
         let _ = call.hangup().await;
+        let _ = peer.close().await;
         return Err(recovery::CANCELLED.into());
     }
     owner.view.lock().startup.configuration = Some(startup::elapsed(call_started));
@@ -190,9 +191,9 @@ pub(super) async fn start(
         if let Err(error) = result {
             attempt.fail(error.into());
         }
+        let call_clean = call.hangup().await.is_ok();
         let peer_clean = peer.close().await.is_ok();
         drop(peer);
-        let call_clean = call.hangup().await.is_ok();
         if peer_clean && call_clean {
             Ok(())
         } else {

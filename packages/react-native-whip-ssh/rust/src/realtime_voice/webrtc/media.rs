@@ -137,7 +137,10 @@ pub(super) async fn run(
                 peer.incoming.set_suppressed(!enabled)?;
                 while let Some(packet) = peer.incoming.take()? {
                     let arrival = packet.at;
-                    if let Some(packet) = packet::parse(packet.as_ref()) { jitter.push(packet, arrival); }
+                    // Keep packets received within the response's tail grace.
+                    // Later RTP can continue after stopped and prevent draining.
+                    if finishing.is_none_or(|deadline| arrival <= deadline)
+                        && let Some(packet) = packet::parse(packet.as_ref()) { jitter.push(packet, arrival); }
                 }
                 while let Some(packet) = jitter.pop(Instant::now()) {
                     let payload = if let JitterFrame::Packet(packet) = &packet {
