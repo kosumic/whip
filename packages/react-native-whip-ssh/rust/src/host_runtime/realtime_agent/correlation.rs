@@ -143,6 +143,16 @@ impl Tracker {
             lost: view.is_none(),
         };
         if let Some(view) = view {
+            tracker.lost |=
+                view.messages.last().is_some_and(|message| {
+                    message.id.is_empty() || message.id.len() > MAX_ID_BYTES
+                }) || view
+                    .turns
+                    .last()
+                    .is_some_and(|turn| turn.id.is_empty() || turn.id.len() > MAX_ID_BYTES);
+            if tracker.lost {
+                return tracker;
+            }
             tracker.anchor = view.messages.last().map(|message| message.id.clone());
             tracker.turn_anchor = view.turns.last().map(|turn| turn.id.clone());
             tracker.baseline = view
@@ -211,7 +221,11 @@ impl Tracker {
         };
         let mut turns = view.turns.iter().filter(|turn| includes(turn, &user.id));
         let turn = turns.next();
-        if messages.next().is_some() || turns.next().is_some() || user.id.len() > MAX_ID_BYTES {
+        if messages.next().is_some()
+            || turns.next().is_some()
+            || user.id.is_empty()
+            || user.id.len() > MAX_ID_BYTES
+        {
             self.lost = true;
             result.lost = true;
             return result;
