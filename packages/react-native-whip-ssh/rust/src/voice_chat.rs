@@ -327,6 +327,14 @@ impl VoiceChat {
 
     /// Standard builds use local VAD without loading or downloading a model.
     /// The optional smart-turn build feature permits explicit model installation.
+    #[cfg_attr(
+        not(feature = "smart-turn"),
+        allow(
+            clippy::unused_async,
+            clippy::unused_async_trait_impl,
+            reason = "Preserve the asynchronous UniFFI bridge when model inference is disabled"
+        )
+    )]
     pub async fn prepare(self: Arc<Self>, install: bool) -> Result<VoiceChatView, VoiceChatError> {
         if self.state.lock().phase == VoiceChatPhase::Closed {
             return Ok(self.view());
@@ -400,6 +408,14 @@ impl VoiceChat {
     }
 
     /// Inference runs only when the optional smart-turn build feature is enabled.
+    #[cfg_attr(
+        not(feature = "smart-turn"),
+        allow(
+            clippy::unused_async,
+            clippy::unused_async_trait_impl,
+            reason = "Preserve the asynchronous UniFFI bridge when model inference is disabled"
+        )
+    )]
     pub async fn analyze(self: Arc<Self>, input_id: u64) -> Result<VoiceChatView, VoiceChatError> {
         #[cfg(feature = "smart-turn")]
         {
