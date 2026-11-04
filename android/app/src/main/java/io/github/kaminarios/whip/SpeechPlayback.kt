@@ -42,7 +42,7 @@ object SpeechPlayback : SensorEventListener {
   private const val INITIALIZATION_TIMEOUT_MS = 10_000L
   private const val MODEL_INITIALIZATION_TIMEOUT_MS = 60_000L
   internal const val MAX_CHAT_UTTERANCES = 2
-  private data class QueuedChat(val text: String, val promise: Promise)
+  private data class QueuedChat(val text: String, val promise: Promise, val source: JSONObject? = null)
   private val queuedChat = ArrayDeque<QueuedChat>()
 
   private data class Session(
@@ -55,6 +55,7 @@ object SpeechPlayback : SensorEventListener {
     var localOnly: Boolean = false,
     var reportedStart: Boolean = false,
     var readyReported: Boolean = false,
+    var captionSource: JSONObject? = null,
   )
 
   private val handler = Handler(Looper.getMainLooper())
@@ -150,13 +151,17 @@ object SpeechPlayback : SensorEventListener {
     val speak = {
       if (automaticId == id && automaticCommand("valid", "id" to id) == "true") {
         // These callbacks are entirely native; they do not call a JS promise.
+        val caption = next.optJSONObject("caption")?.apply {
+          put("hostId", next.getString("hostId")); put("paneId", next.getString("paneId"))
+          put("bindingTokens", next.optJSONArray("bindingTokens"))
+        }
         speakChat(AUTOMATIC_OWNER, next.getString("text"), PromiseImpl(Callback {
           if (automaticId == id) {
             automaticCommand("completed", "id" to id)
             automaticId = 0L
             handler.post(automaticWake)
           }
-        }, failure))
+        }, failure), caption)
       } else drainAutomatic()
     }
     if (session?.owner == AUTOMATIC_OWNER) speak()
@@ -226,7 +231,7 @@ object SpeechPlayback : SensorEventListener {
     val context = appContext ?: return
     val accepted = begin(context, SpeechPolicy.CHAT, previous.owner, "", previous.label, {
       completed?.resolve(null)
-      if (pending != null) speakChat(previous.owner, pending.text, pending.promise)
+      if (pending != null) speakChat(previous.owner, pending.text, pending.promise, pending.source)
     }, ended = previous.ended)
     if (accepted) session?.localOnly = previous.localOnly
     else {
@@ -253,6 +258,10 @@ object SpeechPlayback : SensorEventListener {
   private var utterance: Promise? = null
   private var utteranceId: String? = null
   private var sequence = 0L
+  private var caption: JSONObject? = null
+  private var captionClock = 0L
+  private var captionPrefix = 0
+  private var captionPosition = -1
   private var audioManager: AudioManager? = null
   private var sensorManager: SensorManager? = null
   private val shakeDetector = SpeechShakeDetector()
@@ -268,6 +277,7 @@ object SpeechPlayback : SensorEventListener {
   var onAutomaticFocus: ((String?, String?) -> Unit)? = null
   var onChatStarted: ((String) -> Unit)? = null
   var onChatLevel: ((String, Float) -> Unit)? = null
+  var onCaption: ((String) -> Unit)? = null
   private val resetLevel = Runnable { session?.let { reportLevel(it, 0f) } }
   val active: Boolean get() = session != null
   val label: String? get() = session?.label
@@ -292,9 +302,9 @@ object SpeechPlayback : SensorEventListener {
     if (!accepted) promise.reject(ERROR_CODE, "Could not start chat speech")
   }
 
-  fun speakChat(owner: String, text: String, promise: Promise) {
+  fun speakChat(owner: String, text: String, promise: Promise, source: JSONObject? = null) {
     if (suspendedChat?.owner == owner && deferredChat == null) {
-      deferredChat = QueuedChat(text, promise)
+      deferredChat = QueuedChat(text, promise, source)
       return
     }
     val current = session
@@ -303,6 +313,7 @@ object SpeechPlayback : SensorEventListener {
       return
     }
     utterance = promise
+    current.captionSource = source
     speak(current, text, null, 1.0)
   }
 
@@ -456,6 +467,7 @@ object SpeechPlayback : SensorEventListener {
         override fun onRangeStart(utteranceId: String?, start: Int, end: Int, frame: Int) { handler.post {
           if (utteranceId != null && utteranceId == SpeechPlayback.utteranceId) session?.let {
             reportLevel(it, 0.1f + minOf(end - start, 12) * 0.006f)
+            reportCaption(start)
             handler.removeCallbacks(resetLevel)
             handler.postDelayed(resetLevel, 180)
           }
@@ -498,6 +510,12 @@ object SpeechPlayback : SensorEventListener {
     val manager = checkNotNull(audioManager) { "Audio is unavailable" }
     val id = "speech-${current.id}-${++sequence}"
     utteranceId = id
+    caption = current.captionSource?.takeIf { !VoiceCallService.active && !preview }?.let {
+      JSONObject(it.toString()).put("id", id)
+    }
+    captionPrefix = caption?.optString("text")?.let { text.length - it.length } ?: 0
+    captionPosition = -1
+    captionClock = if (caption != null) SpeechPolicy.captionStart(text) else 0L
     val listener = AudioManager.OnAudioFocusChangeListener { change ->
       // Immediate agent notifications may duck audio; their sound must not
       // turn deferred status delivery into an interruption of the current chunk.
@@ -530,7 +548,10 @@ object SpeechPlayback : SensorEventListener {
           started()
         }
       }
-      PcmSpeechPlayback.start(current.id, text, rate, attributes, { reportStarted(current); playbackStarted() }, { reportLevel(current, it) }) { completed, spoke, error ->
+      PcmSpeechPlayback.start(current.id, text, rate, attributes, { reportStarted(current); playbackStarted() }, { reportLevel(current, it) }, { played, samples, complete ->
+        if (session === current && utteranceId == id && captionClock != 0L && played > 0L)
+          reportCaption(SpeechPolicy.captionProgress(captionClock, played, samples, complete).toInt())
+      }) { completed, spoke, error ->
         if (session?.id == current.id && utteranceId == id) {
           when {
             completed -> finish(id)
@@ -568,6 +589,22 @@ object SpeechPlayback : SensorEventListener {
   private fun reportLevel(current: Session, level: Float) {
     if (session === current && current.kind == SpeechPolicy.CHAT)
       onChatLevel?.invoke(current.owner, if (level.isFinite()) level.coerceIn(0f, 1f) else 0f)
+  }
+
+  private fun reportCaption(position: Int) {
+    val event = caption ?: return
+    val contentPosition = position - captionPrefix
+    if (contentPosition < 0 || contentPosition == captionPosition) return
+    captionPosition = contentPosition
+    event.put("spokenUtf16", event.optInt("startUtf16") + contentPosition)
+    onCaption?.invoke(event.toString())
+  }
+
+  private fun clearCaption() {
+    caption?.let { onCaption?.invoke(JSONObject().put("id", it.getString("id")).put("ended", true).toString()) }
+    caption = null
+    captionClock = 0L
+    captionPosition = -1
   }
 
   internal fun configureSystemVoice(tts: TextToSpeech, locale: Locale, languageExplicit: Boolean, rate: Double, localOnly: Boolean = false): Boolean {
@@ -636,6 +673,7 @@ object SpeechPlayback : SensorEventListener {
   }
 
   private fun clear(reason: String, error: String?) {
+    clearCaption()
     val stopped = session
     handler.removeCallbacks(resetLevel)
     stopped?.let { reportLevel(it, 0f) }
@@ -668,6 +706,7 @@ object SpeechPlayback : SensorEventListener {
   private fun finish(id: String?) {
     val current = session ?: return
     if (id == null || id != utteranceId || !SpeechPolicy.complete(current.id)) return
+    clearCaption()
     handler.removeCallbacks(resetLevel)
     reportLevel(current, 0f)
     if (current.kind != SpeechPolicy.CHAT) {

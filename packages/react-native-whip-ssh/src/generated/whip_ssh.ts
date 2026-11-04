@@ -303,6 +303,41 @@ export function chatSpeechAnnouncement(tabName: string, text: string): string {
   );
 }
 
+/**
+ * Mark only the current word in the original Markdown; speech offsets refer to
+ * the same normalized prose used by the reader, never URLs or fenced code.
+ */
+export function chatSpeechHighlight(
+  markdown: string,
+  spokenUtf16: number,
+  expected: string,
+  startUtf16: number,
+): string {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterString.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_chat_speech_highlight(
+          FfiConverterString.lower(markdown, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(
+            spokenUtf16,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterString.lower(expected, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt32.lower(startUtf16, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
 export function chatSpeechResponseAvailable(
   agent: AgentTranscriptKind,
   messages: Array<ChatSpeechMessage>,
@@ -52196,6 +52231,7 @@ const FfiConverterTypeBrowserSearchHistory = new FfiConverterObject(
 
 export interface ChatSpeechQueueLike {
   next(): string | undefined;
+  nextWithSource(): string | undefined;
   /**
    * Read assistant prose and questions in the selected response, in order.
    * Questions are speakable while the agent is still waiting for an answer.
@@ -52252,6 +52288,26 @@ export class ChatSpeechQueue
       uniffiCaller.rustCall(
         /*caller:*/ callStatus => {
           return nativeModule().ubrn_uniffi_whip_ssh_fn_method_chatspeechqueue_next(
+            uniffiTypeChatSpeechQueueObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  nextWithSource(): string | undefined {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterOptionalString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_chatspeechqueue_next_with_source(
             uniffiTypeChatSpeechQueueObjectFactory.clonePointer(this),
             callStatus,
           );
@@ -61897,6 +61953,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_chat_speech_highlight() !==
+    56889
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_chat_speech_highlight',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_chat_speech_response_available() !==
     17606
   ) {
@@ -63470,6 +63534,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_chatspeechqueue_next',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_chatspeechqueue_next_with_source() !==
+    28232
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_chatspeechqueue_next_with_source',
     );
   }
   if (

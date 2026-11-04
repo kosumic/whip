@@ -6,7 +6,16 @@ import {
   type ChatSpeechMessage,
   AutomaticChatSpeechQueue,
   chatSpeechAnnouncement,
+  chatSpeechHighlight,
 } from './generated-entry';
+export { chatSpeechHighlight };
+
+export interface ChatSpeechChunk {
+  messageId: string;
+  partId: string;
+  text: string;
+  startUtf16: number;
+}
 import type { NativeAgentTranscriptMessage, NativeAgentTranscriptPart, RuntimeAgentKind } from './index';
 
 const AGENT = {
@@ -78,6 +87,11 @@ export class NativeChatSpeechQueue {
 
   next(): string | undefined {
     return this.queue.next();
+  }
+
+  nextWithSource(): ChatSpeechChunk | undefined {
+    const json = this.queue.nextWithSource();
+    return json ? JSON.parse(json) as ChatSpeechChunk : undefined;
   }
 
   dispose(): void {

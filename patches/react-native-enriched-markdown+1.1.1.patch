@@ -1,11 +1,14 @@
 diff --git a/node_modules/react-native-enriched-markdown/android/generated/java/com/facebook/react/viewmanagers/EnrichedMarkdownManagerDelegate.java b/node_modules/react-native-enriched-markdown/android/generated/java/com/facebook/react/viewmanagers/EnrichedMarkdownManagerDelegate.java
-index 4f647a6..2dfe07e 100644
+index 4f647a69..30dfffa5 100644
 --- a/node_modules/react-native-enriched-markdown/android/generated/java/com/facebook/react/viewmanagers/EnrichedMarkdownManagerDelegate.java
 +++ b/node_modules/react-native-enriched-markdown/android/generated/java/com/facebook/react/viewmanagers/EnrichedMarkdownManagerDelegate.java
-@@ -26,6 +26,9 @@
+@@ -26,6 +26,12 @@ public class EnrichedMarkdownManagerDelegate<T extends View, U extends BaseViewM
    @Override
    public void setProperty(T view, String propName, @Nullable Object value) {
      switch (propName) {
++      case "readAloud":
++        mViewManager.setReadAloud(view, value == null ? null : (String) value);
++        break;
 +      case "searchQuery":
 +        mViewManager.setSearchQuery(view, value == null ? null : (String) value);
 +        break;
@@ -13,33 +16,38 @@ index 4f647a6..2dfe07e 100644
          mViewManager.setMarkdown(view, value == null ? null : (String) value);
          break;
 diff --git a/node_modules/react-native-enriched-markdown/android/generated/java/com/facebook/react/viewmanagers/EnrichedMarkdownManagerInterface.java b/node_modules/react-native-enriched-markdown/android/generated/java/com/facebook/react/viewmanagers/EnrichedMarkdownManagerInterface.java
-index acb91d0..a0a3236 100644
+index acb91d09..f57c9489 100644
 --- a/node_modules/react-native-enriched-markdown/android/generated/java/com/facebook/react/viewmanagers/EnrichedMarkdownManagerInterface.java
 +++ b/node_modules/react-native-enriched-markdown/android/generated/java/com/facebook/react/viewmanagers/EnrichedMarkdownManagerInterface.java
-@@ -16,6 +16,7 @@
+@@ -16,6 +16,8 @@ import com.facebook.react.bridge.ReadableMap;
  import com.facebook.react.uimanager.ViewManagerWithGeneratedInterface;
 
  public interface EnrichedMarkdownManagerInterface<T extends View> extends ViewManagerWithGeneratedInterface {
 +  void setSearchQuery(T view, @Nullable String value);
++  void setReadAloud(T view, @Nullable String value);
    void setMarkdown(T view, @Nullable String value);
    void setMarkdownStyle(T view, @Nullable ReadableMap value);
    void setEnableImagePress(T view, boolean value);
 diff --git a/node_modules/react-native-enriched-markdown/android/generated/jni/react/renderer/components/EnrichedMarkdownTextSpec/Props.cpp b/node_modules/react-native-enriched-markdown/android/generated/jni/react/renderer/components/EnrichedMarkdownTextSpec/Props.cpp
-index 2d1077e..8282eff 100644
+index 2d1077e5..5373508f 100644
 --- a/node_modules/react-native-enriched-markdown/android/generated/jni/react/renderer/components/EnrichedMarkdownTextSpec/Props.cpp
 +++ b/node_modules/react-native-enriched-markdown/android/generated/jni/react/renderer/components/EnrichedMarkdownTextSpec/Props.cpp
-@@ -19,6 +19,7 @@
+@@ -19,6 +19,8 @@ EnrichedMarkdownProps::EnrichedMarkdownProps(
      const EnrichedMarkdownProps &sourceProps,
      const RawProps &rawProps): ViewProps(context, sourceProps, rawProps),
 
 +    searchQuery(convertRawProp(context, rawProps, "searchQuery", sourceProps.searchQuery, {})),
++    readAloud(convertRawProp(context, rawProps, "readAloud", sourceProps.readAloud, {})),
      markdown(convertRawProp(context, rawProps, "markdown", sourceProps.markdown, {})),
      markdownStyle(convertRawProp(context, rawProps, "markdownStyle", sourceProps.markdownStyle, {})),
      enableImagePress(convertRawProp(context, rawProps, "enableImagePress", sourceProps.enableImagePress, {false})),
-@@ -63,6 +64,10 @@
+@@ -63,6 +65,13 @@ folly::dynamic EnrichedMarkdownProps::getDiffProps(
    }
    folly::dynamic result = HostPlatformViewProps::getDiffProps(prevProps);
    
++  if (readAloud != oldProps->readAloud) {
++    result["readAloud"] = readAloud;
++  }
 +  if (searchQuery != oldProps->searchQuery) {
 +    result["searchQuery"] = searchQuery;
 +  }
@@ -48,25 +56,37 @@ index 2d1077e..8282eff 100644
      result["markdown"] = markdown;
    }
 diff --git a/node_modules/react-native-enriched-markdown/android/generated/jni/react/renderer/components/EnrichedMarkdownTextSpec/Props.h b/node_modules/react-native-enriched-markdown/android/generated/jni/react/renderer/components/EnrichedMarkdownTextSpec/Props.h
-index 06fa054..70b635f 100644
+index 06fa054e..90332c7d 100644
 --- a/node_modules/react-native-enriched-markdown/android/generated/jni/react/renderer/components/EnrichedMarkdownTextSpec/Props.h
 +++ b/node_modules/react-native-enriched-markdown/android/generated/jni/react/renderer/components/EnrichedMarkdownTextSpec/Props.h
-@@ -3122,6 +3122,7 @@
+@@ -3122,6 +3122,8 @@ class EnrichedMarkdownProps final : public ViewProps {
 
  #pragma mark - Props
 
 +  std::string searchQuery{};
++  std::string readAloud{};
    std::string markdown{};
    EnrichedMarkdownMarkdownStyleStruct markdownStyle{};
    bool enableImagePress{false};
 diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdown.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdown.kt
-index b6b38b4..259fff0 100644
+index b6b38b4c..108bbce3 100644
 --- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdown.kt
 +++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdown.kt
-@@ -50,6 +50,48 @@
+@@ -50,6 +50,61 @@ class EnrichedMarkdown(
      FORCE_HEIGHT,
    }
 
++  private val speechPresentation = SpeechPresentation()
++  private var readAloudConfig: ReadAloudConfig? = null
++  var readAloud: String = ""
++    set(value) {
++      if (field == value) return
++      field = value
++      readAloudConfig = ReadAloudConfig.parse(value)
++      scheduleRenderIfNeeded()
++      invalidate()
++    }
++
 +  private class SearchSpan : android.text.style.BackgroundColorSpan(0x66FFBF47)
 +  private data class SearchCache(val text: CharSequence, val query: String)
 +  private val searchCache = java.util.WeakHashMap<android.widget.TextView, SearchCache>()
@@ -77,6 +97,7 @@ index b6b38b4..259fff0 100644
 +  // Check each draw because segment content can arrive asynchronously during streaming.
 +  override fun dispatchDraw(canvas: android.graphics.Canvas) {
 +    if (searchQuery.isEmpty() && searchCache.isEmpty()) {
++      speechPresentation.apply(segmentViews, readAloudConfig)
 +      super.dispatchDraw(canvas)
 +      return
 +    }
@@ -106,20 +127,41 @@ index b6b38b4..259fff0 100644
 +    }
 +    segmentViews.forEach { highlight(it) }
 +    if (searchQuery.isEmpty()) searchCache.clear()
++    speechPresentation.apply(segmentViews, readAloudConfig)
 +    super.dispatchDraw(canvas)
 +  }
 +
    private val parser = Parser.shared
    private val mainHandler = Handler(Looper.getMainLooper())
    private val executor: ExecutorService = Executors.newSingleThreadExecutor()
+@@ -372,6 +427,7 @@ class EnrichedMarkdown(
+     val tableMode = tableStreamingMode
+     val codeBlockMode = codeBlockStreamingMode
+
++    val speechOriginal = readAloudConfig?.takeIf { it.phase == SpeechPhase.CURRENT }?.original
+     val renderId = ++currentRenderId
+
+     executor.execute {
+@@ -391,7 +447,7 @@ class EnrichedMarkdown(
+         }
+
+         val ast =
+-          parser.parseMarkdown(renderableMarkdown, md4cFlags, isGFM) ?: run {
++          parser.parseMarkdown(renderableMarkdown, md4cFlags, isGFM, speechOriginal) ?: run {
+             postToMain(renderId) { applyRenderedSegments(emptyList(), false) }
+             return@execute
+           }
 diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdownManager.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdownManager.kt
-index 61eed4b..cca9375 100644
+index 61eed4b3..3de9f3e3 100644
 --- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdownManager.kt
 +++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdownManager.kt
-@@ -40,6 +40,11 @@
+@@ -40,6 +40,14 @@ class EnrichedMarkdownManager :
 
    override fun getDelegate(): ViewManagerDelegate<EnrichedMarkdown>? = mDelegate
 
++  @ReactProp(name = "readAloud")
++  override fun setReadAloud(view: EnrichedMarkdown, value: String?) { view.readAloud = value ?: "" }
++
 +  @ReactProp(name = "searchQuery")
 +  override fun setSearchQuery(view: EnrichedMarkdown, value: String?) {
 +    view.searchQuery = value ?: ""
@@ -155,78 +197,141 @@ index 0000000..2edc3e5
 +  return text;
 +}
 diff --git a/node_modules/react-native-enriched-markdown/ios/EnrichedMarkdown.mm b/node_modules/react-native-enriched-markdown/ios/EnrichedMarkdown.mm
-index b7edde7..c45b4e2 100644
+index b7edde7a..5dc1cb62 100644
 --- a/node_modules/react-native-enriched-markdown/ios/EnrichedMarkdown.mm
 +++ b/node_modules/react-native-enriched-markdown/ios/EnrichedMarkdown.mm
-@@ -1,4 +1,5 @@
+@@ -1,4 +1,6 @@
  #import "EnrichedMarkdown.h"
 +#import "ENRMSearchHighlight.h"
++#import "ENRMSpeechPresentation.h"
  #import "ContextMenuUtils.h"
  #import "ENRMAccessibilityLabels.h"
  #import "ENRMAsyncRenderCoordinator.h"
-@@ -75,6 +76,9 @@
+@@ -75,6 +77,10 @@ typedef NS_OPTIONS(NSUInteger, ENRMDirtyFlags) {
  };
 
  static char kENRMSegmentFadeAnimatorKey;
 +static char kENRMSearchBaselineKey;
 +static char kENRMSearchPaintedKey;
 +static char kENRMSearchQueryKey;
++static char kENRMSpeechSettingsKey;
 
  @interface EnrichedMarkdown () <RCTEnrichedMarkdownViewProtocol, UITextViewDelegate, ENRMImageLayoutObserver>
  + (ENRMMd4cFlags *)flagsFromProps:(const EnrichedMarkdownMd4cFlagsStruct &)props;
-@@ -96,6 +100,7 @@
+@@ -96,6 +102,8 @@ static char kENRMSegmentFadeAnimatorKey;
    ENRMMd4cFlags *_md4cFlags;
    BOOL _isGFM;
    NSString *_cachedMarkdown;
 +  NSString *_searchQuery;
++  NSString *_readAloud;
    NSString *_renderedMarkdown;
    ENRMLatexErrorCoordinator *_latexErrorCoordinator;
    NSMutableArray<RCTUIView *> *_segmentViews;
-@@ -1050,6 +1055,43 @@
+@@ -709,6 +717,8 @@ static char kENRMSegmentFadeAnimatorKey;
+   ENRMMarkdownParser *parser = _parser;
+   ENRMMd4cFlags *md4cFlags = [_md4cFlags copy];
+   BOOL isGFM = _isGFM;
++  NSDictionary *speech = _readAloud.length ? [NSJSONSerialization JSONObjectWithData:[_readAloud dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] : nil;
++  NSString *speechOriginal = [speech[@"phase"] isEqualToString:@"current"] ? speech[@"original"] : nil;
+
+   BOOL allowFontScaling = _fontScaleObserver.allowFontScaling;
+   CGFloat maxFontSizeMultiplier = _maxFontSizeMultiplier;
+@@ -736,7 +746,7 @@ static char kENRMSegmentFadeAnimatorKey;
+           return YES;
+         }
+
+-        MarkdownASTNode *ast = [parser parseMarkdown:renderableMarkdown flags:md4cFlags isGFM:isGFM];
++        MarkdownASTNode *ast = [parser parseMarkdown:renderableMarkdown flags:md4cFlags isGFM:isGFM speechOriginal:speechOriginal];
+         if (!ast)
+           return NO;
+
+@@ -761,7 +771,9 @@ static char kENRMSegmentFadeAnimatorKey;
+
+ - (NSArray *)parseAndRenderSegments:(NSString *)markdownString
+ {
+-  MarkdownASTNode *ast = [_parser parseMarkdown:markdownString flags:_md4cFlags isGFM:_isGFM];
++  NSDictionary *speech = _readAloud.length ? [NSJSONSerialization JSONObjectWithData:[_readAloud dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] : nil;
++  NSString *original = [speech[@"phase"] isEqualToString:@"current"] ? speech[@"original"] : nil;
++  MarkdownASTNode *ast = [_parser parseMarkdown:markdownString flags:_md4cFlags isGFM:_isGFM speechOriginal:original];
+   if (!ast) {
+     return nil;
+   }
+@@ -1050,6 +1062,74 @@ static char kENRMSegmentFadeAnimatorKey;
    [self animateTextView:view fromTailStart:tailStart];
  }
 
-+- (void)applySearchHighlightsInView:(RCTUIView *)segment query:(NSString *)query
++- (void)collectPresentationRuns:(NSMutableArray *)runs tables:(NSMapTable *)tables inView:(RCTUIView *)segment
 +{
 +  if ([segment isKindOfClass:[EnrichedMarkdownInternalText class]]) {
 +    auto view = ((EnrichedMarkdownInternalText *)segment).textView;
 +    NSAttributedString *current = ENRMGetAttributedText(view);
 +    NSAttributedString *painted = objc_getAssociatedObject(view, &kENRMSearchPaintedKey);
-+    NSString *oldQuery = objc_getAssociatedObject(view, &kENRMSearchQueryKey);
-+    if ([current isEqualToAttributedString:painted] && [query isEqualToString:oldQuery]) return;
 +    NSAttributedString *baseline = [current isEqualToAttributedString:painted]
-+        ? objc_getAssociatedObject(view, &kENRMSearchBaselineKey) : current;
-+    if (!baseline) return;
-+    NSAttributedString *next = ENRMSearchHighlight(baseline, query);
-+    objc_setAssociatedObject(view, &kENRMSearchBaselineKey, baseline, OBJC_ASSOCIATION_COPY_NONATOMIC);
-+    objc_setAssociatedObject(view, &kENRMSearchPaintedKey, next, OBJC_ASSOCIATION_COPY_NONATOMIC);
-+    objc_setAssociatedObject(view, &kENRMSearchQueryKey, query, OBJC_ASSOCIATION_COPY_NONATOMIC);
-+    if (![current isEqualToAttributedString:next]) ENRMSetAttributedText(view, next);
++      ? objc_getAssociatedObject(view, &kENRMSearchBaselineKey) : current;
++    if (baseline) [runs addObject:@{@"source": baseline, @"view": view}];
 +  } else if ([segment isKindOfClass:[ENRMCodeBlockContainerView class]]) {
-+    ((ENRMCodeBlockContainerView *)segment).searchQuery = query;
++    ((ENRMCodeBlockContainerView *)segment).searchQuery = _searchQuery ?: @"";
 +  } else if ([segment isKindOfClass:[TableContainerView class]]) {
-+    ((TableContainerView *)segment).searchQuery = query;
-+  } else {
-+    // Quotes and admonitions now own recursive segment subtrees.
-+    for (RCTUIView *child in segment.subviews) {
-+      [self applySearchHighlightsInView:child query:query];
-+    }
-+  }
++    TableContainerView *table = (TableContainerView *)segment;
++    table.searchQuery = _searchQuery ?: @"";
++    NSArray *texts = [table speechSourceTexts];
++    [tables setObject:[texts mutableCopy] forKey:table];
++    for (NSUInteger index = 0; index < texts.count; index++)
++      [runs addObject:@{@"source": texts[index], @"table": table, @"index": @(index)}];
++  } else for (RCTUIView *child in segment.subviews) [self collectPresentationRuns:runs tables:tables inView:child];
 +}
 +
 +- (void)applySearchHighlights
 +{
-+  if (!_searchQuery) return;
-+  for (RCTUIView *segment in _segmentViews) {
-+    [self applySearchHighlightsInView:segment query:_searchQuery];
++  if (!_searchQuery && !_readAloud) return;
++  NSMutableArray *runs = [NSMutableArray array];
++  NSMapTable *tables = [NSMapTable strongToStrongObjectsMapTable];
++  for (RCTUIView *segment in _segmentViews) [self collectPresentationRuns:runs tables:tables inView:segment];
++  NSDictionary *speech = _readAloud.length ? [NSJSONSerialization JSONObjectWithData:[_readAloud dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] : nil;
++  NSInteger currentIndex = NSNotFound;
++  NSRange currentWord = NSMakeRange(NSNotFound, 0);
++  if ([speech[@"phase"] isEqualToString:@"current"]) {
++    for (NSUInteger index = 0; index < runs.count; index++) {
++      NSRange marker = ENRMSpeechMarkerRange(runs[index][@"source"]);
++      if (marker.location != NSNotFound) { currentIndex = index; currentWord = marker; break; }
++    }
++    if (currentIndex == NSNotFound) speech = nil;
 +  }
++  for (NSUInteger index = 0; index < runs.count; index++) {
++    NSDictionary *run = runs[index];
++    NSAttributedString *baseline = run[@"source"];
++    NSString *role = speech[@"phase"];
++    NSRange word = NSMakeRange(NSNotFound, 0);
++    if ([role isEqualToString:@"current"]) {
++      role = index < currentIndex ? @"heard" : index > currentIndex ? @"upcoming" : @"current";
++      if (index == currentIndex) word = currentWord;
++    }
++    NSString *key = [NSString stringWithFormat:@"%@|%@|%@", _searchQuery ?: @"", role ?: @"", NSStringFromRange(word)];
++    ENRMPlatformTextView *view = run[@"view"];
++    if (view) {
++      NSAttributedString *current = ENRMGetAttributedText(view);
++      if ([current isEqualToAttributedString:objc_getAssociatedObject(view, &kENRMSearchPaintedKey)]
++          && [key isEqualToString:objc_getAssociatedObject(view, &kENRMSearchQueryKey)]
++          && [(_readAloud ?: @"") isEqualToString:objc_getAssociatedObject(view, &kENRMSpeechSettingsKey)]) continue;
++    }
++    NSAttributedString *next = ENRMSpeechPaint(ENRMSearchHighlight(baseline, _searchQuery), speech, role, word);
++    if (view) {
++      objc_setAssociatedObject(view, &kENRMSearchBaselineKey, baseline, OBJC_ASSOCIATION_COPY_NONATOMIC);
++      objc_setAssociatedObject(view, &kENRMSearchPaintedKey, next, OBJC_ASSOCIATION_COPY_NONATOMIC);
++      objc_setAssociatedObject(view, &kENRMSearchQueryKey, key, OBJC_ASSOCIATION_COPY_NONATOMIC);
++      objc_setAssociatedObject(view, &kENRMSpeechSettingsKey, _readAloud ?: @"", OBJC_ASSOCIATION_COPY_NONATOMIC);
++      if (![ENRMGetAttributedText(view) isEqualToAttributedString:next]) ENRMSetAttributedText(view, next);
++    } else ((NSMutableArray *)[tables objectForKey:run[@"table"]])[[run[@"index"] unsignedIntegerValue]] = next;
++  }
++  for (TableContainerView *table in tables) [table applySpeechTexts:speech ? [tables objectForKey:table] : nil];
 +  if (_searchQuery.length == 0) _searchQuery = nil;
++  if (_readAloud.length == 0) _readAloud = nil;
 +}
 +
  - (void)layoutSubviews
  {
    [super layoutSubviews];
-@@ -1057,6 +1099,7 @@
+@@ -1057,6 +1137,7 @@ static char kENRMSegmentFadeAnimatorKey;
    if (contentWidth > 0) {
      [self computeSegmentLayoutForWidth:contentWidth applyFrames:YES];
    }
@@ -234,10 +339,15 @@ index b7edde7..c45b4e2 100644
  }
 
  - (void)updateProps:(Props::Shared const &)props oldProps:(Props::Shared const &)oldProps
-@@ -1064,6 +1107,10 @@
+@@ -1064,6 +1145,15 @@ static char kENRMSegmentFadeAnimatorKey;
    const auto &oldViewProps = *std::static_pointer_cast<EnrichedMarkdownProps const>(_props);
    const auto &newViewProps = *std::static_pointer_cast<EnrichedMarkdownProps const>(props);
 
++  if (oldViewProps.readAloud != newViewProps.readAloud) {
++    _readAloud = [NSString stringWithUTF8String:newViewProps.readAloud.c_str()];
++    _dirtyFlags |= ENRMDirtyRender;
++    [self applySearchHighlights];
++  }
 +  if (oldViewProps.searchQuery != newViewProps.searchQuery) {
 +    _searchQuery = [NSString stringWithUTF8String:newViewProps.searchQuery.c_str()];
 +    [self applySearchHighlights];
@@ -245,30 +355,35 @@ index b7edde7..c45b4e2 100644
    BOOL markdownChanged = oldViewProps.markdown != newViewProps.markdown;
    if (markdownChanged) {
      _dirtyFlags |= ENRMDirtyRender;
-@@ -1304,6 +1351,7 @@
+@@ -1304,6 +1394,8 @@ static char kENRMSegmentFadeAnimatorKey;
    [_segmentSignatures removeAllObjects];
 
    _cachedMarkdown = nil;
 +  _searchQuery = nil;
++  _readAloud = nil;
    _renderedMarkdown = nil;
    _config = nil;
    _md4cFlags = [EnrichedMarkdown flagsFromProps:resetProps->md4cFlags];
 diff --git a/node_modules/react-native-enriched-markdown/ios/generated/ReactCodegen/EnrichedMarkdownTextSpec/Props.cpp b/node_modules/react-native-enriched-markdown/ios/generated/ReactCodegen/EnrichedMarkdownTextSpec/Props.cpp
-index 2d1077e..8282eff 100644
+index 2d1077e5..5373508f 100644
 --- a/node_modules/react-native-enriched-markdown/ios/generated/ReactCodegen/EnrichedMarkdownTextSpec/Props.cpp
 +++ b/node_modules/react-native-enriched-markdown/ios/generated/ReactCodegen/EnrichedMarkdownTextSpec/Props.cpp
-@@ -19,6 +19,7 @@
+@@ -19,6 +19,8 @@ EnrichedMarkdownProps::EnrichedMarkdownProps(
      const EnrichedMarkdownProps &sourceProps,
      const RawProps &rawProps): ViewProps(context, sourceProps, rawProps),
 
 +    searchQuery(convertRawProp(context, rawProps, "searchQuery", sourceProps.searchQuery, {})),
++    readAloud(convertRawProp(context, rawProps, "readAloud", sourceProps.readAloud, {})),
      markdown(convertRawProp(context, rawProps, "markdown", sourceProps.markdown, {})),
      markdownStyle(convertRawProp(context, rawProps, "markdownStyle", sourceProps.markdownStyle, {})),
      enableImagePress(convertRawProp(context, rawProps, "enableImagePress", sourceProps.enableImagePress, {false})),
-@@ -63,6 +64,10 @@
+@@ -63,6 +65,13 @@ folly::dynamic EnrichedMarkdownProps::getDiffProps(
    }
    folly::dynamic result = HostPlatformViewProps::getDiffProps(prevProps);
    
++  if (readAloud != oldProps->readAloud) {
++    result["readAloud"] = readAloud;
++  }
 +  if (searchQuery != oldProps->searchQuery) {
 +    result["searchQuery"] = searchQuery;
 +  }
@@ -277,14 +392,15 @@ index 2d1077e..8282eff 100644
      result["markdown"] = markdown;
    }
 diff --git a/node_modules/react-native-enriched-markdown/ios/generated/ReactCodegen/EnrichedMarkdownTextSpec/Props.h b/node_modules/react-native-enriched-markdown/ios/generated/ReactCodegen/EnrichedMarkdownTextSpec/Props.h
-index 06fa054..70b635f 100644
+index 06fa054e..90332c7d 100644
 --- a/node_modules/react-native-enriched-markdown/ios/generated/ReactCodegen/EnrichedMarkdownTextSpec/Props.h
 +++ b/node_modules/react-native-enriched-markdown/ios/generated/ReactCodegen/EnrichedMarkdownTextSpec/Props.h
-@@ -3122,6 +3122,7 @@
+@@ -3122,6 +3122,8 @@ class EnrichedMarkdownProps final : public ViewProps {
 
  #pragma mark - Props
 
 +  std::string searchQuery{};
++  std::string readAloud{};
    std::string markdown{};
    EnrichedMarkdownMarkdownStyleStruct markdownStyle{};
    bool enableImagePress{false};
@@ -531,19 +647,21 @@ index 0c022cf..a566e10 100644
  
  #if !TARGET_OS_OSX
 diff --git a/node_modules/react-native-enriched-markdown/ios/segments/TableContainerView.h b/node_modules/react-native-enriched-markdown/ios/segments/TableContainerView.h
-index 1b2846d..acd89e2 100644
+index 1b2846dd..232e7f48 100644
 --- a/node_modules/react-native-enriched-markdown/ios/segments/TableContainerView.h
 +++ b/node_modules/react-native-enriched-markdown/ios/segments/TableContainerView.h
-@@ -33,6 +33,7 @@
+@@ -33,6 +33,9 @@ typedef void (^TableLinkPressBlock)(NSString *url);
                  writingDirectionMode:(ENRMWritingDirectionMode)writingDirectionMode
               resolvedLayoutDirection:(NSWritingDirection)resolvedLayoutDirection;
 
++- (NSArray<NSAttributedString *> *)speechSourceTexts;
++- (void)applySpeechTexts:(nullable NSArray<NSAttributedString *> *)texts;
 +@property (nonatomic, copy) NSString *searchQuery;
  @property (nonatomic, strong) StyleConfig *config;
 
  @property (nonatomic, assign) BOOL allowFontScaling;
 diff --git a/node_modules/react-native-enriched-markdown/ios/segments/TableContainerView.m b/node_modules/react-native-enriched-markdown/ios/segments/TableContainerView.m
-index 7a39908..d6a6550 100644
+index 7a39908b..c3928f2b 100644
 --- a/node_modules/react-native-enriched-markdown/ios/segments/TableContainerView.m
 +++ b/node_modules/react-native-enriched-markdown/ios/segments/TableContainerView.m
 @@ -1,3 +1,4 @@
@@ -551,7 +669,15 @@ index 7a39908..d6a6550 100644
  #import "TableContainerView.h"
  #import "AttributedRenderer.h"
  #import "ENRMAccessibilityLabels.h"
-@@ -404,12 +405,23 @@
+@@ -238,6 +239,7 @@ static void ENRMTableComputeLayout(NSArray<NSArray<TableCellData *> *> *rows, NS
+   RCTUIScrollView *_scrollView;
+   RCTUIView *_gridContainer;
+   NSArray<NSArray<TableCellData *> *> *_rows;
++  NSArray<NSAttributedString *> *_speechTexts;
+   NSUInteger _colCount;
+
+   NSMutableArray<NSNumber *> *_colWidths;
+@@ -404,12 +406,43 @@ static void ENRMTableComputeLayout(NSArray<NSArray<TableCellData *> *> *rows, NS
    return (bodyRowIndex % 2 == 0) ? self.config.tableRowEvenBackgroundColor : self.config.tableRowOddBackgroundColor;
  }
 
@@ -566,63 +692,88 @@ index 7a39908..d6a6550 100644
 +#endif
 +}
 +
++- (NSArray<NSAttributedString *> *)speechSourceTexts
++{
++  NSMutableArray *texts = [NSMutableArray array];
++  for (NSArray<TableCellData *> *row in _rows) for (NSUInteger column = 0; column < _colCount; column++)
++    [texts addObject:column < row.count ? row[column].attributedText : [[NSAttributedString alloc] init]];
++  return texts;
++}
++- (void)applySpeechTexts:(NSArray<NSAttributedString *> *)texts
++{
++  if ((_speechTexts == nil && texts == nil) || [_speechTexts isEqualToArray:texts]) return;
++  _speechTexts = [texts copy];
++#if TARGET_OS_OSX
++  [self renderGridMacOS];
++#else
++  [self renderGridIOS];
++#endif
++}
++
  - (NSArray<NSAttributedString *> *)attributedTextsForRow:(NSArray<TableCellData *> *)rowCells
  {
    NSMutableArray<NSAttributedString *> *cellTexts = [NSMutableArray arrayWithCapacity:_colCount];
    for (NSUInteger columnIndex = 0; columnIndex < _colCount; columnIndex++) {
      NSAttributedString *text = (columnIndex < rowCells.count) ? rowCells[columnIndex].attributedText : nil;
 -    [cellTexts addObject:text ?: [[NSAttributedString alloc] init]];
-+    [cellTexts addObject:ENRMSearchHighlight(text ?: [[NSAttributedString alloc] init], _searchQuery)];
++    NSUInteger index = [_rows indexOfObjectIdenticalTo:rowCells] * _colCount + columnIndex;
++    [cellTexts addObject:index < _speechTexts.count ? _speechTexts[index]
++      : ENRMSearchHighlight(text ?: [[NSAttributedString alloc] init], _searchQuery)];
    }
    return [cellTexts copy];
  }
 diff --git a/node_modules/react-native-enriched-markdown/lib/typescript/src/types/MarkdownTextProps.d.ts b/node_modules/react-native-enriched-markdown/lib/typescript/src/types/MarkdownTextProps.d.ts
-index 379af3d..1bb968b 100644
+index 379af3df..ee526625 100644
 --- a/node_modules/react-native-enriched-markdown/lib/typescript/src/types/MarkdownTextProps.d.ts
 +++ b/node_modules/react-native-enriched-markdown/lib/typescript/src/types/MarkdownTextProps.d.ts
-@@ -116,6 +116,8 @@
+@@ -116,6 +116,9 @@ export interface EnrichedMarkdownTextProps extends Omit<ViewProps, 'style'> {
       * Markdown content to render.
       * @platform ios, android, web
       */
 +  /** Literal case-insensitive highlight in rendered GitHub-flavor text. */
 +  searchQuery?: string;
++  readAloud?: string;
      markdown: string;
      /**
       * Style configuration for markdown elements.
 diff --git a/node_modules/react-native-enriched-markdown/src/EnrichedMarkdownNativeComponent.ts b/node_modules/react-native-enriched-markdown/src/EnrichedMarkdownNativeComponent.ts
-index b4041e5..d186278 100644
+index b4041e54..515cfdb4 100644
 --- a/node_modules/react-native-enriched-markdown/src/EnrichedMarkdownNativeComponent.ts
 +++ b/node_modules/react-native-enriched-markdown/src/EnrichedMarkdownNativeComponent.ts
-@@ -408,6 +408,7 @@
+@@ -408,6 +408,8 @@ interface StreamingConfigInternal {
  }
 
  export interface NativeProps extends ViewProps {
 +  searchQuery?: string;
++  readAloud?: string;
    /**
     * Markdown content to render.
     */
 diff --git a/node_modules/react-native-enriched-markdown/src/types/MarkdownTextProps.ts b/node_modules/react-native-enriched-markdown/src/types/MarkdownTextProps.ts
-index c088b59..6297b36 100644
+index c088b59d..d7ef132d 100644
 --- a/node_modules/react-native-enriched-markdown/src/types/MarkdownTextProps.ts
 +++ b/node_modules/react-native-enriched-markdown/src/types/MarkdownTextProps.ts
-@@ -121,6 +121,8 @@
+@@ -121,6 +121,10 @@ export interface EnrichedMarkdownTextProps extends Omit<ViewProps, 'style'> {
     * Markdown content to render.
     * @platform ios, android, web
     */
 +  /** Literal case-insensitive highlight in rendered GitHub-flavor text. */
 +  searchQuery?: string;
++  /** Native spoken/current/upcoming styling for a parsed speech marker. */
++  readAloud?: string;
    markdown: string;
    /**
     * Style configuration for markdown elements.
 diff --git a/node_modules/react-native-enriched-markdown/lib/module/EnrichedMarkdownNativeComponent.ts b/node_modules/react-native-enriched-markdown/lib/module/EnrichedMarkdownNativeComponent.ts
-index b4041e5..d186278 100644
+index b4041e54..515cfdb4 100644
 --- a/node_modules/react-native-enriched-markdown/lib/module/EnrichedMarkdownNativeComponent.ts
 +++ b/node_modules/react-native-enriched-markdown/lib/module/EnrichedMarkdownNativeComponent.ts
-@@ -408,6 +408,7 @@
+@@ -408,6 +408,8 @@ interface StreamingConfigInternal {
  }
 
  export interface NativeProps extends ViewProps {
 +  searchQuery?: string;
++  readAloud?: string;
    /**
     * Markdown content to render.
     */
@@ -1848,3 +1999,411 @@ index e1964cf..3a62600 100644
 +  [queue addOperation:operation];
 +  return operation;
 +}
+diff --git a/node_modules/react-native-enriched-markdown/android/src/main/cpp/jni-adapter.cpp b/node_modules/react-native-enriched-markdown/android/src/main/cpp/jni-adapter.cpp
+index 6faeed95..bba579e5 100644
+--- a/node_modules/react-native-enriched-markdown/android/src/main/cpp/jni-adapter.cpp
++++ b/node_modules/react-native-enriched-markdown/android/src/main/cpp/jni-adapter.cpp
+@@ -1,6 +1,7 @@
+ #include "CodeBlockHighlighter.hpp"
+ #include "CodeBlockLanguages.hpp"
+ #include "MD4CParser.hpp"
++#include "SpeechPresentation.hpp"
+ #include <android/log.h>
+ #include <jni.h>
+ #include <string>
+@@ -195,7 +196,7 @@ static jobject createJavaNode(JNIEnv *env, std::shared_ptr<MarkdownASTNode> node
+ extern "C" {
+
+ JNIEXPORT jobject JNICALL Java_com_swmansion_enriched_markdown_parser_Parser_nativeParseMarkdown(
+-    JNIEnv *env, jobject /* this */, jstring markdown, jobject flags, jboolean isGFM) {
++    JNIEnv *env, jobject /* this */, jstring markdown, jobject flags, jboolean isGFM, jstring speechOriginal) {
+   if (!markdown) {
+     LOGE("Markdown string is null");
+     return nullptr;
+@@ -255,6 +256,14 @@ JNIEXPORT jobject JNICALL Java_com_swmansion_enriched_markdown_parser_Parser_nat
+
+     MD4CParser parser;
+     auto ast = parser.parse(std::string(markdownStr), md4cFlags, isGFM == JNI_TRUE);
++    if (speechOriginal) {
++      const char *original = env->GetStringUTFChars(speechOriginal, nullptr);
++      if (original) {
++        const std::string source(original);
++        env->ReleaseStringUTFChars(speechOriginal, original);
++        ast = prepareSpeech(parser, source, ast, md4cFlags, isGFM == JNI_TRUE);
++      }
++    }
+
+     env->ReleaseStringUTFChars(markdown, markdownStr);
+
+diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/SpeechPresentation.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/SpeechPresentation.kt
+new file mode 100644
+index 00000000..9feee933
+--- /dev/null
++++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/SpeechPresentation.kt
+@@ -0,0 +1,105 @@
++package com.swmansion.enriched.markdown
++
++import android.graphics.Color
++import android.graphics.Typeface
++import android.os.Build
++import android.text.Spannable
++import android.text.SpannableString
++import android.text.Spanned
++import android.text.TextPaint
++import android.text.style.ForegroundColorSpan
++import android.text.style.MetricAffectingSpan
++import android.view.View
++import android.view.ViewGroup
++import android.widget.TextView
++import com.swmansion.enriched.markdown.segments.CodeBlockContainerView
++import org.json.JSONObject
++import java.util.WeakHashMap
++import java.util.Locale
++
++internal const val SPEECH_CURRENT_ATTRIBUTE = "whipSpeechCurrent"
++internal class SpeechMarkerSpan
++
++internal enum class SpeechPhase { HEARD, CURRENT, UPCOMING }
++
++internal class ReadAloudConfig(val phase: SpeechPhase, val original: String, val heard: Int, val upcoming: Int, val weight: Int) {
++  companion object {
++    fun parse(value: String): ReadAloudConfig? = try {
++      if (value.isEmpty()) null else JSONObject(value).let {
++        ReadAloudConfig(SpeechPhase.valueOf(it.getString("phase").uppercase(Locale.ROOT)), it.getString("original"), Color.parseColor(it.getString("heard")),
++          Color.parseColor(it.getString("upcoming")), it.getString("weight").toInt())
++      }
++    } catch (_: Exception) { null }
++  }
++}
++
++private class SpeechColorSpan(color: Int) : ForegroundColorSpan(color)
++private class SpeechWeightSpan(private val weight: Int) : MetricAffectingSpan() {
++  override fun updateDrawState(paint: TextPaint) = updateMeasureState(paint)
++  override fun updateMeasureState(paint: TextPaint) {
++    val font = paint.typeface ?: Typeface.DEFAULT
++    paint.typeface = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
++      Typeface.create(font, maxOf(font.weight, weight), font.isItalic)
++    else Typeface.create(font, font.style or Typeface.BOLD)
++  }
++}
++
++/** Paint the renderer's existing text; URLs, selection and Markdown stay intact. */
++internal class SpeechPresentation {
++  private data class Painted(val text: CharSequence, val config: ReadAloudConfig, val role: SpeechPhase, val start: Int, val end: Int)
++  private val painted = WeakHashMap<TextView, Painted>()
++
++  private fun clear(text: Spannable) {
++    text.getSpans(0, text.length, SpeechColorSpan::class.java).forEach { text.removeSpan(it) }
++    text.getSpans(0, text.length, SpeechWeightSpan::class.java).forEach { text.removeSpan(it) }
++  }
++
++  fun apply(roots: Iterable<View>, config: ReadAloudConfig?) {
++    if (config == null && painted.isEmpty()) return
++    val views = ArrayList<TextView>()
++    fun collect(view: View) {
++      when (view) {
++        is CodeBlockContainerView -> return
++        is TextView -> views.add(view)
++        is ViewGroup -> for (index in 0 until view.childCount) collect(view.getChildAt(index))
++      }
++    }
++    roots.forEach { collect(it) }
++    var currentView = -1
++    var start = 0
++    var end = 0
++    if (config?.phase == SpeechPhase.CURRENT) for ((index, view) in views.withIndex()) {
++      val text = view.text as? Spanned ?: continue
++      val marker = text.getSpans(0, text.length, SpeechMarkerSpan::class.java).firstOrNull() ?: continue
++      currentView = index; start = text.getSpanStart(marker); end = text.getSpanEnd(marker)
++      break
++    }
++    val active = config?.takeIf { it.phase != SpeechPhase.CURRENT || currentView >= 0 }
++    if (active == null) {
++      for (view in painted.keys.toList()) (view.text as? Spannable)?.let { clear(it) }
++      painted.clear()
++      return
++    }
++    for ((index, view) in views.withIndex()) {
++      val role = if (active.phase != SpeechPhase.CURRENT) active.phase else if (index < currentView) SpeechPhase.HEARD else if (index > currentView) SpeechPhase.UPCOMING else SpeechPhase.CURRENT
++      val old = painted[view]
++      if (old != null && old.text === view.text && old.config === active && old.role == role && old.start == start && old.end == end) continue
++      val text = view.text as? Spannable ?: SpannableString(view.text)
++      clear(text)
++      fun color(from: Int, to: Int, color: Int) {
++        if (from < to) text.setSpan(SpeechColorSpan(color), from, to, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
++      }
++      when (role) {
++        SpeechPhase.HEARD -> color(0, text.length, active.heard)
++        SpeechPhase.UPCOMING -> color(0, text.length, active.upcoming)
++        SpeechPhase.CURRENT -> {
++          color(0, end, active.heard)
++          color(end, text.length, active.upcoming)
++          text.setSpan(SpeechWeightSpan(active.weight), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
++        }
++      }
++      if (text !== view.text) view.text = text
++      painted[view] = Painted(view.text, active, role, start, end)
++    }
++  }
++}
+diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/parser/Parser.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/parser/Parser.kt
+index 217d4647..51b0b537 100644
+--- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/parser/Parser.kt
++++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/parser/Parser.kt
+@@ -38,6 +38,7 @@ class Parser {
+       markdown: String,
+       flags: Md4cFlags,
+       isGFM: Boolean,
++      speechOriginal: String?,
+     ): MarkdownASTNode?
+
+     /**
+@@ -51,13 +52,14 @@ class Parser {
+     markdown: String,
+     flags: Md4cFlags = Md4cFlags.DEFAULT,
+     isGFM: Boolean = true,
++    speechOriginal: String? = null,
+   ): MarkdownASTNode? {
+     if (markdown.isBlank()) {
+       return null
+     }
+
+     try {
+-      val ast = nativeParseMarkdown(markdown, flags, isGFM)
++      val ast = nativeParseMarkdown(markdown, flags, isGFM, speechOriginal)
+
+       if (ast != null) {
+         return ast
+diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/renderer/HighlightRenderer.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/renderer/HighlightRenderer.kt
+index a99a31f0..fe7edcf3 100644
+--- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/renderer/HighlightRenderer.kt
++++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/renderer/HighlightRenderer.kt
+@@ -1,6 +1,8 @@
+ package com.swmansion.enriched.markdown.renderer
+
+ import android.text.SpannableStringBuilder
++import com.swmansion.enriched.markdown.SpeechMarkerSpan
++import com.swmansion.enriched.markdown.SPEECH_CURRENT_ATTRIBUTE
+ import com.swmansion.enriched.markdown.parser.MarkdownASTNode
+ import com.swmansion.enriched.markdown.spans.HighlightSpan
+ import com.swmansion.enriched.markdown.utils.text.span.SPAN_FLAGS_EXCLUSIVE_EXCLUSIVE
+@@ -15,7 +17,7 @@ class HighlightRenderer : NodeRenderer {
+   ) {
+     factory.renderWithSpan(builder, { factory.renderChildren(node, builder, onLinkPress, onLinkLongPress) }) { start, end, blockStyle ->
+       builder.setSpan(
+-        HighlightSpan(factory.styleCache, blockStyle),
++        if (node.getAttribute(SPEECH_CURRENT_ATTRIBUTE) == "true") SpeechMarkerSpan() else HighlightSpan(factory.styleCache, blockStyle),
+         start,
+         end,
+         SPAN_FLAGS_EXCLUSIVE_EXCLUSIVE,
+diff --git a/node_modules/react-native-enriched-markdown/cpp/parser/SpeechPresentation.hpp b/node_modules/react-native-enriched-markdown/cpp/parser/SpeechPresentation.hpp
+new file mode 100644
+index 00000000..eb9788cd
+--- /dev/null
++++ b/node_modules/react-native-enriched-markdown/cpp/parser/SpeechPresentation.hpp
+@@ -0,0 +1,69 @@
++#pragma once
++#include "MD4CParser.hpp"
++#include <algorithm>
++#include <array>
++#include <utility>
++
++namespace Markdown {
++inline constexpr const char *SpeechCurrentAttribute = "whipSpeechCurrent";
++
++struct SpeechMark {
++  size_t start;
++  size_t end;
++  std::shared_ptr<MarkdownASTNode> node;
++};
++struct SpeechProjection {
++  std::string text;
++  std::vector<SpeechMark> marks;
++};
++inline void projectSpeech(const std::shared_ptr<MarkdownASTNode> &node, SpeechProjection &result) {
++  if (!node) return;
++  const auto start = result.text.size();
++  result.text += node->content;
++  for (const auto &child : node->children) projectSpeech(child, result);
++  if (node->type == NodeType::Highlight && result.text.size() > start)
++    result.marks.push_back({start, result.text.size(), node});
++}
++
++// Compare parsed text rather than counting == in source: literals in code,
++// existing highlights, links and Unicode must retain their original meaning.
++inline std::shared_ptr<MarkdownASTNode> prepareSpeech(
++    MD4CParser &parser, const std::string &original, std::shared_ptr<MarkdownASTNode> marked,
++    const Md4cFlags &flags, bool isGFM) {
++  using Key = std::array<bool, 10>;
++  const Key key{flags.underline, flags.latexMath, flags.superscript, flags.subscript,
++                flags.highlight, flags.permissiveAutolinks, flags.hardSoftBreaks,
++                flags.preserveBlankLines, flags.admonitions, isGFM};
++  struct Cache {
++    std::string source;
++    Key flags{};
++    std::shared_ptr<MarkdownASTNode> ast;
++    SpeechProjection projection;
++  };
++  static thread_local Cache cache;
++  constexpr size_t MaxCachedBytes = 128 * 1024;
++  Cache temporary;
++  auto &entry = original.size() <= MaxCachedBytes ? cache : temporary;
++  if (!entry.ast || entry.source != original || entry.flags != key) {
++    entry = {};
++    entry.source = original;
++    entry.flags = key;
++    entry.ast = parser.parse(original, flags, isGFM);
++    projectSpeech(entry.ast, entry.projection);
++  }
++  SpeechProjection next;
++  projectSpeech(marked, next);
++  if (next.text != entry.projection.text) return entry.ast;
++  std::shared_ptr<MarkdownASTNode> current;
++  for (const auto &mark : next.marks) {
++    const bool existed = std::any_of(entry.projection.marks.begin(), entry.projection.marks.end(),
++        [&](const SpeechMark &old) { return old.start == mark.start && old.end == mark.end; });
++    if (existed) continue;
++    if (current) return entry.ast;
++    current = mark.node;
++  }
++  if (!current) return entry.ast;
++  current->attributes[SpeechCurrentAttribute] = "true";
++  return marked;
++}
++} // namespace Markdown
+diff --git a/node_modules/react-native-enriched-markdown/ios/ENRMSpeechPresentation.h b/node_modules/react-native-enriched-markdown/ios/ENRMSpeechPresentation.h
+new file mode 100644
+index 00000000..308f3d6c
+--- /dev/null
++++ b/node_modules/react-native-enriched-markdown/ios/ENRMSpeechPresentation.h
+@@ -0,0 +1,42 @@
++#pragma once
++#import "ENRMUIKit.h"
++#import <React/RCTConvert.h>
++#import <React/RCTFont.h>
++
++static NSString *const ENRMSpeechCurrentAttribute = @"WhipSpeechCurrent";
++
++static inline NSRange ENRMSpeechMarkerRange(NSAttributedString *source)
++{
++  __block NSRange marker = NSMakeRange(NSNotFound, 0);
++  [source enumerateAttribute:ENRMSpeechCurrentAttribute inRange:NSMakeRange(0, source.length) options:0
++                 usingBlock:^(id value, NSRange range, BOOL *stop) {
++                   if (value) { marker = range; *stop = YES; }
++                 }];
++  return marker;
++}
++
++static inline NSAttributedString *ENRMSpeechPaint(NSAttributedString *source, NSDictionary *config,
++                                                 NSString *role, NSRange current)
++{
++  if (!config || source.length == 0) return source;
++  RCTUIColor *heard = [RCTConvert UIColor:config[@"heard"]];
++  RCTUIColor *upcoming = [RCTConvert UIColor:config[@"upcoming"]];
++  if (!heard || !upcoming) return source;
++  NSMutableAttributedString *text = [source mutableCopy];
++  NSRange all = NSMakeRange(0, source.length);
++  if ([role isEqualToString:@"heard"]) [text addAttribute:NSForegroundColorAttributeName value:heard range:all];
++  else if ([role isEqualToString:@"upcoming"]) [text addAttribute:NSForegroundColorAttributeName value:upcoming range:all];
++  else if (current.location != NSNotFound && NSMaxRange(current) <= source.length) {
++    [text addAttribute:NSForegroundColorAttributeName value:heard range:NSMakeRange(0, NSMaxRange(current))];
++    [text addAttribute:NSForegroundColorAttributeName value:upcoming
++                 range:NSMakeRange(NSMaxRange(current), source.length - NSMaxRange(current))];
++    [source enumerateAttribute:NSFontAttributeName inRange:current options:0
++                    usingBlock:^(UIFont *font, NSRange range, BOOL *stop) {
++                      if (!font || (font.fontDescriptor.symbolicTraits & UIFontDescriptorTraitBold)) return;
++                      UIFont *bold = [RCTFont updateFont:font withFamily:nil size:nil weight:config[@"weight"]
++                                                   style:nil variant:nil scaleMultiplier:1];
++                      if (bold) [text addAttribute:NSFontAttributeName value:bold range:range];
++                    }];
++  }
++  return text;
++}
+diff --git a/node_modules/react-native-enriched-markdown/ios/parser/ENRMMarkdownParser.h b/node_modules/react-native-enriched-markdown/ios/parser/ENRMMarkdownParser.h
+index 7bcba9f8..cb1dcfbb 100644
+--- a/node_modules/react-native-enriched-markdown/ios/parser/ENRMMarkdownParser.h
++++ b/node_modules/react-native-enriched-markdown/ios/parser/ENRMMarkdownParser.h
+@@ -21,5 +21,6 @@
+ - (MarkdownASTNode *)parseMarkdown:(NSString *)markdown;
+ - (MarkdownASTNode *)parseMarkdown:(NSString *)markdown flags:(ENRMMd4cFlags *)flags;
+ - (MarkdownASTNode *)parseMarkdown:(NSString *)markdown flags:(ENRMMd4cFlags *)flags isGFM:(BOOL)isGFM;
++- (MarkdownASTNode *)parseMarkdown:(NSString *)markdown flags:(ENRMMd4cFlags *)flags isGFM:(BOOL)isGFM speechOriginal:(NSString *)original;
+
+ @end
+diff --git a/node_modules/react-native-enriched-markdown/ios/parser/ENRMMarkdownParser.mm b/node_modules/react-native-enriched-markdown/ios/parser/ENRMMarkdownParser.mm
+index a4a0022b..0145c7e5 100644
+--- a/node_modules/react-native-enriched-markdown/ios/parser/ENRMMarkdownParser.mm
++++ b/node_modules/react-native-enriched-markdown/ios/parser/ENRMMarkdownParser.mm
+@@ -1,7 +1,7 @@
+ #import "ENRMMarkdownParser.h"
+ #import "MarkdownASTNode.h"
+
+-extern MarkdownASTNode *parseMarkdownWithCppParser(NSString *markdown, ENRMMd4cFlags *flags, BOOL isGFM);
++extern MarkdownASTNode *parseMarkdownWithCppParser(NSString *markdown, ENRMMd4cFlags *flags, BOOL isGFM, NSString *original);
+
+ @implementation ENRMMd4cFlags
+
+@@ -55,7 +55,12 @@ extern MarkdownASTNode *parseMarkdownWithCppParser(NSString *markdown, ENRMMd4cF
+
+ - (MarkdownASTNode *)parseMarkdown:(NSString *)markdown flags:(ENRMMd4cFlags *)flags isGFM:(BOOL)isGFM
+ {
+-  return parseMarkdownWithCppParser(markdown, flags, isGFM);
++  return [self parseMarkdown:markdown flags:flags isGFM:isGFM speechOriginal:nil];
++}
++
++- (MarkdownASTNode *)parseMarkdown:(NSString *)markdown flags:(ENRMMd4cFlags *)flags isGFM:(BOOL)isGFM speechOriginal:(NSString *)original
++{
++  return parseMarkdownWithCppParser(markdown, flags, isGFM, original);
+ }
+
+ @end
+diff --git a/node_modules/react-native-enriched-markdown/ios/parser/MarkdownParserBridge.mm b/node_modules/react-native-enriched-markdown/ios/parser/MarkdownParserBridge.mm
+index e700fcee..59fa1f02 100644
+--- a/node_modules/react-native-enriched-markdown/ios/parser/MarkdownParserBridge.mm
++++ b/node_modules/react-native-enriched-markdown/ios/parser/MarkdownParserBridge.mm
+@@ -1,5 +1,6 @@
+ #import "ENRMMarkdownParser.h"
+ #include "MD4CParser.hpp"
++#include "SpeechPresentation.hpp"
+ #import "MarkdownASTNode.h"
+ #include "MarkdownASTNode.hpp"
+ #import <React/RCTLog.h>
+@@ -142,7 +143,7 @@ static MarkdownASTNode *convertCppASTToObjC(std::shared_ptr<Markdown::MarkdownAS
+ }
+
+ // Public function to parse markdown using C++ parser and convert to Objective-C AST
+-MarkdownASTNode *parseMarkdownWithCppParser(NSString *markdown, ENRMMd4cFlags *flags, BOOL isGFM)
++MarkdownASTNode *parseMarkdownWithCppParser(NSString *markdown, ENRMMd4cFlags *flags, BOOL isGFM, NSString *original)
+ {
+   if (markdown.length == 0) {
+     return [[MarkdownASTNode alloc] initWithType:MarkdownNodeTypeDocument];
+@@ -170,6 +171,7 @@ MarkdownASTNode *parseMarkdownWithCppParser(NSString *markdown, ENRMMd4cFlags *f
+
+   Markdown::MD4CParser parser;
+   auto cppAST = parser.parse(cppMarkdown, cppFlags, isGFM);
++  if (original) cppAST = Markdown::prepareSpeech(parser, original.UTF8String ?: "", cppAST, cppFlags, isGFM);
+
+   // Convert C++ AST to Objective-C AST
+   return convertCppASTToObjC(cppAST);
+diff --git a/node_modules/react-native-enriched-markdown/ios/renderer/HighlightRenderer.m b/node_modules/react-native-enriched-markdown/ios/renderer/HighlightRenderer.m
+index 398d7ddd..cf391bbc 100644
+--- a/node_modules/react-native-enriched-markdown/ios/renderer/HighlightRenderer.m
++++ b/node_modules/react-native-enriched-markdown/ios/renderer/HighlightRenderer.m
+@@ -1,4 +1,5 @@
+ #import "HighlightRenderer.h"
++#import "ENRMSpeechPresentation.h"
+ #import "MarkdownASTNode.h"
+ #import "RenderContext.h"
+ #import "RendererFactory.h"
+@@ -21,6 +22,11 @@ NSString *const HighlightAttributeName = @"EnrichedMarkdownHighlight";
+   if (range.length == 0)
+     return;
+
++  if ([node.attributes[@"whipSpeechCurrent"] boolValue]) {
++    [output addAttribute:ENRMSpeechCurrentAttribute value:@YES range:range];
++    return;
++  }
++
+   BlockStyle *blockStyle = [context getBlockStyle];
+   RCTUIColor *foregroundColor = [RenderContext calculateHighlightColor:[_config highlightColor]
+                                                         paragraphColor:[_config paragraphColor]

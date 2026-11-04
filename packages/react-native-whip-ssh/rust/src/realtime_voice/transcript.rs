@@ -1,6 +1,6 @@
 //! Call-owned captions paced by acknowledged playback, including while the
 //! server is still generating. Final duration refines the estimate gradually.
-mod pacing;
+use crate::speech_pacing as pacing;
 use std::collections::{HashSet, VecDeque};
 
 use oai_rt_rs::ServerEvent;

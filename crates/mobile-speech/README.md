@@ -25,6 +25,7 @@ queue.enqueue(QueueItem {
     group: "route-1".into(),
     text: "Turn left at the next street.".into(),
     prefix: String::new(),
+    context: String::new(),
 }, 0);
 let playback = queue.take(0).unwrap();
 assert!(queue.take(1).is_none()); // audio is still in flight

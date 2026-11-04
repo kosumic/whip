@@ -6,7 +6,7 @@ const MAX_UNITS_PER_SECOND: f64 = 32.0;
 const MAX_CORRECTION_UNITS_PER_SECOND: f64 = 40.0;
 
 #[derive(Clone, Copy)]
-pub(super) struct Pace(f64);
+pub(crate) struct Pace(f64);
 impl Default for Pace {
     fn default() -> Self {
         Self(INITIAL_UNITS_PER_SECOND)
@@ -23,8 +23,7 @@ impl Pace {
 }
 
 fn seconds(samples: usize) -> f64 {
-    f64::from(u32::try_from(samples).unwrap_or(u32::MAX))
-        / f64::from(u32::try_from(super::super::RATE).unwrap_or(u32::MAX))
+    f64::from(u32::try_from(samples).unwrap_or(u32::MAX)) / 24_000.0
 }
 
 #[derive(Clone, Copy)]
@@ -34,7 +33,7 @@ struct Point {
 }
 
 #[derive(Default)]
-pub(super) struct Text {
+pub(crate) struct Text {
     points: Vec<Point>,
     words: Vec<Point>,
     pub units: u32,
@@ -120,7 +119,7 @@ impl Text {
     }
 }
 
-pub(super) struct Clock {
+pub(crate) struct Clock {
     pace: Pace,
     progress: f64,
     played: usize,

@@ -25,6 +25,8 @@ bool whip_speech_complete(uint64_t lease) {
 }
 bool whip_speech_stop(uint64_t lease) { if (!whip_speech_is_current(lease)) return false; activeLease = 0; return true; }
 uint64_t whip_speech_timeout_ms(uint8_t kind, uint64_t units) { return 30000; }
+uint64_t whip_speech_caption_start(const char *text) { return 1; }
+uintptr_t whip_speech_caption_progress(uint64_t id, uintptr_t played, uintptr_t samples, bool complete) { return 0; }
 uint64_t whip_speech_stop_owner(uint8_t kind, const char *owner) {
   if (activeKind != kind || ![activeOwner isEqualToString:@(owner)]) return 0;
   uint64_t lease = activeLease; activeLease = 0; return lease;

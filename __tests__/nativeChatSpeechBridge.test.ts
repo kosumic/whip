@@ -5,6 +5,7 @@ const mockUpdate = jest.fn();
 const mockReadResponse = jest.fn();
 const mockAvailable = jest.fn();
 const mockNext = jest.fn();
+const mockNextWithSource = jest.fn();
 const mockDestroy = jest.fn();
 const mockAutomatic = { update: jest.fn(), next: jest.fn(), dismissCurrent: jest.fn(), remove: jest.fn(), reset: jest.fn(), uniffiDestroy: jest.fn() };
 jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => {
@@ -23,10 +24,19 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => {
       Notice: part('Notice'),
     },
     ChatSpeechQueue: jest.fn().mockImplementation(() => ({
-      update: mockUpdate, readResponse: mockReadResponse, next: mockNext, uniffiDestroy: mockDestroy,
+      update: mockUpdate, readResponse: mockReadResponse, next: mockNext, nextWithSource: mockNextWithSource, uniffiDestroy: mockDestroy,
     })),
     chatSpeechResponseAvailable: (...args: unknown[]) => mockAvailable(...args),
   };
+});
+
+test('manual playback preserves Rust chunk identity and UTF-16 position', () => {
+  const chunk = { messageId: 'reply', partId: 'text', startUtf16: 302, text: '你好 👋' };
+  mockNextWithSource.mockReturnValueOnce(JSON.stringify(chunk)).mockReturnValueOnce(undefined);
+  const queue = new NativeChatSpeechQueue();
+  expect(queue.nextWithSource()).toEqual(chunk);
+  expect(queue.nextWithSource()).toBeUndefined();
+  queue.dispose();
 });
 
 test('global speech forwards transcript identity, tab name, readiness, and time to the bounded Rust queue', () => {

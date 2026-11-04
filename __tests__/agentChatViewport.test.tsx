@@ -37,6 +37,7 @@ import { SCROLL_IDLE_MS } from '../src/hooks/useScrollActivity';
 import { FLOATING_WARNING_BANNER_HEIGHT } from '../src/components/FloatingWarningBanner';
 
 const mockSearch = jest.fn<ChatSearchResults, [string]>();
+jest.mock('react-native-whip-ssh', () => ({ chatSpeechHighlight: jest.fn((content: string) => content) }));
 const mockSearchNavigate = jest.fn<ChatSearchResults, [boolean]>();
 const mockSearchSelect = jest.fn<ChatSearchResults, [number]>();
 const mockSearchDispose = jest.fn();

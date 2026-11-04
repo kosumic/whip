@@ -12,7 +12,7 @@ const mockNative = {
   stopSpeech: jest.fn(async () => {}),
 };
 const mockListeners = new Map<string, (state: AgentChatState | null, baseline?: boolean) => void>();
-const mockQueues: { update: jest.Mock; readResponse: jest.Mock; next: jest.Mock; dispose: jest.Mock }[] = [];
+const mockQueues: { update: jest.Mock; readResponse: jest.Mock; next: jest.Mock; nextWithSource: jest.Mock; dispose: jest.Mock }[] = [];
 const mockEvents = new Set<(event: { token: string; error?: string }) => void>();
 jest.mock('react-native', () => ({
   Platform: { OS: 'android' },
@@ -31,7 +31,7 @@ function mockAddListener(_name: string, callback: (event: { token: string; error
 }
 jest.mock('react-native-whip-ssh', () => ({
   NativeChatSpeechQueue: jest.fn().mockImplementation(() => {
-    const queue = { update: jest.fn(), readResponse: jest.fn(() => mockReadable), next: jest.fn(), dispose: jest.fn() };
+    const queue = { update: jest.fn(), readResponse: jest.fn(() => mockReadable), next: jest.fn(), nextWithSource: jest.fn(), dispose: jest.fn() };
     mockQueues.push(queue);
     return queue;
   }),
@@ -105,6 +105,19 @@ test('manual playback pauses global automatic speech and resumes it after releas
 });
 
 describe.each(['android', 'ios'] as const)('%s chat speech', platform => {
+  test('manual read-aloud carries original response identity and chunk offsets to native playback', async () => {
+    const speakChatWithSource = jest.fn(async () => {});
+    Object.assign(mockNative, { speakChatWithSource });
+    try {
+      const chunk = { messageId: 'selected-reply', partId: 'prose', startUtf16: 301, text: 'Second chunk' };
+      stop = readChatResponse(target, state.transcript.messages, jest.fn(), jest.fn());
+      mockQueues[0].nextWithSource.mockReturnValueOnce(chunk);
+      await flush();
+      expect(speakChatWithSource).toHaveBeenCalledWith(expect.any(String), chunk.text,
+        JSON.stringify({ ...chunk, hostId: target.hostId, paneId: target.paneId, bindingTokens: [target.bindingToken] }));
+      expect(mockNative.speakChat).not.toHaveBeenCalled();
+    } finally { Reflect.deleteProperty(mockNative, 'speakChatWithSource'); }
+  });
   beforeEach(() => { Platform.OS = platform; });
 
   test('manual speech reads the selected response without the tab name', async () => {

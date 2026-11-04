@@ -42,6 +42,8 @@ mod remote_preview;
 mod reverse_control;
 mod rich_text_html;
 mod secure_id;
+mod speech_captions;
+mod speech_pacing;
 mod speech_playback;
 mod ssh;
 mod ssh_workflows;
@@ -82,6 +84,7 @@ pub use remote_ops::*;
 pub use reverse_control::*;
 pub use rich_text_html::*;
 pub use secure_id::*;
+pub use speech_captions::chat_speech_highlight;
 pub use ssh::tailcat::{
     TailcatIdentity, TailcatIdentityError, generate_tailcat_identity, tailcat_server_command,
 };

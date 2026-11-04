@@ -657,6 +657,13 @@ interface NativeModuleInterface {
     text: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_func_chat_speech_highlight(
+    markdown: Uint8Array,
+    spokenUtf16: number,
+    expected: Uint8Array,
+    startUtf16: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_chat_speech_response_available(
     agent: Uint8Array,
     messages: Uint8Array,
@@ -1610,6 +1617,10 @@ interface NativeModuleInterface {
     uniffi_out_err: UniffiRustCallStatus,
   ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_chatspeechqueue_next(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_chatspeechqueue_next_with_source(
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
@@ -3062,6 +3073,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_download(): number;
   ubrn_uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_upload(): number;
   ubrn_uniffi_whip_ssh_checksum_func_chat_speech_announcement(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_chat_speech_highlight(): number;
   ubrn_uniffi_whip_ssh_checksum_func_chat_speech_response_available(): number;
   ubrn_uniffi_whip_ssh_checksum_func_chmod_ssh_sftp_path(): number;
   ubrn_uniffi_whip_ssh_checksum_func_clear_agent_transcript_cache(): number;
@@ -3261,6 +3273,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_chatsearchindex_select(): number;
   ubrn_uniffi_whip_ssh_checksum_constructor_chatspeechqueue_new(): number;
   ubrn_uniffi_whip_ssh_checksum_method_chatspeechqueue_next(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_chatspeechqueue_next_with_source(): number;
   ubrn_uniffi_whip_ssh_checksum_method_chatspeechqueue_read_response(): number;
   ubrn_uniffi_whip_ssh_checksum_method_chatspeechqueue_update(): number;
   ubrn_uniffi_whip_ssh_checksum_constructor_composerdictation_new(): number;

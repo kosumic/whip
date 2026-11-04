@@ -45,10 +45,13 @@ struct SpeechState {
     pending: VecDeque<ChatSpeechChunk>,
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct ChatSpeechChunk {
     pub message_id: String,
     pub part_id: String,
     pub text: String,
+    pub start_utf16: usize,
 }
 
 #[derive(Default)]
@@ -132,6 +135,11 @@ impl ChatSpeechQueue {
         self.next_content().map(|chunk| chunk.text)
     }
 
+    pub fn next_with_source(&self) -> Option<String> {
+        self.next_content()
+            .and_then(|chunk| serde_json::to_string(&chunk).ok())
+    }
+
     /// Read assistant prose and questions in the selected response, in order.
     /// Questions are speakable while the agent is still waiting for an answer.
     pub fn read_response(
@@ -149,17 +157,20 @@ impl ChatSpeechQueue {
                 if !readable(agent, message.completed, &part) {
                     continue;
                 }
+                let prose = spoken_prose(&part.text);
+                let mut offset = 0;
                 state
                     .pending
-                    .extend(
-                        speech_chunks(&spoken_prose(&part.text))
-                            .into_iter()
-                            .map(|text| ChatSpeechChunk {
-                                message_id: message.id.clone(),
-                                part_id: part.id.clone(),
-                                text,
-                            }),
-                    );
+                    .extend(speech_chunks(&prose).into_iter().map(|text| {
+                        let start = offset + prose[offset..].find(&text).unwrap_or(0);
+                        offset = start + text.len();
+                        ChatSpeechChunk {
+                            message_id: message.id.clone(),
+                            part_id: part.id.clone(),
+                            start_utf16: prose[..start].encode_utf16().count(),
+                            text,
+                        }
+                    }));
             }
         }
         !state.pending.is_empty()
@@ -256,20 +267,23 @@ impl ChatSpeechQueue {
                     progress.finished = message.completed;
                     continue;
                 }
-                let tail = prose[progress.spoken.len()..end].trim().to_owned();
+                let tail_start = progress.spoken.len();
+                let tail = prose[tail_start..end].trim().to_owned();
                 prose[..end].clone_into(&mut progress.spoken);
                 progress.finished = message.completed;
+                let mut offset = tail_start;
                 state
                     .pending
-                    .extend(
-                        speech_chunks(&tail)
-                            .into_iter()
-                            .map(|text| ChatSpeechChunk {
-                                message_id: message.id.clone(),
-                                part_id: part_id.clone(),
-                                text,
-                            }),
-                    );
+                    .extend(speech_chunks(&tail).into_iter().map(|text| {
+                        let start = offset + prose[offset..].find(&text).unwrap_or(0);
+                        offset = start + text.len();
+                        ChatSpeechChunk {
+                            message_id: message.id.clone(),
+                            part_id: part_id.clone(),
+                            start_utf16: prose[..start].encode_utf16().count(),
+                            text,
+                        }
+                    }));
             }
         }
         state.live = true;
@@ -350,10 +364,39 @@ fn speech_chunks(text: &str) -> Vec<String> {
 
 /// Lightweight speech formatting: omit fenced/indented code and links' URLs,
 /// preserving their human-readable labels and inline code words.
-fn spoken_prose(markdown: &str) -> String {
+pub(crate) fn spoken_prose(markdown: &str) -> String {
+    format_prose(markdown, false).0
+}
+
+pub(crate) fn mapped_prose(markdown: &str) -> (String, Vec<std::ops::Range<usize>>) {
+    format_prose(markdown, true)
+}
+
+fn format_prose(markdown: &str, mapping: bool) -> (String, Vec<std::ops::Range<usize>>) {
     let mut prose = String::new();
+    let mut spans = Vec::new();
+    let mut whitespace = None;
+    let mut emit = |character: char, span: std::ops::Range<usize>| {
+        if character.is_whitespace() {
+            whitespace = Some(span);
+            return;
+        }
+        if let Some(space) = whitespace.take().filter(|_| !prose.is_empty()) {
+            prose.push(' ');
+            if mapping {
+                spans.push(space);
+            }
+        }
+        prose.push(character);
+        if mapping {
+            spans.extend(std::iter::repeat_n(span, character.len_utf16()));
+        }
+    };
     let mut fence: Option<(char, usize)> = None;
-    for line in markdown.lines() {
+    let mut line_start = 0;
+    for line in markdown.split_inclusive('\n') {
+        let source_start = line_start;
+        line_start += line.len();
         let trimmed = line.trim_start();
         let marker = trimmed.chars().next().unwrap_or(' ');
         let count = trimmed.chars().take_while(|&c| c == marker).count();
@@ -371,13 +414,14 @@ fn spoken_prose(markdown: &str) -> String {
             continue;
         }
         let trimmed = trimmed.trim_start_matches(['#', '>', '-', '+', '*', ' ']);
-        let mut chars = trimmed.chars().peekable();
-        while let Some(character) = chars.next() {
+        let source_start = source_start + line.len() - trimmed.len();
+        let mut chars = trimmed.char_indices().peekable();
+        while let Some((index, character)) = chars.next() {
             match character {
-                ']' if chars.peek() == Some(&'(') => {
+                ']' if chars.peek().is_some_and(|(_, c)| *c == '(') => {
                     chars.next();
                     let mut depth = 1;
-                    for c in chars.by_ref() {
+                    for (_, c) in chars.by_ref() {
                         match c {
                             '(' => depth += 1,
                             ')' => depth -= 1,
@@ -388,14 +432,17 @@ fn spoken_prose(markdown: &str) -> String {
                         }
                     }
                 }
-                '!' if chars.peek() == Some(&'[') => {}
+                '!' if chars.peek().is_some_and(|(_, c)| *c == '[') => {}
                 '[' | ']' | '*' | '_' | '`' | '~' => {}
-                _ => prose.push(character),
+                _ => emit(
+                    character,
+                    source_start + index..source_start + index + character.len_utf8(),
+                ),
             }
         }
-        prose.push(' ');
+        emit(' ', line_start..line_start);
     }
-    prose.split_whitespace().collect::<Vec<_>>().join(" ")
+    (prose, spans)
 }
 
 #[cfg(test)]
@@ -807,6 +854,35 @@ mod tests {
                 assert_eq!(queue.next(), None);
             }
         }
+    }
+
+    #[test]
+    fn manual_chunks_keep_original_part_identity_and_unicode_offsets() {
+        let queue = ChatSpeechQueue::new();
+        let text = format!("{} Hello 你好 👋 world", "Hello ".repeat(1_200));
+        let prose = spoken_prose(&text);
+        assert!(queue.read_response(
+            AgentTranscriptKind::Codex,
+            vec![message("selected", true, &text)]
+        ));
+        let mut chunks = 0;
+        while let Some(json) = queue.next_with_source() {
+            let chunk: serde_json::Value = serde_json::from_str(&json).unwrap_or_default();
+            assert_eq!(chunk["messageId"], "selected");
+            assert_eq!(chunk["partId"], "selected");
+            let start = chunk["startUtf16"].as_u64().unwrap_or_default() as usize;
+            let text = chunk["text"].as_str().unwrap_or_default();
+            let original = String::from_utf16(
+                &prose
+                    .encode_utf16()
+                    .skip(start)
+                    .take(text.encode_utf16().count())
+                    .collect::<Vec<_>>(),
+            );
+            assert_eq!(original.ok().as_deref(), Some(text));
+            chunks += 1;
+        }
+        assert!(chunks > 1);
     }
 
     #[test]

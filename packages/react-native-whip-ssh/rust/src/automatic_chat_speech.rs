@@ -76,13 +76,23 @@ impl AutomaticChatSpeechQueue {
                 chunk.message_id,
                 chunk.part_id
             );
+            let mut offset = 0;
             for text in speech_chunks_with_limit(&chunk.text, MAX_CONTENT_UNITS) {
+                let start = offset + chunk.text[offset..].find(&text).unwrap_or(0);
+                offset = start + text.len();
+                let context = serde_json::json!({
+                    "messageId": chunk.message_id, "partId": chunk.part_id,
+                    "startUtf16": chunk.start_utf16 + chunk.text[..start].encode_utf16().count(),
+                    "text": text,
+                })
+                .to_string();
                 state.queue.enqueue(
                     QueueItem {
                         source: key.clone(),
                         group: group.clone(),
                         text,
                         prefix: chat_speech_prefix(&tab_name),
+                        context,
                     },
                     now_ms,
                 );
@@ -205,6 +215,47 @@ mod tests {
         assert_eq!(take(&queue, 2).key, "one");
         update(&queue, "one", "first agent", 3);
         assert!(queue.next(3).is_none());
+    }
+
+    #[test]
+    fn automatic_chunks_keep_source_offsets_across_tab_prefixes_and_competing_chats() {
+        let queue = AutomaticChatSpeechQueue::new();
+        update(&queue, "one", "history", 0);
+        update(&queue, "two", "history", 0);
+        let prose = "Hello 你好 👋 world. ".repeat(30);
+        queue.update(
+            "one".into(),
+            AgentTranscriptKind::Codex,
+            "Debug".into(),
+            true,
+            false,
+            messages("reply", &prose),
+            1,
+        );
+        update(&queue, "two", "competing", 2);
+        let mut count = 0;
+        while let Some(playback) = queue.take_native(2) {
+            let source: serde_json::Value =
+                serde_json::from_str(&playback.item.context).unwrap_or_default();
+            if playback.item.source == "one" {
+                assert_eq!(source["messageId"], "reply");
+                assert_eq!(source["partId"], "reply");
+                let start = source["startUtf16"].as_u64().unwrap_or_default() as usize;
+                let text = source["text"].as_str().unwrap_or_default();
+                assert!(playback.item.text.ends_with(text));
+                let original = String::from_utf16(
+                    &prose
+                        .encode_utf16()
+                        .skip(start)
+                        .take(text.encode_utf16().count())
+                        .collect::<Vec<_>>(),
+                );
+                assert_eq!(original.ok().as_deref(), Some(text));
+                count += 1;
+            }
+            assert!(queue.complete_native(playback.id));
+        }
+        assert!(count >= 2);
     }
 
     #[test]

@@ -6,6 +6,25 @@ tool share one native player per platform. `SpeechPlayback.kt` and
 watchdog. `speech_playback.rs` owns admission, session ownership, and deadlines;
 `chat_speech.rs` selects, formats, and queues chat prose.
 
+Automatic read-aloud and the response read button highlight the current word in
+the original chat response, only while that prose row is visible. Reading never
+opens a caption panel, switches chats, or scrolls to a hidden response. Native
+events carry host, pane, message, part, and normalized UTF-16 chunk offsets, so
+repeated words and tab-name prefixes cannot highlight a different response.
+System voices supply word ranges; Phonon uses acknowledged PCM and the same
+Rust pacing clock as voice chat. Phonon word timing is an estimate, refined by
+the final audio duration. Completion, cancellation and replacement clear the
+highlight. Markdown links, formatting and code blocks retain their original
+content; a rewritten response is left unhighlighted rather than using stale
+positions.
+
+The in-chat presentation matches voice captions: spoken text stays bright, the
+current word uses semibold, and upcoming text is dim. Native Markdown rendering
+tags the added speech marker by comparing parsed trees with the original text;
+existing highlights and `==` inside code cannot select the wrong word. Styling
+decorates rendered text rather than changing its links, content or block layout,
+and is removed when playback stops or the response leaves view.
+
 The dependency-free [`mobile-speech`](../crates/mobile-speech/README.md) crate
 owns reusable playback admission, leases, and completion-driven plain-text
 queueing. It contains no Whip, React Native, transcript, model, or OS dependency.

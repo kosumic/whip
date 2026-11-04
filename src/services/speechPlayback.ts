@@ -31,6 +31,7 @@ export interface NativeSpeechPlayback {
   /** Bounded lookahead; each promise resolves only after its audio is played. */
   enqueueChatSpeech?(token: string, text: string): Promise<void>;
   speakChat(token: string, text: string): Promise<void>;
+  speakChatWithSource?(token: string, text: string, source: string): Promise<void>;
   stopChatSpeech(token: string): Promise<void>;
   speakStatusAnnouncement(token: string): Promise<SpeechEndReason>;
   refreshStatusAnnouncements(): Promise<void>;

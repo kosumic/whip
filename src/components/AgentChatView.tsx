@@ -82,6 +82,8 @@ import type { AgentStatus } from '../types';
 import { useReducedMotion } from './app-ui';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { MarkdownText } from './MarkdownText';
+import { ChatSpeechText } from './ChatSpeechText';
+import type { SpeechCaptionSource } from '../services/speechCaptions';
 import { SelectableChatText } from './SelectableChatText';
 import { ChatComposerSelection } from './ChatComposerSelection';
 import { NativeCodeBlock } from './NativeCodeBlock';
@@ -830,17 +832,19 @@ function AssistantPart({
   expanded,
   onToggle,
   active,
+  speechSource,
 }: BlockExpansion & {
   active: boolean;
   directory?: string;
   part: TranscriptPart;
   onLinkPress: (url: string) => void;
   streaming?: boolean;
+  speechSource?: SpeechCaptionSource;
 }) {
   const { colors } = useTheme();
   if (part.type === 'text') {
     if (!part.text.trim()) return null;
-    return <View className="min-w-0 w-full"><MarkdownText content={part.text} streaming={streaming} variant="transcript" onLinkPress={({ url }) => onLinkPress(url)} /></View>;
+    return <View className="min-w-0 w-full"><ChatSpeechText content={part.text} source={speechSource} streaming={streaming} onLinkPress={({ url }) => onLinkPress(url)} /></View>;
   }
   if (part.type === 'reasoning') {
     if (!part.text.trim()) return null;
@@ -1079,7 +1083,7 @@ function ChangedFiles({ turn, expanded, onToggle }: BlockExpansion & { turn: Tra
 }
 
 const TranscriptBlockView = memo(function TranscriptBlockRow({
-  block, active, expanded, searchSelected, searchQuery, onToggle, onLinkPress, imageClient, directory, onAddToComposer, readAloud,
+  block, active, expanded, searchSelected, searchQuery, onToggle, onLinkPress, imageClient, directory, onAddToComposer, readAloud, visible,
 }: {
   block: ChatBlock;
   active: boolean;
@@ -1092,6 +1096,7 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
   directory?: string;
   onAddToComposer?: (text: string) => void;
   readAloud?: ChatReadAloudControl;
+  visible: boolean;
 }) {
   const { colors } = useTheme();
   const toggle = () => onToggle(block.id);
@@ -1100,7 +1105,8 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
       case 'user': return <UserPrompt message={block.message} imageClient={imageClient} directory={directory} active={active} />;
       case 'part': return <View className="gap-1">
         {block.message?.createdAt !== undefined && <Text className="text-[9px] text-muted-foreground">Assistant · {new Date(block.message.createdAt).toLocaleTimeString()}</Text>}
-        <AssistantPart part={block.part} directory={directory} streaming={active && block.streaming} expanded={expanded} onToggle={toggle} active={active} onLinkPress={onLinkPress} />
+        <AssistantPart part={block.part} directory={directory} streaming={active && block.streaming} expanded={expanded} onToggle={toggle} active={active} onLinkPress={onLinkPress}
+          speechSource={active && visible && readAloud?.target ? { bindingToken: readAloud.target.bindingToken, hostId: readAloud.target.hostId, paneId: readAloud.target.paneId, messageId: block.messageId, partId: block.part.id } : undefined} />
       </View>;
       case 'error': return <TranscriptNoticeCard error className="flex-row"><CircleAlert size={15} color={colors.error} /><Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground"><SearchText text={block.error} /></Text></TranscriptNoticeCard>;
       case 'changes': return <ChangedFiles turn={block.turn} expanded={expanded} onToggle={toggle} />;
@@ -1161,6 +1167,7 @@ export function AgentChatView({
     savedViewport?.followEnd ?? true,
   );
   const [viewportReady, setViewportReady] = useState(false);
+  const [visibleBlocks, setVisibleBlocks] = useState<ReadonlySet<string>>(() => new Set());
   const { scrolling, beginScroll, endScroll, resetScroll } = useScrollActivity();
   // These refs belong to this binding/generation, and survive warm reuse.
   const savedViewportRef = useRef<SavedChatViewport | null>(
@@ -1749,6 +1756,10 @@ export function AgentChatView({
   }: {
     viewableItems: ViewToken<ChatRow>[];
   }) => {
+    setVisibleBlocks(previous => {
+      const next = new Set(viewableItems.filter(token => token.isViewable).map(token => token.item.id));
+      return previous.size === next.size && [...next].every(id => previous.has(id)) ? previous : next;
+    });
     updatePinnedPrompt(scrollGeometryRef.current.offset);
     const currentLatestBlockId = latestBlockIdRef.current;
     initialViewportRef.current.viewableLatestBlockId =
@@ -1825,6 +1836,7 @@ export function AgentChatView({
               key={item.id}
               block={block}
               active={active}
+              visible={viewportVisible && visibleBlocks.has(item.id)}
               expanded={expandedBlocks.has(item.id)}
               searchSelected={search.match?.documentId === item.id}
               searchQuery={searchOpen && search.ready ? search.query.trim() : ''}

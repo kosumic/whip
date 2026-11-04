@@ -283,6 +283,17 @@ Java_com_whipssh_SpeechPolicy_isCurrent(JNIEnv *, jclass, jlong lease) {
     return whip_speech_is_current(static_cast<uint64_t>(lease));
 }
 
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_whipssh_SpeechPolicy_captionStart(JNIEnv *env, jclass, jstring text) {
+    const auto value = speechUtf8(env, text);
+    return static_cast<jlong>(whip_speech_caption_start(value.c_str()));
+}
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_whipssh_SpeechPolicy_captionProgress(JNIEnv *, jclass, jlong id, jlong played, jlong samples, jboolean complete) {
+    if (played < 0 || samples < 0) return 0;
+    return static_cast<jlong>(whip_speech_caption_progress(id, played, samples, complete));
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_whipssh_SpeechPolicy_complete(JNIEnv *, jclass, jlong lease) {
     return whip_speech_complete(static_cast<uint64_t>(lease));

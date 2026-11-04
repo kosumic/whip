@@ -101,8 +101,14 @@ object PcmSpeechPlayback {
 
   fun start(lease: Long, text: String, rate: Double, attributes: AudioAttributes,
             started: () -> Unit, level: (Float) -> Unit, ended: (Boolean, Boolean, String?) -> Unit) {
+    start(lease, text, rate, attributes, started, level, { _, _, _ -> }, ended)
+  }
+
+  fun start(lease: Long, text: String, rate: Double, attributes: AudioAttributes,
+            started: () -> Unit, level: (Float) -> Unit, progress: (Long, Long, Boolean) -> Unit,
+            ended: (Boolean, Boolean, String?) -> Unit) {
     stop()
-    begin(lease, rate, attributes, retained = false).enqueue(text, started, level, ended)
+    begin(lease, rate, attributes, retained = false).enqueue(text, started, level, ended, progress)
   }
 
   /** Voice chat may prepare one following utterance while this track is playing. */
@@ -140,6 +146,7 @@ object PcmSpeechPlayback {
       val started: () -> Unit,
       val level: (Float) -> Unit,
       val ended: (Boolean, Boolean, String?) -> Unit,
+      val progress: (Long, Long, Boolean) -> Unit,
     ) {
       val began = SystemClock.elapsedRealtime()
       @Volatile var firstFrame: Long? = null
@@ -157,9 +164,10 @@ object PcmSpeechPlayback {
     private var levelAt = 0L
     @Volatile private var starvationCount = 0
 
-    fun enqueue(text: String, started: () -> Unit, level: (Float) -> Unit, ended: (Boolean, Boolean, String?) -> Unit) {
+    fun enqueue(text: String, started: () -> Unit, level: (Float) -> Unit, ended: (Boolean, Boolean, String?) -> Unit,
+                progress: (Long, Long, Boolean) -> Unit = { _, _, _ -> }) {
       check(utterances.size < SpeechPlayback.MAX_CHAT_UTTERANCES) { "Speech lookahead is full" }
-      val utterance = Utterance(started, level, ended)
+      val utterance = Utterance(started, level, ended, progress)
       utterances.add(utterance)
       synthesisWorker.execute {
         if (!offer(Packet.Begin(utterance))) return@execute
@@ -242,6 +250,8 @@ object PcmSpeechPlayback {
         if (SystemClock.elapsedRealtime() >= levelAt) {
           levelAt = SystemClock.elapsedRealtime() + LEVEL_INTERVAL_MS
           utterance.level(playbackLevel())
+          val endFrame = utterance.endFrame
+          utterance.progress((position - first).coerceAtLeast(0), ((endFrame ?: frames) - first).coerceAtLeast(0), endFrame != null)
         }
         val end = utterance.endFrame ?: return
         if (position < end) return

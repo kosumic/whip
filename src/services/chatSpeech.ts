@@ -128,9 +128,15 @@ function startChatSpeech(
     draining = true;
     try {
       while (!stopped) {
-        const text = queue.next();
-        if (!text) break;
-        await native.speakChat(token, text);
+        if (native.speakChatWithSource) {
+          const chunk = queue.nextWithSource();
+          if (!chunk) break;
+          await native.speakChatWithSource(token, chunk.text, JSON.stringify({ ...chunk, hostId: target.hostId, paneId: target.paneId, bindingTokens: [target.bindingToken] }));
+        } else {
+          const text = queue.next();
+          if (!text) break;
+          await native.speakChat(token, text);
+        }
       }
       if (messages) stop();
     } catch (error) {

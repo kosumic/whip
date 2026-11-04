@@ -26,6 +26,8 @@ void whip_alert_speech_free(char *value);
 void whip_automatic_speech_register(void (*wake)(void));
 char *whip_automatic_speech_command(const char *command);
 uint64_t whip_speech_timeout_ms(uint8_t kind, uint64_t text_units);
+uint64_t whip_speech_caption_start(const char *text);
+uintptr_t whip_speech_caption_progress(uint64_t id, uintptr_t played, uintptr_t samples, bool complete);
 uint64_t whip_speech_stop_owner(uint8_t kind, const char *owner);
 uint64_t whip_speech_cancel_request(uint8_t kind, const char *request);
 char *whip_speech_backend_command(const char *root, const char *action);

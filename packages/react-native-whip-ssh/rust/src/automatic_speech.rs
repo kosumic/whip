@@ -210,7 +210,9 @@ impl Coordinator {
                     return Value::Null;
                 };
                 return json!({ "id": playback.id, "token": OWNER, "text": playback.item.text,
-                    "hostId": source.host_id, "paneId": source.pane_id, "label": source.tab_name });
+                    "hostId": source.host_id, "paneId": source.pane_id, "label": source.tab_name,
+                    "bindingTokens": source.bindings.values().filter(|binding| binding.pane == source.pane_id).map(|binding| &binding.token).collect::<Vec<_>>(),
+                    "caption": serde_json::from_str::<Value>(&playback.item.context).unwrap_or(Value::Null) });
             }
             Command::Valid { id } => {
                 return json!(self.allowed() && self.queue.active_id() == Some(id));

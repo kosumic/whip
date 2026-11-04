@@ -6,6 +6,7 @@ import { NativeCodeBlock } from '../src/components/NativeCodeBlock';
 import { ChatComposerSelection } from '../src/components/ChatComposerSelection';
 import { AppFontScaleContext } from '../src/hooks/useAppFontScale';
 import { SelectableChatText } from '../src/components/SelectableChatText';
+import { SPEECH_CAPTION_COLORS, SPEECH_CAPTION_WEIGHT } from '../src/lib/speechCaptionStyle';
 
 jest.mock('react-native-whip-ssh', () => require('../__mocks__/richTextHtml'));
 
@@ -70,6 +71,29 @@ describe('MarkdownText', () => {
   afterEach(() => {
     act(() => renderer?.unmount());
     jest.useRealTimers();
+  });
+
+  test('uses voice-caption colors and weight while preserving the original Markdown for native styling', () => {
+    const original = 'Heard **words** and [current](https://example.com) then upcoming.';
+    const marked = 'Heard **words** and [==current==](https://example.com) then upcoming.';
+    act(() => { renderer = create(<MarkdownText content={marked} speechOriginal={original} variant="transcript" />); });
+    const native = () => renderer.root.find(node => String(node.type) === 'EnrichedMarkdownText');
+    expect(JSON.parse(native().props.readAloud)).toMatchObject({
+      phase: 'current', original, upcoming: SPEECH_CAPTION_COLORS.upcoming, weight: SPEECH_CAPTION_WEIGHT,
+    });
+    expect(native().props.markdown).toBe(marked);
+    act(() => { renderer.update(<MarkdownText content={original} variant="transcript" />); });
+    expect(native().props.readAloud).toBeUndefined();
+    expect(native().props.markdown).toBe(original);
+  });
+
+  test.each([0, 1])('keeps speech progress continuous across a diagram when text part %s is current', index => {
+    const diagram = '\n\n```mermaid\ngraph TD;\nA-->B\n```\n\n';
+    const original = `Earlier words.${diagram}Current words.`;
+    const marked = index === 0 ? `Earlier ==words==.${diagram}Current words.` : `Earlier words.${diagram}Current ==words==.`;
+    act(() => { renderer = create(<MarkdownText content={marked} speechOriginal={original} variant="transcript" />); });
+    const parts = renderer.root.findAll(node => String(node.type) === 'EnrichedMarkdownText');
+    expect(parts.map(part => JSON.parse(part.props.readAloud).phase)).toEqual(index === 0 ? ['current', 'upcoming'] : ['heard', 'current']);
   });
 
   test('app font size scales native chat metrics and retains code block spacing', () => {

@@ -16,6 +16,7 @@ import { colorWithAlpha, useTheme } from '../theme';
 import { MermaidPreview } from './MermaidPreview';
 import { SvgPreview } from './SvgPreview';
 import { useChatComposerSelectionMenu } from './ChatComposerSelection';
+import { SPEECH_CAPTION_COLORS, SPEECH_CAPTION_WEIGHT } from '../lib/speechCaptionStyle';
 
 export const WHIP_MARKDOWN_FLAGS = {
   highlight: true,
@@ -35,6 +36,7 @@ const INLINE_CODE_BACKGROUND_ALPHA = '14';
 
 interface Props {
   content: string;
+  speechOriginal?: string;
   containerStyle?: ViewStyle | TextStyle;
   onLinkPress?: (link: { url: string }) => void;
   selectable?: boolean;
@@ -241,6 +243,7 @@ export function useWhipMarkdownStyle(variant: Props['variant'] = 'default'): Mar
 
 export function MarkdownText({
   content,
+  speechOriginal,
   containerStyle,
   onLinkPress,
   selectable = true,
@@ -260,6 +263,21 @@ export function MarkdownText({
       ? { ...part, content: normalizeRichTextMarkdown(part.content) }
       : part);
   }, [content, variant]);
+  const speechParts = useMemo(() => {
+    if (speechOriginal === undefined) return undefined;
+    const originals = variant === 'transcript' ? splitDiagramMarkdown(speechOriginal)
+      : [{ type: 'markdown' as const, content: speechOriginal, start: 0 }];
+    const current = parts.findIndex((part, index) => part.type === 'markdown'
+      && part.content !== normalizeRichTextMarkdown(originals[index]?.content ?? ''));
+    if (current < 0) return undefined;
+    return parts.map((part, index) => part.type !== 'markdown' ? undefined : JSON.stringify({
+      phase: index < current ? 'heard' : index === current ? 'current' : 'upcoming',
+      original: normalizeRichTextMarkdown(originals[index]?.content ?? ''),
+      heard: colors.text,
+      upcoming: SPEECH_CAPTION_COLORS.upcoming,
+      weight: SPEECH_CAPTION_WEIGHT,
+    }));
+  }, [speechOriginal, parts, variant, colors.text]);
   const accessibilityLabels = useMemo(() => ({
     list: {
       bulletPoint: t('markdown.a11y.bulletPoint'),
@@ -287,7 +305,7 @@ export function MarkdownText({
       pluralLabels: { other: t('markdown.copyImageUrls') },
     },
   }), [t]);
-  const renderMarkdown = (value: string) => (
+  const renderMarkdown = (value: string, readAloud?: string) => (
     <EnrichedMarkdownText
       contextMenuItems={contextMenuItems}
       accessibilityLabels={accessibilityLabels}
@@ -299,6 +317,7 @@ export function MarkdownText({
       flavor="github"
       markdown={value}
       searchQuery={searchQuery}
+      readAloud={readAloud}
       markdownStyle={markdownStyle}
       md4cFlags={WHIP_MARKDOWN_FLAGS}
       onLinkPress={onLinkPress}
@@ -313,7 +332,7 @@ export function MarkdownText({
   );
   return (
     <>
-      {parts.map(part => (
+      {parts.map((part, index) => (
         part.type === 'mermaid' ? (
           <MermaidPreview
             key={part.start}
@@ -330,7 +349,7 @@ export function MarkdownText({
             inline
             fallback={renderMarkdown(part.source)}
           />
-        ) : <Fragment key={part.start}>{renderMarkdown(part.content)}</Fragment>
+        ) : <Fragment key={part.start}>{renderMarkdown(part.content, speechParts?.[index])}</Fragment>
       ))}
     </>
   );

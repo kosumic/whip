@@ -24,6 +24,8 @@ pub struct QueueItem {
     pub text: String,
     /// Repeated only when the source or prefix changes.
     pub prefix: String,
+    /// Opaque application metadata, retained through prefixing and completion.
+    pub context: String,
 }
 
 impl QueueItem {

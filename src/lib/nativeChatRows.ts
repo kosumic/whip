@@ -5,7 +5,7 @@ import { nativeTranscriptLookup } from './nativeAgentTranscript';
 export type { ChatRow } from 'react-native-whip-ssh/src/chatRows';
 type Content =
   | { type: 'user'; message: TranscriptMessage }
-  | { type: 'part'; part: TranscriptPart; streaming: boolean; message?: TranscriptMessage }
+  | { type: 'part'; part: TranscriptPart; streaming: boolean; messageId: string; message?: TranscriptMessage }
   | { type: 'error'; error: string }
   | { type: 'changes' | 'meta'; turn: TranscriptTurn }
   | { type: 'diff'; file: TranscriptTurn['diffs'][number] };
@@ -122,7 +122,7 @@ export function resolveChatRow(row: ChatRow, state: AgentChatState): ChatBlock |
       const message = source as TranscriptMessage;
       const part = referencedPart(message, row);
       if (!part) return undefined;
-      content = { type: 'part', part, streaming: row.streaming, message: row.first ? message : undefined }; break;
+      content = { type: 'part', part, streaming: row.streaming, messageId: row.messageId, message: row.first ? message : undefined }; break;
     }
     case 'error': content = { type: 'error', error: (source as TranscriptMessage).error ?? '' }; break;
     case 'changes': case 'meta': content = { type: row.type, turn: source as TranscriptTurn }; break;

@@ -7,6 +7,7 @@ import { readChatResponse, type ChatSpeechTarget } from '../services/chatSpeech'
 import { isSpeechInputActive, subscribeSpeechInput } from '../services/speechInputFocus';
 
 export interface ChatReadAloudControl {
+  target?: ChatSpeechTarget | null;
   readingTurnId: string | null;
   canRead: (turn: TranscriptTurn) => boolean;
   toggle: (turn: TranscriptTurn) => void;
@@ -49,5 +50,5 @@ export function useChatReadAloud(
     }
   };
 
-  return { readingTurnId, canRead, toggle };
+  return { target, readingTurnId, canRead, toggle };
 }

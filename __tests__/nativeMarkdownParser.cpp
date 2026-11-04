@@ -1,4 +1,5 @@
 #include "MD4CParser.hpp"
+#include "SpeechPresentation.hpp"
 #include <cstdlib>
 #include <iostream>
 #include <string>
@@ -31,7 +32,41 @@ static void expectText(const std::string &markdown, const std::string &expected)
   }
 }
 
+static void expectSpeech(const std::string &original, const std::string &marked,
+                         const std::string &current) {
+  Markdown::MD4CParser parser;
+  Markdown::Md4cFlags flags;
+  flags.highlight = true;
+  auto source = parser.parse(original, flags, true);
+  auto result = Markdown::prepareSpeech(parser, original, parser.parse(marked, flags, true), flags, true);
+  Markdown::SpeechProjection projection;
+  Markdown::projectSpeech(result, projection);
+  std::string actual;
+  size_t markers = 0;
+  for (const auto &mark : projection.marks) {
+    if (mark.node->attributes.count(Markdown::SpeechCurrentAttribute)) {
+      actual = plainText(mark.node);
+      markers++;
+    }
+  }
+  if (plainText(source) != plainText(result) || actual != current || markers != (current.empty() ? 0 : 1)) {
+    std::cerr << "Speech presentation changed original text or selected the wrong word: " << marked << '\n';
+    std::exit(EXIT_FAILURE);
+  }
+}
+
 int main() {
+  expectSpeech("One two One", "One two ==One==", "One");
+  expectSpeech("One two One", "One ==two== One", "two");
+  expectSpeech("**Read [the guide](https://example.com)**", "**Read [the ==guide==](https://example.com)**", "guide");
+  expectSpeech("==Earlier== and current", "==Earlier== and ==current==", "current");
+  expectSpeech("`a == b` then current", "`a == b` then ==current==", "current");
+  expectSpeech("# Heading\n\n- First\n- Second", "# Heading\n\n- First\n- ==Second==", "Second");
+  expectSpeech("你好 👋 world", "你==好== 👋 world", "好");
+  expectSpeech("A `word` here", "A ==`word`== here", "word");
+  expectSpeech("| A | B |\n| --- | --- |\n| one | two |", "| A | B |\n| --- | --- |\n| one | ==two== |", "two");
+  expectSpeech("==Existing==", "==Existing==", "");
+  expectSpeech("Original words", "==Different== words", "");
   // SelectableChatText encodes each character to keep prompts literal.
   expectText("&#99;&#111;&#109;&#109;&#105;&#116;", "commit");
   expectText("&#32;&#32;&#32;&#32;&#42;&#42;&#108;&#105;&#116;&#101;&#114;&#97;&#108;&#42;&#42;"

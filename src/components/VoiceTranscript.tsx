@@ -4,8 +4,9 @@ import { useTranslation } from 'react-i18next';
 import ChevronDown from 'lucide-react-native/icons/chevron-down';
 import type { VoiceTranscriptMessage } from '../services/voiceConversation';
 import { Text } from './ui/text';
+import { SPEECH_CAPTION_COLORS, SPEECH_CAPTION_WEIGHT } from '../lib/speechCaptionStyle';
 
-const COLORS = { text: '#ffffff', upcoming: '#777777', bubble: '#282828', accent: '#c797fa' };
+const COLORS = { text: SPEECH_CAPTION_COLORS.heard, upcoming: SPEECH_CAPTION_COLORS.upcoming, bubble: '#282828', accent: '#c797fa' };
 const FOLLOW_MARGIN = 56;
 const CONTENT_TOP = 24;
 const CONTENT_BOTTOM = 36;
@@ -107,7 +108,7 @@ const styles = StyleSheet.create({
   userText: { color: COLORS.text, fontSize: 18, lineHeight: 28 },
   assistantText: { ...SPEECH_TYPE, color: COLORS.upcoming },
   heard: { ...SPEECH_TYPE, color: COLORS.text },
-  current: { ...SPEECH_TYPE, color: COLORS.text, fontWeight: '600' },
+  current: { ...SPEECH_TYPE, color: COLORS.text, fontWeight: SPEECH_CAPTION_WEIGHT },
   upcoming: { ...SPEECH_TYPE, color: COLORS.upcoming },
   latest: { position: 'absolute', alignSelf: 'center', backgroundColor: COLORS.bubble, borderRadius: 22, padding: 12 },
 });

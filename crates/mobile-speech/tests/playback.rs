@@ -17,7 +17,20 @@ fn item(source: &str, group: &str, text: &str) -> QueueItem {
         group: group.into(),
         text: text.into(),
         prefix: format!("{source}: "),
+        context: String::new(),
     }
+}
+
+#[test]
+fn application_context_survives_prefixing_and_playback() {
+    let mut queue = queue(WaitingLimits::Always);
+    let mut first = item("chat", "reply", "First.");
+    first.context = "original-part:0".into();
+    queue.enqueue(first, 0);
+    let playback = queue.take(0).unwrap();
+    assert_eq!(playback.item.text, "chat: First.");
+    assert_eq!(playback.item.context, "original-part:0");
+    assert!(queue.complete(playback.id));
 }
 
 #[test]

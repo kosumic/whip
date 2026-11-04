@@ -59,6 +59,10 @@ class HerdrBackgroundModule(
   override fun getName(): String = "HerdrBackground"
 
   init {
+    SpeechPlayback.onCaption = { json ->
+      context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+        .emit("WhipSpeechCaption", json)
+    }
     SpeechPlayback.onAutomaticFocus = { host, pane ->
       context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
         .emit("WhipAutomaticSpeechFocus", Arguments.createMap().apply {
@@ -259,6 +263,17 @@ class HerdrBackgroundModule(
   }
 
   @ReactMethod
+  fun speakChatWithSource(token: String, text: String, source: String, promise: Promise) {
+    mainHandler.post {
+      try { SpeechPlayback.speakChat(token, text, promise, org.json.JSONObject(source)) }
+      catch (error: Throwable) {
+        promise.reject("E_CHAT_SPEECH_PLAYBACK", error)
+        SpeechPlayback.stopOwner(SpeechPolicy.CHAT, token)
+      }
+    }
+  }
+
+  @ReactMethod
   fun enqueueChatSpeech(token: String, text: String, promise: Promise) {
     mainHandler.post {
       try {
@@ -419,6 +434,7 @@ class HerdrBackgroundModule(
       SpeechPlayback.onChatStopped = null
       SpeechPlayback.onChatStarted = null
       SpeechPlayback.onChatLevel = null
+      SpeechPlayback.onCaption = null
       SpeechPlayback.onAutomaticFocus = null
       SpeechPlayback.detachPresentation()
       stopPersistentAlert()
