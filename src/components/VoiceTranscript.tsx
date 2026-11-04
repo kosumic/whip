@@ -7,6 +7,9 @@ import { Text } from './ui/text';
 
 const COLORS = { text: '#ffffff', upcoming: '#777777', bubble: '#282828', accent: '#c797fa' };
 const FOLLOW_MARGIN = 56;
+const CONTENT_TOP = 24;
+const CONTENT_BOTTOM = 36;
+const LATEST_BOTTOM = 12;
 const SPEECH_TYPE = { fontSize: 22, lineHeight: 34 };
 const WORDS = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]|[\p{L}\p{N}\p{M}]+(?:['’][\p{L}\p{N}\p{M}]+)*|[^\s]/gu;
 const SPEECH_WORD = /[\p{L}\p{N}\p{M}]/u;
@@ -25,7 +28,11 @@ export function spokenTextParts(message: VoiceTranscriptMessage): [string, strin
   return [message.text, '', ''];
 }
 
-export function VoiceTranscript({ messages, reducedMotion }: { messages: readonly VoiceTranscriptMessage[]; reducedMotion: boolean }) {
+export function VoiceTranscript({ messages, reducedMotion, contentInsets = { top: 0, bottom: 0 } }: {
+  messages: readonly VoiceTranscriptMessage[];
+  reducedMotion: boolean;
+  contentInsets?: { top: number; bottom: number };
+}) {
   const { t } = useTranslation();
   const scroll = useRef<ScrollViewInstance>(null);
   const positions = useRef(new Map<string, { y: number; lines?: readonly { text: string; y: number }[] }>());
@@ -48,8 +55,10 @@ export function VoiceTranscript({ messages, reducedMotion }: { messages: readonl
         return end > focus;
       });
       const y = position.y + (line?.y ?? 0);
-      if (y < offset.current || y > offset.current + height.current * 0.6) {
-        scroll.current?.scrollTo({ y: Math.max(0, y - height.current * 0.35), animated: !reducedMotion });
+      const visibleTop = offset.current + contentInsets.top;
+      const visibleHeight = Math.max(0, height.current - contentInsets.top - contentInsets.bottom);
+      if (y < visibleTop || y > visibleTop + visibleHeight * 0.6) {
+        scroll.current?.scrollTo({ y: Math.max(0, y - contentInsets.top - visibleHeight * 0.35), animated: !reducedMotion });
       }
     } else scroll.current?.scrollToEnd({ animated: !reducedMotion });
   };
@@ -59,7 +68,9 @@ export function VoiceTranscript({ messages, reducedMotion }: { messages: readonl
     follow();
   });
   return <View style={styles.container}>
-    <ScrollView ref={scroll} style={styles.container} contentContainerStyle={styles.content}
+    <ScrollView ref={scroll} style={styles.container}
+      contentContainerStyle={[styles.content, { paddingTop: CONTENT_TOP + contentInsets.top, paddingBottom: CONTENT_BOTTOM + contentInsets.bottom }]}
+      contentInsetAdjustmentBehavior="never" scrollIndicatorInsets={contentInsets}
       onLayout={event => { height.current = event.nativeEvent.layout.height; follow(); }}
       onContentSizeChange={follow}
       onScrollBeginDrag={() => { dragging.current = true; following.current = false; setDetached(true); }}
@@ -83,14 +94,14 @@ export function VoiceTranscript({ messages, reducedMotion }: { messages: readonl
         </View>;
       })}
     </ScrollView>
-    {detached && <Pressable accessibilityRole="button" accessibilityLabel={t('voiceChat.latest')} style={styles.latest}
+    {detached && <Pressable accessibilityRole="button" accessibilityLabel={t('voiceChat.latest')} style={[styles.latest, { bottom: contentInsets.bottom + LATEST_BOTTOM }]}
       onPress={() => { following.current = true; setDetached(false); follow(); }}><ChevronDown color={COLORS.accent} size={20} /></Pressable>}
   </View>;
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, minHeight: 0 },
-  content: { paddingHorizontal: 24, paddingTop: 24, paddingBottom: 36, gap: 28 },
+  content: { paddingHorizontal: 24, gap: 28 },
   user: { alignSelf: 'flex-end', maxWidth: '88%', backgroundColor: COLORS.bubble, borderRadius: 20, paddingHorizontal: 18, paddingVertical: 12 },
   assistant: { alignSelf: 'stretch' },
   userText: { color: COLORS.text, fontSize: 18, lineHeight: 28 },
@@ -98,5 +109,5 @@ const styles = StyleSheet.create({
   heard: { ...SPEECH_TYPE, color: COLORS.text },
   current: { ...SPEECH_TYPE, color: COLORS.text, fontWeight: '600' },
   upcoming: { ...SPEECH_TYPE, color: COLORS.upcoming },
-  latest: { position: 'absolute', bottom: 12, alignSelf: 'center', backgroundColor: COLORS.bubble, borderRadius: 22, padding: 12 },
+  latest: { position: 'absolute', alignSelf: 'center', backgroundColor: COLORS.bubble, borderRadius: 22, padding: 12 },
 });

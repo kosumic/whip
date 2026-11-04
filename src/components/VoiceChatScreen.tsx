@@ -27,6 +27,8 @@ const ORB_SIZE = 208;
 const COMPACT_ORB_SIZE = 88;
 const TRANSCRIPT_ORB_SIZE = 48;
 const CONTROL_SIZE = 44;
+const SCREEN_TOP_GAP = 12;
+const SCREEN_BOTTOM_GAP = 28;
 const PRESENTATION_DURATION_MS = 380;
 const VOICE_COLORS = { canvas: '#000000', text: '#ffffff', muted: '#a3a3a3', control: '#303030', border: '#4b4b4b', accent: '#c797fa' };
 const INITIAL: VoiceConversationView = { phase: 'starting', muted: false, smartTurn: false, speaker: false, text: '', level: 0, progress: 0, error: null, transcript: null };
@@ -62,6 +64,8 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
   const reducedMotion = useReducedMotion();
   const [startedAt, setStartedAt] = useState(Date.now);
   const [view, setView] = useState(INITIAL);
+  const [headerHeight, setHeaderHeight] = useState(CONTROL_SIZE);
+  const [footerHeight, setFooterHeight] = useState(0);
   const messages = view.messages ?? [];
   const hasTranscript = messages.length > 0;
   const estimatedCost = view.provider === 'openai' && typeof view.estimatedUsd === 'number' && Number.isFinite(view.estimatedUsd) && view.estimatedUsd >= 0 ? formatUsd(view.estimatedUsd) : null;
@@ -151,31 +155,38 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
       </Animated.View>
     </GlassPortal>}
     <Modal visible={visible && expanded} animationType="none" transparent statusBarTranslucent navigationBarTranslucent presentationStyle="overFullScreen" onShow={measureOrbs} onRequestClose={() => minimize()}>
-    <View style={[styles.screen, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 28 }]}>
+    <View style={[styles.screen, { paddingTop: insets.top + SCREEN_TOP_GAP, paddingBottom: insets.bottom + SCREEN_BOTTOM_GAP }]}>
       <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.backdrop, chromeMotion]} />
-      <Animated.View className="flex-row items-center justify-between px-6" style={chromeMotion}>
+      {hasTranscript && <Animated.View style={[StyleSheet.absoluteFill, chromeMotion]}>
+        <VoiceTranscript messages={messages} reducedMotion={reducedMotion}
+          contentInsets={{ top: insets.top + SCREEN_TOP_GAP + headerHeight, bottom: insets.bottom + SCREEN_BOTTOM_GAP + footerHeight }} />
+      </Animated.View>}
+      <Animated.View pointerEvents="box-none" className="flex-row items-center justify-between px-6" style={chromeMotion}
+        onLayout={event => setHeaderHeight(event.nativeEvent.layout.height)}>
         <Button accessibilityLabel={t('voiceChat.minimize')} variant="ghost" className="size-11 rounded-full p-0" style={styles.control} onPress={() => minimize()}><ChevronDown size={20} color={VOICE_COLORS.text} /></Button>
-        <Text style={styles.agentLabel}>{target.label}</Text>
+        <Text pointerEvents="none" style={styles.agentLabel}>{target.label}</Text>
         <View className="flex-row gap-2">
           <Button accessibilityLabel={t('voiceChat.transcript')} variant="ghost" className="size-11 rounded-full p-0" style={styles.control} onPress={() => minimize()}><MessageSquare size={18} color={VOICE_COLORS.text} /></Button>
           <Button accessibilityLabel={t('voiceChat.speaker')} accessibilityState={{ selected: view.speaker }} variant="ghost" className="size-11 rounded-full p-0" style={styles.control} disabled={!interactive} onPress={() => conversation.current?.toggleSpeaker()}><Volume2 size={19} color={view.speaker ? VOICE_COLORS.accent : VOICE_COLORS.text} /></Button>
         </View>
       </Animated.View>
-      {hasTranscript && <Animated.View style={[styles.transcript, chromeMotion]}><VoiceTranscript messages={messages} reducedMotion={reducedMotion} /></Animated.View>}
-      <View style={hasTranscript ? styles.transcriptOrbSpace : styles.orbSpace}>
-        <Pressable ref={fullOrb} onLayout={measureOrbs} accessibilityRole="button" accessibilityLabel={view.phase === 'speaking' ? t('voiceChat.skip') : t('voiceChat.finish')} disabled={view.phase !== 'speaking' && (view.phase !== 'listening' || view.provider === 'openai')} onPress={() => { if (view.phase === 'speaking') void conversation.current?.skip(); else conversation.current?.finish(); }} style={{ width: orbSize, height: orbSize }}>
-          <Animated.View style={orbMotion}>{expanded && <VoiceOrb view={view} size={orbSize} startedAt={startedAt} />}</Animated.View>
-        </Pressable>
+      <View pointerEvents="box-none" style={hasTranscript ? [styles.transcriptControls, { bottom: insets.bottom + SCREEN_BOTTOM_GAP }] : styles.controls}
+        onLayout={event => setFooterHeight(event.nativeEvent.layout.height)}>
+        <View pointerEvents="box-none" style={hasTranscript ? styles.transcriptOrbSpace : styles.orbSpace}>
+          <Pressable ref={fullOrb} onLayout={measureOrbs} accessibilityRole="button" accessibilityLabel={view.phase === 'speaking' ? t('voiceChat.skip') : t('voiceChat.finish')} disabled={view.phase !== 'speaking' && (view.phase !== 'listening' || view.provider === 'openai')} onPress={() => { if (view.phase === 'speaking') void conversation.current?.skip(); else conversation.current?.finish(); }} style={{ width: orbSize, height: orbSize }}>
+            <Animated.View style={orbMotion}>{expanded && <VoiceOrb view={view} size={orbSize} startedAt={startedAt} />}</Animated.View>
+          </Pressable>
+        </View>
+        <Animated.View pointerEvents="none" className="items-center gap-3 px-8 pb-5" style={[styles.status, chromeMotion]}>
+          <Text accessibilityLiveRegion="polite" className="text-center text-xs" style={styles.statusText}>{t(STATUS[view.phase])}</Text>
+          {estimatedCost !== null && <Text accessibilityHint={t('voiceProvider.costHint')} className="text-center text-xs" style={styles.statusText}>{t('voiceProvider.costEstimate', { cost: estimatedCost })}</Text>}
+          {(view.phase === 'starting' || view.phase === 'preparing') && <ActivityIndicator color={VOICE_COLORS.accent} />}
+          {view.error && <Text accessibilityRole="alert" className="text-center text-sm leading-5" style={styles.statusText}>{view.error}</Text>}
+        </Animated.View>
+        <Animated.View pointerEvents="box-none" style={chromeMotion}>
+          {expanded && composer}
+        </Animated.View>
       </View>
-      <Animated.View className="items-center gap-3 px-8 pb-5" style={[styles.status, chromeMotion]}>
-        <Text accessibilityLiveRegion="polite" className="text-center text-xs" style={styles.statusText}>{t(STATUS[view.phase])}</Text>
-        {estimatedCost !== null && <Text accessibilityHint={t('voiceProvider.costHint')} className="text-center text-xs" style={styles.statusText}>{t('voiceProvider.costEstimate', { cost: estimatedCost })}</Text>}
-        {(view.phase === 'starting' || view.phase === 'preparing') && <ActivityIndicator color={VOICE_COLORS.accent} />}
-        {view.error && <Text accessibilityRole="alert" className="text-center text-sm leading-5" style={styles.statusText}>{view.error}</Text>}
-      </Animated.View>
-      <Animated.View style={chromeMotion}>
-        {expanded && composer}
-      </Animated.View>
     </View>
     </Modal>
   </>;
@@ -213,7 +224,8 @@ const styles = StyleSheet.create({
   composeText: { flex: 1, color: VOICE_COLORS.muted, fontSize: 18 },
   composerActivity: { width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, borderColor: VOICE_COLORS.accent, alignItems: 'center', justifyContent: 'center' },
   orbSpace: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: ORB_SIZE + 32, paddingTop: ORB_SIZE / 3 },
-  transcript: { flex: 1, minHeight: 0 },
+  controls: { flex: 1 },
+  transcriptControls: { position: 'absolute', left: 0, right: 0 },
   transcriptOrbSpace: { alignItems: 'center', justifyContent: 'center', height: TRANSCRIPT_ORB_SIZE + 20 },
   dock: { position: 'absolute', left: 0, right: 0 },
   compactOrbRow: { height: COMPACT_ORB_SIZE + 64, alignItems: 'center', justifyContent: 'center' },
