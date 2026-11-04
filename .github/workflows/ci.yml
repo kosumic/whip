@@ -120,6 +120,14 @@ jobs:
           cargo test --locked
           cargo run --locked --example ingest
 
+      - name: Check portable mobile speech library
+        working-directory: crates/mobile-speech
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+          cargo run --locked --example plain_text
+
       - name: Check shared Herdr protocol
         working-directory: crates/herdr-protocol
         env:

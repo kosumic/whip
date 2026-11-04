@@ -191,6 +191,44 @@ Java_com_whipssh_SpeechPolicy_phononSpeak(JNIEnv *env, jclass, jlong lease, jstr
 namespace jsi = facebook::jsi;
 namespace react = facebook::react;
 
+// Process-owned callback: no React instance, Activity, or local JNI references.
+static JavaVM *automaticVm = nullptr;
+static jclass automaticPolicy = nullptr;
+static jmethodID automaticWakeMethod = nullptr;
+static void wakeAutomaticSpeech() {
+    JNIEnv *env = nullptr;
+    const bool attach = automaticVm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6) == JNI_EDETACHED;
+    if (attach && automaticVm->AttachCurrentThread(&env, nullptr) != JNI_OK) return;
+    if (!env) return;
+    env->CallStaticVoidMethod(automaticPolicy, automaticWakeMethod);
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    if (attach) automaticVm->DetachCurrentThread();
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_whipssh_SpeechPolicy_registerAutomaticSpeech(JNIEnv *env, jclass type) {
+    if (automaticPolicy) return;
+    auto method = env->GetStaticMethodID(type, "automaticSpeechWake", "()V");
+    if (!method) return;
+    auto policy = static_cast<jclass>(env->NewGlobalRef(type));
+    if (!policy || env->GetJavaVM(&automaticVm) != JNI_OK) {
+        if (policy) env->DeleteGlobalRef(policy);
+        return;
+    }
+    automaticPolicy = policy;
+    automaticWakeMethod = method;
+    whip_automatic_speech_register(wakeAutomaticSpeech);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_whipssh_SpeechPolicy_automaticSpeech(JNIEnv *env, jclass, jstring command) {
+    const auto input = speechUtf8(env, command);
+    char *value = whip_automatic_speech_command(input.c_str());
+    const std::string json(value ? value : "null");
+    whip_alert_speech_free(value);
+    return speechString(env, json);
+}
+
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_whipssh_SpeechPolicy_claim(JNIEnv *env, jclass, jint kind, jstring owner, jstring request) {
     const char *ownerValue = env->GetStringUTFChars(owner, nullptr);

@@ -1,13 +1,10 @@
-//! Bounded, recent speech from every live transcript, independent of presentation.
-
+//! Whip transcript selection and policy over the portable mobile-speech queue.
 use crate::{
     AgentTranscriptKind, ChatSpeechMessage, ChatSpeechQueue, chat_speech::speech_chunks_with_limit,
 };
+use mobile_speech::{Playback, PlaybackQueue, QueueConfig, QueueItem, WaitingLimits};
 use parking_lot::Mutex;
-use std::{
-    collections::{HashMap, HashSet, VecDeque},
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 
 const MAX_PENDING: usize = 4;
 const MAX_PENDING_UNITS: usize = 800;
@@ -20,77 +17,23 @@ pub struct ChatSpeechUtterance {
     pub text: String,
 }
 
-struct Pending {
-    utterance: ChatSpeechUtterance,
-    tab_prefix: String,
-    message_id: String,
-    part_id: String,
-    queued_at: u64,
-}
-
-type SpeechIdentity = (String, String, String);
-
-impl Pending {
-    fn continues(&self, identity: Option<&SpeechIdentity>) -> bool {
-        identity.is_some_and(|(key, message, part)| {
-            self.utterance.key == *key && self.message_id == *message && self.part_id == *part
-        })
-    }
-
-    fn units(&self) -> usize {
-        self.utterance.text.encode_utf16().count() + self.tab_prefix.encode_utf16().count()
-    }
-}
-
-#[derive(Default)]
 struct State {
     transcripts: HashMap<String, Arc<ChatSpeechQueue>>,
-    pending: VecDeque<Pending>,
-    playing_key: Option<String>,
-    playing_part: Option<SpeechIdentity>,
-    // Prefix history survives idle gaps and dismissal, independently of playback.
-    last_spoken_source: Option<(String, String)>,
-    dismissed: HashSet<SpeechIdentity>,
+    queue: PlaybackQueue,
 }
-
-impl State {
-    fn competing_with(&self, key: &str) -> bool {
-        self.playing_key
-            .as_deref()
-            .is_some_and(|playing| playing != key)
-            || self.pending.iter().any(|item| item.utterance.key != key)
-    }
-
-    fn trim_competing(&mut self, now_ms: u64) {
-        let playing = self.playing_part.as_ref();
-        // Finishing the current update is playback, not a waiting backlog.
-        // Otherwise its first chunk's playback time can expire its own ending.
-        self.pending.retain(|item| {
-            item.continues(playing) || now_ms.saturating_sub(item.queued_at) <= MAX_AGE_MS
-        });
-        let (mut count, mut units) = self
-            .pending
-            .iter()
-            .filter(|item| !item.continues(playing))
-            .fold((0, 0), |(count, units), item| {
-                (count + 1, units + item.units())
-            });
-        while count > MAX_PENDING || units > MAX_PENDING_UNITS {
-            let Some(index) = self
-                .pending
-                .iter()
-                .position(|item| !item.continues(playing))
-            else {
-                break;
-            };
-            if let Some(item) = self.pending.remove(index) {
-                count -= 1;
-                units -= item.units();
-            }
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            transcripts: HashMap::new(),
+            queue: PlaybackQueue::new(QueueConfig {
+                max_waiting_chunks: MAX_PENDING,
+                max_waiting_utf16_units: MAX_PENDING_UNITS,
+                max_wait_ms: MAX_AGE_MS,
+                limits: WaitingLimits::WhenCompeting,
+            }),
         }
     }
 }
-
 #[derive(Default, uniffi::Object)]
 pub struct AutomaticChatSpeechQueue {
     state: Mutex<State>,
@@ -105,7 +48,7 @@ impl AutomaticChatSpeechQueue {
 
     #[allow(
         clippy::too_many_arguments,
-        reason = "UniFFI update accepts transcript identity, state, content, and timestamp independently"
+        reason = "Compatibility boundary for the existing UniFFI API"
     )]
     pub fn update(
         &self,
@@ -118,121 +61,87 @@ impl AutomaticChatSpeechQueue {
         now_ms: u64,
     ) {
         let mut state = self.state.lock();
-        state
-            .pending
-            .retain(|item| item.utterance.key != key || (live && !baseline));
-        let queue = state.transcripts.entry(key.clone()).or_default().clone();
-        if baseline {
-            queue.update(agent, false, Vec::new());
+        if !live || baseline {
+            state.queue.remove(&key);
         }
-        queue.update(agent, live, messages);
-        let competing = state.competing_with(&key);
-        while let Some(chunk) = queue.next_content() {
-            if state.dismissed.contains(&(
-                key.clone(),
-                chunk.message_id.clone(),
-                chunk.part_id.clone(),
-            )) {
-                continue;
-            }
+        let selector = state.transcripts.entry(key.clone()).or_default().clone();
+        if baseline {
+            selector.update(agent, false, Vec::new());
+        }
+        selector.update(agent, live, messages);
+        while let Some(chunk) = selector.next_content() {
+            let group = format!(
+                "{}:{}{}",
+                chunk.message_id.len(),
+                chunk.message_id,
+                chunk.part_id
+            );
             for text in speech_chunks_with_limit(&chunk.text, MAX_CONTENT_UNITS) {
-                state.pending.push_back(Pending {
-                    utterance: ChatSpeechUtterance {
-                        key: key.clone(),
+                state.queue.enqueue(
+                    QueueItem {
+                        source: key.clone(),
+                        group: group.clone(),
                         text,
+                        prefix: chat_speech_prefix(&tab_name),
                     },
-                    tab_prefix: chat_speech_prefix(&tab_name),
-                    message_id: chunk.message_id.clone(),
-                    part_id: chunk.part_id.clone(),
-                    queued_at: now_ms,
-                });
-                if competing {
-                    state.trim_competing(now_ms);
-                }
+                    now_ms,
+                );
             }
         }
         drop(state);
     }
-
+    /// Compatibility for callers that await completion before asking for next.
     pub fn next(&self, now_ms: u64) -> Option<ChatSpeechUtterance> {
         let mut state = self.state.lock();
-        let competing = state
-            .pending
-            .front()
-            .is_some_and(|first| state.competing_with(&first.utterance.key));
-        loop {
-            // A streamed continuation can arrive after another tab's update.
-            // Finish the current part before moving to waiting updates in FIFO order.
-            let index = state
-                .pending
-                .iter()
-                .position(|item| item.continues(state.playing_part.as_ref()))
-                .unwrap_or(0);
-            let Some(mut item) = state.pending.remove(index) else {
-                break;
-            };
-            if item.continues(state.playing_part.as_ref())
-                || !competing
-                || now_ms.saturating_sub(item.queued_at) <= MAX_AGE_MS
-            {
-                let same_source = state
-                    .last_spoken_source
-                    .as_ref()
-                    .is_some_and(|(key, prefix)| {
-                        key == &item.utterance.key && prefix == &item.tab_prefix
-                    });
-                if !same_source {
-                    item.utterance.text.insert_str(0, &item.tab_prefix);
-                }
-                state.last_spoken_source = Some((item.utterance.key.clone(), item.tab_prefix));
-                state.playing_key = Some(item.utterance.key.clone());
-                state.playing_part =
-                    Some((item.utterance.key.clone(), item.message_id, item.part_id));
-                return Some(item.utterance);
-            }
+        if let Some(id) = state.queue.active().map(|active| active.id) {
+            state.queue.complete(id);
         }
-        state.playing_key = None;
-        state.playing_part = None;
-        None
+        state
+            .queue
+            .take(now_ms)
+            .map(|playback| ChatSpeechUtterance {
+                key: playback.item.source,
+                text: playback.item.text,
+            })
     }
-
-    /// Dismiss the whole currently spoken update, including its remaining chunks.
-    /// Other queued updates and transcript history baselines remain intact.
     pub fn dismiss_current(&self) {
-        let mut state = self.state.lock();
-        let Some(identity) = state.playing_part.take() else {
-            return;
-        };
-        state.pending.retain(|item| {
-            item.utterance.key != identity.0
-                || item.message_id != identity.1
-                || item.part_id != identity.2
-        });
-        state.playing_key = None;
-        state.dismissed.insert(identity);
+        self.state.lock().queue.dismiss_current();
     }
-
     pub fn remove(&self, key: String) {
         let mut state = self.state.lock();
         state.transcripts.remove(&key);
-        state.pending.retain(|item| item.utterance.key != key);
-        state.dismissed.retain(|identity| identity.0 != key);
-        if state.playing_key.as_deref() == Some(&key) {
-            state.playing_key = None;
-            state.playing_part = None;
-        }
+        state.queue.remove(&key);
     }
-
     pub fn reset(&self) {
-        *self.state.lock() = State::default();
+        let mut state = self.state.lock();
+        state.transcripts.clear();
+        state.queue.clear();
     }
 }
-
+impl AutomaticChatSpeechQueue {
+    pub(crate) fn has_source(&self, key: &str) -> bool {
+        self.state.lock().transcripts.contains_key(key)
+    }
+    pub(crate) fn clear_source_pending(&self, key: &str) {
+        self.state.lock().queue.remove(key);
+    }
+    pub(crate) fn clear_pending(&self) {
+        self.state.lock().queue.clear();
+    }
+    pub(crate) fn take_native(&self, now_ms: u64) -> Option<Playback> {
+        self.state.lock().queue.take(now_ms)
+    }
+    pub(crate) fn complete_native(&self, id: u64) -> bool {
+        self.state.lock().queue.complete(id)
+    }
+    pub(crate) fn active_id(&self) -> Option<u64> {
+        self.state.lock().queue.active().map(|active| active.id)
+    }
+}
 #[uniffi::export]
 pub fn chat_speech_announcement(tab_name: String, text: String) -> String {
     format!("{}{text}", chat_speech_prefix(&tab_name))
 }
-
 fn chat_speech_prefix(tab_name: &str) -> String {
     let name = tab_name.trim().chars().take(80).collect::<String>();
     if name.is_empty() {

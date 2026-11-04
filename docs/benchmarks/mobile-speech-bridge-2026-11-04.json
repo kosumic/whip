@@ -1,0 +1,19 @@
+{
+  "date": "2026-11-04",
+  "scenario": "1,000 live transcript revisions editing one of 100 completed assistant messages",
+  "baselineServiceBlob": "a5a077d601a9ae45351f10e0eb1b5c9137daf515",
+  "updatedServiceBlob": "2e1743c63fbe6e82687137d391a61d68e2b560a5",
+  "before": {
+    "automaticJsToRustCalls": 2000,
+    "messageRecordsConverted": 100000,
+    "jsonProxyBytes": 46347890,
+    "syntheticElapsedMs": 88.92
+  },
+  "after": {
+    "automaticJsToRustCalls": 0,
+    "messageRecordsConverted": 0,
+    "jsonProxyBytes": 0,
+    "syntheticElapsedMs": 0.75
+  },
+  "note": "Synthetic automatic-selection bridge harness, 1,000 revisions over 100 assistant messages. Uses actual service and speechMessages code, a native-queue stub, and JSON as a payload-size proxy. This is not an on-device FFI/first-audio latency measurement."
+}

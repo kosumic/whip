@@ -48,6 +48,73 @@ class StatusSpeechTest {
     }
   }
 
+  @Test fun automaticReaderCompletesNativeAudioAndContinuesWithoutJavaScript() {
+    assumeTrue("Run only with no user speech or call active", !SpeechPlayback.active && !VoiceCallService.active)
+    assumeTrue("Unlock the device for automatic speech playback", context.getSystemService(android.app.KeyguardManager::class.java)?.isDeviceLocked != true)
+    val originalAutomatic = SpeechPlayback.automaticPolicy
+    val originalStatus = SpeechPlayback.statusPolicy
+    val originalStarted = SpeechPlayback.onChatStarted
+    val completed = CountDownLatch(2)
+    val detached = CountDownLatch(1)
+    var retainedPlayback = false
+    val texts = ArrayDeque(listOf("The first native automatic update.", "The second native automatic update."))
+    val ids = mutableListOf<Long>()
+    var activeId = 0L
+    var sequence = 0L
+    var enabled = false
+    var paused = false
+    try {
+      main {
+        SpeechPlayback.statusPolicy = { _, _, _ -> "null" }
+        SpeechPlayback.onChatStarted = { token ->
+          if (token == "automatic-chat-speech") {
+            SpeechPlayback.detachPresentation()
+            retainedPlayback = SpeechPlayback.active
+            detached.countDown()
+          }
+        }
+        SpeechPlayback.automaticPolicy = { input ->
+          val command = JSONObject(input)
+          when (command.getString("action")) {
+            "enable" -> { enabled = command.getBoolean("enabled"); "null" }
+            "pause" -> { paused = command.getBoolean("paused"); "null" }
+            "valid" -> (enabled && !paused && activeId == command.getLong("id")).toString()
+            "take" -> if (!enabled || paused || activeId != 0L || texts.isEmpty()) "null" else {
+              activeId = ++sequence
+              JSONObject().put("id", activeId).put("token", "automatic-chat-speech")
+                .put("text", texts.removeFirst()).put("hostId", "test").put("paneId", "pane").put("label", "Native automatic test").toString()
+            }
+            "completed" -> {
+              assertEquals(activeId, command.getLong("id"))
+              ids.add(activeId); activeId = 0L; completed.countDown(); "true"
+            }
+            "ended" -> { activeId = 0L; "null" }
+            else -> "null"
+          }
+        }
+        SpeechPlayback.automaticControl(context, "enable", true)
+      }
+      assertTrue("Automatic speech never started", detached.await(30, TimeUnit.SECONDS))
+      assertTrue("Presentation detach cancelled native playback", retainedPlayback)
+      assertTrue("Automatic speech did not drain natively", completed.await(60, TimeUnit.SECONDS))
+      main {
+        assertEquals(listOf(1L, 2L), ids)
+        SpeechPlayback.detachPresentation()
+        // The automatic setting belongs to Rust/native, so detaching does not
+        // send an enable=false control or change queue policy.
+        assertTrue(enabled)
+      }
+    } finally {
+      main {
+        SpeechPlayback.automaticControl(context, "enable", false)
+        SpeechPlayback.stop()
+        SpeechPlayback.automaticPolicy = originalAutomatic
+        SpeechPlayback.statusPolicy = originalStatus
+        SpeechPlayback.onChatStarted = originalStarted
+      }
+    }
+  }
+
   @Test fun statusWaitsForCurrentChunkAndReaderContinuesWithANewLease() {
     assumeTrue("Run only with no user speech or call active", !SpeechPlayback.active && !VoiceCallService.active)
     val originalPolicy = SpeechPlayback.statusPolicy

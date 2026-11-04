@@ -3391,6 +3391,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "mobile-speech"
+version = "0.1.0"
+
+[[package]]
 name = "module-lattice"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7403,6 +7407,7 @@ dependencies = [
  "hmac 0.12.1",
  "html5ever",
  "log",
+ "mobile-speech",
  "native-credentials",
  "oai-rt-rs",
  "parking_lot",

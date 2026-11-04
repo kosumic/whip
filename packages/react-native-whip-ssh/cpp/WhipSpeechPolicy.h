@@ -20,6 +20,10 @@ bool whip_speech_stop(uint64_t lease);
 // JSON command results are owned by the caller and freed with the paired API.
 char *whip_alert_speech_command(const char *action, const char *token, uint64_t observed_lease);
 void whip_alert_speech_free(char *value);
+// Process-lifetime native wake enqueues work on the platform thread. Command
+// results use the same allocation/free contract as alert speech.
+void whip_automatic_speech_register(void (*wake)(void));
+char *whip_automatic_speech_command(const char *command);
 uint64_t whip_speech_timeout_ms(uint8_t kind, uint64_t text_units);
 uint64_t whip_speech_stop_owner(uint8_t kind, const char *owner);
 uint64_t whip_speech_cancel_request(uint8_t kind, const char *request);

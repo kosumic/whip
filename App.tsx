@@ -94,7 +94,7 @@ function AppContent() {
   const startupStorage = useStartupStorage();
   const preferences = useDevicePreferences(startupStorage);
   const preferencesLoaded = preferences.hydration.status !== 'loading';
-  useAutomaticChatSpeech(preferencesLoaded && preferences.value.ttsEnabled);
+  useAutomaticChatSpeech(preferences.value.ttsEnabled, preferencesLoaded);
   const entitlements = useWhipEntitlements(
     preferencesLoaded,
     preferences.value.developerOptionsEnabled,

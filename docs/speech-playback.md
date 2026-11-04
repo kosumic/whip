@@ -6,6 +6,44 @@ tool share one native player per platform. `SpeechPlayback.kt` and
 watchdog. `speech_playback.rs` owns admission, session ownership, and deadlines;
 `chat_speech.rs` selects, formats, and queues chat prose.
 
+The dependency-free [`mobile-speech`](../crates/mobile-speech/README.md) crate
+owns reusable playback admission, leases, and completion-driven plain-text
+queueing. It contains no Whip, React Native, transcript, model, or OS dependency.
+Whip configures its queue limits and class priorities, interprets normalized
+agent transcripts, and adapts its existing native system/Phonon player. Other
+applications can use the crate directly with ordinary text and their own backend.
+
+Automatic read-aloud consumes authoritative Rust transcript revisions and
+changed messages in `automatic_speech.rs`, before presentation delivery. Initial
+loads, source replacement, reconnects, and muted/paused updates advance silent
+baselines in Rust. A process-lifetime native wake callback schedules platform
+work; playback completion advances the Rust queue directly, including after
+Phonon PCM drain and status-announcement handoff. Utterance IDs fence late
+callbacks in addition to the existing native playback leases. JavaScript sends
+preferences, pause/resume controls, and cached binding labels, and receives
+focus/error feedback. It neither re-encodes transcript histories for automatic
+selection nor drives an automatic speech drain loop.
+
+Disabled readers retain only binding metadata, without inspecting message
+payloads or retaining spoken-prefix indexes. Enabling prepares full baselines
+from weak Rust transcript owners on the existing runtime's blocking worker;
+generation checks discard preparation after a newer toggle. Paused enabled
+readers keep their baselines current. Loading preferences after a React remount
+does not become an explicit disable or undo native Stop.
+
+UniFFI presentation callbacks can wait for JavaScript. A dedicated presentation
+delivery worker keeps that wait off transcript ingestion and the existing Rust
+runtime's executor threads. Each bound source retains at most four undelivered
+updates; overload replaces them with a lazy authoritative snapshot, rather than
+retaining an unbounded history of deltas. Native speech and native transcript
+rows advance before that delivery. There is still one Rust runtime and player.
+
+React presentation detach releases only its listeners, leaving the enabled
+reader with Rust/native. An explicit setting change disables it; repeating
+enable on remount does not undo native Stop. Native lock notifications pause
+automatic speech and discard waiting audio. Native playback still depends on
+OS execution limits; process suspension or termination cannot guarantee speech.
+
 Chat speech also reads structured agent questions from question tools and
 question notices, including while the agent is waiting for an answer. It reads
 the question and its options in order, joining options with "or" and including
@@ -17,8 +55,8 @@ and reasoning remain excluded.
 
 The shared voice setting reads new updates from every ready, bound transcript,
 across hosts and screens, even when its chat viewport is closed. Initial loads,
-reconnect catchup, and cached/stale snapshots stay silent. Each automatic chunk
-starts with its tab name, such as "Debug tab: ". When chats compete, updates share
+reconnect catchup, and cached/stale snapshots stay silent. Switching between
+speaking chats announces the tab name, such as "Debug tab: ". When chats compete, updates share
 a FIFO queue with at most four unstarted waiting chunks and 800 UTF-16 units in total.
 Content chunks contain at most 300 UTF-16 units before the tab prefix. Overload
 drops the oldest unstarted waiting chunks; competing waiting speech expires after 15 seconds.
@@ -269,3 +307,69 @@ when the call guard detected an active call and the user chose passive profiling
 These live replies each used one native text utterance; cross-utterance
 lookahead and cancellation are covered by adapter regressions, while the
 compiled device regression remains available for a later idle-phone check.
+
+## Extraction validation (#352)
+
+The standalone core passes eight behavioral tests, its README doctest, strict
+Clippy, the plain-text navigation example, and package verification without
+mobile SDKs. The integration passes 63 Rust speech regressions, 89 transcript/
+session regressions, 145 JavaScript regressions, TypeScript, and scoped ESLint.
+Seven arm64 iOS simulator adapter tests passed; the final focus-restoration
+change also passed a build-only check (`scripts/test-ios-speech.rb --build-only`).
+These checks used an isolated snapshot based on `1d5399a6` to exclude concurrent
+realtime voice/caption changes.
+
+The GitHub-channel arm64 Android release and acceptance-test APKs built
+successfully. Both signatures verify with upload certificate SHA-256
+`4dea5dc20cbe8f9bdfaa4ba6d2bacf99ed4c9ce86f086df11d0e3823a98c067e`;
+the app contains only `arm64-v8a` native libraries. The local release uses
+`whip.skipR8=true`, is 127,108,543 bytes, and has APK SHA-256
+`d47eb7bcf4c3751bcb4347a6dd5252d8fb8753c9207feb94aca76dc7c658725d`.
+This developer build's size is not a before/after comparison or an optimized
+CI release measurement.
+
+On 2026-11-04 the user authorized installation. The upload-signed release and
+test APKs updated the Pixel 9 Pro in place without clearing app data.
+`StatusSpeechTest` passed all three cases in 21.665 seconds with cached Phonon:
+two automatic utterances completed after presentation detach, status speech
+waited for a chat chunk and returned a new lease, and closing a suspended reader
+preserved an unrelated announcement. This adapter suite scripts the Rust queue
+boundary while exercising the real player and native completion callbacks.
+The same three cases passed with System TTS in 19.540 seconds. Across both
+backends and the Phonon suite below, all nine device test executions passed
+without skips. The original Phonon/Zoey selection was restored afterwards.
+
+`PhononSpeechTest` passed all three cases in 37.207 seconds without requesting
+downloads. It covered streamed audio/drain, stale-lease cancellation, ordered
+lookahead, bounded admission, replacement, and system voice selection/restoration
+(134 installed voices). Cold first consumed output was 1,703 ms; warm output was
+697 ms; cancellation to replacement output took 577 ms. Generation produced
+4,480 ms of audio in 2,216 ms (2.02 times playback speed). The queued callback
+gap was 39 ms. Sampled PSS was 56,174 KiB initially and 272,322 KiB at its peak;
+these are backend acceptance measurements, not idle-memory regression results.
+
+The normal app also loaded this task's live Codex transcript over SSH. Fresh
+assistant updates produced native Phonon output without pressing read-aloud,
+and new updates played and drained after pressing Home (the launcher was
+verified as the foreground activity). The voice-announcements toggle was
+exercised off/on and returned to its original enabled value. These observations
+cover the live transcript path beyond the scripted adapter boundary, but not
+OS process suspension/termination or every provider and audio route.
+
+A [synthetic bridge report](benchmarks/mobile-speech-bridge-2026-11-04.json)
+compares 1,000 revisions editing one of 100 completed assistant messages:
+
+| Automatic selection work | Before | After |
+| --- | ---: | ---: |
+| JS-to-Rust calls | 2,000 | 0 |
+| Message records converted in JS | 100,000 | 0 |
+| JSON payload-size proxy | 46,347,890 bytes | 0 bytes |
+| Synthetic service time | 88.92 ms | 0.75 ms |
+
+This measures the removed automatic-selection bridge path using the actual
+service code and a native queue stub. It excludes ordinary UI presentation
+traffic and is not a device FFI or first-audio latency measurement. Physical
+iOS, additional audio routes/background scenarios, transcript-to-first-audio
+latency, idle CPU/memory comparisons, and a comparable before/after APK-size
+measurement remain pending. Issue #352 remains open until its remaining
+acceptance checks are complete.

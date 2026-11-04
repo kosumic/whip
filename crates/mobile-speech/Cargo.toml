@@ -1,0 +1,19 @@
+[package]
+name = "mobile-speech"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "AGPL-3.0-or-later"
+description = "App-independent speech playback ownership and completion-driven queueing for mobile backends"
+repository = "https://github.com/kosumic/whip"
+readme = "README.md"
+keywords = ["speech", "tts", "android", "ios", "audio"]
+categories = ["multimedia::audio"]
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"

@@ -425,6 +425,15 @@ detection, catch-up, retry/rebind, and incremental normalization. The shared
 connection layer guards the SSH generation and suppresses data and close
 callbacks from replaced transcript streams; transcript state uses its own
 operation and source epochs for reducer correctness.
+Automatic chat speech consumes Rust transcript revisions directly. The
+app-independent `mobile-speech` crate owns plain-text queueing and generation
+fencing; Whip supplies eligibility, history baselines, preferences, and native
+system/Phonon adapters. Native audio completion advances the queue without a JS
+drain loop. Transcript presentation callbacks run on a separate delivery worker
+with a bounded per-source backlog and lazy snapshot catch-up, keeping a busy JS
+thread off ingestion and speech scheduling. React detach leaves the process-owned
+reader alive; explicit preference and native interruption controls remain binding.
+
 Each state projection has a monotonic revision and can be fetched in full, so a
 missed callback does not lose transcript correctness. The remote rollout remains
 authoritative. Rust owns the host/agent/session identity, checkpoint format and

@@ -5,6 +5,7 @@ require 'fileutils'
 require 'xcodeproj'
 
 abort 'iOS speech tests require macOS' unless RUBY_PLATFORM.include?('darwin')
+action = ARGV.delete('--build-only') ? 'build-for-testing' : 'test'
 root = File.expand_path('..', __dir__)
 build = File.join(root, 'build', 'ios-speech-tests')
 FileUtils.mkdir_p(build)
@@ -64,4 +65,4 @@ ENV['PATH'] = "/usr/bin:/bin:/usr/sbin:/sbin:#{ENV['PATH']}"
 ENV.delete_if { |name, _| name.start_with?('NIX_') || %w[SDKROOT CC CXX CPP LD LDPLUSPLUS AR AS NM RANLIB STRIP LIPO LIBTOOL].include?(name) }
 exec('/usr/bin/xcodebuild', '-project', project.path.to_s,
      '-scheme', 'SpeechTests', '-sdk', 'iphonesimulator', '-destination', ENV.fetch('WHIP_IOS_TEST_DESTINATION', 'platform=iOS Simulator,name=iPhone 17 Pro'),
-     '-derivedDataPath', File.join(build, 'DerivedData'), '-parallel-testing-enabled', 'NO', 'test', *ARGV)
+     '-derivedDataPath', File.join(build, 'DerivedData'), '-parallel-testing-enabled', 'NO', action, *ARGV)

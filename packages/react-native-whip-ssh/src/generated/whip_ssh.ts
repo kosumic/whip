@@ -37179,7 +37179,9 @@ export const SessionConnectionPlatformError = (() => {
       return Failed_.instanceOf(obj);
     }
 
-    static getInner(obj: Failed_): Readonly<{
+    static getInner(
+      obj: Failed_,
+    ): Readonly<{
       kind: SessionConnectionFailureKind;
       expectedProtocol?: string;
       receivedProtocol?: string;
@@ -50077,11 +50079,10 @@ const FfiConverterTypeAppCore = new FfiConverterObject(
 );
 
 export interface AutomaticChatSpeechQueueLike {
-  /**
-   * Dismiss the whole currently spoken update, including its remaining chunks.
-   * Other queued updates and transcript history baselines remain intact.
-   */
   dismissCurrent(): void;
+  /**
+   * Compatibility for callers that await completion before asking for next.
+   */
   next(nowMs: bigint): ChatSpeechUtterance | undefined;
   remove(key: string): void;
   reset(): void;
@@ -50122,10 +50123,6 @@ export class AutomaticChatSpeechQueue
       uniffiTypeAutomaticChatSpeechQueueObjectFactory.bless(pointer);
   }
 
-  /**
-   * Dismiss the whole currently spoken update, including its remaining chunks.
-   * Other queued updates and transcript history baselines remain intact.
-   */
   dismissCurrent(): void {
     uniffiCaller.rustCall(
       /*caller:*/ callStatus => {
@@ -50138,6 +50135,9 @@ export class AutomaticChatSpeechQueue
     );
   }
 
+  /**
+   * Compatibility for callers that await completion before asking for next.
+   */
   next(nowMs: bigint): ChatSpeechUtterance | undefined {
     return ((__rb: Uint8Array) => {
       try {
@@ -60251,7 +60251,7 @@ const FfiConverterTypeTerminalSubmissionQueue = new FfiConverterObject(
 
 export interface VoiceChatLike {
   /**
-   * Inference runs independently: capture keeps advancing and invalidates stale verdicts.
+   * Inference runs only when the optional smart-turn build feature is enabled.
    */
   analyze(
     inputId: bigint,
@@ -60270,7 +60270,8 @@ export interface VoiceChatLike {
   nextSpeech(): string | undefined;
   playbackEnded(): VoiceChatView;
   /**
-   * Download is explicit. Once installed, neither VAD nor Smart Turn opens a network connection.
+   * Standard builds use local VAD without loading or downloading a model.
+   * The optional smart-turn build feature permits explicit model installation.
    */
   prepare(
     install: boolean,
@@ -60333,7 +60334,7 @@ export class VoiceChat extends UniffiAbstractObject implements VoiceChatLike {
   }
 
   /**
-   * Inference runs independently: capture keeps advancing and invalidates stale verdicts.
+   * Inference runs only when the optional smart-turn build feature is enabled.
    */
   async analyze(
     inputId: bigint,
@@ -60491,7 +60492,8 @@ export class VoiceChat extends UniffiAbstractObject implements VoiceChatLike {
   }
 
   /**
-   * Download is explicit. Once installed, neither VAD nor Smart Turn opens a network connection.
+   * Standard builds use local VAD without loading or downloading a model.
+   * The optional smart-turn build feature permits explicit model installation.
    */
   async prepare(
     install: boolean,
@@ -62949,7 +62951,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_dismiss_current() !==
-    15150
+    758
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_dismiss_current',
@@ -62957,7 +62959,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_next() !==
-    41080
+    61019
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_automaticchatspeechqueue_next',
@@ -65589,7 +65591,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_analyze() !==
-    14990
+    60916
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_voicechat_analyze',
@@ -65645,7 +65647,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_prepare() !==
-    27216
+    6666
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_voicechat_prepare',

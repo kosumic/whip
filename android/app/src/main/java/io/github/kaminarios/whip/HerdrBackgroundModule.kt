@@ -59,6 +59,13 @@ class HerdrBackgroundModule(
   override fun getName(): String = "HerdrBackground"
 
   init {
+    SpeechPlayback.onAutomaticFocus = { host, pane ->
+      context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+        .emit("WhipAutomaticSpeechFocus", Arguments.createMap().apply {
+          if (host != null) putString("hostId", host)
+          if (pane != null) putString("paneId", pane)
+        })
+    }
     SpeechPlayback.onChatLevel = { token, level ->
       context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
         .emit(CHAT_SPEECH_LEVEL, Arguments.createMap().apply { putString("token", token); putDouble("level", level.toDouble()) })
@@ -190,6 +197,20 @@ class HerdrBackgroundModule(
   @ReactMethod
   fun speechBackendCommand(action: String, promise: Promise) {
     mainHandler.post { PhononPlayback.command(context, action, promise) }
+  }
+
+  @ReactMethod
+  fun automaticSpeechControl(action: String, value: Boolean, promise: Promise) {
+    mainHandler.post {
+      try { SpeechPlayback.automaticControl(context, action, value); promise.resolve(null) }
+      catch (error: Throwable) { promise.reject("E_AUTOMATIC_SPEECH", error) }
+    }
+  }
+
+  @ReactMethod
+  fun automaticSpeechBinding(bindingToken: String, hostId: String, tabName: String) {
+    SpeechPolicy.automaticSpeech(org.json.JSONObject().put("action", "bind")
+      .put("bindingToken", bindingToken).put("hostId", hostId).put("tabName", tabName).toString())
   }
 
   @ReactMethod
@@ -389,7 +410,8 @@ class HerdrBackgroundModule(
       SpeechPlayback.onChatStopped = null
       SpeechPlayback.onChatStarted = null
       SpeechPlayback.onChatLevel = null
-      SpeechPlayback.shutdown()
+      SpeechPlayback.onAutomaticFocus = null
+      SpeechPlayback.detachPresentation()
       stopPersistentAlert()
     }
     super.invalidate()
