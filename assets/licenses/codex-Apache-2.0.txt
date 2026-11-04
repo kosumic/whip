@@ -210,4 +210,4 @@ This project includes code derived from [Ratatui](https://github.com/ratatui/rat
 Copyright (c) 2016-2022 Florian Dehau
 Copyright (c) 2023-2025 The Ratatui Developers
 
-Whip adaptations: native mobile PCM capture/render timestamps, public Realtime WebSocket event correlation, and device/session ownership.
+Whip adaptations: native mobile PCM capture/render timestamps, public Realtime WebSocket event correlation, device/session ownership, and general task delegation through Whip's bound-agent tools and approval controls.

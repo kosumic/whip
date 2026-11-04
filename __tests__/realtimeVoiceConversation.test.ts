@@ -6,6 +6,7 @@ import { request } from 'react-native-permissions';
 
 const mockEvents = new Map<string, (event: unknown) => void>();
 const mockApp = { currentState: 'active' };
+const mockLanguage = { resolvedLanguage: 'en', language: 'en' };
 const mockState = { sessionId: 'session-1' } as AgentChatState;
 let mockTranscript: (state: AgentChatState | null) => void;
 const mockRelease = jest.fn();
@@ -25,6 +26,7 @@ jest.mock('react-native', () => ({
 }));
 jest.mock('react-native-permissions', () => ({ PERMISSIONS: { IOS: { MICROPHONE: 'mic' }, ANDROID: { RECORD_AUDIO: 'mic' } }, RESULTS: { GRANTED: 'granted' }, request: jest.fn(() => Promise.resolve('granted')) }));
 jest.mock('../src/services/speechPlayback', () => ({ getSpeechPlayback: () => mockNative }));
+jest.mock('../src/i18n', () => ({ __esModule: true, get default() { return mockLanguage; } }));
 jest.mock('../src/services/composerSpeechInput', () => ({ get composerSpeechInput() { return mockInput; } }));
 jest.mock('../src/services/speechInputFocus', () => ({ setSpeechInputActive: jest.fn() }));
 jest.mock('../src/services/chatSpeech', () => ({ suspendChatSpeechForInput: jest.fn(() => Promise.resolve()) }));
@@ -42,7 +44,7 @@ function setup() {
   const call = new RealtimeVoiceConversation({ hostId: 'host', paneId: 'pane-1', tabId: 'tab', bindingToken: 'binding-1', agent: 'codex', label: 'Codex' }, { ...defaults, provider: 'openai', realtimeVoice: 'cedar' }, changed);
   return { call, changed };
 }
-beforeEach(() => { jest.useFakeTimers(); jest.clearAllMocks(); mockEvents.clear(); mockApp.currentState = 'active'; });
+beforeEach(() => { jest.useFakeTimers(); jest.clearAllMocks(); mockEvents.clear(); mockApp.currentState = 'active'; mockLanguage.resolvedLanguage = 'en'; });
 afterEach(() => jest.useRealTimers());
 
 test('starts direct native Realtime with the pinned agent, selected voice and independent server VAD', async () => {
@@ -51,7 +53,7 @@ test('starts direct native Realtime with the pinned agent, selected voice and in
   await call.start();
   expect(mockNative.startRealtimeVoice).toHaveBeenCalledTimes(1);
   const [token, config, key] = jest.mocked(mockNative.startRealtimeVoice).mock.calls[0] as unknown as [string, string, string];
-  expect(JSON.parse(config)).toEqual({ target: { runtimeId: 'runtime-1', terminalId: 'terminal-1', paneId: 'pane-1', bindingToken: 'binding-1' }, voice: 'cedar', vad: { type: 'server_vad', threshold: 0.5, prefix_padding_ms: 300, silence_duration_ms: 500 } });
+  expect(JSON.parse(config)).toEqual({ target: { runtimeId: 'runtime-1', terminalId: 'terminal-1', paneId: 'pane-1', bindingToken: 'binding-1' }, voice: 'cedar', language: 'en', vad: { type: 'server_vad', threshold: 0.5, prefix_padding_ms: 300, silence_duration_ms: 500 } });
   expect(key).toBe('sk-private-test');
   expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ provider: 'openai', text: 'hello', inputTokens: 3, outputTokens: 4 }));
   call.toggleMuted();
@@ -62,6 +64,18 @@ test('starts direct native Realtime with the pinned agent, selected voice and in
   expect(mockNative.endVoiceCall).toHaveBeenCalledWith(token);
   expect(mockInput.releaseReservation).toHaveBeenCalledWith(token);
   expect(mockUnsubscribe).toHaveBeenCalled();
+});
+
+test('snapshots the selected app language for native input transcription', async () => {
+  mockLanguage.resolvedLanguage = 'zh-Hant';
+  const { call } = setup();
+  await call.start();
+  const [, config] = mockNative.startRealtimeVoice.mock.calls[0] as unknown as [string, string];
+  expect(JSON.parse(config).language).toBe('zh-Hant');
+  mockLanguage.resolvedLanguage = 'en';
+  await jest.advanceTimersByTimeAsync(200);
+  expect(mockNative.startRealtimeVoice).toHaveBeenCalledTimes(1);
+  await call.close();
 });
 
 test('background presentation retains native ownership and system hangup closes the call', async () => {

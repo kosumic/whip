@@ -152,6 +152,11 @@ fn preview_uses_selected_realtime_voice_without_microphone_turns_or_agent_tools(
         false
     );
     assert_eq!(event["session"]["tools"], json!([]));
+    assert!(
+        event["session"]["audio"]["input"]
+            .get("transcription")
+            .is_none()
+    );
     assert_eq!(event["session"]["tool_choice"], "none");
     assert_eq!(event["session"]["max_output_tokens"], 256);
     config.validate_audio(serde_json::from_value(event["session"]["audio"].clone())?)?;
@@ -160,6 +165,32 @@ fn preview_uses_selected_realtime_voice_without_microphone_turns_or_agent_tools(
     assert_eq!(response["response"]["input"], json!([]));
     assert_eq!(response["response"]["tool_choice"], "none");
     assert_eq!(response["response"]["max_output_tokens"], 256);
+    Ok(())
+}
+
+#[test]
+fn transcription_uses_app_language_and_defaults_to_english_for_older_callers()
+-> Result<(), Box<dyn std::error::Error>> {
+    for (language, expected) in [
+        (None, "en"),
+        (Some("en"), "en"),
+        (Some("zh-Hant"), "zh"),
+        (Some("zh-Hans"), "zh"),
+        (Some("ja"), "ja"),
+        (Some("es"), "es"),
+        (Some("fr"), "fr"),
+    ] {
+        let mut value = json!({"target":{"runtimeId":"host","terminalId":"terminal","paneId":"pane","bindingToken":"binding"},"voice":"cedar","vad":{"type":"server_vad","threshold":0.5,"prefix_padding_ms":300,"silence_duration_ms":500}});
+        if let Some(language) = language {
+            value["language"] = json!(language);
+        }
+        let config: Config = serde_json::from_value(value)?;
+        // Check the actual typed client's wire serialization, not just our JSON.
+        let event = serde_json::to_value(config.session_update()?)?;
+        let transcription = &event["session"]["audio"]["input"]["transcription"];
+        assert_eq!(transcription["model"], "gpt-4o-mini-transcribe");
+        assert_eq!(transcription["language"], expected);
+    }
     Ok(())
 }
 

@@ -39,7 +39,7 @@ const noticeSources: BundledNoticeSource[] = [
   {
     id: 'codex-realtime-voice',
     asset: 'assets/licenses/codex-Apache-2.0.txt',
-    sha256: '4edbe13c05a06ba5508db036b8b163928f93a9c2dab92af290b4dc70ea18389a',
+    sha256: 'fd82f8f6a4f4f3c9c46a23c3b6d2412900563d6e7ed28bef9d50018fe7c0649b',
   },
   { id: 'phonon-31m-en', ...audioApacheLicense },
   { id: 'phonon-voices', ...audioApacheLicense },

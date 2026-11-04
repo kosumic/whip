@@ -5,6 +5,10 @@ Platform API key, then open a connected coding-agent chat and start its call.
 The existing Local provider remains the default. GPT-Live and Global calls
 remain unavailable. The selected voice and Realtime VAD configuration are
 snapshotted when the app-wide owner starts the call; edits affect the next call.
+Input transcription uses the selected app language as its language hint
+(Chinese script variants both use `zh`). Older callers default to English.
+Captions are generated separately from the voice model's understanding of audio
+and can still contain recognition errors.
 
 **Preview voice** becomes available after saving an API key in Realtime mode.
 It plays one short AI-generated sample in the selected Realtime voice using
@@ -47,6 +51,12 @@ Ported the public-API-compatible audio processing and response lifecycle from
 - `codex-rs/voice-host/src/device_buffers.rs` and `capture_worker.rs`: capture
   generations, stale-frame rejection, and discarded pre-unmute callbacks.
 - `codex-rs/realtime-webrtc/src/session.rs`: transport/session ownership.
+- `codex-rs/prompts/templates/realtime/backend_prompt.md` and
+  `codex-rs/codex-api/src/endpoint/realtime_websocket/methods_v2.rs`: general
+  delegation by default, passing the user's own words for tasks, research,
+  browsing, and current information. Status answers must use live agent tools.
+  Whip retains its idle-only host submission contract: busy work is neither
+  steered nor queued, and uncertain submissions are never replayed.
 
 The adapted modules retain their Apache-2.0 attribution and bundled license.
 Whip keeps native mobile device ownership and the public Realtime WebSocket
