@@ -101,7 +101,7 @@ class HerdrBackgroundModule(
 
   @ReactMethod
   fun startRealtimeVoiceCall(token: String, label: String, promise: Promise) {
-    mainHandler.post { VoiceCallService.start(context, token, label, promise, warmLocalSpeech = false) }
+    mainHandler.post { VoiceCallService.start(context, token, label, promise, mode = VoiceCallService.Mode.OPENAI_REALTIME) }
   }
 
   @ReactMethod

@@ -10,6 +10,7 @@ import android.app.Service
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.graphics.drawable.Icon
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
@@ -28,6 +29,8 @@ import com.whipssh.HostRuntimeMonitoring
 /** Background microphone/media owner. Android media volume also applies between turns. */
 @android.annotation.SuppressLint("NewApi") // start() admits only Android 13+ with microphone permission.
 class VoiceCallService : Service() {
+  enum class Mode { LOCAL, OPENAI_REALTIME }
+
   private var wakeLock: PowerManager.WakeLock? = null
   private var focus: VoiceMediaFocus? = null
   private val audio by lazy { getSystemService(AudioManager::class.java) }
@@ -76,7 +79,7 @@ class VoiceCallService : Service() {
       session.ready = true
       main.removeCallbacks(session.timeout)
       publishRoute()
-      if (session.warmLocalSpeech) SpeechPlayback.warmUp(this)
+      if (session.mode == Mode.LOCAL) SpeechPlayback.warmUp(this)
       session.start?.resolve(null)
       session.start = null
     } catch (_: Exception) { finish(session, "Media audio focus is unavailable.") }
@@ -90,10 +93,13 @@ class VoiceCallService : Service() {
     val token = session?.token.orEmpty()
     val hangup = action(END, token, 1)
     val launch = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    val avatar = if (session?.mode == Mode.OPENAI_REALTIME) R.drawable.ic_voice_call_openai else R.mipmap.ic_launcher_whip_adaptive
+    val caller = Person.Builder().setName(session?.label ?: getString(R.string.app_name))
+      .setIcon(Icon.createWithResource(this, avatar)).setBot(true).build()
     val builder = Notification.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_notification_whip)
       .setContentTitle(session?.label ?: getString(R.string.app_name)).setContentText(getString(R.string.voice_call_ongoing))
       .setCategory(Notification.CATEGORY_CALL).setContentIntent(launch).setOngoing(true).setOnlyAlertOnce(true)
-      .setStyle(Notification.CallStyle.forOngoingCall(Person.Builder().setName(session?.label ?: getString(R.string.app_name)).build(), hangup))
+      .setStyle(Notification.CallStyle.forOngoingCall(caller, hangup))
     if (session != null) builder.addAction(Notification.Action.Builder(null,
       getString(if (session.muted) R.string.voice_call_unmute else R.string.voice_call_mute), action(MUTE, token, 2)).build())
     startForeground(NOTIFICATION, builder.build(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
@@ -132,7 +138,7 @@ class VoiceCallService : Service() {
     instance = null
     super.onDestroy()
   }
-  private class Session(val token: String, val label: String, var start: Promise?, val warmLocalSpeech: Boolean) {
+  private class Session(val token: String, val label: String, var start: Promise?, val mode: Mode) {
     var taskContext: HeadlessJsTaskContext? = null
     var taskId: Int? = null
     fun finishBackgroundTask() { taskId?.let { taskContext?.finishTask(it) }; taskId = null; taskContext = null }
@@ -163,12 +169,12 @@ class VoiceCallService : Service() {
     internal fun owns(token: String): Boolean = current?.let { it.token == token && it.ready && !it.ending } == true
     internal fun muted(token: String): Boolean = current?.takeIf { it.token == token }?.muted == true
     val audioAttributes get() = VoiceMediaAudio.attributes
-    fun start(context: ReactApplicationContext, token: String, label: String, promise: Promise, warmLocalSpeech: Boolean = true) {
+    fun start(context: ReactApplicationContext, token: String, label: String, promise: Promise, mode: Mode = Mode.LOCAL) {
       if (current != null) { promise.reject("E_VOICE_CALL", "Voice chat is already active."); return }
       if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
         promise.reject("E_VOICE_CALL", "Microphone permission and Android 13 or later are required."); return
       }
-      val session = Session(token, label, promise, warmLocalSpeech)
+      val session = Session(token, label, promise, mode)
       if (!calls.reserve(session)) { promise.reject("E_VOICE_CALL", "Voice chat is already active."); return }
       try {
         session.taskContext = HeadlessJsTaskContext.getInstance(context)
