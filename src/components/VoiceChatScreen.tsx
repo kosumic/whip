@@ -25,7 +25,7 @@ import { VoiceTranscript } from './VoiceTranscript';
 
 const ORB_SIZE = 208;
 const COMPACT_ORB_SIZE = 88;
-const TRANSCRIPT_ORB_SIZE = 48;
+const ORB_SIZE_RATIO = COMPACT_ORB_SIZE / ORB_SIZE;
 const CONTROL_SIZE = 44;
 const SCREEN_TOP_GAP = 12;
 const SCREEN_BOTTOM_GAP = 28;
@@ -69,8 +69,6 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
   const messages = view.messages ?? [];
   const hasTranscript = messages.length > 0;
   const estimatedCost = view.provider === 'openai' && typeof view.estimatedUsd === 'number' && Number.isFinite(view.estimatedUsd) && view.estimatedUsd >= 0 ? formatUsd(view.estimatedUsd) : null;
-  const orbSize = hasTranscript ? TRANSCRIPT_ORB_SIZE : ORB_SIZE;
-  const orbSizeRatio = COMPACT_ORB_SIZE / orbSize;
   const fullOrb = useRef<ViewInstance>(null);
   const compactOrb = useRef<ViewInstance>(null);
   const presentation = useSharedValue(expanded ? 1 : 0);
@@ -95,7 +93,7 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
   const chromeMotion = useAnimatedStyle(() => ({ opacity: presentation.value }));
   const orbMotion = useAnimatedStyle(() => ({ transform: [
     { translateY: travel.value * (1 - presentation.value) },
-    { scale: orbSizeRatio + (1 - orbSizeRatio) * presentation.value },
+    { scale: ORB_SIZE_RATIO + (1 - ORB_SIZE_RATIO) * presentation.value },
   ] }));
   const minimize = (after?: () => void) => {
     if (transitioning.current) return;
@@ -173,8 +171,8 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
       <View pointerEvents="box-none" style={hasTranscript ? [styles.transcriptControls, { bottom: insets.bottom + SCREEN_BOTTOM_GAP }] : styles.controls}
         onLayout={event => setFooterHeight(event.nativeEvent.layout.height)}>
         <View pointerEvents="box-none" style={hasTranscript ? styles.transcriptOrbSpace : styles.orbSpace}>
-          <Pressable ref={fullOrb} onLayout={measureOrbs} accessibilityRole="button" accessibilityLabel={view.phase === 'speaking' ? t('voiceChat.skip') : t('voiceChat.finish')} disabled={view.phase !== 'speaking' && (view.phase !== 'listening' || view.provider === 'openai')} onPress={() => { if (view.phase === 'speaking') void conversation.current?.skip(); else conversation.current?.finish(); }} style={{ width: orbSize, height: orbSize }}>
-            <Animated.View style={orbMotion}>{expanded && <VoiceOrb view={view} size={orbSize} startedAt={startedAt} />}</Animated.View>
+          <Pressable ref={fullOrb} onLayout={measureOrbs} accessibilityRole="button" accessibilityLabel={view.phase === 'speaking' ? t('voiceChat.skip') : t('voiceChat.finish')} disabled={view.phase !== 'speaking' && (view.phase !== 'listening' || view.provider === 'openai')} onPress={() => { if (view.phase === 'speaking') void conversation.current?.skip(); else conversation.current?.finish(); }} style={{ width: ORB_SIZE, height: ORB_SIZE }}>
+            <Animated.View style={orbMotion}>{expanded && <VoiceOrb view={view} size={ORB_SIZE} startedAt={startedAt} />}</Animated.View>
           </Pressable>
         </View>
         <Animated.View pointerEvents="none" className="items-center gap-3 px-8 pb-5" style={[styles.status, chromeMotion]}>
@@ -226,7 +224,7 @@ const styles = StyleSheet.create({
   orbSpace: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: ORB_SIZE + 32, paddingTop: ORB_SIZE / 3 },
   controls: { flex: 1 },
   transcriptControls: { position: 'absolute', left: 0, right: 0 },
-  transcriptOrbSpace: { alignItems: 'center', justifyContent: 'center', height: TRANSCRIPT_ORB_SIZE + 20 },
+  transcriptOrbSpace: { alignItems: 'center', justifyContent: 'center', height: ORB_SIZE + 20 },
   dock: { position: 'absolute', left: 0, right: 0 },
   compactOrbRow: { height: COMPACT_ORB_SIZE + 64, alignItems: 'center', justifyContent: 'center' },
   compactTarget: { width: COMPACT_ORB_SIZE, height: COMPACT_ORB_SIZE, alignItems: 'center', justifyContent: 'center' },
