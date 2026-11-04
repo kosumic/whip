@@ -7,7 +7,8 @@ updates:
       default-days: 1
     open-pull-requests-limit: 8
     schedule:
-      interval: daily
+      interval: weekly
+      day: monday
     groups:
       # Beta addons declare peer ranges on core; update the family together.
       xterm:
@@ -19,10 +20,6 @@ updates:
         patterns:
           - react-native-purchases
           - react-native-purchases-ui
-      typescript-eslint:
-        applies-to: version-updates
-        patterns:
-          - '@typescript-eslint/*'
       react-native-cli:
         applies-to: version-updates
         patterns:
@@ -42,7 +39,6 @@ updates:
           - '@xterm/*'
           - react-native-purchases
           - react-native-purchases-ui
-          - '@typescript-eslint/*'
           - '@react-native-community/cli*'
           - expo
           - 'expo-*'
@@ -54,10 +50,10 @@ updates:
         update-types: ['version-update:semver-major', 'version-update:semver-minor']
       - dependency-name: 'expo-*'
         versions: ['>= 59.0.0']
-      - dependency-name: babel-preset-expo
-        versions: ['>= 59.0.0']
-      # Keep Babel upgrades manual and aligned with Expo.
-      - dependency-name: '@babel/*'
+      # Upgrade Babel, TypeScript, and ESLint tooling manually.
+      - dependency-name: '*babel*'
+      - dependency-name: '*typescript*'
+      - dependency-name: '*eslint*'
       # Expo SDK 58 owns these native/React versions. Update these bounds with
       # `npx expo install --fix` when upgrading the SDK, not independently.
       - dependency-name: '@react-native-async-storage/async-storage'
@@ -91,32 +87,30 @@ updates:
         versions: ['> 0.88.1']
       - dependency-name: '@react-native/metro-config'
         versions: ['> 0.88.1']
-      # React Native 0.88 only accepts ESLint 8 or 9.
-      - dependency-name: eslint
-        versions:
-          - '>= 10.0.0'
 
   - package-ecosystem: npm
     directory: /feedback-worker
     cooldown:
       default-days: 1
     schedule:
-      interval: daily
-    groups:
-      typescript-eslint:
-        patterns:
-          - '@typescript-eslint/*'
+      interval: weekly
+      day: monday
+    ignore:
+      - dependency-name: '*babel*'
+      - dependency-name: '*typescript*'
+      - dependency-name: '*eslint*'
 
   - package-ecosystem: npm
     directory: /notify-relay
     cooldown:
       default-days: 1
     schedule:
-      interval: daily
-    groups:
-      typescript-eslint:
-        patterns:
-          - '@typescript-eslint/*'
+      interval: weekly
+      day: monday
+    ignore:
+      - dependency-name: '*babel*'
+      - dependency-name: '*typescript*'
+      - dependency-name: '*eslint*'
 
   - package-ecosystem: gradle
     directory: /android
