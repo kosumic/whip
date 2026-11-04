@@ -34,14 +34,22 @@ fn captions_follow_playback_not_arrival_and_preserve_previous_turns() -> TestRes
     let mut pcm = [0; 100];
     output.read(&mut pcm);
     output.acknowledge(output.epoch, 50);
-    assert_eq!(output.transcript.snapshot()[0].spoken_utf16, 5);
-    output.acknowledge(output.epoch, 100);
-    // A temporarily empty buffer keeps following this reply at a frozen cursor.
-    assert!(output.transcript.snapshot()[0].active);
+    assert_eq!(output.transcript.snapshot()[0].spoken_utf16, 0);
     output.transcript.observe(
         &event("response.output_audio.done", json!({}))?,
         &HashSet::new(),
     );
+    output.transcript.observe(
+        &event(
+            "response.output_audio_transcript.done",
+            json!({"transcript":"Hello world"}),
+        )?,
+        &HashSet::new(),
+    );
+    assert_eq!(output.transcript.snapshot()[0].spoken_utf16, 5);
+    assert!(output.transcript.snapshot()[0].active);
+    output.acknowledge(output.epoch, 100);
+    assert!(!output.transcript.snapshot()[0].active);
     assert_eq!(output.transcript.snapshot()[0].spoken_utf16, 11);
     output.append("next".into(), 0, vec![0; 100])?;
     output.transcript.observe(
@@ -65,6 +73,17 @@ fn interrupted_audio_freezes_cursor_and_ignores_stale_playback() -> TestResult {
     output
         .transcript
         .observe(&delta("Hello world")?, &HashSet::new());
+    output.transcript.observe(
+        &event("response.output_audio.done", json!({}))?,
+        &HashSet::new(),
+    );
+    output.transcript.observe(
+        &event(
+            "response.output_audio_transcript.done",
+            json!({"transcript":"Hello world"}),
+        )?,
+        &HashSet::new(),
+    );
     output.read(&mut [0; 100]);
     let old_epoch = output.epoch;
     output.acknowledge(old_epoch, 50);
@@ -76,6 +95,86 @@ fn interrupted_audio_freezes_cursor_and_ignores_stale_playback() -> TestResult {
     let ignored = HashSet::from(["response".into()]);
     output.transcript.observe(&delta(" ignored")?, &ignored);
     assert_eq!(output.transcript.snapshot()[0].text, "Hello world");
+    Ok(())
+}
+
+#[test]
+fn early_sentences_are_not_timed_against_the_first_small_audio_packet() -> TestResult {
+    let text = "First sentence arrives early. Second sentence is still queued. Third sentence has not been spoken.";
+    let mut output = super::super::Output::default();
+    let ignored = HashSet::new();
+    output.transcript.observe(&delta(text)?, &ignored);
+    output.append("reply".into(), 0, vec![0; super::super::RATE / 5])?;
+    output.read(&mut vec![0; super::super::RATE / 10]);
+    output.acknowledge(output.epoch, super::super::RATE / 10);
+    // Only 100ms was heard. The old estimator marked all three sentences spoken.
+    assert_eq!(output.transcript.snapshot()[0].spoken_utf16, 0);
+    assert!(output.transcript.snapshot()[0].active);
+    output.append(
+        "reply".into(),
+        0,
+        vec![0; super::super::RATE * 16 - super::super::RATE / 5],
+    )?;
+    output
+        .transcript
+        .observe(&event("response.output_audio.done", json!({}))?, &ignored);
+    assert_eq!(output.transcript.snapshot()[0].spoken_utf16, 0);
+    output.transcript.observe(
+        &event(
+            "response.output_audio_transcript.done",
+            json!({"transcript":text}),
+        )?,
+        &ignored,
+    );
+    assert!(output.transcript.snapshot()[0].spoken_utf16 <= 2);
+    assert!(output.transcript.snapshot()[0].active);
+    Ok(())
+}
+
+#[test]
+fn caption_timing_is_independent_of_text_audio_packet_interleaving() -> TestResult {
+    let ignored = HashSet::new();
+    let mut early_text = Transcript::default();
+    let mut interleaved = Transcript::default();
+    let text = "Same words. Same audio duration. Same playback position.";
+    early_text.observe(&delta(text)?, &ignored);
+    early_text.audio("reply", 0, super::super::RATE / 10);
+    early_text.audio("reply", 0, super::super::RATE * 4);
+    interleaved.audio("reply", 0, super::super::RATE);
+    interleaved.observe(&delta("Same words. ")?, &ignored);
+    interleaved.audio("reply", 0, super::super::RATE * 3);
+    interleaved.observe(
+        &delta("Same audio duration. Same playback position.")?,
+        &ignored,
+    );
+    interleaved.audio("reply", 0, super::super::RATE * 4);
+    for transcript in [&mut early_text, &mut interleaved] {
+        transcript.observe(
+            &event(
+                "response.output_audio_transcript.done",
+                json!({"transcript":text}),
+            )?,
+            &ignored,
+        );
+        transcript.played("reply", 0, super::super::RATE / 4);
+        assert_eq!(transcript.snapshot()[0].spoken_utf16, 0);
+        transcript.observe(&event("response.output_audio.done", json!({}))?, &ignored);
+    }
+    for played in [
+        super::super::RATE / 2,
+        super::super::RATE,
+        super::super::RATE * 2,
+        super::super::RATE * 4,
+    ] {
+        early_text.played("reply", 0, played);
+        interleaved.played("reply", 0, played);
+        assert_eq!(
+            early_text.snapshot()[0].spoken_utf16,
+            interleaved.snapshot()[0].spoken_utf16
+        );
+    }
+    assert_eq!(early_text.snapshot()[0].spoken_utf16, text.len());
+    assert!(!early_text.snapshot()[0].active);
     Ok(())
 }
 

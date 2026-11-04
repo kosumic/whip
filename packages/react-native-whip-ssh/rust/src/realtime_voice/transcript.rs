@@ -1,5 +1,5 @@
-//! Call-owned captions. Timing is an estimate within streamed audio/text chunks,
-//! advanced only by acknowledged device playback, never wall time or receipt.
+//! Call-owned captions. Word timing is estimated over a completed audio item,
+//! advanced only by acknowledged device playback, never packet arrival order.
 use std::collections::{HashSet, VecDeque};
 
 use oai_rt_rs::ServerEvent;
@@ -7,7 +7,6 @@ use serde::Serialize;
 
 const MAX_MESSAGES: usize = 64;
 const MAX_BYTES: usize = 128 * 1024;
-const MAX_SPANS: usize = 2048;
 const USER: &str = "user";
 const ASSISTANT: &str = "assistant";
 
@@ -21,61 +20,31 @@ pub(super) struct Message {
     pub active: bool,
 }
 
-struct Span {
-    start: usize,
-    end: usize,
-    text_start: usize,
-    text_end: usize,
-}
-
 struct Turn {
     message: Message,
     samples: usize,
     played: usize,
-    spans: Vec<Span>,
-    done: bool,
+    audio_done: bool,
+    text_done: bool,
     stopped: bool,
 }
 
 impl Turn {
-    fn anchor(&mut self) {
-        let text_end = self.message.text.encode_utf16().count();
-        let (start, text_start) = self
-            .spans
-            .last()
-            .map_or((0, 0), |span| (span.end, span.text_end));
-        if self.samples > start && text_end > text_start && self.spans.len() < MAX_SPANS {
-            self.spans.push(Span {
-                start,
-                end: self.samples,
-                text_start,
-                text_end,
-            });
-        }
-        self.advance(self.played);
-    }
-
     fn advance(&mut self, played: usize) {
         if self.stopped {
             return;
         }
         self.played = self.played.max(played.min(self.samples));
-        let position = self.spans.iter().fold(0, |position, span| {
-            if self.played >= span.end {
-                span.text_end
-            } else if self.played > span.start {
-                span.text_start
-                    + (span.text_end - span.text_start) * (self.played - span.start)
-                        / (span.end - span.start)
-            } else {
-                position
-            }
-        });
-        self.message.spoken_utf16 = self.message.spoken_utf16.max(position);
-        self.message.active = self.samples > 0 && (!self.done || self.samples > self.played);
-        if self.done && self.samples > 0 && self.samples == self.played {
-            self.message.spoken_utf16 = self.message.text.encode_utf16().count();
+        // Transcript and audio packets are independent streams, not paired
+        // word boundaries. A sentence can precede its first 100ms of audio.
+        // Interpolating against that partial duration races to the sentence's
+        // end and a monotonic cursor cannot recover. Keep streaming text dim
+        // until both final markers establish this item's actual denominator.
+        if self.audio_done && self.text_done && self.samples > 0 {
+            self.message.spoken_utf16 =
+                self.message.text.encode_utf16().count() * self.played / self.samples;
         }
+        self.message.active = self.samples > 0 && (!self.audio_done || self.samples > self.played);
     }
 }
 
@@ -110,8 +79,8 @@ impl Transcript {
             },
             samples: 0,
             played: 0,
-            spans: Vec::new(),
-            done: false,
+            audio_done: false,
+            text_done: false,
             stopped: false,
         });
         self.turns.back_mut()
@@ -167,10 +136,10 @@ impl Transcript {
             } if !ignored.contains(response_id) => {
                 if let Some(turn) = self.turn(assistant_id(item_id, *content_index), ASSISTANT)
                     && !turn.stopped
-                    && !turn.done
+                    && !turn.text_done
                 {
                     super::bounded_text(&mut turn.message.text, delta);
-                    turn.anchor();
+                    turn.advance(turn.played);
                 }
             }
             ServerEvent::ResponseOutputAudioTranscriptDone {
@@ -184,7 +153,8 @@ impl Transcript {
                     && !turn.stopped
                 {
                     turn.message.text = super::limit_text(transcript.clone());
-                    turn.anchor();
+                    turn.text_done = true;
+                    turn.advance(turn.played);
                 }
             }
             ServerEvent::ResponseOutputAudioDone {
@@ -194,8 +164,8 @@ impl Transcript {
                 ..
             } if !ignored.contains(response_id) => {
                 if let Some(turn) = self.turn(assistant_id(item_id, *content_index), ASSISTANT) {
-                    turn.done = true;
-                    turn.anchor();
+                    turn.audio_done = true;
+                    turn.advance(turn.played);
                 }
             }
             _ => {}
@@ -208,7 +178,7 @@ impl Transcript {
             && !turn.stopped
         {
             turn.samples = samples;
-            turn.anchor();
+            turn.advance(turn.played);
         }
     }
 

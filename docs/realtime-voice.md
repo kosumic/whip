@@ -29,11 +29,17 @@ belongs to the call and survives minimizing or remounting its presentation.
 It is separate from the coding-agent transcript and is not persisted to disk.
 
 The public [Realtime transcript events](https://developers.openai.com/api/reference/resources/realtime/server-events)
-have no word timestamps. Whip estimates word timing within streamed text/audio
-chunks using acknowledged device playback, excluding silence used to clock AEC.
-Buffering does not advance the highlight; interrupting or skipping freezes it.
-These are approximate word boundaries, not forced alignment. Late input captions
-update the reserved user turn rather than appearing after the assistant reply.
+have no word timestamps, and text/audio packets are not paired timing cues.
+Whip streams the text immediately but keeps it dim until the final transcript
+and audio markers establish the item's complete audio duration. It then estimates
+word timing over that complete item using acknowledged device playback,
+excluding silence used to clock AEC. This can delay the initial highlight while
+generation finishes; it prevents early sentences being squeezed into the first
+small audio packet. Buffering does not advance the highlight; interrupting or
+skipping freezes it. These are approximate word boundaries, not forced alignment.
+Different packet sizes/interleavings do not change the completed-item estimate.
+Late input captions update the reserved user turn rather than appearing after
+the assistant reply.
 Local calls also retain captions, with spoken text acknowledged at TTS chunk
 boundaries rather than estimated word timing. Both paths bound retained text.
 
