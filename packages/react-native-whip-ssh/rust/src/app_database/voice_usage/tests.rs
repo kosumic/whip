@@ -58,6 +58,7 @@ fn query() -> Query {
         month_ms: 50,
         provider: None,
         mode: None,
+        scope: None,
     }
 }
 fn open(path: &std::path::Path) -> Store {
@@ -243,6 +244,36 @@ fn periods_use_inclusive_call_start_boundaries_and_filters_also_apply_to_totals(
         })
         .unwrap();
     assert_eq!(summary.totals["lifetime"].calls, 0);
+    let VoiceUsageEvent::Started { mut call } = started("global", 95, false) else {
+        panic!("Expected start");
+    };
+    call.scope = VoiceUsageScope::Global;
+    ledger.apply(VoiceUsageEvent::Started { call }).unwrap();
+    ledger
+        .apply(usage("global", "response", 1, Some(2.0), true))
+        .unwrap();
+    let global = ledger
+        .summary(&Query {
+            scope: Some(VoiceUsageScope::Global),
+            ..query()
+        })
+        .unwrap();
+    assert_eq!(global.calls.len(), 1);
+    assert_eq!(global.calls[0].identity.session_id, "global");
+    assert_eq!(global.totals["lifetime"].calls, 1);
+    assert_eq!(global.totals["lifetime"].known_estimated_usd, 2.0);
+    let agents = ledger
+        .summary(&Query {
+            scope: Some(VoiceUsageScope::Agent),
+            ..query()
+        })
+        .unwrap();
+    assert!(
+        !agents
+            .calls
+            .iter()
+            .any(|call| call.identity.session_id == "global")
+    );
 }
 #[test]
 fn rejects_sensitive_fields_invalid_quantities_and_unversioned_estimates() {

@@ -6,6 +6,7 @@ mod types;
 use crate::HostProfileRecord;
 
 pub(super) use operation::HostAction;
+pub(super) use operation::connection_value;
 pub use types::*;
 
 use std::collections::HashMap;
@@ -23,6 +24,59 @@ static CURRENT: OnceLock<Mutex<Weak<HostActionCoordinator>>> = OnceLock::new();
 
 fn registry() -> &'static Mutex<Weak<HostActionCoordinator>> {
     CURRENT.get_or_init(Mutex::default)
+}
+
+/// Shared, secret-free application context. Voice never borrows an MCP launch.
+pub(super) fn voice_context() -> Result<HostActionContext, BrowserError> {
+    let coordinator = registry().lock().upgrade().ok_or_else(|| {
+        BrowserError::new(
+            ErrorCode::DeviceUnavailable,
+            "Whip host actions are unavailable",
+        )
+    })?;
+    let state = coordinator.state.lock();
+    if state.closed || !state.context.ready || state.context.locked {
+        return Err(BrowserError::new(
+            ErrorCode::PermissionDenied,
+            "Unlock Whip and wait for saved hosts to load",
+        ));
+    }
+    Ok(state.context.clone())
+}
+
+pub(super) struct VoiceAuthority {
+    coordinator: Weak<HostActionCoordinator>,
+    epoch: u64,
+}
+impl VoiceAuthority {
+    pub(super) fn acquire() -> Result<Self, BrowserError> {
+        voice_context()?;
+        let coordinator = registry()
+            .lock()
+            .upgrade()
+            .ok_or_else(|| BrowserError::new(ErrorCode::Cancelled, "App controls detached"))?;
+        let epoch = coordinator.state.lock().epoch;
+        Ok(Self {
+            coordinator: Arc::downgrade(&coordinator),
+            epoch,
+        })
+    }
+    pub(super) fn check(&self) -> Result<(), BrowserError> {
+        let coordinator = self
+            .coordinator
+            .upgrade()
+            .ok_or_else(|| BrowserError::new(ErrorCode::Cancelled, "App controls detached"))?;
+        let state = coordinator.state.lock();
+        if state.closed || state.epoch != self.epoch || state.context.locked || !state.context.ready
+        {
+            return Err(BrowserError::new(
+                ErrorCode::PermissionDenied,
+                "Global call authorization revoked",
+            ));
+        }
+        drop(state);
+        Ok(())
+    }
 }
 
 struct State {

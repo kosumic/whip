@@ -1,6 +1,6 @@
 import { AppState, DeviceEventEmitter, NativeEventEmitter, Platform } from 'react-native';
 import { PERMISSIONS, RESULTS, request } from 'react-native-permissions';
-import type { VoiceChatTarget, VoiceConversationView } from './voiceConversation';
+import type { RealtimeVoiceChatTarget, VoiceConversationView } from './voiceConversation';
 import type { VoiceSessionAdapter } from './voiceSessionManager';
 import type { VoiceConversationSettings } from '../lib/voiceConversationSettings';
 import { DEFAULT_REALTIME_VAD, parseRealtimeVad } from '../lib/voiceConversationSettings';
@@ -41,7 +41,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
   private cleanups: (() => void)[] = [];
   private view: VoiceConversationView = { phase: 'starting', muted: false, smartTurn: false, speaker: false, text: '', level: 0, progress: 0, error: null, transcript: null, provider: 'openai', inputTokens: 0, outputTokens: 0, estimatedUsd: null };
 
-  constructor(private readonly target: VoiceChatTarget, private readonly settings: Readonly<VoiceConversationSettings>, private readonly changed: (view: VoiceConversationView) => void, private readonly requestedAt = performance.now()) {}
+  constructor(private readonly target: RealtimeVoiceChatTarget, private readonly settings: Readonly<VoiceConversationSettings>, private readonly changed: (view: VoiceConversationView) => void, private readonly requestedAt = performance.now()) {}
 
   async start(): Promise<void> {
     try {
@@ -55,7 +55,8 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
       if (!this.playback.startRealtimeVoice || !this.playback.realtimeVoiceView || !this.playback.stopRealtimeVoice) throw new Error('Install an updated Whip build for Realtime calls.');
       const binding = this.target.bindingToken;
       const target = binding ? agentTranscriptService.realtimeTarget(binding) : undefined;
-      if (!this.target.terminal && target?.paneId !== this.target.paneId) throw new Error('Open the connected agent chat before starting Realtime.');
+      const global = 'global' in this.target && this.target.global;
+      if (!global && !this.target.terminal && target?.paneId !== this.target.paneId) throw new Error('Open the connected agent chat before starting Realtime.');
       requireForeground();
       const permission = Platform.OS === 'ios' ? PERMISSIONS.IOS.MICROPHONE : PERMISSIONS.ANDROID.RECORD_AUDIO;
       if (await request(permission) !== RESULTS.GRANTED) throw new Error('Allow microphone access in Settings to use Realtime.');
@@ -64,7 +65,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
       await suspendChatSpeechForInput();
       if (this.closed) return;
       setSpeechInputActive(true);
-      this.cleanups.push(suppressAgentAlertsForTab(this.token, this.target.hostId, this.target.tabId));
+      if (this.target.hostId && this.target.tabId) this.cleanups.push(suppressAgentAlertsForTab(this.token, this.target.hostId, this.target.tabId));
       if (Platform.OS === 'android') this.cleanups.push(retainVoiceCallBackground(this.token));
       const emitter: Pick<NativeEventEmitter<{ WhipVoiceCall: [CallEvent] }>, 'addListener'> = Platform.OS === 'ios' ? new NativeEventEmitter(this.playback) : DeviceEventEmitter;
       const call = emitter.addListener('WhipVoiceCall', event => {
@@ -97,7 +98,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
       if (this.closed) { await this.playback.endVoiceCall(this.token); return; }
       this.callActivated = true;
       requireForeground();
-      const config = JSON.stringify({ clientElapsedMs: Math.max(0, Math.round(performance.now() - this.requestedAt)), target, terminalTarget: this.target.terminal, model: this.settings.realtimeModel, voice: this.settings.realtimeVoice, vad: parseRealtimeVad(this.settings.realtimeVad ?? DEFAULT_REALTIME_VAD) });
+      const config = JSON.stringify({ clientElapsedMs: Math.max(0, Math.round(performance.now() - this.requestedAt)), ...(global ? { global: true } : { target, terminalTarget: this.target.terminal }), model: this.settings.realtimeModel, voice: this.settings.realtimeVoice, vad: parseRealtimeVad(this.settings.realtimeVad ?? DEFAULT_REALTIME_VAD) });
       this.nativeMediaAttempted = true;
       this.startingMedia = this.playback.startRealtimeVoice(this.token, config);
       await this.startingMedia;

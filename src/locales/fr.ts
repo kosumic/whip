@@ -1,6 +1,17 @@
 import type { en } from './en';
 
 export const fr = {
+  "globalCall.title": "Appel global",
+  "globalCall.open": "Démarrer ou reprendre l’appel global",
+  "globalCall.start": "Démarrer un appel global",
+  "globalCall.permissions": "Parlez à Whip en passant d’un hôte ou onglet à l’autre. Cet appel peut lire l’état des hôtes enregistrés et des agents, naviguer dans Whip et lire les informations de base de l’appareil. Chaque requête à un agent explicitement choisi nécessite votre confirmation. La modification des hôtes, les commandes shell, le contrôle du navigateur, le presse-papiers et la localisation sont indisponibles.",
+  "globalCall.cloudRequired": "Choisissez OpenAI API et Realtime pour un appel global. Les appels locaux nécessitent un agent de programmation.",
+  "globalCall.confirmTitle": "Envoyer cette requête à l’agent ?",
+  "globalCall.confirmTarget": "Hôte : {{host}} · Volet de l’agent : {{pane}}",
+  "globalCall.confirmSend": "Envoyer à l’agent",
+  "globalCall.message": "Message pour l’appel global",
+  "globalCall.send": "Envoyer à l’appel",
+  "voiceUsage.scope": "Portée de l’appel",
   "voiceUsage.tts": "Synthèse vocale",
   "voiceUsage.speech": "Synthèse / aperçu",
   "voiceUsage.preview": "Aperçu vocal",

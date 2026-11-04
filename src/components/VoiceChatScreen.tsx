@@ -1,4 +1,4 @@
-import { useContext, useEffect, useImperativeHandle, useRef, useState, type ComponentProps, type Ref } from 'react';
+import { useContext, useEffect, useImperativeHandle, useRef, useState, type ComponentProps, type ReactNode, type Ref } from 'react';
 import { ActivityIndicator, Modal, Pressable, StyleSheet, View, type ViewInstance } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -11,7 +11,7 @@ import Volume2 from 'lucide-react-native/icons/volume-2';
 import Plus from 'lucide-react-native/icons/plus';
 import AudioLines from 'lucide-react-native/icons/audio-lines';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
-import type { VoiceChatTarget, VoiceConversationView } from '../services/voiceConversation';
+import type { RealtimeVoiceChatTarget, VoiceConversationView } from '../services/voiceConversation';
 import { voiceSessionManager, type VoiceSession } from '../services/voiceSessionManager';
 import { VoiceConversationSettingsContext } from '../lib/voiceConversationSettingsContext';
 import { Button } from './ui/button';
@@ -40,8 +40,9 @@ const STATUS = {
 } as const;
 
 interface VoiceChatScreenProps {
+  children?: ReactNode;
   ref?: Ref<VoiceChatHandle>;
-  target: VoiceChatTarget;
+  target: RealtimeVoiceChatTarget;
   send: (text: string) => boolean;
   visible: boolean;
   expanded: boolean;
@@ -58,7 +59,7 @@ interface VoiceChatScreenProps {
 export interface VoiceChatHandle { submitted: (text: string) => void }
 
 /** Presents the app-wide call without owning its lifetime. */
-export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyle, compactComposer = true, onComposerHeightChange, onMinimize, onExpand, onClose, onCompose, onAttach }: VoiceChatScreenProps) {
+export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyle, compactComposer = true, onComposerHeightChange, onMinimize, onExpand, onClose, onCompose, onAttach, children }: VoiceChatScreenProps) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
@@ -115,17 +116,19 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
   const callbacks = useRef({ send, onClose, vadSensitivity, settings });
   callbacks.current = { send, onClose, vadSensitivity, settings };
   const { agent, bindingToken, hostId, paneId, tabId, terminal } = target;
+  const isGlobal = 'global' in target && target.global;
   const latestTarget = useRef(target);
   latestTarget.current = target;
   useEffect(() => {
     const currentTarget = latestTarget.current;
-    const session = voiceSessionManager.start(currentTarget.terminal ? { kind: 'Terminal', target: currentTarget } : { kind: 'Agent', target: currentTarget }, callbacks.current.send, callbacks.current.settings);
+    const scope = 'global' in currentTarget ? { kind: 'Global' as const } : currentTarget.terminal ? { kind: 'Terminal' as const, target: currentTarget } : { kind: 'Agent' as const, target: currentTarget };
+    const session = voiceSessionManager.start(scope, callbacks.current.send, callbacks.current.settings);
     conversation.current = session;
     setStartedAt(session.startedAt);
     session.setVadSensitivity(callbacks.current.vadSensitivity);
     const unsubscribe = session.subscribe(setView);
     return () => { unsubscribe(); conversation.current = null; };
-  }, [agent, hostId, paneId, tabId, terminal?.runtimeId, terminal?.runtimeIncarnation, terminal?.connectionGeneration, terminal?.terminalId, terminal?.paneId]);
+  }, [isGlobal, agent, hostId, paneId, tabId, terminal?.runtimeId, terminal?.runtimeIncarnation, terminal?.connectionGeneration, terminal?.terminalId, terminal?.paneId]);
   useEffect(() => { conversation.current?.setTranscriptBinding(bindingToken); }, [bindingToken]);
   useEffect(() => { conversation.current?.setVadSensitivity(vadSensitivity); }, [vadSensitivity]);
   useEffect(() => { if (view.phase === 'closed') callbacks.current.onClose(); }, [view.phase]);
@@ -134,14 +137,14 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
     callbacks.current.onClose();
   };
   const interactive = ['listening', 'muted', 'waiting', 'speaking'].includes(view.phase);
-  const status = t(terminal && view.phase === 'waiting' ? 'voiceChat.terminalWaiting' : STATUS[view.phase]);
-  const compose = () => minimize(onCompose);
-  const composer = <VoiceComposer label={t('voiceChat.compose', { agent: target.label })}
+  const status = t((terminal || isGlobal) && view.phase === 'waiting' ? 'voiceChat.terminalWaiting' : STATUS[view.phase]);
+  const compose = () => { if (isGlobal) onCompose?.(); else minimize(onCompose); };
+  const composer = <VoiceComposer label={isGlobal ? t('globalCall.message') : t('voiceChat.compose', { agent: target.label })}
     muted={view.muted} interactive={interactive} onCompose={compose}
     onAttach={onAttach ? () => minimize(onAttach) : undefined}
     onToggleMuted={() => conversation.current?.toggleMuted()} onClose={close} />;
   return <>
-    {visible && <GlassPortal name={`voice-chat-${hostId}-${paneId}`}>
+    {visible && <GlassPortal name={isGlobal ? 'global-voice-chat' : `voice-chat-${hostId}-${paneId}`}>
       <Animated.View pointerEvents={expanded ? 'none' : 'box-none'} accessibilityElementsHidden={expanded} importantForAccessibility={expanded ? 'no-hide-descendants' : 'auto'}
         style={[styles.dock, dockStyle, { opacity: expanded ? 0 : 1 }]}>
         <View pointerEvents="box-none" style={styles.compactOrbRow}>
@@ -164,7 +167,7 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
       <Animated.View pointerEvents="box-none" className="flex-row items-center justify-between px-6" style={chromeMotion}
         onLayout={event => setHeaderHeight(event.nativeEvent.layout.height)}>
         <Button accessibilityLabel={t('voiceChat.minimize')} variant="ghost" className="size-11 rounded-full p-0" style={styles.control} onPress={() => minimize()}><ChevronDown size={20} color={VOICE_COLORS.text} /></Button>
-        <Text pointerEvents="none" style={styles.agentLabel}>{terminal ? t('voiceChat.terminalScope', { terminal: target.label }) : target.label}</Text>
+        <Text pointerEvents="none" style={styles.agentLabel}>{isGlobal ? t('globalCall.title') : terminal ? t('voiceChat.terminalScope', { terminal: target.label }) : target.label}</Text>
         <View className="flex-row gap-2">
           <Button accessibilityLabel={t('voiceChat.transcript')} variant="ghost" className="size-11 rounded-full p-0" style={styles.control} onPress={() => minimize()}><MessageSquare size={18} color={VOICE_COLORS.text} /></Button>
           <Button accessibilityLabel={t('voiceChat.speaker')} accessibilityState={{ selected: view.speaker }} variant="ghost" className="size-11 rounded-full p-0" style={styles.control} disabled={!interactive} onPress={() => conversation.current?.toggleSpeaker()}><Volume2 size={19} color={view.speaker ? VOICE_COLORS.accent : VOICE_COLORS.text} /></Button>
@@ -187,6 +190,7 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
           {expanded && composer}
         </Animated.View>
       </View>
+      {children}
     </View>
     </Modal>
   </>;

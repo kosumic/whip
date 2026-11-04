@@ -50,7 +50,7 @@ export interface VoiceUsageCall extends VoiceUsageIdentity {
 export type UsagePeriod = 'today' | 'week' | 'month' | 'lifetime';
 export interface VoiceUsageTotal { known_estimated_usd: number; unknown_cost_calls: number; incomplete_calls: number; calls: number }
 export interface VoiceUsageSummary { calls: VoiceUsageCall[]; totals: Record<UsagePeriod, VoiceUsageTotal> }
-export interface VoiceUsageFilter { provider?: UsageProvider; mode?: UsageMode }
+export interface VoiceUsageFilter { provider?: UsageProvider; mode?: UsageMode; scope?: UsageScope }
 
 export function voiceUsageQuery(filter: VoiceUsageFilter, now = new Date()) {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());

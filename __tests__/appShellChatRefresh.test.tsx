@@ -69,6 +69,7 @@ jest.mock('../src/components/HostsScreen', () => ({
   HostsScreen: 'HostsScreen',
 }));
 jest.mock('../src/components/MoreScreen', () => ({ MoreScreen: 'MoreScreen' }));
+jest.mock('../src/components/GlobalVoiceCall', () => ({ GlobalVoiceCall: 'GlobalVoiceCall' }));
 jest.mock('../src/components/ScreenUpdates', () => ({
   ScreenUpdates: 'ScreenUpdates',
 }));

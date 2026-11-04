@@ -1,4 +1,4 @@
-import type { AgentVoiceChatTarget, TerminalVoiceChatTarget, VoiceChatTarget, VoiceConversationView } from './voiceConversation';
+import type { AgentVoiceChatTarget, TerminalVoiceChatTarget, VoiceChatTarget, RealtimeVoiceChatTarget, VoiceConversationView } from './voiceConversation';
 import { DEFAULT_VOICE_CONVERSATION_SETTINGS, parseVoiceConversationSettings, type VoiceConversationSettings, type VoiceMode } from '../lib/voiceConversationSettings';
 import { voiceUsageLedger } from './voiceUsage';
 import { settledPromise } from '../lib/promises';
@@ -18,7 +18,7 @@ export interface VoiceSessionAdapter {
 type Send = (text: string) => boolean;
 type Factory = (target: AgentVoiceChatTarget, send: Send, changed: (view: VoiceConversationView) => void) => Promise<VoiceSessionAdapter>;
 export interface VoiceUsageObserver { started(session: VoiceSession): void; ended(session: VoiceSession): void }
-type RealtimeFactory = (target: VoiceChatTarget, settings: Readonly<VoiceConversationSettings>, changed: (view: VoiceConversationView) => void, requestedAt: number) => Promise<VoiceSessionAdapter>;
+type RealtimeFactory = (target: RealtimeVoiceChatTarget, settings: Readonly<VoiceConversationSettings>, changed: (view: VoiceConversationView) => void, requestedAt: number) => Promise<VoiceSessionAdapter>;
 const initialView = (): VoiceConversationView => ({ phase: 'starting', muted: false, smartTurn: false, speaker: false, text: '', level: 0, progress: 0, error: null, transcript: null });
 
 export function sameVoiceChatTarget(left: VoiceChatTarget, right: VoiceChatTarget): boolean {
@@ -104,7 +104,7 @@ export class VoiceSessionManager {
     this.transition = this.transition.then(async () => {
       if (previous) await this.end(previous);
       if (session.ended || this.current !== session) return;
-      if (this.locked || scope.kind === 'Global' || (scope.kind === 'Terminal' && session.mode !== 'Realtime') || session.mode === 'Live' || (session.mode === 'Realtime' && !this.createRealtime)) {
+      if (this.locked || (scope.kind === 'Global' && session.mode !== 'Realtime') || (scope.kind === 'Terminal' && session.mode !== 'Realtime') || session.mode === 'Live' || (session.mode === 'Realtime' && !this.createRealtime)) {
         session.ended = true;
         session.publish({ ...initialView(), phase: 'error', error: this.locked ? 'Unlock Whip to start a call.' : 'This conversation mode is not available yet.' });
         return;
@@ -115,8 +115,8 @@ export class VoiceSessionManager {
         session.publish(view);
         if (view.phase === 'closed' || view.phase === 'error') void this.hangup(session, view.phase === 'error');
       };
-      const adapter = scope.kind === 'Terminal' || session.mode === 'Realtime'
-        ? await this.createRealtime!(scope.target, session.settings, publish, session.startedMonotonic)
+      const adapter = scope.kind === 'Global' || scope.kind === 'Terminal' || session.mode === 'Realtime'
+        ? await this.createRealtime!(scope.kind === 'Global' ? { global: true, label: 'Global call' } : scope.target, session.settings, publish, session.startedMonotonic)
         : await this.createLocal(scope.target, text => this.current === session && !session.ended && !this.locked && Boolean(session.send?.(text)), publish);
       session.adapter = adapter;
       if (session.ended || this.current !== session) { await adapter.close(); return; }

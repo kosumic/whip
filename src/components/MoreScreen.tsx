@@ -18,6 +18,7 @@ import { Text } from './ui/text';
 import type { WhipEntitlementsController } from '../billing/useWhipEntitlements';
 import { MembershipSection } from './MembershipSection';
 import { RancherPurchaseSheet } from './RancherPurchaseSheet';
+import { GlobalCallButton } from './GlobalCallButton';
 
 type Props = Omit<
   SettingsSectionProps,
@@ -44,10 +45,11 @@ export function MoreScreen(props: Props) {
   return (
     <SettingsDetailsProvider>
       <ScrollView className="flex-1">
-        <GlassSurface className="border-b border-white/30 px-5 py-5 dark:border-white/10">
+        <GlassSurface className="flex-row items-center justify-between border-b border-white/30 px-5 py-5 dark:border-white/10">
           <Text className="text-[22px] font-semibold leading-7">
             {t('nav.more')}
           </Text>
+          <GlobalCallButton />
         </GlassSurface>
         {props.membershipEnabled ? (
           <MembershipSection

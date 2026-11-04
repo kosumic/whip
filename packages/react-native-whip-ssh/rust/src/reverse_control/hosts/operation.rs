@@ -301,7 +301,7 @@ fn connected_to(connection: &HostActionConnection, host_id: &str) -> bool {
         )
 }
 
-fn connection_value(connection: &HostActionConnection) -> Value {
+pub(in crate::reverse_control) fn connection_value(connection: &HostActionConnection) -> Value {
     let status = match connection.status {
         AppConnectionStatus::Connecting => "connecting",
         AppConnectionStatus::Connected => "connected",

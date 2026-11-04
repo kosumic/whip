@@ -2,6 +2,54 @@ use super::*;
 use crate::host_runtime::realtime_agent::Delegation;
 
 #[test]
+fn global_voice_configuration_has_an_explicit_exclusive_scope_and_no_remote_authority()
+-> Result<(), Box<dyn std::error::Error>> {
+    let mut value = json!({"global":true,"voice":"cedar","vad":{"type":"server_vad","threshold":0.5,"prefix_padding_ms":300,"silence_duration_ms":500}});
+    let config: Config = serde_json::from_value(value.clone())?;
+    let session = serde_json::to_value(config.session_update()?)?;
+    let names: Vec<_> = session["session"]["tools"]
+        .as_array()
+        .ok_or("No tools")?
+        .iter()
+        .filter_map(|tool| tool["name"].as_str())
+        .collect();
+    assert!(names.contains(&"hosts_list"));
+    assert!(names.contains(&"app_navigate"));
+    assert!(names.contains(&"herdr_delegate"));
+    assert!(!names.contains(&"background_agent"));
+    assert!(!names.contains(&"terminal_exec"));
+    assert!(!names.contains(&"device_shizuku_exec"));
+    assert!(!names.contains(&"browser_eval"));
+    value["target"] = json!({"runtimeId":"host","terminalId":"terminal","paneId":"pane","bindingToken":"binding"});
+    assert!(
+        serde_json::from_value::<Config>(value.clone())?
+            .session_update()
+            .is_err()
+    );
+    value["global"] = json!(false);
+    let agent =
+        serde_json::to_value(serde_json::from_value::<Config>(value.clone())?.session_update()?)?;
+    assert!(
+        !agent["session"]["tools"]
+            .as_array()
+            .ok_or("No agent tools")?
+            .iter()
+            .any(|tool| tool["name"] == "hosts_list")
+    );
+    value["global"] = json!(true);
+    value["target"] = Value::Null;
+    value["preview"] = json!(true);
+    assert!(
+        serde_json::from_value::<Config>(value)?
+            .session_update()
+            .is_err()
+    );
+    let typed = serde_json::to_value(global_submitted_message("Show saved hosts")?)?;
+    assert_eq!(typed["item"]["content"][0]["text"], "Show saved hosts");
+    Ok(())
+}
+
+#[test]
 fn acknowledgement_can_speak_during_a_pending_tool_and_results_take_priority()
 -> Result<(), Box<dyn std::error::Error>> {
     let now = Instant::now();

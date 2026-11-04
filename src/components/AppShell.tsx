@@ -48,6 +48,8 @@ import { GlassProvider } from './GlassSurface';
 import { VoiceVadSensitivityContext } from '../lib/voiceVadSensitivity';
 import { VoiceConversationSettingsContext } from '../lib/voiceConversationSettingsContext';
 import { voiceSessionManager } from '../services/voiceSessionManager';
+import { GlobalCallContext } from '../lib/globalCallContext';
+import { GlobalVoiceCall, type GlobalVoiceCallHandle } from './GlobalVoiceCall';
 import { HerdScreen } from './HerdScreen';
 import { HostsScreen } from './HostsScreen';
 import { LiveSessionView } from './LiveSessionView';
@@ -83,6 +85,7 @@ export function AppShell({
   const { t } = useTranslation();
   const { isDark } = useTheme();
   const navigationBlurTargetRef = useRef<ViewInstance | null>(null);
+  const globalCallRef = useRef<GlobalVoiceCallHandle>(null);
   const storedPreferences = preferences.value;
   const capabilities = entitlements.capabilities;
   const effectivePreferences = useMemo(
@@ -273,6 +276,7 @@ export function AppShell({
 
   return (
     <VoiceConversationSettingsContext value={{ settings: storedPreferences.voiceConversation, onChange: value => preferences.setPreference('voiceConversation', value) }}>
+    <GlobalCallContext value={() => globalCallRef.current?.open()}>
     <VoiceVadSensitivityContext value={storedPreferences.vadSensitivity}>
       <StableStatusBar
         hidden={fullscreenVisible}
@@ -711,10 +715,12 @@ export function AppShell({
               remoteFiles={remoteFiles}
               security={security}
             />
+            <GlobalVoiceCall ref={globalCallRef} navigation={navigation} sessions={sessions} locked={security.locked} visible={!overlaysVisible} />
           </View>
         </GlassProvider>
       </SafeAreaView>
     </VoiceVadSensitivityContext>
+    </GlobalCallContext>
     </VoiceConversationSettingsContext>
   );
 }

@@ -81,3 +81,11 @@ test('refreshes native-only usage while the panel is open and stops after it is 
     expect(voiceUsageLedger.summary).toHaveBeenCalledTimes(before + 1);
   } finally { jest.useRealTimers(); }
 });
+
+test('global call costs can be filtered separately from agent and speech usage', async () => {
+  await act(async () => press('voiceUsage.title'));
+  await act(async () => press('voiceUsage.global'));
+  expect(voiceUsageLedger.summary).toHaveBeenLastCalledWith({ provider: undefined, mode: undefined, scope: 'global' });
+  await act(async () => press('voiceUsage.agent'));
+  expect(voiceUsageLedger.summary).toHaveBeenLastCalledWith({ provider: undefined, mode: undefined, scope: 'agent' });
+});

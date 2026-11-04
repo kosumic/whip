@@ -317,6 +317,7 @@ struct Query {
     month_ms: u64,
     provider: Option<VoiceUsageProvider>,
     mode: Option<VoiceUsageMode>,
+    scope: Option<VoiceUsageScope>,
 }
 #[derive(Debug, Default, Serialize)]
 struct Total {
@@ -344,6 +345,7 @@ impl Ledger {
             .filter(|call| {
                 query.provider.is_none_or(|p| p == call.identity.provider)
                     && query.mode.is_none_or(|m| m == call.identity.mode)
+                    && query.scope.is_none_or(|scope| scope == call.identity.scope)
                     && call.identity.started_at_ms <= query.now_ms
             })
             .map(Call::view)

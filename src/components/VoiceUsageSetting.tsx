@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AppState, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { voiceUsageLedger, type UsageMode, type UsagePeriod, type UsageProvider, type VoiceUsageCall, type VoiceUsageSummary } from '../services/voiceUsage';
+import { voiceUsageLedger, type UsageMode, type UsagePeriod, type UsageProvider, type UsageScope, type VoiceUsageCall, type VoiceUsageSummary } from '../services/voiceUsage';
 import { GlassButton } from './GlassControls';
 import { Text } from './ui/text';
 import { formatUsd as usd } from '../lib/formatUsd';
@@ -9,6 +9,7 @@ import { formatUsd as usd } from '../lib/formatUsd';
 const PERIODS: UsagePeriod[] = ['today', 'week', 'month', 'lifetime'];
 const PROVIDERS: (UsageProvider | undefined)[] = [undefined, 'local', 'openai'];
 const MODES: (UsageMode | undefined)[] = [undefined, 'turn_based', 'realtime', 'live', 'tts'];
+const SCOPES: (UsageScope | undefined)[] = [undefined, 'agent', 'global', 'speech', 'preview'];
 const PAGE_SIZE = 20;
 const REFRESH_INTERVAL_MS = 2_000;
 
@@ -17,6 +18,7 @@ export function VoiceUsageSetting() {
   const [expanded, setExpanded] = useState(false);
   const [provider, setProvider] = useState<UsageProvider>();
   const [mode, setMode] = useState<UsageMode>();
+  const [scope, setScope] = useState<UsageScope>();
   const [summary, setSummary] = useState<VoiceUsageSummary>();
   const [error, setError] = useState(false);
   const [refresh, setRefresh] = useState(0);
@@ -30,7 +32,7 @@ export function VoiceUsageSetting() {
       if (loading) return;
       loading = true;
       const request = ++revision;
-      void voiceUsageLedger.summary({ provider, mode }).then(value => {
+      void voiceUsageLedger.summary({ provider, mode, scope }).then(value => {
         if (current && request === revision) { setSummary(value); setError(false); }
       }, () => { if (current && request === revision) setError(true); }).finally(() => { loading = false; });
     };
@@ -41,7 +43,7 @@ export function VoiceUsageSetting() {
     // this panel is open; this also keeps local-calendar totals current.
     const timer = setInterval(load, REFRESH_INTERVAL_MS);
     return () => { current = false; unsubscribe(); appState.remove(); clearInterval(timer); };
-  }, [expanded, provider, mode, refresh]);
+  }, [expanded, provider, mode, scope, refresh]);
   const cost = (call: VoiceUsageCall) => call.provider === 'local' ? t('voiceUsage.localFree')
     : call.estimated_usd === null ? t('voiceUsage.unknown') : usd(call.estimated_usd);
   return <View className="gap-2 border-b border-border px-3.5 py-3">
@@ -63,6 +65,12 @@ export function VoiceUsageSetting() {
         {MODES.map(value => <GlassButton key={value ?? 'all'} accessibilityRole="radio"
           accessibilityState={{ selected: mode === value }} variant={mode === value ? 'secondary' : 'ghost'}
           onPress={() => setMode(value)}><Text>{t(value ? `voiceUsage.${value}` : 'voiceUsage.all')}</Text></GlassButton>)}
+      </View>
+      <Text className="text-sm font-medium">{t('voiceUsage.scope')}</Text>
+      <View className="flex-row flex-wrap gap-2">
+        {SCOPES.map(value => <GlassButton key={value ?? 'all'} accessibilityRole="radio"
+          accessibilityState={{ selected: scope === value }} variant={scope === value ? 'secondary' : 'ghost'}
+          onPress={() => setScope(value)}><Text>{t(value ? `voiceUsage.${value}` : 'voiceUsage.all')}</Text></GlassButton>)}
       </View>
       {error ? <>
         <Text accessibilityRole="alert" className="text-xs text-destructive">{t('voiceUsage.storageError')}</Text>

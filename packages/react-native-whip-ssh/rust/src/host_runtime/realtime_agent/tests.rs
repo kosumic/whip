@@ -33,6 +33,24 @@ fn fixture(id: &str) -> Result<Fixture, Box<dyn std::error::Error>> {
 }
 
 #[test]
+fn global_voice_selection_pins_agent_identity_before_confirmation()
+-> Result<(), Box<dyn std::error::Error>> {
+    let _guard = terminal_delivery_test_guard();
+    let (runtime, _, mut snapshot) = fixture("voice-global-selection")?;
+    let selected = PinnedAgent::select("voice-global-selection".into(), "pane-1")?;
+    selected.check()?;
+    assert!(PinnedAgent::select("voice-global-selection".into(), "missing-pane").is_err());
+    snapshot.panes[0]
+        .agent_session
+        .as_mut()
+        .ok_or("No agent identity")?
+        .value = "22222222-2222-4222-8222-222222222222".into();
+    install(&runtime, snapshot);
+    assert!(selected.check().is_err());
+    Ok(())
+}
+
+#[test]
 fn realtime_agent_snapshot_refresh_retains_call_but_blocks_tools_until_fresh()
 -> Result<(), Box<dyn std::error::Error>> {
     let _guard = terminal_delivery_test_guard();

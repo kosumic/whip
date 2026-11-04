@@ -288,67 +288,74 @@ impl Action {
             Self::Host(action) => action.run(owner, &session, &parent, &caller_host).await,
             Self::Herdr { host_id, operation } => {
                 let host_id = host_id.unwrap_or(caller_host);
-                let runtime =
-                    crate::host_runtime::get_host_runtime(host_id.clone()).ok_or_else(|| {
-                        BrowserError::new(
-                            ErrorCode::NotFound,
-                            "Connect this saved host with hosts.connect first",
-                        )
-                    })?;
-                let value = match operation {
-                    HerdrOperation::AgentRequest(request) => runtime
-                        .request_from_reverse_agent(request)
-                        .await
-                        .map_err(control_error)?,
-                    HerdrOperation::Request(request) => {
-                        json!(
-                            runtime
-                                .control_from_reverse_agent(request)
-                                .await
-                                .map_err(control_error)?
-                        )
-                    }
-                    HerdrOperation::StartServer => {
-                        runtime
-                            .start_herdr_from_reverse_agent()
-                            .await
-                            .map_err(|_| {
-                                BrowserError::new(
-                                    ErrorCode::DeviceUnavailable,
-                                    "Could not start Herdr; check the host connection",
-                                )
-                            })?;
-                        json!({"started":true})
-                    }
-                    HerdrOperation::RestartAgent(terminal_id) => {
-                        runtime
-                            .restart_from_reverse_agent(terminal_id)
-                            .await
-                            .map_err(control_error)?;
-                        json!({"restarted":true})
-                    }
-                    HerdrOperation::CopyAgent { terminal_id, label } => {
-                        match runtime
-                            .copy_from_reverse_agent(terminal_id, label)
-                            .await
-                            .map_err(control_error)?
-                        {
-                            HerdrTabLaunchResult::Created { tab, root_pane } => {
-                                json!({"tab":tab,"root_pane":root_pane})
-                            }
-                            HerdrTabLaunchResult::LaunchFailed { .. } => {
-                                return Err(BrowserError::new(
-                                    ErrorCode::DeviceUnavailable,
-                                    "Tab created but the agent failed to start; inspect the host snapshot",
-                                ));
-                            }
-                        }
-                    }
-                };
-                result("herdr", json!({"host_id":host_id,"result":value}))
+                run_herdr(host_id, operation).await
             }
         }
     }
+}
+
+/// Shared validated execution, independent of the MCP transport.
+pub(super) async fn run_herdr(
+    host_id: String,
+    operation: HerdrOperation,
+) -> Result<Value, BrowserError> {
+    let runtime = crate::host_runtime::get_host_runtime(host_id.clone()).ok_or_else(|| {
+        BrowserError::new(
+            ErrorCode::NotFound,
+            "Connect this saved host with hosts.connect first",
+        )
+    })?;
+    let value = match operation {
+        HerdrOperation::AgentRequest(request) => runtime
+            .request_from_reverse_agent(request)
+            .await
+            .map_err(control_error)?,
+        HerdrOperation::Request(request) => {
+            json!(
+                runtime
+                    .control_from_reverse_agent(request)
+                    .await
+                    .map_err(control_error)?
+            )
+        }
+        HerdrOperation::StartServer => {
+            runtime
+                .start_herdr_from_reverse_agent()
+                .await
+                .map_err(|_| {
+                    BrowserError::new(
+                        ErrorCode::DeviceUnavailable,
+                        "Could not start Herdr; check the host connection",
+                    )
+                })?;
+            json!({"started":true})
+        }
+        HerdrOperation::RestartAgent(terminal_id) => {
+            runtime
+                .restart_from_reverse_agent(terminal_id)
+                .await
+                .map_err(control_error)?;
+            json!({"restarted":true})
+        }
+        HerdrOperation::CopyAgent { terminal_id, label } => {
+            match runtime
+                .copy_from_reverse_agent(terminal_id, label)
+                .await
+                .map_err(control_error)?
+            {
+                HerdrTabLaunchResult::Created { tab, root_pane } => {
+                    json!({"tab":tab,"root_pane":root_pane})
+                }
+                HerdrTabLaunchResult::LaunchFailed { .. } => {
+                    return Err(BrowserError::new(
+                        ErrorCode::DeviceUnavailable,
+                        "Tab created but the agent failed to start; inspect the host snapshot",
+                    ));
+                }
+            }
+        }
+    };
+    result("herdr", json!({"host_id":host_id,"result":value}))
 }
 
 fn control_error(error: HerdrControlError) -> BrowserError {

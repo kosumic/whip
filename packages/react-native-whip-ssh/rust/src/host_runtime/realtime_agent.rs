@@ -53,6 +53,52 @@ fn changed() -> HerdrControlError {
 }
 
 impl PinnedAgent {
+    /// Explicit global-call selection, pinned before the user confirms a prompt.
+    pub(crate) fn select(
+        runtime_id: String,
+        pane_id: &str,
+    ) -> Result<Arc<Self>, HerdrControlError> {
+        let runtime = get_host_runtime(runtime_id.clone()).ok_or_else(changed)?;
+        let terminal_id = runtime
+            .host_state()
+            .snapshot
+            .as_ref()
+            .and_then(|snapshot| snapshot.panes.iter().find(|pane| pane.pane_id == pane_id))
+            .map(|pane| pane.terminal_id.clone())
+            .ok_or_else(changed)?;
+        let crate::agent_sessions::AgentChatOpenResult::Bound { binding } = runtime
+            .open_agent_chat(terminal_id.clone())
+            .map_err(|_| changed())?
+        else {
+            return Err(changed());
+        };
+        Self::pin(AgentTarget {
+            runtime_id,
+            terminal_id,
+            pane_id: pane_id.into(),
+            binding_token: binding.binding_token,
+        })
+    }
+
+    /// Start native transcript observation without opening or depending on chat UI.
+    pub(crate) async fn prepare_selected(&self) -> Result<(), HerdrControlError> {
+        self.check()?;
+        let result = self
+            .runtime
+            .start_agent_chat(self.binding.binding_token.clone())
+            .await
+            .map_err(|_| changed())?;
+        self.check()?;
+        if matches!(
+            result,
+            crate::agent_sessions::AgentChatStartResult::Started { .. }
+        ) {
+            Ok(())
+        } else {
+            Err(changed())
+        }
+    }
+
     pub(crate) fn pin(target: AgentTarget) -> Result<Arc<Self>, HerdrControlError> {
         let runtime = get_host_runtime(target.runtime_id).ok_or_else(changed)?;
         let binding = runtime

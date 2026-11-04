@@ -1,4 +1,6 @@
 import {type HerdrBackend,toNativeHerdrBackend,fromNativeHerdrBackend} from './herdrBackend';
+export { setWhipAppControl } from './generated-entry';
+export type { WhipToolPermit, WhipAppControl } from './generated-entry';
 import {
   setReverseControlEventSink,
   type ReverseControlEvent,

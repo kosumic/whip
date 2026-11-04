@@ -9,6 +9,8 @@ mod http;
 mod instructions;
 mod recovery;
 mod tools;
+pub(crate) mod voice;
+pub use voice::{WhipAppControl, WhipToolPermit, set_whip_app_control};
 
 pub use browser::operations::{
     BrowserEffectPermit, BrowserOperationCoordinator, BrowserOperationError,

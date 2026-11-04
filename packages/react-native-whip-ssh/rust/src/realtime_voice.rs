@@ -44,6 +44,7 @@ use crate::host_runtime::realtime_agent::{
     AgentTarget, BACKGROUND_AGENT, PinnedAgent, REMAIN_SILENT,
 };
 use crate::host_runtime::realtime_terminal::{PinnedTerminal, TerminalTarget};
+use crate::reverse_control::voice::{self as global_tools, WhipToolSession};
 use captions::Language as TranscriptionLanguage;
 
 pub(super) const RATE: usize = 24_000;
@@ -77,6 +78,8 @@ pub(super) struct Config {
     webrtc: bool,
     target: Option<AgentTarget>,
     terminal_target: Option<TerminalTarget>,
+    #[serde(default)]
+    global: bool,
     #[serde(default)]
     model: Option<String>,
     voice: String,
@@ -156,7 +159,7 @@ impl Config {
             return Err("Choose a supported OpenAI Realtime voice.");
         }
         if self.preview {
-            if self.target.is_some() || self.terminal_target.is_some() {
+            if self.target.is_some() || self.terminal_target.is_some() || self.global {
                 return Err("Voice previews cannot connect to an agent.");
             }
             return typed(json!({"type":"session.update","session":{
@@ -167,10 +170,13 @@ impl Config {
                 "tools":[], "tool_choice":"none"
             }}));
         }
-        if self.target.is_some() == self.terminal_target.is_some() || self.vad.is_none() {
-            return Err(
-                "Realtime calls require one bound agent or terminal and turn detection settings.",
-            );
+        if usize::from(self.target.is_some())
+            + usize::from(self.terminal_target.is_some())
+            + usize::from(self.global)
+            != 1
+            || self.vad.is_none()
+        {
+            return Err("Realtime calls require exactly one scope and turn detection settings.");
         }
         if let Some(Vad::ServerVad {
             threshold,
@@ -189,7 +195,9 @@ impl Config {
         vad["create_response"] = json!(true);
         vad["interrupt_response"] = json!(true);
         let terminal = self.terminal_target.is_some();
-        let tools = if terminal {
+        let tools = if self.global {
+            global_tools::schemas()
+        } else if terminal {
             terminal::schemas()
         } else {
             vec![
@@ -199,7 +207,7 @@ impl Config {
         };
         typed(json!({"type":"session.update","session":{
             "type":"realtime", "output_modalities":["audio"], "max_output_tokens":512,
-            "instructions":if terminal { terminal::INSTRUCTIONS } else { INSTRUCTIONS },
+            "instructions":if self.global { global_tools::INSTRUCTIONS } else if terminal { terminal::INSTRUCTIONS } else { INSTRUCTIONS },
             "audio":{"input":{"format":{"type":"audio/pcm","rate":RATE},"turn_detection":vad,
                 "noise_reduction":{"type":"near_field"},
                 "transcription":captions::settings(self.language)},
@@ -370,6 +378,7 @@ pub(super) struct RealtimeVoiceAdapter {
     devices_ready: AtomicBool,
     allow_input: bool,
     speech: crate::speech_playback::RealtimeSpeechLease,
+    global: Option<Arc<WhipToolSession>>,
 }
 enum StartError {
     Session,
@@ -390,6 +399,7 @@ impl RealtimeVoiceAdapter {
     ) -> Result<Arc<Self>, StartError> {
         let started_at = Instant::now();
         let mut update = config.session_update()?;
+        let global = config.global.then(WhipToolSession::new).transpose()?;
         let agent = config
             .target
             .clone()
@@ -476,6 +486,7 @@ impl RealtimeVoiceAdapter {
             devices_ready: AtomicBool::new(false),
             allow_input: !config.preview,
             speech,
+            global,
         });
         let owner = adapter.clone();
         let runtime = crate::runtime().map_err(|_| "Realtime runtime could not start.")?;
@@ -500,6 +511,7 @@ impl RealtimeVoiceAdapter {
                     Err(error) => Err(error),
                 };
                 tools.shutdown().await;
+                if let Some(global) = &owner.global { global.close(); }
                 if let Err(message) = result {
                     owner.fail(message);
                 }
@@ -519,6 +531,9 @@ impl RealtimeVoiceAdapter {
     }
 
     fn fail(&self, error: &'static str) {
+        if let Some(global) = &self.global {
+            global.close();
+        }
         let mut view = self.view.lock();
         if !self.closed.swap(true, Ordering::AcqRel) {
             view.phase = "error";
@@ -533,6 +548,9 @@ impl RealtimeVoiceAdapter {
         self.cancel.send_replace(true);
     }
     fn close(&self) {
+        if let Some(global) = &self.global {
+            global.close();
+        }
         self.input.close();
         {
             let mut view = self.view.lock();
@@ -659,6 +677,10 @@ impl RealtimeVoiceAdapter {
         Ok(())
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "One serialized event loop preserves audio and tool-result ordering across call scopes"
+    )]
     async fn run(
         self: &Arc<Self>,
         config: Config,
@@ -694,8 +716,9 @@ impl RealtimeVoiceAdapter {
             tokio::select! {
                 command = commands.recv() => match command {
                     Some(Command::Submitted(text)) => {
-                        let event = if terminal.is_some() { terminal_submitted_message(&text)? } else { submitted_message(&text)? };
+                        let event = if self.global.is_some() { global_submitted_message(&text)? } else if terminal.is_some() { terminal_submitted_message(&text)? } else { submitted_message(&text)? };
                         send(&mut socket, event).await?;
+                        if self.global.is_some() { responses.request_create(); }
                     }
                     Some(Command::Skip) => {
                         if let Some(media) = self.media.lock().as_ref() { media.cancel_audio(responses.active().map(String::as_str)); }
@@ -717,6 +740,13 @@ impl RealtimeVoiceAdapter {
                 },
                 result = tools.join_next(), if !tools.is_empty() => {
                     let ToolCompletion { call_id, deferred: was_deferred, mut value } = result.ok_or("Realtime tool task ended.")?.map_err(|_| "Realtime tool task failed.")?;
+                    if self.global.is_some() {
+                        if self.closed.load(Ordering::Acquire) { continue; }
+                        let silent = value == json!({});
+                        send(&mut socket, function_output(call_id, value)).await?;
+                        if !silent { responses.request_create(); }
+                        continue;
+                    }
                     if let Some(terminal) = &terminal {
                         terminal.complete(&mut socket, &mut responses, call_id, value).await?;
                         continue;
@@ -860,6 +890,17 @@ impl RealtimeVoiceAdapter {
                         ServerEvent::InputAudioTranscriptionFailed { .. } => { self.view.lock().error = Some("OpenAI could not transcribe this turn. Voice audio is still connected."); }
                         ServerEvent::ResponseFunctionCallArgumentsDone { call_id, name, arguments, response_id, .. } => {
                             if ignored.contains(&response_id) { continue; }
+                            if let Some(global) = &self.global {
+                                if !global.admit(&call_id)? { continue; }
+                                if tools.len() >= delegation::MAX_PENDING {
+                                    send(&mut socket, function_output(call_id, json!({"error":"queue_full"}))).await?;
+                                    responses.request_create();
+                                } else {
+                                    let global = global.clone();
+                                    tools.spawn(async move { ToolCompletion { value: global.execute(&name, &arguments).await, call_id, deferred: false } });
+                                }
+                                continue;
+                            }
                             if let Some(terminal) = &terminal {
                                 terminal.handle(&mut socket, tools, &mut responses, (call_id, name, arguments)).await?;
                                 continue;
@@ -1006,6 +1047,15 @@ fn submitted_message(text: &str) -> Result<ClientEvent, &'static str> {
     }
     typed(json!({"type":"conversation.item.create","item":{
         "type":"message","role":"user","content":[{"type":"input_text","text":format!("{TYPED_PREFIX}{text}")}]
+    }}))
+}
+
+fn global_submitted_message(text: &str) -> Result<ClientEvent, &'static str> {
+    if text.trim().is_empty() || text.len() > MAX_TEXT {
+        return Err("The typed message exceeds the voice context limit.");
+    }
+    typed(json!({"type":"conversation.item.create","item":{
+        "type":"message","role":"user","content":[{"type":"input_text","text":text}]
     }}))
 }
 

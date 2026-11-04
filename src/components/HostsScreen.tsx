@@ -43,6 +43,7 @@ import { GlassSurface } from './GlassSurface';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
+import { GlobalCallButton } from './GlobalCallButton';
 
 const HOST_FEATURE_ICON_SIZE = 13;
 const HOST_FEATURE_ICON_FRAME_CLASS_NAME = 'size-5 items-center justify-center';
@@ -108,6 +109,7 @@ export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId
         left={<WhipMark size={40} />}
         right={
           <View className="flex-row items-center gap-2">
+            <GlobalCallButton />
             {supportsBrowserControl() && (
               <IconButton icon={Globe2} accessibilityLabel={t('terminal.openBrowser')} onPress={() => bestEffortCleanup(browserRegistry.openLocal(), 'browser-open-local')} />
             )}

@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
 import { View } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { useTranslation } from 'react-i18next';
@@ -10,7 +10,9 @@ import { SpeechVoicePicker } from './SpeechVoicePicker';
 import { OpenAiVoiceKeySetting } from './OpenAiVoiceKeySetting';
 import { Text } from './ui/text';
 
-export function VoiceConversationSetting() {
+export interface VoiceConversationSettingHandle { stopPreview: () => Promise<void> }
+
+export function VoiceConversationSetting({ ref }: { ref?: Ref<VoiceConversationSettingHandle> }) {
   const { t } = useTranslation();
   const { settings, onChange } = useContext(VoiceConversationSettingsContext);
   const [saved, setSaved] = useState<boolean>();
@@ -29,6 +31,7 @@ export function VoiceConversationSetting() {
     if (mounted.current) setPreviewing(false);
     return previewClosing.current;
   }, []);
+  useImperativeHandle(ref, () => ({ stopPreview }), [stopPreview]);
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; };

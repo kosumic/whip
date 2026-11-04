@@ -19,6 +19,11 @@ export type TerminalVoiceChatTarget = {
   terminal: { runtimeId: string; runtimeIncarnation: number; connectionGeneration: number; terminalId: string; paneId?: string };
 };
 export type VoiceChatTarget = AgentVoiceChatTarget | TerminalVoiceChatTarget;
+export type GlobalVoiceChatTarget = {
+  global: true; label: string;
+  hostId?: never; paneId?: never; tabId?: never; agent?: never; bindingToken?: never; terminal?: never;
+};
+export type RealtimeVoiceChatTarget = VoiceChatTarget | GlobalVoiceChatTarget;
 
 export interface VoiceTranscriptMessage {
   id: string;

@@ -31,6 +31,7 @@ import {
   type UniffiVTableCallbackInterfaceWhipSshSshWorkflowPlatform,
   type UniffiVTableCallbackInterfaceWhipSshTerminalDeliveryEventSink,
   type UniffiVTableCallbackInterfaceWhipSshTerminalSubmissionPlatform,
+  type UniffiVTableCallbackInterfaceWhipSshWhipAppControl,
   type UniffiVTableCallbackInterfaceWhipSshWhipSshEventSink,
 } from './whip_ssh-ffi';
 import {
@@ -70,6 +71,7 @@ import {
   uniffiCreateRecord,
   uniffiRustCallAsync,
   uniffiTraitInterfaceCall,
+  uniffiTraitInterfaceCallAsync,
   uniffiTraitInterfaceCallAsyncWithError,
   uniffiTypeNameSymbol,
   variantOrdinalSymbol,
@@ -2811,6 +2813,21 @@ export function setUsageForeground(foreground: boolean): void {
     /*caller:*/ callStatus => {
       nativeModule().ubrn_uniffi_whip_ssh_fn_func_set_usage_foreground(
         FfiConverterBool.lower(foreground, nativeModule().rustbuffer_alloc),
+        callStatus,
+      );
+    },
+    /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
+export function setWhipAppControl(platform: WhipAppControl): void {
+  uniffiCaller.rustCall(
+    /*caller:*/ callStatus => {
+      nativeModule().ubrn_uniffi_whip_ssh_fn_func_set_whip_app_control(
+        FfiConverterTypeWhipAppControl.lower(
+          platform,
+          nativeModule().rustbuffer_alloc,
+        ),
         callStatus,
       );
     },
@@ -60943,6 +60960,436 @@ const FfiConverterTypeVoiceChat = new FfiConverterObject(
   uniffiTypeVoiceChatObjectFactory,
 );
 
+export interface WhipToolPermitLike {
+  callId(): string;
+  checkActive(): boolean;
+}
+/**
+ * @deprecated Use `WhipToolPermitLike` instead.
+ */
+export type WhipToolPermitInterface = WhipToolPermitLike;
+
+export class WhipToolPermit
+  extends UniffiAbstractObject
+  implements WhipToolPermitLike
+{
+  readonly [uniffiTypeNameSymbol] = 'WhipToolPermit';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeWhipToolPermitObjectFactory.bless(pointer);
+  }
+
+  callId(): string {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_whiptoolpermit_call_id(
+            uniffiTypeWhipToolPermitObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  checkActive(): boolean {
+    return FfiConverterBool.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_whiptoolpermit_check_active(
+            uniffiTypeWhipToolPermitObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeWhipToolPermitObjectFactory.pointer(this);
+      uniffiTypeWhipToolPermitObjectFactory.freePointer(pointer);
+      uniffiTypeWhipToolPermitObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is WhipToolPermit {
+    return uniffiTypeWhipToolPermitObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeWhipToolPermitObjectFactory: UniffiObjectFactory<WhipToolPermitLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): WhipToolPermitLike {
+        const instance = Object.create(WhipToolPermit.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'WhipToolPermit';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_whiptoolpermit_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: WhipToolPermitLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: WhipToolPermitLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_whiptoolpermit(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_whiptoolpermit(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is WhipToolPermitLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'WhipToolPermit'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeWhipToolPermit = new FfiConverterObject(
+  uniffiTypeWhipToolPermitObjectFactory,
+);
+
+/**
+ * Foreign code performs presentation/OS effects only after checking a native permit.
+ */
+export interface WhipAppControl {
+  execute(
+    permit: WhipToolPermitLike,
+    action: string,
+    argumentsJson: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<string>;
+  cancel(callId: string): void;
+}
+
+/**
+ * Foreign code performs presentation/OS effects only after checking a native permit.
+ */
+export class WhipAppControlImpl
+  extends UniffiAbstractObject
+  implements WhipAppControl
+{
+  readonly [uniffiTypeNameSymbol] = 'WhipAppControlImpl';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeWhipAppControlImplObjectFactory.bless(pointer);
+  }
+
+  async execute(
+    permit: WhipToolPermitLike,
+    action: string,
+    argumentsJson: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<string> {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_whipappcontrol_execute(
+            uniffiTypeWhipAppControlImplObjectFactory.clonePointer(this),
+            FfiConverterTypeWhipToolPermit.lower(
+              permit,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(action, nativeModule().rustbuffer_alloc),
+            FfiConverterString.lower(
+              argumentsJson,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterString.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  cancel(callId: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_whipappcontrol_cancel(
+          uniffiTypeWhipAppControlImplObjectFactory.clonePointer(this),
+          FfiConverterString.lower(callId, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeWhipAppControlImplObjectFactory.pointer(this);
+      uniffiTypeWhipAppControlImplObjectFactory.freePointer(pointer);
+      uniffiTypeWhipAppControlImplObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is WhipAppControlImpl {
+    return uniffiTypeWhipAppControlImplObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeWhipAppControlImplObjectFactory: UniffiObjectFactory<WhipAppControl> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): WhipAppControl {
+        const instance = Object.create(WhipAppControlImpl.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'WhipAppControlImpl';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_whipappcontrol_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: WhipAppControl): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: WhipAppControl): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_whipappcontrol(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_whipappcontrol(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is WhipAppControl {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'WhipAppControlImpl'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeWhipAppControl = new FfiConverterObjectWithCallbacks(
+  uniffiTypeWhipAppControlImplObjectFactory,
+);
+
+// Add a vtable for the callbacks that go in WhipAppControl.
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+const uniffiCallbackInterfaceWhipAppControl: {
+  vtable: any;
+  register: () => void;
+} = {
+  // Create the VTable using a series of closures.
+  // ts automatically converts these into C callback functions.
+  vtable: {
+    execute: (
+      uniffiHandle: bigint,
+      permit: bigint,
+      action: Uint8Array,
+      argumentsJson: Uint8Array,
+      uniffiFutureCallback: UniffiForeignFutureCompleterustBuffer,
+      uniffiCallbackData: bigint,
+    ) => {
+      const uniffiMakeCall = async (signal: AbortSignal): Promise<string> => {
+        try {
+          const jsCallback = FfiConverterTypeWhipAppControl.lift(uniffiHandle);
+          return await jsCallback.execute(
+            FfiConverterTypeWhipToolPermit.lift(permit),
+            FfiConverterString.lift(action),
+            FfiConverterString.lift(argumentsJson),
+            { signal },
+          );
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(action);
+          nativeModule().rustbuffer_free(argumentsJson);
+        }
+      };
+      const uniffiHandleSuccess = (returnValue: string) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultRustBuffer */ {
+            return_value: FfiConverterString.lower(
+              returnValue,
+              nativeModule().rustbuffer_alloc,
+            ),
+            call_status: uniffiCaller.createCallStatus(),
+          },
+        );
+      };
+      const uniffiHandleError = (code: number, errorBuf: UniffiByteArray) => {
+        uniffiFutureCallback.call(
+          uniffiFutureCallback,
+          uniffiCallbackData,
+          /* UniffiForeignFutureResultRustBuffer */ {
+            return_value: /*empty*/ new Uint8Array(0),
+            // TODO create callstatus with error.
+            call_status: uniffiCaller.createErrorStatus(code, errorBuf),
+          },
+        );
+      };
+      const uniffiForeignFuture = uniffiTraitInterfaceCallAsync(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiForeignFuture;
+    },
+    cancel: (uniffiHandle: bigint, callId: Uint8Array) => {
+      const uniffiMakeCall = (): void => {
+        try {
+          const jsCallback = FfiConverterTypeWhipAppControl.lift(uniffiHandle);
+          return jsCallback.cancel(FfiConverterString.lift(callId));
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+          nativeModule().rustbuffer_free(callId);
+        }
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    uniffi_free: (uniffiHandle: UniffiHandle): void => {
+      // this will throw a stale handle error if the handle isn't found.
+      FfiConverterTypeWhipAppControl.drop(uniffiHandle);
+    },
+    uniffi_clone: (uniffiHandle: UniffiHandle): UniffiHandle => {
+      return FfiConverterTypeWhipAppControl.clone(uniffiHandle);
+    },
+  },
+  register: () => {
+    nativeModule().ubrn_uniffi_whip_ssh_fn_init_callback_vtable_whipappcontrol(
+      uniffiCallbackInterfaceWhipAppControl.vtable,
+    );
+  },
+};
+
 export interface WhipSshEventSink {
   emit(eventJson: string): void;
   unixSocketChannelData(
@@ -62629,6 +63076,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_set_usage_foreground',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_set_whip_app_control() !==
+    25912
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_set_whip_app_control',
     );
   }
   if (nativeModule().ubrn_uniffi_whip_ssh_checksum_func_shutdown() !== 45428) {
@@ -65873,6 +66328,22 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_whipappcontrol_execute() !==
+    50875
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_whipappcontrol_execute',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_whipappcontrol_cancel() !==
+    50305
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_whipappcontrol_cancel',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_whipssheventsink_emit() !==
     27595
   ) {
@@ -65896,6 +66367,22 @@ function uniffiEnsureInitialized() {
       'uniffi_whip_ssh_checksum_method_whipssheventsink_exec_channel_data',
     );
   }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_whiptoolpermit_call_id() !==
+    9929
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_whiptoolpermit_call_id',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_whiptoolpermit_check_active() !==
+    46236
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_whiptoolpermit_check_active',
+    );
+  }
 
   uniffiCallbackInterfaceAgentTranscriptEventSink.register();
   uniffiCallbackInterfaceSessionConnectionPlatform.register();
@@ -65912,6 +66399,7 @@ function uniffiEnsureInitialized() {
   uniffiCallbackInterfaceSshWorkflowPlatform.register();
   uniffiCallbackInterfaceTerminalDeliveryEventSink.register();
   uniffiCallbackInterfaceTerminalSubmissionPlatform.register();
+  uniffiCallbackInterfaceWhipAppControl.register();
   uniffiCallbackInterfaceWhipSshEventSink.register();
 }
 
@@ -66275,6 +66763,8 @@ export default Object.freeze({
     FfiConverterTypeVoiceChatPhase,
     FfiConverterTypeVoiceChatTranscriptTurn,
     FfiConverterTypeVoiceChatView,
+    FfiConverterTypeWhipAppControl,
     FfiConverterTypeWhipSshEventSink,
+    FfiConverterTypeWhipToolPermit,
   },
 });

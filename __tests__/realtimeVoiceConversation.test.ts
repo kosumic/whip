@@ -45,6 +45,21 @@ jest.mock('../src/services/NativeTranscriptService', () => ({ agentTranscriptSer
 
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 
+test('global Realtime starts without a transcript or SSH target and retains its own native scope', async () => {
+  const changed = jest.fn();
+  const call = new RealtimeVoiceConversation({ global: true, label: 'Global call' }, { ...defaults, provider: 'openai' }, changed);
+  await call.start();
+  const [token, raw] = mockNative.startRealtimeVoice.mock.calls[0] as unknown as [string, string];
+  expect(JSON.parse(raw)).toEqual(expect.objectContaining({ global: true, model: defaults.realtimeModel }));
+  expect(JSON.parse(raw).target).toBeUndefined();
+  expect(JSON.parse(raw).terminalTarget).toBeUndefined();
+  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'listening', transcript: null }));
+  call.submitted('List my saved hosts');
+  await flush();
+  expect(mockNative.realtimeVoiceSubmitted).toHaveBeenCalledWith(token, 'List my saved hosts');
+  await call.close();
+});
+
 test('starts a terminal call without an agent binding and shares typed input as context', async () => {
   const changed = jest.fn();
   const terminal = { runtimeId: 'runtime-1', runtimeIncarnation: 4, connectionGeneration: 9, terminalId: 'shell-1' };

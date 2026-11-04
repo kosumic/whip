@@ -3,6 +3,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { HostsScreen } from '../src/components/HostsScreen';
 import { browserRegistry } from '../src/browser/registry';
 import { hapticPress } from '../src/services/interactionFeedback';
+import { GlobalCallContext } from '../src/lib/globalCallContext';
 
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
@@ -38,6 +39,7 @@ jest.mock('lucide-react-native/icons/log-in', () => (undefined));
 jest.mock('lucide-react-native/icons/log-out', () => (undefined));
 jest.mock('lucide-react-native/icons/network', () => (undefined));
 jest.mock('lucide-react-native/icons/plus', () => ('Plus'));
+jest.mock('lucide-react-native/icons/phone', () => ('Phone'));
 jest.mock('lucide-react-native/icons/server', () => ('Server'));
 jest.mock('lucide-react-native/icons/server-off', () => (undefined));
 jest.mock('lucide-react-native/icons/trash', () => (undefined));
@@ -59,13 +61,14 @@ jest.mock('../src/services/remoteNotifications', () => ({
   subscribeRemoteNotifications: jest.fn(() => jest.fn()),
 }));
 
-test('the Hosts header opens and reuses a browser without any connected hosts', async () => {
+test('the Hosts header offers global calls and reuses its browser without any connected hosts', async () => {
   const onAdd = jest.fn();
+  const onGlobalCall = jest.fn();
   let view!: ReactTestRenderer;
   try {
     await act(async () => {
       view = create(
-        <HostsScreen
+        <GlobalCallContext value={onGlobalCall}><HostsScreen
           hosts={[]}
           error={null}
           credentialRecovery={{ state: 'ready', count: 0 }}
@@ -77,10 +80,13 @@ test('the Hosts header opens and reuses a browser without any connected hosts', 
           onEdit={jest.fn()}
           onManageGlobalKeychain={jest.fn()}
           onUnlockCredentials={jest.fn()}
-        />,
+        /></GlobalCallContext>,
       );
     });
     const browser = view.root.findByProps({ accessibilityLabel: 'terminal.openBrowser' });
+    const call = view.root.findByProps({ accessibilityLabel: 'globalCall.open' });
+    await act(async () => call.props.onPress());
+    expect(onGlobalCall).toHaveBeenCalledTimes(1);
     const add = view.root.findByProps({ accessibilityLabel: 'hosts.add' });
     expect(browser.parent).toBe(add.parent);
     const pressBrowser = hapticPress(browser.props.onPress);
