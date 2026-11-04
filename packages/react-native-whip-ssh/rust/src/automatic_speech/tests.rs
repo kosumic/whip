@@ -194,6 +194,7 @@ fn disabled_readers_do_not_consume_prose_and_stale_baseline_jobs_cannot_reenable
         revision: 2,
         messages: &history,
         turns: &[],
+        provider_turns: false,
     };
     assert!(!coordinator.restore_baseline(stale, "one", 1, AgentTranscriptStatus::Live, view, 5));
     assert!(take(&mut coordinator).is_null());

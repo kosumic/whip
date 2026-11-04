@@ -22,6 +22,7 @@ fn build(messages: &[AgentTranscriptMessage]) -> String {
         revision: 1,
         messages,
         turns: &[],
+        provider_turns: false,
     })
 }
 #[test]

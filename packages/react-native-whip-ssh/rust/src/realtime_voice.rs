@@ -662,11 +662,11 @@ impl RealtimeVoiceAdapter {
                             send(&mut socket, feedback_message("Unsent deferred requests were cancelled because a submission outcome is unknown. Inspect the agent before submitting again.")?).await?;
                         }
                     }
-                    if value.get("error").is_none() && value["completion"] == "lifecycle_settled" {
+                    if value.get("error").is_none() && value["completion"] != "submitted" {
                         value["feedback_guidance"] = json!(feedback::FINISHED_GUIDANCE);
                     }
                     if was_deferred {
-                        send(&mut socket, feedback_message(&format!("Deferred request lifecycle update (not proof of per-turn completion): {value}"))?).await?;
+                        send(&mut socket, feedback_message(&format!("Deferred request turn observation: {value}"))?).await?;
                     } else {
                         send(&mut socket, function_output(call_id, value)).await?;
                     }

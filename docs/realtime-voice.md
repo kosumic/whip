@@ -172,8 +172,9 @@ Public API references:
 ## Handoff feedback
 
 Codex's `realtime_conversation.rs` handoff stream is adapted onto the pinned
-native transcript. New assistant text arrives as `[BACKEND]` user-context items
-while `background_agent` is pending; reasoning, user text, tool payloads and cached
+native transcript. New assistant text from the associated provider turn arrives
+as `[BACKEND]` user-context items while `background_agent` is pending; reasoning,
+user text, tool payloads and cached
 history are excluded. Cursors forward appended text once, rebaseline replaced
 windows, and bound copied messages, individual text, batches and total output.
 Disconnect/rebinding or call teardown stops feedback with the owning actor.
@@ -185,18 +186,44 @@ requires new agent text and is coalesced at 15-second intervals; idle timers
 never invent progress. User speech and active playback defer notices, and tool
 results take priority. Completion flushes the latest backend text before the
 function result and resumes voice. Native completion also allows two seconds
-for the transcript tail and returns bounded new public assistant text, excluding
-private parts and stale history. If no answer text is available, voice directs
+for the transcript tail and returns bounded public assistant text from that
+turn, excluding private parts and stale history. If no answer text is available, voice directs
 the user to the agent chat instead of inventing an answer or resubmitting work.
 Notices expose only `remain_silent`, allowing the voice model to honor silence
 without dispatching another task. A silence acknowledgement does not request a
 new response or cancel agent work.
 
+Each submitted request carries a native UUID marker as tracking metadata before
+the original prompt and quoted voice context. The pinned session, generation,
+transcript revision and message/turn anchors are captured before dispatch.
+The marker distinguishes repeated prompts and concurrent submissions without
+matching their natural language. A unique observed user message establishes
+acceptance; its provider turn supplies identity, public output and explicit
+completed, interrupted or failed outcome. This also observes fast completion
+when polling misses the working state. Idle status alone cannot complete work.
+
+The borrowed transcript view distinguishes provider turns from inferred display
+grouping. Current paginated Codex rollouts preserve provider turn IDs,
+membership and outcomes. Other projections can report inferred acceptance, but
+cannot establish completion or supply attributed voice output. Missing or
+ambiguous membership, a disappearing anchor, revision rollback, changed user
+content or session replacement yields unknown/unavailable correlation. Input
+is never replayed to recover correlation.
+
 The first delegation keeps its feedback cursor while follow-ups steer active
-Codex. Admission is serialized only until startup is observed; a pending task
-does not lock out steering. Steering returns a submission acknowledgement,
-while the original handoff keeps listening for progress and lifecycle changes.
-Lifecycle observations are not per-turn completion receipts.
+Codex. Admission is serialized until acceptance or startup is observed; a
+pending task does not lock out steering. Steering is associated only with the
+provider turn observed running before dispatch and returns a submission
+acknowledgement with acceptance reported separately. It cannot complete the
+original handoff. Deferred requests capture independent cursors at dispatch.
+Completion describes the associated turn; it does not prove that every
+instruction within a steered turn was executed. Agent status, including blocked
+state, is reported separately and cannot establish this request's outcome.
+
+The reference is Codex's active handoff identity and per-item output routing in
+[`realtime_conversation.rs`](https://github.com/openai/codex/blob/ede589336e9ecc64cb05045c2961fb1277858f1d/codex-rs/core/src/realtime_conversation.rs).
+Whip carries its marker through Herdr and observes the transcript because Herdr
+does not return Codex's backend handoff receipt.
 
 ## Ownership and media
 
@@ -343,8 +370,9 @@ server-side occupant change between verification and dispatch. This is a
 remaining qualification limitation, not a guarantee of atomic remote pinning.
 There is also no atomic expected-idle condition: another client can start work
 between the last idle snapshot and submission. Default Codex Enter bindings are
-assumed for steering; remapped bindings and exact per-turn completion require
-stronger host capabilities before production qualification.
+assumed for steering; remapped bindings and atomic submission receipts require
+stronger host capabilities before production qualification. Transcript
+correlation cannot make remote verification and dispatch atomic.
 
 ## Validation and remaining qualification
 

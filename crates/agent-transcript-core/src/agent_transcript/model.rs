@@ -109,6 +109,9 @@ pub struct AgentTranscriptView<'a> {
     pub revision: u64,
     pub messages: &'a [AgentTranscriptMessage],
     pub turns: &'a [AgentTranscriptTurn],
+    /// True only when turn identities, membership and outcomes come from the
+    /// provider protocol. Display grouping alone is not a completion receipt.
+    pub provider_turns: bool,
 }
 
 impl<'a> From<&'a AgentTranscriptState> for AgentTranscriptView<'a> {
@@ -117,6 +120,7 @@ impl<'a> From<&'a AgentTranscriptState> for AgentTranscriptView<'a> {
             revision: state.revision,
             messages: &state.messages,
             turns: &state.turns,
+            provider_turns: false,
         }
     }
 }

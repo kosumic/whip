@@ -1,4 +1,5 @@
 //! The voice provider has no host selection, shell, or approval capability.
+mod correlation;
 mod delivery;
 pub(crate) use delivery::{BACKGROUND_AGENT, Delegation, Delivery, REMAIN_SILENT};
 
@@ -44,6 +45,7 @@ pub(crate) struct PinnedAgent {
     recovery: u64,
     submission: tokio::sync::Mutex<()>,
     uncertain: AtomicBool,
+    feedback_scope: parking_lot::Mutex<Option<correlation::Scope>>,
 }
 
 fn changed() -> HerdrControlError {
@@ -73,6 +75,7 @@ impl PinnedAgent {
             recovery,
             submission: tokio::sync::Mutex::new(()),
             uncertain: AtomicBool::new(false),
+            feedback_scope: parking_lot::Mutex::new(None),
         });
         pinned.check()?;
         Ok(pinned)
@@ -100,19 +103,49 @@ impl PinnedAgent {
 
     pub(crate) fn feedback_snapshot(
         &self,
-        revision: Option<u64>,
+        _revision: Option<u64>,
     ) -> Result<Option<crate::realtime_voice::feedback::Snapshot>, HerdrControlError> {
         self.check_liveness()?;
         if self.check().is_err() {
             return Ok(None);
         }
+        let scope = self.feedback_scope.lock().clone();
         let snapshot = self.runtime.inner.agents.project_live_transcript(
             &self.binding.transcript_key,
-            revision,
-            crate::realtime_voice::feedback::Snapshot::from_view,
+            None,
+            |view| {
+                let scope = scope
+                    .as_ref()
+                    .and_then(|scope| scope.turn(view).map(|turn| (scope, turn)));
+                crate::realtime_voice::feedback::Snapshot::from_filtered_view(view, |message| {
+                    scope.is_some_and(|(scope, turn)| scope.permits(turn, message))
+                })
+            },
         );
         self.check_liveness()?;
         Ok(snapshot)
+    }
+
+    fn observe_request(
+        &self,
+        tracker: &mut correlation::Tracker,
+    ) -> Result<Option<correlation::Observation>, HerdrControlError> {
+        self.check()?;
+        let observation = self.runtime.inner.agents.project_live_transcript(
+            &self.binding.transcript_key,
+            None,
+            |view| tracker.observe(view),
+        );
+        self.check()?;
+        if observation
+            .as_ref()
+            .is_some_and(|observation| observation.lost)
+        {
+            *self.feedback_scope.lock() = None;
+        } else if let Some(scope) = &tracker.scope {
+            *self.feedback_scope.lock() = Some(scope.clone());
+        }
+        Ok(observation)
     }
 
     fn check_state(&self, require_fresh: bool) -> Result<(), HerdrControlError> {
@@ -254,6 +287,10 @@ impl PinnedAgent {
         self.uncertain.store(true, Ordering::Release);
     }
 
+    pub(crate) fn clear_feedback(&self) {
+        *self.feedback_scope.lock() = None;
+    }
+
     pub(crate) async fn delegate(&self, request: Delegation, followup: bool) -> Value {
         if request.delivery == Delivery::Now
             && self.check_liveness().is_ok()
@@ -329,7 +366,17 @@ impl PinnedAgent {
             }
             let target = self.binding.pane_id.as_str();
             let was_working = status == HerdrAgentStatus::Working;
-            let baseline = self.feedback_snapshot(None)?;
+            let mut tracker = self
+                .runtime
+                .inner
+                .agents
+                .project_live_transcript(&self.binding.transcript_key, None, |view| {
+                    correlation::Tracker::new(Some(view), was_working)
+                })
+                .unwrap_or_else(|| correlation::Tracker::new(None, was_working));
+            if !was_working {
+                *self.feedback_scope.lock() = None;
+            }
             let text = if let Some(context) = &request.context {
                 match context.request(&request.prompt) {
                     Ok(text) => text,
@@ -342,46 +389,70 @@ impl PinnedAgent {
             } else {
                 request.prompt.clone()
             };
+            let text = tracker.text(&text);
             self.request(json!({"action":"agent_prompt","target":target,"text":text}))
                 .await?;
             if let Some(context) = &request.context {
                 context.acknowledge();
             }
             if was_working && followup && request.delivery == Delivery::Now {
-                return Ok(
-                    json!({"delivery":"steered","completion":"submitted","guidance":"Guidance was sent to the active task. This is not task completion; the original handoff continues."}),
-                );
-            }
-            // A successful write alone is not a started turn. Observe activity
-            // before releasing admission for another initial submission.
-            if !was_working {
                 let deadline = tokio::time::Instant::now() + START_TIMEOUT;
                 loop {
-                    let status = self.live_status().await?;
-                    if matches!(
-                        status,
-                        HerdrAgentStatus::Working | HerdrAgentStatus::Blocked
-                    ) {
-                        break;
-                    }
-                    if tokio::time::Instant::now() >= deadline {
-                        return Err(HerdrControlError::RequestTimeout(
-                            "Agent input was submitted but activity was not observed".into(),
-                        ));
+                    self.wait_fresh().await?;
+                    let observation = self.observe_request(&mut tracker)?;
+                    if observation
+                        .as_ref()
+                        .is_some_and(|value| value.accepted || value.lost)
+                        || tokio::time::Instant::now() >= deadline
+                    {
+                        return Ok(json!({"delivery":"steered","completion":"submitted",
+                            "accepted":observation.as_ref().is_some_and(|value| value.accepted && !value.lost),
+                            "turn_id":observation.as_ref().filter(|value| value.provider && !value.lost).and_then(|value| value.turn_id.as_ref()),
+                            "guidance":"Guidance was submitted to the active task. Acceptance is reported separately. This is not task completion; the original handoff continues."}));
                     }
                     tokio::time::sleep(POLL_INTERVAL).await;
                 }
             }
-            drop(admission);
-            // Only reads are repeated. Never replay input after a transport or
-            // completion timeout. This wait does not claim per-turn correlation.
+            let delivery = if was_working { "steered" } else { "started" };
+            let deadline = tokio::time::Instant::now() + START_TIMEOUT;
             loop {
+                self.wait_fresh().await?;
+                let observation = self.observe_request(&mut tracker)?;
                 let status = self.live_status().await?;
-                if settled(status) || status == HerdrAgentStatus::Blocked {
-                    let answer = self.settled_answer(baseline.as_ref()).await?;
-                    return Ok(
-                        json!({"delivery":if was_working {"steered"} else {"started"},"completion":"lifecycle_settled","status":status,"assistant_output":answer,"guidance":"This is a lifecycle observation, not proof that every request or queued task completed. assistant_output is actual public text observed after submission, not a per-turn completion receipt."}),
-                    );
+                // Transcript acceptance or terminal outcome also handles work that
+                // starts and finishes entirely between lifecycle polls.
+                if observation
+                    .as_ref()
+                    .is_some_and(|value| value.accepted || value.lost)
+                    || was_working
+                    || matches!(
+                        status,
+                        HerdrAgentStatus::Working | HerdrAgentStatus::Blocked
+                    )
+                {
+                    break;
+                }
+                if tokio::time::Instant::now() >= deadline {
+                    return Err(HerdrControlError::RequestTimeout(
+                        "Agent input was submitted but acceptance was not observed".into(),
+                    ));
+                }
+                tokio::time::sleep(POLL_INTERVAL).await;
+            }
+            drop(admission);
+            // Only reads repeat. An idle pane or another turn completing cannot
+            // complete this request. Unavailable correlation never replays input.
+            loop {
+                self.wait_fresh().await?;
+                let observation = self.observe_request(&mut tracker)?;
+                let status = self.live_status().await?;
+                if observation
+                    .as_ref()
+                    .is_some_and(|value| value.outcome.is_some() || value.lost)
+                    || settled(status)
+                    || status == HerdrAgentStatus::Blocked
+                {
+                    return self.request_result(&mut tracker, delivery, status).await;
                 }
                 tokio::time::sleep(POLL_INTERVAL).await;
             }
@@ -413,24 +484,33 @@ impl PinnedAgent {
         }
     }
 
-    async fn settled_answer(
+    async fn request_result(
         &self,
-        baseline: Option<&crate::realtime_voice::feedback::Snapshot>,
-    ) -> Result<Option<String>, HerdrControlError> {
-        let Some(baseline) = baseline else {
-            return Ok(None);
-        };
-        // Native transcript delivery can trail PTY status. Keep the socket/audio
-        // actor responsive while allowing that bounded tail to arrive.
+        tracker: &mut correlation::Tracker,
+        delivery: &str,
+        status: HerdrAgentStatus,
+    ) -> Result<Value, HerdrControlError> {
+        // Provider items can trail terminal/status events. Read a bounded tail
+        // from the same identity; never select a different turn or stale answer.
         let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
-        let mut answer = None;
         loop {
             self.wait_fresh().await?;
-            if let Some(snapshot) = self.feedback_snapshot(None)? {
-                answer = snapshot.answer_since(baseline).map(str::to_owned);
-            }
-            if tokio::time::Instant::now() >= deadline {
-                return Ok(answer);
+            let observation = self.observe_request(tracker)?;
+            if tokio::time::Instant::now() >= deadline
+                || observation.as_ref().is_some_and(|value| value.lost)
+            {
+                let Some(observation) = observation else {
+                    return Ok(
+                        json!({"error":"outcome_unknown","completion":"unknown","correlation":"unavailable"}),
+                    );
+                };
+                let mut result = observation.result(delivery, status);
+                if observation.lost || !observation.accepted {
+                    result["error"] = json!("outcome_unknown");
+                } else if observation.outcome.is_none() && status == HerdrAgentStatus::Blocked {
+                    result["observation"] = json!("agent_blocked");
+                }
+                return Ok(result);
             }
             tokio::time::sleep(POLL_INTERVAL).await;
         }

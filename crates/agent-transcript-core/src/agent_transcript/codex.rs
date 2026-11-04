@@ -1625,6 +1625,7 @@ impl CodexSessionCore {
             revision: self.revision,
             messages: self.adapter.projected_messages(),
             turns: self.adapter.projected_turns()?,
+            provider_turns: true,
         })
     }
 

@@ -145,6 +145,7 @@ impl Dispatch<'_> {
         request.context = Some(self.context.capture(self.transcript)?);
         let followup = self.handoff.is_some();
         if self.handoff.is_none() {
+            agent.clear_feedback();
             *self.handoff = Some(feedback::Handoff::new(
                 call.call_id.clone(),
                 call.response_id,

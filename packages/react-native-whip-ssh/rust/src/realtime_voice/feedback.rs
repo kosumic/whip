@@ -7,7 +7,9 @@
 
 use std::time::{Duration, Instant};
 
-use crate::agent_transcript::{AgentMessageRole, AgentTranscriptPart, AgentTranscriptView};
+use crate::agent_transcript::{
+    AgentMessageRole, AgentTranscriptMessage, AgentTranscriptPart, AgentTranscriptView,
+};
 
 const MAX_MESSAGES: usize = 64;
 const MAX_MESSAGE_BYTES: usize = 8192;
@@ -15,7 +17,7 @@ const MAX_BATCH_BYTES: usize = 16 * 1024;
 const MAX_HANDOFF_BYTES: usize = 64 * 1024;
 const PROGRESS_INTERVAL: Duration = Duration::from_secs(15);
 pub(super) const BACKEND_PREFIX: &str = "[BACKEND] ";
-pub(super) const FINISHED_GUIDANCE: &str = "Use actual assistant_output and [BACKEND] assistant text as the result. If neither contains the answer, say the result is not available in this voice call and direct the user to the agent chat. A lifecycle observation alone is not an answer or proof that all deferred work completed. Do not resubmit the request.";
+pub(super) const FINISHED_GUIDANCE: &str = "Use actual assistant_output and [BACKEND] assistant text as the result. If neither contains the answer, say the result is not available in this voice call and direct the user to the agent chat. Completion applies only to the associated provider turn. Unknown, inferred, blocked or submitted observations do not establish completion. Do not resubmit the request.";
 
 pub(crate) struct Snapshot {
     revision: u64,
@@ -27,35 +29,21 @@ struct AgentMessage {
 }
 
 impl Snapshot {
-    /// Bounded public assistant text, never terminal output or private parts.
-    pub(crate) fn answer_since(&self, previous: &Self) -> Option<&str> {
-        if previous
-            .messages
-            .last()
-            .is_some_and(|anchor| !self.messages.iter().any(|message| message.id == anchor.id))
-        {
-            return None;
-        }
-        self.messages
-            .iter()
-            .rev()
-            .find(|message| {
-                !message.text.is_empty()
-                    && previous
-                        .messages
-                        .iter()
-                        .find(|old| old.id == message.id)
-                        .is_none_or(|old| old.text != message.text)
-            })
-            .map(|message| message.text.as_str())
+    #[cfg(test)]
+    pub(crate) fn from_view(view: AgentTranscriptView<'_>) -> Self {
+        Self::from_filtered_view(view, |_| true)
     }
 
-    pub(crate) fn from_view(view: AgentTranscriptView<'_>) -> Self {
+    pub(crate) fn from_filtered_view(
+        view: AgentTranscriptView<'_>,
+        include: impl Fn(&AgentTranscriptMessage) -> bool,
+    ) -> Self {
         let messages = view
             .messages
             .iter()
             .rev()
             .take(MAX_MESSAGES)
+            .filter(|message| include(message))
             .rev()
             .filter_map(|message| {
                 // Omit pathological IDs rather than allocating unbounded cursor keys.

@@ -228,6 +228,7 @@ impl OpenCodeSessionCore {
             revision: self.revision,
             messages: &self.messages,
             turns: &self.turns,
+            provider_turns: false,
         }
     }
 
