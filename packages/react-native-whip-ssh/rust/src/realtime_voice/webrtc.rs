@@ -3,6 +3,7 @@ mod api;
 mod audio_track;
 mod identity;
 mod incoming;
+mod jitter;
 mod media;
 mod packet;
 mod transport;
@@ -403,10 +404,45 @@ pub(super) fn devices_started(owner: &RealtimeVoiceAdapter) {
     }
     owner.ready.store(true, Ordering::Release);
     view.recovery = recovery::State::Active;
+    if owner.allow_input && !view.muted && view.startup.first_input.is_none() {
+        // Accept capture now; advertise listening after its first encoded
+        // packet has reached the media sender, rather than at device open.
+        view.phase = "starting";
+        return;
+    }
     view.phase = if view.muted { "muted" } else { "listening" };
     view.startup.listening.get_or_insert_with(|| {
         owner
             .client_elapsed_ms
             .saturating_add(startup::elapsed(owner.started_at))
     });
+}
+
+pub(super) fn input_started(owner: &RealtimeVoiceAdapter) {
+    let elapsed = owner
+        .client_elapsed_ms
+        .saturating_add(startup::elapsed(owner.started_at));
+    let mut view = owner.view.lock();
+    view.startup.first_input.get_or_insert(elapsed);
+    view.startup.listening.get_or_insert(elapsed);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::confirmation;
+    use serde_json::json;
+
+    #[test]
+    fn audio_confirmation_preserves_settings_without_resending_prompt_or_tools()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let session = json!({"type":"realtime","instructions":"already supplied context","tools":[{"type":"function","name":"bound_agent"}],
+            "audio":{"input":{"format":{"type":"audio/pcm","rate":24000},"transcription":{"model":"gpt-4o-mini-transcribe"}},"output":{"format":{"type":"audio/pcm","rate":24000},"voice":"cedar"}}});
+        let event = serde_json::to_value(confirmation(&session)?)?;
+        assert_eq!(event["type"], "session.update");
+        assert_eq!(event["session"]["audio"], session["audio"]);
+        let settings = event["session"].as_object().ok_or("missing session")?;
+        assert!(!settings.contains_key("instructions"));
+        assert!(!settings.contains_key("tools"));
+        Ok(())
+    }
 }

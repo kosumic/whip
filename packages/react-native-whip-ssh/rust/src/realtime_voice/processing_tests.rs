@@ -53,10 +53,10 @@ fn rendered_reference_cancels_delayed_echo_without_using_noise_suppression() -> 
 
 #[test]
 fn near_end_speech_survives_when_speaker_is_silent() -> Result<()> {
-    let mut processor = echo_only()?;
+    let mut processor = Processor::new()?;
     let start = Instant::now() + Duration::from_millis(100);
     let mut energy = 0_f64;
-    for frame in 0..300 {
+    for frame in 0..100 {
         let now = start + Duration::from_millis(frame * 10);
         let capture: Vec<_> = (0..PCM_BLOCK)
             .map(|index| {
@@ -72,16 +72,14 @@ fn near_end_speech_survives_when_speaker_is_silent() -> Result<()> {
             .checked_sub(Duration::from_millis(20))
             .ok_or(INVALID_AUDIO)?;
         let cleaned = processor.capture(at, &capture, now)?;
-        if frame > 200 {
-            energy += cleaned.iter().map(|&v| f64::from(v).powi(2)).sum::<f64>();
-        }
+        energy += cleaned.iter().map(|&v| f64::from(v).powi(2)).sum::<f64>();
     }
     assert!(
         energy
-            > f64::from(u32::try_from(99 * PCM_BLOCK).map_err(|_| INVALID_AUDIO)?)
+            > f64::from(u32::try_from(100 * PCM_BLOCK).map_err(|_| INVALID_AUDIO)?)
                 * 3000_f64.powi(2)
                 / 10.0,
-        "near-end speech must remain audible"
+        "near-end speech must remain audible in the first second without warmup"
     );
     Ok(())
 }

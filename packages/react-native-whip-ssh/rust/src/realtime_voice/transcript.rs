@@ -1,6 +1,10 @@
 //! Call-owned captions paced by acknowledged playback, including while the
 //! server is still generating. Final duration refines the estimate gradually.
 use crate::speech_pacing as pacing;
+mod duration;
+#[cfg(test)]
+mod duration_tests;
+mod streaming;
 use std::collections::{HashSet, VecDeque};
 
 use oai_rt_rs::ServerEvent;
@@ -21,9 +25,20 @@ pub(super) struct Message {
     pub active: bool,
 }
 
+#[derive(Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct Timing {
+    received_ms: usize,
+    heard_ms: usize,
+    expected_ms: Option<usize>,
+    text_utf16: usize,
+    spoken_utf16: usize,
+}
+
 struct Turn {
     message: Message,
     samples: usize,
+    expected_samples: Option<usize>,
     played: usize,
     audio_done: bool,
     text_done: bool,
@@ -32,9 +47,15 @@ struct Turn {
     timing: pacing::Text,
     clock: pacing::Clock,
     pace_reported: bool,
+    stream_pace: streaming::StreamPace,
 }
 
 impl Turn {
+    fn observe_stream_pace(&mut self) {
+        if let Some(pace) = self.stream_pace.observe(self.timing.units, self.samples) {
+            self.clock.set_pace(pace);
+        }
+    }
     fn stop(&mut self) {
         if self.message.active {
             self.message.spoken_utf16 = self.timing.freeze(self.message.spoken_utf16);
@@ -48,11 +69,19 @@ impl Turn {
             return;
         }
         self.played = self.played.max(played.min(self.samples));
+        let duration_known = self.audio_done || self.expected_samples.is_some();
+        let duration = if self.audio_done {
+            self.samples
+        } else {
+            self.expected_samples
+                .unwrap_or(self.samples)
+                .max(self.samples)
+        };
         self.message.spoken_utf16 = self.clock.advance(
             &self.timing,
             self.played,
-            self.samples,
-            self.audio_done && self.text_done,
+            duration,
+            duration_known && self.text_done,
         );
         self.message.active = self.samples > 0 && (!self.audio_done || self.samples > self.played);
     }
@@ -69,6 +98,21 @@ fn assistant_id(item: &str, index: u32) -> String {
 }
 
 impl Transcript {
+    pub fn timing(&self) -> Timing {
+        self.turns
+            .iter()
+            .rev()
+            .find(|turn| turn.message.role == ASSISTANT)
+            .map_or_else(Timing::default, |turn| Timing {
+                received_ms: turn.samples.saturating_mul(1000) / super::RATE,
+                heard_ms: turn.played.saturating_mul(1000) / super::RATE,
+                expected_ms: turn
+                    .expected_samples
+                    .map(|samples| samples.saturating_mul(1000) / super::RATE),
+                text_utf16: turn.message.text.encode_utf16().count(),
+                spoken_utf16: turn.message.spoken_utf16,
+            })
+    }
     fn turn(&mut self, id: String, role: &'static str) -> Option<&mut Turn> {
         if id.len() > 512 {
             return None;
@@ -89,6 +133,7 @@ impl Transcript {
                 active: false,
             },
             samples: 0,
+            expected_samples: None,
             played: 0,
             audio_done: false,
             text_done: false,
@@ -97,6 +142,7 @@ impl Transcript {
             timing: pacing::Text::default(),
             clock: pacing::Clock::new(self.pace),
             pace_reported: false,
+            stream_pace: streaming::StreamPace::new(self.pace),
         });
         self.turns.back_mut()
     }
@@ -114,6 +160,19 @@ impl Transcript {
 
     pub fn observe(&mut self, event: &ServerEvent, ignored: &HashSet<String>) {
         match event {
+            ServerEvent::ResponseDone { response, .. } if !ignored.contains(&response.id) => {
+                if let Some(audio) = duration::estimate(response)
+                    && let Some(turn) = self.turns.iter_mut().find(|turn| {
+                        turn.message.id == assistant_id(audio.item, audio.index) && !turn.stopped
+                    })
+                {
+                    turn.message.text = super::limit_text(audio.transcript.to_owned());
+                    turn.timing.update(&turn.message.text);
+                    turn.text_done = true;
+                    turn.expected_samples = Some(audio.samples);
+                    turn.advance(turn.played);
+                }
+            }
             ServerEvent::InputAudioBufferSpeechStarted { item_id, .. }
             | ServerEvent::InputAudioBufferCommitted { item_id, .. } => {
                 self.turn(format!("user:{item_id}"), USER);
@@ -166,6 +225,7 @@ impl Transcript {
                 {
                     super::bounded_text(&mut turn.message.text, delta);
                     turn.timing.update(&turn.message.text);
+                    turn.observe_stream_pace();
                     turn.advance(turn.played);
                 }
             }

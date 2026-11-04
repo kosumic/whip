@@ -334,3 +334,20 @@ fn silence_is_an_empty_noop_and_suppresses_pending_notices() -> Result<(), &'sta
     assert!(next_response(&responses, Some(&mut handoff), now)?.is_none());
     Ok(())
 }
+
+#[test]
+fn typed_input_adds_user_context_without_resubmitting_agent_work()
+-> Result<(), Box<dyn std::error::Error>> {
+    let text = "Please also check 日本語 captions 👋";
+    let event = serde_json::to_value(submitted_message(text)?)?;
+    assert_eq!(event["type"], "conversation.item.create");
+    assert_eq!(event["item"]["role"], "user");
+    assert_eq!(event["item"]["content"][0]["type"], "input_text");
+    assert_eq!(
+        event["item"]["content"][0]["text"],
+        format!("{TYPED_PREFIX}{text}")
+    );
+    assert!(submitted_message("   ").is_err());
+    assert!(submitted_message(&"x".repeat(MAX_TEXT + 1)).is_err());
+    Ok(())
+}

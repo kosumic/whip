@@ -13,6 +13,17 @@ impl Default for Pace {
     }
 }
 impl Pace {
+    pub fn observe_streaming(&mut self, units: u32, samples: usize) -> bool {
+        if samples == 0 {
+            return false;
+        }
+        let rate = f64::from(units) / seconds(samples);
+        if !(MIN_UNITS_PER_SECOND..=MAX_UNITS_PER_SECOND).contains(&rate) {
+            return false;
+        }
+        self.observe(units, samples);
+        true
+    }
     pub fn observe(&mut self, units: u32, samples: usize) {
         if units > 0 && samples > 0 {
             let observed = (f64::from(units) / seconds(samples))
@@ -133,6 +144,10 @@ impl Clock {
         }
     }
 
+    pub fn set_pace(&mut self, pace: Pace) {
+        self.pace = pace;
+    }
+
     pub fn advance(&mut self, text: &Text, played: usize, samples: usize, complete: bool) -> usize {
         let elapsed = seconds(played.saturating_sub(self.played));
         self.played = self.played.max(played);
@@ -146,7 +161,12 @@ impl Clock {
                     .progress
                     .max(target.min(self.progress + elapsed * MAX_CORRECTION_UNITS_PER_SECOND));
             } else {
-                self.progress += elapsed * self.pace.0;
+                // A better rate estimate also catches earlier drift, but only
+                // over newly acknowledged audio and at a bounded display speed.
+                let target = seconds(played) * self.pace.0;
+                self.progress = self
+                    .progress
+                    .max(target.min(self.progress + elapsed * MAX_CORRECTION_UNITS_PER_SECOND));
             }
         }
         text.position(self.progress)

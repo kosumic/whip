@@ -100,6 +100,12 @@ Java_com_whipssh_RealtimeVoiceNative_stopped(JNIEnv *, jclass, jlong call) { ret
 extern "C" JNIEXPORT void JNICALL
 Java_com_whipssh_RealtimeVoiceNative_control(JNIEnv *, jclass, jlong call, jint action) { whip_realtime_control(call, static_cast<uint8_t>(action)); }
 extern "C" JNIEXPORT jboolean JNICALL
+Java_com_whipssh_RealtimeVoiceNative_submitted(JNIEnv *env, jclass, jlong call, jstring text) {
+    if (!text) return false;
+    const auto value = speechUtf8(env, text);
+    return !env->ExceptionCheck() && whip_realtime_submitted(call, reinterpret_cast<const uint8_t *>(value.data()), value.size());
+}
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_whipssh_RealtimeVoiceNative_capture(JNIEnv *env, jclass, jlong call, jshortArray samples, jint count) {
     std::array<int16_t, WhipRealtimeMaxFrame> pcm;
     if (count < 0 || count > static_cast<jint>(pcm.size()) || count > env->GetArrayLength(samples)) return false;

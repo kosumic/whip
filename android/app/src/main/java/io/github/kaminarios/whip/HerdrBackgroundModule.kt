@@ -142,6 +142,11 @@ class HerdrBackgroundModule(
   @ReactMethod
   fun realtimeVoiceControl(token: String, action: Int, promise: Promise) { mainHandler.post { RealtimeVoice.control(token, action); promise.resolve(null) } }
   @ReactMethod
+  fun realtimeVoiceSubmitted(token: String, text: String, promise: Promise) { mainHandler.post {
+    if (RealtimeVoice.submitted(token, text)) promise.resolve(null)
+    else promise.reject("E_REALTIME_CONTEXT", "The typed message could not be shared with voice.")
+  } }
+  @ReactMethod
   fun realtimeVoiceView(token: String, promise: Promise) { mainHandler.post { promise.resolve(RealtimeVoice.view(token)) } }
 
   @ReactMethod

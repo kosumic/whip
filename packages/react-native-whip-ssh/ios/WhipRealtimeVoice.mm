@@ -255,6 +255,11 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
   });
 }
 - (void)control:(NSString *)token action:(uint8_t)action { if ([self.token isEqualToString:token]) whip_realtime_control(_call.load(), action); }
+- (BOOL)submitted:(NSString *)token text:(NSString *)text {
+  if (![self.token isEqualToString:token]) return NO;
+  NSData *bytes = [text dataUsingEncoding:NSUTF8StringEncoding];
+  return bytes && whip_realtime_submitted(_call.load(), (const uint8_t *)bytes.bytes, bytes.length);
+}
 - (void)mute:(NSString *)token muted:(BOOL)muted { [self control:token action:muted ? WhipRealtimeMute : WhipRealtimeUnmute]; }
 - (NSString *)view:(NSString *)token {
   if (![self.token isEqualToString:token]) return [self.lastToken isEqualToString:token] ? self.lastView : @"{\"phase\":\"closed\"}";

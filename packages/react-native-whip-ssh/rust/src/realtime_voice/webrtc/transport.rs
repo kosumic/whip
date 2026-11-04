@@ -22,16 +22,40 @@ use webrtc::peer_connection::PeerConnectionBuilder;
 use webrtc::peer_connection::PeerConnectionEventHandler;
 use webrtc::peer_connection::RTCIceCandidateInit;
 use webrtc::peer_connection::RTCIceGatheringState;
+use webrtc::peer_connection::RTCPeerConnectionState;
 use webrtc::peer_connection::RTCSessionDescription;
 
 const WAIT: Duration = Duration::from_secs(/*secs*/ 15);
 const MAX_REMOTE_CANDIDATES: usize = 32;
 type Result<T> = std::result::Result<T, &'static str>;
 
-struct Events(Arc<Notify>);
+struct Events {
+    gathered: Arc<Notify>,
+    media: watch::Sender<bool>,
+}
 
 // The upstream trait requires async-trait's boxed-future ABI.
 impl PeerConnectionEventHandler for Events {
+    fn on_connection_state_change<'a, 'async_trait>(
+        &'a self,
+        state: RTCPeerConnectionState,
+    ) -> BoxFuture<'async_trait, ()>
+    where
+        'a: 'async_trait,
+        Self: 'async_trait,
+    {
+        Box::pin(async move {
+            match state {
+                RTCPeerConnectionState::Connected => {
+                    self.media.send_replace(true);
+                }
+                RTCPeerConnectionState::Failed | RTCPeerConnectionState::Closed => {
+                    self.media.send_replace(false);
+                }
+                _ => {}
+            }
+        })
+    }
     fn on_data_channel<'a, 'async_trait>(
         &'a self,
         channel: Arc<dyn DataChannel>,
@@ -56,7 +80,7 @@ impl PeerConnectionEventHandler for Events {
     {
         Box::pin(async move {
             if state == RTCIceGatheringState::Complete {
-                self.0.notify_one();
+                self.gathered.notify_one();
             }
         })
     }
@@ -99,6 +123,7 @@ impl Transport {
         let (media, audio) = super::audio_track::AudioTrack::new()?;
         let (incoming, ingress) = super::incoming::Incoming::new();
         let gathered = Arc::new(Notify::new());
+        let (media_ready, ready) = watch::channel(false);
         // Upstream defaults exhaust checks after 1.4s, including checks sent before
         // a TCP connection exists. Keep probing throughout our negotiation deadline.
         let check_interval = Duration::from_millis(/*millis*/ 200);
@@ -119,7 +144,10 @@ impl Transport {
                     .with_media_engine(media)
                     .with_runtime(runtime)
                     .with_setting_engine(settings)
-                    .with_handler(Arc::new(Events(gathered.clone())))
+                    .with_handler(Arc::new(Events {
+                        gathered: gathered.clone(),
+                        media: media_ready,
+                    }))
                     .with_udp_addrs(vec!["0.0.0.0:0", "[::]:0"])
                     .with_tcp_addrs(vec!["0.0.0.0:0", "[::]:0"])
                     .with_data_channel_send_buffer_limit(/*bytes*/ 64 * 1024)
@@ -136,13 +164,10 @@ impl Transport {
             let _ = timeout(Duration::from_secs(2), connection.close()).await;
             return Err("failed to create voice event channel");
         };
-        let (sender, ready) = watch::channel(false);
         let observer = tokio::spawn(async move {
             while let Some(event) = channel.poll().await {
                 match event {
-                    DataChannelEvent::OnOpen => {
-                        sender.send_replace(true);
-                    }
+                    DataChannelEvent::OnOpen => {}
                     DataChannelEvent::OnError
                     | DataChannelEvent::OnClosing
                     | DataChannelEvent::OnClose => break,
@@ -174,7 +199,6 @@ impl Transport {
                     _ => {}
                 }
             }
-            sender.send_replace(false);
         });
         Ok(Self {
             incoming,
@@ -257,7 +281,7 @@ impl Transport {
                 .wait_for(|ready| *ready)
                 .await
                 .map(|_| ())
-                .map_err(|_| "voice event channel closed")
+                .map_err(|_| "voice media connection closed")
         })
         .await
         .map_or(Ok(AnswerOutcome::TimedOut), |result| {

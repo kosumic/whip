@@ -51,6 +51,7 @@ pub(super) const FRAME: usize = RATE / 50;
 const MAX_OUTPUT: usize = RATE * 30;
 const MAX_WIRE: usize = 512 * 1024;
 const MAX_TEXT: usize = 16 * 1024;
+const TYPED_PREFIX: &str = "[TYPED — already submitted to the bound coding agent]\n";
 const MAX_ARGUMENT_BYTES: usize = 64 * 1024;
 const MAX_CALLS: usize = 128;
 const IO_TIMEOUT: Duration = Duration::from_secs(10);
@@ -228,12 +229,19 @@ pub(super) struct View {
     tool: Option<String>,
     captions: Option<captions::Diagnostics>,
     messages: Vec<transcript::Message>,
+    playback: transcript::Timing,
+    signal: echo::Signal,
     startup: startup::Timings,
     media_ready: bool,
     recovery: recovery::State,
     startup_attempt: u64,
     capture_packets: u64,
     capture_gaps: u64,
+    caption_events: u64,
+    capture_level: f32,
+    uploaded_packets: u64,
+    server_events: u64,
+    input_speech_events: u64,
 }
 
 struct Output {
@@ -342,6 +350,7 @@ struct BoundTargets {
 pub(super) enum Command {
     Skip,
     Mute(bool),
+    Submitted(String),
 }
 pub(super) struct RealtimeVoiceAdapter {
     started_at: Instant,
@@ -433,12 +442,19 @@ impl RealtimeVoiceAdapter {
                 output_tokens: 0,
                 estimated_usd: None,
                 messages: Vec::new(),
+                playback: transcript::Timing::default(),
+                signal: echo::Signal::default(),
                 startup: startup::Timings::default(),
                 media_ready: false,
                 recovery: recovery::State::Starting,
                 startup_attempt: 0,
                 capture_packets: 0,
                 capture_gaps: 0,
+                caption_events: 0,
+                capture_level: 0.0,
+                uploaded_packets: 0,
+                server_events: 0,
+                input_speech_events: 0,
                 tool: None,
                 captions: (!config.preview)
                     .then(|| captions::Diagnostics::pending(config.language)),
@@ -563,6 +579,7 @@ impl RealtimeVoiceAdapter {
         {
             return true;
         }
+        self.view.lock().capture_level = peak(samples);
         match self.input.push(generation, at, samples) {
             Ok(())
             | Err(
@@ -665,6 +682,7 @@ impl RealtimeVoiceAdapter {
         let mut preview_done = false;
         let mut preview_requested = false;
         let mut seen = wire::Seen::default();
+        let mut settings = startup::Settings::default();
         let mut handoff: Option<feedback::Handoff> = None;
         let mut deferred = delegation::Deferred::default();
         let context = handoff_context::Context::default();
@@ -675,6 +693,10 @@ impl RealtimeVoiceAdapter {
             }
             tokio::select! {
                 command = commands.recv() => match command {
+                    Some(Command::Submitted(text)) => {
+                        let event = if terminal.is_some() { terminal_submitted_message(&text)? } else { submitted_message(&text)? };
+                        send(&mut socket, event).await?;
+                    }
                     Some(Command::Skip) => {
                         if let Some(media) = self.media.lock().as_ref() { media.cancel_audio(responses.active().map(String::as_str)); }
                         if let Some(id) = responses.active().cloned() { ignored.insert(id.clone()); send(&mut socket, ClientEvent::ResponseCancel { event_id: None, response_id: Some(id) }).await?; }
@@ -757,7 +779,7 @@ impl RealtimeVoiceAdapter {
                     if self.ready.load(Ordering::Acquire) {
                         let output = self.output.lock();
                         let mut view = self.view.lock();
-                        view.phase = if output.generated > output.played { "speaking" } else if view.muted { "muted" } else if !tools.is_empty() || responses.is_active() { "waiting" } else { "listening" };
+                        view.phase = if output.generated > output.played { "speaking" } else if view.muted { "muted" } else if self.webrtc && self.allow_input && view.startup.first_input.is_none() { "starting" } else if !tools.is_empty() || responses.is_active() { "waiting" } else { "listening" };
                         if output.generated == output.played { view.playback_level = 0.0; }
                     }
                 },
@@ -771,6 +793,13 @@ impl RealtimeVoiceAdapter {
                     };
                     if config.webrtc && !seen.accept(&text)? { continue; }
                     let event: ServerEvent = serde_json::from_str(&text).map_err(|_| "OpenAI returned an unsupported Realtime event.")?;
+                    self.view.lock().server_events += 1;
+                    if matches!(event, ServerEvent::InputAudioBufferSpeechStarted { .. } | ServerEvent::InputAudioBufferSpeechStopped { .. } | ServerEvent::InputAudioBufferCommitted { .. }) {
+                        self.view.lock().input_speech_events += 1;
+                    }
+                    if matches!(event, ServerEvent::InputAudioTranscriptionDelta { .. } | ServerEvent::InputAudioTranscriptionCompleted { .. } | ServerEvent::ResponseOutputAudioTranscriptDelta { .. } | ServerEvent::ResponseOutputAudioTranscriptDone { .. }) {
+                        self.view.lock().caption_events += 1;
+                    }
                     if let ServerEvent::SessionCreated { session, .. } | ServerEvent::SessionUpdated { session, .. } = &event {
                         config.validate_model(&session.config.model)?;
                     }
@@ -778,9 +807,8 @@ impl RealtimeVoiceAdapter {
                     if costs.observe(&event) { self.view.lock().estimated_usd = costs.estimated_usd(); }
                     if !config.webrtc || !matches!(event, ServerEvent::ResponseOutputAudioDone { .. }) { self.output.lock().transcript.observe(&event, &ignored); }
                     match event {
-                        ServerEvent::SessionUpdated { session, .. } | ServerEvent::SessionCreated { session, .. } => {
-                            if !config.webrtc && !self.ready.load(Ordering::Acquire) && session.config.audio.is_none() { continue; }
-                            self.confirm_audio(&config, session.config.audio, configuration_started)?;
+                        event @ (ServerEvent::SessionUpdated { .. } | ServerEvent::SessionCreated { .. }) => {
+                            if !self.confirm_audio(&config, &event, configuration_started, &mut settings)? { continue; }
                             if config.preview && !preview_requested {
                                 preview_requested = true;
                                 send(&mut socket, preview_response()?).await?;
@@ -859,23 +887,25 @@ impl RealtimeVoiceAdapter {
     fn confirm_audio(
         &self,
         config: &Config,
-        audio: Option<oai_rt_rs::AudioConfig>,
+        event: &ServerEvent,
         started: Instant,
-    ) -> Result<(), &'static str> {
-        let audio = audio.ok_or("OpenAI did not negotiate audio.")?;
-        if !config.preview {
-            let captions = captions::Diagnostics::confirm(config.language, &audio);
-            let accepted = captions.validate();
+        settings: &mut startup::Settings,
+    ) -> Result<bool, &'static str> {
+        let accepted = settings.observe(config, event);
+        if let Some(captions) = settings.take_captions() {
             self.view.lock().captions = Some(captions);
-            accepted?;
         }
-        config.validate_audio(audio)?;
-        if !config.webrtc {
-            self.ready.store(true, Ordering::Release);
+        if !accepted? {
+            return Ok(false);
+        }
+        if config.webrtc {
+            self.view.lock().media_ready = settings.is_confirmed();
+        } else {
+            self.ready.store(settings.is_confirmed(), Ordering::Release);
             self.record_listening(started);
             self.view.lock().phase = "listening";
         }
-        Ok(())
+        Ok(true)
     }
 
     fn record_listening(&self, configuration_started: Instant) {
@@ -968,6 +998,17 @@ impl RealtimeVoiceAdapter {
     }
 }
 
+// Composer already submitted to the agent. Add context without creating a voice
+// response or invoking the agent tool a second time.
+fn submitted_message(text: &str) -> Result<ClientEvent, &'static str> {
+    if text.trim().is_empty() || text.len() > MAX_TEXT {
+        return Err("The typed message exceeds the voice context limit.");
+    }
+    typed(json!({"type":"conversation.item.create","item":{
+        "type":"message","role":"user","content":[{"type":"input_text","text":format!("{TYPED_PREFIX}{text}")}]
+    }}))
+}
+
 type RealtimeSocket = socket::Socket;
 
 async fn keep_alive(
@@ -986,6 +1027,15 @@ async fn keep_alive(
         *ping_at = tokio::time::Instant::now();
     }
     Ok(())
+}
+
+fn terminal_submitted_message(text: &str) -> Result<ClientEvent, &'static str> {
+    if text.trim().is_empty() || text.len() > MAX_TEXT {
+        return Err("The typed message exceeds the voice context limit.");
+    }
+    typed(
+        json!({"type":"conversation.item.create","item":{"type":"message","role":"user","content":[{"type":"input_text","text":format!("[TYPED — already sent as input to the bound terminal; execution and completion unverified; do not repeat]\n{text}")} ]}}),
+    )
 }
 
 async fn connect_raw(

@@ -16,6 +16,7 @@ import { settledPromise } from '../lib/promises';
 import { VoiceCallSoundPlayer } from './voiceCallSoundPlayer';
 
 const CONTROL = { skip: 1 } as const;
+const MAX_PENDING_CONTEXT = 8;
 let sequence = 0;
 type CallEvent = { token: string; type: string; muted?: boolean; speaker?: boolean };
 type NativeView = Pick<VoiceConversationView, 'phase' | 'muted' | 'level' | 'playbackLevel' | 'text' | 'userText' | 'error' | 'inputTokens' | 'outputTokens' | 'estimatedUsd' | 'messages'>;
@@ -33,6 +34,8 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
   private sounds?: VoiceCallSoundPlayer;
   private startingMedia?: Promise<void>;
   private nativeMediaAttempted = false;
+  private mediaStarted = false;
+  private pendingSubmissions: string[] = [];
   private playback?: NativeSpeechPlayback;
   private timer?: ReturnType<typeof setTimeout>;
   private cleanups: (() => void)[] = [];
@@ -99,6 +102,8 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
       this.startingMedia = this.playback.startRealtimeVoice(this.token, config);
       await this.startingMedia;
       if (this.closed) { await this.playback.stopRealtimeVoice(this.token); return; }
+      this.mediaStarted = true;
+      for (const text of this.pendingSubmissions.splice(0)) this.shareSubmission(text);
       await this.poll();
     } catch (error) {
       // Only application-generated messages are trusted here. Native bridge
@@ -137,7 +142,20 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
     if (binding && binding !== this.target.bindingToken) this.fail('The bound agent session changed. Please call again.');
   }
   setVadSensitivity(_value: number): void { /* Local VAD settings never configure server VAD. */ }
-  submitted(_text: string): void { /* Composer already submitted through its own verified path. */ }
+  submitted(text: string): void {
+    if (this.closed || !text.trim()) return;
+    if (!this.mediaStarted) {
+      if (this.pendingSubmissions.length === MAX_PENDING_CONTEXT) { this.fail('Voice context is still starting. Start a new call.'); return; }
+      this.pendingSubmissions.push(text);
+      return;
+    }
+    this.shareSubmission(text);
+  }
+  private shareSubmission(text: string): void {
+    const playback = this.playback;
+    if (!playback?.realtimeVoiceSubmitted) { this.fail('Install an updated Whip build to share typed messages with voice.'); return; }
+    void playback.realtimeVoiceSubmitted(this.token, text).catch(() => this.fail('The typed message could not be shared with voice. Start a new call.'));
+  }
   toggleMuted(): void { void this.playback?.setVoiceCallMuted(this.token, !this.view.muted).catch(() => this.fail('The call mute state could not be changed.')); }
   toggleSpeaker(): void { void this.playback?.setVoiceCallSpeaker(this.token, !this.view.speaker).catch(() => this.publish({ error: 'The requested audio route is unavailable.' })); }
   finish(): void { /* Realtime server VAD owns turn commits. */ }
@@ -146,6 +164,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
     if (this.closing) return this.closing;
     this.closed = true;
     const stoppedSound = this.sounds?.stop();
+    this.pendingSubmissions = [];
     clearTimeout(this.timer);
     this.closing = (async () => {
       try {

@@ -51,6 +51,8 @@ RCT_EXPORT_METHOD(realtimeVoiceControl:(NSString *)token action:(NSInteger)actio
 { [WhipRealtimeVoice.shared control:token action:(uint8_t)action]; resolve(nil); }
 RCT_EXPORT_METHOD(realtimeVoiceView:(NSString *)token resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 { resolve([WhipRealtimeVoice.shared view:token]); }
+RCT_EXPORT_METHOD(realtimeVoiceSubmitted:(NSString *)token text:(NSString *)text resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{ if ([WhipRealtimeVoice.shared submitted:token text:text]) resolve(nil); else reject(@"E_REALTIME_CONTEXT", @"The typed message could not be shared with voice.", nil); }
 RCT_EXPORT_METHOD(endVoiceCall:(NSString *)token resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 { [WhipVoiceCall.shared end:token resolve:resolve reject:reject]; }
 RCT_EXPORT_METHOD(playVoiceCallSound:(NSString *)uri inCall:(BOOL)inCall resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)

@@ -20,6 +20,7 @@ const mockNative = {
   startRealtimeVoice: jest.fn(() => Promise.resolve()), stopRealtimeVoice: jest.fn(() => Promise.resolve()),
   realtimeVoiceView: jest.fn(() => Promise.resolve(JSON.stringify({ phase: 'listening', muted: false, level: 0.2, playbackLevel: 0, text: 'hello', error: null, inputTokens: 3, outputTokens: 4, estimatedUsd: 0.0123, messages: [{ id: 'reply', role: 'assistant', text: 'hello', spokenUtf16: 2, active: true }] }))),
   realtimeVoiceControl: jest.fn(() => Promise.resolve()),
+  realtimeVoiceSubmitted: jest.fn((_token: string, _text: string) => Promise.resolve()),
   setVoiceCallMuted: jest.fn(() => Promise.resolve()), setVoiceCallSpeaker: jest.fn(() => Promise.resolve()),
 };
 
@@ -44,16 +45,19 @@ jest.mock('../src/services/NativeTranscriptService', () => ({ agentTranscriptSer
 
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 
-test('starts a terminal call without an agent binding', async () => {
+test('starts a terminal call without an agent binding and shares typed input as context', async () => {
   const changed = jest.fn();
   const terminal = { runtimeId: 'runtime-1', runtimeIncarnation: 4, connectionGeneration: 9, terminalId: 'shell-1' };
   const call = new RealtimeVoiceConversation({ hostId: 'host', paneId: 'shell-1', tabId: 'shell-1', label: 'Shell', terminal }, { ...defaults, provider: 'openai' }, changed);
   await call.start();
-  const [, raw] = mockNative.startRealtimeVoice.mock.calls[0] as unknown as [string, string];
+  const [token, raw] = mockNative.startRealtimeVoice.mock.calls[0] as unknown as [string, string];
   const config = JSON.parse(raw);
   expect(config.terminalTarget).toEqual(terminal);
   expect(config.target).toBeUndefined();
   expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'listening', transcript: null }));
+  call.submitted('Already typed into the selected terminal');
+  await flush();
+  expect(mockNative.realtimeVoiceSubmitted).toHaveBeenCalledWith(token, 'Already typed into the selected terminal');
   await call.close();
 });
 function setup() {
@@ -140,6 +144,46 @@ test('cue failures do not interrupt Realtime or prevent releasing the call', asy
   mockNative.playVoiceCallSound.mockRejectedValueOnce(new Error('Audio unavailable'));
   await call.close();
   expect(mockInput.releaseReservation).toHaveBeenCalled();
+});
+
+test('shares typed composer submissions with the active voice session and stops sharing after close', async () => {
+  const { call } = setup();
+  await call.start();
+  const token = (mockNative.startRealtimeVoice.mock.calls[0] as unknown as [string])[0];
+  call.submitted('Please also check 日本語 captions 👋');
+  await flush();
+  expect(mockNative.realtimeVoiceSubmitted).toHaveBeenCalledWith(token, 'Please also check 日本語 captions 👋');
+  expect(mockNative.realtimeVoiceSubmitted).toHaveBeenCalledTimes(1);
+  call.submitted('   ');
+  await call.close();
+  call.submitted('After hangup');
+  expect(mockNative.realtimeVoiceSubmitted).toHaveBeenCalledTimes(1);
+});
+
+test('reports context sharing failure without retrying a composer submission', async () => {
+  mockNative.realtimeVoiceSubmitted.mockRejectedValueOnce(new Error('native error'));
+  const { call, changed } = setup();
+  await call.start();
+  call.submitted('Already sent to the coding agent');
+  await flush();
+  expect(mockNative.realtimeVoiceSubmitted).toHaveBeenCalledTimes(1);
+  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'error', error: 'The typed message could not be shared with voice. Start a new call.' }));
+  await call.close();
+});
+
+test('holds typed context during native startup and flushes it in order', async () => {
+  let ready!: () => void;
+  mockNative.startRealtimeVoice.mockImplementationOnce(() => new Promise<void>(resolve => { ready = resolve; }));
+  const { call } = setup();
+  const starting = call.start();
+  call.submitted('First typed message');
+  await flush();
+  call.submitted('Second typed message');
+  expect(mockNative.realtimeVoiceSubmitted).not.toHaveBeenCalled();
+  ready();
+  await starting;
+  expect(mockNative.realtimeVoiceSubmitted.mock.calls.map(([, text]) => text)).toEqual(['First typed message', 'Second typed message']);
+  await call.close();
 });
 
 test('starts native Realtime with a pinned agent, selected voice, automatic language and server VAD', async () => {

@@ -1,8 +1,31 @@
 //! Call-owned AEC3. Only audio submitted to the media device is a render reference.
+use serde::Serialize;
 use std::collections::VecDeque;
 
 const MAX_SPANS: usize = 128;
+const MAX_RENDER_SAMPLES: usize = super::RATE / 2;
 const DSP_ERROR: &str = "Realtime echo cancellation could not process device audio.";
+
+#[derive(Clone, Copy, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct Signal {
+    raw_rms: f64,
+    processed_rms: f64,
+    dropped_frames: u64,
+}
+
+fn mean_power(samples: &[i16]) -> f64 {
+    samples
+        .iter()
+        .map(|&sample| (f64::from(sample) / 32768.0).powi(2))
+        .sum::<f64>()
+        / f64::from(u32::try_from(samples.len().max(1)).unwrap_or(u32::MAX))
+}
+
+struct Render {
+    at: std::time::Instant,
+    samples: Vec<i16>,
+}
 
 struct Span {
     end: usize,
@@ -63,12 +86,22 @@ impl PlaybackClock {
 pub(super) struct MediaEchoCanceller {
     processor: super::processing::Processor,
     clock: PlaybackClock,
+    rendered: VecDeque<Render>,
+    render_samples: usize,
+    signal: Signal,
+    raw_power: f64,
+    processed_power: f64,
 }
 impl MediaEchoCanceller {
     pub(super) fn new() -> Result<Self, &'static str> {
         Ok(Self {
             processor: super::processing::Processor::new()?,
             clock: PlaybackClock::default(),
+            rendered: VecDeque::new(),
+            render_samples: 0,
+            signal: Signal::default(),
+            raw_power: 0.0,
+            processed_power: 0.0,
         })
     }
     pub(super) fn render(
@@ -78,10 +111,6 @@ impl MediaEchoCanceller {
         audio: bool,
         delay_ns: i64,
     ) -> Result<(), &'static str> {
-        if self.clock.epoch != epoch {
-            self.processor.reset_render();
-        }
-        self.clock.submit(epoch, samples.len(), audio)?;
         let now = std::time::Instant::now();
         let delay = std::time::Duration::from_nanos(delay_ns.unsigned_abs());
         let at = if delay_ns >= 0 {
@@ -90,7 +119,30 @@ impl MediaEchoCanceller {
             now.checked_sub(delay)
         }
         .ok_or(DSP_ERROR)?;
-        self.processor.render(at, samples)
+        self.submit_render(epoch, at, samples, audio)
+    }
+    fn submit_render(
+        &mut self,
+        epoch: u64,
+        at: std::time::Instant,
+        samples: &[i16],
+        audio: bool,
+    ) -> Result<(), &'static str> {
+        self.clock.submit(epoch, samples.len(), audio)?;
+        self.enqueue_render(at, samples);
+        Ok(())
+    }
+    fn enqueue_render(&mut self, at: std::time::Instant, samples: &[i16]) {
+        if self.render_samples + samples.len() > MAX_RENDER_SAMPLES {
+            self.processor.reset_render();
+            self.rendered.clear();
+            self.render_samples = 0;
+        }
+        self.rendered.push_back(Render {
+            at,
+            samples: samples.to_vec(),
+        });
+        self.render_samples += samples.len();
     }
     pub(super) fn capture(
         &mut self,
@@ -98,15 +150,35 @@ impl MediaEchoCanceller {
         at: std::time::Instant,
         now: std::time::Instant,
     ) -> Result<Vec<i16>, &'static str> {
-        match self.processor.capture(at, samples, now) {
+        // Like Codex's capture worker, service speaker references before capture
+        // on the same worker. Device submission only queues PCM, and delay is
+        // measured when processing it rather than on the playback thread.
+        while let Some(render) = self.rendered.pop_front() {
+            self.render_samples -= render.samples.len();
+            self.processor.render_at(render.at, &render.samples, now)?;
+        }
+        let cleaned = match self.processor.capture(at, samples, now) {
             Err(super::processing::PROCESSING_LATE) => {
-                self.processor.reset()?;
+                self.signal.dropped_frames += 1;
+                self.reset_capture()?;
                 Ok(vec![])
             }
             result => result,
-        }
+        }?;
+        // Coarse signal energy only: never retain microphone samples for logs.
+        const SMOOTHING: f64 = 0.1;
+        self.raw_power += SMOOTHING * (mean_power(samples) - self.raw_power);
+        self.processed_power += SMOOTHING * (mean_power(&cleaned) - self.processed_power);
+        self.signal.raw_rms = self.raw_power.sqrt();
+        self.signal.processed_rms = self.processed_power.sqrt();
+        Ok(cleaned)
+    }
+    pub(super) fn diagnostics(&self) -> Signal {
+        self.signal
     }
     pub(super) fn reset_capture(&mut self) -> Result<(), &'static str> {
+        self.rendered.clear();
+        self.render_samples = 0;
         self.processor.reset()
     }
     pub(super) fn played(&mut self, epoch: u64, position: usize) -> usize {

@@ -19,5 +19,6 @@ int32_t WhipReadOpenAiVoiceCredential(void *context, uint8_t *destination, size_
 - (void)stop:(NSString *)token resolve:(RCTPromiseResolveBlock)resolve;
 - (void)mute:(NSString *)token muted:(BOOL)muted;
 - (void)control:(NSString *)token action:(uint8_t)action;
+- (BOOL)submitted:(NSString *)token text:(NSString *)text;
 - (NSString *)view:(NSString *)token;
 @end

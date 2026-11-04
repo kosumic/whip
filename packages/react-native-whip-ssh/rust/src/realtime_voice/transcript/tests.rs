@@ -24,6 +24,33 @@ fn delta(text: &str) -> Result<ServerEvent, Box<dyn std::error::Error>> {
 }
 
 #[test]
+fn long_streaming_reply_learns_rate_before_the_turn_finishes() -> TestResult {
+    let mut transcript = Transcript::default();
+    let ignored = HashSet::new();
+    let full = "aaaa ".repeat(110);
+    let mut available = 0;
+    let mut previous = 0;
+    for step in 1..=200 {
+        let played = step * super::super::RATE / 10;
+        transcript.audio("reply", 0, played + super::super::RATE / 5);
+        let next = (step * 5 / 2 + 10).min(full.len());
+        transcript.observe(&delta(&full[available..next])?, &ignored);
+        available = next;
+        // Text and audio arrival alone must never advance the highlight.
+        assert_eq!(transcript.snapshot()[0].spoken_utf16, previous);
+        transcript.played("reply", 0, played);
+        let message = &transcript.snapshot()[0];
+        assert!(message.active);
+        assert!(message.spoken_utf16 >= previous);
+        if step >= 80 {
+            assert!(message.spoken_utf16.abs_diff(step * 5 / 2) <= 6);
+        }
+        previous = message.spoken_utf16;
+    }
+    Ok(())
+}
+
+#[test]
 fn captions_follow_playback_not_arrival_and_preserve_previous_turns() -> TestResult {
     let mut output = super::super::Output::default();
     output

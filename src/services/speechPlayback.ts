@@ -22,6 +22,7 @@ export interface NativeSpeechPlayback {
   voiceCredentialsUpdating?(updating: boolean): Promise<void>;
   stopRealtimeVoice?(token: string): Promise<void>;
   realtimeVoiceControl?(token: string, action: number): Promise<void>;
+  realtimeVoiceSubmitted?(token: string, text: string): Promise<void>;
   realtimeVoiceView?(token: string): Promise<string>;
   /** Plays bundled cues without taking audio focus from an active call. */
   playVoiceCallSound(uri: string, inCall: boolean): Promise<void>;

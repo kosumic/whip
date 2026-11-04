@@ -16,6 +16,7 @@ void whip_realtime_stop(uint64_t call);
 bool whip_realtime_stopped(uint64_t call);
 enum WhipRealtimeControl { WhipRealtimeSkip = 1, WhipRealtimeMute = 3, WhipRealtimeUnmute = 4, WhipRealtimeAudioFailed = 5, WhipRealtimeMediaReady = 6 };
 void whip_realtime_control(uint64_t call, uint8_t action);
+bool whip_realtime_submitted(uint64_t call, const uint8_t *text, size_t length);
 bool whip_realtime_capture(uint64_t call, const int16_t *samples, size_t count);
 uint64_t whip_realtime_input_generation(uint64_t call);
 bool whip_realtime_capture_timed(uint64_t call, const int16_t *samples, size_t count, uint64_t generation, uint64_t age_ns);

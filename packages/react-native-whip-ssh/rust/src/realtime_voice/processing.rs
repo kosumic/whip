@@ -145,10 +145,7 @@ impl Processor {
         self.render.reset();
         self.render_delay = 0;
     }
-    pub(super) fn render(&mut self, at: Instant, samples: &[i16]) -> Result<()> {
-        self.render_at(at, samples, Instant::now())
-    }
-    fn render_at(&mut self, at: Instant, samples: &[i16], now: Instant) -> Result<()> {
+    pub(super) fn render_at(&mut self, at: Instant, samples: &[i16], now: Instant) -> Result<()> {
         if now.saturating_duration_since(at) > MAX_DELAY {
             self.reset_render();
             return Ok(());

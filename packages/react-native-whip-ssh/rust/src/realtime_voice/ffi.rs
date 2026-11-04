@@ -119,6 +119,31 @@ pub extern "C" fn whip_realtime_control(id: u64, action: u8) {
 }
 
 /// # Safety
+/// `text` points to `length` live UTF-8 bytes for this synchronous call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn whip_realtime_submitted(id: u64, text: *const u8, length: usize) -> bool {
+    if text.is_null() || length == 0 || length > super::MAX_TEXT {
+        return false;
+    }
+    // SAFETY: The native adapter owns and bounds these bytes until return.
+    let Ok(text) = std::str::from_utf8(unsafe { std::slice::from_raw_parts(text, length) }) else {
+        return false;
+    };
+    if super::submitted_message(text).is_err() {
+        return false;
+    }
+    let Some(call) = call(id) else {
+        return false;
+    };
+    if !call.allow_input || call.closed.load(Ordering::Acquire) {
+        return false;
+    }
+    call.commands
+        .try_send(Command::Submitted(text.to_owned()))
+        .is_ok()
+}
+
+/// # Safety
 /// samples must reference count initialized PCM16 samples for this call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn whip_realtime_capture(id: u64, samples: *const i16, count: usize) -> bool {
@@ -260,9 +285,18 @@ pub extern "C" fn whip_realtime_view(id: u64) -> *mut c_char {
     let Some(call) = call(id) else {
         return std::ptr::null_mut();
     };
-    let messages = call.output.lock().transcript.snapshot();
+    let (messages, playback) = {
+        let output = call.output.lock();
+        (output.transcript.snapshot(), output.transcript.timing())
+    };
+    let signal = call.echo.lock().as_ref().map_or_else(
+        super::echo::Signal::default,
+        super::echo::MediaEchoCanceller::diagnostics,
+    );
     let mut view = call.view.lock();
     view.messages = messages;
+    view.playback = playback;
+    view.signal = signal;
     (view.capture_packets, view.capture_gaps) = call.input.diagnostics();
     serde_json::to_string(&*view)
         .ok()

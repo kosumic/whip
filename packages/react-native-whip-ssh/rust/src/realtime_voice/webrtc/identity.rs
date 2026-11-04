@@ -13,6 +13,7 @@ pub(super) struct Tag {
 }
 #[derive(Default)]
 pub(super) struct Identity {
+    seen: super::super::wire::Seen,
     tags: VecDeque<Tag>,
     cancelled: VecDeque<String>,
     pub current: Option<Tag>,
@@ -23,6 +24,15 @@ pub(super) struct Identity {
     pub finish_at: Option<Instant>,
 }
 impl Identity {
+    pub fn finish(&mut self, epoch: u64, now: Instant) -> bool {
+        if self.epoch != epoch || self.finish_at.is_none_or(|deadline| deadline > now) {
+            return false;
+        }
+        self.enabled = false;
+        self.ended = true;
+        self.finish_at = None;
+        true
+    }
     pub fn cancel_response(&mut self, response: Option<&str>) {
         let response = response
             .map(str::to_owned)
@@ -41,6 +51,14 @@ impl Identity {
         self.finish_at = None;
     }
     pub fn observe(&mut self, event: &Value) {
+        match self.seen.accept_value(event) {
+            Ok(true) => {}
+            Ok(false) => return,
+            Err(_) => {
+                self.failed = true;
+                return;
+            }
+        }
         let response = event["response_id"].as_str().unwrap_or_default();
         match event["type"].as_str().unwrap_or_default() {
             "response.content_part.added" | "response.output_audio_transcript.delta" => {
@@ -114,6 +132,40 @@ impl Identity {
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn server_stop_finishes_on_its_deadline_despite_idle_rtp_and_cannot_end_a_new_epoch()
+    -> Result<(), &'static str> {
+        let mut identity = Identity::default();
+        identity.observe(&json!({"type":"response.content_part.added","response_id":"reply","item_id":"item","content_index":0,"part":{"type":"audio"}}));
+        identity.observe(&json!({"type":"output_audio_buffer.started","response_id":"reply"}));
+        identity.observe(&json!({"type":"output_audio_buffer.stopped","response_id":"reply"}));
+        let epoch = identity.epoch;
+        let deadline = identity.finish_at.ok_or("missing drain deadline")?;
+        assert!(!identity.finish(epoch, deadline - Duration::from_nanos(1)));
+        assert!(identity.enabled);
+        assert!(identity.finish(epoch, deadline));
+        assert!(identity.ended);
+        assert!(!identity.enabled);
+        assert!(!identity.finish(epoch, deadline + Duration::from_secs(1)));
+        identity.observe(&json!({"type":"output_audio_buffer.started","response_id":"reply"}));
+        assert!(!identity.finish(epoch, deadline + Duration::from_secs(2)));
+        assert!(identity.enabled);
+        assert!(!identity.ended);
+        Ok(())
+    }
+    #[test]
+    fn mirrored_sideband_events_do_not_restart_the_audible_epoch() {
+        let mut identity = Identity::default();
+        let part = json!({"event_id":"part_1","type":"response.content_part.added","response_id":"reply","item_id":"item","content_index":0,"part":{"type":"audio"}});
+        let started = json!({"event_id":"start_1","type":"output_audio_buffer.started","response_id":"reply"});
+        identity.observe(&part);
+        identity.observe(&started);
+        let epoch = identity.epoch;
+        identity.observe(&part);
+        identity.observe(&started);
+        assert_eq!(identity.epoch, epoch);
+        assert!(identity.enabled);
+    }
     #[test]
     fn cancelled_response_cannot_resume_or_clear_a_newer_audible_epoch() {
         let mut identity = Identity::default();

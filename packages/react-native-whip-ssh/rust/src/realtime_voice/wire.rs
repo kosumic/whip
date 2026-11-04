@@ -9,6 +9,9 @@ impl Seen {
     pub fn accept(&mut self, text: &str) -> Result<bool, &'static str> {
         let event: serde_json::Value =
             serde_json::from_str(text).map_err(|_| "Invalid Realtime event.")?;
+        self.accept_value(&event)
+    }
+    pub fn accept_value(&mut self, event: &serde_json::Value) -> Result<bool, &'static str> {
         let Some(id) = event["event_id"].as_str() else {
             return Ok(true);
         };

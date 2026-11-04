@@ -24,6 +24,7 @@ internal object RealtimeVoice {
   private const val NANOS_PER_SECOND = 1_000_000_000L
   private const val MAX_AUDIO_AGE_NS = NANOS_PER_SECOND / 2
   private const val LOG_TAG = "WhipRealtimeAudio"
+  private const val DIAGNOSTIC_INTERVAL_MS = 5_000L
   private var current: Session? = null
   private var lastToken: String? = null
   private var lastView = "{\"phase\":\"closed\"}"
@@ -53,6 +54,12 @@ internal object RealtimeVoice {
     var captureMuted = VoiceCallService.muted(token)
     var captionDiagnostic: String? = null
     var startupDiagnostic: String? = null
+    var audioDiagnostic: String? = null
+    var audioDiagnosticAtMs = 0L
+    @Volatile var capturedSamples = 0L
+    @Volatile var rejectedCapture = 0L
+    @Volatile var captureAgeNs = 0L
+    @Volatile var deviceFramePosition = 0L
     fun elapsedMs(): Long = clientElapsedMs + SystemClock.elapsedRealtime() - mediaStartedAt
   }
 
@@ -124,6 +131,16 @@ internal object RealtimeVoice {
               Log.i(LOG_TAG, diagnostic)
             }
           }
+          val audioDiagnostic = "phase=$phase speechEvents=${state.optLong("inputSpeechEvents")} gaps=${state.optLong("captureGaps")} captionEvents=${state.optLong("captionEvents")} messages=${state.optJSONArray("messages")?.length() ?: 0}"
+          val diagnosticNow = SystemClock.elapsedRealtime()
+          if (session.audioDiagnostic != audioDiagnostic || diagnosticNow - session.audioDiagnosticAtMs >= DIAGNOSTIC_INTERVAL_MS) {
+            session.audioDiagnostic = audioDiagnostic
+            session.audioDiagnosticAtMs = diagnosticNow
+            val playback = state.optJSONObject("playback")
+            val signal = state.optJSONObject("signal")
+            val counters = "rawRms=${signal?.optDouble("rawRms")} processedRms=${signal?.optDouble("processedRms")} processingDrops=${signal?.optLong("droppedFrames")} receivedMs=${playback?.optLong("receivedMs")} heardMs=${playback?.optLong("heardMs")} durationMs=${playback?.optLong("expectedMs")} captionUtf16=${playback?.optLong("textUtf16")} spokenUtf16=${playback?.optLong("spokenUtf16")}"
+            Log.w(LOG_TAG, "Audio deviceSamples=${session.capturedSamples} rejected=${session.rejectedCapture} ageMs=${session.captureAgeNs / 1_000_000} devicePosition=${session.deviceFramePosition} capturePackets=${state.optLong("capturePackets")} uploadedPackets=${state.optLong("uploadedPackets")} rawLevel=${state.optDouble("captureLevel")} processedLevel=${state.optDouble("level")} events=${state.optLong("serverEvents")} $audioDiagnostic $counters")
+          }
           if (phase == "error" || preview && phase == "closed") {
             stop(token)
             if (!preview) VoiceCallService.end(token)
@@ -192,13 +209,19 @@ internal object RealtimeVoice {
         if (captured == 0L) Log.i(LOG_TAG, "Startup firstCaptureMs=${session.elapsedMs()}")
         val first = captured
         captured += count
+        session.capturedSamples = captured
         val now = System.nanoTime()
         val at = if (input.getTimestamp(timestamp, AudioTimestamp.TIMEBASE_MONOTONIC) == AudioRecord.SUCCESS) {
           timestamp.nanoTime + (first - timestamp.framePosition) * NANOS_PER_SECOND / Core.RATE
         } else now - count * NANOS_PER_SECOND / Core.RATE
         // Match Codex's device-time cutoff: reject even a callback crossing
         // unmute, together with every read started in a previous generation.
-        if (boundary !== session.boundary || at < boundary.cutoff || at > now || now - at > MAX_AUDIO_AGE_NS) continue
+        session.captureAgeNs = now - at
+        session.deviceFramePosition = timestamp.framePosition
+        if (boundary !== session.boundary || at < boundary.cutoff || at > now || now - at > MAX_AUDIO_AGE_NS) {
+          session.rejectedCapture++
+          continue
+        }
         if (!Core.captureTimed(session.call, pcm, count, generation, now - at)) break
       }
     } catch (_: Exception) { if (session.running.get()) Core.control(session.call, Core.AUDIO_FAILED) }
@@ -214,20 +237,21 @@ internal object RealtimeVoice {
       val timestamp = AudioTimestamp()
       var generation = 0L
       var submitted = 0L
+      var epochStart = 0L
       while (session.running.get()) {
         val nextEpoch = Core.epoch(session.call)
         if (nextEpoch != generation) {
-          track.pause(); track.flush(); track.play()
-          generation = nextEpoch; submitted = 0
+          // Response epochs are not device epochs. Keep the hardware clock and
+          // AEC reference continuous, including the short queued audio tail.
+          generation = nextEpoch; epochStart = submitted
         }
         val played = track.playbackHeadPosition.toLong() and 0xffffffffL
-        Core.played(session.call, generation, played)
+        Core.played(session.call, generation, (played - epochStart).coerceAtLeast(0))
         // Keep at most 80ms in the platform buffer; Rust retains the rest.
         if (submitted - played > Core.FRAME * 3) { Thread.sleep(5); continue }
         val audioCount = Core.read(session.call, pcm, epoch)
         if (epoch[0] != generation) {
-          track.pause(); track.flush(); track.play()
-          generation = epoch[0]; submitted = 0
+          generation = epoch[0]; epochStart = submitted
         }
         if (audioCount == 0 && session.preview) { Thread.sleep(5); continue }
         // Clock the render reference continuously, including silence between
@@ -264,6 +288,7 @@ internal object RealtimeVoice {
     Core.control(it.call, action)
   } }
   fun muted(token: String, muted: Boolean) { control(token, if (muted) Core.MUTE else Core.UNMUTE) }
+  fun submitted(token: String, text: String): Boolean = current?.takeIf { it.token == token }?.let { Core.submitted(it.call, text) } ?: false
   fun view(token: String): String = current?.takeIf { it.token == token }?.let { Core.view(it.call) }
     ?: if (lastToken == token) lastView else "{\"phase\":\"closed\"}"
   fun stop(token: String, promise: Promise? = null) {
