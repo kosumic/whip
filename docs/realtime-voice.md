@@ -30,22 +30,41 @@ It is separate from the coding-agent transcript and is not persisted to disk.
 
 The public [Realtime transcript events](https://developers.openai.com/api/reference/resources/realtime/server-events)
 have no word timestamps, and text/audio packets are not paired timing cues.
-Whip streams the text immediately but keeps it dim until the final transcript
-and audio markers establish the item's complete audio duration. It then estimates
-word timing over that complete item using acknowledged device playback,
-excluding silence used to clock AEC. This can delay the initial highlight while
-generation finishes; it prevents early sentences being squeezed into the first
-small audio packet. Buffering does not advance the highlight; interrupting or
-skipping freezes it. These are approximate word boundaries, not forced alignment.
-Different packet sizes/interleavings do not change the completed-item estimate.
-Realtime presentation applies a capped one-word visual lead to compensate the
-observed steady lag. Punctuation does not consume that lead, unknown/zero
-positions stay unhighlighted, and interrupted replies retain their bright prefix.
-This calibration does not change native playback counts or audio truncation.
+Whip streams text immediately and estimates spoken progress from acknowledged
+device playback, excluding silence used to clock AEC. Highlighting starts while
+audio is still being generated, using an initial speech pace that learns from
+completed turns. CJK characters receive syllable weights instead of English
+letter weights. Once final text/audio markers establish the complete duration,
+the native clock gradually reconciles its estimate and applies the visual word
+lead; the React presentation adds no second lead. Final metadata alone cannot
+jump a still-playing reply forward. Buffering does not advance the clock, and
+interrupting or skipping freezes the bright prefix. Actual audio truncation
+continues to use heard samples. These are approximate word boundaries, not
+forced alignment; text/audio packet arrival cannot provide exact alignment.
 Late input captions update the reserved user turn rather than appearing after
 the assistant reply.
 Local calls also retain captions, with spoken text acknowledged at TTS chunk
 boundaries rather than estimated word timing. Both paths bound retained text.
+
+Android Realtime startup emits duration-only diagnostics under
+`WhipRealtimeAudio`. The clock begins when the voice session is requested,
+before its transition queue, microphone permission and foreground service:
+
+- `preMediaMs` measures elapsed time before native media creation.
+- `mediaSetupMs` measures audio object setup; `coreStartMs` covers native core
+  startup through microphone start. Rust separately measures `preparationMs`
+  and `credentialsMs`.
+- `websocketMs` measures socket connection; `configurationMs` measures sending
+  the session update through validation of the server's confirmation.
+- `micStartMs`, `firstCaptureMs`, `listeningMs` and `firstInputMs` are elapsed
+  times since the original request. Listening requires accepted server
+  configuration; first input means an audio frame was sent, not a provider
+  receipt. The presentation polls at 100ms, which can add display delay.
+
+Stages overlap, so these counters must not all be summed. Logs contain no audio,
+transcripts, target identifiers or credentials. Realtime skips local OS TTS
+warmup; Local calls retain it. Device startup latency must be measured with a
+user-initiated call rather than inferred from timeouts or source inspection.
 
 **Preview voice** becomes available after saving an API key in Realtime mode.
 It plays one short AI-generated sample in the selected Realtime voice using
