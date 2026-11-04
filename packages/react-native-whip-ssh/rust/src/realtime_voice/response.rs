@@ -76,6 +76,12 @@ pub(super) fn is_active_response_error(error: &oai_rt_rs::ServerError) -> bool {
 }
 
 pub(super) fn provider_error_message(error: &oai_rt_rs::ServerError) -> &'static str {
+    if matches!(
+        error.code.as_deref(),
+        Some("model_not_found" | "model_not_supported" | "permission_denied")
+    ) {
+        return super::models::ACCESS_ERROR;
+    }
     match error.error_type {
         oai_rt_rs::ApiErrorType::RateLimitError => "OpenAI Realtime quota or rate limit reached.",
         oai_rt_rs::ApiErrorType::AuthenticationError => "OpenAI rejected the saved API credential.",

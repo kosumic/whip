@@ -7,6 +7,7 @@ mod delegation;
 mod echo;
 pub(crate) mod feedback;
 mod ffi;
+mod models;
 mod processing;
 mod response;
 mod socket;
@@ -50,7 +51,6 @@ const MAX_ARGUMENT_BYTES: usize = 64 * 1024;
 const MAX_CALLS: usize = 128;
 const IO_TIMEOUT: Duration = Duration::from_secs(10);
 static EVENT_SEQUENCE: AtomicU64 = AtomicU64::new(1);
-const MODEL: &str = "gpt-realtime";
 const INSTRUCTIONS: &str = include_str!("realtime_voice/instructions.md");
 // Adapted from Codex's realtime_websocket/methods_v2.rs default tool description
 // at 93b4e5b4c6474cdbf12614c4ac3acbd006fbee89 (Apache-2.0).
@@ -71,6 +71,8 @@ pub(super) struct Config {
     #[serde(default)]
     webrtc: bool,
     target: Option<AgentTarget>,
+    #[serde(default)]
+    model: Option<String>,
     voice: String,
     vad: Option<Vad>,
     #[serde(default)]
@@ -98,6 +100,18 @@ enum Vad {
 }
 
 impl Config {
+    fn model(&self) -> Result<&'static models::Model, &'static str> {
+        models::selected(self.model.as_deref())
+    }
+
+    fn validate_model(&self, confirmed: &str) -> Result<(), &'static str> {
+        if self.model()?.accepts(confirmed) {
+            Ok(())
+        } else {
+            Err(models::MISMATCH)
+        }
+    }
+
     fn validate_audio(&self, audio: oai_rt_rs::AudioConfig) -> Result<(), &'static str> {
         let input = audio.input.ok_or("OpenAI did not negotiate input audio.")?;
         let output = audio
@@ -137,6 +151,7 @@ impl Config {
     }
 
     fn session_update(&self) -> Result<ClientEvent, &'static str> {
+        self.model()?;
         if !VOICES.contains(&self.voice.as_str()) {
             return Err("Choose a supported OpenAI Realtime voice.");
         }
@@ -590,7 +605,7 @@ impl RealtimeVoiceAdapter {
         let mut heartbeat = tokio::time::interval(Duration::from_millis(250));
         let mut capture = ::audio_ingress::Packet::new(self.input.packet_samples);
         let mut responses = response::ResponseCreateQueue::default();
-        let mut costs = cost::CurrentChat::default();
+        let mut costs = cost::CurrentChat::new(config.model()?);
         let mut input_item = String::new();
         let mut ignored = HashSet::new();
         let mut ledger = ToolLedger::default();
@@ -708,6 +723,9 @@ impl RealtimeVoiceAdapter {
                     };
                     if config.webrtc && !seen.accept(&text)? { continue; }
                     let event: ServerEvent = serde_json::from_str(&text).map_err(|_| "OpenAI returned an unsupported Realtime event.")?;
+                    if let ServerEvent::SessionCreated { session, .. } | ServerEvent::SessionUpdated { session, .. } = &event {
+                        config.validate_model(&session.config.model)?;
+                    }
                     if !config.webrtc && matches!(event, ServerEvent::SessionCreated { .. }) { continue; }
                     if costs.observe(&event) { self.view.lock().estimated_usd = costs.estimated_usd(); }
                     if !config.webrtc || !matches!(event, ServerEvent::ResponseOutputAudioDone { .. }) { self.output.lock().transcript.observe(&event, &ignored); }
@@ -826,11 +844,13 @@ impl RealtimeVoiceAdapter {
     ) -> Result<(RealtimeSocket, Instant), &'static str> {
         let started = Instant::now();
         if config.webrtc {
-            return webrtc::start(self.clone(), key, update)
+            return webrtc::start(self.clone(), key, update, config.model()?)
                 .await
                 .map(|socket| (socket, started));
         }
-        let mut socket = connect(key).await?;
+        let mut socket = connect_raw(key, &config.model()?.websocket_url())
+            .await
+            .map(|socket| socket::Socket::Direct(Box::new(socket)))?;
         self.view.lock().startup.websocket = Some(startup::elapsed(started));
         let configuration_started = Instant::now();
         send(&mut socket, update).await?;
@@ -839,17 +859,6 @@ impl RealtimeVoiceAdapter {
 }
 
 type RealtimeSocket = socket::Socket;
-
-async fn connect(
-    key: native_credentials::NativeCredential,
-) -> Result<RealtimeSocket, &'static str> {
-    connect_raw(
-        key,
-        &format!("wss://api.openai.com/v1/realtime?model={MODEL}"),
-    )
-    .await
-    .map(|socket| socket::Socket::Direct(Box::new(socket)))
-}
 
 async fn connect_raw(
     key: native_credentials::NativeCredential,
@@ -876,7 +885,7 @@ async fn connect_raw(
     .map_err(|_| "OpenAI Realtime connection timed out.")?
     .map_err(|error| match error {
         tokio_tungstenite::tungstenite::Error::Http(response) => match response.status().as_u16() {
-            401 | 403 => "OpenAI rejected the API credential or model access.",
+            401 | 403 | 404 => models::ACCESS_ERROR,
             429 => "OpenAI Realtime quota or rate limit reached.",
             _ => "OpenAI Realtime could not connect. Check model access and connectivity.",
         },

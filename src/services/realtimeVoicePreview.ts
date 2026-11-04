@@ -1,5 +1,5 @@
 import { AppState } from 'react-native';
-import { REALTIME_VOICES } from '../lib/voiceConversationSettings';
+import { DEFAULT_REALTIME_MODEL, REALTIME_MODELS, REALTIME_VOICES } from '../lib/voiceConversationSettings';
 import { composerSpeechInput } from './composerSpeechInput';
 import { suspendChatSpeechForInput } from './chatSpeech';
 import { onOpenAiVoiceCredentialChange, voiceCredentialError } from './openAiVoiceCredentials';
@@ -23,9 +23,10 @@ export class RealtimeVoicePreview {
   private credentialChange?: () => void;
   private background?: { remove: () => void };
 
-  async play(voice: string): Promise<VoicePreviewResult> {
+  async play(voice: string, model = DEFAULT_REALTIME_MODEL): Promise<VoicePreviewResult> {
     if (this.cancelled) return 'cancelled';
     if (AppState.currentState !== 'active' || !REALTIME_VOICES.some(candidate => candidate === voice)) throw new Error('Voice preview is unavailable.');
+    if (!REALTIME_MODELS.some(candidate => candidate.id === model)) throw new Error('Choose a supported OpenAI Realtime model.');
     if (!composerSpeechInput.reserve(this.token)) return 'busy';
     this.reserved = true;
     try {
@@ -36,7 +37,7 @@ export class RealtimeVoicePreview {
       await suspendChatSpeechForInput();
       if (this.cancelled || AppState.currentState !== 'active') return 'cancelled';
       // Catch and replace every native exception: bridge errors may contain arguments.
-      this.starting = this.playback.startRealtimeVoicePreview(this.token, voice);
+      this.starting = this.playback.startRealtimeVoicePreview(this.token, voice, model);
       await this.starting;
       const deadline = Date.now() + TIMEOUT_MS;
       while (!this.cancelled && Date.now() < deadline) {

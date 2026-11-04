@@ -1,5 +1,8 @@
+use super::super::models;
 use super::*;
 use serde_json::{Value, json};
+
+const DEFAULT_MODEL: &str = "gpt-realtime-1.5";
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 fn event(value: Value) -> TestResult<ServerEvent> {
@@ -10,7 +13,7 @@ fn event(value: Value) -> TestResult<ServerEvent> {
     Ok(event)
 }
 fn confirmed(model: &str) -> TestResult<CurrentChat> {
-    let mut chat = CurrentChat::default();
+    let mut chat = CurrentChat::new(models::selected(Some(model))?);
     chat.observe(&event(json!({"type":"session.updated","event_id":"session-event","session":{"id":"session","object":"realtime.session","expires_at":4_000_000_000_u64,"type":"realtime","model":model,"output_modalities":["audio"]}}))?);
     Ok(chat)
 }
@@ -36,7 +39,7 @@ fn estimate(chat: &CurrentChat, expected: f64) -> TestResult {
 
 #[test]
 fn charges_audio_text_and_cached_input_at_their_own_rates() -> TestResult {
-    let mut chat = confirmed(super::super::MODEL)?;
+    let mut chat = confirmed(DEFAULT_MODEL)?;
     chat.observe(&response("response.done", "one", usage())?);
     // 800 text + 1500 audio uncached; 700 cached; 100 text + 400 audio output.
     estimate(&chat, 0.07868)
@@ -44,7 +47,7 @@ fn charges_audio_text_and_cached_input_at_their_own_rates() -> TestResult {
 
 #[test]
 fn combines_all_responses_and_separately_billed_transcription_without_replay() -> TestResult {
-    let mut chat = confirmed(super::super::MODEL)?;
+    let mut chat = confirmed(DEFAULT_MODEL)?;
     let reply = response("response.done", "same-id", usage())?;
     chat.observe(&reply);
     chat.observe(&reply);
@@ -61,7 +64,7 @@ fn combines_all_responses_and_separately_billed_transcription_without_replay() -
 
 #[test]
 fn a_final_usage_report_replaces_the_same_responses_earlier_report() -> TestResult {
-    let mut chat = confirmed(super::super::MODEL)?;
+    let mut chat = confirmed(DEFAULT_MODEL)?;
     chat.observe(&response("response.cancelled", "one", usage())?);
     let mut final_usage = usage();
     final_usage["output_tokens"] = json!(600);
@@ -93,7 +96,7 @@ fn unknown_or_inconsistent_usage_never_becomes_a_zero_cost_estimate() -> TestRes
             value
         },
     ] {
-        let mut chat = confirmed(super::super::MODEL)?;
+        let mut chat = confirmed(DEFAULT_MODEL)?;
         chat.observe(&response("response.done", "known", usage())?);
         chat.observe(&response("response.done", "missing", invalid)?);
         assert!(chat.estimated_usd().is_none());
@@ -103,13 +106,18 @@ fn unknown_or_inconsistent_usage_never_becomes_a_zero_cost_estimate() -> TestRes
 
 #[test]
 fn estimates_belong_to_one_call_and_require_a_supported_confirmed_model() -> TestResult {
-    assert!(CurrentChat::default().estimated_usd().is_none());
-    let mut first = confirmed("gpt-realtime-2025-08-28")?;
+    assert!(
+        CurrentChat::new(models::selected(None)?)
+            .estimated_usd()
+            .is_none()
+    );
+    let mut first = confirmed(DEFAULT_MODEL)?;
     estimate(&first, 0.0)?;
     first.observe(&response("response.done", "one", usage())?);
     estimate(&first, 0.07868)?;
-    estimate(&confirmed(super::super::MODEL)?, 0.0)?;
-    let mut unknown = confirmed("unknown-model")?;
+    estimate(&confirmed(DEFAULT_MODEL)?, 0.0)?;
+    let mut unknown = confirmed(DEFAULT_MODEL)?;
+    unknown.observe(&event(json!({"type":"session.updated","event_id":"changed-model","session":{"id":"session","object":"realtime.session","expires_at":4_000_000_000_u64,"type":"realtime","model":"unknown-model","output_modalities":["audio"]}}))?);
     unknown.observe(&response("response.done", "one", usage())?);
     assert!(unknown.estimated_usd().is_none());
     Ok(())
@@ -117,15 +125,15 @@ fn estimates_belong_to_one_call_and_require_a_supported_confirmed_model() -> Tes
 
 #[test]
 fn failed_transcription_and_accounting_overflow_remain_unknown() -> TestResult {
-    let mut failed = confirmed(super::super::MODEL)?;
+    let mut failed = confirmed(DEFAULT_MODEL)?;
     failed.observe(&event(json!({"type":"conversation.item.input_audio_transcription.failed","event_id":"failure","item_id":"caption","content_index":0,"error":{"type":"transcription_error","code":"bad_audio","message":"test failure"}}))?);
     assert!(failed.estimated_usd().is_none());
-    let mut chat = confirmed(super::super::MODEL)?;
+    let mut chat = confirmed(DEFAULT_MODEL)?;
     let mut invalid = usage();
     invalid["input_tokens"] = json!(u32::MAX);
     chat.observe(&response("response.done", "bad", invalid)?);
     assert!(chat.estimated_usd().is_none());
-    let mut chat = confirmed(super::super::MODEL)?;
+    let mut chat = confirmed(DEFAULT_MODEL)?;
     for id in 0..=MAX_ITEMS {
         chat.observe(&response(
             "response.created",

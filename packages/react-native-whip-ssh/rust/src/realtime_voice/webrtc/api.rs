@@ -1,5 +1,5 @@
 //! Unified public call creation: SDP and initial configuration travel together.
-use super::super::{IO_TIMEOUT, MAX_WIRE, MODEL};
+use super::super::{IO_TIMEOUT, MAX_WIRE, models};
 use native_credentials::NativeCredential;
 use reqwest::{
     Client,
@@ -22,9 +22,10 @@ impl Call {
     pub async fn create(
         key: &NativeCredential,
         offer: String,
-        mut session: Value,
+        session: Value,
     ) -> Result<Self, &'static str> {
-        session["model"] = Value::String(MODEL.into());
+        // Initial configuration owns model selection for both calls and previews.
+        models::selected(Some(session["model"].as_str().ok_or(models::UNSUPPORTED)?))?;
         let client = HTTP
             .get_or_init(|| {
                 Client::builder()
@@ -59,7 +60,7 @@ impl Call {
             .map_err(|_| "Realtime call creation failed. Check your network.")?;
         if response.status().as_u16() != 201 {
             return Err(match response.status().as_u16() {
-                401 | 403 => "OpenAI rejected the API credential or model access.",
+                401 | 403 | 404 => models::ACCESS_ERROR,
                 429 => "OpenAI Realtime quota or rate limit reached.",
                 _ => "OpenAI rejected the Realtime call configuration.",
             });

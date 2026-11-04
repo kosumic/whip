@@ -84,7 +84,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
       else await this.playback.startVoiceCall(this.token, this.target.label);
       if (this.closed) { await this.playback.endVoiceCall(this.token); return; }
       requireForeground();
-      const config = JSON.stringify({ clientElapsedMs: Math.max(0, Math.round(performance.now() - this.requestedAt)), target, voice: this.settings.realtimeVoice, vad: parseRealtimeVad(this.settings.realtimeVad ?? DEFAULT_REALTIME_VAD) });
+      const config = JSON.stringify({ clientElapsedMs: Math.max(0, Math.round(performance.now() - this.requestedAt)), target, model: this.settings.realtimeModel, voice: this.settings.realtimeVoice, vad: parseRealtimeVad(this.settings.realtimeVad ?? DEFAULT_REALTIME_VAD) });
       this.nativeMediaAttempted = true;
       this.startingMedia = this.playback.startRealtimeVoice(this.token, config);
       await this.startingMedia;
@@ -93,7 +93,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
     } catch (error) {
       // Only application-generated messages are trusted here. Native bridge
       // and provider errors can contain sensitive data.
-      this.fail(voiceCredentialError(error, error instanceof Error && !this.nativeMediaAttempted ? error.message : 'OpenAI Realtime could not start. Check the saved API credential, connected agent, and microphone permissions.'));
+      this.fail(voiceCredentialError(error, error instanceof Error && !this.nativeMediaAttempted ? error.message : 'OpenAI Realtime could not start. Check the saved API key, selected model access, connected agent, and microphone permissions.'));
     }
   }
 

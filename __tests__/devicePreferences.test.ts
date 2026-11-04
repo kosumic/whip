@@ -663,7 +663,7 @@ test('Store builds ignore persisted developer settings without erasing them', ()
 });
 
 test('OpenAI provider and separate model voices survive a preferences restart', async () => {
-  const voiceConversation = { provider: 'openai' as const, mode: 'Live' as const, realtimeVoice: 'cedar', liveVoice: 'quartz' };
+  const voiceConversation = { provider: 'openai' as const, mode: 'Live' as const, realtimeModel: 'gpt-realtime-2.1-mini', realtimeVoice: 'cedar', liveVoice: 'quartz' };
   await saveDevicePreferences({ ...defaultDevicePreferences, voiceConversation });
   mockGetItem.mockResolvedValue(mockSetItem.mock.calls.at(-1)![1]);
   const loaded = await loadDevicePreferences();
@@ -678,7 +678,7 @@ test('validates each model catalog independently and defaults old preferences to
   mockGetItem.mockResolvedValue(JSON.stringify({ voiceConversation: {
     provider: 'openai', mode: 'Live', realtimeVoice: 'quartz', liveVoice: 'quartz',
   } }));
-  expect((await loadDevicePreferences()).voiceConversation).toEqual({ provider: 'openai', mode: 'Live', realtimeVoice: 'marin', liveVoice: 'quartz' });
+  expect((await loadDevicePreferences()).voiceConversation).toEqual({ ...defaultDevicePreferences.voiceConversation, provider: 'openai', mode: 'Live', realtimeVoice: 'marin', liveVoice: 'quartz' });
   mockGetItem.mockResolvedValue(JSON.stringify({ voiceConversation: {
     provider: 'invalid', mode: 'unknown', realtimeVoice: 'unknown', liveVoice: 'unknown',
   } }));

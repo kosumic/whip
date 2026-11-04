@@ -1,0 +1,36 @@
+{
+  "defaultModel": "gpt-realtime-1.5",
+  "checkedOn": "2026-11-04",
+  "models": [
+    {
+      "id": "gpt-realtime-1.5",
+      "name": "GPT Realtime 1.5",
+      "snapshots": [],
+      "rates": {
+        "textInput": 4.0, "cachedTextInput": 0.4, "textOutput": 16.0,
+        "audioInput": 32.0, "cachedAudioInput": 0.4, "audioOutput": 64.0,
+        "imageInput": 5.0, "cachedImageInput": 0.5
+      }
+    },
+    {
+      "id": "gpt-realtime-2.1",
+      "name": "GPT Realtime 2.1",
+      "snapshots": [],
+      "rates": {
+        "textInput": 4.0, "cachedTextInput": 0.4, "textOutput": 24.0,
+        "audioInput": 32.0, "cachedAudioInput": 0.4, "audioOutput": 64.0,
+        "imageInput": 5.0, "cachedImageInput": 0.5
+      }
+    },
+    {
+      "id": "gpt-realtime-2.1-mini",
+      "name": "GPT Realtime 2.1 Mini",
+      "snapshots": [],
+      "rates": {
+        "textInput": 0.6, "cachedTextInput": 0.06, "textOutput": 2.4,
+        "audioInput": 10.0, "cachedAudioInput": 0.3, "audioOutput": 20.0,
+        "imageInput": 0.8, "cachedImageInput": 0.08
+      }
+    }
+  ]
+}

@@ -5,6 +5,22 @@ Platform API key, then open a connected coding-agent chat and start its call.
 The existing Local provider remains the default. GPT-Live and Global calls
 remain unavailable. The selected voice and Realtime VAD configuration are
 snapshotted when the app-wide owner starts the call; edits affect the next call.
+The Realtime model is also saved and snapshotted per call. Settings offers
+`gpt-realtime-1.5` (the default, matching Codex's inspected v1/v2 path),
+`gpt-realtime-2.1`, and `gpt-realtime-2.1-mini`. The original `gpt-realtime`
+and its snapshots are not available as legacy choices. Older settings with no
+model, or an unsupported saved model, migrate to `gpt-realtime-1.5`; other
+conversation preferences are retained. This is a preference migration, not a
+runtime fallback: a rejected model or access failure ends the attempted session
+without selecting another model or replaying agent work.
+
+The native catalog in `realtime_voice/models.json` supplies the default,
+supported model IDs and verified USD rates; React Native presents the same
+catalog. WebSockets select the model in the connection URL; WebRTC includes it
+in the initial call POST. `session.update` omits the immutable model field.
+Both paths verify the model in provider session events against the selected
+model and its explicitly cataloged snapshots. Unrecognized snapshots are not
+accepted by guessing a model-name prefix.
 Input transcription follows Codex's automatic language detection. UI language
 does not constrain spoken language, so bilingual/code-switching conversations
 can retain English, Chinese or other speech in their original language.
@@ -69,8 +85,9 @@ warmup; Local calls retain it. Device startup latency must be measured with a
 user-initiated call rather than inferred from timeouts or source inspection.
 
 **Preview voice** becomes available after saving an API key in Realtime mode.
-It plays one short AI-generated sample in the selected Realtime voice using
-`gpt-realtime`; API charges apply. Preview opens no microphone and sends no agent
+It plays one short AI-generated sample using the selected Realtime model and
+voice; API charges apply. Changing either setting cancels a running preview.
+Preview opens no microphone and sends no agent
 target, tools, chat history or transcription request. Stop, changing voices or
 providers, leaving settings, backgrounding and audio interruption cancel it.
 GPT-Live previews remain unavailable.
@@ -227,11 +244,16 @@ the same charge twice. Presentation remounts retain the running call's total.
 Raw token counters are not displayed.
 
 The rate snapshot was checked on 2026-11-04 against the official model pages for
-[gpt-realtime](https://developers.openai.com/api/docs/models/gpt-realtime) and
+[gpt-realtime-1.5](https://developers.openai.com/api/docs/models/gpt-realtime-1.5),
+[gpt-realtime-2.1](https://developers.openai.com/api/docs/models/gpt-realtime-2.1),
+[gpt-realtime-2.1-mini](https://developers.openai.com/api/docs/models/gpt-realtime-2.1-mini), and
 [gpt-4o-mini-transcribe](https://developers.openai.com/api/docs/models/gpt-4o-mini-transcribe).
 Only the selected models' known aliases/snapshots are priced. Missing usage,
 unsupported models or inconsistent token/cache breakdowns leave the estimate
-unavailable and hide its line instead of showing zero. Live totals advance as usage reports arrive; pending
+unavailable and hide its line instead of showing zero. Live totals advance as usage reports arrive.
+Text, audio and image input use the selected model's separate uncached/cached
+rates, and output uses its own text/audio rates. Missing verified rates also
+hide the estimate rather than borrowing another model's prices. Pending
 responses are not projected from microphone duration or guessed token counts.
 These are voice API estimates, excluding remote coding-agent charges and any
 account-specific pricing. Current-session estimates do not backfill the separate

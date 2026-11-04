@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { useTranslation } from 'react-i18next';
 import { VoiceConversationSettingsContext } from '../lib/voiceConversationSettingsContext';
-import { LIVE_VOICES, REALTIME_VOICES, selectedConversationVoice, DEFAULT_REALTIME_VAD, parseRealtimeVad } from '../lib/voiceConversationSettings';
+import { LIVE_VOICES, REALTIME_MODELS, REALTIME_VOICES, selectedConversationVoice, DEFAULT_REALTIME_VAD, parseRealtimeVad } from '../lib/voiceConversationSettings';
 import { hasOpenAiVoiceKey, removeOpenAiVoiceKey, saveOpenAiVoiceKey } from '../services/openAiVoiceCredentials';
 import { RealtimeVoicePreview } from '../services/realtimeVoicePreview';
 import { GlassButton } from './GlassControls';
@@ -36,7 +36,7 @@ export function VoiceConversationSetting() {
     mounted.current = true;
     return () => { mounted.current = false; };
   }, []);
-  useEffect(() => () => { void stopPreview(); }, [settings.provider, settings.mode, settings.realtimeVoice, stopPreview]);
+  useEffect(() => () => { void stopPreview(); }, [settings.provider, settings.mode, settings.realtimeModel, settings.realtimeVoice, stopPreview]);
   useEffect(() => {
     if (settings.provider !== 'openai') return;
     let current = true;
@@ -73,7 +73,7 @@ export function VoiceConversationSetting() {
     try {
       await previewClosing.current;
       if (revision !== previewRevision.current || !mounted.current) return;
-      const result = await owner.play(settings.realtimeVoice);
+      const result = await owner.play(settings.realtimeVoice, settings.realtimeModel);
       if (result === 'busy' && revision === previewRevision.current && mounted.current) setError(t('voiceProvider.previewBusy'));
     } catch {
       if (revision === previewRevision.current && mounted.current) setError(t('voiceProvider.previewError'));
@@ -105,6 +105,17 @@ export function VoiceConversationSetting() {
         </GlassButton>)}
       </View>
       <Text accessibilityRole="alert" className="text-xs text-muted-foreground">{t(settings.mode === 'Live' ? 'voiceProvider.liveUnavailable' : 'voiceProvider.realtimeNotice')}</Text>
+      {settings.mode === 'Realtime' && <>
+        <Text className="text-sm font-medium">{t('voiceProvider.model')}</Text>
+        <View className="flex-row flex-wrap gap-2">
+          {REALTIME_MODELS.map(model => <GlassButton key={model.id}
+            accessibilityLabel={model.name} accessibilityRole="radio" accessibilityState={{ selected: settings.realtimeModel === model.id }}
+            variant={settings.realtimeModel === model.id ? 'secondary' : 'ghost'}
+            onPress={() => onChange({ ...settings, realtimeModel: model.id })}>
+            <Text>{model.name}</Text>
+          </GlassButton>)}
+        </View>
+      </>}
       <SpeechVoicePicker title={t('voiceProvider.voice')} selected={selectedConversationVoice(settings)}
         voices={voices.map(id => ({ id, name: id[0].toUpperCase() + id.slice(1), language: '', networkRequired: true }))}
         onSelect={id => onChange({ ...settings, [settings.mode === 'Realtime' ? 'realtimeVoice' : 'liveVoice']: id })} />

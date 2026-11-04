@@ -79,7 +79,7 @@ test('saving a key enables Realtime preview for the selected voice without start
   expect(RealtimeVoicePreview).not.toHaveBeenCalled();
   await act(async () => renderer.root.findByType(SpeechVoicePicker).props.onSelect('cedar'));
   await act(async () => pressText('voiceProvider.preview'));
-  expect(mockPreviewPlay).toHaveBeenCalledWith('cedar');
+  expect(mockPreviewPlay).toHaveBeenCalledWith('cedar', defaults.realtimeModel);
 });
 
 test('a playing preview can be stopped and changing voices cancels its owner', async () => {

@@ -60,8 +60,8 @@ internal object RealtimeVoice {
   fun start(context: ReactApplicationContext, token: String, config: String, promise: Promise) {
     startMedia(context, token, config, false, promise)
   }
-  fun preview(context: ReactApplicationContext, token: String, voice: String, promise: Promise) {
-    val config = JSONObject().put("preview", true).put("voice", voice).toString()
+  fun preview(context: ReactApplicationContext, token: String, voice: String, model: String, promise: Promise) {
+    val config = JSONObject().put("preview", true).put("voice", voice).put("model", model).toString()
     startMedia(context, token, config, true, promise)
   }
   @SuppressLint("MissingPermission")

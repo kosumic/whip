@@ -31,7 +31,7 @@ afterEach(() => jest.useRealTimers());
 
 test('previews the selected voice with the saved key without starting a call or agent session', async () => {
   await expect(new RealtimeVoicePreview().play('cedar')).resolves.toBe('completed');
-  expect(mockNative.startRealtimeVoicePreview).toHaveBeenCalledWith(expect.any(String), 'cedar');
+  expect(mockNative.startRealtimeVoicePreview).toHaveBeenCalledWith(expect.any(String), 'cedar', 'gpt-realtime-1.5');
   expect(mockNative.startVoiceCall).not.toHaveBeenCalled();
   expect(mockNative.startRealtimeVoice).not.toHaveBeenCalled();
   expect(composerSpeechInput.releaseReservation).toHaveBeenCalledTimes(1);

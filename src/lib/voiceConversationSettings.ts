@@ -1,3 +1,9 @@
+import realtimeCatalog from '../../packages/react-native-whip-ssh/rust/src/realtime_voice/models.json';
+
+// Rust validates calls and prices usage from this same catalog.
+export const REALTIME_MODELS = realtimeCatalog.models;
+export const DEFAULT_REALTIME_MODEL = realtimeCatalog.defaultModel;
+
 export type VoiceMode = 'TurnBased' | 'Realtime' | 'Live';
 export type CloudVoiceMode = Exclude<VoiceMode, 'TurnBased'>;
 export type RealtimeVad = { type: 'server_vad'; threshold: number; prefix_padding_ms: number; silence_duration_ms: number };
@@ -5,6 +11,7 @@ export const DEFAULT_REALTIME_VAD: RealtimeVad = { type: 'server_vad', threshold
 export interface VoiceConversationSettings {
   provider: 'local' | 'openai';
   mode: CloudVoiceMode;
+  realtimeModel: string;
   realtimeVoice: string;
   liveVoice: string;
   realtimeVad?: RealtimeVad;
@@ -23,7 +30,7 @@ export const LIVE_VOICES = [
 ] as const;
 
 export const DEFAULT_VOICE_CONVERSATION_SETTINGS: Readonly<VoiceConversationSettings> = {
-  provider: 'local', mode: 'Realtime', realtimeVoice: 'marin', liveVoice: 'marin',
+  provider: 'local', mode: 'Realtime', realtimeModel: DEFAULT_REALTIME_MODEL, realtimeVoice: 'marin', liveVoice: 'marin',
 };
 
 export function parseVoiceConversationSettings(value: unknown): VoiceConversationSettings {
@@ -31,6 +38,7 @@ export function parseVoiceConversationSettings(value: unknown): VoiceConversatio
   return {
     provider: saved.provider === 'openai' ? 'openai' : 'local',
     mode: saved.mode === 'Live' ? 'Live' : 'Realtime',
+    realtimeModel: REALTIME_MODELS.find(model => model.id === saved.realtimeModel)?.id ?? DEFAULT_REALTIME_MODEL,
     realtimeVoice: REALTIME_VOICES.find(voice => voice === saved.realtimeVoice) ?? 'marin',
     liveVoice: LIVE_VOICES.find(voice => voice === saved.liveVoice) ?? 'marin',
     ...(saved.realtimeVad ? { realtimeVad: parseRealtimeVad(saved.realtimeVad) } : {}),

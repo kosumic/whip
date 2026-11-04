@@ -87,9 +87,9 @@ static int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_
 - (void)start:(NSString *)token config:(NSString *)config resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {
   [self start:token config:config preview:NO resolve:resolve reject:reject];
 }
-- (void)preview:(NSString *)token voice:(NSString *)voice resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {
+- (void)preview:(NSString *)token voice:(NSString *)voice model:(NSString *)model resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {
   if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) { reject(@"E_REALTIME", @"Return to Whip to preview a voice.", nil); return; }
-  NSData *data = [NSJSONSerialization dataWithJSONObject:@{@"preview":@YES, @"voice":voice} options:0 error:nil];
+  NSData *data = [NSJSONSerialization dataWithJSONObject:@{@"preview":@YES, @"voice":voice, @"model":model} options:0 error:nil];
   NSString *config = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
   [self start:token config:config preview:YES resolve:resolve reject:reject];
 }

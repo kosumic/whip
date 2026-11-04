@@ -42,6 +42,7 @@ pub(super) async fn start(
     owner: Arc<RealtimeVoiceAdapter>,
     key: native_credentials::NativeCredential,
     update: ClientEvent,
+    model: &super::models::Model,
 ) -> Result<RealtimeSocket, &'static str> {
     let (socket, commands, events) = socket::Socket::relay();
     let identity = Arc::new(Mutex::new(identity::Identity::default()));
@@ -55,8 +56,7 @@ pub(super) async fn start(
         }
     };
     owner.view.lock().startup.offer = Some(startup::elapsed(offer_started));
-    let session =
-        serde_json::to_value(update).map_err(|_| "Invalid voice session.")?["session"].take();
+    let session = initial_session(update, model)?;
     let call_started = Instant::now();
     let call = match api::Call::create(&key, offer, session).await {
         Ok(call) => call,
@@ -104,6 +104,18 @@ pub(super) async fn start(
     });
     owner.view.lock().media_ready = true;
     Ok(socket)
+}
+
+// Models are immutable after creation. Only the call POST includes this field;
+// WebSocket sessions select it in the connection URL, never in session.update.
+fn initial_session(
+    update: ClientEvent,
+    model: &super::models::Model,
+) -> Result<serde_json::Value, &'static str> {
+    let mut session =
+        serde_json::to_value(update).map_err(|_| "Invalid voice session.")?["session"].take();
+    session["model"] = serde_json::Value::String(model.id.clone());
+    Ok(session)
 }
 
 fn spawn_sideband(

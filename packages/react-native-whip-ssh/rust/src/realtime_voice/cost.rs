@@ -1,22 +1,15 @@
 //! Current-call USD estimates from provider usage, never token-count guesses.
-//! Rate snapshot checked 2026-11-04 against the official model pages:
-//! https://developers.openai.com/api/docs/models/gpt-realtime
+//! Realtime model rates live in models.json; transcription rates checked 2026-11-04:
 //! https://developers.openai.com/api/docs/models/gpt-4o-mini-transcribe
 //! Coding-agent charges are outside this voice API estimate.
 use std::collections::BTreeMap;
 
+use super::models::{Model, Rates};
 use oai_rt_rs::{ServerEvent, Usage};
 
 const MILLION: f64 = 1_000_000.0;
 const MAX_ITEMS: usize = 4096;
 const MAX_ID_BYTES: usize = 256;
-const TEXT_INPUT: f64 = 4.0;
-const AUDIO_INPUT: f64 = 32.0;
-const IMAGE_INPUT: f64 = 5.0;
-const CACHED_INPUT: f64 = 0.4;
-const CACHED_IMAGE_INPUT: f64 = 0.5;
-const TEXT_OUTPUT: f64 = 16.0;
-const AUDIO_OUTPUT: f64 = 64.0;
 const TRANSCRIPTION_INPUT: f64 = 1.25;
 const TRANSCRIPTION_OUTPUT: f64 = 5.0;
 
@@ -31,21 +24,29 @@ enum Charge {
     Final(Option<f64>),
 }
 
-#[derive(Default)]
 pub(super) struct CurrentChat {
+    model: &'static Model,
     model_supported: Option<bool>,
     items: BTreeMap<(Kind, String, u32), Charge>,
     invalid: bool,
 }
 
 impl CurrentChat {
+    pub(super) fn new(model: &'static Model) -> Self {
+        Self {
+            model,
+            model_supported: None,
+            items: BTreeMap::new(),
+            invalid: false,
+        }
+    }
+
     pub(super) fn observe(&mut self, event: &ServerEvent) -> bool {
         match event {
-            ServerEvent::SessionUpdated { session, .. } => {
-                let supported = matches!(
-                    session.config.model.as_str(),
-                    super::MODEL | "gpt-realtime-2025-08-28"
-                );
+            ServerEvent::SessionUpdated { session, .. }
+            | ServerEvent::SessionCreated { session, .. } => {
+                let supported =
+                    self.model.accepts(&session.config.model) && self.model.rates.is_some();
                 self.model_supported = Some(self.model_supported.unwrap_or(true) && supported);
             }
             ServerEvent::ResponseCreated { response, .. } => {
@@ -57,7 +58,12 @@ impl CurrentChat {
                     Kind::Response,
                     &response.id,
                     0,
-                    Charge::Final(response.usage.as_ref().and_then(response_cost)),
+                    Charge::Final(response.usage.as_ref().and_then(|usage| {
+                        self.model
+                            .rates
+                            .as_ref()
+                            .and_then(|rates| response_cost(usage, rates))
+                    })),
                 );
             }
             ServerEvent::InputAudioBufferCommitted { item_id, .. } => {
@@ -125,7 +131,7 @@ impl CurrentChat {
     }
 }
 
-fn response_cost(usage: &Usage) -> Option<f64> {
+fn response_cost(usage: &Usage, rates: &Rates) -> Option<f64> {
     if usage.input_tokens.checked_add(usage.output_tokens)? != usage.total_tokens {
         return None;
     }
@@ -167,13 +173,14 @@ fn response_cost(usage: &Usage) -> Option<f64> {
         }
     }
     Some(
-        (f64::from(text.checked_sub(cached_text)?) * TEXT_INPUT
-            + f64::from(audio.checked_sub(cached_audio)?) * AUDIO_INPUT
-            + f64::from(image.checked_sub(cached_image)?) * IMAGE_INPUT
-            + f64::from(cached_text.checked_add(cached_audio)?) * CACHED_INPUT
-            + f64::from(cached_image) * CACHED_IMAGE_INPUT
-            + f64::from(output_text) * TEXT_OUTPUT
-            + f64::from(output_audio) * AUDIO_OUTPUT)
+        (f64::from(text.checked_sub(cached_text)?) * rates.text_input
+            + f64::from(audio.checked_sub(cached_audio)?) * rates.audio_input
+            + f64::from(image.checked_sub(cached_image)?) * rates.image_input
+            + f64::from(cached_text) * rates.cached_text_input
+            + f64::from(cached_audio) * rates.cached_audio_input
+            + f64::from(cached_image) * rates.cached_image_input
+            + f64::from(output_text) * rates.text_output
+            + f64::from(output_audio) * rates.audio_output)
             / MILLION,
     )
 }

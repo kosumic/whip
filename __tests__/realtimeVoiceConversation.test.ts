@@ -52,7 +52,7 @@ test('starts native Realtime with a pinned agent, selected voice, automatic lang
   await call.start();
   expect(mockNative.startRealtimeVoice).toHaveBeenCalledTimes(1);
   const [token, config] = jest.mocked(mockNative.startRealtimeVoice).mock.calls[0] as unknown as [string, string];
-  expect(JSON.parse(config)).toEqual({ clientElapsedMs: expect.any(Number), target: { runtimeId: 'runtime-1', terminalId: 'terminal-1', paneId: 'pane-1', bindingToken: 'binding-1' }, voice: 'cedar', vad: { type: 'server_vad', threshold: 0.5, prefix_padding_ms: 300, silence_duration_ms: 500 } });
+  expect(JSON.parse(config)).toEqual({ clientElapsedMs: expect.any(Number), target: { runtimeId: 'runtime-1', terminalId: 'terminal-1', paneId: 'pane-1', bindingToken: 'binding-1' }, model: defaults.realtimeModel, voice: 'cedar', vad: { type: 'server_vad', threshold: 0.5, prefix_padding_ms: 300, silence_duration_ms: 500 } });
   expect(mockNative.startRealtimeVoice.mock.calls[0]).toHaveLength(2);
   expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ provider: 'openai', text: 'hello', inputTokens: 3, outputTokens: 4, estimatedUsd: 0.0123 }));
   expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ messages: [{ id: 'reply', role: 'assistant', text: 'hello', spokenUtf16: 2, active: true }] }));
