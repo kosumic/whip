@@ -2,6 +2,7 @@ import { NativeVoiceChat } from '../packages/react-native-whip-ssh/src/voiceChat
 import type { AgentChatState } from '../src/agentChat';
 
 let mockWaiting = false;
+const mockView = jest.fn(() => ({ phase: 2, downloadedBytes: 0n, totalBytes: 0n }));
 const mockTranscript = jest.fn((_agent: number, live: boolean, baseline: boolean) => {
   // The native controller rejects disconnections and replacing an in-flight
   // conversation. A routine fetch must not masquerade as either operation.
@@ -9,7 +10,7 @@ const mockTranscript = jest.fn((_agent: number, live: boolean, baseline: boolean
   if (baseline && mockWaiting) throw new Error('Conversation replaced');
 });
 jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
-  VoiceChat: jest.fn(() => ({ transcript: mockTranscript })),
+  VoiceChat: jest.fn(() => ({ transcript: mockTranscript, view: mockView })),
   AgentTranscriptKind: { Claude: 0, Codex: 1, OpenCode: 2, Pi: 3 },
   VoiceChatPhase: { Setup: 0, Preparing: 1, Listening: 2, Finishing: 3, Waiting: 4, Speaking: 5, Muted: 6, Closed: 7 },
 }));
@@ -17,6 +18,17 @@ jest.mock('../packages/react-native-whip-ssh/src/chatSpeech', () => ({ speechMes
 
 const state: AgentChatState = { sessionId: 'conversation', status: 'live', transcript: { sessionId: 'conversation', turns: [], messages: [] } };
 beforeEach(() => { jest.clearAllMocks(); mockWaiting = false; });
+
+test('voice chat without a model reports zero download progress', () => {
+  const call = new NativeVoiceChat('/model-cache');
+  expect(call.view()).toEqual(expect.objectContaining({ phase: 'listening', progress: 0 }));
+});
+
+test('optional model downloads retain their progress', () => {
+  mockView.mockReturnValueOnce({ phase: 1, downloadedBytes: 50n, totalBytes: 100n });
+  const call = new NativeVoiceChat('/model-cache');
+  expect(call.view()).toEqual(expect.objectContaining({ phase: 'preparing', progress: 0.5 }));
+});
 
 test('agent activity refreshes and repeated snapshots keep the same conversation connected', () => {
   const call = new NativeVoiceChat('/model-cache');

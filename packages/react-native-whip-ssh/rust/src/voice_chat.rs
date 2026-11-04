@@ -1,28 +1,38 @@
 //! Local turn detection and transcript-bound, half-duplex conversation policy.
 //! Platform adapters own speech recognition and audio devices; no speech API is used.
 
+#[cfg(feature = "smart-turn")]
 mod smart_turn;
 mod waiting_filler;
 
 use crate::{AgentTranscriptKind, ChatSpeechMessage, ChatSpeechQueue};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use parking_lot::Mutex;
+#[cfg(feature = "smart-turn")]
 use sha2::{Digest, Sha256};
+#[cfg(feature = "smart-turn")]
 use smart_turn::{AUDIO_SAMPLES, SmartTurn};
 use std::{
-    collections::{HashSet, VecDeque},
-    path::PathBuf,
+    collections::HashSet,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
     },
     time::Instant,
 };
+#[cfg(feature = "smart-turn")]
+use std::{collections::VecDeque, path::PathBuf};
 use waiting_filler::WaitingFiller;
 
+#[cfg(feature = "smart-turn")]
 const MODEL_FILE: &str = "smart-turn-v3.2-gpu.onnx";
+#[cfg(feature = "smart-turn")]
 const MODEL_BYTES: u64 = 32_411_198;
+#[cfg(not(feature = "smart-turn"))]
+const MODEL_BYTES: u64 = 0;
+#[cfg(feature = "smart-turn")]
 const MODEL_SHA256: &str = "ab8dc64b88713f90b571c15b714bd1330e6c883cad8763dacf65c9376dc539be";
+#[cfg(feature = "smart-turn")]
 const MODEL_URL: &str = "https://huggingface.co/pipecat-ai/smart-turn-v3/resolve/f766f81d3cfdf7737ac64aad813d91bbfd56bf93/smart-turn-v3.2-gpu.onnx";
 const FRAME_SAMPLES: usize = 256;
 const PAUSE_SAMPLES: usize = 16_000 * 256 / 1_000;
@@ -85,6 +95,7 @@ pub struct VoiceChatTranscriptTurn {
 struct Input {
     vad: Box<earshot::Detector>,
     frame: Vec<f32>,
+    #[cfg(feature = "smart-turn")]
     audio: VecDeque<f32>,
     voiced: usize,
     interruption_voiced: usize,
@@ -102,6 +113,7 @@ impl Default for Input {
         Self {
             vad: earshot::Detector::default_boxed(),
             frame: Vec::with_capacity(FRAME_SAMPLES),
+            #[cfg(feature = "smart-turn")]
             audio: VecDeque::with_capacity(AUDIO_SAMPLES),
             voiced: 0,
             interruption_voiced: 0,
@@ -119,9 +131,12 @@ impl Default for Input {
 impl Input {
     fn push(&mut self, samples: &[f32], sensitivity: u8) {
         for &sample in samples {
-            self.audio.push_back(sample);
-            if self.audio.len() > AUDIO_SAMPLES {
-                self.audio.pop_front();
+            #[cfg(feature = "smart-turn")]
+            {
+                self.audio.push_back(sample);
+                if self.audio.len() > AUDIO_SAMPLES {
+                    self.audio.pop_front();
+                }
             }
             self.frame.push(sample);
             self.samples += 1;
@@ -266,8 +281,10 @@ impl State {
 
 #[derive(uniffi::Object)]
 pub struct VoiceChat {
+    #[cfg(feature = "smart-turn")]
     root: PathBuf,
     state: Mutex<State>,
+    #[cfg(feature = "smart-turn")]
     model: Mutex<Option<SmartTurn>>,
     downloaded: AtomicU64,
     speech: Arc<ChatSpeechQueue>,
@@ -277,9 +294,14 @@ pub struct VoiceChat {
 impl VoiceChat {
     #[uniffi::constructor]
     pub fn new(root: String) -> Arc<Self> {
+        // Preserve the native bridge constructor when model support is disabled.
+        #[cfg(not(feature = "smart-turn"))]
+        let _ = root;
         Arc::new(Self {
+            #[cfg(feature = "smart-turn")]
             root: root.into(),
             state: Mutex::new(State::default()),
+            #[cfg(feature = "smart-turn")]
             model: Mutex::new(None),
             downloaded: AtomicU64::new(0),
             speech: ChatSpeechQueue::new(),
@@ -303,45 +325,28 @@ impl VoiceChat {
         }
     }
 
-    /// Download is explicit. Once installed, neither VAD nor Smart Turn opens a network connection.
+    /// Standard builds use local VAD without loading or downloading a model.
+    /// The optional smart-turn build feature permits explicit model installation.
     pub async fn prepare(self: Arc<Self>, install: bool) -> Result<VoiceChatView, VoiceChatError> {
         if self.state.lock().phase == VoiceChatPhase::Closed {
             return Ok(self.view());
         }
-        let path = self.root.join(MODEL_FILE);
-        let check_path = path.clone();
-        let valid = crate::runtime()?
-            .spawn_blocking(move || verify_model(&check_path))
-            .await
-            .map_err(|e| e.to_string())?;
-        if !valid && !install {
+        #[cfg(feature = "smart-turn")]
+        {
+            self.prepare_smart_turn(install).await
+        }
+
+        #[cfg(not(feature = "smart-turn"))]
+        {
+            let _ = install;
             let mut state = self.state.lock();
             if state.phase != VoiceChatPhase::Closed {
+                state.smart_turn = false;
                 state.listen();
             }
             drop(state);
-            return Ok(self.view());
+            Ok(self.view())
         }
-        if !valid {
-            let session = self.clone();
-            crate::runtime()?
-                .spawn(async move { session.download().await })
-                .await
-                .map_err(|e| e.to_string())??;
-        }
-        let model = crate::runtime()?
-            .spawn_blocking(move || SmartTurn::load(&path))
-            .await
-            .map_err(|e| e.to_string())?
-            .map_err(VoiceChatError::from)?;
-        *self.model.lock() = Some(model);
-        let mut state = self.state.lock();
-        if state.phase != VoiceChatPhase::Closed {
-            state.smart_turn = true;
-            state.listen();
-        }
-        drop(state);
-        Ok(self.view())
     }
 
     /// PCM16LE mono, 16 kHz. Small capture packets keep VAD on the sample clock.
@@ -394,46 +399,18 @@ impl VoiceChat {
         Ok(self.view())
     }
 
-    /// Inference runs independently: capture keeps advancing and invalidates stale verdicts.
+    /// Inference runs only when the optional smart-turn build feature is enabled.
     pub async fn analyze(self: Arc<Self>, input_id: u64) -> Result<VoiceChatView, VoiceChatError> {
-        let probe = {
-            let mut state = self.state.lock();
-            if state.input_id != input_id
-                || state.phase != VoiceChatPhase::Listening
-                || !state.smart_turn
-                || !state.input.should_probe()
-            {
-                return Ok(self.view_unlocked(&state));
-            }
-            state.input.probing = true;
-            state.input.last_probe = state.input.samples;
-            (
-                state.input.revision,
-                state.input.audio.iter().copied().collect::<Vec<_>>(),
-            )
-        };
-        let session = self.clone();
-        let probability = crate::runtime()?
-            .spawn_blocking(move || {
-                session
-                    .model
-                    .lock()
-                    .as_mut()
-                    .ok_or_else(|| "Smart Turn is not ready".to_owned())?
-                    .predict(&probe.1)
-            })
-            .await
-            .map_err(|e| e.to_string())?
-            .map_err(VoiceChatError::from)?;
-        let mut state = self.state.lock();
-        if state.input_id == input_id && state.phase == VoiceChatPhase::Listening {
-            state.input.probing = false;
-            if state.input.revision == probe.0 && probability > 0.5 {
-                state.phase = VoiceChatPhase::Finishing;
-            }
+        #[cfg(feature = "smart-turn")]
+        {
+            self.analyze_smart_turn(input_id).await
         }
-        drop(state);
-        Ok(self.view())
+
+        #[cfg(not(feature = "smart-turn"))]
+        {
+            let _ = input_id;
+            Ok(self.view())
+        }
     }
 
     pub fn finish(&self) {
@@ -741,6 +718,93 @@ impl VoiceChat {
         }
     }
 
+    #[cfg(feature = "smart-turn")]
+    async fn prepare_smart_turn(
+        self: Arc<Self>,
+        install: bool,
+    ) -> Result<VoiceChatView, VoiceChatError> {
+        let path = self.root.join(MODEL_FILE);
+        let check_path = path.clone();
+        let valid = crate::runtime()?
+            .spawn_blocking(move || verify_model(&check_path))
+            .await
+            .map_err(|e| e.to_string())?;
+        if !valid && !install {
+            let mut state = self.state.lock();
+            if state.phase != VoiceChatPhase::Closed {
+                state.listen();
+            }
+            drop(state);
+            return Ok(self.view());
+        }
+        if !valid {
+            let session = self.clone();
+            crate::runtime()?
+                .spawn(async move { session.download().await })
+                .await
+                .map_err(|e| e.to_string())??;
+        }
+        let model = crate::runtime()?
+            .spawn_blocking(move || SmartTurn::load(&path))
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(VoiceChatError::from)?;
+        *self.model.lock() = Some(model);
+        let mut state = self.state.lock();
+        if state.phase != VoiceChatPhase::Closed {
+            state.smart_turn = true;
+            state.listen();
+        }
+        drop(state);
+        Ok(self.view())
+    }
+
+    #[cfg(feature = "smart-turn")]
+    async fn analyze_smart_turn(
+        self: Arc<Self>,
+        input_id: u64,
+    ) -> Result<VoiceChatView, VoiceChatError> {
+        let probe = {
+            let mut state = self.state.lock();
+            if state.input_id != input_id
+                || state.phase != VoiceChatPhase::Listening
+                || !state.smart_turn
+                || !state.input.should_probe()
+            {
+                return Ok(self.view_unlocked(&state));
+            }
+            state.input.probing = true;
+            state.input.last_probe = state.input.samples;
+            (
+                state.input.revision,
+                state.input.audio.iter().copied().collect::<Vec<_>>(),
+            )
+        };
+        let session = self.clone();
+        let probability = crate::runtime()?
+            .spawn_blocking(move || {
+                session
+                    .model
+                    .lock()
+                    .as_mut()
+                    .ok_or_else(|| "Smart Turn is not ready".to_owned())?
+                    .predict(&probe.1)
+            })
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(VoiceChatError::from)?;
+        let mut state = self.state.lock();
+        if state.input_id == input_id && state.phase == VoiceChatPhase::Listening {
+            state.input.probing = false;
+            if state.input.revision == probe.0 && probability > 0.5 {
+                state.phase = VoiceChatPhase::Finishing;
+            }
+        }
+        drop(state);
+        Ok(self.view())
+    }
+
+    #[cfg(feature = "smart-turn")]
     async fn download(&self) -> Result<(), VoiceChatError> {
         tokio::fs::create_dir_all(&self.root)
             .await
@@ -752,6 +816,7 @@ impl VoiceChat {
         }
         result
     }
+    #[cfg(feature = "smart-turn")]
     async fn fetch_model(&self, temporary: &std::path::Path) -> Result<(), VoiceChatError> {
         use tokio::io::AsyncWriteExt;
         let client = reqwest::Client::builder()
@@ -797,6 +862,7 @@ impl VoiceChat {
     }
 }
 
+#[cfg(feature = "smart-turn")]
 fn verify_model(path: &std::path::Path) -> bool {
     use std::io::Read;
     let Ok(mut file) = std::fs::File::open(path) else {
@@ -931,6 +997,34 @@ mod tests {
         assert!(!view.smart_turn);
         assert_eq!(view.downloaded_bytes, 0);
         assert!(!directory.path().join("not-created").exists());
+    }
+
+    #[cfg(not(feature = "smart-turn"))]
+    #[tokio::test]
+    async fn disabled_smart_turn_ignores_install_requests_and_existing_model_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let model_path = directory.path().join("smart-turn-v3.2-gpu.onnx");
+        let existing_model = b"Previously downloaded model data";
+        std::fs::write(&model_path, existing_model).unwrap();
+
+        for install in [false, true] {
+            let session = VoiceChat::new(directory.path().to_string_lossy().into_owned());
+            let view = session.clone().prepare(install).await.unwrap();
+            assert_eq!(view.phase, VoiceChatPhase::Listening);
+            assert!(!view.smart_turn);
+            assert!(!view.analyze);
+            assert_eq!(view.downloaded_bytes, 0);
+            assert_eq!(view.total_bytes, 0);
+            let view = session.clone().analyze(view.input_id).await.unwrap();
+            assert_eq!(view.phase, VoiceChatPhase::Listening);
+            session.close();
+            assert_eq!(
+                session.prepare(install).await.unwrap().phase,
+                VoiceChatPhase::Closed
+            );
+            assert_eq!(std::fs::read(&model_path).unwrap(), existing_model);
+            assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+        }
     }
     #[test]
     #[allow(

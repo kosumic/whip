@@ -8,6 +8,11 @@ description = "Private WP4 pairing transport for Whip"
 [lib]
 crate-type = ["staticlib", "rlib"]
 
+[features]
+default = []
+# Optional end-of-turn inference; standard builds use Earshot silence detection.
+smart-turn = ["dep:tract-onnx", "dep:rustfft"]
+
 [dependencies]
 herdr-protocol = { version = "0.2.0", path = "../../../crates/herdr-protocol" }
 agent-transcript-core = { version = "0.1.0", path = "../../../crates/agent-transcript-core" }
@@ -25,7 +30,7 @@ hmac = "0.12"
 html5ever = "0.39"
 parking_lot = "0.12"
 rayon = "1"
-rustfft = "6.4"
+rustfft = { version = "6.4", optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 resvg = { version = "0.48.1", default-features = false, features = ["text", "raster-images"] }
 russh = { version = "0.64.1", default-features = false, features = ["flate2", "ring"] }
@@ -41,7 +46,7 @@ syntect = { version = "5.3", default-features = false, features = ["default-fanc
 ssh-key = { version = "=0.7.0-rc.11", features = ["ed25519", "getrandom"] }
 thiserror = "2"
 tokio = { version = "1", features = ["fs", "io-util", "net", "rt-multi-thread", "sync", "time"] }
-tract-onnx = "=0.23.9"
+tract-onnx = { version = "=0.23.9", optional = true }
 turso = { version = "0.8.3", default-features = false, features = ["pure-rust-crypto"] }
 two-face = { version = "0.5", default-features = false, features = ["syntect-fancy"] }
 uniffi = "=0.31"

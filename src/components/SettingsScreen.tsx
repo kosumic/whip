@@ -91,7 +91,6 @@ import { GlassButton, GlassIconBadge } from './GlassControls';
 import { CollapsibleSectionCard } from './CollapsibleSectionCard';
 import { SettingsChoiceRow } from './SettingsChoiceRow';
 import { SpeechBackendSetting } from './SpeechBackendSetting';
-import { SmartTurnSetting } from './SmartTurnSetting';
 import { MIN_VAD_SENSITIVITY, MAX_VAD_SENSITIVITY, VAD_SENSITIVITY_STEP } from '../lib/voiceVadSensitivity';
 import { VoiceConversationSetting } from './VoiceConversationSetting';
 import { VoiceUsageSetting } from './VoiceUsageSetting';
@@ -308,7 +307,6 @@ export function SettingsSection(props: SettingsSectionProps) {
         <VoiceConversationSetting />
         <VoiceUsageSetting />
         <SpeechBackendSetting />
-        <SmartTurnSetting />
         <SliderRow
           title={t('voiceChat.vadSensitivity')}
           copy={t('voiceChat.vadSensitivityDescription')}

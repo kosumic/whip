@@ -8,17 +8,15 @@ connection. Saved transcripts cannot start a voice conversation.
 Speak normally. Earshot VAD detects speech on the device. Settings → Voice →
 VAD sensitivity adjusts speech detection from 0–100%. Higher values pick up
 softer speech; lower values reject more background noise. The saved setting
-applies immediately to voice chat, including reply interruption, with or without
-Smart Turn. The default 50% preserves the original detection thresholds.
-By default, 800 ms of
-silence after speech finishes the turn. No model download is required.
+applies immediately to voice chat, including reply interruption. The default 50%
+preserves the original detection thresholds. By default, 800 ms of silence after
+speech finishes the turn. No model download is required.
 
-Smart Turn v3.2 is an optional 32 MB download in Settings → Voice. Calls never
-download a model. When it is
-installed, it checks whether the utterance is complete after 256 ms of silence. If it is incomplete,
-Whip checks again as silence continues. If an optional download fails, voice
-chat continues with basic VAD. Resumed speech invalidates an in-flight
-verdict. Tap the orb to finish manually. Silence alone never sends a prompt.
+Smart Turn is disabled in standard builds. Its ONNX runtime and feature
+extraction dependencies are excluded, the model is never loaded or downloaded,
+and Settings has no Smart Turn download option. Previously downloaded model
+files are left untouched. Tap the orb to finish manually. Silence alone never
+sends a prompt.
 
 After local recognition finishes, Whip queues the nonempty transcript once.
 It follows only the new matching user turn and feeds stable clauses/sentences
@@ -149,6 +147,12 @@ voice setting is introduced.
 
 ## Model and ownership
 
+Standard builds use Earshot VAD and finish speech after 800 ms of silence.
+The retained Smart Turn implementation is opt-in through the Rust `smart-turn`
+Cargo feature (`--features smart-turn`). Enabling it also requires restoring the
+`SmartTurnSetting` entry in Settings to expose model installation. The model and
+inference details below apply only to that optional build.
+
 Smart Turn is an optional, explicit 32,411,198-byte download into the app cache;
 the UI shows progress. Eviction of that cache requires downloading it again.
 The download uses an immutable revision and is checked by size and SHA-256
@@ -186,7 +190,7 @@ device speech-service compatibility still needs device verification.
 nix develop -c cargo test --manifest-path packages/react-native-whip-ssh/rust/Cargo.toml voice_chat
 WHIP_SMART_TURN_MODEL=/absolute/path/to/smart-turn-v3.2-gpu.onnx \
   nix develop -c cargo test --manifest-path packages/react-native-whip-ssh/rust/Cargo.toml \
-  smart_turn_matches_the_upstream_completion_probability -- --ignored
+  --features smart-turn smart_turn_matches_the_upstream_completion_probability -- --ignored
 ```
 
 This feature changes native speech integration and the Rust bridge, so Metro

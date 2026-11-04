@@ -58,6 +58,7 @@ for (const rustPackage of packages) {
         'about',
         'generate',
         '--locked',
+        '--all-features',
         '--fail',
         '--config',
         configPath,
@@ -174,7 +175,7 @@ async function productionTransitiveNotices(rustPackage: RustPackage, crateName: 
   return `${label} production transitive dependency notices (Android/iOS)\n\n${sections.join('\n\n================================================================================\n')}`;
 }
 
-/** Scan each exact production graph once, then select each bundled crate's subtree. */
+/** Cover default and opt-in build features, then select each bundled crate's subtree. */
 function productionReport(rustPackage: RustPackage): Promise<ProductionReport> {
   const manifest = resolve(root, rustPackage.manifest);
   let pending = productionReports.get(manifest);
@@ -188,13 +189,13 @@ function productionReport(rustPackage: RustPackage): Promise<ProductionReport> {
 async function loadProductionReport(rustPackage: RustPackage, manifest: string): Promise<ProductionReport> {
   const reportPath = resolve(outputDirectory, `cargo-${rustPackage.name}-production-transitive-licenses.json`);
   await execFileAsync('cargo', [
-    'about', 'generate', '--locked', '--fail', '--manifest-path', manifest,
+    'about', 'generate', '--locked', '--all-features', '--fail', '--manifest-path', manifest,
     '--config', resolve(root, 'licenses/cargo/turso-about.toml'),
     '--target', 'aarch64-linux-android', '--target', 'aarch64-apple-ios',
     '--format', 'json', '--output-file', reportPath,
   ], { cwd: root, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 120_000 });
   const { stdout } = await execFileAsync('cargo', [
-    'metadata', '--locked', '--format-version', '1', '--manifest-path', manifest,
+    'metadata', '--locked', '--all-features', '--format-version', '1', '--manifest-path', manifest,
   ], { cwd: root, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 120_000 });
   const report = JSON.parse(await readFile(reportPath, 'utf8')) as Pick<ProductionReport, 'licenses'>;
   return { metadata: JSON.parse(stdout) as CargoGraph, licenses: report.licenses };
@@ -208,6 +209,7 @@ async function generateNotice(rustPackage: RustPackage, outputPath: string, temp
         'about',
         'generate',
         '--locked',
+        '--all-features',
         '--fail',
         '--config',
         configPath,
@@ -238,6 +240,7 @@ async function cargoMetadata(rustPackage: RustPackage) {
       '--format-version',
       '1',
       '--locked',
+      '--all-features',
       '--manifest-path',
       resolve(root, rustPackage.manifest),
     ],

@@ -27,7 +27,8 @@ export class NativeVoiceChat {
   constructor(root: string) { this.core = new VoiceChat(root); }
   view() {
     const view = this.core.view();
-    return { ...view, phase: PHASE[view.phase], progress: Number(view.downloadedBytes) / Number(view.totalBytes) };
+    const totalBytes = Number(view.totalBytes);
+    return { ...view, phase: PHASE[view.phase], progress: totalBytes > 0 ? Number(view.downloadedBytes) / totalBytes : 0 };
   }
   async prepare(install: boolean) { await this.core.prepare(install); }
   beginPreparation() { this.core.beginPreparation(); }
