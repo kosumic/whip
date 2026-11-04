@@ -5,10 +5,21 @@ Platform API key, then open a connected coding-agent chat and start its call.
 The existing Local provider remains the default. GPT-Live and Global calls
 remain unavailable. The selected voice and Realtime VAD configuration are
 snapshotted when the app-wide owner starts the call; edits affect the next call.
-Input transcription uses the selected app language as its language hint
-(Chinese script variants both use `zh`). Older callers default to English.
+Input transcription follows Codex's automatic language detection. UI language
+does not constrain spoken language, so bilingual/code-switching conversations
+can retain English, Chinese or other speech in their original language.
 Captions are generated separately from the voice model's understanding of audio
 and can still contain recognition errors.
+Like Codex's `methods_v2.rs` at `d84c872464aca4821dc5cb548a651651aefd84fa`,
+the default transcription request sets only `gpt-4o-mini-transcribe`: no forced
+language, English-only context or translation prompt. An explicit spoken
+language hint remains supported at the native boundary for older callers.
+`session.updated` must confirm the requested caption language and transcription
+model before a call becomes ready. Native diagnostics report only whitelisted
+model/language metadata and whether provider context is absent, never caption
+text, audio, prompts, keys or session identifiers. Short shared greetings can
+still be ambiguous to the separate transcriber; captions are not an exact
+record of what the speech-to-speech model understood.
 
 **Preview voice** becomes available after saving an API key in Realtime mode.
 It plays one short AI-generated sample in the selected Realtime voice using

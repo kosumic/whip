@@ -230,16 +230,17 @@ fn preview_uses_selected_realtime_voice_without_microphone_turns_or_agent_tools(
 }
 
 #[test]
-fn transcription_uses_app_language_and_defaults_to_english_for_older_callers()
+fn transcription_defaults_to_auto_and_preserves_explicit_spoken_language_hints()
 -> Result<(), Box<dyn std::error::Error>> {
     for (language, expected) in [
-        (None, "en"),
-        (Some("en"), "en"),
-        (Some("zh-Hant"), "zh"),
-        (Some("zh-Hans"), "zh"),
-        (Some("ja"), "ja"),
-        (Some("es"), "es"),
-        (Some("fr"), "fr"),
+        (None, None),
+        (Some("auto"), None),
+        (Some("en"), Some("en")),
+        (Some("zh-Hant"), Some("zh")),
+        (Some("zh-Hans"), Some("zh")),
+        (Some("ja"), Some("ja")),
+        (Some("es"), Some("es")),
+        (Some("fr"), Some("fr")),
     ] {
         let mut value = json!({"target":{"runtimeId":"host","terminalId":"terminal","paneId":"pane","bindingToken":"binding"},"voice":"cedar","vad":{"type":"server_vad","threshold":0.5,"prefix_padding_ms":300,"silence_duration_ms":500}});
         if let Some(language) = language {
@@ -250,7 +251,12 @@ fn transcription_uses_app_language_and_defaults_to_english_for_older_callers()
         let event = serde_json::to_value(config.session_update()?)?;
         let transcription = &event["session"]["audio"]["input"]["transcription"];
         assert_eq!(transcription["model"], "gpt-4o-mini-transcribe");
-        assert_eq!(transcription["language"], expected);
+        if let Some(expected) = expected {
+            assert_eq!(transcription["language"], expected);
+        } else {
+            assert!(transcription.get("language").is_none());
+        }
+        assert!(transcription.get("prompt").is_none());
     }
     Ok(())
 }

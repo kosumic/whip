@@ -1,5 +1,6 @@
 //! Public OpenAI Realtime WebSocket adapter. Native media never crosses JS.
 //! The actor owns all wire writes; dropping it cancels transport and tools.
+mod captions;
 mod echo;
 pub(crate) mod feedback;
 mod ffi;
@@ -31,6 +32,7 @@ use tokio_tungstenite::tungstenite::{
 use crate::host_runtime::realtime_agent::{
     AGENT_PROMPT, AGENT_READ, AGENT_STATUS, AgentTarget, PinnedAgent,
 };
+use captions::Language as TranscriptionLanguage;
 
 pub(super) const RATE: usize = 24_000;
 pub(super) const FRAME: usize = RATE / 50;
@@ -65,19 +67,6 @@ pub(super) struct Config {
     preview: bool,
     #[serde(default)]
     software_echo_cancellation: bool,
-}
-
-/// App language variants map to the transcription API's ISO 639-1 codes.
-#[derive(Clone, Copy, Default, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-enum TranscriptionLanguage {
-    #[default]
-    En,
-    #[serde(alias = "zh-Hans", alias = "zh-Hant")]
-    Zh,
-    Ja,
-    Es,
-    Fr,
 }
 
 struct PreparedSession {
@@ -175,7 +164,7 @@ impl Config {
             "instructions":INSTRUCTIONS,
             "audio":{"input":{"format":{"type":"audio/pcm","rate":RATE},"turn_detection":vad,
                 "noise_reduction":{"type":"near_field"},
-                "transcription":{"model":"gpt-4o-mini-transcribe","language":self.language}},
+                "transcription":captions::settings(self.language)},
                 "output":{"format":{"type":"audio/pcm","rate":RATE},"voice":self.voice}},
             "tools":[
                 {"type":"function","name":AGENT_PROMPT,"description":PROMPT_DESCRIPTION,"parameters":{"type":"object","properties":{"text":{"type":"string","maxLength":8192}},"required":["text"],"additionalProperties":false}},
@@ -203,6 +192,7 @@ pub(super) struct View {
     input_tokens: u64,
     output_tokens: u64,
     tool: Option<String>,
+    captions: Option<captions::Diagnostics>,
 }
 
 struct Output {
@@ -343,6 +333,8 @@ impl RealtimeVoiceAdapter {
                 input_tokens: 0,
                 output_tokens: 0,
                 tool: None,
+                captions: (!config.preview)
+                    .then(|| captions::Diagnostics::pending(config.language)),
             }),
             output: Mutex::new(Output::default()),
             echo: Mutex::new(
@@ -578,6 +570,12 @@ impl RealtimeVoiceAdapter {
                     match event {
                         ServerEvent::SessionUpdated { session, .. } => {
                             let audio = session.config.audio.ok_or("OpenAI did not negotiate PCM audio.")?;
+                            if !config.preview {
+                                let captions = captions::Diagnostics::confirm(config.language, &audio);
+                                let accepted = captions.validate();
+                                self.view.lock().captions = Some(captions);
+                                accepted?;
+                            }
                             config.validate_audio(audio)?;
                             let was_ready = self.ready.swap(true, Ordering::AcqRel);
                             self.view.lock().phase = "listening";

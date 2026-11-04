@@ -21,6 +21,7 @@ internal object RealtimeVoice {
   private val main = Handler(Looper.getMainLooper())
   private const val NANOS_PER_SECOND = 1_000_000_000L
   private const val MAX_AUDIO_AGE_NS = NANOS_PER_SECOND / 2
+  private const val LOG_TAG = "WhipRealtimeAudio"
   private var current: Session? = null
   private var lastToken: String? = null
   private var lastView = "{\"phase\":\"closed\"}"
@@ -34,6 +35,7 @@ internal object RealtimeVoice {
     var monitor: Runnable? = null
     @Volatile var boundary = CaptureBoundary()
     var captureMuted = VoiceCallService.muted(token)
+    var captionDiagnostic: String? = null
   }
 
   @SuppressLint("MissingPermission")
@@ -81,14 +83,24 @@ internal object RealtimeVoice {
       input?.startRecording()
       output.play()
       current = session
-      if (!preview) Log.i("WhipRealtimeAudio", "Software AEC3 enabled with media playback reference")
+      if (!preview) Log.i(LOG_TAG, "Software AEC3 enabled with media playback reference")
       if (!preview) session.capture = Thread({ capture(session) }, "WhipRealtimeCapture").apply { start() }
       session.playback = Thread({ playback(session) }, "WhipRealtimePlayback").apply { start() }
       session.monitor = object : Runnable {
         override fun run() {
           if (current !== session) return
           val view = Core.view(session.call)
-          val phase = JSONObject(view).optString("phase")
+          val state = JSONObject(view)
+          val phase = state.optString("phase")
+          state.optJSONObject("captions")?.let { captions ->
+            // These fields are Rust-owned enums/constants, never transcripts,
+            // raw provider data, prompts, credentials or session identifiers.
+            val diagnostic = "Captions status=${captions.optString("status")} requested=${captions.optString("requestedLanguage")} confirmed=${captions.optString("confirmedLanguage")} languageConfirmed=${captions.optBoolean("languageConfirmed")} model=${captions.optString("confirmedModel")} promptAbsent=${captions.optBoolean("promptAbsent")}"
+            if (session.captionDiagnostic != diagnostic) {
+              session.captionDiagnostic = diagnostic
+              Log.i(LOG_TAG, diagnostic)
+            }
+          }
           if (phase == "error" || preview && phase == "closed") {
             stop(token)
             if (!preview) VoiceCallService.end(token)

@@ -12,7 +12,6 @@ import { readOpenAiVoiceKey } from './openAiVoiceCredentials';
 import { agentTranscriptService } from './NativeTranscriptService';
 import { retainVoiceCallBackground } from './voiceCallBackground';
 import { suppressAgentAlertsForTab } from './alerts';
-import i18n from '../i18n';
 
 const CONTROL = { skip: 1 } as const;
 let sequence = 0;
@@ -83,7 +82,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
       if (this.closed) { await this.playback.endVoiceCall(this.token); return; }
       const key = await readOpenAiVoiceKey();
       if (this.closed) return;
-      const config = JSON.stringify({ target, voice: this.settings.realtimeVoice, language: i18n.resolvedLanguage ?? i18n.language ?? 'en', vad: parseRealtimeVad(this.settings.realtimeVad ?? DEFAULT_REALTIME_VAD) });
+      const config = JSON.stringify({ target, voice: this.settings.realtimeVoice, vad: parseRealtimeVad(this.settings.realtimeVad ?? DEFAULT_REALTIME_VAD) });
       this.nativeMediaAttempted = true;
       this.startingMedia = this.playback.startRealtimeVoice(this.token, config, key);
       await this.startingMedia;
