@@ -298,6 +298,33 @@ observes startup and waits for lifecycle settlement before advancing the FIFO.
 It never sends Tab, Escape, approvals or shell input. This avoids terminal keymap,
 popup and draft dependencies for deferred work.
 
+Each admitted delegation also freezes a bounded snapshot of this call's public
+speech captions in Rust. The host receives the unchanged request in a JSON
+`request` field and new or revised captions in a separate `voice_context.messages`
+field when a delta is available; otherwise the plain request is sent unchanged.
+The wrapper identifies those captions as quoted background data, not
+additional tasks. Messages retain chronological order, speaker, completion or
+failure status, interruption status, truncation and the acknowledged assistant
+playback prefix in UTF-16 units. Caption accuracy and playback highlighting
+remain approximate. Generated assistant text beyond the acknowledged prefix
+may not have been heard.
+
+The context retains up to 32 recent speech captions, at most 2 KiB of UTF-8 text
+per caption and 8 KiB of serialized caption data per handoff. JSON escaping is
+included in that limit. The existing 8 KiB request limit remains independent.
+Only audio-transcription and spoken-assistant caption events enter this snapshot;
+startup chat history, private reasoning, raw tool results, backend control items
+and already-submitted composer items are not copied into it.
+
+The shared cursor advances only after the host acknowledges the input, under
+the pinned agent's submission lock. A repeated tool ID never captures or submits
+again. Late captions or changed playback metadata are sent as replacements on a
+subsequent delegation. Deferred work keeps its original snapshot but computes
+its delta when actually submitted, so an older queued snapshot cannot replace
+newer context already acknowledged by the agent. Failed admissions leave the
+cursor intact; an uncertain write still disables further mutations and is never
+replayed. Ending or replacing the call discards the snapshots and cursor.
+
 Prompts are limited to 8 KiB, results to 24 KiB, and calls to 128 tool IDs. At most
 eight active or deferred requests are retained; admission beyond that limit
 fails without submission. Duplicate IDs never execute again. Queue admission,

@@ -8,8 +8,8 @@ use tokio::task::JoinSet;
 use tokio_tungstenite::tungstenite::{Error, Message};
 
 use super::{
-    SilentArguments, ToolCompletion, ToolLedger, feedback, function_output, response, send,
-    spawn_delegation,
+    SilentArguments, ToolCompletion, ToolLedger, feedback, function_output, handoff_context,
+    response, send, spawn_delegation,
 };
 use crate::host_runtime::realtime_agent::{Delegation, Delivery, PinnedAgent};
 
@@ -64,6 +64,8 @@ impl Deferred {
 }
 
 pub(super) struct Dispatch<'a> {
+    pub context: &'a handoff_context::Context,
+    pub transcript: Vec<handoff_context::Caption>,
     pub ledger: &'a mut ToolLedger,
     pub deferred: &'a mut Deferred,
     pub handoff: &'a mut Option<feedback::Handoff>,
@@ -123,7 +125,7 @@ impl Dispatch<'_> {
             }
             return Ok(false);
         }
-        let request = match Delegation::parse(&call.arguments) {
+        let mut request = match Delegation::parse(&call.arguments) {
             Ok(request) => request,
             Err(error) => {
                 send(
@@ -140,6 +142,7 @@ impl Dispatch<'_> {
             self.responses.request_create();
             return Ok(false);
         }
+        request.context = Some(self.context.capture(self.transcript)?);
         let followup = self.handoff.is_some();
         if self.handoff.is_none() {
             *self.handoff = Some(feedback::Handoff::new(

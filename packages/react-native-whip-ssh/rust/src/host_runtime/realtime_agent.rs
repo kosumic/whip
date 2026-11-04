@@ -330,8 +330,23 @@ impl PinnedAgent {
             let target = self.binding.pane_id.as_str();
             let was_working = status == HerdrAgentStatus::Working;
             let baseline = self.feedback_snapshot(None)?;
-            self.request(json!({"action":"agent_prompt","target":target,"text":request.prompt}))
+            let text = if let Some(context) = &request.context {
+                match context.request(&request.prompt) {
+                    Ok(text) => text,
+                    Err(_) => {
+                        return Ok(
+                            json!({"error":"voice_context_unavailable","guidance":"No request was submitted. Inspect the voice conversation before trying again."}),
+                        );
+                    }
+                }
+            } else {
+                request.prompt.clone()
+            };
+            self.request(json!({"action":"agent_prompt","target":target,"text":text}))
                 .await?;
+            if let Some(context) = &request.context {
+                context.acknowledge();
+            }
             if was_working && followup && request.delivery == Delivery::Now {
                 return Ok(
                     json!({"delivery":"steered","completion":"submitted","guidance":"Guidance was sent to the active task. This is not task completion; the original handoff continues."}),

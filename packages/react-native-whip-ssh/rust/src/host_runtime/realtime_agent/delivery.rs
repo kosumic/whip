@@ -16,6 +16,9 @@ pub(crate) enum Delivery {
 #[serde(deny_unknown_fields)]
 pub(crate) struct Delegation {
     pub prompt: String,
+    // Constructed only from native speech captions, never provider tool arguments.
+    #[serde(skip)]
+    pub context: Option<crate::realtime_voice::handoff_context::Snapshot>,
     #[serde(default)]
     pub delivery: Delivery,
 }

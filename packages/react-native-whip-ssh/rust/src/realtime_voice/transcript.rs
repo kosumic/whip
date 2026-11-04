@@ -27,6 +27,7 @@ struct Turn {
     played: usize,
     audio_done: bool,
     text_done: bool,
+    text_failed: bool,
     stopped: bool,
     timing: pacing::Text,
     clock: pacing::Clock,
@@ -91,6 +92,7 @@ impl Transcript {
             played: 0,
             audio_done: false,
             text_done: false,
+            text_failed: false,
             stopped: false,
             timing: pacing::Text::default(),
             clock: pacing::Clock::new(self.pace),
@@ -129,15 +131,26 @@ impl Transcript {
                     .find(|turn| turn.message.id == format!("user:{item_id}"))
                 {
                     turn.message.text = super::limit_text(transcript.clone());
+                    turn.text_done = true;
+                    turn.text_failed = false;
                 }
             }
             ServerEvent::InputAudioTranscriptionDelta { item_id, delta, .. } => {
                 if let Some(turn) = self
                     .turns
                     .iter_mut()
-                    .find(|turn| turn.message.id == format!("user:{item_id}"))
+                    .find(|turn| turn.message.id == format!("user:{item_id}") && !turn.text_done)
                 {
                     super::bounded_text(&mut turn.message.text, delta);
+                }
+            }
+            ServerEvent::InputAudioTranscriptionFailed { item_id, .. } => {
+                if let Some(turn) = self
+                    .turns
+                    .iter_mut()
+                    .find(|turn| turn.message.id == format!("user:{item_id}") && !turn.text_done)
+                {
+                    turn.text_failed = true;
                 }
             }
             ServerEvent::ResponseOutputAudioTranscriptDelta {
@@ -252,6 +265,29 @@ impl Transcript {
             .filter(|turn| !turn.message.text.is_empty())
             .map(|turn| turn.message.clone())
             .collect()
+    }
+
+    pub fn delegation_snapshot(&self) -> Vec<super::handoff_context::Caption> {
+        let mut captions: Vec<_> = self
+            .turns
+            .iter()
+            .rev()
+            .filter(|turn| !turn.message.text.is_empty())
+            .take(super::handoff_context::MAX_RECORDS)
+            .map(|turn| {
+                super::handoff_context::Caption::new(
+                    &turn.message.id,
+                    turn.message.role,
+                    &turn.message.text,
+                    turn.text_done,
+                    turn.text_failed,
+                    turn.stopped && (!turn.audio_done || turn.played < turn.samples),
+                    (turn.message.role == ASSISTANT).then_some(turn.message.spoken_utf16),
+                )
+            })
+            .collect();
+        captions.reverse();
+        captions
     }
 }
 

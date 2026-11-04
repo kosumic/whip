@@ -7,6 +7,7 @@ mod delegation;
 mod echo;
 pub(crate) mod feedback;
 mod ffi;
+pub(crate) mod handoff_context;
 mod models;
 mod processing;
 mod response;
@@ -616,6 +617,7 @@ impl RealtimeVoiceAdapter {
         let mut seen = wire::Seen::default();
         let mut handoff: Option<feedback::Handoff> = None;
         let mut deferred = delegation::Deferred::default();
+        let context = handoff_context::Context::default();
         let mut last_audio_response = None;
         loop {
             if self.closed.load(Ordering::Acquire) {
@@ -785,7 +787,8 @@ impl RealtimeVoiceAdapter {
                         ServerEvent::ResponseFunctionCallArgumentsDone { call_id, name, arguments, response_id, .. } => {
                             let agent = agent.as_ref().ok_or("Voice previews cannot execute tools.")?;
                             if ignored.contains(&response_id) { continue; }
-                            let dispatch = delegation::Dispatch { ledger: &mut ledger, deferred: &mut deferred, handoff: &mut handoff, tools, responses: &mut responses };
+                            let transcript = self.output.lock().transcript.delegation_snapshot();
+                            let dispatch = delegation::Dispatch { ledger: &mut ledger, deferred: &mut deferred, handoff: &mut handoff, tools, responses: &mut responses, context: &context, transcript };
                             let call = delegation::Invocation { already_spoke: last_audio_response.as_deref() == Some(response_id.as_str()), call_id, name: name.clone(), arguments, response_id };
                             if dispatch.handle(&mut socket, agent, call).await? { self.view.lock().tool = Some(name); }
                         }
