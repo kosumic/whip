@@ -171,6 +171,20 @@ from native credential storage to Rust. Speech text is sent to OpenAI and API
 charges apply. Local-only conversations keep their offline speech policy.
 OpenAI failures stop the utterance rather than silently choosing another voice.
 
+OpenAI TTS requests, including read-aloud and previews, now appear in Usage &
+costs under Text to speech. The native adapter requests SSE and decodes audio
+deltas directly to PCM. Final provider token usage is saved with the model's
+versioned price snapshot; generated audio and input text are never stored in
+this history. A cancelled or disconnected stream without a usage report stays
+unknown. A raw-audio response from a server that ignores SSE also stays unknown;
+duration is never substituted for billable tokens. No earlier usage is backfilled.
+Native accounting writes share the application database worker. Storage failures
+retain ordered events for retry without interrupting playback; opening Usage &
+costs flushes pending records and reports storage errors. Process recovery runs
+once before new activity, so opening the panel cannot mark an active native
+request as interrupted. The open panel refreshes native activity every two
+seconds, and positive costs below display precision use a less-than amount.
+
 Rust's `speech_backend` module owns common preferences and provider dispatch.
 `openai_tts` owns the Speech API adapter; `phonon` owns Phonon artifacts and
 inference. Both feed the existing bounded native PCM players and share speech

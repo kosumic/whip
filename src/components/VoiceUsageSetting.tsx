@@ -8,8 +8,9 @@ import { formatUsd as usd } from '../lib/formatUsd';
 
 const PERIODS: UsagePeriod[] = ['today', 'week', 'month', 'lifetime'];
 const PROVIDERS: (UsageProvider | undefined)[] = [undefined, 'local', 'openai'];
-const MODES: (UsageMode | undefined)[] = [undefined, 'turn_based', 'realtime', 'live'];
+const MODES: (UsageMode | undefined)[] = [undefined, 'turn_based', 'realtime', 'live', 'tts'];
 const PAGE_SIZE = 20;
+const REFRESH_INTERVAL_MS = 2_000;
 
 export function VoiceUsageSetting() {
   const { t } = useTranslation();
@@ -24,17 +25,21 @@ export function VoiceUsageSetting() {
     if (!expanded) return;
     let current = true;
     let revision = 0;
+    let loading = false;
     const load = () => {
+      if (loading) return;
+      loading = true;
       const request = ++revision;
       void voiceUsageLedger.summary({ provider, mode }).then(value => {
         if (current && request === revision) { setSummary(value); setError(false); }
-      }, () => { if (current && request === revision) setError(true); });
+      }, () => { if (current && request === revision) setError(true); }).finally(() => { loading = false; });
     };
     setSummary(undefined); setLimit(PAGE_SIZE); load();
     const unsubscribe = voiceUsageLedger.subscribe(load);
     const appState = AppState.addEventListener('change', state => { if (state === 'active') load(); });
-    // Keep local-calendar totals correct across midnight while settings is open.
-    const timer = setInterval(load, 60_000);
+    // Native speech can finish without a JS session event. Refresh only while
+    // this panel is open; this also keeps local-calendar totals current.
+    const timer = setInterval(load, REFRESH_INTERVAL_MS);
     return () => { current = false; unsubscribe(); appState.remove(); clearInterval(timer); };
   }, [expanded, provider, mode, refresh]);
   const cost = (call: VoiceUsageCall) => call.provider === 'local' ? t('voiceUsage.localFree')
@@ -69,8 +74,10 @@ export function VoiceUsageSetting() {
         {PERIODS.map(period => {
           const total = summary.totals[period];
           return <View key={period} className="gap-1 border-t border-border py-2">
-            <Text>{t(`voiceUsage.${period}`)} · {t('voiceUsage.callCount', { count: total.calls })}</Text>
-            <Text>{total.calls === 0 ? t('voiceUsage.noCalls') : t('voiceUsage.knownEstimate', { cost: usd(total.known_estimated_usd) })}</Text>
+            <Text>{t(`voiceUsage.${period}`)} · {t('voiceUsage.activityCount', { count: total.calls })}</Text>
+            <Text>{total.calls === 0 ? t('voiceUsage.noCalls')
+              : total.unknown_cost_calls > 0 && total.known_estimated_usd === 0 ? t('voiceUsage.unknown')
+                : t('voiceUsage.knownEstimate', { cost: usd(total.known_estimated_usd) })}</Text>
             {total.unknown_cost_calls > 0 && <Text className="text-xs text-muted-foreground">{t('voiceUsage.unknownCalls', { count: total.unknown_cost_calls })}</Text>}
             {total.incomplete_calls > 0 && <Text className="text-xs text-muted-foreground">{t('voiceUsage.incompleteCalls', { count: total.incomplete_calls })}</Text>}
           </View>;

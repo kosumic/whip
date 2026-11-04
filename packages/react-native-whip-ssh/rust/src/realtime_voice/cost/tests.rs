@@ -144,3 +144,77 @@ fn failed_transcription_and_accounting_overflow_remain_unknown() -> TestResult {
     assert!(chat.estimated_usd().is_none());
     Ok(())
 }
+
+#[test]
+fn persistent_reports_replace_replayed_responses_and_finalize_before_the_call_ends() -> TestResult {
+    use crate::app_database::{
+        VoiceUsageEvent, VoiceUsageIdentity, VoiceUsageMode, VoiceUsageProvider, VoiceUsageScope,
+    };
+    use parking_lot::Mutex;
+    use std::sync::Arc;
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let sink = events.clone();
+    let mut chat = confirmed(DEFAULT_MODEL)?;
+    chat.persist(NativeVoiceUsageSession::new(
+        VoiceUsageIdentity {
+            session_id: "realtime-one".into(),
+            provider: VoiceUsageProvider::Openai,
+            mode: VoiceUsageMode::Realtime,
+            scope: VoiceUsageScope::Preview,
+            model: Some(DEFAULT_MODEL.into()),
+            voice: Some("cedar".into()),
+            started_at_ms: 1,
+        },
+        Box::new(move |event| sink.lock().push(event)),
+    ));
+    chat.observe(&response("response.cancelled", "same-response", usage())?);
+    let mut final_usage = usage();
+    final_usage["output_tokens"] = json!(600);
+    final_usage["total_tokens"] = json!(3600);
+    final_usage["output_token_details"]["audio_tokens"] = json!(500);
+    chat.observe(&response("response.done", "same-response", final_usage)?);
+    drop(chat);
+    let events = events.lock();
+    assert!(matches!(
+        events.first(),
+        Some(VoiceUsageEvent::Started { .. })
+    ));
+    assert!(matches!(events.last(), Some(VoiceUsageEvent::Ended { .. })));
+    let reports: Vec<_> = events
+        .iter()
+        .filter_map(|event| {
+            if let VoiceUsageEvent::Usage { item_id, item, .. } = event {
+                Some((item_id, item))
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert!(
+        reports
+            .iter()
+            .all(|(id, _)| *id == "response:same-response:0")
+    );
+    assert!(
+        reports[..reports.len() - 1]
+            .iter()
+            .all(|(_, item)| !item.finalized)
+    );
+    let final_report = &reports.last().ok_or("missing persisted report")?.1;
+    assert!(final_report.finalized);
+    assert!((final_report.estimated_usd.ok_or("missing cost")? - 0.08508).abs() < 1e-10);
+    let price = final_report
+        .price_snapshot
+        .as_ref()
+        .ok_or("missing price")?;
+    assert_eq!(
+        price.estimate(&final_report.reported_usage),
+        final_report.estimated_usd
+    );
+    assert!(
+        reports
+            .windows(2)
+            .all(|pair| pair[0].1.revision < pair[1].1.revision)
+    );
+    Ok(())
+}

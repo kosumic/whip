@@ -6,6 +6,8 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use super::{AppStorageEntry, AppStorageError, Store, database};
+mod native;
+pub(crate) use native::{NativeVoiceUsageSession, flush_native_voice_usage};
 
 pub(super) const KEY: &str = "whip.voice.usage";
 const VERSION: u32 = 1;
@@ -22,12 +24,15 @@ pub enum VoiceUsageMode {
     TurnBased,
     Realtime,
     Live,
+    Tts,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum VoiceUsageScope {
     Agent,
     Global,
+    Speech,
+    Preview,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -36,7 +41,7 @@ pub enum AccountingStatus {
     ProviderUsageFinalized,
     Incomplete,
 }
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UsageMetric {
     InputText,
@@ -49,7 +54,7 @@ pub enum UsageMetric {
     CachedInputImage,
     Other,
 }
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UsageUnit {
     Tokens,
@@ -81,6 +86,23 @@ pub struct VoicePriceSnapshot {
     pub source_url: String,
     pub effective_at_ms: u64,
     pub rates: Vec<UsageRate>,
+}
+
+impl VoicePriceSnapshot {
+    pub(crate) fn estimate(&self, quantities: &[UsageQuantity]) -> Option<f64> {
+        quantities.iter().try_fold(0.0, |sum, quantity| {
+            if !valid_amount(quantity.amount) {
+                return None;
+            }
+            let rate = self
+                .rates
+                .iter()
+                .find(|rate| rate.metric == quantity.metric && rate.unit == quantity.unit)?;
+            let total = sum + quantity.amount * rate.usd_per_unit;
+            valid_amount(rate.usd_per_unit).then_some(())?;
+            valid_amount(total).then_some(total)
+        })
+    }
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -361,10 +383,15 @@ impl Ledger {
         Ok(Summary { calls, totals })
     }
 }
+#[cfg(test)]
 fn record(store: &mut Store, event: VoiceUsageEvent) -> Result<(), AppStorageError> {
     let mut ledger = Ledger::load(store)?;
     ledger.apply(event)?;
-    let value = serde_json::to_string(&ledger).map_err(|_| invalid())?;
+    save(store, &ledger)
+}
+
+fn save(store: &mut Store, ledger: &Ledger) -> Result<(), AppStorageError> {
+    let value = serde_json::to_string(ledger).map_err(|_| invalid())?;
     store.write(
         vec![AppStorageEntry {
             key: KEY.into(),
@@ -378,11 +405,13 @@ fn record(store: &mut Store, event: VoiceUsageEvent) -> Result<(), AppStorageErr
 #[uniffi::export]
 pub async fn record_voice_usage(event_json: String) -> Result<(), AppStorageError> {
     let event = serde_json::from_str(&event_json).map_err(|_| invalid())?;
-    database()?.request(move |store| record(store, event)).await
+    flush_native_voice_usage().await?;
+    native::commit(event).await
 }
 #[uniffi::export]
 pub async fn voice_usage_summary(query_json: String) -> Result<String, AppStorageError> {
     let query = serde_json::from_str(&query_json).map_err(|_| invalid())?;
+    flush_native_voice_usage().await?;
     database()?
         .request(move |store| {
             serde_json::to_string(&Ledger::load(store)?.summary(&query)?).map_err(|_| invalid())

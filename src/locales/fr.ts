@@ -1,6 +1,10 @@
 import type { en } from './en';
 
 export const fr = {
+  "voiceUsage.tts": "Synthèse vocale",
+  "voiceUsage.speech": "Synthèse / aperçu",
+  "voiceUsage.preview": "Aperçu vocal",
+  "voiceUsage.activityCount": "{{count}} appels / demandes vocales",
   "voiceUsage.title": "Utilisation et coûts",
   "voiceUsage.explanation": "Estimations de l’API vocale sur cet appareil, pas des factures. Cet historique ne conserve ni audio, ni transcriptions, ni clés API.",
   "voiceUsage.remoteUnknown": "Les coûts de l’agent de programmation/API distant sont inconnus et exclus.",
@@ -28,8 +32,8 @@ export const fr = {
   "voiceUsage.unknownCalls": "{{count}} appels ont des coûts inconnus, exclus de l’estimation.",
   "voiceUsage.incompleteCalls": "{{count}} appels ont une comptabilité incomplète.",
   "voiceUsage.history": "Historique des appels",
-  "voiceUsage.empty": "Aucun appel enregistré pour ces filtres.",
-  "voiceUsage.cloudEmpty": "Aucune utilisation vocale cloud. La comptabilité Realtime et GPT-Live arrivera avec leurs adaptateurs.",
+  "voiceUsage.empty": "Aucun appel ni demande vocale enregistré pour ces filtres.",
+  "voiceUsage.cloudEmpty": "Aucune utilisation OpenAI enregistrée. Les nouveaux appels Realtime, aperçus et demandes OpenAI TTS apparaissent ici ; les utilisations antérieures non enregistrées ne sont pas récupérées.",
   "voiceUsage.agent": "Appel à un agent",
   "voiceUsage.global": "Appel global",
   "voiceUsage.live_estimate": "Estimation en cours",

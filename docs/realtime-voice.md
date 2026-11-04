@@ -315,8 +315,12 @@ rates, and output uses its own text/audio rates. Missing verified rates also
 hide the estimate rather than borrowing another model's prices. Pending
 responses are not projected from microphone duration or guessed token counts.
 These are voice API estimates, excluding remote coding-agent charges and any
-account-specific pricing. Current-session estimates do not backfill the separate
-Usage & costs history ledger.
+account-specific pricing. New Realtime calls and voice previews also write these
+provider reports to the durable Usage & costs ledger in Rust. Response and
+transcription IDs replace prior reports, including cancel/done replays. Reports
+remain replaceable during a call and finalize before its end record is written.
+An interrupted call with missing reports remains incomplete. Earlier unrecorded
+activity is not backfilled.
 There is no local STT/TTS conversation pipeline. Optional user transcription is
 performed by OpenAI alongside direct speech-to-speech audio.
 

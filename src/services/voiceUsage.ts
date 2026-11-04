@@ -2,8 +2,8 @@ import { appStorage } from './appStorage';
 import { settledPromise } from '../lib/promises';
 
 export type UsageProvider = 'local' | 'openai';
-export type UsageMode = 'turn_based' | 'realtime' | 'live';
-export type UsageScope = 'agent' | 'global';
+export type UsageMode = 'turn_based' | 'realtime' | 'live' | 'tts';
+export type UsageScope = 'agent' | 'global' | 'speech' | 'preview';
 export type AccountingStatus = 'live_estimate' | 'provider_usage_finalized' | 'incomplete';
 export type UsageMetric = 'input_text' | 'cached_input_text' | 'output_text' | 'input_audio' | 'cached_input_audio' | 'output_audio' | 'input_image' | 'cached_input_image' | 'other';
 export type UsageUnit = 'tokens' | 'seconds' | 'requests';

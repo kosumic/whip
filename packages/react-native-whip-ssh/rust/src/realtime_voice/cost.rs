@@ -5,6 +5,10 @@
 use std::collections::BTreeMap;
 
 use super::models::{Model, Rates};
+use crate::app_database::{
+    NativeVoiceUsageSession, UsageMetric, UsageQuantity, UsageRate, UsageUnit, VoicePriceSnapshot,
+    VoiceUsageItem,
+};
 use oai_rt_rs::{ServerEvent, Usage};
 
 const MILLION: f64 = 1_000_000.0;
@@ -19,16 +23,12 @@ enum Kind {
     Transcription,
 }
 
-enum Charge {
-    Pending,
-    Final(Option<f64>),
-}
-
 pub(super) struct CurrentChat {
     model: &'static Model,
     model_supported: Option<bool>,
-    items: BTreeMap<(Kind, String, u32), Charge>,
+    items: BTreeMap<(Kind, String, u32), VoiceUsageItem>,
     invalid: bool,
+    persistence: Option<NativeVoiceUsageSession>,
 }
 
 impl CurrentChat {
@@ -38,7 +38,12 @@ impl CurrentChat {
             model_supported: None,
             items: BTreeMap::new(),
             invalid: false,
+            persistence: None,
         }
+    }
+
+    pub(super) fn persist(&mut self, session: NativeVoiceUsageSession) {
+        self.persistence = Some(session);
     }
 
     pub(super) fn observe(&mut self, event: &ServerEvent) -> bool {
@@ -50,7 +55,7 @@ impl CurrentChat {
                 self.model_supported = Some(self.model_supported.unwrap_or(true) && supported);
             }
             ServerEvent::ResponseCreated { response, .. } => {
-                self.record(Kind::Response, &response.id, 0, Charge::Pending);
+                self.record(Kind::Response, &response.id, 0, pending());
             }
             ServerEvent::ResponseDone { response, .. }
             | ServerEvent::ResponseCancelled { response, .. } => {
@@ -58,16 +63,17 @@ impl CurrentChat {
                     Kind::Response,
                     &response.id,
                     0,
-                    Charge::Final(response.usage.as_ref().and_then(|usage| {
+                    priced(
+                        response.usage.as_ref().and_then(response_quantities),
                         self.model
                             .rates
                             .as_ref()
-                            .and_then(|rates| response_cost(usage, rates))
-                    })),
+                            .map(|rates| response_snapshot(self.model.id.as_str(), rates)),
+                    ),
                 );
             }
             ServerEvent::InputAudioBufferCommitted { item_id, .. } => {
-                self.record(Kind::Transcription, item_id, 0, Charge::Pending);
+                self.record(Kind::Transcription, item_id, 0, pending());
             }
             ServerEvent::InputAudioTranscriptionCompleted {
                 item_id,
@@ -79,7 +85,10 @@ impl CurrentChat {
                     Kind::Transcription,
                     item_id,
                     *content_index,
-                    Charge::Final(usage.as_ref().and_then(transcription_cost)),
+                    priced(
+                        usage.as_ref().and_then(transcription_quantities),
+                        Some(transcription_snapshot()),
+                    ),
                 );
             }
             ServerEvent::InputAudioTranscriptionFailed {
@@ -90,14 +99,14 @@ impl CurrentChat {
                 Kind::Transcription,
                 item_id,
                 *content_index,
-                Charge::Final(None),
+                priced(None, Some(transcription_snapshot())),
             ),
             _ => return false,
         }
         true
     }
 
-    fn record(&mut self, kind: Kind, id: &str, index: u32, charge: Charge) {
+    fn record(&mut self, kind: Kind, id: &str, index: u32, charge: VoiceUsageItem) {
         if id.is_empty() || id.len() > MAX_ID_BYTES {
             self.invalid = true;
             return;
@@ -109,21 +118,32 @@ impl CurrentChat {
         }
         // Replayed creation cannot erase finalized usage. Terminal reports for
         // one ID replace earlier reports (including cancel/done duplicates).
-        if matches!(charge, Charge::Pending) {
-            self.items.entry(key).or_insert(charge);
+        if !charge.finalized {
+            self.items.entry(key.clone()).or_insert(charge);
         } else {
-            self.items.insert(key, charge);
+            self.items.insert(key.clone(), charge);
+        }
+        if let Some(item) = self.items.get(&key) {
+            let item = ledger_item(item, self.valid(), false);
+            if let Some(session) = &mut self.persistence {
+                session.record(item_id(&key), item);
+            }
         }
     }
 
+    fn valid(&self) -> bool {
+        !self.invalid && self.model_supported == Some(true)
+    }
+
     pub(super) fn estimated_usd(&self) -> Option<f64> {
-        if self.invalid || self.model_supported != Some(true) {
+        if !self.valid() {
             return None;
         }
         self.items.values().try_fold(0.0, |sum, charge| {
-            let amount = match charge {
-                Charge::Pending => 0.0, // Live estimates advance with reported usage.
-                Charge::Final(amount) => (*amount)?,
+            let amount = if charge.finalized {
+                charge.estimated_usd?
+            } else {
+                0.0
             };
             let sum = sum + amount;
             sum.is_finite().then_some(sum)
@@ -131,7 +151,120 @@ impl CurrentChat {
     }
 }
 
-fn response_cost(usage: &Usage, rates: &Rates) -> Option<f64> {
+impl Drop for CurrentChat {
+    fn drop(&mut self) {
+        let valid = self.valid();
+        if let Some(session) = &mut self.persistence {
+            for (key, item) in &self.items {
+                session.record(item_id(key), ledger_item(item, valid, true));
+            }
+            if self.invalid {
+                session.record("accounting-incomplete".into(), pending());
+            }
+        }
+    }
+}
+
+fn item_id((kind, id, index): &(Kind, String, u32)) -> String {
+    format!(
+        "{}:{id}:{index}",
+        match kind {
+            Kind::Response => "response",
+            Kind::Transcription => "transcription",
+        }
+    )
+}
+
+fn ledger_item(item: &VoiceUsageItem, valid: bool, ended: bool) -> VoiceUsageItem {
+    let mut item = item.clone();
+    if !valid {
+        item.estimated_usd = None;
+    }
+    // Keep terminal provider reports replaceable until the call ends: a later
+    // response.done can refine an earlier response.cancelled for the same ID.
+    item.finalized &= ended;
+    item
+}
+
+fn pending() -> VoiceUsageItem {
+    VoiceUsageItem {
+        revision: 0,
+        reported_usage: vec![],
+        estimated_usd: None,
+        price_snapshot: None,
+        finalized: false,
+    }
+}
+
+fn priced(
+    quantities: Option<Vec<UsageQuantity>>,
+    price_snapshot: Option<VoicePriceSnapshot>,
+) -> VoiceUsageItem {
+    let estimated_usd = quantities
+        .as_ref()
+        .and_then(|quantities| price_snapshot.as_ref()?.estimate(quantities));
+    VoiceUsageItem {
+        revision: 0,
+        reported_usage: quantities.unwrap_or_default(),
+        estimated_usd,
+        price_snapshot,
+        finalized: true,
+    }
+}
+
+fn tokens(metric: UsageMetric, amount: u32) -> UsageQuantity {
+    UsageQuantity {
+        metric,
+        unit: UsageUnit::Tokens,
+        amount: f64::from(amount),
+    }
+}
+
+fn snapshot(model: &str, rates: &[(UsageMetric, f64)]) -> VoicePriceSnapshot {
+    VoicePriceSnapshot {
+        version: 1,
+        id: format!("openai-{model}-2026-11-04"),
+        source_url: format!("https://developers.openai.com/api/docs/models/{model}"),
+        effective_at_ms: 1_793_750_400_000,
+        rates: rates
+            .iter()
+            .map(|(metric, rate)| UsageRate {
+                metric: *metric,
+                unit: UsageUnit::Tokens,
+                usd_per_unit: rate / MILLION,
+            })
+            .collect(),
+    }
+}
+
+fn response_snapshot(model: &str, rates: &Rates) -> VoicePriceSnapshot {
+    use UsageMetric::*;
+    snapshot(
+        model,
+        &[
+            (InputText, rates.text_input),
+            (InputAudio, rates.audio_input),
+            (InputImage, rates.image_input),
+            (CachedInputText, rates.cached_text_input),
+            (CachedInputAudio, rates.cached_audio_input),
+            (CachedInputImage, rates.cached_image_input),
+            (OutputText, rates.text_output),
+            (OutputAudio, rates.audio_output),
+        ],
+    )
+}
+
+fn transcription_snapshot() -> VoicePriceSnapshot {
+    snapshot(
+        "gpt-4o-mini-transcribe",
+        &[
+            (UsageMetric::InputAudio, TRANSCRIPTION_INPUT),
+            (UsageMetric::OutputText, TRANSCRIPTION_OUTPUT),
+        ],
+    )
+}
+
+fn response_quantities(usage: &Usage) -> Option<Vec<UsageQuantity>> {
     if usage.input_tokens.checked_add(usage.output_tokens)? != usage.total_tokens {
         return None;
     }
@@ -172,28 +305,27 @@ fn response_cost(usage: &Usage, rates: &Rates) -> Option<f64> {
             return None;
         }
     }
-    Some(
-        (f64::from(text.checked_sub(cached_text)?) * rates.text_input
-            + f64::from(audio.checked_sub(cached_audio)?) * rates.audio_input
-            + f64::from(image.checked_sub(cached_image)?) * rates.image_input
-            + f64::from(cached_text) * rates.cached_text_input
-            + f64::from(cached_audio) * rates.cached_audio_input
-            + f64::from(cached_image) * rates.cached_image_input
-            + f64::from(output_text) * rates.text_output
-            + f64::from(output_audio) * rates.audio_output)
-            / MILLION,
-    )
+    use UsageMetric::*;
+    Some(vec![
+        tokens(InputText, text.checked_sub(cached_text)?),
+        tokens(InputAudio, audio.checked_sub(cached_audio)?),
+        tokens(InputImage, image.checked_sub(cached_image)?),
+        tokens(CachedInputText, cached_text),
+        tokens(CachedInputAudio, cached_audio),
+        tokens(CachedInputImage, cached_image),
+        tokens(OutputText, output_text),
+        tokens(OutputAudio, output_audio),
+    ])
 }
 
-fn transcription_cost(usage: &Usage) -> Option<f64> {
+fn transcription_quantities(usage: &Usage) -> Option<Vec<UsageQuantity>> {
     if usage.input_tokens.checked_add(usage.output_tokens)? != usage.total_tokens {
         return None;
     }
-    Some(
-        (f64::from(usage.input_tokens) * TRANSCRIPTION_INPUT
-            + f64::from(usage.output_tokens) * TRANSCRIPTION_OUTPUT)
-            / MILLION,
-    )
+    Some(vec![
+        tokens(UsageMetric::InputAudio, usage.input_tokens),
+        tokens(UsageMetric::OutputText, usage.output_tokens),
+    ])
 }
 
 #[cfg(test)]

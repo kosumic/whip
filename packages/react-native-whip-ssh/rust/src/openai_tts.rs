@@ -1,6 +1,10 @@
 //! OpenAI Speech API -> bounded 24 kHz native PCM. No keys or audio cross JS.
 //! https://developers.openai.com/api/docs/guides/text-to-speech
 use native_credentials::NativeCredential;
+mod stream;
+use crate::app_database::{
+    NativeVoiceUsageSession, VoiceUsageItem, VoiceUsageMode, VoiceUsageScope,
+};
 use reqwest::{
     Client, StatusCode,
     header::{AUTHORIZATION, HeaderValue},
@@ -13,6 +17,7 @@ pub(super) const VOICES: &[&str] = &[
     "marin", "cedar",
 ];
 const MODEL: &str = "gpt-4o-mini-tts";
+const USAGE_ITEM_ID: &str = "speech";
 const ENDPOINT: &str = "https://api.openai.com/v1/audio/speech";
 const MAX_AUDIO_BYTES: usize = 24_000 * 2 * 600;
 
@@ -33,6 +38,7 @@ async fn cancellable<T>(
     }
 }
 
+#[derive(Default)]
 struct PcmDecoder {
     pending: Option<u8>,
     bytes: usize,
@@ -114,7 +120,24 @@ pub(super) fn speak(
                     .header(AUTHORIZATION, header)
                     .json(&serde_json::json!({
                         "model": MODEL, "voice": voice, "input": text, "response_format": "pcm",
+                        "stream_format": "sse",
                     }));
+            let mut accounting = NativeVoiceUsageSession::start(
+                VoiceUsageMode::Tts,
+                VoiceUsageScope::Speech,
+                MODEL,
+                voice,
+            );
+            accounting.record(
+                USAGE_ITEM_ID.into(),
+                VoiceUsageItem {
+                    revision: 0,
+                    reported_usage: vec![],
+                    estimated_usd: None,
+                    price_snapshot: None,
+                    finalized: false,
+                },
+            );
             let Some(mut response) = cancellable(request.send(), &current).await? else {
                 return Ok(false);
             };
@@ -128,10 +151,13 @@ pub(super) fn speak(
                 }
                 _ => return Err("OpenAI could not generate speech. Try again.".into()),
             }
-            let mut decoder = PcmDecoder {
-                pending: None,
-                bytes: 0,
-            };
+            let event_stream = response
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| value.starts_with("text/event-stream"));
+            let mut decoder = PcmDecoder::default();
+            let mut stream = stream::SpeechStream::default();
             loop {
                 let Some(chunk) = cancellable(response.chunk(), &current).await? else {
                     return Ok(false);
@@ -139,11 +165,38 @@ pub(super) fn speak(
                 let Some(chunk) = chunk else {
                     break;
                 };
-                if !decoder.push(&chunk, |pcm| current() && output(pcm))? {
+                let accepted = if event_stream {
+                    stream.push(&chunk, &mut |pcm| current() && output(pcm), &mut |item| {
+                        accounting.record(USAGE_ITEM_ID.into(), item)
+                    })?
+                } else {
+                    decoder.push(&chunk, |pcm| current() && output(pcm))?
+                };
+                if !accepted {
                     return Ok(false);
                 }
             }
-            decoder.finish()?;
+            if event_stream {
+                if !stream.finish(&mut |pcm| current() && output(pcm), &mut |item| {
+                    accounting.record(USAGE_ITEM_ID.into(), item)
+                })? {
+                    return Ok(false);
+                }
+            } else {
+                decoder.finish()?;
+                // A raw-audio response has no provider token report. Preserve
+                // the request as unknown instead of inventing billable tokens.
+                accounting.record(
+                    USAGE_ITEM_ID.into(),
+                    VoiceUsageItem {
+                        revision: 0,
+                        reported_usage: vec![],
+                        estimated_usd: None,
+                        price_snapshot: None,
+                        finalized: false,
+                    },
+                );
+            }
             Ok(current())
         })
 }

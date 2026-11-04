@@ -657,6 +657,18 @@ impl RealtimeVoiceAdapter {
         let mut capture = ::audio_ingress::Packet::new(self.input.packet_samples);
         let mut responses = response::ResponseCreateQueue::default();
         let mut costs = cost::CurrentChat::new(config.model()?);
+        costs.persist(crate::app_database::NativeVoiceUsageSession::start(
+            crate::app_database::VoiceUsageMode::Realtime,
+            if config.preview {
+                crate::app_database::VoiceUsageScope::Preview
+            } else if config.target.is_some() || config.terminal_target.is_some() {
+                crate::app_database::VoiceUsageScope::Agent
+            } else {
+                crate::app_database::VoiceUsageScope::Global
+            },
+            &config.model()?.id,
+            &config.voice,
+        ));
         let mut input_item = String::new();
         let mut ignored = HashSet::new();
         let mut ledger = ToolLedger::default();

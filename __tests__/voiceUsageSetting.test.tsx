@@ -53,3 +53,31 @@ test('storage failure hides totals and retry restores history', async () => {
   await act(async () => press('voiceUsage.retry'));
   expect(visible()).not.toContain('voiceUsage.storageError'); expect(visible()).toContain('voiceUsage.history');
 });
+
+test('TTS requests have a filter and missing provider costs are shown as unknown instead of zero', async () => {
+  const unknown = { known_estimated_usd: 0, calls: 1, unknown_cost_calls: 1, incomplete_calls: 1 };
+  jest.mocked(voiceUsageLedger.summary).mockResolvedValue({
+    calls: [{ session_id: 'tts-request', provider: 'openai', mode: 'tts', scope: 'speech', model: 'gpt-4o-mini-tts', voice: 'marin',
+      started_at_ms: Date.now(), ended_at_ms: Date.now(), active: false, estimated_usd: null,
+      remote_agent_estimated_usd: null, status: 'incomplete', items: {} }],
+    totals: { today: unknown, week: unknown, month: unknown, lifetime: unknown },
+  });
+  await act(async () => press('voiceUsage.title'));
+  await act(async () => press('voiceUsage.tts'));
+  expect(voiceUsageLedger.summary).toHaveBeenLastCalledWith({ provider: undefined, mode: 'tts' });
+  expect(visible()).toContain('voiceUsage.unknown');
+  expect(visible()).not.toContain('USD 0.0000');
+});
+
+test('refreshes native-only usage while the panel is open and stops after it is closed', async () => {
+  jest.useFakeTimers();
+  try {
+    await act(async () => press('voiceUsage.title'));
+    const before = jest.mocked(voiceUsageLedger.summary).mock.calls.length;
+    await act(async () => { jest.advanceTimersByTime(2_000); });
+    expect(voiceUsageLedger.summary).toHaveBeenCalledTimes(before + 1);
+    await act(async () => press('voiceUsage.title'));
+    await act(async () => { jest.advanceTimersByTime(2_000); });
+    expect(voiceUsageLedger.summary).toHaveBeenCalledTimes(before + 1);
+  } finally { jest.useRealTimers(); }
+});
