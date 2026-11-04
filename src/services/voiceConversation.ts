@@ -29,6 +29,7 @@ export interface VoiceConversationView {
   userText?: string;
   inputTokens?: number;
   outputTokens?: number;
+  estimatedUsd?: number | null;
 }
 const STOPPED = 'WhipChatSpeechStopped';
 const STARTED = 'WhipChatSpeechStarted';

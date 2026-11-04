@@ -20,6 +20,7 @@ import { GlassPortal } from './GlassSurface';
 import { VoiceOrb } from './VoiceOrb';
 import { VoiceVadSensitivityContext } from '../lib/voiceVadSensitivity';
 import { useReducedMotion } from './app-ui';
+import { formatUsd } from '../lib/formatUsd';
 
 const ORB_SIZE = 208;
 const COMPACT_ORB_SIZE = 88;
@@ -162,6 +163,9 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
       <Animated.View className="items-center gap-3 px-8 pb-5" style={[styles.status, chromeMotion]}>
         <Text accessibilityLiveRegion="polite" className="text-center text-xs" style={styles.statusText}>{t(STATUS[view.phase])}</Text>
         {view.provider === 'openai' && <>
+          <Text accessibilityHint={t('voiceProvider.costHint')} className="text-center text-xs" style={styles.statusText}>{typeof view.estimatedUsd === 'number' && Number.isFinite(view.estimatedUsd) && view.estimatedUsd >= 0
+            ? t('voiceProvider.costEstimate', { cost: formatUsd(view.estimatedUsd) })
+            : t('voiceProvider.costUnknown')}</Text>
           {!!view.userText && <Text numberOfLines={2} className="text-center text-xs" style={styles.statusText}>{view.userText}</Text>}
           {!!view.text && <Text numberOfLines={4} className="text-center text-sm" style={styles.statusText}>{view.text}</Text>}
         </>}

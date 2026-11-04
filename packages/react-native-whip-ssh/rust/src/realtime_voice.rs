@@ -1,6 +1,7 @@
 //! Public OpenAI Realtime WebSocket adapter. Native media never crosses JS.
 //! The actor owns all wire writes; dropping it cancels transport and tools.
 mod captions;
+mod cost;
 mod delegation;
 mod echo;
 pub(crate) mod feedback;
@@ -192,6 +193,7 @@ pub(super) struct View {
     error: Option<&'static str>,
     input_tokens: u64,
     output_tokens: u64,
+    estimated_usd: Option<f64>,
     tool: Option<String>,
     captions: Option<captions::Diagnostics>,
 }
@@ -333,6 +335,7 @@ impl RealtimeVoiceAdapter {
                 error: None,
                 input_tokens: 0,
                 output_tokens: 0,
+                estimated_usd: None,
                 tool: None,
                 captions: (!config.preview)
                     .then(|| captions::Diagnostics::pending(config.language)),
@@ -383,6 +386,7 @@ impl RealtimeVoiceAdapter {
             view.error = Some(error);
             view.level = 0.0;
             view.playback_level = 0.0;
+            view.estimated_usd = None;
         }
         drop(view);
         self.output.lock().clear();
@@ -471,6 +475,7 @@ impl RealtimeVoiceAdapter {
         let started = tokio::time::Instant::now();
         let mut heartbeat = tokio::time::interval(Duration::from_millis(250));
         let mut responses = response::ResponseCreateQueue::default();
+        let mut costs = cost::CurrentChat::default();
         let mut input_item = String::new();
         let mut ignored = HashSet::new();
         let mut ledger = ToolLedger::default();
@@ -586,6 +591,7 @@ impl RealtimeVoiceAdapter {
                         continue;
                     };
                     let event: ServerEvent = serde_json::from_str(&text).map_err(|_| "OpenAI returned an unsupported Realtime event.")?;
+                    if costs.observe(&event) { self.view.lock().estimated_usd = costs.estimated_usd(); }
                     match event {
                         ServerEvent::SessionUpdated { session, .. } => {
                             let audio = session.config.audio.ok_or("OpenAI did not negotiate PCM audio.")?;

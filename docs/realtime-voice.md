@@ -145,8 +145,24 @@ The public API format is mono PCM16 little-endian at 24 kHz. Session confirmatio
 must accept the selected voice and both PCM formats before capture is uploaded.
 Native workers pass borrowed sample buffers through C/JNI directly to Rust;
 only controls, bounded captions, meters and token totals cross the JS bridge.
-Token totals cover completed Realtime responses, not a currency estimate or
-separate transcription usage.
+API call screens show one estimated USD total for the current voice session;
+Local calls show no cost line. Rust sums provider-reported text/audio/image
+usage, subtracts cached usage before applying uncached rates, and includes
+separately billed input transcription. Reports replace earlier values by
+response/item ID, so repeated cancel/done or transcription events cannot add
+the same charge twice. Presentation remounts retain the running call's total.
+Raw token counters are not displayed.
+
+The rate snapshot was checked on 2026-11-04 against the official model pages for
+[gpt-realtime](https://developers.openai.com/api/docs/models/gpt-realtime) and
+[gpt-4o-mini-transcribe](https://developers.openai.com/api/docs/models/gpt-4o-mini-transcribe).
+Only the selected models' known aliases/snapshots are priced. Missing usage,
+unsupported models or inconsistent token/cache breakdowns show an unavailable
+estimate instead of zero. Live totals advance as usage reports arrive; pending
+responses are not projected from microphone duration or guessed token counts.
+These are voice API estimates, excluding remote coding-agent charges and any
+account-specific pricing. Current-session estimates do not backfill the separate
+Usage & costs history ledger.
 There is no local STT/TTS conversation pipeline. Optional user transcription is
 performed by OpenAI alongside direct speech-to-speech audio.
 

@@ -8,6 +8,7 @@ import { VoiceVadSensitivityContext } from '../src/lib/voiceVadSensitivity';
 import { useReducedMotion } from '../src/components/app-ui';
 import { VoiceOrb } from '../src/components/VoiceOrb';
 import { voiceSessionManager } from '../src/services/voiceSessionManager';
+import { Text } from '../src/components/ui/text';
 
 jest.mock('../src/services/voiceConversation', () => ({ VoiceConversation: jest.fn() }));
 jest.mock('../src/services/voiceSessionManager', () => {
@@ -24,7 +25,7 @@ jest.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles },
 }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
-jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string, values?: { cost?: string }) => key === 'voiceProvider.costEstimate' ? `Estimated voice total: ${values?.cost}` : key }) }));
 jest.mock('../src/theme', () => ({ useTheme: () => ({ colors: { canvas: '#000', text: '#fff', primary: '#acf', onPrimary: '#000' } }) }));
 jest.mock('../src/components/app-ui', () => ({ useReducedMotion: jest.fn(() => true) }));
 jest.mock('../src/components/GlassSurface', () => ({ GlassPortal: 'GlassPortal' }));
@@ -72,6 +73,8 @@ function Call({ visible = true }: { visible?: boolean }) {
 function press(label: string) {
   act(() => { renderer.root.findByProps({ accessibilityLabel: label }).props.onPress(); });
 }
+
+const renderedText = () => renderer.root.findAllByType(Text).map(node => node.props.children);
 
 beforeEach(async () => {
   jest.clearAllMocks();
@@ -224,4 +227,30 @@ test('unmounting and remounting a presentation preserves the call and elapsed ti
   expect(renderer.root.findByType(VoiceOrb).props.startedAt).toBe(startedAt);
   press('voiceChat.end');
   expect(session.close).toHaveBeenCalledTimes(1);
+});
+
+test('shows the current API voice estimate and no cost for non-API calls', () => {
+  act(() => publish({ ...listening, estimatedUsd: 0.01234 }));
+  expect(renderedText()).not.toContain('Estimated voice total: USD 0.0123');
+  expect(renderedText()).not.toContain('voiceProvider.costUnknown');
+  act(() => publish({ ...listening, provider: 'openai', estimatedUsd: 0.01234 }));
+  expect(renderedText()).toContain('Estimated voice total: USD 0.0123');
+  act(() => publish({ ...listening }));
+  expect(renderedText()).not.toContain('Estimated voice total: USD 0.0123');
+});
+
+test('distinguishes unknown API costs from a reported zero estimate', () => {
+  act(() => publish({ ...listening, provider: 'openai', estimatedUsd: null }));
+  expect(renderedText()).toContain('voiceProvider.costUnknown');
+  expect(renderedText()).not.toContain('Estimated voice total: USD 0.0000');
+  act(() => publish({ ...listening, provider: 'openai', estimatedUsd: 0 }));
+  expect(renderedText()).toContain('Estimated voice total: USD 0.0000');
+});
+
+test('retains the current API voice estimate when the chat presentation remounts', async () => {
+  act(() => publish({ ...listening, provider: 'openai', estimatedUsd: 0.125 }));
+  await act(async () => renderer.unmount());
+  await act(async () => { renderer = create(<Call />); });
+  expect(renderedText()).toContain('Estimated voice total: USD 0.1250');
+  expect(session.start).toHaveBeenCalledTimes(1);
 });

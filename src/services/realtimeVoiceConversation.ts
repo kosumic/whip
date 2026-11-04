@@ -16,7 +16,7 @@ import { suppressAgentAlertsForTab } from './alerts';
 const CONTROL = { skip: 1 } as const;
 let sequence = 0;
 type CallEvent = { token: string; type: string; muted?: boolean; speaker?: boolean };
-type NativeView = Pick<VoiceConversationView, 'phase' | 'muted' | 'level' | 'playbackLevel' | 'text' | 'userText' | 'error' | 'inputTokens' | 'outputTokens'>;
+type NativeView = Pick<VoiceConversationView, 'phase' | 'muted' | 'level' | 'playbackLevel' | 'text' | 'userText' | 'error' | 'inputTokens' | 'outputTokens' | 'estimatedUsd'>;
 function requireForeground(): void { if (AppState.currentState !== 'active') throw new Error('Return to Whip to start the call.'); }
 
 /** Only call controls and presentation cross this bridge. PCM and tools stay native. */
@@ -30,7 +30,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
   private playback?: NativeSpeechPlayback;
   private timer?: ReturnType<typeof setTimeout>;
   private cleanups: (() => void)[] = [];
-  private view: VoiceConversationView = { phase: 'starting', muted: false, smartTurn: false, speaker: false, text: '', level: 0, progress: 0, error: null, transcript: null, provider: 'openai', inputTokens: 0, outputTokens: 0 };
+  private view: VoiceConversationView = { phase: 'starting', muted: false, smartTurn: false, speaker: false, text: '', level: 0, progress: 0, error: null, transcript: null, provider: 'openai', inputTokens: 0, outputTokens: 0, estimatedUsd: null };
 
   constructor(private readonly target: VoiceChatTarget, private readonly settings: Readonly<VoiceConversationSettings>, private readonly changed: (view: VoiceConversationView) => void) {}
 
@@ -100,7 +100,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
     this.view = { ...this.view, ...update };
     this.changed(this.view);
   }
-  private fail(message: string): void { if (!this.closed) { this.publish({ phase: 'error', error: message, level: 0, playbackLevel: 0 }); void this.close(); } }
+  private fail(message: string): void { if (!this.closed) { this.publish({ phase: 'error', error: message, level: 0, playbackLevel: 0, estimatedUsd: null }); void this.close(); } }
   private async poll(final = false): Promise<void> {
     if (this.closed || !this.playback) return;
     clearTimeout(this.timer);

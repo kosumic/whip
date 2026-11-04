@@ -4,12 +4,12 @@ import { useTranslation } from 'react-i18next';
 import { voiceUsageLedger, type UsageMode, type UsagePeriod, type UsageProvider, type VoiceUsageCall, type VoiceUsageSummary } from '../services/voiceUsage';
 import { GlassButton } from './GlassControls';
 import { Text } from './ui/text';
+import { formatUsd as usd } from '../lib/formatUsd';
 
 const PERIODS: UsagePeriod[] = ['today', 'week', 'month', 'lifetime'];
 const PROVIDERS: (UsageProvider | undefined)[] = [undefined, 'local', 'openai'];
 const MODES: (UsageMode | undefined)[] = [undefined, 'turn_based', 'realtime', 'live'];
 const PAGE_SIZE = 20;
-const usd = (value: number) => `USD ${value.toFixed(4)}`;
 
 export function VoiceUsageSetting() {
   const { t } = useTranslation();
