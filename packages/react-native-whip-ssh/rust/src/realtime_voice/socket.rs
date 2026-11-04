@@ -15,6 +15,7 @@ pub(super) enum Socket {
     Direct(Box<RawSocket>),
     Sideband {
         outgoing: mpsc::Sender<Message>,
+        confirmed: Option<Message>,
         incoming: mpsc::Receiver<Result<Message, Error>>,
     },
 }
@@ -22,7 +23,21 @@ impl Socket {
     pub fn relay() -> (Self, mpsc::Receiver<Message>, Events) {
         let (outgoing, commands) = mpsc::channel(32);
         let (events, incoming) = mpsc::channel(32);
-        (Self::Sideband { outgoing, incoming }, commands, events)
+        (
+            Self::Sideband {
+                outgoing,
+                incoming,
+                confirmed: None,
+            },
+            commands,
+            events,
+        )
+    }
+
+    pub fn replay_confirmation(&mut self, message: Message) {
+        if let Self::Sideband { confirmed, .. } = self {
+            *confirmed = Some(message);
+        }
     }
 
     pub async fn receive_text(
@@ -53,7 +68,14 @@ impl Stream for Socket {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match self.get_mut() {
             Self::Direct(socket) => Pin::new(socket.as_mut()).poll_next(cx),
-            Self::Sideband { incoming, .. } => Pin::new(incoming).poll_next(cx),
+            Self::Sideband {
+                incoming,
+                confirmed,
+                ..
+            } => match confirmed.take() {
+                Some(message) => Poll::Ready(Some(Ok(message))),
+                None => Pin::new(incoming).poll_next(cx),
+            },
         }
     }
 }

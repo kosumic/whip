@@ -11,6 +11,8 @@ use serde_json::Value;
 static HTTP: std::sync::OnceLock<Result<Client, &'static str>> = std::sync::OnceLock::new();
 
 const CALLS: &str = "https://api.openai.com/v1/realtime/calls";
+const CREATION_UNKNOWN: &str =
+    "Realtime call creation outcome is unknown. Start a new call manually.";
 pub(super) struct Call {
     pub answer: String,
     pub id: String,
@@ -57,12 +59,13 @@ impl Call {
             .multipart(form)
             .send()
             .await
-            .map_err(|_| "Realtime call creation failed. Check your network.")?;
+            .map_err(|_| CREATION_UNKNOWN)?;
         if response.status().as_u16() != 201 {
             return Err(match response.status().as_u16() {
                 401 | 403 | 404 => models::ACCESS_ERROR,
                 429 => "OpenAI Realtime quota or rate limit reached.",
-                _ => "OpenAI rejected the Realtime call configuration.",
+                400..=499 => "OpenAI rejected the Realtime call configuration.",
+                _ => CREATION_UNKNOWN,
             });
         }
         let id = call_id(
@@ -70,8 +73,9 @@ impl Call {
                 .headers()
                 .get(LOCATION)
                 .and_then(|h| h.to_str().ok())
-                .ok_or("Realtime call identifier is missing.")?,
-        )?;
+                .ok_or(CREATION_UNKNOWN)?,
+        )
+        .map_err(|_| CREATION_UNKNOWN)?;
         let mut call = Self {
             answer: String::new(),
             id,
@@ -79,43 +83,60 @@ impl Call {
             authorization,
             closed: std::sync::atomic::AtomicBool::new(false),
         };
-        if response
-            .content_length()
-            .is_some_and(|length| length > MAX_WIRE as u64)
-        {
-            return Err("Realtime SDP answer is too large.");
-        }
-        let mut response = response;
-        let mut answer = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|_| "Realtime SDP answer could not be read.")?
-        {
-            if answer.len() + chunk.len() > MAX_WIRE {
+        let answer = async {
+            if response
+                .content_length()
+                .is_some_and(|length| length > MAX_WIRE as u64)
+            {
                 return Err("Realtime SDP answer is too large.");
             }
-            answer.extend_from_slice(&chunk);
+            let mut response = response;
+            let mut answer = Vec::new();
+            while let Some(chunk) = response
+                .chunk()
+                .await
+                .map_err(|_| "Realtime SDP answer could not be read.")?
+            {
+                if answer.len() + chunk.len() > MAX_WIRE {
+                    return Err("Realtime SDP answer is too large.");
+                }
+                answer.extend_from_slice(&chunk);
+            }
+            let answer = String::from_utf8(answer).map_err(|_| "Invalid Realtime SDP answer.")?;
+            if !answer.starts_with("v=0") {
+                return Err("Invalid Realtime SDP answer.");
+            }
+            Ok::<_, &'static str>(answer)
         }
-        let answer = String::from_utf8(answer).map_err(|_| "Invalid Realtime SDP answer.")?;
-        if !answer.starts_with("v=0") {
-            return Err("Invalid Realtime SDP answer.");
-        }
-        call.answer = answer;
+        .await;
+        call.answer = match answer {
+            Ok(answer) => answer,
+            Err(error) => {
+                call.hangup().await?;
+                return Err(error);
+            }
+        };
         Ok(call)
     }
-    pub async fn hangup(&self) {
-        if self.closed.swap(true, std::sync::atomic::Ordering::AcqRel) {
-            return;
+    pub async fn hangup(&self) -> Result<(), &'static str> {
+        if self.closed.load(std::sync::atomic::Ordering::Acquire) {
+            return Ok(());
         }
         // Media close is always performed too; a revoked key can reject hangup.
-        let _ = self
+        let response = self
             .client
             .post(format!("{CALLS}/{}/hangup", self.id))
             .header(AUTHORIZATION, self.authorization.clone())
             .timeout(std::time::Duration::from_secs(2))
             .send()
-            .await;
+            .await
+            .map_err(|_| super::super::recovery::CLEANUP_FAILED)?;
+        if !response.status().is_success() && !matches!(response.status().as_u16(), 404 | 410) {
+            return Err(super::super::recovery::CLEANUP_FAILED);
+        }
+        self.closed
+            .store(true, std::sync::atomic::Ordering::Release);
+        Ok(())
     }
 }
 pub(super) fn call_id(location: &str) -> Result<String, &'static str> {

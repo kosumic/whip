@@ -8,7 +8,7 @@ mod packet;
 mod transport;
 mod transport_runtime;
 
-use super::{ClientEvent, RealtimeSocket, RealtimeVoiceAdapter, socket, startup};
+use super::{ClientEvent, RealtimeSocket, RealtimeVoiceAdapter, recovery, socket, startup};
 use futures::{SinkExt, StreamExt, channel::mpsc as wire};
 use parking_lot::Mutex;
 use std::{
@@ -21,7 +21,7 @@ use tokio_tungstenite::tungstenite::Message;
 pub(super) struct Handle {
     identity: Arc<Mutex<identity::Identity>>,
     stop: watch::Sender<bool>,
-    workers: Vec<JoinHandle<()>>,
+    workers: Vec<JoinHandle<Result<(), &'static str>>>,
 }
 impl Handle {
     pub fn cancel_audio(&self, response: Option<&str>) {
@@ -30,80 +30,272 @@ impl Handle {
     pub fn drained(&self) -> bool {
         self.identity.lock().ended
     }
-    pub async fn close(self) {
+    pub async fn close(self) -> Result<(), &'static str> {
         self.stop.send_replace(true);
-        for task in self.workers {
-            let _ = task.await;
+        let mut clean = true;
+        for mut task in self.workers {
+            match tokio::time::timeout(std::time::Duration::from_secs(6), &mut task).await {
+                Ok(Ok(Ok(()))) => {}
+                Ok(_) => clean = false,
+                Err(_) => {
+                    task.abort();
+                    let _ = task.await;
+                    clean = false;
+                }
+            }
+        }
+        if clean {
+            Ok(())
+        } else {
+            Err(recovery::CLEANUP_FAILED)
         }
     }
 }
 
+async fn retire(
+    owner: &RealtimeVoiceAdapter,
+    stop: &watch::Sender<bool>,
+    mut sideband: JoinHandle<Result<(), &'static str>>,
+    peer: &mut transport::Transport,
+    call: &api::Call,
+    message: &'static str,
+    retryable: bool,
+) -> recovery::Failure {
+    owner.view.lock().recovery = recovery::State::Retiring;
+    stop.send_replace(true);
+    // A normal sideband read failure is why we may be retiring. A panicked or
+    // timed-out worker cannot establish that retirement finished.
+    let worker_clean =
+        match tokio::time::timeout(std::time::Duration::from_secs(3), &mut sideband).await {
+            Ok(Ok(Err(recovery::CLEANUP_FAILED))) => false,
+            Ok(result) => result.is_ok(),
+            Err(_) => {
+                sideband.abort();
+                let _ = sideband.await;
+                false
+            }
+        };
+    let peer_clean = peer.close().await.is_ok();
+    let call_clean = call.hangup().await.is_ok();
+    if worker_clean && peer_clean && call_clean {
+        recovery::Failure { message, retryable }
+    } else {
+        recovery::CLEANUP_FAILED.into()
+    }
+}
+
+#[expect(
+    clippy::significant_drop_tightening,
+    reason = "The live peer is transferred to the media worker and must remain open through confirmation."
+)]
 pub(super) async fn start(
     owner: Arc<RealtimeVoiceAdapter>,
-    key: native_credentials::NativeCredential,
+    key: &native_credentials::NativeCredential,
     update: ClientEvent,
-    model: &super::models::Model,
-) -> Result<RealtimeSocket, &'static str> {
-    let (socket, commands, events) = socket::Socket::relay();
+    config: &super::Config,
+    attempt: Arc<recovery::Attempt>,
+) -> Result<RealtimeSocket, recovery::Failure> {
+    let (mut socket, commands, events) = socket::Socket::relay();
     let identity = Arc::new(Mutex::new(identity::Identity::default()));
     let offer_started = Instant::now();
     let mut peer = transport::Transport::new(events.clone(), identity.clone()).await?;
     let offer = match peer.offer().await {
-        Ok(offer) => offer,
-        Err(error) => {
+        Ok(offer) if attempt.current() => offer,
+        result => {
+            let message = result.err().unwrap_or(recovery::CANCELLED);
             let _ = peer.close().await;
-            return Err(error);
+            return Err(message.into());
         }
     };
     owner.view.lock().startup.offer = Some(startup::elapsed(offer_started));
-    let session = initial_session(update, model)?;
+    let session = initial_session(update, config.model()?)?;
+    let confirmation = confirmation(&session)?;
     let call_started = Instant::now();
-    let call = match api::Call::create(&key, offer, session).await {
+    // Do not race/drop this future on cancellation: the response may carry the
+    // only identity with which an already-created server call can be retired.
+    let call = match api::Call::create(key, offer, session).await {
         Ok(call) => call,
         Err(error) => {
             let _ = peer.close().await;
-            return Err(error);
+            return Err(error.into());
         }
     };
+    if !attempt.current() {
+        let _ = peer.close().await;
+        let _ = call.hangup().await;
+        return Err(recovery::CANCELLED.into());
+    }
     owner.view.lock().startup.configuration = Some(startup::elapsed(call_started));
     let (stop, stopped) = watch::channel(false);
-    let sideband = spawn_sideband(
-        owner.clone(),
+    let request = super::authorized_request(
         key,
-        call.id.clone(),
+        &format!("wss://api.openai.com/v1/realtime?call_id={}", call.id),
+    )?;
+    let sideband = spawn_sideband(
+        request,
         commands,
         events,
         stopped.clone(),
+        confirmation,
+        identity.clone(),
+        attempt.clone(),
     );
     let negotiated = Instant::now();
     let answer = peer.apply_answer(call.answer.clone()).await;
-    if !matches!(answer, Ok(transport::AnswerOutcome::Ready)) {
-        stop.send_replace(true);
-        let _ = sideband.await;
-        let _ = peer.close().await;
-        drop(peer);
-        call.hangup().await;
-        return Err("Realtime WebRTC negotiation failed. Check your network.");
+    if !matches!(answer, Ok(transport::AnswerOutcome::Ready)) || !attempt.current() {
+        let retryable = matches!(answer, Ok(transport::AnswerOutcome::TimedOut))
+            && attempt.current()
+            && attempt.errors.borrow().is_none_or(|error| error.retryable);
+        return Err(retire(
+            &owner,
+            &stop,
+            sideband,
+            &mut peer,
+            &call,
+            "Realtime WebRTC negotiation failed. Check your network.",
+            retryable,
+        )
+        .await);
     }
     owner.view.lock().startup.negotiation = Some(startup::elapsed(negotiated));
+    let confirmed = await_confirmation(&owner, &mut socket, config, &attempt).await;
+    if let Err(error) = confirmed {
+        return Err(retire(
+            &owner,
+            &stop,
+            sideband,
+            &mut peer,
+            &call,
+            error.message,
+            error.retryable,
+        )
+        .await);
+    }
+    if let Err(error) = attempt.activate() {
+        return Err(retire(
+            &owner,
+            &stop,
+            sideband,
+            &mut peer,
+            &call,
+            error.message,
+            false,
+        )
+        .await);
+    }
     let media_owner = owner.clone();
     let media_identity = identity.clone();
     let media = tokio::spawn(async move {
-        let result = media::run(&media_owner, &mut peer, media_identity, stopped).await;
+        let result = media::run(&media_owner, &mut peer, media_identity, stopped, &attempt).await;
         if let Err(error) = result {
-            media_owner.fail(error);
+            attempt.fail(error.into());
         }
-        let _ = peer.close().await;
+        let peer_clean = peer.close().await.is_ok();
         drop(peer);
-        call.hangup().await;
+        let call_clean = call.hangup().await.is_ok();
+        if peer_clean && call_clean {
+            Ok(())
+        } else {
+            Err(recovery::CLEANUP_FAILED)
+        }
     });
     *owner.media.lock() = Some(Handle {
         identity,
         stop,
         workers: vec![sideband, media],
     });
-    owner.view.lock().media_ready = true;
+    {
+        let mut view = owner.view.lock();
+        if !owner.closed.load(Ordering::Acquire) {
+            view.media_ready = true;
+        }
+    }
+    if owner.devices_ready.load(Ordering::Acquire) {
+        devices_started(&owner);
+    }
     Ok(socket)
+}
+
+async fn await_confirmation(
+    owner: &RealtimeVoiceAdapter,
+    socket: &mut RealtimeSocket,
+    config: &super::Config,
+    attempt: &recovery::Attempt,
+) -> Result<(), recovery::Failure> {
+    let mut errors = attempt.errors.subscribe();
+    let mut cancellation = owner.cancel.subscribe();
+    let deadline = tokio::time::sleep(super::IO_TIMEOUT);
+    tokio::pin!(deadline);
+    loop {
+        if !attempt.current() {
+            return Err(recovery::CANCELLED.into());
+        }
+        if let Some(error) = *errors.borrow() {
+            return Err(error);
+        }
+        let message = tokio::select! {
+            biased;
+            _ = cancellation.changed() => return Err(recovery::CANCELLED.into()),
+            _ = errors.changed() => continue,
+            _ = &mut deadline => return Err(recovery::Failure { message: "OpenAI did not confirm the Realtime session settings.", retryable: true }),
+            message = socket.next() => message,
+        };
+        let text = match message {
+            Some(Ok(Message::Text(text))) => text,
+            Some(Ok(Message::Ping(payload))) => {
+                tokio::time::timeout(super::IO_TIMEOUT, socket.send(Message::Pong(payload)))
+                    .await
+                    .map_err(|_| recovery::Failure::from("Realtime startup heartbeat timed out."))?
+                    .map_err(|_| recovery::Failure::from("Realtime startup heartbeat failed."))?;
+                continue;
+            }
+            Some(Ok(Message::Pong(_))) => continue,
+            _ => {
+                return Err(recovery::Failure {
+                    message: "Realtime sideband ended during startup.",
+                    retryable: true,
+                });
+            }
+        };
+        let event: oai_rt_rs::ServerEvent = serde_json::from_str(&text)
+            .map_err(|_| recovery::Failure::from("Invalid Realtime startup event."))?;
+        match event {
+            oai_rt_rs::ServerEvent::SessionCreated { session, .. } => {
+                config.validate_model(&session.config.model)?;
+            }
+            oai_rt_rs::ServerEvent::SessionUpdated { session, .. } => {
+                config.validate_model(&session.config.model)?;
+                let audio = session
+                    .config
+                    .audio
+                    .ok_or("OpenAI did not negotiate audio.")?;
+                if !config.preview {
+                    let captions = super::captions::Diagnostics::confirm(config.language, &audio);
+                    let valid = captions.validate();
+                    owner.view.lock().captions = Some(captions);
+                    valid?;
+                }
+                config.validate_audio(audio)?;
+                socket.replay_confirmation(Message::Text(text));
+                return Ok(());
+            }
+            oai_rt_rs::ServerEvent::Error { error, .. } => {
+                return Err(super::response::provider_error_message(&error).into());
+            }
+            _ => return Err(
+                "OpenAI sent work before confirming the voice session. Start a new call manually."
+                    .into(),
+            ),
+        }
+    }
+}
+
+fn confirmation(session: &serde_json::Value) -> Result<ClientEvent, &'static str> {
+    // Initial instructions/context/tools already went with the SDP request.
+    // Reconfirm audio without reprocessing that context on the critical path.
+    super::typed(serde_json::json!({"type":"session.update","session":{
+        "type":"realtime", "audio":session["audio"].clone()
+    }}))
 }
 
 // Models are immutable after creation. Only the call POST includes this field;
@@ -119,33 +311,57 @@ fn initial_session(
 }
 
 fn spawn_sideband(
-    owner: Arc<RealtimeVoiceAdapter>,
-    key: native_credentials::NativeCredential,
-    id: String,
+    request: tokio_tungstenite::tungstenite::http::Request<()>,
     commands: wire::Receiver<Message>,
     events: socket::Events,
     mut stop: watch::Receiver<bool>,
-) -> JoinHandle<()> {
+    update: ClientEvent,
+    identity: Arc<Mutex<identity::Identity>>,
+    attempt: Arc<recovery::Attempt>,
+) -> JoinHandle<Result<(), &'static str>> {
     tokio::spawn(async move {
         let started = Instant::now();
-        let url = format!("wss://api.openai.com/v1/realtime?call_id={id}");
         let result = tokio::select! {
             biased;
-            _ = stop.changed() => return,
-            result = super::connect_raw(key, &url) => result,
+            _ = stop.changed() => return Ok(()),
+            result = super::connect_request(request) => result,
         };
         let result = match result {
             Ok(mut socket) => {
-                owner.view.lock().startup.websocket = Some(startup::elapsed(started));
-                let result = relay_sideband(&mut socket, commands, events, &mut stop).await;
-                let _ = socket.close(None).await;
+                let result = if attempt.current() {
+                    attempt.owner.view.lock().startup.websocket = Some(startup::elapsed(started));
+                    match super::send(&mut socket, update).await {
+                        Ok(()) => {
+                            relay_sideband(&mut socket, commands, events, &mut stop, identity).await
+                        }
+                        Err(message) => Err(recovery::Failure {
+                            message,
+                            retryable: true,
+                        }),
+                    }
+                } else {
+                    Ok(())
+                };
+                let closed =
+                    tokio::time::timeout(std::time::Duration::from_secs(2), socket.close(None))
+                        .await;
+                if !matches!(
+                    closed,
+                    Ok(Ok(())
+                        | Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed
+                            | tokio_tungstenite::tungstenite::Error::AlreadyClosed))
+                ) {
+                    attempt.fail(recovery::CLEANUP_FAILED.into());
+                    return Err(recovery::CLEANUP_FAILED);
+                }
                 result
             }
             Err(error) => Err(error),
         };
         if let Err(error) = result {
-            owner.fail(error);
+            attempt.fail(error);
         }
+        result.map_err(|error| error.message)
     })
 }
 
@@ -154,17 +370,24 @@ async fn relay_sideband(
     mut commands: wire::Receiver<Message>,
     mut events: socket::Events,
     stop: &mut watch::Receiver<bool>,
-) -> Result<(), &'static str> {
+    identity: Arc<Mutex<identity::Identity>>,
+) -> Result<(), recovery::Failure> {
     loop {
         tokio::select! {
             biased;
             _ = stop.changed() => return Ok(()),
             command = commands.next() => {
                 let Some(command) = command else { return Ok(()); };
-                tokio::time::timeout(super::IO_TIMEOUT, socket.send(command)).await.map_err(|_| "Realtime sideband write timed out.")?.map_err(|_| "Realtime sideband disconnected.")?;
+                tokio::time::timeout(super::IO_TIMEOUT, socket.send(command)).await
+                    .map_err(|_| recovery::Failure { message: "Realtime sideband write timed out.", retryable: true })?
+                    .map_err(|_| recovery::Failure { message: "Realtime sideband disconnected.", retryable: true })?;
             }
             event = socket.next() => {
-                let Some(event) = event else { return Err("Realtime sideband ended."); };
+                let Some(event) = event else { return Err(recovery::Failure { message: "Realtime sideband ended.", retryable: true }); };
+                if let Ok(Message::Text(text)) = &event {
+                    let value = serde_json::from_str(text).map_err(|_| "Invalid Realtime event.")?;
+                    identity.lock().observe(&value);
+                }
                 events.send(event).await.map_err(|_| "Realtime event consumer ended.")?;
             }
         }
@@ -172,12 +395,14 @@ async fn relay_sideband(
 }
 
 pub(super) fn devices_started(owner: &RealtimeVoiceAdapter) {
-    if !owner.webrtc || !owner.view.lock().media_ready || owner.closed.load(Ordering::Acquire) {
+    owner.devices_ready.store(true, Ordering::Release);
+    let mut view = owner.view.lock();
+    if !owner.webrtc || !view.media_ready || owner.closed.load(Ordering::Acquire) {
         return;
     }
     owner.ready.store(true, Ordering::Release);
-    let mut view = owner.view.lock();
-    view.phase = "listening";
+    view.recovery = recovery::State::Active;
+    view.phase = if view.muted { "muted" } else { "listening" };
     view.startup.listening.get_or_insert_with(|| {
         owner
             .client_elapsed_ms

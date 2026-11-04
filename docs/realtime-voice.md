@@ -92,9 +92,11 @@ target, tools, chat history or transcription request. Stop, changing voices or
 providers, leaving settings, backgrounding and audio interruption cancel it.
 GPT-Live previews remain unavailable.
 
-Android uses a native Rust WebRTC/Opus transport. The earlier WebSocket path
-remains available to the existing iOS native caller; iOS WebRTC and broad
-acoustic/route qualification remain acceptance work. Local-peer tests exercise
+Android and iOS use the shared native Rust WebRTC/Opus transport, including
+previews. iOS retains AVAudioEngine voice processing, CallKit routing and native
+playback acknowledgements. There is no automatic WebSocket fallback. The
+explicit WebSocket configuration remains available to native integrations.
+Broad acoustic/route qualification remains acceptance work. Local-peer tests exercise
 real UDP and TCP negotiation, ordered events and decoded Opus without an API key.
 
 ## Client and architectural references
@@ -109,17 +111,47 @@ The `log` facade is capped at INFO at compile time: tungstenite's raw handshake
 and frame diagnostics are TRACE, and its close-frame contents are DEBUG. The
 authorization header is also marked sensitive. Whip's explicit diagnostics and
 fixed UI errors do not depend on those wire logs.
-Android creates a call at the fixed public endpoint
+Both platforms create a call at the fixed public endpoint
 `https://api.openai.com/v1/realtime/calls`, sending SDP and the complete initial
 session configuration together. It applies the returned SDP answer and connects
 an authenticated sideband at `wss://api.openai.com/v1/realtime?call_id=…` in
-parallel. Native devices open after media negotiation. The ordered WebRTC data
+parallel. Listening requires media negotiation, validated `session.updated`
+settings and native device readiness. Android opens devices after confirmation;
+iOS opens its voice-processing engine once and gates microphone delivery until
+confirmation, retaining the same native owner through an allowed retry. The ordered WebRTC data
 channel carries early events; mirrored sideband events are deduplicated before
 transcript, usage or tool processing. Call IDs are admitted from fixed-origin
 Location headers, and credentials remain native sensitive headers. Native HTTP
 connections are pooled across calls without default authorization headers.
 Cancellation closes media, the sideband and the server call; startup errors do
 not retry an uncertain call creation.
+
+Startup recovery follows the attempt identity and cleanup gates in
+[Codex's TUI](https://github.com/openai/codex/blob/ede589336e9ecc64cb05045c2961fb1277858f1d/codex-rs/tui/src/chatwidget/realtime.rs).
+The explicit states are starting, retiring, retrying, active and ended;
+`startupAttempt` and `recovery` expose the attempt count and state without
+payloads or credentials. At most one new server call is allowed after a
+negotiation timeout or a transient sideband/confirmation failure. The old
+sideband worker must finish, the peer must close, and the server must acknowledge
+hangup before another attempt begins. Cleanup timeout/failure prevents retry.
+Authentication, quota, invalid configuration/SDP/settings and native audio errors
+are terminal. An uncertain POST result or a successful response without a usable
+call identity is also terminal; the POST is never blindly repeated.
+
+Cancellation continues driving an in-flight call-creation request to its bounded
+HTTP deadline so a late success can supply the identity needed for hangup.
+Media stops locally immediately; a replacement cannot take ownership until the
+native close operation drains. Every worker uses its immutable native owner and
+attempt, with a separate peer, event queue and server call identity. Old events
+cannot enter the next attempt. Hangup, credential/app lock, interruption,
+speech-owner replacement or a changed bound agent prevents pending recovery.
+Mute and route intent remain with the native call owner.
+
+Recovery ends at confirmed startup. Losing an established session ends the call
+visibly; there is no transparent resume or fresh-session continuation. Agent
+prompts and function calls are never resubmitted. Physical Wi-Fi/mobile-network,
+Bluetooth/route, echo, backgrounding and latency qualification remains tracked
+with #359; simulator compilation does not establish physical audio quality.
 
 Ported the public-API-compatible audio processing and response lifecycle from
 [openai/codex](https://github.com/openai/codex) at
@@ -420,7 +452,7 @@ when blocked. Measure end-to-end latency, underruns, playback-flush delay and
 token usage. Errors contain only fixed application messages, never raw provider
 bodies, prompts or API keys.
 
-Native WebRTC is integrated on Android; physical-device WebRTC qualification,
-iOS adaptation, route reconfiguration, remote session preconditions and
+Native WebRTC is integrated on Android and iOS; physical-device WebRTC qualification,
+route reconfiguration, remote session preconditions and
 production packaging remain acceptance work for #324. Local tests establish
 transport behavior, not the latency savings of a live provider call.

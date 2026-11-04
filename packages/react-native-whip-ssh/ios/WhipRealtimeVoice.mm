@@ -96,6 +96,17 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
 - (void)start:(NSString *)token config:(NSString *)config preview:(BOOL)preview resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {
   if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive || !UIApplication.sharedApplication.protectedDataAvailable) { reject(@"E_VOICE_CREDENTIAL_LOCKED", @"Unlock Whip to start voice.", nil); return; }
   if (self.token || (preview ? WhipVoiceCall.shared.active : ![WhipVoiceCall.shared owns:token])) { reject(@"E_REALTIME", @"The requested voice audio session is unavailable.", nil); return; }
+  NSData *requestedConfig = [config dataUsingEncoding:NSUTF8StringEncoding];
+  if (!requestedConfig) { reject(@"E_REALTIME", @"Invalid voice configuration.", nil); return; }
+  NSMutableDictionary *nativeConfig = [NSJSONSerialization JSONObjectWithData:requestedConfig options:NSJSONReadingMutableContainers error:nil];
+  if (![nativeConfig isKindOfClass:NSMutableDictionary.class]) { reject(@"E_REALTIME", @"Invalid voice configuration.", nil); return; }
+  // Rust owns the same public WebRTC transport on both platforms. Apple's
+  // voice-processing I/O remains the echo canceller and device owner on iOS.
+  nativeConfig[@"webrtc"] = @YES;
+  nativeConfig[@"softwareEchoCancellation"] = @NO;
+  NSData *nativeData = [NSJSONSerialization dataWithJSONObject:nativeConfig options:0 error:nil];
+  if (!nativeData) { reject(@"E_REALTIME", @"Invalid voice configuration.", nil); return; }
+  NSString *nativeJSON = [[NSString alloc] initWithData:nativeData encoding:NSUTF8StringEncoding];
   NSError *error = nil;
   AVAudioEngine *engine = [AVAudioEngine new];
   AVAudioFormat *format = [[AVAudioFormat alloc] initWithCommonFormat:AVAudioPCMFormatInt16 sampleRate:WhipRealtimeSampleRate channels:1 interleaved:NO];
@@ -113,7 +124,7 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
     converter = [[AVAudioConverter alloc] initFromFormat:source toFormat:format];
     if (!converter || source.sampleRate <= 0) { reject(@"E_REALTIME", @"The microphone audio format is unavailable.", nil); return; }
   }
-  int64_t result = whip_realtime_start(config.UTF8String, WhipReadOpenAiVoiceCredential, nullptr);
+  int64_t result = whip_realtime_start(nativeJSON.UTF8String, WhipReadOpenAiVoiceCredential, nullptr);
   if (result <= 0) {
     if (preview) [AVAudioSession.sharedInstance setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:nil];
     NSString *code = @"E_REALTIME";
@@ -153,6 +164,7 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
     [self stop:token]; reject(@"E_REALTIME", @"The native audio engine could not start.", nil); return;
   }
   [self.player play];
+  whip_realtime_control(call, WhipRealtimeMediaReady);
   self.epoch = 0; self.scheduled = 0; self.queued = 0;
   self.timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, self.media);
   dispatch_source_set_timer(self.timer, DISPATCH_TIME_NOW, 10 * NSEC_PER_MSEC, NSEC_PER_MSEC);

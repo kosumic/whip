@@ -80,6 +80,7 @@ pub(super) async fn run(
     peer: &mut Transport,
     identity: Arc<Mutex<Identity>>,
     mut stop: watch::Receiver<bool>,
+    attempt: &super::super::recovery::Attempt,
 ) -> Result<(), &'static str> {
     let rate = u32::try_from(RATE).map_err(|_| "Invalid voice sample rate.")?;
     let mut encoder = opus::Encoder::new(rate, opus::Channels::Mono, opus::Application::Voip)
@@ -99,6 +100,9 @@ pub(super) async fn run(
     let mut tick = tokio::time::interval(Duration::from_millis(5));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
+        if !attempt.current() {
+            return Ok(());
+        }
         tokio::select! {
             biased;
             _ = stop.changed() => return Ok(()),

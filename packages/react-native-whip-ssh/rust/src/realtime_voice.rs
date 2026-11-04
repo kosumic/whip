@@ -10,6 +10,7 @@ mod ffi;
 pub(crate) mod handoff_context;
 mod models;
 mod processing;
+mod recovery;
 mod response;
 mod socket;
 mod startup;
@@ -82,12 +83,6 @@ pub(super) struct Config {
     preview: bool,
     #[serde(default)]
     software_echo_cancellation: bool,
-}
-
-struct PreparedSession {
-    config: Config,
-    key: native_credentials::NativeCredential,
-    update: ClientEvent,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -224,6 +219,8 @@ pub(super) struct View {
     messages: Vec<transcript::Message>,
     startup: startup::Timings,
     media_ready: bool,
+    recovery: recovery::State,
+    startup_attempt: u64,
     capture_packets: u64,
     capture_gaps: u64,
 }
@@ -344,6 +341,8 @@ pub(super) struct RealtimeVoiceAdapter {
     closed: AtomicBool,
     ready: AtomicBool,
     stopped: AtomicBool,
+    attempt: AtomicU64,
+    devices_ready: AtomicBool,
     allow_input: bool,
     speech: crate::speech_playback::RealtimeSpeechLease,
 }
@@ -414,6 +413,8 @@ impl RealtimeVoiceAdapter {
                 messages: Vec::new(),
                 startup: startup::Timings::default(),
                 media_ready: false,
+                recovery: recovery::State::Starting,
+                startup_attempt: 0,
                 capture_packets: 0,
                 capture_gaps: 0,
                 tool: None,
@@ -433,6 +434,8 @@ impl RealtimeVoiceAdapter {
             closed: AtomicBool::new(false),
             ready: AtomicBool::new(false),
             stopped: AtomicBool::new(false),
+            attempt: AtomicU64::new(0),
+            devices_ready: AtomicBool::new(false),
             allow_input: !config.preview,
             speech,
         });
@@ -444,10 +447,19 @@ impl RealtimeVoiceAdapter {
         adapter.view.lock().startup.credentials = Some(startup::elapsed(credential_start));
         runtime.spawn(async move {
                 let mut tools: JoinSet<ToolCompletion> = JoinSet::new();
-                let result = tokio::select! {
+                // Keep driving startup through cancellation: an in-flight POST
+                // may create a call whose identity must be read and retired.
+                let connection = owner.prepare_connection(&config, &key, update, agent.as_ref()).await;
+                drop(key);
+                let result = match connection {
+                    Ok((socket, configuration_started)) if !owner.closed.load(Ordering::Acquire) => tokio::select! {
                     biased;
                     _ = cancellation.changed() => Ok(()),
-                result = owner.run(PreparedSession { config, key, update }, agent, command_rx, &mut tools) => result,
+                result = owner.run(config, socket, configuration_started, agent, command_rx, &mut tools) => result,
+                    },
+                    Ok(_) => Ok(()),
+                    Err(_) if owner.closed.load(Ordering::Acquire) => Ok(()),
+                    Err(error) => Err(error),
                 };
                 tools.shutdown().await;
                 if let Err(message) = result {
@@ -455,9 +467,14 @@ impl RealtimeVoiceAdapter {
                 }
                 owner.ready.store(false, Ordering::Release);
                 let media = owner.media.lock().take();
-                if let Some(media) = media { media.close().await; }
+                if let Some(media) = media { let _ = media.close().await; }
                 owner.output.lock().clear();
                 owner.speech.release();
+                {
+                    let mut view = owner.view.lock();
+                    view.recovery = recovery::State::Ended;
+                    view.media_ready = false;
+                }
                 owner.stopped.store(true, Ordering::Release);
             });
         Ok(adapter)
@@ -467,6 +484,7 @@ impl RealtimeVoiceAdapter {
         let mut view = self.view.lock();
         if !self.closed.swap(true, Ordering::AcqRel) {
             view.phase = "error";
+            view.recovery = recovery::State::Ended;
             view.error = Some(error);
             view.level = 0.0;
             view.playback_level = 0.0;
@@ -478,12 +496,26 @@ impl RealtimeVoiceAdapter {
     }
     fn close(&self) {
         self.input.close();
-        self.closed.store(true, Ordering::Release);
-        self.ready.store(false, Ordering::Release);
+        {
+            let mut view = self.view.lock();
+            self.closed.store(true, Ordering::Release);
+            self.ready.store(false, Ordering::Release);
+            view.media_ready = false;
+            view.recovery = recovery::State::Ended;
+            if view.phase != "error" {
+                view.phase = "closed";
+            }
+        }
         self.cancel.send_replace(true);
         self.output.lock().clear();
     }
     fn command(&self, command: Command) {
+        if !self.ready.load(Ordering::Acquire)
+            && let Command::Mute(muted) = &command
+        {
+            self.view.lock().muted = *muted;
+            return;
+        }
         if !self.closed.load(Ordering::Acquire) && self.commands.try_send(command).is_err() {
             self.fail("Realtime control queue is full. Please call again.");
         }
@@ -590,18 +622,13 @@ impl RealtimeVoiceAdapter {
 
     async fn run(
         self: &Arc<Self>,
-        prepared: PreparedSession,
+        config: Config,
+        mut socket: RealtimeSocket,
+        configuration_started: Instant,
         agent: Option<Arc<PinnedAgent>>,
         mut commands: mpsc::Receiver<Command>,
         tools: &mut JoinSet<ToolCompletion>,
     ) -> Result<(), &'static str> {
-        let PreparedSession {
-            config,
-            key,
-            update,
-        } = prepared;
-        let (mut socket, configuration_started) =
-            self.connect_session(&config, key, update).await?;
         let started = tokio::time::Instant::now();
         let mut heartbeat = tokio::time::interval(Duration::from_millis(250));
         let mut capture = ::audio_ingress::Packet::new(self.input.packet_samples);
@@ -721,7 +748,7 @@ impl RealtimeVoiceAdapter {
                     if let ServerEvent::SessionCreated { session, .. } | ServerEvent::SessionUpdated { session, .. } = &event {
                         config.validate_model(&session.config.model)?;
                     }
-                    if !config.webrtc && matches!(event, ServerEvent::SessionCreated { .. }) { continue; }
+                    if matches!(event, ServerEvent::SessionCreated { .. }) { continue; }
                     if costs.observe(&event) { self.view.lock().estimated_usd = costs.estimated_usd(); }
                     if !config.webrtc || !matches!(event, ServerEvent::ResponseOutputAudioDone { .. }) { self.output.lock().transcript.observe(&event, &ignored); }
                     match event {
@@ -832,17 +859,70 @@ impl RealtimeVoiceAdapter {
         }
     }
 
+    async fn prepare_connection(
+        self: &Arc<Self>,
+        config: &Config,
+        key: &native_credentials::NativeCredential,
+        update: ClientEvent,
+        agent: Option<&Arc<PinnedAgent>>,
+    ) -> Result<(RealtimeSocket, Instant), &'static str> {
+        let connection = self.connect_session(config, key, update);
+        tokio::pin!(connection);
+        let mut tick = tokio::time::interval(Duration::from_millis(100));
+        loop {
+            tokio::select! {
+                result = &mut connection => return result,
+                _ = tick.tick() => {
+                    if !self.speech.is_current() {
+                        self.fail("Voice audio was replaced by another speech session.");
+                    }
+                    if agent.is_some_and(|agent| agent.check_liveness().is_err()) {
+                        self.fail("The bound agent disconnected or changed. Please call again.");
+                    }
+                }
+            }
+        }
+    }
+
     async fn connect_session(
         self: &Arc<Self>,
         config: &Config,
-        key: native_credentials::NativeCredential,
+        key: &native_credentials::NativeCredential,
         update: ClientEvent,
     ) -> Result<(RealtimeSocket, Instant), &'static str> {
         let started = Instant::now();
         if config.webrtc {
-            return webrtc::start(self.clone(), key, update, config.model()?)
-                .await
-                .map(|socket| (socket, started));
+            let encoded = serde_json::to_value(update).map_err(|_| "Invalid voice session.")?;
+            loop {
+                if self.closed.load(Ordering::Acquire) {
+                    return Err(recovery::CANCELLED);
+                }
+                let attempt = recovery::Attempt::new(self.clone());
+                {
+                    let mut view = self.view.lock();
+                    view.startup_attempt = attempt.id;
+                    view.media_ready = false;
+                    view.recovery = if attempt.id == 1 {
+                        recovery::State::Starting
+                    } else {
+                        recovery::State::Retrying
+                    };
+                    view.startup.offer = None;
+                    view.startup.websocket = None;
+                    view.startup.configuration = None;
+                    view.startup.negotiation = None;
+                }
+                let update = serde_json::from_value(encoded.clone())
+                    .map_err(|_| "Invalid voice session.")?;
+                match webrtc::start(self.clone(), key, update, config, attempt.clone()).await {
+                    Ok(socket) => return Ok((socket, started)),
+                    Err(error)
+                        if error.retryable
+                            && attempt.id == 1
+                            && !self.closed.load(Ordering::Acquire) => {}
+                    Err(error) => return Err(error.message),
+                }
+            }
         }
         let mut socket = connect_raw(key, &config.model()?.websocket_url())
             .await
@@ -857,9 +937,18 @@ impl RealtimeVoiceAdapter {
 type RealtimeSocket = socket::Socket;
 
 async fn connect_raw(
-    key: native_credentials::NativeCredential,
+    key: &native_credentials::NativeCredential,
     url: &str,
 ) -> Result<socket::RawSocket, &'static str> {
+    connect_request(authorized_request(key, url)?)
+        .await
+        .map_err(|error| error.message)
+}
+
+fn authorized_request(
+    key: &native_credentials::NativeCredential,
+    url: &str,
+) -> Result<tokio_tungstenite::tungstenite::http::Request<()>, &'static str> {
     let mut request = url
         .into_client_request()
         .map_err(|_| "Realtime request could not be prepared.")?;
@@ -869,7 +958,12 @@ async fn connect_raw(
     authorization.set_sensitive(true);
     request.headers_mut().insert("Authorization", authorization);
     drop(header);
-    drop(key);
+    Ok(request)
+}
+
+async fn connect_request(
+    request: tokio_tungstenite::tungstenite::http::Request<()>,
+) -> Result<socket::RawSocket, recovery::Failure> {
     let socket_config = WebSocketConfig::default()
         .max_message_size(Some(MAX_WIRE))
         .max_frame_size(Some(MAX_WIRE));
@@ -878,14 +972,22 @@ async fn connect_raw(
         tokio_tungstenite::connect_async_with_config(request, Some(socket_config), false),
     )
     .await
-    .map_err(|_| "OpenAI Realtime connection timed out.")?
+    .map_err(|_| recovery::Failure {
+        message: "OpenAI Realtime connection timed out.",
+        retryable: true,
+    })?
     .map_err(|error| match error {
-        tokio_tungstenite::tungstenite::Error::Http(response) => match response.status().as_u16() {
-            401 | 403 | 404 => models::ACCESS_ERROR,
-            429 => "OpenAI Realtime quota or rate limit reached.",
-            _ => "OpenAI Realtime could not connect. Check model access and connectivity.",
+        tokio_tungstenite::tungstenite::Error::Http(response) => {
+            recovery::Failure::from(match response.status().as_u16() {
+                401 | 403 | 404 => models::ACCESS_ERROR,
+                429 => "OpenAI Realtime quota or rate limit reached.",
+                _ => "OpenAI Realtime could not connect. Check model access and connectivity.",
+            })
+        }
+        _ => recovery::Failure {
+            message: "OpenAI Realtime could not connect. Check your network.",
+            retryable: true,
         },
-        _ => "OpenAI Realtime could not connect. Check your network.",
     })?;
     Ok(socket)
 }
