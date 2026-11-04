@@ -1,7 +1,7 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import type { AppCoreProjection, NativeAgentChatBinding, NativeAgentTranscriptUpdate, NativeAppCore, HostRuntimeState } from 'react-native-whip-ssh';
+import type { AppCoreProjection, NativeAgentChatBinding, NativeAgentTranscriptState, NativeAgentTranscriptUpdate, NativeAppCore, HostRuntimeState } from 'react-native-whip-ssh';
 import { useTranscriptCache } from '../src/hooks/useTranscriptCache';
-import type { LiveRuntime } from '../src/hooks/sessionRuntimeTypes';
+import type { LiveRuntime, SessionRuntimeStore } from '../src/hooks/sessionRuntimeTypes';
 import { agentTranscriptService, type NativeTranscriptTransport } from '../src/services/NativeTranscriptService';
 import type { PaneInfo, TabInfo } from '../src/types';
 import { transcriptTitleKey } from '../src/lib/transcriptTabTitles';
@@ -10,7 +10,7 @@ import { useTranscriptTabTitles } from '../src/hooks/useTranscriptTabTitles';
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
 
-function host(id: string, statuses: PaneInfo['agent_status'][]) {
+function host(id: string, statuses: PaneInfo['agent_status'][], transcriptStatus: NativeAgentTranscriptState['status'] = 'live') {
   const panes: PaneInfo[] = statuses.map((status, index) => ({
     pane_id: `pane-${index}`, terminal_id: `terminal-${index}`, workspace_id: 'workspace',
     tab_id: `tab-${index}`, focused: false, agent_status: status, revision: 1,
@@ -28,6 +28,8 @@ function host(id: string, statuses: PaneInfo['agent_status'][]) {
   const bindings = new Map<string, NativeAgentChatBinding>();
   const handlers = new Map<string, (event: NativeAgentTranscriptUpdate) => void>();
   const transport: NativeTranscriptTransport = {
+    runtimeId: id,
+    runtimeIncarnation: 1,
     hostState: () => state,
     currentAgentChat: jest.fn((terminalId, listener) => {
       if (listener) handlers.set(terminalId, listener);
@@ -42,9 +44,9 @@ function host(id: string, statuses: PaneInfo['agent_status'][]) {
       const pane = panes.find(item => item.terminal_id === terminalId)!;
       const binding: NativeAgentChatBinding = {
         terminalId, paneId: pane.pane_id, agent: 'codex', sessionId: pane.agent_session!.value,
-        transcriptKey: `${id}\ncodex\n${pane.agent_session!.value}`, runtimeIncarnation: 1,
+        transcriptKey: `${id}\ncodex\n${pane.agent_session!.value}`, runtimeIncarnation: transport.runtimeIncarnation!,
         bindingToken: `${id}:${terminalId}`, bindingGeneration: 1,
-        state: { sessionId: pane.agent_session!.value, agent: 'codex', revision: 1, status: 'live', messages: [], turns: [],
+        state: { sessionId: pane.agent_session!.value, agent: 'codex', revision: transcriptStatus === 'loading' ? 0 : 1, status: transcriptStatus, messages: [], turns: [],
           info: { id: pane.agent_session!.value, title: `Title ${pane.agent_session!.value}` } },
       };
       bindings.set(terminalId, binding);
@@ -105,6 +107,80 @@ function setup(hosts: ReturnType<typeof host>[], order: [number, number][]) {
     },
   };
 }
+
+function overlappingConsumers(runtime: Host) {
+  const core = { herdView: () => ({ agents: runtime.panes.map(pane => ({ hostId: runtime.id, agent: pane })) }) } as unknown as NativeAppCore;
+  const stores: Pick<SessionRuntimeStore, 'state' | 'runtimesRef'>[] = Array.from({ length: 2 }, () => ({
+    state: { sessions: [{ id: runtime.id }] } as AppCoreProjection,
+    runtimesRef: { current: new Map([[runtime.id, {
+      client: { activeNative: { ...runtime.transport } },
+    } as unknown as LiveRuntime]]) },
+  }));
+  // Bound the broken implementation so this regression fails without hanging Jest.
+  const open = jest.mocked(runtime.transport.openAgentChat);
+  const implementation = open.getMockImplementation()!;
+  open.mockImplementation((...args) => {
+    if (open.mock.calls.length > 12) throw new Error('Repeated transcript opening');
+    return implementation(...args);
+  });
+  function Consumer({ index }: { index: number }) {
+    useTranscriptCache(stores[index], core, 20);
+    return null;
+  }
+  return {
+    stores,
+    async render(owners: number[]) {
+      await act(async () => {
+        const element = <>{owners.map(index => <Consumer key={index} index={index} />)}</>;
+        if (renderer) renderer.update(element);
+        else renderer = create(element);
+      });
+    },
+  };
+}
+
+test('overlapping app surfaces preserve in-flight transcripts and ignore stale cache projections', async () => {
+  const runtime = host('one', ['working', 'blocked'], 'loading');
+  runtime.transport.startAgentChat = jest.fn(() => new Promise(() => undefined));
+  const fixture = overlappingConsumers(runtime);
+  await fixture.render([0]);
+  const original = new Map(runtime.bindings);
+  await fixture.render([0, 1]);
+  // A superseded app surface can finish hydration or lose its host attachment.
+  fixture.stores[0].state = { revision: 2, sessions: [] };
+  await fixture.render([0, 1]);
+  expect(runtime.bindings).toEqual(original);
+  expect(runtime.transport.openAgentChat).toHaveBeenCalledTimes(2);
+  expect(runtime.transport.startAgentChat).toHaveBeenCalledTimes(2);
+  expect(runtime.transport.detachAgentChat).not.toHaveBeenCalled();
+});
+
+test.each([0, 1])('unmounting cache consumer %s preserves the surviving surface and bindings', async removed => {
+  const runtime = host('one', ['working', 'blocked']);
+  const fixture = overlappingConsumers(runtime);
+  await fixture.render([0]);
+  const original = new Map(runtime.bindings);
+  await fixture.render([0, 1]);
+  await fixture.render([1 - removed]);
+  expect(runtime.bindings).toEqual(original);
+  expect(runtime.transport.openAgentChat).toHaveBeenCalledTimes(2);
+  expect(runtime.transport.startAgentChat).toHaveBeenCalledTimes(2);
+  expect(runtime.transport.detachAgentChat).not.toHaveBeenCalled();
+});
+
+test('a replacement native runtime still releases the old binding and loads the new transcript', async () => {
+  const previous = host('one', ['working']);
+  const fixture = setup([previous], [[0, 0]]);
+  await fixture.render();
+  const replacement = host('one', ['working']);
+  Object.assign(replacement.transport, { runtimeIncarnation: 2 });
+  fixture.runtimesRef.current.set(previous.id, replacement.runtime);
+  await fixture.render();
+  expect(previous.transport.detachAgentChat).toHaveBeenCalledTimes(1);
+  expect(replacement.transport.openAgentChat).toHaveBeenCalledTimes(1);
+  expect(replacement.transport.startAgentChat).toHaveBeenCalledTimes(1);
+  expect(replacement.bindings.get('terminal-0')?.runtimeIncarnation).toBe(2);
+});
 
 test('uses the native attention order across hosts and rebalances after priority or capacity changes', async () => {
   const hosts = [host('one', ['working', 'working']), host('two', ['done', 'blocked'])];
@@ -255,7 +331,7 @@ test.each(['session', 'pane', 'disconnected', 'removed', 'transport', 'generatio
     }
     if (change === 'removed') hosts.splice(0);
     if (change === 'transport') fixture.runtimesRef.current.set(runtime.id, {
-      client: { activeNative: { ...runtime.transport } },
+      client: { activeNative: { ...runtime.transport, runtimeIncarnation: 2 } },
     } as unknown as LiveRuntime);
     if (change === 'generation') runtime.state.connectionGeneration += 1;
     await fixture.render();

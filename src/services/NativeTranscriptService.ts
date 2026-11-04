@@ -28,7 +28,12 @@ export type NativeTranscriptTransport = Pick<
   | 'detachAgentChat'
   | 'openAgentChat'
   | 'startAgentChat'
-> & Partial<Pick<HostRuntimeConnection, 'hostState'>>;
+> & Partial<Pick<HostRuntimeConnection, 'hostState' | 'runtimeId' | 'runtimeIncarnation'>>;
+
+function sameRuntime(left: NativeTranscriptTransport, right: NativeTranscriptTransport): boolean {
+  return left === right || (left.runtimeId !== undefined && left.runtimeIncarnation !== undefined && left.runtimeIncarnation > 0 &&
+    left.runtimeId === right.runtimeId && left.runtimeIncarnation === right.runtimeIncarnation);
+}
 
 export interface ObservedAgentTranscript {
   key: string;
@@ -122,6 +127,24 @@ export class NativeTranscriptService {
   private readonly failedPreloads = new Map<string, string>();
   private readonly cacheHostVersions = new Map<string, { revision: number; connectionGeneration: number; transport: NativeTranscriptTransport }>();
   private readonly cacheHostAvailability = new Map<string, ReturnType<typeof transcriptCacheHostAvailability>>();
+  private readonly cacheOwners: symbol[] = [];
+
+  /** Overlapping React surfaces share one process-wide cache and ranking. */
+  claimCacheOwnership() {
+    const owner = Symbol();
+    this.cacheOwners.push(owner);
+    const isCurrent = () => this.cacheOwners.at(-1) === owner;
+    return {
+      isCurrent,
+      release: () => {
+        const index = this.cacheOwners.indexOf(owner);
+        if (index < 0) return;
+        const current = isCurrent();
+        this.cacheOwners.splice(index, 1);
+        if (current) this.residencyChanged();
+      },
+    };
+  }
 
   readonly residencyVersion = (): number => this.residencyRevision;
   readonly subscribeResidency = (listener: () => void): (() => void) => {
@@ -196,7 +219,7 @@ export class NativeTranscriptService {
     const token = this.terminalBindings.get(this.terminalKey(target.hostSessionId, target.terminalId));
     const entry = token ? this.entryForBinding(token) : undefined;
     const binding = token ? entry?.bindings.get(token) : undefined;
-    return entry && binding && entry.transport === target.transport &&
+    return entry && binding && sameRuntime(entry.transport, target.transport) &&
       binding.agent === target.agent && binding.sessionId === target.sessionId
       ? { type: 'bound', binding, state: entry.state } : null;
   }
@@ -214,7 +237,7 @@ export class NativeTranscriptService {
       const previous = this.cacheHostVersions.get(host.hostSessionId);
       const availability = transcriptCacheHostAvailability(host.state);
       if (availability === 'unavailable' || (previous &&
-        (previous.transport !== host.transport || previous.connectionGeneration !== host.state.connectionGeneration))) {
+        (!sameRuntime(previous.transport, host.transport) || previous.connectionGeneration !== host.state.connectionGeneration))) {
         invalidHosts.add(host.hostSessionId);
       }
       this.cacheHostAvailability.set(host.hostSessionId, availability);
@@ -231,7 +254,7 @@ export class NativeTranscriptService {
         const pane = host?.state.snapshot?.panes.find(item =>
           item.terminal_id === binding.terminalId && item.pane_id === binding.paneId);
         const session = pane?.agent_session;
-        if (host && !invalidHosts.has(entry.hostSessionId) && host.transport === entry.transport &&
+        if (host && !invalidHosts.has(entry.hostSessionId) && sameRuntime(host.transport, entry.transport) &&
           session?.agent.trim().toLowerCase() === binding.agent && session.value.trim() === binding.sessionId &&
           (session.kind === 'id' || (binding.agent === 'pi' && session.kind === 'path'))) continue;
         this.forgetBindingToken(binding.bindingToken, true);
@@ -257,7 +280,7 @@ export class NativeTranscriptService {
     }
     for (const host of hosts) {
       const previous = this.cacheHostVersions.get(host.hostSessionId);
-      if (previous?.revision === host.state.revision && previous.transport === host.transport &&
+      if (previous?.revision === host.state.revision && sameRuntime(previous.transport, host.transport) &&
         previous.connectionGeneration === host.state.connectionGeneration) continue;
       this.cacheHostVersions.set(host.hostSessionId, {
         revision: host.state.revision, connectionGeneration: host.state.connectionGeneration, transport: host.transport,

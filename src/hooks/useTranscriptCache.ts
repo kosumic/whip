@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 import type { NativeAppCore } from 'react-native-whip-ssh';
 import type { SessionRuntimeStore } from './sessionRuntimeTypes';
 import { chatAgentForPane } from '../lib/agentChatSession';
@@ -14,8 +14,18 @@ export function useTranscriptCache(
   core: NativeAppCore,
   capacity: number,
 ): void {
+  const ownership = useRef<ReturnType<typeof agentTranscriptService.claimCacheOwnership> | null>(null);
   const residency = useSyncExternalStore(agentTranscriptService.subscribeResidency, agentTranscriptService.residencyVersion);
   useEffect(() => {
+    const lease = agentTranscriptService.claimCacheOwnership();
+    ownership.current = lease;
+    return () => {
+      ownership.current = null;
+      lease.release();
+    };
+  }, [core, runtimesRef]);
+  useEffect(() => {
+    if (!ownership.current?.isCurrent()) return;
     const hosts: TranscriptCacheHost[] = [];
     const targets = new Map<string, TranscriptCacheTarget>();
     for (const session of state.sessions) {
