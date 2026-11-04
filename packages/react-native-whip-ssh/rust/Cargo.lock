@@ -8108,10 +8108,10 @@ dependencies = [
 name = "whip-ssh"
 version = "0.1.0"
 dependencies = [
- "audio-ingress",
  "agent-browser-control",
  "agent-transcript-core",
  "async-trait",
+ "audio-ingress",
  "axum",
  "base64 0.22.1",
  "chrono",
