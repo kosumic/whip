@@ -14,8 +14,8 @@ Like Codex's `methods_v2.rs` at `d84c872464aca4821dc5cb548a651651aefd84fa`,
 the default transcription request sets only `gpt-4o-mini-transcribe`: no forced
 language, English-only context or translation prompt. An explicit spoken
 language hint remains supported at the native boundary for older callers.
-`session.updated` must confirm the requested caption language and transcription
-model before a call becomes ready. Native diagnostics report only whitelisted
+Native code validates the requested caption language and transcription model
+against the session events. Native diagnostics report only whitelisted
 model/language metadata and whether provider context is absent, never caption
 text, audio, prompts, keys or session identifiers. Short shared greetings can
 still be ambiguous to the separate transcriber; captions are not an exact
@@ -52,13 +52,15 @@ before its transition queue, microphone permission and foreground service:
 
 - `preMediaMs` measures elapsed time before native media creation.
 - `mediaSetupMs` measures audio object setup; `coreStartMs` covers native core
-  startup through microphone start. Rust separately measures `preparationMs`
-  and `credentialsMs`.
-- `websocketMs` measures socket connection; `configurationMs` measures sending
-  the session update through validation of the server's confirmation.
+  startup. Rust separately measures `preparationMs` and `credentialsMs`.
+- `offerMs` measures WebRTC peer/offer creation; `configurationMs` measures
+  the call POST with initial configuration, and `negotiationMs` measures SDP
+  answer application through transport readiness. `websocketMs` measures the
+  background control sideband; it does not gate media startup.
 - `micStartMs`, `firstCaptureMs`, `listeningMs` and `firstInputMs` are elapsed
   times since the original request. Listening requires accepted server
-  configuration; first input means an audio frame was sent, not a provider
+  configuration, a connected media transport and started native devices;
+  first input means an audio frame was sent, not a provider
   receipt. The presentation polls at 100ms, which can add display delay.
 
 Stages overlap, so these counters must not all be summed. Logs contain no audio,
@@ -73,9 +75,10 @@ target, tools, chat history or transcription request. Stop, changing voices or
 providers, leaving settings, backgrounding and audio interruption cancel it.
 GPT-Live previews remain unavailable.
 
-This is an experimental WebSocket implementation. It has not completed live
-OpenAI or physical-device audio qualification. Do not treat the compile checks
-below as evidence that acoustic echo cancellation or Bluetooth works on devices.
+Android uses a native Rust WebRTC/Opus transport. The earlier WebSocket path
+remains available to the existing iOS native caller; iOS WebRTC and broad
+acoustic/route qualification remain acceptance work. Local-peer tests exercise
+real UDP and TCP negotiation, ordered events and decoded Opus without an API key.
 
 ## Client and architectural references
 
@@ -89,8 +92,17 @@ The `log` facade is capped at INFO at compile time: tungstenite's raw handshake
 and frame diagnostics are TRACE, and its close-frame contents are DEBUG. The
 authorization header is also marked sensitive. Whip's explicit diagnostics and
 fixed UI errors do not depend on those wire logs.
-The fixed destination is `wss://api.openai.com/v1/realtime?model=gpt-realtime`;
-credentials are never part of agent requests or host configuration.
+Android creates a call at the fixed public endpoint
+`https://api.openai.com/v1/realtime/calls`, sending SDP and the complete initial
+session configuration together. It applies the returned SDP answer and connects
+an authenticated sideband at `wss://api.openai.com/v1/realtime?call_id=…` in
+parallel. Native devices open after media negotiation. The ordered WebRTC data
+channel carries early events; mirrored sideband events are deduplicated before
+transcript, usage or tool processing. Call IDs are admitted from fixed-origin
+Location headers, and credentials remain native sensitive headers. Native HTTP
+connections are pooled across calls without default authorization headers.
+Cancellation closes media, the sideband and the server call; startup errors do
+not retry an uncertain call creation.
 
 Ported the public-API-compatible audio processing and response lifecycle from
 [openai/codex](https://github.com/openai/codex) at
@@ -115,12 +127,26 @@ Ported the public-API-compatible audio processing and response lifecycle from
   idle, steer active Codex, and explicitly defer later tasks. Uncertain
   submissions are never replayed.
 
+The WebRTC peer, ICE admission/runtime limits, Opus RTP clock and bounded
+incoming RTP are adapted from Codex at
+`021fccb046508938c4754982efccfb51d6e8356e` (`voice-host/src/transport.rs`,
+`transport_runtime.rs`, `audio_track.rs`, `incoming.rs`). Whip keeps Android
+media-volume AudioRecord/AudioTrack and Sonora processing, with a bounded native
+60ms reorder/Opus decoder pipeline in place of desktop device/GStreamer code.
 The adapted modules retain their Apache-2.0 attribution and bundled license.
-Whip keeps native mobile device ownership and the public Realtime WebSocket
-protocol. Codex's desktop helper, CPAL/GStreamer packaging, WebRTC/Opus transport,
-subscription credentials, and private wire events are not included in this port.
+
+Starting from an existing chat also follows Codex's `realtime_context.rs`:
+a bounded Current Thread section is appended to initial instructions **before**
+call creation. It keeps recent user/assistant turns, newest first, with roughly
+a 1,200-token (4,800-byte) section budget and 300-token per-turn budget. Only
+public text from the exact pinned native chat is used; reasoning, tool payloads,
+images, other threads, AGENTS/environment context and filesystem scans are not
+injected. Live handoff feedback remains separate. Whip does not recreate Codex's
+recent-thread database or workspace scan from unavailable remote metadata.
 
 Public API references:
+[WebRTC](https://developers.openai.com/api/docs/guides/voice-webrtc?voice-api=realtime),
+[server controls](https://developers.openai.com/api/docs/guides/voice-server-controls?voice-api=realtime),
 [WebSockets](https://developers.openai.com/api/docs/guides/voice-websockets),
 [conversation lifecycle](https://developers.openai.com/api/docs/guides/realtime-conversations),
 [VAD](https://developers.openai.com/api/docs/guides/realtime-vad), and
@@ -186,12 +212,14 @@ One `response.create` uses `conversation: "none"`, an empty input list and a
 256-token limit. The actor caps preview audio at 12 seconds and session work at
 30 seconds (plus connection timeout), and closes only after played audio drains.
 
-The public API format is mono PCM16 little-endian at 24 kHz. Session confirmation
-must accept the selected voice and both PCM formats before capture is uploaded.
+Native PCM is mono, 16-bit little-endian at 24 kHz. WebRTC carries Opus on a
+48-kHz RTP clock; encoding/decoding stays native and retains the existing AEC
+render reference. The initial call configuration selects the voice, caption
+model and server VAD.
 Native workers pass borrowed sample buffers through C/JNI directly to Rust;
 only controls, bounded captions, meters and token totals cross the JS bridge.
-API call screens show one estimated USD total for the current voice session;
-Local calls show no cost line. Rust sums provider-reported text/audio/image
+API call screens show one estimated USD total once it is available; an unknown
+estimate and Local calls show no cost line. Rust sums provider-reported text/audio/image
 usage, subtracts cached usage before applying uncached rates, and includes
 separately billed input transcription. Reports replace earlier values by
 response/item ID, so repeated cancel/done or transcription events cannot add
@@ -202,8 +230,8 @@ The rate snapshot was checked on 2026-11-04 against the official model pages for
 [gpt-realtime](https://developers.openai.com/api/docs/models/gpt-realtime) and
 [gpt-4o-mini-transcribe](https://developers.openai.com/api/docs/models/gpt-4o-mini-transcribe).
 Only the selected models' known aliases/snapshots are priced. Missing usage,
-unsupported models or inconsistent token/cache breakdowns show an unavailable
-estimate instead of zero. Live totals advance as usage reports arrive; pending
+unsupported models or inconsistent token/cache breakdowns leave the estimate
+unavailable and hide its line instead of showing zero. Live totals advance as usage reports arrive; pending
 responses are not projected from microphone duration or guessed token counts.
 These are voice API estimates, excluding remote coding-agent charges and any
 account-specific pricing. Current-session estimates do not backfill the separate
@@ -315,8 +343,7 @@ when blocked. Measure end-to-end latency, underruns, playback-flush delay and
 token usage. Errors contain only fixed application messages, never raw provider
 bodies, prompts or API keys.
 
-Evaluate native WebRTC media as the shipping transport: `oai-rt-rs` provides SDP
-signaling, not a mobile media/AEC implementation. No native WebRTC engine has
-been integrated or device-validated in this change. WebSocket TCP head-of-line
-blocking, conservative truncation, fail-closed route reconfiguration, remote
-session preconditions, and physical-device qualification remain open for #324.
+Native WebRTC is integrated on Android; physical-device WebRTC qualification,
+iOS adaptation, route reconfiguration, remote session preconditions and
+production packaging remain acceptance work for #324. Local tests establish
+transport behavior, not the latency savings of a live provider call.

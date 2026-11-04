@@ -5,6 +5,10 @@ use std::time::Instant;
 #[derive(Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct Timings {
+    #[serde(rename = "offerMs")]
+    pub offer: Option<u64>,
+    #[serde(rename = "negotiationMs")]
+    pub negotiation: Option<u64>,
     #[serde(rename = "preparationMs")]
     pub preparation: Option<u64>,
     #[serde(rename = "credentialsMs")]
@@ -32,7 +36,7 @@ mod tests {
         assert_eq!(
             value,
             serde_json::json!({
-                "preparationMs":null,"credentialsMs":null,"websocketMs":null,
+                "offerMs":null,"negotiationMs":null,"preparationMs":null,"credentialsMs":null,"websocketMs":null,
                 "configurationMs":null,"listeningMs":null,"firstInputMs":null
             })
         );

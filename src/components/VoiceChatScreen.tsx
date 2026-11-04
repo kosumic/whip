@@ -64,6 +64,7 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
   const [view, setView] = useState(INITIAL);
   const messages = view.messages ?? [];
   const hasTranscript = messages.length > 0;
+  const estimatedCost = view.provider === 'openai' && typeof view.estimatedUsd === 'number' && Number.isFinite(view.estimatedUsd) && view.estimatedUsd >= 0 ? formatUsd(view.estimatedUsd) : null;
   const orbSize = hasTranscript ? TRANSCRIPT_ORB_SIZE : ORB_SIZE;
   const orbSizeRatio = COMPACT_ORB_SIZE / orbSize;
   const fullOrb = useRef<ViewInstance>(null);
@@ -168,11 +169,7 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
       </View>
       <Animated.View className="items-center gap-3 px-8 pb-5" style={[styles.status, chromeMotion]}>
         <Text accessibilityLiveRegion="polite" className="text-center text-xs" style={styles.statusText}>{t(STATUS[view.phase])}</Text>
-        {view.provider === 'openai' && <>
-          <Text accessibilityHint={t('voiceProvider.costHint')} className="text-center text-xs" style={styles.statusText}>{typeof view.estimatedUsd === 'number' && Number.isFinite(view.estimatedUsd) && view.estimatedUsd >= 0
-            ? t('voiceProvider.costEstimate', { cost: formatUsd(view.estimatedUsd) })
-            : t('voiceProvider.costUnknown')}</Text>
-        </>}
+        {estimatedCost !== null && <Text accessibilityHint={t('voiceProvider.costHint')} className="text-center text-xs" style={styles.statusText}>{t('voiceProvider.costEstimate', { cost: estimatedCost })}</Text>}
         {(view.phase === 'starting' || view.phase === 'preparing') && <ActivityIndicator color={VOICE_COLORS.accent} />}
         {view.error && <Text accessibilityRole="alert" className="text-center text-sm leading-5" style={styles.statusText}>{view.error}</Text>}
       </Animated.View>

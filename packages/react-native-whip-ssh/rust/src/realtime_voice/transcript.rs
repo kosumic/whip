@@ -213,6 +213,21 @@ impl Transcript {
         }
     }
 
+    pub fn finish_audio(&mut self, item: &str, index: u32) {
+        if let Some(turn) = self
+            .turns
+            .iter_mut()
+            .find(|turn| turn.message.id == assistant_id(item, index))
+        {
+            turn.audio_done = true;
+            turn.advance(turn.played);
+            if turn.text_done && !turn.stopped && !turn.pace_reported {
+                self.pace.observe(turn.timing.units, turn.samples);
+                turn.pace_reported = true;
+            }
+        }
+    }
+
     pub fn stop(&mut self) {
         for turn in &mut self.turns {
             if turn.message.role == ASSISTANT {

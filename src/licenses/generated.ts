@@ -847,6 +847,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/267c69176591f372.txt"),
   },
   {
+    id: "cargo-opus-0-4-0",
+    category: "cargo",
+    projectName: "opus",
+    sourceUrl: "https://github.com/SpaceManiac/opus-rs",
+    attribution: "Direct Rust dependency · version 0.4.0 · used by whip-ssh",
+    licenseName: "Apache-2.0",
+    licenseAsset: require("../../assets/licenses/generated/d00aa65d7a05d267.txt"),
+  },
+  {
     id: "cargo-parking-lot-0-12-5",
     category: "cargo",
     projectName: "parking_lot",
@@ -899,6 +908,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     attribution: "Direct Rust dependency · version 0.48.1 · used by whip-ssh",
     licenseName: "Apache-2.0",
     licenseAsset: require("../../assets/licenses/generated/fae70451618f664b.txt"),
+  },
+  {
+    id: "cargo-rtc-0-20-3",
+    category: "cargo",
+    projectName: "rtc",
+    sourceUrl: "https://github.com/webrtc-rs/rtc",
+    attribution: "Direct Rust dependency · version 0.20.3 · used by whip-ssh",
+    licenseName: "Apache-2.0",
+    licenseAsset: require("../../assets/licenses/generated/d00aa65d7a05d267.txt"),
   },
   {
     id: "cargo-rubato-5-0-0",
@@ -1033,7 +1051,7 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     sourceUrl: "https://github.com/kosumic/whip",
     attribution: "Direct Rust dependency · version 0.1.1 · used by whip-ssh",
     licenseName: "MIT",
-    licenseAsset: require("../../assets/licenses/generated/93fd69409722a443.txt"),
+    licenseAsset: require("../../assets/licenses/generated/87faf4d35ffc5c8a.txt"),
   },
   {
     id: "cargo-thiserror-2-0-21",
@@ -1078,7 +1096,7 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     sourceUrl: "https://github.com/tursodatabase/turso",
     attribution: "Direct Rust dependency · version 0.8.3 · used by whip-ssh",
     licenseName: "MIT",
-    licenseAsset: require("../../assets/licenses/generated/326a93eb6fede64a.txt"),
+    licenseAsset: require("../../assets/licenses/generated/5b6d664521a76db8.txt"),
   },
   {
     id: "cargo-two-face-0-5-2-bat-0-26-1",
@@ -1117,13 +1135,22 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/d00aa65d7a05d267.txt"),
   },
   {
+    id: "cargo-webrtc-0-20-3",
+    category: "cargo",
+    projectName: "webrtc",
+    sourceUrl: "https://github.com/webrtc-rs/webrtc",
+    attribution: "Direct Rust dependency · version 0.20.3 · used by whip-ssh",
+    licenseName: "Apache-2.0",
+    licenseAsset: require("../../assets/licenses/generated/d00aa65d7a05d267.txt"),
+  },
+  {
     id: "cargo-whip-notify-0-1-4",
     category: "cargo",
     projectName: "whip-notify",
     sourceUrl: "https://github.com/kosumic/whip",
     attribution: "Direct Rust dependency · version 0.1.4 · used by whip-ssh",
     licenseName: "MIT",
-    licenseAsset: require("../../assets/licenses/generated/44e5f07f60feb786.txt"),
+    licenseAsset: require("../../assets/licenses/generated/2bbeee1c7cab5599.txt"),
   },
   {
     id: "cargo-whipair-protocol-0-1-0",
@@ -1132,7 +1159,7 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     sourceUrl: "https://github.com/kosumic/whip",
     attribution: "Direct Rust dependency · version 0.1.0 · used by whip-ssh",
     licenseName: "MIT",
-    licenseAsset: require("../../assets/licenses/generated/ba6ae9a98449bb66.txt"),
+    licenseAsset: require("../../assets/licenses/generated/f4cc9c35265b1adf.txt"),
   },
   {
     id: "cargo-zip-9-0-5",
@@ -1141,6 +1168,6 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     sourceUrl: "https://github.com/zip-rs/zip2",
     attribution: "Direct Rust dependency · version 9.0.5 · used by whip-ssh",
     licenseName: "MIT",
-    licenseAsset: require("../../assets/licenses/generated/c64d74f158a7aa85.txt"),
+    licenseAsset: require("../../assets/licenses/generated/c58e2f3a32a1d48d.txt"),
   },
 ] as const;

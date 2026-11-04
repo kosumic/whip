@@ -114,6 +114,7 @@ pub extern "C" fn whip_realtime_control(id: u64, action: u8) {
             1 => call.command(Command::Skip),
             3 => call.command(Command::Mute(true)),
             4 => call.command(Command::Mute(false)),
+            6 => super::webrtc::devices_started(&call),
             5 => call.fail("The native audio device was interrupted or became unavailable."),
             _ => {}
         }

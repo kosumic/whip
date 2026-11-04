@@ -1,6 +1,7 @@
-//! Public OpenAI Realtime WebSocket adapter. Native media never crosses JS.
+//! Public OpenAI Realtime WebRTC/WebSocket adapter. Native media never crosses JS.
 //! The actor owns all wire writes; dropping it cancels transport and tools.
 mod captions;
+pub(crate) mod context;
 mod cost;
 mod delegation;
 mod echo;
@@ -9,10 +10,13 @@ mod ffi;
 mod input;
 mod processing;
 mod response;
+mod socket;
 mod startup;
 #[cfg(test)]
 mod tests;
 mod transcript;
+mod webrtc;
+mod wire;
 
 use std::collections::{HashSet, VecDeque};
 use std::sync::{
@@ -65,6 +69,8 @@ const VOICES: &[&str] = &[
 pub(super) struct Config {
     #[serde(default)]
     client_elapsed_ms: u64,
+    #[serde(default)]
+    webrtc: bool,
     target: Option<AgentTarget>,
     voice: String,
     vad: Option<Vad>,
@@ -202,6 +208,7 @@ pub(super) struct View {
     captions: Option<captions::Diagnostics>,
     messages: Vec<transcript::Message>,
     startup: startup::Timings,
+    media_ready: bool,
 }
 
 struct Output {
@@ -314,6 +321,8 @@ struct CapturedAudio {
 pub(super) struct RealtimeVoiceAdapter {
     started_at: Instant,
     client_elapsed_ms: u64,
+    webrtc: bool,
+    media: Mutex<Option<webrtc::Handle>>,
     view: Mutex<View>,
     output: Mutex<Output>,
     echo: Mutex<Option<echo::MediaEchoCanceller>>,
@@ -345,13 +354,26 @@ impl RealtimeVoiceAdapter {
         >,
     ) -> Result<Arc<Self>, StartError> {
         let started_at = Instant::now();
-        let update = config.session_update()?;
+        let mut update = config.session_update()?;
         let agent = config
             .target
             .clone()
             .map(PinnedAgent::pin)
             .transpose()
             .map_err(|_| "Open the connected agent chat before starting Realtime.")?;
+        if let Some(context) = agent
+            .as_ref()
+            .map(|agent| agent.startup_context())
+            .transpose()
+            .map_err(|_| "The bound chat context is unavailable. Refresh it before calling.")?
+            .flatten()
+            && !context.is_empty()
+        {
+            let mut value =
+                serde_json::to_value(update).map_err(|_| "Voice configuration failed.")?;
+            value["session"]["instructions"] = json!(format!("{INSTRUCTIONS}\n\n{context}"));
+            update = typed(value)?;
+        }
         let speech = crate::speech_playback::RealtimeSpeechLease::claim(config.preview)
             .ok_or("Another speech session is active. Finish it before previewing.")?;
         let (commands, command_rx) = mpsc::channel(8);
@@ -360,6 +382,8 @@ impl RealtimeVoiceAdapter {
         let adapter = Arc::new(Self {
             started_at,
             client_elapsed_ms: config.client_elapsed_ms,
+            webrtc: config.webrtc,
+            media: Mutex::new(None),
             view: Mutex::new(View {
                 phase: "starting",
                 muted: config.preview,
@@ -373,6 +397,7 @@ impl RealtimeVoiceAdapter {
                 estimated_usd: None,
                 messages: Vec::new(),
                 startup: startup::Timings::default(),
+                media_ready: false,
                 tool: None,
                 captions: (!config.preview)
                     .then(|| captions::Diagnostics::pending(config.language)),
@@ -412,6 +437,8 @@ impl RealtimeVoiceAdapter {
                     owner.fail(message);
                 }
                 owner.ready.store(false, Ordering::Release);
+                let media = owner.media.lock().take();
+                if let Some(media) = media { media.close().await; }
                 owner.output.lock().clear();
                 owner.speech.release();
                 owner.stopped.store(true, Ordering::Release);
@@ -482,15 +509,20 @@ impl RealtimeVoiceAdapter {
             return true;
         }
         self.view.lock().level = peak(samples);
-        if self
-            .audio
-            .try_send(CapturedAudio {
-                samples: samples.to_vec(),
-                generation,
-                at,
-            })
-            .is_err()
-        {
+        let frame = CapturedAudio {
+            samples: samples.to_vec(),
+            generation,
+            at,
+        };
+        let sent = if self.webrtc {
+            self.media
+                .lock()
+                .as_ref()
+                .is_some_and(|media| media.input.try_send(frame).is_ok())
+        } else {
+            self.audio.try_send(frame).is_ok()
+        };
+        if !sent {
             self.fail("Realtime upload fell behind. Please call again.");
             return false;
         }
@@ -498,7 +530,7 @@ impl RealtimeVoiceAdapter {
     }
 
     async fn run(
-        &self,
+        self: &Arc<Self>,
         prepared: PreparedSession,
         agent: Option<Arc<PinnedAgent>>,
         mut commands: mpsc::Receiver<Command>,
@@ -510,7 +542,8 @@ impl RealtimeVoiceAdapter {
             key,
             update,
         } = prepared;
-        let (mut socket, configuration_started) = self.connect_session(key, update).await?;
+        let (mut socket, configuration_started) =
+            self.connect_session(&config, key, update).await?;
         let started = tokio::time::Instant::now();
         let mut heartbeat = tokio::time::interval(Duration::from_millis(250));
         let mut responses = response::ResponseCreateQueue::default();
@@ -521,6 +554,8 @@ impl RealtimeVoiceAdapter {
         let mut last_pong = tokio::time::Instant::now();
         let mut ping_at = last_pong;
         let mut preview_done = false;
+        let mut preview_requested = false;
+        let mut seen = wire::Seen::default();
         let mut handoff: Option<feedback::Handoff> = None;
         let mut deferred = delegation::Deferred::default();
         let mut last_audio_response = None;
@@ -531,9 +566,10 @@ impl RealtimeVoiceAdapter {
             tokio::select! {
                 command = commands.recv() => match command {
                     Some(Command::Skip) => {
+                        if let Some(media) = self.media.lock().as_ref() { media.cancel_audio(responses.active().map(String::as_str)); }
                         if let Some(id) = responses.active().cloned() { ignored.insert(id.clone()); send(&mut socket, ClientEvent::ResponseCancel { event_id: None, response_id: Some(id) }).await?; }
                         let event = self.output.lock().interrupt();
-                        if let Some(event) = event { send(&mut socket, event).await?; }
+                        if config.webrtc { send(&mut socket, ClientEvent::OutputAudioBufferClear { event_id: None }).await?; } else if let Some(event) = event { send(&mut socket, event).await?; }
                         self.view.lock().playback_level = 0.0;
                         self.view.lock().phase = "listening";
                     }
@@ -582,7 +618,8 @@ impl RealtimeVoiceAdapter {
                     if !self.speech.is_current() { return Err("Voice audio was replaced by another speech session."); }
                     if let Some(agent) = &agent { agent.check_liveness().map_err(|_| "The bound agent disconnected or changed. Please call again.")?; }
                     if config.preview && started.elapsed() > PREVIEW_TIMEOUT { return Err("Voice preview timed out. Please try again."); }
-                    if preview_done && { let output = self.output.lock(); output.generated == output.played } {
+                    if preview_done && (!config.webrtc || self.media.lock().as_ref().is_some_and(webrtc::Handle::drained)) && { let output = self.output.lock(); output.generated == output.played } {
+                        if self.output.lock().generated == 0 { return Err("OpenAI returned no playable voice preview audio."); }
                         self.view.lock().phase = "closed";
                         self.closed.store(true, Ordering::Release);
                         return Ok(());
@@ -613,11 +650,7 @@ impl RealtimeVoiceAdapter {
                     }
                 },
                 samples = audio.recv(), if self.ready.load(Ordering::Acquire) => {
-                    if let Some(frame) = samples && !self.view.lock().muted && self.input.accepts(frame.generation) && frame.at.elapsed() <= processing::MAX_DELAY {
-                        let bytes: Vec<u8> = frame.samples.iter().flat_map(|sample| sample.to_le_bytes()).collect();
-                        send(&mut socket, ClientEvent::InputAudioBufferAppend { event_id: None, audio: STANDARD.encode(bytes) }).await?;
-                        self.view.lock().startup.first_input.get_or_insert_with(|| self.client_elapsed_ms.saturating_add(startup::elapsed(self.started_at)));
-                    }
+                    self.send_legacy_capture(&mut socket, samples).await?;
                 },
                 message = socket.next() => {
                     let message = message.ok_or("OpenAI Realtime disconnected. Start a new call.")?.map_err(|_| "OpenAI Realtime connection failed.")?;
@@ -630,23 +663,17 @@ impl RealtimeVoiceAdapter {
                         }
                         continue;
                     };
+                    if config.webrtc && !seen.accept(&text)? { continue; }
                     let event: ServerEvent = serde_json::from_str(&text).map_err(|_| "OpenAI returned an unsupported Realtime event.")?;
+                    if !config.webrtc && matches!(event, ServerEvent::SessionCreated { .. }) { continue; }
                     if costs.observe(&event) { self.view.lock().estimated_usd = costs.estimated_usd(); }
-                    self.output.lock().transcript.observe(&event, &ignored);
+                    if !config.webrtc || !matches!(event, ServerEvent::ResponseOutputAudioDone { .. }) { self.output.lock().transcript.observe(&event, &ignored); }
                     match event {
-                        ServerEvent::SessionUpdated { session, .. } => {
-                            let audio = session.config.audio.ok_or("OpenAI did not negotiate PCM audio.")?;
-                            if !config.preview {
-                                let captions = captions::Diagnostics::confirm(config.language, &audio);
-                                let accepted = captions.validate();
-                                self.view.lock().captions = Some(captions);
-                                accepted?;
-                            }
-                            config.validate_audio(audio)?;
-                            let was_ready = self.ready.swap(true, Ordering::AcqRel);
-                            self.record_listening(configuration_started);
-                            self.view.lock().phase = "listening";
-                            if config.preview && !was_ready {
+                        ServerEvent::SessionUpdated { session, .. } | ServerEvent::SessionCreated { session, .. } => {
+                            if !config.webrtc && !self.ready.load(Ordering::Acquire) && session.config.audio.is_none() { continue; }
+                            self.confirm_audio(&config, session.config.audio, configuration_started)?;
+                            if config.preview && !preview_requested {
+                                preview_requested = true;
                                 send(&mut socket, preview_response()?).await?;
                                 responses.mark_requested();
                             }
@@ -661,14 +688,18 @@ impl RealtimeVoiceAdapter {
                             }
                             if matches!(done.status, oai_rt_rs::ResponseStatus::Failed) { return Err("OpenAI could not generate a response. Check quota and model access."); }
                             if config.preview {
-                                if !matches!(done.status, oai_rt_rs::ResponseStatus::Completed) || self.output.lock().generated == 0 {
+                                if !matches!(done.status, oai_rt_rs::ResponseStatus::Completed) || (!config.webrtc && self.output.lock().generated == 0) {
                                     return Err("OpenAI did not complete the voice preview. Please try again.");
                                 }
                                 preview_done = true;
                             }
                         }
+                        ServerEvent::OutputAudioBufferStarted { response_id, .. } if config.webrtc && !ignored.contains(&response_id) => {
+                            if let Some(handoff) = handoff.as_mut() { handoff.audio(&response_id, Instant::now()); }
+                            last_audio_response = Some(response_id);
+                        }
                         ServerEvent::ResponseOutputAudioDelta { response_id, item_id, content_index, delta, .. } => {
-                            if ignored.contains(&response_id) { continue; }
+                            if config.webrtc || ignored.contains(&response_id) { continue; }
                             if let Some(handoff) = handoff.as_mut() { handoff.audio(&response_id, Instant::now()); }
                             last_audio_response = Some(response_id);
                             let pcm = STANDARD.decode(delta).map_err(|_| "OpenAI returned invalid audio.")?;
@@ -680,7 +711,7 @@ impl RealtimeVoiceAdapter {
                             responses.speech_started();
                             if let Some(id) = responses.active().cloned() { ignored.insert(id); }
                             let event = self.output.lock().interrupt();
-                            if let Some(event) = event { send(&mut socket, event).await?; }
+                            if !config.webrtc && let Some(event) = event { send(&mut socket, event).await?; }
                             self.view.lock().text.clear();
                             self.view.lock().user_text.clear();
                         }
@@ -711,6 +742,59 @@ impl RealtimeVoiceAdapter {
         }
     }
 
+    async fn send_legacy_capture(
+        &self,
+        socket: &mut RealtimeSocket,
+        frame: Option<CapturedAudio>,
+    ) -> Result<(), &'static str> {
+        if let Some(frame) = frame
+            && !self.view.lock().muted
+            && self.input.accepts(frame.generation)
+            && frame.at.elapsed() <= processing::MAX_DELAY
+        {
+            let bytes: Vec<u8> = frame
+                .samples
+                .iter()
+                .flat_map(|sample| sample.to_le_bytes())
+                .collect();
+            send(
+                socket,
+                ClientEvent::InputAudioBufferAppend {
+                    event_id: None,
+                    audio: STANDARD.encode(bytes),
+                },
+            )
+            .await?;
+            self.view.lock().startup.first_input.get_or_insert_with(|| {
+                self.client_elapsed_ms
+                    .saturating_add(startup::elapsed(self.started_at))
+            });
+        }
+        Ok(())
+    }
+
+    fn confirm_audio(
+        &self,
+        config: &Config,
+        audio: Option<oai_rt_rs::AudioConfig>,
+        started: Instant,
+    ) -> Result<(), &'static str> {
+        let audio = audio.ok_or("OpenAI did not negotiate audio.")?;
+        if !config.preview {
+            let captions = captions::Diagnostics::confirm(config.language, &audio);
+            let accepted = captions.validate();
+            self.view.lock().captions = Some(captions);
+            accepted?;
+        }
+        config.validate_audio(audio)?;
+        if !config.webrtc {
+            self.ready.store(true, Ordering::Release);
+            self.record_listening(started);
+            self.view.lock().phase = "listening";
+        }
+        Ok(())
+    }
+
     fn record_listening(&self, configuration_started: Instant) {
         let mut view = self.view.lock();
         if view.startup.listening.is_none() {
@@ -723,11 +807,17 @@ impl RealtimeVoiceAdapter {
     }
 
     async fn connect_session(
-        &self,
+        self: &Arc<Self>,
+        config: &Config,
         key: native_credentials::NativeCredential,
         update: ClientEvent,
     ) -> Result<(RealtimeSocket, Instant), &'static str> {
         let started = Instant::now();
+        if config.webrtc {
+            return webrtc::start(self.clone(), key, update)
+                .await
+                .map(|socket| (socket, started));
+        }
         let mut socket = connect(key).await?;
         self.view.lock().startup.websocket = Some(startup::elapsed(started));
         let configuration_started = Instant::now();
@@ -736,13 +826,24 @@ impl RealtimeVoiceAdapter {
     }
 }
 
-type RealtimeSocket =
-    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+type RealtimeSocket = socket::Socket;
 
 async fn connect(
     key: native_credentials::NativeCredential,
 ) -> Result<RealtimeSocket, &'static str> {
-    let mut request = format!("wss://api.openai.com/v1/realtime?model={MODEL}")
+    connect_raw(
+        key,
+        &format!("wss://api.openai.com/v1/realtime?model={MODEL}"),
+    )
+    .await
+    .map(|socket| socket::Socket::Direct(Box::new(socket)))
+}
+
+async fn connect_raw(
+    key: native_credentials::NativeCredential,
+    url: &str,
+) -> Result<socket::RawSocket, &'static str> {
+    let mut request = url
         .into_client_request()
         .map_err(|_| "Realtime request could not be prepared.")?;
     let header = key.authorization();
@@ -837,12 +938,12 @@ fn spawn_delegation(
 }
 
 async fn forward_feedback<S>(
-    socket: &mut tokio_tungstenite::WebSocketStream<S>,
+    socket: &mut S,
     agent: &PinnedAgent,
     handoff: &mut feedback::Handoff,
 ) -> Result<(), &'static str>
 where
-    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    S: futures::Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
 {
     if let Some(snapshot) = agent
         .feedback_snapshot(handoff.revision())
@@ -862,12 +963,9 @@ fn preview_response() -> Result<ClientEvent, &'static str> {
     }}))
 }
 
-async fn send<S>(
-    socket: &mut tokio_tungstenite::WebSocketStream<S>,
-    event: ClientEvent,
-) -> Result<(), &'static str>
+async fn send<S>(socket: &mut S, event: ClientEvent) -> Result<(), &'static str>
 where
-    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    S: futures::Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
 {
     let mut value =
         serde_json::to_value(event).map_err(|_| "Realtime event could not be encoded.")?;

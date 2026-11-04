@@ -21,16 +21,19 @@ export function VoiceOrb({ view, size, startedAt }: { view: VoiceConversationVie
   const update = useCallback(() => web.current?.injectJavaScript(`window.setVoiceState?.(${JSON.stringify({ ...state.current, elapsed: (Date.now() - startedAt) / 1000 })});true;`), [startedAt]);
   useEffect(update, [update, activity, speaking, ready, reducedMotion]);
   // Android's cached texture must contain the padded canvas at peak expansion.
-  return <View collapsable={false} renderToHardwareTextureAndroid pointerEvents="none" importantForAccessibility="no-hide-descendants" accessibilityElementsHidden style={[styles.orb, { width: canvasSize, height: canvasSize, opacity: view.phase === 'error' ? 0.65 : 1 }]}>
+  return <View style={[styles.frame, { width: size, height: size }]} pointerEvents="none" importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
+    <View collapsable={false} renderToHardwareTextureAndroid pointerEvents="none" importantForAccessibility="no-hide-descendants" accessibilityElementsHidden style={[styles.orb, { width: canvasSize, height: canvasSize, opacity: view.phase === 'error' ? 0.65 : 1 }]}>
     <WebView ref={web} source={SOURCE} originWhitelist={ORIGIN} style={styles.scene}
       androidLayerType="hardware" scrollEnabled={false} bounces={false} javaScriptEnabled domStorageEnabled={false}
       allowsInlineMediaPlayback mediaPlaybackRequiresUserAction
       onLoadEnd={update} onShouldStartLoadWithRequest={request => request.url === 'about:blank'}
       onMessage={event => recordDiagnostic('warn', 'VoiceChat', 'orb-renderer', { error: event.nativeEvent.data })} />
+    </View>
   </View>;
 }
 
 const styles = StyleSheet.create({
+  frame: { alignItems: 'center', justifyContent: 'center' },
   orb: { backgroundColor: 'transparent' },
   scene: { flex: 1, backgroundColor: 'transparent' },
 });

@@ -87,6 +87,17 @@ impl PinnedAgent {
         self.check_state(false)
     }
 
+    pub(crate) fn startup_context(&self) -> Result<Option<String>, HerdrControlError> {
+        self.check()?;
+        let context = self.runtime.inner.agents.project_live_transcript(
+            &self.binding.transcript_key,
+            None,
+            crate::realtime_voice::context::from_view,
+        );
+        self.check_liveness()?;
+        Ok(context)
+    }
+
     pub(crate) fn feedback_snapshot(
         &self,
         revision: Option<u64>,

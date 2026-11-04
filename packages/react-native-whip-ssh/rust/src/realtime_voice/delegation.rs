@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use serde_json::json;
 use tokio::task::JoinSet;
-use tokio_tungstenite::WebSocketStream;
+use tokio_tungstenite::tungstenite::{Error, Message};
 
 use super::{
     SilentArguments, ToolCompletion, ToolLedger, feedback, function_output, response, send,
@@ -82,12 +82,12 @@ pub(super) struct Invocation {
 impl Dispatch<'_> {
     pub async fn handle<S>(
         self,
-        socket: &mut WebSocketStream<S>,
+        socket: &mut S,
         agent: &Arc<PinnedAgent>,
         call: Invocation,
     ) -> Result<bool, &'static str>
     where
-        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+        S: futures::Sink<Message, Error = Error> + Unpin,
     {
         let mutation = match self
             .ledger

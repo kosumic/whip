@@ -33,9 +33,12 @@ html5ever = "0.39"
 log = { version = "0.4", features = ["max_level_info"] }
 parking_lot = "0.12"
 oai-rt-rs = "=0.5.1"
+opus = "=0.4.0"
+rtc = "=0.20.3"
+webrtc = "=0.20.3"
 rayon = "1"
 rustfft = { version = "6.4", optional = true }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "multipart", "json"] }
 resvg = { version = "0.48.1", default-features = false, features = ["text", "raster-images"] }
 russh = { version = "0.64.1", default-features = false, features = ["flate2", "ring"] }
 russh-sftp = "2.4"

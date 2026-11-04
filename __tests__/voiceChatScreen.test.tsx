@@ -266,7 +266,7 @@ test('shows the current API voice estimate and no cost for non-API calls', () =>
 
 test('distinguishes unknown API costs from a reported zero estimate', () => {
   act(() => publish({ ...listening, provider: 'openai', estimatedUsd: null }));
-  expect(renderedText()).toContain('voiceProvider.costUnknown');
+  expect(renderedText()).not.toContain('voiceProvider.costUnknown');
   expect(renderedText()).not.toContain('Estimated voice total: USD 0.0000');
   act(() => publish({ ...listening, provider: 'openai', estimatedUsd: 0 }));
   expect(renderedText()).toContain('Estimated voice total: USD 0.0000');

@@ -43,8 +43,9 @@ internal object RealtimeVoice {
   }
   fun invalidate() { current?.let { stop(it.token); VoiceCallService.end(it.token) } }
   private class CaptureBoundary(val cutoff: Long = System.nanoTime())
-  private class Session(val token: String, val call: Long, val input: AudioRecord?, val output: AudioTrack, val preview: Boolean, val focus: VoiceMediaFocus?, val mediaStartedAt: Long, val clientElapsedMs: Long) {
+  private class Session(val token: String, val call: Long, var input: AudioRecord?, var output: AudioTrack?, val preview: Boolean, val focus: VoiceMediaFocus?, val mediaStartedAt: Long, val clientElapsedMs: Long) {
     val running = AtomicBoolean(true)
+    var coreStartMs = 0L
     var capture: Thread? = null
     var playback: Thread? = null
     var monitor: Runnable? = null
@@ -71,45 +72,26 @@ internal object RealtimeVoice {
     val mediaStartedAt = SystemClock.elapsedRealtime()
     val clientElapsedMs = JSONObject(config).optLong("clientElapsedMs", 0).coerceAtLeast(0)
     var call = 0L
-    var input: AudioRecord? = null
-    var output: AudioTrack? = null
     var focus: VoiceMediaFocus? = null
     try {
-      if (!preview) {
-        val inputSize = maxOf(AudioRecord.getMinBufferSize(Core.RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT), Core.FRAME * 8)
-        // Software AEC receives our media render signal explicitly. Avoid
-        // cascading the device's communication-mode preprocessing over it.
-        input = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, Core.RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, inputSize)
-        require(input.state == AudioRecord.STATE_INITIALIZED)
-      } else {
-        focus = VoiceMediaFocus(requireNotNull(context)) {
+      if (preview) {
+        focus = VoiceMediaFocus(context) {
           current?.takeIf { it.token == token }?.let { Core.control(it.call, Core.AUDIO_FAILED) }
           stop(token)
         }
         require(focus.acquire())
       }
-      output = AudioTrack.Builder().setAudioAttributes(VoiceCallService.audioAttributes)
-        .setAudioFormat(AudioFormat.Builder().setSampleRate(Core.RATE).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
-        .setBufferSizeInBytes(maxOf(AudioTrack.getMinBufferSize(Core.RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT), Core.FRAME * 8))
-        .setTransferMode(AudioTrack.MODE_STREAM).build()
-      require(output.state == AudioTrack.STATE_INITIALIZED)
-      VoiceMediaAudio.attach(output)
       val coreStartedAt = SystemClock.elapsedRealtime()
-      val nativeConfig = JSONObject(config).put("softwareEchoCancellation", !preview)
+      val nativeConfig = JSONObject(config).put("softwareEchoCancellation", !preview).put("webrtc", true)
         .put("clientElapsedMs", clientElapsedMs + coreStartedAt - mediaStartedAt).toString()
       val result = Core.start(nativeConfig, WhipVoiceCredentials(context))
       if (result < 0) throw CredentialFailure(result)
       call = result
       require(call != 0L)
       if (VoiceCallService.muted(token)) Core.control(call, Core.MUTE)
-      val session = Session(token, call, input, output, preview, focus, mediaStartedAt, clientElapsedMs)
-      input?.startRecording()
-      if (!preview) Log.i(LOG_TAG, "Startup preMediaMs=$clientElapsedMs mediaSetupMs=${coreStartedAt - mediaStartedAt} coreStartMs=${SystemClock.elapsedRealtime() - coreStartedAt} micStartMs=${session.elapsedMs()}")
-      output.play()
+      val session = Session(token, call, null, null, preview, focus, mediaStartedAt, clientElapsedMs)
+      session.coreStartMs = SystemClock.elapsedRealtime() - coreStartedAt
       current = session
-      if (!preview) Log.i(LOG_TAG, "Software AEC3 enabled with media playback reference")
-      if (!preview) session.capture = Thread({ capture(session) }, "WhipRealtimeCapture").apply { start() }
-      session.playback = Thread({ playback(session) }, "WhipRealtimePlayback").apply { start() }
       session.monitor = object : Runnable {
         override fun run() {
           if (current !== session) return
@@ -117,9 +99,16 @@ internal object RealtimeVoice {
           val view = Core.view(session.call)
           val state = JSONObject(view)
           val phase = state.optString("phase")
+          if (phase != "error" && session.output == null && state.optBoolean("mediaReady")) {
+            try { openDevices(session) } catch (_: Exception) {
+              Core.control(session.call, Core.AUDIO_FAILED); stop(token)
+              if (!preview) VoiceCallService.end(token)
+              return
+            }
+          }
           if (!preview) state.optJSONObject("startup")?.let { timings ->
             // Fixed numeric durations only. Never log the enclosing call view.
-            val diagnostic = listOf("preparationMs", "credentialsMs", "websocketMs", "configurationMs", "listeningMs", "firstInputMs")
+            val diagnostic = listOf("preparationMs", "credentialsMs", "offerMs", "configurationMs", "negotiationMs", "websocketMs", "listeningMs", "firstInputMs")
               .filter { !timings.isNull(it) }.joinToString(" ") { "$it=${timings.optLong(it)}" }
             if (session.startupDiagnostic != diagnostic) {
               session.startupDiagnostic = diagnostic
@@ -145,15 +134,46 @@ internal object RealtimeVoice {
     } catch (failure: Exception) {
       current = null
       if (call != 0L) Core.stop(call)
-      try { input?.release() } catch (_: Exception) {}
-      output?.let { VoiceMediaAudio.detach(it) }
-      try { output?.release() } catch (_: Exception) {}
       focus?.close()
       val failedCall = call
       Thread({
         while (!Core.stopped(failedCall)) Thread.sleep(5)
         main.post { promise.reject(if (failure is CredentialFailure) failure.code else "E_REALTIME", "Realtime audio could not start. Check the saved API credential and device audio support.") }
       }, "WhipRealtimeFailedStart").start()
+    }
+  }
+
+  @SuppressLint("MissingPermission")
+  private fun openDevices(session: Session) {
+    val started = SystemClock.elapsedRealtime()
+    try {
+      if (!session.preview) {
+        val inputSize = maxOf(AudioRecord.getMinBufferSize(Core.RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT), Core.FRAME * 8)
+        session.input = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, Core.RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, inputSize)
+        require(session.input!!.state == AudioRecord.STATE_INITIALIZED)
+      }
+      val output = AudioTrack.Builder().setAudioAttributes(VoiceCallService.audioAttributes)
+        .setAudioFormat(AudioFormat.Builder().setSampleRate(Core.RATE).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
+        .setBufferSizeInBytes(maxOf(AudioTrack.getMinBufferSize(Core.RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT), Core.FRAME * 8))
+        .setTransferMode(AudioTrack.MODE_STREAM).build()
+      session.output = output
+      require(output.state == AudioTrack.STATE_INITIALIZED)
+      VoiceMediaAudio.attach(output)
+      output.play()
+      session.boundary = CaptureBoundary()
+      session.input?.startRecording()
+      Core.control(session.call, Core.MEDIA_READY)
+      if (!session.preview) {
+        Log.i(LOG_TAG, "Startup preMediaMs=${session.clientElapsedMs} coreStartMs=${session.coreStartMs} mediaSetupMs=${SystemClock.elapsedRealtime() - started} micStartMs=${session.elapsedMs()}")
+        Log.i(LOG_TAG, "Software AEC3 enabled with media playback reference")
+        session.capture = Thread({ capture(session) }, "WhipRealtimeCapture").apply { start() }
+      }
+      session.playback = Thread({ playback(session) }, "WhipRealtimePlayback").apply { start() }
+    } catch (failure: Exception) {
+      try { session.input?.release() } catch (_: Exception) {}
+      session.output?.let { VoiceMediaAudio.detach(it); try { it.release() } catch (_: Exception) {} }
+      session.input = null; session.output = null
+      throw failure
     }
   }
 
@@ -187,7 +207,7 @@ internal object RealtimeVoice {
 
   private fun playback(session: Session) {
     Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
-    val track = session.output
+    val track = requireNotNull(session.output)
     try {
       val pcm = ShortArray(Core.FRAME)
       val epoch = LongArray(1)
@@ -265,7 +285,7 @@ internal object RealtimeVoice {
     Core.stop(session.call)
     session.focus?.close()
     try { session.input?.stop() } catch (_: Exception) {}
-    try { session.output.pause(); session.output.flush() } catch (_: Exception) {}
+    try { session.output?.pause(); session.output?.flush() } catch (_: Exception) {}
     Thread({
       session.capture?.join(2000)
       session.playback?.join(2000)
