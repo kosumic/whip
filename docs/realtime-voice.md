@@ -38,6 +38,10 @@ generation finishes; it prevents early sentences being squeezed into the first
 small audio packet. Buffering does not advance the highlight; interrupting or
 skipping freezes it. These are approximate word boundaries, not forced alignment.
 Different packet sizes/interleavings do not change the completed-item estimate.
+Realtime presentation applies a capped one-word visual lead to compensate the
+observed steady lag. Punctuation does not consume that lead, unknown/zero
+positions stay unhighlighted, and interrupted replies retain their bright prefix.
+This calibration does not change native playback counts or audio truncation.
 Late input captions update the reserved user turn rather than appearing after
 the assistant reply.
 Local calls also retain captions, with spoken text acknowledged at TTS chunk

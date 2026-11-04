@@ -101,6 +101,15 @@ test('retains the streaming conversation when compacted and reopened', () => {
   expect(session.close).not.toHaveBeenCalled();
 });
 
+test('applies the observed one-word compensation only to Realtime presentation', () => {
+  const messages = [{ id: 'reply', role: 'assistant' as const, text: 'Hello, this is a reply.', active: true, spokenUtf16: 8 }];
+  act(() => publish({ ...listening, phase: 'speaking', messages }));
+  expect(renderedText()).toContain('this');
+  act(() => publish({ ...listening, provider: 'openai', phase: 'speaking', messages }));
+  expect(renderedText()).toContain('is');
+  expect(messages[0].spokenUtf16).toBe(8);
+});
+
 test('settings changes update the existing call without restarting it', () => {
   act(() => { renderer.update(<VoiceVadSensitivityContext value={75}><Call /></VoiceVadSensitivityContext>); });
   jest.clearAllMocks();

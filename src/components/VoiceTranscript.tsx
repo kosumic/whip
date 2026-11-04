@@ -9,21 +9,34 @@ const COLORS = { text: '#ffffff', upcoming: '#777777', bubble: '#282828', accent
 const FOLLOW_MARGIN = 56;
 const SPEECH_TYPE = { fontSize: 22, lineHeight: 34 };
 const WORDS = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]|[\p{L}\p{N}\p{M}]+(?:['’][\p{L}\p{N}\p{M}]+)*|[^\s]/gu;
+const SPEECH_WORD = /[\p{L}\p{N}\p{M}]/u;
 
 /** Three text runs keep streaming updates cheap, even for long replies. */
-export function spokenTextParts(message: VoiceTranscriptMessage): [string, string, string] {
+export function spokenTextParts(message: VoiceTranscriptMessage, leadCurrentWord = false): [string, string, string] {
   let cursor = Math.max(0, Math.min(message.text.length, message.spokenUtf16));
   // Interpolated native offsets can fall between an emoji's UTF-16 surrogates.
   if (cursor > 0 && (message.text.codePointAt(cursor - 1) ?? 0) > 0xffff) cursor--;
-  if (!message.active || cursor === 0) return [message.text.slice(0, cursor), '', message.text.slice(cursor)];
+  if (cursor === 0 || cursor === message.text.length || (!message.active && !leadCurrentWord)) return [message.text.slice(0, cursor), '', message.text.slice(cursor)];
+  let focus: { start: number; end: number } | undefined;
+  // Compensate the observed one-word Realtime lag only in presentation. The
+  // native played cursor still owns truncation, pause and interruption state.
+  let remaining = leadCurrentWord ? 1 : 0;
   for (const match of message.text.matchAll(WORDS)) {
     const start = match.index;
-    if (start + match[0].length > cursor) return [message.text.slice(0, start), match[0], message.text.slice(start + match[0].length)];
+    const end = start + match[0].length;
+    if (end <= cursor || (leadCurrentWord && !SPEECH_WORD.test(match[0]))) continue;
+    focus = { start, end };
+    if (remaining-- === 0) break;
+  }
+  if (focus) {
+    // Freeze the same bright prefix after interruption, without a current word.
+    if (!message.active) return [message.text.slice(0, focus.end), '', message.text.slice(focus.end)];
+    return [message.text.slice(0, focus.start), message.text.slice(focus.start, focus.end), message.text.slice(focus.end)];
   }
   return [message.text, '', ''];
 }
 
-export function VoiceTranscript({ messages, reducedMotion }: { messages: readonly VoiceTranscriptMessage[]; reducedMotion: boolean }) {
+export function VoiceTranscript({ messages, reducedMotion, leadCurrentWord = false }: { messages: readonly VoiceTranscriptMessage[]; reducedMotion: boolean; leadCurrentWord?: boolean }) {
   const { t } = useTranslation();
   const scroll = useRef<ScrollViewInstance>(null);
   const positions = useRef(new Map<string, { y: number; lines?: readonly { text: string; y: number }[] }>());
@@ -38,11 +51,12 @@ export function VoiceTranscript({ messages, reducedMotion }: { messages: readonl
     if (!following.current) return;
     const position = latest && positions.current.get(latest.id);
     if (position && active) {
+      const focus = spokenTextParts(active, leadCurrentWord)[0].length;
       let end = 0;
       const line = position.lines?.find(candidate => {
         const start = active.text.indexOf(candidate.text, end);
         end = (start < 0 ? end : start) + candidate.text.length;
-        return end > active.spokenUtf16;
+        return end > focus;
       });
       const y = position.y + (line?.y ?? 0);
       if (y < offset.current || y > offset.current + height.current * 0.6) {
@@ -69,7 +83,7 @@ export function VoiceTranscript({ messages, reducedMotion }: { messages: readonl
         }
       }} scrollEventThrottle={100}>
       {messages.map(message => {
-        const [heard, current, upcoming] = spokenTextParts(message);
+        const [heard, current, upcoming] = spokenTextParts(message, leadCurrentWord);
         return <View key={message.id} style={message.role === 'user' ? styles.user : styles.assistant}
           onLayout={event => { positions.current.set(message.id, { ...positions.current.get(message.id), y: event.nativeEvent.layout.y }); follow(); }}>
           {message.role === 'user' ? <Text selectable style={styles.userText}>{message.text}</Text>
