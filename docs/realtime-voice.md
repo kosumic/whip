@@ -270,6 +270,11 @@ Android uses `AudioRecord(VOICE_RECOGNITION)` with explicit software AEC3 and a
 media `AudioTrack`. Every submitted output sample, including silence between
 replies, feeds the render reference. Actual device timestamps determine delay;
 bounded queue timing supplies the estimate while device timestamps initialize.
+As in Codex's capture worker, submitted speaker references queue for the
+microphone consumer, which processes them before capture and measures their
+delay at that point. Reply boundaries preserve the running Android device clock
+and AEC history; they do not flush/restart the media track. Interruption clears
+Rust's pending speech, with at most the bounded 80-ms device queue left to drain.
 The native playback clock excludes synthetic silence from heard-audio counts.
 Volume buttons control media volume;
 the foreground microphone/media service owns media audio focus without Telecom
