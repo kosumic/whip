@@ -1,17 +1,8 @@
 name: Dependabot rebase
 
 on:
-  workflow_run:
-    workflows:
-      - CI
-      - Whipair CI
-      - Whip Notify CI
-      - Feedback Worker CI
-      - Notify Relay CI
-    branches:
-      - main
-    types:
-      - completed
+  schedule:
+    - cron: '17 9 * * *'
   workflow_dispatch:
 
 permissions:
@@ -25,13 +16,20 @@ concurrency:
 
 jobs:
   rebase:
-    name: Refresh failed Dependabot updates after main recovers
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.event == 'push' &&
-       github.event.workflow_run.conclusion == 'success')
+    name: Refresh failed Dependabot updates (${{ matrix.ci-workflow }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      # Serialize workflows so requests for the same PR can be deduplicated.
+      max-parallel: 1
+      matrix:
+        ci-workflow:
+          - ci.yml
+          - ci-whipair.yml
+          - ci-whip-notify.yml
+          - ci-feedback-worker.yml
+          - ci-notify-relay.yml
 
     steps:
       # Dependabot requires rebase commands from a user with repository push access.
@@ -41,9 +39,8 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.DEPENDABOT_REBASE_TOKEN }}
-          TESTED_MAIN_SHA: ${{ github.event.workflow_run.head_sha }}
           BASE_BRANCH: main
-          CI_WORKFLOW: ${{ github.event.workflow_run.workflow_id || 'ci.yml' }}
+          CI_WORKFLOW: ${{ matrix.ci-workflow }}
           REBASE_COMMAND: '@dependabot rebase'
         run: |
           if [[ -z "$GH_TOKEN" ]]; then
@@ -52,16 +49,12 @@ jobs:
           fi
 
           main_sha="$(gh api "repos/$GITHUB_REPOSITORY/branches/$BASE_BRANCH" --jq '.commit.sha')"
-          if [[ -n "$TESTED_MAIN_SHA" && "$main_sha" != "$TESTED_MAIN_SHA" ]]; then
-            echo "Skipping because $BASE_BRANCH advanced after this CI run"
-            exit 0
-          fi
-
           ci_runs="repos/$GITHUB_REPOSITORY/actions/workflows/$CI_WORKFLOW/runs"
-          main_conclusion="$(gh api "$ci_runs?event=push&head_sha=$main_sha&per_page=1" \
+          # Path-filtered workflows may last have run before the latest main commit.
+          main_conclusion="$(gh api "$ci_runs?event=push&branch=$BASE_BRANCH&per_page=1" \
             --jq '.workflow_runs[0].conclusion // "pending"')"
           if [[ "$main_conclusion" != 'success' ]]; then
-            echo "Skipping because current $BASE_BRANCH CI is $main_conclusion"
+            echo "Skipping because latest $BASE_BRANCH $CI_WORKFLOW is $main_conclusion"
             exit 0
           fi
 
