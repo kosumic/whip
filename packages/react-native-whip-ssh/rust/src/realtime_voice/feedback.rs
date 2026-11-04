@@ -15,7 +15,7 @@ const MAX_BATCH_BYTES: usize = 16 * 1024;
 const MAX_HANDOFF_BYTES: usize = 64 * 1024;
 const PROGRESS_INTERVAL: Duration = Duration::from_secs(15);
 pub(super) const BACKEND_PREFIX: &str = "[BACKEND] ";
-pub(super) const FINISHED_GUIDANCE: &str = "Use the preceding [BACKEND] messages as the agent's result. If they do not contain the answer, call agent_read. A lifecycle acknowledgement alone is not an answer. Do not resubmit the request.";
+pub(super) const FINISHED_GUIDANCE: &str = "Use actual assistant_output and [BACKEND] assistant text as the result. If neither contains the answer, say the result is not available in this voice call and direct the user to the agent chat. A lifecycle observation alone is not an answer or proof that all deferred work completed. Do not resubmit the request.";
 
 pub(crate) struct Snapshot {
     revision: u64,
@@ -27,6 +27,29 @@ struct AgentMessage {
 }
 
 impl Snapshot {
+    /// Bounded public assistant text, never terminal output or private parts.
+    pub(crate) fn answer_since(&self, previous: &Self) -> Option<&str> {
+        if previous
+            .messages
+            .last()
+            .is_some_and(|anchor| !self.messages.iter().any(|message| message.id == anchor.id))
+        {
+            return None;
+        }
+        self.messages
+            .iter()
+            .rev()
+            .find(|message| {
+                !message.text.is_empty()
+                    && previous
+                        .messages
+                        .iter()
+                        .find(|old| old.id == message.id)
+                        .is_none_or(|old| old.text != message.text)
+            })
+            .map(|message| message.text.as_str())
+    }
+
     pub(crate) fn from_view(view: AgentTranscriptView<'_>) -> Self {
         let messages = view
             .messages
@@ -124,6 +147,11 @@ impl Handoff {
     }
     pub(super) fn revision(&self) -> Option<u64> {
         self.snapshot.as_ref().map(|snapshot| snapshot.revision)
+    }
+
+    pub(super) fn silence(&mut self) {
+        self.acknowledgement = false;
+        self.progress = false;
     }
 
     pub(super) fn observe(&mut self, next: Snapshot) -> Vec<String> {

@@ -65,9 +65,10 @@ Ported the public-API-compatible audio processing and response lifecycle from
 - `codex-rs/prompts/templates/realtime/backend_prompt.md` and
   `codex-rs/codex-api/src/endpoint/realtime_websocket/methods_v2.rs`: general
   delegation by default, passing the user's own words for tasks, research,
-  browsing, and current information. Status answers must use live agent tools.
-  Whip retains its idle-only host submission contract: busy work is neither
-  steered nor queued, and uncertain submissions are never replayed.
+  browsing, and current information. The two-tool delegation interface also
+  follows Codex at `93b4e5b4c6474cdbf12614c4ac3acbd006fbee89`: start work when
+  idle, steer active Codex, and explicitly defer later tasks. Uncertain
+  submissions are never replayed.
 
 The adapted modules retain their Apache-2.0 attribution and bundled license.
 Whip keeps native mobile device ownership and the public Realtime WebSocket
@@ -84,19 +85,30 @@ Public API references:
 
 Codex's `realtime_conversation.rs` handoff stream is adapted onto the pinned
 native transcript. New assistant text arrives as `[BACKEND]` user-context items
-while `agent_prompt` is pending; reasoning, user text, tool payloads and cached
+while `background_agent` is pending; reasoning, user text, tool payloads and cached
 history are excluded. Cursors forward appended text once, rebaseline replaced
 windows, and bound copied messages, individual text, batches and total output.
 Disconnect/rebinding or call teardown stops feedback with the owning actor.
 
 Voice acknowledges its intent briefly before delegation. If the model emits
-only a function call, the response queue supplies one tool-free spoken
+only a function call, the response queue supplies one short spoken
 acknowledgement after the original response ends. Further spoken progress
 requires new agent text and is coalesced at 15-second intervals; idle timers
 never invent progress. User speech and active playback defer notices, and tool
 results take priority. Completion flushes the latest backend text before the
-function result and resumes voice; missing answer text uses `agent_read`.
-The original idle-only submission and uncertain-outcome rules remain in place.
+function result and resumes voice. Native completion also allows two seconds
+for the transcript tail and returns bounded new public assistant text, excluding
+private parts and stale history. If no answer text is available, voice directs
+the user to the agent chat instead of inventing an answer or resubmitting work.
+Notices expose only `remain_silent`, allowing the voice model to honor silence
+without dispatching another task. A silence acknowledgement does not request a
+new response or cancel agent work.
+
+The first delegation keeps its feedback cursor while follow-ups steer active
+Codex. Admission is serialized only until startup is observed; a pending task
+does not lock out steering. Steering returns a submission acknowledgement,
+while the original handoff keeps listening for progress and lifecycle changes.
+Lifecycle observations are not per-turn completion receipts.
 
 ## Ownership and media
 
@@ -156,26 +168,45 @@ server VAD owns turn commits, so the listening orb does not manually finish a tu
 
 ## Bound tools
 
-The provider receives only `agent_prompt`, `agent_status`, and `agent_read`.
+The provider receives only `background_agent` and `remain_silent`.
 Rust captures the original runtime incarnation, connection/recovery generation,
 terminal, pane, binding generation/token, agent kind and agent session. Each
-tool refreshes the remote snapshot, verifies that identity, and uses Herdr's
+delegation refreshes the remote snapshot, verifies that identity, and uses Herdr's
 existing validated lifecycle request path with checks before and after each
 transport step. Foreground focus is irrelevant. Disconnect/recovery/replacement
 ends the call; late results cannot enter a replacement call.
 
-Prompts are limited to 8 KiB, reads to 120 lines, results to 24 KiB, and calls to
-128 tool IDs. At most two tools and one mutating prompt run concurrently.
-Duplicate IDs never execute again. Busy agents reject a new prompt. Blocked
-agents require the existing Whip approval UI; the provider has no approval,
-send-keys or shell tool. Prompt lifecycle results retain their initiating call
-ID; status/read tools supply progress and final output. An ambiguous timeout or
-transport result permanently disables further prompts for that call.
+`background_agent` preserves the user's words in `prompt`. Whip adds the optional
+`delivery: now | later` adapter field (default `now`) to Codex's prompt-only
+schema: the model explicitly selects scheduling intent rather than Whip guessing
+from keywords. `now` starts idle agents or steers working Codex through Herdr's
+validated `agent.prompt`; busy steering of other agent kinds remains unavailable.
+`later` admits work to a bounded native FIFO owned by the voice call. One deferred
+worker at a time waits for idle/done, refreshes the pinned identity, submits once,
+observes startup and waits for lifecycle settlement before advancing the FIFO.
+It never sends Tab, Escape, approvals or shell input. This avoids terminal keymap,
+popup and draft dependencies for deferred work.
+
+Prompts are limited to 8 KiB, results to 24 KiB, and calls to 128 tool IDs. At most
+eight active or deferred requests are retained; admission beyond that limit
+fails without submission. Duplicate IDs never execute again. Queue admission,
+steering submission and lifecycle settlement are reported separately. Deferred
+requests receive their tool acknowledgement at admission and later receive
+backend lifecycle context, never a second result for the same tool ID.
+Blocked agents require Whip's existing approval controls; queued work waits
+without approving them. Call teardown, disconnect or replacement cancels unsent
+work. An unknown submission outcome cancels unsent deferred requests and disables
+further mutations for the call. Only read-only status polling repeats; input is
+never replayed.
 
 The current Herdr API does not accept an atomic expected-session precondition
 on `agent.prompt`. Snapshot and local generation checks cannot eliminate a
 server-side occupant change between verification and dispatch. This is a
 remaining qualification limitation, not a guarantee of atomic remote pinning.
+There is also no atomic expected-idle condition: another client can start work
+between the last idle snapshot and submission. Default Codex Enter bindings are
+assumed for steering; remapped bindings and exact per-turn completion require
+stronger host capabilities before production qualification.
 
 ## Validation and remaining qualification
 

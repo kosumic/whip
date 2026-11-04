@@ -1,4 +1,5 @@
 use super::*;
+use crate::host_runtime::realtime_agent::Delegation;
 
 #[test]
 fn acknowledgement_can_speak_during_a_pending_tool_and_results_take_priority()
@@ -12,7 +13,7 @@ fn acknowledgement_can_speak_during_a_pending_tool_and_results_take_priority()
     let event = serde_json::to_value(
         next_response(&queue, Some(&mut handoff), now)?.ok_or("missing acknowledgement")?,
     )?;
-    assert_eq!(event["response"]["tool_choice"], "none");
+    assert_eq!(event["response"]["tool_choice"], "auto");
     queue.mark_requested();
     assert!(next_response(&queue, Some(&mut handoff), now)?.is_none());
     queue.mark_started("acknowledgement".into());
@@ -53,8 +54,8 @@ fn handoff_feedback_uses_backend_context_and_tool_free_spoken_notices()
     ] {
         let event = serde_json::to_value(feedback_response(notice)?)?;
         assert_eq!(event["type"], "response.create");
-        assert_eq!(event["response"]["tools"], json!([]));
-        assert_eq!(event["response"]["tool_choice"], "none");
+        assert_eq!(event["response"]["tools"], json!([silence_tool()]));
+        assert_eq!(event["response"]["tool_choice"], "auto");
         assert_eq!(event["response"]["output_modalities"], json!(["audio"]));
         assert_eq!(event["response"]["max_output_tokens"], 96);
     }
@@ -131,22 +132,19 @@ fn audio_overflow_and_overlapping_items_fail_instead_of_reordering() -> Result<(
 #[test]
 fn tool_ids_cannot_repeat_and_uncertain_prompts_cannot_replay() {
     let mut ledger = ToolLedger::default();
-    assert_eq!(ledger.begin("call-1", "agent_prompt", "{}"), Ok(true));
+    assert_eq!(ledger.begin("call-1", BACKGROUND_AGENT, "{}"), Ok(true));
     assert_eq!(
-        ledger.begin("call-1", "agent_prompt", "{}"),
+        ledger.begin("call-1", BACKGROUND_AGENT, "{}"),
         Err("duplicate")
     );
-    assert_eq!(
-        ledger.begin("call-2", "agent_prompt", "{}"),
-        Err("agent_busy")
-    );
-    assert_eq!(ledger.begin("call-3", "agent_status", "{}"), Ok(false));
+    assert_eq!(ledger.begin("call-2", BACKGROUND_AGENT, "{}"), Ok(true));
+    assert_eq!(ledger.begin("call-3", REMAIN_SILENT, "{}"), Ok(false));
     ledger.complete(true, true);
     assert_eq!(
-        ledger.begin("call-4", "agent_prompt", "{}"),
+        ledger.begin("call-4", BACKGROUND_AGENT, "{}"),
         Err("outcome_unknown")
     );
-    assert_eq!(ledger.begin("call-5", "agent_read", "{}"), Ok(false));
+    assert_eq!(ledger.begin("call-5", REMAIN_SILENT, "{}"), Ok(false));
     assert_eq!(ledger.begin("call-6", "shell", "{}"), Err("invalid_tool"));
 }
 
@@ -161,6 +159,17 @@ fn public_session_configuration_preserves_voice_and_server_vad_settings()
             json!({"target":{"runtimeId":"host","terminalId":"terminal","paneId":"pane","bindingToken":"binding"},"voice":"cedar","vad":vad}),
         )?;
         let event = serde_json::to_value(config.session_update()?)?;
+        let tools = event["session"]["tools"]
+            .as_array()
+            .ok_or("missing voice tools")?;
+        assert_eq!(tools.len(), 2);
+        assert_eq!(tools[0]["name"], BACKGROUND_AGENT);
+        assert_eq!(tools[0]["parameters"]["required"], json!(["prompt"]));
+        assert_eq!(
+            tools[0]["parameters"]["properties"]["delivery"]["enum"],
+            json!(["now", "later"])
+        );
+        assert_eq!(tools[1]["name"], REMAIN_SILENT);
         config.validate_audio(serde_json::from_value(event["session"]["audio"].clone())?)?;
         let mut wrong_audio = event["session"]["audio"].clone();
         wrong_audio["output"]["format"]["rate"] = json!(48_000);
@@ -284,5 +293,44 @@ fn previews_reject_agent_targets_and_calls_require_a_binding_and_vad()
     );
     let invalid_voice: Config = serde_json::from_value(json!({"preview":true,"voice":"quartz"}))?;
     assert!(invalid_voice.session_update().is_err());
+    Ok(())
+}
+
+#[test]
+fn deferred_work_is_bounded_fifo_and_cancellation_drops_unsent_requests()
+-> Result<(), Box<dyn std::error::Error>> {
+    fn pending(id: usize) -> Result<delegation::Pending, &'static str> {
+        Ok(delegation::Pending {
+            call_id: id.to_string(),
+            request: Delegation::parse(
+                &json!({"prompt":format!("task {id}"),"delivery":"later"}).to_string(),
+            )?,
+        })
+    }
+    let mut queue = delegation::Deferred::default();
+    for id in 0..delegation::MAX_PENDING - 1 {
+        queue.push(pending(id)?, 1)?;
+    }
+    assert_eq!(queue.push(pending(100)?, 1), Err("queue_full"));
+    let first = queue.take().ok_or("missing first task")?;
+    assert_eq!(first.call_id, "0");
+    assert!(queue.take().is_none()); // The second task cannot overtake active work.
+    queue.finish();
+    assert_eq!(queue.take().ok_or("missing second task")?.call_id, "1");
+    assert_eq!(queue.cancel(), delegation::MAX_PENDING - 3);
+    queue.finish();
+    assert!(queue.take().is_none());
+    Ok(())
+}
+
+#[test]
+fn silence_is_an_empty_noop_and_suppresses_pending_notices() -> Result<(), &'static str> {
+    assert!(serde_json::from_str::<SilentArguments>("{}").is_ok());
+    assert!(serde_json::from_str::<SilentArguments>(r#"{"prompt":"stop"}"#).is_err());
+    let now = Instant::now();
+    let mut handoff = feedback::Handoff::new("call".into(), "response".into(), None, false, now);
+    handoff.silence();
+    let responses = response::ResponseCreateQueue::default();
+    assert!(next_response(&responses, Some(&mut handoff), now)?.is_none());
     Ok(())
 }

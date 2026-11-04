@@ -1,5 +1,12 @@
 //! The voice provider has no host selection, shell, or approval capability.
-use std::sync::Arc;
+mod delivery;
+pub(crate) use delivery::{BACKGROUND_AGENT, Delegation, Delivery, REMAIN_SILENT};
+
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+use std::time::Duration;
 
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -14,11 +21,9 @@ use crate::herdr_api::{
 use crate::host_state::{HostFreshness, HostSyncStatus};
 use crate::reverse_control::herdr::Request;
 
-const MAX_PROMPT_BYTES: usize = 8 * 1024;
 const MAX_RESULT_BYTES: usize = 24 * 1024;
-pub(crate) const AGENT_PROMPT: &str = "agent_prompt";
-pub(crate) const AGENT_STATUS: &str = "agent_status";
-pub(crate) const AGENT_READ: &str = "agent_read";
+const POLL_INTERVAL: Duration = Duration::from_millis(250);
+const START_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[cfg(test)]
 mod tests;
@@ -37,6 +42,8 @@ pub(crate) struct PinnedAgent {
     binding: BoundAgentChat,
     generation: u64,
     recovery: u64,
+    submission: tokio::sync::Mutex<()>,
+    uncertain: AtomicBool,
 }
 
 fn changed() -> HerdrControlError {
@@ -64,6 +71,8 @@ impl PinnedAgent {
             binding,
             generation,
             recovery,
+            submission: tokio::sync::Mutex::new(()),
+            uncertain: AtomicBool::new(false),
         });
         pinned.check()?;
         Ok(pinned)
@@ -210,7 +219,10 @@ impl PinnedAgent {
         request
             .run(protocol, |call| async move {
                 self.check()?;
-                let agent_result = matches!(call.method.as_str(), "agent.get" | "agent.prompt");
+                let agent_result = matches!(
+                    call.method.as_str(),
+                    "agent.get" | "agent.prompt" | "agent.wait"
+                );
                 let value = crate::herdr_api::request_json_on_runtime(
                     self.runtime.inner.herdr.clone(),
                     &call.method,
@@ -227,97 +239,196 @@ impl PinnedAgent {
             .await
     }
 
-    pub(crate) async fn execute(&self, name: &str, arguments: &str) -> Value {
-        if self.check_liveness().is_ok() && self.check().is_err() {
+    pub(crate) fn mark_uncertain(&self) {
+        self.uncertain.store(true, Ordering::Release);
+    }
+
+    pub(crate) async fn delegate(&self, request: Delegation, followup: bool) -> Value {
+        if request.delivery == Delivery::Now
+            && self.check_liveness().is_ok()
+            && self.check().is_err()
+        {
             return json!({"error":"agent_syncing","guidance":"Wait for the connected host to refresh before using agent tools."});
         }
-        match self.execute_inner(name, arguments).await {
+        match self.delegate_inner(request, followup).await {
             Ok(value) if value.to_string().len() <= MAX_RESULT_BYTES => value,
-            Ok(_) => {
-                json!({"error":"result_too_large","guidance":"Use agent_read with fewer lines."})
-            }
+            Ok(_) => json!({"error":"result_too_large"}),
             Err(HerdrControlError::ProtocolError(code, _)) => {
-                // Never return provider/host error bodies, terminal text embedded
-                // in errors, or unrestricted protocol error strings to logs/UI.
                 let code = match code.as_str() {
                     "agent_blocked" | "agent_not_ready" => "approval_required",
                     "agent_pane_busy" => "agent_busy",
                     "unsupported_feature" => "unsupported_host",
                     _ => "outcome_unknown",
                 };
+                if code == "outcome_unknown" {
+                    self.mark_uncertain();
+                }
                 json!({"error":code,"guidance":"Inspect the bound agent in Whip. Never repeat a prompt after an uncertain outcome."})
             }
             Err(_) => {
+                self.mark_uncertain();
                 json!({"error":"outcome_unknown","guidance":"Inspect the agent in Whip before submitting again."})
             }
         }
     }
 
-    async fn execute_inner(&self, name: &str, arguments: &str) -> Result<Value, HerdrControlError> {
-        #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct Prompt {
-            text: String,
-        }
-        #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct Read {
-            lines: Option<u32>,
-        }
-        #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct Empty {}
-        let invalid = || HerdrControlError::InvalidField("Invalid voice tool arguments".into());
-        self.check()?;
-        // A fresh remote snapshot verifies the original pane occupant immediately
-        // before a tool; foreground focus is deliberately irrelevant.
-        let pane = self.refresh().await?;
-        let target = self.binding.pane_id.as_str();
-        match name {
-            AGENT_STATUS => {
-                serde_json::from_str::<Empty>(arguments).map_err(|_| invalid())?;
-                self.request(json!({"action":"agent_get","target":target}))
-                    .await
+    async fn delegate_inner(
+        &self,
+        request: Delegation,
+        followup: bool,
+    ) -> Result<Value, HerdrControlError> {
+        // Serialize admission, not the whole task: a pending lifecycle wait must
+        // not prevent a later user instruction from steering active work.
+        loop {
+            self.wait_fresh().await?;
+            if self.uncertain.load(Ordering::Acquire) {
+                return Ok(
+                    json!({"error":"outcome_unknown","guidance":"Unsent deferred work was cancelled. Inspect the agent before calling again."}),
+                );
             }
-            AGENT_READ => {
-                let args = serde_json::from_str::<Read>(arguments).map_err(|_| invalid())?;
-                let lines = args.lines.unwrap_or(60);
-                if !(1..=120).contains(&lines) {
-                    return Err(invalid());
-                }
-                let value = self
-                    .request(json!({"action":"agent_read","target":target,"lines":lines}))
-                    .await?;
-                self.refresh().await?;
-                Ok(value)
+            let admission = self.submission.lock().await;
+            self.wait_fresh().await?;
+            if self.uncertain.load(Ordering::Acquire) {
+                return Ok(json!({"error":"outcome_unknown"}));
             }
-            AGENT_PROMPT => {
-                let args = serde_json::from_str::<Prompt>(arguments).map_err(|_| invalid())?;
-                if args.text.trim().is_empty()
-                    || args.text.len() > MAX_PROMPT_BYTES
-                    || args
-                        .text
-                        .chars()
-                        .any(|c| c.is_control() && c != '\n' && c != '\t')
-                {
-                    return Err(invalid());
+            let pane = match self.refresh().await {
+                Err(_) if self.check_liveness().is_ok() && self.check().is_err() => {
+                    drop(admission);
+                    continue;
                 }
-                if pane.agent_status == HerdrAgentStatus::Blocked {
+                other => other?,
+            };
+            if request.delivery == Delivery::Later && !settled(pane.agent_status) {
+                drop(admission);
+                tokio::time::sleep(POLL_INTERVAL).await;
+                continue;
+            }
+            // agent.get also verifies lifecycle protocol support and the remote
+            // session identity before any write, including on older hosts.
+            let status = self.live_status().await?;
+            if request.delivery == Delivery::Later && !settled(status) {
+                drop(admission);
+                tokio::time::sleep(POLL_INTERVAL).await;
+                continue;
+            }
+            if let Err(code) = plan(status, self.binding.agent, request.delivery) {
+                return Ok(
+                    json!({"error":code,"guidance":"Inspect the bound agent in Whip. Approval controls remain in Whip."}),
+                );
+            }
+            let target = self.binding.pane_id.as_str();
+            let was_working = status == HerdrAgentStatus::Working;
+            let baseline = self.feedback_snapshot(None)?;
+            self.request(json!({"action":"agent_prompt","target":target,"text":request.prompt}))
+                .await?;
+            if was_working && followup && request.delivery == Delivery::Now {
+                return Ok(
+                    json!({"delivery":"steered","completion":"submitted","guidance":"Guidance was sent to the active task. This is not task completion; the original handoff continues."}),
+                );
+            }
+            // A successful write alone is not a started turn. Observe activity
+            // before releasing admission for another initial submission.
+            if !was_working {
+                let deadline = tokio::time::Instant::now() + START_TIMEOUT;
+                loop {
+                    let status = self.live_status().await?;
+                    if matches!(
+                        status,
+                        HerdrAgentStatus::Working | HerdrAgentStatus::Blocked
+                    ) {
+                        break;
+                    }
+                    if tokio::time::Instant::now() >= deadline {
+                        return Err(HerdrControlError::RequestTimeout(
+                            "Agent input was submitted but activity was not observed".into(),
+                        ));
+                    }
+                    tokio::time::sleep(POLL_INTERVAL).await;
+                }
+            }
+            drop(admission);
+            // Only reads are repeated. Never replay input after a transport or
+            // completion timeout. This wait does not claim per-turn correlation.
+            loop {
+                let status = self.live_status().await?;
+                if settled(status) || status == HerdrAgentStatus::Blocked {
+                    let answer = self.settled_answer(baseline.as_ref()).await?;
                     return Ok(
-                        json!({"error":"approval_required","guidance":"Use the existing approval controls in Whip."}),
+                        json!({"delivery":if was_working {"steered"} else {"started"},"completion":"lifecycle_settled","status":status,"assistant_output":answer,"guidance":"This is a lifecycle observation, not proof that every request or queued task completed. assistant_output is actual public text observed after submission, not a per-turn completion receipt."}),
                     );
                 }
-                if !matches!(
-                    pane.agent_status,
-                    HerdrAgentStatus::Idle | HerdrAgentStatus::Done
-                ) {
-                    return Ok(json!({"error":"agent_busy"}));
-                }
-                // Atomic Herdr lifecycle wait: no shell, key injection, retries,
-                // automatic approval, or waits against a different agent.
-                self.request(json!({"action":AGENT_PROMPT,"target":target,"text":args.text,"wait":{"timeout_ms":120_000}})).await
+                tokio::time::sleep(POLL_INTERVAL).await;
             }
-            _ => Err(invalid()),
         }
+    }
+
+    async fn live_status(&self) -> Result<HerdrAgentStatus, HerdrControlError> {
+        loop {
+            self.wait_fresh().await?;
+            let value = match self
+                .request(json!({"action":"agent_get","target":self.binding.pane_id.as_str()}))
+                .await
+            {
+                Err(_) if self.check_liveness().is_ok() && self.check().is_err() => continue,
+                other => other?,
+            };
+            return serde_json::from_value(value["agent"]["agent_status"].clone())
+                .map_err(|_| changed());
+        }
+    }
+
+    async fn wait_fresh(&self) -> Result<(), HerdrControlError> {
+        loop {
+            self.check_liveness()?;
+            if self.check().is_ok() {
+                return Ok(());
+            }
+            tokio::time::sleep(POLL_INTERVAL).await;
+        }
+    }
+
+    async fn settled_answer(
+        &self,
+        baseline: Option<&crate::realtime_voice::feedback::Snapshot>,
+    ) -> Result<Option<String>, HerdrControlError> {
+        let Some(baseline) = baseline else {
+            return Ok(None);
+        };
+        // Native transcript delivery can trail PTY status. Keep the socket/audio
+        // actor responsive while allowing that bounded tail to arrive.
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        let mut answer = None;
+        loop {
+            self.wait_fresh().await?;
+            if let Some(snapshot) = self.feedback_snapshot(None)? {
+                answer = snapshot.answer_since(baseline).map(str::to_owned);
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return Ok(answer);
+            }
+            tokio::time::sleep(POLL_INTERVAL).await;
+        }
+    }
+}
+
+fn settled(status: HerdrAgentStatus) -> bool {
+    matches!(status, HerdrAgentStatus::Idle | HerdrAgentStatus::Done)
+}
+
+fn plan(
+    status: HerdrAgentStatus,
+    kind: crate::agent_transcript::AgentTranscriptKind,
+    delivery: Delivery,
+) -> Result<(), &'static str> {
+    match status {
+        HerdrAgentStatus::Idle | HerdrAgentStatus::Done => Ok(()),
+        HerdrAgentStatus::Working
+            if delivery == Delivery::Now
+                && kind == crate::agent_transcript::AgentTranscriptKind::Codex =>
+        {
+            Ok(())
+        }
+        HerdrAgentStatus::Blocked => Err("approval_required"),
+        _ => Err("agent_busy"),
     }
 }

@@ -1,6 +1,7 @@
 //! Public OpenAI Realtime WebSocket adapter. Native media never crosses JS.
 //! The actor owns all wire writes; dropping it cancels transport and tools.
 mod captions;
+mod delegation;
 mod echo;
 pub(crate) mod feedback;
 mod ffi;
@@ -30,7 +31,7 @@ use tokio_tungstenite::tungstenite::{
 };
 
 use crate::host_runtime::realtime_agent::{
-    AGENT_PROMPT, AGENT_READ, AGENT_STATUS, AgentTarget, PinnedAgent,
+    AgentTarget, BACKGROUND_AGENT, PinnedAgent, REMAIN_SILENT,
 };
 use captions::Language as TranscriptionLanguage;
 
@@ -39,14 +40,15 @@ pub(super) const FRAME: usize = RATE / 50;
 const MAX_OUTPUT: usize = RATE * 30;
 const MAX_WIRE: usize = 512 * 1024;
 const MAX_TEXT: usize = 16 * 1024;
+const MAX_ARGUMENT_BYTES: usize = 64 * 1024;
 const MAX_CALLS: usize = 128;
 const IO_TIMEOUT: Duration = Duration::from_secs(10);
 static EVENT_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 const MODEL: &str = "gpt-realtime";
 const INSTRUCTIONS: &str = include_str!("realtime_voice/instructions.md");
 // Adapted from Codex's realtime_websocket/methods_v2.rs default tool description
-// at f2b94ef8b52196f127d162c6db71e390b9bb265c (Apache-2.0).
-const PROMPT_DESCRIPTION: &str = "Send a user request to the bound agent. Use this as the default action for tasks, research, browsing, and current information, not only coding. Briefly acknowledge your intent aloud before calling, then pass the user's own words without rephrasing. If idle, the agent starts the task; [BACKEND] progress arrives while its lifecycle result is pending. A busy result means nothing was submitted or queued; inspect status before answering. Never retry after an uncertain outcome.";
+// at 93b4e5b4c6474cdbf12614c4ac3acbd006fbee89 (Apache-2.0).
+const PROMPT_DESCRIPTION: &str = "Send the user's own request to the bound coding agent. Use this as the default action for tasks, research, browsing and current information. If idle, start a task; if Codex is working, send guidance to steer it. Set delivery to later only when the user asks for work next, later, after this or once current work finishes. Later requests enter this call's bounded queue and are submitted in order when the agent settles; ending the call cancels unsent work. Briefly acknowledge intent, keep listening for corrections, and never retry an uncertain submission. Admission is not task completion.";
 const PREVIEW_TIMEOUT: Duration = Duration::from_secs(30);
 const PREVIEW_TOKEN_LIMIT: u32 = 256;
 const PREVIEW_AUDIO_LIMIT: usize = RATE * 12;
@@ -167,9 +169,8 @@ impl Config {
                 "transcription":captions::settings(self.language)},
                 "output":{"format":{"type":"audio/pcm","rate":RATE},"voice":self.voice}},
             "tools":[
-                {"type":"function","name":AGENT_PROMPT,"description":PROMPT_DESCRIPTION,"parameters":{"type":"object","properties":{"text":{"type":"string","maxLength":8192}},"required":["text"],"additionalProperties":false}},
-                {"type":"function","name":AGENT_STATUS,"description":"Read the bound agent's live status.","parameters":{"type":"object","properties":{},"additionalProperties":false}},
-                {"type":"function","name":AGENT_READ,"description":"Read bounded output from the bound coding agent, including progress and approval requests.","parameters":{"type":"object","properties":{"lines":{"type":"integer","minimum":1,"maximum":120}},"additionalProperties":false}}
+                {"type":"function","name":BACKGROUND_AGENT,"description":PROMPT_DESCRIPTION,"parameters":{"type":"object","properties":{"prompt":{"type":"string","maxLength":8192},"delivery":{"type":"string","enum":["now","later"],"description":"Default now: start or steer. Choose later only for an explicit request to defer work."}},"required":["prompt"],"additionalProperties":false}},
+                silence_tool()
             ],"tool_choice":"auto"
         }}))
     }
@@ -357,7 +358,7 @@ impl RealtimeVoiceAdapter {
         crate::runtime()
             .map_err(|_| "Realtime runtime could not start.")?
             .spawn(async move {
-                let mut tools: JoinSet<(String, bool, Value)> = JoinSet::new();
+                let mut tools: JoinSet<ToolCompletion> = JoinSet::new();
                 let result = tokio::select! {
                     biased;
                     _ = cancellation.changed() => Ok(()),
@@ -458,7 +459,7 @@ impl RealtimeVoiceAdapter {
         agent: Option<Arc<PinnedAgent>>,
         mut commands: mpsc::Receiver<Command>,
         mut audio: mpsc::Receiver<CapturedAudio>,
-        tools: &mut JoinSet<(String, bool, Value)>,
+        tools: &mut JoinSet<ToolCompletion>,
     ) -> Result<(), &'static str> {
         let PreparedSession {
             config,
@@ -477,6 +478,7 @@ impl RealtimeVoiceAdapter {
         let mut ping_at = last_pong;
         let mut preview_done = false;
         let mut handoff: Option<feedback::Handoff> = None;
+        let mut deferred = delegation::Deferred::default();
         let mut last_audio_response = None;
         loop {
             if self.closed.load(Ordering::Acquire) {
@@ -503,19 +505,33 @@ impl RealtimeVoiceAdapter {
                     None => return Ok(()),
                 },
                 result = tools.join_next(), if !tools.is_empty() => {
-                    let (call_id, mutation, value) = result.ok_or("Realtime tool task ended.")?.map_err(|_| "Realtime tool task failed.")?;
-                    agent.as_ref().ok_or("Voice previews cannot execute tools.")?.check_liveness().map_err(|_| "The bound agent disconnected or changed. Please call again.")?;
-                    ledger.complete(mutation, value.get("error").and_then(Value::as_str) == Some("outcome_unknown"));
+                    let ToolCompletion { call_id, deferred: was_deferred, mut value } = result.ok_or("Realtime tool task ended.")?.map_err(|_| "Realtime tool task failed.")?;
+                    let agent = agent.as_ref().ok_or("Voice previews cannot execute tools.")?;
+                    agent.check_liveness().map_err(|_| "The bound agent disconnected or changed. Please call again.")?;
+                    let uncertain = value.get("error").and_then(Value::as_str) == Some("outcome_unknown");
+                    ledger.complete(true, uncertain);
+                    if was_deferred { deferred.finish(); }
                     self.view.lock().tool = None;
-                    let mut value = value;
-                    if handoff.as_ref().is_some_and(|handoff| handoff.call_id == call_id) {
-                        if let Some(handoff) = handoff.as_mut() {
-                            forward_feedback(&mut socket, agent.as_ref().ok_or("Missing bound voice agent.")?, handoff).await?;
-                        }
-                        handoff = None;
-                        if value.get("error").is_none() { value["feedback_guidance"] = json!(feedback::FINISHED_GUIDANCE); }
+                    if let Some(handoff) = handoff.as_mut() {
+                        forward_feedback(&mut socket, agent, handoff).await?;
+                        value["handoff_role"] = json!(if handoff.call_id == call_id {"original"} else {"followup"});
                     }
-                    send(&mut socket, function_output(call_id, value)).await?;
+                    if uncertain {
+                        agent.mark_uncertain();
+                        let cancelled = deferred.cancel();
+                        if cancelled > 0 {
+                            send(&mut socket, feedback_message("Unsent deferred requests were cancelled because a submission outcome is unknown. Inspect the agent before submitting again.")?).await?;
+                        }
+                    }
+                    if value.get("error").is_none() && value["completion"] == "lifecycle_settled" {
+                        value["feedback_guidance"] = json!(feedback::FINISHED_GUIDANCE);
+                    }
+                    if was_deferred {
+                        send(&mut socket, feedback_message(&format!("Deferred request lifecycle update (not proof of per-turn completion): {value}"))?).await?;
+                    } else {
+                        send(&mut socket, function_output(call_id, value)).await?;
+                    }
+                    if tools.is_empty() && deferred.len() == 0 { handoff = None; }
                     responses.request_create();
                 },
                 _ = heartbeat.tick() => {
@@ -533,6 +549,9 @@ impl RealtimeVoiceAdapter {
                     if ping_at.elapsed() > Duration::from_secs(15) {
                         tokio::time::timeout(IO_TIMEOUT, socket.send(Message::Ping(Vec::new().into()))).await.map_err(|_| "Realtime send timed out.")?.map_err(|_| "Realtime connection ended.")?;
                         ping_at = tokio::time::Instant::now();
+                    }
+                    if let Some(pending) = deferred.take() {
+                        spawn_delegation(tools, agent.as_ref().ok_or("Missing bound voice agent.")?.clone(), pending, true, false);
                     }
                     if let Some(handoff) = handoff.as_mut() {
                         forward_feedback(&mut socket, agent.as_ref().ok_or("Missing bound voice agent.")?, handoff).await?;
@@ -626,24 +645,11 @@ impl RealtimeVoiceAdapter {
                         ServerEvent::ResponseFunctionCallArgumentsDone { call_id, name, arguments, response_id, .. } => {
                             let agent = agent.as_ref().ok_or("Voice previews cannot execute tools.")?;
                             if ignored.contains(&response_id) { continue; }
-                            match ledger.begin(&call_id, &name, &arguments) {
-                                Ok(mutation) => {
-                                    if tools.len() >= 2 { send(&mut socket, function_output(call_id, json!({"error":"agent_busy"}))).await?; ledger.complete(mutation, false); continue; }
-                                    let agent = agent.clone();
-                                    if mutation {
-                                        handoff = Some(feedback::Handoff::new(call_id.clone(), response_id.clone(), agent.feedback_snapshot(None).map_err(|_| "The bound voice agent changed.")?, last_audio_response.as_deref() == Some(response_id.as_str()), Instant::now()));
-                                    }
-                                    self.view.lock().tool = Some(name.clone());
-                                    tools.spawn(async move {
-                                        let result = tokio::time::timeout(Duration::from_secs(125), agent.execute(&name, &arguments)).await.unwrap_or_else(|_| json!({"error":"outcome_unknown","guidance":"Do not repeat the prompt. Inspect the agent in Whip."}));
-                                        (call_id, mutation, result)
-                                    });
-                                }
-                                Err("duplicate") => {},
-                                Err("limit") => return Err("Realtime tool limit reached. Start a new call."),
-                                Err(error) => { send(&mut socket, function_output(call_id, json!({"error":error}))).await?; responses.request_create(); }
-                            }
+                            let dispatch = delegation::Dispatch { ledger: &mut ledger, deferred: &mut deferred, handoff: &mut handoff, tools, responses: &mut responses };
+                            let call = delegation::Invocation { already_spoke: last_audio_response.as_deref() == Some(response_id.as_str()), call_id, name: name.clone(), arguments, response_id };
+                            if dispatch.handle(&mut socket, agent, call).await? { self.view.lock().tool = Some(name); }
                         }
+
                         ServerEvent::Error { error, .. } => {
                             if error.is_response_cancel_not_active() { continue; }
                             if response::is_active_response_error(&error) { responses.defer_active_response(); continue; }
@@ -720,8 +726,39 @@ fn feedback_message(text: &str) -> Result<ClientEvent, &'static str> {
 
 fn feedback_response(notice: feedback::Notice) -> Result<ClientEvent, &'static str> {
     typed(
-        json!({"type":"response.create","response":{"instructions":format!("{INSTRUCTIONS}\n\n{}", notice.instructions()),"output_modalities":["audio"],"tools":[],"tool_choice":"none","max_output_tokens":96}}),
+        json!({"type":"response.create","response":{"instructions":format!("{INSTRUCTIONS}\n\n{}", notice.instructions()),"output_modalities":["audio"],"tools":[silence_tool()],"tool_choice":"auto","max_output_tokens":96}}),
     )
+}
+
+fn silence_tool() -> Value {
+    json!({"type":"function","name":REMAIN_SILENT,"description":"Say nothing when speech would be distracting, after hidden control messages, or when the user requested silence. This has no effect on agent work.","parameters":{"type":"object","properties":{},"additionalProperties":false}})
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SilentArguments {}
+
+struct ToolCompletion {
+    call_id: String,
+    deferred: bool,
+    value: Value,
+}
+
+fn spawn_delegation(
+    tools: &mut JoinSet<ToolCompletion>,
+    agent: Arc<PinnedAgent>,
+    pending: delegation::Pending,
+    deferred: bool,
+    followup: bool,
+) {
+    tools.spawn(async move {
+        let value = agent.delegate(pending.request, followup).await;
+        ToolCompletion {
+            call_id: pending.call_id,
+            deferred,
+            value,
+        }
+    });
 }
 
 async fn forward_feedback<S>(
@@ -777,7 +814,6 @@ where
 #[derive(Default)]
 struct ToolLedger {
     seen: HashSet<String>,
-    mutation_pending: bool,
     mutation_uncertain: bool,
 }
 impl ToolLedger {
@@ -792,24 +828,18 @@ impl ToolLedger {
             return Err("invalid_call_id");
         }
         self.seen.insert(id.to_owned());
-        if !matches!(name, AGENT_PROMPT | AGENT_STATUS | AGENT_READ) || arguments.len() > MAX_TEXT {
+        if !matches!(name, BACKGROUND_AGENT | REMAIN_SILENT) || arguments.len() > MAX_ARGUMENT_BYTES
+        {
             return Err("invalid_tool");
         }
-        let mutation = name == AGENT_PROMPT;
+        let mutation = name == BACKGROUND_AGENT;
         if mutation && self.mutation_uncertain {
             return Err("outcome_unknown");
-        }
-        if mutation && self.mutation_pending {
-            return Err("agent_busy");
-        }
-        if mutation {
-            self.mutation_pending = true;
         }
         Ok(mutation)
     }
     fn complete(&mut self, mutation: bool, uncertain: bool) {
         if mutation {
-            self.mutation_pending = false;
             self.mutation_uncertain |= uncertain;
         }
     }

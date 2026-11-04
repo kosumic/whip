@@ -148,3 +148,115 @@ fn realtime_agent_session_replacement_and_binding_detach_reject_late_results()
     assert!(pinned.check_liveness().is_err());
     Ok(())
 }
+
+#[test]
+fn delegation_allows_busy_codex_steering_but_never_approval_or_unknown_input() {
+    use crate::agent_transcript::AgentTranscriptKind as Kind;
+    assert_eq!(
+        plan(HerdrAgentStatus::Working, Kind::Codex, Delivery::Now),
+        Ok(())
+    );
+    assert_eq!(
+        plan(HerdrAgentStatus::Working, Kind::Codex, Delivery::Later),
+        Err("agent_busy")
+    );
+    assert_eq!(
+        plan(HerdrAgentStatus::Working, Kind::Claude, Delivery::Now),
+        Err("agent_busy")
+    );
+    for kind in [Kind::Codex, Kind::Claude, Kind::OpenCode, Kind::Pi] {
+        for delivery in [Delivery::Now, Delivery::Later] {
+            assert_eq!(
+                plan(HerdrAgentStatus::Blocked, kind, delivery),
+                Err("approval_required")
+            );
+            assert_eq!(
+                plan(HerdrAgentStatus::Unknown, kind, delivery),
+                Err("agent_busy")
+            );
+            assert_eq!(plan(HerdrAgentStatus::Idle, kind, delivery), Ok(()));
+            assert_eq!(plan(HerdrAgentStatus::Done, kind, delivery), Ok(()));
+        }
+    }
+}
+
+#[test]
+fn delegation_preserves_the_users_words_and_accepts_only_bounded_delivery_intent()
+-> Result<(), Box<dyn std::error::Error>> {
+    let prompt = "Keep this correction now.\n稍後執行測試。\tDo not rewrite it.";
+    let args = Delegation::parse(&json!({"prompt":prompt}).to_string())?;
+    assert_eq!(args.prompt, prompt);
+    assert!(args.delivery == Delivery::Now);
+    assert!(
+        Delegation::parse(&json!({"prompt":prompt,"delivery":"later"}).to_string())?.delivery
+            == Delivery::Later
+    );
+    for args in [
+        json!({"prompt":""}),
+        json!({"prompt":"x".repeat(8193)}),
+        json!({"prompt":"中".repeat(2731)}),
+        json!({"prompt":"hello\u{001b}[A"}),
+        json!({"prompt":"hello","delivery":"esc"}),
+        json!({"prompt":"hello","keys":["Enter"]}),
+        json!({"prompt":"hello","target":"other-agent"}),
+    ] {
+        assert!(Delegation::parse(&args.to_string()).is_err());
+    }
+    Ok(())
+}
+
+#[test]
+fn uncertain_submission_prevents_both_immediate_and_deferred_writes()
+-> Result<(), Box<dyn std::error::Error>> {
+    let _guard = terminal_delivery_test_guard();
+    let (_, pinned, _) = fixture("voice-uncertain")?;
+    pinned.mark_uncertain();
+    let executor = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    for delivery in ["now", "later"] {
+        let request = Delegation::parse(
+            &json!({"prompt":"must not be submitted","delivery":delivery}).to_string(),
+        )?;
+        let result = executor.block_on(pinned.delegate(request, false));
+        assert_eq!(result["error"], "outcome_unknown");
+    }
+    Ok(())
+}
+
+#[test]
+fn deferred_wait_pauses_for_refresh_and_ends_when_the_bound_agent_disconnects()
+-> Result<(), Box<dyn std::error::Error>> {
+    let _guard = terminal_delivery_test_guard();
+    let (runtime, pinned, snapshot) = fixture("voice-deferred-refresh")?;
+    let token = {
+        let mut state = runtime.inner.state.lock();
+        state
+            .host_state
+            .mark_needs_resync("ordinary refresh".into());
+        let generation = state.generation;
+        state.host_state.begin_sync(generation)
+    };
+    let executor = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    executor.block_on(async {
+        let waiting = {
+            let pinned = pinned.clone();
+            tokio::spawn(async move { pinned.wait_fresh().await })
+        };
+        tokio::task::yield_now().await;
+        assert!(!waiting.is_finished());
+        runtime
+            .inner
+            .state
+            .lock()
+            .host_state
+            .complete_sync(token, snapshot, 2);
+        tokio::time::timeout(Duration::from_secs(2), waiting).await???;
+        runtime.inner.state.lock().connection = HostConnectionState::Disconnected;
+        assert!(pinned.wait_fresh().await.is_err());
+        Ok::<(), Box<dyn std::error::Error>>(())
+    })?;
+    Ok(())
+}

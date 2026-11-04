@@ -201,3 +201,28 @@ fn unicode_text_batches_and_total_handoff_output_are_bounded() {
     assert!(total > 0);
     assert!(snapshot(31, &messages).messages.len() <= MAX_MESSAGES);
 }
+
+#[test]
+fn result_fallback_contains_only_new_public_assistant_text() {
+    let old = message("old", AgentMessageRole::Assistant, "old answer");
+    let baseline = snapshot(1, std::slice::from_ref(&old));
+    assert!(baseline.answer_since(&baseline).is_none());
+    let next = snapshot(
+        2,
+        &[
+            old,
+            message("new", AgentMessageRole::Assistant, "new answer"),
+            message("private", AgentMessageRole::User, "private input"),
+        ],
+    );
+    assert_eq!(next.answer_since(&baseline), Some("new answer"));
+    let replaced = snapshot(
+        3,
+        &[message(
+            "unrelated",
+            AgentMessageRole::Assistant,
+            "cached history",
+        )],
+    );
+    assert!(replaced.answer_since(&baseline).is_none());
+}
