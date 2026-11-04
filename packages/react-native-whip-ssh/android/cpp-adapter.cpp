@@ -6,6 +6,7 @@
 #include "WhipSpeechPolicy.h"
 #include "WhipRealtimeVoice.h"
 #include <array>
+#include <algorithm>
 #include <string>
 
 // JNI's modified UTF-8 differs from UTF-8 for NUL and non-BMP characters.
@@ -40,12 +41,48 @@ static jstring speechString(JNIEnv *env, const std::string &json) {
     return result;
 }
 
+struct VoiceCredentialContext { JNIEnv *env; jobject reader; };
+static int32_t readVoiceCredential(void *opaque, uint8_t *destination, size_t capacity) {
+    auto *context = static_cast<VoiceCredentialContext *>(opaque);
+    auto *env = context->env;
+    auto type = env->GetObjectClass(context->reader);
+    auto method = type ? env->GetMethodID(type, "read", "([B)I") : nullptr;
+    if (!method || env->ExceptionCheck()) {
+        env->ExceptionClear();
+        if (type) env->DeleteLocalRef(type);
+        return WhipVoiceCredentialUnavailable;
+    }
+    auto bytes = env->NewByteArray(static_cast<jsize>(capacity));
+    int32_t count = WhipVoiceCredentialFailed;
+    if (bytes) {
+        count = env->CallIntMethod(context->reader, method, bytes);
+        if (env->ExceptionCheck()) { env->ExceptionClear(); count = WhipVoiceCredentialFailed; }
+        if (count > 0 && static_cast<size_t>(count) <= capacity) {
+            env->GetByteArrayRegion(bytes, 0, count, reinterpret_cast<jbyte *>(destination));
+            if (env->ExceptionCheck()) { env->ExceptionClear(); count = WhipVoiceCredentialFailed; }
+        } else if (count > 0) count = WhipVoiceCredentialFailed;
+        // Rust owns the only retained plaintext buffer. Clear the JNI temporary.
+        std::array<jbyte, 256> zeros{};
+        for (size_t offset = 0; offset < capacity; offset += zeros.size()) {
+            auto count = std::min(zeros.size(), capacity - offset);
+            env->SetByteArrayRegion(bytes, static_cast<jsize>(offset), static_cast<jsize>(count), zeros.data());
+        }
+        if (env->ExceptionCheck()) { env->ExceptionClear(); count = WhipVoiceCredentialFailed; }
+        env->DeleteLocalRef(bytes);
+    } else if (env->ExceptionCheck()) env->ExceptionClear();
+    env->DeleteLocalRef(type);
+    return count;
+}
 extern "C" JNIEXPORT jlong JNICALL
-Java_com_whipssh_RealtimeVoiceNative_start(JNIEnv *env, jclass, jstring config, jstring key) {
+Java_com_whipssh_RealtimeVoiceNative_start(JNIEnv *env, jclass, jstring config, jobject reader) {
     const auto configValue = speechUtf8(env, config);
-    const auto keyValue = speechUtf8(env, key);
-    if (env->ExceptionCheck()) return 0;
-    return static_cast<jlong>(whip_realtime_start(configValue.c_str(), keyValue.c_str()));
+    if (env->ExceptionCheck()) { env->ExceptionClear(); return 0; }
+    VoiceCredentialContext context{env, reader};
+    return whip_realtime_start(configValue.c_str(), readVoiceCredential, &context);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_whipssh_RealtimeVoiceNative_credentialsUpdating(JNIEnv *, jclass, jboolean updating) {
+    whip_voice_credentials_updating(updating);
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_whipssh_RealtimeVoiceNative_stop(JNIEnv *, jclass, jlong call) { whip_realtime_stop(call); }

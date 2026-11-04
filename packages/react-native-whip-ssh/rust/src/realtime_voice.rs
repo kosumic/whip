@@ -75,7 +75,7 @@ pub(super) struct Config {
 
 struct PreparedSession {
     config: Config,
-    key: String,
+    key: native_credentials::NativeCredential,
     update: ClientEvent,
 }
 
@@ -321,8 +321,23 @@ pub(super) struct RealtimeVoiceAdapter {
     allow_input: bool,
     speech: crate::speech_playback::RealtimeSpeechLease,
 }
+enum StartError {
+    Session,
+    Credential(native_credentials::CredentialError),
+}
+impl From<&'static str> for StartError {
+    fn from(_: &'static str) -> Self {
+        Self::Session
+    }
+}
 impl RealtimeVoiceAdapter {
-    fn start(config: Config, key: String) -> Result<Arc<Self>, &'static str> {
+    fn start(
+        config: Config,
+        credentials: impl FnOnce() -> Result<
+            native_credentials::NativeCredential,
+            native_credentials::CredentialError,
+        >,
+    ) -> Result<Arc<Self>, StartError> {
         let update = config.session_update()?;
         let agent = config
             .target
@@ -330,9 +345,6 @@ impl RealtimeVoiceAdapter {
             .map(PinnedAgent::pin)
             .transpose()
             .map_err(|_| "Open the connected agent chat before starting Realtime.")?;
-        if key.is_empty() || key.len() > 1024 || key.chars().any(char::is_whitespace) {
-            return Err("Save a valid OpenAI API key in Settings.");
-        }
         let speech = crate::speech_playback::RealtimeSpeechLease::claim(config.preview)
             .ok_or("Another speech session is active. Finish it before previewing.")?;
         let (commands, command_rx) = mpsc::channel(8);
@@ -373,9 +385,9 @@ impl RealtimeVoiceAdapter {
             speech,
         });
         let owner = adapter.clone();
-        crate::runtime()
-            .map_err(|_| "Realtime runtime could not start.")?
-            .spawn(async move {
+        let runtime = crate::runtime().map_err(|_| "Realtime runtime could not start.")?;
+        let key = credentials().map_err(StartError::Credential)?;
+        runtime.spawn(async move {
                 let mut tools: JoinSet<ToolCompletion> = JoinSet::new();
                 let result = tokio::select! {
                     biased;
@@ -689,15 +701,18 @@ impl RealtimeVoiceAdapter {
 type RealtimeSocket =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
-async fn connect(key: String) -> Result<RealtimeSocket, &'static str> {
+async fn connect(
+    key: native_credentials::NativeCredential,
+) -> Result<RealtimeSocket, &'static str> {
     let mut request = format!("wss://api.openai.com/v1/realtime?model={MODEL}")
         .into_client_request()
         .map_err(|_| "Realtime request could not be prepared.")?;
-    let mut authorization = format!("Bearer {key}")
-        .parse::<tokio_tungstenite::tungstenite::http::HeaderValue>()
+    let header = key.authorization();
+    let mut authorization = tokio_tungstenite::tungstenite::http::HeaderValue::from_bytes(&header)
         .map_err(|_| "Invalid OpenAI API credential.")?;
     authorization.set_sensitive(true);
     request.headers_mut().insert("Authorization", authorization);
+    drop(header);
     drop(key);
     let socket_config = WebSocketConfig::default()
         .max_message_size(Some(MAX_WIRE))

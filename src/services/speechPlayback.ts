@@ -8,8 +8,9 @@ export interface NativeSpeechPlayback {
   startLocalChatSpeech(token: string, label: string): Promise<void>;
   startVoiceCall(token: string, label: string): Promise<void>;
   endVoiceCall(token: string): Promise<void>;
-  startRealtimeVoice?(token: string, config: string, key: string): Promise<void>;
-  startRealtimeVoicePreview?(token: string, voice: string, key: string): Promise<void>;
+  startRealtimeVoice?(token: string, config: string): Promise<void>;
+  startRealtimeVoicePreview?(token: string, voice: string): Promise<void>;
+  voiceCredentialsUpdating?(updating: boolean): Promise<void>;
   stopRealtimeVoice?(token: string): Promise<void>;
   realtimeVoiceControl?(token: string, action: number): Promise<void>;
   realtimeVoiceView?(token: string): Promise<string>;

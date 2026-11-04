@@ -78,6 +78,7 @@ feedback-worker/.dev.vars*
 # testing
 /coverage
 /artifacts/
+/crates/native-credentials/target/
 
 # Generated Mermaid preview renders
 /docs/*-architecture.png

@@ -1,7 +1,8 @@
 import { AppState } from 'react-native';
 import { RealtimeVoicePreview } from '../src/services/realtimeVoicePreview';
+import { suspendChatSpeechForInput } from '../src/services/chatSpeech';
 import { composerSpeechInput } from '../src/services/composerSpeechInput';
-import { readOpenAiVoiceKey } from '../src/services/openAiVoiceCredentials';
+import { onOpenAiVoiceCredentialChange } from '../src/services/openAiVoiceCredentials';
 
 const mockNative = {
   startRealtimeVoicePreview: jest.fn(), stopRealtimeVoice: jest.fn(), realtimeVoiceView: jest.fn(),
@@ -12,7 +13,7 @@ jest.mock('react-native', () => ({ AppState: { currentState: 'active', addEventL
 jest.mock('../src/services/speechPlayback', () => ({ getSpeechPlayback: () => mockNative }));
 jest.mock('../src/services/composerSpeechInput', () => ({ composerSpeechInput: { reserve: jest.fn(), releaseReservation: jest.fn() } }));
 jest.mock('../src/services/chatSpeech', () => ({ suspendChatSpeechForInput: jest.fn(() => Promise.resolve()) }));
-jest.mock('../src/services/openAiVoiceCredentials', () => ({ readOpenAiVoiceKey: jest.fn() }));
+jest.mock('../src/services/openAiVoiceCredentials', () => ({ onOpenAiVoiceCredentialChange: jest.fn(() => () => {}), voiceCredentialError: (_error: unknown, fallback: string) => fallback }));
 const flush = async () => { for (let index = 0; index < 6; index++) await Promise.resolve(); };
 const background = () => jest.mocked(AppState.addEventListener).mock.calls.at(-1)![1]('background');
 
@@ -21,7 +22,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   AppState.currentState = 'active';
   jest.mocked(composerSpeechInput.reserve).mockReturnValue(true);
-  jest.mocked(readOpenAiVoiceKey).mockReset().mockResolvedValue('sk-test-secret');
+  jest.mocked(suspendChatSpeechForInput).mockReset().mockResolvedValue(undefined);
   mockNative.startRealtimeVoicePreview.mockReset().mockResolvedValue(undefined);
   mockNative.stopRealtimeVoice.mockReset().mockResolvedValue(undefined);
   mockNative.realtimeVoiceView.mockReset().mockResolvedValue(JSON.stringify({ phase: 'closed' }));
@@ -30,7 +31,7 @@ afterEach(() => jest.useRealTimers());
 
 test('previews the selected voice with the saved key without starting a call or agent session', async () => {
   await expect(new RealtimeVoicePreview().play('cedar')).resolves.toBe('completed');
-  expect(mockNative.startRealtimeVoicePreview).toHaveBeenCalledWith(expect.any(String), 'cedar', 'sk-test-secret');
+  expect(mockNative.startRealtimeVoicePreview).toHaveBeenCalledWith(expect.any(String), 'cedar');
   expect(mockNative.startVoiceCall).not.toHaveBeenCalled();
   expect(mockNative.startRealtimeVoice).not.toHaveBeenCalled();
   expect(composerSpeechInput.releaseReservation).toHaveBeenCalledTimes(1);
@@ -40,17 +41,17 @@ test('previews the selected voice with the saved key without starting a call or 
 test('an active speech owner prevents preview and credential access', async () => {
   jest.mocked(composerSpeechInput.reserve).mockReturnValue(false);
   await expect(new RealtimeVoicePreview().play('marin')).resolves.toBe('busy');
-  expect(readOpenAiVoiceKey).not.toHaveBeenCalled();
+  expect(onOpenAiVoiceCredentialChange).not.toHaveBeenCalled();
   expect(mockNative.startRealtimeVoicePreview).not.toHaveBeenCalled();
 });
 
-test('backgrounding while reading credentials cancels before any paid request', async () => {
-  let keyReady!: (key: string) => void;
-  jest.mocked(readOpenAiVoiceKey).mockImplementation(() => new Promise(resolve => { keyReady = resolve; }));
+test('backgrounding while preparing audio cancels before any paid request', async () => {
+  let audioReady!: () => void;
+  jest.mocked(suspendChatSpeechForInput).mockImplementation(() => new Promise<void>(resolve => { audioReady = resolve; }));
   const result = new RealtimeVoicePreview().play('marin');
   await flush();
   background();
-  keyReady('sk-test-secret');
+  audioReady();
   await expect(result).resolves.toBe('cancelled');
   expect(mockNative.startRealtimeVoicePreview).not.toHaveBeenCalled();
   expect(composerSpeechInput.releaseReservation).toHaveBeenCalledTimes(1);
@@ -106,4 +107,19 @@ test('preview has a finite deadline and releases the native output on timeout', 
   await jest.advanceTimersByTimeAsync(45_000);
   expect(await result).toBe('Voice preview could not play. Check the saved API key, model access, balance and connection.');
   expect(composerSpeechInput.releaseReservation).toHaveBeenCalledTimes(1);
+});
+
+
+test('key replacement cancels a preview waiting on native startup and drains its late completion', async () => {
+  let ready!: () => void;
+  mockNative.startRealtimeVoicePreview.mockImplementationOnce(() => new Promise<void>(resolve => { ready = resolve; }));
+  const preview = new RealtimeVoicePreview();
+  const playing = preview.play('cedar');
+  await flush();
+  const revoke = jest.mocked(onOpenAiVoiceCredentialChange).mock.calls.at(-1)![0];
+  revoke();
+  ready();
+  await expect(playing).resolves.toBe('cancelled');
+  expect(mockNative.stopRealtimeVoice).toHaveBeenCalledTimes(2);
+  expect(mockNative.realtimeVoiceView).not.toHaveBeenCalled();
 });

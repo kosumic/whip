@@ -2,7 +2,7 @@ import { AppState } from 'react-native';
 import { REALTIME_VOICES } from '../lib/voiceConversationSettings';
 import { composerSpeechInput } from './composerSpeechInput';
 import { suspendChatSpeechForInput } from './chatSpeech';
-import { readOpenAiVoiceKey } from './openAiVoiceCredentials';
+import { onOpenAiVoiceCredentialChange, voiceCredentialError } from './openAiVoiceCredentials';
 import { getSpeechPlayback, type NativeSpeechPlayback } from './speechPlayback';
 
 const POLL_MS = 100;
@@ -20,6 +20,7 @@ export class RealtimeVoicePreview {
   private reserved = false;
   private timer?: ReturnType<typeof setTimeout>;
   private wake?: () => void;
+  private credentialChange?: () => void;
   private background?: { remove: () => void };
 
   async play(voice: string): Promise<VoicePreviewResult> {
@@ -28,15 +29,14 @@ export class RealtimeVoicePreview {
     if (!composerSpeechInput.reserve(this.token)) return 'busy';
     this.reserved = true;
     try {
+      this.credentialChange = onOpenAiVoiceCredentialChange(() => { void this.stop(); });
       this.background = AppState.addEventListener('change', state => { if (state !== 'active') void this.stop(); });
       this.playback = getSpeechPlayback();
       if (!this.playback.startRealtimeVoicePreview || !this.playback.stopRealtimeVoice || !this.playback.realtimeVoiceView) throw new Error('Voice preview requires an updated app build.');
       await suspendChatSpeechForInput();
-      if (this.cancelled) return 'cancelled';
-      const key = await readOpenAiVoiceKey();
       if (this.cancelled || AppState.currentState !== 'active') return 'cancelled';
       // Catch and replace every native exception: bridge errors may contain arguments.
-      this.starting = this.playback.startRealtimeVoicePreview(this.token, voice, key);
+      this.starting = this.playback.startRealtimeVoicePreview(this.token, voice);
       await this.starting;
       const deadline = Date.now() + TIMEOUT_MS;
       while (!this.cancelled && Date.now() < deadline) {
@@ -48,9 +48,9 @@ export class RealtimeVoicePreview {
       }
       if (this.cancelled) return 'cancelled';
       throw new Error('Voice preview timed out.');
-    } catch {
+    } catch (error) {
       if (this.cancelled) return 'cancelled';
-      throw new Error('Voice preview could not play. Check the saved API key, model access, balance and connection.');
+      throw new Error(voiceCredentialError(error, 'Voice preview could not play. Check the saved API key, model access, balance and connection.'));
     } finally { await this.stop(); }
   }
 
@@ -60,6 +60,7 @@ export class RealtimeVoicePreview {
     clearTimeout(this.timer);
     this.wake?.();
     this.background?.remove();
+    this.credentialChange?.();
     this.closing = (async () => {
       try {
         await this.stopNative();

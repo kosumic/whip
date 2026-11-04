@@ -1,3 +1,4 @@
+import { onOpenAiVoiceCredentialChange } from '../src/services/openAiVoiceCredentials';
 import { RealtimeVoiceConversation } from '../src/services/realtimeVoiceConversation';
 import { DEFAULT_VOICE_CONVERSATION_SETTINGS as defaults } from '../src/lib/voiceConversationSettings';
 import type { VoiceConversationView } from '../src/services/voiceConversation';
@@ -28,7 +29,7 @@ jest.mock('../src/services/speechPlayback', () => ({ getSpeechPlayback: () => mo
 jest.mock('../src/services/composerSpeechInput', () => ({ get composerSpeechInput() { return mockInput; } }));
 jest.mock('../src/services/speechInputFocus', () => ({ setSpeechInputActive: jest.fn() }));
 jest.mock('../src/services/chatSpeech', () => ({ suspendChatSpeechForInput: jest.fn(() => Promise.resolve()) }));
-jest.mock('../src/services/openAiVoiceCredentials', () => ({ readOpenAiVoiceKey: jest.fn(() => Promise.resolve('sk-private-test')) }));
+jest.mock('../src/services/openAiVoiceCredentials', () => ({ onOpenAiVoiceCredentialChange: jest.fn(() => () => {}), voiceCredentialError: (_error: unknown, fallback: string) => fallback }));
 jest.mock('../src/services/voiceCallBackground', () => ({ retainVoiceCallBackground: () => mockRelease }));
 jest.mock('../src/services/alerts', () => ({ suppressAgentAlertsForTab: () => mockRelease }));
 jest.mock('../src/services/NativeTranscriptService', () => ({ agentTranscriptService: {
@@ -50,9 +51,9 @@ test('starts native Realtime with a pinned agent, selected voice, automatic lang
   call.setVadSensitivity(0.99);
   await call.start();
   expect(mockNative.startRealtimeVoice).toHaveBeenCalledTimes(1);
-  const [token, config, key] = jest.mocked(mockNative.startRealtimeVoice).mock.calls[0] as unknown as [string, string, string];
+  const [token, config] = jest.mocked(mockNative.startRealtimeVoice).mock.calls[0] as unknown as [string, string];
   expect(JSON.parse(config)).toEqual({ target: { runtimeId: 'runtime-1', terminalId: 'terminal-1', paneId: 'pane-1', bindingToken: 'binding-1' }, voice: 'cedar', vad: { type: 'server_vad', threshold: 0.5, prefix_padding_ms: 300, silence_duration_ms: 500 } });
-  expect(key).toBe('sk-private-test');
+  expect(mockNative.startRealtimeVoice.mock.calls[0]).toHaveLength(2);
   expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ provider: 'openai', text: 'hello', inputTokens: 3, outputTokens: 4, estimatedUsd: 0.0123 }));
   expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ messages: [{ id: 'reply', role: 'assistant', text: 'hello', spokenUtf16: 2, active: true }] }));
   call.toggleMuted();
@@ -146,4 +147,19 @@ test('synchronous native startup failures also redact API credentials', async ()
   const { call, changed } = setup();
   await call.start(); await call.close();
   expect(JSON.stringify(changed.mock.calls)).not.toContain('sk-private-test');
+});
+
+
+test('credential deletion while microphone authorization is pending permanently cancels that start', async () => {
+  let authorize!: () => void;
+  jest.mocked(request).mockImplementationOnce(() => new Promise(resolve => { authorize = () => resolve('granted'); }));
+  const { call } = setup();
+  const starting = call.start();
+  await flush();
+  const revoke = jest.mocked(onOpenAiVoiceCredentialChange).mock.calls.at(-1)![0];
+  revoke();
+  authorize();
+  await starting; await call.close();
+  expect(mockNative.startVoiceCall).not.toHaveBeenCalled();
+  expect(mockNative.startRealtimeVoice).not.toHaveBeenCalled();
 });

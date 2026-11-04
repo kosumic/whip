@@ -93,17 +93,27 @@ class HerdrBackgroundModule(
   }
 
   @ReactMethod
-  fun startRealtimeVoice(token: String, config: String, key: String, promise: Promise) {
-    mainHandler.post { RealtimeVoice.start(token, config, key, promise) }
-  }
-  @ReactMethod
-  fun startRealtimeVoicePreview(token: String, voice: String, key: String, promise: Promise) {
+  fun startRealtimeVoice(token: String, config: String, promise: Promise) {
     mainHandler.post {
-      if (context.lifecycleState != LifecycleState.RESUMED) promise.reject("E_REALTIME", "Return to Whip to preview a voice.")
-      else RealtimeVoice.preview(context, token, voice, key, promise)
+      if (context.lifecycleState != LifecycleState.RESUMED) promise.reject("E_VOICE_CREDENTIAL_UNAVAILABLE", "Return to Whip to start a call.")
+      else RealtimeVoice.start(context, token, config, promise)
     }
   }
-  override fun initialize() { super.initialize(); context.addLifecycleEventListener(this) }
+  @ReactMethod
+  fun startRealtimeVoicePreview(token: String, voice: String, promise: Promise) {
+    mainHandler.post {
+      if (context.lifecycleState != LifecycleState.RESUMED) promise.reject("E_REALTIME", "Return to Whip to preview a voice.")
+      else RealtimeVoice.preview(context, token, voice, promise)
+    }
+  }
+  @ReactMethod
+  fun voiceCredentialsUpdating(updating: Boolean, promise: Promise) {
+    mainHandler.post { RealtimeVoice.credentialsUpdating(updating); promise.resolve(null) }
+  }
+  override fun initialize() {
+    super.initialize()
+    context.addLifecycleEventListener(this)
+  }
   override fun onHostResume() {}
   override fun onHostPause() { mainHandler.post { RealtimeVoice.stopPreview() } }
   override fun onHostDestroy() { mainHandler.post { RealtimeVoice.stopPreview() } }
@@ -371,8 +381,8 @@ class HerdrBackgroundModule(
 
   override fun invalidate() {
     context.removeLifecycleEventListener(this)
-    mainHandler.post { RealtimeVoice.stopPreview() }
     mainHandler.post {
+      RealtimeVoice.invalidate()
       finishVoiceCallSound()
       VoiceCallService.onEvent = null
       VoiceCallService.invalidate()

@@ -56,6 +56,7 @@ two-face = { version = "0.5", default-features = false, features = ["syntect-fan
 uniffi = "=0.31"
 url = "2"
 uuid = { version = "1", features = ["v4"] }
+native-credentials = { path = "../../../crates/native-credentials" }
 sonora = { version = "=0.2.0", default-features = false }
 rubato = { version = "=5.0.0", default-features = false }
 

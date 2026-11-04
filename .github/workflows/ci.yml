@@ -131,6 +131,15 @@ jobs:
           cargo test --locked
           cargo run --locked --example messages
 
+      - name: Check native credential boundary
+        working-directory: crates/native-credentials
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/packages/react-native-whip-ssh/rust/target
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:

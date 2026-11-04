@@ -4,6 +4,42 @@
 #import <AVFoundation/AVFoundation.h>
 #import <UIKit/UIKit.h>
 #include <atomic>
+#import <Security/Security.h>
+#import <LocalAuthentication/LocalAuthentication.h>
+
+// Same generic-password item written by react-native-keychain. Read-only: no
+// migration, synchronization, prompts, access-control changes or NSString key.
+static int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capacity) {
+  @autoreleasepool {
+    if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return WhipVoiceCredentialUnavailable;
+    if (!UIApplication.sharedApplication.protectedDataAvailable) return WhipVoiceCredentialLocked;
+    LAContext *authentication = [LAContext new];
+    authentication.interactionNotAllowed = YES;
+    NSDictionary *query = @{
+      (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+      (__bridge id)kSecAttrService: @"io.github.kaminarios.whip.openai.voice",
+      (__bridge id)kSecAttrSynchronizable: @NO,
+      (__bridge id)kSecReturnData: @YES,
+      (__bridge id)kSecMatchLimit: (__bridge id)kSecMatchLimitOne,
+      (__bridge id)kSecUseAuthenticationContext: authentication,
+    };
+    CFTypeRef result = nullptr;
+    OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &result);
+    [authentication invalidate];
+    if (status != errSecSuccess) {
+      if (result) CFRelease(result);
+      if (status == errSecItemNotFound) return WhipVoiceCredentialMissing;
+      if (status == errSecInteractionNotAllowed || status == errSecAuthFailed) return WhipVoiceCredentialLocked;
+      if (status == errSecNotAvailable || status == errSecMissingEntitlement) return WhipVoiceCredentialUnavailable;
+      return WhipVoiceCredentialFailed;
+    }
+    NSData *data = CFBridgingRelease(result);
+    if (!UIApplication.sharedApplication.protectedDataAvailable) return WhipVoiceCredentialLocked;
+    if (!data.length || data.length > capacity) return WhipVoiceCredentialFailed;
+    memcpy(destination, data.bytes, data.length);
+    return (int32_t)data.length;
+  }
+}
 
 @interface WhipRealtimeVoice () {
   std::atomic<uint64_t> _call;
@@ -31,6 +67,7 @@
 - (instancetype)init {
   if ((self = [super init])) {
     _call.store(0);
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(protectedDataLost:) name:UIApplicationProtectedDataWillBecomeUnavailable object:nil];
     _media = dispatch_queue_create("whip.realtime.media", DISPATCH_QUEUE_SERIAL);
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(audioChanged:) name:AVAudioEngineConfigurationChangeNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(interrupted:) name:AVAudioSessionInterruptionNotification object:nil];
@@ -39,16 +76,25 @@
   }
   return self;
 }
-- (void)start:(NSString *)token config:(NSString *)config key:(NSString *)key resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {
-  [self start:token config:config key:key preview:NO resolve:resolve reject:reject];
+- (void)credentialsUpdating:(BOOL)updating {
+  whip_voice_credentials_updating(updating);
+  if (updating) [self invalidate];
 }
-- (void)preview:(NSString *)token voice:(NSString *)voice key:(NSString *)key resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {
+- (void)invalidate {
+  if (self.token) { [self stop:self.token]; [WhipVoiceCall.shared invalidate]; }
+}
+- (void)protectedDataLost:(NSNotification *)notification { [self invalidate]; }
+- (void)start:(NSString *)token config:(NSString *)config resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {
+  [self start:token config:config preview:NO resolve:resolve reject:reject];
+}
+- (void)preview:(NSString *)token voice:(NSString *)voice resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {
   if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) { reject(@"E_REALTIME", @"Return to Whip to preview a voice.", nil); return; }
   NSData *data = [NSJSONSerialization dataWithJSONObject:@{@"preview":@YES, @"voice":voice} options:0 error:nil];
   NSString *config = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-  [self start:token config:config key:key preview:YES resolve:resolve reject:reject];
+  [self start:token config:config preview:YES resolve:resolve reject:reject];
 }
-- (void)start:(NSString *)token config:(NSString *)config key:(NSString *)key preview:(BOOL)preview resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {
+- (void)start:(NSString *)token config:(NSString *)config preview:(BOOL)preview resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {
+  if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive || !UIApplication.sharedApplication.protectedDataAvailable) { reject(@"E_VOICE_CREDENTIAL_LOCKED", @"Unlock Whip to start voice.", nil); return; }
   if (self.token || (preview ? WhipVoiceCall.shared.active : ![WhipVoiceCall.shared owns:token])) { reject(@"E_REALTIME", @"The requested voice audio session is unavailable.", nil); return; }
   NSError *error = nil;
   AVAudioEngine *engine = [AVAudioEngine new];
@@ -67,11 +113,19 @@
     converter = [[AVAudioConverter alloc] initFromFormat:source toFormat:format];
     if (!converter || source.sampleRate <= 0) { reject(@"E_REALTIME", @"The microphone audio format is unavailable.", nil); return; }
   }
-  uint64_t call = whip_realtime_start(config.UTF8String, key.UTF8String);
-  if (!call) {
+  int64_t result = whip_realtime_start(config.UTF8String, WhipReadOpenAiVoiceCredential, nullptr);
+  if (result <= 0) {
     if (preview) [AVAudioSession.sharedInstance setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:nil];
-    reject(@"E_REALTIME", @"Realtime could not start. Check the saved API credential and audio support.", nil); return;
+    NSString *code = @"E_REALTIME";
+    switch (result) {
+      case WhipVoiceCredentialMissing: code = @"E_VOICE_CREDENTIAL_MISSING"; break;
+      case WhipVoiceCredentialLocked: code = @"E_VOICE_CREDENTIAL_LOCKED"; break;
+      case WhipVoiceCredentialUnavailable: code = @"E_VOICE_CREDENTIAL_UNAVAILABLE"; break;
+      case WhipVoiceCredentialFailed: code = @"E_VOICE_CREDENTIAL_FAILED"; break;
+    }
+    reject(code, @"Realtime could not start. Check the saved API credential and audio support.", nil); return;
   }
+  uint64_t call = (uint64_t)result;
   if (WhipVoiceCall.shared.muted) whip_realtime_control(call, WhipRealtimeMute);
   self.token = token; self.preview = preview; _call.store(call);
   self.engine = engine; self.format = format; self.converter = converter;

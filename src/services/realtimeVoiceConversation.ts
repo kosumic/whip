@@ -8,10 +8,11 @@ import { getSpeechPlayback, type NativeSpeechPlayback } from './speechPlayback';
 import { composerSpeechInput } from './composerSpeechInput';
 import { setSpeechInputActive } from './speechInputFocus';
 import { suspendChatSpeechForInput } from './chatSpeech';
-import { readOpenAiVoiceKey } from './openAiVoiceCredentials';
+import { onOpenAiVoiceCredentialChange, voiceCredentialError } from './openAiVoiceCredentials';
 import { agentTranscriptService } from './NativeTranscriptService';
 import { retainVoiceCallBackground } from './voiceCallBackground';
 import { suppressAgentAlertsForTab } from './alerts';
+import { settledPromise } from '../lib/promises';
 
 const CONTROL = { skip: 1 } as const;
 let sequence = 0;
@@ -37,6 +38,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
   async start(): Promise<void> {
     try {
       if (this.closed) return;
+      this.cleanups.push(onOpenAiVoiceCredentialChange(() => { void settledPromise(this.close()); }));
       if (!composerSpeechInput.reserve(this.token)) throw new Error('Finish the current speech session before starting a call.');
       this.cleanups.push(() => composerSpeechInput.releaseReservation(this.token));
       this.playback = getSpeechPlayback();
@@ -80,18 +82,17 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
       this.callStarted = true;
       await this.playback.startVoiceCall(this.token, this.target.label);
       if (this.closed) { await this.playback.endVoiceCall(this.token); return; }
-      const key = await readOpenAiVoiceKey();
-      if (this.closed) return;
+      requireForeground();
       const config = JSON.stringify({ target, voice: this.settings.realtimeVoice, vad: parseRealtimeVad(this.settings.realtimeVad ?? DEFAULT_REALTIME_VAD) });
       this.nativeMediaAttempted = true;
-      this.startingMedia = this.playback.startRealtimeVoice(this.token, config, key);
+      this.startingMedia = this.playback.startRealtimeVoice(this.token, config);
       await this.startingMedia;
       if (this.closed) { await this.playback.stopRealtimeVoice(this.token); return; }
       await this.poll();
     } catch (error) {
       // Only application-generated messages are trusted here. Native bridge
-      // errors may contain method arguments, including the credential.
-      this.fail(error instanceof Error && !this.nativeMediaAttempted ? error.message : 'OpenAI Realtime could not start. Check the saved API credential, connected agent, and microphone permissions.');
+      // and provider errors can contain sensitive data.
+      this.fail(voiceCredentialError(error, error instanceof Error && !this.nativeMediaAttempted ? error.message : 'OpenAI Realtime could not start. Check the saved API credential, connected agent, and microphone permissions.'));
     }
   }
 

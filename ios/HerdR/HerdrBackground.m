@@ -28,10 +28,12 @@ RCT_EXPORT_MODULE(HerdrBackground)
 - (void)callChanged:(NSNotification *)notification { [self sendEventWithName:WhipVoiceCallEvent body:notification.userInfo]; }
 RCT_EXPORT_METHOD(startVoiceCall:(NSString *)token label:(NSString *)label resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 { [WhipVoiceCall.shared start:token label:label resolve:resolve reject:reject]; }
-RCT_EXPORT_METHOD(startRealtimeVoice:(NSString *)token config:(NSString *)config key:(NSString *)key resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
-{ [WhipRealtimeVoice.shared start:token config:config key:key resolve:resolve reject:reject]; }
-RCT_EXPORT_METHOD(startRealtimeVoicePreview:(NSString *)token voice:(NSString *)voice key:(NSString *)key resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
-{ [WhipRealtimeVoice.shared preview:token voice:voice key:key resolve:resolve reject:reject]; }
+RCT_EXPORT_METHOD(startRealtimeVoice:(NSString *)token config:(NSString *)config resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{ [WhipRealtimeVoice.shared start:token config:config resolve:resolve reject:reject]; }
+RCT_EXPORT_METHOD(startRealtimeVoicePreview:(NSString *)token voice:(NSString *)voice resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{ [WhipRealtimeVoice.shared preview:token voice:voice resolve:resolve reject:reject]; }
+RCT_EXPORT_METHOD(voiceCredentialsUpdating:(BOOL)updating resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{ [WhipRealtimeVoice.shared credentialsUpdating:updating]; resolve(nil); }
 RCT_EXPORT_METHOD(stopRealtimeVoice:(NSString *)token resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 { [WhipRealtimeVoice.shared stop:token resolve:resolve]; }
 RCT_EXPORT_METHOD(realtimeVoiceControl:(NSString *)token action:(NSInteger)action resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
@@ -100,7 +102,7 @@ RCT_EXPORT_METHOD(stopSpeech:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseR
 - (void)invalidate
 {
   [NSNotificationCenter.defaultCenter removeObserver:self];
-  dispatch_async(dispatch_get_main_queue(), ^{ [WhipVoiceCall.shared invalidate]; [WhipSpeechPlayback.shared stop]; });
+  dispatch_async(dispatch_get_main_queue(), ^{ [WhipRealtimeVoice.shared invalidate]; [WhipVoiceCall.shared invalidate]; [WhipSpeechPlayback.shared stop]; });
   [super invalidate];
 }
 - (void)dealloc { [NSNotificationCenter.defaultCenter removeObserver:self]; }

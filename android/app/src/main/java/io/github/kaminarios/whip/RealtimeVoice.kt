@@ -1,7 +1,7 @@
 package io.github.kaminarios.whip
 
 import android.annotation.SuppressLint
-import android.content.Context
+import android.app.KeyguardManager
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.AudioTrack
@@ -12,6 +12,7 @@ import android.os.Looper
 import android.os.Process
 import android.util.Log
 import com.facebook.react.bridge.Promise
+import com.facebook.react.bridge.ReactApplicationContext
 import com.whipssh.RealtimeVoiceNative as Core
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicBoolean
@@ -27,6 +28,19 @@ internal object RealtimeVoice {
   private var lastView = "{\"phase\":\"closed\"}"
   private var closingToken: String? = null
   private val endings = mutableListOf<Promise>()
+  private class CredentialFailure(status: Long) : Exception() {
+    val code = when (status) {
+      -1L -> "E_VOICE_CREDENTIAL_MISSING"
+      -2L -> "E_VOICE_CREDENTIAL_LOCKED"
+      -3L -> "E_VOICE_CREDENTIAL_UNAVAILABLE"
+      else -> "E_VOICE_CREDENTIAL_FAILED"
+    }
+  }
+  fun credentialsUpdating(updating: Boolean) {
+    Core.credentialsUpdating(updating)
+    if (updating) invalidate()
+  }
+  fun invalidate() { current?.let { stop(it.token); VoiceCallService.end(it.token) } }
   private class CaptureBoundary(val cutoff: Long = System.nanoTime())
   private class Session(val token: String, val call: Long, val input: AudioRecord?, val output: AudioTrack, val preview: Boolean, val focus: VoiceMediaFocus?) {
     val running = AtomicBoolean(true)
@@ -39,15 +53,15 @@ internal object RealtimeVoice {
   }
 
   @SuppressLint("MissingPermission")
-  fun start(token: String, config: String, key: String, promise: Promise) {
-    startMedia(null, token, config, key, false, promise)
+  fun start(context: ReactApplicationContext, token: String, config: String, promise: Promise) {
+    startMedia(context, token, config, false, promise)
   }
-  fun preview(context: Context, token: String, voice: String, key: String, promise: Promise) {
+  fun preview(context: ReactApplicationContext, token: String, voice: String, promise: Promise) {
     val config = JSONObject().put("preview", true).put("voice", voice).toString()
-    startMedia(context, token, config, key, true, promise)
+    startMedia(context, token, config, true, promise)
   }
   @SuppressLint("MissingPermission")
-  private fun startMedia(context: Context?, token: String, config: String, key: String, preview: Boolean, promise: Promise) {
+  private fun startMedia(context: ReactApplicationContext, token: String, config: String, preview: Boolean, promise: Promise) {
     if (current != null || closingToken != null || (if (preview) VoiceCallService.active else !VoiceCallService.owns(token))) {
       promise.reject("E_REALTIME", "The requested voice audio session is unavailable."); return
     }
@@ -76,7 +90,9 @@ internal object RealtimeVoice {
       require(output.state == AudioTrack.STATE_INITIALIZED)
       VoiceMediaAudio.attach(output)
       val nativeConfig = JSONObject(config).put("softwareEchoCancellation", !preview).toString()
-      call = Core.start(nativeConfig, key)
+      val result = Core.start(nativeConfig, WhipVoiceCredentials(context))
+      if (result < 0) throw CredentialFailure(result)
+      call = result
       require(call != 0L)
       if (VoiceCallService.muted(token)) Core.control(call, Core.MUTE)
       val session = Session(token, call, input, output, preview, focus)
@@ -89,6 +105,7 @@ internal object RealtimeVoice {
       session.monitor = object : Runnable {
         override fun run() {
           if (current !== session) return
+          if (context.getSystemService(KeyguardManager::class.java).isDeviceLocked) { invalidate(); return }
           val view = Core.view(session.call)
           val state = JSONObject(view)
           val phase = state.optString("phase")
@@ -108,7 +125,7 @@ internal object RealtimeVoice {
         }
       }.also { main.post(it) }
       promise.resolve(null)
-    } catch (_: Exception) {
+    } catch (failure: Exception) {
       current = null
       if (call != 0L) Core.stop(call)
       try { input?.release() } catch (_: Exception) {}
@@ -118,7 +135,7 @@ internal object RealtimeVoice {
       val failedCall = call
       Thread({
         while (!Core.stopped(failedCall)) Thread.sleep(5)
-        main.post { promise.reject("E_REALTIME", "Realtime audio could not start. Check the saved API credential and device audio support.") }
+        main.post { promise.reject(if (failure is CredentialFailure) failure.code else "E_REALTIME", "Realtime audio could not start. Check the saved API credential and device audio support.") }
       }, "WhipRealtimeFailedStart").start()
     }
   }

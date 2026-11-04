@@ -1,0 +1,10 @@
+diff --git a/node_modules/react-native-keychain/android/src/main/java/com/oblador/keychain/KeychainModule.kt b/node_modules/react-native-keychain/android/src/main/java/com/oblador/keychain/KeychainModule.kt
+--- a/node_modules/react-native-keychain/android/src/main/java/com/oblador/keychain/KeychainModule.kt
++++ b/node_modules/react-native-keychain/android/src/main/java/com/oblador/keychain/KeychainModule.kt
+@@ -129 +129,6 @@
+   private val prefsStorage: PrefsStorageBase
++
++  // Whip native-only adapter shares this DataStore instance. No ReactMethod,
++  // plaintext, migration, key generation, or additional DataStore instance.
++  fun getWhipVoiceEncryptedEntry(): PrefsStorageBase.ResultSet? =
++    prefsStorage.getEncryptedEntry("io.github.kaminarios.whip.openai.voice")

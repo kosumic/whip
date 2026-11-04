@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::ffi::{CStr, CString, c_char};
 use std::sync::{
     Arc, OnceLock,
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
 };
 use std::time::{Duration, Instant};
 
@@ -18,24 +18,40 @@ fn call(id: u64) -> Option<Arc<RealtimeVoiceAdapter>> {
     calls().lock().get(&id).cloned()
 }
 
-/// # Safety
-/// Both arguments must be live NUL-terminated UTF-8 strings for this call.
+// Serializes credential reads and admission against Settings mutations.
+static CREDENTIAL_UPDATE: AtomicBool = AtomicBool::new(false);
+
+/// Native callers bracket Settings replacement/deletion, even on failure.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn whip_realtime_start(config: *const c_char, key: *const c_char) -> u64 {
-    if config.is_null() || key.is_null() {
+pub extern "C" fn whip_voice_credentials_updating(updating: bool) {
+    let calls = calls().lock();
+    CREDENTIAL_UPDATE.store(updating, Ordering::Relaxed);
+    if updating {
+        for call in calls.values() {
+            call.close();
+        }
+    }
+}
+
+/// # Safety
+/// config is a live NUL-terminated UTF-8 string. reader synchronously fills
+/// at most capacity bytes and retains no pointers; context lives until return.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn whip_realtime_start(
+    config: *const c_char,
+    reader: Option<native_credentials::ReadCredential>,
+    context: *mut std::ffi::c_void,
+) -> i64 {
+    use native_credentials::{CredentialError, NativeCredential};
+    if config.is_null() {
         return 0;
     }
-    // SAFETY: Native callers supply borrowed NUL-terminated strings.
+    // SAFETY: Native callers supply a borrowed NUL-terminated string.
     let config = unsafe { CStr::from_ptr(config) };
-    // SAFETY: key is separately guaranteed to be a borrowed C string.
-    let key = unsafe { CStr::from_ptr(key) };
-    if config.to_bytes().len() > 8192 || key.to_bytes().len() > 1024 {
+    if config.to_bytes().len() > 8192 {
         return 0;
     }
     let Ok(config) = serde_json::from_slice::<Config>(config.to_bytes()) else {
-        return 0;
-    };
-    let Ok(key) = key.to_str() else {
         return 0;
     };
     let mut calls = calls().lock();
@@ -43,12 +59,24 @@ pub unsafe extern "C" fn whip_realtime_start(config: *const c_char, key: *const 
     if !calls.is_empty() {
         return 0;
     }
-    let Ok(adapter) = RealtimeVoiceAdapter::start(config, key.to_owned()) else {
-        return 0;
+    if CREDENTIAL_UPDATE.load(Ordering::Relaxed) {
+        return i64::from(CredentialError::Unavailable as i32);
+    }
+    let Some(reader) = reader else {
+        return i64::from(CredentialError::Unavailable as i32);
+    };
+    let adapter = match RealtimeVoiceAdapter::start(config, || {
+        // SAFETY: The native callback/context contract is required by this entrypoint.
+        unsafe { NativeCredential::read(reader, context) }
+    }) {
+        Ok(adapter) => adapter,
+        Err(super::StartError::Credential(error)) => return i64::from(error as i32),
+        Err(super::StartError::Session) => return 0,
     };
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
     calls.insert(id, adapter);
-    id
+    drop(calls);
+    i64::try_from(id).unwrap_or(0)
 }
 
 #[unsafe(no_mangle)]
@@ -250,5 +278,38 @@ pub unsafe extern "C" fn whip_realtime_free(value: *mut c_char) {
     if !value.is_null() {
         // SAFETY: view transfers exactly one CString allocation to the caller.
         drop(unsafe { CString::from_raw(value) });
+    }
+}
+
+#[cfg(test)]
+mod credential_admission_tests {
+    use super::{whip_realtime_start, whip_voice_credentials_updating};
+    use std::ffi::c_void;
+
+    unsafe extern "C" fn missing(context: *mut c_void, _: *mut u8, _: usize) -> i32 {
+        // SAFETY: The test provides a live, uniquely borrowed read counter.
+        unsafe { *context.cast::<usize>() += 1 };
+        -1
+    }
+
+    #[test]
+    fn secure_storage_is_read_only_after_valid_explicit_admission_and_never_during_revocation() {
+        let mut reads = 0_usize;
+        let context = (&raw mut reads).cast();
+        // SAFETY: All C strings and the callback context live through each call.
+        let invalid = unsafe { whip_realtime_start(c"{}".as_ptr(), Some(missing), context) };
+        assert_eq!(invalid, 0);
+        assert_eq!(reads, 0);
+        let preview = c"{\"preview\":true,\"voice\":\"cedar\"}";
+        whip_voice_credentials_updating(true);
+        // SAFETY: The callback and arguments follow the entrypoint contract.
+        let blocked = unsafe { whip_realtime_start(preview.as_ptr(), Some(missing), context) };
+        whip_voice_credentials_updating(false);
+        assert_eq!(blocked, -3);
+        assert_eq!(reads, 0);
+        // SAFETY: The callback and arguments follow the entrypoint contract.
+        let absent = unsafe { whip_realtime_start(preview.as_ptr(), Some(missing), context) };
+        assert_eq!(absent, -1);
+        assert_eq!(reads, 1);
     }
 }

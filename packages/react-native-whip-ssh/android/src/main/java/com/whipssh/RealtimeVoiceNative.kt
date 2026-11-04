@@ -9,7 +9,8 @@ object RealtimeVoiceNative {
   const val MUTE = 3
   const val UNMUTE = 4
   const val AUDIO_FAILED = 5
-  @JvmStatic external fun start(config: String, key: String): Long
+  @JvmStatic external fun start(config: String, credentials: Any): Long
+  @JvmStatic external fun credentialsUpdating(updating: Boolean)
   @JvmStatic external fun stop(call: Long)
   @JvmStatic external fun stopped(call: Long): Boolean
   @JvmStatic external fun control(call: Long, action: Int)

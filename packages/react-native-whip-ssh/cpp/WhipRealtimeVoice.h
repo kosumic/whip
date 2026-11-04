@@ -7,7 +7,11 @@ extern "C" {
 #endif
 // PCM16, mono, 24000 Hz. Lifecycle/control only uses JSON. Audio is borrowed.
 enum { WhipRealtimeSampleRate = 24000, WhipRealtimeFrame = 480, WhipRealtimeMaxFrame = 1920 };
-uint64_t whip_realtime_start(const char *config, const char *key);
+// Read callback: positive UTF-8 byte count, or a typed negative status. Never JS.
+enum WhipVoiceCredentialStatus { WhipVoiceCredentialMissing = -1, WhipVoiceCredentialLocked = -2, WhipVoiceCredentialUnavailable = -3, WhipVoiceCredentialFailed = -4 };
+typedef int32_t (*WhipReadVoiceCredential)(void *context, uint8_t *destination, size_t capacity);
+int64_t whip_realtime_start(const char *config, WhipReadVoiceCredential reader, void *context);
+void whip_voice_credentials_updating(bool updating);
 void whip_realtime_stop(uint64_t call);
 bool whip_realtime_stopped(uint64_t call);
 enum WhipRealtimeControl { WhipRealtimeSkip = 1, WhipRealtimeMute = 3, WhipRealtimeUnmute = 4, WhipRealtimeAudioFailed = 5 };

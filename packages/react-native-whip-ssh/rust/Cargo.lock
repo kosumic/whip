@@ -3430,6 +3430,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "743fb55ba31b18fb1ecef6bdc9aa2743314978ac084044301a7eee33fb99a20d"
 
 [[package]]
+name = "native-credentials"
+version = "0.1.0"
+dependencies = [
+ "zeroize",
+]
+
+[[package]]
 name = "ndarray"
 version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7396,6 +7403,7 @@ dependencies = [
  "hmac 0.12.1",
  "html5ever",
  "log",
+ "native-credentials",
  "oai-rt-rs",
  "parking_lot",
  "ptts 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
