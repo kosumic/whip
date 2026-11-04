@@ -321,12 +321,12 @@ mod tests {
         for (response, ending, competing_at) in [
             (
                 "The code doesn’t document why. Likely it’s to keep phrases together: commas can create very short chunks, giving TTS less context for natural intonation and potentially adding gaps. But commas could reduce the delay before speech starts. A reasonable compromise is to allow comma boundaries once enough words have accumulated.",
-                "enough words have accumulated.",
+                "A reasonable compromise is to allow comma boundaries once enough words have accumulated.",
                 2,
             ),
             (
                 "That narrows it down: the automatic reader splits my reply exactly before “enough words have accumulated.” Its queue can expire that second chunk after 15 seconds when other chats have pending speech—even while it’s reading the first chunk. I’ll protect the remainder of a reply once reading has started, and add a regression using that exact response.",
-                "started, and add a regression using that exact response.",
+                "I’ll protect the remainder of a reply once reading has started, and add a regression using that exact response.",
                 MAX_AGE_MS + 2,
             ),
         ] {

@@ -8,6 +8,9 @@ use std::{
 use crate::{AgentQuestion, AgentTranscriptKind, agent_transcript::is_question_tool};
 use parking_lot::Mutex;
 
+mod chunking;
+pub(crate) use chunking::speech_chunks_with_limit;
+
 #[derive(uniffi::Enum)]
 pub enum ChatSpeechPart {
     Text {
@@ -343,39 +346,6 @@ const MAX_CHUNK_UNITS: usize = 3_000;
 
 fn speech_chunks(text: &str) -> Vec<String> {
     speech_chunks_with_limit(text, MAX_CHUNK_UNITS)
-}
-
-pub(crate) fn speech_chunks_with_limit(text: &str, max_units: usize) -> Vec<String> {
-    let mut chunks = Vec::new();
-    let mut chunk = String::new();
-    let mut units = 0;
-    for word in text.split_whitespace() {
-        let word_units = word.encode_utf16().count();
-        if !chunk.is_empty() && units + 1 + word_units > max_units {
-            chunks.push(std::mem::take(&mut chunk));
-            units = 0;
-        }
-        if !chunk.is_empty() {
-            chunk.push(' ');
-            units += 1;
-        }
-        for character in word.chars() {
-            if units + character.len_utf16() > max_units {
-                chunks.push(std::mem::take(&mut chunk).trim().to_owned());
-                units = 0;
-            }
-            chunk.push(character);
-            units += character.len_utf16();
-        }
-        if units >= max_units {
-            chunks.push(std::mem::take(&mut chunk));
-            units = 0;
-        }
-    }
-    if !chunk.trim().is_empty() {
-        chunks.push(chunk.trim().to_owned());
-    }
-    chunks
 }
 
 /// Lightweight speech formatting: omit fenced/indented code and links' URLs,

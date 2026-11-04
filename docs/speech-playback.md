@@ -58,7 +58,10 @@ across hosts and screens, even when its chat viewport is closed. Initial loads,
 reconnect catchup, and cached/stale snapshots stay silent. Switching between
 speaking chats announces the tab name, such as "Debug tab: ". When chats compete, updates share
 a FIFO queue with at most four unstarted waiting chunks and 800 UTF-16 units in total.
-Content chunks contain at most 300 UTF-16 units before the tab prefix. Overload
+Content chunks contain at most 300 UTF-16 units before the tab prefix. They prefer
+sentence boundaries, then clause boundaries for long sentences. Without punctuation,
+word boundaries are balanced to avoid a short trailing utterance. An oversized word
+is split only at Unicode scalar boundaries. Overload
 drops the oldest unstarted waiting chunks; competing waiting speech expires after 15 seconds.
 Once an update starts, its remaining chunks and streamed continuations finish
 before other waiting updates. They are excluded from waiting limits and expiry,
