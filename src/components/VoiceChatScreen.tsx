@@ -203,7 +203,7 @@ function VoiceComposer({ label, muted, interactive, onCompose, onAttach, onToggl
         <View style={styles.composerActivity}><AudioLines size={16} color={VOICE_COLORS.text} /></View>
       </Pressable>
     </View>
-    <Button accessibilityLabel={muted ? t('voiceChat.unmute') : t('voiceChat.mute')} accessibilityState={{ selected: muted }} variant="ghost" size="icon" className="rounded-full p-0" style={styles.control} disabled={!interactive} onPress={onToggleMuted}>{muted ? <MicOff size={22} color={VOICE_COLORS.text} /> : <Mic size={22} color={VOICE_COLORS.text} />}</Button>
+    <Button accessibilityLabel={muted ? t('voiceChat.unmute') : t('voiceChat.mute')} accessibilityState={{ selected: muted }} variant="ghost" size="icon" className="rounded-full p-0" style={styles.control} disabled={!interactive} onPress={onToggleMuted}>{muted ? <Mic size={22} color={VOICE_COLORS.text} /> : <MicOff size={22} color={VOICE_COLORS.text} />}</Button>
     <Button accessibilityLabel={t('voiceChat.end')} variant="ghost" size="icon" className="rounded-full p-0" style={styles.hangup} onPress={onClose}><X size={24} color={VOICE_COLORS.canvas} /></Button>
   </View>;
 }
