@@ -27,7 +27,9 @@ fn application_context_survives_prefixing_and_playback() {
     let mut first = item("chat", "reply", "First.");
     first.context = "original-part:0".into();
     queue.enqueue(first, 0);
-    let playback = queue.take(0).unwrap();
+    let Some(playback) = queue.take(0) else {
+        panic!("playback request missing")
+    };
     assert_eq!(playback.item.text, "chat: First.");
     assert_eq!(playback.item.context, "original-part:0");
     assert!(queue.complete(playback.id));

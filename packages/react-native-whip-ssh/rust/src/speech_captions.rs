@@ -51,7 +51,9 @@ pub extern "C" fn whip_speech_caption_progress(
         return 0;
     }
     let Caption { text, clock, .. } = &mut *caption;
-    clock.advance(text, played.min(samples), samples, complete)
+    let progress = clock.advance(text, played.min(samples), samples, complete);
+    drop(caption);
+    progress
 }
 
 /// Mark only the current word in the original Markdown; speech offsets refer to

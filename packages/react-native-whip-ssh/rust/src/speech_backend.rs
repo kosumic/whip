@@ -509,10 +509,8 @@ pub unsafe extern "C" fn whip_speech_pcm_speak(
     })();
     match result {
         Ok(completed) => {
-            if completed {
-                if let Ok(state) = state() {
-                    state.lock().fallback = None;
-                }
+            if completed && let Ok(state) = state() {
+                state.lock().fallback = None;
             }
             i32::from(completed)
         }

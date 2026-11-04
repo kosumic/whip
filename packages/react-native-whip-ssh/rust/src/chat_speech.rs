@@ -870,7 +870,8 @@ mod tests {
             let chunk: serde_json::Value = serde_json::from_str(&json).unwrap_or_default();
             assert_eq!(chunk["messageId"], "selected");
             assert_eq!(chunk["partId"], "selected");
-            let start = chunk["startUtf16"].as_u64().unwrap_or_default() as usize;
+            let start = usize::try_from(chunk["startUtf16"].as_u64().unwrap_or_default())
+                .expect("speech offset fits usize");
             let text = chunk["text"].as_str().unwrap_or_default();
             let original = String::from_utf16(
                 &prose

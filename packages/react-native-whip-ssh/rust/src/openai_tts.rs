@@ -167,7 +167,7 @@ pub(super) fn speak(
                 };
                 let accepted = if event_stream {
                     stream.push(&chunk, &mut |pcm| current() && output(pcm), &mut |item| {
-                        accounting.record(USAGE_ITEM_ID.into(), item)
+                        accounting.record(USAGE_ITEM_ID.into(), item);
                     })?
                 } else {
                     decoder.push(&chunk, |pcm| current() && output(pcm))?
@@ -178,7 +178,7 @@ pub(super) fn speak(
             }
             if event_stream {
                 if !stream.finish(&mut |pcm| current() && output(pcm), &mut |item| {
-                    accounting.record(USAGE_ITEM_ID.into(), item)
+                    accounting.record(USAGE_ITEM_ID.into(), item);
                 })? {
                     return Ok(false);
                 }

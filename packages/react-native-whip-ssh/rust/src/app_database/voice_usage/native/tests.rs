@@ -42,7 +42,7 @@ fn native_tts_records_one_request_and_does_not_lose_its_cost_after_reopen_or_rep
     session.record("speech".into(), item(None, false));
     session.record("speech".into(), item(Some(0.00246), true));
     drop(session);
-    let events = events.lock();
+    let events = events.lock().clone();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("usage.db");
     let mut store = Store::open(&path, crate::runtime().unwrap()).unwrap();
@@ -58,6 +58,7 @@ fn native_tts_records_one_request_and_does_not_lose_its_cost_after_reopen_or_rep
         commit_recovered(&mut store, event, &recovered).unwrap();
     }
     let ledger = Ledger::load(&store).unwrap();
+    drop(store);
     assert_eq!(ledger.calls.len(), 1);
     let call = &ledger.calls["tts-one"];
     assert_eq!(call.estimated_usd(), Some(0.00246));
@@ -89,6 +90,7 @@ fn opening_the_js_ledger_does_not_recover_an_active_native_call_twice() {
     .unwrap();
     commit_recovered(&mut store, VoiceUsageEvent::Recover, &recovered).unwrap();
     let ledger = Ledger::load(&store).unwrap();
+    drop(store);
     assert!(!ledger.calls["old-process"].view().active);
     assert!(ledger.calls["new-process"].view().active);
 }

@@ -64,7 +64,7 @@ fn absent_or_inconsistent_usage_never_turns_valid_audio_into_a_free_request() {
         let mut usage = Vec::new();
         stream
             .push(&fixture(report), &mut |_| true, &mut |item| {
-                usage.push(item)
+                usage.push(item);
             })
             .unwrap();
         assert!(

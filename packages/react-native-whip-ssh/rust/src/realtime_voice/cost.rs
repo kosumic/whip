@@ -9,6 +9,10 @@ use crate::app_database::{
     NativeVoiceUsageSession, UsageMetric, UsageQuantity, UsageRate, UsageUnit, VoicePriceSnapshot,
     VoiceUsageItem,
 };
+use UsageMetric::{
+    CachedInputAudio, CachedInputImage, CachedInputText, InputAudio, InputImage, InputText,
+    OutputAudio, OutputText,
+};
 use oai_rt_rs::{ServerEvent, Usage};
 
 const MILLION: f64 = 1_000_000.0;
@@ -44,6 +48,27 @@ impl CurrentChat {
 
     pub(super) fn persist(&mut self, session: NativeVoiceUsageSession) {
         self.persistence = Some(session);
+    }
+
+    pub(super) fn start(config: &super::Config) -> Result<Self, &'static str> {
+        use crate::app_database::{VoiceUsageMode, VoiceUsageScope};
+
+        let model = config.model()?;
+        let scope = if config.preview {
+            VoiceUsageScope::Preview
+        } else if config.target.is_some() || config.terminal_target.is_some() {
+            VoiceUsageScope::Agent
+        } else {
+            VoiceUsageScope::Global
+        };
+        let mut chat = Self::new(model);
+        chat.persist(NativeVoiceUsageSession::start(
+            VoiceUsageMode::Realtime,
+            scope,
+            &model.id,
+            &config.voice,
+        ));
+        Ok(chat)
     }
 
     pub(super) fn observe(&mut self, event: &ServerEvent) -> bool {
@@ -238,7 +263,6 @@ fn snapshot(model: &str, rates: &[(UsageMetric, f64)]) -> VoicePriceSnapshot {
 }
 
 fn response_snapshot(model: &str, rates: &Rates) -> VoicePriceSnapshot {
-    use UsageMetric::*;
     snapshot(
         model,
         &[
@@ -305,7 +329,6 @@ fn response_quantities(usage: &Usage) -> Option<Vec<UsageQuantity>> {
             return None;
         }
     }
-    use UsageMetric::*;
     Some(vec![
         tokens(InputText, text.checked_sub(cached_text)?),
         tokens(InputAudio, audio.checked_sub(cached_audio)?),

@@ -25,17 +25,18 @@ enum Event {
 
 #[derive(Deserialize)]
 struct Usage {
-    input_tokens: u32,
-    output_tokens: u32,
-    total_tokens: u32,
+    #[serde(rename = "input_tokens")]
+    input: u32,
+    #[serde(rename = "output_tokens")]
+    output: u32,
+    #[serde(rename = "total_tokens")]
+    total: u32,
 }
 
 fn usage_item(usage: Option<serde_json::Value>) -> VoiceUsageItem {
     let usage = usage
         .and_then(|value| serde_json::from_value::<Usage>(value).ok())
-        .filter(|usage| {
-            usage.input_tokens.checked_add(usage.output_tokens) == Some(usage.total_tokens)
-        });
+        .filter(|usage| usage.input.checked_add(usage.output) == Some(usage.total));
     let price = VoicePriceSnapshot {
         version: 1,
         id: "openai-gpt-4o-mini-tts-2026-11-04".into(),
@@ -61,12 +62,12 @@ fn usage_item(usage: Option<serde_json::Value>) -> VoiceUsageItem {
                 UsageQuantity {
                     metric: UsageMetric::InputText,
                     unit: UsageUnit::Tokens,
-                    amount: f64::from(usage.input_tokens),
+                    amount: f64::from(usage.input),
                 },
                 UsageQuantity {
                     metric: UsageMetric::OutputAudio,
                     unit: UsageUnit::Tokens,
-                    amount: f64::from(usage.output_tokens),
+                    amount: f64::from(usage.output),
                 },
             ]
         })

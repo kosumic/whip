@@ -174,7 +174,7 @@ fn persistent_reports_replace_replayed_responses_and_finalize_before_the_call_en
     final_usage["output_token_details"]["audio_tokens"] = json!(500);
     chat.observe(&response("response.done", "same-response", final_usage)?);
     drop(chat);
-    let events = events.lock();
+    let events = events.lock().clone();
     assert!(matches!(
         events.first(),
         Some(VoiceUsageEvent::Started { .. })

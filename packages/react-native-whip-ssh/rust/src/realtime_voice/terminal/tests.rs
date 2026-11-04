@@ -78,7 +78,7 @@ fn jobs_return_immediately_stream_real_output_and_report_completion_once() -> Te
                 tokio::task::yield_now().await;
             }
         }).await?;
-        session.jobs.lock().get_mut("command-1").ok_or("missing job")?.last_notice = Instant::now() - PROGRESS_INTERVAL;
+        session.jobs.lock().get_mut("command-1").ok_or("missing job")?.last_notice = Instant::now().checked_sub(PROGRESS_INTERVAL).ok_or("progress interval exceeds monotonic clock")?;
         let updates = session.feedback();
         assert_eq!(updates.len(), 1);
         assert_eq!(updates[0]["stdout"], "started");

@@ -13,6 +13,7 @@ pub(crate) fn updating(value: bool) {
     if value {
         GENERATION.fetch_add(1, Ordering::AcqRel);
     }
+    drop(updating);
 }
 
 pub(crate) fn is_updating() -> bool {
@@ -35,7 +36,9 @@ pub(crate) unsafe fn read(
     let reader = reader.ok_or(CredentialError::Unavailable)?;
     // SAFETY: The native caller supplies a synchronous reader and live context.
     let key = unsafe { NativeCredential::read(reader, context) }?;
-    Ok((key, generation()))
+    let generation = generation();
+    drop(updating);
+    Ok((key, generation))
 }
 
 pub(crate) fn message(error: CredentialError) -> String {

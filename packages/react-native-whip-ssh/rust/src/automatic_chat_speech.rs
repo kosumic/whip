@@ -240,7 +240,8 @@ mod tests {
             if playback.item.source == "one" {
                 assert_eq!(source["messageId"], "reply");
                 assert_eq!(source["partId"], "reply");
-                let start = source["startUtf16"].as_u64().unwrap_or_default() as usize;
+                let start = usize::try_from(source["startUtf16"].as_u64().unwrap_or_default())
+                    .expect("speech offset fits usize");
                 let text = source["text"].as_str().unwrap_or_default();
                 assert!(playback.item.text.ends_with(text));
                 let original = String::from_utf16(

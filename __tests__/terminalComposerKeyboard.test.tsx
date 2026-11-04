@@ -77,6 +77,7 @@ jest.mock('react-native-reanimated', () => require('../test-support/keyboardAnim
 jest.mock('@rn-primitives/portal', () => ({ Portal: 'Portal' }));
 jest.mock('@shopify/flash-list', () => ({ FlashList: 'FlashList' }));
 jest.mock('../src/components/MarkdownText', () => ({ MarkdownText: 'MarkdownText' }));
+jest.mock('react-native-whip-ssh', () => ({ chatSpeechHighlight: jest.fn((content: string) => content) }));
 jest.mock('../src/components/ChatFileDiff', () => ({ ChatFileDiff: 'ChatFileDiff' }));
 jest.mock('../src/components/GitHubMark', () => ({ GitHubMark: 'GitHubMark' }));
 jest.mock('../src/components/SelectableChatText', () => ({ SelectableChatText: 'SelectableChatText' }));
@@ -113,6 +114,7 @@ jest.mock('lucide-react-native/icons/message-circle', () => ('MessageCircle'));
 jest.mock('lucide-react-native/icons/minimize-2', () => ('Minimize2'));
 jest.mock('lucide-react-native/icons/option', () => ('Option'));
 jest.mock('lucide-react-native/icons/paperclip', () => ('Paperclip'));
+jest.mock('lucide-react-native/icons/phone', () => ('Phone'));
 jest.mock('lucide-react-native/icons/rotate-ccw-clock', () => ('History'));
 jest.mock('lucide-react-native/icons/search', () => ('Search'));
 jest.mock('lucide-react-native/icons/send', () => ('Send'));
@@ -147,6 +149,7 @@ jest.mock('../src/components/OverlayScrollbar', () => ({
 }));
 jest.mock('../src/components/app-ui', () => ({
   AnimatedAgentStatusGlyph: 'AgentGlyph',
+  IconButton: 'IconButton',
   useReducedMotion: () => true,
 }));
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
