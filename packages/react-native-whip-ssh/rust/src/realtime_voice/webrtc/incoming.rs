@@ -25,7 +25,7 @@ use tokio::sync::OwnedSemaphorePermit;
 use tokio::sync::Semaphore;
 use tokio::sync::mpsc;
 
-const PACKETS: usize = 64;
+pub(super) const PACKETS: usize = 64;
 const BYTES: usize = 2 * 1024 * 1024;
 const PACKET_BYTES: usize = 64 * 1024;
 

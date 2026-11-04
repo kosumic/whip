@@ -167,7 +167,6 @@ impl Transport {
         let observer = tokio::spawn(async move {
             while let Some(event) = channel.poll().await {
                 match event {
-                    DataChannelEvent::OnOpen => {}
                     DataChannelEvent::OnError
                     | DataChannelEvent::OnClosing
                     | DataChannelEvent::OnClose => break,

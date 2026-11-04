@@ -146,6 +146,15 @@ impl NativeIngress {
         let sequence = self.sequence.fetch_add(1, Ordering::Relaxed);
         self.admitted(self.queue.push(ticket, self.format, sequence, at, samples))
     }
+    /// Retire queued PCM before processing another pending packet after overload.
+    pub(crate) fn recover(&self) -> bool {
+        if !self.discontinuity.swap(false, Ordering::AcqRel) {
+            return false;
+        }
+        self.recoveries.fetch_add(1, Ordering::Relaxed);
+        self.queue.discard();
+        true
+    }
     /// True marks a capture gap: retire partial DSP/codec state before fresh audio.
     pub(crate) async fn receive(&self, packet: &mut Packet) -> Result<bool, &'static str> {
         loop {
@@ -155,9 +164,7 @@ impl NativeIngress {
                     "Microphone delivery fell behind or returned invalid audio. Reopen voice chat.",
                 );
             }
-            if self.discontinuity.swap(false, Ordering::AcqRel) {
-                self.recoveries.fetch_add(1, Ordering::Relaxed);
-                self.queue.discard();
+            if self.recover() {
                 packet.samples.clear();
                 return Ok(true);
             }

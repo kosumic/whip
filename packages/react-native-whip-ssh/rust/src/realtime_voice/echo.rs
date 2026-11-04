@@ -4,6 +4,7 @@ use std::collections::VecDeque;
 
 const MAX_SPANS: usize = 128;
 const MAX_RENDER_SAMPLES: usize = super::RATE / 2;
+const SMOOTHING: f64 = 0.1;
 const DSP_ERROR: &str = "Realtime echo cancellation could not process device audio.";
 
 #[derive(Clone, Copy, Default, Serialize)]
@@ -166,7 +167,6 @@ impl MediaEchoCanceller {
             result => result,
         }?;
         // Coarse signal energy only: never retain microphone samples for logs.
-        const SMOOTHING: f64 = 0.1;
         self.raw_power += SMOOTHING * (mean_power(samples) - self.raw_power);
         self.processed_power += SMOOTHING * (mean_power(&cleaned) - self.processed_power);
         self.signal.raw_rms = self.raw_power.sqrt();

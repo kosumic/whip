@@ -84,7 +84,7 @@ pub(super) fn speak(
             text.as_ptr(),
             emit,
             std::ptr::from_mut(&mut sink).cast(),
-            &mut result,
+            &raw mut result,
         )
     } {
         return Err(error(engine.handle.as_ref()));

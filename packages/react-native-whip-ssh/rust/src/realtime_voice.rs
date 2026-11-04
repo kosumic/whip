@@ -1,6 +1,7 @@
 //! Public OpenAI Realtime WebRTC/WebSocket adapter. Native media never crosses JS.
 //! The actor owns all wire writes; dropping it cancels transport and tools.
 mod captions;
+mod capture_worker;
 pub(crate) mod context;
 mod cost;
 mod delegation;
@@ -551,7 +552,6 @@ impl RealtimeVoiceAdapter {
         if let Some(global) = &self.global {
             global.close();
         }
-        self.input.close();
         {
             let mut view = self.view.lock();
             self.closed.store(true, Ordering::Release);
@@ -563,6 +563,7 @@ impl RealtimeVoiceAdapter {
             }
         }
         self.cancel.send_replace(true);
+        self.input.close();
         self.output.lock().clear();
     }
     fn command(&self, command: Command) {
@@ -619,9 +620,6 @@ impl RealtimeVoiceAdapter {
         packet: &mut ::audio_ingress::Packet,
     ) -> Result<bool, &'static str> {
         if self.input.receive(packet).await? {
-            if let Some(echo) = self.echo.lock().as_mut() {
-                echo.reset_capture()?;
-            }
             return Ok(true);
         }
         if !self.input.accepts(packet.ticket.generation)
@@ -630,6 +628,15 @@ impl RealtimeVoiceAdapter {
         {
             packet.samples.clear();
             return Ok(false);
+        }
+        Ok(false)
+    }
+
+    // The pending worker checks its generation and resets DSP before this call.
+    fn process_capture(&self, packet: &mut ::audio_ingress::Packet) -> Result<(), &'static str> {
+        if packet.samples.is_empty() || !self.input.accepts(packet.ticket.generation) {
+            packet.samples.clear();
+            return Ok(());
         }
         // Echo processing runs on the consumer, outside the device callback.
         let cleaned = self
@@ -646,15 +653,15 @@ impl RealtimeVoiceAdapter {
             packet.samples.clear();
         }
         self.view.lock().level = peak(&packet.samples);
-        Ok(false)
+        Ok(())
     }
 
     async fn send_capture(
         &self,
         socket: &mut RealtimeSocket,
-        capture: &::audio_ingress::Packet,
+        capture: &capture_worker::Frame,
     ) -> Result<(), &'static str> {
-        if capture.samples.is_empty() {
+        if !capture.current(self) {
             return Ok(());
         }
         let bytes: Vec<u8> = capture
@@ -662,14 +669,18 @@ impl RealtimeVoiceAdapter {
             .iter()
             .flat_map(|sample| sample.to_le_bytes())
             .collect();
-        send(
-            socket,
-            ClientEvent::InputAudioBufferAppend {
-                event_id: None,
-                audio: STANDARD.encode(bytes),
-            },
-        )
-        .await?;
+        let mut cancelled = self.cancel.subscribe();
+        if self.closed.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        tokio::select! {
+            biased;
+            _ = cancelled.changed() => return Ok(()),
+            result = tokio::time::timeout(capture_worker::SEND_TIMEOUT, send(
+                socket,
+                ClientEvent::InputAudioBufferAppend { event_id: None, audio: STANDARD.encode(bytes) },
+            )) => result.map_err(|_| "Realtime audio upload timed out.")??,
+        }
         self.view.lock().startup.first_input.get_or_insert_with(|| {
             self.client_elapsed_ms
                 .saturating_add(startup::elapsed(self.started_at))
@@ -694,6 +705,8 @@ impl RealtimeVoiceAdapter {
         let started = tokio::time::Instant::now();
         let mut heartbeat = tokio::time::interval(Duration::from_millis(250));
         let mut capture = ::audio_ingress::Packet::new(self.input.packet_samples);
+        let mut cancellation = self.cancel.subscribe();
+        let mut pending_capture = capture_worker::Pending::new(self);
         let mut responses = response::ResponseCreateQueue::default();
         let mut costs = cost::CurrentChat::start(&config)?;
         let mut input_item = String::new();
@@ -713,7 +726,12 @@ impl RealtimeVoiceAdapter {
             if self.closed.load(Ordering::Acquire) {
                 return Ok(());
             }
+            if !self.webrtc {
+                pending_capture.refresh(self)?;
+            }
             tokio::select! {
+                biased;
+                _ = cancellation.changed() => return Ok(()),
                 command = commands.recv() => match command {
                     Some(Command::Submitted(text)) => {
                         let event = if self.global.is_some() { global_submitted_message(&text)? } else if terminal.is_some() { terminal_submitted_message(&text)? } else { submitted_message(&text)? };
@@ -812,10 +830,6 @@ impl RealtimeVoiceAdapter {
                         view.phase = if output.generated > output.played { "speaking" } else if view.muted { "muted" } else if self.webrtc && self.allow_input && view.startup.first_input.is_none() { "starting" } else if !tools.is_empty() || responses.is_active() { "waiting" } else { "listening" };
                         if output.generated == output.played { view.playback_level = 0.0; }
                     }
-                },
-                samples = self.next_capture(&mut capture), if !self.webrtc && self.ready.load(Ordering::Acquire) => {
-                    samples?;
-                    self.send_capture(&mut socket, &capture).await?;
                 },
                 message = socket.next() => {
                     let Some(text) = socket.receive_text(message, &mut last_pong).await? else {
@@ -920,6 +934,19 @@ impl RealtimeVoiceAdapter {
                         _ => {},
                     }
                     if ignored.len() > MAX_CALLS { return Err("Realtime interruption limit reached. Start a new call."); }
+                },
+                _ = tokio::task::yield_now(), if !self.webrtc && pending_capture.ready() => {
+                    pending_capture.refresh(self)?;
+                    if let Some(frame) = pending_capture.take() {
+                        if frame.current(self) { self.send_capture(&mut socket, &frame).await?; }
+                        else { pending_capture.reset(self)?; }
+                    }
+                },
+                samples = self.next_capture(&mut capture), if !self.webrtc && self.ready.load(Ordering::Acquire) && !pending_capture.ready() => {
+                    if samples? { pending_capture.reset(self)?; }
+                    pending_capture.refresh(self)?;
+                    self.process_capture(&mut capture)?;
+                    pending_capture.push(&capture)?;
                 },
             }
         }

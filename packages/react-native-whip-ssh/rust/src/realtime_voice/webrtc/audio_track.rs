@@ -20,7 +20,7 @@ use webrtc::media_stream::track_local::static_sample::TrackLocalStaticSample;
 use webrtc::peer_connection::MediaEngine;
 
 pub(crate) const OPUS_PAYLOAD_TYPE: u8 = 111;
-pub(crate) const SEND_TIMEOUT: Duration = Duration::from_millis(/*millis*/ 100);
+pub(crate) const SEND_TIMEOUT: Duration = super::super::capture_worker::SEND_TIMEOUT;
 
 pub(crate) struct EncodedAudio {
     pub(crate) data: Vec<u8>,

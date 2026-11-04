@@ -1,5 +1,5 @@
 //! Native 24kHz PCM/Opus bridge. Device callbacks and audio never cross JavaScript.
-use super::super::{FRAME, RATE, RealtimeVoiceAdapter};
+use super::super::{FRAME, RATE, RealtimeVoiceAdapter, capture_worker};
 use super::{
     audio_track::EncodedAudio,
     identity::Identity,
@@ -9,13 +9,12 @@ use super::{
 };
 use parking_lot::Mutex;
 use std::{
-    collections::VecDeque,
     sync::{Arc, atomic::Ordering},
     time::{Duration, Instant},
 };
 use tokio::sync::watch;
 
-const FRAME_DURATION: Duration = Duration::from_millis(20);
+const FRAME_DURATION: Duration = capture_worker::PACKET_DURATION;
 
 pub(super) async fn run(
     owner: &RealtimeVoiceAdapter,
@@ -33,9 +32,7 @@ pub(super) async fn run(
     let mut jitter = Jitter::default();
     let mut epoch = 0;
     let mut frame = ::audio_ingress::Packet::new(owner.input.packet_samples);
-    let mut input_generation = owner.input.generation();
-    let mut input = VecDeque::new();
-    let mut input_at = Instant::now();
+    let mut pending = capture_worker::Pending::new(owner);
     let mut encoded = vec![0; 1275];
     let mut last_silence = None::<Instant>;
     let mut tick = tokio::time::interval(Duration::from_millis(5));
@@ -44,28 +41,14 @@ pub(super) async fn run(
         if !attempt.current() {
             return Ok(());
         }
+        if pending.refresh(owner)? {
+            encoder
+                .reset_state()
+                .map_err(|_| "Voice encoder reset failed.")?;
+        }
         tokio::select! {
             biased;
             _ = stop.changed() => return Ok(()),
-            captured = owner.next_capture(&mut frame) => {
-                if captured? {
-                    input.clear();
-                    encoder.reset_state().map_err(|_| "Voice encoder reset failed.")?;
-                }
-                if frame.samples.is_empty() { continue; }
-                if input_generation != frame.ticket.generation { input.clear(); encoder.reset_state().map_err(|_| "Voice encoder reset failed.")?; input_generation = frame.ticket.generation; }
-                if input.is_empty() { input_at = frame.at; }
-                input.extend(&frame.samples);
-                while input.len() >= FRAME {
-                    let pcm: Vec<i16> = input.drain(..FRAME).collect();
-                    let count = encoder.encode(&pcm, &mut encoded).map_err(|_| "Voice encoding failed.")?;
-                    peer.audio.send(EncodedAudio { data: encoded[..count].to_vec(), at: input_at }).await?;
-                    owner.view.lock().uploaded_packets += 1;
-                    super::input_started(owner);
-                    input_at += FRAME_DURATION;
-                    last_silence = Some(Instant::now());
-                }
-            }
             _ = tick.tick() => {
                 let (next_epoch, enabled, tag, finishing, failed) = { let state = identity.lock(); (state.epoch, state.enabled, state.current.clone(), state.finish_at, state.failed) };
                 if failed || !*peer.ready.borrow() { return Err("Realtime media connection ended."); }
@@ -76,7 +59,8 @@ pub(super) async fn run(
                     epoch = next_epoch;
                 }
                 peer.incoming.set_suppressed(!enabled)?;
-                while let Some(packet) = peer.incoming.take()? {
+                for _ in 0..super::incoming::PACKETS {
+                    let Some(packet) = peer.incoming.take()? else { break; };
                     let arrival = packet.at;
                     // Keep packets received within the response's tail grace.
                     // Later RTP can continue after stopped and prevent draining.
@@ -105,11 +89,37 @@ pub(super) async fn run(
                     if let Some(tag) = &tag { owner.output.lock().transcript.finish_audio(&tag.item, tag.index); }
                 }
                 if last_silence.is_none_or(|last| last.elapsed() >= FRAME_DURATION) && (!owner.ready.load(Ordering::Acquire) || owner.view.lock().muted || !owner.allow_input) {
-                    input.clear();
-                    peer.audio.send_muted_silence(Instant::now()).await?;
+                    tokio::select! {
+                        biased;
+                        _ = stop.changed() => return Ok(()),
+                        result = peer.audio.send_muted_silence(Instant::now()) => result?,
+                    }
                     last_silence = Some(Instant::now());
                 }
                 if owner.closed.load(Ordering::Acquire) { return Ok(()); }
+            }
+            _ = tokio::task::yield_now(), if pending.ready() => {
+                if pending.refresh(owner)? { encoder.reset_state().map_err(|_| "Voice encoder reset failed.")?; }
+                let Some(captured) = pending.take() else { continue; };
+                if !captured.current(owner) { pending.reset(owner)?; encoder.reset_state().map_err(|_| "Voice encoder reset failed.")?; continue; }
+                let count = encoder.encode(&captured.samples, &mut encoded).map_err(|_| "Voice encoding failed.")?;
+                // A control may arrive while encoding. Never commit a second
+                // old-generation packet after an in-flight send completes.
+                if !captured.current(owner) { pending.reset(owner)?; encoder.reset_state().map_err(|_| "Voice encoder reset failed.")?; continue; }
+                tokio::select! {
+                    biased;
+                    _ = stop.changed() => return Ok(()),
+                    result = peer.audio.send(EncodedAudio { data: encoded[..count].to_vec(), at: captured.at }) => result?,
+                }
+                owner.view.lock().uploaded_packets += 1;
+                super::input_started(owner);
+                last_silence = Some(Instant::now());
+            }
+            captured = owner.next_capture(&mut frame), if !pending.ready() => {
+                if captured? { pending.reset(owner)?; encoder.reset_state().map_err(|_| "Voice encoder reset failed.")?; }
+                if pending.refresh(owner)? { encoder.reset_state().map_err(|_| "Voice encoder reset failed.")?; }
+                owner.process_capture(&mut frame)?;
+                pending.push(&frame)?;
             }
         }
     }
