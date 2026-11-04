@@ -820,6 +820,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/d00aa65d7a05d267.txt"),
   },
   {
+    id: "cargo-mobile-speech-0-1-0",
+    category: "cargo",
+    projectName: "mobile-speech",
+    sourceUrl: "https://github.com/kosumic/whip",
+    attribution: "Direct Rust dependency · version 0.1.0 · used by whip-ssh",
+    licenseName: "AGPL-3.0-or-later",
+    licenseAsset: require("../../assets/licenses/generated/ae93e817eb555f97.txt"),
+  },
+  {
     id: "cargo-native-credentials-0-1-0",
     category: "cargo",
     projectName: "native-credentials",

@@ -48,6 +48,35 @@ char *whip_alert_speech_command(const char *command, const char *token, uint64_t
   return strdup(result.UTF8String);
 }
 void whip_alert_speech_free(char *value) { free(value); }
+static NSMutableArray<NSDictionary *> *automaticWaiting;
+static NSMutableArray<NSNumber *> *automaticCompleted;
+static uint64_t automaticActive;
+static BOOL automaticEnabled;
+static BOOL automaticPaused;
+void whip_automatic_speech_register(void (*wake)(void)) {}
+char *whip_automatic_speech_command(const char *input) {
+  NSDictionary *command = [NSJSONSerialization JSONObjectWithData:[[NSString stringWithUTF8String:input] dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+  NSString *action = command[@"action"];
+  id result = NSNull.null;
+  if ([action isEqualToString:@"enable"]) automaticEnabled = [command[@"enabled"] boolValue];
+  else if ([action isEqualToString:@"pause"]) {
+    automaticPaused = [command[@"paused"] boolValue];
+    if (automaticPaused) [automaticWaiting removeAllObjects];
+  }
+  else if ([action isEqualToString:@"valid"]) result = @(automaticEnabled && !automaticPaused && automaticActive == [command[@"id"] unsignedLongLongValue]);
+  else if ([action isEqualToString:@"ended"]) automaticActive = 0;
+  else if ([action isEqualToString:@"completed"]) {
+    uint64_t identity = [command[@"id"] unsignedLongLongValue];
+    result = @(automaticActive == identity);
+    if (automaticActive == identity) { [automaticCompleted addObject:@(identity)]; automaticActive = 0; }
+  } else if ([action isEqualToString:@"take"] && automaticEnabled && !automaticPaused && !automaticActive && automaticWaiting.count) {
+    result = automaticWaiting.firstObject;
+    automaticActive = [result[@"id"] unsignedLongLongValue];
+    [automaticWaiting removeObjectAtIndex:0];
+  }
+  NSData *data = [NSJSONSerialization dataWithJSONObject:result options:NSJSONWritingFragmentsAllowed error:nil];
+  return strdup([[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding].UTF8String);
+}
 char *whip_phonon_command(const char *root, const char *action) { return strdup("{}"); }
 void whip_phonon_free(char *value) { free(value); }
 bool whip_phonon_enabled(const char *language) { return false; }
@@ -58,17 +87,21 @@ int32_t whip_phonon_speak(uint64_t lease, const char *text, WhipPcmCallback call
 @implementation WhipVoiceCall
 + (instancetype)shared { static WhipVoiceCall *call; if (!call) call = [WhipVoiceCall new]; return call; }
 - (BOOL)active { return NO; }
+- (BOOL)owns:(NSString *)token { return NO; }
 - (void)start:(NSString *)token label:(NSString *)label resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {}
 - (void)end:(NSString *)token resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {}
 - (void)mute:(NSString *)token muted:(BOOL)muted resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {}
 - (void)speaker:(NSString *)token enabled:(BOOL)speaker resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {}
 - (void)invalidate {}
+- (void)playSound:(NSString *)uri inCall:(BOOL)inCall resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject { resolve(nil); }
+- (void)stopSound {}
 @end
 
 @interface WhipSpeechPlayback (TestEngine) <AVSpeechSynthesizerDelegate>
 @property(nonatomic, strong) AVSpeechUtterance *utterance;
 - (BOOL)play:(NSString *)text language:(NSString *)language rate:(double)rate started:(void (^)(void))started preview:(BOOL)preview;
 - (void)watchShake;
+- (void)drainAutomatic;
 - (NSString *)alertCommand:(NSString *)action token:(NSString *)token lease:(uint64_t)lease;
 @end
 @interface TestSpeechPlayback : WhipSpeechPlayback
@@ -96,6 +129,8 @@ int32_t whip_phonon_speak(uint64_t lease, const char *text, WhipPcmCallback call
 - (void)setUp {
   [super setUp]; activeLease = 0; activeOwner = nil;
   waiting = [NSMutableArray new]; valid = [NSMutableSet new];
+  automaticWaiting = [NSMutableArray new]; automaticCompleted = [NSMutableArray new];
+  automaticActive = 0; automaticEnabled = NO; automaticPaused = NO;
   self.player = [TestSpeechPlayback new]; fixturePlayer = self.player; self.player.spoken = [NSMutableArray new]; self.stopped = [NSMutableArray new];
   self.observer = [NSNotificationCenter.defaultCenter addObserverForName:WhipChatSpeechStopped object:self.player queue:nil usingBlock:^(NSNotification *event) {
     [self.stopped addObject:event.userInfo[@"token"]];
@@ -107,6 +142,52 @@ int32_t whip_phonon_speak(uint64_t lease, const char *text, WhipPcmCallback call
 }
 - (void)queue:(NSString *)token { [waiting addObject:token]; [valid addObject:token]; }
 - (void)finish { [self.player speechSynthesizer:[AVSpeechSynthesizer new] didFinishSpeechUtterance:self.player.utterance]; }
+
+- (void)queueAutomatic:(uint64_t)identity text:(NSString *)text {
+  [automaticWaiting addObject:@{@"id": @(identity), @"token": @"automatic-chat-speech", @"text": text,
+    @"hostId": @"host", @"paneId": @"pane", @"label": @"Native automatic test"}];
+}
+- (void)testAutomaticAudioCompletionAdvancesWithoutJavaScriptAndIgnoresLateCallbacks {
+  [self queueAutomatic:1 text:@"first automatic update"];
+  [self queueAutomatic:2 text:@"second automatic update"];
+  XCTestExpectation *second = [self expectationWithDescription:@"native completion starts next utterance"];
+  self.player.onPlay = ^(NSString *text) { if ([text isEqualToString:@"second automatic update"]) [second fulfill]; };
+  [self.player automaticControl:@"enable" value:YES];
+  XCTAssertEqualObjects(self.player.spoken, (@[@"first automatic update"]));
+  AVSpeechUtterance *old = self.player.utterance;
+  [self.player detachPresentation];
+  XCTAssertEqualObjects(activeOwner, @"automatic-chat-speech");
+  [self finish]; [self waitForExpectations:@[second] timeout:2];
+  XCTAssertEqualObjects(automaticCompleted, (@[@1]));
+  [self.player speechSynthesizer:[AVSpeechSynthesizer new] didFinishSpeechUtterance:old];
+  XCTestExpectation *fenced = [self expectationWithDescription:@"late native callback ignored"];
+  dispatch_async(dispatch_get_main_queue(), ^{
+    XCTAssertEqual(automaticActive, 2u);
+    XCTAssertEqualObjects(automaticCompleted, (@[@1]));
+    [fenced fulfill];
+  });
+  [self waitForExpectations:@[fenced] timeout:2];
+  [self finish];
+  XCTestExpectation *completed = [[XCTNSPredicateExpectation alloc] initWithPredicate:
+    [NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) { return automaticCompleted.count == 2; }] object:nil];
+  [self waitForExpectations:@[completed] timeout:2];
+  XCTAssertEqualObjects(automaticCompleted, (@[@1, @2]));
+}
+- (void)testAutomaticPauseCancelsAudioAndLateCompletionCannotDrainQueuedSpeech {
+  [self queueAutomatic:1 text:@"current update"];
+  [self queueAutomatic:2 text:@"discard waiting update"];
+  [self.player automaticControl:@"enable" value:YES];
+  AVSpeechUtterance *old = self.player.utterance;
+  [self.player automaticControl:@"pause" value:YES];
+  XCTAssertEqual(activeLease, 0u);
+  XCTAssertEqual(automaticWaiting.count, 0u);
+  [self.player speechSynthesizer:[AVSpeechSynthesizer new] didFinishSpeechUtterance:old];
+  [self queueAutomatic:3 text:@"fresh update"];
+  [self.player automaticControl:@"pause" value:NO];
+  XCTAssertEqualObjects(self.player.spoken, (@[@"current update", @"fresh update"]));
+  XCTAssertEqual(automaticActive, 3u);
+  XCTAssertEqual(automaticCompleted.count, 0u);
+}
 
 - (void)testChatChunkFinishesBeforeStatusAndContinuesAfterward {
   [self.player startChat:@"reader" label:@"Chat" resolve:^(id value) {} reject:self.unexpectedError];

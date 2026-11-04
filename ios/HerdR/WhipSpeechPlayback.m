@@ -3,14 +3,18 @@
 #import <AVFoundation/AVFoundation.h>
 #import <CoreMotion/CoreMotion.h>
 #import <math.h>
+#import <UIKit/UIKit.h>
+#import <stdatomic.h>
 
 NSString *const WhipChatSpeechStopped = @"WhipChatSpeechStopped";
 NSString *const WhipChatSpeechStarted = @"WhipChatSpeechStarted";
 NSString *const WhipChatSpeechLevel = @"WhipChatSpeechLevel";
+NSString *const WhipAutomaticSpeechFocus = @"WhipAutomaticSpeechFocus";
 static NSString *const WhipSpeechError = @"E_SPEECH";
 static NSString *const WhipSpeechCompleted = @"completed";
 static NSString *const WhipSpeechStopped = @"stopped";
 static NSString *const WhipSpeechInterrupted = @"interrupted";
+static NSString *const WhipAutomaticOwner = @"automatic-chat-speech";
 static const double WhipShakeGravityThreshold = 2.7;
 static const NSTimeInterval WhipShakeInterval = 0.02;
 static const NSTimeInterval WhipModelInitializationTimeout = 60;
@@ -165,7 +169,32 @@ static bool WhipConsumePhonon(void *context, const float *samples, uintptr_t cou
 @property(nonatomic, copy) RCTPromiseRejectBlock boundaryReject;
 @property(nonatomic, strong) NSDictionary *deferredChat;
 @property(nonatomic, copy) NSString *statusOwner;
+@property(nonatomic) uint64_t automaticId;
+@property(nonatomic, copy) NSDictionary *automaticFocus;
+- (void)drainAutomatic;
 @end
+
+static id WhipAutomaticCommand(NSDictionary *command)
+{
+  NSData *input = [NSJSONSerialization dataWithJSONObject:command options:0 error:nil];
+  NSString *json = [[NSString alloc] initWithData:input encoding:NSUTF8StringEncoding];
+  char *result = whip_automatic_speech_command(json.UTF8String);
+  if (!result) return nil;
+  NSData *data = [[NSString stringWithUTF8String:result] dataUsingEncoding:NSUTF8StringEncoding];
+  whip_alert_speech_free(result);
+  id value = [NSJSONSerialization JSONObjectWithData:data options:NSJSONReadingFragmentsAllowed error:nil];
+  return value == NSNull.null ? nil : value;
+}
+
+static atomic_bool WhipAutomaticWakePending = false;
+static void WhipWakeAutomaticSpeech(void)
+{
+  if (atomic_exchange(&WhipAutomaticWakePending, true)) return;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    atomic_store(&WhipAutomaticWakePending, false);
+    [WhipSpeechPlayback.shared drainAutomatic];
+  });
+}
 
 @implementation WhipSpeechPlayback
 + (instancetype)shared
@@ -189,8 +218,91 @@ static bool WhipConsumePhonon(void *context, const float *samples, uintptr_t cou
     NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
     [center addObserver:self selector:@selector(audioInterrupted:) name:AVAudioSessionInterruptionNotification object:nil];
     [center addObserver:self selector:@selector(audioRouteChanged:) name:AVAudioSessionRouteChangeNotification object:nil];
+    [center addObserver:self selector:@selector(automaticLocked:) name:UIApplicationProtectedDataWillBecomeUnavailable object:nil];
+    [center addObserver:self selector:@selector(automaticUnlocked:) name:UIApplicationProtectedDataDidBecomeAvailable object:nil];
   }
   return self;
+}
+
+- (void)automaticBinding:(NSString *)token host:(NSString *)host tabName:(NSString *)tabName
+{
+  WhipAutomaticCommand(@{@"action": @"bind", @"bindingToken": token, @"hostId": host, @"tabName": tabName});
+}
+- (void)automaticControl:(NSString *)action value:(BOOL)value
+{
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{ whip_automatic_speech_register(WhipWakeAutomaticSpeech); });
+  WhipAutomaticCommand(@{@"action": action, [action isEqualToString:@"enable"] ? @"enabled" : @"paused": @(value)});
+  WhipAutomaticCommand(@{@"action": @"lock", @"locked": @(!UIApplication.sharedApplication.protectedDataAvailable)});
+  [self drainAutomatic];
+  [NSNotificationCenter.defaultCenter postNotificationName:WhipAutomaticSpeechFocus object:self userInfo:self.automaticFocus ?: @{}];
+}
+- (void)automaticLocked:(NSNotification *)notification
+{
+  WhipAutomaticCommand(@{@"action": @"lock", @"locked": @YES});
+  [self drainAutomatic];
+}
+- (void)automaticUnlocked:(NSNotification *)notification
+{
+  WhipAutomaticCommand(@{@"action": @"lock", @"locked": @NO});
+  [self drainAutomatic];
+}
+- (void)automaticEnded:(NSString *)reason error:(NSString *)error
+{
+  uint64_t identity = self.automaticId;
+  self.automaticId = 0;
+  self.automaticFocus = nil;
+  [NSNotificationCenter.defaultCenter postNotificationName:WhipAutomaticSpeechFocus object:self userInfo:@{}];
+  if (identity) WhipAutomaticCommand(@{@"action": @"ended", @"id": @(identity),
+    @"reason": reason ?: WhipSpeechInterrupted, @"failed": @(error != nil)});
+}
+- (void)drainAutomatic
+{
+  if (self.automaticId) {
+    if ([WhipAutomaticCommand(@{@"action": @"valid", @"id": @(self.automaticId)}) boolValue]) return;
+    [self stopOwner:WhipAutomaticOwner kind:WhipSpeechChat];
+    self.automaticId = 0;
+  }
+  if (WhipVoiceCall.shared.active || self.suspendedChat ||
+      (self.owner && ![self.owner isEqualToString:WhipAutomaticOwner]) ||
+      !UIApplication.sharedApplication.protectedDataAvailable) return;
+  NSDictionary *next = WhipAutomaticCommand(@{@"action": @"take"});
+  if (!next) { [self stopOwner:WhipAutomaticOwner kind:WhipSpeechChat]; return; }
+  uint64_t identity = [next[@"id"] unsignedLongLongValue];
+  self.automaticId = identity;
+  self.automaticFocus = @{@"hostId": next[@"hostId"], @"paneId": next[@"paneId"]};
+  [NSNotificationCenter.defaultCenter postNotificationName:WhipAutomaticSpeechFocus object:self
+    userInfo:self.automaticFocus];
+  __weak WhipSpeechPlayback *weakSelf = self;
+  RCTPromiseRejectBlock fail = ^(NSString *code, NSString *message, NSError *error) {
+    WhipSpeechPlayback *playback = weakSelf;
+    if (playback.automaticId != identity) return;
+    NSString *failure = message ?: @"Automatic speech playback failed";
+    [playback automaticEnded:WhipSpeechStopped error:failure];
+    [NSNotificationCenter.defaultCenter postNotificationName:WhipChatSpeechStopped object:playback userInfo:
+      @{@"token": WhipAutomaticOwner, @"reason": WhipSpeechStopped, @"error": failure}];
+    [playback stopOwner:WhipAutomaticOwner kind:WhipSpeechChat];
+  };
+  void (^speak)(void) = ^{
+    WhipSpeechPlayback *playback = weakSelf;
+    if (playback.automaticId != identity || ![WhipAutomaticCommand(@{@"action": @"valid", @"id": @(identity)}) boolValue]) {
+      [playback drainAutomatic]; return;
+    }
+    [playback speakChat:WhipAutomaticOwner text:next[@"text"] resolve:^(id value) {
+      WhipSpeechPlayback *current = weakSelf;
+      if (current.automaticId != identity) return;
+      WhipAutomaticCommand(@{@"action": @"completed", @"id": @(identity)});
+      current.automaticId = 0;
+      dispatch_async(dispatch_get_main_queue(), ^{ [weakSelf drainAutomatic]; });
+    } reject:fail];
+  };
+  if ([self.owner isEqualToString:WhipAutomaticOwner]) speak();
+  else [self startChat:WhipAutomaticOwner label:next[@"label"] resolve:^(id value) { speak(); } reject:fail];
+}
+- (void)detachPresentation
+{
+  if (![self.owner isEqualToString:WhipAutomaticOwner] &&
+      ![self.suspendedChat[@"owner"] isEqualToString:WhipAutomaticOwner]) [self stop];
 }
 
 - (void)backendCommand:(NSString *)action resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
@@ -255,7 +367,11 @@ static bool WhipConsumePhonon(void *context, const float *samples, uintptr_t cou
   }
   if (self.utterance || self.phonon || (self.lease && self.kind != WhipSpeechChat) || WhipVoiceCall.shared.active) return NO;
   NSString *json = [self alertCommand:@"take" token:@"" lease:self.lease];
-  if ([json isEqualToString:@"null"]) { [self resumeChat]; return NO; }
+  if ([json isEqualToString:@"null"]) {
+    [self resumeChat];
+    dispatch_async(dispatch_get_main_queue(), ^{ [self drainAutomatic]; });
+    return NO;
+  }
   NSDictionary *next = [NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
   if (!next) return NO;
   if (self.lease) {
@@ -318,6 +434,7 @@ static bool WhipConsumePhonon(void *context, const float *samples, uintptr_t cou
   NSDictionary *previous = self.suspendedChat;
   if (!previous) return;
   self.suspendedChat = nil;
+  if ([previous[@"owner"] isEqualToString:WhipAutomaticOwner]) [self automaticEnded:reason error:error];
   NSMutableDictionary *event = [@{@"token": previous[@"owner"], @"reason": reason} mutableCopy];
   if (error) event[@"error"] = error;
   [NSNotificationCenter.defaultCenter postNotificationName:WhipChatSpeechStopped object:self userInfo:event];
@@ -590,6 +707,7 @@ static bool WhipConsumePhonon(void *context, const float *samples, uintptr_t cou
   [self.speech stopSpeakingAtBoundary:AVSpeechBoundaryImmediate];
   // Publish the stop before resolving the chunk so JS cannot drain another.
   if (owner && kind == WhipSpeechChat) {
+    if ([owner isEqualToString:WhipAutomaticOwner]) [self automaticEnded:reason error:error];
     NSMutableDictionary *event = [@{@"token": owner} mutableCopy];
     if (reason) event[@"reason"] = reason;
     if (error) event[@"error"] = error;

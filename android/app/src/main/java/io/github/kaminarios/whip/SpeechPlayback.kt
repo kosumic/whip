@@ -19,10 +19,14 @@ import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
+import com.facebook.react.bridge.PromiseImpl
+import com.facebook.react.bridge.Callback
 import com.whipssh.SpeechPolicy
 import java.util.Locale
 import org.json.JSONObject
 import kotlin.math.sqrt
+import java.util.concurrent.atomic.AtomicBoolean
+import android.app.KeyguardManager
 
 /** One main-thread OS player. Rust owns admission, session ownership, and chat ordering. */
 object SpeechPlayback : SensorEventListener {
@@ -33,6 +37,8 @@ object SpeechPlayback : SensorEventListener {
   private const val INTERRUPTED = "interrupted"
   private const val ERROR_CODE = "E_SPEECH"
   private const val TAG = "SpeechPlayback"
+  private const val AUTOMATIC_OWNER = "automatic-chat-speech"
+  private const val AUTOMATIC_ERROR = "Automatic speech playback failed"
   private const val INITIALIZATION_TIMEOUT_MS = 10_000L
   private const val MODEL_INITIALIZATION_TIMEOUT_MS = 60_000L
   internal const val MAX_CHAT_UTTERANCES = 2
@@ -60,9 +66,107 @@ object SpeechPlayback : SensorEventListener {
   private var boundaryCompletion: Promise? = null
   private var deferredChat: QueuedChat? = null
   private var statusOwner: String? = null
+  private var automaticId = 0L
+  private var automaticFocus: Pair<String, String>? = null
+  private var automaticRegistered = false
+  private val automaticWakePending = AtomicBoolean(false)
+  private val automaticWake = Runnable {
+    automaticWakePending.set(false)
+    drainAutomatic()
+  }
+  private val lockReceiver = object : BroadcastReceiver() {
+    override fun onReceive(context: Context?, intent: Intent?) {
+      val locked = intent?.action == Intent.ACTION_SCREEN_OFF ||
+        context?.getSystemService(KeyguardManager::class.java)?.isDeviceLocked == true
+      automaticCommand("lock", "locked" to locked)
+      drainAutomatic()
+    }
+  }
+
+  private fun automaticCommand(action: String, vararg values: Pair<String, Any>): String =
+    automaticPolicy(JSONObject().put("action", action).apply {
+      for ((key, value) in values) put(key, value)
+    }.toString())
+
+  fun automaticControl(context: Context, action: String, value: Boolean) {
+    if (!automaticRegistered) {
+      appContext = context.applicationContext
+      SpeechPolicy.automaticWake = {
+        if (automaticWakePending.compareAndSet(false, true)) handler.post(automaticWake)
+      }
+      SpeechPolicy.registerAutomaticSpeech()
+      val filter = IntentFilter().apply {
+        addAction(Intent.ACTION_SCREEN_OFF)
+        addAction(Intent.ACTION_SCREEN_ON)
+        addAction(Intent.ACTION_USER_PRESENT)
+      }
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+        appContext!!.registerReceiver(lockReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+      else appContext!!.registerReceiver(lockReceiver, filter)
+      automaticRegistered = true
+    }
+    automaticCommand(action, (if (action == "enable") "enabled" else "paused") to value)
+    automaticCommand("lock", "locked" to (context.getSystemService(KeyguardManager::class.java)?.isDeviceLocked == true))
+    // Pausing must release native audio before its JS control promise resolves.
+    drainAutomatic()
+    onAutomaticFocus?.invoke(automaticFocus?.first, automaticFocus?.second)
+  }
+
+  private fun automaticEnded(reason: String, error: String?) {
+    val id = automaticId
+    automaticId = 0L
+    automaticFocus = null
+    onAutomaticFocus?.invoke(null, null)
+    if (id != 0L) automaticCommand("ended", "id" to id, "reason" to reason, "failed" to (error != null))
+  }
+
+  private fun drainAutomatic() {
+    val context = appContext ?: return
+    if (automaticId != 0L) {
+      if (automaticCommand("valid", "id" to automaticId) == "true") return
+      stopOwner(SpeechPolicy.CHAT, AUTOMATIC_OWNER)
+      automaticId = 0L
+    }
+    if (VoiceCallService.active || suspendedChat != null ||
+      session?.let { it.owner != AUTOMATIC_OWNER || !it.readyReported } == true) return
+    if (context.getSystemService(KeyguardManager::class.java)?.isDeviceLocked == true) return
+    val json = automaticCommand("take")
+    if (json == "null") {
+      if (session?.owner == AUTOMATIC_OWNER) stopOwner(SpeechPolicy.CHAT, AUTOMATIC_OWNER)
+      return
+    }
+    val next = JSONObject(json)
+    val id = next.getLong("id")
+    automaticId = id
+    automaticFocus = next.getString("hostId") to next.getString("paneId")
+    onAutomaticFocus?.invoke(automaticFocus?.first, automaticFocus?.second)
+    val failure = Callback {
+      if (automaticId == id) {
+        automaticEnded(STOPPED, AUTOMATIC_ERROR)
+        onChatStopped?.invoke(AUTOMATIC_OWNER, STOPPED, AUTOMATIC_ERROR)
+        stopOwner(SpeechPolicy.CHAT, AUTOMATIC_OWNER)
+      }
+    }
+    val speak = {
+      if (automaticId == id && automaticCommand("valid", "id" to id) == "true") {
+        // These callbacks are entirely native; they do not call a JS promise.
+        speakChat(AUTOMATIC_OWNER, next.getString("text"), PromiseImpl(Callback {
+          if (automaticId == id) {
+            automaticCommand("completed", "id" to id)
+            automaticId = 0L
+            handler.post(automaticWake)
+          }
+        }, failure))
+      } else drainAutomatic()
+    }
+    if (session?.owner == AUTOMATIC_OWNER) speak()
+    else startChat(context, AUTOMATIC_OWNER, next.optString("label").ifBlank { "Agent updates" },
+      PromiseImpl(Callback { speak() }, failure))
+  }
 
   // Native adapter tests script admission while exercising the OS player.
   internal var statusPolicy: (String, String, Long) -> String = SpeechPolicy::alertSpeech
+  internal var automaticPolicy: (String) -> String = SpeechPolicy::automaticSpeech
 
   private fun alertCommand(action: String, token: String = "", lease: Long = 0L) =
     statusPolicy(action, token, lease)
@@ -85,7 +189,7 @@ object SpeechPlayback : SensorEventListener {
     // Voice-call output may have prepared PCM. Calls keep their explicit priority.
     if (VoiceCallService.active) return false
     val json = alertCommand("take", lease = current?.id ?: 0L)
-    if (json == "null") { resumeChat(); return false }
+    if (json == "null") { resumeChat(); handler.post(automaticWake); return false }
     val next = JSONObject(json)
     val context = appContext ?: return false
     if (current != null) {
@@ -161,6 +265,7 @@ object SpeechPlayback : SensorEventListener {
     .build()
   private val attributes: AudioAttributes get() = if (VoiceCallService.active) VoiceCallService.audioAttributes else mediaAttributes
   var onChatStopped: ((String, String, String?) -> Unit)? = null
+  var onAutomaticFocus: ((String?, String?) -> Unit)? = null
   var onChatStarted: ((String) -> Unit)? = null
   var onChatLevel: ((String, Float) -> Unit)? = null
   private val resetLevel = Runnable { session?.let { reportLevel(it, 0f) } }
@@ -179,6 +284,7 @@ object SpeechPlayback : SensorEventListener {
       initialized = true
       promise.resolve(null)
     }) { reason, error ->
+      if (owner == AUTOMATIC_OWNER) automaticEnded(reason, error)
       onChatStopped?.invoke(owner, reason, error)
       if (!initialized) promise.reject(ERROR_CODE, error ?: "Speech stopped before initialization")
     }
@@ -513,6 +619,10 @@ object SpeechPlayback : SensorEventListener {
   fun shutdown() {
     releaseEngine()
     stop()
+  }
+
+  fun detachPresentation() {
+    if (session?.owner != AUTOMATIC_OWNER && suspendedChat?.owner != AUTOMATIC_OWNER) shutdown()
   }
 
   private fun releaseEngine() {

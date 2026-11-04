@@ -46,114 +46,59 @@ impl SpeechKind {
     }
 }
 
-#[derive(Debug)]
-struct Lease {
-    id: u64,
-    kind: SpeechKind,
-    owner: String,
-    request: String,
+impl SpeechKind {
+    const fn admission(self) -> mobile_speech::Admission {
+        use mobile_speech::{Admission, Preemption};
+        Admission {
+            preemption: match self {
+                Self::Chat => Preemption::Any,
+                Self::Announcement => Preemption::SameClass,
+                Self::Device => Preemption::SameOwner,
+            },
+            retain_on_complete: matches!(self, Self::Chat),
+        }
+    }
 }
 
+/// Whip's class mapping and policy over the reusable ownership authority.
 #[derive(Default)]
-struct SpeechPlayback {
-    sequence: u64,
-    active: Option<Lease>,
-}
+struct SpeechPlayback(mobile_speech::Arbiter);
 
 impl SpeechPlayback {
     fn claim(&mut self, kind: SpeechKind, owner: &str, request: &str) -> u64 {
-        if owner.is_empty() {
-            return 0;
-        }
-        if let Some(active) = &self.active {
-            let allowed = match kind {
-                SpeechKind::Chat => true,
-                SpeechKind::Announcement => active.kind == SpeechKind::Announcement,
-                SpeechKind::Device => active.kind == kind && active.owner == owner,
-            };
-            if !allowed {
-                return 0;
-            }
-        }
-        // Zero denotes denied admission. Never reuse a live callback's lease.
-        let Some(id) = self.sequence.checked_add(1) else {
-            return 0;
-        };
-        self.sequence = id;
-        self.active = Some(Lease {
-            id,
-            kind,
-            owner: owner.into(),
-            request: request.into(),
-        });
-        id
+        self.0
+            .claim(kind as u8, owner, request, kind.admission())
+            .map_or(0, mobile_speech::LeaseId::get)
     }
-
-    fn claim_status_at_boundary(&mut self, owner: &str, observed_lease: u64) -> u64 {
-        match &self.active {
-            None if observed_lease == 0 => {}
-            Some(active) if active.id == observed_lease && active.kind == SpeechKind::Chat => {}
-            _ => return 0,
-        }
-        // The adapter certifies an idle chat/chunk boundary, and this lock
-        // fences any intervening takeover before transferring the lease.
-        let Some(id) = self.sequence.checked_add(1) else {
-            return 0;
-        };
-        self.sequence = id;
-        self.active = Some(Lease {
-            id,
-            kind: SpeechKind::Announcement,
-            owner: owner.into(),
-            request: String::new(),
-        });
-        id
+    fn claim_status_at_boundary(&mut self, owner: &str, observed: u64) -> u64 {
+        self.0
+            .handoff(
+                mobile_speech::LeaseId::new(observed),
+                SpeechKind::Chat as u8,
+                SpeechKind::Announcement as u8,
+                owner,
+                SpeechKind::Announcement.admission(),
+            )
+            .map_or(0, mobile_speech::LeaseId::get)
     }
-
     fn is_current(&self, id: u64) -> bool {
-        self.active.as_ref().is_some_and(|active| active.id == id)
+        mobile_speech::LeaseId::new(id).is_some_and(|id| self.0.is_current(id))
     }
-
     fn complete(&mut self, id: u64) -> bool {
-        if !self.is_current(id) {
-            return false;
-        }
-        // Listening chat owns speech even between replies. One-shot callers
-        // release it as soon as their utterance finishes.
-        if self
-            .active
-            .as_ref()
-            .is_some_and(|active| active.kind != SpeechKind::Chat)
-        {
-            self.active = None;
-        }
-        true
+        mobile_speech::LeaseId::new(id).is_some_and(|id| self.0.complete(id))
     }
-
     fn stop(&mut self, id: u64) -> bool {
-        if !self.is_current(id) {
-            return false;
-        }
-        self.active = None;
-        true
+        mobile_speech::LeaseId::new(id).is_some_and(|id| self.0.stop(id))
     }
-
     fn stop_matching(
         &mut self,
         kind: SpeechKind,
         owner: Option<&str>,
         request: Option<&str>,
     ) -> u64 {
-        let Some(active) = &self.active else { return 0 };
-        if active.kind != kind
-            || owner.is_some_and(|owner| owner != active.owner)
-            || request.is_some_and(|request| request != active.request)
-        {
-            return 0;
-        }
-        let id = active.id;
-        self.active = None;
-        id
+        self.0
+            .stop_matching(kind as u8, owner, request)
+            .map_or(0, mobile_speech::LeaseId::get)
     }
 }
 

@@ -1,8 +1,16 @@
 import { NativeModules } from 'react-native';
 
+/** Presentation metadata only; transcript revisions flow entirely inside Rust. */
+export function setAutomaticSpeechBinding(bindingToken: string, hostId: string, tabName: string): void {
+  const native = NativeModules?.HerdrBackground as NativeSpeechPlayback | undefined;
+  native?.automaticSpeechBinding?.(bindingToken, hostId, tabName);
+}
+
 export type SpeechEndReason = 'completed' | 'stopped' | 'shake' | 'replaced' | 'interrupted' | 'busy';
 
 export interface NativeSpeechPlayback {
+  automaticSpeechControl(action: 'enable' | 'pause', value: boolean): Promise<void>;
+  automaticSpeechBinding(bindingToken: string, hostId: string, tabName: string): void;
   speechBackendCommand(action: SpeechBackendAction | 'system-voices'): Promise<string>;
   startChatSpeech(token: string, label: string): Promise<void>;
   startLocalChatSpeech(token: string, label: string): Promise<void>;

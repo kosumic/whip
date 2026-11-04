@@ -6,6 +6,7 @@ mod app_core;
 mod app_database;
 mod app_update;
 mod automatic_chat_speech;
+mod automatic_speech;
 mod billing;
 mod browser_library;
 mod browser_search_history;

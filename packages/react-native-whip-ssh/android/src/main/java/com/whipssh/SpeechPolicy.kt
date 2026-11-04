@@ -12,6 +12,10 @@ object SpeechPolicy {
   @JvmStatic external fun claim(kind: Int, owner: String, request: String): Long
   @JvmStatic external fun isCurrent(lease: Long): Boolean
   @JvmStatic external fun alertSpeech(action: String, token: String, observedLease: Long): String
+  @Volatile var automaticWake: (() -> Unit)? = null
+  @JvmStatic fun automaticSpeechWake() { automaticWake?.invoke() }
+  @JvmStatic external fun registerAutomaticSpeech()
+  @JvmStatic external fun automaticSpeech(command: String): String
   @JvmStatic external fun complete(lease: Long): Boolean
   @JvmStatic external fun stop(lease: Long): Boolean
   @JvmStatic external fun timeoutMs(kind: Int, textUnits: Long): Long
