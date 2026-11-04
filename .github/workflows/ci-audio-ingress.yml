@@ -5,7 +5,7 @@ on:
     paths: &ingress-paths
       - 'crates/audio-ingress/**'
       - '.github/workflows/ci-audio-ingress.yml'
-      - 'rust-toolchain.toml'
+      - 'crates/audio-ingress/rust-toolchain.toml'
   pull_request:
     branches: [main]
     paths: *ingress-paths
