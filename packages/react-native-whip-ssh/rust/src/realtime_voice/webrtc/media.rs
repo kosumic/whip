@@ -1,5 +1,5 @@
 //! Native 24kHz PCM/Opus bridge. Device callbacks and audio never cross JavaScript.
-use super::super::{CapturedAudio, FRAME, RATE, RealtimeVoiceAdapter, processing, startup};
+use super::super::{FRAME, RATE, RealtimeVoiceAdapter, startup};
 use super::{
     audio_track::EncodedAudio,
     identity::Identity,
@@ -12,15 +12,10 @@ use std::{
     sync::{Arc, atomic::Ordering},
     time::{Duration, Instant},
 };
-use tokio::sync::{mpsc, watch};
+use tokio::sync::watch;
 
 const REORDER: Duration = Duration::from_millis(60);
 const MAX_PACKETS: usize = 64;
-
-enum Playout {
-    Packet(Packet),
-    Missing,
-}
 
 #[derive(Default)]
 struct Jitter {
@@ -53,7 +48,7 @@ impl Jitter {
         }
         self.packets.push_back(packet);
     }
-    fn pop(&mut self, now: Instant) -> Option<Playout> {
+    fn pop(&mut self, now: Instant) -> Option<Option<Packet>> {
         if self.packets.is_empty() || self.deadline.is_none_or(|deadline| deadline > now) {
             return None;
         }
@@ -64,7 +59,7 @@ impl Jitter {
             .position(|packet| packet.sequence == expected)
             .and_then(|index| self.packets.remove(index));
         self.sequence = Some(expected.wrapping_add(1));
-        Some(packet.map_or(Playout::Missing, Playout::Packet))
+        Some(packet)
     }
     fn advance(&mut self, samples: usize) {
         self.deadline = self.deadline.map(|deadline| {
@@ -77,7 +72,6 @@ impl Jitter {
 pub(super) async fn run(
     owner: &RealtimeVoiceAdapter,
     peer: &mut Transport,
-    mut capture: mpsc::Receiver<CapturedAudio>,
     identity: Arc<Mutex<Identity>>,
     mut stop: watch::Receiver<bool>,
 ) -> Result<(), &'static str> {
@@ -89,11 +83,12 @@ pub(super) async fn run(
     let mut decoded = vec![0_i16; RATE * 120 / 1000];
     let mut jitter = Jitter::default();
     let mut epoch = 0;
+    let mut frame = ::audio_ingress::Packet::new(owner.input.packet_samples);
     let mut input_generation = owner.input.generation();
     let mut input = VecDeque::new();
     let mut input_at = Instant::now();
     let mut encoded = vec![0; 1275];
-    let mut last_silence = Instant::now();
+    let mut last_silence = Instant::now() - Duration::from_millis(20);
     let mut last_timestamp = None;
     let mut tick = tokio::time::interval(Duration::from_millis(5));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -101,12 +96,15 @@ pub(super) async fn run(
         tokio::select! {
             biased;
             _ = stop.changed() => return Ok(()),
-            frame = capture.recv() => {
-                let Some(frame) = frame else { return Ok(()); };
-                if frame.at.elapsed() > processing::MAX_DELAY || !owner.input.accepts(frame.generation) || !owner.ready.load(Ordering::Acquire) || owner.view.lock().muted { continue; }
-                if input_generation != frame.generation { input.clear(); encoder.reset_state().map_err(|_| "Voice encoder reset failed.")?; input_generation = frame.generation; }
+            captured = owner.next_capture(&mut frame) => {
+                if captured? {
+                    input.clear();
+                    encoder.reset_state().map_err(|_| "Voice encoder reset failed.")?;
+                }
+                if frame.samples.is_empty() { continue; }
+                if input_generation != frame.ticket.generation { input.clear(); encoder.reset_state().map_err(|_| "Voice encoder reset failed.")?; input_generation = frame.ticket.generation; }
                 if input.is_empty() { input_at = frame.at; }
-                input.extend(frame.samples);
+                input.extend(&frame.samples);
                 while input.len() >= FRAME {
                     let pcm: Vec<i16> = input.drain(..FRAME).collect();
                     let count = encoder.encode(&pcm, &mut encoded).map_err(|_| "Voice encoding failed.")?;
@@ -132,7 +130,7 @@ pub(super) async fn run(
                     if let Some(packet) = packet::parse(packet.as_ref()) { jitter.push(packet, arrival); }
                 }
                 while let Some(packet) = jitter.pop(Instant::now()) {
-                    let payload = if let Playout::Packet(packet) = &packet {
+                    let payload = if let Some(packet) = &packet {
                         if last_timestamp.is_some_and(|last: u32| packet.timestamp.wrapping_sub(last) > u32::MAX / 2) { jitter.advance(FRAME); continue; }
                         last_timestamp = Some(packet.timestamp);
                         packet.payload.as_slice()
@@ -143,7 +141,6 @@ pub(super) async fn run(
                         if identity.lock().epoch != epoch { break; }
                         let bytes = decoded[..count].iter().flat_map(|sample| sample.to_le_bytes()).collect();
                         owner.output.lock().append(tag.item.clone(), tag.index, bytes)?;
-                        if !owner.allow_input && owner.output.lock().generated > super::super::PREVIEW_AUDIO_LIMIT { return Err("Voice preview exceeded its audio limit."); }
                     }
                 }
                 if finishing.is_some_and(|deadline| Instant::now() >= deadline) && jitter.packets.is_empty() {
@@ -185,9 +182,10 @@ mod tests {
             let at = now
                 + REORDER
                 + Duration::from_millis(u64::try_from(index * 20).map_err(|_| "index")?);
-            let Playout::Packet(packet) = jitter.pop(at).ok_or("missing frame")? else {
-                return Err("unexpected loss");
-            };
+            let packet = jitter
+                .pop(at)
+                .ok_or("missing frame")?
+                .ok_or("unexpected loss")?;
             assert_eq!(packet.sequence, expected);
             jitter.advance(FRAME);
         }

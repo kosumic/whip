@@ -7,7 +7,6 @@ mod delegation;
 mod echo;
 pub(crate) mod feedback;
 mod ffi;
-mod input;
 mod processing;
 mod response;
 mod socket;
@@ -209,6 +208,8 @@ pub(super) struct View {
     messages: Vec<transcript::Message>,
     startup: startup::Timings,
     media_ready: bool,
+    capture_packets: u64,
+    capture_gaps: u64,
 }
 
 struct Output {
@@ -313,11 +314,6 @@ pub(super) enum Command {
     Skip,
     Mute(bool),
 }
-struct CapturedAudio {
-    samples: Vec<i16>,
-    generation: u64,
-    at: Instant,
-}
 pub(super) struct RealtimeVoiceAdapter {
     started_at: Instant,
     client_elapsed_ms: u64,
@@ -327,8 +323,7 @@ pub(super) struct RealtimeVoiceAdapter {
     output: Mutex<Output>,
     echo: Mutex<Option<echo::MediaEchoCanceller>>,
     commands: mpsc::Sender<Command>,
-    audio: mpsc::Sender<CapturedAudio>,
-    input: input::InputGate,
+    input: Arc<crate::audio_ingress::NativeIngress>,
     cancel: watch::Sender<bool>,
     closed: AtomicBool,
     ready: AtomicBool,
@@ -377,7 +372,12 @@ impl RealtimeVoiceAdapter {
         let speech = crate::speech_playback::RealtimeSpeechLease::claim(config.preview)
             .ok_or("Another speech session is active. Finish it before previewing.")?;
         let (commands, command_rx) = mpsc::channel(8);
-        let (audio, audio_rx) = mpsc::channel(32);
+        let input = crate::audio_ingress::NativeIngress::realtime(
+            u32::try_from(RATE).map_err(|_| "Invalid capture rate.")?,
+            FRAME * 4,
+            32,
+        )?;
+        input.set_muted(config.preview);
         let (cancel, mut cancellation) = watch::channel(false);
         let adapter = Arc::new(Self {
             started_at,
@@ -398,6 +398,8 @@ impl RealtimeVoiceAdapter {
                 messages: Vec::new(),
                 startup: startup::Timings::default(),
                 media_ready: false,
+                capture_packets: 0,
+                capture_gaps: 0,
                 tool: None,
                 captions: (!config.preview)
                     .then(|| captions::Diagnostics::pending(config.language)),
@@ -410,8 +412,7 @@ impl RealtimeVoiceAdapter {
                     .transpose()?,
             ),
             commands,
-            audio,
-            input: input::InputGate::new(config.preview),
+            input,
             cancel,
             closed: AtomicBool::new(false),
             ready: AtomicBool::new(false),
@@ -430,7 +431,7 @@ impl RealtimeVoiceAdapter {
                 let result = tokio::select! {
                     biased;
                     _ = cancellation.changed() => Ok(()),
-                result = owner.run(PreparedSession { config, key, update }, agent, command_rx, audio_rx, &mut tools) => result,
+                result = owner.run(PreparedSession { config, key, update }, agent, command_rx, &mut tools) => result,
                 };
                 tools.shutdown().await;
                 if let Err(message) = result {
@@ -460,6 +461,7 @@ impl RealtimeVoiceAdapter {
         self.cancel.send_replace(true);
     }
     fn close(&self) {
+        self.input.close();
         self.closed.store(true, Ordering::Release);
         self.ready.store(false, Ordering::Release);
         self.cancel.send_replace(true);
@@ -491,42 +493,83 @@ impl RealtimeVoiceAdapter {
         {
             return true;
         }
-        let cleaned = {
-            let mut echo = self.echo.lock();
-            echo.as_mut()
-                .map(|echo| echo.capture(samples, at, Instant::now()))
-                .transpose()
-        };
-        let cleaned = match cleaned {
-            Ok(samples) => samples,
-            Err(error) => {
-                self.fail(error);
-                return false;
+        match self.input.push(generation, at, samples) {
+            Ok(())
+            | Err(
+                ::audio_ingress::Error::Stale
+                | ::audio_ingress::Error::Closed
+                | ::audio_ingress::Error::Overflow
+                | ::audio_ingress::Error::Busy
+                | ::audio_ingress::Error::Expired,
+            ) => true,
+            Err(_) => {
+                self.fail("Realtime microphone delivery fell behind.");
+                false
             }
-        };
-        let samples = cleaned.as_deref().unwrap_or(samples);
-        if self.view.lock().muted || samples.is_empty() || !self.input.accepts(generation) {
-            return true;
         }
-        self.view.lock().level = peak(samples);
-        let frame = CapturedAudio {
-            samples: samples.to_vec(),
-            generation,
-            at,
-        };
-        let sent = if self.webrtc {
-            self.media
-                .lock()
-                .as_ref()
-                .is_some_and(|media| media.input.try_send(frame).is_ok())
-        } else {
-            self.audio.try_send(frame).is_ok()
-        };
-        if !sent {
-            self.fail("Realtime upload fell behind. Please call again.");
-            return false;
+    }
+
+    async fn next_capture(
+        &self,
+        packet: &mut ::audio_ingress::Packet,
+    ) -> Result<bool, &'static str> {
+        if self.input.receive(packet).await? {
+            if let Some(echo) = self.echo.lock().as_mut() {
+                echo.reset_capture()?;
+            }
+            return Ok(true);
         }
-        true
+        if !self.input.accepts(packet.ticket.generation)
+            || !self.ready.load(Ordering::Acquire)
+            || self.view.lock().muted
+        {
+            packet.samples.clear();
+            return Ok(false);
+        }
+        // Echo processing runs on the consumer, outside the device callback.
+        let cleaned = self
+            .echo
+            .lock()
+            .as_mut()
+            .map(|echo| echo.capture(&packet.samples, packet.at, Instant::now()))
+            .transpose()?;
+        if let Some(cleaned) = cleaned {
+            packet.samples.clear();
+            packet.samples.extend(cleaned);
+        }
+        if !self.input.accepts(packet.ticket.generation) {
+            packet.samples.clear();
+        }
+        self.view.lock().level = peak(&packet.samples);
+        Ok(false)
+    }
+
+    async fn send_capture(
+        &self,
+        socket: &mut RealtimeSocket,
+        capture: &::audio_ingress::Packet,
+    ) -> Result<(), &'static str> {
+        if capture.samples.is_empty() {
+            return Ok(());
+        }
+        let bytes: Vec<u8> = capture
+            .samples
+            .iter()
+            .flat_map(|sample| sample.to_le_bytes())
+            .collect();
+        send(
+            socket,
+            ClientEvent::InputAudioBufferAppend {
+                event_id: None,
+                audio: STANDARD.encode(bytes),
+            },
+        )
+        .await?;
+        self.view.lock().startup.first_input.get_or_insert_with(|| {
+            self.client_elapsed_ms
+                .saturating_add(startup::elapsed(self.started_at))
+        });
+        Ok(())
     }
 
     async fn run(
@@ -534,7 +577,6 @@ impl RealtimeVoiceAdapter {
         prepared: PreparedSession,
         agent: Option<Arc<PinnedAgent>>,
         mut commands: mpsc::Receiver<Command>,
-        mut audio: mpsc::Receiver<CapturedAudio>,
         tools: &mut JoinSet<ToolCompletion>,
     ) -> Result<(), &'static str> {
         let PreparedSession {
@@ -546,6 +588,7 @@ impl RealtimeVoiceAdapter {
             self.connect_session(&config, key, update).await?;
         let started = tokio::time::Instant::now();
         let mut heartbeat = tokio::time::interval(Duration::from_millis(250));
+        let mut capture = ::audio_ingress::Packet::new(self.input.packet_samples);
         let mut responses = response::ResponseCreateQueue::default();
         let mut costs = cost::CurrentChat::default();
         let mut input_item = String::new();
@@ -576,7 +619,6 @@ impl RealtimeVoiceAdapter {
                     Some(Command::Mute(muted)) => {
                         if muted { self.view.lock().muted = true; }
                         self.view.lock().level = 0.0;
-                        while audio.try_recv().is_ok() {}
                         { let mut echo = self.echo.lock(); if let Some(echo) = echo.as_mut() { echo.reset_capture()?; } }
                         send(&mut socket, ClientEvent::InputAudioBufferClear { event_id: None }).await?;
                         responses.clear_input();
@@ -649,8 +691,9 @@ impl RealtimeVoiceAdapter {
                         if output.generated == output.played { view.playback_level = 0.0; }
                     }
                 },
-                samples = audio.recv(), if self.ready.load(Ordering::Acquire) => {
-                    self.send_legacy_capture(&mut socket, samples).await?;
+                samples = self.next_capture(&mut capture), if !self.webrtc && self.ready.load(Ordering::Acquire) => {
+                    samples?;
+                    self.send_capture(&mut socket, &capture).await?;
                 },
                 message = socket.next() => {
                     let message = message.ok_or("OpenAI Realtime disconnected. Start a new call.")?.map_err(|_| "OpenAI Realtime connection failed.")?;
@@ -740,37 +783,6 @@ impl RealtimeVoiceAdapter {
                 },
             }
         }
-    }
-
-    async fn send_legacy_capture(
-        &self,
-        socket: &mut RealtimeSocket,
-        frame: Option<CapturedAudio>,
-    ) -> Result<(), &'static str> {
-        if let Some(frame) = frame
-            && !self.view.lock().muted
-            && self.input.accepts(frame.generation)
-            && frame.at.elapsed() <= processing::MAX_DELAY
-        {
-            let bytes: Vec<u8> = frame
-                .samples
-                .iter()
-                .flat_map(|sample| sample.to_le_bytes())
-                .collect();
-            send(
-                socket,
-                ClientEvent::InputAudioBufferAppend {
-                    event_id: None,
-                    audio: STANDARD.encode(bytes),
-                },
-            )
-            .await?;
-            self.view.lock().startup.first_input.get_or_insert_with(|| {
-                self.client_elapsed_ms
-                    .saturating_add(startup::elapsed(self.started_at))
-            });
-        }
-        Ok(())
     }
 
     fn confirm_audio(

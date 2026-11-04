@@ -5,6 +5,7 @@ mod agent_transcript;
 mod app_core;
 mod app_database;
 mod app_update;
+mod audio_ingress;
 mod automatic_chat_speech;
 mod automatic_speech;
 mod billing;

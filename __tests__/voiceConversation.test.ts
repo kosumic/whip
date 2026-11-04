@@ -20,10 +20,10 @@ const mockAppListeners = new Set<(state: string) => void>();
 const mockCallEvents = new Map<string, (event: { token: string; type: string; muted?: boolean; reason?: string; error?: string; level?: number }) => void>();
 const mockTranscriptListeners = new Set<(state: AgentChatState | null, baseline?: boolean) => void>();
 let mockInputSnapshot = { owner: null as string | null, phase: 'idle', interimText: '' };
-let mockView = { phase: 'preparing', inputId: 1n, muted: false, smartTurn: false, text: '', level: 0, silenceMs: 800, progress: 0, analyze: false };
+let mockView = { phase: 'preparing', inputId: 1n, muted: false, smartTurn: false, text: '', level: 0, silenceMs: 800, progress: 0, analyze: false, audioError: null as string | null };
 let mockRequest: {
   owner: string; localOnly: boolean; duringPlayback?: boolean; append: (text: string) => void;
-  onAudio: (pcm: string) => void; onError: (error: string, message: string) => void;
+  audioCapture: { open: () => string; close: (handle: string) => void }; onError: (error: string, message: string) => void;
 } | undefined;
 const mockCore = {
   submitText: jest.fn(),
@@ -33,6 +33,7 @@ const mockCore = {
   prepare: jest.fn((_install: boolean) => { mockView.phase = 'listening'; return Promise.resolve(); }),
   beginPreparation: jest.fn(() => { mockView.phase = 'preparing'; }),
   useVad: jest.fn(() => { mockView.phase = 'listening'; }),
+  openAudioCapture: jest.fn(() => 101n), closeAudioCapture: jest.fn(),
   audio: jest.fn(), analyze: jest.fn(() => Promise.resolve()), recognition: jest.fn(),
   ended: jest.fn(), takePrompt: jest.fn(), transcript: jest.fn(), nextSpeech: jest.fn(),
   playbackEnded: jest.fn(() => { mockView.phase = 'listening'; }),
@@ -93,10 +94,11 @@ let session: VoiceConversation;
 let changed: jest.Mock<void, [VoiceConversationView]>;
 let send: jest.Mock<boolean, [string]>;
 beforeEach(() => {
+  jest.useFakeTimers();
   jest.clearAllMocks();
   mockSpeech.enqueueChatSpeech = undefined;
   mockInputSnapshot = { owner: null, phase: 'idle', interimText: '' };
-  mockView = { phase: 'preparing', inputId: 1n, muted: false, smartTurn: false, text: '', level: 0, silenceMs: 800, progress: 0, analyze: false };
+  mockView = { phase: 'preparing', inputId: 1n, muted: false, smartTurn: false, text: '', level: 0, silenceMs: 800, progress: 0, analyze: false, audioError: null as string | null };
   mockRequest = undefined;
   mockCore.speechFinished.mockReturnValue(true);
   mockCore.nextSpeech.mockReset().mockReturnValue(undefined);
@@ -104,7 +106,7 @@ beforeEach(() => {
   changed = jest.fn(); send = jest.fn<boolean, [string]>(() => true);
   session = new VoiceConversation(target, send, changed, () => Promise.resolve(mockCore as unknown as NativeVoiceChat));
 });
-afterEach(async () => { await session.close(); mockInputListeners.clear(); mockAppListeners.clear(); mockTranscriptListeners.clear(); mockCallEvents.clear(); });
+afterEach(async () => { await session.close(); mockInputListeners.clear(); mockAppListeners.clear(); mockTranscriptListeners.clear(); mockCallEvents.clear(); jest.clearAllTimers(); jest.useRealTimers(); });
 
 test('local call captions acknowledge audible chunks and retain earlier replies', async () => {
   let finishSpeech!: () => void;
@@ -128,13 +130,28 @@ test('starts without downloading and uses the shared strictly local recognizer',
   await session.start(); await flush();
   expect(changed.mock.calls.at(-1)?.[0].error).toBeNull();
   expect(mockCore.prepare).toHaveBeenCalledWith(false);
-  expect(mockInput.start).toHaveBeenCalledWith(expect.objectContaining({ localOnly: true, onAudio: expect.any(Function) }));
+  expect(mockInput.start).toHaveBeenCalledWith(expect.objectContaining({ localOnly: true, audioCapture: expect.objectContaining({ open: expect.any(Function), close: expect.any(Function) }) }));
   expect(mockSpeech.startVoiceCall.mock.invocationCallOrder[0]).toBeLessThan(mockInput.start.mock.invocationCallOrder[0]);
-  mockRequest!.onAudio('AAAA');
-  expect(mockCore.audio).toHaveBeenCalledWith(1n, 'AAAA');
+  jest.advanceTimersByTime(50);
+  expect(mockRequest!.audioCapture.open()).toBe('101');
+  expect(mockCore.openAudioCapture).toHaveBeenCalledWith(1n);
+  expect(mockCore.audio).not.toHaveBeenCalled();
   mockRequest!.append('Recognized words');
   expect(mockCore.recognition).toHaveBeenCalledWith(1n, 'Recognized words');
   expect(send).not.toHaveBeenCalled();
+});
+
+test('coarse native state updates surface capture failure without forwarding PCM through JS', async () => {
+  await session.start(); await flush();
+  mockView.level = 0.5;
+  jest.advanceTimersByTime(50);
+  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ level: 0.5 }));
+  expect(mockCore.audio).not.toHaveBeenCalled();
+  mockView.audioError = 'Microphone delivery fell behind.';
+  jest.advanceTimersByTime(50);
+  await flush();
+  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'error', error: mockView.audioError }));
+  expect(mockSpeech.endVoiceCall).toHaveBeenCalledTimes(1);
 });
 
 test('plays the ready piano once after the recognizer is listening', async () => {
@@ -242,7 +259,7 @@ test('a new agent can receive its first spoken prompt before its transcript exis
   expect(mockInput.start).toHaveBeenCalled();
   mockView.phase = 'waiting';
   mockCore.takePrompt.mockReturnValueOnce('First spoken prompt');
-  mockRequest!.onAudio('AAAA');
+  jest.advanceTimersByTime(50);
   expect(send).toHaveBeenCalledWith('First spoken prompt');
 
   session.setTranscriptBinding('first-transcript');
@@ -259,7 +276,7 @@ test('a binding invalidation preserves the pending reply until the replacement t
   await session.start(); await flush();
   mockView.phase = 'waiting';
   mockCore.takePrompt.mockReturnValueOnce('First spoken prompt');
-  mockRequest!.onAudio('AAAA');
+  jest.advanceTimersByTime(50);
   for (const listener of mockTranscriptListeners) listener(null);
   session.setTranscriptBinding();
   expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'waiting', error: null }));
@@ -284,7 +301,7 @@ test('a binding that never returns ends the call after the recovery deadline', a
   try {
     await session.start(); await flush();
     mockView.phase = 'waiting';
-    mockRequest!.onAudio('AAAA');
+    jest.advanceTimersByTime(50);
     for (const listener of mockTranscriptListeners) listener(null);
     await jest.advanceTimersByTimeAsync(29_000);
     expect(mockSpeech.endVoiceCall).not.toHaveBeenCalled();
@@ -362,7 +379,7 @@ test('closing during turn inference rejects its late result and releases speech 
   mockCore.analyze.mockImplementationOnce(() => new Promise<void>(done => { resolve = done; }));
   await session.start(); await flush();
   mockView.analyze = true;
-  mockRequest!.onAudio('AAAA');
+  jest.advanceTimersByTime(50);
   await session.close();
   const calls = changed.mock.calls.length;
   resolve(); await flush();
@@ -501,8 +518,8 @@ test('voice interruption stops output and preserves the running recognizer and i
   await flush();
   const capture = mockRequest!;
   const starts = mockInput.start.mock.calls.length;
-  mockCore.audio.mockImplementationOnce(() => { mockView.phase = 'listening'; });
-  capture.onAudio('user speech');
+  mockView.phase = 'listening';
+  jest.advanceTimersByTime(50);
   await flush();
   expect(mockSpeech.stopChatSpeech).toHaveBeenCalledTimes(1);
   expect(mockInput.start).toHaveBeenCalledTimes(starts);
@@ -550,7 +567,7 @@ test('latency uses a native playback-start event rather than TTS submission', as
   let finishSpeech!: () => void;
   try {
     await session.start(); await flush();
-    mockView.phase = 'finishing'; mockRequest!.onAudio('last packet');
+    mockView.phase = 'finishing'; jest.advanceTimersByTime(50);
     now = 1_050;
     mockCore.ended.mockImplementationOnce(() => { mockView.phase = 'waiting'; });
     mockCore.takePrompt.mockReturnValueOnce('Hello');
@@ -825,7 +842,7 @@ describe('spoken waiting filler', () => {
     else if (action === 'skip') await session.skip();
     else {
       mockView.phase = 'listening';
-      mockRequest!.onAudio('AAAA');
+      jest.advanceTimersByTime(50);
     }
     await flush();
     expect(mockSpeech.stopChatSpeech).toHaveBeenCalled();

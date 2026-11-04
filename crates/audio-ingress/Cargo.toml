@@ -1,0 +1,19 @@
+[package]
+name = "audio-ingress"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "AGPL-3.0-or-later"
+description = "Bounded, generation-fenced PCM delivery for native audio consumers"
+repository = "https://github.com/kosumic/whip"
+
+[dependencies]
+crossbeam-queue = "0.3"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"

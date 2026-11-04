@@ -266,6 +266,7 @@ pub extern "C" fn whip_realtime_view(id: u64) -> *mut c_char {
     let messages = call.output.lock().transcript.snapshot();
     let mut view = call.view.lock();
     view.messages = messages;
+    (view.capture_packets, view.capture_gaps) = call.input.diagnostics();
     serde_json::to_string(&*view)
         .ok()
         .and_then(|value| CString::new(value).ok())

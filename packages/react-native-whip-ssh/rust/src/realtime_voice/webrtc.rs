@@ -8,21 +8,17 @@ mod packet;
 mod transport;
 mod transport_runtime;
 
-use super::{CapturedAudio, ClientEvent, RealtimeSocket, RealtimeVoiceAdapter, socket, startup};
+use super::{ClientEvent, RealtimeSocket, RealtimeVoiceAdapter, socket, startup};
 use futures::{SinkExt, StreamExt, channel::mpsc as wire};
 use parking_lot::Mutex;
 use std::{
     sync::{Arc, atomic::Ordering},
     time::Instant,
 };
-use tokio::{
-    sync::{mpsc, watch},
-    task::JoinHandle,
-};
+use tokio::{sync::watch, task::JoinHandle};
 use tokio_tungstenite::tungstenite::Message;
 
 pub(super) struct Handle {
-    pub input: mpsc::Sender<CapturedAudio>,
     identity: Arc<Mutex<identity::Identity>>,
     stop: watch::Sender<bool>,
     workers: Vec<JoinHandle<()>>,
@@ -90,11 +86,10 @@ pub(super) async fn start(
         return Err("Realtime WebRTC negotiation failed. Check your network.");
     }
     owner.view.lock().startup.negotiation = Some(startup::elapsed(negotiated));
-    let (input, capture) = mpsc::channel(32);
     let media_owner = owner.clone();
     let media_identity = identity.clone();
     let media = tokio::spawn(async move {
-        let result = media::run(&media_owner, &mut peer, capture, media_identity, stopped).await;
+        let result = media::run(&media_owner, &mut peer, media_identity, stopped).await;
         if let Err(error) = result {
             media_owner.fail(error);
         }
@@ -103,7 +98,6 @@ pub(super) async fn start(
         call.hangup().await;
     });
     *owner.media.lock() = Some(Handle {
-        input,
         identity,
         stop,
         workers: vec![sideband, media],

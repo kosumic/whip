@@ -739,6 +739,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/fae70451618f664b.txt"),
   },
   {
+    id: "cargo-audio-ingress-0-1-0",
+    category: "cargo",
+    projectName: "audio-ingress",
+    sourceUrl: "https://github.com/kosumic/whip",
+    attribution: "Direct Rust dependency · version 0.1.0 · used by whip-ssh",
+    licenseName: "AGPL-3.0-or-later",
+    licenseAsset: require("../../assets/licenses/generated/506900f8c4de58c1.txt"),
+  },
+  {
     id: "cargo-axum-0-8-9",
     category: "cargo",
     projectName: "axum",

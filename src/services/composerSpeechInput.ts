@@ -6,7 +6,7 @@ import { setSpeechInputActive } from './speechInputFocus';
 type Recognizer = Pick<typeof import('expo-speech-recognition').ExpoSpeechRecognitionModule,
   'addListener' | 'start' | 'stop' | 'abort' | 'isRecognitionAvailable' | 'requestPermissionsAsync' | 'getPermissionsAsync'> &
   Partial<Pick<typeof import('expo-speech-recognition').ExpoSpeechRecognitionModule,
-    'supportsOnDeviceRecognition' | 'supportsAudioChunkEvents' | 'supportsEchoCancellation'>>;
+    'supportsOnDeviceRecognition' | 'supportsAudioChunkEvents' | 'supportsNativeAudioIngress' | 'supportsEchoCancellation'>>;
 type RecognitionOptions = Parameters<Recognizer['start']>[0];
 type Subscription = { remove: () => void };
 export type SpeechInputError = 'permission' | 'unavailable' | 'noSpeech' | 'network' | 'interrupted' | 'failed';
@@ -26,6 +26,7 @@ interface Request {
   managedCall?: boolean;
   duringPlayback?: boolean;
   onAudio?: (pcm: string) => void;
+  audioCapture?: { open: () => string; close: (handle: string) => void };
 }
 interface Dependencies {
   recognizer: Recognizer;
@@ -52,6 +53,7 @@ interface Session {
   restart?: ReturnType<typeof setTimeout>;
   restartDelay: number;
   audioToken?: string;
+  audioHandle?: string;
 }
 
 const IDLE: SpeechInputSnapshot = { owner: null, phase: 'idle', interimText: '' };
@@ -179,6 +181,11 @@ export class ComposerSpeechInput {
         this.release(session);
         return;
       }
+      if (request.audioCapture && recognizer.supportsNativeAudioIngress?.() !== true) {
+        request.onError('unavailable', LOCAL_UNAVAILABLE);
+        this.release(session);
+        return;
+      }
       if (!recognizer.isRecognitionAvailable()) {
         request.onError('unavailable');
         this.release(session);
@@ -251,6 +258,7 @@ export class ComposerSpeechInput {
           // A manual stop still drains its pending hypothesis on error.
           if (!session.stopping) {
             session.cancelled = true;
+            this.closeCapture(session);
             session.core!.end();
             this.publish({ owner: request.owner, phase: 'finishing', interimText: '' });
           }
@@ -259,6 +267,7 @@ export class ComposerSpeechInput {
           if (this.current !== session || !session.started) return;
           session.started = false;
           session.ending = true;
+          this.closeCapture(session);
           clearTimeout(session.timeout);
           if (session.android && !session.cancelled && !session.stopping) {
             // Includes providers which ignore segmented mode and end after one
@@ -306,6 +315,7 @@ export class ComposerSpeechInput {
     const session = this.current;
     if (session?.request.owner !== owner || this.snapshot.phase !== 'listening') return;
     session.stopping = true;
+    this.closeCapture(session);
     session.core!.finish();
     this.refresh(session);
     clearTimeout(session.restart);
@@ -327,6 +337,7 @@ export class ComposerSpeechInput {
     const session = this.current;
     if (session?.request.owner !== owner || session.cancelled) return;
     session.cancelled = true;
+    this.closeCapture(session);
     session.core?.end();
     clearTimeout(session.restart);
     if (!session.started) {
@@ -339,7 +350,7 @@ export class ComposerSpeechInput {
   }
 
   private startRecognition(session: Session): void {
-    session.started = true;
+    session.started = false;
     session.ending = false;
     // This guards missing native startup/final events, never listening silence.
     session.timeout = setTimeout(() => {
@@ -347,7 +358,15 @@ export class ComposerSpeechInput {
       if (!this.fallback(session)) this.fail(session);
     }, FINAL_RESULT_TIMEOUT_MS);
     session.audioToken = `${session.request.owner}:${++this.nextAudioToken}`;
-    try { session.dependencies!.recognizer.start({ ...session.options!, ...(session.request.onAudio ? { audioChunkToken: session.audioToken } : {}) }); } catch {
+    try {
+      this.closeCapture(session);
+      session.audioHandle = session.request.audioCapture?.open();
+      session.started = true;
+      session.dependencies!.recognizer.start({ ...session.options!,
+        ...(session.audioHandle ? { audioIngressHandle: session.audioHandle, audioChunkEvents: false } : {}),
+        ...(session.request.onAudio ? { audioChunkToken: session.audioToken } : {}),
+      });
+    } catch {
       if (!this.fallback(session)) this.fail(session);
     }
   }
@@ -385,8 +404,15 @@ export class ComposerSpeechInput {
     this.publish({ owner: session.request.owner, ...session.core!.view() });
   }
 
+  private closeCapture(session: Session): void {
+    const handle = session.audioHandle;
+    session.audioHandle = undefined;
+    if (handle) session.request.audioCapture?.close(handle);
+  }
+
   private release(session: Session): void {
     if (this.current !== session) return;
+    this.closeCapture(session);
     if (!session.cancelled) this.append(session, session.core?.end());
     this.current = null;
     clearTimeout(session.timeout);

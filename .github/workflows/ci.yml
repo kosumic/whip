@@ -128,6 +128,13 @@ jobs:
           cargo test --locked
           cargo run --locked --example plain_text
 
+      - name: Check shared PCM ingress
+        working-directory: crates/audio-ingress
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+
       - name: Check shared Herdr protocol
         working-directory: crates/herdr-protocol
         env:

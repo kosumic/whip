@@ -5,6 +5,7 @@
 #include "react-native-whip-ssh.h"
 #include "WhipSpeechPolicy.h"
 #include "WhipRealtimeVoice.h"
+#include "WhipAudioIngress.h"
 #include <array>
 #include <algorithm>
 #include <string>
@@ -42,6 +43,14 @@ static jstring speechString(JNIEnv *env, const std::string &json) {
 }
 
 struct VoiceCredentialContext { JNIEnv *env; jobject reader; };
+extern "C" JNIEXPORT jint JNICALL
+Java_expo_modules_speechrecognition_ExpoAudioRecorder_whipCapturePcm(JNIEnv *env, jclass, jlong handle, jbyteArray bytes, jint count, jint rate, jlong sequence) {
+    std::array<uint8_t, WhipAudioMaxBytes> pcm;
+    if (!bytes || count < 0 || count > static_cast<jint>(pcm.size()) || count > env->GetArrayLength(bytes) || rate <= 0 || sequence < 0) return WhipAudioInvalid;
+    env->GetByteArrayRegion(bytes, 0, count, reinterpret_cast<jbyte *>(pcm.data()));
+    if (env->ExceptionCheck()) return WhipAudioInvalid;
+    return whip_audio_ingress_push_v1(handle, pcm.data(), count, rate, 1, sequence, 0);
+}
 static int32_t readVoiceCredential(void *opaque, uint8_t *destination, size_t capacity) {
     auto *context = static_cast<VoiceCredentialContext *>(opaque);
     auto *env = context->env;

@@ -133,8 +133,11 @@ valid recognition. A client cancellation during a deliberate local stop drains
 the transcript without ending the call; active-capture failures still surface.
 See [Android's audio-source session contract](https://developer.android.com/reference/android/speech/RecognizerIntent#EXTRA_AUDIO_SOURCE).
 
-The patch to `expo-speech-recognition` adds opt-in `audiochunk` events containing
-16 kHz mono PCM16LE from its existing microphone stream. Android needs Android
+The patch to `expo-speech-recognition` sends local voice PCM directly from its
+existing microphone stream to the shared Rust ingress, using a fresh sink handle
+for every recognizer cycle. PCM does not pass through JavaScript. UI and turn
+transitions poll Rust at 20 Hz. See [native microphone ingress](audio-ingress.md)
+for buffering, lifecycle fencing and validation status. Android needs Android
 13 or later and an installed on-device recognition service/language. iOS requires
 on-device recognition for the actual selected locale. The patch explicitly
 rejects a locale that cannot honor that requirement. Capture is not persisted.

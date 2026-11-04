@@ -112,3 +112,5 @@ AGENTS.md
 /.direnv/
 
 !/notify-relay/.dev.vars.example
+
+/crates/audio-ingress/target/

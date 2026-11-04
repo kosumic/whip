@@ -15,6 +15,7 @@ smart-turn = ["dep:tract-onnx", "dep:rustfft"]
 
 [dependencies]
 mobile-speech = { version = "0.1.0", path = "../../../crates/mobile-speech" }
+audio-ingress = { version = "0.1.0", path = "../../../crates/audio-ingress" }
 herdr-protocol = { version = "0.2.0", path = "../../../crates/herdr-protocol" }
 agent-transcript-core = { version = "0.1.0", path = "../../../crates/agent-transcript-core" }
 agent-browser-control = { version = "0.1.0", path = "../../../crates/agent-browser-control" }

@@ -18313,6 +18313,7 @@ export type VoiceChatView = {
   level: number;
   silenceMs: number;
   analyze: boolean;
+  audioError?: string;
   downloadedBytes: bigint;
   totalBytes: bigint;
 };
@@ -18347,6 +18348,7 @@ const FfiConverterTypeVoiceChatView = (() => {
         level: FfiConverterFloat32.read(from),
         silenceMs: FfiConverterUInt32.read(from),
         analyze: FfiConverterBool.read(from),
+        audioError: FfiConverterOptionalString.read(from),
         downloadedBytes: FfiConverterUInt64.read(from),
         totalBytes: FfiConverterUInt64.read(from),
       };
@@ -18360,6 +18362,7 @@ const FfiConverterTypeVoiceChatView = (() => {
       FfiConverterFloat32.write(value.level, into);
       FfiConverterUInt32.write(value.silenceMs, into);
       FfiConverterBool.write(value.analyze, into);
+      FfiConverterOptionalString.write(value.audioError, into);
       FfiConverterUInt64.write(value.downloadedBytes, into);
       FfiConverterUInt64.write(value.totalBytes, into);
     }
@@ -18373,6 +18376,7 @@ const FfiConverterTypeVoiceChatView = (() => {
         FfiConverterFloat32.allocationSize(value.level) +
         FfiConverterUInt32.allocationSize(value.silenceMs) +
         FfiConverterBool.allocationSize(value.analyze) +
+        FfiConverterOptionalString.allocationSize(value.audioError) +
         FfiConverterUInt64.allocationSize(value.downloadedBytes) +
         FfiConverterUInt64.allocationSize(value.totalBytes)
       );
@@ -60266,8 +60270,13 @@ export interface VoiceChatLike {
    */
   beginPreparation(): void;
   close(): void;
+  closeAudioCapture(handle: bigint): void;
   finish(): void;
   nextSpeech(): string | undefined;
+  /**
+   * Opens a fresh native capture ticket for each recognizer cycle.
+   */
+  openAudioCapture(inputId: bigint) /*throws*/ : bigint;
   playbackEnded(): VoiceChatView;
   /**
    * Standard builds use local VAD without loading or downloading a model.
@@ -60439,6 +60448,19 @@ export class VoiceChat extends UniffiAbstractObject implements VoiceChatLike {
     );
   }
 
+  closeAudioCapture(handle: bigint): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_close_audio_capture(
+          uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+          FfiConverterUInt64.lower(handle, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
   finish(): void {
     uniffiCaller.rustCall(
       /*caller:*/ callStatus => {
@@ -60463,6 +60485,27 @@ export class VoiceChat extends UniffiAbstractObject implements VoiceChatLike {
         /*caller:*/ callStatus => {
           return nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_next_speech(
             uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  /**
+   * Opens a fresh native capture ticket for each recognizer cycle.
+   */
+  openAudioCapture(inputId: bigint): bigint /*throws*/ {
+    return FfiConverterUInt64.lift(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeVoiceChatError.lift.bind(
+          FfiConverterTypeVoiceChatError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_open_audio_capture(
+            uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+            FfiConverterUInt64.lower(inputId, nativeModule().rustbuffer_alloc),
             callStatus,
           );
         },
@@ -65622,6 +65665,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_close_audio_capture() !==
+    22475
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_close_audio_capture',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_finish() !==
     58245
   ) {
@@ -65635,6 +65686,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_voicechat_next_speech',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_open_audio_capture() !==
+    44505
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_open_audio_capture',
     );
   }
   if (

@@ -4,6 +4,7 @@ module.exports = [
   'android/app/build',
   'android/build',
   'build',
+  'crates/audio-ingress/target',
   'crates/agent-browser-control/target',
   'crates/agent-transcript-core/target',
   'crates/herdr-protocol/target',

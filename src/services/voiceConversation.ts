@@ -45,6 +45,7 @@ const STOPPED = 'WhipChatSpeechStopped';
 const STARTED = 'WhipChatSpeechStarted';
 const LEVEL = 'WhipChatSpeechLevel';
 const CALL_EVENT = 'WhipVoiceCall';
+const CAPTURE_POLL_MS = 50;
 const WATCHDOG_MS = 10_000;
 const SPEECH_LOOKAHEAD = 2;
 const FILLER_POLL_MS = 1_000;
@@ -102,8 +103,7 @@ export class VoiceConversation {
   private unsubscribeTranscript?: () => void;
   private transcriptRecovery?: ReturnType<typeof setTimeout>;
   private releaseBackground?: () => void;
-  private captureChunks = 0;
-  private captureDiagnosticAt = 0;
+  private captureTimer?: ReturnType<typeof setInterval>;
   private readonly startedWithoutTranscript: boolean;
   private view: VoiceConversationView = {
     phase: 'starting', muted: false, smartTurn: false, speaker: false, text: '', level: 0, progress: 0, error: null, transcript: null,
@@ -150,6 +150,9 @@ export class VoiceConversation {
       const core = await this.load(root);
       if (this.closed) return;
       this.core = core;
+      this.captureTimer = setInterval(() => {
+        try { this.apply(); } catch (error) { this.fail(error); }
+      }, CAPTURE_POLL_MS);
       core.setVadSensitivity(this.vadSensitivity);
       const speechEmitter: Pick<NativeEventEmitter<VoiceSpeechEvents>, 'addListener'> =
         Platform.OS === 'ios' ? new NativeEventEmitter<VoiceSpeechEvents>(this.playback) : DeviceEventEmitter;
@@ -329,6 +332,7 @@ export class VoiceConversation {
   private apply(): void {
     if (this.closed || !this.core) return;
     const view = this.core.view();
+    if (view.audioError) { this.fail(new Error(view.audioError)); return; }
     if (view.phase !== 'listening' && this.readySoundPlaying) void this.stopSound();
     if (view.phase === 'waiting') {
       this.fillerTimer ??= setInterval(() => this.fillSilence(), FILLER_POLL_MS);
@@ -403,20 +407,12 @@ export class VoiceConversation {
           recordDiagnostic('info', 'VoiceChat', 'recognized-segment', { inputId: id.toString(), characters: text.length, appState: AppState.currentState });
           this.core!.recognition(id, text);
         },
-        onAudio: pcm => {
-          if (this.closed || this.input?.id !== id) return;
-          try {
-            this.core!.audio(id, pcm);
-            this.captureChunks++;
-            const now = performance.now();
-            if (now >= this.captureDiagnosticAt) {
-              this.captureDiagnosticAt = now + 5_000;
-              const view = this.core!.view();
-              recordDiagnostic('info', 'VoiceChat', 'capture-progress', { inputId: id.toString(), chunks: this.captureChunks,
-                phase: view.phase, level: view.level, silenceMs: view.silenceMs, characters: view.text.length, appState: AppState.currentState });
-            }
-            this.apply();
-          } catch (error) { this.fail(error); }
+        audioCapture: {
+          open: () => {
+            if (this.closed || this.input?.id !== id) throw new Error('The voice input was replaced.');
+            return this.core!.openAudioCapture(id).toString();
+          },
+          close: handle => this.core?.closeAudioCapture(BigInt(handle)),
         },
         onError: (error, message) => {
           const phase = this.core?.view().phase;
@@ -650,6 +646,7 @@ export class VoiceConversation {
     this.core?.close();
     clearTimeout(this.watchdog);
     clearInterval(this.progressTimer);
+    clearInterval(this.captureTimer);
     clearInterval(this.fillerTimer);
     clearTimeout(this.transcriptRecovery);
     for (const cleanup of this.cleanup.splice(0)) cleanup();

@@ -34,6 +34,8 @@ export class NativeVoiceChat {
   beginPreparation() { this.core.beginPreparation(); }
   useVad() { this.core.useVad(); }
   setVadSensitivity(value: number) { this.core.setVadSensitivity(value); }
+  openAudioCapture(input: bigint) { return this.core.openAudioCapture(input); }
+  closeAudioCapture(handle: bigint) { this.core.closeAudioCapture(handle); }
   audio(input: bigint, pcm: string) { this.core.audio(input, pcm); }
   async analyze(input: bigint) { await this.core.analyze(input); }
   finish() { this.core.finish(); }

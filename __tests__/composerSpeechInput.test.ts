@@ -58,6 +58,73 @@ function setup() {
 }
 
 const cleanups: (() => void)[] = [];
+
+test('native PCM capture rotates its sink on restart and fences it before final-result draining', async () => {
+  const { controller, request, recognizer, core, emit, events } = setup();
+  Object.assign(recognizer, {
+    supportsOnDeviceRecognition: () => true,
+    supportsAudioChunkEvents: () => true,
+    supportsNativeAudioIngress: () => true,
+  });
+  const open = jest.fn().mockReturnValueOnce('101').mockReturnValueOnce('102');
+  const close = jest.fn();
+  await controller.start({ ...request, localOnly: true, audioCapture: { open, close } });
+  expect(recognizer.start).toHaveBeenLastCalledWith(expect.objectContaining({
+    audioIngressHandle: '101', audioChunkEvents: false, requiresOnDeviceRecognition: true,
+  }));
+  expect(events.has('audiochunk')).toBe(false);
+  emit('start');
+  emit('end');
+  expect(close).toHaveBeenCalledWith('101');
+  jest.advanceTimersByTime(250);
+  expect(recognizer.start).toHaveBeenLastCalledWith(expect.objectContaining({ audioIngressHandle: '102' }));
+  emit('start');
+  controller.stop(request.owner);
+  expect(close).toHaveBeenLastCalledWith('102');
+  expect(close.mock.invocationCallOrder.at(-1)).toBeLessThan(recognizer.stop.mock.invocationCallOrder[0]);
+  core.result.mockReturnValueOnce('final words');
+  emit('result', { isFinal: true, results: [{ transcript: 'final words' }] });
+  expect(request.append).toHaveBeenCalledWith('Edited draft final words');
+  emit('end');
+  expect(close).toHaveBeenCalledTimes(2);
+});
+
+test('cancelling native capture fences its sink before aborting recognition', async () => {
+  const { controller, request, recognizer, emit } = setup();
+  Object.assign(recognizer, { supportsOnDeviceRecognition: () => true, supportsAudioChunkEvents: () => true, supportsNativeAudioIngress: () => true });
+  const close = jest.fn();
+  await controller.start({ ...request, localOnly: true, audioCapture: { open: () => '103', close } });
+  emit('start');
+  controller.cancel(request.owner);
+  expect(close).toHaveBeenCalledWith('103');
+  expect(close.mock.invocationCallOrder[0]).toBeLessThan(recognizer.abort.mock.invocationCallOrder[0]);
+  emit('end');
+  expect(close).toHaveBeenCalledTimes(1);
+});
+
+test('an older native build cannot silently start voice chat without PCM ingress', async () => {
+  const { controller, request, recognizer } = setup();
+  Object.assign(recognizer, { supportsOnDeviceRecognition: () => true, supportsAudioChunkEvents: () => true });
+  const open = jest.fn();
+  await controller.start({ ...request, localOnly: true, audioCapture: { open, close: jest.fn() } });
+  expect(recognizer.start).not.toHaveBeenCalled();
+  expect(open).not.toHaveBeenCalled();
+  expect(request.onError).toHaveBeenCalledWith('unavailable', expect.any(String));
+});
+
+test('sink startup failure releases microphone ownership without waiting for native end', async () => {
+  const { controller, request, recognizer } = setup();
+  Object.assign(recognizer, { supportsOnDeviceRecognition: () => true, supportsAudioChunkEvents: () => true, supportsNativeAudioIngress: () => true });
+  await controller.start({ ...request, localOnly: true, audioCapture: {
+    open: () => { throw new Error('The Rust audio sink could not start.'); }, close: jest.fn(),
+  } });
+  expect(request.onError).toHaveBeenCalledWith('failed');
+  expect(recognizer.start).not.toHaveBeenCalled();
+  expect(recognizer.abort).not.toHaveBeenCalled();
+  expect(controller.getSnapshot()).toEqual({ owner: null, phase: 'idle', interimText: '' });
+  await controller.start(request);
+  expect(recognizer.start).toHaveBeenCalledTimes(1);
+});
 beforeEach(() => { jest.useFakeTimers(); });
 afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup();

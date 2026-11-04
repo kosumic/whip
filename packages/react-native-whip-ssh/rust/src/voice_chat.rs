@@ -1,6 +1,7 @@
 //! Local turn detection and transcript-bound, half-duplex conversation policy.
 //! Platform adapters own speech recognition and audio devices; no speech API is used.
 
+mod capture;
 #[cfg(feature = "smart-turn")]
 mod smart_turn;
 mod waiting_filler;
@@ -79,6 +80,7 @@ pub struct VoiceChatView {
     pub level: f32,
     pub silence_ms: u32,
     pub analyze: bool,
+    pub audio_error: Option<String>,
     pub downloaded_bytes: u64,
     pub total_bytes: u64,
 }
@@ -206,6 +208,8 @@ impl Input {
 }
 
 struct State {
+    ingress: Option<Arc<crate::audio_ingress::NativeIngress>>,
+    audio_error: Option<String>,
     phase: VoiceChatPhase,
     input_id: u64,
     muted: bool,
@@ -226,6 +230,8 @@ struct State {
 impl Default for State {
     fn default() -> Self {
         Self {
+            ingress: None,
+            audio_error: None,
             phase: VoiceChatPhase::Preparing,
             input_id: 0,
             muted: false,
@@ -246,6 +252,16 @@ impl Default for State {
     }
 }
 impl State {
+    fn next_input(&mut self) {
+        self.input_id += 1;
+        self.close_capture();
+    }
+    fn close_capture(&mut self) {
+        if let Some(ingress) = self.ingress.take() {
+            ingress.close();
+        }
+    }
+
     fn await_reply(&mut self, text: String) {
         self.phase = VoiceChatPhase::Waiting;
         self.baseline = self.observed_turns.clone();
@@ -255,13 +271,13 @@ impl State {
         self.response_completed = false;
         self.response_skipped = false;
         self.waiting_filler = Some(WaitingFiller::new(Instant::now()));
-        self.input_id += 1;
+        self.next_input();
         self.input = Input::default();
         self.text.clear();
     }
 
     fn listen(&mut self) {
-        self.input_id += 1;
+        self.next_input();
         self.phase = if self.muted {
             VoiceChatPhase::Muted
         } else {
@@ -308,6 +324,21 @@ impl VoiceChat {
         })
     }
 
+    /// Opens a fresh native capture ticket for each recognizer cycle.
+    pub fn open_audio_capture(self: Arc<Self>, input_id: u64) -> Result<u64, VoiceChatError> {
+        self.open_capture(input_id)
+            .map_err(|error| error.to_owned().into())
+    }
+    pub fn close_audio_capture(&self, handle: u64) {
+        let mut state = self.state.lock();
+        if state
+            .ingress
+            .as_ref()
+            .is_some_and(|stream| stream.id() == handle)
+        {
+            state.close_capture();
+        }
+    }
     pub fn view(&self) -> VoiceChatView {
         self.view_unlocked(&self.state.lock())
     }
@@ -380,28 +411,7 @@ impl VoiceChat {
                 VoiceChatPhase::Listening | VoiceChatPhase::Speaking | VoiceChatPhase::Waiting
             )
         {
-            if !samples.is_empty() {
-                #[allow(
-                    clippy::cast_precision_loss,
-                    reason = "Capture packets are bounded to a few thousand samples"
-                )]
-                {
-                    state.level = (samples.iter().map(|s| s * s).sum::<f32>()
-                        / samples.len() as f32)
-                        .sqrt()
-                        .min(1.0);
-                }
-            }
-            let sensitivity = state.vad_sensitivity;
-            state.input.push(&samples, sensitivity);
-            self.interrupt_if_recognized(&mut state);
-            if state.phase == VoiceChatPhase::Listening
-                && state.input.speech_started
-                && (state.input.samples - state.input.speech_started_at >= MAX_UTTERANCE_SAMPLES
-                    || (!state.smart_turn && state.input.silent >= VAD_PAUSE_SAMPLES))
-            {
-                state.phase = VoiceChatPhase::Finishing;
-            }
+            self.process_audio(&mut state, &samples);
         }
         drop(state);
         Ok(self.view())
@@ -446,7 +456,7 @@ impl VoiceChat {
                 | VoiceChatPhase::Listening
                 | VoiceChatPhase::Muted
         ) {
-            state.input_id += 1;
+            state.next_input();
             state.phase = VoiceChatPhase::Preparing;
             state.input = Input::default();
             state.text.clear();
@@ -633,7 +643,7 @@ impl VoiceChat {
             self.speech.reset_voice();
             state.response_skipped = true;
             state.phase = VoiceChatPhase::Waiting;
-            state.input_id += 1;
+            state.next_input();
             state.input = Input::default();
             state.text.clear();
             if state.response_completed {
@@ -674,7 +684,7 @@ impl VoiceChat {
             state.phase,
             VoiceChatPhase::Speaking | VoiceChatPhase::Waiting
         ) {
-            state.input_id += 1;
+            state.next_input();
             state.input = Input::default();
             state.text.clear();
         }
@@ -690,7 +700,7 @@ impl VoiceChat {
 
     pub fn close(&self) {
         let mut state = self.state.lock();
-        state.input_id += 1;
+        state.next_input();
         state.phase = VoiceChatPhase::Closed;
         state.input = Input::default();
         state.text.clear();
@@ -699,6 +709,30 @@ impl VoiceChat {
 }
 
 impl VoiceChat {
+    fn process_audio(&self, state: &mut State, samples: &[f32]) {
+        if !samples.is_empty() {
+            #[allow(
+                clippy::cast_precision_loss,
+                reason = "Capture packets are bounded to a few thousand samples"
+            )]
+            {
+                state.level = (samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32)
+                    .sqrt()
+                    .min(1.0);
+            }
+        }
+        let sensitivity = state.vad_sensitivity;
+        state.input.push(samples, sensitivity);
+        self.interrupt_if_recognized(state);
+        if state.phase == VoiceChatPhase::Listening
+            && state.input.speech_started
+            && (state.input.samples - state.input.speech_started_at >= MAX_UTTERANCE_SAMPLES
+                || (!state.smart_turn && state.input.silent >= VAD_PAUSE_SAMPLES))
+        {
+            state.phase = VoiceChatPhase::Finishing;
+        }
+    }
+
     fn interrupt_if_recognized(&self, state: &mut State) {
         if !state.muted
             && matches!(
@@ -728,6 +762,7 @@ impl VoiceChat {
             level: s.level,
             silence_ms: u32::try_from(s.input.silent.saturating_mul(1_000) / 16_000)
                 .unwrap_or(u32::MAX),
+            audio_error: s.audio_error.clone(),
             analyze: s.smart_turn && s.phase == VoiceChatPhase::Listening && s.input.should_probe(),
             downloaded_bytes: self.downloaded.load(Ordering::Relaxed),
             total_bytes: MODEL_BYTES,
