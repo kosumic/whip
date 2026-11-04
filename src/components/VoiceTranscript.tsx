@@ -7,6 +7,7 @@ import { Text } from './ui/text';
 
 const COLORS = { text: '#ffffff', upcoming: '#777777', bubble: '#282828', accent: '#c797fa' };
 const FOLLOW_MARGIN = 56;
+const SPEECH_TYPE = { fontSize: 22, lineHeight: 34 };
 const WORDS = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]|[\p{L}\p{N}\p{M}]+(?:['’][\p{L}\p{N}\p{M}]+)*|[^\s]/gu;
 
 /** Three text runs keep streaming updates cheap, even for long replies. */
@@ -90,9 +91,9 @@ const styles = StyleSheet.create({
   user: { alignSelf: 'flex-end', maxWidth: '88%', backgroundColor: COLORS.bubble, borderRadius: 20, paddingHorizontal: 18, paddingVertical: 12 },
   assistant: { alignSelf: 'stretch' },
   userText: { color: COLORS.text, fontSize: 18, lineHeight: 28 },
-  assistantText: { color: COLORS.upcoming, fontSize: 22, lineHeight: 34 },
-  heard: { color: COLORS.text },
-  current: { color: COLORS.text, fontWeight: '600' },
-  upcoming: { color: COLORS.upcoming },
+  assistantText: { ...SPEECH_TYPE, color: COLORS.upcoming },
+  heard: { ...SPEECH_TYPE, color: COLORS.text },
+  current: { ...SPEECH_TYPE, color: COLORS.text, fontWeight: '600' },
+  upcoming: { ...SPEECH_TYPE, color: COLORS.upcoming },
   latest: { position: 'absolute', bottom: 12, alignSelf: 'center', backgroundColor: COLORS.bubble, borderRadius: 22, padding: 12 },
 });
