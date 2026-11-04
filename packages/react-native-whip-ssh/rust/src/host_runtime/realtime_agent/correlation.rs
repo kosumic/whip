@@ -243,7 +243,7 @@ impl Tracker {
         }
         if self.active_turn.is_none()
             && let Some(anchor) = &self.turn_anchor
-            && !view
+            && view
                 .turns
                 .iter()
                 .position(|old| &old.id == anchor)
@@ -252,7 +252,7 @@ impl Tracker {
                         .iter()
                         .position(|candidate| candidate.id == turn.id),
                 )
-                .is_some_and(|(before, after)| after > before)
+                .is_none_or(|(before, after)| after <= before)
         {
             self.lost = true;
         }

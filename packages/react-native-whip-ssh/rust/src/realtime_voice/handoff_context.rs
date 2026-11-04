@@ -19,8 +19,10 @@ pub(super) struct Caption {
     id: String,
     role: &'static str,
     text: String,
-    caption_final: bool,
-    caption_failed: bool,
+    #[serde(rename = "captionFinal")]
+    final_text: bool,
+    #[serde(rename = "captionFailed")]
+    failed: bool,
     interrupted: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     heard_utf16: Option<usize>,
@@ -42,8 +44,8 @@ impl Caption {
             id: id.to_owned(),
             role,
             text: text.to_owned(),
-            caption_final: final_text,
-            caption_failed: failed,
+            final_text,
+            failed,
             interrupted,
             heard_utf16: heard,
             truncated: false,
@@ -176,5 +178,6 @@ impl Snapshot {
                 };
             }
         }
+        drop(cursor);
     }
 }

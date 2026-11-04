@@ -15,7 +15,13 @@ use std::{
 use tokio::sync::watch;
 
 const REORDER: Duration = Duration::from_millis(60);
+const FRAME_DURATION: Duration = Duration::from_millis(20);
 const MAX_PACKETS: usize = 64;
+
+enum JitterFrame {
+    Packet(Packet),
+    Missing,
+}
 
 #[derive(Default)]
 struct Jitter {
@@ -48,7 +54,7 @@ impl Jitter {
         }
         self.packets.push_back(packet);
     }
-    fn pop(&mut self, now: Instant) -> Option<Option<Packet>> {
+    fn pop(&mut self, now: Instant) -> Option<JitterFrame> {
         if self.packets.is_empty() || self.deadline.is_none_or(|deadline| deadline > now) {
             return None;
         }
@@ -59,7 +65,7 @@ impl Jitter {
             .position(|packet| packet.sequence == expected)
             .and_then(|index| self.packets.remove(index));
         self.sequence = Some(expected.wrapping_add(1));
-        Some(packet)
+        Some(packet.map_or(JitterFrame::Missing, JitterFrame::Packet))
     }
     fn advance(&mut self, samples: usize) {
         self.deadline = self.deadline.map(|deadline| {
@@ -88,7 +94,7 @@ pub(super) async fn run(
     let mut input = VecDeque::new();
     let mut input_at = Instant::now();
     let mut encoded = vec![0; 1275];
-    let mut last_silence = Instant::now() - Duration::from_millis(20);
+    let mut last_silence = None::<Instant>;
     let mut last_timestamp = None;
     let mut tick = tokio::time::interval(Duration::from_millis(5));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -110,8 +116,8 @@ pub(super) async fn run(
                     let count = encoder.encode(&pcm, &mut encoded).map_err(|_| "Voice encoding failed.")?;
                     peer.audio.send(EncodedAudio { data: encoded[..count].to_vec(), at: input_at }).await?;
                     owner.view.lock().startup.first_input.get_or_insert_with(|| owner.client_elapsed_ms.saturating_add(startup::elapsed(owner.started_at)));
-                    input_at += Duration::from_millis(20);
-                    last_silence = Instant::now();
+                    input_at += FRAME_DURATION;
+                    last_silence = Some(Instant::now());
                 }
             }
             _ = tick.tick() => {
@@ -130,7 +136,7 @@ pub(super) async fn run(
                     if let Some(packet) = packet::parse(packet.as_ref()) { jitter.push(packet, arrival); }
                 }
                 while let Some(packet) = jitter.pop(Instant::now()) {
-                    let payload = if let Some(packet) = &packet {
+                    let payload = if let JitterFrame::Packet(packet) = &packet {
                         if last_timestamp.is_some_and(|last: u32| packet.timestamp.wrapping_sub(last) > u32::MAX / 2) { jitter.advance(FRAME); continue; }
                         last_timestamp = Some(packet.timestamp);
                         packet.payload.as_slice()
@@ -148,10 +154,10 @@ pub(super) async fn run(
                     let mut state = identity.lock();
                     if state.epoch == epoch { state.enabled = false; state.ended = true; state.finish_at = None; }
                 }
-                if last_silence.elapsed() >= Duration::from_millis(20) && (!owner.ready.load(Ordering::Acquire) || owner.view.lock().muted || !owner.allow_input) {
+                if last_silence.is_none_or(|last| last.elapsed() >= FRAME_DURATION) && (!owner.ready.load(Ordering::Acquire) || owner.view.lock().muted || !owner.allow_input) {
                     input.clear();
                     peer.audio.send_muted_silence(Instant::now()).await?;
-                    last_silence = Instant::now();
+                    last_silence = Some(Instant::now());
                 }
                 if owner.closed.load(Ordering::Acquire) { return Ok(()); }
             }
@@ -182,14 +188,49 @@ mod tests {
             let at = now
                 + REORDER
                 + Duration::from_millis(u64::try_from(index * 20).map_err(|_| "index")?);
-            let packet = jitter
-                .pop(at)
-                .ok_or("missing frame")?
-                .ok_or("unexpected loss")?;
+            let Some(JitterFrame::Packet(packet)) = jitter.pop(at) else {
+                return Err("missing frame or unexpected loss");
+            };
             assert_eq!(packet.sequence, expected);
             jitter.advance(FRAME);
         }
         assert!(jitter.packets.is_empty());
         Ok(())
+    }
+
+    #[test]
+    fn jitter_distinguishes_pending_audio_from_missing_packets() {
+        let now = Instant::now();
+        let mut jitter = Jitter::default();
+        assert!(jitter.pop(now).is_none());
+        for sequence in [0, 2] {
+            jitter.push(
+                Packet {
+                    sequence,
+                    timestamp: 0,
+                    payload: vec![1],
+                },
+                now,
+            );
+        }
+        assert!(jitter.pop(now).is_none());
+        let first = now + REORDER;
+        assert!(matches!(
+            jitter.pop(first),
+            Some(JitterFrame::Packet(Packet { sequence: 0, .. }))
+        ));
+        jitter.advance(FRAME);
+        assert!(jitter.pop(first).is_none());
+        let missing = first + FRAME_DURATION;
+        assert!(matches!(jitter.pop(missing), Some(JitterFrame::Missing)));
+        jitter.advance(FRAME);
+        assert!(jitter.pop(missing).is_none());
+        let next = missing + FRAME_DURATION;
+        assert!(matches!(
+            jitter.pop(next),
+            Some(JitterFrame::Packet(Packet { sequence: 2, .. }))
+        ));
+        jitter.advance(FRAME);
+        assert!(jitter.pop(next + FRAME_DURATION).is_none());
     }
 }

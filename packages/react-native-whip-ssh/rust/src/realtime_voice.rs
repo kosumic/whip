@@ -713,14 +713,7 @@ impl RealtimeVoiceAdapter {
                     self.send_capture(&mut socket, &capture).await?;
                 },
                 message = socket.next() => {
-                    let message = message.ok_or("OpenAI Realtime disconnected. Start a new call.")?.map_err(|_| "OpenAI Realtime connection failed.")?;
-                    let Message::Text(text) = message else {
-                        match message {
-                            Message::Close(_) => return Err("OpenAI Realtime ended the call."),
-                            Message::Ping(payload) => { tokio::time::timeout(IO_TIMEOUT, socket.send(Message::Pong(payload))).await.map_err(|_| "Realtime send timed out.")?.map_err(|_| "Realtime connection failed.")?; },
-                            Message::Pong(_) => last_pong = tokio::time::Instant::now(),
-                            _ => {},
-                        }
+                    let Some(text) = socket.receive_text(message, &mut last_pong).await? else {
                         continue;
                     };
                     if config.webrtc && !seen.accept(&text)? { continue; }

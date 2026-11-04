@@ -333,7 +333,9 @@ mod tests {
         assert_eq!(
             stream.push(
                 generation,
-                Instant::now() - MAX_AGE - Duration::from_millis(1),
+                Instant::now()
+                    .checked_sub(MAX_AGE + Duration::from_millis(1))
+                    .unwrap(),
                 &[1]
             ),
             Err(Error::Expired)
