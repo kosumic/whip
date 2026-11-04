@@ -14,9 +14,12 @@ import android.os.Looper
 internal class VoiceMediaFocus(context: Context, interrupted: () -> Unit) : AutoCloseable {
   private val manager = context.getSystemService(AudioManager::class.java)
   private val main = Handler(Looper.getMainLooper())
-  private val listener = AudioManager.OnAudioFocusChangeListener { change -> if (change < AudioManager.AUDIOFOCUS_GAIN) main.post { interrupted() } }
+  private val listener = AudioManager.OnAudioFocusChangeListener { change ->
+    // Notification ducking must not end a conversation between agent turns.
+    if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) main.post { interrupted() }
+  }
   private val request = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-    .setAudioAttributes(VoiceMediaAudio.attributes).setWillPauseWhenDucked(true)
+    .setAudioAttributes(VoiceMediaAudio.attributes)
     .setOnAudioFocusChangeListener(listener, main).build() else null
   @Suppress("DEPRECATION")
   fun acquire(): Boolean = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && request != null) manager.requestAudioFocus(request)
