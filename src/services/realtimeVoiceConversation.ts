@@ -33,7 +33,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
   private cleanups: (() => void)[] = [];
   private view: VoiceConversationView = { phase: 'starting', muted: false, smartTurn: false, speaker: false, text: '', level: 0, progress: 0, error: null, transcript: null, provider: 'openai', inputTokens: 0, outputTokens: 0, estimatedUsd: null };
 
-  constructor(private readonly target: VoiceChatTarget, private readonly settings: Readonly<VoiceConversationSettings>, private readonly changed: (view: VoiceConversationView) => void) {}
+  constructor(private readonly target: VoiceChatTarget, private readonly settings: Readonly<VoiceConversationSettings>, private readonly changed: (view: VoiceConversationView) => void, private readonly requestedAt = performance.now()) {}
 
   async start(): Promise<void> {
     try {
@@ -80,10 +80,11 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
       else this.cleanups.push(unsubscribe);
       if (this.closed) return;
       this.callStarted = true;
-      await this.playback.startVoiceCall(this.token, this.target.label);
+      if (this.playback.startRealtimeVoiceCall) await this.playback.startRealtimeVoiceCall(this.token, this.target.label);
+      else await this.playback.startVoiceCall(this.token, this.target.label);
       if (this.closed) { await this.playback.endVoiceCall(this.token); return; }
       requireForeground();
-      const config = JSON.stringify({ target, voice: this.settings.realtimeVoice, vad: parseRealtimeVad(this.settings.realtimeVad ?? DEFAULT_REALTIME_VAD) });
+      const config = JSON.stringify({ clientElapsedMs: Math.max(0, Math.round(performance.now() - this.requestedAt)), target, voice: this.settings.realtimeVoice, vad: parseRealtimeVad(this.settings.realtimeVad ?? DEFAULT_REALTIME_VAD) });
       this.nativeMediaAttempted = true;
       this.startingMedia = this.playback.startRealtimeVoice(this.token, config);
       await this.startingMedia;

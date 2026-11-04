@@ -101,11 +101,13 @@ test('retains the streaming conversation when compacted and reopened', () => {
   expect(session.close).not.toHaveBeenCalled();
 });
 
-test('applies the observed one-word compensation only to Realtime presentation', () => {
+test('shows native streaming positions without applying an additional Realtime offset', () => {
   const messages = [{ id: 'reply', role: 'assistant' as const, text: 'Hello, this is a reply.', active: true, spokenUtf16: 8 }];
   act(() => publish({ ...listening, phase: 'speaking', messages }));
   expect(renderedText()).toContain('this');
   act(() => publish({ ...listening, provider: 'openai', phase: 'speaking', messages }));
+  expect(renderedText()).toContain('this');
+  act(() => publish({ ...listening, provider: 'openai', phase: 'speaking', messages: [{ ...messages[0], spokenUtf16: 12 }] }));
   expect(renderedText()).toContain('is');
   expect(messages[0].spokenUtf16).toBe(8);
 });

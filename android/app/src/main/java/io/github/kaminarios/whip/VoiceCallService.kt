@@ -76,7 +76,7 @@ class VoiceCallService : Service() {
       session.ready = true
       main.removeCallbacks(session.timeout)
       publishRoute()
-      SpeechPlayback.warmUp(this)
+      if (session.warmLocalSpeech) SpeechPlayback.warmUp(this)
       session.start?.resolve(null)
       session.start = null
     } catch (_: Exception) { finish(session, "Media audio focus is unavailable.") }
@@ -132,7 +132,7 @@ class VoiceCallService : Service() {
     instance = null
     super.onDestroy()
   }
-  private class Session(val token: String, val label: String, var start: Promise?) {
+  private class Session(val token: String, val label: String, var start: Promise?, val warmLocalSpeech: Boolean) {
     var taskContext: HeadlessJsTaskContext? = null
     var taskId: Int? = null
     fun finishBackgroundTask() { taskId?.let { taskContext?.finishTask(it) }; taskId = null; taskContext = null }
@@ -163,12 +163,12 @@ class VoiceCallService : Service() {
     internal fun owns(token: String): Boolean = current?.let { it.token == token && it.ready && !it.ending } == true
     internal fun muted(token: String): Boolean = current?.takeIf { it.token == token }?.muted == true
     val audioAttributes get() = VoiceMediaAudio.attributes
-    fun start(context: ReactApplicationContext, token: String, label: String, promise: Promise) {
+    fun start(context: ReactApplicationContext, token: String, label: String, promise: Promise, warmLocalSpeech: Boolean = true) {
       if (current != null) { promise.reject("E_VOICE_CALL", "Voice chat is already active."); return }
       if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
         promise.reject("E_VOICE_CALL", "Microphone permission and Android 13 or later are required."); return
       }
-      val session = Session(token, label, promise)
+      val session = Session(token, label, promise, warmLocalSpeech)
       if (!calls.reserve(session)) { promise.reject("E_VOICE_CALL", "Voice chat is already active."); return }
       try {
         session.taskContext = HeadlessJsTaskContext.getInstance(context)

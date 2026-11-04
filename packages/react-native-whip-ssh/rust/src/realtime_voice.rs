@@ -9,6 +9,7 @@ mod ffi;
 mod input;
 mod processing;
 mod response;
+mod startup;
 #[cfg(test)]
 mod tests;
 mod transcript;
@@ -62,6 +63,8 @@ const VOICES: &[&str] = &[
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct Config {
+    #[serde(default)]
+    client_elapsed_ms: u64,
     target: Option<AgentTarget>,
     voice: String,
     vad: Option<Vad>,
@@ -198,6 +201,7 @@ pub(super) struct View {
     tool: Option<String>,
     captions: Option<captions::Diagnostics>,
     messages: Vec<transcript::Message>,
+    startup: startup::Timings,
 }
 
 struct Output {
@@ -308,6 +312,8 @@ struct CapturedAudio {
     at: Instant,
 }
 pub(super) struct RealtimeVoiceAdapter {
+    started_at: Instant,
+    client_elapsed_ms: u64,
     view: Mutex<View>,
     output: Mutex<Output>,
     echo: Mutex<Option<echo::MediaEchoCanceller>>,
@@ -338,6 +344,7 @@ impl RealtimeVoiceAdapter {
             native_credentials::CredentialError,
         >,
     ) -> Result<Arc<Self>, StartError> {
+        let started_at = Instant::now();
         let update = config.session_update()?;
         let agent = config
             .target
@@ -351,6 +358,8 @@ impl RealtimeVoiceAdapter {
         let (audio, audio_rx) = mpsc::channel(32);
         let (cancel, mut cancellation) = watch::channel(false);
         let adapter = Arc::new(Self {
+            started_at,
+            client_elapsed_ms: config.client_elapsed_ms,
             view: Mutex::new(View {
                 phase: "starting",
                 muted: config.preview,
@@ -363,6 +372,7 @@ impl RealtimeVoiceAdapter {
                 output_tokens: 0,
                 estimated_usd: None,
                 messages: Vec::new(),
+                startup: startup::Timings::default(),
                 tool: None,
                 captions: (!config.preview)
                     .then(|| captions::Diagnostics::pending(config.language)),
@@ -386,7 +396,10 @@ impl RealtimeVoiceAdapter {
         });
         let owner = adapter.clone();
         let runtime = crate::runtime().map_err(|_| "Realtime runtime could not start.")?;
+        adapter.view.lock().startup.preparation = Some(startup::elapsed(started_at));
+        let credential_start = Instant::now();
         let key = credentials().map_err(StartError::Credential)?;
+        adapter.view.lock().startup.credentials = Some(startup::elapsed(credential_start));
         runtime.spawn(async move {
                 let mut tools: JoinSet<ToolCompletion> = JoinSet::new();
                 let result = tokio::select! {
@@ -497,8 +510,7 @@ impl RealtimeVoiceAdapter {
             key,
             update,
         } = prepared;
-        let mut socket = connect(key).await?;
-        send(&mut socket, update).await?;
+        let (mut socket, configuration_started) = self.connect_session(key, update).await?;
         let started = tokio::time::Instant::now();
         let mut heartbeat = tokio::time::interval(Duration::from_millis(250));
         let mut responses = response::ResponseCreateQueue::default();
@@ -604,6 +616,7 @@ impl RealtimeVoiceAdapter {
                     if let Some(frame) = samples && !self.view.lock().muted && self.input.accepts(frame.generation) && frame.at.elapsed() <= processing::MAX_DELAY {
                         let bytes: Vec<u8> = frame.samples.iter().flat_map(|sample| sample.to_le_bytes()).collect();
                         send(&mut socket, ClientEvent::InputAudioBufferAppend { event_id: None, audio: STANDARD.encode(bytes) }).await?;
+                        self.view.lock().startup.first_input.get_or_insert_with(|| self.client_elapsed_ms.saturating_add(startup::elapsed(self.started_at)));
                     }
                 },
                 message = socket.next() => {
@@ -631,6 +644,7 @@ impl RealtimeVoiceAdapter {
                             }
                             config.validate_audio(audio)?;
                             let was_ready = self.ready.swap(true, Ordering::AcqRel);
+                            self.record_listening(configuration_started);
                             self.view.lock().phase = "listening";
                             if config.preview && !was_ready {
                                 send(&mut socket, preview_response()?).await?;
@@ -695,6 +709,30 @@ impl RealtimeVoiceAdapter {
                 },
             }
         }
+    }
+
+    fn record_listening(&self, configuration_started: Instant) {
+        let mut view = self.view.lock();
+        if view.startup.listening.is_none() {
+            view.startup.configuration = Some(startup::elapsed(configuration_started));
+            view.startup.listening = Some(
+                self.client_elapsed_ms
+                    .saturating_add(startup::elapsed(self.started_at)),
+            );
+        }
+    }
+
+    async fn connect_session(
+        &self,
+        key: native_credentials::NativeCredential,
+        update: ClientEvent,
+    ) -> Result<(RealtimeSocket, Instant), &'static str> {
+        let started = Instant::now();
+        let mut socket = connect(key).await?;
+        self.view.lock().startup.websocket = Some(startup::elapsed(started));
+        let configuration_started = Instant::now();
+        send(&mut socket, update).await?;
+        Ok((socket, configuration_started))
     }
 }
 

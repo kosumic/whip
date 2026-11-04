@@ -93,6 +93,11 @@ class HerdrBackgroundModule(
   }
 
   @ReactMethod
+  fun startRealtimeVoiceCall(token: String, label: String, promise: Promise) {
+    mainHandler.post { VoiceCallService.start(context, token, label, promise, warmLocalSpeech = false) }
+  }
+
+  @ReactMethod
   fun startRealtimeVoice(token: String, config: String, promise: Promise) {
     mainHandler.post {
       if (context.lifecycleState != LifecycleState.RESUMED) promise.reject("E_VOICE_CREDENTIAL_UNAVAILABLE", "Return to Whip to start a call.")

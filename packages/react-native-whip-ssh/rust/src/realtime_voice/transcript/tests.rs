@@ -29,12 +29,13 @@ fn captions_follow_playback_not_arrival_and_preserve_previous_turns() -> TestRes
     output
         .transcript
         .observe(&delta("Hello world")?, &HashSet::new());
-    output.append("reply".into(), 0, vec![0; 200])?;
+    output.append("reply".into(), 0, vec![0; super::super::RATE * 4])?;
     assert_eq!(output.transcript.snapshot()[0].spoken_utf16, 0);
-    let mut pcm = [0; 100];
+    let mut pcm = vec![0; super::super::RATE * 2];
     output.read(&mut pcm);
-    output.acknowledge(output.epoch, 50);
-    assert_eq!(output.transcript.snapshot()[0].spoken_utf16, 0);
+    output.acknowledge(output.epoch, super::super::RATE / 4);
+    let streaming = output.transcript.snapshot()[0].spoken_utf16;
+    assert!(streaming > 0);
     output.transcript.observe(
         &event("response.output_audio.done", json!({}))?,
         &HashSet::new(),
@@ -46,9 +47,9 @@ fn captions_follow_playback_not_arrival_and_preserve_previous_turns() -> TestRes
         )?,
         &HashSet::new(),
     );
-    assert_eq!(output.transcript.snapshot()[0].spoken_utf16, 5);
+    assert_eq!(output.transcript.snapshot()[0].spoken_utf16, streaming);
     assert!(output.transcript.snapshot()[0].active);
-    output.acknowledge(output.epoch, 100);
+    output.acknowledge(output.epoch, super::super::RATE * 2);
     assert!(!output.transcript.snapshot()[0].active);
     assert_eq!(output.transcript.snapshot()[0].spoken_utf16, 11);
     output.append("next".into(), 0, vec![0; 100])?;
@@ -69,7 +70,7 @@ fn captions_follow_playback_not_arrival_and_preserve_previous_turns() -> TestRes
 #[test]
 fn interrupted_audio_freezes_cursor_and_ignores_stale_playback() -> TestResult {
     let mut output = super::super::Output::default();
-    output.append("reply".into(), 0, vec![0; 200])?;
+    output.append("reply".into(), 0, vec![0; super::super::RATE * 4])?;
     output
         .transcript
         .observe(&delta("Hello world")?, &HashSet::new());
@@ -84,13 +85,17 @@ fn interrupted_audio_freezes_cursor_and_ignores_stale_playback() -> TestResult {
         )?,
         &HashSet::new(),
     );
-    output.read(&mut [0; 100]);
+    output.read(&mut vec![0; super::super::RATE * 2]);
     let old_epoch = output.epoch;
-    output.acknowledge(old_epoch, 50);
-    output.interrupt();
-    output.acknowledge(old_epoch, 100);
+    output.acknowledge(old_epoch, super::super::RATE / 4);
+    let before = output.transcript.snapshot()[0].spoken_utf16;
+    let truncation = output.interrupt().ok_or("missing truncation")?;
+    assert_eq!(serde_json::to_value(truncation)?["audio_end_ms"], 250);
+    let frozen = output.transcript.snapshot()[0].spoken_utf16;
+    assert!(frozen >= before);
+    output.acknowledge(old_epoch, super::super::RATE * 2);
     let messages = output.transcript.snapshot();
-    assert_eq!(messages[0].spoken_utf16, 5);
+    assert_eq!(messages[0].spoken_utf16, frozen);
     assert!(!messages[0].active);
     let ignored = HashSet::from(["response".into()]);
     output.transcript.observe(&delta(" ignored")?, &ignored);
@@ -108,17 +113,21 @@ fn early_sentences_are_not_timed_against_the_first_small_audio_packet() -> TestR
     output.read(&mut vec![0; super::super::RATE / 10]);
     output.acknowledge(output.epoch, super::super::RATE / 10);
     // Only 100ms was heard. The old estimator marked all three sentences spoken.
-    assert_eq!(output.transcript.snapshot()[0].spoken_utf16, 0);
+    assert!(output.transcript.snapshot()[0].spoken_utf16 <= 2);
     assert!(output.transcript.snapshot()[0].active);
     output.append(
         "reply".into(),
         0,
         vec![0; super::super::RATE * 16 - super::super::RATE / 5],
     )?;
+    output.read(&mut vec![0; super::super::RATE]);
+    output.acknowledge(output.epoch, super::super::RATE / 2);
+    let streaming = output.transcript.snapshot()[0].spoken_utf16;
+    assert!(streaming > 0 && streaming <= 8);
     output
         .transcript
         .observe(&event("response.output_audio.done", json!({}))?, &ignored);
-    assert_eq!(output.transcript.snapshot()[0].spoken_utf16, 0);
+    assert_eq!(output.transcript.snapshot()[0].spoken_utf16, streaming);
     output.transcript.observe(
         &event(
             "response.output_audio_transcript.done",
@@ -126,7 +135,7 @@ fn early_sentences_are_not_timed_against_the_first_small_audio_packet() -> TestR
         )?,
         &ignored,
     );
-    assert!(output.transcript.snapshot()[0].spoken_utf16 <= 2);
+    assert_eq!(output.transcript.snapshot()[0].spoken_utf16, streaming);
     assert!(output.transcript.snapshot()[0].active);
     Ok(())
 }
@@ -157,8 +166,10 @@ fn caption_timing_is_independent_of_text_audio_packet_interleaving() -> TestResu
             &ignored,
         );
         transcript.played("reply", 0, super::super::RATE / 4);
-        assert_eq!(transcript.snapshot()[0].spoken_utf16, 0);
+        let streaming = transcript.snapshot()[0].spoken_utf16;
+        assert!(streaming > 0 && streaming <= 4);
         transcript.observe(&event("response.output_audio.done", json!({}))?, &ignored);
+        assert_eq!(transcript.snapshot()[0].spoken_utf16, streaming);
     }
     for played in [
         super::super::RATE / 2,

@@ -9,6 +9,7 @@ import android.media.AudioTimestamp
 import android.media.MediaRecorder
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.os.Process
 import android.util.Log
 import com.facebook.react.bridge.Promise
@@ -42,7 +43,7 @@ internal object RealtimeVoice {
   }
   fun invalidate() { current?.let { stop(it.token); VoiceCallService.end(it.token) } }
   private class CaptureBoundary(val cutoff: Long = System.nanoTime())
-  private class Session(val token: String, val call: Long, val input: AudioRecord?, val output: AudioTrack, val preview: Boolean, val focus: VoiceMediaFocus?) {
+  private class Session(val token: String, val call: Long, val input: AudioRecord?, val output: AudioTrack, val preview: Boolean, val focus: VoiceMediaFocus?, val mediaStartedAt: Long, val clientElapsedMs: Long) {
     val running = AtomicBoolean(true)
     var capture: Thread? = null
     var playback: Thread? = null
@@ -50,6 +51,8 @@ internal object RealtimeVoice {
     @Volatile var boundary = CaptureBoundary()
     var captureMuted = VoiceCallService.muted(token)
     var captionDiagnostic: String? = null
+    var startupDiagnostic: String? = null
+    fun elapsedMs(): Long = clientElapsedMs + SystemClock.elapsedRealtime() - mediaStartedAt
   }
 
   @SuppressLint("MissingPermission")
@@ -65,6 +68,8 @@ internal object RealtimeVoice {
     if (current != null || closingToken != null || (if (preview) VoiceCallService.active else !VoiceCallService.owns(token))) {
       promise.reject("E_REALTIME", "The requested voice audio session is unavailable."); return
     }
+    val mediaStartedAt = SystemClock.elapsedRealtime()
+    val clientElapsedMs = JSONObject(config).optLong("clientElapsedMs", 0).coerceAtLeast(0)
     var call = 0L
     var input: AudioRecord? = null
     var output: AudioTrack? = null
@@ -89,14 +94,17 @@ internal object RealtimeVoice {
         .setTransferMode(AudioTrack.MODE_STREAM).build()
       require(output.state == AudioTrack.STATE_INITIALIZED)
       VoiceMediaAudio.attach(output)
-      val nativeConfig = JSONObject(config).put("softwareEchoCancellation", !preview).toString()
+      val coreStartedAt = SystemClock.elapsedRealtime()
+      val nativeConfig = JSONObject(config).put("softwareEchoCancellation", !preview)
+        .put("clientElapsedMs", clientElapsedMs + coreStartedAt - mediaStartedAt).toString()
       val result = Core.start(nativeConfig, WhipVoiceCredentials(context))
       if (result < 0) throw CredentialFailure(result)
       call = result
       require(call != 0L)
       if (VoiceCallService.muted(token)) Core.control(call, Core.MUTE)
-      val session = Session(token, call, input, output, preview, focus)
+      val session = Session(token, call, input, output, preview, focus, mediaStartedAt, clientElapsedMs)
       input?.startRecording()
+      if (!preview) Log.i(LOG_TAG, "Startup preMediaMs=$clientElapsedMs mediaSetupMs=${coreStartedAt - mediaStartedAt} coreStartMs=${SystemClock.elapsedRealtime() - coreStartedAt} micStartMs=${session.elapsedMs()}")
       output.play()
       current = session
       if (!preview) Log.i(LOG_TAG, "Software AEC3 enabled with media playback reference")
@@ -109,6 +117,15 @@ internal object RealtimeVoice {
           val view = Core.view(session.call)
           val state = JSONObject(view)
           val phase = state.optString("phase")
+          if (!preview) state.optJSONObject("startup")?.let { timings ->
+            // Fixed numeric durations only. Never log the enclosing call view.
+            val diagnostic = listOf("preparationMs", "credentialsMs", "websocketMs", "configurationMs", "listeningMs", "firstInputMs")
+              .filter { !timings.isNull(it) }.joinToString(" ") { "$it=${timings.optLong(it)}" }
+            if (session.startupDiagnostic != diagnostic) {
+              session.startupDiagnostic = diagnostic
+              Log.i(LOG_TAG, "Startup $diagnostic")
+            }
+          }
           state.optJSONObject("captions")?.let { captions ->
             // These fields are Rust-owned enums/constants, never transcripts,
             // raw provider data, prompts, credentials or session identifiers.
@@ -152,6 +169,7 @@ internal object RealtimeVoice {
         val boundary = session.boundary
         val count = input.read(pcm, 0, pcm.size, AudioRecord.READ_BLOCKING)
         if (count <= 0) { if (session.running.get()) Core.control(session.call, Core.AUDIO_FAILED); break }
+        if (captured == 0L) Log.i(LOG_TAG, "Startup firstCaptureMs=${session.elapsedMs()}")
         val first = captured
         captured += count
         val now = System.nanoTime()

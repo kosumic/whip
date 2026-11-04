@@ -25,7 +25,7 @@ test('Realtime selects its own adapter and keeps its initial voice and server VA
   const session = manager.start({ kind: 'Agent', target }, () => true, settings);
   await flush();
   expect(local).not.toHaveBeenCalled();
-  expect(realtime).toHaveBeenCalledWith(target, session.settings, expect.any(Function));
+  expect(realtime).toHaveBeenCalledWith(target, session.settings, expect.any(Function), session.startedMonotonic);
   expect(cloud.start).toHaveBeenCalledTimes(1);
   expect(manager.start({ kind: 'Agent', target }, () => true, { ...defaults, realtimeVoice: 'marin' })).toBe(session);
   expect(session.settings.realtimeVoice).toBe('cedar');

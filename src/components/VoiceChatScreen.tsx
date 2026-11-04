@@ -160,7 +160,7 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
           <Button accessibilityLabel={t('voiceChat.speaker')} accessibilityState={{ selected: view.speaker }} variant="ghost" className="size-11 rounded-full p-0" style={styles.control} disabled={!interactive} onPress={() => conversation.current?.toggleSpeaker()}><Volume2 size={19} color={view.speaker ? VOICE_COLORS.accent : VOICE_COLORS.text} /></Button>
         </View>
       </Animated.View>
-      {hasTranscript && <Animated.View style={[styles.transcript, chromeMotion]}><VoiceTranscript messages={messages} reducedMotion={reducedMotion} leadCurrentWord={view.provider === 'openai'} /></Animated.View>}
+      {hasTranscript && <Animated.View style={[styles.transcript, chromeMotion]}><VoiceTranscript messages={messages} reducedMotion={reducedMotion} /></Animated.View>}
       <View style={hasTranscript ? styles.transcriptOrbSpace : styles.orbSpace}>
         <Pressable ref={fullOrb} onLayout={measureOrbs} accessibilityRole="button" accessibilityLabel={view.phase === 'speaking' ? t('voiceChat.skip') : t('voiceChat.finish')} disabled={view.phase !== 'speaking' && (view.phase !== 'listening' || view.provider === 'openai')} onPress={() => { if (view.phase === 'speaking') void conversation.current?.skip(); else conversation.current?.finish(); }} style={{ width: orbSize, height: orbSize }}>
           <Animated.View style={orbMotion}>{expanded && <VoiceOrb view={view} size={orbSize} startedAt={startedAt} />}</Animated.View>

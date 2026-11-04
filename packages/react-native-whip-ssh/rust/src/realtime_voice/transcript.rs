@@ -1,5 +1,6 @@
-//! Call-owned captions. Word timing is estimated over a completed audio item,
-//! advanced only by acknowledged device playback, never packet arrival order.
+//! Call-owned captions paced by acknowledged playback, including while the
+//! server is still generating. Final duration refines the estimate gradually.
+mod pacing;
 use std::collections::{HashSet, VecDeque};
 
 use oai_rt_rs::ServerEvent;
@@ -27,23 +28,31 @@ struct Turn {
     audio_done: bool,
     text_done: bool,
     stopped: bool,
+    timing: pacing::Text,
+    clock: pacing::Clock,
+    pace_reported: bool,
 }
 
 impl Turn {
+    fn stop(&mut self) {
+        if self.message.active {
+            self.message.spoken_utf16 = self.timing.freeze(self.message.spoken_utf16);
+        }
+        self.stopped = true;
+        self.message.active = false;
+    }
+
     fn advance(&mut self, played: usize) {
         if self.stopped {
             return;
         }
         self.played = self.played.max(played.min(self.samples));
-        // Transcript and audio packets are independent streams, not paired
-        // word boundaries. A sentence can precede its first 100ms of audio.
-        // Interpolating against that partial duration races to the sentence's
-        // end and a monotonic cursor cannot recover. Keep streaming text dim
-        // until both final markers establish this item's actual denominator.
-        if self.audio_done && self.text_done && self.samples > 0 {
-            self.message.spoken_utf16 =
-                self.message.text.encode_utf16().count() * self.played / self.samples;
-        }
+        self.message.spoken_utf16 = self.clock.advance(
+            &self.timing,
+            self.played,
+            self.samples,
+            self.audio_done && self.text_done,
+        );
         self.message.active = self.samples > 0 && (!self.audio_done || self.samples > self.played);
     }
 }
@@ -51,6 +60,7 @@ impl Turn {
 #[derive(Default)]
 pub(super) struct Transcript {
     turns: VecDeque<Turn>,
+    pace: pacing::Pace,
 }
 
 fn assistant_id(item: &str, index: u32) -> String {
@@ -82,6 +92,9 @@ impl Transcript {
             audio_done: false,
             text_done: false,
             stopped: false,
+            timing: pacing::Text::default(),
+            clock: pacing::Clock::new(self.pace),
+            pace_reported: false,
         });
         self.turns.back_mut()
     }
@@ -139,6 +152,7 @@ impl Transcript {
                     && !turn.text_done
                 {
                     super::bounded_text(&mut turn.message.text, delta);
+                    turn.timing.update(&turn.message.text);
                     turn.advance(turn.played);
                 }
             }
@@ -153,6 +167,7 @@ impl Transcript {
                     && !turn.stopped
                 {
                     turn.message.text = super::limit_text(transcript.clone());
+                    turn.timing.update(&turn.message.text);
                     turn.text_done = true;
                     turn.advance(turn.played);
                 }
@@ -169,6 +184,12 @@ impl Transcript {
                 }
             }
             _ => {}
+        }
+        for turn in &mut self.turns {
+            if turn.audio_done && turn.text_done && !turn.stopped && !turn.pace_reported {
+                self.pace.observe(turn.timing.units, turn.samples);
+                turn.pace_reported = true;
+            }
         }
         self.trim();
     }
@@ -195,8 +216,7 @@ impl Transcript {
     pub fn stop(&mut self) {
         for turn in &mut self.turns {
             if turn.message.role == ASSISTANT {
-                turn.stopped = true;
-                turn.message.active = false;
+                turn.stop();
             }
         }
     }
@@ -207,8 +227,7 @@ impl Transcript {
             .iter_mut()
             .find(|turn| turn.message.id == assistant_id(item, index))
         {
-            turn.stopped = true;
-            turn.message.active = false;
+            turn.stop();
         }
     }
 

@@ -28,26 +28,26 @@ test('supports bilingual words and UTF-16 cursors without dropping or duplicatin
   expect(spokenTextParts({ ...reply, text: 'Hi 👋 there', spokenUtf16: 4, active: false })).toEqual(['Hi ', '', '👋 there']);
 });
 
-test('Realtime compensation advances one lexical word and leaves the played cursor intact', () => {
-  expect(spokenTextParts(reply, true)).toEqual(['Hello, this ', 'is', ' a streamed reply.']);
+test('renders the native clock position without adding a second word offset', () => {
+  expect(spokenTextParts(reply)).toEqual(['Hello, ', 'this', ' is a streamed reply.']);
   expect(reply.spokenUtf16).toBe(8);
-  expect(spokenTextParts({ ...reply, text: 'One, two; three four', spokenUtf16: 1 }, true)).toEqual(['One, ', 'two', '; three four']);
-  expect(spokenTextParts({ ...reply, text: '你好世界', spokenUtf16: 1 }, true)).toEqual(['你好', '世', '界']);
+  expect(spokenTextParts({ ...reply, text: 'One, two; three four', spokenUtf16: 3 })).toEqual(['One, ', 'two', '; three four']);
+  expect(spokenTextParts({ ...reply, text: '你好世界', spokenUtf16: 1 })).toEqual(['你', '好', '世界']);
 });
 
-test('Realtime compensation never starts on unknown timing or skips the final word', () => {
-  expect(spokenTextParts({ ...reply, spokenUtf16: 0 }, true)).toEqual(['', '', reply.text]);
+test('does not invent a position while timing is unknown or skip the final word', () => {
+  expect(spokenTextParts({ ...reply, spokenUtf16: 0 })).toEqual(['', '', reply.text]);
   const text = 'One two';
-  expect(spokenTextParts({ ...reply, text, spokenUtf16: 5 }, true)).toEqual(['One ', 'two', '']);
-  expect(spokenTextParts({ ...reply, text, spokenUtf16: text.length, active: false }, true)).toEqual([text, '', '']);
+  expect(spokenTextParts({ ...reply, text, spokenUtf16: 5 })).toEqual(['One ', 'two', '']);
+  expect(spokenTextParts({ ...reply, text, spokenUtf16: text.length, active: false })).toEqual([text, '', '']);
 });
 
-test('interruption freezes the compensated bright prefix without advancing raw playback', () => {
-  const [heard, current, upcoming] = spokenTextParts(reply, true);
-  expect(spokenTextParts({ ...reply, active: false }, true)).toEqual([heard + current, '', upcoming]);
+test('preserves the interrupted prefix frozen by the native clock', () => {
+  const [heard, current, upcoming] = spokenTextParts(reply);
+  expect(spokenTextParts({ ...reply, active: false, spokenUtf16: (heard + current).length })).toEqual([heard + current, '', upcoming]);
   const message = { ...reply, text: 'Hello 你好 👋 world' };
   for (let cursor = 0; cursor <= message.text.length; cursor++) {
-    expect(spokenTextParts({ ...message, spokenUtf16: cursor }, true).join('')).toBe(message.text);
+    expect(spokenTextParts({ ...message, spokenUtf16: cursor }).join('')).toBe(message.text);
   }
 });
 

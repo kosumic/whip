@@ -18,7 +18,7 @@ export interface VoiceSessionAdapter {
 type Send = (text: string) => boolean;
 type Factory = (target: VoiceChatTarget, send: Send, changed: (view: VoiceConversationView) => void) => Promise<VoiceSessionAdapter>;
 export interface VoiceUsageObserver { started(session: VoiceSession): void; ended(session: VoiceSession): void }
-type RealtimeFactory = (target: VoiceChatTarget, settings: Readonly<VoiceConversationSettings>, changed: (view: VoiceConversationView) => void) => Promise<VoiceSessionAdapter>;
+type RealtimeFactory = (target: VoiceChatTarget, settings: Readonly<VoiceConversationSettings>, changed: (view: VoiceConversationView) => void, requestedAt: number) => Promise<VoiceSessionAdapter>;
 const initialView = (): VoiceConversationView => ({ phase: 'starting', muted: false, smartTurn: false, speaker: false, text: '', level: 0, progress: 0, error: null, transcript: null });
 
 function sameTarget(left: CallScope, right: CallScope): boolean {
@@ -30,6 +30,7 @@ function sameTarget(left: CallScope, right: CallScope): boolean {
 /** A presentation subscription never owns microphone or native call lifetime. */
 export class VoiceSession {
   readonly startedAt = Date.now();
+  readonly startedMonotonic = performance.now();
   readonly mode: VoiceMode;
   readonly settings: Readonly<VoiceConversationSettings>;
   adapter?: VoiceSessionAdapter;
@@ -107,7 +108,7 @@ export class VoiceSessionManager {
         if (view.phase === 'closed' || view.phase === 'error') void this.hangup(session, view.phase === 'error');
       };
       const adapter = session.mode === 'Realtime'
-        ? await this.createRealtime!(scope.target, session.settings, publish)
+        ? await this.createRealtime!(scope.target, session.settings, publish, session.startedMonotonic)
         : await this.createLocal(scope.target, text => this.current === session && !session.ended && !this.locked && Boolean(session.send?.(text)), publish);
       session.adapter = adapter;
       if (session.ended || this.current !== session) { await adapter.close(); return; }
@@ -185,7 +186,7 @@ export const localVoiceUsageObserver: VoiceUsageObserver = {
 export const voiceSessionManager = new VoiceSessionManager(async (target, send, changed) => {
   const { VoiceConversation } = await import('./voiceConversation');
   return new VoiceConversation(target, send, changed);
-}, localVoiceUsageObserver, async (target, settings, changed) => {
+}, localVoiceUsageObserver, async (target, settings, changed, requestedAt) => {
   const { RealtimeVoiceConversation } = await import('./realtimeVoiceConversation');
-  return new RealtimeVoiceConversation(target, settings, changed);
+  return new RealtimeVoiceConversation(target, settings, changed, requestedAt);
 });
