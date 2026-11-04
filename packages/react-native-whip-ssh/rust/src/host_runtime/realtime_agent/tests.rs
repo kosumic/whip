@@ -47,6 +47,7 @@ fn realtime_agent_snapshot_refresh_retains_call_but_blocks_tools_until_fresh()
     };
     pinned.check_liveness()?;
     assert!(pinned.check().is_err());
+    assert!(pinned.feedback_snapshot(None)?.is_none());
     runtime
         .inner
         .state
@@ -74,6 +75,7 @@ fn realtime_agent_failed_refresh_stops_call() -> Result<(), Box<dyn std::error::
         .host_state
         .fail_sync(token, "refresh failed".into());
     assert!(pinned.check_liveness().is_err());
+    assert!(pinned.feedback_snapshot(None).is_err());
     Ok(())
 }
 

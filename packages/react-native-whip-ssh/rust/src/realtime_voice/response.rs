@@ -18,7 +18,10 @@ impl ResponseCreateQueue {
         self.pending_create = true;
     }
     pub(super) fn can_create(&self) -> bool {
-        self.pending_create && !self.is_active() && !self.speaking && !self.awaiting_vad
+        self.pending_create && self.can_respond()
+    }
+    pub(super) fn can_respond(&self) -> bool {
+        !self.is_active() && !self.speaking && !self.awaiting_vad
     }
     pub(super) fn mark_requested(&mut self) {
         self.pending_create = false;
@@ -101,6 +104,28 @@ pub(super) fn provider_error_message(error: &oai_rt_rs::ServerError) -> &'static
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn notices_wait_for_response_completion_and_user_speech() {
+        let mut queue = ResponseCreateQueue::default();
+        queue.mark_started("tool-request".into());
+        assert!(!queue.can_respond());
+        queue.mark_finished("tool-request");
+        assert!(queue.can_respond());
+        assert!(!queue.can_create());
+        queue.mark_requested();
+        assert!(!queue.can_respond());
+        queue.mark_started("acknowledgement".into());
+        queue.speech_started();
+        queue.mark_finished("acknowledgement");
+        assert!(!queue.can_respond());
+        queue.speech_stopped();
+        assert!(!queue.can_respond());
+        queue.mark_started("user-followup".into());
+        queue.mark_finished("user-followup");
+        assert!(queue.can_respond());
+        queue.request_create();
+        assert!(queue.can_create());
+    }
     #[test]
     fn interrupted_response_stays_active_until_server_completion() {
         let mut queue = ResponseCreateQueue::default();

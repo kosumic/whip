@@ -1,6 +1,67 @@
 use super::*;
 
 #[test]
+fn acknowledgement_can_speak_during_a_pending_tool_and_results_take_priority()
+-> Result<(), Box<dyn std::error::Error>> {
+    let now = Instant::now();
+    let mut handoff = feedback::Handoff::new("call".into(), "original".into(), None, false, now);
+    let mut queue = response::ResponseCreateQueue::default();
+    queue.mark_started("original".into());
+    assert!(next_response(&queue, Some(&mut handoff), now)?.is_none());
+    queue.mark_finished("original");
+    let event = serde_json::to_value(
+        next_response(&queue, Some(&mut handoff), now)?.ok_or("missing acknowledgement")?,
+    )?;
+    assert_eq!(event["response"]["tool_choice"], "none");
+    queue.mark_requested();
+    assert!(next_response(&queue, Some(&mut handoff), now)?.is_none());
+    queue.mark_started("acknowledgement".into());
+    queue.request_create(); // The actual tool result arrived while audio plays.
+    assert!(next_response(&queue, None, now)?.is_none());
+    queue.mark_finished("acknowledgement");
+    assert!(matches!(
+        next_response(&queue, None, now)?,
+        Some(ClientEvent::ResponseCreate { response: None, .. })
+    ));
+    queue.mark_requested();
+    assert!(next_response(&queue, None, now)?.is_none());
+
+    // A fast tool result wins over a still-unspoken acknowledgement.
+    let mut queue = response::ResponseCreateQueue::default();
+    let mut handoff = feedback::Handoff::new("fast".into(), "original".into(), None, false, now);
+    queue.request_create();
+    assert!(matches!(
+        next_response(&queue, Some(&mut handoff), now)?,
+        Some(ClientEvent::ResponseCreate { response: None, .. })
+    ));
+    Ok(())
+}
+
+#[test]
+fn handoff_feedback_uses_backend_context_and_tool_free_spoken_notices()
+-> Result<(), Box<dyn std::error::Error>> {
+    let event = serde_json::to_value(feedback_message("Checking the spot quote.")?)?;
+    assert_eq!(event["item"]["role"], "user");
+    assert_eq!(event["item"]["content"][0]["type"], "input_text");
+    assert_eq!(
+        event["item"]["content"][0]["text"],
+        "[BACKEND] Checking the spot quote."
+    );
+    for notice in [
+        feedback::Notice::Acknowledgement,
+        feedback::Notice::Progress,
+    ] {
+        let event = serde_json::to_value(feedback_response(notice)?)?;
+        assert_eq!(event["type"], "response.create");
+        assert_eq!(event["response"]["tools"], json!([]));
+        assert_eq!(event["response"]["tool_choice"], "none");
+        assert_eq!(event["response"]["output_modalities"], json!(["audio"]));
+        assert_eq!(event["response"]["max_output_tokens"], 96);
+    }
+    Ok(())
+}
+
+#[test]
 fn playback_is_ordered_and_interrupts_at_audio_actually_heard() -> Result<(), &'static str> {
     let mut output = Output::default();
     output.append(

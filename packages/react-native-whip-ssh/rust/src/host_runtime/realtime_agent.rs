@@ -78,6 +78,23 @@ impl PinnedAgent {
         self.check_state(false)
     }
 
+    pub(crate) fn feedback_snapshot(
+        &self,
+        revision: Option<u64>,
+    ) -> Result<Option<crate::realtime_voice::feedback::Snapshot>, HerdrControlError> {
+        self.check_liveness()?;
+        if self.check().is_err() {
+            return Ok(None);
+        }
+        let snapshot = self.runtime.inner.agents.project_live_transcript(
+            &self.binding.transcript_key,
+            revision,
+            crate::realtime_voice::feedback::Snapshot::from_view,
+        );
+        self.check_liveness()?;
+        Ok(snapshot)
+    }
+
     fn check_state(&self, require_fresh: bool) -> Result<(), HerdrControlError> {
         if !super::runtimes()
             .read()

@@ -1,6 +1,7 @@
 //! Public OpenAI Realtime WebSocket adapter. Native media never crosses JS.
 //! The actor owns all wire writes; dropping it cancels transport and tools.
 mod echo;
+pub(crate) mod feedback;
 mod ffi;
 mod input;
 mod processing;
@@ -43,7 +44,7 @@ const MODEL: &str = "gpt-realtime";
 const INSTRUCTIONS: &str = include_str!("realtime_voice/instructions.md");
 // Adapted from Codex's realtime_websocket/methods_v2.rs default tool description
 // at f2b94ef8b52196f127d162c6db71e390b9bb265c (Apache-2.0).
-const PROMPT_DESCRIPTION: &str = "Send a user request to the bound agent. Use this as the default action for tasks, research, browsing, and current information, not only coding. Pass the user's own words without rephrasing. If idle, the agent starts the task and returns its lifecycle result. A busy result means nothing was submitted or queued; inspect status before answering. Never retry after an uncertain outcome.";
+const PROMPT_DESCRIPTION: &str = "Send a user request to the bound agent. Use this as the default action for tasks, research, browsing, and current information, not only coding. Briefly acknowledge your intent aloud before calling, then pass the user's own words without rephrasing. If idle, the agent starts the task; [BACKEND] progress arrives while its lifecycle result is pending. A busy result means nothing was submitted or queued; inspect status before answering. Never retry after an uncertain outcome.";
 const PREVIEW_TIMEOUT: Duration = Duration::from_secs(30);
 const PREVIEW_TOKEN_LIMIT: u32 = 256;
 const PREVIEW_AUDIO_LIMIT: usize = RATE * 12;
@@ -472,34 +473,7 @@ impl RealtimeVoiceAdapter {
             key,
             update,
         } = prepared;
-        let mut request = format!("wss://api.openai.com/v1/realtime?model={MODEL}")
-            .into_client_request()
-            .map_err(|_| "Realtime request could not be prepared.")?;
-        let mut authorization = format!("Bearer {key}")
-            .parse::<tokio_tungstenite::tungstenite::http::HeaderValue>()
-            .map_err(|_| "Invalid OpenAI API credential.")?;
-        authorization.set_sensitive(true);
-        request.headers_mut().insert("Authorization", authorization);
-        drop(key);
-        let socket_config = WebSocketConfig::default()
-            .max_message_size(Some(MAX_WIRE))
-            .max_frame_size(Some(MAX_WIRE));
-        let (mut socket, _) = tokio::time::timeout(
-            IO_TIMEOUT,
-            tokio_tungstenite::connect_async_with_config(request, Some(socket_config), false),
-        )
-        .await
-        .map_err(|_| "OpenAI Realtime connection timed out.")?
-        .map_err(|error| match error {
-            tokio_tungstenite::tungstenite::Error::Http(response) => {
-                match response.status().as_u16() {
-                    401 | 403 => "OpenAI rejected the API credential or model access.",
-                    429 => "OpenAI Realtime quota or rate limit reached.",
-                    _ => "OpenAI Realtime could not connect. Check model access and connectivity.",
-                }
-            }
-            _ => "OpenAI Realtime could not connect. Check your network.",
-        })?;
+        let mut socket = connect(key).await?;
         send(&mut socket, update).await?;
         let started = tokio::time::Instant::now();
         let mut heartbeat = tokio::time::interval(Duration::from_millis(250));
@@ -510,6 +484,8 @@ impl RealtimeVoiceAdapter {
         let mut last_pong = tokio::time::Instant::now();
         let mut ping_at = last_pong;
         let mut preview_done = false;
+        let mut handoff: Option<feedback::Handoff> = None;
+        let mut last_audio_response = None;
         loop {
             if self.closed.load(Ordering::Acquire) {
                 return Ok(());
@@ -539,6 +515,14 @@ impl RealtimeVoiceAdapter {
                     agent.as_ref().ok_or("Voice previews cannot execute tools.")?.check_liveness().map_err(|_| "The bound agent disconnected or changed. Please call again.")?;
                     ledger.complete(mutation, value.get("error").and_then(Value::as_str) == Some("outcome_unknown"));
                     self.view.lock().tool = None;
+                    let mut value = value;
+                    if handoff.as_ref().is_some_and(|handoff| handoff.call_id == call_id) {
+                        if let Some(handoff) = handoff.as_mut() {
+                            forward_feedback(&mut socket, agent.as_ref().ok_or("Missing bound voice agent.")?, handoff).await?;
+                        }
+                        handoff = None;
+                        if value.get("error").is_none() { value["feedback_guidance"] = json!(feedback::FINISHED_GUIDANCE); }
+                    }
                     send(&mut socket, function_output(call_id, value)).await?;
                     responses.request_create();
                 },
@@ -558,8 +542,12 @@ impl RealtimeVoiceAdapter {
                         tokio::time::timeout(IO_TIMEOUT, socket.send(Message::Ping(Vec::new().into()))).await.map_err(|_| "Realtime send timed out.")?.map_err(|_| "Realtime connection ended.")?;
                         ping_at = tokio::time::Instant::now();
                     }
-                    if responses.can_create() && { let output = self.output.lock(); output.generated == output.played } {
-                        send(&mut socket, ClientEvent::ResponseCreate { event_id: None, response: None }).await?;
+                    if let Some(handoff) = handoff.as_mut() {
+                        forward_feedback(&mut socket, agent.as_ref().ok_or("Missing bound voice agent.")?, handoff).await?;
+                    }
+                    if { let output = self.output.lock(); output.generated == output.played }
+                        && let Some(event) = next_response(&responses, handoff.as_mut(), Instant::now())? {
+                        send(&mut socket, event).await?;
                         responses.mark_requested();
                     }
                     if self.ready.load(Ordering::Acquire) {
@@ -616,6 +604,8 @@ impl RealtimeVoiceAdapter {
                         }
                         ServerEvent::ResponseOutputAudioDelta { response_id, item_id, content_index, delta, .. } => {
                             if ignored.contains(&response_id) { continue; }
+                            if let Some(handoff) = handoff.as_mut() { handoff.audio(&response_id, Instant::now()); }
+                            last_audio_response = Some(response_id);
                             let pcm = STANDARD.decode(delta).map_err(|_| "OpenAI returned invalid audio.")?;
                             self.output.lock().append(item_id, content_index, pcm)?;
                             if config.preview && self.output.lock().generated > PREVIEW_AUDIO_LIMIT { return Err("Voice preview exceeded its audio limit."); }
@@ -642,6 +632,9 @@ impl RealtimeVoiceAdapter {
                                 Ok(mutation) => {
                                     if tools.len() >= 2 { send(&mut socket, function_output(call_id, json!({"error":"agent_busy"}))).await?; ledger.complete(mutation, false); continue; }
                                     let agent = agent.clone();
+                                    if mutation {
+                                        handoff = Some(feedback::Handoff::new(call_id.clone(), response_id.clone(), agent.feedback_snapshot(None).map_err(|_| "The bound voice agent changed.")?, last_audio_response.as_deref() == Some(response_id.as_str()), Instant::now()));
+                                    }
                                     self.view.lock().tool = Some(name.clone());
                                     tools.spawn(async move {
                                         let result = tokio::time::timeout(Duration::from_secs(125), agent.execute(&name, &arguments)).await.unwrap_or_else(|_| json!({"error":"outcome_unknown","guidance":"Do not repeat the prompt. Inspect the agent in Whip."}));
@@ -665,6 +658,91 @@ impl RealtimeVoiceAdapter {
             }
         }
     }
+}
+
+type RealtimeSocket =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+async fn connect(key: String) -> Result<RealtimeSocket, &'static str> {
+    let mut request = format!("wss://api.openai.com/v1/realtime?model={MODEL}")
+        .into_client_request()
+        .map_err(|_| "Realtime request could not be prepared.")?;
+    let mut authorization = format!("Bearer {key}")
+        .parse::<tokio_tungstenite::tungstenite::http::HeaderValue>()
+        .map_err(|_| "Invalid OpenAI API credential.")?;
+    authorization.set_sensitive(true);
+    request.headers_mut().insert("Authorization", authorization);
+    drop(key);
+    let socket_config = WebSocketConfig::default()
+        .max_message_size(Some(MAX_WIRE))
+        .max_frame_size(Some(MAX_WIRE));
+    let (socket, _) = tokio::time::timeout(
+        IO_TIMEOUT,
+        tokio_tungstenite::connect_async_with_config(request, Some(socket_config), false),
+    )
+    .await
+    .map_err(|_| "OpenAI Realtime connection timed out.")?
+    .map_err(|error| match error {
+        tokio_tungstenite::tungstenite::Error::Http(response) => match response.status().as_u16() {
+            401 | 403 => "OpenAI rejected the API credential or model access.",
+            429 => "OpenAI Realtime quota or rate limit reached.",
+            _ => "OpenAI Realtime could not connect. Check model access and connectivity.",
+        },
+        _ => "OpenAI Realtime could not connect. Check your network.",
+    })?;
+    Ok(socket)
+}
+
+fn next_response(
+    responses: &response::ResponseCreateQueue,
+    handoff: Option<&mut feedback::Handoff>,
+    now: Instant,
+) -> Result<Option<ClientEvent>, &'static str> {
+    // Tool continuations take priority; notices cannot interrupt a response or
+    // the user's VAD turn. Playback must also be drained by the caller.
+    if responses.can_create() {
+        return Ok(Some(ClientEvent::ResponseCreate {
+            event_id: None,
+            response: None,
+        }));
+    }
+    if responses.can_respond()
+        && let Some(notice) = handoff.and_then(|handoff| handoff.notice(now))
+    {
+        return feedback_response(notice).map(Some);
+    }
+    Ok(None)
+}
+
+fn feedback_message(text: &str) -> Result<ClientEvent, &'static str> {
+    typed(
+        json!({"type":"conversation.item.create","item":{"type":"message","role":"user","content":[{"type":"input_text","text":format!("{}{text}", feedback::BACKEND_PREFIX)}]}}),
+    )
+}
+
+fn feedback_response(notice: feedback::Notice) -> Result<ClientEvent, &'static str> {
+    typed(
+        json!({"type":"response.create","response":{"instructions":format!("{INSTRUCTIONS}\n\n{}", notice.instructions()),"output_modalities":["audio"],"tools":[],"tool_choice":"none","max_output_tokens":96}}),
+    )
+}
+
+async fn forward_feedback<S>(
+    socket: &mut tokio_tungstenite::WebSocketStream<S>,
+    agent: &PinnedAgent,
+    handoff: &mut feedback::Handoff,
+) -> Result<(), &'static str>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    if let Some(snapshot) = agent
+        .feedback_snapshot(handoff.revision())
+        .map_err(|_| "The bound voice agent changed.")?
+    {
+        for text in handoff.observe(snapshot) {
+            send(socket, feedback_message(&text)?).await?;
+        }
+    }
+    Ok(())
 }
 
 fn preview_response() -> Result<ClientEvent, &'static str> {

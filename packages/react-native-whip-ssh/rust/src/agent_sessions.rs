@@ -868,6 +868,34 @@ impl AgentSessionManager {
             .map(|session| session.core.state())
     }
 
+    /// Project changed live history under its owner lock without cloning all
+    /// materialized messages. Voice uses this to copy only bounded public text.
+    pub(crate) fn project_live_transcript<T>(
+        &self,
+        key: &TranscriptKey,
+        revision: Option<u64>,
+        project: impl FnOnce(crate::agent_transcript::AgentTranscriptView<'_>) -> T,
+    ) -> Option<T> {
+        let state = self.inner.state.lock();
+        let session = state.sessions.get(key)?;
+        if session.core.status() != AgentTranscriptStatus::Live
+            || revision == Some(session.core.revision())
+        {
+            return None;
+        }
+        let snapshot;
+        let view = match session.core.projection_view() {
+            Some(view) => view,
+            None => {
+                snapshot = session.core.state();
+                (&snapshot).into()
+            }
+        };
+        let projected = project(view);
+        drop(state);
+        Some(projected)
+    }
+
     /// Search only clones history when the native projection has changed.
     pub(crate) fn search_snapshot(
         &self,

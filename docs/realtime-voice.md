@@ -69,6 +69,24 @@ Public API references:
 [VAD](https://developers.openai.com/api/docs/guides/realtime-vad), and
 [client events](https://developers.openai.com/api/reference/resources/realtime/client-events).
 
+## Handoff feedback
+
+Codex's `realtime_conversation.rs` handoff stream is adapted onto the pinned
+native transcript. New assistant text arrives as `[BACKEND]` user-context items
+while `agent_prompt` is pending; reasoning, user text, tool payloads and cached
+history are excluded. Cursors forward appended text once, rebaseline replaced
+windows, and bound copied messages, individual text, batches and total output.
+Disconnect/rebinding or call teardown stops feedback with the owning actor.
+
+Voice acknowledges its intent briefly before delegation. If the model emits
+only a function call, the response queue supplies one tool-free spoken
+acknowledgement after the original response ends. Further spoken progress
+requires new agent text and is coalesced at 15-second intervals; idle timers
+never invent progress. User speech and active playback defer notices, and tool
+results take priority. Completion flushes the latest backend text before the
+function result and resumes voice; missing answer text uses `agent_read`.
+The original idle-only submission and uncertain-outcome rules remain in place.
+
 ## Ownership and media
 
 `VoiceSessionManager` serializes Local and Realtime adapters. Realtime reserves
