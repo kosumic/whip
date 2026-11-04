@@ -8,6 +8,7 @@ import { VoiceVadSensitivityContext } from '../src/lib/voiceVadSensitivity';
 import { useReducedMotion } from '../src/components/app-ui';
 import { VoiceOrb } from '../src/components/VoiceOrb';
 import { voiceSessionManager } from '../src/services/voiceSessionManager';
+import { Text } from '../src/components/ui/text';
 
 jest.mock('../src/services/voiceConversation', () => ({ VoiceConversation: jest.fn() }));
 jest.mock('../src/services/voiceSessionManager', () => {
@@ -20,11 +21,11 @@ jest.mock('../src/services/voiceSessionManager', () => {
 jest.mock('../src/components/VoiceOrb', () => ({ VoiceOrb: 'VoiceOrb' }));
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
 jest.mock('react-native', () => ({
-  ActivityIndicator: 'ActivityIndicator', Modal: 'Modal', Pressable: 'Pressable', View: 'View',
+  ActivityIndicator: 'ActivityIndicator', Modal: 'Modal', Pressable: 'Pressable', View: 'View', ScrollView: 'ScrollView',
   StyleSheet: { create: (styles: unknown) => styles },
 }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
-jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string, values?: { cost?: string }) => key === 'voiceProvider.costEstimate' ? `Estimated voice total: ${values?.cost}` : key }) }));
 jest.mock('../src/theme', () => ({ useTheme: () => ({ colors: { canvas: '#000', text: '#fff', primary: '#acf', onPrimary: '#000' } }) }));
 jest.mock('../src/components/app-ui', () => ({ useReducedMotion: jest.fn(() => true) }));
 jest.mock('../src/components/GlassSurface', () => ({ GlassPortal: 'GlassPortal' }));
@@ -73,6 +74,8 @@ function press(label: string) {
   act(() => { renderer.root.findByProps({ accessibilityLabel: label }).props.onPress(); });
 }
 
+const renderedText = () => renderer.root.findAllByType(Text).map(node => node.props.children);
+
 beforeEach(async () => {
   jest.clearAllMocks();
   jest.mocked(VoiceConversation).mockImplementation((_target, _send, changed) => {
@@ -83,6 +86,31 @@ beforeEach(async () => {
   act(() => publish(listening));
 });
 afterEach(async () => { await act(async () => { renderer.unmount(); await voiceSessionManager.hangup(); }); });
+
+test('retains the streaming conversation when compacted and reopened', () => {
+  const messages = [
+    { id: 'user', role: 'user' as const, text: 'What is new?', active: false, spokenUtf16: 0 },
+    { id: 'assistant', role: 'assistant' as const, text: 'Here is the latest answer.', active: true, spokenUtf16: 10 },
+  ];
+  act(() => publish({ ...listening, provider: 'openai', phase: 'speaking', messages }));
+  expect(renderer.root.findByProps({ accessibilityLabel: messages[1].text }).props.numberOfLines).toBeUndefined();
+  press('voiceChat.minimize');
+  press('voiceChat.reopen');
+  expect(renderer.root.findByProps({ accessibilityLabel: messages[1].text })).toBeDefined();
+  expect(session.start).toHaveBeenCalledTimes(1);
+  expect(session.close).not.toHaveBeenCalled();
+});
+
+test('shows native streaming positions without applying an additional Realtime offset', () => {
+  const messages = [{ id: 'reply', role: 'assistant' as const, text: 'Hello, this is a reply.', active: true, spokenUtf16: 8 }];
+  act(() => publish({ ...listening, phase: 'speaking', messages }));
+  expect(renderedText()).toContain('this');
+  act(() => publish({ ...listening, provider: 'openai', phase: 'speaking', messages }));
+  expect(renderedText()).toContain('this');
+  act(() => publish({ ...listening, provider: 'openai', phase: 'speaking', messages: [{ ...messages[0], spokenUtf16: 12 }] }));
+  expect(renderedText()).toContain('is');
+  expect(messages[0].spokenUtf16).toBe(8);
+});
 
 test('settings changes update the existing call without restarting it', () => {
   act(() => { renderer.update(<VoiceVadSensitivityContext value={75}><Call /></VoiceVadSensitivityContext>); });
@@ -224,4 +252,30 @@ test('unmounting and remounting a presentation preserves the call and elapsed ti
   expect(renderer.root.findByType(VoiceOrb).props.startedAt).toBe(startedAt);
   press('voiceChat.end');
   expect(session.close).toHaveBeenCalledTimes(1);
+});
+
+test('shows the current API voice estimate and no cost for non-API calls', () => {
+  act(() => publish({ ...listening, estimatedUsd: 0.01234 }));
+  expect(renderedText()).not.toContain('Estimated voice total: USD 0.0123');
+  expect(renderedText()).not.toContain('voiceProvider.costUnknown');
+  act(() => publish({ ...listening, provider: 'openai', estimatedUsd: 0.01234 }));
+  expect(renderedText()).toContain('Estimated voice total: USD 0.0123');
+  act(() => publish({ ...listening }));
+  expect(renderedText()).not.toContain('Estimated voice total: USD 0.0123');
+});
+
+test('distinguishes unknown API costs from a reported zero estimate', () => {
+  act(() => publish({ ...listening, provider: 'openai', estimatedUsd: null }));
+  expect(renderedText()).not.toContain('voiceProvider.costUnknown');
+  expect(renderedText()).not.toContain('Estimated voice total: USD 0.0000');
+  act(() => publish({ ...listening, provider: 'openai', estimatedUsd: 0 }));
+  expect(renderedText()).toContain('Estimated voice total: USD 0.0000');
+});
+
+test('retains the current API voice estimate when the chat presentation remounts', async () => {
+  act(() => publish({ ...listening, provider: 'openai', estimatedUsd: 0.125 }));
+  await act(async () => renderer.unmount());
+  await act(async () => { renderer = create(<Call />); });
+  expect(renderedText()).toContain('Estimated voice total: USD 0.1250');
+  expect(session.start).toHaveBeenCalledTimes(1);
 });

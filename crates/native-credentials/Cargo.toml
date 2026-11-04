@@ -1,0 +1,14 @@
+[package]
+name = "native-credentials"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-or-later"
+description = "Bounded native credential ingress for trusted Rust cloud clients"
+repository = "https://github.com/kosumic/whip"
+publish = false
+
+[dependencies]
+zeroize = "1"
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"

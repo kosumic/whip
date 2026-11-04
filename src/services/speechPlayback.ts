@@ -1,13 +1,28 @@
 import { NativeModules } from 'react-native';
 
+/** Presentation metadata only; transcript revisions flow entirely inside Rust. */
+export function setAutomaticSpeechBinding(bindingToken: string, hostId: string, tabName: string): void {
+  const native = NativeModules?.HerdrBackground as NativeSpeechPlayback | undefined;
+  native?.automaticSpeechBinding?.(bindingToken, hostId, tabName);
+}
+
 export type SpeechEndReason = 'completed' | 'stopped' | 'shake' | 'replaced' | 'interrupted' | 'busy';
 
 export interface NativeSpeechPlayback {
+  automaticSpeechControl(action: 'enable' | 'pause', value: boolean): Promise<void>;
+  automaticSpeechBinding(bindingToken: string, hostId: string, tabName: string): void;
   speechBackendCommand(action: SpeechBackendAction | 'system-voices'): Promise<string>;
   startChatSpeech(token: string, label: string): Promise<void>;
   startLocalChatSpeech(token: string, label: string): Promise<void>;
   startVoiceCall(token: string, label: string): Promise<void>;
+  startRealtimeVoiceCall?(token: string, label: string): Promise<void>;
   endVoiceCall(token: string): Promise<void>;
+  startRealtimeVoice?(token: string, config: string): Promise<void>;
+  startRealtimeVoicePreview?(token: string, voice: string): Promise<void>;
+  voiceCredentialsUpdating?(updating: boolean): Promise<void>;
+  stopRealtimeVoice?(token: string): Promise<void>;
+  realtimeVoiceControl?(token: string, action: number): Promise<void>;
+  realtimeVoiceView?(token: string): Promise<string>;
   /** Plays bundled cues without taking audio focus from an active call. */
   playVoiceCallSound(uri: string, inCall: boolean): Promise<void>;
   stopVoiceCallSound(): Promise<void>;

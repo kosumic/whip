@@ -7,6 +7,8 @@ module.exports = [
   'crates/agent-browser-control/target',
   'crates/agent-transcript-core/target',
   'crates/herdr-protocol/target',
+  'crates/mobile-speech/target',
+  'crates/native-credentials/target',
   'crates/tailcat-client/target',
   'crates/whipair-protocol/target',
   'ios/Pods',

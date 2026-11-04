@@ -1,0 +1,48 @@
+name: Mobile speech CI
+
+on:
+  push:
+    branches: [main]
+    paths: &speech-paths
+      - 'crates/mobile-speech/**'
+      - '.github/workflows/ci-mobile-speech.yml'
+      - 'rust-toolchain.toml'
+  pull_request:
+    branches: [main]
+    paths: *speech-paths
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-mobile-speech-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Standalone crate (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04-arm, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: crates/mobile-speech
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install
+      - name: Check formatting
+        run: cargo fmt --check
+      - name: Lint
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Test without mobile SDKs
+        run: cargo test --locked
+      - name: Run a non-agent plain-text consumer
+        run: cargo run --locked --example plain_text
+      - name: Verify standalone package
+        run: cargo package --locked

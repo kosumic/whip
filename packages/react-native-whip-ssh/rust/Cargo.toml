@@ -14,6 +14,7 @@ default = []
 smart-turn = ["dep:tract-onnx", "dep:rustfft"]
 
 [dependencies]
+mobile-speech = { version = "0.1.0", path = "../../../crates/mobile-speech" }
 herdr-protocol = { version = "0.2.0", path = "../../../crates/herdr-protocol" }
 agent-transcript-core = { version = "0.1.0", path = "../../../crates/agent-transcript-core" }
 agent-browser-control = { version = "0.1.0", path = "../../../crates/agent-browser-control" }
@@ -28,10 +29,17 @@ futures = "0.3"
 earshot = "=1.2.2"
 hmac = "0.12"
 html5ever = "0.39"
+# WebSocket handshake/frame trace logs contain credentials and conversation data.
+log = { version = "0.4", features = ["max_level_info"] }
 parking_lot = "0.12"
+oai-rt-rs = "=0.5.1"
+opus = "=0.4.0"
+# Provider-backed DTLS avoids crypto-bigint 0.5 (RUSTSEC-2026-0387).
+rtc = "=0.21.1"
+webrtc = "=0.21.1"
 rayon = "1"
 rustfft = { version = "6.4", optional = true }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "multipart", "json"] }
 resvg = { version = "0.48.1", default-features = false, features = ["text", "raster-images"] }
 russh = { version = "0.64.1", default-features = false, features = ["flate2", "ring"] }
 russh-sftp = "2.4"
@@ -46,12 +54,16 @@ syntect = { version = "5.3", default-features = false, features = ["default-fanc
 ssh-key = { version = "=0.7.0-rc.11", features = ["ed25519", "getrandom"] }
 thiserror = "2"
 tokio = { version = "1", features = ["fs", "io-util", "net", "rt-multi-thread", "sync", "time"] }
+tokio-tungstenite = { version = "0.26", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 tract-onnx = { version = "=0.23.9", optional = true }
 turso = { version = "0.8.3", default-features = false, features = ["pure-rust-crypto"] }
 two-face = { version = "0.5", default-features = false, features = ["syntect-fancy"] }
 uniffi = "=0.31"
 url = "2"
 uuid = { version = "1", features = ["v4"] }
+native-credentials = { path = "../../../crates/native-credentials" }
+sonora = { version = "=0.2.0", default-features = false }
+rubato = { version = "=5.0.0", default-features = false }
 
 [target.'cfg(not(target_os = "ios"))'.dependencies]
 ptts = { version = "=0.6.0", default-features = false, features = ["hf"] }

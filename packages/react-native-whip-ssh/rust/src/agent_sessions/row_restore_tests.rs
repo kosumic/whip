@@ -7,6 +7,44 @@ use serde_json::json;
 
 const OPENCODE_SESSION: &str = "ses_rows";
 
+#[test]
+fn live_feedback_projection_skips_unchanged_and_stale_history() {
+    let core = materialized_cores("Public answer")
+        .into_iter()
+        .nth(1)
+        .unwrap();
+    let (manager, binding) = manager_with_core(core);
+    let revision = manager
+        .project_live_transcript(&binding.transcript_key, None, |view| {
+            assert!(!view.messages.is_empty());
+            view.revision
+        })
+        .expect("live transcript");
+    assert!(
+        manager
+            .project_live_transcript(&binding.transcript_key, Some(revision), |_| panic!(
+                "unchanged history must not be copied"
+            ))
+            .is_none()
+    );
+    manager
+        .inner
+        .state
+        .lock()
+        .sessions
+        .get_mut(&binding.transcript_key)
+        .unwrap()
+        .core
+        .mark_stale_update("source interrupted");
+    assert!(
+        manager
+            .project_live_transcript(&binding.transcript_key, None, |_| panic!(
+                "stale history must not reach voice"
+            ))
+            .is_none()
+    );
+}
+
 fn materialized_cores(text: &str) -> [AgentSessionCore; 2] {
     let records = [
         json!({"type":"session_meta", "payload":{"id":SESSION, "history_mode":"paginated"}}),

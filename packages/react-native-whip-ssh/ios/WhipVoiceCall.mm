@@ -1,4 +1,5 @@
 #import "WhipVoiceCall.h"
+#import "WhipRealtimeVoice.h"
 #import <AVFoundation/AVFoundation.h>
 #import <CallKit/CallKit.h>
 
@@ -12,6 +13,7 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
 @property(nonatomic, copy) NSString *token;
 @property(nonatomic, copy) NSString *label;
 @property(nonatomic, readwrite) BOOL active;
+@property(nonatomic, readwrite) BOOL muted;
 @property(nonatomic, copy) RCTPromiseResolveBlock ready;
 @property(nonatomic, copy) RCTPromiseRejectBlock failed;
 @property(nonatomic, strong) NSTimer *timeout;
@@ -27,6 +29,7 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
 @end
 
 @implementation WhipVoiceCall
+- (BOOL)owns:(NSString *)token { return self.active && [self.token isEqualToString:token]; }
 + (instancetype)shared
 {
   static WhipVoiceCall *call;
@@ -200,6 +203,8 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
 - (void)provider:(CXProvider *)provider performSetMutedCallAction:(CXSetMutedCallAction *)action
 {
   if (![action.callUUID isEqual:self.uuid]) { [action fail]; return; }
+  self.muted = action.muted;
+  [WhipRealtimeVoice.shared mute:self.token muted:action.muted];
   [self emit:@{@"type": @"muted", @"muted": @(action.muted)}];
   [action fulfill];
 }
@@ -231,6 +236,8 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
 }
 - (void)clear:(NSString *)error
 {
+  [WhipRealtimeVoice.shared stop:self.token];
+  self.muted = NO;
   [self emit:error ? @{@"type": @"ended", @"error": error} : @{@"type": @"ended"}];
   RCTPromiseRejectBlock failed = self.failed;
   self.ready = nil; self.failed = nil;

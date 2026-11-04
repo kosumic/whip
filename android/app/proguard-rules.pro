@@ -10,6 +10,9 @@
 # Add any project specific keep options here:
 
 # PCM callbacks are invoked by name from the native Phonon adapter.
+-keepclassmembers class com.whipssh.SpeechPolicy {
+    public static void automaticSpeechWake();
+}
 -keep interface com.whipssh.SpeechPolicy$PcmSink { *; }
 -keepclassmembers class * implements com.whipssh.SpeechPolicy$PcmSink {
     public boolean write(float[]);

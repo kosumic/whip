@@ -17,7 +17,7 @@ cropped. No device frame, captions, or interface elements are added.
 
 The `ipad-13` set contains native 2064 × 2752 captures from an iPad Pro 13-inch
 (M5) simulator, using the same waterfall image, app glass, full-screen settings,
-and saved hosts (thinker, example-host, Oracle, mini) as the iPhone launch captures.
+and saved hosts as the iPhone launch captures.
 App background dimming is 80%; terminal dimming is 85% with an 11-point font.
 The six views are Herd, hosts, agent chat, remote files, Git changes, and code diff.
 

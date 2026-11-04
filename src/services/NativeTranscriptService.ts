@@ -19,6 +19,7 @@ import {
   agentChatDiagnosticToken,
   recordAgentChatDiagnostic,
 } from './agentChatDiagnostics';
+import { setAutomaticSpeechBinding } from './speechPlayback';
 
 export type NativeTranscriptTransport = Pick<
   HostRuntimeConnection,
@@ -128,6 +129,23 @@ export class NativeTranscriptService {
   private readonly cacheHostVersions = new Map<string, { revision: number; connectionGeneration: number; transport: NativeTranscriptTransport }>();
   private readonly cacheHostAvailability = new Map<string, ReturnType<typeof transcriptCacheHostAvailability>>();
   private readonly cacheOwners: symbol[] = [];
+  private readonly speechBindings = new Map<string, string>();
+
+  constructor() {
+    this.titles.subscribeAll(() => {
+      for (const entry of this.entries.values()) this.updateSpeechBinding(entry);
+    });
+  }
+
+  private updateSpeechBinding(entry: TranscriptEntry): void {
+    const event = this.observed(entry, false);
+    if (!event) return;
+    const token = event.binding.bindingToken;
+    const label = JSON.stringify([event.hostSessionId, event.tabName]);
+    if (this.speechBindings.get(token) === label) return;
+    this.speechBindings.set(token, label);
+    setAutomaticSpeechBinding(token, event.hostSessionId, event.tabName);
+  }
 
   /** Overlapping React surfaces share one process-wide cache and ranking. */
   claimCacheOwnership() {
@@ -272,6 +290,7 @@ export class NativeTranscriptService {
     this.capacity = terminalCacheCapacity(capacity);
     this.cacheManaged = true;
     this.reconcileCacheBindings(hosts);
+    for (const entry of this.entries.values()) this.updateSpeechBinding(entry);
     const availableTargets = targets.filter(target => target.preload !== false || this.cachedTarget(target));
     this.cacheTargets = availableTargets;
     const connectedHosts = new Set(hosts.map(host => host.hostSessionId));
@@ -553,6 +572,7 @@ export class NativeTranscriptService {
       entry.listeners.set(binding.bindingToken, new Set());
     }
     this.terminalBindings.set(terminalKey, binding.bindingToken);
+    this.updateSpeechBinding(entry);
     if (previousToken !== binding.bindingToken) this.residencyChanged();
     boundEntry.current = entry;
     this.notifyObservers(entry, isNewEntry);
@@ -593,6 +613,14 @@ export class NativeTranscriptService {
 
   getState(bindingToken: string): AgentChatState | null {
     return this.entryForBinding(bindingToken)?.state ?? null;
+  }
+
+  /** A snapshot for native call pinning; cloud tools cannot resolve foreground focus. */
+  realtimeTarget(bindingToken: string) {
+    const entry = this.entryForBinding(bindingToken);
+    const binding = entry?.bindings.get(bindingToken);
+    if (!entry || !binding) return undefined;
+    return { runtimeId: entry.hostSessionId, terminalId: binding.terminalId, paneId: binding.paneId, bindingToken };
   }
 
   closeTerminal(
@@ -751,6 +779,7 @@ export class NativeTranscriptService {
   }
 
   private forgetBindingToken(bindingToken: string, notify = false): void {
+    this.speechBindings.delete(bindingToken);
     const entry = this.entryForBinding(bindingToken);
     if (!entry) return;
     // Invalidation is binding-local, not a transcript/global error. Presentation
@@ -765,6 +794,7 @@ export class NativeTranscriptService {
       this.notifyObservers(entry);
     }
     entry.bindings.delete(bindingToken);
+    if (entry.bindings.size > 0) this.updateSpeechBinding(entry);
     for (const [terminalKey, token] of this.terminalBindings) {
       if (token === bindingToken) this.terminalBindings.delete(terminalKey);
     }

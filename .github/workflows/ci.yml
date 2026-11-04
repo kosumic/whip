@@ -120,6 +120,14 @@ jobs:
           cargo test --locked
           cargo run --locked --example ingest
 
+      - name: Check portable mobile speech library
+        working-directory: crates/mobile-speech
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+          cargo run --locked --example plain_text
+
       - name: Check shared Herdr protocol
         working-directory: crates/herdr-protocol
         env:
@@ -130,6 +138,15 @@ jobs:
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked
           cargo run --locked --example messages
+
+      - name: Check native credential boundary
+        working-directory: crates/native-credentials
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/packages/react-native-whip-ssh/rust/target
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7

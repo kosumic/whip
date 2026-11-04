@@ -128,6 +128,7 @@
         packages = [
           androidSdk
           linuxCargoAbout
+          androidPkgs.cmake
           androidPkgs.jdk17_headless
           androidPkgs.libwebp
           androidPkgs.nodejs_24
@@ -154,6 +155,7 @@
       default = darwinPkgs.mkShell {
         packages = with darwinPkgs; [
           darwinCargoAbout
+          cmake
           nodejs_24
           watchman
           (ruby_3_4.withPackages (gems: [ gems.xcodeproj ]))

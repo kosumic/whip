@@ -6,6 +6,7 @@ mod diagnostics;
 mod file_source;
 pub(crate) mod ids;
 mod pi;
+mod presentation;
 use pi::{pi_transcript_find_command, resolve_pi_path, validate_pi_session};
 mod opencode_v2;
 #[cfg(test)]
@@ -391,6 +392,45 @@ struct AgentSessionManagerInner {
     rows: Mutex<HashMap<TranscriptKey, Vec<Weak<crate::AgentChatRows>>>>,
 }
 
+impl Drop for AgentSessionManagerInner {
+    fn drop(&mut self) {
+        crate::automatic_speech::runtime_removed(&self.runtime_id, self.runtime_incarnation);
+    }
+}
+
+/// A weak, process-owned route to the authoritative baseline. Speech does not
+/// keep a host, connection, or transcript alive after its owner releases it.
+#[derive(Clone)]
+pub(crate) struct AutomaticSpeechSource {
+    manager: Weak<AgentSessionManagerInner>,
+    key: TranscriptKey,
+}
+
+impl AutomaticSpeechSource {
+    pub(crate) fn baseline(
+        &self,
+        apply: impl FnOnce(u64, AgentTranscriptStatus, crate::AgentTranscriptView<'_>),
+    ) {
+        let Some(manager) = self.manager.upgrade() else {
+            return;
+        };
+        let state = manager.state.lock();
+        let Some(session) = state.sessions.get(&self.key) else {
+            return;
+        };
+        let snapshot;
+        let view = match session.core.projection_view() {
+            Some(view) => view,
+            None => {
+                snapshot = session.core.state();
+                (&snapshot).into()
+            }
+        };
+        apply(session.operation_epoch, session.core.status(), view);
+        drop(state);
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct AgentSessionManager {
     inner: Arc<AgentSessionManagerInner>,
@@ -615,6 +655,13 @@ impl AgentSessionManager {
             } else {
                 None
             };
+            if let Some(old) = &old_binding {
+                crate::automatic_speech::unbound(
+                    self.inner.runtime_incarnation,
+                    old.key.as_str(),
+                    identity.terminal_id.as_str(),
+                );
+            }
             let orphaned = old_binding.and_then(|old_binding| {
                 let old = state.sessions.get_mut(&old_binding.key)?;
                 old.terminals.remove(&identity.terminal_id);
@@ -687,6 +734,24 @@ impl AgentSessionManager {
             state
                 .terminal_bindings
                 .insert(identity.terminal_id.clone(), binding.clone());
+            let epoch = state
+                .sessions
+                .get(&key)
+                .map_or(0, |session| session.operation_epoch);
+            crate::automatic_speech::bound(
+                &self.inner.runtime_id,
+                self.inner.runtime_incarnation,
+                key.as_str(),
+                epoch,
+                identity.terminal_id.as_str(),
+                identity.pane_id.as_str(),
+                &binding.token,
+                &state_snapshot,
+                AutomaticSpeechSource {
+                    manager: Arc::downgrade(&self.inner),
+                    key: key.clone(),
+                },
+            );
             drop(state);
             (binding, state_snapshot, orphaned)
         };
@@ -866,6 +931,34 @@ impl AgentSessionManager {
             .sessions
             .get(key)
             .map(|session| session.core.state())
+    }
+
+    /// Project changed live history under its owner lock without cloning all
+    /// materialized messages. Voice uses this to copy only bounded public text.
+    pub(crate) fn project_live_transcript<T>(
+        &self,
+        key: &TranscriptKey,
+        revision: Option<u64>,
+        project: impl FnOnce(crate::agent_transcript::AgentTranscriptView<'_>) -> T,
+    ) -> Option<T> {
+        let state = self.inner.state.lock();
+        let session = state.sessions.get(key)?;
+        if session.core.status() != AgentTranscriptStatus::Live
+            || revision == Some(session.core.revision())
+        {
+            return None;
+        }
+        let snapshot;
+        let view = match session.core.projection_view() {
+            Some(view) => view,
+            None => {
+                snapshot = session.core.state();
+                (&snapshot).into()
+            }
+        };
+        let projected = project(view);
+        drop(state);
+        Some(projected)
     }
 
     /// Search only clones history when the native projection has changed.
@@ -1091,6 +1184,11 @@ impl AgentSessionManager {
         let close = {
             let mut state = self.inner.state.lock();
             let binding = state.terminal_bindings.remove(terminal_id)?;
+            crate::automatic_speech::unbound(
+                self.inner.runtime_incarnation,
+                binding.key.as_str(),
+                terminal_id.as_str(),
+            );
             let key = binding.key;
             let session = state.sessions.get_mut(&key)?;
             session.terminals.remove(terminal_id);
@@ -1102,6 +1200,7 @@ impl AgentSessionManager {
             self.release_session(&key);
             return Some(key);
         }
+        crate::automatic_speech::wake();
         None
     }
 
@@ -1114,6 +1213,7 @@ impl AgentSessionManager {
             return;
         }
         session.operation_epoch = NEXT_OPERATION_EPOCH.fetch_add(1, Ordering::Relaxed);
+        let released_epoch = session.operation_epoch;
         session.retry_running = false;
         session.pending_cache_offset = None;
         if let Some(context) = session.stream_context.take() {
@@ -1131,6 +1231,12 @@ impl AgentSessionManager {
         // Inactive transcript memory budget: zero. Turso owns durable history;
         // reopening creates a core and restores its persisted checkpoint.
         state.sessions.remove(key);
+        drop(state);
+        crate::automatic_speech::removed(
+            self.inner.runtime_incarnation,
+            key.as_str(),
+            released_epoch,
+        );
     }
 
     pub(crate) fn reconcile_authoritative_bindings(
@@ -2364,12 +2470,76 @@ fn emit(
     operation_epoch: u64,
     update: AgentTranscriptUpdate,
 ) {
-    let current = manager
-        .state
-        .lock()
+    let state = manager.state.lock();
+    let session = state
         .sessions
         .get(&key)
-        .is_some_and(|session| session.operation_epoch == operation_epoch);
+        .filter(|session| session.operation_epoch == operation_epoch);
+    let current = session.is_some();
+    if let Some(session) = session {
+        let reset = crate::automatic_speech::needs_baseline(
+            manager.runtime_incarnation,
+            key.as_str(),
+            operation_epoch,
+            session.core.status(),
+        ) || update.deltas.iter().any(|delta| {
+            matches!(
+                delta,
+                AgentTranscriptDelta::Reset { .. }
+                    | AgentTranscriptDelta::MessageRemoved { .. }
+                    | AgentTranscriptDelta::MessagesTruncated { .. }
+            )
+        });
+        // Concurrent producers can emit after a newer revision committed. In
+        // that case borrow the latest authoritative view rather than lose an
+        // earlier delta or apply stale content over a newer message.
+        if !crate::automatic_speech::tracking_enabled() {
+            crate::automatic_speech::accept(
+                manager.runtime_incarnation,
+                key.as_str(),
+                operation_epoch,
+                session.core.revision(),
+                session.core.status(),
+                std::iter::empty(),
+                false,
+            );
+        } else if reset || session.core.revision() != update.revision {
+            let snapshot;
+            let view = match session.core.projection_view() {
+                Some(view) => view,
+                None => {
+                    snapshot = session.core.state();
+                    (&snapshot).into()
+                }
+            };
+            crate::automatic_speech::accept(
+                manager.runtime_incarnation,
+                key.as_str(),
+                operation_epoch,
+                view.revision,
+                session.core.status(),
+                view.messages.iter(),
+                reset,
+            );
+        } else {
+            crate::automatic_speech::accept(
+                manager.runtime_incarnation,
+                key.as_str(),
+                operation_epoch,
+                update.revision,
+                session.core.status(),
+                update.deltas.iter().filter_map(|delta| match delta {
+                    AgentTranscriptDelta::MessageUpserted { message, .. } => Some(message),
+                    _ => None,
+                }),
+                false,
+            );
+        }
+    }
+    drop(state);
+    if current {
+        crate::automatic_speech::wake();
+    }
     if current {
         let mut registry = manager.rows.lock();
         if let Some(owners) = registry.get_mut(&key) {
@@ -2389,15 +2559,8 @@ fn emit(
             }
         }
     }
-    let sink = event_sink().read().clone();
-    if let Some(sink) = sink {
-        sink.event(AgentTranscriptEvent {
-            runtime_id: manager.runtime_id.clone(),
-            runtime_incarnation: manager.runtime_incarnation,
-            operation_epoch,
-            key: key.into(),
-            update,
-        });
+    if current {
+        presentation::enqueue(manager, key, operation_epoch, update);
     }
 }
 

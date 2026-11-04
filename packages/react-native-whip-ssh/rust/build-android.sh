@@ -14,6 +14,11 @@ if [[ ! -x "$ubrn" ]]; then
   exit 1
 fi
 
+# The bundled Opus CMake build uses ANDROID_NDK_HOME; Nix exports ROOT.
+if [[ -z "${ANDROID_NDK_HOME:-}" && -n "${ANDROID_NDK_ROOT:-}" ]]; then
+  export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
+fi
+
 cargo build \
   --locked \
   --manifest-path "$rust_dir/Cargo.toml" \

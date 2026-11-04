@@ -15,13 +15,13 @@ export interface OpenSourceLicenseNotice {
 
 export const OPEN_SOURCE_LICENSES: readonly OpenSourceLicenseNotice[] = [
   {
-    id: 'androidx-core-telecom',
-    projectName: 'AndroidX Core Telecom',
-    sourceUrl: 'https://developer.android.com/jetpack/androidx/releases/core#core-telecom',
-    attribution: 'Android system call lifecycle, audio routing, and call control integration.',
+    id: 'codex-realtime-voice',
+    projectName: 'OpenAI Codex Realtime voice',
+    sourceUrl: 'https://github.com/openai/codex/tree/f2b94ef8b52196f127d162c6db71e390b9bb265c',
+    attribution: 'Realtime audio processing and response lifecycle adapted from Codex voice-host and core. Modified for native mobile devices and the public OpenAI Realtime API.',
     licenseName: 'Apache-2.0',
-    copyright: 'Copyright 2023 The Android Open Source Project',
-    licenseAsset: bundledAsset(require('../../assets/licenses/phonon-Apache-2.0.txt')),
+    copyright: 'Copyright OpenAI',
+    licenseAsset: bundledAsset(require('../../assets/licenses/codex-Apache-2.0.txt')),
   },
   {
     id: 'smart-turn-v3',

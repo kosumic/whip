@@ -14,6 +14,15 @@ import { loadVoiceCallSound, type VoiceCallSound } from './voiceCallSounds';
 
 export type VoiceChatTarget = Omit<ChatSpeechTarget, 'bindingToken'> & { bindingToken?: string; tabId: string };
 
+export interface VoiceTranscriptMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  /** Estimated UTF-16 playback cursor, advanced by native device acknowledgments. */
+  spokenUtf16: number;
+  active: boolean;
+}
+
 export interface VoiceConversationView {
   phase: VoiceChatView['phase'] | 'error' | 'starting';
   muted: boolean;
@@ -25,6 +34,12 @@ export interface VoiceConversationView {
   progress: number;
   error: string | null;
   transcript: AgentChatState | null;
+  provider?: 'openai';
+  userText?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  estimatedUsd?: number | null;
+  messages?: readonly VoiceTranscriptMessage[];
 }
 const STOPPED = 'WhipChatSpeechStopped';
 const STARTED = 'WhipChatSpeechStarted';
@@ -34,6 +49,7 @@ const WATCHDOG_MS = 10_000;
 const SPEECH_LOOKAHEAD = 2;
 const FILLER_POLL_MS = 1_000;
 const TRANSCRIPT_RECOVERY_MS = 30_000;
+const CAPTION_LIMIT = { messages: 64, text: 16 * 1024, total: 128 * 1024 } as const;
 let nextSession = 0;
 const voiceCalls: { active: VoiceConversation | null } = { active: null };
 type CallEvent = { token: string; type: 'ended' | 'muted' | 'route' | 'audioInactive'; muted?: boolean; speaker?: boolean; error?: string };
@@ -221,7 +237,7 @@ export class VoiceConversation {
   finish = (): void => { if (!this.closed) { this.core?.finish(); this.apply(); } };
   submitted(text: string): void {
     if (this.closed || !this.core || !this.callActivated || !text.trim()) return;
-    try { this.core.submitText(text); }
+    try { this.core.submitText(text); this.caption(`user:${this.core.view().inputId}`, 'user', text); }
     catch (error) { this.view = { ...this.view, error: failureMessage(error) }; this.changed(this.view); return; }
     this.timing = undefined;
     this.cancelFiller();
@@ -331,6 +347,7 @@ export class VoiceConversation {
     }
     if (view.phase === 'speaking' && this.timing && this.timing.prose === undefined) this.timing.prose = performance.now();
     this.view = { ...this.view, phase: this.callActivated ? view.phase : 'starting', muted: view.muted, smartTurn: view.smartTurn, text: view.text, level: view.level, progress: view.progress, playbackLevel: view.phase === 'speaking' ? this.view.playbackLevel : 0 };
+    if ((view.phase === 'listening' || view.phase === 'finishing') && view.text.trim()) this.caption(`user:${view.inputId}`, 'user', view.text);
     this.changed(this.view);
     if ((view.phase === 'listening' || view.phase === 'finishing') && this.playing && this.input?.monitor) {
       this.stopInterruptedPlayback();
@@ -543,11 +560,19 @@ export class VoiceConversation {
           continue;
         }
         if (this.timing && this.timing.synthesis === undefined) this.timing.synthesis = performance.now();
+        const captionId = `assistant:${token}`;
+        const previous = this.view.messages?.find(message => message.id === captionId)?.text ?? '';
+        const captionText = previous ? `${previous} ${text}` : text;
+        this.caption(captionId, 'assistant', captionText);
+        const spokenEnd = captionText.length;
         const done = () => {
           pending.delete(queued);
           if (current()) this.signalSpeech();
         };
-        const queued = enqueue(token, text).then(done, error => { status.failure = { error }; done(); });
+        const queued = enqueue(token, text).then(() => {
+          if (current()) this.caption(captionId, 'assistant', undefined, spokenEnd);
+          done();
+        }, error => { status.failure = { error }; done(); });
         pending.add(queued);
       }
       if (!current()) return;
@@ -564,6 +589,22 @@ export class VoiceConversation {
       recordDiagnostic('warn', 'VoiceChat', 'playback-failed', { error: this.view.error });
       await this.skip();
     }
+  }
+
+  /** Local TTS acknowledges whole chunks; never invent word timing for it. */
+  private caption(id: string, role: VoiceTranscriptMessage['role'], text?: string, spokenUtf16 = 0): void {
+    const messages = [...(this.view.messages ?? [])];
+    const index = messages.findIndex(message => message.id === id);
+    const previous = messages[index];
+    const value = (text ?? previous?.text ?? '').slice(0, CAPTION_LIMIT.text);
+    if (!value.trim()) return;
+    const message: VoiceTranscriptMessage = { id, role, text: value, active: false, spokenUtf16: Math.min(value.length, Math.max(previous?.spokenUtf16 ?? 0, spokenUtf16)) };
+    if (previous?.text === value && previous.spokenUtf16 === message.spokenUtf16) return;
+    if (index < 0) messages.push(message); else messages[index] = message;
+    let length = messages.reduce((sum, item) => sum + item.text.length, 0);
+    while (messages.length > CAPTION_LIMIT.messages || length > CAPTION_LIMIT.total) length -= messages.shift()!.text.length;
+    this.view = { ...this.view, messages };
+    this.changed(this.view);
   }
 
   private fail(error: unknown): void {

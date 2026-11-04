@@ -28,6 +28,7 @@ mod interaction;
 pub use interaction::{AgentInteractionChoice, AgentInteractionKind, AgentInteractionPrompt};
 mod monitoring;
 mod notifications;
+pub(crate) mod realtime_agent;
 mod remote_files;
 mod remote_text;
 pub use remote_text::{RemoteTextAnchor, RemoteTextPage, RemoteTextReader, RemoteTextRow};

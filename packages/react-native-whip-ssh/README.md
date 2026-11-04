@@ -280,7 +280,7 @@ Set `WHIP_TAILCAT_LATENCY_RESULTS` to save JSON. Repeat with
 system VPN or server networking:
 
 ```sh
-WHIP_TAILCAT_LIVE_DIRECT_HOST=example-host nix develop -c cargo test --locked \
+WHIP_TAILCAT_LIVE_DIRECT_HOST=your-ssh-host nix develop -c cargo test --locked \
   --manifest-path packages/react-native-whip-ssh/rust/Cargo.toml --lib \
   live_remote_typing_latency -- --ignored --nocapture
 ```

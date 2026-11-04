@@ -5,6 +5,7 @@
 FOUNDATION_EXPORT NSString *const WhipChatSpeechStopped;
 FOUNDATION_EXPORT NSString *const WhipChatSpeechStarted;
 FOUNDATION_EXPORT NSString *const WhipChatSpeechLevel;
+FOUNDATION_EXPORT NSString *const WhipAutomaticSpeechFocus;
 
 /** Main-thread OS playback shared by chat, announcements, and device tools. */
 @interface WhipSpeechPlayback : NSObject
@@ -16,6 +17,9 @@ FOUNDATION_EXPORT NSString *const WhipChatSpeechLevel;
 - (void)announce:(NSString *)owner text:(NSString *)text language:(NSString *)language resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
 - (void)announceStatus:(NSString *)owner resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
 - (void)refreshStatus;
+- (void)automaticControl:(NSString *)action value:(BOOL)value;
+- (void)automaticBinding:(NSString *)token host:(NSString *)host tabName:(NSString *)tabName;
+- (void)detachPresentation;
 - (void)preview:(NSString *)owner text:(NSString *)text language:(NSString *)language resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
 - (void)speakDevice:(NSString *)owner request:(NSString *)request text:(NSString *)text language:(NSString *)language rate:(double)rate resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
 - (BOOL)stopOwner:(NSString *)owner kind:(enum WhipSpeechKind)kind;

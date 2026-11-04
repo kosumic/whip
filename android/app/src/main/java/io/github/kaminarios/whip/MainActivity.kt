@@ -2,6 +2,7 @@ package io.github.kaminarios.whip
 
 import android.os.Bundle
 import android.os.Build
+import android.media.AudioManager
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -48,6 +49,7 @@ class MainActivity : ReactActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     setTheme(R.style.AppTheme)
     super.onCreate(null)
+    volumeControlStream = AudioManager.STREAM_MUSIC
     window.setBackgroundDrawableResource(android.R.color.white)
     // React first renders loading placeholders for fonts and stored preferences.
     // Keep Android's starting window until the actual app screen has laid out,

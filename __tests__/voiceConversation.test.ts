@@ -106,6 +106,24 @@ beforeEach(() => {
 });
 afterEach(async () => { await session.close(); mockInputListeners.clear(); mockAppListeners.clear(); mockTranscriptListeners.clear(); mockCallEvents.clear(); });
 
+test('local call captions acknowledge audible chunks and retain earlier replies', async () => {
+  let finishSpeech!: () => void;
+  mockSpeech.speakChat.mockImplementationOnce(() => new Promise<void>(resolve => { finishSpeech = resolve; }));
+  await session.start(); await flush();
+  mockView.phase = 'speaking';
+  mockCore.nextSpeech.mockReturnValueOnce('First reply.');
+  for (const listener of mockTranscriptListeners) listener(state);
+  await flush();
+  expect(changed.mock.calls.at(-1)?.[0].messages).toEqual([expect.objectContaining({ role: 'assistant', text: 'First reply.', spokenUtf16: 0, active: false })]);
+  finishSpeech(); await flush();
+  expect(changed.mock.calls.at(-1)?.[0].messages).toEqual([expect.objectContaining({ text: 'First reply.', spokenUtf16: 12 })]);
+  mockView.inputId = 2n; mockView.phase = 'speaking';
+  mockCore.nextSpeech.mockReturnValueOnce('Second reply.');
+  for (const listener of mockTranscriptListeners) listener(state);
+  await flush();
+  expect(changed.mock.calls.at(-1)?.[0].messages?.map(message => message.text)).toEqual(['First reply.', 'Second reply.']);
+});
+
 test('starts without downloading and uses the shared strictly local recognizer', async () => {
   await session.start(); await flush();
   expect(changed.mock.calls.at(-1)?.[0].error).toBeNull();

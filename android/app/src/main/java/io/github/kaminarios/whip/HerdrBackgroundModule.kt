@@ -23,13 +23,15 @@ import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.LifecycleEventListener
+import com.facebook.react.common.LifecycleState
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.whipssh.SpeechPolicy
 import kotlin.math.sqrt
 
 class HerdrBackgroundModule(
   private val context: ReactApplicationContext,
-) : ReactContextBaseJavaModule(context), SensorEventListener {
+) : ReactContextBaseJavaModule(context), SensorEventListener, LifecycleEventListener {
   private val sensorManager = context.getSystemService(SensorManager::class.java)
   private val notificationManager = context.getSystemService(NotificationManager::class.java)
   private val mainHandler = Handler(Looper.getMainLooper())
@@ -57,6 +59,13 @@ class HerdrBackgroundModule(
   override fun getName(): String = "HerdrBackground"
 
   init {
+    SpeechPlayback.onAutomaticFocus = { host, pane ->
+      context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+        .emit("WhipAutomaticSpeechFocus", Arguments.createMap().apply {
+          if (host != null) putString("hostId", host)
+          if (pane != null) putString("paneId", pane)
+        })
+    }
     SpeechPlayback.onChatLevel = { token, level ->
       context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
         .emit(CHAT_SPEECH_LEVEL, Arguments.createMap().apply { putString("token", token); putDouble("level", level.toDouble()) })
@@ -89,6 +98,43 @@ class HerdrBackgroundModule(
   fun startVoiceCall(token: String, label: String, promise: Promise) {
     mainHandler.post { VoiceCallService.start(context, token, label, promise) }
   }
+
+  @ReactMethod
+  fun startRealtimeVoiceCall(token: String, label: String, promise: Promise) {
+    mainHandler.post { VoiceCallService.start(context, token, label, promise, warmLocalSpeech = false) }
+  }
+
+  @ReactMethod
+  fun startRealtimeVoice(token: String, config: String, promise: Promise) {
+    mainHandler.post {
+      if (context.lifecycleState != LifecycleState.RESUMED) promise.reject("E_VOICE_CREDENTIAL_UNAVAILABLE", "Return to Whip to start a call.")
+      else RealtimeVoice.start(context, token, config, promise)
+    }
+  }
+  @ReactMethod
+  fun startRealtimeVoicePreview(token: String, voice: String, promise: Promise) {
+    mainHandler.post {
+      if (context.lifecycleState != LifecycleState.RESUMED) promise.reject("E_REALTIME", "Return to Whip to preview a voice.")
+      else RealtimeVoice.preview(context, token, voice, promise)
+    }
+  }
+  @ReactMethod
+  fun voiceCredentialsUpdating(updating: Boolean, promise: Promise) {
+    mainHandler.post { RealtimeVoice.credentialsUpdating(updating); promise.resolve(null) }
+  }
+  override fun initialize() {
+    super.initialize()
+    context.addLifecycleEventListener(this)
+  }
+  override fun onHostResume() {}
+  override fun onHostPause() { mainHandler.post { RealtimeVoice.stopPreview() } }
+  override fun onHostDestroy() { mainHandler.post { RealtimeVoice.stopPreview() } }
+  @ReactMethod
+  fun stopRealtimeVoice(token: String, promise: Promise) { mainHandler.post { RealtimeVoice.stop(token, promise) } }
+  @ReactMethod
+  fun realtimeVoiceControl(token: String, action: Int, promise: Promise) { mainHandler.post { RealtimeVoice.control(token, action); promise.resolve(null) } }
+  @ReactMethod
+  fun realtimeVoiceView(token: String, promise: Promise) { mainHandler.post { promise.resolve(RealtimeVoice.view(token)) } }
 
   @ReactMethod
   fun endVoiceCall(token: String, promise: Promise) {
@@ -156,6 +202,20 @@ class HerdrBackgroundModule(
   @ReactMethod
   fun speechBackendCommand(action: String, promise: Promise) {
     mainHandler.post { PhononPlayback.command(context, action, promise) }
+  }
+
+  @ReactMethod
+  fun automaticSpeechControl(action: String, value: Boolean, promise: Promise) {
+    mainHandler.post {
+      try { SpeechPlayback.automaticControl(context, action, value); promise.resolve(null) }
+      catch (error: Throwable) { promise.reject("E_AUTOMATIC_SPEECH", error) }
+    }
+  }
+
+  @ReactMethod
+  fun automaticSpeechBinding(bindingToken: String, hostId: String, tabName: String) {
+    SpeechPolicy.automaticSpeech(org.json.JSONObject().put("action", "bind")
+      .put("bindingToken", bindingToken).put("hostId", hostId).put("tabName", tabName).toString())
   }
 
   @ReactMethod
@@ -346,14 +406,17 @@ class HerdrBackgroundModule(
   override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
 
   override fun invalidate() {
+    context.removeLifecycleEventListener(this)
     mainHandler.post {
+      RealtimeVoice.invalidate()
       finishVoiceCallSound()
       VoiceCallService.onEvent = null
       VoiceCallService.invalidate()
       SpeechPlayback.onChatStopped = null
       SpeechPlayback.onChatStarted = null
       SpeechPlayback.onChatLevel = null
-      SpeechPlayback.shutdown()
+      SpeechPlayback.onAutomaticFocus = null
+      SpeechPlayback.detachPresentation()
       stopPersistentAlert()
     }
     super.invalidate()
