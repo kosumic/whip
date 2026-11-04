@@ -27,6 +27,14 @@ loading binding instead of repeatedly detaching it and restarting discovery.
 Selection retention ends when the app backgrounds, the selection changes, or
 the screen unmounts; active transcript subscribers retain their own entries.
 
+Releasing that foreground protection does not evict a valid cached transcript.
+Already-loaded idle chats remain eligible for residency, while unopened idle
+agents do not trigger speculative loads. Attention ranking chooses which entry
+to replace only when a confirmed new binding needs space, or when the configured
+cache limit shrinks. A speculative candidate without a chat binding cannot
+discard an existing transcript. Closing a pane or replacing its host/session
+identity still invalidates its binding independently of cache capacity.
+
 Terminal renderers and transcripts have independent cache lifecycles. Evicting
 a renderer or releasing its terminal bridge preserves the transcript binding
 and its updates. The transcript cache controls its own eviction; closing the

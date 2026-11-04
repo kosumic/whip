@@ -294,6 +294,7 @@ export class NativeTranscriptService {
       for (const binding of entry.bindings.values()) {
         this.failedPreloads.set(this.terminalKey(entry.hostSessionId, binding.terminalId), entry.hostSessionId);
       }
+      this.evict(entry);
     }
     const selected = new Set([...this.entries.values()].filter(entry => this.pinned(entry)).map(entry => this.identity(entry)));
     const limit = Math.max(this.capacity, selected.size);
@@ -303,7 +304,10 @@ export class NativeTranscriptService {
       if (selected.size < limit) selected.add(identity);
     }
     for (const entry of [...this.entries.values()]) {
-      if (!selected.has(this.identity(entry))) this.evict(entry);
+      // Losing attention/foreground status does not invalidate a transcript.
+      // Trim excess capacity here; new admissions reserve their own slot only
+      // after Rust confirms that a candidate actually has a chat binding.
+      if (this.entries.size > limit && !selected.has(this.identity(entry))) this.evict(entry);
     }
     this.admittedTerminals.clear();
     for (const target of availableTargets) {
@@ -420,10 +424,6 @@ export class NativeTranscriptService {
     transport: NativeTranscriptTransport,
   ): AgentChatProjection {
     this.failedPreloads.delete(this.terminalKey(hostSessionId, terminalId));
-    const target = this.cacheTargets.find(item => item.hostSessionId === hostSessionId && item.terminalId === terminalId);
-    if (!this.terminalBindings.has(this.terminalKey(hostSessionId, terminalId))) {
-      this.reserve(target && cacheIdentity(hostSessionId, target.agent, target.sessionId));
-    }
     recordAgentChatDiagnostic('activate-requested', {
       hostSessionId,
       terminalId,

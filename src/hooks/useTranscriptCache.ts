@@ -40,10 +40,12 @@ export function useTranscriptCache(
         const agent = identity && chatAgentForPane(pane);
         if (!agent || !identity?.value.trim() ||
           (identity.kind !== 'id' && !(agent === 'pi' && identity.kind === 'path'))) continue;
-        if (pane.agent_status !== 'working' && pane.agent_status !== 'blocked' && pane.agent_status !== 'done') continue;
+        const needsAttention = pane.agent_status === 'working' || pane.agent_status === 'blocked' || pane.agent_status === 'done';
         targets.set(JSON.stringify([session.id, pane.terminal_id]), {
           hostSessionId: session.id, terminalId: pane.terminal_id,
-          agent, sessionId: identity.value.trim(), transport, preload: availability === 'load',
+          // Seen/idle chats stay eligible for residency after navigation releases
+          // their foreground pin. Only attention rows start speculative loads.
+          agent, sessionId: identity.value.trim(), transport, preload: availability === 'load' && needsAttention,
         });
       }
     }

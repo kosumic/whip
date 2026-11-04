@@ -178,15 +178,52 @@ describe('attention-ranked transcript cache', () => {
   test('overlapping foreground owners release their selected transcript independently', () => {
     const service = new NativeTranscriptService();
     const selected = cacheRemote(1);
+    const competing = Array.from({ length: 3 }, (_, index) => cacheRemote(index + 2));
+    const ranked = competing.map(remote => remote.target);
     const first = service.retainForegroundTerminal('host', selected.target.terminalId);
     const second = service.retainForegroundTerminal('host', selected.target.terminalId);
     service.preload('host', selected.target.terminalId, selected.value);
     first(); first();
-    service.reconcileCache(3, [], []);
+    service.reconcileCache(3, ranked, []);
     expect(service.getState(selected.binding.bindingToken)).not.toBeNull();
     second();
-    service.reconcileCache(3, [], []);
+    service.reconcileCache(3, ranked, []);
     expect(service.getState(selected.binding.bindingToken)).toBeNull();
+    expect(service.getState(competing[2].binding.bindingToken)).not.toBeNull();
+  });
+
+  test('a valid unranked transcript stays cached after its viewport detaches when there is spare capacity', async () => {
+    const service = new NativeTranscriptService();
+    const viewed = cacheRemote(1);
+    const running = cacheRemote(2);
+    viewed.rebind({ ...viewed.binding, state: { ...viewed.binding.state, status: 'live' } });
+    service.activate('host', viewed.target.terminalId, viewed.value);
+    await flush();
+    const cached = service.getState(viewed.binding.bindingToken);
+    const stop = service.subscribe(viewed.binding.bindingToken, jest.fn());
+    service.reconcileCache(20, [running.target], []);
+    stop();
+    for (let visit = 0; visit < 3; visit++) service.reconcileCache(20, [running.target], []);
+    expect(service.getState(viewed.binding.bindingToken)).toBe(cached);
+    expect(viewed.value.detachAgentChat).not.toHaveBeenCalled();
+    expect(viewed.value.startAgentChat).toHaveBeenCalledTimes(1);
+  });
+
+  test('an unavailable speculative candidate does not evict a valid cached transcript', async () => {
+    const service = new NativeTranscriptService();
+    const residents = Array.from({ length: 3 }, (_, index) => cacheRemote(index + 1));
+    for (const resident of residents) {
+      resident.rebind({ ...resident.binding, state: { ...resident.binding.state, status: 'live' } });
+    }
+    const unavailable = cacheRemote(4);
+    service.reconcileCache(3, residents.map(remote => remote.target), []);
+    await flush();
+    const cached = residents.map(remote => service.getState(remote.binding.bindingToken));
+    unavailable.noChat();
+    service.reconcileCache(3, [unavailable.target, ...residents.map(remote => remote.target)], []);
+    expect(residents.map(remote => service.getState(remote.binding.bindingToken))).toEqual(cached);
+    for (const resident of residents) expect(resident.value.detachAgentChat).not.toHaveBeenCalled();
+    expect(unavailable.value.startAgentChat).not.toHaveBeenCalled();
   });
 
   test('loads only the highest ranked transcripts across hosts and promotes newly urgent tabs', () => {

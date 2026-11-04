@@ -213,6 +213,43 @@ test('only fresh, available transcripts with running, blocked or done status ent
   expect(runtime.transport.openAgentChat).toHaveBeenCalledTimes(3);
 });
 
+test('a viewed chat stays resident after completion is acknowledged and the view returns to Herd', async () => {
+  const runtime = host('one', ['done', 'working', 'idle']);
+  const fixture = setup([runtime], [[0, 0], [0, 1]]);
+  await fixture.render(20);
+  const binding = runtime.bindings.get('terminal-0')!;
+  await act(async () => {
+    binding.state = { ...binding.state, revision: 2, messages: [{
+      id: 'message-1', role: 'user', parts: [{ type: 'text', id: 'text-1', text: 'Previously loaded history' }], diffs: [],
+    }] };
+    runtime.handlers.get(binding.terminalId)!({ key: binding.transcriptKey,
+      runtimeIncarnation: binding.runtimeIncarnation, revision: 2,
+      deltas: [{ type: 'reset', state: binding.state }] });
+  });
+  const cached = agentTranscriptService.getState(binding.bindingToken);
+  let releaseSelection = () => {};
+  let unsubscribe = () => {};
+  await act(async () => {
+    releaseSelection = agentTranscriptService.retainForegroundTerminal(runtime.id, binding.terminalId);
+    unsubscribe = agentTranscriptService.subscribe(binding.bindingToken, jest.fn());
+  });
+  // Opening a completed chat acknowledges it as seen/idle. Only one other
+  // agent is running, so returning to Herd must not discard the viewed history.
+  runtime.panes[0].agent_status = 'idle';
+  runtime.state.revision += 1;
+  fixture.order.splice(0, 2, [0, 1]);
+  await fixture.render(20);
+  await act(async () => { unsubscribe(); releaseSelection(); });
+  expect(agentTranscriptService.getState(binding.bindingToken)).toBe(cached);
+  expect(runtime.transport.detachAgentChat).not.toHaveBeenCalledWith(binding.terminalId);
+  const returned = agentTranscriptService.preload(runtime.id, binding.terminalId, runtime.transport);
+  expect(returned).toMatchObject({ type: 'bound', binding });
+  if (returned?.type === 'bound') expect(returned.state.transcript.messages[0].parts[0]).toMatchObject({ text: 'Previously loaded history' });
+  expect(runtime.transport.openAgentChat).toHaveBeenCalledTimes(2);
+  expect(runtime.transport.startAgentChat).toHaveBeenCalledTimes(2);
+  expect(runtime.bindings.has('terminal-2')).toBe(false);
+});
+
 test('a stale speculative binding yields its slot and waits for a host update before retrying', async () => {
   const runtime = host('one', ['working', 'blocked', 'done', 'working']);
   const start = runtime.transport.startAgentChat;
