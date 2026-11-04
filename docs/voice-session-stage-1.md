@@ -31,6 +31,11 @@ drafts after save attempts, and shows generic credential failures. No credential
 is sent to SSH hosts. Cloud adapters in later stages must read credentials only
 for a user-started cloud session and must preserve this ownership boundary.
 
+The shared usage/cost statistics foundation is documented in
+[voice-usage.md](voice-usage.md). It records local call lifecycle independently of
+audio, provides Settings → Voice → Usage & costs, and defines the persisted
+accounting contract for the later cloud adapters.
+
 ## Validation
 
 JS tests cover remounts, target replacement, cancellation during loading, stale

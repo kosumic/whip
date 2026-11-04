@@ -11,6 +11,8 @@ use tokio::sync::oneshot;
 mod known_hosts;
 pub(crate) use known_hosts::detach as detach_known_host_repository;
 pub use known_hosts::*;
+mod voice_usage;
+pub use voice_usage::*;
 
 const SCHEMA_VERSION: i64 = 1;
 const LEGACY_IMPORT: &str = "async-storage-v1";
@@ -329,7 +331,8 @@ fn legacy_app_key(key: &str) -> bool {
 }
 
 fn validate_entry(entry: &AppStorageEntry, importing: bool) -> Result<(), AppStorageError> {
-    if !legacy_app_key(&entry.key) || importing && entry.value.is_none() {
+    let allowed = legacy_app_key(&entry.key) || (!importing && entry.key == voice_usage::KEY);
+    if !allowed || importing && entry.value.is_none() {
         return Err(AppStorageError::InvalidEntry(entry.key.clone()));
     }
     // These records have always stored metadata only. Fail closed on unexpected

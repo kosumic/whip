@@ -159,6 +159,8 @@ export {
   selectLegacyAppDataKeys,
   readAppData,
   writeAppData,
+  recordVoiceUsage,
+  voiceUsageSummary,
   type AppStorageEntry,
 } from './generated-entry';
 

@@ -933,6 +933,9 @@ interface NativeModuleInterface {
     agent: Uint8Array,
     sessionId: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_record_voice_usage(
+    eventJson: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_func_remove_ssh_sftp_directory(
     key: Uint8Array,
     path: Uint8Array,
@@ -1074,6 +1077,9 @@ interface NativeModuleInterface {
     generation: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_func_voice_usage_summary(
+    queryJson: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_func_write_app_data(entries: Uint8Array): bigint;
   ubrn_uniffi_whip_ssh_fn_func_write_exec_channel(
     key: Uint8Array,
@@ -3121,6 +3127,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_public_key_verification_code(): number;
   ubrn_uniffi_whip_ssh_checksum_func_read_app_data(): number;
   ubrn_uniffi_whip_ssh_checksum_func_read_saved_agent_transcript(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_record_voice_usage(): number;
   ubrn_uniffi_whip_ssh_checksum_func_remove_ssh_sftp_directory(): number;
   ubrn_uniffi_whip_ssh_checksum_func_remove_ssh_sftp_file(): number;
   ubrn_uniffi_whip_ssh_checksum_func_rename_ssh_sftp_path(): number;
@@ -3151,6 +3158,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_usage_chart(): number;
   ubrn_uniffi_whip_ssh_checksum_func_usage_summary(): number;
   ubrn_uniffi_whip_ssh_checksum_func_use_javascript_terminal_delivery(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_voice_usage_summary(): number;
   ubrn_uniffi_whip_ssh_checksum_func_write_app_data(): number;
   ubrn_uniffi_whip_ssh_checksum_func_write_exec_channel(): number;
   ubrn_uniffi_whip_ssh_checksum_func_write_length_prefixed_unix_socket_channel(): number;

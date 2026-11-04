@@ -1,6 +1,10 @@
-import { VoiceSessionManager, type VoiceSessionAdapter } from '../src/services/voiceSessionManager';
+import { VoiceSessionManager, localVoiceUsageObserver, type VoiceSessionAdapter } from '../src/services/voiceSessionManager';
 import type { VoiceChatTarget, VoiceConversationView } from '../src/services/voiceConversation';
 import { DEFAULT_VOICE_CONVERSATION_SETTINGS as defaults } from '../src/lib/voiceConversationSettings';
+import { voiceUsageLedger } from '../src/services/voiceUsage';
+
+jest.mock('../src/services/voiceUsage', () => ({ voiceUsageLedger: { record: jest.fn(() => Promise.resolve()) } }));
+jest.mock('../src/lib/secureId', () => ({ createSecureId: () => 'voice-stable-random-id' }));
 
 const target: VoiceChatTarget = { agent: 'codex', hostId: 'host', tabId: 'tab', paneId: 'pane', label: 'Codex' };
 const view: VoiceConversationView = { phase: 'listening', muted: false, smartTurn: false, speaker: false, text: '', level: 0, progress: 0, error: null, transcript: null };
@@ -143,4 +147,55 @@ test('removing the call host hangs up, while switching between retained hosts pr
   await manager.retainAgentHosts(['other']);
   expect(adapters[0].close).toHaveBeenCalledTimes(1);
   expect(manager.active).toBeUndefined();
+});
+
+test('usage observes one session across remounts and one end across repeated hangups', async () => {
+  const { create } = setup();
+  const usage = { started: jest.fn(), ended: jest.fn() };
+  const manager = new VoiceSessionManager(create, usage);
+  const first = manager.start({ kind: 'Agent', target }, () => true); await flush();
+  manager.start({ kind: 'Agent', target }, () => true); await flush();
+  await manager.hangup(first); await manager.hangup(first);
+  expect(usage.started).toHaveBeenCalledTimes(1);
+  expect(usage.started).toHaveBeenCalledWith(first);
+  expect(usage.ended).toHaveBeenCalledTimes(1);
+});
+
+test('unavailable cloud calls and cancelled intermediate sessions never create usage records', async () => {
+  const { create } = setup();
+  const usage = { started: jest.fn(), ended: jest.fn() };
+  const manager = new VoiceSessionManager(create, usage);
+  manager.start({ kind: 'Agent', target }, () => true);
+  manager.start({ kind: 'Agent', target: { ...target, tabId: 'cloud' } }, () => true, { ...defaults, provider: 'openai' });
+  await flush();
+  expect(usage.started).not.toHaveBeenCalled();
+});
+
+test('failed accounting never blocks local audio startup or cleanup', async () => {
+  const { create, adapters } = setup();
+  const usage = { started: () => { throw new Error('storage failed'); }, ended: () => { throw new Error('storage failed'); } };
+  const manager = new VoiceSessionManager(create, usage);
+  manager.start({ kind: 'Agent', target }, () => true); await flush();
+  expect(adapters[0].start).toHaveBeenCalledTimes(1);
+  await manager.hangup();
+  expect(adapters[0].close).toHaveBeenCalledTimes(1);
+  expect(manager.active).toBeUndefined();
+});
+
+test('the local call observer persists one identity and pairs it with hangup', async () => {
+  const { create } = setup();
+  const manager = new VoiceSessionManager(create, localVoiceUsageObserver);
+  jest.mocked(voiceUsageLedger.record).mockClear();
+  const session = manager.start({ kind: 'Agent', target }, () => true); await flush();
+  expect(session.getSnapshot().error).toBeNull();
+  manager.start({ kind: 'Agent', target }, () => true); await flush();
+  await manager.hangup(); await manager.hangup(session);
+  expect(voiceUsageLedger.record).toHaveBeenCalledTimes(2);
+  expect(voiceUsageLedger.record).toHaveBeenNthCalledWith(1, { kind: 'started', call: {
+    session_id: 'voice-stable-random-id', provider: 'local', mode: 'turn_based',
+    model: null, voice: null, scope: 'agent', started_at_ms: session.startedAt,
+  } });
+  expect(voiceUsageLedger.record).toHaveBeenNthCalledWith(2, {
+    kind: 'ended', session_id: 'voice-stable-random-id', ended_at_ms: expect.any(Number),
+  });
 });
