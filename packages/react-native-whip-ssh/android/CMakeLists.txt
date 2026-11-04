@@ -36,6 +36,7 @@ add_library(react_codegen_WhipSshSpec       SHARED
     ../cpp/react-native-whip-ssh.cpp
     ../cpp/generated/whip_ssh.cpp
     cpp-adapter.cpp
+    markdown-highlighting.cpp
     terminal-native.cpp
     build/generated/source/codegen/jni/WhipSshSpec-generated.cpp
 )

@@ -160,22 +160,8 @@
     "node": ">=24.3.0"
   },
   "enriched-markdown": {
-    "enableCodeHighlight": true,
-    "enableMath": true,
-    "codeHighlightLanguages": [
-      "rust",
-      "typescript",
-      "javascript",
-      "tsx",
-      "python",
-      "bash",
-      "json",
-      "yaml",
-      "markdown",
-      "c",
-      "cpp",
-      "go"
-    ]
+    "enableCodeHighlight": false,
+    "enableMath": true
   },
   "overrides": {
     "@hono/node-server": "2.0.10",

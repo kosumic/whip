@@ -1,4 +1,7 @@
 //! Stateful, bounded syntax colors. No parsing runs on the React Native thread.
+mod markdown;
+
+pub use markdown::whip_syntax_highlight;
 use std::path::Path;
 use std::sync::LazyLock;
 

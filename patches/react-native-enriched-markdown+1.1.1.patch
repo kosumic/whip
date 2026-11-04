@@ -301,7 +301,7 @@ index e17d3df..91590c6 100644
 
  // True until the closing fence arrives: highlighting is deferred and copying is
 diff --git a/node_modules/react-native-enriched-markdown/ios/segments/ENRMCodeBlockContainerView.m b/node_modules/react-native-enriched-markdown/ios/segments/ENRMCodeBlockContainerView.m
-index 0c022cf..efc7ec8 100644
+index 0c022cf..a566e10 100644
 --- a/node_modules/react-native-enriched-markdown/ios/segments/ENRMCodeBlockContainerView.m
 +++ b/node_modules/react-native-enriched-markdown/ios/segments/ENRMCodeBlockContainerView.m
 @@ -1,3 +1,4 @@
@@ -309,15 +309,24 @@ index 0c022cf..efc7ec8 100644
  #import "ENRMCodeBlockContainerView.h"
  #import "ENRMCodeBlockContent.h"
  #import "ENRMCodeBlockHighlighter.h"
-@@ -26,6 +27,7 @@
+@@ -26,6 +27,7 @@ static const CGFloat kENRMHeaderLabelScale = 0.85;
  static const CGFloat kENRMHeaderIconScale = 0.72;
  static const CGFloat kENRMHeaderSecondaryAlpha = 0.6;
  static const CGFloat kENRMHeaderDividerAlpha = 0.2;
 +static const NSTimeInterval kENRMCopyFeedbackInterval = 1.5;
-
+ 
  // Height geometry and code-run construction shared by the instance layout path
  // and the view-free measureHeightForCodeBlockNode:, so the two cannot drift.
-@@ -220,6 +222,7 @@
+@@ -209,6 +211,8 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
+ #endif
+ 
+ @implementation ENRMCodeBlockContainerView {
++  NSOperation *_highlightOperation;
++  NSUInteger _highlightGeneration;
+   NSAttributedString *_attributedCode;
+   NSString *_cachedCode;
+   NSString *_cachedLanguage;
+@@ -220,6 +224,7 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
    CGFloat _headerLabelLineHeight;
    NSAttributedString *_languageLabel;
    CGSize _languageLabelSize;
@@ -325,7 +334,7 @@ index 0c022cf..efc7ec8 100644
  #if !TARGET_OS_OSX
    UIFont *_headerFont;
    UIButton *_copyButton;
-@@ -238,6 +241,9 @@
+@@ -238,6 +243,9 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
    _pending = pending;
    // Header stays visible while streaming; only copying is held back.
    _copyButton.enabled = !pending;
@@ -335,9 +344,9 @@ index 0c022cf..efc7ec8 100644
    // The reconciler can reuse an unchanged block without re-applying the node, so
    // re-derive here to pick up highlighting once the block closes.
    [self rebuildAttributedCode];
-@@ -273,11 +279,6 @@
+@@ -273,11 +281,6 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
      [self addInteraction:contextMenu];
-
+ 
      _copyButton = [UIButton buttonWithType:UIButtonTypeSystem];
 -    UIImageSymbolConfiguration *symbolConfig =
 -        [UIImageSymbolConfiguration configurationWithPointSize:[config codeBlockFont].pointSize * kENRMHeaderIconScale
@@ -347,7 +356,7 @@ index 0c022cf..efc7ec8 100644
      _copyButton.tintColor = [[config codeBlockColor] colorWithAlphaComponent:kENRMHeaderSecondaryAlpha];
      [_copyButton addTarget:self action:@selector(copyCodeToPasteboard) forControlEvents:UIControlEventTouchUpInside];
      [self addSubview:_copyButton];
-@@ -286,20 +287,73 @@
+@@ -286,20 +289,80 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
      _tapRecognizer.delegate = self;
      [self addGestureRecognizer:_tapRecognizer];
  #else
@@ -368,10 +377,12 @@ index 0c022cf..efc7ec8 100644
    }
    return self;
  }
-
+ 
 +- (void)dealloc
 +{
 +  [_copyFeedbackTimer invalidate];
++  [_highlightOperation cancel];
++  _highlightOperation = nil;
 +}
 +
 +#if !TARGET_OS_OSX
@@ -384,7 +395,12 @@ index 0c022cf..efc7ec8 100644
 +  [super viewDidMoveToWindow];
 +#endif
 +  if (!self.window) {
++    ++_highlightGeneration;
++    [_highlightOperation cancel];
++    _highlightOperation = nil;
 +    [self resetCopyFeedback];
++  } else {
++    [self rebuildAttributedCode];
 +  }
 +}
 +
@@ -427,15 +443,40 @@ index 0c022cf..efc7ec8 100644
  - (void)setupScrollView
  {
    _scrollView = [[RCTUIScrollView alloc] init];
-@@ -408,17 +462,33 @@
-   _attributedCode = highlighted ?: plainCode;
+@@ -402,23 +465,55 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
+ // Highlighting is deferred while pending, applied once the block closes.
+ - (void)rebuildAttributedCode
+ {
++  NSUInteger generation = ++_highlightGeneration;
++  [_highlightOperation cancel];
++  _highlightOperation = nil;
+   NSAttributedString *plainCode = [self plainAttributedCode];
+-  NSAttributedString *highlighted =
+-      _pending ? nil : ENRMHighlightedAttributedCode(plainCode, _cachedCode, _cachedLanguage, _config);
+-  _attributedCode = highlighted ?: plainCode;
++  _attributedCode = plainCode;
    // Setting attributedCode builds and lays out the cached TextKit stack once;
    // width then reads out of that layout, and height stays analytic.
 -  _codeContentView.attributedCode = _attributedCode;
 +  _codeContentView.attributedCode = ENRMSearchHighlight(_attributedCode, _searchQuery);
    _codeSize = CGSizeMake(_codeContentView.usedWidth, ENRMCodeBlockCodeHeight(_cachedCode, _config));
++  if (_pending) return;
++  __weak ENRMCodeBlockContainerView *weakSelf = self;
++  _highlightOperation = ENRMHighlightedAttributedCodeAsync(plainCode, _cachedCode, _cachedLanguage, _config,
++      ^(NSAttributedString *highlighted) {
++    ENRMCodeBlockContainerView *strongSelf = weakSelf;
++    if (!strongSelf || strongSelf->_highlightGeneration != generation || strongSelf->_pending) return;
++    strongSelf->_highlightOperation = nil;
++    strongSelf->_attributedCode = highlighted;
++    strongSelf->_codeContentView.attributedCode = ENRMSearchHighlight(highlighted, strongSelf->_searchQuery);
++#if !TARGET_OS_OSX
++    [strongSelf->_codeContentView setNeedsDisplay];
++#else
++    [strongSelf->_codeContentView setNeedsDisplay:YES];
++#endif
++  });
  }
-
+ 
 -- (void)applyCodeBlockNode:(MarkdownASTNode *)node
 +- (void)setSearchQuery:(NSString *)query
  {
@@ -450,7 +491,7 @@ index 0c022cf..efc7ec8 100644
 +  [_codeContentView setNeedsDisplay:YES];
 +#endif
 +}
-
+ 
 +- (void)applyCodeBlockNode:(MarkdownASTNode *)node
 +{
 +  NSString *newCode = ENRMCodeBlockExtractCode(node);
@@ -465,8 +506,8 @@ index 0c022cf..efc7ec8 100644
    if (languageChanged) {
      _cachedLanguage = newLanguage;
      _displayLanguage = ENRMCodeBlockDisplayLanguageName(newLanguage);
-@@ -540,7 +610,11 @@
-
+@@ -540,7 +635,11 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
+ 
  - (void)copyCodeToPasteboard
  {
 +  if (_pending || _cachedCode.length == 0) {
@@ -477,8 +518,8 @@ index 0c022cf..efc7ec8 100644
    if (self.onCopyPress) {
      self.onCopyPress(_cachedCode ?: @"", _cachedLanguage ?: @"");
    }
-@@ -548,7 +622,11 @@
-
+@@ -548,7 +647,11 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
+ 
  - (void)copyMarkdownToPasteboard
  {
 +  if (_pending || _cachedCode.length == 0) {
@@ -487,7 +528,7 @@ index 0c022cf..efc7ec8 100644
    copyStringToPasteboard([self fencedMarkdown]);
 +  [self showCopyFeedback];
  }
-
+ 
  #if !TARGET_OS_OSX
 diff --git a/node_modules/react-native-enriched-markdown/ios/segments/TableContainerView.h b/node_modules/react-native-enriched-markdown/ios/segments/TableContainerView.h
 index 1b2846d..acd89e2 100644
@@ -607,10 +648,10 @@ index ae4be04..58e6e7e 100644
    }
 
 diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/segments/CodeBlockContainerView.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/segments/CodeBlockContainerView.kt
-index f3c451c..a942cf4 100644
+index f3c451c..fd6ca74 100644
 --- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/segments/CodeBlockContainerView.kt
 +++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/segments/CodeBlockContainerView.kt
-@@ -6,6 +6,7 @@
+@@ -6,6 +6,7 @@ import android.content.Context
  import android.graphics.Canvas
  import android.graphics.ColorFilter
  import android.graphics.Paint
@@ -618,7 +659,7 @@ index f3c451c..a942cf4 100644
  import android.graphics.PixelFormat
  import android.graphics.Typeface
  import android.graphics.drawable.Drawable
-@@ -27,6 +28,7 @@
+@@ -27,6 +28,7 @@ import androidx.appcompat.widget.AppCompatImageButton
  import androidx.appcompat.widget.AppCompatTextView
  import com.swmansion.enriched.markdown.parser.MarkdownASTNode
  import com.swmansion.enriched.markdown.spans.LineHeightSpan
@@ -626,7 +667,16 @@ index f3c451c..a942cf4 100644
  import com.swmansion.enriched.markdown.styles.CodeBlockStyle
  import com.swmansion.enriched.markdown.styles.StyleConfig
  import com.swmansion.enriched.markdown.utils.common.CodeBlockHighlighter
-@@ -79,6 +81,7 @@
+@@ -68,6 +70,8 @@ class CodeBlockContainerView(
+   // created later see the same current values. See DynamicBlockProps.
+   var dynamicProps: DynamicBlockProps = DynamicBlockProps()
+ 
++  private var highlightGeneration = 0L
++  private var highlightTask: java.util.concurrent.Future<*>? = null
+   private var code: String = ""
+   private var language: String? = null
+   private var fenceChar: String = "`"
+@@ -79,6 +83,7 @@ class CodeBlockContainerView(
        if (field == value) return
        field = value
        copyButton.isEnabled = !value
@@ -634,10 +684,10 @@ index f3c451c..a942cf4 100644
        // The reconciler can reuse an unchanged block without re-applying the
        // node, so re-derive here to pick up highlighting once the block closes.
        rebuildCodeText()
-@@ -124,6 +127,12 @@
+@@ -124,6 +129,12 @@ class CodeBlockContainerView(
        setTextColor(secondaryColor(codeBlockStyle.color))
      }
-
+ 
 +  private val copyIcon =
 +    CopyIconDrawable(
 +      secondaryColor(codeBlockStyle.color),
@@ -647,7 +697,7 @@ index f3c451c..a942cf4 100644
    // contentDescription reads the shared label live so a runtime label change is
    // reflected for TalkBack without a push (mirrors the live block-menu reads).
    private val copyButton =
-@@ -132,15 +141,12 @@
+@@ -132,15 +143,12 @@ class CodeBlockContainerView(
      }.apply {
        background = null
        scaleType = ImageView.ScaleType.CENTER
@@ -660,15 +710,15 @@ index f3c451c..a942cf4 100644
 +      setImageDrawable(copyIcon)
        setOnClickListener { copyCode() }
      }
-
+ 
 +  private val resetCopyIcon = Runnable { copyIcon.copied = false }
 +
    private val dividerPaint =
      Paint(Paint.ANTI_ALIAS_FLAG).apply {
        color = dividerColor(codeBlockStyle.color)
-@@ -179,10 +185,12 @@
+@@ -179,10 +187,12 @@ class CodeBlockContainerView(
    }
-
+ 
    fun applyCodeBlockNode(node: MarkdownASTNode) {
 -    code = CodeBlockNode.extractCode(node)
 +    val newCode = CodeBlockNode.extractCode(node)
@@ -676,29 +726,39 @@ index f3c451c..a942cf4 100644
 +    if (newCode != code || newLanguage != language) resetCopyFeedback()
 +    code = newCode
      fenceChar = CodeBlockNode.fenceChar(node)
-
+ 
 -    val newLanguage = CodeBlockNode.language(node)
      if (newLanguage != language) {
        language = newLanguage
        languageView.text = CodeBlockNode.displayLanguageName(newLanguage)
-@@ -193,7 +201,7 @@
-
+@@ -193,11 +203,15 @@ class CodeBlockContainerView(
+ 
    // Highlighting is deferred while pending, applied once the block closes.
    private fun rebuildCodeText() {
 -    val plainCode = buildCodeText(code, codeBlockStyle)
++    val generation = ++highlightGeneration
++    highlightTask?.cancel(false)
 +    val plainCode = buildCodeText(code, codeBlockStyle, context)
++    textView.text = plainCode
      if (!pending) {
-       CodeBlockHighlighter.highlight(plainCode, code, language, codeBlockStyle)
+-      CodeBlockHighlighter.highlight(plainCode, code, language, codeBlockStyle)
++      highlightTask = CodeBlockHighlighter.highlightAsync(plainCode, code, language, codeBlockStyle) {
++        if (highlightGeneration == generation && !pending) textView.text = plainCode
++      }
      }
-@@ -293,13 +301,26 @@
+-    textView.text = plainCode
+   }
+ 
+   override fun onMeasure(
+@@ -293,13 +307,33 @@ class CodeBlockContainerView(
    ): Boolean = x >= copyButton.left && x < copyButton.right && y >= copyButton.top && y < copyButton.bottom
-
+ 
    private fun copyFencedMarkdown() {
 -    if (code.isEmpty()) return
 +    if (pending || code.isEmpty()) return
      copyToClipboard(CodeBlockNode.fencedMarkdown(code, language, fenceChar))
    }
-
+ 
    private fun copyToClipboard(text: String) {
      val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
      clipboard.setPrimaryClip(ClipData.newPlainText("Code", text))
@@ -712,15 +772,22 @@ index f3c451c..a942cf4 100644
 +    copyIcon.copied = false
 +  }
 +
++  override fun onAttachedToWindow() {
++    super.onAttachedToWindow()
++    rebuildCodeText()
++  }
++
 +  override fun onDetachedFromWindow() {
++    highlightGeneration++
++    highlightTask?.cancel(false)
 +    resetCopyFeedback()
 +    super.onDetachedFromWindow()
    }
-
+ 
    private class CopyIconDrawable(
-@@ -316,9 +337,25 @@
+@@ -316,9 +350,25 @@ class CodeBlockContainerView(
        }
-
+ 
      private val glyph = CopyGlyph()
 +    private val check = Path()
 +
@@ -729,7 +796,7 @@ index f3c451c..a942cf4 100644
 +        field = value
 +        invalidateSelf()
 +      }
-
+ 
      override fun draw(canvas: Canvas) {
 -      glyph.draw(canvas, bounds.width().toFloat(), paint)
 +      if (copied) {
@@ -743,17 +810,17 @@ index f3c451c..a942cf4 100644
 +        glyph.draw(canvas, bounds.width().toFloat(), paint)
 +      }
      }
-
+ 
      override fun getIntrinsicWidth() = size
-@@ -338,6 +375,7 @@
+@@ -338,6 +388,7 @@ class CodeBlockContainerView(
    }
-
+ 
    companion object {
 +    private const val COPY_FEEDBACK_MS = 1_500L
      private const val HEADER_LABEL_SCALE = 0.85f
-
+ 
      // Drawable box for the copy glyph, as a multiple of the code font size.
-@@ -379,11 +417,13 @@
+@@ -379,11 +430,13 @@ class CodeBlockContainerView(
      private fun buildCodeText(
        code: String,
        style: CodeBlockStyle,
@@ -765,9 +832,9 @@ index f3c451c..a942cf4 100644
          }
 +        ChatCjkFont.apply(this, context.assets)
        }
-
+ 
      // Lines never wrap (the code pane scrolls horizontally), so the layout is
-@@ -398,7 +438,7 @@
+@@ -398,7 +451,7 @@ class CodeBlockContainerView(
        val style = config.codeBlockStyle
        val inset = contentInset(style)
        val headerH = headerHeight(style)
@@ -1062,7 +1129,7 @@ diff --git a/node_modules/react-native-enriched-markdown/cpp/parser/MD4CParser.c
      if (type == MD_TEXT_NORMAL || type == MD_TEXT_CODE || type == MD_TEXT_LATEXMATH) {
        impl->currentText.append(text, size);
 diff --git a/node_modules/react-native-enriched-markdown/android/build.gradle b/node_modules/react-native-enriched-markdown/android/build.gradle
-index 4ad8312e..871e7798 100644
+index 4ad8312..57fd6e0 100644
 --- a/node_modules/react-native-enriched-markdown/android/build.gradle
 +++ b/node_modules/react-native-enriched-markdown/android/build.gradle
 @@ -255,16 +255,16 @@ if (codeHighlightActive) {
@@ -1089,6 +1156,14 @@ index 4ad8312e..871e7798 100644
      }
    }
    highlightConfigFile.text = """\
+@@ -284,6 +284,7 @@ repositories {
+ def kotlin_version = getExtOrDefault("kotlinVersion")
+ 
+ dependencies {
++  implementation project(":react-native-whip-ssh")
+   // JVM unit tests (Robolectric) for the library's Kotlin spans/renderers. Run with
+   // `./gradlew :react-native-enriched-markdown:testDebugUnitTest` from an app that
+   // autolinks this module (e.g. apps/react-native-example/android). Mirrors the
 diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/MeasurementStore.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/MeasurementStore.kt
 index 7bb48f44..a53eaede 100644
 --- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/MeasurementStore.kt
@@ -1281,3 +1356,495 @@ index 4b2ad015..5d75b83e 100644
    movementMethod = LinkLongPressMovementMethod.createInstance()
    setTextIsSelectable(true)
    customSelectionActionModeCallback = createSelectionActionModeCallback(this)
+diff --git a/node_modules/react-native-enriched-markdown/ReactNativeEnrichedMarkdown.podspec b/node_modules/react-native-enriched-markdown/ReactNativeEnrichedMarkdown.podspec
+index aa87830..a8ba07c 100644
+--- a/node_modules/react-native-enriched-markdown/ReactNativeEnrichedMarkdown.podspec
++++ b/node_modules/react-native-enriched-markdown/ReactNativeEnrichedMarkdown.podspec
+@@ -11,6 +11,7 @@ require File.join(__dir__, "cpp/highlight/code_highlight_podspec.rb")
+ code_highlight = monorepo ? EnrichedMarkdownCodeHighlight.disabled : EnrichedMarkdownCodeHighlight.config(__dir__)
+ 
+ Pod::Spec.new do |s|
++  s.dependency "WhipSsh"
+   s.name         = "ReactNativeEnrichedMarkdown"
+   s.version      = package["version"]
+   s.summary      = package["description"]
+diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/utils/common/CodeBlockHighlighter.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/utils/common/CodeBlockHighlighter.kt
+index 6ef15f6..e849657 100644
+--- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/utils/common/CodeBlockHighlighter.kt
++++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/utils/common/CodeBlockHighlighter.kt
+@@ -1,5 +1,6 @@
+ package com.swmansion.enriched.markdown.utils.common
+ 
++import com.whipssh.WhipSyntaxHighlighter
+ import android.text.Spannable
+ import android.text.style.ForegroundColorSpan
+ import android.util.Log
+@@ -29,8 +30,7 @@ enum class HighlightTokenType {
+ }
+ 
+ /**
+- * Platform adapter over the shared C++ syntax highlighting seam
+- * (core/cpp/highlight/CodeBlockHighlighter.hpp).
++ * Platform adapter over Whip's shared Rust Syntect highlighter.
+  *
+  * The native call returns semantic tokens as (start, end, type) int triplets
+  * with UTF-16 offsets into the code string, or null when highlighting is
+@@ -49,10 +49,6 @@ object CodeBlockHighlighter {
+     }
+   }
+ 
+-  private external fun nativeHighlightCode(
+-    code: String,
+-    language: String,
+-  ): IntArray?
+ 
+   /**
+    * Applies token colors onto [target]. Token offsets are relative to [code];
+@@ -70,11 +66,26 @@ object CodeBlockHighlighter {
+   ) {
+     val tokens =
+       try {
+-        nativeHighlightCode(code, language.orEmpty())
++        WhipSyntaxHighlighter.highlight(code, language.orEmpty())
+       } catch (e: UnsatisfiedLinkError) {
+         null
+       } ?: return
+ 
++    applyTokens(target, tokens, style, offset)
++  }
++
++  fun highlightAsync(
++    target: Spannable, code: String, language: String?, style: CodeBlockStyle,
++    onReady: () -> Unit,
++  ): java.util.concurrent.Future<*> =
++    WhipSyntaxHighlighter.highlightAsync(code, language.orEmpty()) { tokens ->
++      if (tokens != null) {
++        applyTokens(target, tokens, style, 0)
++        onReady()
++      }
++    }
++
++  private fun applyTokens(target: Spannable, tokens: IntArray, style: CodeBlockStyle, offset: Int) {
+     val colors = style.syntaxColors
+     var i = 0
+     while (i + 2 < tokens.size) {
+diff --git a/node_modules/react-native-enriched-markdown/cpp/highlight/CodeBlockHighlighter.cpp b/node_modules/react-native-enriched-markdown/cpp/highlight/CodeBlockHighlighter.cpp
+index c3a97f6..b0de724 100644
+--- a/node_modules/react-native-enriched-markdown/cpp/highlight/CodeBlockHighlighter.cpp
++++ b/node_modules/react-native-enriched-markdown/cpp/highlight/CodeBlockHighlighter.cpp
+@@ -1,284 +1,31 @@
+ #include "CodeBlockHighlighter.hpp"
+ 
+-// Stub compiled when the syntax highlighting module is disabled. The real
+-// implementation defines the same symbol under ENRICHED_MARKDOWN_CODE_HIGHLIGHT,
+-// so exactly one definition exists in any build configuration.
+-
+-#if !defined(ENRICHED_MARKDOWN_CODE_HIGHLIGHT)
+-
+-namespace Markdown {
+-
+-std::vector<HighlightToken> highlightCode(const std::string & /*code*/, const std::string & /*language*/) {
+-  return {};
+-}
+-
+-} // namespace Markdown
+-
+-#else
+-
+-#include "CodeBlockLanguages.hpp"
+-#include "HighlightGrammars.hpp"
+-
+-#include <tree_sitter/api.h>
+-
+-#include <algorithm>
+-#include <cstring>
+-#include <memory>
+-#include <mutex>
+-#include <unordered_map>
++#if defined(__APPLE__)
++#include <WhipSsh/WhipSyntaxHighlight.h>
++#endif
+ 
+ namespace Markdown {
+ 
+-namespace {
+-
+-// Bounds the synchronous main-thread parse against pathological inputs. Typical
+-// blocks parse in sub-millisecond to low-millisecond time; anything past these
+-// caps falls back to plain rendering instead of risking a frame hang.
+-constexpr size_t kMaxBytes = 50u * 1024u;
+-constexpr size_t kMaxLines = 2000u;
+-
+-// tree-sitter highlight capture names, flattened to their leading dotted
+-// prefix. The longest matching prefix wins, so "variable.member" resolves to
+-// Property while a bare "variable" resolves to Variable. Names with no entry
+-// (for example "spell", "none") are skipped and leave their bytes uncolored.
+-struct CaptureMapping {
+-  const char *prefix;
+-  HighlightTokenType type;
+-};
+-
+-constexpr CaptureMapping kCaptureMappings[] = {
+-    {"keyword", HighlightTokenType::Keyword},
+-    {"operator", HighlightTokenType::Operator},
+-    {"punctuation", HighlightTokenType::Punctuation},
+-    {"string", HighlightTokenType::String},
+-    {"escape", HighlightTokenType::String},
+-    {"character", HighlightTokenType::String},
+-    {"number", HighlightTokenType::Number},
+-    {"float", HighlightTokenType::Number},
+-    {"boolean", HighlightTokenType::Constant},
+-    {"constant", HighlightTokenType::Constant},
+-    {"comment", HighlightTokenType::Comment},
+-    {"function", HighlightTokenType::Function},
+-    {"method", HighlightTokenType::Function},
+-    {"constructor", HighlightTokenType::Type},
+-    {"type", HighlightTokenType::Type},
+-    {"module", HighlightTokenType::Type},
+-    {"namespace", HighlightTokenType::Type},
+-    {"variable", HighlightTokenType::Variable},
+-    {"parameter", HighlightTokenType::Variable},
+-    {"variable.member", HighlightTokenType::Property},
+-    {"property", HighlightTokenType::Property},
+-    {"field", HighlightTokenType::Property},
+-    {"tag", HighlightTokenType::Tag},
+-    {"attribute", HighlightTokenType::Attribute},
+-    {"embedded", HighlightTokenType::Embedded},
+-    {"injection", HighlightTokenType::Embedded},
+-};
+-
+-// A capture name matches a prefix only on dotted boundaries so "type" never
+-// swallows "typename"-style names. Returns false when nothing maps.
+-bool mapCaptureName(const char *name, uint32_t length, HighlightTokenType &out) {
+-  size_t best = 0;
+-  bool found = false;
+-  for (const CaptureMapping &m : kCaptureMappings) {
+-    size_t plen = std::strlen(m.prefix);
+-    if (plen > length || plen < best) {
+-      continue;
+-    }
+-    if (std::strncmp(name, m.prefix, plen) != 0) {
+-      continue;
+-    }
+-    if (plen != length && name[plen] != '.') {
+-      continue;
+-    }
+-    best = plen;
+-    out = m.type;
+-    found = true;
+-  }
+-  return found;
+-}
+-
+-// Compiled queries are immutable after creation and reused across calls. Access
+-// is serialized on the main thread today; the mutex is cheap insurance should
+-// highlighting ever move off-main. A cached nullptr marks a query that failed to
+-// compile so it is not retried.
+-TSQuery *queryForLanguage(const TSLanguage *language, const char *source) {
+-  static std::mutex mutex;
+-  static std::unordered_map<const TSLanguage *, TSQuery *> cache;
+-
+-  std::lock_guard<std::mutex> lock(mutex);
+-  auto it = cache.find(language);
+-  if (it != cache.end()) {
+-    return it->second;
+-  }
+-
+-  uint32_t errorOffset = 0;
+-  TSQueryError errorType = TSQueryErrorNone;
+-  TSQuery *query = ts_query_new(language, source, static_cast<uint32_t>(std::strlen(source)), &errorOffset, &errorType);
+-  cache.emplace(language, query);
+-  return query;
+-}
+-
+-// Precomputes, for every byte offset that starts a code point, the number of
+-// UTF-16 code units preceding it. Token boundaries always land on code-point
+-// boundaries, so mapping a byte offset is a single lookup. Astral code points
+-// (4-byte UTF-8) contribute a surrogate pair (+2).
+-std::vector<uint32_t> buildUtf16PrefixMap(const std::string &code) {
+-  const size_t n = code.size();
+-  std::vector<uint32_t> prefix(n + 1, 0);
+-  uint32_t units = 0;
+-  size_t i = 0;
+-  while (i < n) {
+-    unsigned char c = static_cast<unsigned char>(code[i]);
+-    size_t len;
+-    uint32_t width;
+-    if (c < 0x80) {
+-      len = 1;
+-      width = 1;
+-    } else if ((c >> 5) == 0x6) {
+-      len = 2;
+-      width = 1;
+-    } else if ((c >> 4) == 0xE) {
+-      len = 3;
+-      width = 1;
+-    } else if ((c >> 3) == 0x1E) {
+-      len = 4;
+-      width = 2;
+-    } else {
+-      len = 1;
+-      width = 1;
+-    }
+-    units += width;
+-    for (size_t k = 1; k <= len && i + k <= n; ++k) {
+-      prefix[i + k] = units;
+-    }
+-    i += len;
+-  }
+-  return prefix;
+-}
+-
+-using ParserPtr = std::unique_ptr<TSParser, decltype(&ts_parser_delete)>;
+-using TreePtr = std::unique_ptr<TSTree, decltype(&ts_tree_delete)>;
+-using CursorPtr = std::unique_ptr<TSQueryCursor, decltype(&ts_query_cursor_delete)>;
+-
+-} // namespace
+-
+-// Resolves the language to a compiled grammar, parses the code, runs the
+-// grammar's highlight query, resolves overlapping captures (innermost span
+-// wins per byte), and returns coalesced foreground-only tokens with UTF-16
+-// offsets. Any failure along the way degrades to an empty vector (plain
+-// rendering).
+ std::vector<HighlightToken> highlightCode(const std::string &code, const std::string &language) {
+-  try {
+-    if (code.empty()) {
+-      return {};
+-    }
+-
+-    std::string grammarId = canonicalGrammarId(language);
+-    if (grammarId.empty()) {
+-      return {};
+-    }
+-    const GrammarEntry *grammar = findGrammar(grammarId.c_str());
+-    if (grammar == nullptr) {
+-      return {};
+-    }
+-
+-    if (code.size() > kMaxBytes) {
+-      return {};
+-    }
+-    size_t lines = 1;
+-    for (char c : code) {
+-      if (c == '\n' && ++lines > kMaxLines) {
+-        return {};
+-      }
+-    }
+-
+-    ParserPtr parser(ts_parser_new(), ts_parser_delete);
+-    if (!parser) {
+-      return {};
+-    }
+-    const TSLanguage *tsLanguage = grammar->language();
+-    if (tsLanguage == nullptr || !ts_parser_set_language(parser.get(), tsLanguage)) {
+-      return {};
+-    }
+-
+-    TSQuery *query = queryForLanguage(tsLanguage, grammar->highlightsQuery);
+-    if (query == nullptr) {
+-      return {};
+-    }
+-
+-    TreePtr tree(ts_parser_parse_string(parser.get(), nullptr, code.c_str(), static_cast<uint32_t>(code.size())),
+-                 ts_tree_delete);
+-    if (!tree) {
+-      return {};
+-    }
+-
+-    CursorPtr cursor(ts_query_cursor_new(), ts_query_cursor_delete);
+-    if (!cursor) {
+-      return {};
+-    }
+-    ts_query_cursor_exec(cursor.get(), query, ts_tree_root_node(tree.get()));
+-
+-    // Innermost-wins overlap resolution: paint each capture's byte range,
+-    // widest span first, so tighter captures overwrite. A -1 byte is uncolored.
+-    struct Capture {
+-      uint32_t start;
+-      uint32_t end;
+-      HighlightTokenType type;
+-    };
+-    std::vector<Capture> captures;
+-    TSQueryMatch match;
+-    uint32_t captureIndex = 0;
+-    while (ts_query_cursor_next_capture(cursor.get(), &match, &captureIndex)) {
+-      const TSQueryCapture &capture = match.captures[captureIndex];
+-      uint32_t nameLength = 0;
+-      const char *name = ts_query_capture_name_for_id(query, capture.index, &nameLength);
+-      HighlightTokenType type;
+-      if (name == nullptr || !mapCaptureName(name, nameLength, type)) {
+-        continue;
+-      }
+-      uint32_t start = ts_node_start_byte(capture.node);
+-      uint32_t end = ts_node_end_byte(capture.node);
+-      if (end > start && end <= code.size()) {
+-        captures.push_back({start, end, type});
+-      }
+-    }
+-    if (captures.empty()) {
+-      return {};
+-    }
+-
+-    std::stable_sort(captures.begin(), captures.end(),
+-                     [](const Capture &a, const Capture &b) { return (a.end - a.start) > (b.end - b.start); });
+-
+-    std::vector<int8_t> byteType(code.size(), -1);
+-    for (const Capture &capture : captures) {
+-      for (uint32_t b = capture.start; b < capture.end; ++b) {
+-        byteType[b] = static_cast<int8_t>(capture.type);
+-      }
+-    }
+-
+-    std::vector<uint32_t> u16 = buildUtf16PrefixMap(code);
+-    std::vector<HighlightToken> tokens;
+-    size_t b = 0;
+-    const size_t n = code.size();
+-    while (b < n) {
+-      if (byteType[b] < 0) {
+-        ++b;
+-        continue;
+-      }
+-      int8_t type = byteType[b];
+-      size_t runStart = b;
+-      while (b < n && byteType[b] == type) {
+-        ++b;
+-      }
+-      tokens.push_back({u16[runStart], u16[b], static_cast<HighlightTokenType>(type)});
+-    }
+-    return tokens;
+-  } catch (...) {
+-    return {};
+-  }
++#if defined(__APPLE__)
++  std::vector<HighlightToken> tokens;
++  const bool success = whip_syntax_highlight(
++      reinterpret_cast<const uint8_t *>(code.data()), code.size(),
++      reinterpret_cast<const uint8_t *>(language.data()), language.size(), &tokens,
++      [](void *context, uint32_t start, uint32_t end, uint32_t type) noexcept -> bool {
++        try {
++          auto &output = *static_cast<std::vector<HighlightToken> *>(context);
++          output.push_back({start, end, static_cast<HighlightTokenType>(type)});
++          return true;
++        } catch (...) { return false; }
++      });
++  return success ? tokens : std::vector<HighlightToken>{};
++#else
++  // Android's Spannable adapter calls WhipSyntaxHighlighter through JNI.
++  (void)code;
++  (void)language;
++  return {};
++#endif
+ }
+ 
+ } // namespace Markdown
+-
+-#endif
+diff --git a/node_modules/react-native-enriched-markdown/cpp/highlight/CodeBlockHighlighter.hpp b/node_modules/react-native-enriched-markdown/cpp/highlight/CodeBlockHighlighter.hpp
+index 23770b3..6060a4c 100644
+--- a/node_modules/react-native-enriched-markdown/cpp/highlight/CodeBlockHighlighter.hpp
++++ b/node_modules/react-native-enriched-markdown/cpp/highlight/CodeBlockHighlighter.hpp
+@@ -4,14 +4,8 @@
+ #include <string>
+ #include <vector>
+ 
+-// Shared seam for optional syntax highlighting of fenced code blocks.
+-//
+-// The real implementation is compiled only when ENRICHED_MARKDOWN_CODE_HIGHLIGHT
+-// is defined by the build. Without the flag the stub in CodeBlockHighlighter.cpp
+-// returns no tokens and platform callers keep the plain uncolored rendering, so
+-// the absent module degrades to the default code block appearance. The same
+-// fallback applies at runtime when a language has no compiled grammar or
+-// highlighting fails.
++// Whip shares its Rust Syntect grammars with native fenced-code rendering.
++// Unknown languages and highlighting failures retain plain rendering.
+ //
+ // The seam returns semantic tokens instead of a platform text type on
+ // purpose. Platform adapters map token types to foreground colors and apply
+@@ -21,7 +15,7 @@
+ //
+ // Token offsets are UTF-16 code units into the code string, because both
+ // Android (Spannable) and iOS (NSAttributedString) address text in UTF-16.
+-// Implementations are responsible for converting tree-sitter byte offsets.
++// Syntect converts source ranges to these UTF-16 offsets.
+ //
+ // Token types follow tree-sitter's standard highlight capture names,
+ // flattened to one level. Values are explicit because they cross the JNI
+diff --git a/node_modules/react-native-enriched-markdown/ios/utils/ENRMCodeBlockHighlighter.h b/node_modules/react-native-enriched-markdown/ios/utils/ENRMCodeBlockHighlighter.h
+index 1ba308c..61279f5 100644
+--- a/node_modules/react-native-enriched-markdown/ios/utils/ENRMCodeBlockHighlighter.h
++++ b/node_modules/react-native-enriched-markdown/ios/utils/ENRMCodeBlockHighlighter.h
+@@ -22,6 +22,12 @@ extern "C" {
+ NSAttributedString *_Nullable ENRMHighlightedAttributedCode(NSAttributedString *plainCode, NSString *code,
+                                                             NSString *_Nullable language, StyleConfig *config);
+ 
++/// Parses on the shared background queue; completes on the main queue.
++/// Cancelling the returned operation suppresses both queued work and completion.
++NSOperation *ENRMHighlightedAttributedCodeAsync(NSAttributedString *plainCode, NSString *code,
++    NSString *_Nullable language, StyleConfig *config,
++    void (^completion)(NSAttributedString *_Nullable));
++
+ /// Applies token foreground colors from the config's palette onto `output`
+ /// within `range` (range.location is where the code begins in output). Used by
+ /// the commonmark flavor, which renders code inline instead of as a container.
+diff --git a/node_modules/react-native-enriched-markdown/ios/utils/ENRMCodeBlockHighlighter.mm b/node_modules/react-native-enriched-markdown/ios/utils/ENRMCodeBlockHighlighter.mm
+index e1964cf..3a62600 100644
+--- a/node_modules/react-native-enriched-markdown/ios/utils/ENRMCodeBlockHighlighter.mm
++++ b/node_modules/react-native-enriched-markdown/ios/utils/ENRMCodeBlockHighlighter.mm
+@@ -3,6 +3,9 @@
+ #import "ENRMUIKit.h"
+ #import "StyleConfig.h"
+ 
++static BOOL ENRMApplyTokens(NSMutableAttributedString *output, NSRange range,
++                            const std::vector<Markdown::HighlightToken> &tokens, StyleConfig *config);
++
+ BOOL ENRMApplyHighlightTokens(NSMutableAttributedString *output, NSRange range, NSString *code,
+                               NSString *_Nullable language, StyleConfig *config)
+ {
+@@ -20,6 +23,12 @@ BOOL ENRMApplyHighlightTokens(NSMutableAttributedString *output, NSRange range,
+     return NO;
+   }
+ 
++  return ENRMApplyTokens(output, range, tokens, config);
++}
++
++static BOOL ENRMApplyTokens(NSMutableAttributedString *output, NSRange range,
++                            const std::vector<Markdown::HighlightToken> &tokens, StyleConfig *config)
++{
+   NSUInteger cap = MIN(NSMaxRange(range), output.length);
+   BOOL applied = NO;
+   for (const auto &token : tokens) {
+@@ -49,3 +58,34 @@ NSAttributedString *ENRMHighlightedAttributedCode(NSAttributedString *plainCode,
+   BOOL applied = ENRMApplyHighlightTokens(highlighted, NSMakeRange(0, highlighted.length), code, language, config);
+   return applied ? highlighted : nil;
+ }
++
++NSOperation *ENRMHighlightedAttributedCodeAsync(NSAttributedString *plainCode, NSString *code,
++    NSString *_Nullable language, StyleConfig *config,
++    void (^completion)(NSAttributedString *_Nullable))
++{
++  static NSOperationQueue *queue;
++  static dispatch_once_t once;
++  dispatch_once(&once, ^{
++    queue = [NSOperationQueue new];
++    queue.name = @"whip-syntax";
++    queue.maxConcurrentOperationCount = 1;
++    queue.qualityOfService = NSQualityOfServiceUtility;
++  });
++  NSBlockOperation *operation = [NSBlockOperation new];
++  __weak NSBlockOperation *weakOperation = operation;
++  [operation addExecutionBlock:^{
++    if (weakOperation.cancelled) return;
++    std::vector<Markdown::HighlightToken> tokens;
++    try {
++      tokens = Markdown::highlightCode(code.UTF8String ?: "", language.UTF8String ?: "");
++    } catch (...) { return; }
++    if (weakOperation.cancelled || tokens.empty()) return;
++    dispatch_async(dispatch_get_main_queue(), ^{
++      if (!weakOperation || weakOperation.cancelled) return;
++      NSMutableAttributedString *result = [plainCode mutableCopy];
++      if (ENRMApplyTokens(result, NSMakeRange(0, result.length), tokens, config)) completion(result);
++    });
++  }];
++  [queue addOperation:operation];
++  return operation;
++}
