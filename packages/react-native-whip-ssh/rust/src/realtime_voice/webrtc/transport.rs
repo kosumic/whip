@@ -104,12 +104,18 @@ impl Transport {
         let check_interval = Duration::from_millis(/*millis*/ 200);
         let attempts = u16::try_from(WAIT.as_millis() / check_interval.as_millis())
             .map_err(|_| "invalid voice ICE attempt budget")?;
-        let mut settings = webrtc::peer_connection::SettingEngine::default();
-        settings.set_ice_connection_attempts(Some(check_interval), Some(attempts));
+        let settings =
+            rtc::peer_connection::configuration::setting_engine::SettingEngineBuilder::new()
+                .with_ice_connection_attempts(Some(check_interval), Some(attempts))
+                .with_sctp_max_receive_buffer_size(/*bytes*/ 64 * 1024)
+                .build();
         let connection: Arc<dyn PeerConnection> = Arc::new(
             Box::pin(
                 PeerConnectionBuilder::new()
-                    .with_interceptor_registry(rtc::interceptor::Registry::from(ingress))
+                    .with_interceptor_registry(
+                        rtc::interceptor::Registry::new()
+                            .with(rtc::interceptor::Slot::from(0), ingress),
+                    )
                     .with_media_engine(media)
                     .with_runtime(runtime)
                     .with_setting_engine(settings)
@@ -117,7 +123,6 @@ impl Transport {
                     .with_udp_addrs(vec!["0.0.0.0:0", "[::]:0"])
                     .with_tcp_addrs(vec!["0.0.0.0:0", "[::]:0"])
                     .with_data_channel_send_buffer_limit(/*bytes*/ 64 * 1024)
-                    .with_sctp_receive_buffer_size(/*size*/ 64 * 1024)
                     .build(),
             )
             .await
@@ -166,8 +171,7 @@ impl Transport {
                             break;
                         }
                     }
-                    DataChannelEvent::OnBufferedAmountLow
-                    | DataChannelEvent::OnBufferedAmountHigh => {}
+                    _ => {}
                 }
             }
             sender.send_replace(false);

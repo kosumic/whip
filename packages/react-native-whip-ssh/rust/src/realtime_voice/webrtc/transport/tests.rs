@@ -41,8 +41,10 @@ async fn real_udp_and_tcp_peers_exchange_events_and_opus_without_an_api_call() -
         timeout(Duration::from_secs(30), async {
             let (sender, mut channels) = mpsc::channel(1);
             let gathered = Arc::new(Notify::new());
-            let mut settings = webrtc::peer_connection::SettingEngine::default();
-            settings.set_lite(true);
+            let settings =
+                rtc::peer_connection::configuration::setting_engine::SettingEngineBuilder::new()
+                    .with_lite(true)
+                    .build();
             let (media, mut remote_audio) = AudioTrack::new()?;
             let builder = PeerConnectionBuilder::new()
                 .with_media_engine(media)

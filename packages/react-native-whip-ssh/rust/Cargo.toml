@@ -34,8 +34,9 @@ log = { version = "0.4", features = ["max_level_info"] }
 parking_lot = "0.12"
 oai-rt-rs = "=0.5.1"
 opus = "=0.4.0"
-rtc = "=0.20.3"
-webrtc = "=0.20.3"
+# Provider-backed DTLS avoids crypto-bigint 0.5 (RUSTSEC-2026-0387).
+rtc = "=0.21.1"
+webrtc = "=0.21.1"
 rayon = "1"
 rustfft = { version = "6.4", optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "multipart", "json"] }
