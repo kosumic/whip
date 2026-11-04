@@ -150,7 +150,7 @@ import {
 } from './TerminalRendererHost';
 import { ComposerInput, ComposerVoiceButton, MessageComposer } from './MessageComposer';
 import type { VoiceChatTarget } from '../services/voiceConversation';
-import { voiceSessionManager } from '../services/voiceSessionManager';
+import { sameVoiceChatTarget, voiceSessionManager } from '../services/voiceSessionManager';
 import { GlassOverlayHost, GlassPortal, GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import {
   OverlayScrollbar,
@@ -449,10 +449,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const { colors: appColors } = useTheme();
     const [voiceChatOpen, setVoiceChatOpen] = useState<{ targetKey: string; target: VoiceChatTarget } | null>(() => {
       const call = voiceSessionManager.active;
-      if (!call || call.ended || call.scope.kind !== 'Agent' || !activeTarget || !voiceChatTarget) return null;
+      if (!call || call.ended || call.scope.kind === 'Global' || !activeTarget || !voiceChatTarget) return null;
       const target = call.scope.target;
-      return target.hostId === voiceChatTarget.hostId && target.paneId === voiceChatTarget.paneId &&
-        target.tabId === voiceChatTarget.tabId && target.agent === voiceChatTarget.agent
+      return sameVoiceChatTarget(target, voiceChatTarget)
         ? { targetKey: activeTarget.key, target } : null;
     });
     const [voiceChatExpanded, setVoiceChatExpanded] = useState(true);
@@ -466,13 +465,14 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const [voiceChatComposing, setVoiceChatComposing] = useState(false);
     const voiceChatRef = useRef<VoiceChatHandle>(null);
     const voiceChatActive = Boolean(voiceChatOpen && voiceChatOpen.targetKey === activeTarget?.key);
-    const callTarget = voiceChatActive && voiceChatTarget ? voiceChatTarget : voiceChatOpen?.target;
+    const callTarget = voiceChatActive && voiceChatTarget && !voiceChatOpen?.target.terminal && !voiceChatTarget.terminal
+      ? voiceChatTarget : voiceChatOpen?.target;
     const voiceSubmissionTarget = useRef<string | undefined>(undefined);
     voiceSubmissionTarget.current = voiceChatOpen?.targetKey;
     useEffect(() => {
       if (voiceChatOpen && !targets.some(target => target.key === voiceChatOpen.targetKey)) {
         const call = voiceSessionManager.active;
-        if (call?.scope.kind === 'Agent' && call.scope.target.hostId === voiceChatOpen.target.hostId &&
+        if (call && call.scope.kind !== 'Global' && call.scope.target.hostId === voiceChatOpen.target.hostId &&
             call.scope.target.tabId === voiceChatOpen.target.tabId && call.scope.target.paneId === voiceChatOpen.target.paneId) {
           void voiceSessionManager.hangup(call);
         }
@@ -480,11 +480,11 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       }
     }, [targets, voiceChatOpen]);
     useEffect(() => {
-      if (voiceChatActive && voiceChatTarget) {
+      if (voiceChatActive && voiceChatTarget && !voiceChatTarget.terminal && !voiceChatOpen?.target.terminal) {
         setVoiceChatOpen(current => current && current.target !== voiceChatTarget
           ? { ...current, target: voiceChatTarget } : current);
       }
-    }, [voiceChatActive, voiceChatTarget]);
+    }, [voiceChatActive, voiceChatTarget, voiceChatOpen?.target.terminal]);
     const openVoiceChat = () => {
       if (!activeTarget || !voiceChatTarget) return;
       Keyboard.dismiss(); setVoiceChatComposing(false); setVoiceChatExpanded(true);

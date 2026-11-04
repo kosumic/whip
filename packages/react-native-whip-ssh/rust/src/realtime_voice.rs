@@ -14,6 +14,7 @@ mod recovery;
 mod response;
 mod socket;
 mod startup;
+mod terminal;
 #[cfg(test)]
 mod tests;
 mod transcript;
@@ -42,6 +43,7 @@ use tokio_tungstenite::tungstenite::{
 use crate::host_runtime::realtime_agent::{
     AgentTarget, BACKGROUND_AGENT, PinnedAgent, REMAIN_SILENT,
 };
+use crate::host_runtime::realtime_terminal::{PinnedTerminal, TerminalTarget};
 use captions::Language as TranscriptionLanguage;
 
 pub(super) const RATE: usize = 24_000;
@@ -73,6 +75,7 @@ pub(super) struct Config {
     #[serde(default)]
     webrtc: bool,
     target: Option<AgentTarget>,
+    terminal_target: Option<TerminalTarget>,
     #[serde(default)]
     model: Option<String>,
     voice: String,
@@ -152,7 +155,7 @@ impl Config {
             return Err("Choose a supported OpenAI Realtime voice.");
         }
         if self.preview {
-            if self.target.is_some() {
+            if self.target.is_some() || self.terminal_target.is_some() {
                 return Err("Voice previews cannot connect to an agent.");
             }
             return typed(json!({"type":"session.update","session":{
@@ -163,8 +166,10 @@ impl Config {
                 "tools":[], "tool_choice":"none"
             }}));
         }
-        if self.target.is_none() || self.vad.is_none() {
-            return Err("Realtime calls require a bound agent and turn detection settings.");
+        if self.target.is_some() == self.terminal_target.is_some() || self.vad.is_none() {
+            return Err(
+                "Realtime calls require one bound agent or terminal and turn detection settings.",
+            );
         }
         if let Some(Vad::ServerVad {
             threshold,
@@ -182,17 +187,23 @@ impl Config {
             serde_json::to_value(&self.vad).map_err(|_| "Invalid Realtime VAD settings.")?;
         vad["create_response"] = json!(true);
         vad["interrupt_response"] = json!(true);
+        let terminal = self.terminal_target.is_some();
+        let tools = if terminal {
+            terminal::schemas()
+        } else {
+            vec![
+                json!({"type":"function","name":BACKGROUND_AGENT,"description":PROMPT_DESCRIPTION,"parameters":{"type":"object","properties":{"prompt":{"type":"string","maxLength":8192},"delivery":{"type":"string","enum":["now","later"],"description":"Default now: start or steer. Choose later only for an explicit request to defer work."}},"required":["prompt"],"additionalProperties":false}}),
+                silence_tool(),
+            ]
+        };
         typed(json!({"type":"session.update","session":{
             "type":"realtime", "output_modalities":["audio"], "max_output_tokens":512,
-            "instructions":INSTRUCTIONS,
+            "instructions":if terminal { terminal::INSTRUCTIONS } else { INSTRUCTIONS },
             "audio":{"input":{"format":{"type":"audio/pcm","rate":RATE},"turn_detection":vad,
                 "noise_reduction":{"type":"near_field"},
                 "transcription":captions::settings(self.language)},
                 "output":{"format":{"type":"audio/pcm","rate":RATE},"voice":self.voice}},
-            "tools":[
-                {"type":"function","name":BACKGROUND_AGENT,"description":PROMPT_DESCRIPTION,"parameters":{"type":"object","properties":{"prompt":{"type":"string","maxLength":8192},"delivery":{"type":"string","enum":["now","later"],"description":"Default now: start or steer. Choose later only for an explicit request to defer work."}},"required":["prompt"],"additionalProperties":false}},
-                silence_tool()
-            ],"tool_choice":"auto"
+            "tools":tools,"tool_choice":"auto"
         }}))
     }
 }
@@ -323,6 +334,11 @@ impl Output {
     }
 }
 
+struct BoundTargets {
+    agent: Option<Arc<PinnedAgent>>,
+    terminal: Option<Arc<terminal::Session>>,
+}
+
 pub(super) enum Command {
     Skip,
     Mute(bool),
@@ -371,6 +387,12 @@ impl RealtimeVoiceAdapter {
             .map(PinnedAgent::pin)
             .transpose()
             .map_err(|_| "Open the connected agent chat before starting Realtime.")?;
+        let terminal = config
+            .terminal_target
+            .clone()
+            .map(PinnedTerminal::pin)
+            .transpose()?
+            .map(terminal::Session::new);
         if let Some(context) = agent
             .as_ref()
             .map(|agent| agent.startup_context())
@@ -449,13 +471,13 @@ impl RealtimeVoiceAdapter {
                 let mut tools: JoinSet<ToolCompletion> = JoinSet::new();
                 // Keep driving startup through cancellation: an in-flight POST
                 // may create a call whose identity must be read and retired.
-                let connection = owner.prepare_connection(&config, &key, update, agent.as_ref()).await;
+                let connection = owner.prepare_connection(&config, &key, update, agent.as_ref(), terminal.as_ref()).await;
                 drop(key);
                 let result = match connection {
                     Ok((socket, configuration_started)) if !owner.closed.load(Ordering::Acquire) => tokio::select! {
                     biased;
                     _ = cancellation.changed() => Ok(()),
-                result = owner.run(config, socket, configuration_started, agent, command_rx, &mut tools) => result,
+                result = owner.run(config, socket, configuration_started, BoundTargets { agent, terminal }, command_rx, &mut tools) => result,
                     },
                     Ok(_) => Ok(()),
                     Err(_) if owner.closed.load(Ordering::Acquire) => Ok(()),
@@ -625,10 +647,11 @@ impl RealtimeVoiceAdapter {
         config: Config,
         mut socket: RealtimeSocket,
         configuration_started: Instant,
-        agent: Option<Arc<PinnedAgent>>,
+        targets: BoundTargets,
         mut commands: mpsc::Receiver<Command>,
         tools: &mut JoinSet<ToolCompletion>,
     ) -> Result<(), &'static str> {
+        let BoundTargets { agent, terminal } = targets;
         let started = tokio::time::Instant::now();
         let mut heartbeat = tokio::time::interval(Duration::from_millis(250));
         let mut capture = ::audio_ingress::Packet::new(self.input.packet_samples);
@@ -672,6 +695,10 @@ impl RealtimeVoiceAdapter {
                 },
                 result = tools.join_next(), if !tools.is_empty() => {
                     let ToolCompletion { call_id, deferred: was_deferred, mut value } = result.ok_or("Realtime tool task ended.")?.map_err(|_| "Realtime tool task failed.")?;
+                    if let Some(terminal) = &terminal {
+                        terminal.complete(&mut socket, &mut responses, call_id, value).await?;
+                        continue;
+                    }
                     let agent = agent.as_ref().ok_or("Voice previews cannot execute tools.")?;
                     agent.check_liveness().map_err(|_| "The bound agent disconnected or changed. Please call again.")?;
                     let uncertain = value.get("error").and_then(Value::as_str) == Some("outcome_unknown");
@@ -703,6 +730,9 @@ impl RealtimeVoiceAdapter {
                 _ = heartbeat.tick() => {
                     if !self.speech.is_current() { return Err("Voice audio was replaced by another speech session."); }
                     if let Some(agent) = &agent { agent.check_liveness().map_err(|_| "The bound agent disconnected or changed. Please call again.")?; }
+                    if let Some(terminal) = &terminal {
+                        terminal.forward_feedback(&mut socket, &mut responses).await?;
+                    }
                     if config.preview && started.elapsed() > PREVIEW_TIMEOUT { return Err("Voice preview timed out. Please try again."); }
                     if preview_done && (!config.webrtc || self.media.lock().as_ref().is_some_and(webrtc::Handle::drained)) && { let output = self.output.lock(); output.generated == output.played } {
                         if self.output.lock().generated == 0 { return Err("OpenAI returned no playable voice preview audio."); }
@@ -712,11 +742,7 @@ impl RealtimeVoiceAdapter {
                     }
                     if !self.ready.load(Ordering::Acquire) && started.elapsed() > IO_TIMEOUT { return Err("OpenAI did not confirm the Realtime session settings."); }
                     if started.elapsed() > Duration::from_mins(55) { return Err("Realtime call time limit reached. Start a new call."); }
-                    if last_pong.elapsed() > Duration::from_secs(45) { return Err("OpenAI Realtime stopped responding."); }
-                    if ping_at.elapsed() > Duration::from_secs(15) {
-                        tokio::time::timeout(IO_TIMEOUT, socket.send(Message::Ping(Vec::new().into()))).await.map_err(|_| "Realtime send timed out.")?.map_err(|_| "Realtime connection ended.")?;
-                        ping_at = tokio::time::Instant::now();
-                    }
+                    keep_alive(&mut socket, last_pong, &mut ping_at).await?;
                     if let Some(pending) = deferred.take() {
                         spawn_delegation(tools, agent.as_ref().ok_or("Missing bound voice agent.")?.clone(), pending, true, false);
                     }
@@ -805,8 +831,12 @@ impl RealtimeVoiceAdapter {
                         ServerEvent::InputAudioTranscriptionCompleted { item_id, transcript, .. } => { if item_id == input_item { self.view.lock().user_text = limit_text(transcript); } }
                         ServerEvent::InputAudioTranscriptionFailed { .. } => { self.view.lock().error = Some("OpenAI could not transcribe this turn. Voice audio is still connected."); }
                         ServerEvent::ResponseFunctionCallArgumentsDone { call_id, name, arguments, response_id, .. } => {
-                            let agent = agent.as_ref().ok_or("Voice previews cannot execute tools.")?;
                             if ignored.contains(&response_id) { continue; }
+                            if let Some(terminal) = &terminal {
+                                terminal.handle(&mut socket, tools, &mut responses, (call_id, name, arguments)).await?;
+                                continue;
+                            }
+                            let agent = agent.as_ref().ok_or("Voice previews cannot execute tools.")?;
                             let transcript = self.output.lock().transcript.delegation_snapshot();
                             let dispatch = delegation::Dispatch { ledger: &mut ledger, deferred: &mut deferred, handoff: &mut handoff, tools, responses: &mut responses, context: &context, transcript };
                             let call = delegation::Invocation { already_spoke: last_audio_response.as_deref() == Some(response_id.as_str()), call_id, name: name.clone(), arguments, response_id };
@@ -865,6 +895,7 @@ impl RealtimeVoiceAdapter {
         key: &native_credentials::NativeCredential,
         update: ClientEvent,
         agent: Option<&Arc<PinnedAgent>>,
+        terminal: Option<&Arc<terminal::Session>>,
     ) -> Result<(RealtimeSocket, Instant), &'static str> {
         let connection = self.connect_session(config, key, update);
         tokio::pin!(connection);
@@ -878,6 +909,9 @@ impl RealtimeVoiceAdapter {
                     }
                     if agent.is_some_and(|agent| agent.check_liveness().is_err()) {
                         self.fail("The bound agent disconnected or changed. Please call again.");
+                    }
+                    if terminal.is_some_and(|terminal| terminal.target.check().is_err()) {
+                        self.fail(crate::host_runtime::realtime_terminal::CHANGED);
                     }
                 }
             }
@@ -935,6 +969,24 @@ impl RealtimeVoiceAdapter {
 }
 
 type RealtimeSocket = socket::Socket;
+
+async fn keep_alive(
+    socket: &mut RealtimeSocket,
+    last_pong: tokio::time::Instant,
+    ping_at: &mut tokio::time::Instant,
+) -> Result<(), &'static str> {
+    if last_pong.elapsed() > Duration::from_secs(45) {
+        return Err("OpenAI Realtime stopped responding.");
+    }
+    if ping_at.elapsed() > Duration::from_secs(15) {
+        tokio::time::timeout(IO_TIMEOUT, socket.send(Message::Ping(Vec::new().into())))
+            .await
+            .map_err(|_| "Realtime send timed out.")?
+            .map_err(|_| "Realtime connection ended.")?;
+        *ping_at = tokio::time::Instant::now();
+    }
+    Ok(())
+}
 
 async fn connect_raw(
     key: &native_credentials::NativeCredential,

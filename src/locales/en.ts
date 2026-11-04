@@ -86,6 +86,8 @@ export const en = {
   'voiceChat.starting': "Starting voice call…",
   'voiceChat.speaker': "Speaker",
   'voiceChat.title': "Voice chat",
+  'voiceChat.terminalScope': "Terminal · {{terminal}}",
+  'voiceChat.terminalWaiting': "Working…",
   'voiceChat.setup': "Download turn detection",
   'voiceChat.preparing': "Preparing voice chat…",
   'voiceChat.listening': "Listening",

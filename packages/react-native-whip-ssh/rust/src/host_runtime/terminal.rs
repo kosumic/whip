@@ -641,6 +641,12 @@ pub(super) async fn open_ssh_shell_inner(
             (current, changed)
         };
         if current {
+            super::realtime_terminal::observe_output(
+                &inner,
+                &data_terminal_id,
+                operation_epoch,
+                &bytes,
+            );
             if directory_changed {
                 emit(HostRuntimeEvent::SshShellDirectoryChanged {
                     runtime_id: runtime_id.clone(),

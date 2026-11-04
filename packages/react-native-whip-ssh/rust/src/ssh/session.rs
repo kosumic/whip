@@ -135,6 +135,18 @@ impl SshSession {
             .map_err(Into::into)
     }
 
+    /// Observe bounded progress while retaining cancellation-safe channel cleanup.
+    pub(crate) async fn execute_observed(
+        &self,
+        command: &str,
+        timeout: std::time::Duration,
+        progress: super::CommandProgress,
+    ) -> Result<CommandOutput, SshFailure> {
+        super::execute_observed_with_timeout_on(&self.inner, command, timeout, Some(progress))
+            .await
+            .map_err(Into::into)
+    }
+
     /// Send private configuration over stdin, never a remote process argument.
     pub(crate) async fn execute_with_input(
         &self,

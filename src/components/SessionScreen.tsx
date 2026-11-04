@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useContext,
   useEffect,
   useEffectEvent,
   useLayoutEffect,
@@ -11,6 +12,7 @@ import {
   type RefObject,
 } from 'react';
 import { useChatViewportRetention } from '../hooks/useChatViewportRetention';
+import { VoiceConversationSettingsContext } from '../lib/voiceConversationSettingsContext';
 import { useViewedAgent } from '../hooks/useViewedAgent';
 import { useGithubRepository } from '../hooks/useGithubRepository';
 import { GithubDiscoveryPopup } from './GithubDiscoveryPopup';
@@ -634,6 +636,8 @@ export function SessionScreen({
   const voiceChatKey = savedChatOpen ? activeSavedChat?.state.sessionId : activeChatView?.binding.bindingToken;
   const voiceChatAgent = savedChatOpen ? activeSavedChat?.agent : activeChatView?.binding.agent;
   const liveVoiceChatAgent = chatAgentForPane(activePane);
+  const { settings: voiceSettings } = useContext(VoiceConversationSettingsContext);
+  const terminalVoiceAvailable = voiceSettings.provider === 'openai' && voiceSettings.mode === 'Realtime';
   const foregroundTranscriptHost = visible && appActive && liveVoiceChatAgent && activeTarget?.session.kind !== 'ssh'
     ? activeTarget?.hostSessionId : undefined;
   const foregroundTranscriptTerminal = foregroundTranscriptHost ? activeTarget?.session.terminalId : undefined;
@@ -1815,7 +1819,21 @@ export function SessionScreen({
                   tabId: activePane.tab_id,
                   label: chatAgentDisplayName(liveVoiceChatAgent),
                 }
-              : undefined}
+              : !savedChatOpen && !liveVoiceChatAgent && terminalVoiceAvailable && activeTarget?.session.status === 'connected'
+                ? {
+                    hostId: hostSessionId,
+                    paneId: activePane?.pane_id ?? activeTarget.session.terminalId,
+                    tabId: activePane?.tab_id ?? activeTarget.session.terminalId,
+                    label: activeTarget.session.title || t('terminal.sshShell'),
+                    terminal: {
+                      runtimeId: activeTarget.client.native.runtimeId,
+                      runtimeIncarnation: activeTarget.client.native.runtimeIncarnation,
+                      connectionGeneration: activeTarget.client.native.hostState().connectionGeneration,
+                      terminalId: activeTarget.session.terminalId,
+                      paneId: activeTarget.session.kind === 'ssh' ? undefined : activePane?.pane_id,
+                    },
+                  }
+                : undefined}
             voiceContext={chatVisible && voiceChatState && voiceChatKey
               ? {
                   key: `${savedChatOpen ? 'saved' : 'live'}:${voiceChatKey}`,

@@ -43,6 +43,19 @@ jest.mock('../src/services/NativeTranscriptService', () => ({ agentTranscriptSer
 } }));
 
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+
+test('starts a terminal call without an agent binding', async () => {
+  const changed = jest.fn();
+  const terminal = { runtimeId: 'runtime-1', runtimeIncarnation: 4, connectionGeneration: 9, terminalId: 'shell-1' };
+  const call = new RealtimeVoiceConversation({ hostId: 'host', paneId: 'shell-1', tabId: 'shell-1', label: 'Shell', terminal }, { ...defaults, provider: 'openai' }, changed);
+  await call.start();
+  const [, raw] = mockNative.startRealtimeVoice.mock.calls[0] as unknown as [string, string];
+  const config = JSON.parse(raw);
+  expect(config.terminalTarget).toEqual(terminal);
+  expect(config.target).toBeUndefined();
+  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'listening', transcript: null }));
+  await call.close();
+});
 function setup() {
   const changed = jest.fn((_view: VoiceConversationView) => {});
   const call = new RealtimeVoiceConversation({ hostId: 'host', paneId: 'pane-1', tabId: 'tab', bindingToken: 'binding-1', agent: 'codex', label: 'Codex' }, { ...defaults, provider: 'openai', realtimeVoice: 'cedar' }, changed);

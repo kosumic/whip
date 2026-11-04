@@ -88,6 +88,8 @@ export const zhHans = {
   'voiceChat.reopen': "返回语音聊天",
   'voiceChat.speaker': "扬声器",
   'voiceChat.title': "语音聊天",
+  'voiceChat.terminalScope': "终端 · {{terminal}}",
+  'voiceChat.terminalWaiting': "处理中…",
   'voiceChat.setup': "下载轮次检测",
   'voiceChat.preparing': "正在准备语音聊天…",
   'voiceChat.listening': "正在聆听",

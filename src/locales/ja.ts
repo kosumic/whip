@@ -88,6 +88,8 @@ export const ja = {
   'voiceChat.reopen': "音声チャットに戻る",
   'voiceChat.speaker': "スピーカー",
   'voiceChat.title': "音声チャット",
+  'voiceChat.terminalScope': "ターミナル · {{terminal}}",
+  'voiceChat.terminalWaiting': "処理中…",
   'voiceChat.setup': "発話終了検出をダウンロード",
   'voiceChat.preparing': "音声チャットを準備中…",
   'voiceChat.listening': "聞いています",

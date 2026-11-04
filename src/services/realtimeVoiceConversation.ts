@@ -52,7 +52,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
       if (!this.playback.startRealtimeVoice || !this.playback.realtimeVoiceView || !this.playback.stopRealtimeVoice) throw new Error('Install an updated Whip build for Realtime calls.');
       const binding = this.target.bindingToken;
       const target = binding ? agentTranscriptService.realtimeTarget(binding) : undefined;
-      if (target?.paneId !== this.target.paneId) throw new Error('Open the connected agent chat before starting Realtime.');
+      if (!this.target.terminal && target?.paneId !== this.target.paneId) throw new Error('Open the connected agent chat before starting Realtime.');
       requireForeground();
       const permission = Platform.OS === 'ios' ? PERMISSIONS.IOS.MICROPHONE : PERMISSIONS.ANDROID.RECORD_AUDIO;
       if (await request(permission) !== RESULTS.GRANTED) throw new Error('Allow microphone access in Settings to use Realtime.');
@@ -80,11 +80,11 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
         this.publish({ ...(event.muted !== undefined ? { muted: event.muted } : {}), ...(event.speaker !== undefined ? { speaker: event.speaker } : {}) });
       });
       this.cleanups.push(() => call.remove());
-      const unsubscribe = agentTranscriptService.subscribe(binding!, state => {
+      const unsubscribe = binding ? agentTranscriptService.subscribe(binding, state => {
         if (this.closed) return;
         if (!state) { this.fail('The bound agent disconnected or changed. Please call again.'); return; }
         this.publish({ transcript: state });
-      });
+      }) : () => {};
       if (this.closed) unsubscribe();
       else this.cleanups.push(unsubscribe);
       if (this.closed) return;
@@ -94,7 +94,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
       if (this.closed) { await this.playback.endVoiceCall(this.token); return; }
       this.callActivated = true;
       requireForeground();
-      const config = JSON.stringify({ clientElapsedMs: Math.max(0, Math.round(performance.now() - this.requestedAt)), target, model: this.settings.realtimeModel, voice: this.settings.realtimeVoice, vad: parseRealtimeVad(this.settings.realtimeVad ?? DEFAULT_REALTIME_VAD) });
+      const config = JSON.stringify({ clientElapsedMs: Math.max(0, Math.round(performance.now() - this.requestedAt)), target, terminalTarget: this.target.terminal, model: this.settings.realtimeModel, voice: this.settings.realtimeVoice, vad: parseRealtimeVad(this.settings.realtimeVad ?? DEFAULT_REALTIME_VAD) });
       this.nativeMediaAttempted = true;
       this.startingMedia = this.playback.startRealtimeVoice(this.token, config);
       await this.startingMedia;
@@ -103,7 +103,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
     } catch (error) {
       // Only application-generated messages are trusted here. Native bridge
       // and provider errors can contain sensitive data.
-      this.fail(voiceCredentialError(error, error instanceof Error && !this.nativeMediaAttempted ? error.message : 'OpenAI Realtime could not start. Check the saved API key, selected model access, connected agent, and microphone permissions.'));
+      this.fail(voiceCredentialError(error, error instanceof Error && !this.nativeMediaAttempted ? error.message : 'OpenAI Realtime could not start. Check the saved API key, selected model access, connection, and microphone permissions.'));
     }
   }
 

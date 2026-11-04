@@ -1260,7 +1260,7 @@ async fn execute_with_input_on(
     session.ensure_alive()?;
     let _slot = command_slot(session).await?;
     let mut channel = session.handle.channel_open_session().await?;
-    let result = execute_channel(session, &mut channel, command, input).await;
+    let result = execute_channel(session, &mut channel, command, input, None).await;
     let _ = channel.close().await;
     result
 }
@@ -1270,13 +1270,26 @@ async fn execute_with_timeout_on(
     command: &str,
     timeout: Duration,
 ) -> Result<CommandOutput, TransportError> {
+    execute_observed_with_timeout_on(session, command, timeout, None).await
+}
+
+pub(crate) type CommandProgress = Arc<dyn Fn(bool, &[u8]) + Send + Sync>;
+
+async fn execute_observed_with_timeout_on(
+    session: &Arc<Session>,
+    command: &str,
+    timeout: Duration,
+    progress: Option<CommandProgress>,
+) -> Result<CommandOutput, TransportError> {
     session.ensure_alive()?;
     let deadline = tokio::time::Instant::now() + timeout;
     let session = session.clone();
     let command = command.to_owned();
     let (mut reply, result) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
-        let result = execute_timed_command(&session, &command, deadline, timeout, &mut reply).await;
+        let result =
+            execute_timed_command(&session, &command, deadline, timeout, &mut reply, progress)
+                .await;
         let _ = reply.send(result);
     });
     tokio::time::timeout_at(deadline, result)
@@ -1291,6 +1304,7 @@ async fn execute_timed_command(
     deadline: tokio::time::Instant,
     timeout: Duration,
     reply: &mut tokio::sync::oneshot::Sender<Result<CommandOutput, TransportError>>,
+    progress: Option<CommandProgress>,
 ) -> Result<CommandOutput, TransportError> {
     let queued = Instant::now();
     let _slot = tokio::time::timeout_at(deadline, command_slot(session))
@@ -1317,7 +1331,7 @@ async fn execute_timed_command(
         Err(exec_timeout("channel-open", timeout))
     } else {
         tokio::select! {
-            result = tokio::time::timeout_at(deadline, execute_channel(session, &mut channel, command, None)) =>
+            result = tokio::time::timeout_at(deadline, execute_channel(session, &mut channel, command, None, progress.as_ref())) =>
                 result.unwrap_or_else(|_| Err(exec_timeout("command", timeout))),
             () = reply.closed() => Err(exec_timeout("cancelled", timeout)),
         }
@@ -1362,6 +1376,7 @@ async fn execute_channel(
     channel: &mut russh::Channel<client::Msg>,
     command: &str,
     input: Option<&[u8]>,
+    progress: Option<&CommandProgress>,
 ) -> Result<CommandOutput, TransportError> {
     let exec_started = Instant::now();
     request_agent_forwarding(session, channel).await?;
@@ -1381,12 +1396,18 @@ async fn execute_channel(
     while let Some(message) = channel.wait().await {
         match message {
             russh::ChannelMsg::Data { data } => {
+                if let Some(progress) = progress {
+                    progress(false, &data);
+                }
                 if !data.is_empty() && first_stdout.is_none() {
                     first_stdout = Some(read_started.elapsed());
                 }
                 stdout_truncated |= append_capped(&mut stdout, &data);
             }
             russh::ChannelMsg::ExtendedData { data, ext: 1 } => {
+                if let Some(progress) = progress {
+                    progress(true, &data);
+                }
                 stderr_truncated |= append_capped(&mut stderr, &data);
             }
             russh::ChannelMsg::ExitStatus {

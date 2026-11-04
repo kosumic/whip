@@ -1,5 +1,5 @@
 import { VoiceSessionManager, localVoiceUsageObserver, type VoiceSessionAdapter } from '../src/services/voiceSessionManager';
-import type { VoiceChatTarget, VoiceConversationView } from '../src/services/voiceConversation';
+import type { TerminalVoiceChatTarget, VoiceChatTarget, VoiceConversationView } from '../src/services/voiceConversation';
 import { DEFAULT_VOICE_CONVERSATION_SETTINGS as defaults, DEFAULT_REALTIME_VAD, parseVoiceConversationSettings } from '../src/lib/voiceConversationSettings';
 import { voiceUsageLedger } from '../src/services/voiceUsage';
 
@@ -9,6 +9,42 @@ jest.mock('../src/lib/secureId', () => ({ createSecureId: () => 'voice-stable-ra
 const target: VoiceChatTarget = { agent: 'codex', hostId: 'host', tabId: 'tab', paneId: 'pane', label: 'Codex' };
 const view: VoiceConversationView = { phase: 'listening', muted: false, smartTurn: false, speaker: false, text: '', level: 0, progress: 0, error: null, transcript: null };
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+
+const terminalTarget: TerminalVoiceChatTarget = { hostId: 'host', paneId: 'shell', tabId: 'shell', label: 'SSH shell',
+  terminal: { runtimeId: 'runtime', runtimeIncarnation: 1, connectionGeneration: 1, terminalId: 'shell' } };
+
+test('terminal calls require Realtime and cannot enter the local agent adapter', async () => {
+  const local = jest.fn();
+  const realtime = jest.fn();
+  const manager = new VoiceSessionManager(local, undefined, realtime);
+  const session = manager.start({ kind: 'Terminal', target: terminalTarget }, () => true, defaults);
+  await flush();
+  expect(local).not.toHaveBeenCalled();
+  expect(realtime).not.toHaveBeenCalled();
+  expect(session.ended).toBe(true);
+  expect(session.getSnapshot().phase).toBe('error');
+});
+
+test('terminal remount retains the pinned call while a replaced connection requires a new session', async () => {
+  const local = jest.fn();
+  const adapter = () => ({ start: jest.fn(async () => {}), close: jest.fn(async () => {}), setTranscriptBinding: jest.fn(), setVadSensitivity: jest.fn(), submitted: jest.fn(), toggleMuted: jest.fn(), toggleSpeaker: jest.fn(), finish: jest.fn(), skip: jest.fn(async () => {}) });
+  const first = adapter(), second = adapter();
+  const realtime = jest.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+  const manager = new VoiceSessionManager(local, undefined, realtime);
+  const settings = { ...defaults, provider: 'openai' as const };
+  const call = manager.start({ kind: 'Terminal', target: terminalTarget }, () => true, settings);
+  await flush();
+  expect(manager.start({ kind: 'Terminal', target: { ...terminalTarget, label: 'Renamed shell' } }, () => true, settings)).toBe(call);
+  expect(realtime).toHaveBeenCalledTimes(1);
+  const replacement = manager.start({ kind: 'Terminal', target: { ...terminalTarget, terminal: { ...terminalTarget.terminal, connectionGeneration: 2 } } }, () => true, settings);
+  await flush();
+  expect(replacement).not.toBe(call);
+  expect(first.close).toHaveBeenCalledTimes(1);
+  expect(realtime).toHaveBeenCalledTimes(2);
+  expect(local).not.toHaveBeenCalled();
+  await manager.retainAgentHosts([]);
+  expect(second.close).toHaveBeenCalledTimes(1);
+});
 
 test('saved semantic VAD preferences migrate to server VAD for Realtime', () => {
   const saved = parseVoiceConversationSettings({ ...defaults, provider: 'openai', realtimeVad: { type: 'semantic_vad', eagerness: 'low' } });

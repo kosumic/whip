@@ -114,17 +114,18 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
   useImperativeHandle(ref, () => ({ submitted: text => conversation.current?.submitted(text) }), []);
   const callbacks = useRef({ send, onClose, vadSensitivity, settings });
   callbacks.current = { send, onClose, vadSensitivity, settings };
-  const { agent, bindingToken, hostId, paneId, tabId } = target;
+  const { agent, bindingToken, hostId, paneId, tabId, terminal } = target;
   const latestTarget = useRef(target);
   latestTarget.current = target;
   useEffect(() => {
-    const session = voiceSessionManager.start({ kind: 'Agent', target: latestTarget.current }, callbacks.current.send, callbacks.current.settings);
+    const currentTarget = latestTarget.current;
+    const session = voiceSessionManager.start(currentTarget.terminal ? { kind: 'Terminal', target: currentTarget } : { kind: 'Agent', target: currentTarget }, callbacks.current.send, callbacks.current.settings);
     conversation.current = session;
     setStartedAt(session.startedAt);
     session.setVadSensitivity(callbacks.current.vadSensitivity);
     const unsubscribe = session.subscribe(setView);
     return () => { unsubscribe(); conversation.current = null; };
-  }, [agent, hostId, paneId, tabId]);
+  }, [agent, hostId, paneId, tabId, terminal?.runtimeId, terminal?.runtimeIncarnation, terminal?.connectionGeneration, terminal?.terminalId, terminal?.paneId]);
   useEffect(() => { conversation.current?.setTranscriptBinding(bindingToken); }, [bindingToken]);
   useEffect(() => { conversation.current?.setVadSensitivity(vadSensitivity); }, [vadSensitivity]);
   useEffect(() => { if (view.phase === 'closed') callbacks.current.onClose(); }, [view.phase]);
@@ -133,6 +134,7 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
     callbacks.current.onClose();
   };
   const interactive = ['listening', 'muted', 'waiting', 'speaking'].includes(view.phase);
+  const status = t(terminal && view.phase === 'waiting' ? 'voiceChat.terminalWaiting' : STATUS[view.phase]);
   const compose = () => minimize(onCompose);
   const composer = <VoiceComposer label={t('voiceChat.compose', { agent: target.label })}
     muted={view.muted} interactive={interactive} onCompose={compose}
@@ -144,7 +146,7 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
         style={[styles.dock, dockStyle, { opacity: expanded ? 0 : 1 }]}>
         <View pointerEvents="box-none" style={styles.compactOrbRow}>
           <View ref={compactOrb} collapsable={false} onLayout={measureOrbs} style={styles.compactTarget}>
-            {!expanded && <Pressable accessibilityRole="button" accessibilityLabel={t('voiceChat.reopen')} accessibilityHint={t(STATUS[view.phase])} onPress={onExpand} style={styles.compactTarget}>
+            {!expanded && <Pressable accessibilityRole="button" accessibilityLabel={t('voiceChat.reopen')} accessibilityHint={status} onPress={onExpand} style={styles.compactTarget}>
               <VoiceOrb view={view} size={COMPACT_ORB_SIZE} startedAt={startedAt} />
             </Pressable>}
           </View>
@@ -162,7 +164,7 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
       <Animated.View pointerEvents="box-none" className="flex-row items-center justify-between px-6" style={chromeMotion}
         onLayout={event => setHeaderHeight(event.nativeEvent.layout.height)}>
         <Button accessibilityLabel={t('voiceChat.minimize')} variant="ghost" className="size-11 rounded-full p-0" style={styles.control} onPress={() => minimize()}><ChevronDown size={20} color={VOICE_COLORS.text} /></Button>
-        <Text pointerEvents="none" style={styles.agentLabel}>{target.label}</Text>
+        <Text pointerEvents="none" style={styles.agentLabel}>{terminal ? t('voiceChat.terminalScope', { terminal: target.label }) : target.label}</Text>
         <View className="flex-row gap-2">
           <Button accessibilityLabel={t('voiceChat.transcript')} variant="ghost" className="size-11 rounded-full p-0" style={styles.control} onPress={() => minimize()}><MessageSquare size={18} color={VOICE_COLORS.text} /></Button>
           <Button accessibilityLabel={t('voiceChat.speaker')} accessibilityState={{ selected: view.speaker }} variant="ghost" className="size-11 rounded-full p-0" style={styles.control} disabled={!interactive} onPress={() => conversation.current?.toggleSpeaker()}><Volume2 size={19} color={view.speaker ? VOICE_COLORS.accent : VOICE_COLORS.text} /></Button>
@@ -176,7 +178,7 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
           </Pressable>
         </View>
         <Animated.View pointerEvents="none" className="items-center gap-3 px-8 pb-5" style={[styles.status, chromeMotion]}>
-          <Text accessibilityLiveRegion="polite" className="text-center text-xs" style={styles.statusText}>{t(STATUS[view.phase])}</Text>
+          <Text accessibilityLiveRegion="polite" className="text-center text-xs" style={styles.statusText}>{status}</Text>
           {estimatedCost !== null && <Text accessibilityHint={t('voiceProvider.costHint')} className="text-center text-xs" style={styles.statusText}>{t('voiceProvider.costEstimate', { cost: estimatedCost })}</Text>}
           {(view.phase === 'starting' || view.phase === 'preparing') && <ActivityIndicator color={VOICE_COLORS.accent} />}
           {view.error && <Text accessibilityRole="alert" className="text-center text-sm leading-5" style={styles.statusText}>{view.error}</Text>}

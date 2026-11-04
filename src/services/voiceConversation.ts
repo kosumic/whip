@@ -12,7 +12,13 @@ import { DEFAULT_VAD_SENSITIVITY } from '../lib/voiceVadSensitivity';
 import { suppressAgentAlertsForTab } from './alerts';
 import { VoiceCallSoundPlayer } from './voiceCallSoundPlayer';
 
-export type VoiceChatTarget = Omit<ChatSpeechTarget, 'bindingToken'> & { bindingToken?: string; tabId: string };
+export type AgentVoiceChatTarget = Omit<ChatSpeechTarget, 'bindingToken'> & { bindingToken?: string; tabId: string; terminal?: never };
+export type TerminalVoiceChatTarget = {
+  hostId: string; paneId: string; tabId: string; label: string;
+  agent?: never; bindingToken?: never;
+  terminal: { runtimeId: string; runtimeIncarnation: number; connectionGeneration: number; terminalId: string; paneId?: string };
+};
+export type VoiceChatTarget = AgentVoiceChatTarget | TerminalVoiceChatTarget;
 
 export interface VoiceTranscriptMessage {
   id: string;
@@ -109,7 +115,7 @@ export class VoiceConversation {
   };
 
   constructor(
-    private readonly target: VoiceChatTarget,
+    private readonly target: AgentVoiceChatTarget,
     private readonly send: (text: string) => boolean,
     private readonly changed: (view: VoiceConversationView) => void,
     private readonly load = loadCore,

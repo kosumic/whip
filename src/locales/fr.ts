@@ -90,6 +90,8 @@ export const fr = {
   'voiceChat.reopen': "Revenir au chat vocal",
   'voiceChat.speaker': "Haut-parleur",
   'voiceChat.title': "Conversation vocale",
+  'voiceChat.terminalScope': "Terminal · {{terminal}}",
+  'voiceChat.terminalWaiting': "En cours…",
   'voiceChat.setup': "Télécharger la détection des tours",
   'voiceChat.preparing': "Préparation…",
   'voiceChat.listening': "À votre écoute",

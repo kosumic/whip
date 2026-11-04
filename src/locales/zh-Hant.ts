@@ -88,6 +88,8 @@ export const zhHant: Record<string, string> = {
   'voiceChat.reopen': "返回語音聊天",
   'voiceChat.speaker': "揚聲器",
   'voiceChat.title': "語音聊天",
+  'voiceChat.terminalScope': "終端機 · {{terminal}}",
+  'voiceChat.terminalWaiting': "處理中…",
   'voiceChat.setup': "下載輪次偵測",
   'voiceChat.preparing': "正在準備語音聊天…",
   'voiceChat.listening': "正在聆聽",

@@ -88,6 +88,8 @@ export const es = {
   'voiceChat.reopen': "Volver al chat de voz",
   'voiceChat.speaker': "Altavoz",
   'voiceChat.title': "Chat de voz",
+  'voiceChat.terminalScope': "Terminal · {{terminal}}",
+  'voiceChat.terminalWaiting': "Trabajando…",
   'voiceChat.setup': "Descargar detección de turnos",
   'voiceChat.preparing': "Preparando chat de voz…",
   'voiceChat.listening': "Escuchando",
