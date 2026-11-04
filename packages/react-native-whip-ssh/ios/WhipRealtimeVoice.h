@@ -1,6 +1,14 @@
 #import <Foundation/Foundation.h>
 #import <React/RCTBridgeModule.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+int32_t WhipReadOpenAiVoiceCredential(void *context, uint8_t *destination, size_t capacity);
+#ifdef __cplusplus
+}
+#endif
+
 @interface WhipRealtimeVoice : NSObject
 + (instancetype)shared;
 - (void)invalidate;

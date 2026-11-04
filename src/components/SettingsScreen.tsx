@@ -306,7 +306,6 @@ export function SettingsSection(props: SettingsSectionProps) {
         onToggle={toggleVoice}>
         <VoiceConversationSetting />
         <VoiceUsageSetting />
-        <SpeechBackendSetting />
         <SliderRow
           title={t('voiceChat.vadSensitivity')}
           copy={t('voiceChat.vadSensitivityDescription')}
@@ -320,6 +319,8 @@ export function SettingsSection(props: SettingsSectionProps) {
         />
         <SettingRow title={t('settings.speakChanges')} copy={t('settings.speakChangesCopy')} value={props.ttsEnabled} onChange={props.onTtsChange} divided />
       </CollapsibleSectionCard>
+
+      <SpeechBackendSetting />
 
       <CollapsibleSectionCard
         title={t('settings.security')}

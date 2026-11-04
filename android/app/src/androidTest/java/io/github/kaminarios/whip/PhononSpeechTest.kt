@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicReference
 class PhononSpeechTest {
   private val instrumentation = InstrumentationRegistry.getInstrumentation()
   private val root get() = File(instrumentation.targetContext.noBackupFilesDir, "phonon").absolutePath
-  private fun command(action: String) = JSONObject(SpeechPolicy.phononCommand(root, action)).also {
+  private fun command(action: String) = JSONObject(SpeechPolicy.backendCommand(root, action)).also {
     check(!it.has("commandError")) { it.optString("commandError") }
   }
   private fun main(work: () -> Unit) = instrumentation.runOnMainSync { work() }
@@ -46,7 +46,7 @@ class PhononSpeechTest {
     val error = AtomicReference<String>()
     val promise = PromiseImpl(Callback { args -> value.set(args.first() as String); done.countDown() },
       Callback { args -> error.set(args.joinToString()); done.countDown() })
-    main { PhononPlayback.command(instrumentation.targetContext, action, promise) }
+    main { PcmSpeechPlayback.command(instrumentation.targetContext, action, promise) }
     assertTrue("Native settings command: $action", done.await(15, TimeUnit.SECONDS))
     assertNull(error.get())
     return value.get()
@@ -137,7 +137,7 @@ class PhononSpeechTest {
       val playbackError = AtomicReference<String?>(null)
       val began = SystemClock.elapsedRealtime()
       main {
-        PhononPlayback.start(lease,
+        PcmSpeechPlayback.start(lease,
           "This is a streaming speech check. You should hear the beginning while the rest of the reply is still being generated. ".repeat(3),
           1.0, attributes,
           { firstMs.set(SystemClock.elapsedRealtime() - began); first.countDown() },
@@ -164,17 +164,17 @@ class PhononSpeechTest {
       val warm = CountDownLatch(1)
       val oldEnded = AtomicBoolean(false)
       val warmBegan = SystemClock.elapsedRealtime()
-      main { PhononPlayback.start(oldLease, "This reply will be stopped before it finishes. ".repeat(10), 1.0, attributes,
+      main { PcmSpeechPlayback.start(oldLease, "This reply will be stopped before it finishes. ".repeat(10), 1.0, attributes,
         { Log.i("PhononAcceptance", "warm_first_output_ms=${SystemClock.elapsedRealtime() - warmBegan}"); warm.countDown() },
         { _, _, _ -> oldEnded.set(true) }) }
       assertTrue(warm.await(30, TimeUnit.SECONDS))
       val stopAt = SystemClock.elapsedRealtime()
-      main { SpeechPolicy.stop(oldLease); PhononPlayback.stop() }
+      main { SpeechPolicy.stop(oldLease); PcmSpeechPlayback.stop() }
       val nextLease = SpeechPolicy.claim(SpeechPolicy.CHAT, "phonon-device-next", "")
       val nextFirst = CountDownLatch(1)
       val nextDone = CountDownLatch(1)
       val replacementError = AtomicReference<String?>(null)
-      main { PhononPlayback.start(nextLease, "The next turn is ready.", 1.0, attributes, { nextFirst.countDown() },
+      main { PcmSpeechPlayback.start(nextLease, "The next turn is ready.", 1.0, attributes, { nextFirst.countDown() },
         { completed, _, error -> replacementError.set(error ?: if (!completed) "Replacement speech did not complete" else null); nextDone.countDown() }) }
       assertTrue(nextFirst.await(30, TimeUnit.SECONDS))
       Log.i("PhononAcceptance", "cancel_to_replacement_output_ms=${SystemClock.elapsedRealtime() - stopAt}")
@@ -183,7 +183,7 @@ class PhononSpeechTest {
       assertFalse("Old callbacks must not enter the replacement turn", oldEnded.get())
       SpeechPolicy.stop(nextLease)
     } finally {
-      main { PhononPlayback.stop() }
+      main { PcmSpeechPlayback.stop() }
       for (owner in listOf("phonon-device-check", "phonon-device-cancel", "phonon-device-next")) SpeechPolicy.stopOwner(SpeechPolicy.CHAT, owner)
       sampling.set(false)
       sampler.join()
@@ -208,20 +208,20 @@ class PhononSpeechTest {
       command("phonon")
       lease = SpeechPolicy.claim(SpeechPolicy.CHAT, "phonon-queued-check", "")
       main {
-        PhononPlayback.enqueue(lease,
+        PcmSpeechPlayback.enqueue(lease,
           "The first segment keeps speaking while the following sentence is prepared in advance.", attributes,
           { callbacks.add("first-start") }, {}, { completed, spoke, error ->
             if (!completed || !spoke || error != null) errors.add(error ?: "First segment did not drain")
             firstEnd.set(SystemClock.elapsedRealtime()); callbacks.add("first-end"); done.countDown()
           })
-        PhononPlayback.enqueue(lease,
+        PcmSpeechPlayback.enqueue(lease,
           "The second segment follows using the same audio stream.", attributes,
           { nextStart.set(SystemClock.elapsedRealtime()); callbacks.add("second-start") }, {}, { completed, spoke, error ->
             if (!completed || !spoke || error != null) errors.add(error ?: "Second segment did not drain")
             callbacks.add("second-end"); done.countDown()
           })
         try {
-          PhononPlayback.enqueue(lease, "This must not be admitted.", attributes, {}, {}, { _, _, _ -> fail("Over-capacity audio was played") })
+          PcmSpeechPlayback.enqueue(lease, "This must not be admitted.", attributes, {}, {}, { _, _, _ -> fail("Over-capacity audio was played") })
           fail("Lookahead must be bounded")
         } catch (_: IllegalStateException) { /* The current and following utterance own capacity. */ }
       }
@@ -233,18 +233,18 @@ class PhononSpeechTest {
       val speaking = CountDownLatch(1)
       val cancelledCallbacks = AtomicBoolean(false)
       main {
-        PhononPlayback.enqueue(lease, "This audio and its prepared continuation will be cancelled. ".repeat(8), attributes,
+        PcmSpeechPlayback.enqueue(lease, "This audio and its prepared continuation will be cancelled. ".repeat(8), attributes,
           { speaking.countDown() }, {}, { _, _, _ -> cancelledCallbacks.set(true) })
-        PhononPlayback.enqueue(lease, "The old prepared continuation must never finish after stop.", attributes,
+        PcmSpeechPlayback.enqueue(lease, "The old prepared continuation must never finish after stop.", attributes,
           {}, {}, { _, _, _ -> cancelledCallbacks.set(true) })
       }
       assertTrue(speaking.await(60, TimeUnit.SECONDS))
-      main { SpeechPolicy.stop(lease); PhononPlayback.stop() }
+      main { SpeechPolicy.stop(lease); PcmSpeechPlayback.stop() }
       val replacement = SpeechPolicy.claim(SpeechPolicy.CHAT, "phonon-queued-replacement", "")
       lease = replacement
       val replaced = CountDownLatch(1)
       main {
-        PhononPlayback.enqueue(replacement, "Replacement audio is ready.", attributes, {}, {}, { completed, spoke, error ->
+        PcmSpeechPlayback.enqueue(replacement, "Replacement audio is ready.", attributes, {}, {}, { completed, spoke, error ->
           if (!completed || !spoke || error != null) errors.add(error ?: "Replacement did not drain")
           replaced.countDown()
         })
@@ -253,7 +253,7 @@ class PhononSpeechTest {
       assertEquals(emptyList<String>(), errors.toList())
       assertFalse("Cancelled audio cannot complete into its replacement", cancelledCallbacks.get())
     } finally {
-      main { SpeechPolicy.stop(lease); PhononPlayback.stop() }
+      main { SpeechPolicy.stop(lease); PcmSpeechPlayback.stop() }
       command(initial.getString("backend"))
     }
   }

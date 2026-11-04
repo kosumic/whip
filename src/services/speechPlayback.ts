@@ -42,8 +42,8 @@ export interface NativeSpeechPlayback {
   removeListeners(count: number): void;
 }
 
-export type SpeechBackendAction = 'status' | 'system' | 'phonon' | 'download' | 'cancel' | 'delete'
-  | `voice:${string}` | `remove-voice:${string}` | `system-voice:${string}` | `preview-text:${string}`;
+export type SpeechBackendAction = 'status' | 'system' | 'phonon' | 'openai' | 'download' | 'cancel' | 'delete'
+  | `voice:${string}` | `remove-voice:${string}` | `system-voice:${string}` | `openai-voice:${string}` | `preview-text:${string}`;
 export interface SpeechVoice {
   id: string;
   name: string;
@@ -54,9 +54,11 @@ export interface SpeechVoice {
   networkRequired?: boolean;
 }
 export interface SpeechBackendStatus {
-  backend: 'system' | 'phonon';
+  backend: 'system' | 'phonon' | 'openai';
   voice: string;
   systemVoice: string;
+  openaiVoice: string;
+  openaiVoices: string[];
   previewText: string | null;
   maxTextUnits: number;
   voices: SpeechVoice[];

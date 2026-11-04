@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
+import Volume2 from 'lucide-react-native/icons/volume-2';
+import Sparkles from 'lucide-react-native/icons/sparkles';
+import { useSectionExpansion } from '../hooks/useSectionExpansion';
+import { CollapsibleSectionCard } from './CollapsibleSectionCard';
 import { useTranslation } from 'react-i18next';
 import { deviceLanguage } from '../i18n';
 import { getSpeechPlayback, speechBackendCommand, systemSpeechVoices, type SpeechVoice, type SpeechBackendAction, type SpeechBackendStatus } from '../services/speechPlayback';
@@ -8,6 +12,7 @@ import { hapticPress } from '../services/interactionFeedback';
 import { bestEffortCleanup, reportBackgroundFailure } from '../services/backgroundOperations';
 import { GlassButton } from './GlassControls';
 import { SpeechVoicePicker } from './SpeechVoicePicker';
+import { OpenAiVoiceKeySetting } from './OpenAiVoiceKeySetting';
 import { Input } from './ui/input';
 import { Text } from './ui/text';
 
@@ -16,9 +21,12 @@ async function stopPreviewPlayback(owner: string) {
 }
 
 const PREVIEW_TEXT_SAVE_DELAY_MS = 500;
+const LOCAL_SPEECH_BACKENDS = ['system', 'phonon'] as const;
 
 export function SpeechBackendSetting() {
   const { t } = useTranslation();
+  const { expanded: speechExpanded, toggleExpanded: toggleSpeech } = useSectionExpansion('speech', true);
+  const { expanded: openaiExpanded, toggleExpanded: toggleOpenai } = useSectionExpansion('openai-tts', true);
   const [status, setStatus] = useState<SpeechBackendStatus>();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -29,6 +37,8 @@ export function SpeechBackendSetting() {
   const voicesLoadingRef = useRef(false);
   const [voicesError, setVoicesError] = useState<string>();
   const [previewing, setPreviewing] = useState(false);
+  const [credentialSaved, setCredentialSaved] = useState<boolean>();
+  const [credentialBusy, setCredentialBusy] = useState(false);
   const previewOwner = useRef(`voice-preview-${Date.now()}`);
   const previewSequence = useRef(0);
   const [previewText, setPreviewText] = useState('');
@@ -84,6 +94,10 @@ export function SpeechBackendSetting() {
     setPreviewing(false);
   }, []);
 
+  const credentialStatus = useCallback((saved: boolean | undefined, updating: boolean) => {
+    setCredentialSaved(saved); setCredentialBusy(updating);
+  }, []);
+
   const changePreviewText = (text: string) => {
     previewTextEdited.current = true;
     previewTextRef.current = text;
@@ -130,7 +144,7 @@ export function SpeechBackendSetting() {
   const phononVoices = [{ id: 'default', name: t('speech.defaultVoice'), language: 'en', installed: true }, ...(status?.voices ?? [])];
   const installedSystemVoices = [{ id: '', name: t('speech.systemDefault'), language: '' }, ...(systemVoices ?? [])];
   const voiceBusy = busy || !!status?.voiceDownload;
-  const previewLanguage = status?.backend === 'phonon' ? 'en-US' : systemVoices?.find(voice => voice.id === status?.systemVoice)?.language ?? '';
+  const previewLanguage = status?.backend === 'phonon' ? 'en-US' : status?.backend === 'openai' ? '' : systemVoices?.find(voice => voice.id === status?.systemVoice)?.language ?? '';
   const defaultPreviewText = t('speech.previewText', { lng: status?.backend === 'phonon' ? 'en' : previewLanguage || deviceLanguage() });
   useEffect(() => {
     if (!status || previewTextInitialized.current) return;
@@ -154,62 +168,80 @@ export function SpeechBackendSetting() {
       if (mounted.current && previewSequence.current === sequence) setError(failure instanceof Error ? failure.message : String(failure));
     } finally { if (mounted.current && previewSequence.current === sequence) setPreviewing(false); }
   };
-  return <View className="pb-3.5">
-    <View className="px-3.5 pt-3.5 pb-2">
-      <Text className="text-[15px] font-semibold">{t('speech.backend')}</Text>
-      <Text className="mt-1 text-xs leading-[17px] text-muted-foreground">{t('speech.localCopy')}</Text>
-    </View>
-    <View className="flex-row items-stretch gap-2 px-3.5">
-      <GlassButton variant={status?.backend === 'system' ? 'secondary' : 'ghost'} size="content" role="radio"
-        className="min-h-12 flex-1 px-3 py-3" disabled={busy}
-        accessibilityState={{ selected: status?.backend === 'system' }}
-        onPress={hapticPress(() => { void run('system'); })}>
-        <Text className="text-center text-sm font-medium">{t('speech.system')}</Text>
-      </GlassButton>
-      <GlassButton variant={status?.backend === 'phonon' ? 'secondary' : 'ghost'} size="content" role="radio"
-        className="min-h-12 flex-1 px-3 py-3"
-        accessibilityState={{ selected: status?.backend === 'phonon' }}
-        disabled={busy || !status?.supported || !status.installed}
-        onPress={hapticPress(() => { void run('phonon'); })}>
-        <Text className="text-center text-sm font-medium">{t('speech.phonon')}</Text>
-      </GlassButton>
-    </View>
-    <View className="mx-3.5 my-3 border-l-2 border-border pl-2">
-      {status?.backend === 'system' ? <SpeechVoicePicker title={t('speech.systemVoice')} selected={status.systemVoice}
-        voices={installedSystemVoices} disabled={busy} loading={voicesLoading} error={voicesError}
-        onOpen={() => { if (!systemVoices) void loadSystemVoices(); }}
-        onSelect={id => { void run(`system-voice:${id}`); }} /> : null}
-      {status?.backend === 'phonon' ? <SpeechVoicePicker title={t('speech.phononVoice')} selected={status.voice}
-        voices={phononVoices} disabled={voiceBusy || !status.installed} onSelect={id => { void run(`voice:${id}`); }}
-        onRemove={id => { void run(`remove-voice:${id}`); }} /> : null}
-    </View>
-    <View className="gap-2 border-t border-border px-3.5 pt-3.5">
-      <Text className="text-[15px] font-semibold">{t('speech.previewTextLabel')}</Text>
-      <Input value={previewText} onChangeText={changePreviewText} onBlur={savePreviewText}
-        accessibilityLabel={t('speech.previewTextLabel')} editable={previewTextReady}
-        className="h-28" multiline textAlignVertical="top" maxLength={status?.maxTextUnits} />
-      <GlassButton variant="secondary" disabled={busy || !status || !!status.voiceDownload || !previewTextReady || !previewText.trim()}
-        onPress={hapticPress(() => { void preview(); })}>
-        <Text>{t(previewing ? 'speech.stopPreview' : 'speech.preview')}</Text>
-      </GlassButton>
-      {status?.voiceDownload ? <>
-        <Text accessibilityLiveRegion="polite" className="text-xs text-muted-foreground">{t('speech.voiceProgress', {
-          name: status.voices.find(voice => voice.id === status.voiceDownload?.id)?.name,
-          progress: Math.floor(status.voiceDownload.downloadedBytes * 100 / status.voiceDownload.totalBytes),
-        })}</Text>
-        <GlassButton variant="secondary" disabled={busy} onPress={hapticPress(() => { void run('cancel'); })}><Text>{t('common.cancel')}</Text></GlassButton>
-      </> : null}
-      {status?.supported ? <>
-        <Text className="text-xs text-muted-foreground">{status.installed
-          ? t('speech.installed', { size: downloadSize })
-          : status.downloading ? t('speech.progress', { progress, size: downloadSize })
-            : t('speech.downloadSize', { size: downloadSize })}</Text>
-        {!status.installed ? <Text className="text-xs text-muted-foreground">{t('speech.storage', { size: formatRemoteFileSize(status.requiredStorageBytes) })}</Text> : null}
-        {status.downloading ? <GlassButton variant="secondary" disabled={busy} onPress={hapticPress(() => { void run('cancel'); })}><Text>{t('common.cancel')}</Text></GlassButton>
-          : !status.installed ? <GlassButton variant="secondary" disabled={busy} onPress={hapticPress(() => { void run('download'); })}><Text>{t(status.downloadedBytes > 0 ? 'speech.resume' : 'speech.download')}</Text></GlassButton> : null}
-        {!status.downloading && (status.installed || status.downloadedBytes > 0) ? <GlassButton variant="ghost" disabled={busy} onPress={hapticPress(() => { void run('delete'); })}><Text className="text-destructive">{t('speech.remove')}</Text></GlassButton> : null}
-      </> : status ? <Text className="text-xs text-muted-foreground">{t('speech.unsupported')}</Text> : null}
-      {previewTextError || error || status?.error || status?.fallback ? <Text accessibilityLiveRegion="polite" className="text-xs text-muted-foreground">{previewTextError ?? error ?? status?.error ?? status?.fallback}</Text> : null}
-    </View>
+  const previewControls = <View className="gap-2 border-t border-border px-3.5 pt-3.5">
+    <Text className="text-[15px] font-semibold">{t('speech.previewTextLabel')}</Text>
+    <Input value={previewText} onChangeText={changePreviewText} onBlur={savePreviewText}
+      accessibilityLabel={t('speech.previewTextLabel')} editable={previewTextReady}
+      className="h-28" multiline textAlignVertical="top" maxLength={status?.maxTextUnits} />
+    <GlassButton variant="secondary" disabled={busy || !status || !!status.voiceDownload || !previewTextReady || !previewText.trim() ||
+      (status.backend === 'openai' && !previewing && (credentialBusy || !credentialSaved))}
+      onPress={hapticPress(() => { void preview(); })}>
+      <Text>{t(previewing ? 'speech.stopPreview' : 'speech.preview')}</Text>
+    </GlassButton>
   </View>;
+  const feedback = <>
+      {previewTextError || error || status?.error || status?.fallback ? <Text accessibilityLiveRegion="polite" className="text-xs text-muted-foreground">{previewTextError ?? error ?? status?.error ?? status?.fallback}</Text> : null}
+  </>;
+  return <>
+    <CollapsibleSectionCard title={t('speech.backend')} icon={Volume2}
+      expanded={speechExpanded} onToggle={() => { if (status?.backend !== 'openai') { stopPreview(); } toggleSpeech(); }} contentClassName="pb-3.5">
+      <Text className="px-3.5 py-3 text-xs leading-[17px] text-muted-foreground">{t('speech.localCopy')}</Text>
+      <View className="flex-row flex-wrap items-stretch gap-2 px-3.5">
+        {LOCAL_SPEECH_BACKENDS.map(backend => <GlassButton key={backend}
+          variant={status?.backend === backend ? 'secondary' : 'ghost'} size="content" role="radio"
+          className="min-h-12 flex-1 px-3 py-3"
+          accessibilityState={{ selected: status?.backend === backend }}
+          disabled={busy || (backend === 'phonon' && (!status?.supported || !status.installed))}
+          onPress={hapticPress(() => { void run(backend); })}>
+          <Text className="text-center text-sm font-medium">{t(`speech.${backend}`)}</Text>
+        </GlassButton>)}
+      </View>
+      <View className="mx-3.5 my-3 border-l-2 border-border pl-2">
+        {status?.backend === 'system' ? <SpeechVoicePicker title={t('speech.systemVoice')} selected={status.systemVoice}
+          voices={installedSystemVoices} disabled={busy} loading={voicesLoading} error={voicesError}
+          onOpen={() => { if (!systemVoices) void loadSystemVoices(); }}
+          onSelect={id => { void run(`system-voice:${id}`); }} /> : null}
+        {status?.backend === 'phonon' ? <SpeechVoicePicker title={t('speech.phononVoice')} selected={status.voice}
+          voices={phononVoices} disabled={voiceBusy || !status.installed} onSelect={id => { void run(`voice:${id}`); }}
+          onRemove={id => { void run(`remove-voice:${id}`); }} /> : null}
+      </View>
+      {status?.backend !== 'openai' ? previewControls : null}
+      <View className="gap-2 px-3.5 pt-3.5">
+        {status?.voiceDownload ? <>
+          <Text accessibilityLiveRegion="polite" className="text-xs text-muted-foreground">{t('speech.voiceProgress', {
+            name: status.voices.find(voice => voice.id === status.voiceDownload?.id)?.name,
+            progress: Math.floor(status.voiceDownload.downloadedBytes * 100 / status.voiceDownload.totalBytes),
+          })}</Text>
+          <GlassButton variant="secondary" disabled={busy} onPress={hapticPress(() => { void run('cancel'); })}><Text>{t('common.cancel')}</Text></GlassButton>
+        </> : null}
+        {status?.supported ? <>
+          <Text className="text-xs text-muted-foreground">{status.installed
+            ? t('speech.installed', { size: downloadSize })
+            : status.downloading ? t('speech.progress', { progress, size: downloadSize })
+              : t('speech.downloadSize', { size: downloadSize })}</Text>
+          {!status.installed ? <Text className="text-xs text-muted-foreground">{t('speech.storage', { size: formatRemoteFileSize(status.requiredStorageBytes) })}</Text> : null}
+          {status.downloading ? <GlassButton variant="secondary" disabled={busy} onPress={hapticPress(() => { void run('cancel'); })}><Text>{t('common.cancel')}</Text></GlassButton>
+            : !status.installed ? <GlassButton variant="secondary" disabled={busy} onPress={hapticPress(() => { void run('download'); })}><Text>{t(status.downloadedBytes > 0 ? 'speech.resume' : 'speech.download')}</Text></GlassButton> : null}
+          {!status.downloading && (status.installed || status.downloadedBytes > 0) ? <GlassButton variant="ghost" disabled={busy} onPress={hapticPress(() => { void run('delete'); })}><Text className="text-destructive">{t('speech.remove')}</Text></GlassButton> : null}
+        </> : status ? <Text className="text-xs text-muted-foreground">{t('speech.unsupported')}</Text> : null}
+      </View>
+      {status?.backend !== 'openai' ? <View className="px-3.5">{feedback}</View> : null}
+    </CollapsibleSectionCard>
+    <CollapsibleSectionCard title={t('speech.openai')} icon={Sparkles}
+      expanded={openaiExpanded} onToggle={() => { if (status?.backend === 'openai') { stopPreview(); } toggleOpenai(); }} contentClassName="pb-3.5">
+      <View className="gap-3 px-3.5 py-3">
+        <Text className="text-xs leading-[17px] text-muted-foreground">{t('speech.openaiCopy')}</Text>
+        <GlassButton variant={status?.backend === 'openai' ? 'secondary' : 'ghost'} role="radio"
+          disabled={busy || !status} accessibilityState={{ selected: status?.backend === 'openai' }}
+          onPress={hapticPress(() => { void run('openai'); })}>
+          <Text>{t('speech.useOpenai')}</Text>
+        </GlassButton>
+        {status ? <SpeechVoicePicker title={t('speech.openaiVoice')} selected={status.openaiVoice}
+          voices={status.openaiVoices.map(id => ({ id, name: id[0].toUpperCase() + id.slice(1), language: '', networkRequired: true }))}
+          disabled={busy} onSelect={id => { void run(`openai-voice:${id}`); }} /> : null}
+        <OpenAiVoiceKeySetting beforeUpdate={stopPreview} onStatusChange={credentialStatus} />
+      </View>
+      {status?.backend === 'openai' ? <>{previewControls}<View className="px-3.5">{feedback}</View></> : null}
+    </CollapsibleSectionCard>
+  </>;
 }

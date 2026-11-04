@@ -21,10 +21,12 @@ object SpeechPolicy {
   @JvmStatic external fun timeoutMs(kind: Int, textUnits: Long): Long
   @JvmStatic external fun stopOwner(kind: Int, owner: String): Long
   @JvmStatic external fun cancelRequest(kind: Int, request: String): Long
-  @JvmStatic external fun phononCommand(root: String, action: String): String
+  @JvmStatic external fun backendCommand(root: String, action: String): String
   @JvmStatic external fun phononEnabled(language: String): Boolean
-  @JvmStatic external fun phononPlaybackFailed()
+  @JvmStatic external fun pcmEnabled(language: String, localOnly: Boolean): Boolean
+  @JvmStatic external fun networkSelected(): Boolean
+  @JvmStatic external fun pcmPlaybackFailed()
   // Invoked on an audio worker; the callback writes directly to AudioTrack.
   interface PcmSink { fun write(samples: FloatArray): Boolean }
-  @JvmStatic external fun phononSpeak(lease: Long, text: String, sink: PcmSink): Int
+  @JvmStatic external fun pcmSpeak(lease: Long, text: String, sink: PcmSink, credentials: Any?): Int
 }

@@ -329,7 +329,7 @@ object SpeechPlayback : SensorEventListener {
       handler.removeCallbacks(timeout)
       handler.postDelayed(timeout, MODEL_INITIALIZATION_TIMEOUT_MS)
     }
-    PhononPlayback.enqueue(current.id, text, attributes, {
+    PcmSpeechPlayback.enqueue(current.id, text, attributes, {
       if (session === current && queuedChat.contains(entry)) {
         reportStarted(current)
         handler.removeCallbacks(timeout)
@@ -377,6 +377,7 @@ object SpeechPlayback : SensorEventListener {
   }
 
   private fun begin(context: Context, kind: Int, owner: String, request: String, name: String, ready: () -> Unit, claimedLease: Long? = null, ended: (String, String?) -> Unit): Boolean {
+    PcmSpeechPlayback.prepareCredentials(context)
     val id = claimedLease ?: SpeechPolicy.claim(kind, owner, request)
     if (id == 0L) return false
     if (claimedLease == null) discardSuspendedChat(REPLACED, null)
@@ -406,7 +407,7 @@ object SpeechPlayback : SensorEventListener {
       HerdrBackgroundService.refreshNotification()
       handler.postDelayed(timeout, INITIALIZATION_TIMEOUT_MS)
       ensureEngine(app)
-      if (engineReady || SpeechPolicy.phononEnabled(Locale.getDefault().toLanguageTag())) readySession()
+      if (engineReady || SpeechPolicy.pcmEnabled(Locale.getDefault().toLanguageTag(), VoiceCallService.active)) readySession()
     } catch (error: Exception) {
       stop(error = error.message ?: "Could not start speech")
     }
@@ -486,7 +487,8 @@ object SpeechPlayback : SensorEventListener {
     if (!SpeechPolicy.isCurrent(current.id)) return false
     val locale = language?.takeIf { it.isNotBlank() }?.let(Locale::forLanguageTag) ?: Locale.getDefault()
     val languageExplicit = !language.isNullOrBlank()
-    val local = SpeechPolicy.phononEnabled(locale.toLanguageTag())
+    val local = SpeechPolicy.pcmEnabled(locale.toLanguageTag(), current.localOnly)
+    val cloud = !current.localOnly && SpeechPolicy.networkSelected()
     val tts = engine?.takeIf { engineReady }
     if (!local) checkNotNull(tts) { "Speech engine is unavailable" }.setAudioAttributes(attributes)
     if (!rate.isFinite() || rate <= 0 || (!local && !configureSystemVoice(checkNotNull(tts), locale, languageExplicit, rate, current.localOnly))) {
@@ -528,11 +530,11 @@ object SpeechPlayback : SensorEventListener {
           started()
         }
       }
-      PhononPlayback.start(current.id, text, rate, attributes, { reportStarted(current); playbackStarted() }, { reportLevel(current, it) }) { completed, spoke, error ->
+      PcmSpeechPlayback.start(current.id, text, rate, attributes, { reportStarted(current); playbackStarted() }, { reportLevel(current, it) }) { completed, spoke, error ->
         if (session?.id == current.id && utteranceId == id) {
           when {
             completed -> finish(id)
-            error != null && current.localOnly -> stop(error = error)
+            error != null && (current.localOnly || cloud) -> stop(error = error)
             error != null && !spoke -> {
               // A failed load can still use the initialized OS engine. Never
               // repeat a partially audible utterance after a synthesis failure.
@@ -569,9 +571,9 @@ object SpeechPlayback : SensorEventListener {
   }
 
   internal fun configureSystemVoice(tts: TextToSpeech, locale: Locale, languageExplicit: Boolean, rate: Double, localOnly: Boolean = false): Boolean {
-    val selected = tts.voices?.firstOrNull { it.name == PhononPlayback.systemVoice }
+    val selected = tts.voices?.firstOrNull { it.name == PcmSpeechPlayback.systemVoice }
       ?.takeIf { !languageExplicit || it.locale.language == locale.language }
-      ?: if (localOnly && PhononPlayback.systemVoice.isBlank()) tts.voice else null
+      ?: if (localOnly && PcmSpeechPlayback.systemVoice.isBlank()) tts.voice else null
     if (localOnly && (selected == null || selected.isNetworkConnectionRequired ||
         selected.features?.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED) == true)) return false
     val language = selected?.locale ?: locale
@@ -640,7 +642,7 @@ object SpeechPlayback : SensorEventListener {
     session = null
     handler.removeCallbacks(timeout)
     utteranceId = null
-    PhononPlayback.stop()
+    PcmSpeechPlayback.stop()
     // Keep the service connection warm between replies in the same voice call.
     engine?.stop()
     if (error != null || !VoiceCallService.active) releaseEngine()

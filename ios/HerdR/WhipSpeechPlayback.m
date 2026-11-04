@@ -1,5 +1,6 @@
 #import "WhipSpeechPlayback.h"
 #import "../../packages/react-native-whip-ssh/ios/WhipVoiceCall.h"
+#import "../../packages/react-native-whip-ssh/ios/WhipRealtimeVoice.h"
 #import <AVFoundation/AVFoundation.h>
 #import <CoreMotion/CoreMotion.h>
 #import <math.h>
@@ -19,16 +20,16 @@ static const double WhipShakeGravityThreshold = 2.7;
 static const NSTimeInterval WhipShakeInterval = 0.02;
 static const NSTimeInterval WhipModelInitializationTimeout = 60;
 
-static dispatch_queue_t WhipPhononWorker(void)
+static dispatch_queue_t WhipPcmSpeechWorker(void)
 {
   static dispatch_queue_t queue;
   static dispatch_once_t once;
-  dispatch_once(&once, ^{ queue = dispatch_queue_create("whip.phonon.audio", DISPATCH_QUEUE_SERIAL); });
+  dispatch_once(&once, ^{ queue = dispatch_queue_create("whip.speech.pcm", DISPATCH_QUEUE_SERIAL); });
   return queue;
 }
 
 /** At most three 80 ms PCM buffers. Completion means played back, not generated. */
-@interface WhipPhononAudio : NSObject
+@interface WhipPcmSpeechAudio : NSObject
 @property(nonatomic) uint64_t lease;
 @property(nonatomic, strong) AVAudioEngine *engine;
 @property(nonatomic, strong) AVAudioPlayerNode *node;
@@ -47,7 +48,7 @@ static dispatch_queue_t WhipPhononWorker(void)
 - (void)stop;
 @end
 
-@implementation WhipPhononAudio
+@implementation WhipPcmSpeechAudio
 - (instancetype)init
 {
   if ((self = [super init])) _condition = [NSCondition new];
@@ -63,9 +64,9 @@ static dispatch_queue_t WhipPhononWorker(void)
   if (!self.format) return NO;
   [self.engine attachNode:self.node];
   [self.engine connect:self.node to:self.engine.mainMixerNode format:self.format];
-  __weak WhipPhononAudio *weakSelf = self;
+  __weak WhipPcmSpeechAudio *weakSelf = self;
   [self.engine.mainMixerNode installTapOnBus:0 bufferSize:1024 format:nil block:^(AVAudioPCMBuffer *buffer, AVAudioTime *when) {
-    WhipPhononAudio *audio = weakSelf;
+    WhipPcmSpeechAudio *audio = weakSelf;
     NSTimeInterval now = NSDate.timeIntervalSinceReferenceDate;
     if (!audio || !buffer.floatChannelData || !buffer.frameLength || now - audio.lastLevelTime < 0.04) return;
     audio.lastLevelTime = now;
@@ -141,9 +142,9 @@ static dispatch_queue_t WhipPhononWorker(void)
 }
 @end
 
-static bool WhipConsumePhonon(void *context, const float *samples, uintptr_t count)
+static bool WhipConsumeSpeechPcm(void *context, const float *samples, uintptr_t count)
 {
-  @autoreleasepool { return [(__bridge WhipPhononAudio *)context write:samples count:count]; }
+  @autoreleasepool { return [(__bridge WhipPcmSpeechAudio *)context write:samples count:count]; }
 }
 
 @interface WhipSpeechPlayback () <AVSpeechSynthesizerDelegate>
@@ -158,7 +159,7 @@ static bool WhipConsumePhonon(void *context, const float *samples, uintptr_t cou
 @property(nonatomic, copy) RCTPromiseResolveBlock utteranceResolve;
 @property(nonatomic, copy) RCTPromiseRejectBlock utteranceReject;
 @property(nonatomic) BOOL audioActive;
-@property(nonatomic, strong) WhipPhononAudio *phonon;
+@property(nonatomic, strong) WhipPcmSpeechAudio *pcm;
 @property(nonatomic, copy) NSString *systemVoice;
 @property(nonatomic) BOOL localOnly;
 @property(nonatomic) BOOL reportedStart;
@@ -316,11 +317,11 @@ static void WhipWakeAutomaticSpeech(void)
     resolve([[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding]);
     return;
   }
-  if ([@[@"system", @"phonon", @"delete"] containsObject:action] ||
-      [action hasPrefix:@"voice:"] || [action hasPrefix:@"system-voice:"] || [action hasPrefix:@"remove-voice:"]) [self stop];
+  if ([@[@"system", @"phonon", @"openai", @"delete"] containsObject:action] ||
+      [action hasPrefix:@"openai-voice:"] || [action hasPrefix:@"voice:"] || [action hasPrefix:@"system-voice:"] || [action hasPrefix:@"remove-voice:"]) [self stop];
   static dispatch_queue_t settings;
   static dispatch_once_t once;
-  dispatch_once(&once, ^{ settings = dispatch_queue_create("whip.phonon.settings", DISPATCH_QUEUE_SERIAL); });
+  dispatch_once(&once, ^{ settings = dispatch_queue_create("whip.speech.settings", DISPATCH_QUEUE_SERIAL); });
   dispatch_async(settings, ^{
     NSURL *support = [NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject;
     NSURL *directory = [support URLByAppendingPathComponent:@"phonon" isDirectory:YES];
@@ -330,9 +331,9 @@ static void WhipWakeAutomaticSpeech(void)
       reject(WhipSpeechError, error.localizedDescription ?: @"Could not prepare model storage", error);
       return;
     }
-    char *json = whip_phonon_command(directory.path.UTF8String, action.UTF8String);
+    char *json = whip_speech_backend_command(directory.path.UTF8String, action.UTF8String);
     NSString *value = json ? [NSString stringWithUTF8String:json] : nil;
-    whip_phonon_free(json);
+    whip_speech_backend_free(json);
     NSDictionary *status = value ? [NSJSONSerialization JSONObjectWithData:[value dataUsingEncoding:NSUTF8StringEncoding] options:0 error:&error] : nil;
     if (!status || status[@"commandError"]) reject(WhipSpeechError, status[@"commandError"] ?: @"Speech backend unavailable", error);
     else dispatch_async(dispatch_get_main_queue(), ^{
@@ -365,7 +366,7 @@ static void WhipWakeAutomaticSpeech(void)
       resolve(@"busy");
     }
   }
-  if (self.utterance || self.phonon || (self.lease && self.kind != WhipSpeechChat) || WhipVoiceCall.shared.active) return NO;
+  if (self.utterance || self.pcm || (self.lease && self.kind != WhipSpeechChat) || WhipVoiceCall.shared.active) return NO;
   NSString *json = [self alertCommand:@"take" token:@"" lease:self.lease];
   if ([json isEqualToString:@"null"]) {
     [self resumeChat];
@@ -536,7 +537,8 @@ static void WhipWakeAutomaticSpeech(void)
 - (BOOL)play:(NSString *)text language:(NSString *)language rate:(double)rate started:(void (^)(void))started preview:(BOOL)preview
 {
   NSString *requestedLanguage = language.length ? language : AVSpeechSynthesisVoice.currentLanguageCode;
-  BOOL local = whip_phonon_enabled(requestedLanguage.UTF8String);
+  BOOL local = whip_speech_pcm_enabled(requestedLanguage.UTF8String, self.localOnly);
+  BOOL cloud = !self.localOnly && whip_speech_network_selected();
   AVSpeechSynthesisVoice *voice = [AVSpeechSynthesisVoice voiceWithLanguage:requestedLanguage];
   AVSpeechSynthesisVoice *selected = self.systemVoice.length ? [AVSpeechSynthesisVoice voiceWithIdentifier:self.systemVoice] : nil;
   if (self.localOnly && !local && self.systemVoice.length && !selected) {
@@ -574,7 +576,7 @@ static void WhipWakeAutomaticSpeech(void)
   }];
   [NSRunLoop.mainRunLoop addTimer:self.timer forMode:NSRunLoopCommonModes];
   if (local) {
-    WhipPhononAudio *player = [WhipPhononAudio new];
+    WhipPcmSpeechAudio *player = [WhipPcmSpeechAudio new];
     player.lease = lease;
     player.onLevel = ^(float level) {
       if (weakSelf.lease == lease && weakSelf.utterance == utterance) [weakSelf reportLevel:level];
@@ -595,29 +597,30 @@ static void WhipWakeAutomaticSpeech(void)
       if (weakSelf.lease == lease && weakSelf.utterance == utterance) [weakSelf reportStarted];
       playbackStarted();
     };
-    self.phonon = player;
+    self.pcm = player;
     if (![player open:rate error:&error]) {
-      whip_phonon_playback_failed();
-      [player stop]; self.phonon = nil;
-      if (self.localOnly) { [self stopWithReason:WhipSpeechStopped error:error.localizedDescription ?: @"The selected local voice could not start."]; return NO; }
+      whip_speech_pcm_playback_failed();
+      [player stop]; self.pcm = nil;
+      if (self.localOnly || cloud) { [self stopWithReason:WhipSpeechStopped error:error.localizedDescription ?: @"The selected voice could not start."]; return NO; }
       [self.speech speakUtterance:utterance];
       playbackStarted();
       return YES;
     }
-    dispatch_async(WhipPhononWorker(), ^{
-      int result = whip_phonon_speak(lease, text.UTF8String, WhipConsumePhonon, (__bridge void *)player);
+    dispatch_async(WhipPcmSpeechWorker(), ^{
+      int result = whip_speech_pcm_speak(lease, text.UTF8String, WhipConsumeSpeechPcm, (__bridge void *)player,
+                                         WhipReadOpenAiVoiceCredential, NULL);
       BOOL completed = result > 0 && [player drain];
       dispatch_async(dispatch_get_main_queue(), ^{
         WhipSpeechPlayback *playback = weakSelf;
-        if (playback.lease != lease || playback.phonon != player || !whip_speech_is_current(lease)) return;
+        if (playback.lease != lease || playback.pcm != player || !whip_speech_is_current(lease)) return;
         if (completed && whip_speech_complete(lease)) {
           if (playback.kind == WhipSpeechChat) [playback finishUtterance:nil];
           else { [playback clear:WhipSpeechCompleted error:nil]; [playback drainStatus]; }
-        } else if (result < 0 && !player.started && !playback.localOnly) {
-          [player stop]; playback.phonon = nil;
+        } else if (result < 0 && !player.started && !playback.localOnly && !cloud) {
+          [player stop]; playback.pcm = nil;
           [playback.speech speakUtterance:utterance];
           playbackStarted();
-        } else [playback stopWithReason:WhipSpeechInterrupted error:result < 0 ? @"Phonon speech failed" : nil];
+        } else [playback stopWithReason:WhipSpeechInterrupted error:result < 0 ? @"Speech synthesis failed. Check the selected backend in Settings." : nil];
       });
     });
   } else {
@@ -672,8 +675,8 @@ static void WhipWakeAutomaticSpeech(void)
 {
   [self.levelTimer invalidate]; self.levelTimer = nil;
   [self reportLevel:0];
-  [self.phonon stop];
-  self.phonon = nil;
+  [self.pcm stop];
+  self.pcm = nil;
   [self.timer invalidate];
   self.timer = nil;
   self.utterance = nil;

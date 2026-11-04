@@ -7,10 +7,12 @@ const SERVICE = 'io.github.kaminarios.whip.openai.voice';
 // Presence and initially entered values use Settings' existing Keychain store.
 // Saved credentials have no JS read API. Cloud clients use native-to-Rust ingress.
 const listeners = new Set<() => void>();
+const settledListeners = new Set<() => void>();
 let mutation: Promise<void> = Promise.resolve();
-export function onOpenAiVoiceCredentialChange(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => { listeners.delete(listener); };
+export function onOpenAiVoiceCredentialChange(listener: () => void, timing: 'before' | 'after' = 'before'): () => void {
+  const subscribers = timing === 'after' ? settledListeners : listeners;
+  subscribers.add(listener);
+  return () => { subscribers.delete(listener); };
 }
 
 async function updateCredential(action: () => Promise<void>): Promise<void> {
@@ -20,7 +22,10 @@ async function updateCredential(action: () => Promise<void>): Promise<void> {
     if (!native.voiceCredentialsUpdating) throw new Error('Install an updated Whip build to change voice credentials.');
     await native.voiceCredentialsUpdating(true);
     try { await action(); }
-    finally { await native.voiceCredentialsUpdating(false); }
+    finally {
+      await native.voiceCredentialsUpdating(false);
+      for (const listener of settledListeners) listener();
+    }
   });
   mutation = settledPromise(operation);
   await operation;

@@ -9,6 +9,8 @@ export function useSectionExpansion(
     | 'usage'
     | 'notifications'
     | 'voice'
+    | 'speech'
+    | 'openai-tts'
     | 'security'
     | 'appearance'
     | 'herd'

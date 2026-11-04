@@ -28,6 +28,7 @@ jest.mock('../src/components/SpeechVoicePicker', () => ({ SpeechVoicePicker: 'Sp
 jest.mock('../src/services/openAiVoiceCredentials', () => ({
   hasOpenAiVoiceKey: jest.fn(() => Promise.resolve(false)),
   saveOpenAiVoiceKey: jest.fn(() => Promise.resolve()), removeOpenAiVoiceKey: jest.fn(() => Promise.resolve()),
+  onOpenAiVoiceCredentialChange: jest.fn(() => () => {}),
 }));
 
 let renderer: ReactTestRenderer;

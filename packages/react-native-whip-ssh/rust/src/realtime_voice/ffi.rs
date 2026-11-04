@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::ffi::{CStr, CString, c_char};
 use std::sync::{
     Arc, OnceLock,
-    atomic::{AtomicBool, AtomicU64, Ordering},
+    atomic::{AtomicU64, Ordering},
 };
 use std::time::{Duration, Instant};
 
@@ -18,14 +18,11 @@ fn call(id: u64) -> Option<Arc<RealtimeVoiceAdapter>> {
     calls().lock().get(&id).cloned()
 }
 
-// Serializes credential reads and admission against Settings mutations.
-static CREDENTIAL_UPDATE: AtomicBool = AtomicBool::new(false);
-
 /// Native callers bracket Settings replacement/deletion, even on failure.
 #[unsafe(no_mangle)]
 pub extern "C" fn whip_voice_credentials_updating(updating: bool) {
     let calls = calls().lock();
-    CREDENTIAL_UPDATE.store(updating, Ordering::Relaxed);
+    crate::voice_credentials::updating(updating);
     if updating {
         for call in calls.values() {
             call.close();
@@ -42,7 +39,7 @@ pub unsafe extern "C" fn whip_realtime_start(
     reader: Option<native_credentials::ReadCredential>,
     context: *mut std::ffi::c_void,
 ) -> i64 {
-    use native_credentials::{CredentialError, NativeCredential};
+    use native_credentials::CredentialError;
     if config.is_null() {
         return 0;
     }
@@ -59,7 +56,7 @@ pub unsafe extern "C" fn whip_realtime_start(
     if !calls.is_empty() {
         return 0;
     }
-    if CREDENTIAL_UPDATE.load(Ordering::Relaxed) {
+    if crate::voice_credentials::is_updating() {
         return i64::from(CredentialError::Unavailable as i32);
     }
     let Some(reader) = reader else {
@@ -67,7 +64,7 @@ pub unsafe extern "C" fn whip_realtime_start(
     };
     let adapter = match RealtimeVoiceAdapter::start(config, || {
         // SAFETY: The native callback/context contract is required by this entrypoint.
-        unsafe { NativeCredential::read(reader, context) }
+        unsafe { crate::voice_credentials::read(Some(reader), context) }.map(|(key, _)| key)
     }) {
         Ok(adapter) => adapter,
         Err(super::StartError::Credential(error)) => return i64::from(error as i32),

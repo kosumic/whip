@@ -9,7 +9,7 @@
 
 // Same generic-password item written by react-native-keychain. Read-only: no
 // migration, synchronization, prompts, access-control changes or NSString key.
-static int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capacity) {
+int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capacity) {
   @autoreleasepool {
     if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return WhipVoiceCredentialUnavailable;
     if (!UIApplication.sharedApplication.protectedDataAvailable) return WhipVoiceCredentialLocked;

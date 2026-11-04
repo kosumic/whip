@@ -120,7 +120,11 @@ class HerdrBackgroundModule(
   }
   @ReactMethod
   fun voiceCredentialsUpdating(updating: Boolean, promise: Promise) {
-    mainHandler.post { RealtimeVoice.credentialsUpdating(updating); promise.resolve(null) }
+    mainHandler.post {
+      RealtimeVoice.credentialsUpdating(updating)
+      if (updating && SpeechPolicy.networkSelected()) SpeechPlayback.stop()
+      promise.resolve(null)
+    }
   }
   override fun initialize() {
     super.initialize()
@@ -201,7 +205,7 @@ class HerdrBackgroundModule(
 
   @ReactMethod
   fun speechBackendCommand(action: String, promise: Promise) {
-    mainHandler.post { PhononPlayback.command(context, action, promise) }
+    mainHandler.post { PcmSpeechPlayback.command(context, action, promise) }
   }
 
   @ReactMethod

@@ -35,7 +35,11 @@ RCT_EXPORT_METHOD(startRealtimeVoice:(NSString *)token config:(NSString *)config
 RCT_EXPORT_METHOD(startRealtimeVoicePreview:(NSString *)token voice:(NSString *)voice model:(NSString *)model resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 { [WhipRealtimeVoice.shared preview:token voice:voice model:model resolve:resolve reject:reject]; }
 RCT_EXPORT_METHOD(voiceCredentialsUpdating:(BOOL)updating resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
-{ [WhipRealtimeVoice.shared credentialsUpdating:updating]; resolve(nil); }
+{
+  [WhipRealtimeVoice.shared credentialsUpdating:updating];
+  if (updating && whip_speech_network_selected()) [WhipSpeechPlayback.shared stop];
+  resolve(nil);
+}
 RCT_EXPORT_METHOD(stopRealtimeVoice:(NSString *)token resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 { [WhipRealtimeVoice.shared stop:token resolve:resolve]; }
 RCT_EXPORT_METHOD(realtimeVoiceControl:(NSString *)token action:(NSInteger)action resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)

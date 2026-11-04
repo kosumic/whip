@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "WhipRealtimeVoice.h"
 
 // Keep aligned with SpeechKind in rust/src/speech_playback.rs.
 enum WhipSpeechKind {
@@ -27,14 +28,18 @@ char *whip_automatic_speech_command(const char *command);
 uint64_t whip_speech_timeout_ms(uint8_t kind, uint64_t text_units);
 uint64_t whip_speech_stop_owner(uint8_t kind, const char *owner);
 uint64_t whip_speech_cancel_request(uint8_t kind, const char *request);
-char *whip_phonon_command(const char *root, const char *action);
-void whip_phonon_free(char *value);
+char *whip_speech_backend_command(const char *root, const char *action);
+void whip_speech_backend_free(char *value);
 bool whip_phonon_enabled(const char *language);
+bool whip_speech_pcm_enabled(const char *language, bool local_only);
+bool whip_speech_network_selected(void);
 void whip_phonon_set_supported(bool supported);
-void whip_phonon_playback_failed(void);
+void whip_speech_pcm_playback_failed(void);
 // Synchronous worker call. PCM is borrowed only for the callback; false cancels.
 typedef bool (*WhipPcmCallback)(void *context, const float *samples, uintptr_t count);
 int32_t whip_phonon_speak(uint64_t lease, const char *text, WhipPcmCallback callback, void *context);
+int32_t whip_speech_pcm_speak(uint64_t lease, const char *text, WhipPcmCallback callback, void *context,
+                              WhipReadVoiceCredential reader, void *credential_context);
 #ifdef __cplusplus
 }
 #endif

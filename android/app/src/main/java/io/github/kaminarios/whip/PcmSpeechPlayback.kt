@@ -11,6 +11,7 @@ import android.os.SystemClock
 import android.util.Log
 import android.speech.tts.TextToSpeech
 import com.facebook.react.bridge.Promise
+import com.facebook.react.bridge.ReactApplicationContext
 import com.whipssh.SpeechPolicy
 import org.json.JSONObject
 import org.json.JSONArray
@@ -22,7 +23,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** PCM never crosses JS. AudioTrack resamples 24 kHz mono to the device output. */
-object PhononPlayback {
+object PcmSpeechPlayback {
   private const val SAMPLE_RATE = 24_000
   private const val BUFFER_SAMPLES = SAMPLE_RATE * 2 / 5
   private const val PREFILL_SAMPLES = SAMPLE_RATE / 4
@@ -35,31 +36,37 @@ object PhononPlayback {
   private val synthesisWorker = Executors.newSingleThreadExecutor()
   private val settingsWorker = Executors.newSingleThreadExecutor()
   private var player: Player? = null // Main-thread ownership; Player.stop is thread safe.
+  @Volatile private var credentials: WhipVoiceCredentials? = null
   @Volatile var systemVoice: String = ""
     private set
 
   fun command(context: Context, action: String, promise: Promise? = null) {
+    prepareCredentials(context)
     if (action == "system-voices") { listSystemVoices(context, promise); return }
-    if (action == "delete" || action == "system" || action == "phonon" ||
-      action.startsWith("voice:") || action.startsWith("system-voice:") || action.startsWith("remove-voice:")) SpeechPlayback.stop()
+    if (action == "delete" || action == "system" || action == "phonon" || action == "openai" ||
+      action.startsWith("openai-voice:") || action.startsWith("voice:") || action.startsWith("system-voice:") || action.startsWith("remove-voice:")) SpeechPlayback.stop()
     settingsWorker.execute {
       try {
         val root = File(context.noBackupFilesDir, "phonon").absolutePath
-        val value = SpeechPolicy.phononCommand(root, action)
+        val value = SpeechPolicy.backendCommand(root, action)
         val status = JSONObject(value)
         val error = status.optString("commandError").takeIf { it.isNotEmpty() }
         if (error != null) {
           promise?.reject("E_SPEECH_BACKEND", error)
-          if (promise == null) Log.w("Phonon", error)
+          if (promise == null) Log.w("SpeechPCM", error)
         } else {
           systemVoice = status.optString("systemVoice")
           promise?.resolve(value)
         }
       } catch (error: Exception) {
         promise?.reject("E_SPEECH_BACKEND", error)
-        if (promise == null) Log.w("Phonon", "Could not initialize speech backend", error)
+        if (promise == null) Log.w("SpeechPCM", "Could not initialize speech backend", error)
       }
     }
+  }
+
+  fun prepareCredentials(context: Context) {
+    if (context is ReactApplicationContext) credentials = WhipVoiceCredentials(context)
   }
 
   private fun listSystemVoices(context: Context, promise: Promise?) {
@@ -158,7 +165,7 @@ object PhononPlayback {
         if (!offer(Packet.Begin(utterance))) return@execute
         var error: String? = null
         try {
-          val result = SpeechPolicy.phononSpeak(lease, text, object : SpeechPolicy.PcmSink {
+          val result = SpeechPolicy.pcmSpeak(lease, text, object : SpeechPolicy.PcmSink {
             override fun write(samples: FloatArray): Boolean {
               // Cap individual packets as well as queue capacity. Phonon owns
               // its generation workers; this handoff only decouples their sink.
@@ -167,8 +174,8 @@ object PhononPlayback {
               }
               return true
             }
-          })
-          if (result <= 0 && current()) error = "Phonon synthesis failed"
+          }, credentials)
+          if (result < 0 && current()) error = "Speech synthesis failed. Check the selected backend in Settings."
         } catch (failure: Exception) {
           error = failure.message ?: "Local speech synthesis failed"
         }
@@ -205,17 +212,17 @@ object PhononPlayback {
         }
       } catch (failure: Exception) {
         if (current()) {
-          SpeechPolicy.phononPlaybackFailed()
+          SpeechPolicy.pcmPlaybackFailed()
           main.post {
             if (player === this && current()) {
               val pending = utterances.peek()
-              PhononPlayback.stop()
+              PcmSpeechPlayback.stop()
               pending?.ended?.invoke(false, pending.acknowledged, failure.message ?: "Local speech playback failed")
             }
           }
         }
       } finally {
-        Log.i("Phonon", "stream_closed lease=$lease ${statistics()} starvations=$starvationCount")
+        Log.i("SpeechPCM", "stream_closed lease=$lease ${statistics()} starvations=$starvationCount")
         close()
       }
     }
@@ -229,7 +236,7 @@ object PhononPlayback {
         val first = utterance.firstFrame ?: return
         if (!utterance.acknowledged && position > first) {
           utterance.acknowledged = true
-          Log.i("Phonon", "first_output_ms=${SystemClock.elapsedRealtime() - utterance.began}")
+          Log.i("SpeechPCM", "first_output_ms=${SystemClock.elapsedRealtime() - utterance.began}")
           utterance.started()
         }
         if (SystemClock.elapsedRealtime() >= levelAt) {
@@ -240,8 +247,8 @@ object PhononPlayback {
         if (position < end) return
         utterances.poll()
         val completed = utterance.error == null && end > first
-        Log.i("Phonon", "playback_finished lease=$lease completed=$completed segment_frames=${end - first} ${statistics()} starvations=$starvationCount")
-        if (!retained) PhononPlayback.stop()
+        Log.i("SpeechPCM", "playback_finished lease=$lease completed=$completed segment_frames=${end - first} ${statistics()} starvations=$starvationCount")
+        if (!retained) PcmSpeechPlayback.stop()
         utterance.ended(completed, utterance.acknowledged, utterance.error)
       }
     }
@@ -265,7 +272,7 @@ object PhononPlayback {
         .setTransferMode(AudioTrack.MODE_STREAM)
         .setBufferSizeInBytes(maxOf(minimum, BUFFER_SAMPLES * Float.SIZE_BYTES)).build().also {
           check(it.state == AudioTrack.STATE_INITIALIZED) { "Could not initialize streaming audio" }
-          Log.i("Phonon", "stream_opened lease=$lease session=${it.audioSessionId} retained=$retained")
+          Log.i("SpeechPCM", "stream_opened lease=$lease session=${it.audioSessionId} retained=$retained")
           if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             it.setStartThresholdInFrames(minOf(SAMPLE_RATE / 50, it.bufferSizeInFrames))
           }

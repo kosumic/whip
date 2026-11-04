@@ -32,7 +32,7 @@ class MainApplication : Application(), ReactApplication {
       ReleaseLevel.STABLE
     }
     loadReactNative(this)
-    PhononPlayback.command(this, "status")
+    PcmSpeechPlayback.command(this, "status")
     ApplicationLifecycleDispatcher.onApplicationCreate(this)
   }
 

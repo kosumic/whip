@@ -77,12 +77,17 @@ char *whip_automatic_speech_command(const char *input) {
   NSData *data = [NSJSONSerialization dataWithJSONObject:result options:NSJSONWritingFragmentsAllowed error:nil];
   return strdup([[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding].UTF8String);
 }
-char *whip_phonon_command(const char *root, const char *action) { return strdup("{}"); }
-void whip_phonon_free(char *value) { free(value); }
+char *whip_speech_backend_command(const char *root, const char *action) { return strdup("{}"); }
+void whip_speech_backend_free(char *value) { free(value); }
 bool whip_phonon_enabled(const char *language) { return false; }
+bool whip_speech_pcm_enabled(const char *language, bool local_only) { return false; }
+bool whip_speech_network_selected(void) { return false; }
+int32_t WhipReadOpenAiVoiceCredential(void *context, uint8_t *destination, size_t capacity) { return -1; }
 void whip_phonon_set_supported(bool supported) {}
-void whip_phonon_playback_failed(void) {}
+void whip_speech_pcm_playback_failed(void) {}
 int32_t whip_phonon_speak(uint64_t lease, const char *text, WhipPcmCallback callback, void *context) { return 0; }
+int32_t whip_speech_pcm_speak(uint64_t lease, const char *text, WhipPcmCallback callback, void *context,
+                            WhipReadVoiceCredential reader, void *credential_context) { return 0; }
 
 @implementation WhipVoiceCall
 + (instancetype)shared { static WhipVoiceCall *call; if (!call) call = [WhipVoiceCall new]; return call; }

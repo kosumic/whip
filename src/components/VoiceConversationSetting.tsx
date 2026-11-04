@@ -4,22 +4,19 @@ import Slider from '@react-native-community/slider';
 import { useTranslation } from 'react-i18next';
 import { VoiceConversationSettingsContext } from '../lib/voiceConversationSettingsContext';
 import { LIVE_VOICES, REALTIME_MODELS, REALTIME_VOICES, selectedConversationVoice, DEFAULT_REALTIME_VAD, parseRealtimeVad } from '../lib/voiceConversationSettings';
-import { hasOpenAiVoiceKey, removeOpenAiVoiceKey, saveOpenAiVoiceKey } from '../services/openAiVoiceCredentials';
 import { RealtimeVoicePreview } from '../services/realtimeVoicePreview';
 import { GlassButton } from './GlassControls';
 import { SpeechVoicePicker } from './SpeechVoicePicker';
-import { Input } from './ui/input';
+import { OpenAiVoiceKeySetting } from './OpenAiVoiceKeySetting';
 import { Text } from './ui/text';
 
 export function VoiceConversationSetting() {
   const { t } = useTranslation();
   const { settings, onChange } = useContext(VoiceConversationSettingsContext);
-  const [key, setKey] = useState('');
   const [saved, setSaved] = useState<boolean>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const mounted = useRef(false);
-  const credentialRevision = useRef(0);
   const [previewing, setPreviewing] = useState(false);
   const preview = useRef<RealtimeVoicePreview | undefined>(undefined);
   const previewRevision = useRef(0);
@@ -37,32 +34,9 @@ export function VoiceConversationSetting() {
     return () => { mounted.current = false; };
   }, []);
   useEffect(() => () => { void stopPreview(); }, [settings.provider, settings.mode, settings.realtimeModel, settings.realtimeVoice, stopPreview]);
-  useEffect(() => {
-    if (settings.provider !== 'openai') return;
-    let current = true;
-    const revision = credentialRevision.current;
-    void hasOpenAiVoiceKey().then(value => { if (current && revision === credentialRevision.current) setSaved(value); }, () => {
-      if (current && revision === credentialRevision.current) setError(t('voiceProvider.credentialError'));
-    });
-    return () => { current = false; };
-  }, [settings.provider, t]);
-
-  const updateKey = async (remove: boolean) => {
-    if (busy) return;
-    credentialRevision.current++;
-    setBusy(true); setError(undefined);
-    const draft = key;
-    setKey('');
-    try {
-      await stopPreview();
-      if (remove) await removeOpenAiVoiceKey();
-      else await saveOpenAiVoiceKey(draft);
-      if (mounted.current) setSaved(!remove);
-    } catch {
-      // Native errors may include arguments. Never display/log those errors.
-      if (mounted.current) setError(t('voiceProvider.credentialError'));
-    } finally { if (mounted.current) setBusy(false); }
-  };
+  const credentialStatus = useCallback((value: boolean | undefined, updating: boolean) => {
+    setSaved(value); setBusy(updating);
+  }, []);
   const previewVoice = async () => {
     if (previewing) { await stopPreview(); return; }
     if (busy || !saved || settings.mode !== 'Realtime') return;
@@ -91,7 +65,7 @@ export function VoiceConversationSetting() {
       {(['local', 'openai'] as const).map(provider => <GlassButton key={provider}
         accessibilityRole="radio" accessibilityState={{ selected: settings.provider === provider }}
         variant={settings.provider === provider ? 'secondary' : 'ghost'}
-        onPress={() => { setKey(''); setError(undefined); onChange({ ...settings, provider }); }}>
+        onPress={() => { setError(undefined); onChange({ ...settings, provider }); }}>
         <Text>{t(`voiceProvider.${provider}`)}</Text>
       </GlassButton>)}
     </View>
@@ -137,16 +111,7 @@ export function VoiceConversationSetting() {
         accessibilityLabel={t(previewing ? 'voiceProvider.stopPreview' : 'voiceProvider.preview')}
         onPress={() => { void previewVoice(); }}><Text>{t(previewing ? 'voiceProvider.stopPreview' : 'voiceProvider.preview')}</Text></GlassButton>
       <Text className="text-xs text-muted-foreground">{t(settings.mode === 'Realtime' ? 'voiceProvider.previewNotice' : 'voiceProvider.previewUnavailable')}</Text>
-      <Text className="text-sm font-medium">{t('voiceProvider.apiKey')}</Text>
-      <Text className="text-xs text-muted-foreground">{t('voiceProvider.byok')}</Text>
-      <Text accessibilityLiveRegion="polite" className="text-xs text-muted-foreground">{t(saved ? 'voiceProvider.keySaved' : 'voiceProvider.keyNotSaved')}</Text>
-      <Input secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete="off" textContentType="none"
-        accessibilityLabel={t('voiceProvider.apiKey')} placeholder={t('voiceProvider.keyPlaceholder')}
-        editable={!busy} value={key} onChangeText={setKey} />
-      <View className="flex-row gap-2">
-        <GlassButton disabled={busy || !key.trim()} onPress={() => updateKey(false)}><Text>{t('common.save')}</Text></GlassButton>
-        <GlassButton disabled={busy || !saved} onPress={() => updateKey(true)}><Text>{t('voiceProvider.removeKey')}</Text></GlassButton>
-      </View>
+      <OpenAiVoiceKeySetting beforeUpdate={stopPreview} onStatusChange={credentialStatus} />
       {error && <Text accessibilityRole="alert" className="text-xs text-destructive">{error}</Text>}
     </>}
   </View>;

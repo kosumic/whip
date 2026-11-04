@@ -148,15 +148,15 @@ Java_com_whipssh_RealtimeVoiceNative_view(JNIEnv *env, jclass, jlong call) {
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_whipssh_SpeechPolicy_phononCommand(JNIEnv *env, jclass, jstring root, jstring action) {
+Java_com_whipssh_SpeechPolicy_backendCommand(JNIEnv *env, jclass, jstring root, jstring action) {
     const auto rootValue = speechUtf8(env, root);
     const auto actionValue = speechUtf8(env, action);
     if (env->ExceptionCheck()) return nullptr;
-    auto *value = whip_phonon_command(rootValue.c_str(), actionValue.c_str());
+    auto *value = whip_speech_backend_command(rootValue.c_str(), actionValue.c_str());
     // Status strings contain JSON-escaped user data; decode standard UTF-8.
     if (!value) return nullptr;
     const std::string json(value);
-    whip_phonon_free(value);
+    whip_speech_backend_free(value);
     return speechString(env, json);
 }
 
@@ -166,9 +166,20 @@ Java_com_whipssh_SpeechPolicy_phononEnabled(JNIEnv *env, jclass, jstring languag
     return !env->ExceptionCheck() && whip_phonon_enabled(value.c_str());
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_whipssh_SpeechPolicy_pcmEnabled(JNIEnv *env, jclass, jstring language, jboolean localOnly) {
+    const auto value = speechUtf8(env, language);
+    return !env->ExceptionCheck() && whip_speech_pcm_enabled(value.c_str(), localOnly);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_whipssh_SpeechPolicy_networkSelected(JNIEnv *, jclass) {
+    return whip_speech_network_selected();
+}
+
 extern "C" JNIEXPORT void JNICALL
-Java_com_whipssh_SpeechPolicy_phononPlaybackFailed(JNIEnv *, jclass) {
-    whip_phonon_playback_failed();
+Java_com_whipssh_SpeechPolicy_pcmPlaybackFailed(JNIEnv *, jclass) {
+    whip_speech_pcm_playback_failed();
 }
 
 struct PcmSinkContext { JNIEnv *env; jobject sink; jmethodID write; };
@@ -185,14 +196,16 @@ static bool writeSpeechPcm(void *opaque, const float *samples, uintptr_t count) 
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_whipssh_SpeechPolicy_phononSpeak(JNIEnv *env, jclass, jlong lease, jstring text, jobject sink) {
+Java_com_whipssh_SpeechPolicy_pcmSpeak(JNIEnv *env, jclass, jlong lease, jstring text, jobject sink, jobject reader) {
     const auto value = speechUtf8(env, text);
     if (env->ExceptionCheck()) return -1;
     jclass sinkClass = env->GetObjectClass(sink);
     jmethodID write = env->GetMethodID(sinkClass, "write", "([F)Z");
     if (!write) { env->DeleteLocalRef(sinkClass); return -1; }
     PcmSinkContext context{env, sink, write};
-    const auto result = whip_phonon_speak(static_cast<uint64_t>(lease), value.c_str(), writeSpeechPcm, &context);
+    VoiceCredentialContext credentialContext{env, reader};
+    const auto result = whip_speech_pcm_speak(static_cast<uint64_t>(lease), value.c_str(), writeSpeechPcm, &context,
+                                             reader ? readVoiceCredential : nullptr, &credentialContext);
     env->DeleteLocalRef(sinkClass);
     return result;
 }

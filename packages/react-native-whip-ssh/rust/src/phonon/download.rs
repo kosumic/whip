@@ -12,11 +12,11 @@ use std::{
     time::Duration,
 };
 
-pub(super) fn staging(root: &Path) -> PathBuf {
+pub(crate) fn staging(root: &Path) -> PathBuf {
     root.join(format!("{REVISION}.partial"))
 }
 
-pub(super) fn partial_bytes(root: &Path) -> u64 {
+pub(crate) fn partial_bytes(root: &Path) -> u64 {
     ARTIFACTS
         .iter()
         .map(|a| fs::metadata(staging(root).join(a.name)).map_or(0, |m| m.len().min(a.bytes)))
@@ -27,7 +27,7 @@ fn verify_file(path: &Path, artifact: Artifact) -> Result<(), String> {
     verify_digest(path, artifact.bytes, artifact.sha256)
 }
 
-pub(super) fn verify_digest(path: &Path, bytes: u64, sha256: &str) -> Result<(), String> {
+pub(crate) fn verify_digest(path: &Path, bytes: u64, sha256: &str) -> Result<(), String> {
     let mut file = fs::File::open(path).map_err(|e| e.to_string())?;
     if file.metadata().map_err(|e| e.to_string())?.len() != bytes {
         return Err("The model download is incomplete. Retry the download.".into());
@@ -47,7 +47,7 @@ pub(super) fn verify_digest(path: &Path, bytes: u64, sha256: &str) -> Result<(),
     Ok(())
 }
 
-pub(super) fn verify(directory: &Path) -> Result<(), String> {
+pub(crate) fn verify(directory: &Path) -> Result<(), String> {
     for &artifact in ARTIFACTS {
         verify_file(&directory.join(artifact.name), artifact)?;
     }
@@ -89,7 +89,7 @@ async fn cancellable<T>(
     }
 }
 
-pub(super) fn install(
+pub(crate) fn install(
     root: &Path,
     cancel: &AtomicBool,
     progress: impl Fn(u64),
@@ -217,7 +217,7 @@ async fn fetch(
     Ok(())
 }
 
-pub(super) fn install_voice(
+pub(crate) fn install_voice(
     root: &Path,
     voice: &'static super::voices::Voice,
     cancel: &AtomicBool,
