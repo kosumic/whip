@@ -3,7 +3,7 @@ import { PERMISSIONS, RESULTS, request } from 'react-native-permissions';
 import type { RealtimeVoiceChatTarget, VoiceConversationView } from './voiceConversation';
 import type { VoiceSessionAdapter } from './voiceSessionManager';
 import type { VoiceConversationSettings } from '../lib/voiceConversationSettings';
-import { DEFAULT_REALTIME_VAD, parseRealtimeVad } from '../lib/voiceConversationSettings';
+import { LIVE_MODEL, DEFAULT_REALTIME_VAD, parseRealtimeVad } from '../lib/voiceConversationSettings';
 import { getSpeechPlayback, type NativeSpeechPlayback } from './speechPlayback';
 import { composerSpeechInput } from './composerSpeechInput';
 import { setSpeechInputActive } from './speechInputFocus';
@@ -19,7 +19,7 @@ const CONTROL = { skip: 1 } as const;
 const MAX_PENDING_CONTEXT = 8;
 let sequence = 0;
 type CallEvent = { token: string; type: string; muted?: boolean; speaker?: boolean };
-type NativeView = Pick<VoiceConversationView, 'phase' | 'muted' | 'level' | 'playbackLevel' | 'text' | 'userText' | 'error' | 'inputTokens' | 'outputTokens' | 'estimatedUsd' | 'messages'>;
+type NativeView = Pick<VoiceConversationView, 'phase' | 'muted' | 'level' | 'playbackLevel' | 'text' | 'userText' | 'error' | 'inputTokens' | 'outputTokens' | 'estimatedUsd' | 'messages' | 'backendText' | 'liveSeconds' | 'usageFinalized'>;
 function requireForeground(): void { if (AppState.currentState !== 'active') throw new Error('Return to Whip to start the call.'); }
 
 /** Only call controls and presentation cross this bridge. PCM and tools stay native. */
@@ -56,10 +56,10 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
       const binding = this.target.bindingToken;
       const target = binding ? agentTranscriptService.realtimeTarget(binding) : undefined;
       const global = 'global' in this.target && this.target.global;
-      if (!global && !this.target.terminal && target?.paneId !== this.target.paneId) throw new Error('Open the connected agent chat before starting Realtime.');
+      if (!global && !this.target.terminal && target?.paneId !== this.target.paneId) throw new Error('Open the connected agent chat before starting voice.');
       requireForeground();
       const permission = Platform.OS === 'ios' ? PERMISSIONS.IOS.MICROPHONE : PERMISSIONS.ANDROID.RECORD_AUDIO;
-      if (await request(permission) !== RESULTS.GRANTED) throw new Error('Allow microphone access in Settings to use Realtime.');
+      if (await request(permission) !== RESULTS.GRANTED) throw new Error('Allow microphone access in Settings to use voice.');
       if (this.closed) return;
       requireForeground();
       await suspendChatSpeechForInput();
@@ -76,7 +76,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
           // Native owners stop PCM immediately, including while JS is suspended.
           void this.poll(true).finally(() => {
             if (this.closed) return;
-            if (event.type === 'audioInactive') this.fail('The system interrupted the Realtime audio session.');
+            if (event.type === 'audioInactive') this.fail('The system interrupted the voice audio session.');
             else { this.publish({ phase: 'closed', level: 0, playbackLevel: 0 }); void this.close(); }
           });
           return;
@@ -98,7 +98,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
       if (this.closed) { await this.playback.endVoiceCall(this.token); return; }
       this.callActivated = true;
       requireForeground();
-      const config = JSON.stringify({ clientElapsedMs: Math.max(0, Math.round(performance.now() - this.requestedAt)), ...(global ? { global: true, globalShizukuAccess: Platform.OS === 'android' && this.settings.globalShizukuAccess } : { target, terminalTarget: this.target.terminal }), model: this.settings.realtimeModel, voice: this.settings.realtimeVoice, vad: parseRealtimeVad(this.settings.realtimeVad ?? DEFAULT_REALTIME_VAD) });
+      const config = JSON.stringify({ clientElapsedMs: Math.max(0, Math.round(performance.now() - this.requestedAt)), ...(global ? { global: true, globalShizukuAccess: Platform.OS === 'android' && this.settings.globalShizukuAccess } : { target, terminalTarget: this.target.terminal }), ...(this.settings.mode === 'Live' ? { live: true, model: LIVE_MODEL, voice: this.settings.liveVoice } : { model: this.settings.realtimeModel, voice: this.settings.realtimeVoice, vad: parseRealtimeVad(this.settings.realtimeVad ?? DEFAULT_REALTIME_VAD) }) });
       this.nativeMediaAttempted = true;
       this.startingMedia = this.playback.startRealtimeVoice(this.token, config);
       await this.startingMedia;
@@ -109,7 +109,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
     } catch (error) {
       // Only application-generated messages are trusted here. Native bridge
       // and provider errors can contain sensitive data.
-      this.fail(voiceCredentialError(error, error instanceof Error && !this.nativeMediaAttempted ? error.message : 'OpenAI Realtime could not start. Check the saved API key, selected model access, connection, and microphone permissions.'));
+      this.fail(voiceCredentialError(error, error instanceof Error && !this.nativeMediaAttempted ? error.message : 'OpenAI voice could not start. Check the saved API key, selected model access, connection, and microphone permissions.'));
     }
   }
 
@@ -135,7 +135,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
       }
       if (view.phase === 'error' || view.phase === 'closed') { void this.close(); return; }
       if (!final) this.timer = setTimeout(() => { void this.poll(); }, 100);
-    } catch { this.fail('Realtime call status is unavailable. Please call again.'); }
+    } catch { this.fail('Voice call status is unavailable. Please call again.'); }
   }
   setTranscriptBinding(binding?: string): void {
     // A presentation can temporarily lose its subscription while remounting.
@@ -160,7 +160,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
   toggleMuted(): void { void this.playback?.setVoiceCallMuted(this.token, !this.view.muted).catch(() => this.fail('The call mute state could not be changed.')); }
   toggleSpeaker(): void { void this.playback?.setVoiceCallSpeaker(this.token, !this.view.speaker).catch(() => this.publish({ error: 'The requested audio route is unavailable.' })); }
   finish(): void { /* Realtime server VAD owns turn commits. */ }
-  async skip(): Promise<void> { if (!this.closed) await this.playback?.realtimeVoiceControl?.(this.token, CONTROL.skip).catch(() => this.fail('The Realtime reply could not be interrupted.')); }
+  async skip(): Promise<void> { if (!this.closed) await this.playback?.realtimeVoiceControl?.(this.token, CONTROL.skip).catch(() => this.fail('The spoken reply could not be interrupted.')); }
   close(): Promise<void> {
     if (this.closing) return this.closing;
     this.closed = true;

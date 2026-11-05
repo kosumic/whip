@@ -43,7 +43,7 @@ test('shows unknown and incomplete costs alongside known estimates for all perio
   jest.mocked(voiceUsageLedger.summary).mockResolvedValue({ ...empty, totals: { today: partial, week: partial, month: partial, lifetime: partial } });
   await act(async () => press('voiceUsage.title'));
   expect(visible()).toContain('voiceUsage.unknownCalls'); expect(visible()).toContain('voiceUsage.incompleteCalls');
-  expect(visible()).toContain('USD 0.3000');
+  expect(visible()).toContain('$0.3000');
   for (const period of ['today', 'week', 'month', 'lifetime']) expect(visible()).toContain(`voiceUsage.${period}`);
 });
 test('storage failure hides totals and retry restores history', async () => {
@@ -66,7 +66,7 @@ test('TTS requests have a filter and missing provider costs are shown as unknown
   await act(async () => press('voiceUsage.tts'));
   expect(voiceUsageLedger.summary).toHaveBeenLastCalledWith({ provider: undefined, mode: 'tts' });
   expect(visible()).toContain('voiceUsage.unknown');
-  expect(visible()).not.toContain('USD 0.0000');
+  expect(visible()).not.toContain('$0.0000');
 });
 
 test('refreshes native-only usage while the panel is open and stops after it is closed', async () => {

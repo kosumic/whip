@@ -1,11 +1,10 @@
 # Native voice credential boundary (#353)
 
-Realtime calls and explicitly requested output-only previews use the same
+Realtime/GPT-Live calls and explicitly requested Realtime previews use the same
 native-to-Rust credential ingress. Merely opening Settings or a preview screen
 does not read the secret. Explicit preview taps remain supported, as requested
-in the follow-up to #353 and implemented by Realtime PR #342. GPT-Live is still
-unavailable; its future Rust adapter can reuse `native-credentials::NativeCredential` without
-adding a JavaScript secret API. The platform-neutral types and bounded native
+in the follow-up to #353 and implemented by Realtime PR #342. GPT-Live reuses
+`native-credentials::NativeCredential` without adding a JavaScript secret API. The platform-neutral types and bounded native
 callback live in `crates/native-credentials`; platform storage/lifecycle adapters
 stay in the app. The crate depends only on zeroize and has no React Native,
 UniFFI, persistence, service selector or platform dependency. Local STT, TTS, turn-based calls, startup and

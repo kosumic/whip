@@ -51,6 +51,9 @@ export interface VoiceConversationView {
   outputTokens?: number;
   estimatedUsd?: number | null;
   messages?: readonly VoiceTranscriptMessage[];
+  backendText?: string | null;
+  liveSeconds?: number | null;
+  usageFinalized?: boolean;
 }
 const STOPPED = 'WhipChatSpeechStopped';
 const STARTED = 'WhipChatSpeechStarted';

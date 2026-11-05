@@ -185,3 +185,13 @@ test('credential failures clear drafts and show a generic error without the secr
   expect(JSON.stringify(renderer.toJSON())).not.toContain('sk-test-secret');
   expect(renderer.root.findAll(node => node.props.children === 'voiceProvider.credentialError').length).toBeGreaterThan(0);
 });
+
+
+test('a saved key enables GPT-Live through the existing conversation provider setting', async () => {
+  await act(async () => saveOpenAiVoiceKey('sk-test'));
+  await act(async () => pressText('voiceProvider.Live'));
+  expect(providerButton('openai').props.disabled).toBe(false);
+  await act(async () => pressText('voiceProvider.openai'));
+  expect(providerButton('openai').props.accessibilityState.selected).toBe(true);
+  expect(renderer.root.findByType(SpeechVoicePicker).props.selected).toBe('marin');
+});

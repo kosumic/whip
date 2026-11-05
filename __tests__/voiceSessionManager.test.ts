@@ -290,3 +290,21 @@ test('the local call observer persists one identity and pairs it with hangup', a
     kind: 'ended', session_id: 'voice-stable-random-id', ended_at_ms: expect.any(Number),
   });
 });
+
+test('agent-bound Live calls use the cloud adapter, preserve the Live voice and do not fall back to local', async () => {
+  const local = jest.fn();
+  const adapter = { start: jest.fn(async () => {}), close: jest.fn(async () => {}), setTranscriptBinding: jest.fn(), setVadSensitivity: jest.fn(), submitted: jest.fn(), toggleMuted: jest.fn(), toggleSpeaker: jest.fn(), finish: jest.fn(), skip: jest.fn(async () => {}) };
+  const cloud = jest.fn(async () => adapter);
+  const manager = new VoiceSessionManager(local, undefined, cloud);
+  const call = manager.start({ kind: 'Agent', target }, () => true, { ...defaults, provider: 'openai', mode: 'Live', liveVoice: 'quartz' });
+  await flush();
+  expect(cloud).toHaveBeenCalledWith(target, call.settings, expect.any(Function), call.startedMonotonic);
+  expect(call.mode).toBe('Live');
+  expect(call.settings.liveVoice).toBe('quartz');
+  expect(adapter.start).toHaveBeenCalledTimes(1);
+  expect(manager.start({ kind: 'Agent', target }, () => true, { ...defaults, provider: 'openai', mode: 'Live', liveVoice: 'cedar' })).toBe(call);
+  expect(call.settings.liveVoice).toBe('quartz');
+  expect(local).not.toHaveBeenCalled();
+  await manager.hangup();
+  expect(adapter.close).toHaveBeenCalledTimes(1);
+});

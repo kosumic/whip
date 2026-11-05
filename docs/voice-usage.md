@@ -13,9 +13,11 @@ Local turn-based calls have no Whip cloud voice API charge. Remote coding-agent
 and API spending is unknown and excluded, including during a local call. Local
 speech backend/voice settings are separate; the ledger leaves model and voice
 null when there is no cloud model/selected cloud voice. It never probes the
-System/Phonon backend or adds work to the audio path. Realtime/GPT-Live filters
-have an explicit empty state until their adapters arrive in #324/#325. The scope
-schema supports agent/global, while Global calling/grouping stays in #326.
+System/Phonon backend or adds work to the audio path. Realtime and GPT-Live
+adapters record provider usage in this ledger. Live uses one cumulative
+seconds item, finalized only after confirmed closure; remote agent spend stays
+unknown and excluded. See [GPT-Live calls](live-voice.md). The scope schema
+supports agent/global; Global GPT-Live remains in #326.
 
 ## Storage and lifecycle
 
@@ -84,7 +86,8 @@ writes and notifies settings subscribers.
 5. Record `ended` once at teardown. Duplicate end events keep the first timestamp.
    Keep observing provider final usage through graceful shutdown, independently of
    view ownership. Remote coding-agent spending remains unknown at this boundary;
-   GPT-Live backend usage needs an explicit separate accounting contract in #325.
+   GPT-Live remote agent spend remains explicitly unavailable; it is not inferred
+   from transcript token counts.
 
 The implementation intentionally contains no provider tariff constants or network
 requests. Source guidance checked 2026-11-03:

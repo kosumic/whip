@@ -1,3 +1,4 @@
+import liveCatalog from '../../packages/react-native-whip-ssh/rust/src/realtime_voice/live/catalog.json';
 import realtimeCatalog from '../../packages/react-native-whip-ssh/rust/src/realtime_voice/models.json';
 
 // Rust validates calls and prices usage from this same catalog.
@@ -23,12 +24,8 @@ export interface VoiceConversationSettings {
 // https://developers.openai.com/api/reference/resources/realtime/subresources/calls/methods/accept
 export const REALTIME_VOICES = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse', 'marin', 'cedar'] as const;
 // https://developers.openai.com/api/docs/guides/live-conversations#voice-options
-export const LIVE_VOICES = [
-  ...REALTIME_VOICES,
-  'quartz', 'ripple', 'vesper', 'willow', 'stone', 'gleam', 'meridian',
-  'bossa', 'tempo', 'beacon', 'delta', 'cinder', 'nuri', 'juni', 'flitz',
-  'brise', 'sillage', 'nira', 'harema', 'shida', 'noeul',
-] as const;
+export const LIVE_MODEL = liveCatalog.model;
+export const LIVE_VOICES = liveCatalog.voices;
 
 export const DEFAULT_VOICE_CONVERSATION_SETTINGS: Readonly<VoiceConversationSettings> = {
   provider: 'local', mode: 'Realtime', realtimeModel: DEFAULT_REALTIME_MODEL, realtimeVoice: 'marin', liveVoice: 'marin',

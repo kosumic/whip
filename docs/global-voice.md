@@ -5,8 +5,8 @@ call using the saved OpenAI Realtime provider, model, and voice, or returns to
 the current global call. If the saved configuration is unsupported or the API
 key is not ready, it opens Global call settings to complete setup and explicitly
 start the call. No SSH connection or saved host is required. Local turn-based
-calls remain agent-bound; GPT-Live is
-unavailable until the Stage 3 adapter (#325) is implemented.
+calls remain agent-bound. [GPT-Live calls](live-voice.md) are also agent-bound;
+Global GPT-Live tools remain deferred to Stage 4 (#326).
 
 The app shell presents the call. Changing tabs, opening an agent, disconnecting
 a host, or editing voice preferences does not change its scope or restart it.

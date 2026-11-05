@@ -104,7 +104,7 @@ export class VoiceSessionManager {
     this.transition = this.transition.then(async () => {
       if (previous) await this.end(previous);
       if (session.ended || this.current !== session) return;
-      if (this.locked || (scope.kind === 'Global' && session.mode !== 'Realtime') || (scope.kind === 'Terminal' && session.mode !== 'Realtime') || session.mode === 'Live' || (session.mode === 'Realtime' && !this.createRealtime)) {
+      if (this.locked || (scope.kind === 'Global' && session.mode !== 'Realtime') || (scope.kind === 'Terminal' && session.mode !== 'Realtime') || (session.mode !== 'TurnBased' && !this.createRealtime)) {
         session.ended = true;
         session.publish({ ...initialView(), phase: 'error', error: this.locked ? 'Unlock Whip to start a call.' : 'This conversation mode is not available yet.' });
         return;
@@ -115,7 +115,7 @@ export class VoiceSessionManager {
         session.publish(view);
         if (view.phase === 'closed' || view.phase === 'error') void this.hangup(session, view.phase === 'error');
       };
-      const adapter = scope.kind === 'Global' || scope.kind === 'Terminal' || session.mode === 'Realtime'
+      const adapter = scope.kind === 'Global' || scope.kind === 'Terminal' || session.mode !== 'TurnBased'
         ? await this.createRealtime!(scope.kind === 'Global' ? { global: true, label: 'Global call' } : scope.target, session.settings, publish, session.startedMonotonic)
         : await this.createLocal(scope.target, text => this.current === session && !session.ended && !this.locked && Boolean(session.send?.(text)), publish);
       session.adapter = adapter;

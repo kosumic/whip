@@ -96,6 +96,7 @@ export function VoiceUsageSetting() {
           <Text>{new Date(call.started_at_ms).toLocaleString()} · {t(`voiceUsage.${call.mode}`)}</Text>
           <Text className="text-xs text-muted-foreground">{t(`voiceProvider.${call.provider}`)} · {t(`voiceUsage.${call.scope}`)}{call.model ? ` · ${call.model}` : ''}{call.voice ? ` · ${call.voice}` : ''}</Text>
           <Text>{cost(call)}</Text>
+          {call.mode === 'live' && <Text className="text-xs text-muted-foreground">{t('voiceUsage.remoteUnknown')}</Text>}
           {call.provider !== 'local' && <Text className="text-xs text-muted-foreground">{t(`voiceUsage.${call.status}`)}</Text>}
           <Text className="text-xs text-muted-foreground">{call.active ? t('voiceUsage.active') : call.ended_at_ms === null ? t('voiceUsage.endUnknown') : t('voiceUsage.ended', { time: new Date(call.ended_at_ms).toLocaleString() })}</Text>
         </View>)}

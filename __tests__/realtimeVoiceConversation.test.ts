@@ -338,3 +338,17 @@ test('credential deletion while microphone authorization is pending permanently 
     expect(mockNative.startVoiceCall).not.toHaveBeenCalled();
   } finally { await call.close(); delete native.startRealtimeVoiceCall; }
 });
+
+test('Live starts the independent native protocol with its selected voice and agent target', async () => {
+  const changed = jest.fn();
+  const call = new RealtimeVoiceConversation({ hostId: 'host', paneId: 'pane-1', tabId: 'tab', bindingToken: 'binding-1', agent: 'codex', label: 'Codex' }, { ...defaults, provider: 'openai', mode: 'Live', liveVoice: 'quartz', realtimeVoice: 'cedar' }, changed);
+  await call.start();
+  const [, raw] = mockNative.startRealtimeVoice.mock.calls[0] as unknown as [string, string];
+  const config = JSON.parse(raw);
+  expect(config).toMatchObject({ live: true, model: 'gpt-live-1', voice: 'quartz', target: { paneId: 'pane-1', bindingToken: 'binding-1' } });
+  expect(config.vad).toBeUndefined();
+  call.submitted('Already submitted through the composer');
+  await flush();
+  expect(mockNative.realtimeVoiceSubmitted).toHaveBeenCalledWith(expect.any(String), 'Already submitted through the composer');
+  await call.close();
+});

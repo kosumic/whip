@@ -331,7 +331,12 @@ fn legacy_app_key(key: &str) -> bool {
 }
 
 fn validate_entry(entry: &AppStorageEntry, importing: bool) -> Result<(), AppStorageError> {
-    let allowed = legacy_app_key(&entry.key) || (!importing && entry.key == voice_usage::KEY);
+    let allowed = legacy_app_key(&entry.key)
+        || (!importing
+            && matches!(
+                entry.key.as_str(),
+                voice_usage::KEY | "whip.voice.live.transcripts"
+            ));
     if !allowed || importing && entry.value.is_none() {
         return Err(AppStorageError::InvalidEntry(entry.key.clone()));
     }

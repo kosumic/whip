@@ -256,26 +256,32 @@ test('unmounting and remounting a presentation preserves the call and elapsed ti
 
 test('shows the current API voice estimate and no cost for non-API calls', () => {
   act(() => publish({ ...listening, estimatedUsd: 0.01234 }));
-  expect(renderedText()).not.toContain('Estimated voice total: USD 0.0123');
+  expect(renderedText()).not.toContain('Estimated voice total: $0.0123');
   expect(renderedText()).not.toContain('voiceProvider.costUnknown');
   act(() => publish({ ...listening, provider: 'openai', estimatedUsd: 0.01234 }));
-  expect(renderedText()).toContain('Estimated voice total: USD 0.0123');
+  expect(renderedText()).toContain('Estimated voice total: $0.0123');
   act(() => publish({ ...listening }));
-  expect(renderedText()).not.toContain('Estimated voice total: USD 0.0123');
+  expect(renderedText()).not.toContain('Estimated voice total: $0.0123');
 });
 
 test('distinguishes unknown API costs from a reported zero estimate', () => {
   act(() => publish({ ...listening, provider: 'openai', estimatedUsd: null }));
   expect(renderedText()).not.toContain('voiceProvider.costUnknown');
-  expect(renderedText()).not.toContain('Estimated voice total: USD 0.0000');
+  expect(renderedText()).not.toContain('Estimated voice total: $0.0000');
   act(() => publish({ ...listening, provider: 'openai', estimatedUsd: 0 }));
-  expect(renderedText()).toContain('Estimated voice total: USD 0.0000');
+  expect(renderedText()).toContain('Estimated voice total: $0.0000');
 });
 
 test('retains the current API voice estimate when the chat presentation remounts', async () => {
   act(() => publish({ ...listening, provider: 'openai', estimatedUsd: 0.125 }));
   await act(async () => renderer.unmount());
   await act(async () => { renderer = create(<Call />); });
-  expect(renderedText()).toContain('Estimated voice total: USD 0.1250');
+  expect(renderedText()).toContain('Estimated voice total: $0.1250');
   expect(session.start).toHaveBeenCalledTimes(1);
+});
+
+test('Live reports duration and keeps a public agent result visible when speech fails', () => {
+  act(() => publish({ ...listening, provider: 'openai', liveSeconds: 15, estimatedUsd: 0.0125, backendText: 'The build passed. Inspect the agent chat for details.', phase: 'error', error: 'Voice delivery failed.' }));
+  expect(renderedText()).toContain('The build passed. Inspect the agent chat for details.');
+  expect(JSON.stringify(renderedText())).toContain('voiceUsage.remoteUnknown');
 });

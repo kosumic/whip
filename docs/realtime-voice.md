@@ -12,8 +12,8 @@ Settings closed. A key lookup error or key replacement preserves the selection.
 Local is always selectable. Phonon is offered only for TTS and requires an installed model on a
 supported device before it can be selected. Removing its model resets Phonon TTS
 to System. Restored selections whose key or model is missing also fall back.
-The existing Local provider remains the default. GPT-Live and Global calls
-remain unavailable. The selected voice and Realtime VAD configuration are
+The existing Local provider remains the default. [GPT-Live](live-voice.md) is
+available for agent-bound calls; [Global calls](global-voice.md) use Realtime. The selected voice and Realtime VAD configuration are
 snapshotted when the app-wide owner starts the call; edits affect the next call.
 The Realtime model is also saved and snapshotted per call. Settings offers
 `gpt-realtime-1.5` (the default, matching Codex's inspected v1/v2 path),

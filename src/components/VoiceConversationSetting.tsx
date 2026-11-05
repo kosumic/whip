@@ -7,6 +7,7 @@ import { LIVE_VOICES, REALTIME_MODELS, REALTIME_VOICES, selectedConversationVoic
 import { RealtimeVoicePreview } from '../services/realtimeVoicePreview';
 import { GlassButton } from './GlassControls';
 import { SpeechVoicePicker } from './SpeechVoicePicker';
+import { LiveVoiceHistory } from './LiveVoiceHistory';
 import { Text } from './ui/text';
 
 export interface VoiceConversationSettingHandle { stopPreview: () => Promise<void> }
@@ -66,7 +67,7 @@ export function VoiceConversationSetting({ ref, credentialSaved, credentialBusy 
         <Text>{t(`voiceProvider.${mode}`)}</Text>
       </GlassButton>)}
     </View>
-    <Text accessibilityRole="alert" className="text-xs text-muted-foreground">{t(settings.mode === 'Live' ? 'voiceProvider.liveUnavailable' : 'voiceProvider.realtimeNotice')}</Text>
+    <Text accessibilityRole="alert" className="text-xs text-muted-foreground">{t(settings.mode === 'Live' ? 'voiceProvider.liveNotice' : 'voiceProvider.realtimeNotice')}</Text>
     {settings.mode === 'Realtime' && <>
       <Text className="text-sm font-medium">{t('voiceProvider.model')}</Text>
       <View className="flex-row flex-wrap gap-2">
@@ -99,6 +100,7 @@ export function VoiceConversationSetting({ ref, credentialSaved, credentialBusy 
       accessibilityLabel={t(previewing ? 'voiceProvider.stopPreview' : 'voiceProvider.preview')}
       onPress={() => { void previewVoice(); }}><Text>{t(previewing ? 'voiceProvider.stopPreview' : 'voiceProvider.preview')}</Text></GlassButton>
     <Text className="text-xs text-muted-foreground">{t(settings.mode === 'Realtime' ? 'voiceProvider.previewNotice' : 'voiceProvider.previewUnavailable')}</Text>
+    {settings.mode === 'Live' && <LiveVoiceHistory />}
     {error && <Text accessibilityRole="alert" className="text-xs text-destructive">{error}</Text>}
   </View>;
 }

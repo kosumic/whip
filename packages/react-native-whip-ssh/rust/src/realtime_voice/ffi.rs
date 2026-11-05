@@ -298,8 +298,13 @@ pub extern "C" fn whip_realtime_view(id: u64) -> *mut c_char {
     view.playback = playback;
     view.signal = signal;
     (view.capture_packets, view.capture_gaps) = call.input.diagnostics();
-    serde_json::to_string(&*view)
-        .ok()
+    let mut value = serde_json::to_value(&*view).ok();
+    drop(view);
+    if let (Some(value), Some(transcript)) = (&mut value, &call.output.lock().live_transcript) {
+        value["messages"] = transcript.messages();
+    }
+    value
+        .and_then(|value| serde_json::to_string(&value).ok())
         .and_then(|value| CString::new(value).ok())
         .map_or(std::ptr::null_mut(), CString::into_raw)
 }

@@ -9,6 +9,7 @@ mod echo;
 pub(crate) mod feedback;
 mod ffi;
 pub(crate) mod handoff_context;
+mod live;
 mod models;
 mod processing;
 mod recovery;
@@ -73,6 +74,8 @@ const VOICES: &[&str] = &[
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct Config {
+    #[serde(default)]
+    live: bool,
     #[serde(default)]
     client_elapsed_ms: u64,
     #[serde(default)]
@@ -241,6 +244,9 @@ pub(super) struct View {
     output_tokens: u64,
     estimated_usd: Option<f64>,
     tool: Option<String>,
+    backend_text: Option<String>,
+    live_seconds: Option<f64>,
+    usage_finalized: bool,
     captions: Option<captions::Diagnostics>,
     messages: Vec<transcript::Message>,
     playback: transcript::Timing,
@@ -259,6 +265,7 @@ pub(super) struct View {
 }
 
 struct Output {
+    live_transcript: Option<live::captions::Transcript>,
     transcript: transcript::Transcript,
     epoch: u64,
     samples: VecDeque<i16>,
@@ -270,6 +277,7 @@ struct Output {
 impl Default for Output {
     fn default() -> Self {
         Self {
+            live_transcript: None,
             transcript: transcript::Transcript::default(),
             epoch: 1,
             samples: VecDeque::new(),
@@ -404,7 +412,12 @@ impl RealtimeVoiceAdapter {
         >,
     ) -> Result<Arc<Self>, StartError> {
         let started_at = Instant::now();
-        let mut update = config.session_update()?;
+        let mut update = if config.live {
+            live::LiveVoiceAdapter::validate(&config)?;
+            None
+        } else {
+            Some(config.session_update()?)
+        };
         let global = config
             .global
             .then(|| WhipToolSession::new(config.global_shizuku_access))
@@ -421,7 +434,9 @@ impl RealtimeVoiceAdapter {
             .map(PinnedTerminal::pin)
             .transpose()?
             .map(terminal::Session::new);
-        let instructions = if let Some(global) = &global {
+        let instructions = if config.live {
+            None
+        } else if let Some(global) = &global {
             Some(global.instructions()?)
         } else {
             agent
@@ -435,9 +450,9 @@ impl RealtimeVoiceAdapter {
         };
         if let Some(instructions) = instructions {
             let mut value =
-                serde_json::to_value(update).map_err(|_| "Voice configuration failed.")?;
+                serde_json::to_value(&update).map_err(|_| "Voice configuration failed.")?;
             value["session"]["instructions"] = json!(instructions);
-            update = typed(value)?;
+            update = Some(typed(value)?);
         }
         let speech = crate::speech_playback::RealtimeSpeechLease::claim(config.preview)
             .ok_or("Another speech session is active. Finish it before previewing.")?;
@@ -452,7 +467,7 @@ impl RealtimeVoiceAdapter {
         let adapter = Arc::new(Self {
             started_at,
             client_elapsed_ms: config.client_elapsed_ms,
-            webrtc: config.webrtc,
+            webrtc: config.webrtc && !config.live,
             media: Mutex::new(None),
             view: Mutex::new(View {
                 phase: "starting",
@@ -480,10 +495,16 @@ impl RealtimeVoiceAdapter {
                 server_events: 0,
                 input_speech_events: 0,
                 tool: None,
-                captions: (!config.preview)
+                backend_text: None,
+                live_seconds: None,
+                usage_finalized: false,
+                captions: (!config.preview && !config.live)
                     .then(|| captions::Diagnostics::pending(config.language)),
             }),
-            output: Mutex::new(Output::default()),
+            output: Mutex::new(Output {
+                live_transcript: config.live.then(live::captions::Transcript::default),
+                ..Output::default()
+            }),
             echo: Mutex::new(
                 config
                     .software_echo_cancellation
@@ -510,11 +531,14 @@ impl RealtimeVoiceAdapter {
         adapter.view.lock().startup.credentials = Some(startup::elapsed(credential_start));
         runtime.spawn(async move {
                 let mut tools: JoinSet<ToolCompletion> = JoinSet::new();
+                let result = if config.live {
+                    live::LiveVoiceAdapter::run(owner.clone(), config, key, agent, command_rx).await
+                } else if let Some(update) = update {
                 // Keep driving startup through cancellation: an in-flight POST
                 // may create a call whose identity must be read and retired.
                 let connection = owner.prepare_connection(&config, &key, update, agent.as_ref(), terminal.as_ref()).await;
                 drop(key);
-                let result = match connection {
+                match connection {
                     Ok((socket, configuration_started)) if !owner.closed.load(Ordering::Acquire) => tokio::select! {
                     biased;
                     _ = cancellation.changed() => Ok(()),
@@ -523,7 +547,8 @@ impl RealtimeVoiceAdapter {
                     Ok(_) => Ok(()),
                     Err(_) if owner.closed.load(Ordering::Acquire) => Ok(()),
                     Err(error) => Err(error),
-                };
+                }
+                } else { Err("Voice configuration failed.") };
                 tools.shutdown().await;
                 if let Some(global) = &owner.global { global.close(); }
                 if let Err(message) = result {

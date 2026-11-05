@@ -12,7 +12,7 @@ export function VoiceConversationProviderSetting() {
   const { t } = useTranslation();
   const { settings, onChange } = useContext(VoiceConversationSettingsContext);
   const credential = useOpenAiVoiceCredentialStatus();
-  const openaiReady = credential.ready && settings.mode === 'Realtime';
+  const openaiReady = credential.ready;
   return <View className="gap-2 border-b border-border px-3.5 py-3">
     <Text className="text-sm font-medium">{t('voiceProvider.title')}</Text>
     <View className="flex-row gap-2">
@@ -26,7 +26,7 @@ export function VoiceConversationProviderSetting() {
     </View>
     <Text className="text-xs text-muted-foreground">{t('voiceProvider.independent')}</Text>
     {!openaiReady && <Text accessibilityLiveRegion="polite" className="text-xs text-muted-foreground">
-      {t('voiceProvider.openai')}: {t(credential.ready ? 'voiceProvider.liveUnavailable' : credential.reason)}
+      {t('voiceProvider.openai')}: {t(credential.reason)}
     </Text>}
     {(!openaiReady || settings.provider === 'openai') && <Text className="text-xs text-muted-foreground">{t('openai.configure')}</Text>}
   </View>;
