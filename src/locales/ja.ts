@@ -89,6 +89,8 @@ export const ja = {
   'voiceProvider.captionAssistant': "アシスタント",
   'voiceProvider.liveNotice': "GPT-Liveはマイク音声と選択したエージェントの結果をOpenAIに送信します。音声APIの料金がかかります。接続済みエージェントのチャットから通話できます。",
   'voiceProvider.liveUnavailable': "GPT-Live 通話はまだ利用できません。",
+  'voiceProvider.liveBilling': 'GPT-Live は通話が有効な間、無音、マイクのミュート、エージェントの応答待ちも含めて秒単位で課金されます。音声の時間料金を止めるには通話を終了してください。バックエンドのモデルとツールの使用料は別途かかります。',
+  'voiceProvider.realtimeBilling': 'Realtime は音声とテキストのトークン数に応じて課金されます。ターン検出で無音は除外され、待機中の接続に時間料金はかかりません。応答と入力音声の文字起こしには料金がかかる場合があります。',
   "voiceProvider.realtimeNotice": "Realtime はマイク音声と接続したエージェントの出力を OpenAI に送信し、API 料金が発生します。接続済みエージェントのチャットを先に開いてください。WebSocket 通信は実験段階です。",
   "voiceProvider.serverVad": "Realtime の発話区切り検出",
   "voiceProvider.serverVadIndependent": "OpenAI の設定は次回の通話から適用されます。ローカル VAD と Smart Turn の設定は独立しています。",

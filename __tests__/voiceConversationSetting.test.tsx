@@ -112,10 +112,13 @@ test('a credential lookup failure disables OpenAI without disabling Local or dis
 });
 
 test('switching cloud modes keeps separate saved voices and requires a key for preview', async () => {
+  expect(renderer.root.findAll(node => node.type === Text && node.props.children === 'voiceProvider.realtimeBilling')).toHaveLength(1);
   await act(async () => pressText('voiceProvider.openai'));
   expect(renderer.root.findAll(node => node.props.children === 'voiceProvider.realtimeNotice').length).toBeGreaterThan(0);
   await act(async () => renderer.root.findByType(SpeechVoicePicker).props.onSelect('cedar'));
   await act(async () => pressText('voiceProvider.Live'));
+  expect(renderer.root.findAll(node => node.type === Text && node.props.children === 'voiceProvider.liveBilling')).toHaveLength(1);
+  expect(renderer.root.findAll(node => node.type === Text && node.props.children === 'voiceProvider.realtimeBilling')).toHaveLength(0);
   expect(renderer.root.findByType(SpeechVoicePicker).props.selected).toBe('marin');
   expect(renderer.root.findByType(SpeechVoicePicker).props.voices).toContainEqual(expect.objectContaining({ id: 'quartz' }));
   await act(async () => renderer.root.findByType(SpeechVoicePicker).props.onSelect('quartz'));

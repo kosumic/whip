@@ -91,6 +91,8 @@ export const fr = {
   'voiceProvider.captionAssistant': "Assistant",
   'voiceProvider.liveNotice': "GPT-Live envoie le son du microphone et les résultats sélectionnés de l’agent à OpenAI. Des frais d’API vocale s’appliquent. Ouvrez un chat d’agent connecté pour appeler.",
   'voiceProvider.liveUnavailable': "Les appels GPT-Live ne sont pas encore disponibles.",
+  'voiceProvider.liveBilling': 'GPT-Live facture à la seconde pendant tout l’appel actif, y compris le silence, le microphone coupé et l’attente de l’agent. Terminez l’appel pour arrêter les frais de durée vocale. Les modèles et outils du backend sont facturés séparément.',
+  'voiceProvider.realtimeBilling': 'Realtime facture les tokens audio et texte. La détection des tours filtre le silence ; une connexion inactive n’entraîne pas de frais de durée. Les réponses et la transcription audio en entrée peuvent être facturées.',
   "voiceProvider.realtimeNotice": "Realtime transmet le son du microphone et les sorties de l’agent lié à OpenAI ; l’API est payante. Ouvrez d’abord le chat d’un agent connecté. Le transport WebSocket est expérimental.",
   "voiceProvider.serverVad": "Détection des tours Realtime",
   "voiceProvider.serverVadIndependent": "Ces réglages OpenAI s’appliquent au prochain appel. Le VAD local et Smart Turn restent indépendants.",

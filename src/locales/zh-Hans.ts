@@ -89,6 +89,8 @@ export const zhHans = {
   'voiceProvider.captionAssistant': "助手",
   'voiceProvider.liveNotice': "GPT-Live 会将麦克风音频和所选智能体的结果发送给 OpenAI。语音 API 会产生费用。请在已连接的智能体聊天中发起通话。",
   'voiceProvider.liveUnavailable': "GPT-Live 通话尚未开放。",
+  'voiceProvider.liveBilling': 'GPT-Live 按整段通话的活跃时长逐秒计费，包括静音、麦克风静音和等待智能体的时间。结束通话才能停止语音时长计费。后端模型和工具的用量另行计费。',
+  'voiceProvider.realtimeBilling': 'Realtime 按音频和文本 token 计费。轮次检测会过滤静音，空闲连接没有按时长计费的费用。回复和输入音频转录仍可能产生费用。',
   "voiceProvider.realtimeNotice": "Realtime 将麦克风音频和绑定代理的输出发送给 OpenAI，并按 API 计费。请先打开已连接代理的聊天。WebSocket 传输处于实验阶段。",
   "voiceProvider.serverVad": "Realtime 话轮检测",
   "voiceProvider.serverVadIndependent": "这些 OpenAI 设置将在下次通话时生效。本地 VAD 和 Smart Turn 设置保持独立。",

@@ -69,6 +69,7 @@ export function VoiceConversationSetting({ ref, credentialSaved, credentialBusy 
       </GlassButton>)}
     </View>
     <Text accessibilityRole="alert" className="text-xs text-muted-foreground">{t(settings.mode === 'Live' ? 'voiceProvider.liveNotice' : 'voiceProvider.realtimeNotice')}</Text>
+    <Text className="text-xs text-muted-foreground">{t(settings.mode === 'Live' ? 'voiceProvider.liveBilling' : 'voiceProvider.realtimeBilling')}</Text>
     {settings.mode === 'Realtime' && <>
       <Text className="text-sm font-medium">{t('voiceProvider.model')}</Text>
       <View className="flex-row flex-wrap gap-2">

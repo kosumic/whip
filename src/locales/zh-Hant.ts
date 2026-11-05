@@ -89,6 +89,8 @@ export const zhHant: Record<string, string> = {
   'voiceProvider.captionAssistant': "助手",
   'voiceProvider.liveNotice': "GPT-Live 會將麥克風音訊和所選代理的結果傳送給 OpenAI。語音 API 會產生費用。請在已連線的代理聊天中發起通話。",
   'voiceProvider.liveUnavailable': "GPT-Live 通話尚未開放。",
+  'voiceProvider.liveBilling': 'GPT-Live 按整段通話的啟用時間逐秒計費，包括靜音、麥克風靜音和等待代理的時間。結束通話才能停止語音時長計費。後端模型和工具的用量另行計費。',
+  'voiceProvider.realtimeBilling': 'Realtime 按音訊和文字 token 計費。輪次偵測會過濾靜音，閒置連線沒有按時長計費的費用。回覆和輸入音訊轉錄仍可能產生費用。',
   "voiceProvider.realtimeNotice": "Realtime 將麥克風音訊和綁定代理的輸出傳送給 OpenAI，並按 API 計費。請先開啟已連線代理的聊天。WebSocket 傳輸處於實驗階段。",
   "voiceProvider.serverVad": "Realtime 話輪偵測",
   "voiceProvider.serverVadIndependent": "這些 OpenAI 設定將於下次通話時套用。本機 VAD 和 Smart Turn 設定保持獨立。",

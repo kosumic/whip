@@ -89,6 +89,8 @@ export const es = {
   'voiceProvider.captionAssistant': "Asistente",
   'voiceProvider.liveNotice': "GPT-Live envía el audio del micrófono y los resultados del agente a OpenAI. Se aplican cargos de la API de voz. Abre un chat de agente conectado para llamar.",
   'voiceProvider.liveUnavailable': "Las llamadas GPT-Live aún no están disponibles.",
+  'voiceProvider.liveBilling': 'GPT-Live cobra por segundo durante toda la llamada activa, incluidos el silencio, el micrófono silenciado y la espera del agente. Finaliza la llamada para detener los cargos por duración de voz. El uso de modelos y herramientas del backend se cobra por separado.',
+  'voiceProvider.realtimeBilling': 'Realtime cobra por tokens de audio y texto. La detección de turnos filtra el silencio; una conexión inactiva no tiene cargos por tiempo. Las respuestas y la transcripción de entrada pueden generar cargos.',
   "voiceProvider.realtimeNotice": "Realtime envía el audio del micrófono y la salida del agente vinculado a OpenAI; se aplican cargos de API. Abre primero el chat de un agente conectado. El transporte WebSocket es experimental.",
   "voiceProvider.serverVad": "Detección de turnos Realtime",
   "voiceProvider.serverVadIndependent": "Estos ajustes de OpenAI se aplican a la próxima llamada. El VAD local y Smart Turn siguen siendo independientes.",
