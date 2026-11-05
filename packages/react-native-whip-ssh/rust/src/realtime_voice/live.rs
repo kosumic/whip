@@ -3,6 +3,7 @@
 //! at c90354172c5c49535b122443e9a8ed52c2233b80. Native media ownership is shared;
 //! Live delegation/context events never become Realtime function calls.
 pub(super) mod captions;
+mod global;
 mod preview;
 #[cfg(test)]
 mod tests;
@@ -45,8 +46,10 @@ struct Pricing {
     usd_per_minute: f64,
 }
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Catalog {
     model: String,
+    backend_model: String,
     voices: Vec<String>,
     pricing: Pricing,
 }
@@ -73,9 +76,9 @@ struct Pending {
     offset: f64,
     received: Instant,
 }
-struct Completion {
-    id: String,
-    value: Value,
+enum Completion {
+    Agent { id: String, value: Value },
+    Global(Result<global::Results, &'static str>),
 }
 struct Handoff {
     id: String,
@@ -187,10 +190,12 @@ impl State {
                         .and_then(|output| output.voice.as_ref())
                         .is_some_and(|voice| voice != &api::Voice::Named(config.voice.clone()))
             })
-            || matches!(
-                &session.delegation,
-                Field::Value(api::DelegationConfig::Responses { .. })
-            )
+            || match &session.delegation {
+                Field::Value(api::DelegationConfig::Responses { responses }) => {
+                    !config.global || responses.model != catalog()?.backend_model
+                }
+                _ => config.global,
+            }
         {
             return Err("OpenAI did not accept the selected GPT-Live session configuration.");
         }
@@ -205,8 +210,9 @@ impl LiveVoiceAdapter {
         if config.preview {
             config.validate_preview()?;
         }
-        if (!config.preview && config.target.is_none())
-            || config.global
+        if (!config.preview
+            && (usize::from(config.target.is_some()) + usize::from(config.global) != 1))
+            || (config.global_shizuku_access && !config.global)
             || config.terminal_target.is_some()
             || !catalog.voices.contains(&config.voice)
             || config
@@ -214,7 +220,7 @@ impl LiveVoiceAdapter {
                 .as_ref()
                 .is_some_and(|model| model != &catalog.model)
         {
-            return Err("Choose a supported GPT-Live voice and a connected coding agent.");
+            return Err("Choose a supported GPT-Live voice and exactly one call scope.");
         }
         Ok(())
     }
@@ -244,6 +250,12 @@ impl LiveVoiceAdapter {
                 }]
             }]))
             .map_err(|_| "Invalid GPT-Live preview instructions.")?;
+        } else if config.global {
+            global::configure(
+                config,
+                &mut session,
+                crate::reverse_control::voice::base_instructions(config.global_shizuku_access),
+            )?;
         }
         Ok(session)
     }
@@ -254,7 +266,11 @@ impl LiveVoiceAdapter {
         agent: Option<Arc<PinnedAgent>>,
         commands: mpsc::Receiver<super::Command>,
     ) -> Result<(), &'static str> {
-        let usage = usage::Usage::start(&config.voice, config.preview)?;
+        let mut session = Self::session(&config)?;
+        if let Some(global) = &owner.global {
+            global::configure(&config, &mut session, global.instructions()?)?;
+        }
+        let usage = usage::Usage::start(&config.voice, config.preview, config.global)?;
         let mut cancelled = owner.cancel.subscribe();
         // No retries after session.start: a lost acknowledgement may still mean
         // a billable session exists. A new user-initiated call gets a new ledger ID.
@@ -271,13 +287,7 @@ impl LiveVoiceAdapter {
             return Ok(());
         }
         owner.view.lock().startup.websocket = Some(super::startup::elapsed(owner.started_at));
-        send(
-            &mut socket,
-            Command::Start {
-                session: Self::session(&config)?,
-            },
-        )
-        .await?;
+        send(&mut socket, Command::Start { session }).await?;
         let mut adapter = Self {
             state: State::default(),
             tasks: JoinSet::new(),
@@ -293,15 +303,18 @@ impl LiveVoiceAdapter {
                 commands,
             )
             .await
-        } else if let Some(agent) = agent {
+        } else if config.global || agent.is_some() {
             adapter
-                .drive(&owner, &config, &agent, &mut socket, commands)
+                .drive(&owner, &config, agent.as_ref(), &mut socket, commands)
                 .await
         } else {
             Err("Open a connected coding agent before calling GPT-Live.")
         };
         // Dropping observation futures never invokes remote cancel. Dispatched
         // agent prompts continue; only this call's unsent pending requests stop.
+        if let Some(global) = &owner.global {
+            global.close();
+        }
         adapter.tasks.shutdown().await;
         adapter.state.pending.clear();
         owner.ready.store(false, Ordering::Release);
@@ -342,7 +355,7 @@ impl LiveVoiceAdapter {
         &mut self,
         owner: &Arc<RealtimeVoiceAdapter>,
         config: &Config,
-        agent: &Arc<PinnedAgent>,
+        agent: Option<&Arc<PinnedAgent>>,
         socket: &mut super::socket::RawSocket,
         mut commands: mpsc::Receiver<super::Command>,
     ) -> Result<(), &'static str> {
@@ -352,6 +365,7 @@ impl LiveVoiceAdapter {
             usage,
         } = self;
         let mut cancelled = owner.cancel.subscribe();
+        let mut backend = config.global.then(global::Backend::default);
         let started = Instant::now();
         let mut tick = tokio::time::interval(capture_worker::PACKET_DURATION);
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -383,6 +397,11 @@ impl LiveVoiceAdapter {
                         append(socket, None, "The user interrupted your spoken reply. Stop speaking now and listen. This does not cancel coding-agent work.", Channel::Instructions).await?;
                     }
                     Some(super::Command::Submitted(text)) => {
+                        if let Some(backend) = &mut backend {
+                            send(socket,Command::ResponseItemCreate { item: api::ResponseInputItem::user_text(text) }).await?;
+                            backend.request();
+                            continue;
+                        }
                         // Typed input is already an agent submission. Advance
                         // the native speech cursor so a model handoff caused by
                         // this context cannot replay old spoken input.
@@ -438,8 +457,23 @@ impl LiveVoiceAdapter {
                                     owner.output.lock().append("live-stream".into(),0,pcm)?;
                                 }
                                 ServerEvent::DelegationCreated {delegation,offset_ms,..} => {
-                                    if state.delegate(&delegation,offset_ms,tasks.len())? == Admission::Full {
+                                    if config.global {
+                                        if delegation.target != api::DelegationTarget::Responses || delegation.response_id.is_none() {
+                                            return Err("Global GPT-Live requires Responses delegation.");
+                                        }
+                                    } else if state.delegate(&delegation,offset_ms,tasks.len())? == Admission::Full {
                                         append(socket,Some(&delegation.id),"No request was sent: the call's agent queue is full. Use the agent chat.",Channel::Commentary).await?;
+                                    }
+                                }
+                                ServerEvent::Response {delegation_id,event,..} => {
+                                    let backend = backend.as_mut().ok_or("Unexpected GPT-Live backend response.")?;
+                                    let event = api::ResponseEvent::decode(Value::Object(event)).map_err(|_| "Invalid global Live backend event.")?;
+                                    if let Some(batch) = backend.observe(delegation_id.value().map(String::as_str), &event)? {
+                                        let global = owner.global.clone().ok_or("Global call controls are unavailable.")?;
+                                        tasks.spawn(async move { Completion::Global(batch.execute(global).await) });
+                                    }
+                                    if let api::ResponseEvent::OutputTextDone {text,..} = event {
+                                        owner.view.lock().backend_text = Some(public_text(&super::limit_text(text)));
                                     }
                                 }
                                 ServerEvent::InputAudioMuted {..} => {
@@ -460,16 +494,27 @@ impl LiveVoiceAdapter {
                 },
                 completion = tasks.join_next(), if !tasks.is_empty() => {
                     let completion = completion.ok_or("GPT-Live agent observation stopped.")?.map_err(|_| "GPT-Live agent observation failed.")?;
-                    state.uncertain |= completion.value["error"]=="outcome_unknown";
-                    let text = public_result(&completion.value);
-                    // Text fallback survives failed voice/context delivery.
-                    owner.view.lock().backend_text = Some(text.clone());
-                    append(socket,Some(&completion.id),&text,Channel::Commentary).await?;
-                    if state.handoff.as_ref().is_some_and(|handoff| handoff.id==completion.id) { state.handoff=None; }
+                    match completion {
+                        Completion::Agent {id,value} => {
+                            state.uncertain |= value["error"]=="outcome_unknown";
+                            let text = public_result(&value);
+                            // Text fallback survives failed voice/context delivery.
+                            owner.view.lock().backend_text = Some(text.clone());
+                            append(socket,Some(&id),&text,Channel::Commentary).await?;
+                            if state.handoff.as_ref().is_some_and(|handoff| handoff.id==id) { state.handoff=None; }
+                        }
+                        Completion::Global(results) => {
+                            let results = results?;
+                            let backend = backend.as_mut().ok_or("Global Live backend is unavailable.")?;
+                            backend.finished(&results)?;
+                            for item in results.items { send(socket,Command::ResponseItemCreate {item}).await?; }
+                        }
+                    }
                 },
                 _ = tick.tick() => {
                     if !owner.speech.is_current() { return Err("Voice audio was replaced by another speech session."); }
-                    agent.check_liveness().map_err(|_| "The bound agent disconnected or changed. Please call again.")?;
+                    if let Some(agent) = agent { agent.check_liveness().map_err(|_| "The bound agent disconnected or changed. Please call again.")?; }
+                    if let Some(global) = &owner.global { global.check().map_err(|_| "Global call authorization ended.")?; }
                     if state.session_id.is_none() {
                         if started.elapsed()>super::IO_TIMEOUT { return Err("GPT-Live session startup timed out."); }
                         continue;
@@ -480,12 +525,17 @@ impl LiveVoiceAdapter {
                         let mut view = owner.view.lock();
                         view.phase = if speaking { "speaking" } else if view.muted { "muted" } else { "listening" };
                     }
-                    Self::dispatch(owner,agent,socket,state,tasks).await?;
-                    if last_feedback.elapsed()>=Duration::from_millis(500) {
-                        last_feedback=Instant::now();
-                        if let Some(handoff) = &mut state.handoff {
-                            let snapshot = agent.feedback_snapshot(handoff.feedback.revision()).map_err(|_| "The bound agent changed.")?;
-                            if let Some(snapshot)=snapshot { for text in handoff.feedback.observe(snapshot) { let text = public_text(&text); append(socket,Some(&handoff.id),&text,Channel::Thinking).await?; } }
+                    if let Some(backend) = &mut backend && backend.take_continuation() {
+                        send(socket,Command::ResponseCreate).await?;
+                    }
+                    if let Some(agent) = agent {
+                        Self::dispatch(owner,agent,socket,state,tasks).await?;
+                        if last_feedback.elapsed()>=Duration::from_millis(500) {
+                            last_feedback=Instant::now();
+                            if let Some(handoff) = &mut state.handoff {
+                                let snapshot = agent.feedback_snapshot(handoff.feedback.revision()).map_err(|_| "The bound agent changed.")?;
+                                if let Some(snapshot)=snapshot { for text in handoff.feedback.observe(snapshot) { let text = public_text(&text); append(socket,Some(&handoff.id),&text,Channel::Thinking).await?; } }
+                            }
                         }
                     }
                     if pong.elapsed()>Duration::from_secs(45) { return Err("GPT-Live stopped responding."); }
@@ -574,7 +624,7 @@ impl LiveVoiceAdapter {
                     followup,
                 )
                 .await;
-            Completion {
+            Completion::Agent {
                 id: pending.id,
                 value,
             }

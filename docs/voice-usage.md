@@ -31,7 +31,9 @@ System/Phonon backend or adds work to the audio path. Realtime and GPT-Live
 adapters record provider usage in this ledger. Live uses one cumulative
 seconds item, finalized only after confirmed closure; remote agent spend stays
 unknown and excluded. See [GPT-Live calls](live-voice.md). The scope schema
-supports agent/global; Global GPT-Live remains in #326.
+supports agent/global, including global GPT-Live. Global Live uses a delegated
+Responses backend whose charges are also unknown and excluded from the voice
+duration estimate.
 
 ## Storage and lifecycle
 

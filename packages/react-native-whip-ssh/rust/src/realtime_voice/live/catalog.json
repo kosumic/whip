@@ -1,5 +1,6 @@
 {
   "model": "gpt-live-1",
+  "backendModel": "gpt-6-luna",
   "voices": ["alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse", "marin", "cedar", "quartz", "ripple", "vesper", "willow", "stone", "gleam", "meridian", "bossa", "tempo", "beacon", "delta", "cinder", "nuri", "juni", "flitz", "brise", "sillage", "nira", "harema", "shida", "noeul"],
   "pricing": {
     "id": "openai-gpt-live-1-2026-11-04",

@@ -45,12 +45,12 @@ jest.mock('../src/services/NativeTranscriptService', () => ({ agentTranscriptSer
 
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 
-test('global Realtime starts without a transcript or SSH target and retains its own native scope', async () => {
+test.each(['Realtime', 'Live'] as const)('global %s starts without a transcript or SSH target and retains its own native scope', async mode => {
   const changed = jest.fn();
-  const call = new RealtimeVoiceConversation({ global: true, label: 'Global call' }, { ...defaults, provider: 'openai' }, changed);
+  const call = new RealtimeVoiceConversation({ global: true, label: 'Global call' }, { ...defaults, provider: 'openai', mode, liveVoice: 'quartz' }, changed);
   await call.start();
   const [token, raw] = mockNative.startRealtimeVoice.mock.calls[0] as unknown as [string, string];
-  expect(JSON.parse(raw)).toEqual(expect.objectContaining({ global: true, model: defaults.realtimeModel, globalShizukuAccess: false }));
+  expect(JSON.parse(raw)).toEqual(expect.objectContaining({ global: true, globalShizukuAccess: false, ...(mode === 'Live' ? { live: true, model: 'gpt-live-1', voice: 'quartz' } : { model: defaults.realtimeModel }) }));
   expect(JSON.parse(raw).target).toBeUndefined();
   expect(JSON.parse(raw).terminalTarget).toBeUndefined();
   expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'listening', transcript: null }));

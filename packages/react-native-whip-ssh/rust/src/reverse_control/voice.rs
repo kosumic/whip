@@ -31,7 +31,7 @@ const REMAIN_SILENT: &str = "remain_silent";
 const CONFIRM_DELEGATION: &str = "confirm_delegation";
 
 const MAX_CALLS: usize = 128;
-const MAX_ARGUMENTS: usize = 16 * 1024;
+pub(crate) const MAX_ARGUMENTS: usize = 16 * 1024;
 const MAX_RESULT: usize = 32 * 1024;
 const LIFETIME: Duration = Duration::from_mins(55);
 static PLATFORM: OnceLock<RwLock<Option<Arc<dyn WhipAppControl>>>> = OnceLock::new();
@@ -181,7 +181,7 @@ impl WhipToolSession {
         })
     }
 
-    fn check(&self) -> Result<(), BrowserError> {
+    pub(crate) fn check(&self) -> Result<(), BrowserError> {
         if self.closed.load(Ordering::Acquire) || self.started.elapsed() >= LIFETIME {
             return Err(BrowserError::new(
                 ErrorCode::Cancelled,

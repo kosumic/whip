@@ -1,16 +1,14 @@
-import { useCallback, useContext, useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
 import { Modal, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import type { AppNavigationController } from '../hooks/useAppNavigation';
 import type { SessionRuntimeController } from '../hooks/useSessionRuntimeManager';
-import { VoiceConversationSettingsContext } from '../lib/voiceConversationSettingsContext';
 import { useOpenAiVoiceCredentialStatus } from '../hooks/useOpenAiVoiceCredentialStatus';
 import { hostDisplayName } from '../lib/hostProfiles';
 import { GlobalVoiceControl, type GlobalVoiceApproval } from '../services/globalVoiceControl';
 import { voiceSessionManager } from '../services/voiceSessionManager';
 import { VoiceChatScreen, type VoiceChatHandle } from './VoiceChatScreen';
-import { VoiceConversationProviderSetting } from './VoiceConversationProviderSetting';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
 
@@ -25,7 +23,6 @@ export function GlobalVoiceCall({ ref, navigation, sessions, locked, visible }: 
 }) {
   const { t } = useTranslation();
   const { bottom, top } = useSafeAreaInsets();
-  const { settings } = useContext(VoiceConversationSettingsContext);
   const credential = useOpenAiVoiceCredentialStatus();
   const [setup, setSetup] = useState(false);
   const [calling, setCalling] = useState(false);
@@ -40,7 +37,7 @@ export function GlobalVoiceCall({ ref, navigation, sessions, locked, visible }: 
   const approvalSession = approval ? sessions.presentationSessions.find(item => item.hostId === approval.hostId) : undefined;
   const approvalPane = approvalSession?.snapshot.panes.find(item => item.pane_id === approval?.paneId);
   const approvalAgent = approvalPane?.label || approvalPane?.display_agent || approvalPane?.agent;
-  const canStart = credential.ready && settings.provider === 'openai' && settings.mode === 'Realtime';
+  const canStart = credential.ready;
   const start = useCallback(() => {
     if (locked || !canStart) return;
     setCallAttempt(attempt => attempt + 1); setSetup(false); setExpanded(true); setCalling(true);
@@ -86,12 +83,16 @@ export function GlobalVoiceCall({ ref, navigation, sessions, locked, visible }: 
         </View>
         <ScrollView className="flex-1">
           <Text className="px-5 pb-4 text-sm text-muted-foreground">{t('globalCall.permissions')}</Text>
-          <VoiceConversationProviderSetting />
+          <View className="gap-2 px-5 py-3">
+            <Text className="text-sm font-medium">{t('openai.title')}</Text>
+            {!credential.ready && <Text accessibilityLiveRegion="polite" className="text-sm text-muted-foreground">{t(credential.reason)}</Text>}
+            <Text className="text-sm text-muted-foreground">{t('openai.configure')}</Text>
+            <Button variant="secondary" onPress={() => { closeSetup(); navigation.selectTab('more'); }}><Text>{t('settings.title')}</Text></Button>
+          </View>
         </ScrollView>
         <Button className="mx-5 my-3" disabled={!canStart} onPress={start}>
           <Text>{t('globalCall.start')}</Text>
         </Button>
-        {settings.provider === 'local' && <Text className="px-5 pb-3 text-sm text-muted-foreground">{t('globalCall.cloudRequired')}</Text>}
       </View>
     </Modal>
     {calling && <VoiceChatScreen key={callAttempt} ref={voice} target={{ global: true, label: t('globalCall.title') }} send={NO_AGENT_SEND}

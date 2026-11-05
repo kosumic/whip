@@ -1,12 +1,21 @@
 # Global voice calls (#326)
 
 The phone button on Hosts, More, and the Terminal control bar starts a global
-call using the saved OpenAI Realtime provider, model, and voice, or returns to
-the current global call. If the saved configuration is unsupported or the API
-key is not ready, it opens Global call settings to complete setup and explicitly
-start the call. No SSH connection or saved host is required. Local turn-based
-calls remain agent-bound. [GPT-Live calls](live-voice.md) are also agent-bound;
-Global GPT-Live tools remain deferred to Stage 4 (#326).
+call using OpenAI and the saved Realtime or GPT-Live mode and voice, or returns
+to the current global call. Global calls always use OpenAI, independently of the
+local/OpenAI preference for agent calls, without changing that preference.
+If the API key is not ready, setup shows its status and a link to Settings;
+it never offers a local provider. No SSH connection or saved host is required.
+Local turn-based calls remain agent-bound.
+
+Global [GPT-Live calls](live-voice.md) use a Responses backend (`gpt-6-luna`,
+configured in `realtime_voice/live/catalog.json`) with the same tool catalog and
+native capability checks as Realtime. Whip waits for a complete, attributed
+backend response before dispatching functions and returns every result through
+`response.item.create` before requesting continuation. Duplicate, ambiguous or
+incomplete function batches never replay work. Typed global messages enter the
+backend as user input; they do not directly submit a coding-agent prompt.
+Agent-bound Live calls continue using client delegation to their pinned agent.
 
 The app shell presents the call. Changing tabs, opening an agent, disconnecting
 a host, or editing voice preferences does not change its scope or restart it.
@@ -22,10 +31,10 @@ safe app navigation, and basic device info/battery/network status. The Rust
 an MCP server, read a launch's bearer token, borrow a remote agent's authority,
 or connect to a host automatically.
 
-The Realtime catalog contains `hosts_list`, `herdr_snapshot`, `app_snapshot`,
+The shared global catalog contains `hosts_list`, `herdr_snapshot`, `app_snapshot`,
 `app_navigate`, `app_focus_host`, `app_focus_tab`, `app_open_agent`,
 `herdr_delegate`, safe device status tools, and `remain_silent`. Function names
-use underscores on the public Realtime wire; they map to the corresponding
+use underscores on the public voice wire; they map to the corresponding
 Whip namespaces. Shared Reverse Control parsers, typed host context, device
 result sanitizers, and Herdr execution validate the supported operations. Existing launch-scoped
 MCP behavior and its broader catalog are unchanged.
@@ -48,6 +57,9 @@ Presentation and OS effects require the app in the foreground.
 Global transcript/captions stay separate from agent transcripts. Provider
 usage is recorded with global scope and never follows UI focus. Usage & costs
 can filter by scope. Remote-agent billing remains separate and unknown.
+Global Live duration is recorded with global scope. Its displayed voice estimate
+excludes delegated Responses backend charges and remote coding-agent spending;
+those costs remain unknown in Whip.
 
 Each global call loads **Settings → Reverse Control → Global AGENTS.md** into
 its initial model instructions, before the first response or tool call. It uses
@@ -67,9 +79,9 @@ independent.
 
 ## Remaining Stage 4 work
 
-This implements the global Realtime entry point and the status/navigation/
-confirmed-delegation permission set. #326 remains open for GPT-Live delegation,
-browser capability sessions and document fences, opt-in consequential host or
+This implements global Realtime and GPT-Live with the status/navigation/
+confirmed-delegation permission set. #326 remains open for browser capability
+sessions and document fences, opt-in consequential host or
 device actions, persisted selected-agent billing associations, and Android/iOS
 device acceptance checks. Browser control, host edits/connections/deletion,
 remote shell execution, clipboard, location, downloads/exports, and device speech

@@ -21,12 +21,14 @@ impl Default for Usage {
     }
 }
 impl Usage {
-    pub fn start(voice: &str, preview: bool) -> Result<Self, &'static str> {
+    pub fn start(voice: &str, preview: bool, global: bool) -> Result<Self, &'static str> {
         let mut usage = Self {
             persistence: Some(NativeVoiceUsageSession::start(
                 VoiceUsageMode::Live,
                 if preview {
                     VoiceUsageScope::Preview
+                } else if global {
+                    VoiceUsageScope::Global
                 } else {
                     VoiceUsageScope::Agent
                 },

@@ -13,34 +13,27 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
 const terminalTarget: TerminalVoiceChatTarget = { hostId: 'host', paneId: 'shell', tabId: 'shell', label: 'SSH shell',
   terminal: { runtimeId: 'runtime', runtimeIncarnation: 1, connectionGeneration: 1, terminalId: 'shell' } };
 
-test('global Realtime has no host target, survives host changes and closes on app lock', async () => {
+test.each(['Realtime', 'Live'] as const)('global %s uses OpenAI independently of agent preferences, survives host changes and closes on app lock', async mode => {
   const local = jest.fn();
   const cloud = { start: jest.fn(async () => {}), close: jest.fn(async () => {}), setTranscriptBinding: jest.fn(), setVadSensitivity: jest.fn(), submitted: jest.fn(), toggleMuted: jest.fn(), toggleSpeaker: jest.fn(), finish: jest.fn(), skip: jest.fn(async () => {}) };
   const realtime = jest.fn(async () => cloud);
   const manager = new VoiceSessionManager(local, undefined, realtime);
-  const call = manager.start({ kind: 'Global' }, () => false, { ...defaults, provider: 'openai', realtimeVoice: 'cedar' });
+  const call = manager.start({ kind: 'Global' }, () => false, { ...defaults, provider: 'local', mode, realtimeVoice: 'cedar', liveVoice: 'quartz' });
   await flush();
   expect(realtime).toHaveBeenCalledWith({ global: true, label: 'Global call' }, call.settings, expect.any(Function), call.startedMonotonic);
   await manager.retainAgentHosts([]);
   await manager.retainAgentHosts(['different']);
   expect(manager.start({ kind: 'Global' }, () => false, defaults)).toBe(call);
   expect(call.settings.realtimeVoice).toBe('cedar');
+  expect(call.settings.liveVoice).toBe('quartz');
+  expect(call.settings.provider).toBe('openai');
+  expect(call.mode).toBe(mode);
+  expect(defaults.provider).toBe('local');
   expect(cloud.close).not.toHaveBeenCalled();
   expect(local).not.toHaveBeenCalled();
   await manager.setLocked(true);
   expect(cloud.close).toHaveBeenCalledTimes(1);
   expect(manager.active).toBeUndefined();
-});
-
-test.each(['local', 'live'] as const)('global %s mode cannot acquire audio or a coding-agent adapter', async mode => {
-  const local = jest.fn(), realtime = jest.fn();
-  const manager = new VoiceSessionManager(local, undefined, realtime);
-  const call = manager.start({ kind: 'Global' }, () => true, { ...defaults, provider: mode === 'local' ? 'local' : 'openai', mode: mode === 'live' ? 'Live' : 'Realtime' });
-  await flush();
-  expect(call.ended).toBe(true);
-  expect(call.getSnapshot().phase).toBe('error');
-  expect(local).not.toHaveBeenCalled();
-  expect(realtime).not.toHaveBeenCalled();
 });
 
 test('terminal calls require Realtime and cannot enter the local agent adapter', async () => {

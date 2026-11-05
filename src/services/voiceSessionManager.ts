@@ -52,7 +52,7 @@ export class VoiceSession {
   private readonly listeners = new Set<(view: VoiceConversationView) => void>();
 
   constructor(readonly scope: CallScope, settings: VoiceConversationSettings) {
-    this.settings = Object.freeze(parseVoiceConversationSettings(settings));
+    this.settings = Object.freeze(parseVoiceConversationSettings(scope.kind === 'Global' ? { ...settings, provider: 'openai' } : settings));
     if (this.settings.realtimeVad) Object.freeze(this.settings.realtimeVad);
     this.mode = this.settings.provider === 'local' ? 'TurnBased' : this.settings.mode;
     if (scope.kind === 'Agent') this.bindingToken = scope.target.bindingToken;
@@ -104,7 +104,7 @@ export class VoiceSessionManager {
     this.transition = this.transition.then(async () => {
       if (previous) await this.end(previous);
       if (session.ended || this.current !== session) return;
-      if (this.locked || (scope.kind === 'Global' && session.mode !== 'Realtime') || (scope.kind === 'Terminal' && session.mode !== 'Realtime') || (session.mode !== 'TurnBased' && !this.createRealtime)) {
+      if (this.locked || (scope.kind === 'Terminal' && session.mode !== 'Realtime') || (session.mode !== 'TurnBased' && !this.createRealtime)) {
         session.ended = true;
         session.publish({ ...initialView(), phase: 'error', error: this.locked ? 'Unlock Whip to start a call.' : 'This conversation mode is not available yet.' });
         return;

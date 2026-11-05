@@ -5,7 +5,9 @@ voice, then choose OpenAI API under Voice. Start the existing call action from a
 connected coding-agent chat. The model is `gpt-live-1`; the selected Live voice
 is independent of Realtime/TTS and takes effect on the next call. The existing
 call screen, mute, speaker, background ownership, minimize and hangup controls
-are reused. Global GPT-Live tools remain in Stage 4; terminal GPT-Live is outside this stage.
+are reused. [Global calls](global-voice.md) also support GPT-Live, use OpenAI
+regardless of the agent-call provider preference, and run Whip's global tools
+through a Responses backend. Terminal GPT-Live is outside this stage.
 Settings offers editable preview text (up to 240 characters) for both Realtime
 and Live voices. A preview uses the saved API key and incurs API charges, opens
 no microphone or agent connection, and stops when you change its text, voice or
@@ -21,7 +23,8 @@ saved; duration usage is recorded with Preview scope.
 `realtime_voice/live.rs` implements an independent Rust `LiveVoiceAdapter` using
 `oai_rt_rs::live` public typed events/codec. It connects to
 `wss://api.openai.com/v1/live/sessions`, sends `session.start`, confirms the
-session/model/voice and uses client delegation. It shares only native PCM,
+session/model/voice and uses client delegation for agent calls or Responses
+delegation for global calls. It shares native PCM,
 echo cancellation, credential ingress and call ownership with Realtime. Live
 uses paced PCM16 at 24 kHz over WebSocket on both platforms; it does not send
 Realtime events or use private Codex/ChatGPT bootstrap endpoints.
@@ -87,6 +90,8 @@ lives in `live/catalog.json`, with source/date/revision, currently $0.05/minute
 billed per second. Updating the catalog does not reprice history. Remote agent
 costs remain explicitly unknown and excluded, never fabricated as zero. The
 call and usage UI show voice estimates separately from that unavailable spend.
+Global Live records duration with global scope; its delegated Responses backend
+is also billed separately and excluded from the displayed voice estimate.
 
 ## Validation
 
