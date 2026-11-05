@@ -63,6 +63,7 @@ Whip is not developed, maintained, or endorsed by the Herdr project or its autho
   - [Android](#android)
   - [iOS](#ios)
 - [Connect your first host](#connect-your-first-host)
+  - [Quick start with a coding agent](#quick-start-with-a-coding-agent)
   - [Pair with a QR code](#pair-with-a-qr-code)
   - [Enter a host manually](#enter-a-host-manually)
   - [Connect with Tailcat](#connect-with-tailcat)
@@ -327,6 +328,24 @@ does not need to be POSIX: Fish works. A Windows host whose sshd `DefaultShell` 
 PowerShell or `cmd.exe` has no `/bin/sh`, so it reports **Cannot run Herdr setup
 commands**, and its SSH terminal tabs keep working.
 
+### Quick start with a coding agent
+
+On the Mac or Linux computer you want to access, paste this prompt into your
+coding agent. It can download Whipair directly from GitHub.
+
+```text
+Set up this computer so I can connect to it from the Whip mobile app.
+
+1. Check this computer's operating system and CPU architecture. Install Tailcat if it is missing, following https://github.com/tailscale/tailcat/blob/main/INSTALL.md.
+2. Download the latest matching Whipair binary from the whipair-v* releases at https://github.com/kosumic/whip/releases?q=whipair-v. Verify its SHA-256 checksum against the release checksum file and make the binary executable. Use the native binary directly.
+3. If Herdr is installed, run commands in Herdr. Run whipair --tailcat. Use Tailcat's built-in SSH service so a system SSH server and SSH keys are not required. Do not change my system SSH configuration.
+4. Keep the process running in a terminal I can return to, and show me its Whip pairing QR code so I can scan it on my phone. Tell me how to stop it when I am done. Keep the QR code and tc address private.
+```
+
+In Whip, open **Add host → Quick connect with Tailcat** to copy this same prompt
+or scan the QR when your agent is ready. Keep the computer's terminal running
+while using Whip.
+
 ### Pair with a QR code
 
 In Whip, open **Add host** and choose **Scan pairing QR**. On the Mac or Linux
@@ -387,10 +406,12 @@ Whip accepts Herdr releases that report protocols 17 through 22 and rejects othe
 
 ### Connect with Tailcat
 
-Tailcat mode carries SSH inside a WireGuard-encrypted tunnel across networks, without a Tailscale account or a separate Tailscale app on your phone. It tries a direct UDP connection first and falls back to an encrypted relay when needed; relay connections can increase typing latency. SSH credentials and host-key verification still apply.
+Start with the [coding-agent prompt](#quick-start-with-a-coding-agent) for a guided setup. Install Tailcat separately and run `whipair --tailcat` to display a Whip QR using the built-in, tunnel-authenticated SSH server. Arguments after `--` go directly to `tailcat serve`, and its output passes through. For example, `whipair --tailcat -- --key=my-server` uses an existing saved key; `whipair --tailcat -- 2222` forwards the host's SSH port instead. Keep the command running until you finish.
+
+Tailcat mode carries SSH inside a WireGuard-encrypted tunnel across networks, without a Tailscale account or a separate Tailscale app on your phone. It tries a direct UDP connection first and falls back to an encrypted relay when needed; relay connections can increase typing latency. Host-key verification applies in every mode. The built-in `no-auth-ssh` service authenticates access through the tunnel; forwarded SSH and the key-authenticated built-in service use SSH credentials.
 
 1. [Install Tailcat](https://github.com/tailscale/tailcat/blob/main/INSTALL.md) on the laptop or server you want to access.
-2. In Whip, open **Add host**, enable **Tailcat mode**, then choose **Enter host manually**. You can also enable the mode when editing a saved host. It defaults off for each host.
+2. In Whip, open **Add host → Enter host manually**, then enable **Tailcat mode** in the editor. You can also enable the mode when editing a saved host. It defaults off for each host.
 3. Choose one of the server options below. Expand **How it works and server setup** in the host editor for copyable commands matching your settings.
 4. Leave `tailcat serve` running and paste its complete `tc…` address into **Tailcat address**. No separate SSH hostname or IP is required. Enter the SSH credentials, connect, and verify the SSH fingerprint through a trusted channel before choosing **Trust host**.
 
