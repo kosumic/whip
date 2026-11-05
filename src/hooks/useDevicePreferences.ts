@@ -27,6 +27,8 @@ import {
 import type { StartupStorageSnapshot } from '../services/startupStorage';
 import type { AppTab } from '../types';
 import type { LoadState } from './useStartupStorage';
+import { useOpenAiVoiceCredentialStatus } from './useOpenAiVoiceCredentialStatus';
+import { speechBackendCommand } from '../services/speechPlayback';
 
 type PreferenceHydration =
   | { status: 'loading' }
@@ -72,6 +74,7 @@ export function useDevicePreferences(
   startupStorage: LoadState<StartupStorageSnapshot>,
 ): DevicePreferencesController {
   const locales = useLocales();
+  const credential = useOpenAiVoiceCredentialStatus();
   const hydrationStarted = useRef(false);
   const [persistence] = useState(
     () => new DevicePreferencesPersistence(saveDevicePreferences),
@@ -193,6 +196,14 @@ export function useDevicePreferences(
     },
     [mutate],
   );
+
+  useEffect(() => {
+    if (!credential.missing || state.hydration.status !== 'loaded') return;
+    mutate(current => current.voiceConversation.provider === 'openai'
+      ? { ...current, voiceConversation: { ...current.voiceConversation, provider: 'local' } }
+      : current);
+    reportBackgroundFailure(speechBackendCommand('system-if-openai'), 'missing-openai-key-fallback');
+  }, [credential.missing, state.hydration.status, mutate]);
 
   const setTerminalPreferences = useCallback(
     (

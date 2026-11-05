@@ -3,16 +3,18 @@ import { View } from 'react-native';
 import Volume2 from 'lucide-react-native/icons/volume-2';
 import Sparkles from 'lucide-react-native/icons/sparkles';
 import { useSectionExpansion } from '../hooks/useSectionExpansion';
+import { useOpenAiVoiceCredentialStatus } from '../hooks/useOpenAiVoiceCredentialStatus';
 import { CollapsibleSectionCard } from './CollapsibleSectionCard';
 import { useTranslation } from 'react-i18next';
 import { deviceLanguage } from '../i18n';
-import { getSpeechPlayback, speechBackendCommand, systemSpeechVoices, type SpeechVoice, type SpeechBackendAction, type SpeechBackendStatus } from '../services/speechPlayback';
+import { getSpeechPlayback, onSpeechBackendChange, speechBackendCommand, systemSpeechVoices, type SpeechVoice, type SpeechBackendAction, type SpeechBackendStatus } from '../services/speechPlayback';
 import { formatRemoteFileSize } from '../lib/remoteFiles';
 import { hapticPress } from '../services/interactionFeedback';
 import { bestEffortCleanup, reportBackgroundFailure } from '../services/backgroundOperations';
 import { GlassButton } from './GlassControls';
 import { SpeechVoicePicker } from './SpeechVoicePicker';
 import { OpenAiVoiceKeySetting } from './OpenAiVoiceKeySetting';
+import { VoiceConversationSetting, type VoiceConversationSettingHandle } from './VoiceConversationSetting';
 import { Input } from './ui/input';
 import { Text } from './ui/text';
 
@@ -21,12 +23,13 @@ async function stopPreviewPlayback(owner: string) {
 }
 
 const PREVIEW_TEXT_SAVE_DELAY_MS = 500;
-const LOCAL_SPEECH_BACKENDS = ['system', 'phonon'] as const;
+const SPEECH_BACKENDS = ['system', 'phonon', 'openai'] as const;
 
 export function SpeechBackendSetting() {
   const { t } = useTranslation();
   const { expanded: speechExpanded, toggleExpanded: toggleSpeech } = useSectionExpansion('speech', true);
-  const { expanded: openaiExpanded, toggleExpanded: toggleOpenai } = useSectionExpansion('openai-tts', true);
+  const { expanded: openaiExpanded, toggleExpanded: toggleOpenai } = useSectionExpansion('openai', true);
+  const conversationSetting = useRef<VoiceConversationSettingHandle>(null);
   const [status, setStatus] = useState<SpeechBackendStatus>();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -37,8 +40,7 @@ export function SpeechBackendSetting() {
   const voicesLoadingRef = useRef(false);
   const [voicesError, setVoicesError] = useState<string>();
   const [previewing, setPreviewing] = useState(false);
-  const [credentialSaved, setCredentialSaved] = useState<boolean>();
-  const [credentialBusy, setCredentialBusy] = useState(false);
+  const credential = useOpenAiVoiceCredentialStatus();
   const previewOwner = useRef(`voice-preview-${Date.now()}`);
   const previewSequence = useRef(0);
   const [previewText, setPreviewText] = useState('');
@@ -94,9 +96,10 @@ export function SpeechBackendSetting() {
     setPreviewing(false);
   }, []);
 
-  const credentialStatus = useCallback((saved: boolean | undefined, updating: boolean) => {
-    setCredentialSaved(saved); setCredentialBusy(updating);
-  }, []);
+  const stopPreviews = useCallback(() => {
+    stopPreview();
+    return conversationSetting.current?.stopPreview();
+  }, [stopPreview]);
 
   const changePreviewText = (text: string) => {
     previewTextEdited.current = true;
@@ -124,11 +127,13 @@ export function SpeechBackendSetting() {
   }, [stopPreview]);
   useEffect(() => {
     mounted.current = true;
+    const unsubscribe = onSpeechBackendChange(value => { if (mounted.current) setStatus(value); });
     void run('status');
     void loadSystemVoices();
     const owner = previewOwner.current;
     return () => {
       mounted.current = false; request.current += 1;
+      unsubscribe();
       savePreviewText();
       bestEffortCleanup(stopPreviewPlayback(owner), 'voice-preview-unmount');
     };
@@ -174,7 +179,7 @@ export function SpeechBackendSetting() {
       accessibilityLabel={t('speech.previewTextLabel')} editable={previewTextReady}
       className="h-28" multiline textAlignVertical="top" maxLength={status?.maxTextUnits} />
     <GlassButton variant="secondary" disabled={busy || !status || !!status.voiceDownload || !previewTextReady || !previewText.trim() ||
-      (status.backend === 'openai' && !previewing && (credentialBusy || !credentialSaved))}
+      (status.backend === 'openai' && !previewing && !credential.ready)}
       onPress={hapticPress(() => { void preview(); })}>
       <Text>{t(previewing ? 'speech.stopPreview' : 'speech.preview')}</Text>
     </GlassButton>
@@ -184,18 +189,28 @@ export function SpeechBackendSetting() {
   </>;
   return <>
     <CollapsibleSectionCard title={t('speech.backend')} icon={Volume2}
-      expanded={speechExpanded} onToggle={() => { if (status?.backend !== 'openai') { stopPreview(); } toggleSpeech(); }} contentClassName="pb-3.5">
+      expanded={speechExpanded} onToggle={() => { stopPreview(); toggleSpeech(); }} contentClassName="pb-3.5">
       <Text className="px-3.5 py-3 text-xs leading-[17px] text-muted-foreground">{t('speech.localCopy')}</Text>
       <View className="flex-row flex-wrap items-stretch gap-2 px-3.5">
-        {LOCAL_SPEECH_BACKENDS.map(backend => <GlassButton key={backend}
-          variant={status?.backend === backend ? 'secondary' : 'ghost'} size="content" role="radio"
-          className="min-h-12 flex-1 px-3 py-3"
-          accessibilityState={{ selected: status?.backend === backend }}
-          disabled={busy || (backend === 'phonon' && (!status?.supported || !status.installed))}
-          onPress={hapticPress(() => { void run(backend); })}>
-          <Text className="text-center text-sm font-medium">{t(`speech.${backend}`)}</Text>
-        </GlassButton>)}
+        {SPEECH_BACKENDS.map(backend => {
+          const disabled = busy || (backend === 'openai' && !credential.ready) ||
+            (backend === 'phonon' && (!status?.supported || !status.installed));
+          return <GlassButton key={backend}
+            variant={status?.backend === backend ? 'secondary' : 'ghost'} size="content" role="radio"
+            className="min-h-12 flex-1 px-3 py-3"
+            accessibilityState={{ selected: status?.backend === backend, disabled }}
+            disabled={disabled}
+            onPress={hapticPress(() => { if (!disabled) void run(backend); })}>
+            <Text className="text-center text-sm font-medium">{t(`speech.${backend}`)}</Text>
+          </GlassButton>;
+        })}
       </View>
+      {!credential.ready && <Text accessibilityLiveRegion="polite" className="px-3.5 pt-3 text-xs text-muted-foreground">
+        {t('speech.openai')}: {t(credential.reason)} {t('openai.configure')}
+      </Text>}
+      {status?.supported && !status.installed && <Text className="px-3.5 pt-3 text-xs text-muted-foreground">
+        {t('speech.phonon')}: {t('providers.downloadRequired')}
+      </Text>}
       <View className="mx-3.5 my-3 border-l-2 border-border pl-2">
         {status?.backend === 'system' ? <SpeechVoicePicker title={t('speech.systemVoice')} selected={status.systemVoice}
           voices={installedSystemVoices} disabled={busy} loading={voicesLoading} error={voicesError}
@@ -205,7 +220,7 @@ export function SpeechBackendSetting() {
           voices={phononVoices} disabled={voiceBusy || !status.installed} onSelect={id => { void run(`voice:${id}`); }}
           onRemove={id => { void run(`remove-voice:${id}`); }} /> : null}
       </View>
-      {status?.backend !== 'openai' ? previewControls : null}
+      {previewControls}
       <View className="gap-2 px-3.5 pt-3.5">
         {status?.voiceDownload ? <>
           <Text accessibilityLiveRegion="polite" className="text-xs text-muted-foreground">{t('speech.voiceProgress', {
@@ -225,23 +240,21 @@ export function SpeechBackendSetting() {
           {!status.downloading && (status.installed || status.downloadedBytes > 0) ? <GlassButton variant="ghost" disabled={busy} onPress={hapticPress(() => { void run('delete'); })}><Text className="text-destructive">{t('speech.remove')}</Text></GlassButton> : null}
         </> : status ? <Text className="text-xs text-muted-foreground">{t('speech.unsupported')}</Text> : null}
       </View>
-      {status?.backend !== 'openai' ? <View className="px-3.5">{feedback}</View> : null}
+      <View className="px-3.5">{feedback}</View>
     </CollapsibleSectionCard>
-    <CollapsibleSectionCard title={t('speech.openai')} icon={Sparkles}
-      expanded={openaiExpanded} onToggle={() => { if (status?.backend === 'openai') { stopPreview(); } toggleOpenai(); }} contentClassName="pb-3.5">
+    <CollapsibleSectionCard title={t('openai.title')} icon={Sparkles}
+      expanded={openaiExpanded} onToggle={() => { void stopPreviews(); toggleOpenai(); }} contentClassName="pb-3.5">
+      <View className="border-b border-border px-3.5 py-3">
+        <OpenAiVoiceKeySetting beforeUpdate={stopPreviews} />
+      </View>
+      <VoiceConversationSetting ref={conversationSetting} credentialSaved={credential.ready} />
       <View className="gap-3 px-3.5 py-3">
+        <Text className="text-sm font-medium">{t('speech.openai')}</Text>
         <Text className="text-xs leading-[17px] text-muted-foreground">{t('speech.openaiCopy')}</Text>
-        <GlassButton variant={status?.backend === 'openai' ? 'secondary' : 'ghost'} role="radio"
-          disabled={busy || !status} accessibilityState={{ selected: status?.backend === 'openai' }}
-          onPress={hapticPress(() => { void run('openai'); })}>
-          <Text>{t('speech.useOpenai')}</Text>
-        </GlassButton>
         {status ? <SpeechVoicePicker title={t('speech.openaiVoice')} selected={status.openaiVoice}
           voices={status.openaiVoices.map(id => ({ id, name: id[0].toUpperCase() + id.slice(1), language: '', networkRequired: true }))}
           disabled={busy} onSelect={id => { void run(`openai-voice:${id}`); }} /> : null}
-        <OpenAiVoiceKeySetting beforeUpdate={stopPreview} onStatusChange={credentialStatus} />
       </View>
-      {status?.backend === 'openai' ? <>{previewControls}<View className="px-3.5">{feedback}</View></> : null}
     </CollapsibleSectionCard>
   </>;
 }

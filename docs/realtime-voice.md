@@ -1,7 +1,17 @@
 # OpenAI Realtime calls (Stage 2, #324)
 
-Select **OpenAI API → Realtime API** in conversation settings, save an OpenAI
-Platform API key, then open a connected coding-agent chat and start its call.
+In **Settings → OpenAI**, save your OpenAI Platform API key and configure
+the Realtime model, voice and turn detection. This single key also serves
+OpenAI text-to-speech. Select **OpenAI API** in the **Voice** card to use it
+for conversations; choose the speech backend separately in **Speech backend**.
+Then open a connected coding-agent chat and start its call.
+OpenAI selection is disabled until an API key is saved and while credentials
+are being updated or their presence cannot be checked. Removing the key resets
+the saved conversation provider to Local and OpenAI TTS to System, even with
+Settings closed. A key lookup error or key replacement preserves the selection.
+Local is always selectable. Phonon is offered only for TTS and requires an installed model on a
+supported device before it can be selected. Removing its model resets Phonon TTS
+to System. Restored selections whose key or model is missing also fall back.
 The existing Local provider remains the default. GPT-Live and Global calls
 remain unavailable. The selected voice and Realtime VAD configuration are
 snapshotted when the app-wide owner starts the call; edits affect the next call.

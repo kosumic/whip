@@ -10,7 +10,7 @@ export function useSectionExpansion(
     | 'notifications'
     | 'voice'
     | 'speech'
-    | 'openai-tts'
+    | 'openai'
     | 'security'
     | 'appearance'
     | 'herd'

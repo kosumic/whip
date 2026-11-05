@@ -9,6 +9,8 @@ const SERVICE = 'io.github.kaminarios.whip.openai.voice';
 const listeners = new Set<() => void>();
 const settledListeners = new Set<() => void>();
 let mutation: Promise<void> = Promise.resolve();
+let updating = false;
+export function isOpenAiVoiceCredentialUpdating(): boolean { return updating; }
 export function onOpenAiVoiceCredentialChange(listener: () => void, timing: 'before' | 'after' = 'before'): () => void {
   const subscribers = timing === 'after' ? settledListeners : listeners;
   subscribers.add(listener);
@@ -17,13 +19,16 @@ export function onOpenAiVoiceCredentialChange(listener: () => void, timing: 'bef
 
 async function updateCredential(action: () => Promise<void>): Promise<void> {
   const operation = mutation.then(async () => {
-    for (const listener of listeners) listener();
-    const native = getSpeechPlayback();
-    if (!native.voiceCredentialsUpdating) throw new Error('Install an updated Whip build to change voice credentials.');
-    await native.voiceCredentialsUpdating(true);
-    try { await action(); }
-    finally {
-      await native.voiceCredentialsUpdating(false);
+    updating = true;
+    try {
+      for (const listener of listeners) listener();
+      const native = getSpeechPlayback();
+      if (!native.voiceCredentialsUpdating) throw new Error('Install an updated Whip build to change voice credentials.');
+      await native.voiceCredentialsUpdating(true);
+      try { await action(); }
+      finally { await native.voiceCredentialsUpdating(false); }
+    } finally {
+      updating = false;
       for (const listener of settledListeners) listener();
     }
   });
@@ -35,7 +40,7 @@ async function updateCredential(action: () => Promise<void>): Promise<void> {
 export function voiceCredentialError(error: unknown, fallback: string): string {
   const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
   switch (code) {
-    case 'E_VOICE_CREDENTIAL_MISSING': return 'Save an OpenAI API key in voice conversation settings.';
+    case 'E_VOICE_CREDENTIAL_MISSING': return 'Save an OpenAI API key in Settings → OpenAI.';
     case 'E_VOICE_CREDENTIAL_LOCKED': return 'Unlock the device and Whip to use the OpenAI API credential.';
     case 'E_VOICE_CREDENTIAL_UNAVAILABLE': return 'OpenAI API credential storage is unavailable. Return to Whip and try again.';
     case 'E_VOICE_CREDENTIAL_FAILED': return 'Could not access the OpenAI API credential.';

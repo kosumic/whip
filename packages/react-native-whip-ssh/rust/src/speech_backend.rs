@@ -119,7 +119,7 @@ impl State {
         } else {
             download::partial_bytes(root)
         };
-        Ok(Self {
+        let mut state = Self {
             root: root.into(),
             preferences,
             installed,
@@ -132,7 +132,18 @@ impl State {
             generation: 0,
             installed_voices,
             voice_download: None,
-        })
+        };
+        if !state.installed || !supported() {
+            state.fallback_from(Backend::Phonon)?;
+        }
+        Ok(state)
+    }
+
+    fn fallback_from(&mut self, backend: Backend) -> Result<(), String> {
+        if self.preferences.backend == backend {
+            self.select(Backend::System)?;
+        }
+        Ok(())
     }
 
     fn select(&mut self, backend: Backend) -> Result<(), String> {
@@ -249,6 +260,7 @@ fn command(root: &str, action: &str) -> Result<serde_json::Value, String> {
         }
         "phonon" => current.select(Backend::Phonon)?,
         "openai" => current.select(Backend::Openai)?,
+        "system-if-openai" => current.fallback_from(Backend::Openai)?,
         "cancel" => current.cancel.store(true, Ordering::Release),
         "download" => {
             if !supported() {
@@ -296,7 +308,7 @@ fn command(root: &str, action: &str) -> Result<serde_json::Value, String> {
             if current.downloading || current.voice_download.is_some() {
                 return Err("Cancel the download before removing Phonon".into());
             }
-            current.select(Backend::System)?;
+            current.fallback_from(Backend::Phonon)?;
             // Invalidate a cached model without waiting for a cancelled inference on the UI thread.
             current.generation = current.generation.wrapping_add(1);
             let root = current.root.clone();
@@ -617,6 +629,37 @@ pub(super) fn phonon_available(language: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_phonon_model_persists_system_selection_on_restore() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(
+            directory.path().join("preferences.json"),
+            br#"{"backend":"phonon","system_voice":"installed-voice"}"#,
+        )
+        .unwrap();
+        let state = State::open(directory.path()).unwrap();
+        assert_eq!(state.status()["backend"], "system");
+        assert_eq!(state.status()["systemVoice"], "installed-voice");
+        assert_eq!(
+            State::open(directory.path()).unwrap().status()["backend"],
+            "system"
+        );
+    }
+
+    #[test]
+    fn provider_removal_only_resets_the_affected_selection_and_keeps_voice_settings() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut state = State::open(directory.path()).unwrap();
+        state.select(Backend::Openai).unwrap();
+        state.select_openai_voice("cedar").unwrap();
+        state.fallback_from(Backend::Phonon).unwrap();
+        assert_eq!(state.status()["backend"], "openai");
+        state.fallback_from(Backend::Openai).unwrap();
+        let restored = State::open(directory.path()).unwrap();
+        assert_eq!(restored.status()["backend"], "system");
+        assert_eq!(restored.status()["openaiVoice"], "cedar");
+    }
 
     #[test]
     fn openai_selection_and_voice_survive_switching_and_restart_without_downloads() {

@@ -14,6 +14,11 @@ import {
 import { DEVICE_PREFERENCES_FLUSH_INTERVAL_MS } from '../src/services/devicePreferencesPersistence';
 import type { StartupStorageSnapshot } from '../src/services/startupStorage';
 import type { LoadState } from '../src/hooks/useStartupStorage';
+import { hasOpenAiVoiceKey, removeOpenAiVoiceKey, saveOpenAiVoiceKey } from '../src/services/openAiVoiceCredentials';
+import { speechBackendCommand } from '../src/services/speechPlayback';
+
+jest.mock('../src/services/openAiVoiceCredentials', () => require('../test-support/mockOpenAiVoiceCredentials').createMockOpenAiVoiceCredentials());
+jest.mock('../src/services/speechPlayback', () => ({ speechBackendCommand: jest.fn(() => Promise.resolve({ backend: 'system' })) }));
 
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
@@ -107,6 +112,7 @@ function savedPreferences(): DevicePreferences {
 beforeEach(() => {
   jest.useFakeTimers();
   jest.clearAllMocks();
+  jest.mocked(hasOpenAiVoiceKey).mockResolvedValue(true);
   jest.spyOn(global, 'setInterval');
   jest.spyOn(global, 'clearInterval');
   mockSetItem.mockReset().mockResolvedValue();
@@ -263,4 +269,44 @@ test('never writes defaults when preference hydration fails', async () => {
   });
   expect(mockSetItem).not.toHaveBeenCalled();
   consoleError.mockRestore();
+});
+
+const openaiPreferences = {
+  ...defaultDevicePreferences,
+  voiceConversation: { ...defaultDevicePreferences.voiceConversation, provider: 'openai' as const, realtimeVoice: 'cedar' },
+};
+const openaiStartupStorage: LoadState<StartupStorageSnapshot> = {
+  ...startupStorage,
+  value: { ...startupStorage.value, preferences: JSON.stringify(openaiPreferences) },
+};
+
+test('clearing the key persists Local selection and resets OpenAI TTS with no Settings UI mounted', async () => {
+  await mount(openaiStartupStorage);
+  expect(controller.value.voiceConversation.provider).toBe('openai');
+  await act(async () => removeOpenAiVoiceKey());
+  expect(controller.value.voiceConversation).toEqual({ ...openaiPreferences.voiceConversation, provider: 'local' });
+  expect(speechBackendCommand).toHaveBeenCalledWith('system-if-openai');
+  await act(async () => transition('background'));
+  expect(savedPreferences().voiceConversation.provider).toBe('local');
+});
+
+test('a restored OpenAI selection with a confirmed missing key falls back after preferences load', async () => {
+  jest.mocked(hasOpenAiVoiceKey).mockResolvedValue(false);
+  await mount(openaiStartupStorage);
+  expect(controller.value.voiceConversation.provider).toBe('local');
+  expect(speechBackendCommand).toHaveBeenCalledWith('system-if-openai');
+});
+
+test('replacing a saved key preserves the OpenAI selection', async () => {
+  await mount(openaiStartupStorage);
+  await act(async () => saveOpenAiVoiceKey('sk-replacement'));
+  expect(controller.value.voiceConversation.provider).toBe('openai');
+  expect(speechBackendCommand).not.toHaveBeenCalled();
+});
+
+test('a credential lookup failure does not overwrite the saved provider selection', async () => {
+  jest.mocked(hasOpenAiVoiceKey).mockRejectedValueOnce(new Error('storage unavailable'));
+  await mount(openaiStartupStorage);
+  expect(controller.value.voiceConversation.provider).toBe('openai');
+  expect(speechBackendCommand).not.toHaveBeenCalled();
 });

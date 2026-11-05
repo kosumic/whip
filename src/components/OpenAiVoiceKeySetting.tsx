@@ -11,7 +11,7 @@ interface Props {
   onStatusChange?: (saved: boolean | undefined, busy: boolean) => void;
 }
 
-/** Both speech and conversation settings edit the same native-only credential. */
+/** One native-only credential shared by OpenAI speech and conversations. */
 export function OpenAiVoiceKeySetting({ beforeUpdate, onStatusChange }: Props) {
   const { t } = useTranslation();
   const [key, setKey] = useState('');
@@ -54,6 +54,7 @@ export function OpenAiVoiceKeySetting({ beforeUpdate, onStatusChange }: Props) {
 
   return <View className="gap-2">
     <Text className="text-sm font-medium">{t('voiceProvider.apiKey')}</Text>
+    <Text className="text-xs text-muted-foreground">{t('openai.sharedKey')}</Text>
     <Text className="text-xs text-muted-foreground">{t('voiceProvider.byok')}</Text>
     <Text accessibilityLiveRegion="polite" className="text-xs text-muted-foreground">{t(saved ? 'voiceProvider.keySaved' : 'voiceProvider.keyNotSaved')}</Text>
     <Input secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete="off" textContentType="none"

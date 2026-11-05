@@ -44,7 +44,7 @@ export interface NativeSpeechPlayback {
   removeListeners(count: number): void;
 }
 
-export type SpeechBackendAction = 'status' | 'system' | 'phonon' | 'openai' | 'download' | 'cancel' | 'delete'
+export type SpeechBackendAction = 'status' | 'system' | 'phonon' | 'openai' | 'system-if-openai' | 'download' | 'cancel' | 'delete'
   | `voice:${string}` | `remove-voice:${string}` | `system-voice:${string}` | `openai-voice:${string}` | `preview-text:${string}`;
 export interface SpeechVoice {
   id: string;
@@ -79,8 +79,20 @@ export async function systemSpeechVoices(): Promise<SpeechVoice[]> {
   return JSON.parse(await getSpeechPlayback().speechBackendCommand('system-voices')) as SpeechVoice[];
 }
 
+const backendListeners = new Set<(status: SpeechBackendStatus) => void>();
+const BACKEND_SELECTION_ACTIONS = new Set<SpeechBackendAction>(['system', 'phonon', 'openai', 'system-if-openai', 'delete']);
+
+export function onSpeechBackendChange(listener: (status: SpeechBackendStatus) => void): () => void {
+  backendListeners.add(listener);
+  return () => { backendListeners.delete(listener); };
+}
+
 export async function speechBackendCommand(action: SpeechBackendAction): Promise<SpeechBackendStatus> {
-  return JSON.parse(await getSpeechPlayback().speechBackendCommand(action)) as SpeechBackendStatus;
+  const status = JSON.parse(await getSpeechPlayback().speechBackendCommand(action)) as SpeechBackendStatus;
+  if (BACKEND_SELECTION_ACTIONS.has(action)) {
+    for (const listener of backendListeners) listener(status);
+  }
+  return status;
 }
 
 export function getSpeechPlayback(): NativeSpeechPlayback {

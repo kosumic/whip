@@ -1,6 +1,6 @@
 import * as Keychain from 'react-native-keychain';
 import { settledPromise } from '../src/lib/promises';
-import { hasOpenAiVoiceKey, saveOpenAiVoiceKey, removeOpenAiVoiceKey, onOpenAiVoiceCredentialChange, voiceCredentialError } from '../src/services/openAiVoiceCredentials';
+import { hasOpenAiVoiceKey, isOpenAiVoiceCredentialUpdating, saveOpenAiVoiceKey, removeOpenAiVoiceKey, onOpenAiVoiceCredentialChange, voiceCredentialError } from '../src/services/openAiVoiceCredentials';
 jest.mock('react-native-keychain', () => ({
   hasGenericPassword: jest.fn(), getGenericPassword: jest.fn(), setGenericPassword: jest.fn(), resetGenericPassword: jest.fn(),
   ACCESSIBLE: { WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'device-only-unlocked' },
@@ -72,4 +72,16 @@ test('native credential failures are distinct and sanitized', () => {
     expect(message).not.toContain('sk-private');
   }
   expect(voiceCredentialError(new Error('sk-private'), 'network failed')).toBe('network failed');
+});
+
+test('a failed native update releases readiness tracking and notifies subscribers', async () => {
+  const after = jest.fn();
+  const unsubscribe = onOpenAiVoiceCredentialChange(after, 'after');
+  mockUpdating.mockRejectedValueOnce(new Error('native unavailable'));
+  try {
+    await expect(saveOpenAiVoiceKey('sk-test')).rejects.toThrow('Could not securely save');
+    expect(isOpenAiVoiceCredentialUpdating()).toBe(false);
+    expect(after).toHaveBeenCalledTimes(1);
+    expect(Keychain.setGenericPassword).not.toHaveBeenCalled();
+  } finally { unsubscribe(); }
 });

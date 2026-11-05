@@ -5,11 +5,12 @@ import { useTranslation } from 'react-i18next';
 import type { AppNavigationController } from '../hooks/useAppNavigation';
 import type { SessionRuntimeController } from '../hooks/useSessionRuntimeManager';
 import { VoiceConversationSettingsContext } from '../lib/voiceConversationSettingsContext';
+import { useOpenAiVoiceCredentialStatus } from '../hooks/useOpenAiVoiceCredentialStatus';
 import { hostDisplayName } from '../lib/hostProfiles';
 import { GlobalVoiceControl, type GlobalVoiceApproval } from '../services/globalVoiceControl';
 import { voiceSessionManager } from '../services/voiceSessionManager';
 import { VoiceChatScreen, type VoiceChatHandle } from './VoiceChatScreen';
-import { VoiceConversationSetting, type VoiceConversationSettingHandle } from './VoiceConversationSetting';
+import { VoiceConversationProviderSetting } from './VoiceConversationProviderSetting';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
 
@@ -25,8 +26,8 @@ export function GlobalVoiceCall({ ref, navigation, sessions, locked, visible }: 
   const { t } = useTranslation();
   const { bottom, top } = useSafeAreaInsets();
   const { settings } = useContext(VoiceConversationSettingsContext);
+  const credential = useOpenAiVoiceCredentialStatus();
   const [setup, setSetup] = useState(false);
-  const [starting, setStarting] = useState(false);
   const [calling, setCalling] = useState(false);
   const [callAttempt, setCallAttempt] = useState(0);
   const [expanded, setExpanded] = useState(true);
@@ -35,16 +36,14 @@ export function GlobalVoiceCall({ ref, navigation, sessions, locked, visible }: 
   const [approval, setApproval] = useState<Approval>();
   const approvalRef = useRef<Approval | undefined>(undefined);
   const voice = useRef<VoiceChatHandle>(null);
-  const voiceSetting = useRef<VoiceConversationSettingHandle>(null);
-  const setupRevision = useRef(0);
-  const closeSetup = () => { setupRevision.current++; setSetup(false); };
+  const closeSetup = () => { setSetup(false); };
   const approvalSession = approval ? sessions.presentationSessions.find(item => item.hostId === approval.hostId) : undefined;
   const approvalPane = approvalSession?.snapshot.panes.find(item => item.pane_id === approval?.paneId);
   const approvalAgent = approvalPane?.label || approvalPane?.display_agent || approvalPane?.agent;
   useImperativeHandle(ref, () => ({ open() {
     if (locked) return;
     if (calling && voiceSessionManager.active?.scope.kind === 'Global' && !voiceSessionManager.active.ended) setExpanded(true);
-    else { setupRevision.current++; setSetup(true); }
+    else setSetup(true);
   } }), [calling, locked]);
   const context = { navigation, sessions, locked, showNavigation: () => {
     approvalRef.current?.complete(false); setComposing(false); setExpanded(false);
@@ -70,17 +69,11 @@ export function GlobalVoiceCall({ ref, navigation, sessions, locked, visible }: 
     return () => { control.dispose(); approvalRef.current?.complete(false); };
   }, []);
   useEffect(() => {
-    if (locked) { setupRevision.current++; setSetup(false); setComposing(false); approvalRef.current?.complete(false); }
+    if (locked) { setSetup(false); setComposing(false); approvalRef.current?.complete(false); }
   }, [locked]);
-  const start = async () => {
-    if (starting || settings.provider !== 'openai' || settings.mode !== 'Realtime') return;
-    const revision = setupRevision.current;
-    setStarting(true);
-    try {
-      await voiceSetting.current?.stopPreview();
-      if (contextRef.current.locked || revision !== setupRevision.current) return;
-      setCallAttempt(attempt => attempt + 1); setSetup(false); setExpanded(true); setCalling(true);
-    } finally { setStarting(false); }
+  const start = () => {
+    if (contextRef.current.locked || !credential.ready || settings.provider !== 'openai' || settings.mode !== 'Realtime') return;
+    setCallAttempt(attempt => attempt + 1); setSetup(false); setExpanded(true); setCalling(true);
   };
   return <>
     <Modal visible={setup && visible && !locked} animationType="slide" onRequestClose={closeSetup}>
@@ -91,9 +84,9 @@ export function GlobalVoiceCall({ ref, navigation, sessions, locked, visible }: 
         </View>
         <ScrollView className="flex-1">
           <Text className="px-5 pb-4 text-sm text-muted-foreground">{t('globalCall.permissions')}</Text>
-          <VoiceConversationSetting ref={voiceSetting} />
+          <VoiceConversationProviderSetting />
         </ScrollView>
-        <Button className="mx-5 my-3" disabled={starting || settings.provider !== 'openai' || settings.mode !== 'Realtime'} onPress={start}>
+        <Button className="mx-5 my-3" disabled={!credential.ready || settings.provider !== 'openai' || settings.mode !== 'Realtime'} onPress={start}>
           <Text>{t('globalCall.start')}</Text>
         </Button>
         {settings.provider === 'local' && <Text className="px-5 pb-3 text-sm text-muted-foreground">{t('globalCall.cloudRequired')}</Text>}

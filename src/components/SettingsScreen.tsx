@@ -92,7 +92,7 @@ import { CollapsibleSectionCard } from './CollapsibleSectionCard';
 import { SettingsChoiceRow } from './SettingsChoiceRow';
 import { SpeechBackendSetting } from './SpeechBackendSetting';
 import { MIN_VAD_SENSITIVITY, MAX_VAD_SENSITIVITY, VAD_SENSITIVITY_STEP } from '../lib/voiceVadSensitivity';
-import { VoiceConversationSetting } from './VoiceConversationSetting';
+import { VoiceConversationProviderSetting } from './VoiceConversationProviderSetting';
 import { VoiceUsageSetting } from './VoiceUsageSetting';
 import { DetailsTitle, SettingsDetailsProvider } from './SettingsDetails';
 import { ShizukuSection } from './ShizukuSection';
@@ -304,7 +304,7 @@ export function SettingsSection(props: SettingsSectionProps) {
         icon={Volume2}
         expanded={voiceExpanded}
         onToggle={toggleVoice}>
-        <VoiceConversationSetting />
+        <VoiceConversationProviderSetting />
         <VoiceUsageSetting />
         <SliderRow
           title={t('voiceChat.vadSensitivity')}

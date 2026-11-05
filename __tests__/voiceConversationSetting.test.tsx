@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { VoiceConversationSetting } from '../src/components/VoiceConversationSetting';
+import { VoiceConversationProviderSetting } from '../src/components/VoiceConversationProviderSetting';
+import { OpenAiVoiceKeySetting } from '../src/components/OpenAiVoiceKeySetting';
 jest.mock('@react-native-community/slider', () => 'Slider');
 import { SpeechVoicePicker } from '../src/components/SpeechVoicePicker';
 import { Text } from '../src/components/ui/text';
@@ -25,20 +27,26 @@ jest.mock('../src/components/GlassControls', () => ({ GlassButton: 'GlassButton'
 jest.mock('../src/components/ui/input', () => ({ Input: 'Input' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
 jest.mock('../src/components/SpeechVoicePicker', () => ({ SpeechVoicePicker: 'SpeechVoicePicker' }));
-jest.mock('../src/services/openAiVoiceCredentials', () => ({
-  hasOpenAiVoiceKey: jest.fn(() => Promise.resolve(false)),
-  saveOpenAiVoiceKey: jest.fn(() => Promise.resolve()), removeOpenAiVoiceKey: jest.fn(() => Promise.resolve()),
-  onOpenAiVoiceCredentialChange: jest.fn(() => () => {}),
-}));
+jest.mock('../src/services/openAiVoiceCredentials', () => require('../test-support/mockOpenAiVoiceCredentials').createMockOpenAiVoiceCredentials());
 
 let renderer: ReactTestRenderer;
 function Harness() {
   const [settings, onChange] = useState(defaults);
-  return <VoiceConversationSettingsContext value={{ settings, onChange }}><VoiceConversationSetting /></VoiceConversationSettingsContext>;
+  const [credential, setCredential] = useState<{ saved?: boolean; busy: boolean }>({ busy: false });
+  const credentialStatus = useCallback((saved: boolean | undefined, busy: boolean) => setCredential({ saved, busy }), []);
+  return <VoiceConversationSettingsContext value={{ settings, onChange }}>
+    <VoiceConversationProviderSetting />
+    <OpenAiVoiceKeySetting onStatusChange={credentialStatus} />
+    <VoiceConversationSetting credentialSaved={credential.saved} credentialBusy={credential.busy} />
+  </VoiceConversationSettingsContext>;
 }
 function pressText(label: string) {
   const text = renderer.root.findAll(node => node.type === Text && node.props.children === label)[0];
-  text.parent!.props.onPress();
+  const button = text.parent!;
+  if (!button.props.disabled) button.props.onPress();
+}
+function providerButton(provider: 'local' | 'openai') {
+  return renderer.root.findAll(node => node.type === Text && node.props.children === `voiceProvider.${provider}`)[0].parent!;
 }
 beforeEach(async () => {
   jest.clearAllMocks();
@@ -49,9 +57,57 @@ beforeEach(async () => {
 });
 afterEach(() => act(() => renderer.unmount()));
 
-test('Local settings do not access cloud credentials or show a cloud voice picker', () => {
-  expect(hasOpenAiVoiceKey).not.toHaveBeenCalled();
+test('provider selection checks key presence and contains no key editor or cloud voice configuration', async () => {
+  await act(async () => renderer.unmount());
+  jest.clearAllMocks();
+  await act(async () => { renderer = create(<VoiceConversationProviderSetting />); });
+  expect(hasOpenAiVoiceKey).toHaveBeenCalled();
   expect(renderer.root.findAllByType(SpeechVoicePicker)).toHaveLength(0);
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'voiceProvider.apiKey' })).toHaveLength(0);
+});
+
+test('OpenAI configuration is available before selecting it as the conversation provider', async () => {
+  expect(renderer.root.findByType(SpeechVoicePicker).props.selected).toBe(defaults.realtimeVoice);
+  await act(async () => renderer.root.findByType(SpeechVoicePicker).props.onSelect('cedar'));
+  const local = renderer.root.findAll(node => node.type === Text && node.props.children === 'voiceProvider.local')[0].parent!;
+  expect(local.props.accessibilityState.selected).toBe(true);
+});
+
+test('OpenAI selection requires a key and follows key saves and removal while Local stays available', async () => {
+  const onChange = jest.fn();
+  await act(async () => renderer.update(<VoiceConversationSettingsContext value={{ settings: defaults, onChange }}>
+    <VoiceConversationProviderSetting />
+  </VoiceConversationSettingsContext>));
+  expect(providerButton('openai').props.disabled).toBe(true);
+  expect(providerButton('local').props.disabled).toBe(false);
+  await act(async () => providerButton('openai').props.onPress());
+  expect(onChange).not.toHaveBeenCalled();
+  await act(async () => saveOpenAiVoiceKey('sk-test'));
+  expect(providerButton('openai').props.disabled).toBe(false);
+  await act(async () => providerButton('openai').props.onPress());
+  expect(onChange).toHaveBeenCalledWith({ ...defaults, provider: 'openai' });
+  await act(async () => removeOpenAiVoiceKey());
+  expect(providerButton('openai').props.disabled).toBe(true);
+  expect(providerButton('local').props.disabled).toBe(false);
+});
+
+test('a delayed key presence check cannot enable OpenAI after its key was removed', async () => {
+  let finish!: (saved: boolean) => void;
+  jest.mocked(hasOpenAiVoiceKey).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+  await act(async () => renderer.update(<VoiceConversationProviderSetting />));
+  expect(providerButton('openai').props.disabled).toBe(true);
+  expect(providerButton('local').props.disabled).toBe(false);
+  await act(async () => removeOpenAiVoiceKey());
+  await act(async () => finish(true));
+  expect(providerButton('openai').props.disabled).toBe(true);
+});
+
+test('a credential lookup failure disables OpenAI without disabling Local or displaying native errors', async () => {
+  jest.mocked(hasOpenAiVoiceKey).mockRejectedValueOnce(new Error('sk-native-secret'));
+  await act(async () => renderer.update(<VoiceConversationProviderSetting />));
+  expect(providerButton('openai').props.disabled).toBe(true);
+  expect(providerButton('local').props.disabled).toBe(false);
+  expect(JSON.stringify(renderer.toJSON())).not.toContain('sk-native-secret');
 });
 
 test('switching cloud modes keeps separate saved voices and leaves GPT-Live preview unavailable', async () => {
@@ -85,6 +141,7 @@ test('saving a key enables Realtime preview for the selected voice without start
 
 test('a playing preview can be stopped and changing voices cancels its owner', async () => {
   jest.mocked(hasOpenAiVoiceKey).mockResolvedValue(true);
+  await act(async () => renderer.update(<Harness key="saved" />));
   await act(async () => pressText('voiceProvider.openai'));
   let finish!: (result: string) => void;
   mockPreviewPlay.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
@@ -100,6 +157,7 @@ test('a playing preview can be stopped and changing voices cancels its owner', a
 
 test('preview failures display a translated error without native arguments', async () => {
   jest.mocked(hasOpenAiVoiceKey).mockResolvedValue(true);
+  await act(async () => renderer.update(<Harness key="saved" />));
   mockPreviewPlay.mockRejectedValueOnce(new Error('sk-test-secret'));
   await act(async () => pressText('voiceProvider.openai'));
   await act(async () => pressText('voiceProvider.preview'));
