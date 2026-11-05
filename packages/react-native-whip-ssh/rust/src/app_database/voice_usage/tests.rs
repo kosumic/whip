@@ -257,6 +257,45 @@ fn unknown_billing_and_interruption_are_never_presented_as_zero_or_active() {
     assert_eq!(call.status, AccountingStatus::Incomplete);
     assert_eq!(call.remote_agent_estimated_usd, None);
 }
+
+#[test]
+fn partial_call_keeps_known_charges_through_recovery_and_late_usage() {
+    let mut ledger = Ledger::default();
+    ledger.apply(started("partial", 90, false)).unwrap();
+    ledger
+        .apply(usage("partial", "response", 1, Some(0.25), true))
+        .unwrap();
+    ledger
+        .apply(usage("partial", "caption", 1, None, false))
+        .unwrap();
+    ledger.apply(VoiceUsageEvent::Recover).unwrap();
+    ledger = serde_json::from_str(&serde_json::to_string(&ledger).unwrap()).unwrap();
+    let chart_query = Query {
+        chart_boundaries_ms: vec![80, 100],
+        ..query()
+    };
+    let summary = ledger.summary(&chart_query).unwrap();
+    let call = &summary.calls[0];
+    assert_eq!(call.estimated_usd, None);
+    assert_eq!(call.known_estimated_usd, Some(0.25));
+    assert_eq!(call.status, AccountingStatus::Incomplete);
+    assert!(!call.active);
+    assert_eq!(summary.totals["lifetime"].known_estimated_usd, 0.25);
+    assert_eq!(summary.totals["lifetime"].unknown_cost_calls, 1);
+    assert_eq!(summary.chart_buckets[0].known_estimated_usd, 0.25);
+    assert_eq!(summary.chart_buckets[0].unknown_cost_calls, 1);
+    ledger
+        .apply(usage("partial", "caption", 2, Some(0.05), true))
+        .unwrap();
+    ledger
+        .apply(usage("partial", "caption", 2, Some(0.05), true))
+        .unwrap();
+    let summary = ledger.summary(&chart_query).unwrap();
+    assert_eq!(summary.calls[0].estimated_usd, Some(0.3));
+    assert_eq!(summary.totals["lifetime"].known_estimated_usd, 0.3);
+    assert_eq!(summary.totals["lifetime"].unknown_cost_calls, 0);
+    assert_eq!(summary.totals["lifetime"].incomplete_calls, 1);
+}
 #[test]
 fn local_cost_is_zero_but_remote_agent_cost_is_unknown_and_local_cannot_accept_billing() {
     let mut ledger = Ledger::default();

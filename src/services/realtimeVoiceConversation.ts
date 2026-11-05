@@ -19,7 +19,7 @@ const CONTROL = { skip: 1 } as const;
 const MAX_PENDING_CONTEXT = 8;
 let sequence = 0;
 type CallEvent = { token: string; type: string; muted?: boolean; speaker?: boolean };
-type NativeView = Pick<VoiceConversationView, 'phase' | 'muted' | 'level' | 'playbackLevel' | 'text' | 'userText' | 'error' | 'inputTokens' | 'outputTokens' | 'estimatedUsd' | 'messages' | 'backendText' | 'liveSeconds' | 'usageFinalized'>;
+type NativeView = Pick<VoiceConversationView, 'phase' | 'muted' | 'level' | 'playbackLevel' | 'text' | 'userText' | 'error' | 'inputTokens' | 'outputTokens' | 'estimatedUsd' | 'costIncomplete' | 'messages' | 'backendText' | 'liveSeconds' | 'usageFinalized'>;
 function requireForeground(): void { if (AppState.currentState !== 'active') throw new Error('Return to Whip to start the call.'); }
 
 /** Only call controls and presentation cross this bridge. PCM and tools stay native. */
@@ -118,7 +118,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
     this.view = { ...this.view, ...update };
     this.changed(this.view);
   }
-  private fail(message: string): void { if (!this.closed) { this.publish({ phase: 'error', error: message, level: 0, playbackLevel: 0, estimatedUsd: null }); void this.close(); } }
+  private fail(message: string): void { if (!this.closed) { this.publish({ phase: 'error', error: message, level: 0, playbackLevel: 0, costIncomplete: true }); void this.close(); } }
   private inputReady(): boolean { return this.view.phase === 'listening' || this.view.phase === 'muted'; }
   private async poll(final = false): Promise<void> {
     if (this.closed || !this.playback) return;

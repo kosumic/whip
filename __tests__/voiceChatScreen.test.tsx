@@ -25,7 +25,7 @@ jest.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles },
 }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
-jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string, values?: { cost?: string }) => key === 'voiceProvider.costEstimate' ? `Estimated voice total: ${values?.cost}` : key }) }));
+jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string, values?: { cost?: string }) => key === 'voiceProvider.costEstimate' ? `Estimated voice total: ${values?.cost}` : key === 'voiceUsage.partialEstimate' ? `Known voice cost: ${values?.cost} · total incomplete` : key }) }));
 jest.mock('../src/theme', () => ({ useTheme: () => ({ colors: { canvas: '#000', text: '#fff', primary: '#acf', onPrimary: '#000' } }) }));
 jest.mock('../src/components/app-ui', () => ({ useReducedMotion: jest.fn(() => true) }));
 jest.mock('../src/components/GlassSurface', () => ({ GlassPortal: 'GlassPortal' }));
@@ -270,6 +270,14 @@ test('distinguishes unknown API costs from a reported zero estimate', () => {
   expect(renderedText()).not.toContain('Estimated voice total: $0.0000');
   act(() => publish({ ...listening, provider: 'openai', estimatedUsd: 0 }));
   expect(renderedText()).toContain('Estimated voice total: $0.0000');
+});
+
+test('labels retained known costs as partial until all usage is priced', () => {
+  act(() => publish({ ...listening, provider: 'openai', estimatedUsd: 0.125, costIncomplete: true }));
+  expect(renderedText()).toContain('Known voice cost: $0.1250 · total incomplete');
+  expect(renderedText()).not.toContain('Estimated voice total: $0.1250');
+  act(() => publish({ ...listening, provider: 'openai', estimatedUsd: 0.15, costIncomplete: false }));
+  expect(renderedText()).toContain('Estimated voice total: $0.1500');
 });
 
 test('retains the current API voice estimate when the chat presentation remounts', async () => {

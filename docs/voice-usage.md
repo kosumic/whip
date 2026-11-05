@@ -14,9 +14,11 @@ incomplete accounting. Historical prices are never recomputed from a current
 rate card. USD estimates are not invoices.
 
 Rust aggregates each chart bucket from the same filtered calls as the totals.
-Unknown-price calls are counted as activity and shown with an outlined marker
-in the cost chart, excluded from the known estimate. Unknown-only totals display
-unknown rather than zero. History is limited to the chosen period or bucket;
+Calls with unpriced components are counted as activity and shown with an outlined
+marker in the cost chart. Their priced components still contribute to the known
+estimate; history labels the amount as known with an incomplete total. A call
+with no priced components displays unknown rather than zero.
+History is limited to the chosen period or bucket;
 current calls remain visible independently of their start period. The existing
 native summary query accepts optional, strictly increasing calendar boundaries;
 older callers that omit them keep their existing response shape. Chart queries
@@ -98,7 +100,8 @@ writes and notifies settings subscribers.
    never zero. Finalize only after collecting complete usage and any available
    pricing evidence; finalized items are immutable, and replay/older revisions
    cannot duplicate totals. Distinct late finalized items can still be added after
-   the call ends. Unknown costs exclude that entire call from the known subtotal.
+   the call ends. Unknown components are excluded; priced components remain in
+   the known subtotal even when the complete call estimate is unavailable.
 5. Record `ended` once at teardown. Duplicate end events keep the first timestamp.
    Keep observing provider final usage through graceful shutdown, independently of
    view ownership. Remote coding-agent spending remains unknown at this boundary;

@@ -76,7 +76,7 @@ fn a_final_usage_report_replaces_the_same_responses_earlier_report() -> TestResu
 }
 
 #[test]
-fn unknown_or_inconsistent_usage_never_becomes_a_zero_cost_estimate() -> TestResult {
+fn unknown_or_inconsistent_usage_keeps_the_other_responses_known_cost() -> TestResult {
     for invalid in [
         json!(null),
         json!({"total_tokens":3500,"input_tokens":3000,"output_tokens":500}),
@@ -99,7 +99,8 @@ fn unknown_or_inconsistent_usage_never_becomes_a_zero_cost_estimate() -> TestRes
         let mut chat = confirmed(DEFAULT_MODEL)?;
         chat.observe(&response("response.done", "known", usage())?);
         chat.observe(&response("response.done", "missing", invalid)?);
-        assert!(chat.estimated_usd().is_none());
+        estimate(&chat, 0.07868)?;
+        assert!(chat.is_partial());
     }
     Ok(())
 }

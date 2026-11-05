@@ -182,7 +182,7 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
         </View>
         <Animated.View pointerEvents="none" className="items-center gap-3 px-8 pb-5" style={[styles.status, chromeMotion]}>
           <Text accessibilityLiveRegion="polite" className="text-center text-xs" style={styles.statusText}>{status}</Text>
-          {estimatedCost !== null && <Text accessibilityHint={t('voiceProvider.costHint')} className="text-center text-xs" style={styles.statusText}>{t('voiceProvider.costEstimate', { cost: estimatedCost })}</Text>}
+          {estimatedCost !== null && <Text accessibilityHint={t('voiceProvider.costHint')} className="text-center text-xs" style={styles.statusText}>{t(view.costIncomplete ? 'voiceUsage.partialEstimate' : 'voiceProvider.costEstimate', { cost: estimatedCost })}</Text>}
           {view.liveSeconds != null && <Text className="text-center text-xs" style={styles.statusText}>{t('voiceUsage.liveDuration', { seconds: Math.ceil(view.liveSeconds) })} · {t('voiceUsage.remoteUnknown')}</Text>}
           {view.backendText && <Text selectable numberOfLines={4} className="text-center text-sm" style={styles.statusText}>{view.backendText}</Text>}
           {(view.phase === 'starting' || view.phase === 'preparing') && <ActivityIndicator color={VOICE_COLORS.accent} />}

@@ -3,6 +3,7 @@ export const zhHant: Record<string, string> = {
   'voiceUsage.activity': '使用次數',
   'voiceUsage.filters': '篩選',
   'voiceUsage.estimatedCost': '語音費用估算 · 美元',
+  'voiceUsage.partialEstimate': '已知 {{cost}} · 總額不完整',
   'voiceUsage.emptyRange': '此時段沒有通話或語音請求。',
   "globalCall.title": "全域通話",
   "globalCall.open": "開始或返回全域通話",

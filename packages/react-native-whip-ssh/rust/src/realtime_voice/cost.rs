@@ -157,19 +157,34 @@ impl CurrentChat {
     }
 
     fn valid(&self) -> bool {
-        !self.invalid && self.model_supported == Some(true)
+        // An accounting limit adds an unpriced gap on close; it must not erase
+        // charges already priced against the confirmed model.
+        self.model_supported == Some(true)
+    }
+
+    pub(super) fn has_pending_usage(&self) -> bool {
+        self.items.values().any(|item| !item.finalized)
+    }
+
+    pub(super) fn is_partial(&self) -> bool {
+        self.invalid
+            || !self.valid()
+            || self.items.values().any(|item| item.estimated_usd.is_none())
     }
 
     pub(super) fn estimated_usd(&self) -> Option<f64> {
         if !self.valid() {
             return None;
         }
-        self.items.values().try_fold(0.0, |sum, charge| {
-            let amount = if charge.finalized {
-                charge.estimated_usd?
-            } else {
-                0.0
-            };
+        if self.items.is_empty() {
+            return Some(0.0);
+        }
+        let mut known = self
+            .items
+            .values()
+            .filter_map(|charge| charge.estimated_usd);
+        let first = known.next()?;
+        known.try_fold(first, |sum, amount| {
             let sum = sum + amount;
             sum.is_finite().then_some(sum)
         })

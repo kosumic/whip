@@ -164,3 +164,21 @@ test('an unknown-cost bucket remains selectable and is not shown as an empty cha
   await act(async () => press('voiceUsage.activity'));
   expect(renderer.root.findByProps({ accessibilityLiveRegion: 'polite' }).props.children).toBe('1');
 });
+
+test('a partially priced call contributes its known charges to the chart and labels its history estimate', async () => {
+  const partial = { ...totals, calls: 1, known_estimated_usd: 0.25, unknown_cost_calls: 1, incomplete_calls: 1 };
+  jest.mocked(voiceUsageLedger.summary).mockResolvedValue({ ...empty,
+    calls: [{ session_id: 'partial-call', provider: 'openai', mode: 'realtime', scope: 'agent', model: null, voice: null,
+      started_at_ms: Date.now(), ended_at_ms: Date.now(), active: false, estimated_usd: null, known_estimated_usd: 0.25,
+      remote_agent_estimated_usd: null, status: 'incomplete', items: {} }],
+    totals: { today: partial, week: partial, month: partial, lifetime: partial },
+    chart: { ...chartPeriod, buckets: chartPeriod.dates.map((_, index) => index === 0 ? partial : totals) },
+  });
+  await act(async () => press('voiceUsage.title'));
+  expect(renderer.root.findByProps({ accessibilityLiveRegion: 'polite' }).props.children).toBe('$0.2500');
+  expect(visible()).toContain('voiceUsage.partialEstimate');
+  expect(visible()).toContain('voiceUsage.unknownCalls');
+  const bar = renderer.root.findAll(node => node.props.accessibilityRole === 'button' && node.props.accessibilityLabel?.startsWith(`${new Intl.DateTimeFormat('en', { weekday: 'short', month: 'short', day: 'numeric' }).format(chartPeriod.dates[0])}, $0.2500`))[0];
+  await act(async () => bar.props.onPress());
+  expect(renderer.root.findByProps({ accessibilityLiveRegion: 'polite' }).props.children).toBe('$0.2500');
+});

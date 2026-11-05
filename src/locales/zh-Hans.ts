@@ -3,6 +3,7 @@ export const zhHans = {
   'voiceUsage.activity': '使用次数',
   'voiceUsage.filters': '筛选',
   'voiceUsage.estimatedCost': '语音费用估算 · 美元',
+  'voiceUsage.partialEstimate': '已知 {{cost}} · 总额不完整',
   'voiceUsage.emptyRange': '此时段没有通话或语音请求。',
   "globalCall.title": "全局通话",
   "globalCall.open": "开始或返回全局通话",

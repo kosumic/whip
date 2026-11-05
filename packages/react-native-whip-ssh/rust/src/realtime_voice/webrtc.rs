@@ -176,9 +176,27 @@ pub(super) async fn start(
     let media_owner = owner.clone();
     let media_identity = identity.clone();
     let media = tokio::spawn(async move {
-        let result = media::run(&media_owner, &mut peer, media_identity, stopped, &attempt).await;
+        let mut stopped = stopped;
+        let result = media::run(
+            &media_owner,
+            &mut peer,
+            media_identity,
+            stopped.clone(),
+            &attempt,
+        )
+        .await;
         if let Err(error) = result {
             attempt.fail(error.into());
+        }
+        if attempt.collecting_usage() {
+            // The audio worker has stopped. Retain the transport and sideband
+            // until the accounting collector finishes, then retire the call.
+            let _ = peer.incoming.set_suppressed(true);
+            let _ = tokio::time::timeout(
+                super::shutdown::FINAL_USAGE_TIMEOUT + std::time::Duration::from_millis(500),
+                stopped.wait_for(|stopped| *stopped),
+            )
+            .await;
         }
         let call_clean = call.hangup().await.is_ok();
         let peer_clean = peer.close().await.is_ok();
@@ -244,9 +262,14 @@ fn spawn_sideband(
         };
         let result = match result {
             Ok(mut socket) => {
-                let result = if attempt.current() {
+                let result = if attempt.current() || attempt.collecting_usage() {
                     attempt.owner.view.lock().startup.websocket = Some(startup::elapsed(started));
-                    match super::send(&mut socket, update).await {
+                    let confirmed = if attempt.collecting_usage() {
+                        Ok(())
+                    } else {
+                        super::send(&mut socket, update).await
+                    };
+                    match confirmed {
                         Ok(()) => {
                             relay_sideband(&mut socket, commands, events, &mut stop, identity).await
                         }

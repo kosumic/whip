@@ -3,6 +3,7 @@ export const es = {
   'voiceUsage.activity': 'Actividad',
   'voiceUsage.filters': 'Filtros',
   'voiceUsage.estimatedCost': 'Coste de voz estimado · USD',
+  'voiceUsage.partialEstimate': '{{cost}} conocido · total incompleto',
   'voiceUsage.emptyRange': 'No hay llamadas ni solicitudes de voz en este periodo.',
   "globalCall.title": "Llamada global",
   "globalCall.open": "Iniciar o volver a la llamada global",

@@ -337,7 +337,9 @@ model and server VAD.
 Native workers pass borrowed sample buffers through C/JNI directly to Rust;
 only controls, bounded captions, meters and token totals cross the JS bridge.
 API call screens show one estimated USD total once it is available; an unknown
-estimate and Local calls show no cost line. Rust sums provider-reported text/audio/image
+estimate and Local calls show no cost line. A known subtotal with unpriced
+components is labeled incomplete, including after a status-read failure.
+Rust sums provider-reported text/audio/image
 usage, subtracts cached usage before applying uncached rates, and includes
 separately billed input transcription. Reports replace earlier values by
 response/item ID, so repeated cancel/done or transcription events cannot add
@@ -349,9 +351,11 @@ The rate snapshot was checked on 2026-11-04 against the official model pages for
 [gpt-realtime-2.1](https://developers.openai.com/api/docs/models/gpt-realtime-2.1),
 [gpt-realtime-2.1-mini](https://developers.openai.com/api/docs/models/gpt-realtime-2.1-mini), and
 [gpt-4o-mini-transcribe](https://developers.openai.com/api/docs/models/gpt-4o-mini-transcribe).
-Only the selected models' known aliases/snapshots are priced. Missing usage,
-unsupported models or inconsistent token/cache breakdowns leave the estimate
-unavailable and hide its line instead of showing zero. Live totals advance as usage reports arrive.
+Only the selected models' known aliases/snapshots are priced. Missing usage or
+inconsistent token/cache breakdowns leave that component unpriced; other priced
+components remain in the known subtotal. With no priced reports, or an
+unsupported model, the estimate is unavailable instead of zero. Live totals
+advance as usage reports arrive.
 Text, audio and image input use the selected model's separate uncached/cached
 rates, and output uses its own text/audio rates. Missing verified rates also
 hide the estimate rather than borrowing another model's prices. Pending
@@ -363,6 +367,18 @@ transcription IDs replace prior reports, including cancel/done replays. Reports
 remain replaceable during a call and finalize before its end record is written.
 An interrupted call with missing reports remains incomplete. Earlier unrecorded
 activity is not backfilled.
+
+Realtime hangup stops native audio and tool work immediately, then retains the
+event stream for at most three seconds to collect final response/transcription
+usage. Shutdown disables VAD, clears uncommitted input, cancels generation, and
+cancels any response admitted just before shutdown. Only accounting events are
+processed; no tools, prompts, transcripts or audio are delivered during this
+window. WebRTC retains its peer and sideband until collection finishes before
+retiring the server call. An idle tail ends collection early after confirmation
+and all pending reports finish. Credential revocation bypasses or interrupts
+collection. A timeout or disconnect keeps the known subtotal and leaves missing
+components unknown; it never reconnects or repeats work to recover billing.
+
 There is no local STT/TTS conversation pipeline. Optional user transcription is
 performed by OpenAI alongside direct speech-to-speech audio.
 

@@ -3,6 +3,7 @@ export const en = {
   'voiceUsage.activity': 'Activity',
   'voiceUsage.filters': 'Filters',
   'voiceUsage.estimatedCost': 'Estimated voice cost · USD',
+  'voiceUsage.partialEstimate': '{{cost}} known · total incomplete',
   'voiceUsage.emptyRange': 'No calls or speech requests in this period.',
   "voiceUsage.tts": "Text to speech",
   "voiceUsage.speech": "Speech / preview",

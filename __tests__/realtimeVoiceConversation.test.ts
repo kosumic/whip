@@ -88,6 +88,18 @@ function setup() {
   const call = new RealtimeVoiceConversation({ hostId: 'host', paneId: 'pane-1', tabId: 'tab', bindingToken: 'binding-1', agent: 'codex', label: 'Codex' }, { ...defaults, provider: 'openai', realtimeVoice: 'cedar' }, changed);
   return { call, changed };
 }
+
+test('a status-read failure retains the known voice estimate and marks it incomplete', async () => {
+  const { call, changed } = setup();
+  await call.start();
+  mockNative.realtimeVoiceView.mockRejectedValueOnce(new Error('status read failed'));
+  jest.advanceTimersByTime(100);
+  await flush();
+  expect(changed).toHaveBeenCalledWith(expect.objectContaining({
+    phase: 'error', estimatedUsd: 0.0123, costIncomplete: true,
+  }));
+  await call.close();
+});
 beforeEach(() => { jest.useFakeTimers(); jest.clearAllMocks(); mockEvents.clear(); mockApp.currentState = 'active'; });
 afterEach(() => jest.useRealTimers());
 

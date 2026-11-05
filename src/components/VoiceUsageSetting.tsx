@@ -109,10 +109,16 @@ export function VoiceUsageSetting() {
     call.provider === 'local'
       ? t('voiceUsage.localFree')
       : call.estimated_usd === null
-        ? t('voiceUsage.unknown')
+        ? call.known_estimated_usd == null
+          ? t('voiceUsage.unknown')
+          : t('voiceUsage.partialEstimate', {
+              cost: usd(call.known_estimated_usd),
+            })
         : usd(call.estimated_usd);
   const totalCost = (total: VoiceUsageTotal) =>
-    total.calls > 0 && total.unknown_cost_calls === total.calls
+    total.calls > 0 &&
+    total.unknown_cost_calls === total.calls &&
+    total.known_estimated_usd === 0
       ? t('voiceUsage.unknown')
       : usd(total.known_estimated_usd);
   const chart = summary?.chart;

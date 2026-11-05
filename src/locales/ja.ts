@@ -3,6 +3,7 @@ export const ja = {
   'voiceUsage.activity': '利用件数',
   'voiceUsage.filters': '絞り込み',
   'voiceUsage.estimatedCost': '音声料金の見積もり · USD',
+  'voiceUsage.partialEstimate': '判明分 {{cost}} · 合計は未確定',
   'voiceUsage.emptyRange': 'この期間には通話や音声リクエストがありません。',
   "globalCall.title": "グローバル通話",
   "globalCall.open": "グローバル通話を開始・再表示",

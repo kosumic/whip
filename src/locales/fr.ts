@@ -5,6 +5,7 @@ export const fr = {
   'voiceUsage.activity': 'Activité',
   'voiceUsage.filters': 'Filtres',
   'voiceUsage.estimatedCost': 'Coût vocal estimé · USD',
+  'voiceUsage.partialEstimate': '{{cost}} connus · total incomplet',
   'voiceUsage.emptyRange': 'Aucun appel ni demande vocale sur cette période.',
   "globalCall.title": "Appel global",
   "globalCall.open": "Démarrer ou reprendre l’appel global",

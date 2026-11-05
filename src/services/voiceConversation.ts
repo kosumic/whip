@@ -50,6 +50,7 @@ export interface VoiceConversationView {
   inputTokens?: number;
   outputTokens?: number;
   estimatedUsd?: number | null;
+  costIncomplete?: boolean;
   messages?: readonly VoiceTranscriptMessage[];
   backendText?: string | null;
   liveSeconds?: number | null;

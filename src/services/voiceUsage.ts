@@ -44,6 +44,8 @@ export interface VoiceUsageCall extends VoiceUsageIdentity {
   ended_at_ms: number | null;
   active: boolean;
   estimated_usd: number | null;
+  /** Sum of the priced components, even when the complete call is unpriced. */
+  known_estimated_usd?: number | null;
   remote_agent_estimated_usd: number | null;
   status: AccountingStatus;
   items: Record<string, VoiceUsageItem>;

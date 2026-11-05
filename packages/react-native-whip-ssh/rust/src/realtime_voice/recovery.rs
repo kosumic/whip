@@ -65,6 +65,11 @@ impl Attempt {
         self.owner.attempt.load(Ordering::Acquire) == self.id
             && !self.owner.closed.load(Ordering::Acquire)
     }
+    pub fn collecting_usage(&self) -> bool {
+        self.active.load(Ordering::Acquire)
+            && self.owner.attempt.load(Ordering::Acquire) == self.id
+            && self.owner.closed.load(Ordering::Acquire)
+    }
     pub fn activate(&self) -> Result<(), Failure> {
         if !self.current() {
             return Err(CANCELLED.into());

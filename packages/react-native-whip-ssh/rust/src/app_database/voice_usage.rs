@@ -258,6 +258,21 @@ impl Ledger {
     }
 }
 impl Call {
+    fn known_estimated_usd(&self) -> Option<f64> {
+        if self.identity.provider == VoiceUsageProvider::Local {
+            return Some(0.0);
+        }
+        let mut total = None;
+        for amount in self.items.values().filter_map(|item| item.estimated_usd) {
+            let sum = total.unwrap_or(0.0) + amount;
+            if !sum.is_finite() {
+                return None;
+            }
+            total = Some(sum);
+        }
+        total
+    }
+
     fn estimated_usd(&self) -> Option<f64> {
         if self.identity.provider == VoiceUsageProvider::Local {
             return Some(0.0);
@@ -291,6 +306,7 @@ impl Call {
             ended_at_ms: self.ended_at_ms,
             active: self.ended_at_ms.is_none() && !self.interrupted,
             estimated_usd: self.estimated_usd(),
+            known_estimated_usd: self.known_estimated_usd(),
             status: self.status(),
             // Coding-agent/API spending is outside the voice adapter boundary.
             remote_agent_estimated_usd: None,
@@ -305,6 +321,7 @@ struct CallView {
     ended_at_ms: Option<u64>,
     active: bool,
     estimated_usd: Option<f64>,
+    known_estimated_usd: Option<f64>,
     status: AccountingStatus,
     remote_agent_estimated_usd: Option<f64>,
     items: BTreeMap<String, VoiceUsageItem>,
@@ -332,9 +349,10 @@ struct Total {
 impl Total {
     fn observe(&mut self, call: &CallView) {
         self.calls += 1;
-        if let Some(cost) = call.estimated_usd {
+        if let Some(cost) = call.known_estimated_usd {
             self.known_estimated_usd += cost;
-        } else {
+        }
+        if call.estimated_usd.is_none() {
             self.unknown_cost_calls += 1;
         }
         if call.status == AccountingStatus::Incomplete
