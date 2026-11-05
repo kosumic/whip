@@ -95,6 +95,8 @@ interface Props {
   state: AgentChatState;
   /** Run foreground work such as animations, image fetches, and speech highlighting. */
   active?: boolean;
+  /** Prepare rows, layout, and scroll position while the layer remains hidden. */
+  prewarm?: boolean;
   /** Present the selected conversation and its local controls independently of transport. */
   visible?: boolean;
   agent: ChatAgent;
@@ -731,6 +733,7 @@ export function AgentChatView({
   initialSearchTarget,
   state,
   active = true,
+  prewarm = false,
   visible = active,
   agent,
   agentStatus,
@@ -1080,10 +1083,18 @@ export function AgentChatView({
 
   const scheduleInitialViewportReady = (source: string) => {
     const readiness = initialViewportRef.current;
-    if (!visible || readiness.ready) return;
+    if ((!visible && !prewarm) || readiness.ready) return;
     recordInitialViewportReadiness(source);
     if (!initialViewportConditionsSatisfied()) return;
     readiness.ready = true;
+    if (!active && prewarm) {
+      const geometry = scrollGeometryRef.current;
+      suspendedAtEndRef.current = readiness.atEnd;
+      savedViewportRef.current = {
+        ...savedViewportRef.current,
+        offset: geometry.offset, followEnd: followEndRef.current,
+      };
+    }
     // Initial/returning viewports have already aligned to the remapped saved anchor.
     setViewportReady(true);
     recordInitialViewportReadiness('ready');
@@ -1149,7 +1160,7 @@ export function AgentChatView({
       geometry.contentHeight - geometry.viewportHeight,
     );
     if (
-      !visible || readiness.ready ||
+      (!visible && !prewarm) || readiness.ready ||
       !readiness.itemsLoaded ||
       !readiness.contentSizeKnown ||
       geometry.viewportHeight <= 0
@@ -1285,6 +1296,15 @@ export function AgentChatView({
   useLayoutEffect(() => {
     updateViewportActivity();
   }, [active]);
+
+  const prepareHiddenViewport = useEffectEvent(() => {
+    if (!prewarm || visible) return;
+    alignLoadedInitialViewport();
+    scheduleInitialViewportReady('priority-prewarm');
+  });
+  useLayoutEffect(() => {
+    prepareHiddenViewport();
+  }, [prewarm, visible]);
 
   useLayoutEffect(() => {
     visibleRef.current = visible;

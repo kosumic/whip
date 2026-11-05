@@ -4,6 +4,7 @@ import {
   useEffect,
   useEffectEvent,
   useLayoutEffect,
+  useMemo,
   useReducer,
   useRef,
   useState,
@@ -12,6 +13,7 @@ import {
   type RefObject,
 } from 'react';
 import { useChatViewportRetention } from '../hooks/useChatViewportRetention';
+import { PRIORITY_CHAT_VIEWPORT_CAPACITY } from '../lib/chatViewportState';
 import { VoiceConversationSettingsContext } from '../lib/voiceConversationSettingsContext';
 import { useViewedAgent } from '../hooks/useViewedAgent';
 import { useGithubRepository } from '../hooks/useGithubRepository';
@@ -164,6 +166,7 @@ interface Props {
   client: HerdrClient | null;
   terminalState: TerminalSessionsState;
   terminalTargets: readonly TerminalRenderTarget[];
+  priorityChatTargets?: readonly TerminalRenderTarget[];
   appBackgroundImageUri: string | null;
   appBackgroundDimming: number;
   latencyMs: number | null;
@@ -266,6 +269,7 @@ interface BrowserWebViewHandle {
 }
 
 const BROWSER_WEBVIEW_STYLE = { flex: 1 } as const;
+const NO_PRIORITY_CHAT_TARGETS: readonly TerminalRenderTarget[] = [];
 
 export function SessionScreen({
   hostId,
@@ -276,6 +280,7 @@ export function SessionScreen({
   client,
   terminalState,
   terminalTargets,
+  priorityChatTargets = NO_PRIORITY_CHAT_TARGETS,
   appBackgroundImageUri,
   appBackgroundDimming,
   latencyMs,
@@ -301,6 +306,12 @@ export function SessionScreen({
   onInteraction,
   onExit,
 }: Props) {
+  const priorityTargets = useMemo(() => priorityChatTargets.slice(0, PRIORITY_CHAT_VIEWPORT_CAPACITY), [priorityChatTargets]);
+  const priorityChatKeys = useMemo(() => new Set(priorityTargets.map(target => target.key)), [priorityTargets]);
+  // Priority chats need no terminal renderer or rail entry before their first visit.
+  const chatTargets = useMemo(() => [...new Map(
+    [...priorityTargets, ...terminalTargets].map(target => [target.key, target]),
+  ).values()], [priorityTargets, terminalTargets]);
   const { colors } = useTheme();
   const { t } = useTranslation();
   const appGlassEnabled = useAppGlassEnabled();
@@ -675,8 +686,8 @@ export function SessionScreen({
   );
   const chatViewportCandidates = [...chatViews.entries()]
     .filter(
-      ([, view]) =>
-        chatPresentationMountsViewport(view.presentation) &&
+      ([key, view]) =>
+        (priorityChatKeys.has(key) || chatPresentationMountsViewport(view.presentation)) &&
         agentTranscriptReadiness(view.state) === 'usable',
     )
     .map(([key, view]) => ({
@@ -715,10 +726,25 @@ export function SessionScreen({
   const viewportRetention = useChatViewportRetention(
     chatViewportCandidates.map(item => item.identity),
     activeViewportIdentity,
+    priorityTargets.flatMap(target => {
+      const candidate = chatViewportCandidates.find(item => item.key === target.key);
+      return candidate ? [candidate.identity] : [];
+    }),
   );
   const mountedChatViews = chatViewportCandidates.filter(item =>
     viewportRetention.retained.has(item.identity),
   );
+  const pinnedChatKeys = JSON.stringify(priorityChatKeys.size ? [...new Set([
+    ...priorityChatKeys, ...mountedChatViews.map(item => item.key),
+  ])].sort() : []);
+  useLayoutEffect(() => {
+    // Protect both UI budgets even when the transcript cache is set to three.
+    // Priority pins also allow speculative admission before a viewport mounts.
+    const keys = new Set(JSON.parse(pinnedChatKeys) as string[]);
+    const release = chatTargets.filter(target => keys.has(target.key)).map(target =>
+      agentTranscriptService.retainForegroundTerminal(target.hostSessionId, target.session.terminalId));
+    return () => release.forEach(dispose => dispose());
+  }, [chatTargets, pinnedChatKeys]);
   const chatSubscriptionIdentity = [...chatViews.entries()]
     .map(([key, view]) =>
       [key, view.binding.bindingToken, view.presentation.generation].join(':'),
@@ -941,7 +967,7 @@ export function SessionScreen({
   useEffect(() => {
     // Background cache eviction preserves selection without reopening its binding.
     const activeId = visible && appActive ? activeTarget?.key : null;
-    const targets = new Map(terminalTargets.map(target => [target.key, target]));
+    const targets = new Map(chatTargets.map(target => [target.key, target]));
     const next = new Map(chatViewsRef.current);
     let changed = false;
     for (const key of chatRestoreIntentsRef.current.keys()) {
@@ -983,10 +1009,10 @@ export function SessionScreen({
       setChatViews(next);
     }
   }, [visible, appActive, terminalState.activeTerminalId, terminalState.sessions, snapshot.panes,
-    client, hostSessionId, requestedChatPresentation, updateChatRestoreIntent, activeTarget, terminalTargets, chatViews]);
+    client, hostSessionId, requestedChatPresentation, updateChatRestoreIntent, activeTarget, chatTargets, chatViews]);
 
   useEffect(() => {
-    const targets = new Map(terminalTargets.map(target => [target.key, target]));
+    const targets = new Map(chatTargets.map(target => [target.key, target]));
     const liveTerminalKeys = new Set(targets.keys());
     const projections = new Map<string, AgentChatProjection>();
     const reboundPresentations = new Map<string, AgentChatPresentation>();
@@ -1018,9 +1044,7 @@ export function SessionScreen({
         reboundPresentations.set(key, requestedChatPresentation(projection.state));
       }
     }
-    // Terminal selection/rendering has already committed. Only the selected
-    // resident Herdr target may establish a speculative binding; cache and
-    // remote work continue independently inside the transcript service.
+    // Reconcile selection independently of the additive priority preparation.
     const preloadTarget = visible && appActive && activeTarget &&
       activeTarget.session.kind !== 'ssh' && chatAgentForPane(activePane) &&
       !chatRestoreIntentsRef.current.has(activeTarget.key)
@@ -1040,14 +1064,23 @@ export function SessionScreen({
     const restoreSelection = preloadTarget?.session.chatSelected &&
       (!existing || existing.presentation.phase === AgentChatPresentationPhase.Dormant ||
         existing.presentation.phase === AgentChatPresentationPhase.Warm);
-    const selectedView = selectedProjection?.type === 'bound' &&
+    const retainedPresentation = selectedProjection?.type === 'bound' &&
+      existing?.binding.bindingToken === selectedProjection.binding.bindingToken
+      ? existing.presentation : undefined;
+    const selectedView = preloadTarget && selectedProjection?.type === 'bound' &&
       (preload?.type === 'bound' || restoreSelection)
       ? {
           binding: selectedProjection.binding,
           state: selectedProjection.state,
           presentation: restoreSelection
-            ? requestedChatPresentation(selectedProjection.state)
-            : dormantChatPresentation(),
+            ? requestChatPresentation(
+                retainedPresentation ?? dormantChatPresentation(),
+                agentTranscriptReadiness(selectedProjection.state),
+                nextChatPresentationGeneration(),
+              )
+            : retainedPresentation ?? (priorityChatKeys.has(preloadTarget.key)
+              ? { phase: AgentChatPresentationPhase.Warm, generation: nextChatPresentationGeneration() }
+              : dormantChatPresentation()),
         }
       : null;
     setChatViews(current => {
@@ -1072,18 +1105,60 @@ export function SessionScreen({
     hostSessionId,
     snapshot.panes,
     terminalState.sessions,
-    terminalTargets,
+    chatTargets,
+    priorityChatKeys,
+    nextChatPresentationGeneration,
     requestedChatPresentation,
   ]);
+
+  useEffect(() => {
+    if (!appActive || priorityTargets.length === 0) return;
+    const views = new Map<string, AgentChatViewState>();
+    for (const target of priorityTargets) {
+      try {
+        const host = target.client.native.hostState();
+        const projection = host.syncStatus === 'synced' && host.freshness === 'fresh'
+          ? agentTranscriptService.preload(target.hostSessionId, target.session.terminalId, target.client.native)
+          : agentTranscriptService.reconcile(target.hostSessionId, target.session.terminalId, target.client.native);
+        if (projection?.type !== 'bound') continue;
+        const previous = chatViewsRef.current.get(target.key);
+        if (previous?.binding.bindingToken !== projection.binding.bindingToken ||
+          previous.presentation.phase === AgentChatPresentationPhase.Dormant) {
+          const generation = previous?.binding.bindingToken === projection.binding.bindingToken
+            ? previous.presentation.generation : nextChatPresentationGeneration();
+          views.set(target.key, {
+            binding: projection.binding, state: projection.state,
+            presentation: { phase: AgentChatPresentationPhase.Warm, generation },
+          });
+        }
+      } catch (error) {
+        recordAgentChatDiagnostic('priority-viewport-unavailable', { error: String(error) });
+      }
+    }
+    if (views.size) setChatViews(current => {
+      let next = current;
+      for (const [key, candidate] of views) {
+        const previous = current.get(key);
+        // Selection may have committed earlier in this same effect flush.
+        if (previous?.binding.bindingToken === candidate.binding.bindingToken &&
+          previous.presentation.phase !== AgentChatPresentationPhase.Dormant) continue;
+        const presentation = previous && chatPresentationRequested(previous.presentation)
+          ? requestChatPresentation(dormantChatPresentation(), agentTranscriptReadiness(candidate.state), candidate.presentation.generation)
+          : candidate.presentation;
+        if (next === current) next = new Map(current);
+        next.set(key, { ...candidate, presentation });
+      }
+      return next;
+    });
+  }, [appActive, priorityTargets, transcriptResidency, nextChatPresentationGeneration]);
 
   useLayoutEffect(() => {
     const subscriptions = [...chatViewsRef.current.entries()].flatMap(
       ([key, view]) => {
-        // The transcript service keeps receiving/caching updates for every
-        // binding. Only the requested foreground viewport needs React updates.
-        if (key !== activeChatKey) return [];
+        // Priority viewports prepare and stay current without becoming selected.
+        if (key !== activeChatKey && !priorityChatKeys.has(key)) return [];
         const terminalId = view.binding.terminalId;
-        const target = terminalTargets.find(item => item.key === key);
+        const target = chatTargets.find(item => item.key === key);
         if (!target) return [];
         return [
           agentTranscriptService.subscribe(view.binding.bindingToken, state => {
@@ -1104,7 +1179,8 @@ export function SessionScreen({
                 return new Map(current).set(key, chatBindingLost(active, false));
               }
               const readiness = agentTranscriptReadiness(state);
-              const nextPresentation = updateChatTranscriptReadiness(
+              const nextPresentation = priorityChatKeys.has(key) && !chatPresentationRequested(active.presentation)
+                ? active.presentation : updateChatTranscriptReadiness(
                 active.presentation,
                 readiness,
                 resetGeneration,
@@ -1137,7 +1213,8 @@ export function SessionScreen({
     activeChatKey,
     chatSubscriptionIdentity,
     nextChatPresentationGeneration,
-    terminalTargets,
+    chatTargets,
+    priorityChatKeys,
   ]);
 
   useEffect(() => {
@@ -1886,9 +1963,11 @@ export function SessionScreen({
                           visible && selected &&
                           chatPresentationVisible(chatView.presentation);
                         const terminalId = chatView.binding.terminalId;
-                        const chatClient = terminalTargets.find(target => target.key === key)?.client;
+                        const priority = priorityChatKeys.has(key);
+                        const chatTarget = chatTargets.find(target => target.key === key);
+                        const chatClient = chatTarget?.client;
                         return (
-                          <ScreenUpdates key={identity} active={active}>
+                          <ScreenUpdates key={identity} active={active || (appActive && priority)}>
                             {() => (
                               <View
                                 key={key}
@@ -1914,7 +1993,8 @@ export function SessionScreen({
                                   readAloud={visible && selected ? chatReadAloud : undefined}
                                   imageClient={chatClient}
                                   active={active}
-                                  visible={visible && selected}
+                                  prewarm={appActive && priority}
+                                  visible={visible && selected && chatPresentationRequested(chatView.presentation)}
                                   savedViewport={viewportRetention.snapshots.get(
                                     identity,
                                   )}
@@ -1928,7 +2008,7 @@ export function SessionScreen({
                                   agentStatus={
                                     selected && activePane
                                       ? activePane.agent_status
-                                      : 'idle'
+                                      : chatTarget?.agentStatus ?? 'idle'
                                   }
                                   contentInsets={insets}
                                   animatedBottomInset={animatedBottomInset}

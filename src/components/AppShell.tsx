@@ -17,6 +17,9 @@ import { effectiveDevicePreferences } from '../billing/effectiveSettings';
 import type { WhipEntitlementsController } from '../billing/useWhipEntitlements';
 import { resolveHerdProjectionRequest, type HerdHostQueue } from '../herdQueue';
 import { aggregateAgentStatus } from '../lib/agentStatusAggregate';
+import { chatAgentForPane } from '../lib/agentChatSession';
+import { PRIORITY_CHAT_VIEWPORT_CAPACITY } from '../lib/chatViewportState';
+import { terminalRendererKey, type TerminalRenderTarget } from '../lib/terminalRenderer';
 import { shouldEnableAppGlass } from '../lib/appGlass';
 import { hostDisplayName } from '../lib/hostProfiles';
 import { hostRuntimeSummary } from '../lib/hostRuntimeSummary';
@@ -114,6 +117,46 @@ export function AppShell({
     terminalControlUsage,
   } = effectivePreferences;
   const activeSession = sessions.activeSession;
+  const retainedPriorityTargets = useRef<TerminalRenderTarget[]>([]);
+  const priorityChatTargets = useMemo(() => {
+    const targets: TerminalRenderTarget[] = [];
+    // Rust owns the unfiltered, device-wide Herd attention order.
+    for (const item of sessions.herdView([]).agents) {
+      const client = sessions.getClient(item.hostId);
+      const native = client?.activeNative;
+      if (!client || !native) continue;
+      const host = native.hostState();
+      const pane = host.snapshot?.panes.find(candidate => candidate.terminal_id === item.agent.terminal_id);
+      const agent = chatAgentForPane(pane);
+      const identity = pane?.agent_session;
+      if (!pane || !agent || !identity?.value.trim() ||
+        (identity.kind !== 'id' && !(agent === 'pi' && identity.kind === 'path'))) continue;
+      const key = terminalRendererKey(item.hostId, pane.terminal_id);
+      if (targets.some(target => target.key === key)) continue;
+      targets.push({
+        key,
+        hostSessionId: item.hostId, client, agentStatus: pane.agent_status,
+        session: {
+          terminalId: pane.terminal_id, paneId: pane.pane_id, title: '',
+          kind: 'herdr', status: 'connected', reconnectAttempt: 0,
+        },
+      });
+      if (targets.length === PRIORITY_CHAT_VIEWPORT_CAPACITY) break;
+    }
+    // Unrelated controller updates must not restart viewport pins/subscriptions.
+    const previous = retainedPriorityTargets.current;
+    if (previous.length === targets.length && previous.every((target, index) => {
+      const next = targets[index];
+      return target.key === next.key && target.client === next.client &&
+        target.agentStatus === next.agentStatus && target.session.paneId === next.session.paneId;
+    })) return previous;
+    retainedPriorityTargets.current = targets;
+    return targets;
+  }, [sessions]);
+  // Mount the shared viewport owner while Herd is open, even before selecting a host.
+  const viewportSession = activeSession ?? sessions.presentationSessions.find(
+    session => session.id === priorityChatTargets[0]?.hostSessionId,
+  );
   useEffect(() => {
     if (sessions.restoreComplete) void voiceSessionManager.retainAgentHosts(sessions.presentationSessions.map(session => session.id));
   }, [sessions.restoreComplete, sessions.presentationSessions]);
@@ -631,32 +674,33 @@ export function AppShell({
                 ) : null}
               </View>
 
-              {navigation.mountedTabs.has('terminal') &&
-                activeSession && (
+              {(navigation.mountedTabs.has('terminal') || priorityChatTargets.length > 0) &&
+                viewportSession && (
                   <AgentStatusAnimationProvider enabled={terminalVisible}>
                     <LiveSessionView
-                      session={activeSession}
-                      client={liveClient}
-                      visible={terminalVisible}
+                      session={viewportSession}
+                      client={activeSession ? liveClient : sessions.getClient(viewportSession.id) ?? null}
+                      visible={terminalVisible && Boolean(activeSession)}
                       attentionVisible={terminalVisible && !overlaysVisible}
                       ttsEnabled={ttsEnabled}
                       latencyMs={visibleLiveHostLatency(
-                        activeSession.connectionStatus,
+                        viewportSession.connectionStatus,
                         activeTelemetry?.latencyMs ?? null,
                       )}
                       latencyWarningActive={
-                        activeSession.connectionStatus === 'ready' &&
+                        viewportSession.connectionStatus === 'ready' &&
                         Boolean(activeTelemetry?.latencyWarning.active)
                       }
-                      terminalState={terminals.get(activeSession.id, sessions.state)}
+                      terminalState={terminals.get(viewportSession.id, sessions.state)}
                       terminalTargets={sessions.terminalTargets}
+                      priorityChatTargets={priorityChatTargets}
                       appBackgroundImageUri={appBackgroundImageUri}
                       appBackgroundDimming={appBackgroundDimming}
                       terminalPreferences={terminalPreferences}
                       terminalControlUsage={terminalControlUsage}
                       terminalHistory={history.entries}
                       onOpenFiles={remoteFiles.open}
-                      composerDraftRequest={remoteFiles.draftRequest?.hostSessionId === activeSession.id ? remoteFiles.draftRequest : undefined}
+                      composerDraftRequest={remoteFiles.draftRequest?.hostSessionId === viewportSession.id ? remoteFiles.draftRequest : undefined}
                       onComposerDraftConsumed={remoteFiles.consumeDraft}
                       composerStore={terminals.composerStore}
                       onTerminalControlUse={
@@ -670,11 +714,11 @@ export function AppShell({
                         );
                       }}
                       onExit={() =>
-                        sessions.exitTerminalToHerd(activeSession.id)
+                        sessions.exitTerminalToHerd(viewportSession.id)
                       }
                       onRefresh={async sessionId => {
-                        if (activeSession.connectionStatus === 'ready') await sessions.refresh(sessionId);
-                        else await sessions.connectSavedHost(activeSession.host);
+                        if (viewportSession.connectionStatus === 'ready') await sessions.refresh(sessionId);
+                        else await sessions.connectSavedHost(viewportSession.host);
                       }}
                       onOpenPane={(sessionId, pane) => {
                         sessions.select(sessionId, 'terminal');
@@ -686,7 +730,7 @@ export function AppShell({
                       onSelectSshShell={terminals.selectSshShell}
                       onRenameSshShell={terminals.renameSshShell}
                       onCloseTerminal={(sessionId, terminalId) => {
-                        if (activeSession.connectionStatus === 'ready') sessions.closeTerminal(sessionId, terminalId);
+                        if (viewportSession.connectionStatus === 'ready') sessions.closeTerminal(sessionId, terminalId);
                       }}
                       onTerminalStatus={terminals.updateStatus}
                       onTerminalFontSizeChange={terminals.updateFontSize}

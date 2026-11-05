@@ -2074,6 +2074,42 @@ describe('AgentChatView auto-follow', () => {
   });
 });
 
+test('a priority conversation prepares while hidden and opens using the same ready list', () => {
+  const state = chatState([TURN]);
+  const onReady = jest.fn();
+  const scrollToOffset = jest.fn();
+  let renderer!: ReactTestRenderer;
+  const element = (active: boolean) => <AgentChatView {...chatView(state, active, onReady).props} prewarm />;
+  try {
+    act(() => {
+      renderer = create(element(false), {
+        createNodeMock: node => node.type === 'FlashList'
+          ? { scrollToOffset, getAbsoluteLastScrollOffset: () => 600 } : null,
+      });
+    });
+    const list = flatList(renderer);
+    act(() => {
+      chatViewport(renderer).props.onLayout({ nativeEvent: { layout: { height: 400 } } });
+      list.props.onContentSizeChange(0, 1_000);
+      list.props.onScroll(scrollEvent(600, 1_000));
+      list.props.onViewableItemsChanged({ viewableItems: [{ item: finalBlock(renderer, TURN), isViewable: true }] });
+      list.props.onLoad();
+    });
+    expect(onReady).toHaveBeenCalledTimes(1);
+    expect(chatViewport(renderer).parent?.props.style.opacity).toBe(0);
+    expect(chatViewport(renderer).parent?.props.pointerEvents).toBe('none');
+    scrollToOffset.mockClear();
+    onReady.mockClear();
+    act(() => { renderer.update(element(true)); });
+    expect(flatList(renderer)).toBe(list);
+    expect(chatViewport(renderer).parent?.props.style.opacity).toBe(1);
+    expect(onReady).toHaveBeenCalledTimes(1);
+    expect(scrollToOffset).not.toHaveBeenCalled();
+  } finally {
+    act(() => renderer?.unmount());
+  }
+});
+
 describe('AgentChatView warm viewport restoration', () => {
   let renderer: ReactTestRenderer;
   let state: AgentChatState;

@@ -30,6 +30,7 @@ interface Props {
   latencyWarningActive: boolean;
   terminalState: TerminalSessionsState;
   terminalTargets: readonly TerminalRenderTarget[];
+  priorityChatTargets?: readonly TerminalRenderTarget[];
   appBackgroundImageUri: string | null;
   appBackgroundDimming: number;
   terminalPreferences: TerminalPreferences;
@@ -80,6 +81,7 @@ export function LiveSessionView({
   latencyWarningActive,
   terminalState,
   terminalTargets,
+  priorityChatTargets,
   appBackgroundImageUri,
   appBackgroundDimming,
   terminalPreferences,
@@ -149,6 +151,7 @@ export function LiveSessionView({
       client={client}
       terminalState={terminalState}
       terminalTargets={terminalTargets}
+      priorityChatTargets={priorityChatTargets}
       appBackgroundImageUri={appBackgroundImageUri}
       appBackgroundDimming={appBackgroundDimming}
       latencyMs={latencyMs}

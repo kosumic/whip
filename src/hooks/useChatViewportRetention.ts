@@ -1,13 +1,14 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { ChatViewportState } from '../lib/chatViewportState';
+import { CHAT_VIEWPORT_CAPACITY, PRIORITY_CHAT_VIEWPORT_CAPACITY, type ChatViewportState } from '../lib/chatViewportState';
 
 // Keep the selected chat and its most recent neighbour ready for quick switching.
-export const CHAT_VIEWPORT_CAPACITY = 2;
+export { CHAT_VIEWPORT_CAPACITY } from '../lib/chatViewportState';
 
 /** Only bounds mounted UI. Native transcript/terminal residency is independent. */
 export function useChatViewportRetention(
   keys: readonly string[],
   activeKey: string | null,
+  priorityKeys: readonly string[] = [],
 ) {
   const [recent, setRecent] = useState<readonly string[]>([]);
   const snapshots = useRef(new Map<string, ChatViewportState>());
@@ -28,5 +29,7 @@ export function useChatViewportRetention(
     }
   }, [recent, retained, live]);
 
-  return { retained: new Set(retained), snapshots: snapshots.current };
+  // Priority residency never changes the two-entry visit history.
+  const priority = priorityKeys.slice(0, PRIORITY_CHAT_VIEWPORT_CAPACITY).filter(key => live.has(key));
+  return { retained: new Set([...retained, ...priority]), snapshots: snapshots.current };
 }

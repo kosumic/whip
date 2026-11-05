@@ -635,6 +635,106 @@ function revealChat() {
   expect(ui('TerminalScreen').props.chatViewEnabled).toBe(true);
 }
 
+test('prepares three priority chats before visiting and retains two other recent chats alongside them', async () => {
+  const host = setup('codex');
+  const targets = Array.from({ length: 5 }, (_, index) => {
+    const terminalId = `terminal-${index + 1}`;
+    const paneId = `pane-${index + 1}`;
+    const sessionId = `session-${index + 1}`;
+    const pane = { ...host.pane, terminal_id: terminalId, pane_id: paneId,
+      focused: false, agent_session: { ...host.pane.agent_session!, value: sessionId } };
+    if (index === 0) host.props.snapshot.panes[0] = pane;
+    else host.props.snapshot.panes.push(pane);
+    bindChat(host, 'codex', {
+      terminalId, paneId, sessionId, bindingToken: `binding-${index + 1}`, transcriptKey: `transcript-${index + 1}`,
+      state: { sessionId, agent: 'codex', status: 'live', revision: 1, messages: [], turns: [] },
+    });
+    return { ...host.props.terminalTargets[0], key: `target-${index + 1}`,
+      session: { ...host.props.terminalState.sessions[0], terminalId, paneId } };
+  });
+  // The priority agents have never been opened as terminal panes.
+  host.props.terminalTargets = targets.slice(3);
+  host.props.terminalState = { sessions: targets.slice(3).map(target => target.session), activeTerminalId: targets[3].session.terminalId };
+  host.props.priorityChatTargets = targets.slice(0, 3);
+  host.native.startAgentChat.mockImplementation(token => ({
+    type: 'started', state: [...host.availableBindings.values()].find(binding => binding.bindingToken === token)!.state,
+  }));
+  const viewports = () => renderer.root.findAll(node => String(node.type) === 'AgentChatView');
+  await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+  expect(viewports()).toHaveLength(3);
+  expect(viewports().every(view => view.props.prewarm && !view.props.active)).toBe(true);
+  for (const viewport of viewports()) act(() => { viewport.props.onInitialViewportReady(); });
+  expect(ui('TerminalScreen').props.chatViewEnabled).toBe(false);
+  expect(host.props.onTerminalChatSelect).not.toHaveBeenCalled();
+
+  for (const target of targets.slice(3)) {
+    host.props.terminalState = { ...host.props.terminalState, activeTerminalId: target.session.terminalId };
+    await act(async () => { renderer.update(<SessionScreen {...host.props} />); });
+    await act(async () => { await control().onPress(); });
+    const selected = viewports().find(view => view.props.active)!;
+    act(() => { selected.props.onInitialViewportReady(); });
+  }
+  expect(viewports()).toHaveLength(5);
+  expect(viewports().filter(view => view.props.prewarm)).toHaveLength(3);
+  act(() => {
+    agentTranscriptService.reconcileCache(3, targets.map(target => ({
+      hostSessionId: target.hostSessionId, terminalId: target.session.terminalId,
+      agent: 'codex', sessionId: host.availableBindings.get(target.session.terminalId)!.sessionId,
+      transport: target.client.native,
+    })), []);
+  });
+  expect(viewports()).toHaveLength(5);
+  for (const binding of host.availableBindings.values()) {
+    expect(agentTranscriptService.getState(binding.bindingToken)).not.toBeNull();
+  }
+
+  host.props.priorityChatTargets = targets.slice(1, 4);
+  await act(async () => { renderer.update(<SessionScreen {...host.props} />); });
+  expect(viewports().map(view => view.props.state.sessionId).sort()).toEqual(['session-2', 'session-3', 'session-4', 'session-5']);
+  expect(host.native.detachAgentChat).not.toHaveBeenCalled();
+});
+
+test('a rejected priority preload does not retry itself or select Chat', async () => {
+  const host = setup('codex');
+  bindChat(host, 'codex');
+  host.props.priorityChatTargets = host.props.terminalTargets;
+  host.props.visible = false;
+  await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+  expect(host.native.startAgentChat).toHaveBeenCalledTimes(1);
+  await act(async () => { renderer.update(<SessionScreen {...host.props} />); });
+  expect(host.native.startAgentChat).toHaveBeenCalledTimes(1);
+  expect(host.props.onTerminalChatSelect).not.toHaveBeenCalled();
+});
+
+test('priority retention does not start loads from a retained stale host snapshot', async () => {
+  const host = setup('codex');
+  bindChat(host, 'codex');
+  host.props.priorityChatTargets = host.props.terminalTargets;
+  host.props.visible = false;
+  host.native.hostState.mockReturnValue({ ...host.native.hostState(), syncStatus: 'syncing', freshness: 'stale' });
+  await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+  expect(host.native.openAgentChat).not.toHaveBeenCalled();
+  expect(host.native.startAgentChat).not.toHaveBeenCalled();
+  expect(host.props.onTerminalChatSelect).not.toHaveBeenCalled();
+});
+
+test('priority preparation preserves restored Chat selection and reuses its viewport after closing', async () => {
+  const host = setup('codex');
+  bindTitledChat(host, 'codex', 'Ready priority chat');
+  host.props.terminalState.sessions[0].chatSelected = true;
+  host.props.priorityChatTargets = host.props.terminalTargets;
+  await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+  const viewport = ui('AgentChatView');
+  expect(viewport.props.active).toBe(true);
+  revealChat();
+  await act(async () => { await control().onPress(); });
+  expect(ui('TerminalScreen').props.chatViewEnabled).toBe(false);
+  expect(ui('AgentChatView')).toBe(viewport);
+  await act(async () => { await control().onPress(); });
+  expect(ui('AgentChatView')).toBe(viewport);
+  revealChat();
+});
+
 function bindTitledChat(host: ReturnType<typeof setup>, agent: ChatAgent, title: string) {
   const sessionId = host.pane.agent_session!.value;
   const binding = bindChat(host, agent, { sessionId });

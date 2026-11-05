@@ -6,6 +6,7 @@ import { AppShell } from '../src/components/AppShell';
 import { LiveSessionView } from '../src/components/LiveSessionView';
 import type { useAgentChatOpen } from '../src/hooks/useAgentChatOpen';
 import { agentTranscriptService } from '../src/services/NativeTranscriptService';
+import type { TerminalRenderTarget } from '../src/lib/terminalRenderer';
 
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
@@ -137,6 +138,8 @@ function setup() {
       knownHostsOpen: false,
     },
     sessions: {
+      herdView: () => ({ agents: [] }),
+      getClient: () => client,
       activeSession: session,
       activeClient: client,
       presentationSessions: [session],
@@ -162,6 +165,35 @@ function setup() {
     finishRefresh: () => finishRefresh(snapshot),
   };
 }
+
+test.each([false, true])('prepares the first three agents before opening Terminal (host selected=%s)', selected => {
+  const host = setup();
+  const panes = Array.from({ length: 5 }, (_, index) => ({
+    ...host.snapshot.panes[0], terminal_id: `terminal-${index}`, pane_id: `pane-${index}`,
+    agent_session: { agent: 'codex', kind: 'id', value: `session-${index}` },
+  }));
+  const herdView = jest.fn(() => ({ agents: [3, 1, 4, 0, 2].map(index => ({ hostId: 'host-1', agent: panes[index] })) }));
+  const native = { ...host.native, hostState: () => ({ syncStatus: 'synced', freshness: 'fresh', snapshot: { panes } }) };
+  const client = { ...host.client, native, activeNative: native };
+  const props = {
+    ...host.props,
+    navigation: { ...host.props.navigation, state: { ...host.props.navigation.state, tab: 'hosts' }, mountedTabs: new Set(['hosts']) },
+    sessions: { ...host.props.sessions, activeSession: selected ? host.props.sessions.activeSession : null, herdView, getClient: () => client },
+  } as unknown as Props;
+  let renderer!: ReactTestRenderer;
+  try {
+    act(() => { renderer = create(<AppShell {...props} />); });
+    const view = renderer.root.findByType(LiveSessionView);
+    expect(herdView).toHaveBeenCalledWith([]);
+    expect(view.props.visible).toBe(false);
+    expect(view.props.priorityChatTargets?.map((target: TerminalRenderTarget) => target.session.terminalId)).toEqual(['terminal-3', 'terminal-1', 'terminal-4']);
+    const preparedTargets = view.props.priorityChatTargets;
+    act(() => { renderer.update(<AppShell {...props} sessions={{ ...props.sessions }} />); });
+    expect(renderer.root.findByType(LiveSessionView).props.priorityChatTargets).toBe(preparedTargets);
+  } finally {
+    act(() => renderer?.unmount());
+  }
+});
 
 test.each([
   ['android', true, ['left', 'right']],

@@ -65,7 +65,17 @@ Projection revisions and transcript revisions are separate. A malformed or
 missing projection revision requests recovery automatically; repeated malformed
 recovery reports an error instead of looping. Disposal rejects pending native
 work and prevents late JavaScript callbacks from touching a replacement store.
-Warm hidden views keep their owner and expansion state. A temporary loss of the
+Warm hidden views keep their owner and expansion state. The first three supported
+agents in the unfiltered, device-wide Herd order also prepare and retain hidden
+viewports before selection. These priority slots are additive to the two most
+recently visited chats: overlapping identities share one viewport, for at most
+five mounted conversations. Priority changes do not alter the recent-chat history.
+While priority slots are in use, both budgets' transcripts are protected from
+cache eviction, including with the minimum transcript cache capacity of three.
+Hidden preparation performs row projection, list measurement, and initial scroll
+alignment without selecting Chat or starting foreground animations, images, or
+speech. Priority transcripts remain subscribed so loading can complete and row
+updates can be prepared before opening. A temporary loss of the
 host's JavaScript client retains the current source. Binding replacement and
 viewport disposal release the owner.
 
