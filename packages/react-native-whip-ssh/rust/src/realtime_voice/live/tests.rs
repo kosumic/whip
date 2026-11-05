@@ -2,6 +2,22 @@ use super::*;
 use serde_json::json;
 
 #[test]
+fn native_live_calls_negotiate_audio_on_webrtc_while_previews_keep_pcm()
+-> Result<(), Box<dyn std::error::Error>> {
+    let mut config: Config =
+        serde_json::from_value(json!({"live":true,"webrtc":true,"global":true,"voice":"quartz"}))?;
+    let session = serde_json::to_value(LiveVoiceAdapter::session(&config)?)?;
+    assert!(session["audio"].get("format").is_none());
+    assert_eq!(session["audio"]["output"]["voice"], "quartz");
+    assert_eq!(session["delegation"]["type"], "responses");
+    config.global = false;
+    config.preview = true;
+    let preview = serde_json::to_value(LiveVoiceAdapter::session(&config)?)?;
+    assert_eq!(preview["audio"]["format"]["rate"], 24_000);
+    Ok(())
+}
+
+#[test]
 fn live_preview_uses_custom_text_without_an_agent_or_tools()
 -> Result<(), Box<dyn std::error::Error>> {
     let mut config: Config = serde_json::from_value(
@@ -158,7 +174,8 @@ async fn public_live_api_smoke() -> Result<(), Box<dyn std::error::Error>> {
     let config: Config = serde_json::from_value(
         json!({"live":true,"voice":"quartz","model":"gpt-live-1","target":{"runtimeId":"synthetic","terminalId":"synthetic","paneId":"synthetic","bindingToken":"synthetic"}}),
     )?;
-    let mut socket = super::super::connect_raw(&credential, URL).await?;
+    let socket = super::super::connect_raw(&credential, URL).await?;
+    let mut socket = super::super::socket::Socket::Direct(Box::new(socket));
     drop(credential);
     send(
         &mut socket,
@@ -305,23 +322,30 @@ fn session_identity_model_and_voice_are_pinned() -> Result<(), Box<dyn std::erro
             json!({"id":id,"expires_at":2_000_000_000,"model":model,"status":"active","audio":{"format":{"type":"audio/pcm","rate":24000},"output":{"voice":voice}},"delegation":{"type":"client"}}),
         )
     };
-    let mut state = State::default();
-    state.pin_session(&snapshot("one", "gpt-live-1", "quartz")?, &config)?;
-    assert!(
-        state
-            .pin_session(&snapshot("two", "gpt-live-1", "quartz")?, &config)
-            .is_err()
-    );
-    assert!(
-        state
-            .pin_session(&snapshot("one", "gpt-realtime-1.5", "quartz")?, &config)
-            .is_err()
-    );
-    assert!(
-        state
-            .pin_session(&snapshot("one", "gpt-live-1", "marin")?, &config)
-            .is_err()
-    );
+    // WebSocket learns identity from the first event; WebRTC pins the POST's
+    // identity before its parallel control connection becomes available.
+    for session_id in [None, Some("one".to_owned())] {
+        let mut state = State {
+            session_id,
+            ..State::default()
+        };
+        state.pin_session(&snapshot("one", "gpt-live-1", "quartz")?, &config)?;
+        assert!(
+            state
+                .pin_session(&snapshot("two", "gpt-live-1", "quartz")?, &config)
+                .is_err()
+        );
+        assert!(
+            state
+                .pin_session(&snapshot("one", "gpt-realtime-1.5", "quartz")?, &config)
+                .is_err()
+        );
+        assert!(
+            state
+                .pin_session(&snapshot("one", "gpt-live-1", "marin")?, &config)
+                .is_err()
+        );
+    }
     Ok(())
 }
 

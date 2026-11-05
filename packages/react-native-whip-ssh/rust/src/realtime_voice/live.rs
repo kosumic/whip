@@ -3,7 +3,7 @@
 //! at c90354172c5c49535b122443e9a8ed52c2233b80. Native media ownership is shared;
 //! Live delegation/context events never become Realtime function calls.
 pub(super) mod captions;
-mod errors;
+pub(super) mod errors;
 mod global;
 mod preview;
 #[cfg(test)]
@@ -33,7 +33,7 @@ const INSTRUCTIONS: &str = include_str!("live/instructions.md");
 const MAX_EVENTS: usize = 16_384;
 const MAX_PENDING: usize = 8;
 const CAPTION_GRACE: Duration = Duration::from_millis(750);
-const CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
+pub(super) const CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
 const CONTEXT_BYTES: usize = 480; // <= 500 tokens even for byte-level tokenization.
 static SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
@@ -140,10 +140,12 @@ impl State {
     fn interrupted(&mut self, offset: f64) {
         self.suppress_output_after = Some(offset);
     }
-    fn input_caption(&mut self, end: f64) {
+    fn input_caption(&mut self, end: f64) -> bool {
         if self.suppress_output_after.is_some_and(|after| end > after) {
             self.suppress_output_after = None;
+            return true;
         }
+        false
     }
     fn confirm_mute(&mut self, id: Option<&str>, muted: bool) -> bool {
         if self.muted.as_ref().is_some_and(|(pending_id, pending, _)| {
@@ -224,12 +226,12 @@ impl LiveVoiceAdapter {
         }
         Ok(())
     }
-    fn session(config: &Config) -> Result<api::SessionConfig, &'static str> {
+    pub(super) fn session(config: &Config) -> Result<api::SessionConfig, &'static str> {
         Self::validate(config)?;
         let mut session = api::SessionConfig {
             model: catalog()?.model.clone(),
             audio: Some(api::AudioConfig {
-                format: Some(api::AudioFormat::default()),
+                format: (!config.webrtc || config.preview).then(api::AudioFormat::default),
                 output: Some(api::AudioOutput {
                     voice: Some(api::Voice::Named(config.voice.clone())),
                 }),
@@ -274,22 +276,33 @@ impl LiveVoiceAdapter {
         let mut cancelled = owner.cancel.subscribe();
         // No retries after session.start: a lost acknowledgement may still mean
         // a billable session exists. A new user-initiated call gets a new ledger ID.
-        let connected = tokio::select! {
-            biased;
-            _ = cancelled.changed() => return Ok(()),
-            result = super::connect_raw(&key, URL) => result,
+        let (mut socket, session_id) = if config.webrtc && !config.preview {
+            let session = serde_json::to_value(session).map_err(|_| "Invalid GPT-Live session.")?;
+            let (socket, id) = super::webrtc::start_live(owner.clone(), &key, session).await?;
+            (socket, Some(id))
+        } else {
+            let connected = tokio::select! {
+                biased;
+                _ = cancelled.changed() => return Ok(()),
+                result = super::connect_raw(&key, URL) => result,
+            };
+            let socket = connected.map_err(
+                |_| "GPT-Live could not connect. Check the saved API key, model access and network.",
+            )?;
+            owner.view.lock().startup.websocket = Some(super::startup::elapsed(owner.started_at));
+            let mut socket = super::socket::Socket::Direct(Box::new(socket));
+            send(&mut socket, Command::Start { session }).await?;
+            (socket, None)
         };
         drop(key);
-        let mut socket = connected.map_err(
-            |_| "GPT-Live could not connect. Check the saved API key, model access and network.",
-        )?;
         if owner.closed.load(Ordering::Acquire) {
             return Ok(());
         }
-        owner.view.lock().startup.websocket = Some(super::startup::elapsed(owner.started_at));
-        send(&mut socket, Command::Start { session }).await?;
         let mut adapter = Self {
-            state: State::default(),
+            state: State {
+                session_id,
+                ..State::default()
+            },
             tasks: JoinSet::new(),
             usage,
         };
@@ -318,11 +331,19 @@ impl LiveVoiceAdapter {
         adapter.tasks.shutdown().await;
         adapter.state.pending.clear();
         owner.ready.store(false, Ordering::Release);
+        if let Some(media) = owner.media.lock().as_ref() {
+            media.cancel_audio(None);
+        }
         owner.output.lock().clear();
         if !adapter.usage.finalized {
             let closed =
                 Self::graceful_close(&config, &mut socket, &mut adapter.state, &mut adapter.usage)
                     .await;
+            if closed.is_ok()
+                && let Some(media) = owner.media.lock().as_ref()
+            {
+                media.confirm_live_closed();
+            }
             if config.preview && result.is_ok() {
                 result = closed;
             }
@@ -366,7 +387,7 @@ impl LiveVoiceAdapter {
         owner: &Arc<RealtimeVoiceAdapter>,
         config: &Config,
         agent: Option<&Arc<PinnedAgent>>,
-        socket: &mut super::socket::RawSocket,
+        socket: &mut super::RealtimeSocket,
         mut commands: mpsc::Receiver<super::Command>,
     ) -> Result<(), &'static str> {
         let Self {
@@ -393,7 +414,7 @@ impl LiveVoiceAdapter {
                 _ = cancelled.changed() => return Ok(()),
                 command = commands.recv() => match command {
                     Some(super::Command::Mute(muted)) => {
-                        pending.reset(owner)?;
+                        if !config.webrtc { pending.reset(owner)?; }
                         // Native mute takes effect immediately; unmute waits for
                         // provider acknowledgement before accepting microphone frames.
                         owner.view.lock().muted = true;
@@ -403,6 +424,7 @@ impl LiveVoiceAdapter {
                     Some(super::Command::Skip) => {
                         owner.output.lock().clear();
                         state.interrupted(started.elapsed().as_secs_f64() * 1000.0);
+                        if let Some(media) = owner.media.lock().as_ref() { media.cancel_audio(None); }
                         owner.view.lock().playback_level = 0.0;
                         append(socket, None, "The user interrupted your spoken reply. Stop speaking now and listen. This does not cancel coding-agent work.", Channel::Instructions).await?;
                     }
@@ -431,13 +453,15 @@ impl LiveVoiceAdapter {
                             match frame.event {
                                 ServerEvent::Started {session,..} => {
                                     state.pin_session(&session,config)?;
+                                    owner.view.lock().startup.settings_confirmed = Some(owner.client_elapsed_ms.saturating_add(super::startup::elapsed(owner.started_at)));
                                     let muted = owner.view.lock().muted;
-                                    { let mut view = owner.view.lock(); view.media_ready = true; view.phase = if muted {"muted"} else {"listening"}; view.recovery = super::recovery::State::Active; }
-                                    owner.ready.store(true,Ordering::Release);
+                                    { let mut view = owner.view.lock(); view.media_ready = true; view.phase = if muted {"muted"} else if config.webrtc && view.startup.first_input.is_none() {"starting"} else {"listening"}; view.recovery = super::recovery::State::Active; }
+                                    if !config.webrtc { owner.ready.store(true,Ordering::Release); }
                                     if muted { let id = send(socket,Command::InputAudioMute).await?; state.muted=Some((id,true,Instant::now())); }
                                 }
                                 ServerEvent::Closed {session,usage:final_usage,reason,..} => {
                                     state.pin_session(&session,config)?;
+                                    if let Some(media) = owner.media.lock().as_ref() { media.confirm_live_closed(); }
                                     let confirmed = !matches!(reason,api::CloseReason::ConnectionLost);
                                     usage.observe(final_usage.seconds,confirmed)?;
                                     update_usage(owner,usage);
@@ -453,7 +477,7 @@ impl LiveVoiceAdapter {
                                     update_usage(owner,usage);
                                 }
                                 ServerEvent::InputTranscriptDelta {event_id,delta,start_ms,end_ms} => {
-                                    state.input_caption(end_ms);
+                                    if state.input_caption(end_ms) && let Some(media) = owner.media.lock().as_ref() { media.resume_live_audio(); }
                                     owner.view.lock().user_text = super::limit_text(delta.clone());
                                     owner.view.lock().caption_events += 1;
                                     if let Some(transcript) = owner.output.lock().live_transcript.as_mut() { transcript.append(captions::Fragment {id:event_id,role:"user".into(),text:delta,start_ms,end_ms,event:None})?; }
@@ -463,7 +487,7 @@ impl LiveVoiceAdapter {
                                     if let Some(transcript) = owner.output.lock().live_transcript.as_mut() { transcript.append(captions::Fragment {id:event_id,role:"assistant".into(),text:delta,start_ms,end_ms,event:None})?; }
                                 }
                                 ServerEvent::OutputAudioDelta {delta,..} => {
-                                    if state.suppress_output_after.is_some() { continue; }
+                                    if config.webrtc || state.suppress_output_after.is_some() { continue; }
                                     let pcm = STANDARD.decode(delta).map_err(|_| "GPT-Live returned invalid audio.")?;
                                     owner.output.lock().append("live-stream".into(),0,pcm)?;
                                 }
@@ -500,8 +524,8 @@ impl LiveVoiceAdapter {
                                 ServerEvent::InputAudioMuted {..} => {
                                     if state.confirm_mute(frame.client_event_id.as_deref(),true) { owner.view.lock().muted=true; }
                                 }
-                                ServerEvent::InputAudioUnmuted {..} => {
-                                    if state.confirm_mute(frame.client_event_id.as_deref(),false) { owner.view.lock().muted=false; }
+                                ServerEvent::InputAudioUnmuted {..} if state.confirm_mute(frame.client_event_id.as_deref(),false) => {
+                                    owner.view.lock().muted=false;
                                 }
                                 _ => {}
                             }
@@ -545,7 +569,7 @@ impl LiveVoiceAdapter {
                     {
                         let speaking = !owner.output.lock().samples.is_empty();
                         let mut view = owner.view.lock();
-                        view.phase = if speaking { "speaking" } else if view.muted { "muted" } else { "listening" };
+                        view.phase = if speaking { "speaking" } else if view.muted { "muted" } else if config.webrtc && view.startup.first_input.is_none() { "starting" } else { "listening" };
                     }
                     if let Some(backend) = &mut backend && backend.take_continuation() {
                         send(socket,Command::ResponseCreate).await?;
@@ -562,13 +586,11 @@ impl LiveVoiceAdapter {
                     }
                     if pong.elapsed()>Duration::from_secs(45) { return Err("GPT-Live stopped responding."); }
                     if ping.elapsed()>Duration::from_secs(15) { tokio::time::timeout(capture_worker::SEND_TIMEOUT,socket.send(Message::Ping(Vec::new().into()))).await.map_err(|_| "GPT-Live upload timed out.")?.map_err(|_| "GPT-Live disconnected.")?; ping=Instant::now(); }
-                    pending.refresh(owner)?;
-                    let samples = pending.take().filter(|frame| frame.current(owner)).map_or([0;super::FRAME],|frame| frame.samples);
-                    let bytes:Vec<_> = samples.iter().flat_map(|sample|sample.to_le_bytes()).collect();
-                    send(socket,Command::InputAudioAppend {audio:STANDARD.encode(bytes)}).await?;
-                    owner.view.lock().uploaded_packets += 1;
+                    if !config.webrtc {
+                        upload_pcm(owner, socket, &mut pending).await?;
+                    }
                 },
-                packet = owner.next_capture(&mut capture), if !pending.ready() && state.session_id.is_some() => {
+                packet = owner.next_capture(&mut capture), if !config.webrtc && !pending.ready() && state.session_id.is_some() => {
                     if packet? { pending.reset(owner)?; }
                     pending.refresh(owner)?;
                     owner.process_capture(&mut capture)?;
@@ -581,7 +603,7 @@ impl LiveVoiceAdapter {
     async fn dispatch(
         owner: &RealtimeVoiceAdapter,
         agent: &Arc<PinnedAgent>,
-        socket: &mut super::socket::RawSocket,
+        socket: &mut super::RealtimeSocket,
         state: &mut State,
         tasks: &mut JoinSet<Completion>,
     ) -> Result<(), &'static str> {
@@ -661,7 +683,7 @@ impl LiveVoiceAdapter {
     }
     async fn graceful_close(
         config: &Config,
-        socket: &mut super::socket::RawSocket,
+        socket: &mut super::RealtimeSocket,
         state: &mut State,
         usage: &mut usage::Usage,
     ) -> Result<(), &'static str> {
@@ -709,8 +731,33 @@ enum Channel {
     Commentary,
     Instructions,
 }
+
+async fn upload_pcm(
+    owner: &RealtimeVoiceAdapter,
+    socket: &mut super::RealtimeSocket,
+    pending: &mut capture_worker::Pending,
+) -> Result<(), &'static str> {
+    pending.refresh(owner)?;
+    let samples = pending
+        .take()
+        .filter(|frame| frame.current(owner))
+        .map_or([0; super::FRAME], |frame| frame.samples);
+    let bytes: Vec<_> = samples
+        .iter()
+        .flat_map(|sample| sample.to_le_bytes())
+        .collect();
+    send(
+        socket,
+        Command::InputAudioAppend {
+            audio: STANDARD.encode(bytes),
+        },
+    )
+    .await?;
+    owner.view.lock().uploaded_packets += 1;
+    Ok(())
+}
 async fn append(
-    socket: &mut super::socket::RawSocket,
+    socket: &mut super::RealtimeSocket,
     id: Option<&str>,
     text: &str,
     channel: Channel,
@@ -753,7 +800,7 @@ fn chunks(mut text: &str) -> Vec<&str> {
     chunks
 }
 async fn send(
-    socket: &mut super::socket::RawSocket,
+    socket: &mut super::RealtimeSocket,
     command: Command,
 ) -> Result<String, &'static str> {
     let kind = command.kind();

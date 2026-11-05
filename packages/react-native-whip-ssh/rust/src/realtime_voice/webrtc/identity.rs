@@ -13,6 +13,7 @@ pub(super) struct Tag {
 }
 #[derive(Default)]
 pub(super) struct Identity {
+    pub live: bool,
     seen: super::super::wire::Seen,
     tags: VecDeque<Tag>,
     cancelled: VecDeque<String>,
@@ -24,6 +25,26 @@ pub(super) struct Identity {
     pub finish_at: Option<Instant>,
 }
 impl Identity {
+    pub fn live() -> Self {
+        Self {
+            live: true,
+            current: Some(Tag {
+                response: "live-stream".into(),
+                item: "live-stream".into(),
+                index: 0,
+            }),
+            epoch: 1,
+            enabled: true,
+            ..Self::default()
+        }
+    }
+    pub fn resume_live(&mut self) {
+        if self.live && !self.enabled {
+            self.epoch += 1;
+            self.enabled = true;
+            self.ended = false;
+        }
+    }
     pub fn finish(&mut self, epoch: u64, now: Instant) -> bool {
         if self.epoch != epoch || self.finish_at.is_none_or(|deadline| deadline > now) {
             return false;
@@ -132,6 +153,27 @@ impl Identity {
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn live_interruption_can_resume_only_its_new_playback_epoch() {
+        let mut identity = Identity::live();
+        assert!(identity.enabled);
+        identity.cancel_response(None);
+        let interrupted = identity.epoch;
+        assert!(!identity.enabled);
+        identity.resume_live();
+        assert!(identity.enabled);
+        assert!(identity.epoch > interrupted);
+        assert_eq!(
+            identity.current.as_ref().map(|tag| tag.item.as_str()),
+            Some("live-stream")
+        );
+        let resumed = identity.epoch;
+        identity.resume_live();
+        assert_eq!(identity.epoch, resumed);
+        let mut realtime = Identity::default();
+        realtime.resume_live();
+        assert!(!realtime.enabled);
+    }
     #[test]
     fn server_stop_finishes_on_its_deadline_despite_idle_rtp_and_cannot_end_a_new_epoch()
     -> Result<(), &'static str> {

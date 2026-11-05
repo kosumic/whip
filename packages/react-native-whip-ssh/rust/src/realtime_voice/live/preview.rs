@@ -1,8 +1,8 @@
 //! A playback-only Live session: paced silence in, one bounded sample out.
 use super::{State, codec, send, update_usage, usage};
 use crate::realtime_voice::{
-    Config, FRAME, PREVIEW_AUDIO_LIMIT, PREVIEW_TIMEOUT, RealtimeVoiceAdapter, bounded_text,
-    capture_worker, socket::RawSocket,
+    Config, FRAME, PREVIEW_AUDIO_LIMIT, PREVIEW_TIMEOUT, RealtimeSocket, RealtimeVoiceAdapter,
+    bounded_text, capture_worker,
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
 use futures::{SinkExt, StreamExt};
@@ -44,7 +44,7 @@ impl Sample {
 pub(super) async fn drive(
     owner: &Arc<RealtimeVoiceAdapter>,
     config: &Config,
-    socket: &mut RawSocket,
+    socket: &mut RealtimeSocket,
     state: &mut State,
     usage: &mut usage::Usage,
     mut commands: mpsc::Receiver<super::super::Command>,

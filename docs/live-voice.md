@@ -21,21 +21,33 @@ saved; duration usage is recorded with Preview scope.
 ## Protocol and ownership
 
 `realtime_voice/live.rs` implements an independent Rust `LiveVoiceAdapter` using
-`oai_rt_rs::live` public typed events/codec. It connects to
-`wss://api.openai.com/v1/live/sessions`, sends `session.start`, confirms the
-session/model/voice and uses client delegation for agent calls or Responses
-delegation for global calls. It shares native PCM,
-echo cancellation, credential ingress and call ownership with Realtime. Live
-uses paced PCM16 at 24 kHz over WebSocket on both platforms; it does not send
-Realtime events or use private Codex/ChatGPT bootstrap endpoints.
+`oai_rt_rs::live` public typed events/codec. Native calls use the same WebRTC
+transport, Opus/RTP bridge, jitter buffer, echo cancellation and device ownership
+as Realtime. They send the SDP offer and complete Live configuration together to
+`POST /v1/live/sessions`, with the negotiated data-channel ID in `transport.dcid`.
+The POST starts the session; no `session.start` is sent again. The returned
+answer starts media while a control WebSocket attaches to
+`/v1/live/sessions/{id}/attach` in parallel, following Codex's media/sideband
+startup ownership. Events mirrored on the data channel and sideband are applied
+once. Reflected sideband PCM is ignored; microphone and speaker audio use RTP.
+The selected model, voice and delegation mode are still confirmed through
+`session.started`. Agent calls use client delegation; global calls use Responses
+delegation. Live uses its own public protocol, rather than Realtime events or
+private Codex/ChatGPT bootstrap endpoints. Voice previews retain their bounded,
+playback-only PCM WebSocket path.
 
-Audio is bounded and sent every 20 ms; late capture is dropped through the
+Device PCM remains 24 kHz and is encoded into bounded 20 ms Opus frames. The
+native peer uses DTLS 1.3, SCTP SNAP and a pre-negotiated data channel; SPED is not
+implemented. Late capture is dropped through the
 existing ingress/DSP generation checks. Silence maintains the continuous Live
 stream, including while input is muted. Provider mute/unmute acknowledgements
 are correlated by client event ID. Interruption clears local playback immediately,
 requests silence through public instructions and suppresses subsequent playback
 until new user speech; it never cancels coding work. Native route/interruption,
 app lock, credential replacement and target validity checks retain ownership.
+
+See [startup measurements](voice-startup-latency.md) for the measured Android
+critical path and the remaining differences from ChatGPT's native setup.
 
 ## Delegation
 
@@ -116,6 +128,12 @@ delegation/context updates, returned audio/captions and final usage. It never
 contacts a real coding agent or changes a workspace. Supply `OPENAI_API_KEY`
 only when intentionally running it. Physical Android/iOS audio routing and
 microphone-to-agent validation require a connected device.
+
+`public_live_webrtc_api_smoke` checks public Live SDP creation, the parallel
+sideband, audible Opus/RTP output, captions and final usage using synthetic
+instructions and silence input. It is also explicitly billable and ignored by
+default; WebRTC initialization has its own duration charge. It sends no agent
+requests and never sends PCM input on the sideband.
 
 Official protocol sources checked 2026-11-04:
 

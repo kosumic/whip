@@ -5,6 +5,7 @@ mod driver;
 mod identity;
 mod incoming;
 mod jitter;
+mod live;
 mod media;
 mod network;
 mod packet;
@@ -24,10 +25,19 @@ pub(super) struct Handle {
     identity: Arc<Mutex<identity::Identity>>,
     stop: watch::Sender<bool>,
     workers: Vec<JoinHandle<Result<(), &'static str>>>,
+    live_closed: Option<Arc<std::sync::atomic::AtomicBool>>,
 }
 impl Handle {
     pub fn cancel_audio(&self, response: Option<&str>) {
         self.identity.lock().cancel_response(response);
+    }
+    pub fn resume_live_audio(&self) {
+        self.identity.lock().resume_live();
+    }
+    pub fn confirm_live_closed(&self) {
+        if let Some(closed) = &self.live_closed {
+            closed.store(true, Ordering::Release);
+        }
     }
     pub fn drained(&self) -> bool {
         self.identity.lock().ended
@@ -211,6 +221,7 @@ pub(super) async fn start(
         identity,
         stop,
         workers: vec![sideband, media],
+        live_closed: None,
     });
     {
         let mut view = owner.view.lock();
@@ -223,6 +234,8 @@ pub(super) async fn start(
     }
     Ok(socket)
 }
+
+pub(super) use live::start as start_live;
 
 fn confirmation(session: &serde_json::Value) -> Result<ClientEvent, &'static str> {
     // Initial instructions/context/tools already went with the SDP request.
@@ -362,6 +375,9 @@ pub(super) fn input_started(owner: &RealtimeVoiceAdapter) {
     let mut view = owner.view.lock();
     view.startup.first_input.get_or_insert(elapsed);
     view.startup.listening.get_or_insert(elapsed);
+    if view.phase == "starting" && view.media_ready && !view.muted {
+        view.phase = "listening";
+    }
 }
 
 #[cfg(test)]

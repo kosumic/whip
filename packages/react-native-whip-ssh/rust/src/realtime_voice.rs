@@ -493,7 +493,7 @@ impl RealtimeVoiceAdapter {
         let adapter = Arc::new(Self {
             started_at,
             client_elapsed_ms: config.client_elapsed_ms,
-            webrtc: config.webrtc && !config.live,
+            webrtc: config.webrtc && !(config.live && config.preview),
             media: Mutex::new(None),
             view: Mutex::new(View {
                 phase: "starting",

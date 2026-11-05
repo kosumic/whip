@@ -14,7 +14,7 @@ fn identifier(value: Option<&str>) -> &str {
         .unwrap_or("unknown")
 }
 
-pub(super) fn rejected(error: &ProviderError, global: bool) -> &'static str {
+pub(in crate::realtime_voice) fn rejected(error: &ProviderError, global: bool) -> &'static str {
     crate::host_runtime::diagnostics::log_lifecycle(format_args!(
         "GPT-Live rejected type={} code={} param={} client_event_id={}",
         identifier(Some(&error.error_type)),

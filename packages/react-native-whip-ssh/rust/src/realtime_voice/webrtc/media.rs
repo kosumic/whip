@@ -35,6 +35,7 @@ pub(super) async fn run(
     let mut pending = capture_worker::Pending::new(owner);
     let mut encoded = vec![0; 1275];
     let mut last_silence = None::<Instant>;
+    let mut last_live_sound = None::<Instant>;
     let mut tick = tokio::time::interval(Duration::from_millis(5));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
@@ -50,12 +51,13 @@ pub(super) async fn run(
             biased;
             _ = stop.changed() => return Ok(()),
             _ = tick.tick() => {
-                let (next_epoch, enabled, tag, finishing, failed) = { let state = identity.lock(); (state.epoch, state.enabled, state.current.clone(), state.finish_at, state.failed) };
+                let (next_epoch, enabled, tag, finishing, failed, live) = { let state = identity.lock(); (state.epoch, state.enabled, state.current.clone(), state.finish_at, state.failed, state.live) };
                 if failed || !*peer.ready.borrow() { return Err("Realtime media connection ended."); }
                 if epoch != next_epoch {
                     peer.incoming.set_suppressed(true)?;
                     jitter = Jitter::default();
                     decoder.reset_state().map_err(|_| "Voice decoder reset failed.")?;
+                    last_live_sound = None;
                     epoch = next_epoch;
                 }
                 peer.incoming.set_suppressed(!enabled)?;
@@ -76,6 +78,14 @@ pub(super) async fn run(
                     } else { &[] };
                     let count = decoder.decode(payload, if payload.is_empty() { &mut decoded[..FRAME] } else { &mut decoded }, false).map_err(|_| "Realtime audio decoding failed.")?;
                     jitter.advance(count);
+                    // Live is one continuous track, including silence. Retain
+                    // short pauses, then let the native playback queue drain.
+                    if live {
+                        if decoded[..count].iter().any(|sample| sample.unsigned_abs() >= 64) {
+                            last_live_sound = Some(playout_at);
+                        }
+                        if last_live_sound.is_none_or(|last| playout_at.duration_since(last) > Duration::from_millis(250)) { continue; }
+                    }
                     if let Some(tag) = &tag {
                         if identity.lock().epoch != epoch { break; }
                         let bytes = decoded[..count].iter().flat_map(|sample| sample.to_le_bytes()).collect();

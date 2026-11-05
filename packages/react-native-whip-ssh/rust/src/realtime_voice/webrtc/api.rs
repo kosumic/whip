@@ -10,6 +10,17 @@ use serde_json::Value;
 
 static HTTP: std::sync::OnceLock<Result<Client, &'static str>> = std::sync::OnceLock::new();
 
+pub(super) fn client() -> Result<Client, &'static str> {
+    HTTP.get_or_init(|| {
+        Client::builder()
+            .timeout(IO_TIMEOUT)
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|_| "Voice HTTP client could not start.")
+    })
+    .clone()
+}
+
 const CALLS: &str = "https://api.openai.com/v1/realtime/calls";
 const CREATION_UNKNOWN: &str =
     "Realtime call creation outcome is unknown. Start a new call manually.";
@@ -28,15 +39,7 @@ impl Call {
     ) -> Result<Self, &'static str> {
         // Initial configuration owns model selection for both calls and previews.
         models::selected(Some(session["model"].as_str().ok_or(models::UNSUPPORTED)?))?;
-        let client = HTTP
-            .get_or_init(|| {
-                Client::builder()
-                    .timeout(IO_TIMEOUT)
-                    .redirect(reqwest::redirect::Policy::none())
-                    .build()
-                    .map_err(|_| "Realtime HTTP client could not start.")
-            })
-            .clone()?;
+        let client = client()?;
         let mut authorization = HeaderValue::from_bytes(&key.authorization())
             .map_err(|_| "Invalid voice credential.")?;
         authorization.set_sensitive(true);
