@@ -42,7 +42,6 @@ import {
   HerdrTerminalNotificationKind,
   HerdrTerminalControlEvent_Tags,
   HostConnectionState,
-  HostAuthMode,
   GithubDiscoveryStatus,
   GithubSection,
   GithubCommentFormat,

@@ -19,6 +19,10 @@ fn session_identity_cannot_change_the_authorized_attach_endpoint() {
 /// Uses synthetic instructions, silence input, and no host or agent execution.
 #[tokio::test]
 #[ignore = "requires explicitly authorized OPENAI_API_KEY and network access"]
+#[allow(
+    clippy::significant_drop_tightening,
+    reason = "The peer moves into the media task after negotiation"
+)]
 async fn public_live_webrtc_api_smoke() -> Result<(), Box<dyn std::error::Error>> {
     use oai_rt_rs::live::{ClientEvent, Codec, Command, Field, Nullable, ServerEvent};
     use std::ffi::c_void;
@@ -46,8 +50,10 @@ async fn public_live_webrtc_api_smoke() -> Result<(), Box<dyn std::error::Error>
         .transpose()?;
     let input = input.map(|bytes| {
         bytes
-            .chunks_exact(2)
-            .map(|b| i16::from_le_bytes([b[0], b[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|b| i16::from_le_bytes(*b))
             .collect::<Vec<_>>()
     });
     let mut session = voice::live::LiveVoiceAdapter::session(&config)?;
