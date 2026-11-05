@@ -55,6 +55,7 @@ mod transcript_database;
 mod usage;
 mod voice_chat;
 mod voice_credentials;
+mod voice_history;
 
 pub use agent_sessions::*;
 pub use agent_transcript::*;

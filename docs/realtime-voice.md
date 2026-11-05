@@ -58,7 +58,21 @@ in bubbles and assistant replies remain readable in full. Spoken text brightens,
 the current word is emphasized, and upcoming speech stays dim. Scrolling back
 pauses automatic following; **Follow current speech** resumes it. This history
 belongs to the call and survives minimizing or remounting its presentation.
-It is separate from the coding-agent transcript and is not persisted to disk.
+It is separate from the coding-agent transcript. After a call ends, captions
+are saved in the app database under `whip.voice.transcripts`.
+Settings → Saved voice chats is a separate card outside OpenAI. It shows the
+last 20 conversations across Realtime and GPT-Live, newest first, with
+the model shown on each entry. Preview sessions are excluded. Existing Live
+captions remain available and migrate on the next saved conversation. Caption
+text and speaker identity are saved without invented timestamps or audio
+recordings; existing Live timeline intervals are preserved.
+Local conversations are excluded because their messages already live in the
+remote coding agent's history.
+The shared transcript includes expandable delegation and tool-call rows,
+including tools observed in this call's pinned coding-agent turn. Stable call
+IDs update a row rather than duplicating it. Submission is displayed separately
+from confirmed completion; ending observation never implies remote success.
+Saved chats reuse the active-call chat renderer without playback highlighting.
 
 The public [Realtime transcript events](https://developers.openai.com/api/reference/resources/realtime/server-events)
 have no word timestamps, and text/audio packets are not paired timing cues.

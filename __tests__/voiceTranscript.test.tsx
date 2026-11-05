@@ -66,6 +66,29 @@ test('renders retained turns and streaming updates without truncation or a playb
   act(() => renderer.unmount());
 });
 
+test('renders delegation and tool status with expandable input and results beside speech', () => {
+  let renderer!: ReactTestRenderer;
+  const delegation: VoiceTranscriptMessage = { id: 'delegation', role: 'assistant', text: 'Codex · submitted', active: false, spokenUtf16: 0,
+    event: { kind: 'delegation', name: 'Codex', status: 'submitted', input: 'Check the build' } };
+  const tool: VoiceTranscriptMessage = { id: 'tool', role: 'assistant', text: 'terminal_exec · completed', active: false, spokenUtf16: 0,
+    event: { kind: 'tool', name: 'terminal_exec', status: 'completed', input: 'cargo check', output: 'Build passed' } };
+  act(() => { renderer = create(<VoiceTranscript messages={[delegation, tool]} reducedMotion />); });
+  expect(JSON.stringify(renderer.toJSON())).toContain('voiceTranscript.delegation');
+  expect(JSON.stringify(renderer.toJSON())).toContain('submitted');
+  act(() => { renderer.root.findAllByType(Pressable)[1].props.onPress(); });
+  expect(JSON.stringify(renderer.toJSON())).toContain('cargo check');
+  expect(JSON.stringify(renderer.toJSON())).toContain('Build passed');
+  act(() => renderer.unmount());
+});
+
+test('archived chats display complete text without pretending it has playback acknowledgments', () => {
+  let renderer!: ReactTestRenderer;
+  const archived = { ...reply, active: false, spokenUtf16: 0 };
+  act(() => { renderer = create(<VoiceTranscript messages={[archived]} reducedMotion playback={false} />); });
+  expect(renderer.root.findByProps({ accessibilityLabel: reply.text }).props.children).toBe(reply.text);
+  act(() => renderer.unmount());
+});
+
 test('scrolling back detaches following until explicitly resumed', () => {
   let renderer!: ReactTestRenderer;
   const player = { scrollTo: jest.fn(), scrollToEnd: jest.fn() };

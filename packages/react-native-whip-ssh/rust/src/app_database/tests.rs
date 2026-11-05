@@ -377,18 +377,35 @@ fn notification_encryption_preferences_import_and_persist_independently_per_host
 }
 
 #[test]
-fn live_captions_persist_separately_from_agent_history_and_survive_reopen() {
+fn unified_voice_chats_and_legacy_live_captions_survive_reopen() {
     let directory = tempfile::tempdir().unwrap_or_else(|error| panic!("{error}"));
     let path = directory.path().join("app.db");
-    let key = "whip.voice.live.transcripts";
-    let value = r#"[{"id":"live-call","endedAtMs":1000,"fragments":[{"id":"caption","role":"user","text":"hello","startMs":0,"endMs":50}]}]"#;
+    let live_key = "whip.voice.live.transcripts";
+    let realtime_key = "whip.voice.transcripts";
+    let live = r#"[{"id":"live-call","endedAtMs":1000,"fragments":[{"id":"caption","role":"user","text":"hello","startMs":0,"endMs":50}]}]"#;
+    let realtime = r#"[{"id":"realtime-call","model":"gpt-realtime-1.5","endedAtMs":2000,"fragments":[{"id":"caption","role":"assistant","text":"hello back"}]},{"id":"local-call","model":"local","endedAtMs":3000,"fragments":[{"id":"caption","role":"user","text":"local text"}]}]"#;
     let mut database = store(&path);
     assert!(database.write(Vec::new(), true).is_ok());
-    assert!(database.write(vec![entry(key, Some(value))], false).is_ok());
+    assert!(
+        database
+            .write(
+                vec![
+                    entry(live_key, Some(live)),
+                    entry(realtime_key, Some(realtime))
+                ],
+                false
+            )
+            .is_ok()
+    );
     drop(database);
     let database = store(&path);
     assert_eq!(
-        database.read(vec![key.into()]).ok(),
-        Some(vec![entry(key, Some(value))])
+        database
+            .read(vec![live_key.into(), realtime_key.into()])
+            .ok(),
+        Some(vec![
+            entry(live_key, Some(live)),
+            entry(realtime_key, Some(realtime))
+        ])
     );
 }

@@ -558,6 +558,11 @@ impl RealtimeVoiceAdapter {
         let credential_start = Instant::now();
         let key = credentials().map_err(StartError::Credential)?;
         adapter.view.lock().startup.credentials = Some(startup::elapsed(credential_start));
+        let caption_identity = if config.live || config.preview {
+            None
+        } else {
+            Some((config.model()?.id.clone(), config.voice.clone()))
+        };
         runtime.spawn(async move {
             let mut tools: JoinSet<ToolCompletion> = JoinSet::new();
             let result = if config.live {
@@ -592,6 +597,14 @@ impl RealtimeVoiceAdapter {
                 Err("Voice configuration failed.")
             };
             tools.shutdown().await;
+            if let Some((model, voice)) = caption_identity {
+                let captions = owner.output.lock().transcript.saved_captions();
+                if let Err(error) =
+                    crate::voice_history::persist(&model, Some(&voice), captions).await
+                {
+                    owner.view.lock().error.get_or_insert(error);
+                }
+            }
             if let Some(global) = &owner.global {
                 global.close();
             }
@@ -884,6 +897,8 @@ impl RealtimeVoiceAdapter {
                 },
                 result = tools.join_next(), if !tools.is_empty() => {
                     let ToolCompletion { call_id, deferred: was_deferred, mut value } = result.ok_or("Realtime tool task ended.")?.map_err(|_| "Realtime tool task failed.")?;
+                    let transcript_result = if self.global.is_none() && terminal.is_none() { json!({"completion":value["completion"], "error":value["error"], "result":live::public_result(&value)}) } else { value.clone() };
+                    self.output.lock().transcript.event_result(&call_id, &transcript_result);
                     if self.global.is_some() {
                         if self.closed.load(Ordering::Acquire) { continue; }
                         let silent = value == json!({});
@@ -902,7 +917,7 @@ impl RealtimeVoiceAdapter {
                     if was_deferred { deferred.finish(); }
                     self.view.lock().tool = None;
                     if let Some(handoff) = handoff.as_mut() {
-                        forward_feedback(socket, agent, handoff).await?;
+                        forward_feedback(self, socket, agent, handoff).await?;
                         value["handoff_role"] = json!(if handoff.call_id == call_id {"original"} else {"followup"});
                     }
                     if uncertain {
@@ -927,7 +942,7 @@ impl RealtimeVoiceAdapter {
                     if !self.speech.is_current() { return Err("Voice audio was replaced by another speech session."); }
                     if let Some(agent) = &agent { agent.check_liveness().map_err(|_| "The bound agent disconnected or changed. Please call again.")?; }
                     if let Some(terminal) = &terminal {
-                        terminal.forward_feedback(socket, &mut responses).await?;
+                        terminal.forward_feedback(self, socket, &mut responses).await?;
                     }
                     if config.preview && started.elapsed() > PREVIEW_TIMEOUT { return Err("Voice preview timed out. Please try again."); }
                     if preview_done && (!config.webrtc || self.media.lock().as_ref().is_some_and(webrtc::Handle::drained)) && { let output = self.output.lock(); output.generated == output.played } {
@@ -943,7 +958,7 @@ impl RealtimeVoiceAdapter {
                         spawn_delegation(tools, agent.as_ref().ok_or("Missing bound voice agent.")?.clone(), pending, true, false);
                     }
                     if let Some(handoff) = handoff.as_mut() {
-                        forward_feedback(socket, agent.as_ref().ok_or("Missing bound voice agent.")?, handoff).await?;
+                        forward_feedback(self, socket, agent.as_ref().ok_or("Missing bound voice agent.")?, handoff).await?;
                     }
                     if { let output = self.output.lock(); output.generated == output.played }
                         && let Some(event) = next_response(&responses, handoff.as_mut(), Instant::now())? {
@@ -1034,26 +1049,40 @@ impl RealtimeVoiceAdapter {
                         ServerEvent::InputAudioTranscriptionFailed { .. } => { self.view.lock().error = Some("OpenAI could not transcribe this turn. Voice audio is still connected."); }
                         ServerEvent::ResponseFunctionCallArgumentsDone { call_id, name, arguments, response_id, .. } => {
                             if ignored.contains(&response_id) { continue; }
+                            if name != REMAIN_SILENT {
+                                let mut event = crate::voice_history::Event::new(if matches!(name.as_str(), BACKGROUND_AGENT | "herdr_delegate") {"delegation"} else {"tool"}, &name, "requested");
+                                event.input = Some(limit_text(arguments.clone()));
+                                self.output.lock().transcript.event(&call_id, event);
+                            }
                             if let Some(global) = &self.global {
                                 if !global.admit(&call_id)? { continue; }
                                 if tools.len() >= delegation::MAX_PENDING {
+                                    self.output.lock().transcript.event_result(&call_id, &json!({"error":"queue_full"}));
                                     send(socket, function_output(call_id, json!({"error":"queue_full"}))).await?;
                                     responses.request_create();
                                 } else {
+                                    self.output.lock().transcript.event_status(&call_id, "running");
                                     let global = global.clone();
                                     tools.spawn(async move { ToolCompletion { value: global.execute(&name, &arguments).await, call_id, deferred: false } });
                                 }
                                 continue;
                             }
                             if let Some(terminal) = &terminal {
+                                if tools.len() >= delegation::MAX_PENDING { self.output.lock().transcript.event_result(&call_id, &json!({"error":"queue_full"})); }
+                                else { self.output.lock().transcript.event_status(&call_id, "running"); }
                                 terminal.handle(socket, tools, &mut responses, (call_id, name, arguments)).await?;
                                 continue;
                             }
                             let agent = agent.as_ref().ok_or("Voice previews cannot execute tools.")?;
+                            let event_id = call_id.clone();
+                            let later = serde_json::from_str::<Value>(&arguments).is_ok_and(|value| value["delivery"] == "later");
                             let transcript = self.output.lock().transcript.delegation_snapshot();
                             let dispatch = delegation::Dispatch { ledger: &mut ledger, deferred: &mut deferred, handoff: &mut handoff, tools, responses: &mut responses, context: &context, transcript };
                             let call = delegation::Invocation { already_spoke: last_audio_response.as_deref() == Some(response_id.as_str()), call_id, name: name.clone(), arguments, response_id };
-                            if dispatch.handle(socket, agent, call).await? { self.view.lock().tool = Some(name); }
+                            if dispatch.handle(socket, agent, call).await? {
+                                self.output.lock().transcript.event_status(&event_id, if later {"queued"} else {"running"});
+                                self.view.lock().tool = Some(name);
+                            } else { self.output.lock().transcript.event_status(&event_id, "not_admitted"); }
                         }
 
                         ServerEvent::Error { error, .. } => {
@@ -1374,6 +1403,7 @@ fn spawn_delegation(
 }
 
 async fn forward_feedback<S>(
+    owner: &RealtimeVoiceAdapter,
     socket: &mut S,
     agent: &PinnedAgent,
     handoff: &mut feedback::Handoff,
@@ -1385,11 +1415,27 @@ where
         .feedback_snapshot(handoff.revision())
         .map_err(|_| "The bound voice agent changed.")?
     {
+        owner.agent_events(&snapshot);
         for text in handoff.observe(snapshot) {
             send(socket, feedback_message(&text)?).await?;
         }
     }
     Ok(())
+}
+
+impl RealtimeVoiceAdapter {
+    fn agent_events(&self, snapshot: &feedback::Snapshot) {
+        let mut output = self.output.lock();
+        for message in &snapshot.events {
+            if let Some(event) = &message.event {
+                if let Some(transcript) = &mut output.live_transcript {
+                    transcript.event(&message.id, event.clone());
+                } else {
+                    output.transcript.event(&message.id, event.clone());
+                }
+            }
+        }
+    }
 }
 
 fn preview_response(config: &Config) -> Result<ClientEvent, &'static str> {

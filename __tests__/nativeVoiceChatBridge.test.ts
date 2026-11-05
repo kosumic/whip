@@ -76,3 +76,15 @@ test('a removed transcript is distinct from a routine activity refresh', () => {
   call.transcript('codex', state, true);
   expect(() => call.transcript('codex', { ...state, status: 'unavailable' }, false)).toThrow('Disconnected');
 });
+
+test('tool details cross the native boundary with the owning turn rather than the speech queue', () => {
+  const call = new NativeVoiceChat('/model-cache');
+  const updated: AgentChatState = { ...state, transcript: { ...state.transcript, turns: [{
+    id: 'turn', status: 'idle', diffs: [], assistants: [{ id: 'assistant', role: 'assistant', diffs: [], parts: [{
+      type: 'tool', id: 'tool', callId: 'call', tool: 'shell', state: { status: 'completed', input: { command: 'cargo check' }, output: 'passed', files: [], diagnostics: [], loaded: [] },
+    }] }],
+  }] } };
+  call.transcript('codex', updated, false);
+  const turns = (mockTranscript.mock.calls.at(-1) as unknown as [number, boolean, boolean, { toolsJson: string }[]])[3];
+  expect(JSON.parse(turns[0].toolsJson)).toEqual([{ id: 'call', kind: 'tool', name: 'shell', status: 'completed', input: '{"command":"cargo check"}', output: 'passed' }]);
+});

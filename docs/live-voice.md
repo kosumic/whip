@@ -76,10 +76,18 @@ never submitted again. Full agent histories are not copied to the voice model.
 Input/output captions retain independent fragment IDs and timeline intervals,
 including overlapping and late fragments. Their timing is not a playback
 receipt; Live has no output-done event, so Whip does not invent word timing.
-On teardown, the last 20 calls' bounded captions are saved separately under
-`whip.voice.live.transcripts` in the app database. Settings → OpenAI → GPT-Live →
-Saved Live captions exposes selectable text. Audio is never stored, and
+On teardown, bounded captions are saved under `whip.voice.transcripts` in the
+app database. Settings → Saved voice chats is a separate card outside OpenAI
+and exposes the last 20 Realtime and Live conversations in one list,
+with their models shown. Existing `whip.voice.live.transcripts` records remain
+available and migrate on the next saved call. Audio is never stored, and
 `store:false` does not opt into provider recording/fork storage.
+
+Delegation and tool events share the same transcript entry shape as Realtime
+and Local calls, with bounded input/result details and last observed status.
+Coding-agent tool details are shown to the user separately from public voice
+handoff text; they do not become spoken context. Active calls and saved chats
+use the same renderer, including expandable event rows.
 
 The existing usage ledger records one duration item per call. Cumulative
 `session.usage.updated` values replace prior seconds monotonically. Graceful

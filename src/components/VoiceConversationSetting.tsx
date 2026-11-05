@@ -7,7 +7,6 @@ import { LIVE_MODEL, LIVE_VOICES, REALTIME_MODELS, REALTIME_VOICES, selectedConv
 import { RealtimeVoicePreview } from '../services/realtimeVoicePreview';
 import { GlassButton } from './GlassControls';
 import { SpeechVoicePicker } from './SpeechVoicePicker';
-import { LiveVoiceHistory } from './LiveVoiceHistory';
 import { Text } from './ui/text';
 import { Input } from './ui/input';
 
@@ -105,7 +104,6 @@ export function VoiceConversationSetting({ ref, credentialSaved, credentialBusy 
       accessibilityLabel={t(previewing ? 'voiceProvider.stopPreview' : 'voiceProvider.preview')}
       onPress={() => { void previewVoice(); }}><Text>{t(previewing ? 'voiceProvider.stopPreview' : 'voiceProvider.preview')}</Text></GlassButton>
     <Text className="text-xs text-muted-foreground">{t('voiceProvider.previewNotice')}</Text>
-    {settings.mode === 'Live' && <LiveVoiceHistory />}
     {error && <Text accessibilityRole="alert" className="text-xs text-destructive">{error}</Text>}
   </View>;
 }

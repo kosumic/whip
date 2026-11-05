@@ -1,12 +1,10 @@
 //! Live fragments have timeline intervals, not provider turns or playback marks.
 use serde::{Deserialize, Serialize};
-use std::collections::{HashSet, VecDeque};
+use std::collections::HashSet;
 
 const MAX_FRAGMENTS: usize = 512;
 const MAX_BYTES: usize = 64 * 1024;
 const MAX_REQUEST: usize = 8 * 1024;
-const HISTORY_KEY: &str = "whip.voice.live.transcripts";
-const MAX_SAVED_CALLS: usize = 20;
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -16,6 +14,21 @@ pub(super) struct Fragment {
     pub text: String,
     pub start_ms: f64,
     pub end_ms: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event: Option<crate::voice_history::Event>,
+}
+
+impl From<Fragment> for crate::voice_history::Caption {
+    fn from(fragment: Fragment) -> Self {
+        Self {
+            id: fragment.id,
+            role: fragment.role,
+            text: fragment.text,
+            start_ms: Some(fragment.start_ms),
+            end_ms: Some(fragment.end_ms),
+            event: fragment.event,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -24,14 +37,6 @@ pub(in crate::realtime_voice) struct Transcript {
     bytes: usize,
     admitted: HashSet<String>,
     discarded_through: f64,
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SavedCall {
-    id: String,
-    fragments: Vec<Fragment>,
-    ended_at_ms: u64,
 }
 
 impl Transcript {
@@ -47,13 +52,21 @@ impl Transcript {
         if self.fragments.iter().any(|old| old.id == fragment.id) {
             return Ok(());
         }
-        self.bytes += fragment.text.len();
+        self.bytes += fragment.text.len()
+            + fragment
+                .event
+                .as_ref()
+                .map_or(0, crate::voice_history::Event::bytes);
         self.fragments.push(fragment);
         self.fragments
             .sort_by(|a, b| a.start_ms.total_cmp(&b.start_ms));
         while self.bytes > MAX_BYTES || self.fragments.len() > MAX_FRAGMENTS {
             let removed = self.fragments.remove(0);
-            self.bytes -= removed.text.len();
+            self.bytes -= removed.text.len()
+                + removed
+                    .event
+                    .as_ref()
+                    .map_or(0, crate::voice_history::Event::bytes);
             self.admitted.remove(&removed.id);
             self.discarded_through = self.discarded_through.max(removed.end_ms);
         }
@@ -108,8 +121,12 @@ impl Transcript {
         for fragment in &self.fragments {
             let previous = bubbles
                 .iter()
-                .rposition(|bubble| bubble.role == fragment.role);
+                .rposition(|bubble| bubble.role == fragment.role && bubble.event.is_none());
             if let Some(index) = previous
+                && fragment.event.is_none()
+                && bubbles[index + 1..]
+                    .iter()
+                    .all(|bubble| bubble.event.is_none())
                 && fragment.start_ms <= bubbles[index].end_ms + 1200.0
                 && bubbles[index].text.len() + fragment.text.len() <= super::super::MAX_TEXT
             {
@@ -127,6 +144,7 @@ impl Transcript {
                         "id":fragment.id,"role":fragment.role,"text":fragment.text,
                         "startMs":fragment.start_ms,"endMs":fragment.end_ms,
                         "spokenUtf16":0,"active":false,
+                        "event":fragment.event,
                     })
                 })
                 .collect(),
@@ -136,45 +154,58 @@ impl Transcript {
     pub(super) fn snapshot(&self) -> Vec<Fragment> {
         self.fragments.clone()
     }
-}
-
-pub(super) async fn persist(id: String, fragments: Vec<Fragment>) -> Result<(), &'static str> {
-    use crate::app_database::{AppStorageEntry, read_app_data, write_app_data};
-    if fragments.is_empty() {
-        return Ok(());
+    pub(in crate::realtime_voice) fn event(
+        &mut self,
+        id: &str,
+        event: crate::voice_history::Event,
+    ) {
+        let event = event.bounded();
+        let id = format!("event:{id}");
+        let text = format!("{} · {}", event.name, event.status);
+        if let Some(fragment) = self.fragments.iter_mut().find(|fragment| fragment.id == id) {
+            if event.status == "requested"
+                && fragment
+                    .event
+                    .as_ref()
+                    .is_some_and(|old| old.status != "requested")
+            {
+                return;
+            }
+            self.bytes = self.bytes.saturating_sub(
+                fragment.text.len()
+                    + fragment
+                        .event
+                        .as_ref()
+                        .map_or(0, crate::voice_history::Event::bytes),
+            ) + text.len()
+                + event.bytes();
+            fragment.text = text;
+            fragment.event = Some(event);
+        } else {
+            let at = self
+                .fragments
+                .last()
+                .map_or(0.0, |fragment| fragment.end_ms);
+            let _ = self.append(Fragment {
+                id,
+                role: "assistant".into(),
+                text,
+                start_ms: at,
+                end_ms: at,
+                event: Some(event),
+            });
+        }
     }
-    let entries = read_app_data(vec![HISTORY_KEY.into()])
-        .await
-        .map_err(|_| "Voice captions could not be saved.")?;
-    let mut calls: VecDeque<SavedCall> = entries
-        .into_iter()
-        .next()
-        .and_then(|entry| entry.value)
-        .map(|value| serde_json::from_str(&value))
-        .transpose()
-        .map_err(|_| "Saved voice captions are unavailable.")?
-        .unwrap_or_default();
-    calls.retain(|call| call.id != id);
-    let ended_at_ms = u64::try_from(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis(),
-    )
-    .unwrap_or(u64::MAX);
-    calls.push_back(SavedCall {
-        id,
-        fragments,
-        ended_at_ms,
-    });
-    while calls.len() > MAX_SAVED_CALLS {
-        calls.pop_front();
+    pub(super) fn event_result(&mut self, id: &str, value: &serde_json::Value) {
+        if let Some(event) = self
+            .fragments
+            .iter()
+            .find(|fragment| fragment.id == format!("event:{id}"))
+            .and_then(|fragment| fragment.event.clone())
+        {
+            let mut event = event;
+            event.result(value);
+            self.event(id, event);
+        }
     }
-    let value = serde_json::to_string(&calls).map_err(|_| "Voice captions could not be saved.")?;
-    write_app_data(vec![AppStorageEntry {
-        key: HISTORY_KEY.into(),
-        value: Some(value),
-    }])
-    .await
-    .map_err(|_| "Voice captions could not be saved.")
 }

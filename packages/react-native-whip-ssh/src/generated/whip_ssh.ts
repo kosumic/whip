@@ -18239,6 +18239,7 @@ export type VoiceChatTranscriptTurn = {
   completed: boolean;
   failed: boolean;
   messages: Array<ChatSpeechMessage>;
+  toolsJson: string;
 };
 
 /**
@@ -18270,6 +18271,7 @@ const FfiConverterTypeVoiceChatTranscriptTurn = (() => {
         completed: FfiConverterBool.read(from),
         failed: FfiConverterBool.read(from),
         messages: FfiConverterSequenceTypeChatSpeechMessage.read(from),
+        toolsJson: FfiConverterString.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
@@ -18278,6 +18280,7 @@ const FfiConverterTypeVoiceChatTranscriptTurn = (() => {
       FfiConverterBool.write(value.completed, into);
       FfiConverterBool.write(value.failed, into);
       FfiConverterSequenceTypeChatSpeechMessage.write(value.messages, into);
+      FfiConverterString.write(value.toolsJson, into);
     }
     allocationSize(value: TypeName): number {
       return (
@@ -18285,7 +18288,10 @@ const FfiConverterTypeVoiceChatTranscriptTurn = (() => {
         FfiConverterString.allocationSize(value.userText) +
         FfiConverterBool.allocationSize(value.completed) +
         FfiConverterBool.allocationSize(value.failed) +
-        FfiConverterSequenceTypeChatSpeechMessage.allocationSize(value.messages)
+        FfiConverterSequenceTypeChatSpeechMessage.allocationSize(
+          value.messages,
+        ) +
+        FfiConverterString.allocationSize(value.toolsJson)
       );
     }
   }
@@ -18368,6 +18374,7 @@ export type VoiceChatView = {
   audioError?: string;
   downloadedBytes: bigint;
   totalBytes: bigint;
+  eventsJson: string;
 };
 
 /**
@@ -18403,6 +18410,7 @@ const FfiConverterTypeVoiceChatView = (() => {
         audioError: FfiConverterOptionalString.read(from),
         downloadedBytes: FfiConverterUInt64.read(from),
         totalBytes: FfiConverterUInt64.read(from),
+        eventsJson: FfiConverterString.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
@@ -18417,6 +18425,7 @@ const FfiConverterTypeVoiceChatView = (() => {
       FfiConverterOptionalString.write(value.audioError, into);
       FfiConverterUInt64.write(value.downloadedBytes, into);
       FfiConverterUInt64.write(value.totalBytes, into);
+      FfiConverterString.write(value.eventsJson, into);
     }
     allocationSize(value: TypeName): number {
       return (
@@ -18430,7 +18439,8 @@ const FfiConverterTypeVoiceChatView = (() => {
         FfiConverterBool.allocationSize(value.analyze) +
         FfiConverterOptionalString.allocationSize(value.audioError) +
         FfiConverterUInt64.allocationSize(value.downloadedBytes) +
-        FfiConverterUInt64.allocationSize(value.totalBytes)
+        FfiConverterUInt64.allocationSize(value.totalBytes) +
+        FfiConverterString.allocationSize(value.eventsJson)
       );
     }
   }

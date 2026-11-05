@@ -23,6 +23,16 @@ It follows only the new matching user turn and feeds stable clauses/sentences
 into the existing local speech queue as the transcript grows. A single native
 player stays open through generation gaps; completion flushes the last fragment.
 It does not replay history or already spoken prefixes when a transcript is edited.
+
+Local conversations stay in the remote coding agent's existing history and
+are excluded from **Settings → Saved voice chats**. That separate list retains
+Realtime and GPT-Live calls. Waiting filler and earlier agent history are
+excluded from the active voice transcript, and microphone audio is never stored.
+Delegations and the matched agent turn's tools appear as expandable transcript
+rows with status, bounded input and available results. The active Local call
+uses the same chat renderer as cloud calls and saved cloud chats.
+Tool details never enter the local speech queue.
+
 Normal turn-taking resumes after generation and playback have both drained.
 If the first reply takes more than two seconds, Whip speaks a short, randomly
 selected filler such as “Hmm” or “One moment” using the selected local voice.

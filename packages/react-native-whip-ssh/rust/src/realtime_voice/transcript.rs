@@ -23,6 +23,8 @@ pub(super) struct Message {
     pub text: String,
     pub spoken_utf16: usize,
     pub active: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event: Option<crate::voice_history::Event>,
 }
 
 #[derive(Default, Serialize)]
@@ -102,7 +104,7 @@ impl Transcript {
         self.turns
             .iter()
             .rev()
-            .find(|turn| turn.message.role == ASSISTANT)
+            .find(|turn| turn.message.role == ASSISTANT && turn.message.event.is_none())
             .map_or_else(Timing::default, |turn| Timing {
                 received_ms: turn.samples.saturating_mul(1000) / super::RATE,
                 heard_ms: turn.played.saturating_mul(1000) / super::RATE,
@@ -131,6 +133,7 @@ impl Transcript {
                 text: String::new(),
                 spoken_utf16: 0,
                 active: false,
+                event: None,
             },
             samples: 0,
             expected_samples: None,
@@ -148,10 +151,26 @@ impl Transcript {
     }
 
     fn trim(&mut self) {
-        let mut bytes: usize = self.turns.iter().map(|turn| turn.message.text.len()).sum();
+        let mut bytes: usize = self
+            .turns
+            .iter()
+            .map(|turn| {
+                turn.message.text.len()
+                    + turn
+                        .message
+                        .event
+                        .as_ref()
+                        .map_or(0, crate::voice_history::Event::bytes)
+            })
+            .sum();
         while bytes > MAX_BYTES {
             if let Some(turn) = self.turns.pop_front() {
-                bytes -= turn.message.text.len();
+                bytes -= turn.message.text.len()
+                    + turn
+                        .message
+                        .event
+                        .as_ref()
+                        .map_or(0, crate::voice_history::Event::bytes);
             } else {
                 break;
             }
@@ -327,12 +346,26 @@ impl Transcript {
             .collect()
     }
 
+    pub(super) fn saved_captions(&self) -> Vec<crate::voice_history::Caption> {
+        self.snapshot()
+            .into_iter()
+            .map(|message| crate::voice_history::Caption {
+                id: message.id,
+                role: message.role.into(),
+                text: message.text,
+                start_ms: None,
+                end_ms: None,
+                event: message.event,
+            })
+            .collect()
+    }
+
     pub fn delegation_snapshot(&self) -> Vec<super::handoff_context::Caption> {
         let mut captions: Vec<_> = self
             .turns
             .iter()
             .rev()
-            .filter(|turn| !turn.message.text.is_empty())
+            .filter(|turn| !turn.message.text.is_empty() && turn.message.event.is_none())
             .take(super::handoff_context::MAX_RECORDS)
             .map(|turn| {
                 super::handoff_context::Caption::new(
@@ -348,6 +381,52 @@ impl Transcript {
             .collect();
         captions.reverse();
         captions
+    }
+
+    pub(super) fn event(&mut self, id: &str, event: crate::voice_history::Event) {
+        let event = event.bounded();
+        if let Some(turn) = self.turn(format!("event:{id}"), ASSISTANT) {
+            if event.status == "requested"
+                && turn
+                    .message
+                    .event
+                    .as_ref()
+                    .is_some_and(|old| old.status != "requested")
+            {
+                return;
+            }
+            turn.message.text = format!("{} · {}", event.name, event.status);
+            turn.message.event = Some(event);
+            turn.text_done = true;
+        }
+        self.trim();
+    }
+    pub(super) fn event_result(&mut self, id: &str, value: &serde_json::Value) {
+        if let Some(turn) = self
+            .turns
+            .iter_mut()
+            .find(|turn| turn.message.id == format!("event:{id}"))
+            && let Some(event) = &mut turn.message.event
+        {
+            event.result(value);
+            turn.message.text = format!("{} · {}", event.name, event.status);
+        }
+        self.trim();
+    }
+    pub(super) fn event_status(&mut self, id: &str, status: &str) {
+        if let Some(turn) = self
+            .turns
+            .iter_mut()
+            .find(|turn| turn.message.id == format!("event:{id}"))
+            && let Some(event) = &mut turn.message.event
+            && !matches!(event.status.as_str(), "completed" | "failed" | "submitted")
+        {
+            if status == "not_admitted" && event.status != "requested" {
+                return;
+            }
+            event.status = status.into();
+            turn.message.text = format!("{} · {}", event.name, event.status);
+        }
     }
 }
 

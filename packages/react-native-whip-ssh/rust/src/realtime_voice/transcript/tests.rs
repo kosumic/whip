@@ -244,6 +244,78 @@ fn delayed_bilingual_input_keeps_original_conversation_order() -> TestResult {
 }
 
 #[test]
+fn saved_captions_survive_hangup_with_final_text_and_without_playback_metadata() -> TestResult {
+    let mut output = super::super::Output::default();
+    let ignored = HashSet::new();
+    output.transcript.observe(
+        &event(
+            "input_audio_buffer.speech_started",
+            json!({"item_id":"question","audio_start_ms":0}),
+        )?,
+        &ignored,
+    );
+    output.transcript.observe(
+        &event(
+            "conversation.item.input_audio_transcription.delta",
+            json!({"item_id":"question","delta":"Hello 你好"}),
+        )?,
+        &ignored,
+    );
+    output.transcript.observe(&event("conversation.item.input_audio_transcription.completed", json!({"item_id":"question","transcript":"Hello 你好!","usage":{"type":"tokens","total_tokens":0,"input_tokens":0,"output_tokens":0,"input_token_details":{"text_tokens":0,"audio_tokens":0}}}))?, &ignored);
+    output.transcript.observe(
+        &event(
+            "response.output_audio_transcript.done",
+            json!({"transcript":"Hi back 👋"}),
+        )?,
+        &ignored,
+    );
+    output.clear();
+    let saved = serde_json::to_value(output.transcript.saved_captions())?;
+    assert_eq!(
+        saved,
+        json!([
+            {"id":"user:question", "role":"user", "text":"Hello 你好!"},
+            {"id":"assistant:reply:0", "role":"assistant", "text":"Hi back 👋"},
+        ])
+    );
+    Ok(())
+}
+
+#[test]
+fn tool_and_delegation_rows_update_once_and_do_not_become_speech_or_handoff_context() -> TestResult
+{
+    let mut transcript = Transcript::default();
+    let mut request = crate::voice_history::Event::new("delegation", "background_agent", "running");
+    request.input = Some("Check the build".into());
+    transcript.event("call", request);
+    transcript.event_result("call", &json!({"completion":"submitted","accepted":true}));
+    transcript.event(
+        "call",
+        crate::voice_history::Event::new("delegation", "background_agent", "requested"),
+    );
+    assert_eq!(transcript.snapshot().len(), 1);
+    assert_eq!(
+        transcript.snapshot()[0]
+            .event
+            .as_ref()
+            .ok_or("missing event")?
+            .status,
+        "submitted"
+    );
+    assert_eq!(transcript.snapshot()[0].spoken_utf16, 0);
+    assert!(transcript.delegation_snapshot().is_empty());
+    let saved = serde_json::to_value(transcript.saved_captions())?;
+    assert_eq!(saved[0]["event"]["kind"], "delegation");
+    assert!(
+        saved[0]["event"]["output"]
+            .as_str()
+            .ok_or("no result")?
+            .contains("submitted")
+    );
+    Ok(())
+}
+
+#[test]
 fn utf16_cursor_matches_javascript_and_text_after_audio_completion() -> TestResult {
     let mut transcript = Transcript::default();
     transcript.audio("reply", 0, 100);
@@ -262,6 +334,37 @@ fn utf16_cursor_matches_javascript_and_text_after_audio_completion() -> TestResu
     let message = &transcript.snapshot()[0];
     assert_eq!(message.spoken_utf16, "Hi 👋 你好".encode_utf16().count());
     assert!(!message.active);
+    Ok(())
+}
+
+#[test]
+fn terminal_job_admission_is_not_reported_as_command_completion() -> TestResult {
+    let mut transcript = Transcript::default();
+    transcript.event(
+        "job",
+        crate::voice_history::Event::new("tool", "terminal_exec", "requested"),
+    );
+    transcript.event_result("job", &json!({"job_id":"job","completion":"running"}));
+    assert_eq!(
+        transcript.snapshot()[0]
+            .event
+            .as_ref()
+            .ok_or("missing event")?
+            .status,
+        "running"
+    );
+    transcript.event_result(
+        "job",
+        &json!({"completion":"finished","result":{"exit_code":0}}),
+    );
+    assert_eq!(
+        transcript.snapshot()[0]
+            .event
+            .as_ref()
+            .ok_or("missing event")?
+            .status,
+        "completed"
+    );
     Ok(())
 }
 

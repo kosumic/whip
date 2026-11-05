@@ -11,6 +11,8 @@ import { voiceChatModelRoot } from './voiceChatModel';
 import { DEFAULT_VAD_SENSITIVITY } from '../lib/voiceVadSensitivity';
 import { suppressAgentAlertsForTab } from './alerts';
 import { VoiceCallSoundPlayer } from './voiceCallSoundPlayer';
+import type { VoiceTranscriptMessage } from '../lib/voiceTranscript';
+export type { VoiceTranscriptMessage } from '../lib/voiceTranscript';
 
 export type AgentVoiceChatTarget = Omit<ChatSpeechTarget, 'bindingToken'> & { bindingToken?: string; tabId: string; terminal?: never };
 export type TerminalVoiceChatTarget = {
@@ -24,15 +26,6 @@ export type GlobalVoiceChatTarget = {
   hostId?: never; paneId?: never; tabId?: never; agent?: never; bindingToken?: never; terminal?: never;
 };
 export type RealtimeVoiceChatTarget = VoiceChatTarget | GlobalVoiceChatTarget;
-
-export interface VoiceTranscriptMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  text: string;
-  /** Estimated UTF-16 playback cursor, advanced by native device acknowledgments. */
-  spokenUtf16: number;
-  active: boolean;
-}
 
 export interface VoiceConversationView {
   phase: VoiceChatView['phase'] | 'error' | 'starting';
@@ -363,6 +356,15 @@ export class VoiceConversation {
     }
     if (view.phase === 'speaking' && this.timing && this.timing.prose === undefined) this.timing.prose = performance.now();
     this.view = { ...this.view, phase: this.callActivated ? view.phase : 'starting', muted: view.muted, smartTurn: view.smartTurn, text: view.text, level: view.level, progress: view.progress, playbackLevel: view.phase === 'speaking' ? this.view.playbackLevel : 0 };
+    if (view.events?.length) {
+      const messages = [...(this.view.messages ?? [])];
+      for (const event of view.events) {
+        const value = { ...event, active: false, spokenUtf16: 0 };
+        const index = messages.findIndex(message => message.id === event.id);
+        if (index < 0) messages.push(value); else messages[index] = value;
+      }
+      this.view = { ...this.view, messages: messages.slice(-CAPTION_LIMIT.messages) };
+    }
     if ((view.phase === 'listening' || view.phase === 'finishing') && view.text.trim()) this.caption(`user:${view.inputId}`, 'user', view.text);
     this.changed(this.view);
     if ((view.phase === 'listening' || view.phase === 'finishing') && this.playing && this.input?.monitor) {

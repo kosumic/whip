@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View, type ScrollViewInstance } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import ChevronDown from 'lucide-react-native/icons/chevron-down';
-import type { VoiceTranscriptMessage } from '../services/voiceConversation';
+import type { VoiceTranscriptMessage } from '../lib/voiceTranscript';
 import { Text } from './ui/text';
 import { SPEECH_CAPTION_COLORS, SPEECH_CAPTION_WEIGHT } from '../lib/speechCaptionStyle';
 
@@ -29,9 +29,10 @@ export function spokenTextParts(message: VoiceTranscriptMessage): [string, strin
   return [message.text, '', ''];
 }
 
-export function VoiceTranscript({ messages, reducedMotion, contentInsets = { top: 0, bottom: 0 } }: {
+export function VoiceTranscript({ messages, reducedMotion, playback = true, contentInsets = { top: 0, bottom: 0 } }: {
   messages: readonly VoiceTranscriptMessage[];
   reducedMotion: boolean;
+  playback?: boolean;
   contentInsets?: { top: number; bottom: number };
 }) {
   const { t } = useTranslation();
@@ -84,10 +85,12 @@ export function VoiceTranscript({ messages, reducedMotion, contentInsets = { top
         }
       }} scrollEventThrottle={100}>
       {messages.map(message => {
+        if (message.event) return <TranscriptEvent key={message.id} message={message} />;
         const [heard, current, upcoming] = spokenTextParts(message);
         return <View key={message.id} style={message.role === 'user' ? styles.user : styles.assistant}
           onLayout={event => { positions.current.set(message.id, { ...positions.current.get(message.id), y: event.nativeEvent.layout.y }); follow(); }}>
           {message.role === 'user' ? <Text selectable style={styles.userText}>{message.text}</Text>
+            : !playback ? <Text selectable accessibilityLabel={message.text} style={[styles.assistantText, styles.heard]}>{message.text}</Text>
             : <Text selectable accessibilityLabel={message.text} style={styles.assistantText}
               onTextLayout={event => { positions.current.set(message.id, { y: positions.current.get(message.id)?.y ?? 0, lines: event.nativeEvent.lines }); follow(); }}>
               <Text style={styles.heard}>{heard}</Text><Text style={styles.current}>{current}</Text><Text style={styles.upcoming}>{upcoming}</Text>
@@ -95,8 +98,25 @@ export function VoiceTranscript({ messages, reducedMotion, contentInsets = { top
         </View>;
       })}
     </ScrollView>
-    {detached && <Pressable accessibilityRole="button" accessibilityLabel={t('voiceChat.latest')} style={[styles.latest, { bottom: contentInsets.bottom + LATEST_BOTTOM }]}
+    {detached && <Pressable accessibilityRole="button" accessibilityLabel={t(playback ? 'voiceChat.latest' : 'voiceTranscript.latest')} style={[styles.latest, { bottom: contentInsets.bottom + LATEST_BOTTOM }]}
       onPress={() => { following.current = true; setDetached(false); follow(); }}><ChevronDown color={COLORS.accent} size={20} /></Pressable>}
+  </View>;
+}
+
+function TranscriptEvent({ message }: { message: VoiceTranscriptMessage }) {
+  const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
+  const event = message.event!;
+  return <View style={styles.event}>
+    <Pressable accessibilityRole="button" accessibilityState={{ expanded }} onPress={() => setExpanded(value => !value)}>
+      <Text style={styles.eventType}>{t(event.kind === 'delegation' ? 'voiceTranscript.delegation' : 'voiceTranscript.tool')}</Text>
+      <Text style={styles.eventName}>{event.name}</Text>
+      <Text style={styles.eventStatus}>{event.status.replaceAll('_', ' ')}</Text>
+    </Pressable>
+    {expanded && <View style={styles.eventDetails}>
+      {event.input && <><Text style={styles.eventType}>{t('voiceTranscript.input')}</Text><Text selectable style={styles.eventBody}>{event.input}</Text></>}
+      {event.output && <><Text style={styles.eventType}>{t('voiceTranscript.result')}</Text><Text selectable style={styles.eventBody}>{event.output}</Text></>}
+    </View>}
   </View>;
 }
 
@@ -111,4 +131,10 @@ const styles = StyleSheet.create({
   current: { ...SPEECH_TYPE, color: COLORS.text, fontWeight: SPEECH_CAPTION_WEIGHT },
   upcoming: { ...SPEECH_TYPE, color: COLORS.upcoming },
   latest: { position: 'absolute', alignSelf: 'center', backgroundColor: COLORS.bubble, borderRadius: 22, padding: 12 },
+  event: { alignSelf: 'stretch', borderWidth: 1, borderColor: '#383838', borderRadius: 12, padding: 14, gap: 10 },
+  eventType: { color: COLORS.accent, fontSize: 12, lineHeight: 18 },
+  eventName: { color: COLORS.text, fontSize: 16, lineHeight: 24 },
+  eventStatus: { color: COLORS.upcoming, fontSize: 13, lineHeight: 20 },
+  eventDetails: { gap: 6, paddingTop: 8 },
+  eventBody: { color: COLORS.text, fontSize: 14, lineHeight: 22 },
 });

@@ -33,7 +33,6 @@ const MAX_EVENTS: usize = 16_384;
 const MAX_PENDING: usize = 8;
 const CAPTION_GRACE: Duration = Duration::from_millis(750);
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
-const SAVE_TIMEOUT: Duration = Duration::from_secs(2);
 const CONTEXT_BYTES: usize = 480; // <= 500 tokens even for byte-level tokenization.
 static SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
@@ -335,14 +334,14 @@ impl LiveVoiceAdapter {
                 .as_ref()
                 .map(captions::Transcript::snapshot)
                 .unwrap_or_default();
-            let saved = tokio::time::timeout(
-                SAVE_TIMEOUT,
-                captions::persist(format!("live:{}", uuid::Uuid::new_v4()), fragments),
+            if let Err(error) = crate::voice_history::persist(
+                &catalog()?.model,
+                Some(&config.voice),
+                fragments.into_iter().map(Into::into).collect(),
             )
-            .await;
-            if !matches!(saved, Ok(Ok(()))) {
-                owner.view.lock().error =
-                    Some("Voice captions could not be saved. Copy them from this call.");
+            .await
+            {
+                owner.view.lock().error = Some(error);
             }
         }
         update_usage(&owner, &adapter.usage);
@@ -445,11 +444,11 @@ impl LiveVoiceAdapter {
                                     state.input_caption(end_ms);
                                     owner.view.lock().user_text = super::limit_text(delta.clone());
                                     owner.view.lock().caption_events += 1;
-                                    if let Some(transcript) = owner.output.lock().live_transcript.as_mut() { transcript.append(captions::Fragment {id:event_id,role:"user".into(),text:delta,start_ms,end_ms})?; }
+                                    if let Some(transcript) = owner.output.lock().live_transcript.as_mut() { transcript.append(captions::Fragment {id:event_id,role:"user".into(),text:delta,start_ms,end_ms,event:None})?; }
                                 }
                                 ServerEvent::OutputTranscriptDelta {event_id,delta,start_ms,end_ms} => {
                                     super::bounded_text(&mut owner.view.lock().text,&delta);
-                                    if let Some(transcript) = owner.output.lock().live_transcript.as_mut() { transcript.append(captions::Fragment {id:event_id,role:"assistant".into(),text:delta,start_ms,end_ms})?; }
+                                    if let Some(transcript) = owner.output.lock().live_transcript.as_mut() { transcript.append(captions::Fragment {id:event_id,role:"assistant".into(),text:delta,start_ms,end_ms,event:None})?; }
                                 }
                                 ServerEvent::OutputAudioDelta {delta,..} => {
                                     if state.suppress_output_after.is_some() { continue; }
@@ -457,11 +456,15 @@ impl LiveVoiceAdapter {
                                     owner.output.lock().append("live-stream".into(),0,pcm)?;
                                 }
                                 ServerEvent::DelegationCreated {delegation,offset_ms,..} => {
+                                    if let Some(transcript) = owner.output.lock().live_transcript.as_mut() {
+                                        transcript.event(&delegation.id, crate::voice_history::Event::new("delegation", if config.global { "Responses" } else { "Coding agent" }, "requested"));
+                                    }
                                     if config.global {
                                         if delegation.target != api::DelegationTarget::Responses || delegation.response_id.is_none() {
                                             return Err("Global GPT-Live requires Responses delegation.");
                                         }
                                     } else if state.delegate(&delegation,offset_ms,tasks.len())? == Admission::Full {
+                                        if let Some(transcript) = owner.output.lock().live_transcript.as_mut() { transcript.event_result(&delegation.id, &serde_json::json!({"error":"queue_full"})); }
                                         append(socket,Some(&delegation.id),"No request was sent: the call's agent queue is full. Use the agent chat.",Channel::Commentary).await?;
                                     }
                                 }
@@ -470,10 +473,16 @@ impl LiveVoiceAdapter {
                                     let event = api::ResponseEvent::decode(Value::Object(event)).map_err(|_| "Invalid global Live backend event.")?;
                                     if let Some(batch) = backend.observe(delegation_id.value().map(String::as_str), &event)? {
                                         let global = owner.global.clone().ok_or("Global call controls are unavailable.")?;
-                                        tasks.spawn(async move { Completion::Global(batch.execute(global).await) });
+                                        let owner = owner.clone();
+                                        tasks.spawn(async move { Completion::Global(batch.execute(global, owner).await) });
                                     }
                                     if let api::ResponseEvent::OutputTextDone {text,..} = event {
-                                        owner.view.lock().backend_text = Some(public_text(&super::limit_text(text)));
+                                        let text = public_text(&super::limit_text(text));
+                                        if let Some(id) = delegation_id.value() && let Some(transcript) = owner.output.lock().live_transcript.as_mut() {
+                                            let mut event = crate::voice_history::Event::new("delegation", "Responses", "responded");
+                                            event.output = Some(text.clone()); transcript.event(id, event);
+                                        }
+                                        owner.view.lock().backend_text = Some(text);
                                     }
                                 }
                                 ServerEvent::InputAudioMuted {..} => {
@@ -496,8 +505,10 @@ impl LiveVoiceAdapter {
                     let completion = completion.ok_or("GPT-Live agent observation stopped.")?.map_err(|_| "GPT-Live agent observation failed.")?;
                     match completion {
                         Completion::Agent {id,value} => {
+                            if let Some(agent) = agent && let Ok(Some(snapshot)) = agent.feedback_snapshot(None) { owner.agent_events(&snapshot); }
                             state.uncertain |= value["error"]=="outcome_unknown";
                             let text = public_result(&value);
+                            if let Some(transcript) = owner.output.lock().live_transcript.as_mut() { transcript.event_result(&id, &serde_json::json!({"completion":value["completion"], "error":value["error"], "result":text})); }
                             // Text fallback survives failed voice/context delivery.
                             owner.view.lock().backend_text = Some(text.clone());
                             append(socket,Some(&id),&text,Channel::Commentary).await?;
@@ -534,7 +545,7 @@ impl LiveVoiceAdapter {
                             last_feedback=Instant::now();
                             if let Some(handoff) = &mut state.handoff {
                                 let snapshot = agent.feedback_snapshot(handoff.feedback.revision()).map_err(|_| "The bound agent changed.")?;
-                                if let Some(snapshot)=snapshot { for text in handoff.feedback.observe(snapshot) { let text = public_text(&text); append(socket,Some(&handoff.id),&text,Channel::Thinking).await?; } }
+                                if let Some(snapshot)=snapshot { owner.agent_events(&snapshot); for text in handoff.feedback.observe(snapshot) { let text = public_text(&text); append(socket,Some(&handoff.id),&text,Channel::Thinking).await?; } }
                             }
                         }
                     }
@@ -613,6 +624,12 @@ impl LiveVoiceAdapter {
         }
         append(socket,Some(&pending.id),"The request is admitted for the bound coding agent. This is not acknowledgement of submission or task completion. Approval controls remain in Whip.",Channel::Thinking).await?;
         let agent = agent.clone();
+        if let Some(transcript) = owner.output.lock().live_transcript.as_mut() {
+            let mut event =
+                crate::voice_history::Event::new("delegation", "Coding agent", "admitted");
+            event.input = Some(prompt.clone());
+            transcript.event(&pending.id, event);
+        }
         tasks.spawn(async move {
             let value = agent
                 .delegate(
@@ -745,7 +762,7 @@ async fn send(
     .map_err(|_| "GPT-Live connection ended.")?;
     Ok(id)
 }
-fn public_result(value: &Value) -> String {
+pub(super) fn public_result(value: &Value) -> String {
     let status = match value["error"].as_str() {
         Some("approval_required") => "The agent needs approval in Whip. No approval was accepted.",
         Some("agent_busy" | "agent_syncing") => {

@@ -3,7 +3,8 @@
 //! Adapted from Codex's realtime_conversation.rs handoff stream at
 //! f2b94ef8b52196f127d162c6db71e390b9bb265c. Whip reads its pinned native
 //! transcript instead of Codex's backend output channel. Only public answer
-//! text crosses this boundary; reasoning and tool payloads are excluded.
+//! text crosses the voice-context boundary. Tool details are retained separately
+//! for the user's transcript, never included in spoken handoff text.
 
 use std::time::{Duration, Instant};
 
@@ -22,6 +23,7 @@ pub(super) const FINISHED_GUIDANCE: &str = "Use actual assistant_output and [BAC
 pub(crate) struct Snapshot {
     revision: u64,
     messages: Vec<AgentMessage>,
+    pub(crate) events: Vec<crate::voice_history::Caption>,
 }
 struct AgentMessage {
     id: String,
@@ -38,6 +40,62 @@ impl Snapshot {
         view: AgentTranscriptView<'_>,
         include: impl Fn(&AgentTranscriptMessage) -> bool,
     ) -> Self {
+        let mut events: Vec<_> = view
+            .messages
+            .iter()
+            .rev()
+            .filter(|message| include(message))
+            .flat_map(|message| message.parts.iter().rev().map(move |part| (message, part)))
+            .filter_map(|(message, part)| {
+                let AgentTranscriptPart::Tool {
+                    id,
+                    call_id,
+                    tool,
+                    state,
+                    ..
+                } = part
+                else {
+                    return None;
+                };
+                if message.role != AgentMessageRole::Assistant
+                    || id.len() > 256
+                    || call_id.len() > 256
+                {
+                    return None;
+                }
+                let status = match state.status {
+                    crate::agent_transcript::AgentToolStatus::Pending => "pending",
+                    crate::agent_transcript::AgentToolStatus::Running => "running",
+                    crate::agent_transcript::AgentToolStatus::Completed => "completed",
+                    crate::agent_transcript::AgentToolStatus::Error => "failed",
+                };
+                let mut event = crate::voice_history::Event::new("tool", tool, status);
+                let input = state
+                    .input_json
+                    .clone()
+                    .unwrap_or_else(|| serde_json::to_string(&state.input).unwrap_or_default());
+                event.input = Some(take_bytes(&input, MAX_MESSAGE_BYTES).into());
+                event.output = state
+                    .error
+                    .as_ref()
+                    .or(state.output.as_ref())
+                    .map(|text| take_bytes(text, MAX_MESSAGE_BYTES).into());
+                Some(crate::voice_history::Caption {
+                    id: format!(
+                        "agent-tool:{}:{}",
+                        message.id,
+                        if call_id.is_empty() { id } else { call_id }
+                    ),
+                    role: "assistant".into(),
+                    text: format!("{tool} · {status}"),
+                    start_ms: None,
+                    end_ms: None,
+                    event: Some(event),
+                })
+            })
+            .take(MAX_MESSAGES)
+            .collect();
+        events.reverse();
         let messages = view
             .messages
             .iter()
@@ -76,6 +134,7 @@ impl Snapshot {
         Self {
             revision: view.revision,
             messages,
+            events,
         }
     }
 }

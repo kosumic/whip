@@ -80,6 +80,7 @@ fn fragment(id: &str, role: &str, text: &str, start: f64, end: f64) -> captions:
         text: text.into(),
         start_ms: start,
         end_ms: end,
+        event: None,
     }
 }
 #[test]

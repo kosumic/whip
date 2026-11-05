@@ -168,7 +168,11 @@ impl Backend {
 }
 
 impl Batch {
-    pub async fn execute(self, session: Arc<WhipToolSession>) -> Result<Results, &'static str> {
+    pub async fn execute(
+        self,
+        session: Arc<WhipToolSession>,
+        owner: Arc<super::RealtimeVoiceAdapter>,
+    ) -> Result<Results, &'static str> {
         // Admit the entire batch before any effect. Duplicate IDs never replay work.
         session
             .check()
@@ -180,7 +184,23 @@ impl Batch {
         }
         let mut items = Vec::with_capacity(self.calls.len());
         for call in self.calls {
+            let mut event = crate::voice_history::Event::new(
+                if call.name == "herdr_delegate" {
+                    "delegation"
+                } else {
+                    "tool"
+                },
+                &call.name,
+                "running",
+            );
+            event.input = Some(super::super::limit_text(call.args.clone()));
+            if let Some(transcript) = owner.output.lock().live_transcript.as_mut() {
+                transcript.event(&call.call_id, event);
+            }
             let value = session.execute(&call.name, &call.args).await;
+            if let Some(transcript) = owner.output.lock().live_transcript.as_mut() {
+                transcript.event_result(&call.call_id, &value);
+            }
             items.push(api::ResponseInputItem::function_call_output(
                 call.call_id,
                 value.to_string(),

@@ -2,6 +2,7 @@ import { AgentTranscriptKind, VoiceChat, VoiceChatPhase } from './generated-entr
 import type { AgentChatState } from '../../../src/agentChat';
 import type { RuntimeAgentKind } from './index';
 import { speechMessages } from './chatSpeech';
+import type { VoiceTranscriptEntry } from '../../../src/lib/voiceTranscript';
 
 const AGENT = {
   claude: AgentTranscriptKind.Claude,
@@ -28,7 +29,8 @@ export class NativeVoiceChat {
   view() {
     const view = this.core.view();
     const totalBytes = Number(view.totalBytes);
-    return { ...view, phase: PHASE[view.phase], progress: totalBytes > 0 ? Number(view.downloadedBytes) / totalBytes : 0 };
+    const events = JSON.parse(view.eventsJson ?? '[]') as VoiceTranscriptEntry[];
+    return { ...view, events, phase: PHASE[view.phase], progress: totalBytes > 0 ? Number(view.downloadedBytes) / totalBytes : 0 };
   }
   async prepare(install: boolean) { await this.core.prepare(install); }
   beginPreparation() { this.core.beginPreparation(); }
@@ -58,6 +60,11 @@ export class NativeVoiceChat {
       completed: turn.status === 'idle' && turn.details?.outcome === 'completed',
       failed: turn.status === 'error' || turn.status === 'interrupted',
       messages: speechMessages(turn.assistants),
+      toolsJson: JSON.stringify(turn.assistants.flatMap(message => message.parts.flatMap(part => part.type === 'tool' ? [{
+        id: part.callId || part.id, kind: 'tool', name: part.tool, status: part.state.status === 'error' ? 'failed' : part.state.status,
+        input: Array.from(part.state.inputJson ?? JSON.stringify(part.state.input ?? {})).slice(0, 1024).join(''),
+        output: (part.state.error ?? part.state.output) === undefined ? undefined : Array.from((part.state.error ?? part.state.output)!).slice(0, 1024).join(''),
+      }] : [])).slice(-64)),
     })));
     this.transcriptSession = state.sessionId;
   }

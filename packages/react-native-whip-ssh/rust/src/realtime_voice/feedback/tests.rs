@@ -122,13 +122,22 @@ fn excludes_user_reasoning_tools_and_non_text_parts() -> Result<(), serde_json::
         )?,
     });
     let mut handoff = handoff(Some(snapshot(1, &[])), true, Instant::now());
-    let updates = handoff.observe(snapshot(
+    let observed = snapshot(
         2,
         &[
             message("user", AgentMessageRole::User, "Do not forward user text"),
             assistant,
         ],
-    ));
+    );
+    assert_eq!(observed.events.len(), 1);
+    assert_eq!(
+        observed.events[0]
+            .event
+            .as_ref()
+            .and_then(|event| event.output.as_deref()),
+        Some("Private tool payload")
+    );
+    let updates = handoff.observe(observed);
     assert_eq!(updates, ["Public progress."]);
     Ok(())
 }

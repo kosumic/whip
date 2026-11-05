@@ -83,6 +83,7 @@ pub struct VoiceChatView {
     pub audio_error: Option<String>,
     pub downloaded_bytes: u64,
     pub total_bytes: u64,
+    pub events_json: String,
 }
 
 #[derive(uniffi::Record)]
@@ -92,6 +93,14 @@ pub struct VoiceChatTranscriptTurn {
     pub completed: bool,
     pub failed: bool,
     pub messages: Vec<ChatSpeechMessage>,
+    pub tools_json: String,
+}
+
+#[derive(serde::Deserialize)]
+struct TranscriptTool {
+    id: String,
+    #[serde(flatten)]
+    event: crate::voice_history::Event,
 }
 
 struct Input {
@@ -226,6 +235,8 @@ struct State {
     response_completed: bool,
     response_skipped: bool,
     waiting_filler: Option<WaitingFiller>,
+    history: crate::voice_history::Conversation,
+    delegation_id: String,
 }
 impl Default for State {
     fn default() -> Self {
@@ -248,6 +259,8 @@ impl Default for State {
             response_completed: false,
             response_skipped: false,
             waiting_filler: None,
+            history: crate::voice_history::Conversation::default(),
+            delegation_id: String::new(),
         }
     }
 }
@@ -263,6 +276,12 @@ impl State {
     }
 
     fn await_reply(&mut self, text: String) {
+        self.history.user(&text);
+        self.delegation_id = format!("delegation:{}", self.input_id);
+        let id = self.delegation_id.clone();
+        let mut event = crate::voice_history::Event::new("delegation", "Coding agent", "requested");
+        event.input = Some(text.clone());
+        self.history.event(&id, event);
         self.phase = VoiceChatPhase::Waiting;
         self.baseline = self.observed_turns.clone();
         self.expected = text;
@@ -593,6 +612,36 @@ impl VoiceChat {
             .into_iter()
             .find(|t| state.turn_id.as_ref() == Some(&t.id))
         {
+            let event = crate::voice_history::Event::new(
+                "delegation",
+                match agent {
+                    AgentTranscriptKind::Claude => "Claude",
+                    AgentTranscriptKind::Codex => "Codex",
+                    AgentTranscriptKind::OpenCode => "OpenCode",
+                    AgentTranscriptKind::Pi => "Pi",
+                },
+                if turn.failed {
+                    "failed"
+                } else if turn.completed && turn.messages.iter().any(|message| message.assistant) {
+                    "completed"
+                } else {
+                    "running"
+                },
+            );
+            let id = state.delegation_id.clone();
+            state.history.event(&id, event);
+            if turn.tools_json.len() > 1024 * 1024 {
+                return Err("Voice transcript tool details are too large"
+                    .to_owned()
+                    .into());
+            }
+            let tools: Vec<TranscriptTool> = serde_json::from_str(&turn.tools_json)
+                .map_err(|_| "Invalid voice transcript tool details".to_owned())?;
+            for tool in tools.into_iter().take(64) {
+                state
+                    .history
+                    .event(&format!("tool:{}:{}", turn.id, tool.id), tool.event);
+            }
             if turn.failed {
                 return Err("The agent turn was interrupted or failed. Check the transcript before continuing.".to_owned().into());
             }
@@ -623,7 +672,13 @@ impl VoiceChat {
                 .as_mut()
                 .and_then(|filler| filler.next(Instant::now()))
                 .map(str::to_owned),
-            VoiceChatPhase::Speaking => self.speech.next(),
+            VoiceChatPhase::Speaking => {
+                let text = self.speech.next();
+                if let Some(text) = &text {
+                    state.history.assistant(text);
+                }
+                text
+            }
             _ => None,
         }
     }
@@ -700,6 +755,9 @@ impl VoiceChat {
 
     pub fn close(&self) {
         let mut state = self.state.lock();
+        if state.phase == VoiceChatPhase::Closed {
+            return;
+        }
         state.next_input();
         state.phase = VoiceChatPhase::Closed;
         state.input = Input::default();
@@ -766,6 +824,7 @@ impl VoiceChat {
             analyze: s.smart_turn && s.phase == VoiceChatPhase::Listening && s.input.should_probe(),
             downloaded_bytes: self.downloaded.load(Ordering::Relaxed),
             total_bytes: MODEL_BYTES,
+            events_json: s.history.events_json(),
         }
     }
 
@@ -1121,6 +1180,7 @@ mod tests {
             user_text: text.into(),
             completed,
             failed: false,
+            tools_json: "[]".into(),
             messages: vec![ChatSpeechMessage {
                 id: format!("{id}:reply"),
                 assistant: true,
@@ -1189,6 +1249,66 @@ mod tests {
         assert!(session.next_speech().is_none());
         session.playback_ended();
         assert_eq!(session.view().phase, VoiceChatPhase::Listening);
+    }
+
+    #[test]
+    fn local_history_records_user_and_reply_without_waiting_filler_or_old_agent_history() {
+        let session = conversation();
+        submit(&session, "Hello");
+        make_filler_due(&session);
+        assert!(session.next_speech().is_some());
+        session
+            .transcript(
+                AgentTranscriptKind::Codex,
+                true,
+                false,
+                vec![
+                    turn("old", "Historical question", true),
+                    turn("reply", "Hello", true),
+                ],
+            )
+            .unwrap();
+        assert_eq!(session.next_speech().as_deref(), Some("A spoken reply."));
+        let saved = std::mem::take(&mut session.state.lock().history).into_captions();
+        let speech: Vec<_> = saved
+            .iter()
+            .filter(|message| message.event.is_none())
+            .collect();
+        assert_eq!(speech.len(), 2);
+        assert_eq!(speech[0].role, "user");
+        assert_eq!(speech[0].text, "Hello");
+        assert_eq!(speech[1].role, "assistant");
+        assert_eq!(speech[1].text, "A spoken reply.");
+        assert!(saved.iter().any(|message| {
+            message
+                .event
+                .as_ref()
+                .is_some_and(|event| event.kind == "delegation" && event.status == "completed")
+        }));
+        session.close();
+        session.close();
+    }
+
+    #[test]
+    fn local_tool_events_follow_the_bound_turn_and_remain_silent() {
+        let session = conversation();
+        submit(&session, "Hello");
+        let mut current = turn("reply", "Hello", true);
+        current.tools_json = r#"[{"id":"exec","kind":"tool","name":"shell","status":"completed","input":"cargo check","output":"passed"}]"#.into();
+        session
+            .transcript(AgentTranscriptKind::Codex, true, false, vec![current])
+            .unwrap();
+        assert!(session.view().events_json.contains("cargo check"));
+        assert!(session.view().events_json.contains("passed"));
+        assert_eq!(session.next_speech().as_deref(), Some("A spoken reply."));
+        assert!(session.next_speech().is_none());
+        let saved = std::mem::take(&mut session.state.lock().history).into_captions();
+        assert!(saved.iter().any(
+            |message| message.event.as_ref().is_some_and(
+                |event| event.kind == "tool" && event.output.as_deref() == Some("passed")
+            )
+        ));
+        session.close();
     }
 
     #[test]

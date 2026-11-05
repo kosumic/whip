@@ -184,11 +184,15 @@ impl Session {
 
     pub(super) async fn forward_feedback(
         &self,
+        owner: &super::RealtimeVoiceAdapter,
         socket: &mut super::RealtimeSocket,
         responses: &mut super::response::ResponseCreateQueue,
     ) -> Result<(), &'static str> {
         self.target.check()?;
         for value in self.feedback() {
+            if let Some(id) = value["job_id"].as_str() {
+                owner.output.lock().transcript.event_result(id, &value);
+            }
             super::send(
                 socket,
                 super::feedback_message(&format!(

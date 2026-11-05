@@ -91,6 +91,7 @@ import { GlassButton, GlassIconBadge } from './GlassControls';
 import { CollapsibleSectionCard } from './CollapsibleSectionCard';
 import { SettingsChoiceRow } from './SettingsChoiceRow';
 import { SpeechBackendSetting } from './SpeechBackendSetting';
+import { VoiceCaptionHistory } from './VoiceCaptionHistory';
 import { MIN_VAD_SENSITIVITY, MAX_VAD_SENSITIVITY, VAD_SENSITIVITY_STEP } from '../lib/voiceVadSensitivity';
 import { VoiceConversationProviderSetting } from './VoiceConversationProviderSetting';
 import { DetailsTitle, SettingsDetailsProvider } from './SettingsDetails';
@@ -320,6 +321,7 @@ export function SettingsSection(props: SettingsSectionProps) {
       </CollapsibleSectionCard>
 
       <SpeechBackendSetting />
+      <VoiceCaptionHistory />
 
       <CollapsibleSectionCard
         title={t('settings.security')}
