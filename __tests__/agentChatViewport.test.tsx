@@ -10,6 +10,7 @@ import * as Haptics from 'expo-haptics';
 import { Linking } from 'react-native';
 import { COPY_FEEDBACK_MS } from '../src/hooks/useCopyFeedback';
 import type { ChatReadAloudControl } from '../src/hooks/useChatReadAloud';
+import { ChatSpeechText } from '../src/components/ChatSpeechText';
 import {
   act,
   create,
@@ -337,6 +338,44 @@ test('each response footer places its read-aloud icon next to copy and selects t
   } finally {
     act(() => { rows?.unmount(); renderer?.unmount(); });
   }
+});
+
+test('read-aloud captions follow the visible prose row and stop when it leaves the viewport', () => {
+  const turn: TranscriptTurn = {
+    ...TURN, status: 'idle',
+    assistants: [{ id: 'reply', role: 'assistant', completedAt: 1, diffs: [],
+      parts: [{ id: 'text', type: 'text', text: 'A visible response.' }] }],
+  };
+  const target = { agent: 'codex' as const, bindingToken: 'binding', hostId: 'host', paneId: 'pane', label: 'Codex' };
+  const readAloud: ChatReadAloudControl = { target, readingTurnId: turn.id, canRead: () => true, toggle: jest.fn() };
+  const state = chatState([turn]);
+  let renderer!: ReactTestRenderer;
+  let rows!: ReactTestRenderer;
+  try {
+    act(() => { renderer = create(chatView(state, true, undefined, readAloud), {
+      createNodeMock: element => element.type === 'FlashList' ? {
+        scrollToOffset: jest.fn(), getAbsoluteLastScrollOffset: () => 600,
+      } : null,
+    }); });
+    act(() => { rows = create(renderedBlocks(renderer)); });
+    expect(rows.root.findByType(ChatSpeechText).props.source).toBeUndefined();
+    const prose = flatList(renderer).props.data.find((row: ChatBlock) => row.type === 'part');
+    const footer = finalBlock(renderer, turn);
+    act(() => {
+      chatViewport(renderer).props.onLayout({ nativeEvent: { layout: { height: 400 } } });
+      flatList(renderer).props.onContentSizeChange(0, 1000);
+      flatList(renderer).props.onScroll(scrollEvent(600, 1000));
+      flatList(renderer).props.onViewableItemsChanged({ viewableItems: [prose, footer].map(item => ({ item, isViewable: true })) });
+      flatList(renderer).props.onLoad();
+    });
+    act(() => rows.update(renderedBlocks(renderer)));
+    expect(rows.root.findByType(ChatSpeechText).props.source).toEqual({
+      bindingToken: target.bindingToken, hostId: target.hostId, paneId: target.paneId, messageId: 'reply', partId: 'text',
+    });
+    act(() => { flatList(renderer).props.onViewableItemsChanged({ viewableItems: [{ item: footer, isViewable: true }] }); });
+    act(() => rows.update(renderedBlocks(renderer)));
+    expect(rows.root.findByType(ChatSpeechText).props.source).toBeUndefined();
+  } finally { act(() => { rows?.unmount(); renderer?.unmount(); }); }
 });
 
 test('response read-aloud controls are disabled during dictation and absent from hidden chats or reasoning-only turns', () => {
