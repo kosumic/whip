@@ -60455,7 +60455,7 @@ export interface VoiceChatLike {
   ) /*throws*/ : Promise<VoiceChatView>;
   recognition(inputId: bigint, text: string): void;
   /**
-   * Only an explicit stop or accepted Smart Turn verdict permits submission.
+   * Only a local turn boundary permits submission.
    * An early recognizer final may update the text, but cannot commit a turn.
    */
   recognitionEnded(inputId: bigint) /*throws*/ : VoiceChatView;
@@ -60768,7 +60768,7 @@ export class VoiceChat extends UniffiAbstractObject implements VoiceChatLike {
   }
 
   /**
-   * Only an explicit stop or accepted Smart Turn verdict permits submission.
+   * Only a local turn boundary permits submission.
    * An early recognizer final may update the text, but cannot commit a turn.
    */
   recognitionEnded(inputId: bigint): VoiceChatView /*throws*/ {
@@ -66343,7 +66343,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_recognition_ended() !==
-    47322
+    17196
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_voicechat_recognition_ended',
