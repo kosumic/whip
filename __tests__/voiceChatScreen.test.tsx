@@ -19,6 +19,7 @@ jest.mock('../src/services/voiceSessionManager', () => {
   }) };
 });
 jest.mock('../src/components/VoiceOrb', () => ({ VoiceOrb: 'VoiceOrb' }));
+jest.mock('../src/components/ChatToolCard', () => ({ ChatToolCard: 'ChatToolCard' }));
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
 jest.mock('react-native', () => ({
   ActivityIndicator: 'ActivityIndicator', Modal: 'Modal', Pressable: 'Pressable', View: 'View', ScrollView: 'ScrollView',
@@ -49,6 +50,8 @@ jest.mock('lucide-react-native/icons/audio-lines', () => 'AudioLines');
 jest.mock('lucide-react-native/icons/mic-off', () => 'MicOff');
 jest.mock('lucide-react-native/icons/message-square', () => 'MessageSquare');
 jest.mock('lucide-react-native/icons/chevron-down', () => 'ChevronDown');
+jest.mock('lucide-react-native/icons/check', () => 'Check');
+jest.mock('lucide-react-native/icons/copy', () => 'Copy');
 jest.mock('lucide-react-native/icons/skip-forward', () => 'SkipForward');
 jest.mock('lucide-react-native/icons/x', () => 'X');
 jest.mock('lucide-react-native/icons/volume-2', () => 'Volume2');

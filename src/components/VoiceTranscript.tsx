@@ -1,10 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View, type ScrollViewInstance } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Linking, Pressable, ScrollView, StyleSheet, View, type ScrollViewInstance } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import ChevronDown from 'lucide-react-native/icons/chevron-down';
-import type { VoiceTranscriptMessage } from '../lib/voiceTranscript';
+import Check from 'lucide-react-native/icons/check';
+import Copy from 'lucide-react-native/icons/copy';
+import { useCopyFeedback } from '../hooks/useCopyFeedback';
+import { voiceToolPart, type VoiceTranscriptMessage } from '../lib/voiceTranscript';
 import { Text } from './ui/text';
 import { SPEECH_CAPTION_COLORS, SPEECH_CAPTION_WEIGHT } from '../lib/speechCaptionStyle';
+import { ChatToolCard } from './ChatToolCard';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
+import { useTheme } from '../theme';
 
 const COLORS = { text: SPEECH_CAPTION_COLORS.heard, upcoming: SPEECH_CAPTION_COLORS.upcoming, bubble: '#282828', accent: '#c797fa' };
 const FOLLOW_MARGIN = 56;
@@ -85,16 +91,17 @@ export function VoiceTranscript({ messages, reducedMotion, playback = true, cont
         }
       }} scrollEventThrottle={100}>
       {messages.map(message => {
-        if (message.event) return <TranscriptEvent key={message.id} message={message} />;
+        if (message.event) return <TranscriptEvent key={message.id} message={message} active={playback && !reducedMotion} />;
         const [heard, current, upcoming] = spokenTextParts(message);
-        return <View key={message.id} style={message.role === 'user' ? styles.user : styles.assistant}
+        return <View key={message.id} style={message.role === 'user' ? styles.userTurn : styles.assistant}
           onLayout={event => { positions.current.set(message.id, { ...positions.current.get(message.id), y: event.nativeEvent.layout.y }); follow(); }}>
-          {message.role === 'user' ? <Text selectable style={styles.userText}>{message.text}</Text>
+          {message.role === 'user' ? <View style={styles.user}><Text selectable style={styles.userText}>{message.text}</Text></View>
             : !playback ? <Text selectable accessibilityLabel={message.text} style={[styles.assistantText, styles.heard]}>{message.text}</Text>
             : <Text selectable accessibilityLabel={message.text} style={styles.assistantText}
               onTextLayout={event => { positions.current.set(message.id, { y: positions.current.get(message.id)?.y ?? 0, lines: event.nativeEvent.lines }); follow(); }}>
               <Text style={styles.heard}>{heard}</Text><Text style={styles.current}>{current}</Text><Text style={styles.upcoming}>{upcoming}</Text>
             </Text>}
+          {message.text.trim().length > 0 && <TranscriptCopyButton text={message.text} />}
         </View>;
       })}
     </ScrollView>
@@ -103,13 +110,31 @@ export function VoiceTranscript({ messages, reducedMotion, playback = true, cont
   </View>;
 }
 
-function TranscriptEvent({ message }: { message: VoiceTranscriptMessage }) {
+function TranscriptCopyButton({ text }: { text: string }) {
   const { t } = useTranslation();
+  const { copied, copyText } = useCopyFeedback();
+  return <Pressable accessibilityRole="button" accessibilityLabel={t('markdown.copy')}
+    accessibilityValue={{ text: copied ? t('markdown.copied') : '' }}
+    style={styles.copy} onPress={() => copyText(text)}>
+    {copied ? <Check size={16} color={COLORS.accent} /> : <Copy size={16} color={COLORS.upcoming} />}
+  </Pressable>;
+}
+
+function TranscriptEvent({ message, active }: { message: VoiceTranscriptMessage; active: boolean }) {
+  const { t } = useTranslation();
+  const { colors } = useTheme();
   const [expanded, setExpanded] = useState(false);
   const event = message.event!;
+  const { kind, name, status, input, output } = event;
+  const item = useMemo(() => kind === 'tool' ? voiceToolPart(message.id, { kind, name, status, input, output }) : null,
+    [message.id, kind, name, status, input, output]);
+  // Chat content follows the app theme; give it a matching surface on the dark call screen.
+  if (item) return <View style={[styles.tool, { backgroundColor: colors.canvas }]}><ChatToolCard item={item}
+    expanded={expanded} onToggle={() => setExpanded(value => !value)} active={active}
+    onLinkPress={url => reportBackgroundFailure(Linking.openURL(url), 'voice-transcript-link')} /></View>;
   return <View style={styles.event}>
     <Pressable accessibilityRole="button" accessibilityState={{ expanded }} onPress={() => setExpanded(value => !value)}>
-      <Text style={styles.eventType}>{t(event.kind === 'delegation' ? 'voiceTranscript.delegation' : 'voiceTranscript.tool')}</Text>
+      <Text style={styles.eventType}>{t('voiceTranscript.delegation')}</Text>
       <Text style={styles.eventName}>{event.name}</Text>
       <Text style={styles.eventStatus}>{event.status.replaceAll('_', ' ')}</Text>
     </Pressable>
@@ -123,14 +148,17 @@ function TranscriptEvent({ message }: { message: VoiceTranscriptMessage }) {
 const styles = StyleSheet.create({
   container: { flex: 1, minHeight: 0 },
   content: { paddingHorizontal: 24, gap: 28 },
-  user: { alignSelf: 'flex-end', maxWidth: '88%', backgroundColor: COLORS.bubble, borderRadius: 20, paddingHorizontal: 18, paddingVertical: 12 },
+  userTurn: { alignSelf: 'flex-end', maxWidth: '88%' },
+  user: { backgroundColor: COLORS.bubble, borderRadius: 20, paddingHorizontal: 18, paddingVertical: 12 },
   assistant: { alignSelf: 'stretch' },
+  copy: { alignSelf: 'flex-end', minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22 },
   userText: { color: COLORS.text, fontSize: 18, lineHeight: 28 },
   assistantText: { ...SPEECH_TYPE, color: COLORS.upcoming },
   heard: { ...SPEECH_TYPE, color: COLORS.text },
   current: { ...SPEECH_TYPE, color: COLORS.text, fontWeight: SPEECH_CAPTION_WEIGHT },
   upcoming: { ...SPEECH_TYPE, color: COLORS.upcoming },
   latest: { position: 'absolute', alignSelf: 'center', backgroundColor: COLORS.bubble, borderRadius: 22, padding: 12 },
+  tool: { alignSelf: 'stretch', borderRadius: 6 },
   event: { alignSelf: 'stretch', borderWidth: 1, borderColor: '#383838', borderRadius: 12, padding: 14, gap: 10 },
   eventType: { color: COLORS.accent, fontSize: 12, lineHeight: 18 },
   eventName: { color: COLORS.text, fontSize: 16, lineHeight: 24 },

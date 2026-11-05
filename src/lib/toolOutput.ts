@@ -29,3 +29,7 @@ export function parseJsonToolOutput(text: string): { value: JsonValue } | null {
 export function isJsonToolOutput(text: string): boolean {
   return parseJsonToolOutput(text) !== null;
 }
+
+export function textValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}

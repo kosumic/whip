@@ -3,12 +3,28 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { spokenTextParts, VoiceTranscript } from '../src/components/VoiceTranscript';
 import type { VoiceTranscriptMessage } from '../src/services/voiceConversation';
 import { Text } from '../src/components/ui/text';
+import { copyTextWithHaptic } from '../src/services/interactionFeedback';
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
-jest.mock('react-native', () => ({ Pressable: 'Pressable', ScrollView: 'ScrollView', View: 'View', StyleSheet: { create: (styles: unknown) => styles } }));
+jest.mock('react-native', () => ({ ActivityIndicator: 'ActivityIndicator', Text: 'Text', Pressable: 'Pressable', ScrollView: 'ScrollView', View: 'View', StyleSheet: { create: (styles: unknown) => styles } }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 jest.mock('lucide-react-native/icons/chevron-down', () => 'ChevronDown');
+jest.mock('lucide-react-native/icons/check', () => 'Check');
+jest.mock('lucide-react-native/icons/chevron-right', () => 'ChevronRight');
+jest.mock('lucide-react-native/icons/circle-alert', () => 'CircleAlert');
+jest.mock('lucide-react-native/icons/copy', () => 'Copy');
+jest.mock('lucide-react-native/icons/external-link', () => 'ExternalLink');
+jest.mock('lucide-react-native/icons/file', () => 'File');
+jest.mock('lucide-react-native/icons/file-diff', () => 'FileDiff');
+jest.mock('lucide-react-native/icons/file-plus', () => 'FilePlus');
+jest.mock('lucide-react-native/icons/link', () => 'Link');
+jest.mock('lucide-react-native/icons/search', () => 'Search');
+jest.mock('lucide-react-native/icons/square-terminal', () => 'SquareTerminal');
+jest.mock('../src/theme', () => ({ useTheme: () => ({ colors: { text: '#fff', textTertiary: '#888', error: '#f00' } }) }));
+jest.mock('../src/components/MarkdownText', () => ({ MarkdownText: 'MarkdownText' }));
+jest.mock('../src/components/ChatFileDiff', () => ({ ChatFileDiff: 'ChatFileDiff' }));
+jest.mock('../src/services/interactionFeedback', () => ({ hapticPress: (handler: () => unknown) => handler, copyTextWithHaptic: jest.fn() }));
 
 const reply: VoiceTranscriptMessage = { id: 'reply', role: 'assistant', text: 'Hello, this is a streamed reply.', spokenUtf16: 8, active: true };
 
@@ -75,9 +91,43 @@ test('renders delegation and tool status with expandable input and results besid
   act(() => { renderer = create(<VoiceTranscript messages={[delegation, tool]} reducedMotion />); });
   expect(JSON.stringify(renderer.toJSON())).toContain('voiceTranscript.delegation');
   expect(JSON.stringify(renderer.toJSON())).toContain('submitted');
-  act(() => { renderer.root.findAllByType(Pressable)[1].props.onPress(); });
+  act(() => { renderer.root.findByProps({ testID: 'agent-tool-toggle' }).props.onPress(); });
+  act(() => { renderer.root.findByProps({ accessibilityLabel: 'Tool input details' }).props.onPress(); });
   expect(JSON.stringify(renderer.toJSON())).toContain('cargo check');
   expect(JSON.stringify(renderer.toJSON())).toContain('Build passed');
+  act(() => { renderer.root.findAllByType(Pressable).find(node => node.props.accessibilityLabel === 'Copy tool input')!.props.onPress(); });
+  expect(copyTextWithHaptic).toHaveBeenLastCalledWith('cargo check');
+  act(() => { renderer.root.findAllByType(Pressable).find(node => node.props.accessibilityLabel === 'Copy tool output')!.props.onPress(); });
+  expect(copyTextWithHaptic).toHaveBeenLastCalledWith('Build passed');
+  act(() => renderer.unmount());
+});
+
+test('uses structured shell arguments and preserves nested input when copying', () => {
+  let renderer!: ReactTestRenderer;
+  const input = JSON.stringify({ command: 'cargo check', options: { cwd: '/repo' } });
+  const message: VoiceTranscriptMessage = { ...reply, id: 'shell', text: '', active: false,
+    event: { kind: 'tool', name: 'shell', status: 'completed', input, output: 'Build passed' } };
+  act(() => { renderer = create(<VoiceTranscript messages={[message]} reducedMotion />); });
+  expect(renderer.root.findByProps({ testID: 'agent-tool-toggle' }).props.accessibilityLabel).toBe('Shell, cargo check');
+  act(() => { renderer.root.findByProps({ testID: 'agent-tool-toggle' }).props.onPress(); });
+  act(() => { renderer.root.findAllByType(Pressable).find(node => node.props.accessibilityLabel === 'Copy shell command and output')!.props.onPress(); });
+  expect(copyTextWithHaptic).toHaveBeenLastCalledWith('$ cargo check\n\nBuild passed');
+  act(() => { renderer.root.findByProps({ accessibilityLabel: 'Tool input details' }).props.onPress(); });
+  act(() => { renderer.root.findAllByType(Pressable).find(node => node.props.accessibilityLabel === 'Copy tool input')!.props.onPress(); });
+  expect(copyTextWithHaptic).toHaveBeenLastCalledWith(input);
+  act(() => renderer.unmount());
+});
+
+test('updates a running tool to an error without losing its expanded details', () => {
+  let renderer!: ReactTestRenderer;
+  const message: VoiceTranscriptMessage = { ...reply, id: 'tool', text: '', active: false,
+    event: { kind: 'tool', name: 'shell', status: 'running', input: '{"command":"cargo check"}' } };
+  act(() => { renderer = create(<VoiceTranscript messages={[message]} reducedMotion />); });
+  act(() => { renderer.root.findByProps({ testID: 'agent-tool-toggle' }).props.onPress(); });
+  act(() => { renderer.update(<VoiceTranscript messages={[{ ...message,
+    event: { ...message.event!, status: 'failed', output: 'Compilation failed' } }]} reducedMotion />); });
+  expect(renderer.root.findByProps({ testID: 'agent-tool-toggle' }).props.accessibilityState.expanded).toBe(true);
+  expect(JSON.stringify(renderer.toJSON())).toContain('Compilation failed');
   act(() => renderer.unmount());
 });
 
@@ -86,6 +136,24 @@ test('archived chats display complete text without pretending it has playback ac
   const archived = { ...reply, active: false, spokenUtf16: 0 };
   act(() => { renderer = create(<VoiceTranscript messages={[archived]} reducedMotion playback={false} />); });
   expect(renderer.root.findByProps({ accessibilityLabel: reply.text }).props.children).toBe(reply.text);
+  act(() => renderer.unmount());
+});
+
+test.each([true, false])('copies user input and the full current assistant response (playback: %s)', playback => {
+  let renderer!: ReactTestRenderer;
+  const question: VoiceTranscriptMessage = { ...reply, id: 'user', role: 'user', active: false, text: 'Explain 你好 👋\nwith examples.' };
+  act(() => { renderer = create(<VoiceTranscript messages={[question, reply]} reducedMotion playback={playback} />); });
+  const buttons = () => renderer.root.findAllByType(Pressable).filter(node => node.props.accessibilityLabel === 'markdown.copy');
+  expect(buttons()).toHaveLength(2);
+  act(() => { buttons()[0].props.onPress(); });
+  expect(copyTextWithHaptic).toHaveBeenLastCalledWith(question.text);
+  expect(buttons()[0].props.accessibilityValue.text).toBe('markdown.copied');
+  act(() => { buttons()[1].props.onPress(); });
+  expect(copyTextWithHaptic).toHaveBeenLastCalledWith(reply.text);
+  const update = { ...reply, text: `${reply.text}\nMore words.` };
+  act(() => { renderer.update(<VoiceTranscript messages={[question, update]} reducedMotion playback={playback} />); });
+  act(() => { buttons()[1].props.onPress(); });
+  expect(copyTextWithHaptic).toHaveBeenLastCalledWith(update.text);
   act(() => renderer.unmount());
 });
 
@@ -103,7 +171,7 @@ test('scrolling back detaches following until explicitly resumed', () => {
   act(() => { renderer.update(<VoiceTranscript messages={[{ ...reply, spokenUtf16: 20 }]} reducedMotion />); });
   expect(player.scrollTo).not.toHaveBeenCalled();
   expect(player.scrollToEnd).not.toHaveBeenCalled();
-  act(() => { renderer.root.findByType(Pressable).props.onPress(); });
+  act(() => { renderer.root.findByProps({ accessibilityLabel: 'voiceChat.latest' }).props.onPress(); });
   expect(player.scrollTo).toHaveBeenCalledWith(expect.objectContaining({ animated: false }));
   act(() => renderer.unmount());
 });
