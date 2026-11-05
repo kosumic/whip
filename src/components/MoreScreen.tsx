@@ -1,5 +1,6 @@
-import { KeyboardAwareScrollView as ScrollView } from 'react-native-keyboard-controller';
-import { useState } from 'react';
+import { KeyboardAwareScrollView as ScrollView, type KeyboardAwareScrollViewRef } from 'react-native-keyboard-controller';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { ViewInstance } from 'react-native';
 
 import { useTranslation } from 'react-i18next';
 
@@ -37,6 +38,20 @@ type Props = Omit<
 export function MoreScreen(props: Props) {
   const { t } = useTranslation();
   const [purchaseScreenVisible, setPurchaseScreenVisible] = useState(false);
+  const scrollRef = useRef<KeyboardAwareScrollViewRef>(null);
+  const openAiSectionRef = useRef<ViewInstance>(null);
+  const handledConfigRequest = useRef(0);
+  const openAiConfigRequest = props.openAiConfigRequest ?? 0;
+  const scrollToOpenAi = useCallback(() => {
+    if (openAiConfigRequest <= handledConfigRequest.current) return;
+    const content = scrollRef.current?.getInnerViewRef();
+    if (!content || !openAiSectionRef.current) return;
+    openAiSectionRef.current.measureLayout(content, (_x, y) => {
+      scrollRef.current?.scrollTo({ y, animated: true });
+      handledConfigRequest.current = openAiConfigRequest;
+    });
+  }, [openAiConfigRequest]);
+  useEffect(() => { scrollToOpenAi(); }, [scrollToOpenAi]);
   const openRancher = () => {
     if (!props.membershipEnabled) return Promise.resolve();
     setPurchaseScreenVisible(true);
@@ -44,7 +59,7 @@ export function MoreScreen(props: Props) {
   };
   return (
     <SettingsDetailsProvider>
-      <ScrollView className="flex-1">
+      <ScrollView ref={scrollRef} className="flex-1" onContentSizeChange={scrollToOpenAi}>
         <GlassSurface className="flex-row items-center justify-between border-b border-white/30 px-5 py-5 dark:border-white/10">
           <Text className="text-[22px] font-semibold leading-7">
             {t('nav.more')}
@@ -64,6 +79,9 @@ export function MoreScreen(props: Props) {
         <UsageSection />
         {props.developerOptionsEnabled ? <FeedbackSection /> : null}
         <SettingsSection
+          openAiConfigRequest={openAiConfigRequest}
+          openAiSectionRef={openAiSectionRef}
+          onOpenAiLayout={scrollToOpenAi}
           alertsEnabled={props.alertsEnabled}
           agentAlertLevel={props.agentAlertLevel}
           backgroundMonitoringAvailable={props.backgroundMonitoringAvailable}

@@ -1,5 +1,5 @@
 import { createRef } from 'react';
-import { Modal } from 'react-native';
+import { Alert } from 'react-native';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { GlobalVoiceCall, type GlobalVoiceCallHandle } from '../src/components/GlobalVoiceCall';
 import { VoiceChatScreen } from '../src/components/VoiceChatScreen';
@@ -12,7 +12,7 @@ let mockContext: () => GlobalVoiceControlContext;
 let mockActiveCall = true;
 let mockCredentialReady = true;
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
-jest.mock('react-native', () => ({ Modal: 'Modal', ScrollView: 'ScrollView', TextInput: 'TextInput', View: 'View' }));
+jest.mock('react-native', () => ({ Alert: { alert: jest.fn() }, ScrollView: 'ScrollView', TextInput: 'TextInput', View: 'View' }));
 jest.mock('react-native-whip-ssh', () => require('./mockWhipSsh').createMockWhipSshModule());
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -26,34 +26,30 @@ jest.mock('../src/services/globalVoiceControl', () => ({ GlobalVoiceControl: jes
   return { dispose: jest.fn() };
 }) }));
 
-beforeEach(() => { mockCredentialReady = true; mockActiveCall = true; });
+beforeEach(() => { jest.clearAllMocks(); mockCredentialReady = true; mockActiveCall = true; });
 
-test('a global call needs its OpenAI key and offers configuration without provider selection', async () => {
+test('an unconfigured global call shows a message and jumps to OpenAI configuration', async () => {
   mockCredentialReady = false;
   const ref = createRef<GlobalVoiceCallHandle>();
-  const selectTab = jest.fn();
+  const onConfigureOpenAi = jest.fn();
   let view!: ReactTestRenderer;
   const render = () => <VoiceConversationSettingsContext value={{ settings: { ...defaults, provider: 'openai' }, onChange: jest.fn() }}>
-    <GlobalVoiceCall ref={ref} navigation={{ selectTab } as never} sessions={{ presentationSessions: [] } as never} locked={false} visible />
+    <GlobalVoiceCall ref={ref} onConfigureOpenAi={onConfigureOpenAi} navigation={{} as never} sessions={{ presentationSessions: [] } as never} locked={false} visible />
   </VoiceConversationSettingsContext>;
   try {
     await act(async () => { view = create(render()); });
     await act(async () => ref.current!.open());
-    expect(view.root.findAllByProps({ children: 'providers.apiKeyRequired' })).not.toHaveLength(0);
-    const start = () => view.root.findAllByType(Text).find(node => node.props.children === 'globalCall.start')!.parent!;
-    expect(start().props.disabled).toBe(true);
-    await act(async () => start().props.onPress());
+    expect(Alert.alert).toHaveBeenCalledWith('openai.title', 'providers.apiKeyRequired\n\nopenai.configure');
+    expect(onConfigureOpenAi).toHaveBeenCalledTimes(1);
     expect(view.root.findAllByType(VoiceChatScreen)).toHaveLength(0);
-    await act(async () => view.root.findAllByType(Text).find(node => node.props.children === 'settings.title')!.parent!.props.onPress());
-    expect(selectTab).toHaveBeenCalledWith('more');
-    expect(view.root.findByType(Modal).props.visible).toBe(false);
     await act(async () => ref.current!.open());
+    expect(onConfigureOpenAi).toHaveBeenCalledTimes(2);
     mockCredentialReady = true;
     await act(async () => view.update(render()));
-    expect(start().props.disabled).toBe(false);
     expect(view.root.findAllByType(VoiceChatScreen)).toHaveLength(0);
-    await act(async () => start().props.onPress());
+    await act(async () => ref.current!.open());
     expect(view.root.findAllByType(VoiceChatScreen)).toHaveLength(1);
+    expect(onConfigureOpenAi).toHaveBeenCalledTimes(2);
   } finally { await act(async () => view?.unmount()); }
 });
 
@@ -63,10 +59,10 @@ test.each(['Realtime', 'Live'] as const)('global %s starts directly even when ag
   let view!: ReactTestRenderer;
   try {
     await act(async () => { view = create(<VoiceConversationSettingsContext value={{ settings: { ...defaults, provider: 'local', mode }, onChange }}>
-      <GlobalVoiceCall ref={ref} navigation={{} as never} sessions={{ presentationSessions: [] } as never} locked={false} visible />
+      <GlobalVoiceCall ref={ref} onConfigureOpenAi={jest.fn()} navigation={{} as never} sessions={{ presentationSessions: [] } as never} locked={false} visible />
     </VoiceConversationSettingsContext>); });
     await act(async () => ref.current!.open());
-    expect(view.root.findByType(Modal).props.visible).toBe(false);
+    expect(Alert.alert).not.toHaveBeenCalled();
     expect(view.root.findAllByType(VoiceChatScreen)).toHaveLength(1);
     expect(onChange).not.toHaveBeenCalled();
   } finally { await act(async () => view?.unmount()); }
@@ -78,19 +74,19 @@ test('saved configuration starts directly, navigation preserves the call, and an
   const sessions = { presentationSessions: [], activeSession: null } as never;
   let view!: ReactTestRenderer;
   const render = (locked = false) => <VoiceConversationSettingsContext value={{ settings: { ...defaults, provider: 'openai' }, onChange: jest.fn() }}>
-    <GlobalVoiceCall ref={ref} navigation={navigation} sessions={sessions} locked={locked} visible />
+    <GlobalVoiceCall ref={ref} onConfigureOpenAi={jest.fn()} navigation={navigation} sessions={sessions} locked={locked} visible />
   </VoiceConversationSettingsContext>;
   try {
     await act(async () => { view = create(render(true)); });
     await act(async () => ref.current!.open());
     expect(view.root.findAllByType(VoiceChatScreen)).toHaveLength(0);
-    expect(view.root.findByType(Modal).props.visible).toBe(false);
+    expect(Alert.alert).not.toHaveBeenCalled();
     await act(async () => view.update(render()));
     expect(view.root.findAllByType(VoiceChatScreen)).toHaveLength(0);
     await act(async () => ref.current!.open());
     const call = view.root.findByType(VoiceChatScreen);
     expect(call.props.target).toEqual({ global: true, label: 'globalCall.title' });
-    expect(view.root.findByType(Modal).props.visible).toBe(false);
+    expect(Alert.alert).not.toHaveBeenCalled();
     await act(async () => call.props.onMinimize());
     mockCredentialReady = false;
     await act(async () => view.update(render()));
@@ -102,7 +98,7 @@ test('saved configuration starts directly, navigation preserves the call, and an
     mockCredentialReady = true;
     await act(async () => view.update(render()));
     await act(async () => ref.current!.open());
-    expect(view.root.findByType(Modal).props.visible).toBe(false);
+    expect(Alert.alert).not.toHaveBeenCalled();
     expect(view.root.findByType(VoiceChatScreen)).not.toBe(call);
   } finally { await act(async () => view?.unmount()); }
 });
@@ -112,7 +108,7 @@ test('a revoked native delegation confirmation resolves as denied and removes th
   let view!: ReactTestRenderer;
   try {
     await act(async () => { view = create(<VoiceConversationSettingsContext value={{ settings: { ...defaults, provider: 'openai' }, onChange: jest.fn() }}>
-      <GlobalVoiceCall ref={ref} navigation={{} as never} sessions={{ presentationSessions: [] } as never} locked={false} visible />
+      <GlobalVoiceCall ref={ref} onConfigureOpenAi={jest.fn()} navigation={{} as never} sessions={{ presentationSessions: [] } as never} locked={false} visible />
     </VoiceConversationSettingsContext>); });
     await act(async () => ref.current!.open());
     const abort = new AbortController();

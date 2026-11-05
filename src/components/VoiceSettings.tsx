@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { View } from 'react-native';
+import { useCallback, useEffect, useRef, useState, type ReactNode, type Ref } from 'react';
+import { View, type ViewInstance } from 'react-native';
 import Volume2 from 'lucide-react-native/icons/volume-2';
 import Check from 'lucide-react-native/icons/check';
 import { useSectionExpansion } from '../hooks/useSectionExpansion';
@@ -28,10 +28,18 @@ async function stopPreviewPlayback(owner: string) {
 const PREVIEW_TEXT_SAVE_DELAY_MS = 500;
 const SPEECH_BACKENDS = ['system', 'phonon', 'openai'] as const;
 
-export function VoiceSettings({ children }: { children?: ReactNode }) {
+export function VoiceSettings({ children, openAiConfigRequest = 0, openAiSectionRef, onOpenAiLayout }: {
+  children?: ReactNode;
+  openAiConfigRequest?: number;
+  openAiSectionRef?: Ref<ViewInstance>;
+  onOpenAiLayout?: () => void;
+}) {
   const { t } = useTranslation();
   const { expanded: voiceExpanded, toggleExpanded: toggleVoice } = useSectionExpansion('voice', true);
-  const { expanded: openaiExpanded, toggleExpanded: toggleOpenai } = useSectionExpansion('openai', true);
+  const { expanded: openaiExpanded, toggleExpanded: toggleOpenai, setExpanded: setOpenaiExpanded } = useSectionExpansion('openai', true);
+  useEffect(() => {
+    if (openAiConfigRequest > 0) setOpenaiExpanded(true);
+  }, [openAiConfigRequest, setOpenaiExpanded]);
   const conversationSetting = useRef<VoiceConversationSettingHandle>(null);
   const [status, setStatus] = useState<SpeechBackendStatus>();
   const [setupBackend, setSetupBackend] = useState<SpeechBackendStatus['backend']>();
@@ -282,17 +290,19 @@ export function VoiceSettings({ children }: { children?: ReactNode }) {
       </View>}
       <View className="px-3.5">{feedback}</View>
     </CollapsibleSectionCard>
-    <CollapsibleSectionCard title={t('openai.title')} iconContent={<OpenAiIcon />}
-      accessibilityLabel={credential.ready ? `${t('openai.title')}, ${t('voiceProvider.keySaved')}` : t('openai.title')}
-      titleContent={<View className="flex-row items-center gap-2">
-        <Text className={SECTION_TITLE_CLASS_NAME}>{t('openai.title')}</Text>
-        {credential.ready && <Icon as={Check} size={18} className="text-success" accessible={false} />}
-      </View>}
-      expanded={openaiExpanded} onToggle={() => { void stopPreviews(); toggleOpenai(); }} contentClassName="pb-3.5">
-      <View className="border-b border-border px-3.5 py-3">
-        <OpenAiVoiceKeySetting beforeUpdate={stopPreviews} />
-      </View>
-      <VoiceConversationSetting ref={conversationSetting} credentialSaved={credential.ready} />
-    </CollapsibleSectionCard>
+    <View ref={openAiSectionRef} onLayout={onOpenAiLayout} collapsable={false}>
+      <CollapsibleSectionCard title={t('openai.title')} iconContent={<OpenAiIcon />}
+        accessibilityLabel={credential.ready ? `${t('openai.title')}, ${t('voiceProvider.keySaved')}` : t('openai.title')}
+        titleContent={<View className="flex-row items-center gap-2">
+          <Text className={SECTION_TITLE_CLASS_NAME}>{t('openai.title')}</Text>
+          {credential.ready && <Icon as={Check} size={18} className="text-success" accessible={false} />}
+        </View>}
+        expanded={openaiExpanded} onToggle={() => { void stopPreviews(); toggleOpenai(); }} contentClassName="pb-3.5">
+        <View className="border-b border-border px-3.5 py-3">
+          <OpenAiVoiceKeySetting beforeUpdate={stopPreviews} />
+        </View>
+        <VoiceConversationSetting ref={conversationSetting} credentialSaved={credential.ready} />
+      </CollapsibleSectionCard>
+    </View>
   </>;
 }

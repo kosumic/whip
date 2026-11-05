@@ -28,9 +28,9 @@ import Volume1 from 'lucide-react-native/icons/volume-1';
 import Volume2 from 'lucide-react-native/icons/volume-2';
 import X from 'lucide-react-native/icons/x';
 import type { LucideIcon } from 'lucide-react-native';
-import { useContext, useEffect, useState } from 'react';
+import { useContext, useEffect, useState, type Ref } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
-import { Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, View, type ViewInstance } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -107,6 +107,9 @@ const DOUBLE_TAP_MENU_COLLAPSE_DURATION = 220;
 export { DetailsTitle, SettingsDetailsProvider } from './SettingsDetails';
 
 export interface SettingsSectionProps {
+  openAiConfigRequest?: number;
+  openAiSectionRef?: Ref<ViewInstance>;
+  onOpenAiLayout?: () => void;
   alertsEnabled: boolean;
   agentAlertLevel: AgentAlertLevel;
   backgroundMonitoringAvailable: boolean;
@@ -297,7 +300,7 @@ export function SettingsSection(props: SettingsSectionProps) {
         />
       </CollapsibleSectionCard>
 
-      <VoiceSettings>
+      <VoiceSettings openAiConfigRequest={props.openAiConfigRequest} openAiSectionRef={props.openAiSectionRef} onOpenAiLayout={props.onOpenAiLayout}>
         <SliderRow
           title={t('voiceChat.vadSensitivity')}
           copy={t('voiceChat.vadSensitivityDescription')}

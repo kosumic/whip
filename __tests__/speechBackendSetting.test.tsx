@@ -25,7 +25,11 @@ jest.mock('../src/components/ui/icon', () => ({ Icon: 'Icon' }));
 jest.mock('../src/components/OpenAiIcon', () => ({ OpenAiIcon: 'OpenAiIcon' }));
 jest.mock('../src/components/SpeechVoicePicker', () => ({ SpeechVoicePicker: 'SpeechVoicePicker' }));
 jest.mock('../src/components/CollapsibleSectionCard', () => ({ CollapsibleSectionCard: 'SectionCard', SECTION_TITLE_CLASS_NAME: 'section-title' }));
-jest.mock('../src/hooks/useSectionExpansion', () => ({ useSectionExpansion: () => ({ expanded: true, toggleExpanded: jest.fn() }) }));
+jest.mock('../src/hooks/useSectionExpansion', () => ({ useSectionExpansion: (_section: string, defaultExpanded: boolean) => {
+  const { useState } = jest.requireActual<typeof import('react')>('react');
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  return { expanded, setExpanded, toggleExpanded: () => setExpanded(value => !value) };
+} }));
 jest.mock('../src/services/interactionFeedback', () => ({ hapticPress: (callback: () => void) => callback }));
 jest.mock('../src/services/backgroundOperations', () => ({ bestEffortCleanup: jest.fn(), reportBackgroundFailure: jest.fn() }));
 jest.mock('../src/services/speechPlayback', () => ({ getSpeechPlayback: jest.fn(), speechBackendCommand: jest.fn(), systemSpeechVoices: jest.fn(), onSpeechBackendChange: jest.fn(() => () => {}) }));
@@ -100,6 +104,18 @@ test('Voice groups call and speech providers while OpenAI keeps its shared key c
   await act(async () => press('speech.openai'));
   expect(local.findByProps({ title: 'speech.openaiVoice' }).props.selected).toBe('marin');
   expect(openai.findAllByProps({ title: 'speech.openaiVoice' })).toHaveLength(0);
+});
+
+test('a configuration jump expands OpenAI again after the user collapses it', async () => {
+  const card = () => renderer.root.findByProps({ title: 'openai.title' });
+  await act(async () => card().props.onToggle());
+  expect(card().props.expanded).toBe(false);
+  await act(async () => renderer.update(<VoiceSettings openAiConfigRequest={1} />));
+  expect(card().props.expanded).toBe(true);
+  await act(async () => card().props.onToggle());
+  expect(card().props.expanded).toBe(false);
+  await act(async () => renderer.update(<VoiceSettings openAiConfigRequest={2} />));
+  expect(card().props.expanded).toBe(true);
 });
 
 test('OpenAI previews use the shared cancellable player and the edited preview text', async () => {

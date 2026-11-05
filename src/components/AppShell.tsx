@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { BlurTargetView } from 'expo-blur';
 import { Platform, StyleSheet, View, type ViewInstance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -86,6 +86,7 @@ export function AppShell({
   const { isDark } = useTheme();
   const navigationBlurTargetRef = useRef<ViewInstance | null>(null);
   const globalCallRef = useRef<GlobalVoiceCallHandle>(null);
+  const [openAiConfigRequest, setOpenAiConfigRequest] = useState(0);
   const storedPreferences = preferences.value;
   const capabilities = entitlements.capabilities;
   const effectivePreferences = useMemo(
@@ -451,6 +452,7 @@ export function AppShell({
                     <ScreenUpdates active={navigation.state.tab === 'more'}>
                       {() => (
                         <MoreScreen
+                          openAiConfigRequest={openAiConfigRequest}
                           alertsEnabled={alertsEnabled}
                           agentAlertLevel={agentAlertLevel}
                           backgroundMonitoringAvailable={
@@ -715,7 +717,11 @@ export function AppShell({
               remoteFiles={remoteFiles}
               security={security}
             />
-            <GlobalVoiceCall ref={globalCallRef} navigation={navigation} sessions={sessions} locked={security.locked} visible={!overlaysVisible} />
+            <GlobalVoiceCall ref={globalCallRef} navigation={navigation} sessions={sessions} locked={security.locked} visible={!overlaysVisible}
+              onConfigureOpenAi={() => {
+                navigation.selectTab('more');
+                setOpenAiConfigRequest(request => request + 1);
+              }} />
           </View>
         </GlassProvider>
       </SafeAreaView>

@@ -1,5 +1,5 @@
 import { appStorage } from '../services/appStorage';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 
@@ -41,8 +41,7 @@ export function useSectionExpansion(
     };
   }, [defaultExpanded, section, storageKey]);
 
-  const toggleExpanded = () => {
-    const next = !expandedRef.current;
+  const updateExpanded = useCallback((next: boolean) => {
     expansionChanged.current = true;
     expandedRef.current = next;
     setExpanded(next);
@@ -50,7 +49,8 @@ export function useSectionExpansion(
       appStorage.setItem(storageKey, String(next)),
       `${section}-expansion-persist`,
     );
-  };
+  }, [section, storageKey]);
+  const toggleExpanded = () => updateExpanded(!expandedRef.current);
 
-  return { expanded, toggleExpanded };
+  return { expanded, toggleExpanded, setExpanded: updateExpanded };
 }
