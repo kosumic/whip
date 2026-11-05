@@ -82,6 +82,8 @@ pub(super) struct Config {
     #[serde(default)]
     global: bool,
     #[serde(default)]
+    global_shizuku_access: bool,
+    #[serde(default)]
     model: Option<String>,
     voice: String,
     vad: Option<Vad>,
@@ -156,6 +158,9 @@ impl Config {
 
     fn session_update(&self) -> Result<ClientEvent, &'static str> {
         self.model()?;
+        if self.global_shizuku_access && (!self.global || self.preview) {
+            return Err("Shizuku access requires a global call.");
+        }
         if !VOICES.contains(&self.voice.as_str()) {
             return Err("Choose a supported OpenAI Realtime voice.");
         }
@@ -197,7 +202,7 @@ impl Config {
         vad["interrupt_response"] = json!(true);
         let terminal = self.terminal_target.is_some();
         let tools = if self.global {
-            global_tools::schemas()
+            global_tools::schemas(self.global_shizuku_access)
         } else if terminal {
             terminal::schemas()
         } else {
@@ -208,7 +213,7 @@ impl Config {
         };
         typed(json!({"type":"session.update","session":{
             "type":"realtime", "output_modalities":["audio"], "max_output_tokens":512,
-            "instructions":if self.global { global_tools::INSTRUCTIONS } else if terminal { terminal::INSTRUCTIONS } else { INSTRUCTIONS },
+            "instructions":if self.global { global_tools::base_instructions(self.global_shizuku_access) } else if terminal { terminal::INSTRUCTIONS.into() } else { INSTRUCTIONS.into() },
             "audio":{"input":{"format":{"type":"audio/pcm","rate":RATE},"turn_detection":vad,
                 "noise_reduction":{"type":"near_field"},
                 "transcription":captions::settings(self.language)},
@@ -400,7 +405,10 @@ impl RealtimeVoiceAdapter {
     ) -> Result<Arc<Self>, StartError> {
         let started_at = Instant::now();
         let mut update = config.session_update()?;
-        let global = config.global.then(WhipToolSession::new).transpose()?;
+        let global = config
+            .global
+            .then(|| WhipToolSession::new(config.global_shizuku_access))
+            .transpose()?;
         let agent = config
             .target
             .clone()
@@ -413,17 +421,22 @@ impl RealtimeVoiceAdapter {
             .map(PinnedTerminal::pin)
             .transpose()?
             .map(terminal::Session::new);
-        if let Some(context) = agent
-            .as_ref()
-            .map(|agent| agent.startup_context())
-            .transpose()
-            .map_err(|_| "The bound chat context is unavailable. Refresh it before calling.")?
-            .flatten()
-            && !context.is_empty()
-        {
+        let instructions = if let Some(global) = &global {
+            Some(global.instructions()?)
+        } else {
+            agent
+                .as_ref()
+                .map(|agent| agent.startup_context())
+                .transpose()
+                .map_err(|_| "The bound chat context is unavailable. Refresh it before calling.")?
+                .flatten()
+                .filter(|context| !context.is_empty())
+                .map(|context| format!("{INSTRUCTIONS}\n\n{context}"))
+        };
+        if let Some(instructions) = instructions {
             let mut value =
                 serde_json::to_value(update).map_err(|_| "Voice configuration failed.")?;
-            value["session"]["instructions"] = json!(format!("{INSTRUCTIONS}\n\n{context}"));
+            value["session"]["instructions"] = json!(instructions);
             update = typed(value)?;
         }
         let speech = crate::speech_playback::RealtimeSpeechLease::claim(config.preview)

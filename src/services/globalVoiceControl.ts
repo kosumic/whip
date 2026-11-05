@@ -1,6 +1,6 @@
 import { AppState } from 'react-native';
 import { setWhipAppControl, type WhipToolPermit } from 'react-native-whip-ssh';
-import { deviceAction } from '../browser/device';
+import { closeDeviceSession, deviceAction } from '../browser/device';
 import type { AppNavigationController } from '../hooks/useAppNavigation';
 import type { SessionRuntimeController } from '../hooks/useSessionRuntimeManager';
 import { isLiveHostSshConnected } from '../lib/liveHostLatency';
@@ -24,6 +24,7 @@ export class GlobalVoiceControl {
   private readonly operations = new Map<string, Set<AbortController>>();
   private disposed = false;
   private operationSequence = 0;
+  private readonly deviceSessions = new Set<string>();
 
   constructor(private readonly context: () => GlobalVoiceControlContext) {
     setWhipAppControl({
@@ -35,6 +36,7 @@ export class GlobalVoiceControl {
   private cancel(id: string): void {
     for (const operation of this.operations.get(id) ?? []) operation.abort();
     this.operations.delete(id);
+    if (this.deviceSessions.delete(id)) closeDeviceSession(id);
   }
 
   private async execute(permit: Pick<WhipToolPermit, 'callId' | 'checkActive'>, action: string, argumentsJson: string): Promise<string> {
@@ -56,7 +58,8 @@ export class GlobalVoiceControl {
         check();
         value = { approved };
       } else if (action.startsWith('device.')) {
-        value = await deviceAction(action, args, `${id}:${++this.operationSequence}`, abort.signal);
+        this.deviceSessions.add(id);
+        value = await deviceAction(action, args, `${id}:${++this.operationSequence}`, abort.signal, { sessionId: id });
         check();
       } else if (action === 'app_snapshot') {
         value = { foreground: true, tab: context.navigation.state.tab, host_id: context.sessions.activeSession?.hostId ?? null, pane_id: context.navigation.selectedPaneId };
@@ -91,6 +94,6 @@ export class GlobalVoiceControl {
 
   dispose(): void {
     this.disposed = true;
-    for (const id of this.operations.keys()) this.cancel(id);
+    for (const id of new Set([...this.operations.keys(), ...this.deviceSessions])) this.cancel(id);
   }
 }

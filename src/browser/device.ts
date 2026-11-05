@@ -7,7 +7,6 @@ import {
 import Clipboard from '@react-native-clipboard/clipboard';
 import { motionSnapshot } from './motion';
 import { sensorSnapshot } from './sensors';
-import type { BrowserSessionIdentity } from './registry';
 import {
   cancelShizukuCommand,
   executeShizukuCommand,
@@ -33,6 +32,12 @@ interface NativeDevice {
   stopSpeaking(sessionId: string): Promise<Record<string, unknown>>;
   cancelRequest(requestId: string): void;
   releaseSession(sessionId: string): void;
+}
+
+interface DeviceSessionIdentity {
+  sessionId: string;
+  runtimeId?: string;
+  paneId?: string;
 }
 
 /** Session teardown also releases speech acknowledged by an earlier tool call. */
@@ -72,7 +77,7 @@ export async function deviceAction(
   args: Record<string, unknown>,
   requestId: string,
   signal: AbortSignal,
-  identity?: BrowserSessionIdentity,
+  identity?: DeviceSessionIdentity,
 ): Promise<unknown> {
   if (signal.aborted) throw failure('cancelled', 'Device action cancelled');
   if (action === 'device.shizuku_status') return getShizukuDiagnostics();

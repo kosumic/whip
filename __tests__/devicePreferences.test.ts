@@ -77,6 +77,16 @@ test('global AGENTS.md defaults to Use Whip MCP and preserves Markdown across pe
   expect((await loadDevicePreferences()).reverseControlInstructions).toBe(instructions);
 });
 
+test('global call Shizuku access defaults off and requires an explicit saved boolean', async () => {
+  for (const globalShizukuAccess of [undefined, false, 'true', 1]) {
+    mockGetItem.mockResolvedValue(JSON.stringify({ voiceConversation: { globalShizukuAccess } }));
+    expect((await loadDevicePreferences()).voiceConversation.globalShizukuAccess).toBe(false);
+  }
+  await saveDevicePreferences({ ...defaultDevicePreferences, voiceConversation: { ...defaultDevicePreferences.voiceConversation, globalShizukuAccess: true } });
+  mockGetItem.mockResolvedValue(mockSetItem.mock.calls.at(-1)![1]);
+  expect((await loadDevicePreferences()).voiceConversation.globalShizukuAccess).toBe(true);
+});
+
 beforeEach(() => {
   mockGetItem.mockReset();
   mockSetItem.mockReset();
@@ -663,7 +673,7 @@ test('Store builds ignore persisted developer settings without erasing them', ()
 });
 
 test('OpenAI provider and separate model voices survive a preferences restart', async () => {
-  const voiceConversation = { provider: 'openai' as const, mode: 'Live' as const, realtimeModel: 'gpt-realtime-2.1-mini', realtimeVoice: 'cedar', liveVoice: 'quartz' };
+  const voiceConversation = { ...defaultDevicePreferences.voiceConversation, provider: 'openai' as const, mode: 'Live' as const, realtimeModel: 'gpt-realtime-2.1-mini', realtimeVoice: 'cedar', liveVoice: 'quartz' };
   await saveDevicePreferences({ ...defaultDevicePreferences, voiceConversation });
   mockGetItem.mockResolvedValue(mockSetItem.mock.calls.at(-1)![1]);
   const loaded = await loadDevicePreferences();

@@ -15,6 +15,7 @@ export interface VoiceConversationSettings {
   realtimeVoice: string;
   liveVoice: string;
   realtimeVad?: RealtimeVad;
+  globalShizukuAccess: boolean;
 }
 
 // Model-specific catalogs, checked 2026-11-03. These are conversation voices,
@@ -31,6 +32,7 @@ export const LIVE_VOICES = [
 
 export const DEFAULT_VOICE_CONVERSATION_SETTINGS: Readonly<VoiceConversationSettings> = {
   provider: 'local', mode: 'Realtime', realtimeModel: DEFAULT_REALTIME_MODEL, realtimeVoice: 'marin', liveVoice: 'marin',
+  globalShizukuAccess: false,
 };
 
 export function parseVoiceConversationSettings(value: unknown): VoiceConversationSettings {
@@ -41,6 +43,7 @@ export function parseVoiceConversationSettings(value: unknown): VoiceConversatio
     realtimeModel: REALTIME_MODELS.find(model => model.id === saved.realtimeModel)?.id ?? DEFAULT_REALTIME_MODEL,
     realtimeVoice: REALTIME_VOICES.find(voice => voice === saved.realtimeVoice) ?? 'marin',
     liveVoice: LIVE_VOICES.find(voice => voice === saved.liveVoice) ?? 'marin',
+    globalShizukuAccess: saved.globalShizukuAccess === true,
     ...(saved.realtimeVad ? { realtimeVad: parseRealtimeVad(saved.realtimeVad) } : {}),
   };
 }

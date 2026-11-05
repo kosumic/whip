@@ -49,6 +49,22 @@ Global transcript/captions stay separate from agent transcripts. Provider
 usage is recorded with global scope and never follows UI focus. Usage & costs
 can filter by scope. Remote-agent billing remains separate and unknown.
 
+Each global call loads **Settings → Reverse Control → Global AGENTS.md** into
+its initial model instructions, before the first response or tool call. It uses
+the same document and formatting as Reverse Control, ahead of built-in global
+call guidance. Empty documents add no instructions; unavailable or oversized
+documents prevent startup. New calls use the latest saved text. Host-specific
+AGENTS.md documents are not included in global startup context.
+
+On Android, **Settings → Reverse Control → Allow Shizuku access for global calls**
+defaults to off. The saved choice applies to new calls. Enabling it adds
+`device_shizuku_status` and `device_shizuku_exec`, using the same validated
+arguments, bounded results, live Shizuku authorization, and cancellation as
+Reverse Control. Pair Whip with Shizuku separately. Disabled calls cannot invoke
+either tool, even by supplying a tool name directly. Hangup releases the call's
+device session and cancels its commands. Agent-session Shizuku choices are
+independent.
+
 ## Remaining Stage 4 work
 
 This implements the global Realtime entry point and the status/navigation/
@@ -56,5 +72,6 @@ confirmed-delegation permission set. #326 remains open for GPT-Live delegation,
 browser capability sessions and document fences, opt-in consequential host or
 device actions, persisted selected-agent billing associations, and Android/iOS
 device acceptance checks. Browser control, host edits/connections/deletion,
-shell execution, clipboard, location, downloads/exports, and device speech are
-not granted by this global call catalog.
+remote shell execution, clipboard, location, downloads/exports, and device speech
+are not granted by this global call catalog. Android commands require the
+separate Shizuku opt-in described above.

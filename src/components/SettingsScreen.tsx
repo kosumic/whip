@@ -28,7 +28,7 @@ import Volume1 from 'lucide-react-native/icons/volume-1';
 import Volume2 from 'lucide-react-native/icons/volume-2';
 import X from 'lucide-react-native/icons/x';
 import type { LucideIcon } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, {
@@ -96,6 +96,7 @@ import { VoiceConversationProviderSetting } from './VoiceConversationProviderSet
 import { VoiceUsageSetting } from './VoiceUsageSetting';
 import { DetailsTitle, SettingsDetailsProvider } from './SettingsDetails';
 import { ShizukuSection } from './ShizukuSection';
+import { VoiceConversationSettingsContext } from '../lib/voiceConversationSettingsContext';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Input } from './ui/input';
@@ -455,6 +456,7 @@ export function SettingsSection(props: SettingsSectionProps) {
             autoCorrect={false}
           />
         </View>
+        {Platform.OS === 'android' && <GlobalCallShizukuSetting />}
         <ShizukuSection />
       </CollapsibleSectionCard>
 
@@ -1229,6 +1231,13 @@ function BackgroundImageRow({ busy, uri, dimming, locked, variant, onChoose, onR
       </View>
     </View>
   );
+}
+
+function GlobalCallShizukuSetting() {
+  const { t } = useTranslation();
+  const { settings, onChange } = useContext(VoiceConversationSettingsContext);
+  return <SettingRow title={t('settings.globalCallShizuku')} copy={t('settings.globalCallShizukuCopy')}
+    value={settings.globalShizukuAccess} onChange={globalShizukuAccess => onChange({ ...settings, globalShizukuAccess })} />;
 }
 
 function SettingRow({ title, icon, copy, value, onChange, onDetailsPress, divided = false, disabled = false, locked = false, onLockedPress }: { title: string; icon?: LucideIcon; copy: string; value: boolean; onChange: (value: boolean) => void; onDetailsPress?: () => void; divided?: boolean; disabled?: boolean; locked?: boolean; onLockedPress?: () => unknown }) {

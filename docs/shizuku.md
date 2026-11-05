@@ -21,6 +21,13 @@ restarts and agent restarts; new and copied agents start with Shizuku access off
 Turning it off immediately blocks both Shizuku tools and cancels that session's
 running privileged commands without affecting other sessions or browser tools.
 
+Android global voice calls have a separate **Allow Shizuku access for global
+calls** toggle in **Settings → Reverse Control**. It defaults to off and applies
+to new calls. Pairing alone does not enable it. Enabled calls expose
+`device_shizuku_status` and `device_shizuku_exec`; their commands use an independent
+call session and are cancelled on hangup. This choice does not grant Shizuku to
+any coding-agent session.
+
 The integration requires an Android native rebuild; a Metro-only update cannot
 add the API or provider. Shizuku server versions before 11 are unsupported.
 The provider is protected by `android.permission.INTERACT_ACROSS_USERS_FULL`,
@@ -40,8 +47,9 @@ To check on a device:
 
 ## Privileged reverse-control tools
 
-Only launches opted into Whip reverse control with **Allow Shizuku access** on
-can call these tools. Pairing is
+Launches opted into Whip reverse control with **Allow Shizuku access** on, and
+global voice calls started with their separate Shizuku toggle on, can call these
+tools. Pairing is
 performed by the user in Reverse Control settings; MCP calls never open a Shizuku
 permission prompt. The live service checks permission before command execution.
 On Android 17, Shizuku 13.6 can show an empty app list despite granting access; see

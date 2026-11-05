@@ -1,12 +1,12 @@
 import type { WhipAppControl } from 'react-native-whip-ssh';
 import { GlobalVoiceControl, type GlobalVoiceControlContext } from '../src/services/globalVoiceControl';
-import { deviceAction } from '../src/browser/device';
+import { closeDeviceSession, deviceAction } from '../src/browser/device';
 
 let mockPlatform: WhipAppControl;
 const mockApp = { currentState: 'active' };
 jest.mock('react-native', () => ({ get AppState() { return mockApp; } }));
 jest.mock('react-native-whip-ssh', () => ({ setWhipAppControl: (platform: WhipAppControl) => { mockPlatform = platform; } }));
-jest.mock('../src/browser/device', () => ({ deviceAction: jest.fn(async () => ({ level: 0.8 })) }));
+jest.mock('../src/browser/device', () => ({ closeDeviceSession: jest.fn(), deviceAction: jest.fn(async () => ({ level: 0.8 })) }));
 
 function setup() {
   let active = true;
@@ -55,6 +55,33 @@ test('explicit navigation targets do not follow the focused host or fall back to
   expect(openPaneTerminal).toHaveBeenCalledTimes(1);
   expect(select).not.toHaveBeenCalled();
   control.dispose();
+});
+
+test('privileged commands use the global call identity and hangup releases its device session', async () => {
+  jest.mocked(deviceAction).mockClear();
+  jest.mocked(closeDeviceSession).mockClear();
+  const { invoke, control } = setup();
+  jest.mocked(deviceAction).mockImplementationOnce((_action, _args, _id, signal) => new Promise(resolve => {
+    signal.addEventListener('abort', () => resolve({}), { once: true });
+  }));
+  const pending = invoke('device.shizuku_exec', { argv: ['/system/bin/id'] });
+  const [, , requestId, signal, identity] = jest.mocked(deviceAction).mock.calls[0];
+  expect(identity).toEqual({ sessionId: 'call-1' });
+  expect(requestId).toBe('call-1:1');
+  expect(signal.aborted).toBe(false);
+  mockPlatform.cancel('call-1');
+  expect(signal.aborted).toBe(true);
+  expect(await pending).toHaveProperty('error');
+  expect(closeDeviceSession).toHaveBeenCalledWith('call-1');
+  control.dispose();
+});
+
+test('disposing the app control releases device sessions after their commands finish', async () => {
+  jest.mocked(closeDeviceSession).mockClear();
+  const { invoke, control } = setup();
+  await invoke('device.shizuku_exec', { argv: ['/system/bin/id'] });
+  control.dispose();
+  expect(closeDeviceSession).toHaveBeenCalledWith('call-1');
 });
 
 test.each(['background', 'locked', 'revoked'] as const)('%s calls cannot perform presentation effects', async state => {

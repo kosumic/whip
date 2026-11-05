@@ -50,13 +50,21 @@ test('global Realtime starts without a transcript or SSH target and retains its 
   const call = new RealtimeVoiceConversation({ global: true, label: 'Global call' }, { ...defaults, provider: 'openai' }, changed);
   await call.start();
   const [token, raw] = mockNative.startRealtimeVoice.mock.calls[0] as unknown as [string, string];
-  expect(JSON.parse(raw)).toEqual(expect.objectContaining({ global: true, model: defaults.realtimeModel }));
+  expect(JSON.parse(raw)).toEqual(expect.objectContaining({ global: true, model: defaults.realtimeModel, globalShizukuAccess: false }));
   expect(JSON.parse(raw).target).toBeUndefined();
   expect(JSON.parse(raw).terminalTarget).toBeUndefined();
   expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'listening', transcript: null }));
   call.submitted('List my saved hosts');
   await flush();
   expect(mockNative.realtimeVoiceSubmitted).toHaveBeenCalledWith(token, 'List my saved hosts');
+  await call.close();
+});
+
+test('an Android global call passes its explicitly enabled Shizuku access to native startup', async () => {
+  const call = new RealtimeVoiceConversation({ global: true, label: 'Global call' }, { ...defaults, provider: 'openai', globalShizukuAccess: true }, jest.fn());
+  await call.start();
+  const [, raw] = mockNative.startRealtimeVoice.mock.calls[0] as unknown as [string, string];
+  expect(JSON.parse(raw).globalShizukuAccess).toBe(true);
   await call.close();
 });
 

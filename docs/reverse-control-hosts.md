@@ -14,6 +14,9 @@ device preferences. Each host's connection editor also has **Host AGENTS.md**,
 saved with that host's metadata. Existing installations default both to empty.
 These are documents stored in Whip; no file is written to an SSH host.
 
+Global voice calls also load the global document at startup. They use the latest
+saved text for each new call and do not include host-specific documents.
+
 Whip automatically loads the global document during MCP initialization and
 includes its actual contents before built-in server guidance. The global document
 is also included in the `browser.list_tabs` and `hosts.instructions` tool

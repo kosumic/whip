@@ -20,6 +20,25 @@ fn global_voice_configuration_has_an_explicit_exclusive_scope_and_no_remote_auth
     assert!(!names.contains(&"terminal_exec"));
     assert!(!names.contains(&"device_shizuku_exec"));
     assert!(!names.contains(&"browser_eval"));
+    assert!(!names.contains(&"device_shizuku_status"));
+    let mut privileged = value.clone();
+    privileged["globalShizukuAccess"] = json!(true);
+    let enabled = serde_json::to_value(
+        serde_json::from_value::<Config>(privileged.clone())?.session_update()?,
+    )?;
+    let exec = enabled["session"]["tools"]
+        .as_array()
+        .ok_or("No tools")?
+        .iter()
+        .find(|tool| tool["name"] == "device_shizuku_exec")
+        .ok_or("No Shizuku exec")?;
+    assert_eq!(exec["parameters"]["required"], json!(["argv"]));
+    privileged["global"] = json!(false);
+    assert!(
+        serde_json::from_value::<Config>(privileged)?
+            .session_update()
+            .is_err()
+    );
     value["target"] = json!({"runtimeId":"host","terminalId":"terminal","paneId":"pane","bindingToken":"binding"});
     assert!(
         serde_json::from_value::<Config>(value.clone())?

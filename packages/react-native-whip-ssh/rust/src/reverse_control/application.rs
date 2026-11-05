@@ -83,16 +83,15 @@ impl AgentInstructions {
         }
         Ok(instructions)
     }
+}
 
-    fn global_text(&self) -> String {
-        if self.global.trim().is_empty() {
-            String::new()
-        } else {
-            format!(
-                "# AGENTS.md instructions from Whip (global)\n\n<INSTRUCTIONS>\n{}\n</INSTRUCTIONS>",
-                self.global
-            )
-        }
+pub(super) fn global_instruction_text(global: &str) -> String {
+    if global.trim().is_empty() {
+        String::new()
+    } else {
+        format!(
+            "# AGENTS.md instructions from Whip (global)\n\n<INSTRUCTIONS>\n{global}\n</INSTRUCTIONS>"
+        )
     }
 }
 
@@ -448,7 +447,7 @@ impl ReverseControl {
             )
             .mcp());
         }
-        Ok(instructions.global_text())
+        Ok(global_instruction_text(&instructions.global))
     }
 }
 
