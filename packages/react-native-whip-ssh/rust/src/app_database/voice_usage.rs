@@ -1,7 +1,7 @@
 //! Call accounting only. No audio, transcripts, credentials, or agent labels.
 //! Provider adapters supply quantities and versioned pricing; this module never
 //! guesses a tariff or treats missing provider billing as free usage.
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -26,6 +26,7 @@ pub enum VoiceUsageMode {
     Realtime,
     Live,
     Tts,
+    Stt,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -158,12 +159,15 @@ struct Call {
 struct Ledger {
     version: u32,
     calls: BTreeMap<String, Call>,
+    #[serde(default)]
+    deleted: BTreeSet<String>,
 }
 impl Default for Ledger {
     fn default() -> Self {
         Self {
             version: VERSION,
             calls: BTreeMap::new(),
+            deleted: BTreeSet::new(),
         }
     }
 }
@@ -189,13 +193,22 @@ impl Ledger {
         serde_json::from_str(raw).map_err(|_| invalid())
     }
     fn apply(&mut self, event: VoiceUsageEvent) -> Result<(), AppStorageError> {
+        let session_id = match &event {
+            VoiceUsageEvent::Started { call } => Some(&call.session_id),
+            VoiceUsageEvent::Usage { session_id, .. }
+            | VoiceUsageEvent::Ended { session_id, .. } => Some(session_id),
+            VoiceUsageEvent::Recover => None,
+        };
+        if session_id.is_some_and(|id| self.deleted.contains(id)) {
+            return Ok(());
+        }
         match event {
             VoiceUsageEvent::Started { call } => {
                 if !valid_id(&call.session_id)
                     || call.model.as_deref().is_some_and(|s| !valid_id(s))
                     || call.voice.as_deref().is_some_and(|s| !valid_id(s))
                     || (call.provider == VoiceUsageProvider::Local)
-                        != (call.mode == VoiceUsageMode::TurnBased)
+                        != matches!(call.mode, VoiceUsageMode::TurnBased | VoiceUsageMode::Stt)
                 {
                     return Err(invalid());
                 }
@@ -457,9 +470,105 @@ fn save(store: &mut Store, ledger: &Ledger) -> Result<(), AppStorageError> {
 /// A lost acknowledgement can be replayed without duplicate records or totals.
 #[uniffi::export]
 pub async fn record_voice_usage(event_json: String) -> Result<(), AppStorageError> {
-    let event = serde_json::from_str(&event_json).map_err(|_| invalid())?;
+    let event: Recording = serde_json::from_str(&event_json).map_err(|_| invalid())?;
     flush_native_voice_usage().await?;
-    native::commit(event).await
+    match event {
+        Recording::Accounting(event) => native::commit(event).await,
+        Recording::History(HistoryCommand::Transcript {
+            session_id,
+            fragments,
+        }) => {
+            let identity = database()?
+                .request(move |store| {
+                    Ok(Ledger::load(store)?
+                        .calls
+                        .get(&session_id)
+                        .map(|call| call.identity.clone()))
+                })
+                .await?;
+            if let Some(identity) = identity {
+                crate::voice_history::persist(
+                    Some(&identity),
+                    identity
+                        .model
+                        .as_deref()
+                        .unwrap_or(crate::voice_history::LOCAL_MODEL),
+                    identity.voice.as_deref(),
+                    fragments,
+                )
+                .await
+                .map_err(|_| invalid())?;
+            }
+            Ok(())
+        }
+        Recording::History(HistoryCommand::Delete { session_id }) => {
+            if !valid_id(&session_id) {
+                return Err(invalid());
+            }
+            let _write = crate::voice_history::WRITES.lock().await;
+            database()?
+                .request(move |store| delete_history_entry(store, &session_id))
+                .await
+        }
+    }
+}
+
+fn delete_history_entry(store: &mut Store, session_id: &str) -> Result<(), AppStorageError> {
+    let mut ledger = Ledger::load(store)?;
+    ledger.calls.remove(session_id);
+    ledger.deleted.insert(session_id.to_owned());
+    let entries = store.read(vec![
+        crate::voice_history::KEY.into(),
+        crate::voice_history::LEGACY_LIVE_KEY.into(),
+    ])?;
+    let history = crate::voice_history::remove(
+        entries[0].value.as_deref(),
+        entries[1].value.as_deref(),
+        session_id,
+    )
+    .map_err(|_| invalid())?;
+    store.write(
+        vec![
+            AppStorageEntry {
+                key: KEY.into(),
+                value: Some(serde_json::to_string(&ledger).map_err(|_| invalid())?),
+            },
+            AppStorageEntry {
+                key: crate::voice_history::KEY.into(),
+                value: Some(history),
+            },
+            AppStorageEntry {
+                key: crate::voice_history::LEGACY_LIVE_KEY.into(),
+                value: None,
+            },
+        ],
+        false,
+    )
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Recording {
+    Accounting(VoiceUsageEvent),
+    History(HistoryCommand),
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum HistoryCommand {
+    Transcript {
+        session_id: String,
+        fragments: Vec<crate::voice_history::Caption>,
+    },
+    Delete {
+        session_id: String,
+    },
+}
+
+pub(crate) async fn voice_activity_deleted(session_id: String) -> Result<bool, AppStorageError> {
+    database()?
+        .request(move |store| Ok(Ledger::load(store)?.deleted.contains(&session_id)))
+        .await
 }
 #[uniffi::export]
 pub async fn voice_usage_summary(query_json: String) -> Result<String, AppStorageError> {

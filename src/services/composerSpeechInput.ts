@@ -2,6 +2,8 @@ import { AppState, Platform } from 'react-native';
 import type { NativeComposerDictation, ComposerDictationPhase } from 'react-native-whip-ssh/src/composerDictation';
 
 import { setSpeechInputActive } from './speechInputFocus';
+import { settledPromise } from '../lib/promises';
+import type { VoiceUsageEvent, VoiceHistoryCommand } from './voiceUsage';
 
 type Recognizer = Pick<typeof import('expo-speech-recognition').ExpoSpeechRecognitionModule,
   'addListener' | 'start' | 'stop' | 'abort' | 'isRecognitionAvailable' | 'requestPermissionsAsync' | 'getPermissionsAsync'> &
@@ -54,9 +56,19 @@ interface Session {
   restartDelay: number;
   audioToken?: string;
   audioHandle?: string;
+  history?: { id: string; startedAt: number; fragments: string[] };
 }
 
 const IDLE: SpeechInputSnapshot = { owner: null, phase: 'idle', interimText: '' };
+const MAX_HISTORY_FRAGMENTS = 64;
+const MAX_HISTORY_TEXT = 16 * 1024;
+
+function recordSpeechHistory(event: VoiceUsageEvent | VoiceHistoryCommand): void {
+  try {
+    const { voiceUsageLedger } = require('./voiceUsage') as typeof import('./voiceUsage');
+    void settledPromise(voiceUsageLedger.record(event));
+  } catch { /* History must not interrupt microphone ownership. */ }
+}
 const CONTEXT_TIMEOUT_MS = 1_500;
 const FINAL_RESULT_TIMEOUT_MS = 10_000;
 const ANDROID_CONTINUOUS_API = 33;
@@ -350,6 +362,16 @@ export class ComposerSpeechInput {
   }
 
   private startRecognition(session: Session): void {
+    if (!session.request.managedCall && !session.history) {
+      try {
+        const { createSecureId } = require('../lib/secureId') as typeof import('../lib/secureId');
+        session.history = { id: createSecureId('speech'), startedAt: Date.now(), fragments: [] };
+        recordSpeechHistory({ kind: 'started', call: {
+          session_id: session.history.id, provider: 'local', mode: 'stt', scope: 'speech',
+          model: null, voice: null, started_at_ms: session.history.startedAt,
+        } });
+      } catch { /* Recognition remains available if history cannot start. */ }
+    }
     session.started = false;
     session.ending = false;
     // This guards missing native startup/final events, never listening silence.
@@ -396,7 +418,13 @@ export class ComposerSpeechInput {
   }
 
   private append(session: Session, text: string | undefined): void {
-    if (text) session.request.append(session.dependencies!.append(session.request.readDraft(), text));
+    if (text) {
+      if (session.history) {
+        session.history.fragments.push(Array.from(text).slice(0, MAX_HISTORY_TEXT).join(''));
+        session.history.fragments = session.history.fragments.slice(-MAX_HISTORY_FRAGMENTS);
+      }
+      session.request.append(session.dependencies!.append(session.request.readDraft(), text));
+    }
   }
 
   private refresh(session: Session): void {
@@ -414,6 +442,13 @@ export class ComposerSpeechInput {
     if (this.current !== session) return;
     this.closeCapture(session);
     if (!session.cancelled) this.append(session, session.core?.end());
+    if (session.history) {
+      const { id, startedAt, fragments } = session.history;
+      if (fragments.length) recordSpeechHistory({ kind: 'transcript', session_id: id,
+        fragments: fragments.map((text, index) => ({ id: `${id}:${index}`, role: 'user', text })),
+      });
+      recordSpeechHistory({ kind: 'ended', session_id: id, ended_at_ms: Math.max(startedAt, Date.now()) });
+    }
     this.current = null;
     clearTimeout(session.timeout);
     clearTimeout(session.restart);

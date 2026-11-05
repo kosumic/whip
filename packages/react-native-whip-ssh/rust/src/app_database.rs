@@ -335,7 +335,9 @@ fn validate_entry(entry: &AppStorageEntry, importing: bool) -> Result<(), AppSto
         || (!importing
             && matches!(
                 entry.key.as_str(),
-                voice_usage::KEY | crate::voice_history::LEGACY_LIVE_KEY | crate::voice_history::KEY
+                voice_usage::KEY
+                    | crate::voice_history::LEGACY_LIVE_KEY
+                    | crate::voice_history::KEY
             ));
     if !allowed || importing && entry.value.is_none() {
         return Err(AppStorageError::InvalidEntry(entry.key.clone()));

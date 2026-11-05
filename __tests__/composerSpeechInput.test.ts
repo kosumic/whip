@@ -2,6 +2,10 @@ import { ComposerSpeechInput } from '../src/services/composerSpeechInput';
 import { isSpeechInputActive } from '../src/services/speechInputFocus';
 import { Platform } from 'react-native';
 import type { ComposerDictationPhase } from 'react-native-whip-ssh/src/composerDictation';
+import { voiceUsageLedger } from '../src/services/voiceUsage';
+
+jest.mock('../src/services/voiceUsage', () => ({ voiceUsageLedger: { record: jest.fn(async () => {}) } }));
+jest.mock('../src/lib/secureId', () => ({ createSecureId: () => 'speech-history-id' }));
 
 const mockAppListeners = new Set<(state: string) => void>();
 jest.mock('react-native', () => ({
@@ -690,4 +694,37 @@ test('only a reserved local system call can monitor speech without suspending pl
   expect(dependencies.suspendPlayback).not.toHaveBeenCalled();
   expect(recognizer.start).toHaveBeenCalledWith(expect.objectContaining({ requiresOnDeviceRecognition: true, androidEchoCancellation: true, iosVoiceProcessingEnabled: true }));
   controller.cancel(request.owner); emit('end'); controller.releaseReservation(request.owner);
+});
+
+test('dictation history stores recognized words without copying the preexisting draft', async () => {
+  jest.mocked(voiceUsageLedger.record).mockClear();
+  const { controller, request, core, emit } = setup();
+  await controller.start(request);
+  emit('start');
+  core.result.mockReturnValueOnce('Recognized words');
+  emit('result', { isFinal: true, results: [{ transcript: 'Recognized words' }] });
+  controller.stop(request.owner);
+  emit('end');
+  expect(voiceUsageLedger.record).toHaveBeenCalledWith({ kind: 'started', call: expect.objectContaining({
+    session_id: 'speech-history-id', mode: 'stt', scope: 'speech',
+  }) });
+  expect(voiceUsageLedger.record).toHaveBeenCalledWith({ kind: 'transcript', session_id: 'speech-history-id',
+    fragments: [{ id: 'speech-history-id:0', role: 'user', text: 'Recognized words' }],
+  });
+  expect(voiceUsageLedger.record).toHaveBeenLastCalledWith({ kind: 'ended', session_id: 'speech-history-id', ended_at_ms: expect.any(Number) });
+});
+
+test('dictation inside a managed call belongs to the call transcript rather than a second history entry', async () => {
+  jest.mocked(voiceUsageLedger.record).mockClear();
+  const { controller, request, recognizer, core, emit } = setup();
+  Object.assign(recognizer, { supportsOnDeviceRecognition: () => true, supportsAudioChunkEvents: () => true });
+  controller.reserve(request.owner);
+  await controller.start({ ...request, localOnly: true, managedCall: true });
+  emit('start');
+  core.result.mockReturnValueOnce('Call words');
+  emit('result', { isFinal: true, results: [{ transcript: 'Call words' }] });
+  controller.stop(request.owner);
+  emit('end');
+  controller.releaseReservation(request.owner);
+  expect(voiceUsageLedger.record).not.toHaveBeenCalled();
 });

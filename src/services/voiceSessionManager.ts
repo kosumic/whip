@@ -185,6 +185,11 @@ export const localVoiceUsageObserver: VoiceUsageObserver = {
     } }));
   },
   ended(session) {
+    const messages = session.getSnapshot().messages;
+    if (session.usageId && messages?.length) void settledPromise(voiceUsageLedger.record({
+      kind: 'transcript', session_id: session.usageId,
+      fragments: messages.map(({ id, role, text, event }) => ({ id, role, text, event })),
+    }));
     if (session.usageId) void settledPromise(voiceUsageLedger.record({ kind: 'ended', session_id: session.usageId,
       ended_at_ms: Math.max(session.startedAt, Date.now()) }));
   },

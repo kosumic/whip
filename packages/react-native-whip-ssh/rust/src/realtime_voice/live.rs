@@ -326,18 +326,28 @@ impl LiveVoiceAdapter {
                 result = closed;
             }
         }
-        if !config.preview {
-            let fragments = owner
-                .output
-                .lock()
-                .live_transcript
-                .as_ref()
-                .map(captions::Transcript::snapshot)
-                .unwrap_or_default();
+        {
+            let fragments = if config.preview {
+                let mut transcript = crate::voice_history::Conversation::default();
+                transcript.assistant(&owner.view.lock().text);
+                transcript.into_captions()
+            } else {
+                owner
+                    .output
+                    .lock()
+                    .live_transcript
+                    .as_ref()
+                    .map(captions::Transcript::snapshot)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(Into::into)
+                    .collect()
+            };
             if let Err(error) = crate::voice_history::persist(
+                adapter.usage.history_identity(),
                 &catalog()?.model,
                 Some(&config.voice),
-                fragments.into_iter().map(Into::into).collect(),
+                fragments,
             )
             .await
             {

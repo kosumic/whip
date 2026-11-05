@@ -4,6 +4,13 @@ import { voiceUsageLedger, type VoiceUsageSummary } from '../src/services/voiceU
 import { Text } from '../src/components/ui/text';
 import { usageChartPeriod } from '../src/lib/usagePeriods';
 import { usageChart, usageSummary } from 'react-native-whip-ssh';
+import { loadVoiceHistory } from '../src/services/voiceHistory';
+import { VoiceHistoryRow } from '../src/components/VoiceHistoryRow';
+import { VoiceHistoryDetails } from '../src/components/VoiceHistoryDetails';
+
+jest.mock('../src/services/voiceHistory', () => ({ loadVoiceHistory: jest.fn() }));
+jest.mock('../src/components/VoiceHistoryRow', () => ({ VoiceHistoryRow: 'VoiceHistoryRow' }));
+jest.mock('../src/components/VoiceHistoryDetails', () => ({ VoiceHistoryDetails: 'VoiceHistoryDetails' }));
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
 jest.mock('react-native', () => ({
@@ -35,7 +42,7 @@ jest.mock('../src/components/CollapsibleSectionCard', () => ({
   },
 }));
 jest.mock('react-native-whip-ssh', () => ({ usageSummary: jest.fn(), usageChart: jest.fn() }));
-jest.mock('../src/services/voiceUsage', () => ({ voiceUsageLedger: { summary: jest.fn(), subscribe: jest.fn(() => () => {}) } }));
+jest.mock('../src/services/voiceUsage', () => ({ voiceUsageLedger: { summary: jest.fn(), record: jest.fn(async () => {}), subscribe: jest.fn(() => () => {}) } }));
 const totals = { known_estimated_usd: 0, unknown_cost_calls: 0, incomplete_calls: 0, calls: 0 };
 const chartPeriod = usageChartPeriod('week');
 const empty: VoiceUsageSummary = { calls: [], totals: { today: totals, week: totals, month: totals, lifetime: totals }, chart: { ...chartPeriod, buckets: chartPeriod.dates.map(() => ({ ...totals })) } };
@@ -52,6 +59,7 @@ async function openCost() {
 function visible() { return JSON.stringify(renderer.toJSON()); }
 beforeEach(async () => {
   jest.clearAllMocks(); jest.mocked(voiceUsageLedger.summary).mockResolvedValue(empty);
+  jest.mocked(loadVoiceHistory).mockResolvedValue([]);
   jest.mocked(usageSummary).mockReset().mockReturnValue({ todayMs: 7_200_000n, weekMs: 7_200_000n, monthMs: 7_200_000n, lifetimeMs: 14_400_000n, startedAtMs: BigInt(new Date(2026, 0, 1).getTime()) });
   jest.mocked(usageChart).mockReset().mockImplementation(boundaries => ({ bucketsMs: boundaries.slice(1).map((_, index) => index < 2 ? 3_600_000n : 0n), totalMs: 7_200_000n }));
   await act(async () => { renderer = create(<UsageSection />); });
@@ -248,4 +256,47 @@ test('a partially priced call contributes its known charges to the chart and lab
   const bar = renderer.root.findAll(node => node.props.accessibilityRole === 'button' && node.props.accessibilityLabel?.startsWith(`${new Intl.DateTimeFormat('en', { weekday: 'short', month: 'short', day: 'numeric' }).format(chartPeriod.dates[0])}, $0.2500`))[0];
   await act(async () => bar.props.onPress());
   expect(renderer.root.findByProps({ accessibilityLiveRegion: 'polite' }).props.children).toBe('$0.2500');
+});
+
+test('unifies saved captions with usage rows and opens the matching transcript by session ID', async () => {
+  const startedAt = new Date();
+  startedAt.setHours(10, 0, 0, 0);
+  const call = { session_id: 'linked', provider: 'openai' as const, mode: 'realtime' as const,
+    scope: 'agent' as const, model: 'gpt-realtime-1.5', voice: 'marin', started_at_ms: startedAt.getTime(),
+    ended_at_ms: startedAt.getTime() + 125_000, active: false, estimated_usd: 0.1,
+    remote_agent_estimated_usd: null, status: 'provider_usage_finalized' as const, items: {} };
+  const saved = { id: 'linked', model: call.model, endedAtMs: call.ended_at_ms,
+    fragments: [{ id: 'heard', role: 'user' as const, text: 'What changed?' }] };
+  jest.mocked(voiceUsageLedger.summary).mockResolvedValue({ ...empty, calls: [call] });
+  jest.mocked(loadVoiceHistory).mockResolvedValue([saved, { ...saved, id: 'legacy', model: 'gpt-live-1' }]);
+  await openCost();
+  expect(renderer.root.findAllByType(VoiceHistoryRow)).toHaveLength(2);
+  expect(visible()).not.toContain('voiceUsage.provider_usage_finalized');
+  const row = renderer.root.findAllByType(VoiceHistoryRow).find(entry =>
+    entry.findAllByType(Text).some(text => text.props.children === 'voiceUsage.realtime'))!;
+  const text = row.findAllByType(Text).map(node => node.props.children).flat().join('');
+  expect(text).toContain('today');
+  expect(text).toContain('2m 5s');
+  await act(async () => row.props.onOpen());
+  const details = renderer.root.findByType(VoiceHistoryDetails);
+  expect(details.props.saved).toEqual(saved);
+  expect(details.props.call).toEqual(call);
+  await act(async () => details.props.onClose());
+  expect(renderer.root.findAllByType(VoiceHistoryDetails)).toHaveLength(0);
+});
+
+test('a failed delete preserves its entry and a successful retry removes the saved text', async () => {
+  const saved = { id: 'legacy', model: 'gpt-live-1', endedAtMs: Date.now(),
+    fragments: [{ id: 'heard', role: 'user' as const, text: 'Saved text' }] };
+  jest.mocked(loadVoiceHistory).mockResolvedValue([saved]);
+  jest.mocked(voiceUsageLedger.record).mockRejectedValueOnce(new Error('disk full'));
+  await openCost();
+  await act(async () => renderer.root.findByType(VoiceHistoryRow).props.onDelete());
+  expect(voiceUsageLedger.record).toHaveBeenCalledWith({ kind: 'delete', session_id: saved.id });
+  expect(renderer.root.findAllByType(VoiceHistoryRow)).toHaveLength(1);
+  expect(visible()).toContain('voiceUsage.deleteFailed');
+  jest.mocked(loadVoiceHistory).mockResolvedValue([]);
+  await act(async () => renderer.root.findByType(VoiceHistoryRow).props.onDelete());
+  expect(renderer.root.findAllByType(VoiceHistoryRow)).toHaveLength(0);
+  expect(visible()).not.toContain('voiceUsage.deleteFailed');
 });

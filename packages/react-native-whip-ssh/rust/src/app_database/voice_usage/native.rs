@@ -99,13 +99,16 @@ fn enqueue(event: VoiceUsageEvent) {
 }
 
 pub(crate) struct NativeVoiceUsageSession {
-    id: String,
-    started_at_ms: u64,
+    identity: VoiceUsageIdentity,
     revision: u64,
     emit: Box<dyn Fn(VoiceUsageEvent) + Send + Sync>,
 }
 
 impl NativeVoiceUsageSession {
+    pub(crate) fn identity(&self) -> &VoiceUsageIdentity {
+        &self.identity
+    }
+
     pub(crate) fn start(
         mode: VoiceUsageMode,
         scope: VoiceUsageScope,
@@ -131,8 +134,7 @@ impl NativeVoiceUsageSession {
         emit: Box<dyn Fn(VoiceUsageEvent) + Send + Sync>,
     ) -> Self {
         let session = Self {
-            id: call.session_id.clone(),
-            started_at_ms: call.started_at_ms,
+            identity: call.clone(),
             revision: 0,
             emit,
         };
@@ -144,7 +146,7 @@ impl NativeVoiceUsageSession {
         self.revision = self.revision.saturating_add(1);
         item.revision = self.revision;
         (self.emit)(VoiceUsageEvent::Usage {
-            session_id: self.id.clone(),
+            session_id: self.identity.session_id.clone(),
             item_id,
             item,
         });
@@ -154,8 +156,8 @@ impl NativeVoiceUsageSession {
 impl Drop for NativeVoiceUsageSession {
     fn drop(&mut self) {
         (self.emit)(VoiceUsageEvent::Ended {
-            session_id: self.id.clone(),
-            ended_at_ms: now_ms().max(self.started_at_ms),
+            session_id: self.identity.session_id.clone(),
+            ended_at_ms: now_ms().max(self.identity.started_at_ms),
         });
     }
 }

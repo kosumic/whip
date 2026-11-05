@@ -1,7 +1,6 @@
 import { useCallback, useState } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { VoiceConversationSetting } from '../src/components/VoiceConversationSetting';
-import { VoiceCaptionHistory } from '../src/components/VoiceCaptionHistory';
 import { VoiceConversationProviderSetting } from '../src/components/VoiceConversationProviderSetting';
 import { OpenAiVoiceKeySetting } from '../src/components/OpenAiVoiceKeySetting';
 jest.mock('@react-native-community/slider', () => 'Slider');
@@ -28,7 +27,6 @@ jest.mock('../src/components/GlassControls', () => ({ GlassButton: 'GlassButton'
 jest.mock('../src/components/ui/input', () => ({ Input: 'Input' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
 jest.mock('../src/components/SpeechVoicePicker', () => ({ SpeechVoicePicker: 'SpeechVoicePicker' }));
-jest.mock('../src/components/VoiceCaptionHistory', () => ({ VoiceCaptionHistory: 'VoiceCaptionHistory' }));
 jest.mock('../src/services/openAiVoiceCredentials', () => require('../test-support/mockOpenAiVoiceCredentials').createMockOpenAiVoiceCredentials());
 
 let renderer: ReactTestRenderer;
@@ -58,12 +56,6 @@ beforeEach(async () => {
   await act(async () => { renderer = create(<Harness />); });
 });
 afterEach(() => act(() => renderer.unmount()));
-
-test('saved chats are outside the OpenAI provider configuration in both modes', async () => {
-  expect(renderer.root.findAllByType(VoiceCaptionHistory)).toHaveLength(0);
-  await act(async () => pressText('voiceProvider.Live'));
-  expect(renderer.root.findAllByType(VoiceCaptionHistory)).toHaveLength(0);
-});
 
 test('provider selection checks key presence and contains no key editor or cloud voice configuration', async () => {
   await act(async () => renderer.unmount());

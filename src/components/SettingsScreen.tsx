@@ -91,7 +91,6 @@ import { GlassButton, GlassIconBadge } from './GlassControls';
 import { CollapsibleSectionCard } from './CollapsibleSectionCard';
 import { SettingsChoiceRow } from './SettingsChoiceRow';
 import { VoiceSettings } from './VoiceSettings';
-import { VoiceCaptionHistory } from './VoiceCaptionHistory';
 import { MIN_VAD_SENSITIVITY, MAX_VAD_SENSITIVITY, VAD_SENSITIVITY_STEP } from '../lib/voiceVadSensitivity';
 import { DetailsTitle, SettingsDetailsProvider } from './SettingsDetails';
 import { ShizukuSection } from './ShizukuSection';
@@ -312,7 +311,6 @@ export function SettingsSection(props: SettingsSectionProps) {
         />
         <SettingRow title={t('settings.speakChanges')} copy={t('settings.speakChangesCopy')} value={props.ttsEnabled} onChange={props.onTtsChange} divided />
       </VoiceSettings>
-      <VoiceCaptionHistory />
 
       <CollapsibleSectionCard
         title={t('settings.security')}

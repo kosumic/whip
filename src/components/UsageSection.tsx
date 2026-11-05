@@ -29,6 +29,9 @@ import { GlassButton } from './GlassControls';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
 import { WhippingTimeChart } from './WhippingTimeChart';
+import { loadVoiceHistory, type SavedCall } from '../services/voiceHistory';
+import { VoiceHistoryDetails } from './VoiceHistoryDetails';
+import { VoiceHistoryRow } from './VoiceHistoryRow';
 
 const PROVIDERS: (UsageProvider | undefined)[] = [undefined, 'local', 'openai'];
 const MODES: (UsageMode | undefined)[] = [
@@ -37,6 +40,7 @@ const MODES: (UsageMode | undefined)[] = [
   'realtime',
   'live',
   'tts',
+  'stt',
 ];
 const SCOPES: (UsageScope | undefined)[] = [
   undefined,
@@ -62,6 +66,11 @@ export function UsageSection() {
   const [mode, setMode] = useState<UsageMode>();
   const [scope, setScope] = useState<UsageScope>();
   const [summary, setSummary] = useState<VoiceUsageSummary>();
+  const [savedCalls, setSavedCalls] = useState<SavedCall[]>([]);
+  const [captionError, setCaptionError] = useState(false);
+  const [selectedCallId, setSelectedCallId] = useState<string>();
+  const [deletingId, setDeletingId] = useState<string>();
+  const [deleteError, setDeleteError] = useState(false);
   const [error, setError] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const [limit, setLimit] = useState(PAGE_SIZE);
@@ -70,16 +79,45 @@ export function UsageSection() {
     let current = true;
     let revision = 0;
     let loading = false;
+    let historyKey: string | undefined;
+    let cachedHistory: SavedCall[] = [];
     const load = () => {
       if (loading || AppState.currentState !== 'active') return;
       loading = true;
       const request = ++revision;
       void voiceUsageLedger
         .summary({ provider, mode, scope }, new Date(), range)
+        .then(async value => {
+          const key = JSON.stringify(
+            value.calls.map(call => [
+              call.session_id,
+              call.active,
+              call.ended_at_ms,
+            ]),
+          );
+          let historyError = false;
+          if (key !== historyKey) {
+            try {
+              cachedHistory = await loadVoiceHistory();
+              historyKey = key;
+            } catch {
+              historyError = true;
+            }
+          }
+          return {
+            value,
+            captions: {
+              calls: historyError ? [] : cachedHistory,
+              error: historyError,
+            },
+          };
+        })
         .then(
-          value => {
+          ({ value, captions }) => {
             if (current && request === revision) {
               setSummary(value);
+              setSavedCalls(captions.calls);
+              setCaptionError(captions.error);
               setError(false);
             }
           },
@@ -92,6 +130,8 @@ export function UsageSection() {
         });
     };
     setSummary(undefined);
+    setSavedCalls([]);
+    setSelectedCallId(undefined);
     setSelected(null);
     setLimit(PAGE_SIZE);
     load();
@@ -142,11 +182,66 @@ export function UsageSection() {
     selected !== null && chart
       ? Number(chart.boundaries[selected + 1])
       : Infinity;
-  const history =
-    summary?.calls.filter(
-      call =>
-        call.started_at_ms >= historyStart && call.started_at_ms < historyEnd,
-    ) ?? [];
+  const savedById = new Map(savedCalls.map(call => [call.id, call]));
+  const usageIds = new Set(summary?.calls.map(call => call.session_id));
+  const history = [
+    ...(summary?.calls ?? []).map(call => ({
+      id: call.session_id,
+      timestamp: call.started_at_ms,
+      call,
+      saved: savedById.get(call.session_id),
+    })),
+    ...savedCalls
+      .filter(saved => {
+        if (usageIds.has(saved.id)) return false;
+        const savedProvider =
+          saved.usage?.provider ??
+          (saved.model === 'local' ? 'local' : 'openai');
+        const savedMode =
+          saved.usage?.mode ??
+          (saved.model === 'local'
+            ? 'turn_based'
+            : saved.model === 'gpt-live-1'
+              ? 'live'
+              : 'realtime');
+        return (
+          (!provider || provider === savedProvider) &&
+          (!mode || mode === savedMode) &&
+          (!scope || scope === saved.usage?.scope)
+        );
+      })
+      .map(saved => ({
+        id: saved.id,
+        timestamp: saved.usage?.started_at_ms ?? saved.endedAtMs,
+        call: undefined as VoiceUsageCall | undefined,
+        saved,
+      })),
+  ]
+    .filter(
+      entry => entry.timestamp >= historyStart && entry.timestamp < historyEnd,
+    )
+    .sort((left, right) => right.timestamp - left.timestamp);
+  const selectedCall = summary?.calls.find(
+    call => call.session_id === selectedCallId,
+  );
+  const selectedSaved = selectedCallId
+    ? savedById.get(selectedCallId)
+    : undefined;
+  const deleteEntry = async (id: string) => {
+    if (deletingId) return;
+    setDeletingId(id);
+    setDeleteError(false);
+    try {
+      await voiceUsageLedger.record({ kind: 'delete', session_id: id });
+      setSavedCalls(calls => calls.filter(call => call.id !== id));
+      if (selectedCallId === id) setSelectedCallId(undefined);
+      setRefresh(value => value + 1);
+    } catch {
+      setDeleteError(true);
+    } finally {
+      setDeletingId(undefined);
+    }
+  };
   const number = (value: number) =>
     new Intl.NumberFormat(i18n.language, { maximumFractionDigits: 0 }).format(
       value,
@@ -384,6 +479,18 @@ export function UsageSection() {
               <Text className="mb-2 text-xs font-semibold text-muted-foreground">
                 {t('voiceUsage.history')}
               </Text>
+              {(captionError || deleteError) && (
+                <Text
+                  accessibilityRole="alert"
+                  className="py-2 text-sm text-destructive"
+                >
+                  {t(
+                    deleteError
+                      ? 'voiceUsage.deleteFailed'
+                      : 'voiceUsage.transcriptLoadFailed',
+                  )}
+                </Text>
+              )}
               {history.length === 0 && (
                 <Text className="py-3 text-sm text-muted-foreground">
                   {t(
@@ -397,36 +504,61 @@ export function UsageSection() {
                   )}
                 </Text>
               )}
-              {history.slice(0, limit).map(call => (
-                <View
-                  key={call.session_id}
-                  className="gap-1 border-b border-border py-3"
+              {history.slice(0, limit).map(({ id, timestamp, call, saved }) => (
+                <VoiceHistoryRow
+                  key={id}
+                  label={`${call ? t(`voiceUsage.${call.mode}`) : saved!.model} · ${new Date(timestamp).toLocaleString(i18n.language)}`}
+                  onOpen={() => setSelectedCallId(id)}
+                  onDelete={() => {
+                    void deleteEntry(id);
+                  }}
+                  deleting={deletingId === id}
                 >
-                  <View className="flex-row items-start justify-between gap-3">
-                    <Text className="min-w-0 flex-1 text-sm font-medium">
-                      {t(`voiceUsage.${call.mode}`)}
-                    </Text>
-                    <Text className="max-w-[60%] text-right text-sm font-semibold">
-                      {cost(call)}
-                    </Text>
-                  </View>
-                  <Text className="text-xs text-muted-foreground">
-                    {formatHistoryDate(call.started_at_ms, i18n.language)}{' '}
-                    · {t(`voiceUsage.${call.scope}`)}
-                  </Text>
-                  <CallHistoryTiming call={call} />
-                  <Text className="text-xs text-muted-foreground">
-                    {t(`voiceProvider.${call.provider}`)}
-                    {call.model ? ` · ${call.model}` : ''}
-                    {call.voice ? ` · ${call.voice}` : ''}
-                  </Text>
-                  {call.provider !== 'local' &&
-                    call.status !== 'provider_usage_finalized' && (
+                  {call ? (
+                    <>
+                      <View className="flex-row items-start justify-between gap-3">
+                        <Text className="min-w-0 flex-1 text-sm font-medium">
+                          {t(`voiceUsage.${call.mode}`)}
+                        </Text>
+                        <Text className="max-w-[60%] text-right text-sm font-semibold">
+                          {cost(call)}
+                        </Text>
+                      </View>
                       <Text className="text-xs text-muted-foreground">
-                        {t(`voiceUsage.${call.status}`)}
+                        {formatHistoryDate(call.started_at_ms, i18n.language)} ·{' '}
+                        {t(`voiceUsage.${call.scope}`)}
                       </Text>
-                    )}
-                </View>
+                      <CallHistoryTiming call={call} />
+                      <Text className="text-xs text-muted-foreground">
+                        {t(`voiceProvider.${call.provider}`)}
+                        {call.model ? ` · ${call.model}` : ''}
+                        {call.voice ? ` · ${call.voice}` : ''}
+                      </Text>
+                      {call.provider !== 'local' &&
+                        call.status !== 'provider_usage_finalized' && (
+                          <Text className="text-xs text-muted-foreground">
+                            {t(`voiceUsage.${call.status}`)}
+                          </Text>
+                        )}
+                    </>
+                  ) : (
+                    <>
+                      <Text className="text-sm font-medium">
+                        {saved!.model}
+                      </Text>
+                      <Text className="text-xs text-muted-foreground">
+                        {formatHistoryDate(timestamp, i18n.language)}
+                      </Text>
+                      <Text className="text-xs text-muted-foreground">
+                        {t('voiceUsage.ended', {
+                          time: new Date(saved!.endedAtMs).toLocaleTimeString(
+                            i18n.language,
+                          ),
+                        })}
+                      </Text>
+                    </>
+                  )}
+                </VoiceHistoryRow>
               ))}
               {history.length > limit && (
                 <GlassButton
@@ -440,6 +572,14 @@ export function UsageSection() {
           </>
         )}
       </CollapsibleSectionCard>
+      {selectedCallId && (selectedCall || selectedSaved) && (
+        <VoiceHistoryDetails
+          key={selectedCallId}
+          call={selectedCall}
+          saved={selectedSaved}
+          onClose={() => setSelectedCallId(undefined)}
+        />
+      )}
     </View>
   );
 }

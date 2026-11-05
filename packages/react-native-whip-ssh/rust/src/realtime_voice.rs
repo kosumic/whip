@@ -558,11 +558,6 @@ impl RealtimeVoiceAdapter {
         let credential_start = Instant::now();
         let key = credentials().map_err(StartError::Credential)?;
         adapter.view.lock().startup.credentials = Some(startup::elapsed(credential_start));
-        let caption_identity = if config.live || config.preview {
-            None
-        } else {
-            Some((config.model()?.id.clone(), config.voice.clone()))
-        };
         runtime.spawn(async move {
             let mut tools: JoinSet<ToolCompletion> = JoinSet::new();
             let result = if config.live {
@@ -597,14 +592,6 @@ impl RealtimeVoiceAdapter {
                 Err("Voice configuration failed.")
             };
             tools.shutdown().await;
-            if let Some((model, voice)) = caption_identity {
-                let captions = owner.output.lock().transcript.saved_captions();
-                if let Err(error) =
-                    crate::voice_history::persist(&model, Some(&voice), captions).await
-                {
-                    owner.view.lock().error.get_or_insert(error);
-                }
-            }
             if let Some(global) = &owner.global {
                 global.close();
             }
@@ -795,6 +782,8 @@ impl RealtimeVoiceAdapter {
         tools: &mut JoinSet<ToolCompletion>,
     ) -> Result<(), &'static str> {
         let mut costs = cost::CurrentChat::start(&config)?;
+        let model = config.model()?.id.clone();
+        let voice = config.voice.clone();
         let mut cancellation = self.cancel.subscribe();
         let webrtc = config.webrtc;
         let result = if self.closed.load(Ordering::Acquire) {
@@ -818,6 +807,13 @@ impl RealtimeVoiceAdapter {
                 && crate::voice_credentials::generation() == self.credential_generation
         })
         .await;
+        let captions = self.output.lock().transcript.saved_captions();
+        if let Err(error) =
+            crate::voice_history::persist(costs.history_identity(), &model, Some(&voice), captions)
+                .await
+        {
+            self.view.lock().error.get_or_insert(error);
+        }
         {
             let mut view = self.view.lock();
             view.estimated_usd = costs.estimated_usd();

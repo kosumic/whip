@@ -450,3 +450,66 @@ fn committed_finalization_replays_after_database_restart_without_duplicate_total
         AccountingStatus::ProviderUsageFinalized
     );
 }
+
+#[test]
+fn deleting_history_is_durable_and_late_usage_cannot_restore_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("app.db");
+    let mut store = open(&path);
+    store.write(vec![], true).unwrap();
+    record(&mut store, started("call", 90, false)).unwrap();
+    record(&mut store, started("keep", 91, false)).unwrap();
+    record(&mut store, usage("call", "response", 1, Some(0.25), true)).unwrap();
+    let captions = r#"[{"id":"call","model":"gpt-realtime-1.5","endedAtMs":95,"fragments":[{"id":"user","role":"user","text":"Delete me"}]},{"id":"keep","model":"gpt-live-1","endedAtMs":96,"fragments":[]}]"#;
+    store
+        .write(
+            vec![AppStorageEntry {
+                key: crate::voice_history::KEY.into(),
+                value: Some(captions.into()),
+            }],
+            false,
+        )
+        .unwrap();
+    delete_history_entry(&mut store, "call").unwrap();
+    delete_history_entry(&mut store, "call").unwrap();
+    drop(store);
+    let mut store = open(&path);
+    record(&mut store, started("call", 90, false)).unwrap();
+    record(&mut store, usage("call", "late", 2, Some(0.5), true)).unwrap();
+    record(
+        &mut store,
+        VoiceUsageEvent::Ended {
+            session_id: "call".into(),
+            ended_at_ms: 100,
+        },
+    )
+    .unwrap();
+    let summary = Ledger::load(&store).unwrap().summary(&query()).unwrap();
+    assert_eq!(summary.calls.len(), 1);
+    assert_eq!(summary.calls[0].identity.session_id, "keep");
+    assert_eq!(summary.totals["today"].known_estimated_usd, 0.0);
+    let saved = store.read(vec![crate::voice_history::KEY.into()]).unwrap();
+    let saved: serde_json::Value =
+        serde_json::from_str(saved[0].value.as_deref().unwrap()).unwrap();
+    assert_eq!(saved.as_array().unwrap().len(), 1);
+    assert_eq!(saved[0]["id"], "keep");
+}
+
+#[test]
+fn failed_history_deletion_does_not_partially_remove_usage() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = open(&dir.path().join("app.db"));
+    store.write(vec![], true).unwrap();
+    record(&mut store, started("call", 90, false)).unwrap();
+    store
+        .write(
+            vec![AppStorageEntry {
+                key: crate::voice_history::KEY.into(),
+                value: Some("broken".into()),
+            }],
+            false,
+        )
+        .unwrap();
+    assert!(delete_history_entry(&mut store, "call").is_err());
+    assert!(Ledger::load(&store).unwrap().calls.contains_key("call"));
+}

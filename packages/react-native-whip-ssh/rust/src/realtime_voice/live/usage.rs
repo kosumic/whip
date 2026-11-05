@@ -21,6 +21,12 @@ impl Default for Usage {
     }
 }
 impl Usage {
+    pub fn history_identity(&self) -> Option<&crate::app_database::VoiceUsageIdentity> {
+        self.persistence
+            .as_ref()
+            .map(NativeVoiceUsageSession::identity)
+    }
+
     pub fn start(voice: &str, preview: bool, global: bool) -> Result<Self, &'static str> {
         let mut usage = Self {
             persistence: Some(NativeVoiceUsageSession::start(

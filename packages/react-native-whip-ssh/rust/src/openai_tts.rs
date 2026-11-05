@@ -128,6 +128,25 @@ pub(super) fn speak(
                 MODEL,
                 voice,
             );
+            let mut transcript = crate::voice_history::Conversation::default();
+            transcript.assistant(text);
+            if let Ok(runtime) = crate::runtime() {
+                let identity = accounting.identity().clone();
+                let voice = voice.to_owned();
+                // History writes do not delay synthesis or audio playback.
+                runtime.spawn(async move {
+                    if let Err(error) = crate::voice_history::persist(
+                        Some(&identity),
+                        MODEL,
+                        Some(&voice),
+                        transcript.into_captions(),
+                    )
+                    .await
+                    {
+                        log::warn!("{error}");
+                    }
+                });
+            }
             accounting.record(
                 USAGE_ITEM_ID.into(),
                 VoiceUsageItem {

@@ -1,9 +1,10 @@
 import { appStorage } from './appStorage';
 import { settledPromise } from '../lib/promises';
 import { usageChartPeriod, type UsageChartPeriod, type UsageRange } from '../lib/usagePeriods';
+import type { VoiceTranscriptEntry } from '../lib/voiceTranscript';
 
 export type UsageProvider = 'local' | 'openai';
-export type UsageMode = 'turn_based' | 'realtime' | 'live' | 'tts';
+export type UsageMode = 'turn_based' | 'realtime' | 'live' | 'tts' | 'stt';
 export type UsageScope = 'agent' | 'global' | 'speech' | 'preview';
 export type AccountingStatus = 'live_estimate' | 'provider_usage_finalized' | 'incomplete';
 export type UsageMetric = 'input_text' | 'cached_input_text' | 'output_text' | 'input_audio' | 'cached_input_audio' | 'output_audio' | 'input_image' | 'cached_input_image' | 'other';
@@ -40,6 +41,9 @@ export type VoiceUsageEvent =
   | { kind: 'usage'; session_id: string; item_id: string; item: VoiceUsageItem }
   | { kind: 'ended'; session_id: string; ended_at_ms: number }
   | { kind: 'recover' };
+export type VoiceHistoryCommand =
+  | { kind: 'transcript'; session_id: string; fragments: readonly VoiceTranscriptEntry[] }
+  | { kind: 'delete'; session_id: string };
 export interface VoiceUsageCall extends VoiceUsageIdentity {
   ended_at_ms: number | null;
   active: boolean;
@@ -70,7 +74,7 @@ const nativeBridge = (): UsageBridge => require('react-native-whip-ssh') as Usag
  * Failed operations stay in this process's queue, in order, for a later retry. */
 export class VoiceUsageLedger {
   private recovered = false;
-  private pending: VoiceUsageEvent[] = [];
+  private pending: (VoiceUsageEvent | VoiceHistoryCommand)[] = [];
   private operations: Promise<unknown> = Promise.resolve();
   private readonly listeners = new Set<() => void>();
   constructor(private readonly bridge = nativeBridge, private readonly initialize = () => appStorage.initialize()) {}
@@ -91,7 +95,7 @@ export class VoiceUsageLedger {
       this.pending.shift();
     }
   }
-  record(event: VoiceUsageEvent): Promise<void> {
+  record(event: VoiceUsageEvent | VoiceHistoryCommand): Promise<void> {
     // Snapshot immediately: adapters must not mutate a pending usage report.
     this.pending.push(JSON.parse(JSON.stringify(event)) as VoiceUsageEvent);
     return this.enqueue(async () => {

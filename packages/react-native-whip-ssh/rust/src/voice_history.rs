@@ -1,5 +1,7 @@
-//! One bounded history for Realtime and Live; Local stays in agent history.
-use crate::app_database::{AppStorageEntry, read_app_data, write_app_data};
+//! Bounded call transcripts and speech text, separate from accounting and audio.
+use crate::app_database::{
+    AppStorageEntry, VoiceUsageIdentity, VoiceUsageMode, read_app_data, write_app_data,
+};
 use serde::{Deserialize, Serialize};
 use std::{collections::VecDeque, sync::LazyLock, time::Duration};
 
@@ -8,6 +10,7 @@ pub(crate) const LEGACY_LIVE_KEY: &str = "whip.voice.live.transcripts";
 pub(crate) const LOCAL_MODEL: &str = "local";
 const LEGACY_LIVE_MODEL: &str = "gpt-live-1";
 const MAX_CALLS: usize = 20;
+const MAX_SPEECH_REQUESTS: usize = 100;
 const MAX_MESSAGES: usize = 64;
 const MAX_TEXT: usize = 16 * 1024;
 const MAX_BYTES: usize = 128 * 1024;
@@ -17,7 +20,8 @@ const USER: &str = "user";
 const ASSISTANT: &str = "assistant";
 const MAX_EVENT_DETAIL: usize = 4096;
 // Serialize read/append/write across call teardown and replacements.
-static WRITES: LazyLock<tokio::sync::Mutex<()>> = LazyLock::new(|| tokio::sync::Mutex::new(()));
+pub(crate) static WRITES: LazyLock<tokio::sync::Mutex<()>> =
+    LazyLock::new(|| tokio::sync::Mutex::new(()));
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -136,7 +140,6 @@ impl Conversation {
         }
         self.trim();
     }
-    #[cfg(test)]
     pub fn into_captions(self) -> Vec<Caption> {
         self.messages.into()
     }
@@ -209,6 +212,8 @@ struct SavedCall {
     model: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     voice: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    usage: Option<VoiceUsageIdentity>,
     fragments: Vec<Caption>,
     ended_at_ms: u64,
 }
@@ -225,7 +230,37 @@ fn append(
     legacy: Option<&str>,
     call: SavedCall,
 ) -> Result<String, &'static str> {
-    let mut calls: VecDeque<SavedCall> = if let Some(existing) = existing {
+    let mut calls = load_calls(existing, legacy)?;
+    calls.retain(|previous| previous.id != call.id);
+    calls.push_back(call);
+    calls.make_contiguous().sort_by_key(|call| call.ended_at_ms);
+    let mut speech = 0;
+    let mut conversations = 0;
+    // Speech requests must not evict saved conversations.
+    let mut calls: Vec<_> = calls
+        .into_iter()
+        .rev()
+        .filter(|call| {
+            let (count, limit) = if call.usage.as_ref().is_some_and(|usage| {
+                matches!(usage.mode, VoiceUsageMode::Tts | VoiceUsageMode::Stt)
+            }) {
+                (&mut speech, MAX_SPEECH_REQUESTS)
+            } else {
+                (&mut conversations, MAX_CALLS)
+            };
+            *count += 1;
+            *count <= limit
+        })
+        .collect();
+    calls.reverse();
+    serde_json::to_string(&calls).map_err(|_| SAVE_ERROR)
+}
+
+fn load_calls(
+    existing: Option<&str>,
+    legacy: Option<&str>,
+) -> Result<VecDeque<SavedCall>, &'static str> {
+    Ok(if let Some(existing) = existing {
         serde_json::from_str(existing).map_err(|_| SAVE_ERROR)?
     } else {
         let old: Vec<LegacyCall> = legacy
@@ -238,30 +273,51 @@ fn append(
                 id: call.id,
                 model: LEGACY_LIVE_MODEL.into(),
                 voice: None,
+                usage: None,
                 fragments: call.fragments,
                 ended_at_ms: call.ended_at_ms,
             })
             .collect()
-    };
-    calls.retain(|previous| previous.id != call.id && previous.model != LOCAL_MODEL);
-    if call.model != LOCAL_MODEL {
-        calls.push_back(call);
-    }
-    calls.make_contiguous().sort_by_key(|call| call.ended_at_ms);
-    while calls.len() > MAX_CALLS {
-        calls.pop_front();
-    }
+    })
+}
+
+pub(crate) fn remove(
+    existing: Option<&str>,
+    legacy: Option<&str>,
+    id: &str,
+) -> Result<String, &'static str> {
+    let mut calls = load_calls(existing, legacy)?;
+    calls.retain(|call| call.id != id);
     serde_json::to_string(&calls).map_err(|_| SAVE_ERROR)
 }
 
 pub(crate) async fn persist(
+    identity: Option<&VoiceUsageIdentity>,
     model: &str,
     voice: Option<&str>,
-    fragments: Vec<Caption>,
+    mut fragments: Vec<Caption>,
 ) -> Result<(), &'static str> {
-    if model == LOCAL_MODEL || fragments.is_empty() {
+    if fragments.is_empty() {
         return Ok(());
     }
+    if fragments
+        .iter()
+        .any(|fragment| !matches!(fragment.role.as_str(), USER | ASSISTANT))
+    {
+        return Err(SAVE_ERROR);
+    }
+    for fragment in &mut fragments {
+        fragment.text.truncate(boundary(&fragment.text, MAX_TEXT));
+        fragment.event = fragment.event.take().map(Event::bounded);
+    }
+    let mut bytes = 0;
+    fragments.reverse();
+    fragments.retain(|fragment| {
+        bytes += fragment.text.len() + fragment.event.as_ref().map_or(0, Event::bytes);
+        bytes <= MAX_BYTES
+    });
+    fragments.truncate(MAX_MESSAGES);
+    fragments.reverse();
     // Snapshot the end time before waiting for another call's database write.
     let ended_at_ms = u64::try_from(
         std::time::SystemTime::now()
@@ -272,6 +328,13 @@ pub(crate) async fn persist(
     .unwrap_or(u64::MAX);
     tokio::time::timeout(SAVE_TIMEOUT, async {
         let _write = WRITES.lock().await;
+        if let Some(identity) = identity
+            && crate::app_database::voice_activity_deleted(identity.session_id.clone())
+                .await
+                .map_err(|_| SAVE_ERROR)?
+        {
+            return Ok(());
+        }
         let entries = read_app_data(vec![KEY.into(), LEGACY_LIVE_KEY.into()])
             .await
             .map_err(|_| SAVE_ERROR)?;
@@ -287,9 +350,13 @@ pub(crate) async fn persist(
             existing,
             legacy,
             SavedCall {
-                id: uuid::Uuid::new_v4().to_string(),
+                id: identity.map_or_else(
+                    || uuid::Uuid::new_v4().to_string(),
+                    |call| call.session_id.clone(),
+                ),
                 model: model.into(),
                 voice: voice.map(str::to_owned),
+                usage: identity.cloned(),
                 fragments,
                 ended_at_ms,
             },
@@ -315,6 +382,7 @@ mod tests {
             id: index.to_string(),
             model: model.into(),
             voice: None,
+            usage: None,
             fragments: conversation.into_captions(),
             ended_at_ms: index as u64,
         }
@@ -366,13 +434,55 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn local_calls_are_not_retained_in_saved_voice_history()
+    fn local_calls_are_retained_alongside_cloud_transcripts()
     -> Result<(), Box<dyn std::error::Error>> {
         let saved = append(None, None, call(1, "gpt-live-1"))?;
         let saved = append(Some(&saved), None, call(2, LOCAL_MODEL))?;
         let calls: Vec<SavedCall> = serde_json::from_str(&saved)?;
-        assert_eq!(calls.len(), 1);
+        assert_eq!(calls.len(), 2);
         assert_eq!(calls[0].model, "gpt-live-1");
+        assert_eq!(calls[1].model, LOCAL_MODEL);
+        Ok(())
+    }
+
+    #[test]
+    fn deletion_preserves_unrelated_and_legacy_captions() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let legacy = r#"[{"id":"old","endedAtMs":0,"fragments":[{"id":"caption","role":"user","text":"hello"}]}]"#;
+        let removed = remove(None, Some(legacy), "old")?;
+        assert_eq!(removed, "[]");
+        assert_eq!(remove(Some(&removed), Some(legacy), "old")?, "[]");
+        let saved = append(None, None, call(1, "gpt-live-1"))?;
+        let saved = append(Some(&saved), None, call(2, LOCAL_MODEL))?;
+        let removed = remove(Some(&saved), None, "1")?;
+        let calls: Vec<SavedCall> = serde_json::from_str(&removed)?;
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].id, "2");
+        Ok(())
+    }
+
+    #[test]
+    fn speech_text_retention_does_not_evict_conversations() -> Result<(), Box<dyn std::error::Error>>
+    {
+        use crate::app_database::{VoiceUsageProvider, VoiceUsageScope};
+        let mut saved = append(None, None, call(0, "gpt-live-1"))?;
+        for index in 1..=MAX_SPEECH_REQUESTS + 1 {
+            let mut speech = call(index, LOCAL_MODEL);
+            speech.usage = Some(VoiceUsageIdentity {
+                session_id: speech.id.clone(),
+                provider: VoiceUsageProvider::Local,
+                mode: VoiceUsageMode::Stt,
+                model: None,
+                voice: None,
+                scope: VoiceUsageScope::Speech,
+                started_at_ms: index as u64,
+            });
+            saved = append(Some(&saved), None, speech)?;
+        }
+        let calls: Vec<SavedCall> = serde_json::from_str(&saved)?;
+        assert_eq!(calls.len(), MAX_SPEECH_REQUESTS + 1);
+        assert_eq!(calls[0].id, "0");
+        assert_eq!(calls[1].id, "2");
         Ok(())
     }
 

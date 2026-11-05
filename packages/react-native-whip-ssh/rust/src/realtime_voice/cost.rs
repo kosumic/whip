@@ -36,6 +36,12 @@ pub(super) struct CurrentChat {
 }
 
 impl CurrentChat {
+    pub(super) fn history_identity(&self) -> Option<&crate::app_database::VoiceUsageIdentity> {
+        self.persistence
+            .as_ref()
+            .map(NativeVoiceUsageSession::identity)
+    }
+
     pub(super) fn new(model: &'static Model) -> Self {
         Self {
             model,
