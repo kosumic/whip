@@ -3,6 +3,7 @@ import { View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { hasOpenAiVoiceKey, onOpenAiVoiceCredentialChange, removeOpenAiVoiceKey, saveOpenAiVoiceKey } from '../services/openAiVoiceCredentials';
 import { GlassButton } from './GlassControls';
+import { DetailsTitle } from './SettingsDetails';
 import { Input } from './ui/input';
 import { Text } from './ui/text';
 
@@ -16,6 +17,7 @@ export function OpenAiVoiceKeySetting({ beforeUpdate, onStatusChange }: Props) {
   const { t } = useTranslation();
   const [key, setKey] = useState('');
   const [saved, setSaved] = useState<boolean>();
+  const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
   const mounted = useRef(false);
@@ -45,7 +47,10 @@ export function OpenAiVoiceKeySetting({ beforeUpdate, onStatusChange }: Props) {
       await beforeUpdate?.();
       if (remove) await removeOpenAiVoiceKey();
       else await saveOpenAiVoiceKey(draft);
-      if (mounted.current) setSaved(!remove);
+      if (mounted.current) {
+        setSaved(!remove);
+        setEditing(false);
+      }
     } catch {
       // Native exceptions may include arguments; never display or log them.
       if (mounted.current) setError(true);
@@ -53,17 +58,20 @@ export function OpenAiVoiceKeySetting({ beforeUpdate, onStatusChange }: Props) {
   };
 
   return <View className="gap-2">
-    <Text className="text-sm font-medium">{t('voiceProvider.apiKey')}</Text>
-    <Text className="text-xs text-muted-foreground">{t('openai.sharedKey')}</Text>
-    <Text className="text-xs text-muted-foreground">{t('voiceProvider.byok')}</Text>
-    <Text accessibilityLiveRegion="polite" className="text-xs text-muted-foreground">{t(saved ? 'voiceProvider.keySaved' : 'voiceProvider.keyNotSaved')}</Text>
-    <Input secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete="off" textContentType="none"
-      accessibilityLabel={t('voiceProvider.apiKey')} placeholder={t('voiceProvider.keyPlaceholder')}
-      editable={!busy} value={key} onChangeText={setKey} />
-    <View className="flex-row gap-2">
-      <GlassButton disabled={busy || !key.trim()} onPress={() => { void update(false); }}><Text>{t('common.save')}</Text></GlassButton>
-      <GlassButton disabled={busy || !saved} onPress={() => { void update(true); }}><Text>{t('voiceProvider.removeKey')}</Text></GlassButton>
-    </View>
+    <DetailsTitle title={t('voiceProvider.apiKey')} titleClassName="text-sm font-medium"
+      copy={`${t('openai.sharedKey')}\n\n${t('voiceProvider.byok')}`} />
+    {saved && !editing ? <GlassButton variant="secondary" onPress={() => setEditing(true)}>
+      <Text>{t('voiceProvider.keySaved')}</Text>
+    </GlassButton> : <>
+      <Text accessibilityLiveRegion="polite" className="text-xs text-muted-foreground">{t(saved ? 'voiceProvider.keySaved' : 'voiceProvider.keyNotSaved')}</Text>
+      <Input secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete="off" textContentType="none"
+        accessibilityLabel={t('voiceProvider.apiKey')} placeholder={t('voiceProvider.keyPlaceholder')}
+        editable={!busy} value={key} onChangeText={setKey} />
+      <View className="flex-row gap-2">
+        <GlassButton disabled={busy || !key.trim()} onPress={() => { void update(false); }}><Text>{t(saved ? 'voiceProvider.replaceKey' : 'common.save')}</Text></GlassButton>
+        {saved && <GlassButton disabled={busy} onPress={() => { void update(true); }}><Text>{t('voiceProvider.removeKey')}</Text></GlassButton>}
+      </View>
+    </>}
     {error && <Text accessibilityRole="alert" className="text-xs text-destructive">{t('voiceProvider.credentialError')}</Text>}
   </View>;
 }

@@ -120,6 +120,7 @@ export const ja = {
   "voiceProvider.keyNotSaved": "API キーは未保存",
   "voiceProvider.keyPlaceholder": "API キーを入力または置換",
   "voiceProvider.removeKey": "API キーを削除",
+  "voiceProvider.replaceKey": "API キーを置換",
   "voiceProvider.credentialError": "認証情報の更新または参照ができませんでした。再試行してください。",
   'voiceChat.vadSensitivity': "VAD感度",
   'voiceChat.vadSensitivityDescription': "感度を上げると小さな声を検出しやすくなります。下げると周囲の雑音を拾いにくくなります。音声チャットと応答の割り込みに適用されます。",

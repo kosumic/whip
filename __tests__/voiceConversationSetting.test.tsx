@@ -24,6 +24,7 @@ jest.mock('react-i18next', () => {
   return { useTranslation: () => ({ t }) };
 });
 jest.mock('../src/components/GlassControls', () => ({ GlassButton: 'GlassButton' }));
+jest.mock('../src/components/SettingsDetails', () => ({ DetailsTitle: 'DetailsTitle' }));
 jest.mock('../src/components/ui/input', () => ({ Input: 'Input' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
 jest.mock('../src/components/SpeechVoicePicker', () => ({ SpeechVoicePicker: 'SpeechVoicePicker' }));
@@ -198,15 +199,41 @@ test('preview failures display a translated error without native arguments', asy
 });
 
 test('saving a key clears the masked draft, never renders saved credentials, and supports removal', async () => {
+  expect(renderer.root.findByProps({ title: 'voiceProvider.apiKey' }).props.copy).toBe('openai.sharedKey\n\nvoiceProvider.byok');
+  expect(renderer.root.findAll(node => node.type === Text && node.props.children === 'voiceProvider.byok')).toHaveLength(0);
   await act(async () => pressText('voiceProvider.openai'));
   const input = () => renderer.root.findByProps({ accessibilityLabel: 'voiceProvider.apiKey' });
   expect(input().props.secureTextEntry).toBe(true);
+  expect(renderer.root.findAll(node => node.type === Text && node.props.children === 'voiceProvider.removeKey')).toHaveLength(0);
   await act(async () => input().props.onChangeText('sk-test-secret'));
   await act(async () => pressText('common.save'));
   expect(saveOpenAiVoiceKey).toHaveBeenCalledWith('sk-test-secret');
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'voiceProvider.apiKey' })).toHaveLength(0);
+  expect(JSON.stringify(renderer.toJSON())).not.toContain('sk-test-secret');
+  await act(async () => pressText('voiceProvider.keySaved'));
   expect(input().props.value).toBe('');
   await act(async () => pressText('voiceProvider.removeKey'));
   expect(removeOpenAiVoiceKey).toHaveBeenCalledTimes(1);
+  expect(input().props.value).toBe('');
+  expect(renderer.root.findAll(node => node.type === Text && node.props.children === 'voiceProvider.removeKey')).toHaveLength(0);
+});
+
+test('a saved key starts collapsed and can be replaced through its status button', async () => {
+  jest.mocked(hasOpenAiVoiceKey).mockResolvedValue(true);
+  await act(async () => renderer.update(<Harness key="saved" />));
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'voiceProvider.apiKey' })).toHaveLength(0);
+  expect(renderer.root.findAll(node => node.type === Text && node.props.children === 'voiceProvider.removeKey')).toHaveLength(0);
+  await act(async () => pressText('voiceProvider.keySaved'));
+  const input = renderer.root.findByProps({ accessibilityLabel: 'voiceProvider.apiKey' });
+  expect(input.props.value).toBe('');
+  expect(renderer.root.findAll(node => node.type === Text && node.props.children === 'voiceProvider.removeKey')).toHaveLength(1);
+  await act(async () => pressText('voiceProvider.replaceKey'));
+  expect(saveOpenAiVoiceKey).not.toHaveBeenCalled();
+  await act(async () => input.props.onChangeText('sk-replacement-secret'));
+  await act(async () => pressText('voiceProvider.replaceKey'));
+  expect(saveOpenAiVoiceKey).toHaveBeenCalledWith('sk-replacement-secret');
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'voiceProvider.apiKey' })).toHaveLength(0);
+  expect(JSON.stringify(renderer.toJSON())).not.toContain('sk-replacement-secret');
 });
 
 test('credential failures clear drafts and show a generic error without the secret', async () => {

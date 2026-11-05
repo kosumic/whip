@@ -122,6 +122,7 @@ export const fr = {
   "voiceProvider.keyNotSaved": "Aucune clé enregistrée",
   "voiceProvider.keyPlaceholder": "Saisir ou remplacer la clé",
   "voiceProvider.removeKey": "Supprimer la clé API",
+  "voiceProvider.replaceKey": "Remplacer la clé API",
   "voiceProvider.credentialError": "Impossible de modifier ou de consulter les identifiants. Réessayez.",
   'voiceChat.vadSensitivity': "Sensibilité VAD",
   'voiceChat.vadSensitivityDescription': "Une sensibilité élevée détecte les voix plus douces. Une sensibilité faible filtre davantage le bruit ambiant. S’applique au chat vocal et à l’interruption des réponses.",

@@ -120,6 +120,7 @@ export const zhHant: Record<string, string> = {
   "voiceProvider.keyNotSaved": "尚未儲存 API 金鑰",
   "voiceProvider.keyPlaceholder": "輸入或替換 API 金鑰",
   "voiceProvider.removeKey": "刪除 API 金鑰",
+  "voiceProvider.replaceKey": "取代 API 金鑰",
   "voiceProvider.credentialError": "無法更新或存取 API 憑證。請重試。",
   'voiceChat.vadSensitivity': "VAD 靈敏度",
   'voiceChat.vadSensitivityDescription': "提高靈敏度可偵測更輕的說話聲，降低靈敏度可過濾更多背景噪音。適用於語音聊天和打斷回覆。",

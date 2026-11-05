@@ -120,6 +120,7 @@ export const es = {
   "voiceProvider.keyNotSaved": "No hay ninguna clave guardada",
   "voiceProvider.keyPlaceholder": "Introduce o reemplaza la clave",
   "voiceProvider.removeKey": "Eliminar clave de API",
+  "voiceProvider.replaceKey": "Reemplazar clave de API",
   "voiceProvider.credentialError": "No se pudo actualizar o acceder a la credencial. Inténtalo de nuevo.",
   'voiceChat.vadSensitivity': "Sensibilidad de VAD",
   'voiceChat.vadSensitivityDescription': "Una sensibilidad alta detecta voces más suaves. Una sensibilidad baja filtra más ruido de fondo. Se aplica al chat de voz y a la interrupción de respuestas.",

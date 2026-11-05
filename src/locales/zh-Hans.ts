@@ -120,6 +120,7 @@ export const zhHans = {
   "voiceProvider.keyNotSaved": "未保存 API 密钥",
   "voiceProvider.keyPlaceholder": "输入或替换 API 密钥",
   "voiceProvider.removeKey": "删除 API 密钥",
+  "voiceProvider.replaceKey": "替换 API 密钥",
   "voiceProvider.credentialError": "无法更新或访问 API 凭据。请重试。",
   'voiceChat.vadSensitivity': "VAD 灵敏度",
   'voiceChat.vadSensitivityDescription': "提高灵敏度可检测更轻的说话声，降低灵敏度可过滤更多背景噪音。适用于语音聊天和打断回复。",

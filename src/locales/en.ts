@@ -110,6 +110,7 @@ export const en = {
   'voiceProvider.keyNotSaved': 'No API key saved',
   'voiceProvider.keyPlaceholder': 'Enter or replace API key',
   'voiceProvider.removeKey': 'Remove API key',
+  'voiceProvider.replaceKey': 'Replace API key',
   'voiceProvider.credentialError': 'Could not update or access the API credential. Please try again.',
   'voiceChat.vadSensitivity': "VAD sensitivity",
   'voiceChat.vadSensitivityDescription': "Higher sensitivity picks up softer speech. Lower sensitivity rejects more background noise. Applies to voice chat and reply interruption.",

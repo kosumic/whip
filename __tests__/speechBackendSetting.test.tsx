@@ -19,6 +19,7 @@ jest.mock('react-i18next', () => ({ useTranslation: () => ({
 }) }));
 jest.mock('../src/i18n', () => ({ deviceLanguage: () => 'en' }));
 jest.mock('../src/components/GlassControls', () => ({ GlassButton: 'GlassButton' }));
+jest.mock('../src/components/SettingsDetails', () => ({ DetailsTitle: 'DetailsTitle' }));
 jest.mock('../src/components/ui/input', () => ({ Input: 'Input' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
 jest.mock('../src/components/ui/icon', () => ({ Icon: 'Icon' }));
@@ -97,6 +98,8 @@ test('Voice groups call and speech providers while OpenAI keeps its shared key c
   expect(openai.findAllByType(SpeechVoicePicker)).toHaveLength(1);
   expect(openai.findAllByType(VoiceConversationSetting)).toHaveLength(1);
   expect(openai.findAll(node => node.props.role === 'radio')).toHaveLength(0);
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'voiceProvider.apiKey' })).toHaveLength(0);
+  await act(async () => press('voiceProvider.keySaved'));
   expect(renderer.root.findAllByProps({ accessibilityLabel: 'voiceProvider.apiKey' })).toHaveLength(1);
   expect(openai.findByProps({ accessibilityLabel: 'voiceProvider.apiKey' }).props.secureTextEntry).toBe(true);
   expect(local.findAllByProps({ accessibilityLabel: 'speech.previewTextLabel' })).toHaveLength(1);
@@ -153,7 +156,7 @@ test('saving one shared API key enables both speech and conversation previews an
   await act(async () => input().props.onChangeText('sk-speech-test'));
   await act(async () => press('common.save'));
   expect(saveOpenAiVoiceKey).toHaveBeenCalledWith('sk-speech-test');
-  expect(input().props.value).toBe('');
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'voiceProvider.apiKey' })).toHaveLength(0);
   expect(openaiCard().props.accessibilityLabel).toBe('openai.title, voiceProvider.keySaved');
   expect(renderer.root.findByProps({ accessibilityLabel: 'voiceProvider.preview' }).props.disabled).toBe(false);
   expect(providerButton('openai').props.disabled).toBe(false);
