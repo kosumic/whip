@@ -285,6 +285,41 @@ test('unifies saved captions with usage rows and opens the matching transcript b
   expect(renderer.root.findAllByType(VoiceHistoryDetails)).toHaveLength(0);
 });
 
+test('Activity and Cost show recent history when relative date formatting is unavailable on the device', async () => {
+  const relativeTimeFormat = Object.getOwnPropertyDescriptor(Intl, 'RelativeTimeFormat')!;
+  Object.defineProperty(Intl, 'RelativeTimeFormat', { ...relativeTimeFormat, value: undefined });
+  try {
+    const today = new Date();
+    today.setHours(10, 0, 0, 0);
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const lastWeek = new Date(today);
+    lastWeek.setDate(lastWeek.getDate() - 7);
+    jest.mocked(loadVoiceHistory).mockResolvedValue([today, yesterday, lastWeek].map((date, index) => ({
+      id: `saved-${index}`, model: 'gpt-live-1', endedAtMs: date.getTime(),
+      fragments: [{ id: `text-${index}`, role: 'user' as const, text: 'Saved text' }],
+    })));
+    jest.mocked(voiceUsageLedger.summary).mockResolvedValue({ ...empty, calls: [{
+      session_id: 'recent-call', provider: 'openai', mode: 'realtime', scope: 'agent',
+      model: 'gpt-realtime-1.5', voice: 'marin', started_at_ms: yesterday.getTime(),
+      ended_at_ms: today.getTime(), active: false, estimated_usd: 0.1,
+      remote_agent_estimated_usd: null, status: 'provider_usage_finalized', items: {},
+    }] });
+    await act(async () => press('voiceUsage.title'));
+    await act(async () => press('usage.lifetime'));
+    await act(async () => press('voiceUsage.activity'));
+    expect(renderer.root.findAllByType(VoiceHistoryRow)).toHaveLength(4);
+    for (const date of [today, yesterday, lastWeek]) {
+      expect(visible()).toContain(date.toLocaleDateString('en'));
+    }
+    await act(async () => press('voiceUsage.cost'));
+    expect(renderer.root.findAllByType(VoiceHistoryRow)).toHaveLength(4);
+    expect(visible()).toContain('$0.1000');
+  } finally {
+    Object.defineProperty(Intl, 'RelativeTimeFormat', relativeTimeFormat);
+  }
+});
+
 test('a failed delete preserves its entry and a successful retry removes the saved text', async () => {
   const saved = { id: 'legacy', model: 'gpt-live-1', endedAtMs: Date.now(),
     fragments: [{ id: 'heard', role: 'user' as const, text: 'Saved text' }] };
