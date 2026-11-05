@@ -49,7 +49,7 @@ function subscribe(listener: () => void): () => void {
 const noSubscription = () => () => {};
 const empty = () => null;
 
-/** Only mounted, visible prose subscribes; reading never moves the viewport. */
+/** Mounted prose in the visible chat subscribes; reading never moves the viewport. */
 export function useSpeechCaption(source?: SpeechCaptionSource): SpeechCaption | null {
   return useSyncExternalStore(source ? subscribe : noSubscription, () =>
     source && current?.bindingTokens.includes(source.bindingToken) && source.hostId === current.hostId && source.paneId === current.paneId

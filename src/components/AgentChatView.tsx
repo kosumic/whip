@@ -759,7 +759,6 @@ export function AgentChatView({
     savedViewport?.followEnd ?? true,
   );
   const [viewportReady, setViewportReady] = useState(false);
-  const [visibleBlocks, setVisibleBlocks] = useState<ReadonlySet<string>>(() => new Set());
   const { scrolling, beginScroll, endScroll, resetScroll } = useScrollActivity();
   // These refs belong to this binding/generation, and survive warm reuse.
   const savedViewportRef = useRef<SavedChatViewport | null>(
@@ -1453,10 +1452,6 @@ export function AgentChatView({
   }: {
     viewableItems: ViewToken<ChatRow>[];
   }) => {
-    setVisibleBlocks(previous => {
-      const next = new Set(viewableItems.filter(token => token.isViewable).map(token => token.item.id));
-      return previous.size === next.size && [...next].every(id => previous.has(id)) ? previous : next;
-    });
     updatePinnedPrompt(scrollGeometryRef.current.offset);
     const currentLatestBlockId = latestBlockIdRef.current;
     initialViewportRef.current.viewableLatestBlockId =
@@ -1567,7 +1562,7 @@ export function AgentChatView({
               key={item.id}
               block={block}
               active={active}
-              visible={viewportVisible && visibleBlocks.has(item.id)}
+              visible={viewportVisible}
               expanded={expandedBlocks.has(item.id)}
               searchSelected={search.match?.documentId === item.id}
               searchQuery={searchOpen && search.ready ? search.query.trim() : ''}

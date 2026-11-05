@@ -151,6 +151,18 @@ index b6b38b4c..108bbce3 100644
              postToMain(renderId) { applyRenderedSegments(emptyList(), false) }
              return@execute
            }
+@@ -431,6 +487,11 @@ class EnrichedMarkdown(
+
+     val topologyChanged = applySegments(renderedSegments, reset)
+
++    // Async text updates can redraw only the child's hardware render node.
++    // Apply caption spans now instead of waiting for the parent to draw again.
++    speechPresentation.apply(segmentViews, readAloudConfig)
++    invalidate()
++
+     // A just-closed block has unchanged content, so the reconciler reuses it
+     // without an update; sync pending here to trigger its deferred highlight.
+     segmentViews.forEachIndexed { index, view ->
 diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdownManager.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdownManager.kt
 index 61eed4b3..3de9f3e3 100644
 --- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdownManager.kt

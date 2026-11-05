@@ -105,6 +105,48 @@ class SpeechCaptionTest {
     }
   }
 
+  @androidx.test.filters.SdkSuppress(minSdkVersion = 29)
+  @Test fun readAloudWordAdvancesInHardwareRenderedResponse() {
+    lateinit var root: EnrichedMarkdown
+    lateinit var window: android.widget.PopupWindow
+    main {
+      val anchor = android.view.inspector.WindowInspector.getGlobalWindowViews().firstOrNull { it.hasWindowFocus() }
+      assertNotNull("Open Whip before running this rendering regression", anchor)
+      DisplayMetricsHolder.initDisplayMetricsIfNotInitialized(context)
+      root = EnrichedMarkdown(context).apply {
+        id = View.generateViewId()
+        setMarkdownStyle(style())
+        setMd4cFlags(Md4cFlags(highlight = true, latexMath = false))
+        readAloud = JSONObject().put("phase", "current").put("original", ORIGINAL)
+          .put("heard", "#ffffff").put("upcoming", DIM).put("weight", "600").toString()
+        setMarkdownContent(MARKED)
+        commitProps()
+      }
+      window = android.widget.PopupWindow(root, 800, 240, false)
+      window.showAtLocation(anchor, android.view.Gravity.TOP or android.view.Gravity.START, 0, 100)
+    }
+    fun awaitPaint(message: String, matches: (TextView) -> Boolean) {
+      val deadline = SystemClock.elapsedRealtime() + 3_000
+      var matched = false
+      while (!matched && SystemClock.elapsedRealtime() < deadline) {
+        main { matched = texts(root).firstOrNull { it.text.toString().trim() == ORIGINAL }?.let(matches) == true }
+        if (!matched) SystemClock.sleep(20)
+      }
+      assertTrue(message, matched)
+    }
+    try {
+      awaitPaint("Initial upcoming words must be dim") { paintAt(it, 8).color == Color.parseColor(DIM) }
+      main { assertTrue("Exercise Android's hardware rendering", root.isHardwareAccelerated) }
+      SystemClock.sleep(200)
+      main { root.setMarkdownContent("One two ==three==."); root.commitProps() }
+      awaitPaint("The next word must become bright and semibold while the previous word returns to normal") {
+        paintAt(it, 8).color == Color.WHITE && paintAt(it, 8).typeface.weight >= 600 && paintAt(it, 4).typeface.weight < 600
+      }
+      main { root.readAloud = ""; root.setMarkdownContent(ORIGINAL); root.commitProps() }
+      awaitPaint("Stopping must restore normal styling") { paintAt(it, 8).color == Color.WHITE && paintAt(it, 8).typeface.weight < 600 }
+    } finally { main { window.dismiss(); root.cleanup() } }
+  }
+
   @Test fun manualPlaybackReportsOriginalResponseProgressAndCompletion() {
     val ready = CountDownLatch(1)
     val complete = CountDownLatch(1)

@@ -8,6 +8,7 @@ import { Fragment, Profiler, useState, type ReactElement } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
 import * as Haptics from 'expo-haptics';
 import { Linking } from 'react-native';
+import { chatSpeechHighlight } from 'react-native-whip-ssh';
 import { COPY_FEEDBACK_MS } from '../src/hooks/useCopyFeedback';
 import type { ChatReadAloudControl } from '../src/hooks/useChatReadAloud';
 import { ChatSpeechText } from '../src/components/ChatSpeechText';
@@ -38,6 +39,7 @@ import { SCROLL_IDLE_MS } from '../src/hooks/useScrollActivity';
 import { FLOATING_WARNING_BANNER_HEIGHT } from '../src/components/FloatingWarningBanner';
 
 const mockSearch = jest.fn<ChatSearchResults, [string]>();
+const mockCaptionListeners = new Set<(json: string) => void>();
 jest.mock('react-native-whip-ssh', () => ({ chatSpeechHighlight: jest.fn((content: string) => content) }));
 const mockSearchNavigate = jest.fn<ChatSearchResults, [boolean]>();
 const mockSearchSelect = jest.fn<ChatSearchResults, [number]>();
@@ -96,6 +98,11 @@ jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );
 jest.mock('react-native', () => ({
+  NativeModules: { HerdrBackground: {} },
+  DeviceEventEmitter: { addListener: (_name: string, listener: (json: string) => void) => {
+    mockCaptionListeners.add(listener);
+    return { remove: () => mockCaptionListeners.delete(listener) };
+  } },
   ActivityIndicator: 'ActivityIndicator',
   Keyboard: { dismiss: jest.fn() },
   Platform: { OS: 'android' },
@@ -340,14 +347,14 @@ test('each response footer places its read-aloud icon next to copy and selects t
   }
 });
 
-test('read-aloud captions follow the visible prose row and stop when it leaves the viewport', () => {
+test.each(['manual', 'automatic'])('mounted prose receives %s captions without a FlashList visibility report', playback => {
   const turn: TranscriptTurn = {
     ...TURN, status: 'idle',
     assistants: [{ id: 'reply', role: 'assistant', completedAt: 1, diffs: [],
       parts: [{ id: 'text', type: 'text', text: 'A visible response.' }] }],
   };
   const target = { agent: 'codex' as const, bindingToken: 'binding', hostId: 'host', paneId: 'pane', label: 'Codex' };
-  const readAloud: ChatReadAloudControl = { target, readingTurnId: turn.id, canRead: () => true, toggle: jest.fn() };
+  const readAloud: ChatReadAloudControl = { target, readingTurnId: playback === 'manual' ? turn.id : null, canRead: () => true, toggle: jest.fn() };
   const state = chatState([turn]);
   let renderer!: ReactTestRenderer;
   let rows!: ReactTestRenderer;
@@ -359,22 +366,33 @@ test('read-aloud captions follow the visible prose row and stop when it leaves t
     }); });
     act(() => { rows = create(renderedBlocks(renderer)); });
     expect(rows.root.findByType(ChatSpeechText).props.source).toBeUndefined();
-    const prose = flatList(renderer).props.data.find((row: ChatBlock) => row.type === 'part');
     const footer = finalBlock(renderer, turn);
     act(() => {
       chatViewport(renderer).props.onLayout({ nativeEvent: { layout: { height: 400 } } });
       flatList(renderer).props.onContentSizeChange(0, 1000);
       flatList(renderer).props.onScroll(scrollEvent(600, 1000));
-      flatList(renderer).props.onViewableItemsChanged({ viewableItems: [prose, footer].map(item => ({ item, isViewable: true })) });
+      // FlashList reports changes by index. A recycled/replaced prose row can
+      // already be on screen without receiving another viewability callback.
+      flatList(renderer).props.onViewableItemsChanged({ viewableItems: [{ item: footer, isViewable: true }] });
       flatList(renderer).props.onLoad();
     });
     act(() => rows.update(renderedBlocks(renderer)));
     expect(rows.root.findByType(ChatSpeechText).props.source).toEqual({
       bindingToken: target.bindingToken, hostId: target.hostId, paneId: target.paneId, messageId: 'reply', partId: 'text',
     });
-    act(() => { flatList(renderer).props.onViewableItemsChanged({ viewableItems: [{ item: footer, isViewable: true }] }); });
+    jest.mocked(chatSpeechHighlight).mockReturnValueOnce('A ==visible== response.');
+    act(() => {
+      const caption = JSON.stringify({
+        bindingTokens: [target.bindingToken], hostId: target.hostId, paneId: target.paneId,
+        messageId: 'reply', partId: 'text', id: 'speech', text: 'A visible response.', startUtf16: 0, spokenUtf16: 3,
+      });
+      for (const listener of mockCaptionListeners) listener(caption);
+    });
+    expect(rows.root.findByType('MarkdownText').props.content).toBe('A ==visible== response.');
+    act(() => renderer.update(chatView(state, false, undefined, readAloud)));
     act(() => rows.update(renderedBlocks(renderer)));
     expect(rows.root.findByType(ChatSpeechText).props.source).toBeUndefined();
+    expect(rows.root.findByType('MarkdownText').props.content).toBe('A visible response.');
   } finally { act(() => { rows?.unmount(); renderer?.unmount(); }); }
 });
 
