@@ -17,7 +17,7 @@ export const en = {
   "voiceUsage.speech": "Speech / preview",
   "voiceUsage.preview": "Voice preview",
   "voiceUsage.activityCount": "{{count}} calls / speech requests",
-  "voiceUsage.title": "Usage & costs",
+  "voiceUsage.title": "Usage & Costs",
   "voiceUsage.explanation": "Voice API estimates on this device, not invoices. Transcripts and speech text are saved on this device. History does not store audio or API keys.",
   "voiceUsage.remoteUnknown": "Backend model and remote coding-agent/API costs are unknown and excluded.",
   "voiceUsage.periodNote": "Calls are grouped by start date in local time. Weeks start on Monday.",
