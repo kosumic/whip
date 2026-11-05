@@ -1,235 +1,19 @@
-//! Agent-independent search over Rust-owned conversation snapshots.
-
-pub(crate) mod transcript;
-#[cfg(test)]
-mod transcript_tests;
-
-use std::sync::Arc;
-
-use parking_lot::Mutex;
-
+//! Whip's async owner and FFI registration for portable transcript search.
 use crate::agent_sessions::ids::TranscriptKey;
 use crate::agent_sessions::{AgentSessionError, AgentSessionManager};
 use crate::agent_transcript::AgentTranscriptKind;
 use crate::transcript_database::{TranscriptDatabase, TranscriptIdentity};
-
-const MAX_MATCHES: usize = 500;
-const CONTEXT_CHARS: usize = 48;
-
-pub(crate) struct ChatSearchDocument {
-    pub id: String,
-    pub text: String,
-    pub reveal: Vec<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
-pub struct ChatSearchMatch {
-    pub document_id: String,
-    /// List rows to expand before scrolling to the document.
-    pub reveal: Vec<String>,
-    /// Byte offset in the original document; identity only, never a JS string offset.
-    pub offset: u64,
-    pub before: String,
-    pub matched: String,
-    pub after: String,
-    pub leading: bool,
-    pub trailing: bool,
-}
-
-#[derive(Clone, Default, uniffi::Record)]
-pub struct ChatSearchResults {
-    pub query: String,
-    pub matches: Vec<ChatSearchMatch>,
-    pub selected: Option<u32>,
-    pub truncated: bool,
-}
-
-#[derive(Clone, uniffi::Record)]
-pub struct ChatSearchFocus {
-    pub document_id: String,
-    pub offset: u64,
-}
-
-pub(crate) struct Document {
-    pub source: ChatSearchDocument,
-    pub folded: String,
-    /// Only non-ASCII text needs a mapping from lowercase bytes to source bytes.
-    boundaries: Vec<(usize, usize)>,
-}
-
-impl From<ChatSearchDocument> for Document {
-    fn from(source: ChatSearchDocument) -> Self {
-        let mut folded = String::with_capacity(source.text.len());
-        let mut boundaries = Vec::new();
-        if source.text.is_ascii() {
-            folded = source.text.to_ascii_lowercase();
-        } else {
-            for (offset, character) in source.text.char_indices() {
-                boundaries.push((folded.len(), offset));
-                folded.extend(character.to_lowercase());
-            }
-            boundaries.push((folded.len(), source.text.len()));
-        }
-        Self {
-            source,
-            folded,
-            boundaries,
-        }
-    }
-}
-
-impl Document {
-    pub(crate) fn first_match(&self, needle: &str) -> Option<ChatSearchMatch> {
-        let start = self.folded.find(needle)?;
-        let (start, end) = self.source_range(start, start + needle.len());
-        Some(self.excerpt(start, end))
-    }
-    fn source_range(&self, start: usize, end: usize) -> (usize, usize) {
-        if self.boundaries.is_empty() {
-            return (start, end);
-        }
-        let first = self
-            .boundaries
-            .partition_point(|&(offset, _)| offset <= start)
-            - 1;
-        let last = self.boundaries.partition_point(|&(offset, _)| offset < end);
-        (self.boundaries[first].1, self.boundaries[last].1)
-    }
-
-    fn excerpt(&self, start: usize, end: usize) -> ChatSearchMatch {
-        let text = &self.source.text;
-        let before = text[..start]
-            .char_indices()
-            .rev()
-            .nth(CONTEXT_CHARS - 1)
-            .map_or(0, |(offset, _)| offset);
-        let after = text[end..]
-            .char_indices()
-            .nth(CONTEXT_CHARS)
-            .map_or(text.len(), |(offset, _)| end + offset);
-        ChatSearchMatch {
-            document_id: self.source.id.clone(),
-            reveal: self.source.reveal.clone(),
-            offset: start as u64,
-            before: text[before..start].to_owned(),
-            matched: text[start..end].to_owned(),
-            after: text[end..after].to_owned(),
-            leading: before > 0,
-            trailing: after < text.len(),
-        }
-    }
-}
+use agent_transcript_view::SearchState;
+#[cfg(test)]
+use agent_transcript_view::search::{CONTEXT_CHARS, ChatSearchDocument, MAX_MATCHES};
+pub use agent_transcript_view::{ChatSearchFocus, ChatSearchMatch, ChatSearchResults};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 #[derive(Default)]
-struct SearchState {
-    documents: Vec<Document>,
+struct SearchCache {
+    index: SearchState,
     revision: Option<u64>,
-    results: ChatSearchResults,
-}
-
-impl SearchState {
-    fn focus(&mut self, focus: ChatSearchFocus) -> ChatSearchResults {
-        let needle: String = self
-            .results
-            .query
-            .trim()
-            .chars()
-            .flat_map(char::to_lowercase)
-            .collect();
-        if needle.is_empty() {
-            return self.results.clone();
-        }
-        if let Some(index) = self
-            .results
-            .matches
-            .iter()
-            .position(|hit| hit.document_id == focus.document_id && hit.offset == focus.offset)
-        {
-            self.results.selected = u32::try_from(index).ok();
-        } else if let Some(document) = self
-            .documents
-            .iter()
-            .find(|doc| doc.source.id == focus.document_id)
-        {
-            let matched = document
-                .folded
-                .match_indices(&needle)
-                .find(|(start, _)| {
-                    document.source_range(*start, *start + needle.len()).0 as u64 == focus.offset
-                })
-                .map(|(start, _)| {
-                    let (start, end) = document.source_range(start, start + needle.len());
-                    document.excerpt(start, end)
-                })
-                .or_else(|| document.first_match(&needle));
-            if let Some(matched) = matched {
-                if let Some(index) = self.results.matches.iter().position(|hit| {
-                    hit.document_id == matched.document_id && hit.offset == matched.offset
-                }) {
-                    self.results.selected = u32::try_from(index).ok();
-                    return self.results.clone();
-                }
-                if self.results.matches.len() == MAX_MATCHES {
-                    self.results.matches.pop();
-                    self.results.truncated = true;
-                }
-                self.results.matches.push(matched);
-                self.results.selected = u32::try_from(self.results.matches.len() - 1).ok();
-            }
-        }
-        self.results.clone()
-    }
-    fn search(&mut self, query: String) -> ChatSearchResults {
-        let selected = (self.results.query == query)
-            .then(|| {
-                self.results
-                    .selected
-                    .and_then(|index| self.results.matches.get(index as usize))
-            })
-            .flatten()
-            .map(|hit| (hit.document_id.clone(), hit.offset));
-        // Use the same per-character mapping as documents (including expansions).
-        let needle = query
-            .trim()
-            .chars()
-            .flat_map(char::to_lowercase)
-            .collect::<String>();
-        let mut results = ChatSearchResults {
-            query,
-            ..ChatSearchResults::default()
-        };
-        if !needle.is_empty() {
-            'documents: for document in &self.documents {
-                let mut previous = None;
-                for (offset, matched) in document.folded.match_indices(&needle) {
-                    let range = document.source_range(offset, offset + matched.len());
-                    // Lowercase expansion can map several matches to the same character.
-                    if previous == Some(range) {
-                        continue;
-                    }
-                    previous = Some(range);
-                    if results.matches.len() == MAX_MATCHES {
-                        results.truncated = true;
-                        break 'documents;
-                    }
-                    results.matches.push(document.excerpt(range.0, range.1));
-                }
-            }
-        }
-        if !results.matches.is_empty() {
-            let index = selected
-                .and_then(|(id, offset)| {
-                    results
-                        .matches
-                        .iter()
-                        .position(|hit| hit.document_id == id && hit.offset == offset)
-                })
-                .unwrap_or(0);
-            results.selected = u32::try_from(index).ok();
-        }
-        self.results = results.clone();
-        results
-    }
 }
 
 enum SearchSource {
@@ -248,7 +32,7 @@ enum SearchSource {
 #[derive(uniffi::Object)]
 pub struct ChatSearchIndex {
     source: SearchSource,
-    state: Mutex<SearchState>,
+    state: Mutex<SearchCache>,
 }
 
 impl ChatSearchIndex {
@@ -279,7 +63,7 @@ impl ChatSearchIndex {
 
     #[cfg(test)]
     fn set_documents(&self, documents: Vec<ChatSearchDocument>) {
-        self.state.lock().documents = documents.into_iter().map(Document::from).collect();
+        self.state.lock().index.set_documents(documents);
     }
 }
 
@@ -309,7 +93,7 @@ impl ChatSearchIndex {
         focus: Option<ChatSearchFocus>,
     ) -> Result<ChatSearchResults, AgentSessionError> {
         if query.trim().is_empty() {
-            return Ok(self.state.lock().search(query));
+            return Ok(self.state.lock().index.search(query));
         }
         let uninitialized = self.state.lock().revision.is_none();
         let saved = if let SearchSource::Saved { database, identity } = &self.source
@@ -339,14 +123,11 @@ impl ChatSearchIndex {
                     SearchSource::Loaded => None,
                 };
                 if let Some(snapshot) = snapshot {
-                    state.documents = transcript::documents(&snapshot)
-                        .into_iter()
-                        .map(Document::from)
-                        .collect();
+                    state.index.restore(&snapshot);
                     state.revision = Some(snapshot.revision);
                 }
-                let result = state.search(query);
-                let result = focus.map_or(result, |focus| state.focus(focus));
+                let result = state.index.search(query);
+                let result = focus.map_or(result, |focus| state.index.focus(focus));
                 drop(state);
                 Ok(result)
             })
@@ -357,26 +138,11 @@ impl ChatSearchIndex {
     }
 
     pub fn navigate(&self, backwards: bool) -> ChatSearchResults {
-        let mut state = self.state.lock();
-        let count = state.results.matches.len();
-        if count > 0 {
-            let current = state.results.selected.unwrap_or(0) as usize;
-            let index = if backwards {
-                (current + count - 1) % count
-            } else {
-                (current + 1) % count
-            };
-            state.results.selected = u32::try_from(index).ok();
-        }
-        state.results.clone()
+        self.state.lock().index.navigate(backwards)
     }
 
     pub fn select(&self, index: u32) -> ChatSearchResults {
-        let mut state = self.state.lock();
-        if (index as usize) < state.results.matches.len() {
-            state.results.selected = Some(index);
-        }
-        state.results.clone()
+        self.state.lock().index.select(index)
     }
 }
 

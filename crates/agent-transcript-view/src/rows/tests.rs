@@ -1,42 +1,15 @@
 use serde_json::json;
 
 use super::*;
-use crate::{AgentFileDiff, AgentTranscriptKind};
+use agent_transcript_core::{AgentFileDiff, AgentTranscriptKind};
 
-fn message(id: &str, role: &str, parts: serde_json::Value) -> AgentTranscriptMessage {
-    serde_json::from_value(json!({ "id": id, "role": role, "parts": parts, "diffs": [] })).unwrap()
-}
-
-fn text(id: &str, value: &str) -> serde_json::Value {
-    json!({ "Text": { "id": id, "text": value, "timestamp_ms": null } })
-}
-
+#[path = "fixtures.rs"]
+mod fixtures;
+use fixtures::*;
 fn tool(id: &str, name: &str, status: &str) -> serde_json::Value {
     json!({ "Tool": { "id": id, "call_id": id, "tool": name, "timestamp_ms": null,
         "state": { "status": status, "input": [], "output": null, "error": null, "title": null,
             "started_at_ms": null, "completed_at_ms": null, "exit_code": null } } })
-}
-
-pub(super) fn fixture(count: usize) -> AgentTranscriptState {
-    let mut state = AgentTranscriptState::empty("session".into(), AgentTranscriptKind::Codex);
-    for index in 0..count {
-        let id = format!("m{index}");
-        state
-            .messages
-            .push(message(&id, "Assistant", json!([text("text", "Hello")])));
-        state.turns.push(AgentTranscriptTurn {
-            id: format!("t{index}"),
-            user_message_id: None,
-            assistant_message_ids: vec![id],
-            message_ids: vec![],
-            status: AgentTurnStatus::Idle,
-            started_at_ms: None,
-            completed_at_ms: None,
-            diffs: vec![],
-            details: None,
-        });
-    }
-    state
 }
 
 fn rows(state: &AgentTranscriptState, working: bool) -> Vec<AgentChatRow> {
@@ -484,7 +457,7 @@ fn search_uses_identical_ids_and_reveals_hidden_diffs_without_private_ids() {
         None,
         None,
     ));
-    let documents = crate::chat_search::transcript::documents(&state);
+    let documents = crate::search::transcript::documents(&state);
     let hit = documents
         .iter()
         .find(|document| document.text.contains("needle"))
@@ -525,7 +498,7 @@ fn repeated_part_ids_in_messages_and_turns_remain_unique_and_searchable() {
     );
     assert_eq!(projected[0].id, row_id(&["t0", "part", "m0", "text"]));
     assert_eq!(projected[1].id, row_id(&["t0", "part", "m0", "text", "1"]));
-    let documents = crate::chat_search::transcript::documents(&state);
+    let documents = crate::search::transcript::documents(&state);
     assert_eq!(
         documents
             .iter()

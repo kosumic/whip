@@ -104,10 +104,13 @@ for (const rustPackage of packages) {
     if (notice.name === 'turso') {
       notice.licenseText += `\n\n${await productionTransitiveNotices(rustPackage, 'turso')}`;
     }
+    if (notice.name === 'agent-transcript-view') {
+      notice.licenseText += `\n\n${await readFile(resolve(root, 'crates/agent-transcript-view/NOTICE'), 'utf8')}`;
+    }
     if (notice.name === 'herdr-protocol') {
       notice.licenseText += `\n\n${await readFile(resolve(root,'crates/herdr-protocol/NOTICE'),'utf8')}\n${await readFile(resolve(root,'crates/herdr-protocol/LICENSE-APACHE'),'utf8')}`;
     }
-    if (['audio-ingress', 'agent-browser-control', 'agent-transcript-core', 'herdr-protocol', 'native-credentials', 'whip-notify', 'whipair-protocol', 'tailcat-client', 'ptts', 'ptts-ffi', 'zip', 'rayon', 'reqwest', 'tract-onnx', 'rustfft', 'sonora', 'rubato'].includes(notice.name)) {
+    if (['audio-ingress', 'agent-browser-control', 'agent-transcript-core', 'agent-transcript-view', 'herdr-protocol', 'native-credentials', 'whip-notify', 'whipair-protocol', 'tailcat-client', 'ptts', 'ptts-ffi', 'zip', 'rayon', 'reqwest', 'tract-onnx', 'rustfft', 'sonora', 'rubato'].includes(notice.name)) {
       notice.licenseText += `\n\n${await productionTransitiveNotices(rustPackage, notice.name)}`;
     }
     const key = `${notice.name}@${notice.version}`;

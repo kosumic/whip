@@ -2,6 +2,9 @@
 //! transport, canonical reconciliation and UI painting are deliberately excluded.
 use super::*;
 use crate::AgentFileDiff;
+use crate::agent_transcript::*;
+#[path = "../../../../../crates/agent-transcript-view/src/rows/fixtures.rs"]
+mod fixtures;
 use crate::test_allocations::measured;
 
 fn wire_bytes(update: AgentChatRowUpdate) -> usize {
@@ -16,7 +19,7 @@ fn projection_benchmark() {
     const ITERATIONS: u64 = 500;
     let mut results = Vec::new();
     for turns in [100, 1_000, 2_500] {
-        let mut state = super::tests::fixture(turns);
+        let mut state = fixtures::fixture(turns);
         let ((mut projection, initial), initial_ns, initial_allocs, initial_allocated_bytes) =
             measured(|| {
                 let mut projection = RowProjection::default();
@@ -40,7 +43,7 @@ fn projection_benchmark() {
             let update = AgentTranscriptUpdate {
                 revision,
                 deltas: vec![AgentTranscriptDelta::MessageUpserted {
-                    index: row_index(turns - 1),
+                    index: u32::try_from(turns - 1).unwrap(),
                     message: last.clone(),
                 }],
             };
@@ -75,7 +78,7 @@ fn projection_benchmark() {
         projection.accept(&AgentTranscriptUpdate {
             revision: ITERATIONS + 1,
             deltas: vec![AgentTranscriptDelta::TurnUpserted {
-                index: row_index(turns - 1),
+                index: u32::try_from(turns - 1).unwrap(),
                 turn: turn.clone(),
             }],
         });

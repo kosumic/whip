@@ -757,6 +757,9 @@ and `whip-notify`
 each carry their own `LICENSE` file. Original third-party attribution and license
 terms are retained.
 
+`agent-transcript-view`, extracted from Whip’s row and search implementation,
+uses MIT and retains the OpenCode attribution in its `NOTICE`. Its parser dependency `agent-transcript-core` remains MIT.
+
 Third-party work remains subject to its original terms; see [Third-Party Notices](THIRD_PARTY_NOTICES.md).
 
 

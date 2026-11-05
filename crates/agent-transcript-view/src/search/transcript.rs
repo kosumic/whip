@@ -2,13 +2,13 @@
 
 use std::collections::HashMap;
 
-use crate::agent_transcript::{
+use agent_transcript_core::{
     AgentFileDiff, AgentMessageRole, AgentQuestion, AgentScalarValue, AgentTranscriptPart,
     AgentTranscriptState, is_question_tool,
 };
 
 use super::ChatSearchDocument;
-use crate::chat_rows::{part_row_id, renderable, row_id};
+use crate::rows::{part_row_id, renderable, row_id};
 
 #[derive(Default)]
 struct Text(String);
@@ -119,7 +119,7 @@ fn part_text(part: &AgentTranscriptPart) -> Option<(&str, String)> {
     Some((id, text.0))
 }
 
-pub(crate) fn documents(state: &AgentTranscriptState) -> Vec<ChatSearchDocument> {
+pub fn documents(state: &AgentTranscriptState) -> Vec<ChatSearchDocument> {
     let messages: HashMap<_, _> = state
         .messages
         .iter()

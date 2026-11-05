@@ -1,5 +1,5 @@
 use super::transcript::documents;
-use crate::agent_transcript::*;
+use agent_transcript_core::*;
 
 fn text(id: &str, text: &str) -> AgentTranscriptPart {
     AgentTranscriptPart::Text {

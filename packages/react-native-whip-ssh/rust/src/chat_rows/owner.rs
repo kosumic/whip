@@ -61,15 +61,15 @@ impl AgentChatRows {
     ) -> Result<AgentChatRowUpdate, AgentSessionError> {
         let recover = {
             let projection = self.projection.lock();
-            if projection.disposed {
+            if projection.is_disposed() {
                 return Err(AgentSessionError::SessionClosed(
                     "chat viewport is disposed".into(),
                 ));
             }
-            !projection.initialized
-                || projection.needs_reset
-                || projection.transcript_revision < transcript_revision
-                || (after == 0 && projection.revision > 0)
+            !projection.is_initialized()
+                || projection.needs_reset()
+                || projection.transcript_revision() < transcript_revision
+                || (after == 0 && projection.revision() > 0)
         };
         if recover && let Source::Live { manager, key } = &self.source {
             // Manager holds its lifecycle lock through restoration. An emission
@@ -77,7 +77,7 @@ impl AgentChatRows {
             manager.restore_rows(key, self)?;
         }
         let mut projection = self.projection.lock();
-        if projection.disposed {
+        if projection.is_disposed() {
             return Err(AgentSessionError::SessionClosed(
                 "chat viewport is disposed".into(),
             ));
@@ -119,12 +119,12 @@ impl AgentChatRows {
         let polling = self.polling.lock().await;
         let uninitialized = {
             let projection = self.projection.lock();
-            if projection.disposed {
+            if projection.is_disposed() {
                 return Err(AgentSessionError::SessionClosed(
                     "chat viewport is disposed".into(),
                 ));
             }
-            !projection.initialized
+            !projection.is_initialized()
         };
         let snapshot = if let Source::Saved { database, identity } = &self.source {
             let snapshot = if uninitialized {
@@ -147,8 +147,8 @@ impl AgentChatRows {
             .spawn_blocking(move || {
                 if let Some(snapshot) = snapshot {
                     let mut projection = owner.projection.lock();
-                    if !projection.disposed {
-                        if projection.initialized {
+                    if !projection.is_disposed() {
+                        if projection.is_initialized() {
                             projection.reconcile_reset(&snapshot, snapshot.revision);
                         } else {
                             projection.restore(&snapshot);
@@ -167,10 +167,7 @@ impl AgentChatRows {
 
     pub fn dispose(&self) {
         let mut projection = self.projection.lock();
-        *projection = RowProjection {
-            disposed: true,
-            ..RowProjection::default()
-        };
+        projection.dispose();
         drop(projection);
         if let Source::Live { manager, key } = &self.source {
             manager.unregister_rows(key, self);

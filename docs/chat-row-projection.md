@@ -1,9 +1,16 @@
 # Native Chat View row projection
 
-`chat_rows.rs` implements the six Chat View row kinds as typed UniFFI data:
+`crates/agent-transcript-view` implements the pure row projection and search
+presentation. Whip registers its shared schema in the existing UniFFI namespace
+without conversion or transcript copying. The six Chat View row kinds use:
 `AgentChatRow`, `AgentChatRowContent`, `AgentChatRowSpacing`,
 `AgentChatPartKind`, `AgentChatRowPatch`, and `AgentChatRowUpdate`.
-`AgentChatRows` is the viewport owner. Create a live owner through
+`AgentChatRows` in Whip remains the viewport owner. The portable crate has no
+Whip, UniFFI, async runtime, transport, database, or global-state dependency.
+See its [API and ownership guide](../crates/agent-transcript-view/README.md) and
+the [extraction measurements](chat-row-extraction.md).
+
+Create a live owner through
 `HostRuntimeConnection.agentChatRows(key)`, or an offline owner through
 `AgentChatRows.forSaved(namespace, agent, sessionId, conversation)`.
 `poll(after, transcriptRevision, working, expanded)` returns revisioned patches;

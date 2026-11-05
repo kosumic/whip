@@ -1,0 +1,18 @@
+[package]
+name = "agent-transcript-view"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT"
+description = "Provider-neutral transcript row projection and search presentation"
+repository = "https://github.com/kosumic/whip"
+readme = "README.md"
+
+[dependencies]
+agent-transcript-core = { version = "0.1.0", path = "../agent-transcript-core" }
+serde_json = "1"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+opt-level = 3

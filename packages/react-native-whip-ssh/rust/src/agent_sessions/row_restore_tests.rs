@@ -276,7 +276,7 @@ fn borrowed_row_recovery_uses_latest_revision_and_cannot_revive_a_disposed_viewp
             epoch,
             update,
         );
-        assert!(owner.projection.lock().needs_reset);
+        assert!(owner.projection.lock().needs_reset());
         let recovered = futures::executor::block_on(owner.clone().poll(
             initial.revision,
             revision,
@@ -296,7 +296,7 @@ fn borrowed_row_recovery_uses_latest_revision_and_cannot_revive_a_disposed_viewp
         owner.dispose();
         drop(state);
         restoring.join().unwrap().unwrap();
-        assert!(owner.projection.lock().disposed);
+        assert!(owner.projection.lock().is_disposed());
         assert!(futures::executor::block_on(owner.poll(0, revision, false, vec![])).is_err());
     }
 }

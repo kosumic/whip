@@ -480,7 +480,7 @@ impl AgentSessionManager {
             }
         };
         let mut projection = owner.projection.lock();
-        if !projection.disposed {
+        if !projection.is_disposed() {
             projection.restore_view(view);
         }
         drop(projection);
@@ -2548,7 +2548,7 @@ fn emit(
                     return false;
                 };
                 let mut projection = owner.projection.lock();
-                if projection.disposed {
+                if projection.is_disposed() {
                     return false;
                 }
                 projection.accept(&update);
