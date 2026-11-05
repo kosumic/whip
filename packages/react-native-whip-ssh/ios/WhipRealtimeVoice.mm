@@ -87,10 +87,8 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
 - (void)start:(NSString *)token config:(NSString *)config resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {
   [self start:token config:config preview:NO resolve:resolve reject:reject];
 }
-- (void)preview:(NSString *)token voice:(NSString *)voice model:(NSString *)model resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {
+- (void)preview:(NSString *)token config:(NSString *)config resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {
   if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) { reject(@"E_REALTIME", @"Return to Whip to preview a voice.", nil); return; }
-  NSData *data = [NSJSONSerialization dataWithJSONObject:@{@"preview":@YES, @"voice":voice, @"model":model} options:0 error:nil];
-  NSString *config = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
   [self start:token config:config preview:YES resolve:resolve reject:reject];
 }
 - (void)start:(NSString *)token config:(NSString *)config preview:(BOOL)preview resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {
@@ -100,6 +98,7 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
   if (!requestedConfig) { reject(@"E_REALTIME", @"Invalid voice configuration.", nil); return; }
   NSMutableDictionary *nativeConfig = [NSJSONSerialization JSONObjectWithData:requestedConfig options:NSJSONReadingMutableContainers error:nil];
   if (![nativeConfig isKindOfClass:NSMutableDictionary.class]) { reject(@"E_REALTIME", @"Invalid voice configuration.", nil); return; }
+  nativeConfig[@"preview"] = @(preview);
   // Rust owns the same public WebRTC transport on both platforms. Apple's
   // voice-processing I/O remains the echo canceller and device owner on iOS.
   nativeConfig[@"webrtc"] = @YES;

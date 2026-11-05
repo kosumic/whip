@@ -3,12 +3,13 @@ import { View } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { useTranslation } from 'react-i18next';
 import { VoiceConversationSettingsContext } from '../lib/voiceConversationSettingsContext';
-import { LIVE_VOICES, REALTIME_MODELS, REALTIME_VOICES, selectedConversationVoice, DEFAULT_REALTIME_VAD, parseRealtimeVad } from '../lib/voiceConversationSettings';
+import { LIVE_MODEL, LIVE_VOICES, REALTIME_MODELS, REALTIME_VOICES, selectedConversationVoice, DEFAULT_REALTIME_VAD, parseRealtimeVad, VOICE_PREVIEW_TEXT_LIMIT } from '../lib/voiceConversationSettings';
 import { RealtimeVoicePreview } from '../services/realtimeVoicePreview';
 import { GlassButton } from './GlassControls';
 import { SpeechVoicePicker } from './SpeechVoicePicker';
 import { LiveVoiceHistory } from './LiveVoiceHistory';
 import { Text } from './ui/text';
+import { Input } from './ui/input';
 
 export interface VoiceConversationSettingHandle { stopPreview: () => Promise<void> }
 
@@ -20,6 +21,7 @@ export function VoiceConversationSetting({ ref, credentialSaved, credentialBusy 
   const [error, setError] = useState<string>();
   const mounted = useRef(false);
   const [previewing, setPreviewing] = useState(false);
+  const previewText = settings.previewText ?? t('speech.previewText');
   const preview = useRef<RealtimeVoicePreview | undefined>(undefined);
   const previewRevision = useRef(0);
   const previewClosing = useRef<Promise<void>>(Promise.resolve());
@@ -36,10 +38,10 @@ export function VoiceConversationSetting({ ref, credentialSaved, credentialBusy 
     mounted.current = true;
     return () => { mounted.current = false; };
   }, []);
-  useEffect(() => () => { void stopPreview(); }, [settings.provider, settings.mode, settings.realtimeModel, settings.realtimeVoice, stopPreview]);
+  useEffect(() => () => { void stopPreview(); }, [settings.provider, settings.mode, settings.realtimeModel, settings.realtimeVoice, settings.liveVoice, previewText, stopPreview]);
   const previewVoice = async () => {
     if (previewing) { await stopPreview(); return; }
-    if (credentialBusy || !credentialSaved || settings.mode !== 'Realtime') return;
+    if (credentialBusy || !credentialSaved || !previewText.trim()) return;
     const revision = ++previewRevision.current;
     const owner = new RealtimeVoicePreview();
     preview.current = owner;
@@ -47,7 +49,7 @@ export function VoiceConversationSetting({ ref, credentialSaved, credentialBusy 
     try {
       await previewClosing.current;
       if (revision !== previewRevision.current || !mounted.current) return;
-      const result = await owner.play(settings.realtimeVoice, settings.realtimeModel);
+      const result = await owner.play(selectedConversationVoice(settings), settings.mode === 'Live' ? LIVE_MODEL : settings.realtimeModel, previewText);
       if (result === 'busy' && revision === previewRevision.current && mounted.current) setError(t('voiceProvider.previewBusy'));
     } catch {
       if (revision === previewRevision.current && mounted.current) setError(t('voiceProvider.previewError'));
@@ -96,10 +98,13 @@ export function VoiceConversationSetting({ ref, credentialSaved, credentialBusy 
             value={vad[field]} onSlidingComplete={value => onChange({ ...settings, realtimeVad: { ...vad, [field]: value } })} />
         </View>)}
     </>}
-    <GlassButton disabled={!previewing && (credentialBusy || credentialSaved !== true || settings.mode !== 'Realtime')}
+    <Text className="text-xs text-muted-foreground">{t('speech.previewTextLabel')}</Text>
+    <Input accessibilityLabel={t('speech.previewTextLabel')} value={previewText} className="h-28" multiline textAlignVertical="top" maxLength={VOICE_PREVIEW_TEXT_LIMIT}
+      onChangeText={text => onChange({ ...settings, previewText: text.slice(0, VOICE_PREVIEW_TEXT_LIMIT) })} />
+    <GlassButton disabled={!previewing && (credentialBusy || credentialSaved !== true || !previewText.trim())}
       accessibilityLabel={t(previewing ? 'voiceProvider.stopPreview' : 'voiceProvider.preview')}
       onPress={() => { void previewVoice(); }}><Text>{t(previewing ? 'voiceProvider.stopPreview' : 'voiceProvider.preview')}</Text></GlassButton>
-    <Text className="text-xs text-muted-foreground">{t(settings.mode === 'Realtime' ? 'voiceProvider.previewNotice' : 'voiceProvider.previewUnavailable')}</Text>
+    <Text className="text-xs text-muted-foreground">{t('voiceProvider.previewNotice')}</Text>
     {settings.mode === 'Live' && <LiveVoiceHistory />}
     {error && <Text accessibilityRole="alert" className="text-xs text-destructive">{error}</Text>}
   </View>;

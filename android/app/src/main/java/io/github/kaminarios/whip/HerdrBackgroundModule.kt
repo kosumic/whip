@@ -116,10 +116,10 @@ class HerdrBackgroundModule(
     }
   }
   @ReactMethod
-  fun startRealtimeVoicePreview(token: String, voice: String, model: String, promise: Promise) {
+  fun startRealtimeVoicePreview(token: String, config: String, promise: Promise) {
     mainHandler.post {
       if (context.lifecycleState != LifecycleState.RESUMED) promise.reject("E_REALTIME", "Return to Whip to preview a voice.")
-      else RealtimeVoice.preview(context, token, voice, model, promise)
+      else RealtimeVoice.preview(context, token, config, promise)
     }
   }
   @ReactMethod

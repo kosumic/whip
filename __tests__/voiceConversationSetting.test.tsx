@@ -110,7 +110,7 @@ test('a credential lookup failure disables OpenAI without disabling Local or dis
   expect(JSON.stringify(renderer.toJSON())).not.toContain('sk-native-secret');
 });
 
-test('switching cloud modes keeps separate saved voices and leaves GPT-Live preview unavailable', async () => {
+test('switching cloud modes keeps separate saved voices and requires a key for preview', async () => {
   await act(async () => pressText('voiceProvider.openai'));
   expect(renderer.root.findAll(node => node.props.children === 'voiceProvider.realtimeNotice').length).toBeGreaterThan(0);
   await act(async () => renderer.root.findByType(SpeechVoicePicker).props.onSelect('cedar'));
@@ -136,7 +136,39 @@ test('saving a key enables Realtime preview for the selected voice without start
   expect(RealtimeVoicePreview).not.toHaveBeenCalled();
   await act(async () => renderer.root.findByType(SpeechVoicePicker).props.onSelect('cedar'));
   await act(async () => pressText('voiceProvider.preview'));
-  expect(mockPreviewPlay).toHaveBeenCalledWith('cedar', defaults.realtimeModel);
+  expect(mockPreviewPlay).toHaveBeenCalledWith('cedar', defaults.realtimeModel, 'speech.previewText');
+});
+
+test('GPT-Live previews edited text and disables preview for blank text', async () => {
+  jest.mocked(hasOpenAiVoiceKey).mockResolvedValue(true);
+  await act(async () => renderer.update(<Harness key="saved" />));
+  await act(async () => pressText('voiceProvider.Live'));
+  await act(async () => renderer.root.findByType(SpeechVoicePicker).props.onSelect('quartz'));
+  const editor = () => renderer.root.findByProps({ accessibilityLabel: 'speech.previewTextLabel' });
+  await act(async () => editor().props.onChangeText('Bonjour !'));
+  expect(renderer.root.findByProps({ accessibilityLabel: 'voiceProvider.preview' }).props.disabled).toBe(false);
+  await act(async () => pressText('voiceProvider.preview'));
+  expect(mockPreviewPlay).toHaveBeenCalledWith('quartz', 'gpt-live-1', 'Bonjour !');
+  await act(async () => pressText('voiceProvider.Realtime'));
+  expect(editor().props.value).toBe('Bonjour !');
+  await act(async () => editor().props.onChangeText('  '));
+  expect(renderer.root.findByProps({ accessibilityLabel: 'voiceProvider.preview' }).props.disabled).toBe(true);
+});
+
+test.each(['text', 'voice', 'mode'])('changing Live preview %s cancels playback', async change => {
+  jest.mocked(hasOpenAiVoiceKey).mockResolvedValue(true);
+  await act(async () => renderer.update(<Harness key="saved" />));
+  await act(async () => pressText('voiceProvider.Live'));
+  let finish!: (result: string) => void;
+  mockPreviewPlay.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  mockPreviewStop.mockImplementation(() => { finish('cancelled'); return Promise.resolve(); });
+  await act(async () => pressText('voiceProvider.preview'));
+  await act(async () => {
+    if (change === 'text') renderer.root.findByProps({ accessibilityLabel: 'speech.previewTextLabel' }).props.onChangeText('New sample');
+    else if (change === 'voice') renderer.root.findByType(SpeechVoicePicker).props.onSelect('quartz');
+    else pressText('voiceProvider.Realtime');
+  });
+  expect(mockPreviewStop).toHaveBeenCalledTimes(1);
 });
 
 test('a playing preview can be stopped and changing voices cancels its owner', async () => {

@@ -1,5 +1,5 @@
 import { AppState } from 'react-native';
-import { DEFAULT_REALTIME_MODEL, REALTIME_MODELS, REALTIME_VOICES } from '../lib/voiceConversationSettings';
+import { DEFAULT_REALTIME_MODEL, LIVE_MODEL, LIVE_VOICES, REALTIME_MODELS, REALTIME_VOICES, VOICE_PREVIEW_TEXT_LIMIT } from '../lib/voiceConversationSettings';
 import { composerSpeechInput } from './composerSpeechInput';
 import { suspendChatSpeechForInput } from './chatSpeech';
 import { onOpenAiVoiceCredentialChange, voiceCredentialError } from './openAiVoiceCredentials';
@@ -23,10 +23,13 @@ export class RealtimeVoicePreview {
   private credentialChange?: () => void;
   private background?: { remove: () => void };
 
-  async play(voice: string, model = DEFAULT_REALTIME_MODEL): Promise<VoicePreviewResult> {
+  async play(voice: string, model = DEFAULT_REALTIME_MODEL, text = 'Hello. This is a preview of the selected voice.'): Promise<VoicePreviewResult> {
     if (this.cancelled) return 'cancelled';
-    if (AppState.currentState !== 'active' || !REALTIME_VOICES.some(candidate => candidate === voice)) throw new Error('Voice preview is unavailable.');
-    if (!REALTIME_MODELS.some(candidate => candidate.id === model)) throw new Error('Choose a supported OpenAI Realtime model.');
+    const live = model === LIVE_MODEL;
+    const voices = live ? LIVE_VOICES : REALTIME_VOICES;
+    if (AppState.currentState !== 'active' || !voices.some(candidate => candidate === voice)) throw new Error('Voice preview is unavailable.');
+    if (!live && !REALTIME_MODELS.some(candidate => candidate.id === model)) throw new Error('Choose a supported OpenAI voice model.');
+    if (!text.trim() || text.length > VOICE_PREVIEW_TEXT_LIMIT) throw new Error('Enter a short voice preview text.');
     if (!composerSpeechInput.reserve(this.token)) return 'busy';
     this.reserved = true;
     try {
@@ -37,7 +40,7 @@ export class RealtimeVoicePreview {
       await suspendChatSpeechForInput();
       if (this.cancelled || AppState.currentState !== 'active') return 'cancelled';
       // Catch and replace every native exception: bridge errors may contain arguments.
-      this.starting = this.playback.startRealtimeVoicePreview(this.token, voice, model);
+      this.starting = this.playback.startRealtimeVoicePreview(this.token, JSON.stringify({ preview: true, live, voice, model, previewText: text }));
       await this.starting;
       const deadline = Date.now() + TIMEOUT_MS;
       while (!this.cancelled && Date.now() < deadline) {

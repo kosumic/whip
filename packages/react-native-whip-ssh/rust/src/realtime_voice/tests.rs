@@ -295,13 +295,39 @@ fn preview_uses_selected_realtime_voice_without_microphone_turns_or_agent_tools(
             .is_none()
     );
     assert_eq!(event["session"]["tool_choice"], "none");
-    assert_eq!(event["session"]["max_output_tokens"], 256);
+    assert_eq!(event["session"]["max_output_tokens"], PREVIEW_TOKEN_LIMIT);
     config.validate_audio(serde_json::from_value(event["session"]["audio"].clone())?)?;
-    let response = serde_json::to_value(preview_response()?)?;
+    let response = serde_json::to_value(preview_response(&config)?)?;
     assert_eq!(response["response"]["conversation"], "none");
     assert_eq!(response["response"]["input"], json!([]));
     assert_eq!(response["response"]["tool_choice"], "none");
-    assert_eq!(response["response"]["max_output_tokens"], 256);
+    assert_eq!(
+        response["response"]["max_output_tokens"],
+        PREVIEW_TOKEN_LIMIT
+    );
+    Ok(())
+}
+
+#[test]
+fn previews_use_custom_text_and_reject_empty_or_oversized_samples()
+-> Result<(), Box<dyn std::error::Error>> {
+    let mut config: Config =
+        serde_json::from_value(json!({"preview":true,"voice":"cedar","previewText":"Bonjour !"}))?;
+    let response = serde_json::to_value(preview_response(&config)?)?;
+    assert!(
+        response["response"]["instructions"]
+            .as_str()
+            .ok_or("missing instructions")?
+            .contains("Bonjour !")
+    );
+    for text in [
+        String::new(),
+        "  ".into(),
+        "語".repeat(PREVIEW_TEXT_LIMIT + 1),
+    ] {
+        config.preview_text = Some(text);
+        assert!(config.session_update().is_err());
+    }
     Ok(())
 }
 

@@ -92,7 +92,7 @@ test('provider configuration shares one OpenAI key and keeps TTS voices with spe
   expect(renderer.root.findAllByProps({ accessibilityLabel: 'voiceProvider.apiKey' })).toHaveLength(1);
   expect(openai.findByProps({ accessibilityLabel: 'voiceProvider.apiKey' }).props.secureTextEntry).toBe(true);
   expect(local.findAllByProps({ accessibilityLabel: 'speech.previewTextLabel' })).toHaveLength(1);
-  expect(openai.findAllByProps({ accessibilityLabel: 'speech.previewTextLabel' })).toHaveLength(0);
+  expect(openai.findAllByProps({ accessibilityLabel: 'speech.previewTextLabel' })).toHaveLength(1);
   await act(async () => press('speech.openai'));
   expect(local.findByProps({ title: 'speech.openaiVoice' }).props.selected).toBe('marin');
   expect(openai.findAllByProps({ title: 'speech.openaiVoice' })).toHaveLength(0);
@@ -100,7 +100,7 @@ test('provider configuration shares one OpenAI key and keeps TTS voices with spe
 
 test('OpenAI previews use the shared cancellable player and the edited preview text', async () => {
   await act(async () => press('speech.openai'));
-  const input = renderer.root.findByProps({ accessibilityLabel: 'speech.previewTextLabel' });
+  const input = renderer.root.findByProps({ title: 'speech.backend' }).findByProps({ accessibilityLabel: 'speech.previewTextLabel' });
   await act(async () => input.props.onChangeText('My sample.'));
   let finish!: (value: string) => void;
   speakPreview.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));

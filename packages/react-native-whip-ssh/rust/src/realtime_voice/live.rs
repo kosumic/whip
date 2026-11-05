@@ -3,6 +3,7 @@
 //! at c90354172c5c49535b122443e9a8ed52c2233b80. Native media ownership is shared;
 //! Live delegation/context events never become Realtime function calls.
 pub(super) mod captions;
+mod preview;
 #[cfg(test)]
 mod tests;
 mod usage;
@@ -201,10 +202,12 @@ impl State {
 impl LiveVoiceAdapter {
     pub(super) fn validate(config: &Config) -> Result<(), &'static str> {
         let catalog = catalog()?;
-        if config.target.is_none()
+        if config.preview {
+            config.validate_preview()?;
+        }
+        if (!config.preview && config.target.is_none())
             || config.global
             || config.terminal_target.is_some()
-            || config.preview
             || !catalog.voices.contains(&config.voice)
             || config
                 .model
@@ -217,7 +220,7 @@ impl LiveVoiceAdapter {
     }
     fn session(config: &Config) -> Result<api::SessionConfig, &'static str> {
         Self::validate(config)?;
-        Ok(api::SessionConfig {
+        let mut session = api::SessionConfig {
             model: catalog()?.model.clone(),
             audio: Some(api::AudioConfig {
                 format: Some(api::AudioFormat::default()),
@@ -226,10 +229,23 @@ impl LiveVoiceAdapter {
                 }),
             }),
             delegation: Field::Value(api::DelegationConfig::Client),
-            instructions: Field::Value(INSTRUCTIONS.into()),
+            instructions: Field::Value(if config.preview {
+                config.preview_instructions()?
+            } else {
+                INSTRUCTIONS.into()
+            }),
             store: Some(false),
             ..api::SessionConfig::default()
-        })
+        };
+        if config.preview {
+            session.input = serde_json::from_value(serde_json::json!([{
+                "type":"message", "role":"developer", "content":[{
+                    "type":"input_text", "text":config.preview_instructions()?
+                }]
+            }]))
+            .map_err(|_| "Invalid GPT-Live preview instructions.")?;
+        }
+        Ok(session)
     }
     pub(super) async fn run(
         owner: Arc<RealtimeVoiceAdapter>,
@@ -238,8 +254,7 @@ impl LiveVoiceAdapter {
         agent: Option<Arc<PinnedAgent>>,
         commands: mpsc::Receiver<super::Command>,
     ) -> Result<(), &'static str> {
-        let agent = agent.ok_or("Open a connected coding agent before calling GPT-Live.")?;
-        let usage = usage::Usage::start(&config.voice)?;
+        let usage = usage::Usage::start(&config.voice, config.preview)?;
         let mut cancelled = owner.cancel.subscribe();
         // No retries after session.start: a lost acknowledgement may still mean
         // a billable session exists. A new user-initiated call gets a new ledger ID.
@@ -268,9 +283,23 @@ impl LiveVoiceAdapter {
             tasks: JoinSet::new(),
             usage,
         };
-        let result = adapter
-            .drive(&owner, &config, &agent, &mut socket, commands)
-            .await;
+        let mut result = if config.preview {
+            preview::drive(
+                &owner,
+                &config,
+                &mut socket,
+                &mut adapter.state,
+                &mut adapter.usage,
+                commands,
+            )
+            .await
+        } else if let Some(agent) = agent {
+            adapter
+                .drive(&owner, &config, &agent, &mut socket, commands)
+                .await
+        } else {
+            Err("Open a connected coding agent before calling GPT-Live.")
+        };
         // Dropping observation futures never invokes remote cancel. Dispatched
         // agent prompts continue; only this call's unsent pending requests stop.
         adapter.tasks.shutdown().await;
@@ -278,27 +307,35 @@ impl LiveVoiceAdapter {
         owner.ready.store(false, Ordering::Release);
         owner.output.lock().clear();
         if !adapter.usage.finalized {
-            let _ =
+            let closed =
                 Self::graceful_close(&config, &mut socket, &mut adapter.state, &mut adapter.usage)
                     .await;
+            if config.preview && result.is_ok() {
+                result = closed;
+            }
         }
-        let fragments = owner
-            .output
-            .lock()
-            .live_transcript
-            .as_ref()
-            .map(captions::Transcript::snapshot)
-            .unwrap_or_default();
-        let saved = tokio::time::timeout(
-            SAVE_TIMEOUT,
-            captions::persist(format!("live:{}", uuid::Uuid::new_v4()), fragments),
-        )
-        .await;
-        if !matches!(saved, Ok(Ok(()))) {
-            owner.view.lock().error =
-                Some("Voice captions could not be saved. Copy them from this call.");
+        if !config.preview {
+            let fragments = owner
+                .output
+                .lock()
+                .live_transcript
+                .as_ref()
+                .map(captions::Transcript::snapshot)
+                .unwrap_or_default();
+            let saved = tokio::time::timeout(
+                SAVE_TIMEOUT,
+                captions::persist(format!("live:{}", uuid::Uuid::new_v4()), fragments),
+            )
+            .await;
+            if !matches!(saved, Ok(Ok(()))) {
+                owner.view.lock().error =
+                    Some("Voice captions could not be saved. Copy them from this call.");
+            }
         }
         update_usage(&owner, &adapter.usage);
+        if config.preview && result.is_ok() {
+            owner.close();
+        }
         result
     }
     async fn drive(

@@ -4,6 +4,7 @@ import realtimeCatalog from '../../packages/react-native-whip-ssh/rust/src/realt
 // Rust validates calls and prices usage from this same catalog.
 export const REALTIME_MODELS = realtimeCatalog.models;
 export const DEFAULT_REALTIME_MODEL = realtimeCatalog.defaultModel;
+export const VOICE_PREVIEW_TEXT_LIMIT = 240;
 
 export type VoiceMode = 'TurnBased' | 'Realtime' | 'Live';
 export type CloudVoiceMode = Exclude<VoiceMode, 'TurnBased'>;
@@ -15,6 +16,7 @@ export interface VoiceConversationSettings {
   realtimeModel: string;
   realtimeVoice: string;
   liveVoice: string;
+  previewText?: string;
   realtimeVad?: RealtimeVad;
   globalShizukuAccess: boolean;
 }
@@ -40,6 +42,7 @@ export function parseVoiceConversationSettings(value: unknown): VoiceConversatio
     realtimeModel: REALTIME_MODELS.find(model => model.id === saved.realtimeModel)?.id ?? DEFAULT_REALTIME_MODEL,
     realtimeVoice: REALTIME_VOICES.find(voice => voice === saved.realtimeVoice) ?? 'marin',
     liveVoice: LIVE_VOICES.find(voice => voice === saved.liveVoice) ?? 'marin',
+    ...(typeof saved.previewText === 'string' ? { previewText: saved.previewText.slice(0, VOICE_PREVIEW_TEXT_LIMIT) } : {}),
     globalShizukuAccess: saved.globalShizukuAccess === true,
     ...(saved.realtimeVad ? { realtimeVad: parseRealtimeVad(saved.realtimeVad) } : {}),
   };

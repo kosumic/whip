@@ -67,8 +67,7 @@ internal object RealtimeVoice {
   fun start(context: ReactApplicationContext, token: String, config: String, promise: Promise) {
     startMedia(context, token, config, false, promise)
   }
-  fun preview(context: ReactApplicationContext, token: String, voice: String, model: String, promise: Promise) {
-    val config = JSONObject().put("preview", true).put("voice", voice).put("model", model).toString()
+  fun preview(context: ReactApplicationContext, token: String, config: String, promise: Promise) {
     startMedia(context, token, config, true, promise)
   }
   @SuppressLint("MissingPermission")
@@ -89,7 +88,7 @@ internal object RealtimeVoice {
         require(focus.acquire())
       }
       val coreStartedAt = SystemClock.elapsedRealtime()
-      val nativeConfig = JSONObject(config).put("softwareEchoCancellation", !preview).put("webrtc", true)
+      val nativeConfig = JSONObject(config).put("preview", preview).put("softwareEchoCancellation", !preview).put("webrtc", true)
         .put("clientElapsedMs", clientElapsedMs + coreStartedAt - mediaStartedAt).toString()
       val result = Core.start(nativeConfig, WhipVoiceCredentials(context))
       if (result < 0) throw CredentialFailure(result)

@@ -2,6 +2,35 @@ use super::*;
 use serde_json::json;
 
 #[test]
+fn live_preview_uses_custom_text_without_an_agent_or_tools()
+-> Result<(), Box<dyn std::error::Error>> {
+    let mut config: Config = serde_json::from_value(
+        json!({"live":true,"preview":true,"voice":"quartz","previewText":"こんにちは。"}),
+    )?;
+    let session = LiveVoiceAdapter::session(&config)?;
+    let encoded: Value =
+        serde_json::from_str(&codec().encode(&ClientEvent::new(Command::Start { session }))?)?;
+    assert_eq!(encoded["session"]["audio"]["output"]["voice"], "quartz");
+    assert_eq!(encoded["session"]["store"], false);
+    assert_eq!(encoded["session"]["input"][0]["role"], "developer");
+    assert!(
+        encoded["session"]["input"][0]["content"][0]["text"]
+            .as_str()
+            .ok_or("missing preview text")?
+            .contains("こんにちは。")
+    );
+    assert!(encoded["session"].get("tools").is_none());
+    config.target = Some(serde_json::from_value(
+        json!({"runtimeId":"host","terminalId":"terminal","paneId":"pane","bindingToken":"binding"}),
+    )?);
+    assert!(LiveVoiceAdapter::validate(&config).is_err());
+    config.target = None;
+    config.preview = false;
+    assert!(LiveVoiceAdapter::validate(&config).is_err());
+    Ok(())
+}
+
+#[test]
 fn public_configuration_uses_its_own_voice_and_client_delegation()
 -> Result<(), Box<dyn std::error::Error>> {
     let config: Config = serde_json::from_value(

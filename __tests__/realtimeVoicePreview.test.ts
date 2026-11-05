@@ -31,11 +31,26 @@ afterEach(() => jest.useRealTimers());
 
 test('previews the selected voice with the saved key without starting a call or agent session', async () => {
   await expect(new RealtimeVoicePreview().play('cedar')).resolves.toBe('completed');
-  expect(mockNative.startRealtimeVoicePreview).toHaveBeenCalledWith(expect.any(String), 'cedar', 'gpt-realtime-1.5');
+  expect(mockNative.startRealtimeVoicePreview).toHaveBeenCalledWith(expect.any(String), JSON.stringify({ preview: true, live: false, voice: 'cedar', model: 'gpt-realtime-1.5', previewText: 'Hello. This is a preview of the selected voice.' }));
   expect(mockNative.startVoiceCall).not.toHaveBeenCalled();
   expect(mockNative.startRealtimeVoice).not.toHaveBeenCalled();
   expect(composerSpeechInput.releaseReservation).toHaveBeenCalledTimes(1);
   expect(mockRemove).toHaveBeenCalledTimes(1);
+});
+
+test('Live preview uses the selected Live voice and edited text without starting a call', async () => {
+  await expect(new RealtimeVoicePreview().play('quartz', 'gpt-live-1', 'こんにちは。')).resolves.toBe('completed');
+  expect(JSON.parse(mockNative.startRealtimeVoicePreview.mock.calls[0][1])).toEqual({
+    preview: true, live: true, voice: 'quartz', model: 'gpt-live-1', previewText: 'こんにちは。',
+  });
+  expect(mockNative.startVoiceCall).not.toHaveBeenCalled();
+  expect(mockNative.startRealtimeVoice).not.toHaveBeenCalled();
+});
+
+test.each(['', '  ', 'a'.repeat(241)])('invalid preview text is rejected before reserving audio or accessing credentials', async text => {
+  await expect(new RealtimeVoicePreview().play('quartz', 'gpt-live-1', text)).rejects.toThrow('Enter a short voice preview text.');
+  expect(composerSpeechInput.reserve).not.toHaveBeenCalled();
+  expect(mockNative.startRealtimeVoicePreview).not.toHaveBeenCalled();
 });
 
 test('an active speech owner prevents preview and credential access', async () => {

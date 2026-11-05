@@ -6,7 +6,15 @@ connected coding-agent chat. The model is `gpt-live-1`; the selected Live voice
 is independent of Realtime/TTS and takes effect on the next call. The existing
 call screen, mute, speaker, background ownership, minimize and hangup controls
 are reused. Global GPT-Live tools remain in Stage 4; terminal GPT-Live is outside this stage.
-Realtime previews remain available; Live previews are not implemented.
+Settings offers editable preview text (up to 240 characters) for both Realtime
+and Live voices. A preview uses the saved API key and incurs API charges, opens
+no microphone or agent connection, and stops when you change its text, voice or
+mode, leave Settings, background the app, or replace the key. Live sends paced
+silence and requests the sample through startup developer context and one
+commentary append. Since Live has no audio-done event, the preview waits for two
+seconds of quiet and native playback drain, with a 30-second deadline and a
+20-second audio limit. Live may paraphrase the sample. Preview captions are not
+saved; duration usage is recorded with Preview scope.
 
 ## Protocol and ownership
 

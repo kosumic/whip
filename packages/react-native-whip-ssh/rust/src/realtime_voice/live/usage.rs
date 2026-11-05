@@ -21,11 +21,15 @@ impl Default for Usage {
     }
 }
 impl Usage {
-    pub fn start(voice: &str) -> Result<Self, &'static str> {
+    pub fn start(voice: &str, preview: bool) -> Result<Self, &'static str> {
         let mut usage = Self {
             persistence: Some(NativeVoiceUsageSession::start(
                 VoiceUsageMode::Live,
-                VoiceUsageScope::Agent,
+                if preview {
+                    VoiceUsageScope::Preview
+                } else {
+                    VoiceUsageScope::Agent
+                },
                 &super::catalog()?.model,
                 voice,
             )),
