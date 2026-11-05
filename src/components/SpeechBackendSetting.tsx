@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 import Volume2 from 'lucide-react-native/icons/volume-2';
-import Sparkles from 'lucide-react-native/icons/sparkles';
+import Check from 'lucide-react-native/icons/check';
 import { useSectionExpansion } from '../hooks/useSectionExpansion';
 import { useOpenAiVoiceCredentialStatus } from '../hooks/useOpenAiVoiceCredentialStatus';
-import { CollapsibleSectionCard } from './CollapsibleSectionCard';
+import { CollapsibleSectionCard, SECTION_TITLE_CLASS_NAME } from './CollapsibleSectionCard';
 import { useTranslation } from 'react-i18next';
 import { deviceLanguage } from '../i18n';
 import { getSpeechPlayback, onSpeechBackendChange, speechBackendCommand, systemSpeechVoices, type SpeechVoice, type SpeechBackendAction, type SpeechBackendStatus } from '../services/speechPlayback';
@@ -14,9 +14,11 @@ import { bestEffortCleanup, reportBackgroundFailure } from '../services/backgrou
 import { GlassButton } from './GlassControls';
 import { SpeechVoicePicker } from './SpeechVoicePicker';
 import { OpenAiVoiceKeySetting } from './OpenAiVoiceKeySetting';
+import { OpenAiIcon } from './OpenAiIcon';
 import { VoiceConversationSetting, type VoiceConversationSettingHandle } from './VoiceConversationSetting';
 import { Input } from './ui/input';
 import { Text } from './ui/text';
+import { Icon } from './ui/icon';
 
 async function stopPreviewPlayback(owner: string) {
   await getSpeechPlayback().stopAnnouncement(owner);
@@ -31,6 +33,7 @@ export function SpeechBackendSetting() {
   const { expanded: openaiExpanded, toggleExpanded: toggleOpenai } = useSectionExpansion('openai', true);
   const conversationSetting = useRef<VoiceConversationSettingHandle>(null);
   const [status, setStatus] = useState<SpeechBackendStatus>();
+  const [setupBackend, setSetupBackend] = useState<SpeechBackendStatus['backend']>();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const mounted = useRef(false);
@@ -41,6 +44,13 @@ export function SpeechBackendSetting() {
   const [voicesError, setVoicesError] = useState<string>();
   const [previewing, setPreviewing] = useState(false);
   const credential = useOpenAiVoiceCredentialStatus();
+  const phononReady = !!status?.supported && status.installed;
+  const displayedBackend = setupBackend ?? status?.backend;
+  // The open setup tab is presentation state; Rust persists the usable backend.
+  // A pending/failed credential check must not overwrite a saved selection.
+  const backendToActivate = setupBackend === 'phonon' && !phononReady ? 'system'
+    : setupBackend === 'openai' && !credential.ready ? (credential.missing ? 'system' : undefined)
+      : setupBackend;
   const previewOwner = useRef(`voice-preview-${Date.now()}`);
   const previewSequence = useRef(0);
   const [previewText, setPreviewText] = useState('');
@@ -120,6 +130,15 @@ export function SpeechBackendSetting() {
         setError(undefined);
       }
     } catch (failure) {
+      if ((action === 'phonon' || action === 'openai') && mounted.current && request.current === id) {
+        try {
+          const fallback = await speechBackendCommand('system');
+          if (mounted.current && request.current === id) setStatus(fallback);
+        } catch (fallbackFailure) {
+          if (mounted.current && request.current === id) setError(fallbackFailure instanceof Error ? fallbackFailure.message : String(fallbackFailure));
+          return;
+        }
+      }
       if (mounted.current && request.current === id) setError(failure instanceof Error ? failure.message : String(failure));
     } finally {
       if (mounted.current && request.current === id) setBusy(false);
@@ -138,6 +157,9 @@ export function SpeechBackendSetting() {
       bestEffortCleanup(stopPreviewPlayback(owner), 'voice-preview-unmount');
     };
   }, [loadSystemVoices, run, savePreviewText]);
+  useEffect(() => {
+    if (backendToActivate) void run(backendToActivate);
+  }, [backendToActivate, run]);
   useEffect(() => {
     if ((!status?.downloading && !status?.voiceDownload) || busy) return;
     const timer = setTimeout(() => { void run('status'); }, 500);
@@ -190,38 +212,51 @@ export function SpeechBackendSetting() {
   return <>
     <CollapsibleSectionCard title={t('speech.backend')} icon={Volume2}
       expanded={speechExpanded} onToggle={() => { stopPreview(); toggleSpeech(); }} contentClassName="pb-3.5">
-      <Text className="px-3.5 py-3 text-xs leading-[17px] text-muted-foreground">{t('speech.localCopy')}</Text>
-      <View className="flex-row flex-wrap items-stretch gap-2 px-3.5">
+      <View className="flex-row flex-wrap items-stretch gap-2 px-3.5 pt-3">
         {SPEECH_BACKENDS.map(backend => {
-          const disabled = busy || (backend === 'openai' && !credential.ready) ||
-            (backend === 'phonon' && (!status?.supported || !status.installed));
+          const disabled = busy || !status;
           return <GlassButton key={backend}
-            variant={status?.backend === backend ? 'secondary' : 'ghost'} size="content" role="radio"
+            variant={displayedBackend === backend ? 'secondary' : 'ghost'} size="content" role="radio"
             className="min-h-12 flex-1 px-3 py-3"
-            accessibilityState={{ selected: status?.backend === backend, disabled }}
+            accessibilityState={{ selected: displayedBackend === backend, disabled }}
             disabled={disabled}
-            onPress={hapticPress(() => { if (!disabled) void run(backend); })}>
+            onPress={hapticPress(() => {
+              if (disabled) return;
+              if (setupBackend === backend && backendToActivate) void run(backendToActivate);
+              else setSetupBackend(backend);
+              if (backend === 'openai' && !credential.ready && !openaiExpanded) toggleOpenai();
+            })}>
             <Text className="text-center text-sm font-medium">{t(`speech.${backend}`)}</Text>
           </GlassButton>;
         })}
       </View>
-      {!credential.ready && <Text accessibilityLiveRegion="polite" className="px-3.5 pt-3 text-xs text-muted-foreground">
+      {status && displayedBackend !== status.backend && <Text accessibilityLiveRegion="polite" className="px-3.5 pt-3 text-xs text-muted-foreground">
+        {t('speech.activeBackend', { backend: t(`speech.${status.backend}`) })}
+      </Text>}
+      {displayedBackend === 'openai' && !credential.ready && <Text accessibilityLiveRegion="polite" className="px-3.5 pt-3 text-xs text-muted-foreground">
         {t('speech.openai')}: {t(credential.reason)} {t('openai.configure')}
       </Text>}
-      {status?.supported && !status.installed && <Text className="px-3.5 pt-3 text-xs text-muted-foreground">
+      {displayedBackend === 'phonon' && <Text className="px-3.5 pt-3 text-xs leading-[17px] text-muted-foreground">{t('speech.localCopy')}</Text>}
+      {displayedBackend === 'phonon' && status?.supported && !status.installed && <Text className="px-3.5 pt-3 text-xs text-muted-foreground">
         {t('speech.phonon')}: {t('providers.downloadRequired')}
       </Text>}
       <View className="mx-3.5 my-3 border-l-2 border-border pl-2">
-        {status?.backend === 'system' ? <SpeechVoicePicker title={t('speech.systemVoice')} selected={status.systemVoice}
+        {status && displayedBackend === 'system' ? <SpeechVoicePicker title={t('speech.systemVoice')} selected={status.systemVoice}
           voices={installedSystemVoices} disabled={busy} loading={voicesLoading} error={voicesError}
           onOpen={() => { if (!systemVoices) void loadSystemVoices(); }}
           onSelect={id => { void run(`system-voice:${id}`); }} /> : null}
-        {status?.backend === 'phonon' ? <SpeechVoicePicker title={t('speech.phononVoice')} selected={status.voice}
-          voices={phononVoices} disabled={voiceBusy || !status.installed} onSelect={id => { void run(`voice:${id}`); }}
+        {status && displayedBackend === 'phonon' ? <SpeechVoicePicker title={t('speech.phononVoice')} selected={status.voice}
+          voices={phononVoices} disabled={voiceBusy || !phononReady} onSelect={id => { void run(`voice:${id}`); }}
           onRemove={id => { void run(`remove-voice:${id}`); }} /> : null}
+        {status && displayedBackend === 'openai' ? <View className="gap-2">
+          <SpeechVoicePicker title={t('speech.openaiVoice')} selected={status.openaiVoice}
+            voices={status.openaiVoices.map(id => ({ id, name: id[0].toUpperCase() + id.slice(1), language: '', networkRequired: true }))}
+            disabled={busy} onSelect={id => { void run(`openai-voice:${id}`); }} />
+          <Text className="text-xs leading-[17px] text-muted-foreground">{t('speech.openaiCopy')}</Text>
+        </View> : null}
       </View>
       {previewControls}
-      <View className="gap-2 px-3.5 pt-3.5">
+      {displayedBackend === 'phonon' && <View className="gap-2 px-3.5 pt-3.5">
         {status?.voiceDownload ? <>
           <Text accessibilityLiveRegion="polite" className="text-xs text-muted-foreground">{t('speech.voiceProgress', {
             name: status.voices.find(voice => voice.id === status.voiceDownload?.id)?.name,
@@ -239,22 +274,20 @@ export function SpeechBackendSetting() {
             : !status.installed ? <GlassButton variant="secondary" disabled={busy} onPress={hapticPress(() => { void run('download'); })}><Text>{t(status.downloadedBytes > 0 ? 'speech.resume' : 'speech.download')}</Text></GlassButton> : null}
           {!status.downloading && (status.installed || status.downloadedBytes > 0) ? <GlassButton variant="ghost" disabled={busy} onPress={hapticPress(() => { void run('delete'); })}><Text className="text-destructive">{t('speech.remove')}</Text></GlassButton> : null}
         </> : status ? <Text className="text-xs text-muted-foreground">{t('speech.unsupported')}</Text> : null}
-      </View>
+      </View>}
       <View className="px-3.5">{feedback}</View>
     </CollapsibleSectionCard>
-    <CollapsibleSectionCard title={t('openai.title')} icon={Sparkles}
+    <CollapsibleSectionCard title={t('openai.title')} iconContent={<OpenAiIcon />}
+      accessibilityLabel={credential.ready ? `${t('openai.title')}, ${t('voiceProvider.keySaved')}` : t('openai.title')}
+      titleContent={<View className="flex-row items-center gap-2">
+        <Text className={SECTION_TITLE_CLASS_NAME}>{t('openai.title')}</Text>
+        {credential.ready && <Icon as={Check} size={18} className="text-success" accessible={false} />}
+      </View>}
       expanded={openaiExpanded} onToggle={() => { void stopPreviews(); toggleOpenai(); }} contentClassName="pb-3.5">
       <View className="border-b border-border px-3.5 py-3">
         <OpenAiVoiceKeySetting beforeUpdate={stopPreviews} />
       </View>
       <VoiceConversationSetting ref={conversationSetting} credentialSaved={credential.ready} />
-      <View className="gap-3 px-3.5 py-3">
-        <Text className="text-sm font-medium">{t('speech.openai')}</Text>
-        <Text className="text-xs leading-[17px] text-muted-foreground">{t('speech.openaiCopy')}</Text>
-        {status ? <SpeechVoicePicker title={t('speech.openaiVoice')} selected={status.openaiVoice}
-          voices={status.openaiVoices.map(id => ({ id, name: id[0].toUpperCase() + id.slice(1), language: '', networkRequired: true }))}
-          disabled={busy} onSelect={id => { void run(`openai-voice:${id}`); }} /> : null}
-      </View>
     </CollapsibleSectionCard>
   </>;
 }

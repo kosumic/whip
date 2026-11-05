@@ -27,6 +27,9 @@ Blossom path from the inline logo at <https://cookbook.openai.com/>, retrieved
 November 4, 2026. It is converted to Android vector format and centered on a
 white background for visibility in light and dark system themes.
 
+The Settings OpenAI card uses the same Blossom geometry from
+`assets/brand/openai.svg`, tinted for the current theme.
+
 The OpenAI name and Blossom mark belong to OpenAI. The mark identifies calls
 using OpenAI's service and does not imply endorsement or affiliation.
 See [OpenAI's brand guidelines and usage terms](https://openai.com/brand/).

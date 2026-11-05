@@ -17,6 +17,7 @@ export const SECTION_TITLE_CLASS_NAME = 'text-[17px] font-semibold leading-6';
 type HeaderProps = {
   title: string;
   icon?: LucideIcon;
+  iconContent?: ReactNode;
   description?: string;
   titleContent?: ReactNode;
   accessibilityLabel?: string;
@@ -46,6 +47,7 @@ export function SectionCard({
 export function SectionCardHeader({
   title,
   icon,
+  iconContent,
   description,
   titleContent,
   accessibilityLabel,
@@ -61,9 +63,9 @@ export function SectionCardHeader({
       variant="ghost"
       className="min-h-[72px] w-full justify-start rounded-none bg-transparent px-4 py-3"
     >
-      {icon ? (
+      {iconContent || icon ? (
         <GlassIconBadge>
-          <Icon as={icon} size={20} />
+          {iconContent ?? (icon ? <Icon as={icon} size={20} /> : null)}
         </GlassIconBadge>
       ) : null}
       <View className="min-w-0 flex-1">

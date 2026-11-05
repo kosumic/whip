@@ -174,6 +174,7 @@ export const fr = {
   'speech.openaiVoice': "Voix OpenAI TTS",
   'speech.openaiCopy': "Génère une voix IA avec gpt-4o-mini-tts. Le texte est envoyé à OpenAI ; une connexion Internet et votre clé API OpenAI partagée sont nécessaires, et des frais API s’appliquent. Les appels locaux conservent la synthèse hors ligne.",
   'speech.backend': 'Moteur vocal',
+  'speech.activeBackend': 'La synthèse vocale utilise actuellement {{backend}}.',
   'speech.system': 'Système',
   'speech.phonon': 'Phonon (local, anglais)',
   'speech.localCopy': 'Téléchargez une fois pour une synthèse vocale anglaise hors ligne. Choisissez une voix ci-dessous. La transcription et l’assistant nécessitent toujours leurs connexions habituelles.',

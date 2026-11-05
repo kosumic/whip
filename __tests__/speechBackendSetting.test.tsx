@@ -13,14 +13,18 @@ jest.mock('../src/services/realtimeVoicePreview', () => ({ RealtimeVoicePreview:
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
 jest.mock('react-native', () => ({ View: 'View' }));
 jest.mock('lucide-react-native/icons/volume-2', () => 'Volume2');
-jest.mock('lucide-react-native/icons/sparkles', () => 'Sparkles');
-jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+jest.mock('lucide-react-native/icons/check', () => 'Check');
+jest.mock('react-i18next', () => ({ useTranslation: () => ({
+  t: (key: string, options?: { backend?: string }) => key === 'speech.activeBackend' ? `${key}:${options?.backend}` : key,
+}) }));
 jest.mock('../src/i18n', () => ({ deviceLanguage: () => 'en' }));
 jest.mock('../src/components/GlassControls', () => ({ GlassButton: 'GlassButton' }));
 jest.mock('../src/components/ui/input', () => ({ Input: 'Input' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
+jest.mock('../src/components/ui/icon', () => ({ Icon: 'Icon' }));
+jest.mock('../src/components/OpenAiIcon', () => ({ OpenAiIcon: 'OpenAiIcon' }));
 jest.mock('../src/components/SpeechVoicePicker', () => ({ SpeechVoicePicker: 'SpeechVoicePicker' }));
-jest.mock('../src/components/CollapsibleSectionCard', () => ({ CollapsibleSectionCard: 'SectionCard' }));
+jest.mock('../src/components/CollapsibleSectionCard', () => ({ CollapsibleSectionCard: 'SectionCard', SECTION_TITLE_CLASS_NAME: 'section-title' }));
 jest.mock('../src/hooks/useSectionExpansion', () => ({ useSectionExpansion: () => ({ expanded: true, toggleExpanded: jest.fn() }) }));
 jest.mock('../src/services/interactionFeedback', () => ({ hapticPress: (callback: () => void) => callback }));
 jest.mock('../src/services/backgroundOperations', () => ({ bestEffortCleanup: jest.fn(), reportBackgroundFailure: jest.fn() }));
@@ -76,19 +80,22 @@ test('OpenAI can be selected without Phonon support and has its own saved networ
   expect(renderer.root.findByProps({ title: 'speech.openaiVoice' }).props.selected).toBe('cedar');
 });
 
-test('provider configuration shares one OpenAI key and is separate from speech selection', () => {
+test('provider configuration shares one OpenAI key and keeps TTS voices with speech selection', async () => {
   const cards = renderer.root.findAllByType(CollapsibleSectionCard);
   expect(cards).toHaveLength(2);
   const local = cards.find(card => card.props.title === 'speech.backend')!;
   const openai = cards.find(card => card.props.title === 'openai.title')!;
   expect(local.findAllByProps({ accessibilityLabel: 'voiceProvider.apiKey' })).toHaveLength(0);
-  expect(openai.findAllByType(SpeechVoicePicker)).toHaveLength(2);
+  expect(openai.findAllByType(SpeechVoicePicker)).toHaveLength(1);
   expect(openai.findAllByType(VoiceConversationSetting)).toHaveLength(1);
   expect(openai.findAll(node => node.props.role === 'radio')).toHaveLength(0);
   expect(renderer.root.findAllByProps({ accessibilityLabel: 'voiceProvider.apiKey' })).toHaveLength(1);
   expect(openai.findByProps({ accessibilityLabel: 'voiceProvider.apiKey' }).props.secureTextEntry).toBe(true);
   expect(local.findAllByProps({ accessibilityLabel: 'speech.previewTextLabel' })).toHaveLength(1);
   expect(openai.findAllByProps({ accessibilityLabel: 'speech.previewTextLabel' })).toHaveLength(0);
+  await act(async () => press('speech.openai'));
+  expect(local.findByProps({ title: 'speech.openaiVoice' }).props.selected).toBe('marin');
+  expect(openai.findAllByProps({ title: 'speech.openaiVoice' })).toHaveLength(0);
 });
 
 test('OpenAI previews use the shared cancellable player and the edited preview text', async () => {
@@ -108,9 +115,14 @@ test('OpenAI previews use the shared cancellable player and the edited preview t
 test('saving one shared API key enables both speech and conversation previews and clears the draft', async () => {
   jest.mocked(hasOpenAiVoiceKey).mockResolvedValue(false);
   await act(async () => renderer.update(<SpeechBackendSetting key="no-key" />));
+  const openaiCard = () => renderer.root.findByProps({ title: 'openai.title' });
+  expect(openaiCard().props.accessibilityLabel).toBe('openai.title');
   await act(async () => press('speech.openai'));
   expect(status.backend).toBe('system');
-  expect(providerButton('openai').props.disabled).toBe(true);
+  expect(providerButton('openai').props.disabled).toBe(false);
+  expect(providerButton('openai').props.accessibilityState.selected).toBe(true);
+  expect(renderer.root.findByProps({ title: 'speech.openaiVoice' }).props.selected).toBe('marin');
+  expect(renderer.root.findAllByProps({ children: 'speech.activeBackend:speech.system' })).toHaveLength(1);
   expect(renderer.root.findByProps({ accessibilityLabel: 'voiceProvider.preview' }).props.disabled).toBe(true);
   const speechPreview = () => renderer.root.findAll(node => node.type === Text && node.props.children === 'speech.preview')[0].parent!;
   expect(speechPreview().props.disabled).toBe(false);
@@ -120,39 +132,111 @@ test('saving one shared API key enables both speech and conversation previews an
   await act(async () => press('common.save'));
   expect(saveOpenAiVoiceKey).toHaveBeenCalledWith('sk-speech-test');
   expect(input().props.value).toBe('');
+  expect(openaiCard().props.accessibilityLabel).toBe('openai.title, voiceProvider.keySaved');
   expect(renderer.root.findByProps({ accessibilityLabel: 'voiceProvider.preview' }).props.disabled).toBe(false);
   expect(providerButton('openai').props.disabled).toBe(false);
-  await act(async () => press('speech.openai'));
   expect(status.backend).toBe('openai');
   expect(speechPreview().props.disabled).toBe(false);
   await act(async () => removeOpenAiVoiceKey());
-  expect(providerButton('openai').props.disabled).toBe(true);
+  expect(openaiCard().props.accessibilityLabel).toBe('openai.title');
+  expect(status.backend).toBe('system');
+  expect(providerButton('openai').props.accessibilityState.selected).toBe(true);
+  expect(providerButton('openai').props.disabled).toBe(false);
   expect(providerButton('system').props.disabled).toBe(false);
 });
 
 test.each([
   { supported: false, installed: false, ready: false },
+  { supported: false, installed: true, ready: false },
   { supported: true, installed: false, ready: false },
   { supported: true, installed: true, ready: true },
 ])('Phonon selection readiness for supported=$supported, installed=$installed', async ({ supported, installed, ready }) => {
   status = { ...status, supported, installed };
   await act(async () => renderer.update(<SpeechBackendSetting key="phonon" />));
-  expect(providerButton('phonon').props.disabled).toBe(!ready);
+  expect(providerButton('phonon').props.disabled).toBe(false);
   expect(providerButton('system').props.disabled).toBe(false);
   await act(async () => press('speech.phonon'));
   expect(status.backend).toBe(ready ? 'phonon' : 'system');
+  expect(providerButton('phonon').props.accessibilityState.selected).toBe(true);
+  expect(renderer.root.findByProps({ title: 'speech.phononVoice' }).props.disabled).toBe(!ready);
+  expect(renderer.root.findAllByProps({ children: 'speech.download' })).toHaveLength(supported && !installed ? 1 : 0);
 });
 
-test('configuring the OpenAI TTS voice leaves the selected speech backend unchanged', async () => {
-  await act(async () => renderer.root.findByProps({ title: 'speech.openaiVoice' }).props.onSelect('cedar'));
-  expect(status.backend).toBe('system');
+test('the speech card only shows the selected backend voice', async () => {
+  expect(renderer.root.findAllByProps({ title: 'speech.openaiVoice' })).toHaveLength(0);
+  expect(renderer.root.findByProps({ title: 'speech.systemVoice' }).props.selected).toBe('');
+  await act(async () => press('speech.openai'));
+  expect(renderer.root.findAllByProps({ title: 'speech.systemVoice' })).toHaveLength(0);
+  expect(renderer.root.findByProps({ title: 'speech.openaiVoice' }).props.selected).toBe('marin');
+  await act(async () => press('speech.system'));
+  expect(renderer.root.findAllByProps({ title: 'speech.openaiVoice' })).toHaveLength(0);
   expect(renderer.root.findByProps({ title: 'speech.systemVoice' }).props.selected).toBe('');
 });
 
-test('a persisted fallback from outside Settings updates the visible speech selection', async () => {
+test('an external fallback shows the active backend while keeping its setup open', async () => {
   await act(async () => press('speech.openai'));
   const listener = jest.mocked(onSpeechBackendChange).mock.calls[0][0];
   await act(async () => listener({ ...status, backend: 'system' }));
+  expect(providerButton('openai').props.accessibilityState.selected).toBe(true);
+  expect(renderer.root.findByProps({ title: 'speech.openaiVoice' }).props.selected).toBe('marin');
+  expect(renderer.root.findAllByProps({ children: 'speech.activeBackend:speech.system' })).toHaveLength(1);
+});
+
+test.each([
+  { installed: true, downloadedBytes: 100 },
+  { installed: false, downloadedBytes: 50 },
+])('model controls stay in Phonon setup with installed=$installed', async ({ installed, downloadedBytes }) => {
+  status = { ...status, supported: true, installed, downloadedBytes };
+  await act(async () => renderer.update(<SpeechBackendSetting key="model" />));
+  expect(renderer.root.findAllByProps({ children: 'speech.remove' })).toHaveLength(0);
+  expect(renderer.root.findAllByProps({ children: 'speech.resume' })).toHaveLength(0);
+  await act(async () => press('speech.phonon'));
+  expect(renderer.root.findAllByProps({ children: 'speech.remove' })).toHaveLength(1);
+  expect(renderer.root.findAllByProps({ children: 'speech.resume' })).toHaveLength(installed ? 0 : 1);
+  await act(async () => press('speech.openai'));
+  expect(renderer.root.findAllByProps({ children: 'speech.remove' })).toHaveLength(0);
+  expect(renderer.root.findAllByProps({ children: 'speech.resume' })).toHaveLength(0);
+});
+
+test('opening unconfigured Phonon switches speech to System and activates Phonon when installed', async () => {
+  status = { ...status, supported: true };
+  await act(async () => renderer.update(<SpeechBackendSetting key="download" />));
+  await act(async () => press('speech.openai'));
+  expect(status.backend).toBe('openai');
+  await act(async () => press('speech.phonon'));
+  expect(status.backend).toBe('system');
+  expect(renderer.root.findAllByProps({ children: 'speech.activeBackend:speech.system' })).toHaveLength(1);
+  await act(async () => press('speech.download'));
+  const listener = jest.mocked(onSpeechBackendChange).mock.calls.at(-1)![0];
+  status = { ...status, installed: true };
+  await act(async () => listener(status));
+  expect(status.backend).toBe('phonon');
+  expect(renderer.root.findByProps({ title: 'speech.phononVoice' }).props.disabled).toBe(false);
+});
+
+test('completing Phonon setup leaves System selected after navigating away', async () => {
+  status = { ...status, supported: true };
+  await act(async () => renderer.update(<SpeechBackendSetting key="leave-download" />));
+  await act(async () => press('speech.phonon'));
+  await act(async () => press('speech.download'));
+  await act(async () => press('speech.system'));
+  const listener = jest.mocked(onSpeechBackendChange).mock.calls.at(-1)![0];
+  status = { ...status, installed: true };
+  await act(async () => listener(status));
+  expect(status.backend).toBe('system');
   expect(providerButton('system').props.accessibilityState.selected).toBe(true);
-  expect(providerButton('openai').props.accessibilityState.selected).toBe(false);
+  expect(renderer.root.findAllByProps({ children: 'speech.remove' })).toHaveLength(0);
+});
+
+test('a rejected backend selection uses System and keeps the setup available', async () => {
+  await act(async () => press('speech.openai'));
+  status = { ...status, supported: true, installed: true };
+  const listener = jest.mocked(onSpeechBackendChange).mock.calls.at(-1)![0];
+  await act(async () => listener(status));
+  jest.mocked(speechBackendCommand).mockRejectedValueOnce(new Error('Phonon model unavailable'));
+  await act(async () => press('speech.phonon'));
+  expect(status.backend).toBe('system');
+  expect(providerButton('phonon').props.accessibilityState.selected).toBe(true);
+  expect(renderer.root.findAllByProps({ children: 'speech.activeBackend:speech.system' })).toHaveLength(1);
+  expect(renderer.root.findAllByProps({ children: 'Phonon model unavailable' })).toHaveLength(1);
 });

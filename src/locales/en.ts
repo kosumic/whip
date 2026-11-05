@@ -157,6 +157,7 @@ export const en = {
   'speech.openaiVoice': "OpenAI TTS voice",
   'speech.openaiCopy': "Uses gpt-4o-mini-tts to generate AI speech. Speech text is sent to OpenAI; an internet connection and your shared OpenAI API key are required, and API charges apply. Local-only calls keep using offline speech.",
   'speech.backend': 'Speech backend',
+  'speech.activeBackend': 'Currently using {{backend}} for speech.',
   'speech.system': 'System',
   'speech.phonon': 'Phonon (local, English)',
   'speech.localCopy': 'Download once for offline English speech. Choose a voice below. Transcription and the assistant still need their usual connections.',

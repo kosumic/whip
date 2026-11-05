@@ -172,6 +172,7 @@ export const zhHans = {
   'speech.openaiVoice': "OpenAI TTS 声音",
   'speech.openaiCopy': "使用 gpt-4o-mini-tts 生成 AI 语音。朗读文本会发送给 OpenAI；需要网络连接和共用的 OpenAI API 密钥，并产生 API 费用。仅限本地的通话仍使用离线语音。",
   'speech.backend': '语音引擎',
+  'speech.activeBackend': '当前使用 {{backend}} 朗读。',
   'speech.system': '系统',
   'speech.phonon': 'Phonon（本地，英语）',
   'speech.localCopy': '下载一次即可离线生成英语语音。在下方选择声音。转录和助手仍需要原有的网络连接。',

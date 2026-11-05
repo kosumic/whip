@@ -172,6 +172,7 @@ export const ja = {
   'speech.openaiVoice': "OpenAI TTS の声",
   'speech.openaiCopy': "gpt-4o-mini-tts で AI 音声を生成します。読み上げるテキストは OpenAI に送信されます。インターネット接続と共有の OpenAI API キーが必要で、API 料金が発生します。ローカル通話では引き続きオフライン音声を使用します。",
   'speech.backend': '音声エンジン',
+  'speech.activeBackend': '現在、音声には {{backend}} を使用しています。',
   'speech.system': 'システム',
   'speech.phonon': 'Phonon（ローカル・英語）',
   'speech.localCopy': '一度ダウンロードすれば、英語の音声をオフラインで生成できます。下で声を選べます。文字起こしとアシスタントには通常の接続が必要です。',

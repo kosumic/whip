@@ -9,8 +9,13 @@ OpenAI selection is disabled until an API key is saved and while credentials
 are being updated or their presence cannot be checked. Removing the key resets
 the saved conversation provider to Local and OpenAI TTS to System, even with
 Settings closed. A key lookup error or key replacement preserves the selection.
-Local is always selectable. Phonon is offered only for TTS and requires an installed model on a
-supported device before it can be selected. Removing its model resets Phonon TTS
+Local is always selectable. Speech backend tabs open that backend's configuration,
+including setup when it is unavailable. Speech uses System until the chosen
+backend has a saved API key or an installed Phonon model on a supported device;
+the setup tab stays open and identifies the active fallback. Completing setup
+activates the chosen backend while Settings is open. Phonon download, progress
+and model removal controls appear only in its tab. Phonon is offered only for TTS.
+Removing its model resets Phonon TTS
 to System. Restored selections whose key or model is missing also fall back.
 The existing Local provider remains the default. [GPT-Live](live-voice.md) is
 available for agent-bound calls; [Global calls](global-voice.md) use Realtime. The selected voice and Realtime VAD configuration are
