@@ -202,7 +202,7 @@ jobs:
         run: bash tests/test-tailcat-proxyjump.sh
 
       - name: Install prebuilt cargo-audit
-        uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
+        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
           tool: cargo-audit@0.22.2
           fallback: none
@@ -297,7 +297,7 @@ jobs:
 
       - &android-java
         name: Set up Java
-        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: 17
@@ -474,7 +474,7 @@ jobs:
           nix develop --file .github/nix/codeql.nix -c java -version
 
       - name: Initialize Java and Kotlin CodeQL
-        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
         with:
           languages: java-kotlin
           build-mode: manual
@@ -494,7 +494,7 @@ jobs:
           --no-daemon
 
       - name: Analyze Java and Kotlin
-        uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
         with:
           category: /language:java-kotlin
 
