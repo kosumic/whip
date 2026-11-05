@@ -1237,6 +1237,21 @@ export function AgentChatView({
   });
   const initialViewportReadyCallbackRef = useRef(onInitialViewportReady);
   initialViewportReadyCallbackRef.current = onInitialViewportReady;
+  const [preparation, setPreparation] = useState(() => ({
+    identity: sourceIdentity, source: searchSource, store: rowStore,
+    resetVersion: rowStore.resetVersion, generation: 0,
+  }));
+  const previousTranscriptRevisionRef = useRef(state.revision);
+  const transcriptRestarted = state.revision !== undefined
+    && previousTranscriptRevisionRef.current !== undefined
+    && state.revision < previousTranscriptRevisionRef.current;
+  const preparationChanged = preparation.identity !== sourceIdentity
+    || preparation.source !== searchSource || preparation.store !== rowStore
+    || preparation.resetVersion !== rowStore.resetVersion || transcriptRestarted;
+  const projectionCurrent = state.revision === undefined || rowStore.transcriptRevision <= state.revision;
+  const suspendedAtEndRef = useRef(false);
+  const activationStartedRef = useRef(performance.now());
+  const activationPathRef = useRef('cold-mount');
   const lastInitialViewportDiagnosticRef = useRef('');
   const agentName = chatAgentDisplayName(agent);
   const anchorIndex = savedViewport?.anchor && !savedViewport.followEnd
@@ -1244,7 +1259,7 @@ export function AgentChatView({
   const initialScrollIndex = anchorIndex < 0 ? undefined : anchorIndex;
 
   const saveViewport = useCallback(() => {
-    if (initialViewportRef.current.ready) {
+    if (initialViewportRef.current.ready && activeRef.current) {
       const geometry = scrollGeometryRef.current;
       const index = list.current?.getFirstVisibleIndex?.();
       const block = index === undefined ? undefined : blocksRef.current[index];
@@ -1345,6 +1360,8 @@ export function AgentChatView({
     top: CHAT_CONTENT_TOP_GAP + searchBarHeight,
     bottom: CHAT_CONTENT_BOTTOM_GAP,
   });
+  const previousPaddingRef = useRef(contentPadding);
+  const viewportWidthRef = useRef<number | undefined>(undefined);
   const maxOffset = Math.max(0, scrollGeometry.contentHeight - scrollGeometry.viewportHeight);
   const awayFromLatest = !followEnd && !nearEnd(scrollGeometry.offset, maxOffset);
   const activity = useChatActivity(active && workActive && awayFromLatest,
@@ -1558,23 +1575,111 @@ export function AgentChatView({
     list.current?.scrollToOffset({ offset: targetOffset, animated: false });
   };
 
+  const invalidateViewport = (reason: string, remeasure = false) => {
+    const readiness = initialViewportRef.current;
+    recordAgentChatDiagnostic('viewport-invalidated', {
+      reason, wasReady: readiness.ready, generation: preparation.generation, sessionId: state.sessionId,
+    });
+    readiness.ready = false;
+    readiness.positionConfirmed = false;
+    readiness.atEnd = false;
+    if (remeasure) {
+      readiness.contentSizeKnown = false;
+      readiness.measuredLatestBlockId = null;
+      readiness.viewableLatestBlockId = null;
+    }
+    setViewportReady(false);
+  };
+
+  const remeasureViewport = (reason: string) => {
+    invalidateViewport(reason, true);
+    initialViewportRef.current.itemsLoaded = false;
+    // A remounted list guarantees fresh measurement/load/viewability callbacks,
+    // even when reflow or inset changes leave its total content height unchanged.
+    setPreparation(current => ({ ...current, generation: current.generation + 1 }));
+  };
+
+  const updateViewportPreparation = useEffectEvent(() => {
+    previousTranscriptRevisionRef.current = state.revision;
+    if (!preparationChanged) return;
+    const identityChanged = preparation.identity !== sourceIdentity;
+    const reason = identityChanged ? 'identity-changed'
+      : transcriptRestarted ? 'transcript-restarted' : 'row-source-reset';
+    invalidateViewport(reason, true);
+    initialViewportRef.current.itemsLoaded = false;
+    if (identityChanged || (savedViewportRef.current?.anchor
+      && rowStore.ready && rowStore.indexOf(savedViewportRef.current.anchor.blockId) < 0)) {
+      savedViewportRef.current = null;
+      setFollowEnd(true);
+    }
+    activationPathRef.current = reason;
+    setPreparation({
+      identity: sourceIdentity, source: searchSource, store: rowStore,
+      resetVersion: rowStore.resetVersion, generation: preparation.generation + 1,
+    });
+  });
+  useLayoutEffect(() => {
+    updateViewportPreparation();
+  }, [sourceIdentity, searchSource, rowStore, rowStore.resetVersion, state.revision]);
+
+  const updateViewportPadding = useEffectEvent(() => {
+    const previous = previousPaddingRef.current;
+    previousPaddingRef.current = contentPadding;
+    if (previous.top === contentPadding.top && previous.bottom === contentPadding.bottom) return;
+    // Native content-size callbacks remeasure changed list padding before reveal.
+    if (!active || activeRef.current !== active) remeasureViewport('content-insets-changed');
+  });
+  useLayoutEffect(() => {
+    updateViewportPadding();
+  }, [contentPadding.top, contentPadding.bottom]);
+
+  const retainedPositionSafe = () => {
+    const saved = savedViewportRef.current;
+    const geometry = scrollGeometryRef.current;
+    if (!saved || !initialViewportRef.current.positionConfirmed) return false;
+    const maximumOffset = Math.max(0, geometry.contentHeight - geometry.viewportHeight);
+    if (saved.followEnd) return suspendedAtEndRef.current
+      && (Math.abs(geometry.offset - saved.offset) <= CHAT_INITIAL_END_THRESHOLD
+        || Math.abs(geometry.offset - maximumOffset) <= CHAT_INITIAL_END_THRESHOLD);
+    return (!saved.anchor || rowStore.indexOf(saved.anchor.blockId) >= 0)
+      && Math.abs(geometry.offset - restoredOffset(saved, maximumOffset)) <= CHAT_INITIAL_END_THRESHOLD;
+  };
+
   const updateViewportActivity = useEffectEvent(() => {
     if (activeRef.current === active) return;
-    activeRef.current = active;
     const readiness = initialViewportRef.current;
     if (!active && readiness.ready) {
       saveViewport();
+      suspendedAtEndRef.current = readiness.atEnd;
     }
-    readiness.ready = false;
-    setViewportReady(false);
+    activeRef.current = active;
     resetScroll();
     scrollInteractionRef.current = {
       kind: ChatScrollInteractionKind.Idle,
       lastOffset: scrollGeometryRef.current.offset,
     };
     scrollbarDragRef.current = null;
+    recordAgentChatDiagnostic('viewport-activity-changed', {
+      active, ready: readiness.ready, generation: preparation.generation,
+      rowRevision: rowStore.revision, rowResetVersion: rowStore.resetVersion, sessionId: state.sessionId,
+    });
     if (active) {
+      activationStartedRef.current = performance.now();
       setFollowEnd(savedViewportRef.current?.followEnd ?? true);
+      if (readiness.ready && !preparationChanged && retainedPositionSafe()) {
+        activationPathRef.current = 'retained-reactivation';
+        recordAgentChatDiagnostic('viewport-retained-reactivated', {
+          ready: true, generation: preparation.generation,
+          followEnd: followEndRef.current, rowRevision: rowStore.revision, sessionId: state.sessionId,
+        });
+        // Keep existing rows visible while catching up; normal content-size
+        // callbacks continue following later asynchronous row projections.
+        if (followEndRef.current && !readiness.atEnd) list.current?.scrollToEnd({ animated: false });
+        initialViewportReadyCallbackRef.current?.();
+        return;
+      }
+      activationPathRef.current = 'retained-preparation';
+      if (readiness.ready) invalidateViewport('unsafe-retained-position');
       alignLoadedInitialViewport();
       scheduleInitialViewportReady('reactivated');
     }
@@ -1787,7 +1892,26 @@ export function AgentChatView({
     [onOpenFile, onOpenWebLink, state.transcript.info?.directory],
   );
 
-  const viewportVisible = active && activeRef.current === active && (viewportReady || Boolean(rowStore.error));
+  const resumingWithChangedPadding = !activeRef.current && (
+    previousPaddingRef.current.top !== contentPadding.top
+    || previousPaddingRef.current.bottom !== contentPadding.bottom
+  );
+  const viewportVisible = active && !preparationChanged && projectionCurrent
+    && !resumingWithChangedPadding
+    && (Boolean(rowStore.error) || (viewportReady && (activeRef.current || retainedPositionSafe())));
+
+  useEffect(() => {
+    if (!viewportVisible) return;
+    recordAgentChatDiagnostic('viewport-visible', {
+      path: activationPathRef.current, generation: preparation.generation,
+      elapsedMs: performance.now() - activationStartedRef.current, sessionId: state.sessionId,
+    });
+    const frame = requestAnimationFrame(() => recordAgentChatDiagnostic('viewport-visible-frame', {
+      path: activationPathRef.current, generation: preparation.generation,
+      elapsedMs: performance.now() - activationStartedRef.current, sessionId: state.sessionId,
+    }));
+    return () => cancelAnimationFrame(frame);
+  }, [viewportVisible, preparation.generation, state.sessionId]);
 
   return (
     <View
@@ -1809,16 +1933,31 @@ export function AgentChatView({
           });
         }}
         onLayout={event => {
+          const { width, height } = event.nativeEvent.layout;
+          const previousWidth = viewportWidthRef.current;
+          viewportWidthRef.current = width;
+          const widthChanged = previousWidth !== undefined && width !== previousWidth;
+          const heightChanged = scrollGeometryRef.current.viewportHeight > 0
+            && height !== scrollGeometryRef.current.viewportHeight;
+          if (widthChanged) {
+            if (activeRef.current) saveViewport();
+            remeasureViewport('viewport-width-changed');
+          } else if (heightChanged) {
+            if (activeRef.current) saveViewport();
+            invalidateViewport('viewport-height-changed');
+          }
           initialViewportRef.current.viewportLaidOut = true;
           const current = scrollGeometryRef.current;
           updateScrollExtent({
             contentHeight: current.contentHeight,
-            viewportHeight: event.nativeEvent.layout.height,
+            viewportHeight: height,
           });
           alignLoadedInitialViewport();
+          if (heightChanged && !widthChanged) confirmListPosition();
         }}
       >
-        {(rowStore.ready || rowStore.error) && <FlashList
+        {projectionCurrent && (rowStore.ready || rowStore.error) && <FlashList
+          key={preparation.generation}
           ref={list}
           onCommitLayoutEffect={() => {
             updatePinnedPrompt(scrollGeometryRef.current.offset);

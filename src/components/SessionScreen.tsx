@@ -348,7 +348,12 @@ export function SessionScreen({
   );
   const [appActive, setAppActive] = useState(() => AppState.currentState !== 'background');
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', state => setAppActive(state === 'active'));
+    let previous = AppState.currentState;
+    const subscription = AppState.addEventListener('change', state => {
+      recordAgentChatDiagnostic('chat-app-state-changed', { from: previous, to: state });
+      previous = state;
+      setAppActive(state === 'active');
+    });
     return () => subscription.remove();
   }, []);
   const [pasteRequest, setPasteRequest] = useState<{

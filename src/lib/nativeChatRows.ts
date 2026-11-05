@@ -25,6 +25,8 @@ export class ChatRowStore {
   revision = 0;
   ready = false;
   transcriptRevision = 0;
+  /** Successful authoritative replacements invalidate measured viewport geometry. */
+  resetVersion = 0;
   error?: string;
   private readonly positions = new Map<string, number>();
   private readonly prompts = new Map<string, ChatRow>();
@@ -50,6 +52,7 @@ export class ChatRowStore {
       }
     }
     if (update.patches.length) {
+      if (update.patches.some(patch => patch.type === 'reset')) this.resetVersion += 1;
       const previous = this.rows;
       const next = [...previous];
       let earliest = next.length;

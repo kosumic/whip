@@ -147,6 +147,70 @@ targeted cache, Chat, and voice suite passes 269 tests, plus TypeScript and lint
 
 ## Capture and analysis
 
+### Retained foreground resumes (#363)
+
+The retained viewport regression is separate from the cache-rehydration samples
+above. A Pixel 9 Pro capture on 2026-11-05 confirmed that a same-process resume
+reset completed readiness without a viewport unmount or binding replacement:
+
+- `14:22:03.120`: app moved from active to background.
+- `14:22:05.191`: app returned to active.
+- `14:22:05.692`: the same retained viewport reported `ready: false`, then
+  `ready: true` and its initial-ready callback, with source `retained-position`.
+
+That is **501 ms from the app-active log to the readiness callback**. The
+capture has no first-displayed-frame marker, so it does not establish a 501 ms
+blank interval or isolate all of that time to readiness work. The native
+activity launch was HOT; transcript cache rehydration was not this boundary.
+
+The fix preserves readiness across activity changes when the mounted list,
+binding/source, and saved position remain compatible. Background appends can
+catch up while existing rows remain visible. Identity or row-owner replacement,
+authoritative native row resets, transcript revision rollback, incompatible
+geometry/insets, and unsafe retained positions still prepare before reveal.
+Inactive eviction keeps the checkpoint saved at suspension rather than
+overwriting it with hidden native movement.
+
+Resume diagnostics now include:
+
+- `chat-app-state-changed`: the JavaScript AppState notification, with a
+  monotonic timestamp. Pair background and active events for the measured run.
+- `viewport-activity-changed`: activity and readiness at the lifecycle boundary,
+  plus row revision, row reset version, and list generation.
+- `viewport-retained-reactivated`: completed readiness was reused.
+- `viewport-invalidated`: why preparation was required.
+- `native-rows-projected`: initial or reset native projection was committed.
+- `viewport-visible` and `viewport-visible-frame`: root visibility committed
+  and the next JavaScript animation-frame callback, with activation path,
+  session, generation, and time since viewport activation.
+
+Correlate these with `viewport-mounted`/`viewport-unmounted`, binding adoption,
+and the existing readiness diagnostics. `cold-mount`, retained reactivation,
+and retained preparation are different paths. A changed generation identifies
+list preparation; it is not necessarily a new transcript binding.
+
+The animation-frame callback is a JavaScript frame opportunity after React
+reports visibility, **not proof that the compositor displayed the pixels**.
+For app-active-to-frame latency, subtract the two event `monotonicMs` values;
+the visibility event's `elapsedMs` starts later, at viewport activation. Do not
+substitute the older rehydration timings for either interval.
+
+The two new visibility regressions fail against the original component. With
+the fix, all 389 targeted viewport, SessionScreen, row-owner, and retention
+tests pass, along with TypeScript and targeted ESLint on `main`. They cover
+retained-list identity and every committed root opacity during resume,
+background appends before/after measurement, manual anchors and hidden native
+movement, identity/owner/reset/revision changes, geometry/insets, and eviction.
+
+An after-device timing is **not available**. The isolated JavaScript profiling
+bundle was packaged with an existing upload-signed ARM64 native APK, but failed
+startup on the unrelated UniFFI voice recognition-ended bridge checksum. A
+retry with frozen bindings also failed that check. The original working APK
+was restored with `adb install -r`; no uninstall or app-data deletion was used.
+These failed startups are not resume samples, and no latency improvement is
+claimed from them. A coherent native-and-JavaScript rebuild is still needed
+for the after-device measurement.
+
 Collect logcat at `threadtime` resolution, including `WhipHostRuntime` and
 `ReactNativeJS`. Native records use `phase=startup-timing`, a hashed transcript
 key, stage name, elapsed milliseconds, and optional command timing fields.

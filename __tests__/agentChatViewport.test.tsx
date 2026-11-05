@@ -4,7 +4,7 @@ import { NativeCodeBlock } from '../src/components/NativeCodeBlock';
 import { JsonOutputViewer } from '../src/components/JsonOutputViewer';
 import { ChatFileDiff } from '../src/components/ChatFileDiff';
 import * as toolOutput from '../src/lib/toolOutput';
-import { Fragment, useState, type ReactElement } from 'react';
+import { Fragment, Profiler, useState, type ReactElement } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
 import * as Haptics from 'expo-haptics';
 import { Linking } from 'react-native';
@@ -28,7 +28,7 @@ import {
 import { AgentChatView } from '../src/components/AgentChatView';
 import { useNativeChatRows } from '../src/hooks/useNativeChatRows';
 import { ChatRowStore } from '../src/lib/nativeChatRows';
-import { mockChatRows } from '../test-support/mockChatRows';
+import { mockChatRows, useMockChatRows } from '../test-support/mockChatRows';
 import { ChatComposerSelection } from '../src/components/ChatComposerSelection';
 import type { ChatRow as ChatBlock } from '../src/lib/nativeChatRows';
 import type { ChatViewportState } from '../src/lib/chatViewportState';
@@ -43,7 +43,7 @@ const mockSearchNavigate = jest.fn<ChatSearchResults, [boolean]>();
 const mockSearchSelect = jest.fn<ChatSearchResults, [number]>();
 const mockSearchDispose = jest.fn();
 jest.mock('../src/hooks/useNativeChatRows', () => ({
-  useNativeChatRows: jest.fn(jest.requireActual('../test-support/mockChatRows').mockChatRows),
+  useNativeChatRows: jest.fn(jest.requireActual('../test-support/mockChatRows').useMockChatRows),
 }));
 jest.mock('react-native-whip-ssh/src/chatSearch', () => ({
   NativeChatSearchIndex: jest.fn().mockImplementation(() => ({
@@ -52,7 +52,7 @@ jest.mock('react-native-whip-ssh/src/chatSearch', () => ({
 }));
 
 beforeEach(() => {
-  jest.mocked(useNativeChatRows).mockImplementation(mockChatRows);
+  jest.mocked(useNativeChatRows).mockImplementation(useMockChatRows);
   jest.mocked(Haptics.selectionAsync).mockClear();
   jest.mocked(Haptics.notificationAsync).mockClear();
   mockSearch.mockReset().mockImplementation(query => ({ query, matches: [], selected: undefined, truncated: false }));
@@ -698,7 +698,7 @@ describe('AgentChatView floating transcript notice', () => {
   test('native row errors stay visible and inactive chats do not announce notices', () => {
     const error = 'Could not load transcript rows';
     jest.mocked(useNativeChatRows).mockImplementation((...args) => {
-      const store = mockChatRows(...args);
+      const store = useMockChatRows(...args);
       store.error = error;
       return store;
     });
@@ -2030,12 +2030,19 @@ describe('AgentChatView warm viewport restoration', () => {
   let scrollToEnd: jest.Mock;
   let scrollToOffset: jest.Mock;
   let onReady: jest.Mock;
+  let committedOpacities: number[];
+  let observeCommits: boolean;
+  let overrides: Partial<Parameters<typeof AgentChatView>[0]>;
+
+  const profiledChat = (active: boolean) => <Profiler id="chat-resume" onRender={() => {
+    if (observeCommits) committedOpacities.push(chatViewport(renderer).parent!.props.style.opacity);
+  }}><AgentChatView {...chatView(state, active, onReady).props} {...overrides} /></Profiler>;
 
   const latestButtons = () => renderer.root.findAll(
     node => node.props.accessibilityLabel === 'Jump to latest',
   );
   const update = (active: boolean) => {
-    act(() => renderer.update(chatView(state, active, onReady)));
+    act(() => renderer.update(profiledChat(active)));
   };
   const userScrollTo = (offset: number) => {
     act(() => {
@@ -2062,10 +2069,13 @@ describe('AgentChatView warm viewport restoration', () => {
     scrollToEnd = jest.fn();
     scrollToOffset = jest.fn();
     onReady = jest.fn();
+    committedOpacities = [];
+    observeCommits = false;
+    overrides = {};
     act(() => {
-      renderer = create(chatView(state, true, onReady), {
+      renderer = create(profiledChat(true), {
         createNodeMock: element => element.type === 'FlashList'
-          ? { scrollToEnd, scrollToOffset }
+          ? { scrollToEnd, scrollToOffset, getAbsoluteLastScrollOffset: () => 600 }
           : null,
       });
     });
@@ -2106,6 +2116,117 @@ describe('AgentChatView warm viewport restoration', () => {
     expect(latestButtons()).toHaveLength(0);
     act(() => { flatList(renderer).props.onContentSizeChange(0, 1_100); });
     expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
+  });
+
+  test('foregrounding a ready retained list never commits a hidden chat root', () => {
+    const list = flatList(renderer);
+    update(false);
+    observeCommits = true;
+    update(true);
+    expect(committedOpacities.length).toBeGreaterThan(0);
+    expect(committedOpacities.every(opacity => opacity === 1)).toBe(true);
+    expect(flatList(renderer)).toBe(list);
+    expect(onReady).toHaveBeenCalledTimes(1);
+    expect(scrollToOffset).not.toHaveBeenCalled();
+    expect(scrollToEnd).not.toHaveBeenCalled();
+  });
+
+  test('evicting an inactive list preserves the checkpoint from before hidden native movement', () => {
+    const onSaveViewport = jest.fn();
+    overrides.onSaveViewport = onSaveViewport;
+    update(true);
+    userScrollTo(250);
+    update(false);
+    act(() => { flatList(renderer).props.onScroll(scrollEvent(800, 1_500)); });
+    act(() => renderer.unmount());
+    expect(onSaveViewport.mock.calls.every(([saved]) => saved.offset === 250 && !saved.followEnd)).toBe(true);
+    expect(onSaveViewport).toHaveBeenCalled();
+  });
+
+  test('a retained bottom follower waits for new content measurements without hiding old rows', () => {
+    const list = flatList(renderer);
+    update(false);
+    state = chatState([TURN, { ...TURN, id: 'unmeasured-tail' }]);
+    observeCommits = true;
+    update(true);
+    expect(committedOpacities.every(opacity => opacity === 1)).toBe(true);
+    expect(flatList(renderer)).toBe(list);
+    expect(onReady).toHaveBeenCalledTimes(1);
+    expect(scrollToOffset).not.toHaveBeenCalled();
+    act(() => { flatList(renderer).props.onContentSizeChange(0, 1_500); });
+    expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
+    expect(chatViewport(renderer).parent?.props.style.opacity).toBe(1);
+  });
+
+  test.each(['session', 'agent', 'binding', 'namespace', 'row-owner', 'row-reset', 'transcript-restart'] as const)(
+    '%s replacement still prepares a fresh list before reveal', reason => {
+      state = { ...state, revision: 10 };
+      update(true);
+      const previousList = flatList(renderer);
+      update(false);
+      if (reason === 'session') state = { ...state, sessionId: 'replacement-session' };
+      if (reason === 'agent') overrides.agent = 'opencode';
+      if (reason === 'binding') overrides.searchKey = 'replacement-binding';
+      if (reason === 'namespace') overrides.savedSearchNamespace = 'replacement-host';
+      if (reason === 'transcript-restart') state = { ...state, revision: 1 };
+      if (reason === 'row-owner') {
+        const replacement = mockChatRows(undefined, state, false, new Set());
+        jest.mocked(useNativeChatRows).mockImplementation((...args) => {
+          useMockChatRows(...args);
+          return replacement;
+        });
+      }
+      if (reason === 'row-reset') {
+        const store = jest.mocked(useNativeChatRows).mock.results.at(-1)!.value as ChatRowStore;
+        store.apply({
+          baseRevision: store.revision, revision: store.revision + 1,
+          transcriptRevision: state.revision!, patches: [{ type: 'reset', rows: store.rows }],
+        });
+      }
+      update(false);
+      update(true);
+      expect(flatList(renderer)).not.toBe(previousList);
+      expect(onReady).not.toHaveBeenCalled();
+      expect(chatViewport(renderer).parent?.props.style.opacity).toBe(0);
+      act(() => {
+        flatList(renderer).props.onContentSizeChange(0, 1_000);
+        flatList(renderer).props.onViewableItemsChanged({
+          viewableItems: [{ item: finalBlock(renderer, TURN), isViewable: true }],
+        });
+        flatList(renderer).props.onScroll(scrollEvent(600, 1_000));
+        flatList(renderer).props.onLoad();
+      });
+      expect(onReady).toHaveBeenCalledTimes(1);
+      expect(chatViewport(renderer).parent?.props.style.opacity).toBe(1);
+    },
+  );
+
+  test.each(['width', 'height', 'insets'] as const)('%s changes revalidate retained geometry', change => {
+    act(() => { chatViewport(renderer).props.onLayout({ nativeEvent: { layout: { width: 300, height: 400 } } }); });
+    update(false);
+    if (change === 'insets') {
+      overrides.contentInsets = { top: 24, bottom: 200 };
+      update(false);
+    } else {
+      act(() => { chatViewport(renderer).props.onLayout({ nativeEvent: { layout: {
+        width: change === 'width' ? 500 : 300,
+        height: change === 'height' ? 300 : 400,
+      } } }); });
+    }
+    update(true);
+    expect(onReady).not.toHaveBeenCalled();
+    expect(chatViewport(renderer).parent?.props.style.opacity).toBe(0);
+    act(() => {
+      flatList(renderer).props.onContentSizeChange(0, 1_200);
+      flatList(renderer).props.onViewableItemsChanged({
+        viewableItems: [{ item: finalBlock(renderer, TURN), isViewable: true }],
+      });
+      const height = change === 'height' ? 300 : 400;
+      flatList(renderer).props.onScroll(scrollEvent(1_200 - height, 1_200, height));
+      flatList(renderer).props.onLoad();
+    });
+    expect(onReady).toHaveBeenCalledTimes(1);
+    expect(chatViewport(renderer).parent?.props.style.opacity).toBe(1);
   });
 
   test('leaving near bottom restores the exact bottom before reveal', () => {
@@ -2166,21 +2287,27 @@ describe('AgentChatView warm viewport restoration', () => {
     expect(scrollToEnd).not.toHaveBeenCalled();
   });
 
-  test('a bottom follower catches up with hidden messages before becoming visible', () => {
+  test('a bottom follower shows retained content while catching up with hidden messages', () => {
+    const list = flatList(renderer);
     update(false);
     const next = appendHiddenTurn();
     expect(scrollToEnd).not.toHaveBeenCalled();
+    observeCommits = true;
     update(true);
-    expect(scrollToOffset).toHaveBeenCalledWith({ offset: 1_100, animated: false });
-    expect(onReady).not.toHaveBeenCalled();
+    expect(flatList(renderer)).toBe(list);
+    expect(committedOpacities.every(opacity => opacity === 1)).toBe(true);
+    expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
+    expect(onReady).toHaveBeenCalledTimes(1);
     act(() => {
       flatList(renderer).props.onViewableItemsChanged({
         viewableItems: [{ item: finalBlock(renderer, next), isViewable: true }],
       });
     });
-    expect(onReady).not.toHaveBeenCalled();
+    expect(onReady).toHaveBeenCalledTimes(1);
     act(() => { flatList(renderer).props.onScroll(scrollEvent(1_100, 1_500)); });
     expect(onReady).toHaveBeenCalledTimes(1);
+    const ids = flatList(renderer).props.data.map((row: ChatBlock) => row.id);
+    expect(new Set(ids).size).toBe(ids.length);
     expect(latestButtons()).toHaveLength(0);
   });
 });
