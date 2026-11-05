@@ -97,7 +97,7 @@ pub(super) async fn start(
     config: &super::Config,
     attempt: Arc<recovery::Attempt>,
 ) -> Result<RealtimeSocket, recovery::Failure> {
-    let (mut socket, commands, events) = socket::Socket::relay();
+    let (socket, commands, events) = socket::Socket::relay();
     let identity = Arc::new(Mutex::new(identity::Identity::default()));
     let offer_started = Instant::now();
     let mut peer = transport::Transport::new(events.clone(), identity.clone()).await?;
@@ -160,19 +160,9 @@ pub(super) async fn start(
         .await);
     }
     owner.view.lock().startup.negotiation = Some(startup::elapsed(negotiated));
-    let confirmed = await_confirmation(&owner, &mut socket, config, &attempt).await;
-    if let Err(error) = confirmed {
-        return Err(retire(
-            &owner,
-            &stop,
-            sideband,
-            &mut peer,
-            &call,
-            error.message,
-            error.retryable,
-        )
-        .await);
-    }
+    // The call POST already accepted the complete session configuration.
+    // Match Codex: start media after negotiation while the sideband connects
+    // independently. Its effective settings are still validated by run().
     if let Err(error) = attempt.activate() {
         return Err(retire(
             &owner,
@@ -216,80 +206,6 @@ pub(super) async fn start(
         devices_started(&owner);
     }
     Ok(socket)
-}
-
-async fn await_confirmation(
-    owner: &RealtimeVoiceAdapter,
-    socket: &mut RealtimeSocket,
-    config: &super::Config,
-    attempt: &recovery::Attempt,
-) -> Result<(), recovery::Failure> {
-    let mut errors = attempt.errors.subscribe();
-    let mut cancellation = owner.cancel.subscribe();
-    let deadline = tokio::time::sleep(super::IO_TIMEOUT);
-    tokio::pin!(deadline);
-    loop {
-        if !attempt.current() {
-            return Err(recovery::CANCELLED.into());
-        }
-        if let Some(error) = *errors.borrow() {
-            return Err(error);
-        }
-        let message = tokio::select! {
-            biased;
-            _ = cancellation.changed() => return Err(recovery::CANCELLED.into()),
-            _ = errors.changed() => continue,
-            _ = &mut deadline => return Err(recovery::Failure { message: "OpenAI did not confirm the Realtime session settings.", retryable: true }),
-            message = socket.next() => message,
-        };
-        let text = match message {
-            Some(Ok(Message::Text(text))) => text,
-            Some(Ok(Message::Ping(payload))) => {
-                tokio::time::timeout(super::IO_TIMEOUT, socket.send(Message::Pong(payload)))
-                    .await
-                    .map_err(|_| recovery::Failure::from("Realtime startup heartbeat timed out."))?
-                    .map_err(|_| recovery::Failure::from("Realtime startup heartbeat failed."))?;
-                continue;
-            }
-            Some(Ok(Message::Pong(_))) => continue,
-            _ => {
-                return Err(recovery::Failure {
-                    message: "Realtime sideband ended during startup.",
-                    retryable: true,
-                });
-            }
-        };
-        let event: oai_rt_rs::ServerEvent = serde_json::from_str(&text)
-            .map_err(|_| recovery::Failure::from("Invalid Realtime startup event."))?;
-        match event {
-            oai_rt_rs::ServerEvent::SessionCreated { session, .. } => {
-                config.validate_model(&session.config.model)?;
-            }
-            oai_rt_rs::ServerEvent::SessionUpdated { session, .. } => {
-                config.validate_model(&session.config.model)?;
-                let audio = session
-                    .config
-                    .audio
-                    .ok_or("OpenAI did not negotiate audio.")?;
-                if !config.preview {
-                    let captions = super::captions::Diagnostics::confirm(config.language, &audio);
-                    let valid = captions.validate();
-                    owner.view.lock().captions = Some(captions);
-                    valid?;
-                }
-                config.validate_audio(audio)?;
-                socket.replay_confirmation(Message::Text(text));
-                return Ok(());
-            }
-            oai_rt_rs::ServerEvent::Error { error, .. } => {
-                return Err(super::response::provider_error_message(&error).into());
-            }
-            _ => return Err(
-                "OpenAI sent work before confirming the voice session. Start a new call manually."
-                    .into(),
-            ),
-        }
-    }
 }
 
 fn confirmation(session: &serde_json::Value) -> Result<ClientEvent, &'static str> {

@@ -115,7 +115,7 @@ internal object RealtimeVoice {
           }
           if (!preview) state.optJSONObject("startup")?.let { timings ->
             // Fixed numeric durations only. Never log the enclosing call view.
-            val diagnostic = listOf("preparationMs", "credentialsMs", "offerMs", "configurationMs", "negotiationMs", "websocketMs", "listeningMs", "firstInputMs")
+            val diagnostic = listOf("preparationMs", "credentialsMs", "offerMs", "configurationMs", "negotiationMs", "websocketMs", "settingsConfirmedMs", "listeningMs", "firstInputMs")
               .filter { !timings.isNull(it) }.joinToString(" ") { "$it=${timings.optLong(it)}" }
             if (session.startupDiagnostic != diagnostic) {
               session.startupDiagnostic = diagnostic

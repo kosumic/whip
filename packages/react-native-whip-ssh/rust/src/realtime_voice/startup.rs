@@ -60,6 +60,8 @@ pub(super) struct Timings {
     pub websocket: Option<u64>,
     #[serde(rename = "configurationMs")]
     pub configuration: Option<u64>,
+    #[serde(rename = "settingsConfirmedMs")]
+    pub settings_confirmed: Option<u64>,
     #[serde(rename = "listeningMs")]
     pub listening: Option<u64>,
     #[serde(rename = "firstInputMs")]
@@ -108,7 +110,7 @@ mod tests {
     }
 
     #[test]
-    fn default_created_settings_do_not_fail_captions_or_allow_microphone_input()
+    fn default_created_settings_do_not_fail_captions_or_confirm_configuration()
     -> Result<(), Box<dyn std::error::Error>> {
         let mut settings = Settings::default();
         let created: ServerEvent = serde_json::from_value(event("session.created"))?;
@@ -119,7 +121,7 @@ mod tests {
     }
 
     #[test]
-    fn effective_updated_settings_allow_media_and_late_created_events_cannot_reset_them()
+    fn effective_updated_settings_confirm_audio_and_late_created_events_cannot_reset_them()
     -> Result<(), Box<dyn std::error::Error>> {
         let config = config()?;
         let mut settings = Settings::default();
@@ -201,7 +203,7 @@ mod tests {
             value,
             serde_json::json!({
                 "offerMs":null,"negotiationMs":null,"preparationMs":null,"credentialsMs":null,"websocketMs":null,
-                "configurationMs":null,"listeningMs":null,"firstInputMs":null
+                "configurationMs":null,"settingsConfirmedMs":null,"listeningMs":null,"firstInputMs":null
             })
         );
         Ok(())

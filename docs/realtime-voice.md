@@ -73,9 +73,11 @@ before its transition queue, microphone permission and foreground service:
   the call POST with initial configuration, and `negotiationMs` measures SDP
   answer application through transport readiness. `websocketMs` measures the
   background control sideband; it does not gate media startup.
+- `settingsConfirmedMs` is elapsed time until effective server settings
+  are verified. This can occur after microphone startup.
 - `micStartMs`, `firstCaptureMs`, `listeningMs` and `firstInputMs` are elapsed
-  times since the original request. Listening requires accepted server
-  configuration, a connected media transport and started native devices;
+  times since the original request. Listening requires the call POST to accept
+  the initial configuration, a connected media transport and started native devices;
   first input means an audio frame was sent, not a provider
   receipt. The presentation polls at 100ms, which can add display delay.
 
@@ -115,10 +117,16 @@ Both platforms create a call at the fixed public endpoint
 `https://api.openai.com/v1/realtime/calls`, sending SDP and the complete initial
 session configuration together. It applies the returned SDP answer and connects
 an authenticated sideband at `wss://api.openai.com/v1/realtime?call_id=…` in
-parallel. Listening requires media negotiation, validated `session.updated`
-settings and native device readiness. Android opens devices after confirmation;
-iOS opens its voice-processing engine once and gates microphone delivery until
-confirmation, retaining the same native owner through an allowed retry. The ordered WebRTC data
+parallel. Like Codex's `realtime_conversation.rs` and
+`realtime-webrtc/src/session.rs` at `75424f87ca`, native audio starts once the
+configured call POST succeeds and media connects. Startup does not wait for the
+background sideband's additional `session.update` acknowledgement. Effective
+`session.updated` settings are still validated; a mismatch or missing
+confirmation within the startup deadline ends the call. Default
+`session.created` settings do not count as that confirmation. Android opens
+devices after media connects; iOS opens its voice-processing engine once and
+gates microphone delivery until media connects, retaining the same native owner
+through an allowed retry. The ordered WebRTC data
 channel carries early events; mirrored sideband events are deduplicated before
 transcript, usage or tool processing. Call IDs are admitted from fixed-origin
 Location headers, and credentials remain native sensitive headers. Native HTTP
@@ -131,7 +139,7 @@ Startup recovery follows the attempt identity and cleanup gates in
 The explicit states are starting, retiring, retrying, active and ended;
 `startupAttempt` and `recovery` expose the attempt count and state without
 payloads or credentials. At most one new server call is allowed after a
-negotiation timeout or a transient sideband/confirmation failure. The old
+negotiation timeout. The old
 sideband worker must finish, the peer must close, and the server must acknowledge
 hangup before another attempt begins. Cleanup timeout/failure prevents retry.
 Authentication, quota, invalid configuration/SDP/settings and native audio errors

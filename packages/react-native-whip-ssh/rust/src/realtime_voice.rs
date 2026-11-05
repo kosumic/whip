@@ -810,7 +810,7 @@ impl RealtimeVoiceAdapter {
                         self.closed.store(true, Ordering::Release);
                         return Ok(());
                     }
-                    if !self.ready.load(Ordering::Acquire) && started.elapsed() > IO_TIMEOUT { return Err("OpenAI did not confirm the Realtime session settings."); }
+                    if !settings.is_confirmed() && started.elapsed() > IO_TIMEOUT { return Err("OpenAI did not confirm the Realtime session settings."); }
                     if started.elapsed() > Duration::from_mins(55) { return Err("Realtime call time limit reached. Start a new call."); }
                     keep_alive(&mut socket, last_pong, &mut ping_at).await?;
                     if let Some(pending) = deferred.take() {
@@ -966,6 +966,14 @@ impl RealtimeVoiceAdapter {
         if !accepted? {
             return Ok(false);
         }
+        self.view
+            .lock()
+            .startup
+            .settings_confirmed
+            .get_or_insert_with(|| {
+                self.client_elapsed_ms
+                    .saturating_add(startup::elapsed(self.started_at))
+            });
         if config.webrtc {
             self.view.lock().media_ready = settings.is_confirmed();
         } else {
