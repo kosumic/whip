@@ -50,8 +50,8 @@ type Listener = (state: AgentChatState | null, baseline?: boolean) => void;
 export function transcriptCacheHostAvailability(state: HostRuntimeState): 'load' | 'retain' | 'unavailable' {
   if (!state.snapshot) return 'unavailable';
   if (state.syncStatus === 'synced' && state.freshness === 'fresh') return 'load';
-  // Reconnects and failed resyncs still own the last snapshot and history.
-  return state.freshness === 'stale' ? 'retain' : 'unavailable';
+  // A retained snapshot is local data, including while explicitly offline.
+  return 'retain';
 }
 
 export interface TranscriptCacheTarget {
@@ -85,6 +85,7 @@ export type AgentTranscriptReadiness = 'loading' | 'usable' | 'failed';
 export function agentTranscriptReadiness(
   state: AgentChatState,
 ): AgentTranscriptReadiness {
+  if (state.transcript.messages.length || state.transcript.turns.length) return 'usable';
   if (state.status === 'loading') return 'loading';
   if (state.status === 'live' || state.status === 'stale') return 'usable';
   return 'failed';
@@ -255,12 +256,12 @@ export class NativeTranscriptService {
       const previous = this.cacheHostVersions.get(host.hostSessionId);
       const availability = transcriptCacheHostAvailability(host.state);
       // SSH generations share the runtime's transcript manager and bindings.
-      if (availability === 'unavailable' || (previous &&
-        !sameRuntime(previous.transport, host.transport))) {
+      if (previous && !sameRuntime(previous.transport, host.transport)) {
         invalidHosts.add(host.hostSessionId);
       }
       this.cacheHostAvailability.set(host.hostSessionId, availability);
-      this.titles.retain(host.hostSessionId, invalidHosts.has(host.hostSessionId) ? [] : host.state.snapshot?.panes ?? []);
+      if (invalidHosts.has(host.hostSessionId)) this.titles.retain(host.hostSessionId, []);
+      else if (host.state.snapshot) this.titles.retain(host.hostSessionId, host.state.snapshot.panes);
     }
     // Snapshot identity is authoritative even while syncing. Invalidate before
     // selecting pinned entries so a visible but closed pane cannot retain a slot.
@@ -274,8 +275,8 @@ export class NativeTranscriptService {
           item.terminal_id === binding.terminalId && item.pane_id === binding.paneId);
         const session = pane?.agent_session;
         if (host && !invalidHosts.has(entry.hostSessionId) && sameRuntime(host.transport, entry.transport) &&
-          session?.agent.trim().toLowerCase() === binding.agent && session.value.trim() === binding.sessionId &&
-          (session.kind === 'id' || (binding.agent === 'pi' && session.kind === 'path'))) continue;
+          (!host.state.snapshot || (session?.agent.trim().toLowerCase() === binding.agent && session.value.trim() === binding.sessionId &&
+          (session.kind === 'id' || (binding.agent === 'pi' && session.kind === 'path'))))) continue;
         this.forgetBindingToken(binding.bindingToken, true);
         try {
           entry.transport.detachAgentChat(binding.terminalId);

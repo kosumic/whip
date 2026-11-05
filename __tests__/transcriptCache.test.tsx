@@ -347,7 +347,7 @@ test('a syncing host ranks only resident targets and still obeys capacity limits
   expect([...runtime.bindings.keys()].sort()).toEqual(['terminal-2', 'terminal-3', 'terminal-4']);
 });
 
-test.each(['session', 'pane', 'disconnected', 'removed', 'transport'] as const)(
+test.each(['session', 'pane', 'removed', 'transport'] as const)(
   '%s invalidation removes bindings and titles even for a foreground transcript during resync', async change => {
     const runtime = host('one', ['working', 'blocked', 'done']);
     const hosts = [runtime];
@@ -362,10 +362,6 @@ test.each(['session', 'pane', 'disconnected', 'removed', 'transport'] as const)(
     syncing(runtime);
     if (change === 'session') runtime.panes[0].agent_session = { ...pane.agent_session!, value: 'replacement' };
     if (change === 'pane') runtime.panes.shift();
-    if (change === 'disconnected') {
-      runtime.state.syncStatus = 'idle';
-      runtime.state.freshness = 'unavailable';
-    }
     if (change === 'removed') hosts.splice(0);
     if (change === 'transport') fixture.runtimesRef.current.set(runtime.id, {
       client: { activeNative: { ...runtime.transport, runtimeIncarnation: 2 } },
@@ -403,8 +399,10 @@ test('reconnecting keeps the selected conversation and title through SSH replace
   listener.mockClear();
   runtime.state.freshness = 'stale';
   runtime.state.needsResync = true;
-  for (const syncStatus of ['synced', 'syncing', 'error', 'syncing', 'synced'] as const) {
+  for (const syncStatus of ['synced', 'syncing', 'error', 'idle', 'syncing', 'synced'] as const) {
     runtime.state.syncStatus = syncStatus;
+    runtime.state.freshness = syncStatus === 'idle' ? 'unavailable' : 'stale';
+    runtime.state.needsResync = syncStatus !== 'idle';
     runtime.state.revision += 1;
     if (syncStatus === 'syncing') runtime.state.connectionGeneration += 1;
     await fixture.render();

@@ -93,8 +93,10 @@ interface Props {
   savedSearchNamespace?: string;
   initialSearchTarget?: ChatSearchInitialTarget;
   state: AgentChatState;
-  /** Selected and requested, including preparation before the viewport is revealed. */
+  /** Run foreground work such as animations, image fetches, and speech highlighting. */
   active?: boolean;
+  /** Present the selected conversation and its local controls independently of transport. */
+  visible?: boolean;
   agent: ChatAgent;
   agentStatus: AgentStatus;
   contentInsets: VisualContentInsets;
@@ -537,11 +539,12 @@ function cacheUsagePresentation(usage: NonNullable<TranscriptTurn['details']>['u
   return { ...presentation, status, percent, label: percent ? `${presentation.label} · ${percent}` : presentation.label };
 }
 
-function UserPrompt({ message, imageClient, directory, active }: {
+function UserPrompt({ message, imageClient, directory, active, visible }: {
   message: TranscriptMessage;
   imageClient?: RemoteFileClient;
   directory?: string;
   active: boolean;
+  visible: boolean;
 }) {
   const { colors } = useTheme();
   const { copied, copyText } = useCopyFeedback();
@@ -554,7 +557,7 @@ function UserPrompt({ message, imageClient, directory, active }: {
     <View className="ml-9 items-end">
       <View className="min-h-11 max-w-[86%] gap-2 rounded-xl bg-purple-950 px-3 py-2.5">
         {parts.map(part => part.type === 'image'
-          ? <ChatPromptImage key={part.id} source={part.source} client={imageClient} directory={directory} active={active} />
+          ? <ChatPromptImage key={part.id} source={part.source} client={imageClient} directory={directory} active={active} visible={visible} />
           : part.type === 'text' && part.text.trim()
             ? <SelectableChatText key={part.id} text={part.text} color="#faf5ff" />
             : null)}
@@ -694,7 +697,7 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
   const toggle = () => onToggle(block.id);
   const content = () => {
     switch (block.type) {
-      case 'user': return <UserPrompt message={block.message} imageClient={imageClient} directory={directory} active={active} />;
+      case 'user': return <UserPrompt message={block.message} imageClient={imageClient} directory={directory} active={active} visible={visible} />;
       case 'part': return <View className="gap-1">
         {block.message?.createdAt !== undefined && <Text className="text-[9px] text-muted-foreground">Assistant · {new Date(block.message.createdAt).toLocaleTimeString()}</Text>}
         <AssistantPart part={block.part} directory={directory} streaming={active && block.streaming} expanded={expanded} onToggle={toggle} active={active} onLinkPress={onLinkPress}
@@ -728,6 +731,7 @@ export function AgentChatView({
   initialSearchTarget,
   state,
   active = true,
+  visible = active,
   agent,
   agentStatus,
   contentInsets,
@@ -745,15 +749,15 @@ export function AgentChatView({
   const { colors } = useTheme();
   const addToComposer = useContext(ChatComposerSelection);
   const floatingWarningOffset = useContext(FloatingWarningOffsetContext);
-  const selectionOwner = useRef({ active, sessionId: state.sessionId });
-  selectionOwner.current = { active, sessionId: state.sessionId };
+  const selectionOwner = useRef({ visible, sessionId: state.sessionId });
+  selectionOwner.current = { visible, sessionId: state.sessionId };
   const addSelectionToComposer = useCallback((text: string) => {
-    if (selectionOwner.current.active && selectionOwner.current.sessionId === state.sessionId) {
+    if (selectionOwner.current.visible && selectionOwner.current.sessionId === state.sessionId) {
       addToComposer?.(text);
     }
   }, [addToComposer, state.sessionId]);
   const searchSession = useRef(state.sessionId);
-  const searchOpen = active && searchRequested && searchSession.current === state.sessionId;
+  const searchOpen = visible && searchRequested && searchSession.current === state.sessionId;
   const appGlassEnabled = useAppGlassEnabled();
   const [followEnd, setFollowEndState] = useState(
     savedViewport?.followEnd ?? true,
@@ -767,6 +771,8 @@ export function AgentChatView({
   const saveViewportCallback = useRef(onSaveViewport);
   saveViewportCallback.current = onSaveViewport;
   const activeRef = useRef(active);
+  const visibleRef = useRef(visible);
+  const continuouslyVisible = visible && visibleRef.current;
   const [scrollGeometry, setScrollGeometry] = useState<ChatScrollGeometry>({
     contentHeight: 0,
     offset: 0,
@@ -786,7 +792,7 @@ export function AgentChatView({
   // A host disconnect can temporarily remove its JS client. This viewport's
   // native owner still has the canonical manager and its last usable history.
   const searchSource = retainedSource.current?.source;
-  const search = useChatSearch(searchSource, state.transcript, searchOpen && active, initialSearchTarget);
+  const search = useChatSearch(searchSource, state.transcript, searchOpen, initialSearchTarget);
   const pendingSearch = useRef<string | null>(null);
   const lastSearchReveal = useRef('');
   const [expandedBlocks, setExpandedBlocks] = useState<ReadonlySet<string>>(
@@ -850,7 +856,7 @@ export function AgentChatView({
   const initialScrollIndex = anchorIndex < 0 ? undefined : anchorIndex;
 
   const saveViewport = useCallback(() => {
-    if (initialViewportRef.current.ready && activeRef.current) {
+    if (initialViewportRef.current.ready && visibleRef.current) {
       const geometry = scrollGeometryRef.current;
       const index = list.current?.getFirstVisibleIndex?.();
       const block = index === undefined ? undefined : blocksRef.current[index];
@@ -883,8 +889,8 @@ export function AgentChatView({
   useEffect(() => {
     if (searchSession.current === state.sessionId) return;
     searchSession.current = state.sessionId;
-    if (active && searchRequested) onCloseSearch?.();
-  }, [state.sessionId, active, searchRequested, onCloseSearch]);
+    if (visible && searchRequested) onCloseSearch?.();
+  }, [state.sessionId, visible, searchRequested, onCloseSearch]);
 
   useLayoutEffect(() => {
     if (!searchOpen) return;
@@ -894,7 +900,7 @@ export function AgentChatView({
 
   useLayoutEffect(() => {
     const match = search.match;
-    if (!match || !active) {
+    if (!match || !visible) {
       pendingSearch.current = null;
       lastSearchReveal.current = '';
       return;
@@ -906,14 +912,14 @@ export function AgentChatView({
     followEndRef.current = false;
     setFollowEndState(false);
     setExpandedBlocks(current => new Set([...current, ...match.reveal]));
-  }, [search.match, search.query, search.navigationRevision, active]);
+  }, [search.match, search.query, search.navigationRevision, visible]);
 
   const searchBarHeight = searchOpen ? chatSearchBarHeight(search.query) : 0;
   const contextTop = contentInsets.top + searchBarHeight;
-  const showTranscriptNotice = active && (state.status !== 'live' || Boolean(rowStore.error));
+  const showTranscriptNotice = visible && (state.status !== 'live' || Boolean(rowStore.error));
   const transcriptNotice = rowStore.error || state.error || (state.status === 'loading'
     ? `Reading the local ${agentName} history…`
-    : 'The transcript is temporarily unavailable.');
+    : 'Live updates are temporarily unavailable.');
   const floatingNoticeTop = Math.max(contentInsets.top, floatingWarningOffset) + searchBarHeight;
   const pinnedPromptTop = floatingNoticeTop + (showTranscriptNotice ? FLOATING_WARNING_BANNER_HEIGHT + CHAT_CONTEXT_GAP : 0);
   const { prompt: pinnedPrompt, update: updatePinnedPrompt } = usePinnedPrompt(rowStore, state, list, contextTop);
@@ -935,7 +941,7 @@ export function AgentChatView({
   }, [updatePinnedPrompt]);
 
   const revealSearchMatch = () => {
-    if (pendingSearch.current && active && initialViewportRef.current.ready) {
+    if (pendingSearch.current && visible && initialViewportRef.current.ready) {
       const index = rowStore.indexOf(pendingSearch.current);
       if (index < 0) return;
       pendingSearch.current = null;
@@ -1074,7 +1080,7 @@ export function AgentChatView({
 
   const scheduleInitialViewportReady = (source: string) => {
     const readiness = initialViewportRef.current;
-    if (!active || readiness.ready) return;
+    if (!visible || readiness.ready) return;
     recordInitialViewportReadiness(source);
     if (!initialViewportConditionsSatisfied()) return;
     readiness.ready = true;
@@ -1129,7 +1135,7 @@ export function AgentChatView({
       };
     }
     updateInitialEndPosition(current.offset, contentHeight, viewportHeight);
-    if (active && initialViewportRef.current.ready && followEndRef.current
+    if (visible && initialViewportRef.current.ready && followEndRef.current
       && current.viewportHeight > 0 && viewportHeight !== current.viewportHeight) {
       list.current?.scrollToEnd({ animated: false });
     }
@@ -1143,7 +1149,7 @@ export function AgentChatView({
       geometry.contentHeight - geometry.viewportHeight,
     );
     if (
-      !active || readiness.ready ||
+      !visible || readiness.ready ||
       !readiness.itemsLoaded ||
       !readiness.contentSizeKnown ||
       geometry.viewportHeight <= 0
@@ -1218,7 +1224,7 @@ export function AgentChatView({
     previousPaddingRef.current = contentPadding;
     if (previous.top === contentPadding.top && previous.bottom === contentPadding.bottom) return;
     // Native content-size callbacks remeasure changed list padding before reveal.
-    if (!active || activeRef.current !== active) remeasureViewport('content-insets-changed');
+    if (!continuouslyVisible && (!active || activeRef.current !== active)) remeasureViewport('content-insets-changed');
   });
   useLayoutEffect(() => {
     updateViewportPadding();
@@ -1257,7 +1263,7 @@ export function AgentChatView({
     if (active) {
       activationStartedRef.current = performance.now();
       setFollowEnd(savedViewportRef.current?.followEnd ?? true);
-      if (readiness.ready && !preparationChanged && retainedPositionSafe()) {
+      if (readiness.ready && !preparationChanged && (continuouslyVisible || retainedPositionSafe())) {
         activationPathRef.current = 'retained-reactivation';
         recordAgentChatDiagnostic('viewport-retained-reactivated', {
           ready: true, generation: preparation.generation,
@@ -1279,6 +1285,10 @@ export function AgentChatView({
   useLayoutEffect(() => {
     updateViewportActivity();
   }, [active]);
+
+  useLayoutEffect(() => {
+    visibleRef.current = visible;
+  }, [visible]);
 
   useEffect(() => {
     recordAgentChatDiagnostic('viewport-props-changed', {
@@ -1329,7 +1339,7 @@ export function AgentChatView({
       contentSize.height,
       layoutMeasurement.height,
     );
-    if (!active) return;
+    if (!visible) return;
     const interaction = scrollInteractionRef.current;
     if (
       interaction.kind !== ChatScrollInteractionKind.Dragging &&
@@ -1479,13 +1489,13 @@ export function AgentChatView({
     [onOpenFile, onOpenWebLink, state.transcript.info?.directory],
   );
 
-  const resumingWithChangedPadding = !activeRef.current && (
+  const resumingWithChangedPadding = !continuouslyVisible && !activeRef.current && (
     previousPaddingRef.current.top !== contentPadding.top
     || previousPaddingRef.current.bottom !== contentPadding.bottom
   );
-  const viewportVisible = active && !preparationChanged && projectionCurrent
+  const viewportVisible = visible && !preparationChanged && projectionCurrent
     && !resumingWithChangedPadding
-    && (Boolean(rowStore.error) || (viewportReady && (activeRef.current || retainedPositionSafe())));
+    && (Boolean(rowStore.error) || (viewportReady && (continuouslyVisible || !active || activeRef.current || retainedPositionSafe())));
 
   useEffect(() => {
     if (!viewportVisible) return;
@@ -1529,7 +1539,7 @@ export function AgentChatView({
           if (widthChanged) {
             if (activeRef.current) saveViewport();
             remeasureViewport('viewport-width-changed');
-          } else if (heightChanged) {
+          } else if (heightChanged && !(continuouslyVisible && initialViewportRef.current.ready)) {
             if (activeRef.current) saveViewport();
             invalidateViewport('viewport-height-changed');
           }
@@ -1570,8 +1580,8 @@ export function AgentChatView({
               onLinkPress={openTranscriptLink}
               imageClient={imageClient}
               directory={state.transcript.info?.directory}
-              onAddToComposer={active && addToComposer ? addSelectionToComposer : undefined}
-              readAloud={active ? readAloud : undefined}
+              onAddToComposer={visible && addToComposer ? addSelectionToComposer : undefined}
+              readAloud={visible ? readAloud : undefined}
             />
           ) : null;
           }}
@@ -1623,7 +1633,7 @@ export function AgentChatView({
             alignLoadedInitialViewport();
             if (
               contentSizeWasKnown &&
-              active && initialViewportRef.current.ready &&
+              visible && initialViewportRef.current.ready &&
               Math.abs(height - current.contentHeight) > CHAT_SCROLL_OFFSET_EPSILON &&
               followEndRef.current
             )
@@ -1663,7 +1673,7 @@ export function AgentChatView({
               : <CircleAlert size={15} color={colors.warning} />}
           />
         )}
-        {active && !searchOpen && pinnedPrompt && (
+        {visible && !searchOpen && pinnedPrompt && (
           <Pressable
             testID="chat-pinned-prompt"
             accessibilityRole="button"

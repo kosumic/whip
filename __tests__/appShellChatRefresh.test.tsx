@@ -3,7 +3,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { Platform } from 'react-native';
 
 import { AppShell } from '../src/components/AppShell';
-import type { LiveSessionView } from '../src/components/LiveSessionView';
+import { LiveSessionView } from '../src/components/LiveSessionView';
 import type { useAgentChatOpen } from '../src/hooks/useAgentChatOpen';
 import { agentTranscriptService } from '../src/services/NativeTranscriptService';
 
@@ -117,6 +117,7 @@ function setup() {
   let finishRefresh!: (value: typeof snapshot) => void;
   const client = {
     native,
+    activeNative: native,
     snapshot: jest.fn(
       () =>
         new Promise<typeof snapshot>(resolve => {
@@ -215,7 +216,7 @@ test.each(['current', 'not-installed'] as const)(
       });
       expect(mockChatOpen.pendingTerminalId).toBe('terminal-1');
       // Rust projects an in-flight refresh as connected, then returns to ready.
-      const renderStatus = (connectionStatus: 'connected' | 'ready') => {
+      const renderStatus = (connectionStatus: 'connected' | 'ready' | 'reconnecting' | 'disconnected') => {
         const sessions = {
           ...host.props.sessions,
           activeSession: {
@@ -229,6 +230,12 @@ test.each(['current', 'not-installed'] as const)(
       };
       renderStatus('connected');
       expect(mockChatOpen.pendingTerminalId).toBe('terminal-1');
+      renderStatus('reconnecting');
+      expect(mockChatOpen.pendingTerminalId).toBe('terminal-1');
+      expect(renderer.root.findByType(LiveSessionView).props.client).toBe(host.client);
+      renderStatus('disconnected');
+      expect(mockChatOpen.pendingTerminalId).toBe('terminal-1');
+      expect(renderer.root.findByType(LiveSessionView).props.client).toBe(host.client);
       renderStatus('ready');
       await act(async () => {
         host.finishRefresh();

@@ -1562,12 +1562,40 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
       expect(ui('AgentChatView')).toBe(viewport);
       expect(viewport.props.searchKey).toBe(bindingKey);
       expect(viewport.props.active).toBe(appState === 'active');
-      expect(viewport.parent?.props.style.opacity).toBe(appState === 'active' ? 1 : 0);
+      expect(viewport.props.visible).toBe(true);
+      expect(viewport.props.readAloud).toBeDefined();
+      expect(viewport.parent?.props.style.opacity).toBe(1);
       expect(agentTranscriptService.getState(binding.bindingToken)).toBe(state);
       expect(host.native.detachAgentChat).not.toHaveBeenCalled();
       expect(host.native.openAgentChat).toHaveBeenCalledTimes(1);
       expect(host.native.startAgentChat).toHaveBeenCalledTimes(1);
     }
+  });
+
+  test('cached conversation survives failed synchronization without replacing its viewport', async () => {
+    const host = setup(agent);
+    const binding = await openReadyChat(host, agent);
+    revealChat();
+    const viewport = ui('AgentChatView');
+    for (const status of ['loading', 'error', 'unavailable', 'live'] as const) {
+      act(() => {
+        binding.state = { ...binding.state, status, revision: binding.state.revision + 1, messages: [{
+          id: 'cached-reply', role: 'assistant', diffs: [],
+          parts: [{ id: 'text', type: 'text', text: 'Read this while offline' }],
+        }] };
+        host.handlers.get(binding.terminalId)?.({
+          key: binding.transcriptKey, runtimeIncarnation: binding.runtimeIncarnation,
+          revision: binding.state.revision, deltas: [{ type: 'reset', state: binding.state }],
+        });
+      });
+      expect(ui('AgentChatView')).toBe(viewport);
+      expect(ui('TerminalScreen').props.chatViewEnabled).toBe(true);
+      expect(control().loading).toBe(false);
+      expect(viewport.props.state.transcript.messages[0].parts[0].text).toBe('Read this while offline');
+      expect(viewport.props.readAloud).toBeDefined();
+    }
+    expect(readSavedAgentTranscript).not.toHaveBeenCalled();
+    expect(host.native.startAgentChat).toHaveBeenCalledTimes(1);
   });
 
   test('foreground reconciles an agent exit missed while backgrounded', async () => {
@@ -1665,32 +1693,33 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     expect(agentTranscriptService.getState(binding.bindingToken)).not.toBeNull();
   });
 
-  test.each(['inactive', 'background'] as const)('%s cache eviction waits for foreground before restoring selected Chat', async appState => {
+  test.each(['inactive', 'background'] as const)('%s keeps the selected Chat resident under cache pressure', async appState => {
     const host = setup(agent);
     const binding = await openReadyChat(host, agent);
     revealChat();
+    const viewport = ui('AgentChatView');
     act(() => { for (const listener of mockAppStateListeners) listener(appState); });
     const applyPressure = createTranscriptCachePressure(agent);
     for (let update = 0; update < 5; update++) {
       await act(async () => { applyPressure(); });
       await act(async () => { renderer.update(<SessionScreen {...host.props} />); });
-      expect(agentTranscriptService.getState(binding.bindingToken)).toBeNull();
+      expect(agentTranscriptService.getState(binding.bindingToken)).not.toBeNull();
+      expect(ui('AgentChatView')).toBe(viewport);
       expect(host.native.openAgentChat).toHaveBeenCalledTimes(1);
       expect(host.native.startAgentChat).toHaveBeenCalledTimes(1);
     }
-    expect(host.native.detachAgentChat).toHaveBeenCalledTimes(1);
-    expect(renderer.root.findAll(node => String(node.type) === 'AgentChatView')).toHaveLength(0);
+    expect(host.native.detachAgentChat).not.toHaveBeenCalled();
 
     await act(async () => { for (const listener of mockAppStateListeners) listener('active'); });
-    expect(host.native.openAgentChat).toHaveBeenCalledTimes(2);
-    expect(host.native.startAgentChat).toHaveBeenCalledTimes(2);
+    expect(host.native.openAgentChat).toHaveBeenCalledTimes(1);
+    expect(host.native.startAgentChat).toHaveBeenCalledTimes(1);
     expect(agentTranscriptService.getState(binding.bindingToken)).not.toBeNull();
-    revealChat();
+    expect(ui('AgentChatView')).toBe(viewport);
     expect(ui('AgentChatView').props.state.sessionId).toBe(binding.sessionId);
     expect(control().active).toBe(true);
   });
 
-  test('an independent transcript subscriber protects background Chat from cache pressure until it releases ownership', async () => {
+  test('an independent transcript subscriber protects hidden Chat from cache pressure until it releases ownership', async () => {
     const host = setup(agent);
     const binding = await openReadyChat(host, agent);
     revealChat();
@@ -1699,7 +1728,7 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     let stopVoice!: () => void;
     act(() => { stopVoice = agentTranscriptService.subscribe(binding.bindingToken, onTranscript); });
     try {
-      act(() => { for (const listener of mockAppStateListeners) listener('background'); });
+      act(() => renderer.update(<SessionScreen {...host.props} visible={false} />));
       act(() => { ui('TerminalScreen').props.onResidencyEnd(host.props.terminalTargets[0], TerminalResidencyEndReason.Evicted); });
       act(applyPressure);
       expect(agentTranscriptService.getState(binding.bindingToken)).not.toBeNull();

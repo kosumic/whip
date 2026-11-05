@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Modal, Pressable, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { cacheRemoteFile, type CachedRemoteFile, type RemoteFileClient } from '../services/remoteFileTransfer';
@@ -10,53 +10,70 @@ import { ZoomableImagePreview } from './ZoomableImagePreview';
 const THUMBNAIL_WIDTH = 240;
 const THUMBNAIL_HEIGHT = 180;
 
-export function ChatPromptImage({ source, client, directory, active }: {
+export function ChatPromptImage({ source, client, directory, active, visible = active }: {
   source: string;
   client?: RemoteFileClient;
   directory?: string;
   active: boolean;
+  visible?: boolean;
 }) {
   const direct = /^(?:data:image\/|https?:\/\/)/i.test(source);
+  const retainedClient = useRef(client);
+  if (client) retainedClient.current = client;
+  const owner = retainedClient.current;
+  const loadImage = useRef<(() => void) | undefined>(undefined);
   const [loaded, setLoaded] = useState<{ source: string; client: RemoteFileClient; uri: string }>();
   const [failed, setFailed] = useState(false);
   const [expandedUri, setExpandedUri] = useState<string>();
-  const cachedUri = loaded?.source === source && loaded.client === client ? loaded.uri : undefined;
-  const uri = active ? (direct ? source : cachedUri) : undefined;
+  const cachedUri = loaded?.source === source && loaded.client === owner ? loaded.uri : undefined;
+  const uri = visible ? (direct ? source : cachedUri) : undefined;
   const close = () => setExpandedUri(undefined);
   useEffect(() => {
     let disposed = false;
     let cached: CachedRemoteFile | undefined;
+    let running = false;
     setLoaded(undefined);
     setFailed(false);
     setExpandedUri(undefined);
-    if (direct || !client || !active) return;
-    const path = transcriptFileLinkTarget(source, directory)?.path;
-    if (!path) return;
     const load = async () => {
+      if (direct || !owner || running || cached) return;
+      const path = transcriptFileLinkTarget(source, directory)?.path;
+      if (!path) return;
+      running = true;
+      setFailed(false);
       try {
-        const entry = await client.native.statRemotePath(path);
+        const entry = await owner.native.statRemotePath(path);
         if (disposed) return;
         if (entry.kind === 'directory' || remotePreviewKind(remoteEntryName(entry), entry.size) !== 'image') {
           setFailed(true);
           return;
         }
-        const downloaded = await cacheRemoteFile(client, entry.path);
+        const downloaded = await cacheRemoteFile(owner, entry.path);
         if (disposed) {
           downloaded.dispose();
           return;
         }
         cached = downloaded;
-        setLoaded({ source, client, uri: downloaded.uri });
+        setLoaded({ source, client: owner, uri: downloaded.uri });
       } catch {
         if (!disposed) setFailed(true);
+      } finally {
+        running = false;
       }
     };
-    void load();
+    loadImage.current = () => { void load(); };
     return () => {
       disposed = true;
+      loadImage.current = undefined;
       cached?.dispose();
     };
-  }, [source, client, directory, active, direct]);
+  }, [source, owner, directory, direct]);
+  useEffect(() => {
+    if (active && client) loadImage.current?.();
+  }, [active, client, source, owner, directory, direct]);
+  useEffect(() => {
+    if (!visible) setExpandedUri(undefined);
+  }, [visible]);
 
   return (
     <>

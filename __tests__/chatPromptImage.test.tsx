@@ -89,5 +89,23 @@ test('closes the expanded image when switching away from the chat', async () => 
   await act(async () => { renderer.root.findByType('Pressable' as never).props.onPress(); });
   await act(async () => { renderer.update(<ChatPromptImage source={SOURCE} client={client} active={false} />); });
   expect(renderer.root.findAllByType('Modal' as never)).toHaveLength(0);
+  expect(dispose).not.toHaveBeenCalled();
+});
+
+test('keeps downloaded images available through a paused chat and an offline client gap', async () => {
+  const dispose = jest.fn();
+  download.mockResolvedValue({ uri: LOCAL_URI, dispose } as unknown as CachedRemoteFile);
+  await render();
+  for (const active of [false, true]) {
+    await act(async () => { renderer.update(<ChatPromptImage source={SOURCE} active={active} visible />); });
+    expect(renderer.root.findByType('Image' as never).props.source).toEqual({ uri: LOCAL_URI });
+    expect(renderer.root.findByType('Pressable' as never).props.disabled).toBe(false);
+  }
+  await act(async () => { renderer.update(<ChatPromptImage source={SOURCE} client={client} active visible />); });
+  expect(download).toHaveBeenCalledTimes(1);
+  expect(dispose).not.toHaveBeenCalled();
+  await act(async () => { renderer.root.findByType('Pressable' as never).props.onPress(); });
+  expect(renderer.root.findByType('ZoomableImagePreview' as never).props.uri).toBe(LOCAL_URI);
+  act(() => renderer.unmount());
   expect(dispose).toHaveBeenCalledTimes(1);
 });

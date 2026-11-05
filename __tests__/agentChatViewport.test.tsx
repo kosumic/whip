@@ -422,6 +422,37 @@ test('response read-aloud controls are disabled during dictation and absent from
   }
 });
 
+test('a paused visible chat keeps its response audio controls through reconnection', () => {
+  const turn: TranscriptTurn = {
+    ...TURN, status: 'idle',
+    assistants: [{ id: 'reply', role: 'assistant', diffs: [], parts: [{ id: 'text', type: 'text', text: 'Cached response' }] }],
+  };
+  const state = { ...chatState([turn]), status: 'stale' as const };
+  const readAloud: ChatReadAloudControl = { readingTurnId: null, canRead: () => true, toggle: jest.fn() };
+  let renderer!: ReactTestRenderer;
+  let rows!: ReactTestRenderer;
+  try {
+    for (const active of [true, false, true]) {
+      const element = <AgentChatView {...chatView(state, active, undefined, readAloud).props} visible />;
+      act(() => {
+        if (renderer) renderer.update(element);
+        else renderer = create(element);
+      });
+      act(() => {
+        if (rows) rows.update(renderedBlocks(renderer));
+        else rows = create(renderedBlocks(renderer));
+      });
+      const button = rows.root.find(node => String(node.type) === 'Button' && node.props.testID === `chat-response-read-aloud-${turn.id}`);
+      expect(button.props.disabled).toBe(false);
+      if (active) act(() => { button.props.onPress(); });
+    }
+    expect(readAloud.toggle).toHaveBeenCalledTimes(2);
+    expect(readAloud.toggle).toHaveBeenLastCalledWith(turn);
+  } finally {
+    act(() => { rows?.unmount(); renderer?.unmount(); });
+  }
+});
+
 test('renders a user message containing only an image', () => {
   const turn: TranscriptTurn = { ...TURN, user: { id: 'user-image', role: 'user', diffs: [], parts: [{ id: 'image', type: 'image', source: '/home/me/.whip/uploads/cat.png' }] } };
   let renderer!: ReactTestRenderer;
@@ -2135,6 +2166,48 @@ describe('AgentChatView warm viewport restoration', () => {
     expect(latestButtons()).toHaveLength(0);
     act(() => { flatList(renderer).props.onContentSizeChange(0, 1_100); });
     expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
+  });
+
+  test('backgrounding the selected chat pauses activity without hiding its ready native viewport', () => {
+    overrides.visible = true;
+    update(true);
+    const list = flatList(renderer);
+    observeCommits = true;
+    update(false);
+    expect(chatViewport(renderer).parent?.props.style.opacity).toBe(1);
+    expect(chatViewport(renderer).parent?.props.pointerEvents).toBe('auto');
+    update(true);
+    expect(committedOpacities.every(opacity => opacity === 1)).toBe(true);
+    expect(flatList(renderer)).toBe(list);
+    expect(onReady).toHaveBeenCalledTimes(1);
+    expect(scrollToOffset).not.toHaveBeenCalled();
+  });
+
+  test('offline search keeps its query and viewport through backgrounding and inset changes', async () => {
+    jest.useFakeTimers();
+    try {
+      overrides.visible = true;
+      overrides.searchOpen = true;
+      update(true);
+      const list = flatList(renderer);
+      const input = () => renderer.root.find(node => String(node.type) === 'Input');
+      act(() => { input().props.onChangeText('cached response'); });
+      await act(async () => { jest.advanceTimersByTime(CHAT_SEARCH_DELAY_MS); });
+      observeCommits = true;
+      state = { ...state, status: 'stale' };
+      update(false);
+      overrides.contentInsets = { ...CONTENT_INSETS, bottom: 200 };
+      update(false);
+      expect(input().props.value).toBe('cached response');
+      expect(flatList(renderer)).toBe(list);
+      expect(mockSearchDispose).not.toHaveBeenCalled();
+      expect(chatViewport(renderer).parent?.props.pointerEvents).toBe('auto');
+      update(true);
+      expect(input().props.value).toBe('cached response');
+      expect(committedOpacities.every(opacity => opacity === 1)).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test('foregrounding a ready retained list never commits a hidden chat root', () => {

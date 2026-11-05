@@ -23,9 +23,18 @@ import {
 
 import { chatBindingLost, type AgentChatViewState } from '../src/lib/agentChatReconciliation';
 import { transcriptTitleKey } from '../src/lib/transcriptTabTitles';
+import { agentChatStateFromNative } from '../src/lib/nativeAgentTranscript';
 
 const sessionId = '11111111-1111-4111-8111-111111111111';
 const transcriptKey = `profile\ncodex\n${sessionId}`;
+
+test.each(['loading', 'stale', 'error', 'unavailable', 'closed'] as const)(
+  'cached conversation remains readable when live updates are %s', status => {
+    const cached = state(status);
+    cached.messages = [{ id: 'cached', role: 'assistant', diffs: [], parts: [{ id: 'text', type: 'text', text: 'Saved response' }] }];
+    expect(agentTranscriptReadiness(agentChatStateFromNative(cached))).toBe('usable');
+  },
+);
 
 function state(
   status: NativeAgentTranscriptState['status'] = 'live',

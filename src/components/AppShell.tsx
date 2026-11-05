@@ -117,11 +117,10 @@ export function AppShell({
   useEffect(() => {
     if (sessions.restoreComplete) void voiceSessionManager.retainAgentHosts(sessions.presentationSessions.map(session => session.id));
   }, [sessions.restoreComplete, sessions.presentationSessions]);
-  // Snapshot refreshes temporarily project connected while SSH remains usable.
-  const liveClient =
-    activeSession && isLiveHostSshConnected(activeSession.connectionStatus)
-      ? sessions.activeClient ?? null
-      : null;
+  // The runtime owns local transcripts even when its SSH transport is offline.
+  const liveClient = sessions.activeClient?.activeNative
+    ? sessions.activeClient
+    : null;
   const activeTelemetry = activeSession
     ? telemetry.get(activeSession.id)
     : null;

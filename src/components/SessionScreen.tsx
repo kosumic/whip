@@ -643,7 +643,9 @@ export function SessionScreen({
   const liveVoiceChatAgent = chatAgentForPane(activePane);
   const { settings: voiceSettings } = useContext(VoiceConversationSettingsContext);
   const terminalVoiceAvailable = voiceSettings.provider === 'openai' && voiceSettings.mode === 'Realtime';
-  const foregroundTranscriptHost = visible && appActive && liveVoiceChatAgent && activeTarget?.session.kind !== 'ssh'
+  // Selection owns the local conversation across app suspension and offline work.
+  const selectedChatRequested = activeChatView && chatPresentationRequested(activeChatView.presentation);
+  const foregroundTranscriptHost = visible && (appActive || selectedChatRequested) && liveVoiceChatAgent && activeTarget?.session.kind !== 'ssh'
     ? activeTarget?.hostSessionId : undefined;
   const foregroundTranscriptTerminal = foregroundTranscriptHost ? activeTarget?.session.terminalId : undefined;
   useLayoutEffect(() => {
@@ -1852,6 +1854,8 @@ export function SessionScreen({
                       {activeSavedChat ? (
                         <AgentChatView
                           state={activeSavedChat.state}
+                          active={visible && appActive}
+                          visible={visible}
                           savedSearchNamespace={hostSessionId}
                           readAloud={chatReadAloud}
                           imageClient={client ?? undefined}
@@ -1879,7 +1883,7 @@ export function SessionScreen({
                         const selected = key === activeTarget?.key;
                         const active = key === activeChatKey;
                         const shown =
-                          active &&
+                          visible && selected &&
                           chatPresentationVisible(chatView.presentation);
                         const terminalId = chatView.binding.terminalId;
                         const chatClient = terminalTargets.find(target => target.key === key)?.client;
@@ -1907,9 +1911,10 @@ export function SessionScreen({
                                   state={chatView.state}
                                   searchRuntime={chatClient?.native}
                                   searchKey={chatView.binding.transcriptKey}
-                                  readAloud={active ? chatReadAloud : undefined}
+                                  readAloud={visible && selected ? chatReadAloud : undefined}
                                   imageClient={chatClient}
                                   active={active}
+                                  visible={visible && selected}
                                   savedViewport={viewportRetention.snapshots.get(
                                     identity,
                                   )}
