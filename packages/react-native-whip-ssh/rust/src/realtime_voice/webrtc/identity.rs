@@ -141,7 +141,10 @@ mod tests {
         identity.observe(&json!({"type":"output_audio_buffer.stopped","response_id":"reply"}));
         let epoch = identity.epoch;
         let deadline = identity.finish_at.ok_or("missing drain deadline")?;
-        assert!(!identity.finish(epoch, deadline - Duration::from_nanos(1)));
+        let before_deadline = deadline
+            .checked_sub(Duration::from_nanos(1))
+            .ok_or("drain deadline precedes monotonic clock")?;
+        assert!(!identity.finish(epoch, before_deadline));
         assert!(identity.enabled);
         assert!(identity.finish(epoch, deadline));
         assert!(identity.ended);
