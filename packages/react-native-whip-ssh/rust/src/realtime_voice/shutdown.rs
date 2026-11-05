@@ -51,7 +51,6 @@ pub(super) async fn collect(
             )
             .await?;
         }
-        let mut last_pong = tokio::time::Instant::now();
         let mut stop_confirmed = false;
         for _ in 0..MAX_EVENTS {
             if !credentials_current() {
@@ -67,7 +66,7 @@ pub(super) async fn collect(
             let Ok(message) = tokio::time::timeout(wait, socket.next()).await else {
                 break;
             };
-            let Some(text) = socket.receive_text(message, &mut last_pong).await? else {
+            let Some(text) = socket.receive_text(message).await? else {
                 continue;
             };
             let Ok(value) = serde_json::from_str::<Value>(&text) else {

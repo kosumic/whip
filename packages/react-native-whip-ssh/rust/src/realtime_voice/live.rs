@@ -403,8 +403,6 @@ impl LiveVoiceAdapter {
         let mut capture = ::audio_ingress::Packet::new(owner.input.packet_samples);
         let mut pending = capture_worker::Pending::new(owner);
         let mut last_feedback = Instant::now();
-        let mut pong = Instant::now();
-        let mut ping = Instant::now();
         loop {
             if owner.closed.load(Ordering::Acquire) {
                 return Ok(());
@@ -531,7 +529,6 @@ impl LiveVoiceAdapter {
                             }
                         }
                         Some(Ok(Message::Ping(bytes))) => { tokio::time::timeout(capture_worker::SEND_TIMEOUT,socket.send(Message::Pong(bytes))).await.map_err(|_| "GPT-Live upload timed out.")?.map_err(|_| "GPT-Live disconnected.")?; }
-                        Some(Ok(Message::Pong(_))) => pong=Instant::now(),
                         Some(Ok(Message::Close(_)) | Err(_)) | None => return Err("GPT-Live disconnected. Use the agent chat for results; prompts were not replayed."),
                         _ => {}
                     }
@@ -567,7 +564,10 @@ impl LiveVoiceAdapter {
                     }
                     if state.muted.as_ref().is_some_and(|(_,_,at)| at.elapsed()>super::IO_TIMEOUT) { return Err("GPT-Live did not confirm the microphone state."); }
                     {
-                        let speaking = !owner.output.lock().samples.is_empty();
+                        let speaking = {
+                            let output = owner.output.lock();
+                            if config.webrtc { output.live_speaking() } else { !output.samples.is_empty() }
+                        };
                         let mut view = owner.view.lock();
                         view.phase = if speaking { "speaking" } else if view.muted { "muted" } else if config.webrtc && view.startup.first_input.is_none() { "starting" } else { "listening" };
                     }
@@ -584,8 +584,6 @@ impl LiveVoiceAdapter {
                             }
                         }
                     }
-                    if pong.elapsed()>Duration::from_secs(45) { return Err("GPT-Live stopped responding."); }
-                    if ping.elapsed()>Duration::from_secs(15) { tokio::time::timeout(capture_worker::SEND_TIMEOUT,socket.send(Message::Ping(Vec::new().into()))).await.map_err(|_| "GPT-Live upload timed out.")?.map_err(|_| "GPT-Live disconnected.")?; ping=Instant::now(); }
                     if !config.webrtc {
                         upload_pcm(owner, socket, &mut pending).await?;
                     }

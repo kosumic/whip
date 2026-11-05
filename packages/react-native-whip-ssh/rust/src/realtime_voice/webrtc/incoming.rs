@@ -21,6 +21,7 @@ struct State {
 pub(crate) struct ReceivedRtp {
     data: Vec<u8>,
     pub(crate) at: Instant,
+    pub(crate) reliable: bool,
     epoch: u64,
     _packet: OwnedSemaphorePermit,
     _bytes: OwnedSemaphorePermit,
@@ -90,7 +91,7 @@ impl Incoming {
     }
 }
 impl Ingress {
-    pub(super) fn receive(&mut self, packet: str0m::rtp::RtpPacket) {
+    pub(super) fn receive(&mut self, packet: str0m::rtp::RtpPacket, reliable: bool) {
         let epoch = self.state.epoch.load(Ordering::Acquire);
         if epoch % 2 == 1 || self.state.failed.load(Ordering::Acquire) {
             return;
@@ -129,6 +130,7 @@ impl Ingress {
         let _ = self.sender.try_send(ReceivedRtp {
             data,
             at: packet.timestamp,
+            reliable,
             epoch,
             _packet: packet_permit,
             _bytes: byte_permit,

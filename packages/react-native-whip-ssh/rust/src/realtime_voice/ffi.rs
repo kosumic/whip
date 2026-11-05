@@ -224,7 +224,9 @@ pub unsafe extern "C" fn whip_realtime_read(
     let count = output.read(samples);
     drop(output);
     if count > 0 {
-        call.view.lock().playback_level = peak(&samples[..count]);
+        let mut view = call.view.lock();
+        view.playback_level = peak(&samples[..count]);
+        view.media.read_samples += u64::try_from(count).unwrap_or(u64::MAX);
     }
     count
 }

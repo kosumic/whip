@@ -14,6 +14,34 @@ use tokio::sync::{mpsc, oneshot, watch};
 pub(super) const DATA_CHANNEL_ID: u16 = 4;
 const MAX_REMOTE_CANDIDATES: usize = 32;
 const MAX_EVENT_BYTES: usize = 64 * 1024;
+const DISCONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+#[derive(Default)]
+struct ConnectionHealth {
+    disconnected: Option<Instant>,
+}
+impl ConnectionHealth {
+    fn observe(&mut self, state: str0m::IceConnectionState, now: Instant) {
+        if state.is_connected() {
+            self.disconnected = None;
+        } else if state.is_disconnected() {
+            self.disconnected.get_or_insert(now);
+        }
+    }
+    fn deadline(&self, next: Instant) -> Instant {
+        self.disconnected
+            .map_or(next, |at| next.min(at + DISCONNECT_TIMEOUT))
+    }
+    fn check(&self, now: Instant) -> Result<(), &'static str> {
+        if self
+            .disconnected
+            .is_some_and(|at| now.duration_since(at) >= DISCONNECT_TIMEOUT)
+        {
+            return Err("Voice network connection did not recover.");
+        }
+        Ok(())
+    }
+}
 pub(super) enum Command {
     Answer {
         sdp: String,
@@ -34,8 +62,10 @@ pub(super) struct Driver {
     channel: ChannelId,
     sequence: u64,
     ingress: Ingress,
-    events: mpsc::Sender<String>,
     ready: watch::Sender<bool>,
+    failure: watch::Sender<Option<&'static str>>,
+    health: ConnectionHealth,
+    input_protocol: Option<Protocol>,
     commands: mpsc::Receiver<Command>,
     stop: watch::Receiver<bool>,
 }
@@ -46,8 +76,8 @@ impl Driver {
     )]
     pub async fn new(
         ingress: Ingress,
-        events: mpsc::Sender<String>,
         ready: watch::Sender<bool>,
+        failure: watch::Sender<Option<&'static str>>,
         commands: mpsc::Receiver<Command>,
         stop: watch::Receiver<bool>,
         protocol: Option<Protocol>,
@@ -101,8 +131,10 @@ impl Driver {
                 channel,
                 sequence,
                 ingress,
-                events,
                 ready,
+                failure,
+                health: ConnectionHealth::default(),
+                input_protocol: None,
                 commands,
                 stop,
             },
@@ -111,6 +143,19 @@ impl Driver {
     }
     pub async fn run(mut self) -> Result<(), &'static str> {
         let result = self.drive().await;
+        let reason = result
+            .as_ref()
+            .err()
+            .copied()
+            .unwrap_or("Voice media connection closed.");
+        if self.failure.borrow().is_none() {
+            self.failure.send_replace(Some(reason));
+        }
+        if result.is_err() {
+            crate::host_runtime::diagnostics::log_lifecycle(format_args!(
+                "Voice WebRTC transport ended: {reason}"
+            ));
+        }
         self.ready.send_replace(false);
         self.network.close().await;
         result
@@ -118,7 +163,9 @@ impl Driver {
     async fn drive(&mut self) -> Result<(), &'static str> {
         let mut complete: Option<oneshot::Sender<Result<(), &'static str>>> = None;
         loop {
-            let deadline = self.drain().await?;
+            self.health.check(Instant::now())?;
+            let next = self.drain().await?;
+            let deadline = self.health.deadline(next);
             if let Some(complete) = complete.take() {
                 let _: Result<_, _> = complete.send(Ok(()));
             }
@@ -139,7 +186,7 @@ impl Driver {
                         complete=Some(respond);
                     }
                     Some(Command::Audio{data,timestamp,at,complete:respond})=>{
-                        if !*self.ready.borrow(){let _=respond.send(Err("Voice media is not connected."));continue;}
+                        if !*self.ready.borrow(){let _=respond.send(Err(self.failure.borrow().unwrap_or("Voice media is not connected.")));continue;}
                         let mut direct=self.rtc.direct_api();
                         let stream=direct.stream_tx_by_mid(self.mid,None).ok_or("Voice send stream is unavailable.")?;
                         stream.write_rtp(RtpWrite::new(OPUS_PAYLOAD_TYPE.into(),self.sequence.into(),timestamp,at,data));
@@ -152,7 +199,10 @@ impl Driver {
                     let packet=packet?;
                     let Ok(contents)=packet.data.as_slice().try_into() else {continue;};
                     let input=Input::Receive(Instant::now(),Receive{proto:packet.proto,source:packet.source,destination:packet.destination,contents});
-                    if self.rtc.accepts(&input) {self.rtc.handle_input(input).map_err(|_|"Voice network packet was rejected.")?;}
+                    if self.rtc.accepts(&input) {
+                        self.input_protocol = Some(packet.proto);
+                        self.rtc.handle_input(input).map_err(|_|"Voice network packet was rejected.")?;
+                    }
                 },
                 _=tokio::time::sleep_until(deadline.into())=>{
                     self.rtc.handle_input(Input::Timeout(Instant::now())).map_err(|_|"Voice peer timed out.")?;
@@ -192,31 +242,33 @@ impl Driver {
                 Output::Timeout(deadline) => return Ok(deadline),
                 Output::Transmit(packet) => self.network.send(packet).await?,
                 Output::Event(Event::Connected) => {
-                    self.ready.send_replace(true);
+                    if self.failure.borrow().is_none() {
+                        self.ready.send_replace(true);
+                    }
                 }
-                Output::Event(Event::IceConnectionStateChange(
-                    str0m::IceConnectionState::Disconnected,
-                )) => return Err("Voice network connection ended."),
+                Output::Event(Event::IceConnectionStateChange(state)) => {
+                    // ICE Disconnected is recoverable, unlike a closed peer.
+                    // Keep this connection alive for its bounded recovery window.
+                    self.health.observe(state, Instant::now());
+                }
                 Output::Event(Event::ChannelOpen(id, _)) if id != self.channel => {
                     self.rtc.direct_api().close_data_channel(id);
                 }
                 Output::Event(Event::ChannelClose(id)) if id == self.channel => {
-                    return Err("Voice event channel ended.");
+                    // Like Codex's channel observer, report readiness loss to
+                    // the call owner. Keep the peer alive until it retires the
+                    // session and collects final usage on the sideband.
+                    self.failure
+                        .send_replace(Some("Voice event channel ended."));
+                    self.ready.send_replace(false);
                 }
-                Output::Event(Event::ChannelData(packet)) => {
-                    if packet.id != self.channel {
-                        continue;
-                    }
-                    if packet.data.len() > MAX_EVENT_BYTES {
-                        return Err("Voice event is too large.");
-                    }
-                    let text = String::from_utf8(packet.data)
-                        .map_err(|_| "Invalid voice event encoding.")?;
-                    self.events
-                        .try_send(text)
-                        .map_err(|_| "Voice event consumer fell behind.")?;
+                Output::Event(Event::RtpPacket(packet)) => {
+                    self.ingress
+                        .receive(packet, self.input_protocol == Some(Protocol::Tcp));
                 }
-                Output::Event(Event::RtpPacket(packet)) => self.ingress.receive(packet),
+                // Match Codex's voice host: the sideband owns typed events.
+                // Mirrored data messages must never backpressure RTP/DTLS or
+                // deliver an application command twice.
                 Output::Event(_) => {}
             }
         }
@@ -232,5 +284,37 @@ fn initial_drain(rtc: &mut Rtc) -> Result<(), &'static str> {
             Output::Event(_) => {}
             Output::Transmit(_) => return Err("Unexpected voice offer output."),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ConnectionHealth, DISCONNECT_TIMEOUT};
+    use std::time::{Duration, Instant};
+    use str0m::IceConnectionState;
+
+    #[test]
+    fn a_transient_network_loss_can_recover_without_ending_the_call() {
+        let start = Instant::now();
+        let mut health = ConnectionHealth::default();
+        health.observe(IceConnectionState::Disconnected, start);
+        assert!(health.check(start + Duration::from_secs(1)).is_ok());
+        health.observe(
+            IceConnectionState::Connected,
+            start + Duration::from_secs(1),
+        );
+        assert!(health.check(start + DISCONNECT_TIMEOUT).is_ok());
+    }
+
+    #[test]
+    fn repeated_disconnect_notifications_cannot_extend_the_recovery_deadline() {
+        let start = Instant::now();
+        let mut health = ConnectionHealth::default();
+        health.observe(IceConnectionState::Disconnected, start);
+        health.observe(
+            IceConnectionState::Disconnected,
+            start + Duration::from_secs(1),
+        );
+        assert!(health.check(start + DISCONNECT_TIMEOUT).is_err());
     }
 }

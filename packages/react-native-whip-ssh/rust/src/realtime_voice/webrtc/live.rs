@@ -169,7 +169,7 @@ pub(in crate::realtime_voice) async fn start(
     let (socket, commands, events) = socket::Socket::relay();
     let identity = Arc::new(Mutex::new(Identity::live()));
     let offered = Instant::now();
-    let mut peer = Transport::new(events.clone(), identity.clone()).await?;
+    let mut peer = Transport::new().await?;
     owner.view.lock().startup.offer = Some(startup::elapsed(offered));
     let created = Instant::now();
     // Retain the POST through cancellation so a returned session can be retired.
@@ -226,9 +226,25 @@ pub(in crate::realtime_voice) async fn start(
         }
         if attempt.collecting_usage() {
             let _ = peer.incoming.set_suppressed(true);
+            // Live finalization needs a running primary media clock, not just
+            // an open DTLS connection. Hardware capture is already stopped;
+            // send only silence until the sideband confirms session.closed.
             let _ = tokio::time::timeout(
                 voice::live::CLOSE_TIMEOUT + Duration::from_millis(500),
-                stopped.wait_for(|stop| *stop),
+                async {
+                    let mut tick = tokio::time::interval(voice::capture_worker::PACKET_DURATION);
+                    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                    let mut sending = true;
+                    loop {
+                        tokio::select! {
+                            biased;
+                            _ = stopped.changed() => break,
+                            _ = tick.tick(), if sending => {
+                                sending = peer.audio.send_muted_silence(Instant::now()).await.is_ok();
+                            }
+                        }
+                    }
+                },
             )
             .await;
         }
@@ -276,14 +292,15 @@ fn spawn_sideband(
                         tokio::time::timeout(voice::IO_TIMEOUT, socket.send(command)).await
                             .map_err(|_| "GPT-Live control upload timed out.")?.map_err(|_| "GPT-Live control connection ended.")?;
                     }
-                    event = socket.next() => {
-                        let event = event.ok_or("GPT-Live control connection ended.")?;
-                        if let Ok(Message::Text(text)) = &event {
-                            let value: Value = serde_json::from_str(text).map_err(|_| "GPT-Live returned an invalid control event.")?;
-                            // Reflected PCM is observational, never the playback source.
-                            if matches!(value["type"].as_str(), Some("session.output_audio.delta" | "session.input_audio.append")) { continue; }
+                    event = socket::next_sideband_event(&mut socket) => {
+                        let event = event?;
+                        let closed = matches!(event, Message::Close(_));
+                        tokio::select! {
+                            biased;
+                            _ = stop.changed() => break Ok(()),
+                            result = events.send(Ok(event)) => result.map_err(|_| "GPT-Live control consumer ended.")?,
                         }
-                        events.send(event).await.map_err(|_| "GPT-Live control consumer ended.")?;
+                        if closed { break Ok(()); }
                     }
                 }
             };

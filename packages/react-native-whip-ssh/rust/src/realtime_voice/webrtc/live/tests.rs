@@ -25,24 +25,7 @@ fn session_identity_cannot_change_the_authorized_attach_endpoint() {
 )]
 async fn public_live_webrtc_api_smoke() -> Result<(), Box<dyn std::error::Error>> {
     use oai_rt_rs::live::{ClientEvent, Codec, Command, Field, Nullable, ServerEvent};
-    use std::ffi::c_void;
-    unsafe extern "C" fn read(context: *mut c_void, out: *mut u8, capacity: usize) -> i32 {
-        // SAFETY: this test lends its key for one synchronous, bounded read.
-        let key = unsafe { &*context.cast::<String>() };
-        if key.len() > capacity {
-            return -4;
-        }
-        // SAFETY: the credential ingress supplied capacity writable bytes.
-        unsafe {
-            std::ptr::copy_nonoverlapping(key.as_ptr(), out, key.len());
-        }
-        i32::try_from(key.len()).unwrap_or(-4)
-    }
-    let mut key = std::env::var("OPENAI_API_KEY").map_err(|_| "Missing authorized API key")?;
-    // SAFETY: callback/context remain live throughout the synchronous read.
-    let credential = unsafe { NativeCredential::read(read, (&raw mut key).cast()) }
-        .map_err(|_| "Credential ingress failed")?;
-    key.clear();
+    let credential = authorized_credential()?;
     let config: voice::Config =
         serde_json::from_value(json!({"live":true,"webrtc":true,"voice":"quartz","global":true}))?;
     let input = std::env::var_os("WHIP_LIVE_SMOKE_PCM")
@@ -62,11 +45,10 @@ async fn public_live_webrtc_api_smoke() -> Result<(), Box<dyn std::error::Error>
     }
     let session = serde_json::to_value(session)?;
     let mut input_offset = 0;
-    let (events, mut incoming) = futures::channel::mpsc::channel(256);
     let identity = Arc::new(Mutex::new(Identity::live()));
     let owner = playback_owner()?;
     let started = Instant::now();
-    let mut peer = Transport::new(events, identity.clone()).await?;
+    let mut peer = Transport::new().await?;
     let offered = startup::elapsed(started);
     let call = Call::create(&credential, peer.offer(), session).await?;
     drop(credential);
@@ -94,7 +76,8 @@ async fn public_live_webrtc_api_smoke() -> Result<(), Box<dyn std::error::Error>
         result
     });
     let mut decoded = [0_i16; voice::FRAME];
-    let mut request_at = None;
+    // The POST starts Live. An attached sideband need not replay session.started.
+    let request_at = Instant::now() + Duration::from_secs(5);
     let mut seen = voice::wire::Seen::default();
     let mut sent_request = false;
     let mut audio_packets = 0;
@@ -110,11 +93,10 @@ async fn public_live_webrtc_api_smoke() -> Result<(), Box<dyn std::error::Error>
     let result = async {
         loop {
             let event = tokio::select! {
-                event = incoming.next() => event.ok_or("Data channel ended")?.map_err(|_| "Data channel failed")?,
                 event = sideband.next() => event.ok_or("Sideband ended")?.map_err(|_| "Sideband failed")?,
                 _ = tick.tick() => {
                     if Instant::now() > deadline { return Err("WebRTC smoke deadline exceeded".into()); }
-                    if !sent_request && request_at.is_some_and(|at| Instant::now() >= at) {
+                    if !sent_request && Instant::now() >= request_at {
                         sent_request = true;
                         audible = false;
                         text.clear();
@@ -153,9 +135,6 @@ async fn public_live_webrtc_api_smoke() -> Result<(), Box<dyn std::error::Error>
             if matches!(value["type"].as_str(), Some("session.output_audio.delta" | "session.input_audio.append")) { continue; }
             if !seen.accept(&raw)? { continue; }
             match codec.decode_server(&raw)?.event {
-                ServerEvent::Started {..} if request_at.is_none() => {
-                    request_at = Some(Instant::now() + Duration::from_secs(5));
-                }
                 ServerEvent::OutputTranscriptDelta {delta,..} => text.push_str(&delta),
                 ServerEvent::Closed {usage,reason,..} => {
                     assert_eq!(reason, oai_rt_rs::live::CloseReason::CloseRequested);
@@ -214,6 +193,7 @@ fn playback_owner() -> Result<Arc<RealtimeVoiceAdapter>, &'static str> {
             playback: voice::transcript::Timing::default(),
             signal: voice::echo::Signal::default(),
             startup: startup::Timings::default(),
+            media: voice::MediaDiagnostics::default(),
             media_ready: true,
             recovery: recovery::State::Active,
             startup_attempt: 0,
@@ -245,4 +225,247 @@ fn playback_owner() -> Result<Arc<RealtimeVoiceAdapter>, &'static str> {
         speech,
         global: None,
     }))
+}
+
+fn authorized_credential() -> Result<NativeCredential, Box<dyn std::error::Error>> {
+    use std::ffi::c_void;
+    unsafe extern "C" fn read(context: *mut c_void, out: *mut u8, capacity: usize) -> i32 {
+        // SAFETY: this test lends its key for one synchronous, bounded read.
+        let key = unsafe { &*context.cast::<String>() };
+        if key.len() > capacity {
+            return -4;
+        }
+        // SAFETY: the credential ingress supplied capacity writable bytes.
+        unsafe {
+            std::ptr::copy_nonoverlapping(key.as_ptr(), out, key.len());
+        }
+        i32::try_from(key.len()).unwrap_or(-4)
+    }
+    let mut key = std::env::var("OPENAI_API_KEY").map_err(|_| "Missing authorized API key")?;
+    // SAFETY: callback/context remain live throughout the synchronous read.
+    let credential = unsafe { NativeCredential::read(read, (&raw mut key).cast()) }
+        .map_err(|_| "Credential ingress failed")?;
+    key.clear();
+    Ok(credential)
+}
+
+/// Explicitly billable: exercise the full application actor beyond its heartbeat deadline.
+#[tokio::test]
+#[ignore = "requires explicitly authorized OPENAI_API_KEY and network access"]
+async fn public_live_call_survives_a_minute_with_native_playback()
+-> Result<(), Box<dyn std::error::Error>> {
+    let credential = authorized_credential()?;
+    let config: voice::Config =
+        serde_json::from_value(json!({"live":true,"webrtc":true,"voice":"quartz","global":true}))?;
+    let input =
+        std::fs::read(std::env::var_os("WHIP_LIVE_SMOKE_PCM").ok_or("Synthetic PCM required")?)?;
+    let input = input
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .copied()
+        .map(i16::from_le_bytes)
+        .collect::<Vec<_>>();
+    let owner = playback_owner()?;
+    {
+        let mut view = owner.view.lock();
+        view.media_ready = false;
+        view.phase = "starting";
+    }
+    owner.output.lock().live_transcript = Some(voice::live::captions::Transcript::default());
+    let (commands, command_rx) = tokio::sync::mpsc::channel(8);
+    let worker = tokio::spawn(voice::live::LiveVoiceAdapter::run(
+        owner.clone(),
+        config,
+        credential,
+        None,
+        command_rx,
+    ));
+    let started = Instant::now();
+    let duration = Duration::from_secs(65);
+    let mut ready_at = None;
+    let mut offset = 0;
+    let mut peak = 0_u16;
+    let mut highlighted = false;
+    let mut tick = tokio::time::interval(Duration::from_millis(20));
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    while ready_at.is_none_or(|at: Instant| at.elapsed() < duration) && !worker.is_finished() {
+        tick.tick().await;
+        if started.elapsed() > Duration::from_secs(100) {
+            break;
+        }
+        if ready_at.is_none() && owner.view.lock().media_ready {
+            ready_at = Some(Instant::now());
+            eprintln!("Full Live media ready_ms={}", startup::elapsed(started));
+        }
+        let mut pcm = [0_i16; voice::FRAME];
+        if ready_at.is_some_and(|at| at.elapsed() > Duration::from_secs(3)) {
+            let count = pcm.len().min(input.len().saturating_sub(offset));
+            pcm[..count].copy_from_slice(&input[offset..offset + count]);
+            offset += count;
+        }
+        owner.capture(&pcm, owner.input.generation(), Instant::now());
+        let mut output = owner.output.lock();
+        let count = output.read(&mut pcm);
+        peak = pcm[..count]
+            .iter()
+            .map(|sample| sample.unsigned_abs())
+            .max()
+            .unwrap_or(0)
+            .max(peak);
+        let epoch = output.epoch;
+        let delivered = output.delivered;
+        output.acknowledge(epoch, delivered);
+        highlighted |= output.live_transcript.as_ref().is_some_and(|transcript| {
+            transcript.messages().as_array().is_some_and(|messages| {
+                messages.iter().any(|message| {
+                    message["role"] == "assistant"
+                        && message["spokenUtf16"]
+                            .as_u64()
+                            .is_some_and(|spoken| spoken > 0)
+                })
+            })
+        });
+    }
+    owner.close();
+    drop(commands);
+    let result = tokio::time::timeout(Duration::from_secs(10), worker).await??;
+    let media = owner.media.lock().take();
+    let cleanup = if let Some(media) = media {
+        media.close().await
+    } else {
+        Ok(())
+    };
+    let view = owner.view.lock();
+    eprintln!(
+        "Full Live call: elapsed_ms={} active_ms={} peak={peak} result={result:?} cleanup={cleanup:?} input_samples={offset} media={} uploaded={} caption_events={} server_events={} finalized={}",
+        startup::elapsed(started),
+        ready_at.map_or(0, startup::elapsed),
+        serde_json::to_string(&view.media)?,
+        view.uploaded_packets,
+        view.caption_events,
+        view.server_events,
+        view.usage_finalized
+    );
+    let reliable = view.media.reliable_rtp_packets == view.media.rtp_packets;
+    let late_packets = view.media.late_packets;
+    drop(view);
+    result?;
+    assert!(
+        ready_at.is_some_and(|at| at.elapsed() >= duration),
+        "Call ended before its heartbeat deadline"
+    );
+    assert!(peak >= 512, "No audible native playback");
+    assert!(highlighted, "Captions did not follow acknowledged audio");
+    if reliable {
+        assert_eq!(late_packets, 0, "Reliable media lost received speech");
+    }
+    cleanup?;
+    Ok(())
+}
+
+/// Explicitly billable: verify sideband-only events still identify native RTP audio.
+#[tokio::test]
+#[ignore = "requires explicitly authorized OPENAI_API_KEY and network access"]
+#[allow(
+    clippy::significant_drop_tightening,
+    reason = "The negotiated peer moves into the media task"
+)]
+async fn public_realtime_sideband_identifies_native_playback()
+-> Result<(), Box<dyn std::error::Error>> {
+    let credential = authorized_credential()?;
+    let config: voice::Config = serde_json::from_value(
+        json!({"webrtc":true,"voice":"cedar","global":true,"vad":{"type":"server_vad","threshold":0.5,"prefix_padding_ms":300,"silence_duration_ms":500}}),
+    )?;
+    let mut session = super::super::initial_session(config.session_update()?, config.model()?)?;
+    session["instructions"] =
+        json!("When greeted, say exactly: The synthetic WebRTC test passed. Then remain quiet.");
+    session["tools"] = json!([]);
+    session["tool_choice"] = json!("none");
+    let mut peer = Transport::new().await?;
+    let call = api::Call::create(&credential, peer.offer(), session).await?;
+    let request = voice::authorized_request(
+        &credential,
+        &format!("wss://api.openai.com/v1/realtime?call_id={}", call.id),
+    )?;
+    let (mut sideband, connected) = tokio::try_join!(
+        async {
+            voice::connect_request(request)
+                .await
+                .map_err(|error| error.message)
+        },
+        peer.apply_answer(call.answer.clone())
+    )?;
+    drop(credential);
+    assert_eq!(connected, AnswerOutcome::Ready);
+    let input =
+        std::fs::read(std::env::var_os("WHIP_LIVE_SMOKE_PCM").ok_or("Synthetic PCM required")?)?;
+    let input = input
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .copied()
+        .map(i16::from_le_bytes)
+        .collect::<Vec<_>>();
+    let owner = playback_owner()?;
+    let identity = Arc::new(Mutex::new(Identity::default()));
+    let media_identity = identity.clone();
+    let (stop, stopped) = watch::channel(false);
+    let attempt = recovery::Attempt::new(owner.clone());
+    attempt.activate().map_err(|failure| failure.message)?;
+    let media_owner = owner.clone();
+    let media = tokio::spawn(async move {
+        let result = media::run(&media_owner, &mut peer, media_identity, stopped, &attempt).await;
+        peer.close().await?;
+        result
+    });
+    let started = Instant::now();
+    let mut tick = tokio::time::interval(Duration::from_millis(20));
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut offset = 0;
+    let mut peak = 0_u16;
+    let mut began = false;
+    let mut ended = false;
+    let result = async {
+        loop {
+            tokio::select! {
+                event = socket::next_sideband_event(&mut sideband) => {
+                    let Message::Text(text) = event? else { continue; };
+                    let event: Value = serde_json::from_str(&text)?;
+                    identity.lock().observe(&event);
+                    began |= event["type"] == "output_audio_buffer.started";
+                    ended |= event["type"] == "output_audio_buffer.stopped";
+                    if event["type"] == "error" { return Err("Synthetic Realtime call rejected".into()); }
+                }
+                _ = tick.tick() => {
+                    if started.elapsed() > Duration::from_secs(25) { return Err("Sideband playback deadline exceeded".into()); }
+                    let mut pcm = [0_i16; voice::FRAME];
+                    if started.elapsed() > Duration::from_secs(3) {
+                        let count = pcm.len().min(input.len().saturating_sub(offset));
+                        pcm[..count].copy_from_slice(&input[offset..offset+count]);
+                        offset += count;
+                    }
+                    owner.capture(&pcm, owner.input.generation(), Instant::now());
+                    let mut output = owner.output.lock();
+                    let count = output.read(&mut pcm);
+                    peak = pcm[..count].iter().map(|sample| sample.unsigned_abs()).max().unwrap_or(0).max(peak);
+                    let epoch = output.epoch;
+                    let delivered = output.delivered;
+                    output.acknowledge(epoch, delivered);
+                    drop(output);
+                    if media.is_finished() { return Err("Synthetic Realtime media ended".into()); }
+                    if began && ended && peak >= 512 { break; }
+                }
+            }
+        }
+        Ok::<(), Box<dyn std::error::Error>>(())
+    }.await;
+    stop.send_replace(true);
+    let retired = call.hangup().await;
+    let drained = media.await?;
+    let _ = sideband.close(None).await;
+    eprintln!("Realtime sideband: started={began} stopped={ended} peak={peak}");
+    retired?;
+    drained?;
+    result
 }

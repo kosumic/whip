@@ -57,12 +57,18 @@ pub(super) async fn run(
                 continue;
             }
             idle = IDLE_TIMEOUT;
-            let _ = events.try_send(Event::Packet(Packet {
-                proto: Protocol::Tcp,
-                source: remote,
-                destination: local,
-                data,
-            }));
+            // Preserve TCP's reliable framing when the media owner is busy.
+            // Backpressure stays bounded and reaches the socket instead of
+            // silently deleting an authenticated RTP/DTLS/SCTP frame.
+            events
+                .send(Event::Packet(Packet {
+                    proto: Protocol::Tcp,
+                    source: remote,
+                    destination: local,
+                    data,
+                }))
+                .await
+                .map_err(|_| ())?;
         }
         #[allow(
             unreachable_code,
@@ -84,4 +90,55 @@ pub(super) async fn run(
         Ok::<(), ()>(())
     };
     tokio::select! {biased; _=stop.changed()=>{}, _=reading=>{}, _=writing=>{}}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    const FRAMES: u16 = 100;
+
+    #[tokio::test]
+    #[allow(
+        clippy::significant_drop_tightening,
+        reason = "The connection permit moves into the worker and must live until that worker exits"
+    )]
+    async fn received_tcp_frames_survive_a_paused_media_consumer()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let remote = listener.local_addr()?;
+        let client = TcpStream::connect(remote).await?;
+        let local = client.local_addr()?;
+        let (mut server, _) = listener.accept().await?;
+        let (events, mut receiver) = mpsc::channel(2);
+        let (_commands, commands) = mpsc::channel(2);
+        let (stop, stopped) = watch::channel(false);
+        let permit = std::sync::Arc::new(tokio::sync::Semaphore::new(1))
+            .acquire_owned()
+            .await?;
+        let worker = tokio::spawn(run(
+            client, remote, local, commands, events, stopped, permit,
+        ));
+        for sequence in 0..FRAMES {
+            server.write_u16(2).await?;
+            server.write_all(&sequence.to_be_bytes()).await?;
+        }
+        // TCP is reliable even when the media owner briefly stops polling.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let result = tokio::time::timeout(Duration::from_secs(1), async {
+            for sequence in 0..FRAMES {
+                let Some(Event::Packet(packet)) = receiver.recv().await else {
+                    return Err("TCP media stream ended before all frames arrived");
+                };
+                if packet.data != sequence.to_be_bytes() {
+                    return Err("TCP media frames were lost or reordered");
+                }
+            }
+            Ok(())
+        })
+        .await;
+        stop.send_replace(true);
+        worker.await?;
+        result??;
+        Ok(())
+    }
 }

@@ -112,6 +112,47 @@ fn late_caption_fragments_preserve_speaker_order_and_repeated_words() -> Result<
     assert!(captions.request(150.0, 100.0).is_err());
     Ok(())
 }
+
+#[test]
+fn live_highlighting_waits_for_device_playback_and_preserves_fragment_timing()
+-> Result<(), &'static str> {
+    let mut captions = captions::Transcript::default();
+    captions.append(fragment("one", "assistant", "hello", 1000.0, 1500.0))?;
+    captions.append(fragment("two", "assistant", " world", 1700.0, 2300.0))?;
+    let messages = captions.messages();
+    assert_eq!(messages[0]["spokenUtf16"], 0);
+    assert_eq!(messages[0]["active"], false);
+    captions.played(super::super::RATE / 4);
+    let messages = captions.messages();
+    assert_eq!(messages[0]["spokenUtf16"], 2);
+    assert_eq!(messages[0]["active"], true);
+    // More caption delivery cannot advance speech while device playback pauses.
+    captions.append(fragment("late", "user", "yes", 1100.0, 1200.0))?;
+    assert_eq!(captions.messages()[0]["spokenUtf16"], 2);
+    captions.played(super::super::RATE);
+    assert_eq!(captions.messages()[0]["spokenUtf16"], 8);
+    captions.played(super::super::RATE * 2);
+    let messages = captions.messages();
+    assert_eq!(messages[0]["spokenUtf16"], 11);
+    assert_eq!(messages[0]["active"], false);
+    Ok(())
+}
+
+#[test]
+fn interrupted_live_captions_cannot_become_heard_during_a_later_reply() -> Result<(), &'static str>
+{
+    let mut captions = captions::Transcript::default();
+    captions.append(fragment("old", "assistant", "unfinished", 0.0, 1000.0))?;
+    captions.played(super::super::RATE / 2);
+    captions.stop();
+    captions.append(fragment("new", "assistant", "new reply", 4000.0, 5000.0))?;
+    captions.played(super::super::RATE);
+    let messages = captions.messages();
+    assert_eq!(messages[0]["spokenUtf16"], 5);
+    assert_eq!(messages[0]["active"], false);
+    assert_eq!(messages[1]["spokenUtf16"], 9);
+    Ok(())
+}
 #[test]
 fn private_agent_payloads_are_not_spoken_and_status_is_not_completion() {
     let result = public_result(

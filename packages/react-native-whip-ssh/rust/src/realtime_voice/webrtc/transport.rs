@@ -1,16 +1,14 @@
 // Copyright 2025 OpenAI
 // SPDX-License-Identifier: Apache-2.0
 // Adapted from Codex at 021fccb046508938c4754982efccfb51d6e8356e.
-//! Owns the accelerated DTLS/SCTP peer and bounded native media/event channels.
+//! Owns the accelerated DTLS/SCTP peer and bounded native media ingress.
+//! Typed events belong exclusively to the WebSocket sideband, as in Codex.
 use super::{
     audio_track::AudioTrack,
     driver::{Command, Driver},
-    identity::Identity,
     incoming::Incoming,
 };
-use futures::SinkExt;
-use parking_lot::Mutex;
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 use tokio::{
     sync::{mpsc, oneshot, watch},
     task::JoinHandle,
@@ -27,31 +25,26 @@ pub(crate) struct Transport {
     pub(crate) incoming: Incoming,
     pub(crate) audio: AudioTrack,
     pub(crate) ready: watch::Receiver<bool>,
+    pub(super) failure: watch::Receiver<Option<&'static str>>,
     offer: String,
     commands: mpsc::Sender<Command>,
     stop: watch::Sender<bool>,
     worker: Option<JoinHandle<Result<(), &'static str>>>,
-    observer: JoinHandle<()>,
 }
 impl Transport {
-    pub(crate) async fn new(
-        events: super::super::socket::Events,
-        identity: Arc<Mutex<Identity>>,
-    ) -> Result<Self, &'static str> {
-        Self::with_protocol(events, identity, None).await
+    pub(crate) async fn new() -> Result<Self, &'static str> {
+        Self::with_protocol(None).await
     }
     pub(super) async fn with_protocol(
-        mut events: super::super::socket::Events,
-        identity: Arc<Mutex<Identity>>,
         protocol: Option<str0m::net::Protocol>,
     ) -> Result<Self, &'static str> {
         let (incoming, ingress) = Incoming::new();
-        let (sender, mut receiver) = mpsc::channel(32);
         let (ready, connected) = watch::channel(false);
+        let (failed, failure) = watch::channel(None);
         let (stop, stopped) = watch::channel(false);
         let (commands, command_rx) = mpsc::channel(8);
         let (driver, offer) =
-            Driver::new(ingress, sender, ready, command_rx, stopped, protocol).await?;
+            Driver::new(ingress, ready, failed, command_rx, stopped, protocol).await?;
         // Transport dependencies must never emit wire payloads, SDP, or keys,
         // including when a host application installs a tracing subscriber.
         let worker = tokio::spawn(
@@ -59,33 +52,15 @@ impl Transport {
                 .run()
                 .with_subscriber(tracing::subscriber::NoSubscriber::default()),
         );
-        let observer = tokio::spawn(async move {
-            while let Some(text) = receiver.recv().await {
-                let Ok(value) = serde_json::from_str(&text) else {
-                    identity.lock().failed = true;
-                    break;
-                };
-                identity.lock().observe(&value);
-                if events
-                    .send(Ok(tokio_tungstenite::tungstenite::Message::Text(
-                        text.into(),
-                    )))
-                    .await
-                    .is_err()
-                {
-                    break;
-                }
-            }
-        });
         Ok(Self {
             incoming,
-            audio: AudioTrack::new(commands.clone()),
+            audio: AudioTrack::new(commands.clone(), failure.clone()),
             ready: connected,
+            failure,
             offer,
             commands,
             stop,
             worker: Some(worker),
-            observer,
         })
     }
     pub(crate) fn offer(&self) -> String {
@@ -106,8 +81,6 @@ impl Transport {
     }
     pub(crate) async fn close(&mut self) -> Result<(), &'static str> {
         self.stop.send_replace(true);
-        self.observer.abort();
-        let _ = (&mut self.observer).await;
         if let Some(mut worker) = self.worker.take() {
             match tokio::time::timeout(CLOSE_WAIT, &mut worker).await {
                 Ok(Ok(_)) => {}
@@ -125,7 +98,6 @@ impl Transport {
 impl Drop for Transport {
     fn drop(&mut self) {
         self.stop.send_replace(true);
-        self.observer.abort();
         if let Some(mut worker) = self.worker.take()
             && let Ok(runtime) = crate::runtime()
         {

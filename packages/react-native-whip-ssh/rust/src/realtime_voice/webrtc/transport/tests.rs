@@ -1,6 +1,6 @@
 //! Exercise accelerated clients against an independent, DTLS 1.2 stock peer.
 use super::*;
-use futures::{StreamExt, future::BoxFuture};
+use futures::future::BoxFuture;
 use rtc::{
     media::Sample,
     peer_connection::configuration::setting_engine::SettingEngineBuilder,
@@ -23,6 +23,21 @@ use webrtc::{
     peer_connection::MediaEngine,
 };
 type TestResult = Result<(), Box<dyn std::error::Error>>;
+async fn send_silence(audio: &TrackLocalStaticSample) -> TestResult {
+    audio
+        .write_sample(
+            1234,
+            111,
+            &Sample {
+                data: vec![0xf8, 0xff, 0xfe].into(),
+                duration: Duration::from_millis(20),
+                ..Sample::new(std::time::Instant::now())
+            },
+            &[],
+        )
+        .await?;
+    Ok(())
+}
 struct Gathered(Arc<Notify>);
 impl PeerConnectionEventHandler for Gathered {
     fn on_ice_gathering_state_change<'a, 'async_trait>(
@@ -77,7 +92,7 @@ fn audio() -> Result<(MediaEngine, Arc<TrackLocalStaticSample>), Box<dyn std::er
     Ok((media, Arc::new(track)))
 }
 #[tokio::test]
-async fn udp_and_tcp_interoperate_with_stock_dtls12_and_exchange_events_and_opus() -> TestResult {
+async fn udp_and_tcp_media_survive_bursts_of_mirrored_data_channel_events() -> TestResult {
     for protocol in [str0m::net::Protocol::Udp, str0m::net::Protocol::Tcp] {
         tokio::time::timeout(Duration::from_secs(30), async {
             let gathered = Arc::new(Notify::new());
@@ -93,13 +108,7 @@ async fn udp_and_tcp_interoperate_with_stock_dtls12_and_exchange_events_and_opus
             };
             let remote = Box::pin(builder.build()).await?;
             remote.add_track(audio.clone()).await?;
-            let (mut socket, _commands, events) = crate::realtime_voice::socket::Socket::relay();
-            let mut local = Transport::with_protocol(
-                events,
-                Arc::new(Mutex::new(Identity::default())),
-                Some(protocol),
-            )
-            .await?;
+            let mut local = Transport::with_protocol(Some(protocol)).await?;
             remote
                 .set_remote_description(RTCSessionDescription::offer(local.offer())?)
                 .await?;
@@ -131,29 +140,13 @@ async fn udp_and_tcp_interoperate_with_stock_dtls12_and_exchange_events_and_opus
                 }
             }
             let event = r#"{"type":"rate_limits.updated","event_id":"test","rate_limits":[]}"#;
-            channel.send_text(event).await?;
-            assert_eq!(
-                socket
-                    .next()
-                    .await
-                    .ok_or("No wire event")??
-                    .into_text()?
-                    .as_str(),
-                event
-            );
+            // A burst of mirrored messages cannot terminate media, even when
+            // the application is busy and not polling its sideband receiver.
+            for _ in 0..256 {
+                channel.send_text(event).await?;
+            }
             local.incoming.set_suppressed(false)?;
-            audio
-                .write_sample(
-                    1234,
-                    111,
-                    &Sample {
-                        data: vec![0xf8, 0xff, 0xfe].into(),
-                        duration: Duration::from_millis(20),
-                        ..Sample::new(std::time::Instant::now())
-                    },
-                    &[],
-                )
-                .await?;
+            send_silence(&audio).await?;
             let received = loop {
                 if let Some(packet) = local.incoming.take()? {
                     break packet;
@@ -161,10 +154,27 @@ async fn udp_and_tcp_interoperate_with_stock_dtls12_and_exchange_events_and_opus
                 tokio::time::sleep(Duration::from_millis(5)).await;
             };
             let packet = super::super::packet::parse(received.as_ref()).ok_or("Invalid RTP")?;
+            assert_eq!(received.reliable, protocol == str0m::net::Protocol::Tcp);
             drop(received);
             assert_eq!(packet.payload, [0xf8, 0xff, 0xfe]);
             let mut decoder = opus::Decoder::new(24_000, opus::Channels::Mono)?;
             assert!(decoder.decode(&packet.payload, &mut [0; 2880], false)? > 0);
+            drop(packet);
+            channel.close().await?;
+            tokio::time::timeout(
+                Duration::from_secs(5),
+                local.ready.wait_for(|ready| !*ready),
+            )
+            .await??;
+            // A closed control channel reports readiness loss, but only the
+            // owner may retire the peer after collecting final session events.
+            send_silence(&audio).await?;
+            loop {
+                if local.incoming.take()?.is_some() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
             remote.close().await?;
             tokio::time::timeout(
                 Duration::from_secs(5),
@@ -181,8 +191,7 @@ async fn udp_and_tcp_interoperate_with_stock_dtls12_and_exchange_events_and_opus
 }
 #[tokio::test]
 async fn malformed_answer_is_redacted_and_peer_remains_closable() -> TestResult {
-    let (_socket, _commands, events) = crate::realtime_voice::socket::Socket::relay();
-    let mut peer = Transport::new(events, Arc::new(Mutex::new(Identity::default()))).await?;
+    let mut peer = Transport::new().await?;
     assert_eq!(
         peer.apply_answer("synthetic-private-invalid-sdp".into())
             .await,
@@ -195,8 +204,7 @@ async fn malformed_answer_is_redacted_and_peer_remains_closable() -> TestResult 
 
 #[tokio::test]
 async fn untrusted_answer_candidate_count_is_bounded_before_negotiation() -> TestResult {
-    let (_socket, _commands, events) = crate::realtime_voice::socket::Socket::relay();
-    let mut peer = Transport::new(events, Arc::new(Mutex::new(Identity::default()))).await?;
+    let mut peer = Transport::new().await?;
     let answer = "a=candidate:1 1 udp 1 127.0.0.1 5000 typ host\r\n".repeat(33);
     assert_eq!(
         peer.apply_answer(answer).await,
@@ -209,8 +217,7 @@ async fn untrusted_answer_candidate_count_is_bounded_before_negotiation() -> Tes
 
 #[tokio::test]
 async fn closing_before_negotiation_releases_udp_and_tcp_listeners() -> TestResult {
-    let (_socket, _commands, events) = crate::realtime_voice::socket::Socket::relay();
-    let mut peer = Transport::new(events, Arc::new(Mutex::new(Identity::default()))).await?;
+    let mut peer = Transport::new().await?;
     let mut udp = None;
     let mut tcp = None;
     for line in peer

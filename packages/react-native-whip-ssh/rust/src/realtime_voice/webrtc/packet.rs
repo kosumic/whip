@@ -3,6 +3,18 @@ pub(super) struct Packet {
     pub sequence: u16,
     pub timestamp: u32,
     pub payload: Vec<u8>,
+    pub reliable: bool,
+    pub(super) _lease: Option<super::incoming::ReceivedRtp>,
+}
+impl Packet {
+    #[must_use]
+    pub fn retaining(self, lease: super::incoming::ReceivedRtp) -> Self {
+        Self {
+            reliable: lease.reliable,
+            _lease: Some(lease),
+            ..self
+        }
+    }
 }
 pub(super) fn parse(bytes: &[u8]) -> Option<Packet> {
     if bytes.len() < 12 || bytes[0] >> 6 != 2 {
@@ -28,6 +40,8 @@ pub(super) fn parse(bytes: &[u8]) -> Option<Packet> {
         sequence: u16::from_be_bytes([bytes[2], bytes[3]]),
         timestamp: u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]),
         payload: bytes.get(offset..end)?.to_vec(),
+        reliable: false,
+        _lease: None,
     })
 }
 pub(super) fn distance(sequence: u16, expected: u16) -> i16 {

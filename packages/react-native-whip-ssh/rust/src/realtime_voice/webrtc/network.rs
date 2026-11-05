@@ -20,6 +20,8 @@ const CAPACITY: usize = 32;
 const MAX_PACKET: usize = 65_535;
 const ACTIVE_PORT: u16 = 9;
 const MAX_LOCAL_CANDIDATES: usize = 96;
+const UDP_FALLBACK_TYPE_PREFERENCE: u32 = 80;
+const ICE_LOCAL_PRIORITY_MASK: u32 = 0x00ff_ffff;
 pub(super) struct Packet {
     pub proto: Protocol,
     pub source: SocketAddr,
@@ -90,10 +92,21 @@ impl Network {
     pub fn candidates(&self) -> Result<Vec<Candidate>, &'static str> {
         let mut candidates = Vec::new();
         for local in self.udp.keys() {
-            candidates.push(
-                Candidate::host(*local, Protocol::Udp)
-                    .map_err(|_| "Invalid voice UDP candidate.")?,
-            );
+            let candidate = Candidate::host(*local, Protocol::Udp)
+                .map_err(|_| "Invalid voice UDP candidate.")?;
+            // Retain UDP fallback while preferring reliable TCP. API A/B tests
+            // reproduced gaps during audible UDP speech on the affected path.
+            candidates.push(Candidate::from_parts(
+                uuid::Uuid::new_v4().simple().to_string(),
+                1,
+                Protocol::Udp,
+                (UDP_FALLBACK_TYPE_PREFERENCE << 24) | (candidate.prio() & ICE_LOCAL_PRIORITY_MASK),
+                *local,
+                candidate.kind(),
+                None,
+                None,
+                None,
+            ));
         }
         for &ip in &self.interfaces {
             let tcp = if ip.is_ipv4() {
@@ -143,7 +156,11 @@ impl Network {
                     let received=tokio::select!{biased; _=stop.changed()=>return, received=socket.recv_from(&mut buffer)=>received};
                     let Ok((len,source))=received else {let _=sender.try_send(Event::Failed);return;};
                     let packet=Packet {proto:Protocol::Udp,source,destination:local,data:buffer[..len].to_vec()};
-                    let _=sender.try_send(Event::Packet(packet));
+                    tokio::select! {
+                        biased;
+                        _=stop.changed()=>return,
+                        result=sender.send(Event::Packet(packet))=>if result.is_err() { return; },
+                    }
                 }
             });
         }

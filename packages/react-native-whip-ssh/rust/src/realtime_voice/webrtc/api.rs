@@ -1,5 +1,5 @@
 //! Unified public call creation: SDP and initial configuration travel together.
-use super::super::{IO_TIMEOUT, MAX_WIRE, models};
+use super::super::{IO_TIMEOUT, MAX_WIRE, models, startup};
 use native_credentials::NativeCredential;
 use reqwest::{
     Client,
@@ -12,11 +12,17 @@ static HTTP: std::sync::OnceLock<Result<Client, &'static str>> = std::sync::Once
 
 pub(super) fn client() -> Result<Client, &'static str> {
     HTTP.get_or_init(|| {
-        Client::builder()
+        let started = std::time::Instant::now();
+        let client = Client::builder()
             .timeout(IO_TIMEOUT)
             .redirect(reqwest::redirect::Policy::none())
             .build()
-            .map_err(|_| "Voice HTTP client could not start.")
+            .map_err(|_| "Voice HTTP client could not start.");
+        crate::host_runtime::diagnostics::log_lifecycle(format_args!(
+            "Voice HTTP client initialize_ms={}",
+            startup::elapsed(started)
+        ));
+        client
     })
     .clone()
 }

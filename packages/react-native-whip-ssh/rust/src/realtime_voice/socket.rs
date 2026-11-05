@@ -1,5 +1,6 @@
 //! One bounded wire interface for a direct WebSocket or a WebRTC sideband.
-use futures::{Sink, SinkExt, Stream, channel::mpsc};
+use futures::{Sink, SinkExt, Stream, StreamExt, channel::mpsc};
+use serde::Deserialize;
 use std::{
     pin::Pin,
     task::{Context, Poll},
@@ -11,6 +12,42 @@ use tokio_tungstenite::{
 
 pub(super) type RawSocket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 pub(super) type Events = mpsc::Sender<Result<Message, Error>>;
+
+/// The transport owns WebSocket control frames, as in Codex's WsStream.
+/// Reflected PCM is never admitted to the application queue: RTP owns audio.
+pub(super) async fn next_sideband_event(socket: &mut RawSocket) -> Result<Message, &'static str> {
+    loop {
+        match socket.next().await {
+            Some(Ok(Message::Ping(payload))) => {
+                tokio::time::timeout(super::IO_TIMEOUT, socket.send(Message::Pong(payload)))
+                    .await
+                    .map_err(|_| "Voice sideband pong timed out.")?
+                    .map_err(|_| "Voice sideband disconnected.")?;
+            }
+            Some(Ok(Message::Pong(_) | Message::Frame(_))) => {}
+            Some(Ok(Message::Text(text))) => {
+                #[derive(Deserialize)]
+                struct Kind<'a> {
+                    #[serde(borrow, rename = "type")]
+                    kind: &'a str,
+                }
+                let kind: Kind<'_> =
+                    serde_json::from_str(&text).map_err(|_| "Invalid voice sideband event.")?;
+                if !matches!(
+                    kind.kind,
+                    "session.input_audio.append"
+                        | "session.output_audio.delta"
+                        | "response.output_audio.delta"
+                        | "response.audio.delta"
+                ) {
+                    return Ok(Message::Text(text));
+                }
+            }
+            Some(Ok(message)) => return Ok(message),
+            Some(Err(_)) | None => return Err("Voice sideband disconnected."),
+        }
+    }
+}
 pub(super) enum Socket {
     Direct(Box<RawSocket>),
     Sideband {
@@ -28,7 +65,6 @@ impl Socket {
     pub async fn receive_text(
         &mut self,
         message: Option<Result<Message, Error>>,
-        last_pong: &mut tokio::time::Instant,
     ) -> Result<Option<Utf8Bytes>, &'static str> {
         let message = message
             .ok_or("OpenAI Realtime disconnected. Start a new call.")?
@@ -42,7 +78,6 @@ impl Socket {
                     .map_err(|_| "Realtime send timed out.")?
                     .map_err(|_| "Realtime connection failed.")?;
             }
-            Message::Pong(_) => *last_pong = tokio::time::Instant::now(),
             _ => {}
         }
         Ok(None)
@@ -96,40 +131,75 @@ impl Sink<Message> for Socket {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures::StreamExt;
-    use std::time::Duration;
 
-    #[tokio::test(start_paused = true)]
-    async fn control_frames_preserve_heartbeat_and_text_delivery() {
+    #[tokio::test]
+    async fn control_frames_preserve_ping_replies_and_text_delivery()
+    -> Result<(), Box<dyn std::error::Error>> {
         let (mut socket, mut commands, _events) = Socket::relay();
-        let started = tokio::time::Instant::now();
-        let mut last_pong = started;
         let payload = vec![1, 2, 3];
         assert!(
             socket
-                .receive_text(
-                    Some(Ok(Message::Ping(payload.clone().into()))),
-                    &mut last_pong
-                )
-                .await
-                .unwrap()
+                .receive_text(Some(Ok(Message::Ping(payload.clone().into()))))
+                .await?
                 .is_none()
         );
         assert_eq!(commands.next().await, Some(Message::Pong(payload.into())));
-        assert_eq!(last_pong, started);
-        tokio::time::advance(Duration::from_secs(1)).await;
         assert!(
             socket
-                .receive_text(Some(Ok(Message::Pong(Vec::new().into()))), &mut last_pong)
-                .await
-                .unwrap()
+                .receive_text(Some(Ok(Message::Pong(Vec::new().into()))))
+                .await?
                 .is_none()
         );
-        assert_eq!(last_pong, tokio::time::Instant::now());
         let text = socket
-            .receive_text(Some(Ok(Message::Text("event".into()))), &mut last_pong)
-            .await
-            .unwrap();
+            .receive_text(Some(Ok(Message::Text("event".into()))))
+            .await?;
         assert_eq!(text.as_deref(), Some("event"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn sideband_keeps_control_and_reflected_audio_out_of_the_application_queue()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let address = listener.local_addr()?;
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await?;
+            let mut socket = tokio_tungstenite::accept_async(stream).await?;
+            for kind in [
+                "session.input_audio.append",
+                "session.output_audio.delta",
+                "response.output_audio.delta",
+                "response.audio.delta",
+            ] {
+                socket
+                    .send(Message::Text(
+                        serde_json::json!({"type":kind,"delta":"synthetic-pcm"})
+                            .to_string()
+                            .into(),
+                    ))
+                    .await?;
+            }
+            socket.send(Message::Pong(vec![7].into())).await?;
+            socket.send(Message::Ping(vec![8].into())).await?;
+            assert_eq!(
+                socket.next().await.transpose()?,
+                Some(Message::Pong(vec![8].into()))
+            );
+            socket
+                .send(Message::Text(r#"{"type":"session.updated"}"#.into()))
+                .await?;
+            Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+        });
+        let (mut socket, _) = tokio_tungstenite::connect_async(format!("ws://{address}")).await?;
+        let event = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            next_sideband_event(&mut socket),
+        )
+        .await??;
+        assert_eq!(event, Message::Text(r#"{"type":"session.updated"}"#.into()));
+        server
+            .await?
+            .map_err(|_| "Synthetic sideband server failed")?;
+        Ok(())
     }
 }

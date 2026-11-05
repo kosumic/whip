@@ -25,6 +25,8 @@ internal object RealtimeVoice {
   private const val MAX_AUDIO_AGE_NS = NANOS_PER_SECOND / 2
   private const val LOG_TAG = "WhipRealtimeAudio"
   private const val DIAGNOSTIC_INTERVAL_MS = 5_000L
+  private const val READY_CUE_TAIL_MS = 120L
+  private val CLIENT_STARTUP_FIELDS = listOf("transitionMs", "permissionMs", "speechSuspendMs", "callServiceMs")
   private var current: Session? = null
   private var lastToken: String? = null
   private var lastView = "{\"phase\":\"closed\"}"
@@ -51,6 +53,9 @@ internal object RealtimeVoice {
     var playback: Thread? = null
     var monitor: Runnable? = null
     @Volatile var boundary = CaptureBoundary()
+    @Volatile var readyCue: Any? = null
+    @Volatile var playedAudioSamples = 0L
+    @Volatile var playedAudioPeak = 0
     var captureMuted = VoiceCallService.muted(token)
     var captionDiagnostic: String? = null
     var startupDiagnostic: String? = null
@@ -61,6 +66,24 @@ internal object RealtimeVoice {
     @Volatile var captureAgeNs = 0L
     @Volatile var deviceFramePosition = 0L
     fun elapsedMs(): Long = clientElapsedMs + SystemClock.elapsedRealtime() - mediaStartedAt
+  }
+
+  /** A MediaPlayer cue is outside the PCM echo reference. Never upload its echo. */
+  fun quietCaptureForReadyCue(): (() -> Unit)? {
+    val session = current?.takeIf { !it.preview && it.running.get() } ?: return null
+    val cue = Any()
+    session.readyCue = cue
+    session.boundary = CaptureBoundary()
+    Log.i(LOG_TAG, "Ready cue capture suppressed")
+    return {
+      main.postDelayed({
+        if (current === session && session.readyCue === cue) {
+          session.boundary = CaptureBoundary()
+          session.readyCue = null
+          Log.i(LOG_TAG, "Ready cue capture resumed")
+        }
+      }, READY_CUE_TAIL_MS)
+    }
   }
 
   @SuppressLint("MissingPermission")
@@ -88,7 +111,15 @@ internal object RealtimeVoice {
         require(focus.acquire())
       }
       val coreStartedAt = SystemClock.elapsedRealtime()
-      val nativeConfig = JSONObject(config).put("preview", preview).put("softwareEchoCancellation", !preview).put("webrtc", true)
+      val nativeConfigValue = JSONObject(config)
+      val clientStartup = nativeConfigValue.optJSONObject("clientStartup")
+      nativeConfigValue.remove("clientStartup")
+      if (!preview) {
+        val backend = if (nativeConfigValue.optBoolean("live")) "live" else "realtime"
+        val stages = CLIENT_STARTUP_FIELDS.joinToString(" ") { "$it=${clientStartup?.optLong(it)?.coerceAtLeast(0) ?: 0}" }
+        Log.i(LOG_TAG, "Startup backend=$backend $stages")
+      }
+      val nativeConfig = nativeConfigValue.put("preview", preview).put("softwareEchoCancellation", !preview).put("webrtc", true)
         .put("clientElapsedMs", clientElapsedMs + coreStartedAt - mediaStartedAt).toString()
       val result = Core.start(nativeConfig, WhipVoiceCredentials(context))
       if (result < 0) throw CredentialFailure(result)
@@ -137,7 +168,8 @@ internal object RealtimeVoice {
             session.audioDiagnosticAtMs = diagnosticNow
             val playback = state.optJSONObject("playback")
             val signal = state.optJSONObject("signal")
-            val counters = "rawRms=${signal?.optDouble("rawRms")} processedRms=${signal?.optDouble("processedRms")} processingDrops=${signal?.optLong("droppedFrames")} receivedMs=${playback?.optLong("receivedMs")} heardMs=${playback?.optLong("heardMs")} durationMs=${playback?.optLong("expectedMs")} captionUtf16=${playback?.optLong("textUtf16")} spokenUtf16=${playback?.optLong("spokenUtf16")}"
+            val media = state.optJSONObject("media")
+            val counters = "rawRms=${signal?.optDouble("rawRms")} processedRms=${signal?.optDouble("processedRms")} processingDrops=${signal?.optLong("droppedFrames")} receivedMs=${playback?.optLong("receivedMs")} heardMs=${playback?.optLong("heardMs")} durationMs=${playback?.optLong("expectedMs")} captionUtf16=${playback?.optLong("textUtf16")} spokenUtf16=${playback?.optLong("spokenUtf16")} media=${media?.toString()} nativeAudioSamples=${session.playedAudioSamples} nativeAudioPeak=${session.playedAudioPeak}"
             Log.w(LOG_TAG, "Audio deviceSamples=${session.capturedSamples} rejected=${session.rejectedCapture} ageMs=${session.captureAgeNs / 1_000_000} devicePosition=${session.deviceFramePosition} capturePackets=${state.optLong("capturePackets")} uploadedPackets=${state.optLong("uploadedPackets")} rawLevel=${state.optDouble("captureLevel")} processedLevel=${state.optDouble("level")} events=${state.optLong("serverEvents")} $audioDiagnostic $counters")
           }
           if (phase == "error" || preview && phase == "closed") {
@@ -221,6 +253,9 @@ internal object RealtimeVoice {
           session.rejectedCapture++
           continue
         }
+        // Keep the RTP input clock running with silence throughout the cue and
+        // its short acoustic tail. User mute state remains independently owned.
+        if (session.readyCue != null) pcm.fill(0, 0, count)
         if (!Core.captureTimed(session.call, pcm, count, generation, now - at)) break
       }
     } catch (_: Exception) { if (session.running.get()) Core.control(session.call, Core.AUDIO_FAILED) }
@@ -249,6 +284,11 @@ internal object RealtimeVoice {
         // Keep at most 80ms in the platform buffer; Rust retains the rest.
         if (submitted - played > Core.FRAME * 3) { Thread.sleep(5); continue }
         val audioCount = Core.read(session.call, pcm, epoch)
+        if (audioCount > 0) {
+          var peak = 0
+          for (index in 0 until audioCount) peak = maxOf(peak, kotlin.math.abs(pcm[index].toInt()))
+          session.playedAudioPeak = maxOf(session.playedAudioPeak, peak)
+        }
         if (epoch[0] != generation) {
           generation = epoch[0]; epochStart = submitted
         }
@@ -271,6 +311,7 @@ internal object RealtimeVoice {
             check(Core.render(session.call, generation, pcm, offset, written, audioCount > 0, at - System.nanoTime()))
           }
           offset += written; submitted += written
+          if (audioCount > 0) session.playedAudioSamples += written
         }
       }
     } catch (_: Exception) { if (session.running.get()) Core.control(session.call, Core.AUDIO_FAILED) }
@@ -305,6 +346,7 @@ internal object RealtimeVoice {
       if (view.optString("phase") != "error") lastView = view.put("phase", "closed").toString()
     }
     session.running.set(false)
+    val shutdownStartedAt = SystemClock.elapsedRealtime()
     session.monitor?.let { main.removeCallbacks(it) }
     Core.stop(session.call)
     session.focus?.close()
@@ -313,7 +355,9 @@ internal object RealtimeVoice {
     Thread({
       session.capture?.join(2000)
       session.playback?.join(2000)
+      Log.i(LOG_TAG, "Shutdown devicesMs=${SystemClock.elapsedRealtime() - shutdownStartedAt}")
       while (!Core.stopped(session.call)) Thread.sleep(5)
+      Log.i(LOG_TAG, "Shutdown finalizedMs=${SystemClock.elapsedRealtime() - shutdownStartedAt}")
       main.post {
         if (closingToken == token) {
           closingToken = null

@@ -5,6 +5,8 @@ use std::collections::HashSet;
 const MAX_FRAGMENTS: usize = 512;
 const MAX_BYTES: usize = 64 * 1024;
 const MAX_REQUEST: usize = 8 * 1024;
+const USER: &str = "user";
+const ASSISTANT: &str = "assistant";
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -37,6 +39,9 @@ pub(in crate::realtime_voice) struct Transcript {
     bytes: usize,
     admitted: HashSet<String>,
     discarded_through: f64,
+    playback_samples: usize,
+    playback_origin: Option<usize>,
+    heard: Vec<(f64, f64)>,
 }
 
 impl Transcript {
@@ -51,6 +56,14 @@ impl Transcript {
         }
         if self.fragments.iter().any(|old| old.id == fragment.id) {
             return Ok(());
+        }
+        if fragment.role == ASSISTANT && fragment.event.is_none() && self.playback_origin.is_none()
+        {
+            self.playback_origin = Some(self.playback_samples);
+            self.heard.push((fragment.start_ms, fragment.start_ms));
+            if self.heard.len() > MAX_FRAGMENTS {
+                self.heard.remove(0);
+            }
         }
         self.bytes += fragment.text.len()
             + fragment
@@ -81,7 +94,7 @@ impl Transcript {
             .fragments
             .iter()
             .filter(|fragment| {
-                fragment.role == "user"
+                fragment.role == USER
                     && fragment.start_ms >= after
                     && !self.admitted.contains(&fragment.id)
                     && fragment.start_ms <= offset
@@ -109,7 +122,7 @@ impl Transcript {
 
     pub(super) fn admit(&mut self, offset: f64) {
         for fragment in &self.fragments {
-            if fragment.role == "user" && fragment.start_ms <= offset {
+            if fragment.role == USER && fragment.start_ms <= offset {
                 self.admitted.insert(fragment.id.clone());
             }
         }
@@ -117,38 +130,96 @@ impl Transcript {
 
     pub(in crate::realtime_voice) fn messages(&self) -> serde_json::Value {
         // Each speaker grows independently; original fragments retain timing.
-        let mut bubbles: Vec<Fragment> = Vec::new();
+        let mut bubbles: Vec<(Fragment, usize, bool)> = Vec::new();
         for fragment in &self.fragments {
+            let (spoken, active) = self.progress(fragment);
             let previous = bubbles
                 .iter()
-                .rposition(|bubble| bubble.role == fragment.role && bubble.event.is_none());
+                .rposition(|(bubble, _, _)| bubble.role == fragment.role && bubble.event.is_none());
             if let Some(index) = previous
                 && fragment.event.is_none()
                 && bubbles[index + 1..]
                     .iter()
-                    .all(|bubble| bubble.event.is_none())
-                && fragment.start_ms <= bubbles[index].end_ms + 1200.0
-                && bubbles[index].text.len() + fragment.text.len() <= super::super::MAX_TEXT
+                    .all(|(bubble, _, _)| bubble.event.is_none())
+                && fragment.start_ms <= bubbles[index].0.end_ms + 1200.0
+                && bubbles[index].0.text.len() + fragment.text.len() <= super::super::MAX_TEXT
             {
-                bubbles[index].text.push_str(&fragment.text);
-                bubbles[index].end_ms = bubbles[index].end_ms.max(fragment.end_ms);
+                let (bubble, heard, playing) = &mut bubbles[index];
+                if *heard == bubble.text.encode_utf16().count() {
+                    *heard += spoken;
+                }
+                *playing |= active;
+                bubble.text.push_str(&fragment.text);
+                bubble.end_ms = bubble.end_ms.max(fragment.end_ms);
             } else {
-                bubbles.push(fragment.clone());
+                bubbles.push((fragment.clone(), spoken, active));
             }
         }
         serde_json::Value::Array(
             bubbles
                 .iter()
-                .map(|fragment| {
+                .map(|(fragment, spoken, active)| {
                     serde_json::json!({
                         "id":fragment.id,"role":fragment.role,"text":fragment.text,
                         "startMs":fragment.start_ms,"endMs":fragment.end_ms,
-                        "spokenUtf16":0,"active":false,
+                        "spokenUtf16":spoken,"active":active,
                         "event":fragment.event,
                     })
                 })
                 .collect(),
         )
+    }
+
+    /// Fragment timestamps are approximate. Anchor their session-relative clock
+    /// once captions arrive, then advance only with acknowledged device audio.
+    /// Interrupted ranges stay frozen instead of becoming heard on a later reply.
+    pub(in crate::realtime_voice) fn played(&mut self, samples: usize) {
+        self.playback_samples = self.playback_samples.max(samples);
+        if let Some(origin) = self.playback_origin
+            && let Some((start, end)) = self.heard.last_mut()
+        {
+            let samples =
+                u32::try_from(self.playback_samples.saturating_sub(origin)).unwrap_or(u32::MAX);
+            let rate = u32::try_from(super::super::RATE).unwrap_or(u32::MAX);
+            *end = *start + f64::from(samples) * 1000.0 / f64::from(rate);
+        }
+    }
+
+    pub(in crate::realtime_voice) fn stop(&mut self) {
+        self.playback_origin = None;
+        self.playback_samples = 0;
+    }
+
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "A clamped nonnegative fraction intentionally rounds down the bounded UTF-16 length"
+    )]
+    fn progress(&self, fragment: &Fragment) -> (usize, bool) {
+        if fragment.role != ASSISTANT || fragment.event.is_some() {
+            return (0, false);
+        }
+        let Some((_, through)) = self
+            .heard
+            .iter()
+            .find(|(start, end)| *start <= fragment.start_ms && *end > fragment.start_ms)
+        else {
+            return (0, false);
+        };
+        let fraction = if fragment.end_ms <= fragment.start_ms {
+            1.0
+        } else {
+            ((through - fragment.start_ms) / (fragment.end_ms - fragment.start_ms)).clamp(0.0, 1.0)
+        };
+        let length = u32::try_from(fragment.text.encode_utf16().count()).unwrap_or(u32::MAX);
+        let spoken = (f64::from(length) * fraction) as usize;
+        let active = self.playback_origin.is_some()
+            && self.heard.last().is_some_and(|range| {
+                range.0 <= fragment.start_ms
+                    && range.1 > fragment.start_ms
+                    && range.1 < fragment.end_ms
+            });
+        (spoken, active)
     }
 
     pub(super) fn snapshot(&self) -> Vec<Fragment> {
@@ -188,7 +259,7 @@ impl Transcript {
                 .map_or(0.0, |fragment| fragment.end_ms);
             let _ = self.append(Fragment {
                 id,
-                role: "assistant".into(),
+                role: ASSISTANT.into(),
                 text,
                 start_ms: at,
                 end_ms: at,

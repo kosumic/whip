@@ -4,7 +4,7 @@
 //! A bounded Opus sender with a continuous 48kHz RTP clock across mute and callback jitter.
 use super::driver::Command;
 use std::time::{Duration, Instant};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 pub(crate) const OPUS_PAYLOAD_TYPE: u8 = 111;
 pub(crate) const SEND_TIMEOUT: Duration = super::super::capture_worker::SEND_TIMEOUT;
 const PACKET: Duration = Duration::from_millis(20);
@@ -18,14 +18,19 @@ pub(crate) struct EncodedAudio {
 mod tests;
 pub(crate) struct AudioTrack {
     sender: mpsc::Sender<Command>,
+    failure: watch::Receiver<Option<&'static str>>,
     end: Option<Instant>,
     timestamp: u32,
     silence: Option<Vec<u8>>,
 }
 impl AudioTrack {
-    pub(super) fn new(sender: mpsc::Sender<Command>) -> Self {
+    pub(super) fn new(
+        sender: mpsc::Sender<Command>,
+        failure: watch::Receiver<Option<&'static str>>,
+    ) -> Self {
         Self {
             sender,
+            failure,
             end: None,
             timestamp: 0,
             silence: None,
@@ -66,7 +71,8 @@ impl AudioTrack {
         let timestamp = self.timestamp.wrapping_add(ticks);
         let (complete, result) = oneshot::channel();
         tokio::time::timeout(SEND_TIMEOUT, async {
-            self.sender
+            if self
+                .sender
                 .send(Command::Audio {
                     data: frame.data,
                     timestamp,
@@ -74,8 +80,14 @@ impl AudioTrack {
                     complete,
                 })
                 .await
-                .map_err(|_| "voice media sender ended")?;
-            result.await.map_err(|_| "voice media sender ended")?
+                .is_err()
+            {
+                return Err(self.failure_reason().await);
+            }
+            match result.await {
+                Ok(result) => result,
+                Err(_) => Err(self.failure_reason().await),
+            }
         })
         .await
         .map_err(|_| "voice audio sender stalled")??;
@@ -85,5 +97,14 @@ impl AudioTrack {
         );
         self.end = Some(self.end.unwrap_or(frame.at) + skipped + PACKET);
         Ok(())
+    }
+
+    async fn failure_reason(&mut self) -> &'static str {
+        // The in-flight acknowledgement may drop just before the driver's
+        // terminal cause is published. Retain that cause within SEND_TIMEOUT.
+        if self.failure.borrow().is_none() {
+            let _ = self.failure.changed().await;
+        }
+        self.failure.borrow().unwrap_or("voice media sender ended")
     }
 }

@@ -111,7 +111,7 @@ pub(super) async fn start(
     let (socket, commands, events) = socket::Socket::relay();
     let identity = Arc::new(Mutex::new(identity::Identity::default()));
     let offer_started = Instant::now();
-    let mut peer = transport::Transport::new(events.clone(), identity.clone()).await?;
+    let mut peer = transport::Transport::new().await?;
     if !attempt.current() {
         let _ = peer.close().await;
         return Err(recovery::CANCELLED.into());
@@ -334,13 +334,19 @@ async fn relay_sideband(
                     .map_err(|_| recovery::Failure { message: "Realtime sideband write timed out.", retryable: true })?
                     .map_err(|_| recovery::Failure { message: "Realtime sideband disconnected.", retryable: true })?;
             }
-            event = socket.next() => {
-                let Some(event) = event else { return Err(recovery::Failure { message: "Realtime sideband ended.", retryable: true }); };
-                if let Ok(Message::Text(text)) = &event {
+            event = socket::next_sideband_event(socket) => {
+                let event = event?;
+                let closed = matches!(event, Message::Close(_));
+                if let Message::Text(text) = &event {
                     let value = serde_json::from_str(text).map_err(|_| "Invalid Realtime event.")?;
                     identity.lock().observe(&value);
                 }
-                events.send(event).await.map_err(|_| "Realtime event consumer ended.")?;
+                tokio::select! {
+                    biased;
+                    _ = stop.changed() => return Ok(()),
+                    result = events.send(Ok(event)) => result.map_err(|_| "Realtime event consumer ended.")?,
+                }
+                if closed { return Ok(()); }
             }
         }
     }

@@ -27,8 +27,63 @@ response reading; it does not isolate any one of those costs.
 
 The HTTP client and its pool remain alive for the app process after first use.
 Each call still creates and closes its own voice session and media connection.
-Local HTTP client construction time is not separately instrumented. Creating
-the client earlier does not itself establish a network connection.
+Creating the client earlier does not itself establish a network connection.
+
+## Realtime API after playout fixes
+
+The upload-signed arm64 APK with SHA-256
+`87374d899cf6c8089b64d33e9a5537ec996aef3fad093db9a34a46396fd0935d`
+adds explicit backend and client-stage timings. After force-stopping and
+relaunching Whip, the first Realtime API call measured:
+
+| Stage | Time |
+| --- | ---: |
+| Queued transition | 33 ms |
+| Microphone permission | 2 ms |
+| Suspending chat speech | 306 ms |
+| Call service | 22 ms |
+| Credentials | 72 ms |
+| SDP offer | 90 ms |
+| Session creation | 1,598 ms |
+| Peer negotiation | 1,305 ms |
+| Native audio-device setup | 130 ms |
+| First capture, measured from request | 3,771 ms |
+| Listening, measured from request | 3,791 ms |
+
+Negotiation and sideband attachment overlap, so these intervals must not all be
+added together. This trace has no multi-second queued transition. An earlier
+13,150 ms trace spent 5,482 ms before native media setup and 5,422 ms creating
+the session; that older trace did not identify its backend. Its pre-media wait
+cannot be attributed to HTTP client creation. The new client-construction timer
+measured 0–1 ms in host API tests; that is not a phone measurement.
+
+These calls do not establish a before/after speed improvement. They use
+different backends and network conditions. The playout corrections address
+missing audio, while the client-stage timers separate local waits from network
+and server time.
+
+With the reliable-media/caption APK
+`392faf1a4b8b54fbd90ab55cacb99c1416b812bffccecc1ec4434e2a77cf8ec6`,
+the first GPT-Live call reached Listening in 3,908 ms. Its queued transition was
+40 ms, speech suspension 95 ms, call service 91 ms, session creation 2,199 ms,
+and peer negotiation 966 ms. The user confirmed that this call heard speech,
+spoke smoothly, and highlighted captions. This verifies the audio correction;
+it does not demonstrate a cold-start speed improvement.
+
+The next Realtime API call in the same app process reached Listening in
+5,096 ms after roughly three minutes idle. Its queued transition was 13 ms,
+speech suspension 74 ms, session creation 2,318 ms, and peer negotiation
+2,164 ms. Sideband attachment took 2,416 ms in parallel with negotiation;
+settings confirmation arrived after media input had already started. The user
+confirmed smooth, complete speech. These traces show that startup latency
+remains in session/network setup even after the audio correction.
+
+Listening/first-input is not the end of the ready cue. The native microphone
+temporarily uploads silence while that cue plays, preventing the cue from
+triggering a response. In these two calls capture resumed 1,472 ms and
+1,445 ms after cue suppression began, respectively: about 5.44 seconds from
+the Live request and 6.62 seconds from the Realtime request. Those are the
+appropriate endpoints when measuring acceptance of speech after the cue.
 
 ## Installed ChatGPT Android app
 

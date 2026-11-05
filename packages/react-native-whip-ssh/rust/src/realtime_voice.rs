@@ -277,6 +277,7 @@ pub(super) struct View {
     playback: transcript::Timing,
     signal: echo::Signal,
     startup: startup::Timings,
+    media: MediaDiagnostics,
     media_ready: bool,
     recovery: recovery::State,
     startup_attempt: u64,
@@ -289,6 +290,23 @@ pub(super) struct View {
     input_speech_events: u64,
 }
 
+#[derive(Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MediaDiagnostics {
+    rtp_packets: u64,
+    reliable_rtp_packets: u64,
+    rtp_samples: u64,
+    decoded_packets: u64,
+    decoded_samples: u64,
+    decoded_peak: u16,
+    queued_samples: u64,
+    read_samples: u64,
+    concealed_samples: u64,
+    late_packets: u64,
+    clock_resyncs: u64,
+    packet_overflows: u64,
+}
+
 struct Output {
     live_transcript: Option<live::captions::Transcript>,
     transcript: transcript::Transcript,
@@ -298,6 +316,7 @@ struct Output {
     played: usize,
     delivered: usize,
     generated: usize,
+    last_audible: Option<Instant>,
 }
 impl Default for Output {
     fn default() -> Self {
@@ -310,11 +329,20 @@ impl Default for Output {
             played: 0,
             delivered: 0,
             generated: 0,
+            last_audible: None,
         }
     }
 }
 impl Output {
+    fn live_speaking(&self) -> bool {
+        self.last_audible
+            .is_some_and(|at| at.elapsed() < Duration::from_millis(250))
+    }
+
     fn clear(&mut self) {
+        if let Some(transcript) = &mut self.live_transcript {
+            transcript.stop();
+        }
         if let Some((item, index)) = &self.item {
             self.transcript.stop_item(item, *index);
         }
@@ -324,6 +352,7 @@ impl Output {
         self.played = 0;
         self.delivered = 0;
         self.generated = 0;
+        self.last_audible = None;
     }
     fn append(&mut self, item: String, index: u32, pcm: Vec<u8>) -> Result<(), &'static str> {
         if !pcm.len().is_multiple_of(2) {
@@ -338,7 +367,11 @@ impl Output {
             if self.delivered > self.played || !self.samples.is_empty() {
                 return Err("Realtime audio items overlapped. Please call again.");
             }
-            self.clear();
+            // First Live captions may precede the first RTP packet. Preserve
+            // their playback anchor when attaching the continuous track.
+            if self.live_transcript.is_none() || self.item.is_some() {
+                self.clear();
+            }
             self.item = Some((item, index));
         }
         let count = pcm.len() / 2;
@@ -364,6 +397,13 @@ impl Output {
             *sample = self.samples.pop_front().unwrap_or_default();
         }
         self.delivered += count;
+        if self.live_transcript.is_some()
+            && out[..count]
+                .iter()
+                .any(|sample| sample.unsigned_abs() >= 64)
+        {
+            self.last_audible = Some(Instant::now());
+        }
         count
     }
     fn acknowledge(&mut self, epoch: u64, count: usize) {
@@ -371,6 +411,9 @@ impl Output {
             self.played = self.played.max(count.min(self.delivered));
             if let Some((item, index)) = &self.item {
                 self.transcript.played(item, *index, self.played);
+            }
+            if let Some(transcript) = &mut self.live_transcript {
+                transcript.played(self.played);
             }
         }
     }
@@ -511,6 +554,7 @@ impl RealtimeVoiceAdapter {
                 playback: transcript::Timing::default(),
                 signal: echo::Signal::default(),
                 startup: startup::Timings::default(),
+                media: MediaDiagnostics::default(),
                 media_ready: false,
                 recovery: recovery::State::Starting,
                 startup_attempt: 0,
@@ -847,8 +891,6 @@ impl RealtimeVoiceAdapter {
         let mut input_item = String::new();
         let mut ignored = HashSet::new();
         let mut ledger = ToolLedger::default();
-        let mut last_pong = tokio::time::Instant::now();
-        let mut ping_at = last_pong;
         let mut preview_done = false;
         let mut preview_requested = false;
         let mut seen = wire::Seen::default();
@@ -949,7 +991,6 @@ impl RealtimeVoiceAdapter {
                     }
                     if !settings.is_confirmed() && started.elapsed() > IO_TIMEOUT { return Err("OpenAI did not confirm the Realtime session settings."); }
                     if started.elapsed() > Duration::from_mins(55) { return Err("Realtime call time limit reached. Start a new call."); }
-                    keep_alive(socket, last_pong, &mut ping_at).await?;
                     if let Some(pending) = deferred.take() {
                         spawn_delegation(tools, agent.as_ref().ok_or("Missing bound voice agent.")?.clone(), pending, true, false);
                     }
@@ -969,7 +1010,7 @@ impl RealtimeVoiceAdapter {
                     }
                 },
                 message = socket.next() => {
-                    let Some(text) = socket.receive_text(message, &mut last_pong).await? else {
+                    let Some(text) = socket.receive_text(message).await? else {
                         continue;
                     };
                     if config.webrtc && !seen.accept(&text)? { continue; }
@@ -1250,24 +1291,6 @@ fn global_submitted_message(text: &str) -> Result<ClientEvent, &'static str> {
 }
 
 type RealtimeSocket = socket::Socket;
-
-async fn keep_alive(
-    socket: &mut RealtimeSocket,
-    last_pong: tokio::time::Instant,
-    ping_at: &mut tokio::time::Instant,
-) -> Result<(), &'static str> {
-    if last_pong.elapsed() > Duration::from_secs(45) {
-        return Err("OpenAI Realtime stopped responding.");
-    }
-    if ping_at.elapsed() > Duration::from_secs(15) {
-        tokio::time::timeout(IO_TIMEOUT, socket.send(Message::Ping(Vec::new().into())))
-            .await
-            .map_err(|_| "Realtime send timed out.")?
-            .map_err(|_| "Realtime connection ended.")?;
-        *ping_at = tokio::time::Instant::now();
-    }
-    Ok(())
-}
 
 fn terminal_submitted_message(text: &str) -> Result<ClientEvent, &'static str> {
     if text.trim().is_empty() || text.len() > MAX_TEXT {

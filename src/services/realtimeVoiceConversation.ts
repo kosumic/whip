@@ -44,6 +44,8 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
   constructor(private readonly target: RealtimeVoiceChatTarget, private readonly settings: Readonly<VoiceConversationSettings>, private readonly changed: (view: VoiceConversationView) => void, private readonly requestedAt = performance.now()) {}
 
   async start(): Promise<void> {
+    const elapsed = (at: number) => Math.max(0, Math.round(performance.now() - at));
+    const clientStartup = { transitionMs: elapsed(this.requestedAt), permissionMs: 0, speechSuspendMs: 0, callServiceMs: 0 };
     try {
       if (this.closed) return;
       this.cleanups.push(onOpenAiVoiceCredentialChange(() => { void settledPromise(this.close()); }));
@@ -59,10 +61,15 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
       if (!global && !this.target.terminal && target?.paneId !== this.target.paneId) throw new Error('Open the connected agent chat before starting voice.');
       requireForeground();
       const permission = Platform.OS === 'ios' ? PERMISSIONS.IOS.MICROPHONE : PERMISSIONS.ANDROID.RECORD_AUDIO;
-      if (await request(permission) !== RESULTS.GRANTED) throw new Error('Allow microphone access in Settings to use voice.');
+      const permissionAt = performance.now();
+      const granted = await request(permission);
+      clientStartup.permissionMs = elapsed(permissionAt);
+      if (granted !== RESULTS.GRANTED) throw new Error('Allow microphone access in Settings to use voice.');
       if (this.closed) return;
       requireForeground();
+      const speechAt = performance.now();
       await suspendChatSpeechForInput();
+      clientStartup.speechSuspendMs = elapsed(speechAt);
       if (this.closed) return;
       setSpeechInputActive(true);
       if (this.target.hostId && this.target.tabId) this.cleanups.push(suppressAgentAlertsForTab(this.token, this.target.hostId, this.target.tabId));
@@ -93,12 +100,14 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
       else this.cleanups.push(unsubscribe);
       if (this.closed) return;
       this.callStarted = true;
+      const serviceAt = performance.now();
       if (this.playback.startRealtimeVoiceCall) await this.playback.startRealtimeVoiceCall(this.token, this.target.label);
       else await this.playback.startVoiceCall(this.token, this.target.label);
+      clientStartup.callServiceMs = elapsed(serviceAt);
       if (this.closed) { await this.playback.endVoiceCall(this.token); return; }
       this.callActivated = true;
       requireForeground();
-      const config = JSON.stringify({ clientElapsedMs: Math.max(0, Math.round(performance.now() - this.requestedAt)), ...(global ? { global: true, globalShizukuAccess: Platform.OS === 'android' && this.settings.globalShizukuAccess } : { target, terminalTarget: this.target.terminal }), ...(this.settings.mode === 'Live' ? { live: true, model: LIVE_MODEL, voice: this.settings.liveVoice } : { model: this.settings.realtimeModel, voice: this.settings.realtimeVoice, vad: parseRealtimeVad(this.settings.realtimeVad ?? DEFAULT_REALTIME_VAD) }) });
+      const config = JSON.stringify({ ...(Platform.OS === 'android' ? { clientStartup } : {}), clientElapsedMs: Math.max(0, Math.round(performance.now() - this.requestedAt)), ...(global ? { global: true, globalShizukuAccess: Platform.OS === 'android' && this.settings.globalShizukuAccess } : { target, terminalTarget: this.target.terminal }), ...(this.settings.mode === 'Live' ? { live: true, model: LIVE_MODEL, voice: this.settings.liveVoice } : { model: this.settings.realtimeModel, voice: this.settings.realtimeVoice, vad: parseRealtimeVad(this.settings.realtimeVad ?? DEFAULT_REALTIME_VAD) }) });
       this.nativeMediaAttempted = true;
       this.startingMedia = this.playback.startRealtimeVoice(this.token, config);
       await this.startingMedia;
