@@ -45,10 +45,18 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const APPROVAL_TIMEOUT: Duration = Duration::from_secs(600);
 
 #[derive(Debug, Parser)]
-#[command(version, about)]
+#[command(version, about, args_conflicts_with_subcommands = true)]
 struct Cli {
+    #[command(flatten)]
+    serve: ServeArgs,
     #[command(subcommand)]
     command: Option<Commands>,
+}
+
+impl Cli {
+    fn into_command(self) -> Commands {
+        self.command.unwrap_or(Commands::Serve(self.serve))
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -66,6 +74,9 @@ enum Commands {
 
 #[derive(Debug, clap::Args)]
 struct ServeArgs {
+    /// Pair over this Tailcat tc address, skipping network setup (SSH port defaults to 22).
+    #[arg(value_name = "TC_ADDRESS", conflicts_with_all = ["advertise_host", "tailcat_address"])]
+    address: Option<String>,
     /// SSH hostname or address Whip should use. Without this, an interactive selector is shown.
     #[arg(long)]
     advertise_host: Option<String>,
@@ -73,7 +84,7 @@ struct ServeArgs {
     #[arg(long, conflicts_with = "advertise_host")]
     tailcat_address: Option<String>,
     /// Port of the existing SSH service to advertise. Defaults to 22.
-    #[arg(long)]
+    #[arg(short = 'p', long)]
     ssh_port: Option<u16>,
     /// SSH account to pair. It must be the current local user.
     #[arg(long)]
@@ -139,19 +150,7 @@ async fn main() {
 }
 
 async fn run() -> Result<(), Error> {
-    let cli = Cli::parse();
-    match cli.command.unwrap_or(Commands::Serve(ServeArgs {
-        advertise_host: None,
-        tailcat_address: None,
-        ssh_port: None,
-        ssh_user: None,
-        ssh_fingerprint: None,
-        ttl: DEFAULT_TTL_SECONDS,
-        authorized_keys: None,
-        yes: false,
-        print_code: false,
-        code_output: None,
-    })) {
+    match Cli::parse().into_command() {
         Commands::Serve(args) => serve(args).await,
         Commands::Request(args) => request(args).await,
         Commands::Exchange(args) => exchange(args).await,
@@ -188,8 +187,9 @@ async fn serve(args: ServeArgs) -> Result<(), Error> {
         ));
     }
 
-    let interactive_setup = args.advertise_host.is_none() && args.tailcat_address.is_none();
-    let selected = choose_advertised_endpoint(args.advertise_host, args.tailcat_address)?;
+    let tailcat_address = args.address.or(args.tailcat_address);
+    let interactive_setup = args.advertise_host.is_none() && tailcat_address.is_none();
+    let selected = choose_advertised_endpoint(args.advertise_host, tailcat_address)?;
     let ssh_port = match args.ssh_port {
         Some(port) => validate_ssh_port(port)?,
         None if interactive_setup => prompt_ssh_port()?,
@@ -720,7 +720,7 @@ fn choose_advertised_endpoint(
         validate_tailcat_address(address.trim())?;
         return Ok(AdvertisedEndpoint {
             label: "Tailcat".into(),
-            source: "--tailcat-address".into(),
+            source: "specified".into(),
             host: address.trim().into(),
             tailcat: true,
         });
@@ -1023,6 +1023,120 @@ mod tests {
     const ED25519_BLOB: &str =
         "AAAAC3NzaC1lZDI1NTE5AAAAIJdD7y3aLq454yWBdwLWbieU1ebz9/cu7/QEXn9OIeZJ";
     const ECDSA_P256_BLOB: &str = "AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBHwf2HMM5TRXvo2SQJjsNkiDD5KqiiNjrGVv3UUh+mMT5RHxiRtOnlqvjhQtBq0VpmpCV/PwUdhOig4vkbqAcEc=";
+
+    const TC_ADDRESS: &str = "tco2FwWCABAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAWFrWCACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAmFpAQ";
+
+    #[test]
+    fn no_arguments_keeps_interactive_pairing_defaults() {
+        let Commands::Serve(args) = Cli::try_parse_from(["whipair"]).unwrap().into_command() else {
+            panic!("expected pairing setup");
+        };
+        assert!(args.address.is_none());
+        assert!(args.advertise_host.is_none());
+        assert!(args.tailcat_address.is_none());
+        assert!(args.ssh_port.is_none());
+        assert_eq!(args.ttl, DEFAULT_TTL_SECONDS);
+        assert!(!args.yes);
+    }
+
+    #[test]
+    fn pairing_address_cannot_be_combined_with_another_endpoint_or_subcommand() {
+        for conflicting in [
+            vec!["--advertise-host", "127.0.0.1"],
+            vec!["--tailcat-address", TC_ADDRESS],
+            vec!["inspect", "WP4:example"],
+        ] {
+            let mut argv = vec!["whipair", TC_ADDRESS];
+            argv.extend(conflicting);
+            assert!(Cli::try_parse_from(argv).is_err());
+        }
+    }
+
+    #[test]
+    fn existing_subcommands_remain_available() {
+        let Commands::Serve(args) = Cli::try_parse_from([
+            "whipair",
+            "serve",
+            "--tailcat-address",
+            TC_ADDRESS,
+            "--ssh-port",
+            "2222",
+        ])
+        .unwrap()
+        .into_command() else {
+            panic!("expected pairing setup");
+        };
+        assert_eq!(args.tailcat_address.as_deref(), Some(TC_ADDRESS));
+        assert_eq!(args.ssh_port, Some(2222));
+        assert!(matches!(
+            Cli::try_parse_from(["whipair", "inspect", "WP4:example"])
+                .unwrap()
+                .into_command(),
+            Commands::Inspect { .. }
+        ));
+        assert!(matches!(
+            Cli::try_parse_from([
+                "whipair",
+                "request",
+                "--code",
+                "WP4:example",
+                "--public-key",
+                "key.pub",
+            ])
+            .unwrap()
+            .into_command(),
+            Commands::Request(_)
+        ));
+        assert!(matches!(
+            Cli::try_parse_from(["whipair", "exchange", "--socket", "/tmp/pair.sock"])
+                .unwrap()
+                .into_command(),
+            Commands::Exchange(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn tailcat_shortcut_generates_pairing_code_without_setup_prompts() {
+        let fingerprint = format!("SHA256:{}", STANDARD_NO_PAD.encode([9; 32]));
+        for port_args in [vec![], vec!["-p", "2222"]] {
+            let directory = tempfile::tempdir().unwrap();
+            let code_path = directory.path().join("code");
+            let keys_path = directory.path().join("authorized_keys");
+            let mut argv = vec![
+                "whipair",
+                TC_ADDRESS,
+                "--ssh-fingerprint",
+                &fingerprint,
+                "--authorized-keys",
+                keys_path.to_str().unwrap(),
+                "--code-output",
+                code_path.to_str().unwrap(),
+                "--ttl",
+                "1",
+                "--yes",
+            ];
+            argv.extend_from_slice(&port_args);
+            let Commands::Serve(args) = Cli::try_parse_from(argv).unwrap().into_command() else {
+                panic!("expected pairing setup");
+            };
+            let error = serve(args).await.unwrap_err();
+            assert_eq!(error.to_string(), "pairing code expired");
+            let code = std::fs::read_to_string(code_path).unwrap();
+            let payload = decode_pairing_code(code.trim()).unwrap();
+            assert!(payload.tailcat);
+            assert_eq!(payload.ssh_host, TC_ADDRESS);
+            assert_eq!(
+                payload.ssh_port,
+                if port_args.is_empty() {
+                    DEFAULT_SSH_PORT
+                } else {
+                    2222
+                }
+            );
+            assert_eq!(payload.ssh_host_key_sha256, [9; 32]);
+            assert_eq!(std::fs::read_to_string(keys_path).unwrap(), "");
+        }
+    }
 
     #[test]
     fn ssh_keyscan_selection_matches_russh_preference_order() {

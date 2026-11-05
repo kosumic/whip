@@ -113,8 +113,8 @@ nix run github:kosumic/whip#whipair -- serve \
   --ssh-port 2222
 ```
 
-`--ssh-port` defaults to `22`. It does not open a new port; it must match the
-existing SSH service reachable at the advertised host. When no
+`--ssh-port` (short form `-p`) defaults to `22`. It does not open a new port; it
+must match the existing SSH service reachable at the advertised host. When no
 `--advertise-host` is supplied, the interactive setup asks for the endpoint and
 port, offering `22` as the default. Passing both options skips those questions.
 `whipair` does not bind a TCP listener; Whip connects to the host's existing
@@ -127,11 +127,16 @@ and client identity for subsequent connections. No Tailcat toggle is needed on
 the Add Host screen. Tailcat pairing connects directly to the tunnel and cannot
 use a jump host.
 
-You can also supply the address without the interface prompt:
+Pair in one command by passing the address directly:
 
 ```bash
-whipair serve --tailcat-address 'tc…' --ssh-port 22
+whipair 'tc…'
 ```
+
+This skips the address and port prompts and displays the pairing QR. Scan it
+with Whip and approve the enrollment on the host. The SSH port defaults to `22`;
+if Tailcat forwards a different SSH port, use `whipair 'tc…' -p 2222`.
+The existing `whipair serve --tailcat-address 'tc…'` form also works.
 
 The port must match the SSH port forwarded by Tailcat. Whipair discovers the
 SSH host key through `127.0.0.1` for this option; use `--ssh-fingerprint` if sshd
