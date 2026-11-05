@@ -12,6 +12,7 @@ import { chatSpeechHighlight } from 'react-native-whip-ssh';
 import { COPY_FEEDBACK_MS } from '../src/hooks/useCopyFeedback';
 import type { ChatReadAloudControl } from '../src/hooks/useChatReadAloud';
 import { ChatSpeechText } from '../src/components/ChatSpeechText';
+import { MarkdownText } from '../src/components/MarkdownText';
 import {
   act,
   create,
@@ -388,11 +389,11 @@ test.each(['manual', 'automatic'])('mounted prose receives %s captions without a
       });
       for (const listener of mockCaptionListeners) listener(caption);
     });
-    expect(rows.root.findByType('MarkdownText').props.content).toBe('A ==visible== response.');
+    expect(rows.root.findByType(MarkdownText).props.content).toBe('A ==visible== response.');
     act(() => renderer.update(chatView(state, false, undefined, readAloud)));
     act(() => rows.update(renderedBlocks(renderer)));
     expect(rows.root.findByType(ChatSpeechText).props.source).toBeUndefined();
-    expect(rows.root.findByType('MarkdownText').props.content).toBe('A visible response.');
+    expect(rows.root.findByType(MarkdownText).props.content).toBe('A visible response.');
   } finally { act(() => { rows?.unmount(); renderer?.unmount(); }); }
 });
 
