@@ -1,6 +1,7 @@
 const {createHash} = require('node:crypto');
 const {existsSync, readFileSync, readdirSync} = require('node:fs');
 const {extname, join, relative, resolve, sep} = require('node:path');
+const {verifyNativeMarkdownPatch} = require('./check-native-markdown-patch.cjs');
 
 // Generated bindings and assets are expected to change during compilation.
 // Their source inputs must stay fixed until the APK has been packaged.
@@ -34,5 +35,7 @@ function captureNativeAppSources(root) {
 module.exports = {captureNativeAppSources};
 
 if (require.main === module) {
-  process.stdout.write(JSON.stringify(captureNativeAppSources(resolve(process.argv[2] || join(__dirname, '..')))));
+  const root = resolve(process.argv[2] || join(__dirname, '..'));
+  verifyNativeMarkdownPatch(root);
+  process.stdout.write(JSON.stringify(captureNativeAppSources(root)));
 }

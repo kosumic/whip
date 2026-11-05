@@ -30,7 +30,7 @@
     "worker:deploy": "npm --prefix feedback-worker run deploy --",
     "test": "jest",
     "test:workers": "npm --prefix feedback-worker test && npm --prefix notify-relay test",
-    "postinstall": "patch-package && node scripts/sync-terminal-assets.ts && bash scripts/build-ios-uniffi.sh",
+    "postinstall": "patch-package --error-on-fail && node scripts/sync-terminal-assets.ts && bash scripts/build-ios-uniffi.sh",
     "generate:ios-uniffi": "WHIP_BUILD_IOS_UNIFFI=1 bash scripts/build-ios-uniffi.sh",
     "eas-build-pre-install": "bash scripts/prepare-eas-ios.sh",
     "notify:types": "npm --prefix notify-relay run types --",

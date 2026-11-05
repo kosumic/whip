@@ -55,6 +55,7 @@ static SCOPES: LazyLock<Vec<(Scope, Kind)>> = LazyLock::new(|| {
         ("support.class", Kind::Type),
         ("variable.other.property", Kind::Property),
         ("variable.other.member", Kind::Property),
+        ("variable.function", Kind::Function),
         ("variable", Kind::Variable),
         ("punctuation", Kind::Punctuation),
         ("meta.embedded", Kind::Embedded),
@@ -219,6 +220,32 @@ mod tests {
             assert!(tokens.iter().all(|token| token.start < token.end
                 && token.end as usize <= code.encode_utf16().count()));
             assert!(tokens.windows(2).all(|pair| pair[0].end <= pair[1].start));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn shell_commands_and_quoted_commit_messages_have_distinct_tokens() -> Result<(), Box<dyn Error>>
+    {
+        let code = "git add src/components/GlobalVoiceCall.tsx\ngit cm \"fix: start global voice calls using saved configuration\"";
+        for language in ["bash", "sh", "shell", "zsh"] {
+            let tokens = highlight(code, language).ok_or("Missing shell syntax tokens")?;
+            for (text, expected) in [
+                ("git", Kind::Function),
+                (
+                    "fix: start global voice calls using saved configuration",
+                    Kind::String,
+                ),
+            ] {
+                let start = u32::try_from(code.find(text).ok_or("Missing fixture text")?)?;
+                let end = start + u32::try_from(text.len())?;
+                assert!(
+                    tokens.iter().any(|token| token.start <= start
+                        && token.end >= end
+                        && token.kind == expected),
+                    "{language}: {text}: {tokens:?}"
+                );
+            }
         }
         Ok(())
     }
