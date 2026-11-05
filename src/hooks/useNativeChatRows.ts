@@ -3,6 +3,7 @@ import { NativeChatRows, type ChatRowsSource, type ChatRowUpdate } from 'react-n
 import { ChatRowStore } from '../lib/nativeChatRows';
 import type { AgentChatState } from '../agentChat';
 import { operationalErrorDetails, recordOperationalDiagnostic } from '../services/operationalDiagnostics';
+import { recordAgentChatDiagnostic } from '../services/agentChatDiagnostics';
 
 /** One outstanding poll per viewport. Updates may overtake JS transcript
  * delivery; stage them until their referenced objects have arrived. */
@@ -42,6 +43,7 @@ export function useNativeChatRows(source: ChatRowsSource | undefined, state: Age
       if (revision !== undefined && staged.transcriptRevision > revision) return;
       const rows = current.rows;
       const wasReady = current.ready;
+      const resetVersion = current.resetVersion;
       const hadError = Boolean(current.error);
       recover = !current.apply(staged);
       staged = undefined;
@@ -52,6 +54,12 @@ export function useNativeChatRows(source: ChatRowsSource | undefined, state: Age
       } else {
         recoveryAttempts = 0;
         current.error = undefined;
+        if (!wasReady || resetVersion !== current.resetVersion) {
+          recordAgentChatDiagnostic('native-rows-projected', {
+            rowCount: current.rows.length, rowRevision: current.revision,
+            transcriptRevision: current.transcriptRevision, resetVersion: current.resetVersion,
+          });
+        }
         if (rows !== current.rows || !wasReady || hadError) render(value => value + 1);
       }
     };

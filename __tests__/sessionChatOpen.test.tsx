@@ -1536,6 +1536,8 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     const binding = await openReadyChat(host, agent);
     revealChat();
     const state = agentTranscriptService.getState(binding.bindingToken);
+    const viewport = ui('AgentChatView');
+    const bindingKey = viewport.props.searchKey;
     const transitions = [
       { appState: 'inactive', status: 'connected' },
       { appState: 'background', status: 'disconnected' },
@@ -1557,6 +1559,10 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
       expect(ui('TerminalScreen').props.renderViewportOverlay).toBeDefined();
       expect(control().active).toBe(true);
       expect(control().loading).toBe(false);
+      expect(ui('AgentChatView')).toBe(viewport);
+      expect(viewport.props.searchKey).toBe(bindingKey);
+      expect(viewport.props.active).toBe(appState === 'active');
+      expect(viewport.parent?.props.style.opacity).toBe(appState === 'active' ? 1 : 0);
       expect(agentTranscriptService.getState(binding.bindingToken)).toBe(state);
       expect(host.native.detachAgentChat).not.toHaveBeenCalled();
       expect(host.native.openAgentChat).toHaveBeenCalledTimes(1);

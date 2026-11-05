@@ -4,6 +4,26 @@ import { transcriptBlocks } from './legacyChatBlocks';
 import { ChatRowStore, type ChatRow } from '../src/lib/nativeChatRows';
 import type { AgentChatState } from '../src/agentChat';
 import type { ChatRowsSource } from 'react-native-whip-ssh/src/chatRows';
+import { useRef } from 'react';
+
+/** Match the native hook's stable owner and incremental updates in UI tests. */
+export function useMockChatRows(...args: Parameters<typeof mockChatRows>) {
+  const owner = useRef<{ source: ChatRowsSource | undefined; store: ChatRowStore } | null>(null);
+  if (!owner.current || owner.current.source !== args[0]) {
+    owner.current = { source: args[0], store: new ChatRowStore() };
+  }
+  const store = owner.current.store;
+  const projected = mockChatRows(...args);
+  store.apply({
+    baseRevision: store.revision,
+    revision: store.revision + 1,
+    transcriptRevision: projected.transcriptRevision,
+    patches: store.ready
+      ? [{ type: 'splice', index: 0, deleteCount: store.rows.length, rows: projected.rows }]
+      : [{ type: 'reset', rows: projected.rows }],
+  });
+  return store;
+}
 
 export function mockChatRows(_source: ChatRowsSource | undefined, state: AgentChatState, working: boolean, expanded: ReadonlySet<string>) {
   const store = new ChatRowStore();
