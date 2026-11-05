@@ -5,13 +5,13 @@ fling threshold, red close indicator, and row-collapse animation. A short swipe
 returns the row to its resting position. The close indicator is clipped to the
 uncovered area so it does not show through glass rows.
 
-Long press opens a glass-aware popup with Restart, Copy and Reverse Control.
+Long press opens a glass-aware popup with Restart, Copy and Phone Use.
 It replaces the previous long-press shortcut to remote files. The popup is also
 available through the row's accessibility actions. Copy and Restart use icons
 with accessibility labels. Copy opens an optional tab-name prompt; leaving it
 blank lets Herdr choose the name. Cancelling the prompt creates nothing.
 
-Reverse Control is a saved preference for that agent. Changing the switch saves
+Phone Use is a saved preference for that agent. Changing the switch saves
 immediately; dismissing the popup does not revert it. Turning it off revokes that
 pane's current authorization immediately. Turning it on shows **Restart to enable**
 until the agent initializes a fresh Whip MCP connection. The preference survives
@@ -28,19 +28,19 @@ up to 15 seconds while Herdr confirms shell readiness and releases old agent
 ownership. Every attempt refreshes the snapshot and checks that the original
 pane, terminal, workspace and tab still match and no agent has appeared.
 Timeouts and ambiguous failures are never replayed as terminal commands.
-OpenCode with Reverse Control retains its environment-wrapped launch because
+OpenCode with Phone Use retains its environment-wrapped launch because
 `agent.start` cannot accept its MCP environment override. Only that path reports
 the captured ID after observing the CLI and its bound MCP handshake, then
 refreshes the identity before completing.
-After launch, Whip waits up to 60 seconds for startup verification. With Reverse
-Control enabled, the new authorization is bound to the captured conversation ID
+After launch, Whip waits up to 60 seconds for startup verification. With Phone Use
+enabled, the new authorization is bound to the captured conversation ID
 before launch. Whip waits for the resumed CLI's MCP handshake and the captured
 conversation identity from Herdr; a different conversation revokes access.
-Without Reverse Control, Whip waits for Herdr to report the captured
+Without Phone Use, Whip waits for Herdr to report the captured
 conversation. It never substitutes the most recent conversation. A verification
 timeout reports the pending startup condition without tearing down an already
 launched agent's connection.
-The old Reverse Control authorization is revoked after the CLI exits. While
+The old Phone Use authorization is revoked after the CLI exits. While
 the replacement starts, transient shell reports cannot close its new MCP
 connection. Normal exit cleanup resumes after verification; pane replacement,
 conversation changes, and explicit revocation still close access immediately.
@@ -56,9 +56,9 @@ Rust owns agent identity, launch options, authorization, and serialized lifecycl
 operations. Typed UniFFI `AgentControlView` records and the `ReverseControlState`
 enum flow through AppCore sessions and Herd agent rows. React Native presents
 these projections and persists Rust's opaque preference JSON in a store scoped
-to each host. Reverse-control initialization, suspension, restoration, and
+to each host. Phone Use initialization, suspension, restoration, and
 closure refresh the same projection; React keeps no separate preference map.
-Both the UI and Rust reject unsupported Reverse Control agents; currently
+Both the UI and Rust reject unsupported Phone Use agents; currently
 Claude Code, Codex and OpenCode are supported.
 
 Herdr has no atomic compare-pane-and-send endpoint. Avoid simultaneous terminal

@@ -1,6 +1,6 @@
 # Shizuku authorization
 
-On Android, **More → Settings → Reverse Control → Shizuku → Pair with Shizuku**
+On Android, **More → Settings → Phone Use → Shizuku → Pair with Shizuku**
 requests authorization for Whip through the official Shizuku API. Install and
 start Shizuku first, then accept its permission prompt. The section links to the
 official download page when Shizuku is missing and opens its manager when the
@@ -8,21 +8,21 @@ service needs to be started or authorization needs to be changed.
 
 Status comes from the Android service and refreshes when its binder connects or
 dies, when permission is answered, and when Whip returns to the foreground.
-Whip does not save a permission grant locally. Reverse-control MCP exposes
+Whip does not save a permission grant locally. Phone Use MCP exposes
 `device.shizuku_status` and `device.shizuku_exec` through a Shizuku UserService.
 The service runs commands as Shizuku's shell/root identity; Whip's own process
 and remote SSH sessions retain their existing identities.
 
 Each Android agent session has a separate **Allow Shizuku access** switch beside
-**Reverse Control**, both in the Herd command launcher and the existing agent's
-actions menu. It defaults to off whenever Reverse Control is enabled. Pairing
+**Phone Use**, both in the Herd command launcher and the existing agent's
+actions menu. It defaults to off whenever Phone Use is enabled. Pairing
 Whip alone does not enable it. The choice follows that conversation across app
 restarts and agent restarts; new and copied agents start with Shizuku access off.
 Turning it off immediately blocks both Shizuku tools and cancels that session's
 running privileged commands without affecting other sessions or browser tools.
 
 Android global voice calls have a separate **Allow Shizuku access for global
-calls** toggle in **Settings → Reverse Control**. It defaults to off and applies
+calls** toggle in **Settings → Phone Use**. It defaults to off and applies
 to new calls. Pairing alone does not enable it. Enabled calls expose
 `device_shizuku_status` and `device_shizuku_exec`; their commands use an independent
 call session and are cancelled on hangup. This choice does not grant Shizuku to
@@ -35,7 +35,7 @@ as required by the [official developer guide](https://github.com/RikkaApps/Shizu
 
 To check on a device:
 
-1. Open **More → Settings → Reverse Control → Shizuku** without Shizuku installed
+1. Open **More → Settings → Phone Use → Shizuku** without Shizuku installed
    and confirm **Install Shizuku** opens its official download page.
 2. Install Shizuku with the service stopped and confirm **Open Shizuku** opens
    the manager. Start the service and return to Whip.
@@ -45,12 +45,12 @@ To check on a device:
    permission in Shizuku and reopen Whip to confirm access is no longer shown.
 6. On iOS, confirm the Shizuku section is absent.
 
-## Privileged reverse-control tools
+## Privileged Phone Use tools
 
-Launches opted into Whip reverse control with **Allow Shizuku access** on, and
+Launches opted into Whip Phone Use with **Allow Shizuku access** on, and
 global voice calls started with their separate Shizuku toggle on, can call these
 tools. Pairing is
-performed by the user in Reverse Control settings; MCP calls never open a Shizuku
+performed by the user in Phone Use settings; MCP calls never open a Shizuku
 permission prompt. The live service checks permission before command execution.
 On Android 17, Shizuku 13.6 can show an empty app list despite granting access; see
 [upstream issue #1970](https://github.com/RikkaApps/Shizuku/issues/1970).

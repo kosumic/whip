@@ -70,7 +70,7 @@ pub struct HostActionCredential {
 pub enum HostActionPermitError {
     #[error("Host action cancelled")]
     Cancelled,
-    #[error("Reverse Control session is no longer authorized")]
+    #[error("Phone Use session is no longer authorized")]
     Unauthorized,
     #[error("Unlock Whip before managing hosts")]
     Locked,

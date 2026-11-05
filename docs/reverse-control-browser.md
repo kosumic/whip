@@ -1,11 +1,11 @@
-# Reverse Control Browser and Device Tools
+# Phone Use Browser and Device Tools
 
-A Claude Code, Codex or OpenCode (v1 or v2) launch can opt into Reverse Control in
+A Claude Code, Codex or OpenCode (v1 or v2) launch can opt into Phone Use in
 the command launcher. The toggle starts off; unsupported agent commands do not offer it.
 Open Browser appears for the
 pane associated with that launch. Closing the browser hides its presentation;
 it does not close its tabs. Terminal web links use the same controller when that
-pane has Reverse Control, and the same browser subsystem for ordinary previews.
+pane has Phone Use, and the same browser subsystem for ordinary previews.
 The terminal link picker also offers Open browser when no web links were found,
 opening a blank tab with editable site shortcuts.
 
@@ -122,7 +122,7 @@ agents and terminal identities. Calls during recovery fail; an interrupted
 privileged command may already have executed and must not be blindly retried.
 If the original port is unavailable, Whip retains authorization and retries
 restoration during subsequent health checks. Explicit host disconnect, agent
-exit, terminal replacement, and disabling Reverse Control revoke old access.
+exit, terminal replacement, and disabling Phone Use revoke old access.
 For Claude Code and OpenCode, MCP DELETE also revokes the launch.
 
 Codex `/new` and `/clear` create another thread inside the existing CLI process
@@ -146,9 +146,9 @@ Port conflicts remain retryable through the existing health checks.
 Records are written atomically only when their contents change, contain no bearer
 tokens or pending tool calls, and live in Android's `no_backup/reverse-control`
 directory or an iOS Application Support directory excluded from backup. Agent
-cards show Reverse Control when connected, its recovery state while disconnected,
-and an icon for focus. Launches predating recovery records need a new Reverse
-Control launch once before they can survive a full process restart.
+cards show Phone Use when connected, its recovery state while disconnected,
+and an icon for focus. Launches predating recovery records need a new Phone Use
+launch once before they can survive a full process restart.
 
 One failed latency probe does not replace a still-live SSH connection. The
 existing repeated health-failure policy handles persistently unresponsive
@@ -291,7 +291,7 @@ platform APIs. Raw sensor snapshots and DeviceMotion share a TypeScript adapter
 over the SDK-compatible `expo-sensors` package.
 
 Shizuku commands run on the Android phone as shell/root through a UserService.
-See [Shizuku integration](shizuku.md#privileged-reverse-control-tools) for
+See [Shizuku integration](shizuku.md#privileged-phone-use-tools) for
 authorization, output limits, timeout behavior, and command examples.
 
 Clipboard reads may show the platform's paste permission sheet. Clipboard text
@@ -302,7 +302,7 @@ Android channel and the existing app presentation handler. Cancellation before
 posting prevents delivery; if cancellation races delivery, Whip cancels/dismisses
 that notification. An alert already seen cannot be undone.
 
-Speech has a dedicated native synthesizer and one owner across reverse-control
+Speech has a dedicated native synthesizer and one owner across Phone Use
 launches. Another launch cannot stop or replace the owner's speech. A completed
 utterance releases ownership; explicit stop, session teardown and a 60-second
 limit also stop it. Android waits for engine initialization before acknowledging
@@ -364,7 +364,7 @@ initialization. `browser.*` and `device.*` are peer tool namespaces beneath it,
 so agents display calls such as `whip browser.navigate` and `whip device.location`.
 `tools/list` discovers both namespaces. Device APIs remain separate from page
 JavaScript and `browser.eval`. Existing agent processes keep their launch-time
-configuration; start a new Reverse Control launch to pick up the server name.
+configuration; start a new Phone Use launch to pick up the server name.
 
 Initialization instructions explain when to choose Whip, distinguish phone state
 from SSH-host state, and give concrete browser/device examples. Each device tool
@@ -456,7 +456,7 @@ then fetch a small API page using eval. WebView cookies/session state naturally
 apply to page fetches. Eval can read or mutate any browser state available to
 the webpage, including hidden DOM and storage. Whip does not automatically
 export cookies, passwords or credentials alongside results. Page scripts receive
-no Whip native API or reverse-control message handler.
+no Whip native API or Phone Use message handler.
 
 Rust starts async evaluation and polls the result through native evaluation;
 no page-to-native callback is installed. Undefined results become JSON null.
@@ -739,7 +739,7 @@ crate, published on crates.io. The app uses a versioned dependency with a local
 path for repository builds.
 
 The app's `browser::operations` module remains the ownership adapter. Its global
-session registry, FIFO admission/leases, route state, Reverse Control permissions,
+session registry, FIFO admission/leases, route state, Phone Use permissions,
 UniFFI effect permits, and SSH download delivery stay here because they depend on
 Whip's launch/session authority. Native Android WebView and iOS WKWebView drivers
 still receive and check the same permits. Generation-fence decisions delegate to

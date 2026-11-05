@@ -82,7 +82,7 @@ test('new UI adopts the same native incarnation/generation and stale cleanup can
   expect(native.disconnect).toHaveBeenCalledTimes(1);
 });
 
-test('Reverse Control off uses the existing launch path without creating an MCP session', async () => {
+test('Phone Use off uses the existing launch path without creating an MCP session', async () => {
   const result = { tag: 'created', inner: { tab: { tabId: 'tab', workspaceId: 'space', number: 1, label: 'Codex', paneCount: 1 }, rootPane: { paneId: 'pane', terminalId: 'terminal', workspaceId: 'space', tabId: 'tab', revision: 0 } } };
   const native = { ...nativeRuntime(), createTabWithLaunch: jest.fn(async () => result), createTabWithReverseControl: jest.fn(async () => result) };
   const connection = new NativeHostRuntime(native as unknown as HostRuntimeLike);

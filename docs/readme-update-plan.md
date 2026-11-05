@@ -95,7 +95,7 @@ new captures.
 | 2 | `herd.webp` | The same thinker/Whip scope, both rails visible, and current agent icons. |
 | 2 | `terminal.webp` | A useful shell session with the current navigation and keyboard controls. |
 | 2 | `browser.webp` | A loaded local preview in desktop mode with browser controls visible. Verify the profile change immediately reloads open pages. |
-| 2 | `reverse-control.webp` | An unsent supported-agent launch draft with Reverse Control enabled. |
+| 2 | `reverse-control.webp` | An unsent supported-agent launch draft with Phone Use enabled. |
 
 First capture and review the priority 1 screens. Then refresh the remaining
 screens to keep the whole gallery on the same build. For chat, inspect both
