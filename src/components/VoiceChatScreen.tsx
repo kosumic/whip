@@ -183,7 +183,7 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
         <Animated.View pointerEvents="none" className="items-center gap-3 px-8 pb-5" style={[styles.status, chromeMotion]}>
           <Text accessibilityLiveRegion="polite" className="text-center text-xs" style={styles.statusText}>{status}</Text>
           {estimatedCost !== null && <Text accessibilityHint={t('voiceProvider.costHint')} className="text-center text-xs" style={styles.statusText}>{t(view.costIncomplete ? 'voiceUsage.partialEstimate' : 'voiceProvider.costEstimate', { cost: estimatedCost })}</Text>}
-          {view.liveSeconds != null && <Text className="text-center text-xs" style={styles.statusText}>{t('voiceUsage.liveDuration', { seconds: Math.ceil(view.liveSeconds) })} · {t('voiceUsage.remoteUnknown')}</Text>}
+          {view.liveSeconds != null && <Text className="text-center text-xs" style={styles.statusText}>{t('voiceUsage.liveDuration', { seconds: Math.ceil(view.liveSeconds) })}</Text>}
           {!hasTranscript && view.backendText && <Text selectable numberOfLines={4} className="text-center text-sm" style={styles.statusText}>{view.backendText}</Text>}
           {(view.phase === 'starting' || view.phase === 'preparing') && <ActivityIndicator color={VOICE_COLORS.accent} />}
           {view.error && <Text accessibilityRole="alert" className="text-center text-sm leading-5" style={styles.statusText}>{view.error}</Text>}

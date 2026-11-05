@@ -291,7 +291,9 @@ test('retains the current API voice estimate when the chat presentation remounts
 test('Live reports duration and keeps a public agent result visible when speech fails', () => {
   act(() => publish({ ...listening, provider: 'openai', liveSeconds: 15, estimatedUsd: 0.0125, backendText: 'The build passed. Inspect the agent chat for details.', phase: 'error', error: 'Voice delivery failed.' }));
   expect(renderedText()).toContain('The build passed. Inspect the agent chat for details.');
-  expect(JSON.stringify(renderedText())).toContain('voiceUsage.remoteUnknown');
+  expect(renderedText()).toContain('voiceUsage.liveDuration');
+  expect(renderedText()).toContain('Estimated voice total: $0.0125');
+  expect(JSON.stringify(renderedText())).not.toContain('voiceUsage.remoteUnknown');
 });
 
 test.each(['speaking', 'error'] as const)('Live shows the backend result once in transcript details while %s', phase => {
