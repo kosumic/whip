@@ -116,6 +116,18 @@ for additional rows. Cached rows have `current:false`. These tools never
 connect, navigate the UI or fetch a remote snapshot. `hosts.refresh` explicitly
 refreshes a connected host when requested fresh remote state is needed.
 
+All local list tools and `agents.summary` also accept `workspace_id` to select
+one space. Supply `host_id` with it because workspace IDs belong to one host;
+omitting `workspace_id` includes all spaces. Filtering applies before pagination
+and scopes both `counts` and per-host `observed_counts`. Unattached Core delegated
+agents follow their parent's space, matching Herd; their returned navigation IDs
+remain unchanged. Cached rows and incomplete counts retain the same freshness
+rules within the requested scope.
+
+Empty `host_id` and `workspace_id` strings are treated as omitted filters on
+these local tools, accommodating optional string arguments from voice providers.
+A nonempty `workspace_id` still requires a nonempty `host_id`.
+
 Remote controls default to the calling agent's host when `host_id` is omitted:
 
 - `agents.inspect/read/prompt/wait/send_keys/start/focus`
@@ -133,6 +145,8 @@ are not part of the agent contract. Mutations reconcile Whip state.
 ```json
 {"name":"agents.summary","arguments":{}}
 {"name":"agents.list","arguments":{"host_id":"host-mini"}}
+{"name":"agents.summary","arguments":{"host_id":"host-mini","workspace_id":"workspace-1"}}
+{"name":"agents.list","arguments":{"host_id":"host-mini","workspace_id":"workspace-1"}}
 {"name":"workspaces.create","arguments":{"host_id":"host-mini","label":"Build","cwd":"/Users/kosumi/repos/whip"}}
 {"name":"panes.read","arguments":{"host_id":"host-mini","pane_id":"pane-1","lines":100}}
 {"name":"agents.prompt","arguments":{"host_id":"host-mini","target":"reviewer","text":"Check the current build status.","wait":{}}}

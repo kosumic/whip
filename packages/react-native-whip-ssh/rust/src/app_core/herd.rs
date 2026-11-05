@@ -349,7 +349,7 @@ fn project_hosts(
     }
 }
 
-fn grouping_workspace<'a>(
+pub(crate) fn grouping_workspace<'a>(
     hierarchy: Option<&'a hierarchy::Forest>,
     agent: &'a HerdrAgentInfo,
 ) -> &'a str {

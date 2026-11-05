@@ -43,7 +43,12 @@ operations rather than raw Herdr requests. Local status tools share the Rust
 state and agent membership used by Herd. They never connect or request a remote
 snapshot. Counts include current hosts only; `complete:false` marks incomplete
 coverage, and cached list rows carry `current:false`. List tools accept optional
-`host_id`, `offset`, and `limit`; summaries accept optional `host_id`.
+`host_id`, `offset`, and `limit`; summaries accept optional `host_id`. Both also
+accept `workspace_id` together with `host_id` to scope rows and counts to one
+space before pagination. Omit `workspace_id` for all spaces. Unattached Core
+delegated agents follow their parent's space, matching Herd.
+Empty scope strings are treated as omitted filters, including when GPT Live
+sends `{"host_id":""}` to request all hosts.
 
 Every delegation requires explicit host and pane IDs, plus confirmation showing
 the exact prompt in Whip. The native dispatcher pins the original agent before

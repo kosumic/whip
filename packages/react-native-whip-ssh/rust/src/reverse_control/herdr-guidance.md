@@ -12,8 +12,14 @@ These read Whip local state without remote requests. Omit host_id on local list/
 tools to include all saved hosts. counts includes only current hosts;
 complete=false means some hosts are stale or unavailable. Treat current=false
 rows as cached observations, not proof an agent is currently running. Use
-workspaces.list, tabs.list and panes.list for other IDs. Use hosts.refresh
-only when an explicit remote refresh is needed. Whip handles transport details.
+workspaces.list, tabs.list and panes.list for other IDs. Local list/summary tools
+accept workspace_id together with host_id to scope rows and agent counts to one
+space; omit workspace_id for all spaces. Space filtering precedes pagination and
+includes unattached Core delegated agents in their parent's space, as in Herd.
+Empty host_id and workspace_id strings also mean omitted filters on local tools.
+Returned agent IDs and workspace_id remain their actual navigation targets.
+Use hosts.refresh only when an explicit remote refresh is needed. Whip handles
+transport details.
 
 Workspace, tab, pane, terminal and agent IDs belong to one host and session.
 Parse opaque IDs from responses; never construct them or reuse another host's
