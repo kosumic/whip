@@ -15,7 +15,7 @@ fn global_voice_configuration_has_an_explicit_exclusive_scope_and_no_remote_auth
         .collect();
     assert!(names.contains(&"hosts_list"));
     assert!(names.contains(&"app_navigate"));
-    assert!(names.contains(&"herdr_delegate"));
+    assert!(names.contains(&"agents_prompt"));
     assert!(!names.contains(&"background_agent"));
     assert!(!names.contains(&"terminal_exec"));
     assert!(!names.contains(&"device_shizuku_exec"));

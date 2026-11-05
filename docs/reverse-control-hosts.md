@@ -1,9 +1,9 @@
-# Phone Use hosts and Herdr
+# Phone Use hosts and agents
 
 Opted-in Claude Code, Codex and OpenCode agents can manage Whip's saved hosts
-and operate remote Herdr sessions through the existing authenticated Whip MCP
+and operate agents and workspaces through the existing authenticated Whip MCP
 connection. These tools work on Android and iOS without Shizuku. Rust owns the
-schemas, argument validation, Herdr dispatch and response bounds; the app adapter
+schemas, argument validation, remote dispatch and response bounds; the app adapter
 reuses host persistence, credential storage and connection lifecycle operations.
 
 ## User instructions
@@ -56,7 +56,7 @@ overwrite these documents through `hosts.save`.
 {"name":"hosts.list","arguments":{}}
 {"name":"hosts.instructions","arguments":{"host_id":"host-mini"}}
 {"name":"hosts.connect","arguments":{"host_id":"host-mini"}}
-{"name":"herdr.snapshot","arguments":{"host_id":"host-mini"}}
+{"name":"agents.list","arguments":{"host_id":"host-mini"}}
 ```
 
 ## Host tools
@@ -96,29 +96,46 @@ a pending connect stops that attempt; a late credential or trust response cannot
 start it. Deleting or disconnecting the calling host ends its MCP session, so its
 final response may be cancelled.
 
-## Herdr tools
+## Agent and workspace tools
 
-`herdr.snapshot` gets a live session snapshot. `herdr.request` accepts a typed
-`request` object with an `action` discriminator. Both take optional `host_id`,
-defaulting to the calling agent's host. Connect a different saved host first.
-Requests run through Whip's existing Rust transport. Mutations refresh the actual
-host snapshot so background creation cannot synthesize focused UI state.
-`herdr.request` returns the upstream result with its `type` discriminator inside
-`structuredContent.value.result`; `herdr.snapshot` retains Whip's snapshot model.
+Agents use named Whip operations. Raw `herdr.snapshot`, `herdr.request`, and
+other `herdr.*` tools have been removed, including direct calls from clients
+with an old cached catalog. Herdr remains an internal transport.
 
-Supported actions are `ping`, `session_snapshot`, `workspace_create`,
-`workspace_focus`, `workspace_rename`, `workspace_close`, `tab_create`, `tab_focus`,
-`tab_rename`, `tab_close`, `pane_read`, `pane_read_visible`, `pane_get`, `pane_focus`,
-`pane_rename`, `pane_split`, `pane_zoom`, `pane_close`, `pane_send_input`,
-`pane_send_text`, `pane_send_keys`, `agent_start`, `agent_focus`, `agent_get`,
-`agent_read`, `agent_wait`, `agent_send_keys`, `agent_prompt`,
-`integration_install` and `integration_list`. Discover exact schemas with
-`tools/list`. Unknown actions/fields and oversized inputs are rejected.
+`agents.summary` returns counts by status from Whip local state, using the same
+agent membership as Herd. `counts` includes only connected, fresh hosts;
+`complete:false` means some saved hosts cannot currently be counted. Per-host
+`observed_counts` may be cached; check `current`, `freshness`, revision and
+observation timestamps before treating them as current. `working` means actively
+working; `total` also includes idle, blocked, done and unknown agents.
+
+`agents.list`, `workspaces.list`, `tabs.list`, and `panes.list` return local
+IDs and compact metadata. They accept optional `host_id` (all saved hosts when
+omitted), `offset` and `limit` (default 20, maximum 50). Follow `next_offset`
+for additional rows. Cached rows have `current:false`. These tools never
+connect, navigate the UI or fetch a remote snapshot. `hosts.refresh` explicitly
+refreshes a connected host when requested fresh remote state is needed.
+
+Remote controls default to the calling agent's host when `host_id` is omitted:
+
+- `agents.inspect/read/prompt/wait/send_keys/start/focus`
+- `agents.stop/restart/copy` (take `terminal_id`; copy accepts an optional label)
+- `workspaces.create/focus/rename/close`
+- `tabs.create/focus/rename/close`
+- `panes.inspect/read/read_visible/focus/rename/split/zoom/close/send_input/send_text/send_keys`
+- `hosts.start_service/integration_list/integration_install`
+
+Discover each exact schema with `tools/list`. Controls preserve Whip's existing
+validation, lifecycle waiting, cancellation and connection-generation checks.
+Successful results use `structuredContent.value.result`; transport discriminators
+are not part of the agent contract. Mutations reconcile Whip state.
 
 ```json
-{"name":"herdr.request","arguments":{"host_id":"host-mini","request":{"action":"workspace_create","label":"Build","cwd":"/Users/kosumi/repos/whip"}}}
-{"name":"herdr.request","arguments":{"host_id":"host-mini","request":{"action":"pane_read","pane_id":"pane-1","lines":100}}}
-{"name":"herdr.request","arguments":{"host_id":"host-mini","request":{"action":"agent_prompt","target":"reviewer","text":"Check the current build status.","wait":{}}}}
+{"name":"agents.summary","arguments":{}}
+{"name":"agents.list","arguments":{"host_id":"host-mini"}}
+{"name":"workspaces.create","arguments":{"host_id":"host-mini","label":"Build","cwd":"/Users/kosumi/repos/whip"}}
+{"name":"panes.read","arguments":{"host_id":"host-mini","pane_id":"pane-1","lines":100}}
+{"name":"agents.prompt","arguments":{"host_id":"host-mini","target":"reviewer","text":"Check the current build status.","wait":{}}}
 ```
 
 Workspace/tab creation and pane splits require an explicit nonempty `cwd` and
@@ -128,25 +145,25 @@ sibling pane in the same tab and cwd unless the user requests another layout.
 
 Pane and agent reads accept `source` (`visible`, `recent`, `recent_unwrapped`,
 `detection`), `format` (`text`, `ansi`) and `strip_ansi`. Recent reads default to
-120 lines of `recent_unwrapped` plain text; `pane_read_visible` defaults to the
+120 lines of `recent_unwrapped` plain text; `panes.read_visible` defaults to the
 whole visible viewport. Select ANSI explicitly when colors are evidence. Lines
 are bounded to 1–16000; returned text remains subject to the response limit.
 
-`agent_start` pins the pane's terminal ID before launch, submits once, and polls
+`agents.start` pins the pane's terminal ID before launch, submits once, and polls
 until the same name, kind and terminal become interactive. Its successful result
 includes `ready:true`. The startup timeout defaults to 30000 ms and accepts
 3001–300000 ms. A blocked startup returns `agent_not_ready`; the process remains
-available for `agent_get` and `agent_read` inspection.
+available for `agents.inspect` and `agents.read` inspection.
 
-`agent_prompt` without `wait` reports `completion:"submitted"`. Add `wait:{}` for
+`agents.prompt` without `wait` reports `completion:"submitted"`. Add `wait:{}` for
 Herdr's atomic submit-and-wait behavior, reported as
 `completion:"lifecycle_wait_satisfied"`. Herdr must observe activity before a
 settled idle/done/blocked state when prompting a non-working agent. An active
 turn can satisfy the wait if the agent was already working; this is a lifecycle
-wait, not a per-turn receipt. `agent_wait` waits without submitting input. Both
+wait, not a per-turn receipt. `agents.wait` waits without submitting input. Both
 waits default to 120000 ms and accept `timeout_ms` from 1–300000, with optional
 `until` statuses (`working`, `blocked`, `idle`, `done`, `unknown`). Default settled
-statuses need not be repeated. `agent_send_keys` accepts logical key chords.
+statuses need not be repeated. `agents.send_keys` accepts logical key chords.
 
 The new lifecycle actions, startup readiness, atomic prompt waits and explicit
 tab/split cwd are conservatively gated to negotiated protocol 22. On protocols
@@ -159,21 +176,21 @@ Tool failures expose the upstream code in
 `agent_not_ready`, `agent_prompt_stalled` and server `timeout`. Connection loss
 uses `host_disconnected`; client deadlines use `timeout`. Ambiguous transport
 outcomes include `details.outcome_unknown:true`. Prompts and mutations are never
-automatically replayed. Inspect `agent_get`, `agent_read` or the live snapshot
+automatically replayed. Inspect `agents.inspect`, `agents.read` or refresh Whip state
 before deciding whether to retry. Ask the user before answering approval dialogs.
 
 The MCP initialization and script instructions include built-in operational
-guidance based on the [official Herdr skill](https://github.com/herdrdev/herdr/blob/143bf5fd4781d164260c63fe28e7dc08054ad32f/skills/herdr/SKILL.md),
+guidance for Whip operations,
 covering host-scoped IDs, focus, topology, lifecycle waits, approvals, output
 history and recovery. Global and host AGENTS.md supplement this guidance.
 
-`herdr.start_server` starts Herdr with the saved command on a connected host.
-`herdr.restart_agent` takes `terminal_id` and preserves the existing conversation.
-`herdr.copy_agent` takes `terminal_id` and optional `label`, creating a fresh
+`hosts.start_service` starts Herdr with the saved command on a connected host.
+`agents.restart` takes `terminal_id` and preserves the existing conversation.
+`agents.copy` takes `terminal_id` and optional `label`, creating a fresh
 conversation with that agent's saved launch options and Phone Use preference.
 Copies use the source agent's cwd, preserve user focus and require protocol 22.
 Both accept optional `host_id`. Restart can interrupt busy agents. Restarting the
-calling agent closes its old MCP connection. Ordinary `agent_start` requests do
+calling agent closes its old MCP connection. Ordinary `agents.start` requests do
 not grant a new agent Phone Use automatically.
 
 The existing per-launch bearer authorization, concurrency limits and revocation
@@ -184,11 +201,11 @@ bounded to 128 KiB. Instruction documents are separately bounded to allow for
 JSON escaping. Cancellation drops outstanding Herdr control futures and tells the
 app adapter to stop pending host work. Already accepted remote changes and
 committed storage writes cannot be undone. Avoid retrying ambiguous writes;
-inspect the live snapshot first. Authorization allows access to the app's saved
+inspect agents.inspect/agents.read first. Authorization allows access to the app's saved
 hosts, including hosts other than the one running the calling agent.
 
 This extension changes the Rust/native profile contract and requires a native
-rebuild, including regenerated UniFFI bindings.
+rebuild. No public UniFFI record or method signatures change in this update.
 
 ## Verification
 

@@ -185,7 +185,7 @@ impl Batch {
         let mut items = Vec::with_capacity(self.calls.len());
         for call in self.calls {
             let mut event = crate::voice_history::Event::new(
-                if call.name == "herdr_delegate" {
+                if call.name == voice::AGENTS_PROMPT {
                     "delegation"
                 } else {
                     "tool"

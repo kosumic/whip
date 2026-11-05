@@ -1046,7 +1046,7 @@ impl RealtimeVoiceAdapter {
                         ServerEvent::ResponseFunctionCallArgumentsDone { call_id, name, arguments, response_id, .. } => {
                             if ignored.contains(&response_id) { continue; }
                             if name != REMAIN_SILENT {
-                                let mut event = crate::voice_history::Event::new(if matches!(name.as_str(), BACKGROUND_AGENT | "herdr_delegate") {"delegation"} else {"tool"}, &name, "requested");
+                                let mut event = crate::voice_history::Event::new(if matches!(name.as_str(), BACKGROUND_AGENT | global_tools::AGENTS_PROMPT) {"delegation"} else {"tool"}, &name, "requested");
                                 event.input = Some(limit_text(arguments.clone()));
                                 self.output.lock().transcript.event(&call_id, event);
                             }

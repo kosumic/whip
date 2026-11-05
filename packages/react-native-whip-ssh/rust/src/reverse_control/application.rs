@@ -6,7 +6,7 @@ use serde_json::{Map, Value, json};
 
 use super::ReverseControl;
 use super::browser::model::{BrowserError, ErrorCode, MAX_INPUT, MAX_REQUEST, MAX_TEXT_RESULT};
-use crate::herdr_api::{HerdrControlError, HerdrControlRequest, HerdrTabLaunchResult};
+use crate::herdr_api::{HerdrControlError, HerdrTabLaunchResult};
 use crate::host_profiles::{HostProfileRecord, MAX_AGENT_INSTRUCTIONS};
 
 pub(super) const LIST: &str = "hosts.list";
@@ -15,11 +15,11 @@ pub(super) const SAVE: &str = "hosts.save";
 pub(super) const DELETE: &str = "hosts.delete";
 pub(super) const CONNECT: &str = "hosts.connect";
 pub(super) const DISCONNECT: &str = "hosts.disconnect";
-const SNAPSHOT: &str = "herdr.snapshot";
-const REQUEST: &str = "herdr.request";
-const START_SERVER: &str = "herdr.start_server";
-const RESTART_AGENT: &str = "herdr.restart_agent";
-const COPY_AGENT: &str = "herdr.copy_agent";
+const START_SERVER: &str = "hosts.start_service";
+const RESTART_AGENT: &str = "agents.restart";
+const COPY_AGENT: &str = "agents.copy";
+const STOP_AGENT: &str = "agents.stop";
+const REFRESH: &str = "hosts.refresh";
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -41,13 +41,6 @@ struct SaveArgs {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RequestArgs {
-    host_id: Option<String>,
-    request: Value,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct AgentArgs {
     host_id: Option<String>,
     terminal_id: String,
@@ -56,6 +49,7 @@ struct AgentArgs {
 
 pub(super) enum Action {
     Host(super::hosts::HostAction),
+    Local(super::whip_state::Query),
     Herdr {
         host_id: Option<String>,
         operation: HerdrOperation,
@@ -96,7 +90,8 @@ pub(super) fn global_instruction_text(global: &str) -> String {
 }
 
 pub(super) enum HerdrOperation {
-    Request(HerdrControlRequest),
+    Refresh,
+    StopAgent(String),
     AgentRequest(super::herdr::Request),
     StartServer,
     RestartAgent(String),
@@ -111,7 +106,7 @@ fn decode<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, BrowserErro
         .map_err(|_| BrowserError::invalid("Invalid host or Herdr arguments"))
 }
 
-fn identifier(value: &str) -> Result<(), BrowserError> {
+pub(super) fn identifier(value: &str) -> Result<(), BrowserError> {
     if value.is_empty() || value.len() > 256 || value.chars().any(char::is_control) {
         return Err(BrowserError::invalid(
             "Invalid host, terminal or pane identifier",
@@ -167,6 +162,32 @@ impl Action {
             ));
         }
         bounded(&arguments)?;
+        if super::whip_state::Query::recognizes(name) {
+            return Ok(Self::Local(super::whip_state::Query::parse(
+                name, &arguments,
+            )?));
+        }
+        if let Some(tool) = REMOTE_TOOLS.iter().find(|tool| tool.name == name) {
+            let fields = arguments
+                .as_object_mut()
+                .ok_or_else(|| BrowserError::invalid("Expected arguments"))?;
+            let host_id = fields
+                .remove("host_id")
+                .map(serde_json::from_value::<String>)
+                .transpose()
+                .map_err(|_| BrowserError::invalid("Invalid host_id"))?;
+            if fields.contains_key("action") || fields.contains_key("request") {
+                return Err(BrowserError::invalid(
+                    "Use the named Whip operation's arguments",
+                ));
+            }
+            fields.insert("action".into(), json!(tool.action));
+            let request = super::herdr::Request::parse(arguments).map_err(control_error)?;
+            return Ok(Self::Herdr {
+                host_id,
+                operation: HerdrOperation::AgentRequest(request),
+            });
+        }
         match name {
             LIST => {
                 let _: Empty = decode(arguments.clone())?;
@@ -227,35 +248,29 @@ impl Action {
                     return Err(BrowserError::invalid("host_id is required"));
                 }
             }
-            SNAPSHOT | START_SERVER => {
+            START_SERVER | REFRESH => {
                 let args: HostArgs = decode(arguments)?;
                 return Ok(Self::Herdr {
                     host_id: args.host_id,
-                    operation: if name == SNAPSHOT {
-                        HerdrOperation::Request(HerdrControlRequest::SessionSnapshot)
+                    operation: if name == REFRESH {
+                        HerdrOperation::Refresh
                     } else {
                         HerdrOperation::StartServer
                     },
                 });
             }
-            REQUEST => {
-                let args: RequestArgs = decode(arguments)?;
-                let request = super::herdr::Request::parse(args.request).map_err(control_error)?;
-                return Ok(Self::Herdr {
-                    host_id: args.host_id,
-                    operation: HerdrOperation::AgentRequest(request),
-                });
-            }
-            RESTART_AGENT | COPY_AGENT => {
+            RESTART_AGENT | COPY_AGENT | STOP_AGENT => {
                 let args: AgentArgs = decode(arguments)?;
                 identifier(&args.terminal_id)?;
-                if name == RESTART_AGENT && args.label.is_some() {
-                    return Err(BrowserError::invalid("Restart does not accept a label"));
+                if name != COPY_AGENT && args.label.is_some() {
+                    return Err(BrowserError::invalid("Only copy accepts a label"));
                 }
                 return Ok(Self::Herdr {
                     host_id: args.host_id,
                     operation: if name == RESTART_AGENT {
                         HerdrOperation::RestartAgent(args.terminal_id)
+                    } else if name == STOP_AGENT {
+                        HerdrOperation::StopAgent(args.terminal_id)
                     } else {
                         HerdrOperation::CopyAgent {
                             terminal_id: args.terminal_id,
@@ -284,6 +299,7 @@ impl Action {
         caller_host: String,
     ) -> Result<Value, BrowserError> {
         match self {
+            Self::Local(query) => result("whip", query.read()?),
             Self::Host(action) => action.run(owner, &session, &parent, &caller_host).await,
             Self::Herdr { host_id, operation } => {
                 let host_id = host_id.unwrap_or(caller_host);
@@ -304,18 +320,29 @@ pub(super) async fn run_herdr(
             "Connect this saved host with hosts.connect first",
         )
     })?;
-    let value = match operation {
+    let mut value = match operation {
         HerdrOperation::AgentRequest(request) => runtime
             .request_from_reverse_agent(request)
             .await
             .map_err(control_error)?,
-        HerdrOperation::Request(request) => {
-            json!(
-                runtime
-                    .control_from_reverse_agent(request)
-                    .await
-                    .map_err(control_error)?
-            )
+        HerdrOperation::Refresh => {
+            let state = runtime.refresh_state().await.map_err(|_| {
+                BrowserError::new(ErrorCode::HostDisconnected, "Could not refresh this host")
+            })?;
+            if state.freshness != crate::host_state::HostFreshness::Fresh || state.needs_resync {
+                return Err(BrowserError::new(
+                    ErrorCode::DeviceUnavailable,
+                    "Host refresh did not produce current state",
+                ));
+            }
+            json!({"refreshed":true,"revision":state.revision})
+        }
+        HerdrOperation::StopAgent(terminal_id) => {
+            runtime
+                .stop_from_reverse_agent(terminal_id)
+                .await
+                .map_err(control_error)?;
+            json!({"stopped":true})
         }
         HerdrOperation::StartServer => {
             runtime
@@ -354,7 +381,10 @@ pub(super) async fn run_herdr(
             }
         }
     };
-    result("herdr", json!({"host_id":host_id,"result":value}))
+    if let Some(fields) = value.as_object_mut() {
+        fields.remove("type");
+    }
+    result("whip", json!({"host_id":host_id,"result":value}))
 }
 
 fn control_error(error: HerdrControlError) -> BrowserError {
@@ -380,7 +410,7 @@ fn control_error(error: HerdrControlError) -> BrowserError {
         HerdrControlError::TransportDisconnected(_)
         | HerdrControlError::RequestTimeout(_)
         | HerdrControlError::RequestCancelled(_) => {
-            json!({"source":"herdr","outcome_unknown":true,"guidance":"Input may have been delivered. Inspect agent.get, agent.read or herdr.snapshot before retrying a mutation."})
+            json!({"source":"herdr","outcome_unknown":true,"guidance":"Input may have been delivered. Inspect agents.inspect and agents.read before retrying a mutation."})
         }
         _ => Value::Null,
     };
@@ -401,7 +431,7 @@ fn result(kind: &str, value: Value) -> Result<Value, BrowserError> {
     if value.to_string().len() > limit {
         return Err(BrowserError::new(
             ErrorCode::ResultTooLarge,
-            "Response exceeds the tool limit; use a smaller pane read",
+            "Response exceeds the tool limit; use a host filter, smaller page or shorter read",
         ));
     }
     let content = json!({"kind":kind,"value":value});
@@ -522,69 +552,256 @@ fn string() -> Value {
     json!({"type":"string","maxLength":MAX_INPUT})
 }
 fn host_schema() -> Value {
-    json!({"host_id":{"type":"string","maxLength":256,"description":"Saved host id from hosts.list. Herdr and instruction tools default to this agent's host."}})
+    json!({"host_id":{"type":"string","maxLength":256,"description":"Saved host id from hosts.list. Controls and instruction tools default to this agent's host."}})
+}
+
+struct RemoteTool {
+    name: &'static str,
+    action: &'static str,
+    description: &'static str,
+    fields: &'static [&'static str],
+    optional: &'static [&'static str],
+    read_only: bool,
+}
+
+const REMOTE_TOOLS: &[RemoteTool] = &[
+    RemoteTool {
+        name: "workspaces.create",
+        action: "workspace_create",
+        description: "Create a workspace in an explicit cwd; preserves focus by default.",
+        fields: &["cwd"],
+        optional: &["label", "focus"],
+        read_only: false,
+    },
+    RemoteTool {
+        name: "workspaces.focus",
+        action: "workspace_focus",
+        description: "Focus an explicit workspace.",
+        fields: &["workspace_id"],
+        optional: &[],
+        read_only: false,
+    },
+    RemoteTool {
+        name: "workspaces.close",
+        action: "workspace_close",
+        description: "Close a workspace and its panes. Only close when requested or when you created it.",
+        fields: &["workspace_id"],
+        optional: &[],
+        read_only: false,
+    },
+    RemoteTool {
+        name: "workspaces.rename",
+        action: "workspace_rename",
+        description: "Rename a workspace.",
+        fields: &["workspace_id", "label"],
+        optional: &[],
+        read_only: false,
+    },
+    RemoteTool {
+        name: "tabs.create",
+        action: "tab_create",
+        description: "Create a tab in an explicit workspace and cwd; preserves focus by default.",
+        fields: &["workspace_id", "cwd"],
+        optional: &["label", "focus"],
+        read_only: false,
+    },
+    RemoteTool {
+        name: "tabs.focus",
+        action: "tab_focus",
+        description: "Focus an explicit tab.",
+        fields: &["tab_id"],
+        optional: &[],
+        read_only: false,
+    },
+    RemoteTool {
+        name: "tabs.close",
+        action: "tab_close",
+        description: "Close a tab and its panes. Only close when requested or when you created it.",
+        fields: &["tab_id"],
+        optional: &[],
+        read_only: false,
+    },
+    RemoteTool {
+        name: "tabs.rename",
+        action: "tab_rename",
+        description: "Rename a tab.",
+        fields: &["tab_id", "label"],
+        optional: &[],
+        read_only: false,
+    },
+    RemoteTool {
+        name: "panes.read",
+        action: "pane_read",
+        description: "Read pane output; defaults to 120 lines of recent_unwrapped plain text.",
+        fields: &["pane_id"],
+        optional: &["lines", "source", "format", "strip_ansi"],
+        read_only: true,
+    },
+    RemoteTool {
+        name: "panes.read_visible",
+        action: "pane_read_visible",
+        description: "Read the visible pane viewport.",
+        fields: &["pane_id"],
+        optional: &["source", "format", "strip_ansi"],
+        read_only: true,
+    },
+    RemoteTool {
+        name: "panes.inspect",
+        action: "pane_get",
+        description: "Inspect one pane live.",
+        fields: &["pane_id"],
+        optional: &[],
+        read_only: true,
+    },
+    RemoteTool {
+        name: "panes.focus",
+        action: "pane_focus",
+        description: "Focus an explicit pane.",
+        fields: &["pane_id"],
+        optional: &[],
+        read_only: false,
+    },
+    RemoteTool {
+        name: "panes.close",
+        action: "pane_close",
+        description: "Close a pane. Only close when requested or when you created it.",
+        fields: &["pane_id"],
+        optional: &[],
+        read_only: false,
+    },
+    RemoteTool {
+        name: "panes.rename",
+        action: "pane_rename",
+        description: "Rename a pane.",
+        fields: &["pane_id"],
+        optional: &["label"],
+        read_only: false,
+    },
+    RemoteTool {
+        name: "panes.split",
+        action: "pane_split",
+        description: "Split an explicit pane right or down in an explicit cwd; preserves focus by default.",
+        fields: &["pane_id", "direction", "cwd"],
+        optional: &["focus"],
+        read_only: false,
+    },
+    RemoteTool {
+        name: "panes.zoom",
+        action: "pane_zoom",
+        description: "Toggle pane zoom.",
+        fields: &["pane_id"],
+        optional: &[],
+        read_only: false,
+    },
+    RemoteTool {
+        name: "panes.send_input",
+        action: "pane_send_input",
+        description: "Send text and logical keys to a shell or ordinary program. For recognized agents use agents.prompt.",
+        fields: &["pane_id", "text", "keys"],
+        optional: &[],
+        read_only: false,
+    },
+    RemoteTool {
+        name: "panes.send_text",
+        action: "pane_send_text",
+        description: "Send literal text to a shell or ordinary program without submitting it.",
+        fields: &["pane_id", "text"],
+        optional: &[],
+        read_only: false,
+    },
+    RemoteTool {
+        name: "panes.send_keys",
+        action: "pane_send_keys",
+        description: "Send logical keys to a shell or ordinary program.",
+        fields: &["pane_id", "keys"],
+        optional: &[],
+        read_only: false,
+    },
+    RemoteTool {
+        name: "agents.start",
+        action: "agent_start",
+        description: "Start a named agent in an available interactive shell. Waits for readiness, default 30 seconds. Does not grant Phone Use automatically.",
+        fields: &["name", "kind", "pane_id", "args"],
+        optional: &["timeout_ms"],
+        read_only: false,
+    },
+    RemoteTool {
+        name: "agents.focus",
+        action: "agent_focus",
+        description: "Focus an agent by its unique name or pane ID.",
+        fields: &["target"],
+        optional: &[],
+        read_only: false,
+    },
+    RemoteTool {
+        name: "agents.inspect",
+        action: "agent_get",
+        description: "Inspect one agent live by its unique name or pane ID.",
+        fields: &["target"],
+        optional: &[],
+        read_only: true,
+    },
+    RemoteTool {
+        name: "agents.read",
+        action: "agent_read",
+        description: "Read agent output; defaults to 120 lines of recent_unwrapped plain text.",
+        fields: &["target"],
+        optional: &["source", "lines", "format", "strip_ansi"],
+        read_only: true,
+    },
+    RemoteTool {
+        name: "agents.wait",
+        action: "agent_wait",
+        description: "Wait for agent lifecycle status without submitting input. Default 120 seconds, maximum 300 seconds.",
+        fields: &["target"],
+        optional: &["until", "timeout_ms"],
+        read_only: true,
+    },
+    RemoteTool {
+        name: "agents.send_keys",
+        action: "agent_send_keys",
+        description: "Send logical keys to the chosen agent. Inspect approval or blocked dialogs before acting.",
+        fields: &["target", "keys"],
+        optional: &[],
+        read_only: false,
+    },
+    RemoteTool {
+        name: "agents.prompt",
+        action: "agent_prompt",
+        description: "Submit a prompt to the chosen agent once. Without wait acknowledges submission; wait:{} waits for activity and settled lifecycle status, default 120 seconds. Never retry an uncertain outcome.",
+        fields: &["target", "text"],
+        optional: &["wait"],
+        read_only: false,
+    },
+    RemoteTool {
+        name: "hosts.integration_install",
+        action: "integration_install",
+        description: "Install the integration for the requested agent kind on a connected host.",
+        fields: &["kind"],
+        optional: &[],
+        read_only: false,
+    },
+    RemoteTool {
+        name: "hosts.integration_list",
+        action: "integration_list",
+        description: "Inspect available agent integrations on a connected host.",
+        fields: &[],
+        optional: &[],
+        read_only: true,
+    },
+];
+
+pub(super) fn is_tool_namespace(name: &str) -> bool {
+    ["hosts.", "agents.", "workspaces.", "tabs.", "panes."]
+        .iter()
+        .any(|prefix| name.starts_with(prefix))
 }
 
 pub(super) fn tools() -> Vec<Value> {
-    let mut request_variants = Vec::new();
-    for (action, fields, optional) in [
-        ("ping", vec![], vec![]),
-        ("session_snapshot", vec![], vec![]),
-        ("workspace_create", vec!["cwd"], vec!["label", "focus"]),
-        ("workspace_focus", vec!["workspace_id"], vec![]),
-        ("workspace_close", vec!["workspace_id"], vec![]),
-        ("workspace_rename", vec!["workspace_id", "label"], vec![]),
-        (
-            "tab_create",
-            vec!["workspace_id", "cwd"],
-            vec!["label", "focus"],
-        ),
-        ("tab_focus", vec!["tab_id"], vec![]),
-        ("tab_close", vec!["tab_id"], vec![]),
-        ("tab_rename", vec!["tab_id", "label"], vec![]),
-        (
-            "pane_read",
-            vec!["pane_id"],
-            vec!["lines", "source", "format", "strip_ansi"],
-        ),
-        (
-            "pane_read_visible",
-            vec!["pane_id"],
-            vec!["source", "format", "strip_ansi"],
-        ),
-        ("pane_get", vec!["pane_id"], vec![]),
-        ("pane_focus", vec!["pane_id"], vec![]),
-        ("pane_close", vec!["pane_id"], vec![]),
-        ("pane_rename", vec!["pane_id"], vec!["label"]),
-        (
-            "pane_split",
-            vec!["pane_id", "direction", "cwd"],
-            vec!["focus"],
-        ),
-        ("pane_zoom", vec!["pane_id"], vec![]),
-        ("pane_send_input", vec!["pane_id", "text", "keys"], vec![]),
-        ("pane_send_text", vec!["pane_id", "text"], vec![]),
-        ("pane_send_keys", vec!["pane_id", "keys"], vec![]),
-        (
-            "agent_start",
-            vec!["name", "kind", "pane_id", "args"],
-            vec!["timeout_ms"],
-        ),
-        ("agent_focus", vec!["target"], vec![]),
-        ("agent_get", vec!["target"], vec![]),
-        (
-            "agent_read",
-            vec!["target"],
-            vec!["source", "lines", "format", "strip_ansi"],
-        ),
-        ("agent_wait", vec!["target"], vec!["until", "timeout_ms"]),
-        ("agent_send_keys", vec!["target", "keys"], vec![]),
-        ("agent_prompt", vec!["target", "text"], vec!["wait"]),
-        ("integration_install", vec!["kind"], vec![]),
-        ("integration_list", vec![], vec![]),
-    ] {
-        let mut properties = json!({"action":{"const":action,"type":"string"}});
-        for field in fields.iter().chain(&optional) {
+    let mut operations = super::whip_state::tools();
+    for tool in REMOTE_TOOLS {
+        let mut properties = host_schema();
+        for field in tool.fields.iter().chain(tool.optional) {
             properties[field] = match *field {
                 "lines" => json!({"type":"integer","minimum":1,"maximum":16000}),
                 "keys" | "args" => json!({"type":"array","items":string(),"maxItems":128}),
@@ -596,7 +813,7 @@ pub(super) fn tools() -> Vec<Value> {
                 }
                 "format" => json!({"type":"string","enum":["text","ansi"]}),
                 "timeout_ms" => {
-                    json!({"type":"integer","minimum":if action == "agent_start" {3001} else {1},"maximum":super::herdr::MAX_TIMEOUT_MS})
+                    json!({"type":"integer","minimum":if tool.action == "agent_start" {3001} else {1},"maximum":super::herdr::MAX_TIMEOUT_MS})
                 }
                 "until" => statuses_schema(),
                 "wait" => object(
@@ -606,9 +823,7 @@ pub(super) fn tools() -> Vec<Value> {
                 _ => string(),
             };
         }
-        let mut required = vec!["action"];
-        required.extend(fields);
-        request_variants.push(object(properties, &required));
+        operations.push(json!({"name":tool.name,"description":tool.description,"inputSchema":object(properties,tool.fields),"annotations":{"readOnlyHint":tool.read_only,"destructiveHint":!tool.read_only,"openWorldHint":true}}));
     }
     let mut profile = json!({});
     for field in [
@@ -625,19 +840,20 @@ pub(super) fn tools() -> Vec<Value> {
     profile["jumpHostId"] = json!({"type":["string","null"],"maxLength":256});
     profile["forwardAgent"] = json!({"type":"boolean"});
     profile["authMode"] = json!({"type":"string","enum":["password","key"]});
-    [
+    operations.extend([
         (LIST, "List Whip's saved hosts, connection status and each host's AGENTS.md in agentInstructions. Read the target host's instructions before connecting or operating on it. No credentials are returned.", json!({}), vec![], true),
         (INSTRUCTIONS, "Read the user's global AGENTS.md and this host's optional AGENTS.md, stored in Whip. Read global first, then host instructions before connecting or operating on a host. Empty strings mean none configured. Available for disconnected hosts.", host_schema(), vec![], true),
         (SAVE, "Create or update saved host metadata with a partial profile. Omit host_id to create; new hosts require host and username. Existing credentials and user AGENTS.md are preserved. Optionally copy a saved credential locally using credential_from_host_id. No secrets accepted or returned. Editing a connected profile takes effect on its next connection.", { let mut p = host_schema(); p["profile"] = object(profile, &[]); p["credential_from_host_id"] = string(); p }, vec!["profile"], false),
         (DELETE, "Disconnect a saved host and delete its profile, local credentials and host caches. Deleting this agent's host ends its MCP session.", host_schema(), vec!["host_id"], false),
         (CONNECT, "Connect a saved host using Whip's stored credentials, jump hosts, biometric protection and host-key checks. Whip may prompt locally. Read its AGENTS.md from hosts.list first. Does not navigate the UI.", host_schema(), vec!["host_id"], false),
         (DISCONNECT, "Disconnect a host's Whip SSH session. Disconnecting this agent's host ends its MCP session.", host_schema(), vec!["host_id"], false),
-        (SNAPSHOT, "Read live Herdr workspaces, tabs, panes and agents over Whip's existing SSH connection. Read its AGENTS.md from hosts.list first. IDs from this snapshot target herdr.request.", host_schema(), vec![], true),
-        (REQUEST, "Call Herdr on a connected saved host; returns its tagged result (type). Read its AGENTS.md from hosts.list and inspect herdr.snapshot first. Creation requires cwd and defaults focus=false. Reads default recent_unwrapped text, 120 lines. agent_start waits for interactive readiness (default 30s); agent_prompt without wait acknowledges submission, with wait:{} uses atomic lifecycle waiting (default 120s, max 300s). agent_get/read/wait/send_keys, startup readiness, prompt waits and explicit tab/split cwd require protocol 22; unsupported hosts return unsupported_feature before input. Agent targets are names or pane IDs, never terminal IDs. New agents do not receive Phone Use automatically. Inspect blocked or ambiguous outcomes before sending more input.", { let mut p = host_schema(); p["request"] = json!({"oneOf":request_variants}); p }, vec!["request"], false),
+        (REFRESH, "Explicitly refresh this connected host in Whip. Agent counts and discovery use agents.summary/list locally.", host_schema(), vec![], false),
+        (STOP_AGENT, "Stop an existing agent through Whip lifecycle controls, preserving its pane and conversation data. May interrupt work. Stopping yourself ends this MCP session.", { let mut p = host_schema(); p["terminal_id"] = string(); p }, vec!["terminal_id"], false),
         (START_SERVER, "Start Herdr using the saved host's configured command over its existing SSH connection.", host_schema(), vec![], false),
         (RESTART_AGENT, "Restart an existing agent using Whip's conversation-preserving restart. May interrupt its current task. Restarting yourself ends this MCP session.", { let mut p = host_schema(); p["terminal_id"] = string(); p }, vec!["terminal_id"], false),
-        (COPY_AGENT, "Copy an agent into a background tab in its current directory with its saved launch options and Phone Use preference, starting a fresh conversation. Requires protocol 22 and preserves user focus.", { let mut p = host_schema(); p["terminal_id"] = string(); p["label"] = string(); p }, vec!["terminal_id"], false),
-    ].into_iter().map(|(name, description, properties, required, read_only)| json!({"name":name,"description":description,"inputSchema":object(properties,&required),"annotations":{"readOnlyHint":read_only,"destructiveHint":!read_only,"openWorldHint":true}})).collect()
+        (COPY_AGENT, "Copy an agent into a background tab in its current directory with its saved launch options and Phone Use preference, starting a fresh conversation and preserving user focus.", { let mut p = host_schema(); p["terminal_id"] = string(); p["label"] = string(); p }, vec!["terminal_id"], false),
+    ].into_iter().map(|(name, description, properties, required, read_only)| json!({"name":name,"description":description,"inputSchema":object(properties,&required),"annotations":{"readOnlyHint":read_only,"destructiveHint":!read_only,"openWorldHint":true}})));
+    operations
 }
 
 fn statuses_schema() -> Value {
@@ -647,6 +863,76 @@ fn statuses_schema() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::herdr_api::HerdrControlRequest;
+
+    #[test]
+    fn catalog_exposes_named_whip_operations_and_rejects_raw_transport_calls()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let tools = tools();
+        for name in [
+            "agents.summary",
+            "agents.list",
+            "agents.inspect",
+            "agents.prompt",
+            "agents.stop",
+            "workspaces.list",
+            "tabs.create",
+            "panes.read",
+            "hosts.refresh",
+        ] {
+            assert!(
+                tools.iter().any(|tool| tool["name"] == name),
+                "Missing {name}"
+            );
+        }
+        assert!(tools.iter().all(|tool| {
+            !tool["name"]
+                .as_str()
+                .is_some_and(|name| name.starts_with("herdr."))
+        }));
+        for (name, args) in [
+            ("herdr.snapshot", json!({})),
+            (
+                "herdr.request",
+                json!({"request":{"action":"session_snapshot"}}),
+            ),
+            ("herdr.start_server", json!({})),
+            ("herdr.restart_agent", json!({"terminal_id":"terminal-1"})),
+            (
+                "agents.prompt",
+                json!({"target":"worker","text":"work","action":"session_snapshot"}),
+            ),
+            (
+                "agents.inspect",
+                json!({"request":{"action":"session_snapshot"}}),
+            ),
+        ] {
+            assert!(
+                Action::parse(name, &args).is_err(),
+                "Accepted {name}: {args}"
+            );
+        }
+        // The named tool still enforces creation semantics before any transport use.
+        assert!(Action::parse("tabs.create", &json!({"workspace_id":"w"})).is_err());
+        let Action::Herdr {
+            operation: HerdrOperation::AgentRequest(request),
+            ..
+        } = Action::parse(
+            "agents.prompt",
+            &json!({"target":"worker","text":"work","wait":{}}),
+        )?
+        else {
+            return Err("Missing agent prompt".into());
+        };
+        assert_eq!(
+            request.base,
+            Some(HerdrControlRequest::AgentPrompt {
+                target: "worker".into(),
+                text: "work".into()
+            })
+        );
+        Ok(())
+    }
 
     #[test]
     fn host_edits_reject_credentials_instructions_and_invalid_targets() {
@@ -660,13 +946,10 @@ mod tests {
             (SAVE, json!({"profile":{"port":"0"}})),
             (CONNECT, json!({})),
             (DISCONNECT, json!({"host_id":"x\n"})),
+            ("panes.read", json!({"pane_id":"pane-1","lines":0})),
             (
-                REQUEST,
-                json!({"request":{"action":"pane_read","pane_id":"pane-1","lines":0}}),
-            ),
-            (
-                REQUEST,
-                json!({"request":{"action":"agent_prompt","target":"agent-1","text":"ok","secret":"no"}}),
+                "agents.prompt",
+                json!({"target":"agent-1","text":"ok","secret":"no"}),
             ),
         ] {
             assert!(Action::parse(name, &args).is_err(), "{name}: {args}");
@@ -693,8 +976,8 @@ mod tests {
             host_id,
             operation: HerdrOperation::AgentRequest(request),
         } = Action::parse(
-            REQUEST,
-            &json!({"host_id":"mini","request":{"action":"pane_send_text","pane_id":"pane-1","text":literal}}),
+            "panes.send_text",
+            &json!({"host_id":"mini","pane_id":"pane-1","text":literal}),
         )?
         else {
             return Err("missing Herdr request".into());

@@ -1028,6 +1028,25 @@ impl HostRuntime {
     pub(crate) fn herd_agent_order(&self) -> Option<Vec<String>> {
         self.inner.state.lock().agent_order.clone()
     }
+
+    /// One local observation; tool reads must not issue remote control requests.
+    pub(crate) fn tool_state(
+        &self,
+    ) -> (
+        HostConnectionState,
+        HostStateSnapshot,
+        Vec<crate::herdr_api::HerdrAgentInfo>,
+    ) {
+        let state = self.inner.state.lock();
+        let projection = state.host_state.projection();
+        let agents = projection
+            .snapshot
+            .as_ref()
+            .map_or_else(Vec::new, |snapshot| {
+                crate::app_core::project_agents(snapshot, state.agent_order.as_deref())
+            });
+        (state.connection, projection, agents)
+    }
     pub(crate) fn core_backend(&self) -> bool {
         self.inner.herdr.is_core()
     }

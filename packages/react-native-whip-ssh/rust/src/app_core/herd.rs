@@ -115,28 +115,9 @@ pub(super) fn project(
                     });
             let meta = metadata.get(&session.id);
             let mut agents = snapshot.map_or_else(Vec::new, |snapshot| {
-                snapshot
-                    .agents
-                    .iter()
-                    .map(|agent| {
-                        let mut agent = agent.clone();
-                        // Agent-row flags can lag behind pane-focus events.
-                        agent.focused =
-                            snapshot.focused_pane_id.as_deref() == Some(agent.pane_id.as_str());
-                        agent
-                    })
-                    .collect::<Vec<_>>()
+                project_agents(snapshot, agent_orders.get(&session.id).map(Vec::as_slice))
             });
-            if let Some(order) = agent_orders.get(&session.id) {
-                let mut by_pane = agents
-                    .into_iter()
-                    .map(|agent| (agent.pane_id.clone(), agent))
-                    .collect::<HashMap<_, _>>();
-                agents = order
-                    .iter()
-                    .filter_map(|pane_id| by_pane.remove(pane_id))
-                    .collect();
-            } else if follow_server_order {
+            if !agent_orders.contains_key(&session.id) && follow_server_order {
                 agents.sort_by(compare_agent_priority);
             }
             if core_backend {
@@ -185,6 +166,31 @@ pub(super) fn project(
         requested_workspace_id,
         follow_server_order,
     )
+}
+
+/// Shared agent membership for the Herd UI and application tools.
+pub(crate) fn project_agents(
+    snapshot: &crate::herdr_api::HerdrSessionSnapshot,
+    order: Option<&[String]>,
+) -> Vec<HerdrAgentInfo> {
+    let agents = snapshot
+        .agents
+        .iter()
+        .map(|agent| {
+            let mut agent = agent.clone();
+            agent.focused = snapshot.focused_pane_id.as_deref() == Some(agent.pane_id.as_str());
+            agent
+        })
+        .collect::<Vec<_>>();
+    if let Some(order) = order {
+        let mut by_pane = agents
+            .into_iter()
+            .map(|agent| (agent.pane_id.clone(), agent))
+            .collect::<HashMap<_, _>>();
+        order.iter().filter_map(|id| by_pane.remove(id)).collect()
+    } else {
+        agents
+    }
 }
 
 fn project_hosts(

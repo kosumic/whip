@@ -802,6 +802,23 @@ impl HostRuntime {
             .await
     }
 
+    pub(crate) async fn stop_from_reverse_agent(
+        &self,
+        terminal_id: String,
+    ) -> Result<(), HerdrControlError> {
+        let _operation = self.inner.agent_control_operation.lock().await;
+        let generation = self.inner.state.lock().generation;
+        let initial = snapshot(&self.inner, generation).await?;
+        let pane = selected_pane(&initial, &terminal_id)?;
+        let preference = self.inner.agent_preferences.lock().for_pane(&pane)?;
+        stop_agent_using(&pane, &preference, |request| {
+            request_in_generation(&self.inner, generation, request)
+        })
+        .await?;
+        self.inner.reverse_control.close_terminal(&terminal_id);
+        Ok(())
+    }
+
     async fn restart_agent_inner(&self, terminal_id: String) -> Result<(), HerdrControlError> {
         let _operation = self.inner.agent_control_operation.lock().await;
         let generation = self.inner.state.lock().generation;

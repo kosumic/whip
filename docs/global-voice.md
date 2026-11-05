@@ -31,13 +31,19 @@ safe app navigation, and basic device info/battery/network status. The Rust
 an MCP server, read a launch's bearer token, borrow a remote agent's authority,
 or connect to a host automatically.
 
-The shared global catalog contains `hosts_list`, `herdr_snapshot`, `app_snapshot`,
+The shared global catalog contains `hosts_list`, `agents_summary`, `agents_list`,
+`workspaces_list`, `tabs_list`, `panes_list`, `app_snapshot`,
 `app_navigate`, `app_focus_host`, `app_focus_tab`, `app_open_agent`,
-`herdr_delegate`, safe device status tools, and `remain_silent`. Function names
+`agents_prompt`, safe device status tools, and `remain_silent`. Function names
 use underscores on the public voice wire; they map to the corresponding
 Whip namespaces. Shared Phone Use parsers, typed host context, device
-result sanitizers, and Herdr execution validate the supported operations. Existing launch-scoped
-MCP behavior and its broader catalog are unchanged.
+result sanitizers, and remote execution validate the supported operations.
+MCP authorization remains launch-scoped; its broader catalog uses named Whip
+operations rather than raw Herdr requests. Local status tools share the Rust
+state and agent membership used by Herd. They never connect or request a remote
+snapshot. Counts include current hosts only; `complete:false` marks incomplete
+coverage, and cached list rows carry `current:false`. List tools accept optional
+`host_id`, `offset`, and `limit`; summaries accept optional `host_id`.
 
 Every delegation requires explicit host and pane IDs, plus confirmation showing
 the exact prompt in Whip. The native dispatcher pins the original agent before

@@ -10,6 +10,7 @@ mod instructions;
 mod recovery;
 mod tools;
 pub(crate) mod voice;
+mod whip_state;
 pub use voice::{WhipAppControl, WhipToolPermit, set_whip_app_control};
 
 pub use browser::operations::{
@@ -797,7 +798,7 @@ impl ReverseControl {
             model::{BrowserAction, BrowserError, ErrorCode, SessionId},
         };
         let name = message["params"]["name"].as_str().unwrap_or_default();
-        let action = if name.starts_with("hosts.") || name.starts_with("herdr.") {
+        let action = if application::is_tool_namespace(name) {
             ToolAction::Application(
                 application::Action::parse(name, &message["params"]["arguments"])
                     .map_err(|error| error.mcp())?,

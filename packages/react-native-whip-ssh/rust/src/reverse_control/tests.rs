@@ -2156,7 +2156,7 @@ fn host_tools_share_session_isolation_and_cancellation_without_browser_tabs()
         assert!(owner.steps.lock().is_empty());
         assert!(owner.pending.lock().is_empty());
 
-        let receiver = owner.start_action("a", json!(3), &json!({"params":{"name":"herdr.snapshot","arguments":{"host_id":"missing-functional-test-host"}}})).map_err(|_| "Herdr action failed")?;
+        let receiver = owner.start_action("a", json!(3), &json!({"params":{"name":"agents.inspect","arguments":{"host_id":"missing-functional-test-host","target":"agent"}}})).map_err(|_| "Herdr action failed")?;
         assert_eq!(receiver.await?["structuredContent"]["error"]["code"], "not_found");
         assert!(owner.steps.lock().is_empty());
         owner.shutdown();
