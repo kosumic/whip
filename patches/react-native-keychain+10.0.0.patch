@@ -1,6 +1,9 @@
 diff --git a/node_modules/react-native-keychain/android/src/main/java/com/oblador/keychain/KeychainModule.kt b/node_modules/react-native-keychain/android/src/main/java/com/oblador/keychain/KeychainModule.kt
 --- a/node_modules/react-native-keychain/android/src/main/java/com/oblador/keychain/KeychainModule.kt
 +++ b/node_modules/react-native-keychain/android/src/main/java/com/oblador/keychain/KeychainModule.kt
+@@ -106 +106 @@
+-  @StringDef(KnownCiphers.AES_CBC, KnownCiphers.AES_GCM, KnownCiphers.RSA)
++  @StringDef(KnownCiphers.AES_CBC, KnownCiphers.AES_GCM, KnownCiphers.AES_GCM_NO_AUTH, KnownCiphers.RSA)
 @@ -129 +129,6 @@
    private val prefsStorage: PrefsStorageBase
 +
