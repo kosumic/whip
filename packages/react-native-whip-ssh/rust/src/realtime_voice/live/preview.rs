@@ -81,6 +81,7 @@ pub(super) async fn drive(
                                 content: REQUEST.into(), delegation_id: Nullable(None),
                             }).await?;
                         }
+                        ServerEvent::Error {error, ..} => return Err(super::errors::rejected(&error, false)),
                         _ if state.session_id.is_none() => return Err("GPT-Live preview did not start correctly."),
                         ServerEvent::Updated { session, .. } => state.pin_session(&session, config)?,
                         ServerEvent::UsageUpdated { usage: reported, .. } => {
@@ -108,7 +109,6 @@ pub(super) async fn drive(
                             return Err("GPT-Live closed before the voice preview finished.");
                         }
                         ServerEvent::DelegationCreated { .. } => return Err("Voice previews cannot delegate work."),
-                        ServerEvent::Error { .. } => return Err("GPT-Live rejected the voice preview."),
                         _ => {}
                     }
                 }
