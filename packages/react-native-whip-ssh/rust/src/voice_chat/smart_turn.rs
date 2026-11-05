@@ -4,7 +4,7 @@ use rustfft::{Fft, FftPlanner, num_complex::Complex};
 use std::{path::Path, sync::Arc};
 use tract_onnx::prelude::*;
 
-pub(super) const AUDIO_SAMPLES: usize = 8 * 16_000;
+use ai_voice_call::SMART_TURN_AUDIO_SAMPLES as AUDIO_SAMPLES;
 const FRAMES: usize = 800;
 const MELS: usize = 80;
 const FFT: usize = 400;

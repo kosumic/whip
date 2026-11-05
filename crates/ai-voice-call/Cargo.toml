@@ -1,0 +1,25 @@
+[package]
+name = "ai-voice-call"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "AGPL-3.0-or-later"
+description = "Platform-independent local voice-call turn detection and lifecycle policy"
+repository = "https://github.com/kosumic/whip"
+readme = "README.md"
+
+[features]
+default = []
+# Buffer audio for an application-supplied turn classifier. No model or runtime.
+smart-turn = []
+
+[dependencies]
+earshot = "=1.2.2"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"

@@ -7,12 +7,15 @@ mod smart_turn;
 mod waiting_filler;
 
 use crate::{AgentTranscriptKind, ChatSpeechMessage, ChatSpeechQueue};
+use ai_voice_call::{Call, Phase, UserTurn};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use parking_lot::Mutex;
 #[cfg(feature = "smart-turn")]
 use sha2::{Digest, Sha256};
 #[cfg(feature = "smart-turn")]
-use smart_turn::{AUDIO_SAMPLES, SmartTurn};
+use smart_turn::SmartTurn;
+#[cfg(feature = "smart-turn")]
+use std::path::PathBuf;
 use std::{
     collections::HashSet,
     sync::{
@@ -21,8 +24,6 @@ use std::{
     },
     time::Instant,
 };
-#[cfg(feature = "smart-turn")]
-use std::{collections::VecDeque, path::PathBuf};
 use waiting_filler::WaitingFiller;
 
 #[cfg(feature = "smart-turn")]
@@ -35,18 +36,6 @@ const MODEL_BYTES: u64 = 0;
 const MODEL_SHA256: &str = "ab8dc64b88713f90b571c15b714bd1330e6c883cad8763dacf65c9376dc539be";
 #[cfg(feature = "smart-turn")]
 const MODEL_URL: &str = "https://huggingface.co/pipecat-ai/smart-turn-v3/resolve/f766f81d3cfdf7737ac64aad813d91bbfd56bf93/smart-turn-v3.2-gpu.onnx";
-const FRAME_SAMPLES: usize = 256;
-const PAUSE_SAMPLES: usize = 16_000 * 256 / 1_000;
-const VAD_PAUSE_SAMPLES: usize = 16_000 * 800 / 1_000;
-const PROBE_INTERVAL: usize = 16_000 / 2;
-const MAX_UTTERANCE_SAMPLES: usize = 16_000 * 60;
-const MAX_TEXT_BYTES: usize = 64_000;
-const INTERRUPTION_SAMPLES: usize = FRAME_SAMPLES * 16;
-const INTERRUPTION_RECOGNITION_SAMPLES: usize = 16_000 * 2;
-const INTERRUPTION_CONFIDENCE_MARGIN: f32 = 0.25;
-const DEFAULT_VAD_SENSITIVITY: u8 = 50;
-const MAX_VAD_SENSITIVITY: u8 = 100;
-
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum VoiceChatError {
     #[error("{message}")]
@@ -68,6 +57,21 @@ pub enum VoiceChatPhase {
     Speaking,
     Muted,
     Closed,
+}
+
+impl From<Phase> for VoiceChatPhase {
+    fn from(phase: Phase) -> Self {
+        match phase {
+            Phase::Setup => Self::Setup,
+            Phase::Preparing => Self::Preparing,
+            Phase::Listening => Self::Listening,
+            Phase::Finishing => Self::Finishing,
+            Phase::Waiting => Self::Waiting,
+            Phase::Speaking => Self::Speaking,
+            Phase::Muted => Self::Muted,
+            Phase::Closed => Self::Closed,
+        }
+    }
 }
 
 #[derive(Clone, uniffi::Record)]
@@ -103,171 +107,37 @@ struct TranscriptTool {
     event: crate::voice_history::Event,
 }
 
-struct Input {
-    vad: Box<earshot::Detector>,
-    frame: Vec<f32>,
-    #[cfg(feature = "smart-turn")]
-    audio: VecDeque<f32>,
-    voiced: usize,
-    interruption_voiced: usize,
-    interruption_detected_at: Option<usize>,
-    silent: usize,
-    samples: usize,
-    speech_started: bool,
-    speech_started_at: usize,
-    revision: u64,
-    last_probe: usize,
-    probing: bool,
-}
-impl Default for Input {
-    fn default() -> Self {
-        Self {
-            vad: earshot::Detector::default_boxed(),
-            frame: Vec::with_capacity(FRAME_SAMPLES),
-            #[cfg(feature = "smart-turn")]
-            audio: VecDeque::with_capacity(AUDIO_SAMPLES),
-            voiced: 0,
-            interruption_voiced: 0,
-            interruption_detected_at: None,
-            silent: 0,
-            samples: 0,
-            speech_started: false,
-            speech_started_at: 0,
-            revision: 0,
-            last_probe: 0,
-            probing: false,
-        }
-    }
-}
-impl Input {
-    fn push(&mut self, samples: &[f32], sensitivity: u8) {
-        for &sample in samples {
-            #[cfg(feature = "smart-turn")]
-            {
-                self.audio.push_back(sample);
-                if self.audio.len() > AUDIO_SAMPLES {
-                    self.audio.pop_front();
-                }
-            }
-            self.frame.push(sample);
-            self.samples += 1;
-            if self.frame.len() != FRAME_SAMPLES {
-                continue;
-            }
-            let Some(frame) = self.frame.as_chunks::<FRAME_SAMPLES>().0.first() else {
-                continue;
-            };
-            let probability = self.vad.predict_f32(frame);
-            self.frame.clear();
-            self.probability(probability, sensitivity);
-        }
-    }
-    fn probability(&mut self, probability: f32, sensitivity: u8) {
-        // 50% preserves the original 0.60/0.35 onset/continuation thresholds.
-        // Keep hysteresis so quieter syllables do not split an ongoing phrase.
-        let offset = (f32::from(DEFAULT_VAD_SENSITIVITY) - f32::from(sensitivity))
-            / f32::from(MAX_VAD_SENSITIVITY)
-            * 0.6;
-        let onset_threshold = 0.6 + offset;
-        // Derive interruption confidence from normal sensitivity, but keep it
-        // above onset even after listening hysteresis accepts quieter syllables.
-        let interruption_threshold =
-            onset_threshold + (1.0 - onset_threshold) * INTERRUPTION_CONFIDENCE_MARGIN;
-        if probability >= interruption_threshold {
-            self.interruption_voiced += FRAME_SAMPLES;
-            // Keep recent evidence for delayed recognition, but never interrupt
-            // on microphone activity alone.
-            if self.interruption_voiced >= INTERRUPTION_SAMPLES {
-                self.interruption_detected_at = Some(self.samples);
-            }
-        } else {
-            self.interruption_voiced = 0;
-        }
-        let threshold = if self.speech_started {
-            0.35 + offset
-        } else {
-            onset_threshold
-        };
-        if probability >= threshold {
-            self.voiced += FRAME_SAMPLES;
-            self.silent = 0;
-            // Any resumed voice invalidates an in-flight Smart Turn result.
-            self.revision += 1;
-            if !self.speech_started && self.voiced >= FRAME_SAMPLES * 4 {
-                self.speech_started = true;
-                self.speech_started_at = self.samples;
-            }
-        } else {
-            self.voiced = 0;
-            self.silent += FRAME_SAMPLES;
-        }
-    }
-    fn should_probe(&self) -> bool {
-        self.speech_started
-            && self.silent >= PAUSE_SAMPLES
-            && !self.probing
-            && (self.last_probe == 0 || self.samples - self.last_probe >= PROBE_INTERVAL)
-    }
-
-    fn should_interrupt(&self) -> bool {
-        self.interruption_detected_at.is_some_and(|detected| {
-            self.samples.saturating_sub(detected) <= INTERRUPTION_RECOGNITION_SAMPLES
-        })
-    }
-}
-
+#[derive(Default)]
 struct State {
+    call: Call,
     ingress: Option<Arc<crate::audio_ingress::NativeIngress>>,
     audio_error: Option<String>,
-    phase: VoiceChatPhase,
-    input_id: u64,
-    muted: bool,
-    smart_turn: bool,
-    vad_sensitivity: u8,
-    text: String,
-    level: f32,
-    input: Input,
-    prompt: Option<String>,
     expected: String,
     baseline: HashSet<String>,
     observed_turns: HashSet<String>,
     turn_id: Option<String>,
-    response_completed: bool,
-    response_skipped: bool,
     waiting_filler: Option<WaitingFiller>,
     history: crate::voice_history::Conversation,
     delegation_id: String,
 }
-impl Default for State {
-    fn default() -> Self {
-        Self {
-            ingress: None,
-            audio_error: None,
-            phase: VoiceChatPhase::Preparing,
-            input_id: 0,
-            muted: false,
-            smart_turn: false,
-            vad_sensitivity: DEFAULT_VAD_SENSITIVITY,
-            text: String::new(),
-            level: 0.0,
-            input: Input::default(),
-            prompt: None,
-            expected: String::new(),
-            baseline: HashSet::new(),
-            observed_turns: HashSet::new(),
-            turn_id: None,
-            response_completed: false,
-            response_skipped: false,
-            waiting_filler: None,
-            history: crate::voice_history::Conversation::default(),
-            delegation_id: String::new(),
-        }
-    }
-}
 impl State {
-    fn next_input(&mut self) {
-        self.input_id += 1;
-        self.close_capture();
+    // Core transitions and native capture invalidation share the coordinator lock.
+    fn update_call<R>(&mut self, update: impl FnOnce(&mut Call) -> R) -> R {
+        let input_id = self.call.view().input_id;
+        let generation = self.call.generation();
+        let result = update(&mut self.call);
+        if self.call.view().input_id != input_id {
+            self.close_capture();
+        }
+        if generation.is_some() && self.call.generation().is_none() {
+            self.expected.clear();
+            self.turn_id = None;
+            self.waiting_filler = None;
+        }
+        if self.call.view().phase == Phase::Speaking {
+            self.waiting_filler = None;
+        }
+        result
     }
     fn close_capture(&mut self) {
         if let Some(ingress) = self.ingress.take() {
@@ -275,41 +145,23 @@ impl State {
         }
     }
 
-    fn await_reply(&mut self, text: String) {
-        self.history.user(&text);
-        self.delegation_id = format!("delegation:{}", self.input_id);
-        let id = self.delegation_id.clone();
+    fn record_turn(&mut self, turn: UserTurn) {
+        self.history.user(&turn.text);
+        self.delegation_id = format!("delegation:{}", turn.input_id);
         let mut event = crate::voice_history::Event::new("delegation", "Coding agent", "requested");
-        event.input = Some(text.clone());
-        self.history.event(&id, event);
-        self.phase = VoiceChatPhase::Waiting;
+        event.input = Some(turn.text.clone());
+        self.history.event(&self.delegation_id, event);
         self.baseline = self.observed_turns.clone();
-        self.expected = text;
-        self.prompt = None;
+        self.expected = turn.text;
         self.turn_id = None;
-        self.response_completed = false;
-        self.response_skipped = false;
         self.waiting_filler = Some(WaitingFiller::new(Instant::now()));
-        self.next_input();
-        self.input = Input::default();
-        self.text.clear();
     }
 
+    #[cfg(any(test, feature = "smart-turn"))]
     fn listen(&mut self) {
-        self.next_input();
-        self.phase = if self.muted {
-            VoiceChatPhase::Muted
-        } else {
-            VoiceChatPhase::Listening
-        };
-        self.input = Input::default();
-        self.text.clear();
-        self.level = 0.0;
-        self.prompt = None;
+        self.update_call(Call::listen);
         self.expected.clear();
         self.turn_id = None;
-        self.response_completed = false;
-        self.response_skipped = false;
         self.waiting_filler = None;
     }
 }
@@ -364,15 +216,7 @@ impl VoiceChat {
 
     /// Higher sensitivity accepts softer speech, including during reply interruption.
     pub fn set_vad_sensitivity(&self, sensitivity: u8) {
-        let mut state = self.state.lock();
-        let sensitivity = sensitivity.min(MAX_VAD_SENSITIVITY);
-        if state.vad_sensitivity != sensitivity {
-            state.vad_sensitivity = sensitivity;
-            state.input.voiced = 0;
-            state.input.interruption_voiced = 0;
-            state.input.silent = 0;
-            state.input.revision += 1;
-        }
+        self.state.lock().call.set_vad_sensitivity(sensitivity);
     }
 
     /// Standard builds use local VAD without loading or downloading a model.
@@ -386,7 +230,7 @@ impl VoiceChat {
         )
     )]
     pub async fn prepare(self: Arc<Self>, install: bool) -> Result<VoiceChatView, VoiceChatError> {
-        if self.state.lock().phase == VoiceChatPhase::Closed {
+        if self.state.lock().call.view().phase == Phase::Closed {
             return Ok(self.view());
         }
         #[cfg(feature = "smart-turn")]
@@ -398,9 +242,8 @@ impl VoiceChat {
         {
             let _ = install;
             let mut state = self.state.lock();
-            if state.phase != VoiceChatPhase::Closed {
-                state.smart_turn = false;
-                state.listen();
+            if state.call.view().phase != Phase::Closed {
+                state.update_call(|call| call.prepared(false));
             }
             drop(state);
             Ok(self.view())
@@ -423,13 +266,7 @@ impl VoiceChat {
             .map(|b| f32::from(i16::from_le_bytes([b[0], b[1]])) / 32768.0)
             .collect();
         let mut state = self.state.lock();
-        if state.input_id == input_id
-            && !state.muted
-            && matches!(
-                state.phase,
-                VoiceChatPhase::Listening | VoiceChatPhase::Speaking | VoiceChatPhase::Waiting
-            )
-        {
+        if state.call.accepts_audio(input_id) {
             self.process_audio(&mut state, &samples);
         }
         drop(state);
@@ -459,96 +296,53 @@ impl VoiceChat {
     }
 
     pub fn finish(&self) {
-        let mut state = self.state.lock();
-        if state.phase == VoiceChatPhase::Listening {
-            state.phase = VoiceChatPhase::Finishing;
-        }
+        self.state.lock().call.finish();
     }
 
     /// Optional model setup temporarily releases capture. Basic VAD remains usable.
     pub fn begin_preparation(&self) {
-        let mut state = self.state.lock();
-        if matches!(
-            state.phase,
-            VoiceChatPhase::Setup
-                | VoiceChatPhase::Preparing
-                | VoiceChatPhase::Listening
-                | VoiceChatPhase::Muted
-        ) {
-            state.next_input();
-            state.phase = VoiceChatPhase::Preparing;
-            state.input = Input::default();
-            state.text.clear();
-        }
+        self.state.lock().update_call(Call::begin_preparation);
     }
 
     pub fn use_vad(&self) {
-        let mut state = self.state.lock();
-        if state.phase == VoiceChatPhase::Preparing {
-            state.smart_turn = false;
-            state.listen();
-        }
+        self.state.lock().update_call(Call::use_vad);
     }
 
     pub fn recognition(&self, input_id: u64, text: String) {
         let mut state = self.state.lock();
-        if state.input_id == input_id
-            && matches!(
-                state.phase,
-                VoiceChatPhase::Listening
-                    | VoiceChatPhase::Finishing
-                    | VoiceChatPhase::Speaking
-                    | VoiceChatPhase::Waiting
-            )
-            && text.len() <= MAX_TEXT_BYTES
-        {
-            state.text = text;
-            self.interrupt_if_recognized(&mut state);
+        if state.update_call(|call| call.recognition(input_id, text)) {
+            self.speech.reset_voice();
         }
-        drop(state);
     }
 
-    /// Only an explicit stop or accepted Smart Turn verdict permits submission.
+    /// Only a local turn boundary permits submission.
     /// An early recognizer final may update the text, but cannot commit a turn.
     pub fn recognition_ended(&self, input_id: u64) -> Result<VoiceChatView, VoiceChatError> {
         let mut state = self.state.lock();
-        if state.input_id != input_id {
-            return Ok(self.view_unlocked(&state));
-        }
-        if state.phase == VoiceChatPhase::Listening {
-            return Err(
-                "The local recognizer ended before your turn was finished. Try again."
-                    .to_owned()
-                    .into(),
-            );
-        }
-        if state.phase == VoiceChatPhase::Finishing {
-            let text = state.text.trim().to_owned();
-            if text.is_empty() {
-                state.listen();
-            } else {
-                state.await_reply(text.clone());
-                state.prompt = Some(text);
-                self.speech.reset_voice();
-            }
+        if let Some(turn) = state
+            .update_call(|call| call.recognition_ended(input_id))
+            .map_err(str::to_owned)?
+        {
+            state.record_turn(turn);
+            self.speech.reset_voice();
         }
         drop(state);
         Ok(self.view())
     }
 
     pub fn take_prompt(&self) -> Option<String> {
-        self.state.lock().prompt.take()
+        self.state.lock().call.take_prompt()
     }
 
     /// A composer message is already queued by the app. Follow its reply without
     /// submitting it again, using the same conversation and history boundary.
     pub fn submit_text(&self, text: String) -> Result<(), VoiceChatError> {
-        if text.len() > MAX_TEXT_BYTES {
-            return Err("Voice chat message is too long".to_owned().into());
-        }
         let mut state = self.state.lock();
-        if state.phase != VoiceChatPhase::Closed && !text.trim().is_empty() {
-            state.await_reply(text.trim().to_owned());
+        if let Some(turn) = state
+            .update_call(|call| call.submit_text(&text))
+            .map_err(str::to_owned)?
+        {
+            state.record_turn(turn);
             self.speech.reset_voice();
         }
         drop(state);
@@ -564,7 +358,7 @@ impl VoiceChat {
         turns: Vec<VoiceChatTranscriptTurn>,
     ) -> Result<VoiceChatView, VoiceChatError> {
         let mut state = self.state.lock();
-        if state.phase == VoiceChatPhase::Closed {
+        if state.call.view().phase == Phase::Closed {
             return Ok(self.view_unlocked(&state));
         }
         if !live {
@@ -574,12 +368,7 @@ impl VoiceChat {
                     .into(),
             );
         }
-        if baseline
-            && matches!(
-                state.phase,
-                VoiceChatPhase::Waiting | VoiceChatPhase::Speaking
-            )
-        {
+        if baseline && matches!(state.call.view().phase, Phase::Waiting | Phase::Speaking) {
             return Err(
                 "The agent transcript changed during this conversation. Reopen voice chat."
                     .to_owned()
@@ -587,10 +376,7 @@ impl VoiceChat {
             );
         }
         state.observed_turns = turns.iter().map(|turn| turn.id.clone()).collect();
-        if !matches!(
-            state.phase,
-            VoiceChatPhase::Waiting | VoiceChatPhase::Speaking
-        ) {
+        if !matches!(state.call.view().phase, Phase::Waiting | Phase::Speaking) {
             let State {
                 baseline,
                 observed_turns,
@@ -647,17 +433,15 @@ impl VoiceChat {
             }
             // OpenCode can publish an idle user-only turn before the assistant
             // exists. That acknowledges our prompt, not a completed response.
-            state.response_completed |=
-                turn.completed && turn.messages.iter().any(|message| message.assistant);
-            if !state.response_skipped {
-                self.speech
-                    .update_voice(agent, turn.messages, state.response_completed);
+            let completed = state.call.view().response_completed
+                || (turn.completed && turn.messages.iter().any(|message| message.assistant));
+            if !state.call.view().response_skipped {
+                self.speech.update_voice(agent, turn.messages, completed);
             }
-            if state.phase == VoiceChatPhase::Waiting && self.speech.has_pending() {
-                state.phase = VoiceChatPhase::Speaking;
-                state.waiting_filler = None;
-            } else if state.phase == VoiceChatPhase::Waiting && state.response_completed {
-                state.listen();
+            if let Some(generation) = state.call.generation() {
+                state.update_call(|call| {
+                    call.assistant_progress(generation, completed, self.speech.has_pending());
+                });
             }
         }
         drop(state);
@@ -666,13 +450,13 @@ impl VoiceChat {
 
     pub fn next_speech(&self) -> Option<String> {
         let mut state = self.state.lock();
-        match state.phase {
-            VoiceChatPhase::Waiting if !state.response_skipped => state
+        match state.call.view().phase {
+            Phase::Waiting if !state.call.view().response_skipped => state
                 .waiting_filler
                 .as_mut()
                 .and_then(|filler| filler.next(Instant::now()))
                 .map(str::to_owned),
-            VoiceChatPhase::Speaking => {
+            Phase::Speaking => {
                 let text = self.speech.next();
                 if let Some(text) = &text {
                     state.history.assistant(text);
@@ -684,46 +468,24 @@ impl VoiceChat {
     }
 
     pub fn speech_finished(&self) -> bool {
-        let state = self.state.lock();
-        state.phase != VoiceChatPhase::Speaking
-            || (state.response_completed && !self.speech.has_pending())
+        self.state
+            .lock()
+            .call
+            .speech_finished(self.speech.has_pending())
     }
 
     pub fn skip_response(&self) {
         let mut state = self.state.lock();
-        if matches!(
-            state.phase,
-            VoiceChatPhase::Speaking | VoiceChatPhase::Waiting
-        ) {
+        if matches!(state.call.view().phase, Phase::Speaking | Phase::Waiting) {
             self.speech.reset_voice();
-            state.response_skipped = true;
-            state.phase = VoiceChatPhase::Waiting;
-            state.next_input();
-            state.input = Input::default();
-            state.text.clear();
-            if state.response_completed {
-                state.listen();
-            }
+            state.update_call(Call::skip_response);
         }
     }
 
     pub fn playback_ended(&self) -> VoiceChatView {
         let mut state = self.state.lock();
-        if state.phase == VoiceChatPhase::Speaking
-            && state.response_completed
-            && !self.speech.has_pending()
-        {
-            if state.muted {
-                state.listen();
-            } else {
-                // Reuse the echo-cancelled capture across the last audio buffer;
-                // a user starting their next sentence must not lose its first words.
-                state.phase = VoiceChatPhase::Listening;
-                state.expected.clear();
-                state.turn_id = None;
-                state.response_completed = false;
-                state.response_skipped = false;
-            }
+        if let Some(generation) = state.call.generation() {
+            state.update_call(|call| call.playback_ended(generation, self.speech.has_pending()));
         }
         drop(state);
         self.view()
@@ -731,97 +493,36 @@ impl VoiceChat {
 
     pub fn set_muted(&self, muted: bool) -> VoiceChatView {
         let mut state = self.state.lock();
-        if state.muted == muted {
-            return self.view_unlocked(&state);
-        }
-        state.muted = muted;
-        if matches!(
-            state.phase,
-            VoiceChatPhase::Speaking | VoiceChatPhase::Waiting
-        ) {
-            state.next_input();
-            state.input = Input::default();
-            state.text.clear();
-        }
-        if matches!(
-            state.phase,
-            VoiceChatPhase::Listening | VoiceChatPhase::Finishing | VoiceChatPhase::Muted
-        ) {
-            state.listen();
-        }
+        state.update_call(|call| call.set_muted(muted));
         drop(state);
         self.view()
     }
 
     pub fn close(&self) {
-        let mut state = self.state.lock();
-        if state.phase == VoiceChatPhase::Closed {
-            return;
-        }
-        state.next_input();
-        state.phase = VoiceChatPhase::Closed;
-        state.input = Input::default();
-        state.text.clear();
-        state.prompt = None;
+        self.state.lock().update_call(Call::close);
     }
 }
 
 impl VoiceChat {
     fn process_audio(&self, state: &mut State, samples: &[f32]) {
-        if !samples.is_empty() {
-            #[allow(
-                clippy::cast_precision_loss,
-                reason = "Capture packets are bounded to a few thousand samples"
-            )]
-            {
-                state.level = (samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32)
-                    .sqrt()
-                    .min(1.0);
-            }
-        }
-        let sensitivity = state.vad_sensitivity;
-        state.input.push(samples, sensitivity);
-        self.interrupt_if_recognized(state);
-        if state.phase == VoiceChatPhase::Listening
-            && state.input.speech_started
-            && (state.input.samples - state.input.speech_started_at >= MAX_UTTERANCE_SAMPLES
-                || (!state.smart_turn && state.input.silent >= VAD_PAUSE_SAMPLES))
-        {
-            state.phase = VoiceChatPhase::Finishing;
-        }
-    }
-
-    fn interrupt_if_recognized(&self, state: &mut State) {
-        if !state.muted
-            && matches!(
-                state.phase,
-                VoiceChatPhase::Speaking | VoiceChatPhase::Waiting
-            )
-            && !state.text.trim().is_empty()
-            && state.input.should_interrupt()
-        {
-            // Background noise must not discard the reply before the recognizer
-            // confirms words. Keep this capture and the user's buffered first words.
-            state.phase = VoiceChatPhase::Listening;
-            state.expected.clear();
-            state.turn_id = None;
-            state.response_completed = false;
+        let input_id = state.call.view().input_id;
+        if state.update_call(|call| call.audio(input_id, samples)) {
             self.speech.reset_voice();
         }
     }
 
     fn view_unlocked(&self, s: &State) -> VoiceChatView {
+        let view = s.call.view();
         VoiceChatView {
-            phase: s.phase,
-            input_id: s.input_id,
-            muted: s.muted,
-            smart_turn: s.smart_turn,
-            text: s.text.clone(),
-            level: s.level,
-            silence_ms: u32::try_from(s.input.silent.saturating_mul(1_000) / 16_000)
-                .unwrap_or(u32::MAX),
+            phase: view.phase.into(),
+            input_id: view.input_id,
+            muted: view.muted,
+            smart_turn: view.smart_turn,
+            text: view.text.clone(),
+            level: view.level,
+            silence_ms: s.call.silence_ms(),
             audio_error: s.audio_error.clone(),
-            analyze: s.smart_turn && s.phase == VoiceChatPhase::Listening && s.input.should_probe(),
+            analyze: s.call.should_probe(),
             downloaded_bytes: self.downloaded.load(Ordering::Relaxed),
             total_bytes: MODEL_BYTES,
             events_json: s.history.events_json(),
@@ -841,7 +542,7 @@ impl VoiceChat {
             .map_err(|e| e.to_string())?;
         if !valid && !install {
             let mut state = self.state.lock();
-            if state.phase != VoiceChatPhase::Closed {
+            if state.call.view().phase != Phase::Closed {
                 state.listen();
             }
             drop(state);
@@ -861,9 +562,8 @@ impl VoiceChat {
             .map_err(VoiceChatError::from)?;
         *self.model.lock() = Some(model);
         let mut state = self.state.lock();
-        if state.phase != VoiceChatPhase::Closed {
-            state.smart_turn = true;
-            state.listen();
+        if state.call.view().phase != Phase::Closed {
+            state.update_call(|call| call.prepared(true));
         }
         drop(state);
         Ok(self.view())
@@ -876,40 +576,26 @@ impl VoiceChat {
     ) -> Result<VoiceChatView, VoiceChatError> {
         let probe = {
             let mut state = self.state.lock();
-            if state.input_id != input_id
-                || state.phase != VoiceChatPhase::Listening
-                || !state.smart_turn
-                || !state.input.should_probe()
-            {
+            let Some(probe) = state.call.begin_probe(input_id) else {
                 return Ok(self.view_unlocked(&state));
-            }
-            state.input.probing = true;
-            state.input.last_probe = state.input.samples;
-            (
-                state.input.revision,
-                state.input.audio.iter().copied().collect::<Vec<_>>(),
-            )
+            };
+            probe
         };
         let session = self.clone();
-        let probability = crate::runtime()?
+        let (probe, probability) = crate::runtime()?
             .spawn_blocking(move || {
-                session
+                let probability = session
                     .model
                     .lock()
                     .as_mut()
                     .ok_or_else(|| "Smart Turn is not ready".to_owned())?
-                    .predict(&probe.1)
+                    .predict(&probe.audio)?;
+                Ok::<_, String>((probe, probability))
             })
             .await
-            .map_err(|e| e.to_string())?
-            .map_err(VoiceChatError::from)?;
+            .map_err(|e| e.to_string())??;
         let mut state = self.state.lock();
-        if state.input_id == input_id && state.phase == VoiceChatPhase::Listening {
-            state.input.probing = false;
-            if state.input.revision == probe.0 && probability > 0.5 {
-                state.phase = VoiceChatPhase::Finishing;
-            }
-        }
+        state.call.complete_probe(&probe, probability);
         drop(state);
         Ok(self.view())
     }
@@ -947,7 +633,7 @@ impl VoiceChat {
         let mut bytes = 0;
         let mut hash = Sha256::new();
         while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
-            if self.state.lock().phase == VoiceChatPhase::Closed {
+            if self.state.lock().call.view().phase == Phase::Closed {
                 return Err("Download cancelled".to_owned().into());
             }
             bytes += chunk.len() as u64;
@@ -1004,94 +690,6 @@ mod tests {
         session
     }
 
-    #[test]
-    fn sensitivity_controls_speech_onset_and_continuation() {
-        let mut sensitive = Input::default();
-        let mut normal = Input::default();
-        let mut strict = Input::default();
-        for _ in 0..4 {
-            sensitive.probability(0.45, MAX_VAD_SENSITIVITY);
-            normal.probability(0.45, DEFAULT_VAD_SENSITIVITY);
-            strict.probability(0.75, 0);
-        }
-        assert!(sensitive.speech_started);
-        assert!(!normal.speech_started);
-        assert!(!strict.speech_started);
-        for _ in 0..4 {
-            strict.probability(0.95, 0);
-        }
-        assert!(strict.speech_started);
-        sensitive.probability(0.2, MAX_VAD_SENSITIVITY);
-        strict.probability(0.2, 0);
-        assert_eq!(sensitive.silent, 0);
-        assert_eq!(strict.silent, FRAME_SAMPLES);
-    }
-
-    #[test]
-    fn interruption_rejects_marginal_speech_that_normal_listening_accepts() {
-        let mut input = Input::default();
-        // Speech-like background noise can start listening, but must not gain
-        // permission to interrupt just because continuation uses a lower threshold.
-        for _ in 0..100 {
-            input.probability(0.65, DEFAULT_VAD_SENSITIVITY);
-        }
-        assert!(input.speech_started);
-        assert!(!input.should_interrupt());
-    }
-
-    #[test]
-    fn interruption_requires_sustained_speech_but_confirms_within_256_ms() {
-        let mut input = Input::default();
-        // Separate short bursts must not add up to an interruption.
-        for _ in 0..5 {
-            for _ in 0..10 {
-                input.probability(0.95, DEFAULT_VAD_SENSITIVITY);
-                assert!(!input.should_interrupt());
-            }
-            input.probability(0.1, DEFAULT_VAD_SENSITIVITY);
-        }
-        for _ in 0..15 {
-            input.probability(0.95, DEFAULT_VAD_SENSITIVITY);
-            assert!(!input.should_interrupt());
-        }
-        input.probability(0.95, DEFAULT_VAD_SENSITIVITY);
-        assert!(input.should_interrupt());
-    }
-
-    #[test]
-    fn interruption_tracks_normal_sensitivity_and_remains_stricter_at_the_extremes() {
-        for (sensitivity, marginal, clear) in [(0, 0.91, 0.95), (50, 0.65, 0.75), (100, 0.4, 0.55)]
-        {
-            let mut input = Input::default();
-            for _ in 0..20 {
-                input.probability(marginal, sensitivity);
-            }
-            assert!(input.speech_started, "sensitivity {sensitivity}");
-            assert!(!input.should_interrupt(), "sensitivity {sensitivity}");
-            for _ in 0..16 {
-                input.probability(clear, sensitivity);
-            }
-            assert!(input.should_interrupt(), "sensitivity {sensitivity}");
-        }
-    }
-
-    #[test]
-    fn sensitivity_survives_new_turns_and_mute() {
-        let session = conversation();
-        session.set_vad_sensitivity(75);
-        session.finish();
-        session.recognition_ended(session.view().input_id).unwrap();
-        session.set_muted(true);
-        session.set_muted(false);
-        let mut state = session.state.lock();
-        let sensitivity = state.vad_sensitivity;
-        for _ in 0..4 {
-            state.input.probability(0.5, sensitivity);
-        }
-        let speech_started = state.input.speech_started;
-        drop(state);
-        assert!(speech_started);
-    }
     #[tokio::test]
     async fn a_missing_optional_model_starts_voice_chat_without_downloading() {
         let directory = tempfile::tempdir().unwrap();
@@ -1524,24 +1122,7 @@ mod tests {
         session.set_muted(false);
         assert_eq!(session.view().phase, VoiceChatPhase::Closed);
     }
-    #[test]
-    fn resumed_speech_invalidates_a_pending_turn_verdict() {
-        let mut input = Input::default();
-        for _ in 0..3 {
-            input.probability(0.9, DEFAULT_VAD_SENSITIVITY);
-        }
-        assert!(!input.speech_started);
-        input.probability(0.9, DEFAULT_VAD_SENSITIVITY);
-        for _ in 0..16 {
-            input.probability(0.1, DEFAULT_VAD_SENSITIVITY);
-        }
-        assert!(input.should_probe());
-        let revision = input.revision;
-        input.probing = true;
-        input.probability(0.4, DEFAULT_VAD_SENSITIVITY);
-        assert!(input.revision > revision);
-        assert_eq!(input.silent, 0);
-    }
+
     fn streamed_turn(
         id: &str,
         text: &str,

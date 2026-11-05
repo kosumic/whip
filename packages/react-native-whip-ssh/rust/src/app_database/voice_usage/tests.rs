@@ -489,6 +489,7 @@ fn deleting_history_is_durable_and_late_usage_cannot_restore_it() {
     assert_eq!(summary.calls[0].identity.session_id, "keep");
     assert_eq!(summary.totals["today"].known_estimated_usd, 0.0);
     let saved = store.read(vec![crate::voice_history::KEY.into()]).unwrap();
+    drop(store);
     let saved: serde_json::Value =
         serde_json::from_str(saved[0].value.as_deref().unwrap()).unwrap();
     assert_eq!(saved.as_array().unwrap().len(), 1);
@@ -512,4 +513,5 @@ fn failed_history_deletion_does_not_partially_remove_usage() {
         .unwrap();
     assert!(delete_history_entry(&mut store, "call").is_err());
     assert!(Ledger::load(&store).unwrap().calls.contains_key("call"));
+    drop(store);
 }

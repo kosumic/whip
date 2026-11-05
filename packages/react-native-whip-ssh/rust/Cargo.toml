@@ -11,9 +11,10 @@ crate-type = ["staticlib", "rlib"]
 [features]
 default = []
 # Optional end-of-turn inference; standard builds use Earshot silence detection.
-smart-turn = ["dep:tract-onnx", "dep:rustfft"]
+smart-turn = ["ai-voice-call/smart-turn", "dep:tract-onnx", "dep:rustfft"]
 
 [dependencies]
+ai-voice-call = { version = "0.1.0", path = "../../../crates/ai-voice-call" }
 mobile-speech = { version = "0.1.0", path = "../../../crates/mobile-speech" }
 audio-ingress = { version = "0.1.0", path = "../../../crates/audio-ingress" }
 herdr-protocol = { version = "0.2.0", path = "../../../crates/herdr-protocol" }
@@ -28,7 +29,6 @@ whip-notify = { path = "../../../whip-notify", default-features = false }
 tailcat-client = { version = "0.1.1", path = "../../../crates/tailcat-client" }
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 futures = "0.3"
-earshot = "=1.2.2"
 hmac = "0.12"
 html5ever = "0.39"
 # WebSocket handshake/frame trace logs contain credentials and conversation data.

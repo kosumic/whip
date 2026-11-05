@@ -739,6 +739,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/e09da5967c5f57ea.txt"),
   },
   {
+    id: "cargo-ai-voice-call-0-1-0",
+    category: "cargo",
+    projectName: "ai-voice-call",
+    sourceUrl: "https://github.com/kosumic/whip",
+    attribution: "Direct Rust dependency · version 0.1.0 · used by whip-ssh",
+    licenseName: "AGPL-3.0-or-later",
+    licenseAsset: require("../../assets/licenses/generated/d1376a197cbb02e9.txt"),
+  },
+  {
     id: "cargo-async-trait-0-1-92",
     category: "cargo",
     projectName: "async-trait",
@@ -782,15 +791,6 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     attribution: "Direct Rust dependency · version 0.4.45 · used by whip-ssh",
     licenseName: "Apache-2.0",
     licenseAsset: require("../../assets/licenses/generated/b21632a4325daf4a.txt"),
-  },
-  {
-    id: "cargo-earshot-1-2-2",
-    category: "cargo",
-    projectName: "earshot",
-    sourceUrl: "https://github.com/pykeio/earshot",
-    attribution: "Direct Rust dependency · version 1.2.2 · used by whip-ssh",
-    licenseName: "Apache-2.0",
-    licenseAsset: require("../../assets/licenses/generated/fae70451618f664b.txt"),
   },
   {
     id: "cargo-futures-0-3-34",

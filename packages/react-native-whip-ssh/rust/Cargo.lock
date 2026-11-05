@@ -144,6 +144,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ai-voice-call"
+version = "0.1.0"
+dependencies = [
+ "earshot",
+]
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8315,12 +8322,12 @@ dependencies = [
  "agent-browser-control",
  "agent-transcript-core",
  "agent-transcript-view",
+ "ai-voice-call",
  "async-trait",
  "audio-ingress",
  "axum",
  "base64 0.22.1",
  "chrono",
- "earshot",
  "futures",
  "herdr-protocol",
  "hmac 0.12.1",

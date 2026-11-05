@@ -1,4 +1,4 @@
-use super::{VoiceChat, VoiceChatPhase};
+use super::VoiceChat;
 use crate::audio_ingress::{MAX_SAMPLES, NativeIngress};
 use audio_ingress::Packet;
 use std::sync::Arc;
@@ -13,13 +13,7 @@ impl VoiceChat {
     pub(super) fn open_capture(self: Arc<Self>, input_id: u64) -> Result<u64, &'static str> {
         let runtime = crate::runtime().map_err(|_| "Microphone worker could not start.")?;
         let mut state = self.state.lock();
-        if state.input_id != input_id
-            || state.muted
-            || !matches!(
-                state.phase,
-                VoiceChatPhase::Listening | VoiceChatPhase::Waiting | VoiceChatPhase::Speaking
-            )
-        {
+        if !state.call.accepts_audio(input_id) {
             return Err("The microphone input was replaced.");
         }
         state.close_capture();
@@ -40,7 +34,7 @@ impl VoiceChat {
                 };
                 let mut state = owner.state.lock();
                 // Lifecycle decisions and the final sample admission share this lock.
-                if state.input_id != input_id
+                if state.call.view().input_id != input_id
                     || state
                         .ingress
                         .as_ref()
@@ -53,14 +47,7 @@ impl VoiceChat {
                     state.close_capture();
                     break;
                 }
-                if state.muted
-                    || !ingress.accepts(packet.ticket.generation)
-                    || !matches!(
-                        state.phase,
-                        VoiceChatPhase::Listening
-                            | VoiceChatPhase::Waiting
-                            | VoiceChatPhase::Speaking
-                    )
+                if !state.call.accepts_audio(input_id) || !ingress.accepts(packet.ticket.generation)
                 {
                     continue;
                 }
@@ -85,7 +72,8 @@ mod tests {
         clippy::unwrap_used,
         reason = "Unexpected lifecycle errors must fail these tests immediately"
     )]
-    use super::{VoiceChat, VoiceChatPhase};
+    use super::VoiceChat;
+    use crate::VoiceChatPhase;
     use crate::audio_ingress::whip_audio_ingress_push_v1;
     use std::time::Duration;
 

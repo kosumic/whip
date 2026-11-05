@@ -145,6 +145,15 @@ jobs:
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked
 
+      - name: Check independent AI voice-call policy
+        working-directory: crates/ai-voice-call
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets --all-features -- -D warnings
+          cargo test --locked
+          cargo test --locked --all-features
+          cargo run --locked --example local
+
       - name: Check shared Herdr protocol
         working-directory: crates/herdr-protocol
         env:
