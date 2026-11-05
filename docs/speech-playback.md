@@ -1,6 +1,6 @@
 # Speech playback
 
-Chat read-aloud, agent announcements, and the reverse-control `device.speak`
+Chat read-aloud, agent announcements, and the Phone Use `device.speak`
 tool share one native player per platform. `SpeechPlayback.kt` and
 `WhipSpeechPlayback.m` own the speech engine, audio session, accelerometer, and
 watchdog. `speech_playback.rs` owns admission, session ownership, and deadlines;
@@ -117,7 +117,7 @@ entries. Native Stop, shake, dictation and audio interruption discard waiting
 status speech immediately. Notification scheduling, vibration, and persistent
 feedback start independently of speech and its errors.
 
-Device speech may replace an utterance from the same reverse-control session;
+Device speech may replace an utterance from the same Phone Use session;
 other owners receive `device_unavailable`.
 
 Agent status announcements use the current conversation's cached session title,
@@ -127,7 +127,7 @@ tab-and-agent announcement. Reading the cache does not open or load a transcript
 
 Every admitted session receives a new Rust lease. Native initialization,
 utterance callbacks, and targeted cancellation validate that lease or owner.
-Closing an old reverse-control session or completing an older announcement
+Closing an old Phone Use session or completing an older announcement
 cannot stop a newer speaker. Device tools still acknowledge speech when it
 starts and retain ownership until completion or cancellation.
 

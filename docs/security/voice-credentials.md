@@ -8,7 +8,7 @@ in the follow-up to #353 and implemented by Realtime PR #342. GPT-Live reuses
 callback live in `crates/native-credentials`; platform storage/lifecycle adapters
 stay in the app. The crate depends only on zeroize and has no React Native,
 UniFFI, persistence, service selector or platform dependency. Local STT, TTS, turn-based calls, startup and
-Reverse Control do not invoke this ingress.
+Phone Use do not invoke this ingress.
 
 ## Existing records and compatibility
 

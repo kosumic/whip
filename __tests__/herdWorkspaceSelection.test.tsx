@@ -1247,7 +1247,7 @@ describe('Herd workspace selection intent', () => {
     );
     expect(commandInput.props.value).toBe('codex');
     expect(
-      renderer.root.findByProps({ accessibilityLabel: 'Reverse Control' }).props
+      renderer.root.findByProps({ accessibilityLabel: 'herd.reverseControl' }).props
         .checked,
     ).toBe(false);
     expect(
@@ -1274,7 +1274,7 @@ describe('Herd workspace selection intent', () => {
     });
   });
 
-  test('Reverse Control is opt-in for Claude Code, Codex and OpenCode and clears for unsupported commands', async () => {
+  test('Phone Use is opt-in for Claude Code, Codex and OpenCode and clears for unsupported commands', async () => {
     const onLaunchTab = jest.fn().mockResolvedValue(undefined);
     act(() => {
       renderer = create(<HerdScreen {...props({ onLaunchTab })} />);
@@ -1287,7 +1287,7 @@ describe('Herd workspace selection intent', () => {
     );
     await act(() => open.props.onPress());
     const toggle = renderer.root.findByProps({
-      accessibilityLabel: 'Reverse Control',
+      accessibilityLabel: 'herd.reverseControl',
     });
     await act(() => toggle.props.onCheckedChange(true));
     const shizuku = renderer.root.findByProps({ accessibilityLabel: 'shizuku.access' });
@@ -1308,7 +1308,7 @@ describe('Herd workspace selection intent', () => {
     });
     await act(() => open.props.onPress());
     expect(
-      renderer.root.findByProps({ accessibilityLabel: 'Reverse Control' }).props
+      renderer.root.findByProps({ accessibilityLabel: 'herd.reverseControl' }).props
         .checked,
     ).toBe(false);
     const input = renderer.root.find(
@@ -1318,7 +1318,7 @@ describe('Herd workspace selection intent', () => {
     );
     await act(() => input.props.onChangeText('opencode --session ses_test'));
     const openCodeToggle = renderer.root.findByProps({
-      accessibilityLabel: 'Reverse Control',
+      accessibilityLabel: 'herd.reverseControl',
     });
     expect(openCodeToggle.props.checked).toBe(false);
     await act(() => openCodeToggle.props.onCheckedChange(true));
@@ -1332,7 +1332,7 @@ describe('Herd workspace selection intent', () => {
     await act(() => open.props.onPress());
     await act(() => input.props.onChangeText('claude'));
     const claudeToggle = renderer.root.findByProps({
-      accessibilityLabel: 'Reverse Control',
+      accessibilityLabel: 'herd.reverseControl',
     });
     expect(claudeToggle.props.checked).toBe(false);
     await act(() => claudeToggle.props.onCheckedChange(true));
@@ -1352,13 +1352,13 @@ describe('Herd workspace selection intent', () => {
     await act(() =>
       renderer.root
         .findByProps({
-          accessibilityLabel: 'Reverse Control',
+          accessibilityLabel: 'herd.reverseControl',
         })
         .props.onCheckedChange(true),
     );
     await act(() => input.props.onChangeText('echo hello'));
     expect(
-      renderer.root.findAllByProps({ accessibilityLabel: 'Reverse Control' }),
+      renderer.root.findAllByProps({ accessibilityLabel: 'herd.reverseControl' }),
     ).toHaveLength(0);
     await act(async () => submit.props.onPress());
     expect(onLaunchTab).toHaveBeenLastCalledWith('host-1', 'space-a', '', {
@@ -1386,14 +1386,14 @@ describe('Herd workspace selection intent', () => {
     expect(onSetAgentReverseControl).toHaveBeenLastCalledWith('host-1', 'terminal-1', true, false);
   });
 
-  test('iOS does not offer Shizuku access when Reverse Control is enabled', async () => {
+  test('iOS does not offer Shizuku access when Phone Use is enabled', async () => {
     const original = Platform.OS;
     Platform.OS = 'ios';
     try {
       act(() => { renderer = create(<HerdScreen {...props()} />); });
       const open = renderer.root.find(node => String(node.type) === 'Button' && node.props.accessibilityLabel === 'herd.runCommand' && node.props.className.includes('px-4'));
       await act(() => open.props.onPress());
-      await act(() => renderer.root.findByProps({ accessibilityLabel: 'Reverse Control' }).props.onCheckedChange(true));
+      await act(() => renderer.root.findByProps({ accessibilityLabel: 'herd.reverseControl' }).props.onCheckedChange(true));
       expect(renderer.root.findAllByProps({ accessibilityLabel: 'shizuku.access' })).toHaveLength(0);
     } finally {
       Platform.OS = original;

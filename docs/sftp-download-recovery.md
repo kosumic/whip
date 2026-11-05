@@ -59,7 +59,7 @@ cargo clippy --locked --manifest-path packages/react-native-whip-ssh/rust/Cargo.
 npm test -- --runInBand __tests__/remoteFileDownload.test.ts
 ```
 
-Use one Rust test thread, matching CI: host-runtime and reverse-control tests
+Use one Rust test thread, matching CI: host-runtime and Phone Use tests
 share process-wide event sinks and instruction context.
 
 On Thinkery, the serialized Rust library suite passed 941 tests with 10 ignored.

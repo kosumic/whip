@@ -426,7 +426,7 @@ impl Operation {
             .ok_or_else(|| {
                 BrowserError::new(
                     ErrorCode::Unauthorized,
-                    "Reverse Control session is no longer authorized",
+                    "Phone Use session is no longer authorized",
                 )
             })?;
         let permit = {

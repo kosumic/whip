@@ -875,7 +875,7 @@ impl HostRuntime {
         .await;
         // A verification timeout must not disconnect an already running CLI.
         // Failed launches are revoked here; exits, replacements and missing
-        // MCP initialization are revoked by Reverse Control reconciliation.
+        // MCP initialization are revoked by Phone Use reconciliation.
         if result.is_err() && !started {
             self.inner.reverse_control.close_terminal(&terminal_id);
         }

@@ -1,4 +1,4 @@
-# Reverse Control hosts and Herdr
+# Phone Use hosts and Herdr
 
 Opted-in Claude Code, Codex and OpenCode agents can manage Whip's saved hosts
 and operate remote Herdr sessions through the existing authenticated Whip MCP
@@ -8,8 +8,8 @@ reuses host persistence, credential storage and connection lifecycle operations.
 
 ## User instructions
 
-**More → Settings → Reverse Control → Global AGENTS.md** holds optional Markdown
-instructions for every reverse-control agent. Changes save automatically with
+**More → Settings → Phone Use → Global AGENTS.md** holds optional Markdown
+instructions for every Phone Use agent. Changes save automatically with
 device preferences. Each host's connection editor also has **Host AGENTS.md**,
 saved with that host's metadata. Existing installations default both to empty.
 These are documents stored in Whip; no file is written to an SSH host.
@@ -170,11 +170,11 @@ history and recovery. Global and host AGENTS.md supplement this guidance.
 `herdr.start_server` starts Herdr with the saved command on a connected host.
 `herdr.restart_agent` takes `terminal_id` and preserves the existing conversation.
 `herdr.copy_agent` takes `terminal_id` and optional `label`, creating a fresh
-conversation with that agent's saved launch options and Reverse Control preference.
+conversation with that agent's saved launch options and Phone Use preference.
 Copies use the source agent's cwd, preserve user focus and require protocol 22.
 Both accept optional `host_id`. Restart can interrupt busy agents. Restarting the
 calling agent closes its old MCP connection. Ordinary `agent_start` requests do
-not grant a new agent Reverse Control automatically.
+not grant a new agent Phone Use automatically.
 
 The existing per-launch bearer authorization, concurrency limits and revocation
 apply. Functional calls have a 325-second deadline, allowing bounded Herdr waits

@@ -306,7 +306,7 @@ impl AgentLaunch {
             // V2 otherwise reuses a shared background service which may ignore
             // this process's config, or expose its credential to other sessions.
             if self.args.iter().any(|arg| arg.starts_with("--standalone=")) {
-                return Err("Reverse Control requires OpenCode v2 standalone mode".to_owned());
+                return Err("Phone Use requires OpenCode v2 standalone mode".to_owned());
             }
             if !self.args.iter().any(|arg| arg == OPENCODE_STANDALONE_ARG) {
                 self.args.insert(0, OPENCODE_STANDALONE_ARG.to_owned());
@@ -332,14 +332,14 @@ pub(crate) fn agent_launch(launch: HerdrTabLaunch) -> Result<AgentLaunch, String
                     }))
             {
                 return Err(
-                    "Reverse Control requires a local OpenCode process, not an attached server"
+                    "Phone Use requires a local OpenCode process, not an attached server"
                         .to_owned(),
                 );
             }
             Ok(AgentLaunch { kind, args })
         }
         _ => Err(
-            "Reverse Control requires an explicit Claude Code, Codex or OpenCode launch with valid arguments"
+            "Phone Use requires an explicit Claude Code, Codex or OpenCode launch with valid arguments"
                 .to_owned(),
         ),
     }
@@ -454,7 +454,7 @@ impl ReverseControl {
         self.recovery
             .lock()
             .load()
-            .map_err(|_| "Could not load Reverse Control recovery records".to_owned())?;
+            .map_err(|_| "Could not load Phone Use recovery records".to_owned())?;
         let token = random_token()?;
         let kind = launch.kind;
         self.ensure_bridge(ssh).await?;
@@ -852,7 +852,7 @@ impl ReverseControl {
             if shizuku && !cfg!(target_os = "ios") && !owned.info.shizuku_access {
                 return Err(BrowserError::new(
                     ErrorCode::PermissionDenied,
-                    "Enable Shizuku access for this agent's Reverse Control session first",
+                    "Enable Shizuku access for this agent's Phone Use session first",
                 )
                 .mcp());
             }

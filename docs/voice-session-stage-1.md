@@ -44,7 +44,7 @@ preview availability, credential handling and existing local speech behavior.
 Native JUnit tests cover exclusive ownership and stale cleanup.
 
 Physical Android/iOS checks remain necessary for CallKit/Telecom, audio routes,
-minimized/background calls, composer dictation and Reverse Control. No Android
+minimized/background calls, composer dictation and Phone Use. No Android
 device was attached during this change. The full Android test build was blocked
 by missing tree-sitter grammar assets in the installed markdown dependency; the
 new native ownership tests were compiled and run separately with Kotlin/JUnit.

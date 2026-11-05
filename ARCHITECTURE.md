@@ -177,10 +177,10 @@ accepted generation-scoped authoritative snapshot, normal event-subscription
 reconciliation, and a `HostStateChanged` projection. React Native neither sleeps
 nor requests a follow-up snapshot after this operation.
 
-### Reverse Control host actions
+### Phone Use host actions
 
 Rust `HostActionCoordinator` executes the authenticated `hosts.*` workflows.
-It reuses the owning Reverse Control session
+It reuses the owning Phone Use session
 and request identity and serializes mutations, including credential source/target
 operations. Opaque native permits fence each platform effect against cancellation,
 runtime/session/pane/terminal replacement, app locking, adapter replacement and
@@ -293,7 +293,7 @@ Each MCP request pins its tab and position in the FIFO session queue at admissio
 Cancelling a waiter preserves the order of later requests. Requests arriving
 during archive hydration use the initial restored selection, so a later UI tab
 selection cannot redirect them. Saved page locations never authorize an agent;
-the native Reverse Control owner still validates runtime, launch, pane, terminal
+the native Phone Use owner still validates runtime, launch, pane, terminal
 and transport generation before effects and final replies.
 
 The existing Rust browser engine drives DOM programs, navigation completion,

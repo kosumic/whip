@@ -889,7 +889,7 @@ export function HerdScreen({
                 <View className="flex-row items-center justify-between py-2">
                   <View className="flex-1 pr-3">
                     <Text className="text-sm font-semibold">
-                      Reverse Control
+                      {t('herd.reverseControl')}
                     </Text>
                     <Text className="text-xs text-muted-foreground">
                       Let this agent use Whip's browser and device tools,
@@ -897,7 +897,7 @@ export function HerdScreen({
                     </Text>
                   </View>
                   <Switch
-                    accessibilityLabel="Reverse Control"
+                    accessibilityLabel={t('herd.reverseControl')}
                     checked={reverseControl}
                     disabled={workspaceBusy}
                     onCheckedChange={enabled => {

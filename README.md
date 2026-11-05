@@ -35,7 +35,7 @@
 
 Whip gives [Herdr](https://github.com/herdrdev/herdr) a touch-friendly mobile interface without exposing Herdr itself to the network. **No extra host software is needed when SSH and Herdr are already running.** Optional [push notifications](#get-push-notifications) use a host plugin. Whip connects to your machine over SSH—directly, through saved jump hosts, or with [Tailcat mode](#connect-with-tailcat)—and rebuilds the management experience as native screens. Watch the whole herd, follow Claude Code, Codex, OpenCode, and Pi conversations, dictate a prompt, review a Git diff, or attach to a full terminal. Plain SSH hosts work too, with multiple independent shell tabs even without Herdr.
 
-With **Reverse Control**, a remote Claude Code, Codex or OpenCode agent can also use Whip's browser and phone tools, inspect connected hosts, and coordinate other Herdr agents through the same SSH connections.
+With **Phone Use**, a remote Claude Code, Codex or OpenCode agent can also use Whip's browser and phone tools, inspect connected hosts, and coordinate other Herdr agents through the same SSH connections.
 
 **Native terminal delivery:** Rust sends output directly to the Android or iOS WebView running xterm.js. Normal frames and write-completion credits bypass the React Native JavaScript thread. [Architecture and measurements](#performance).
 
@@ -52,7 +52,7 @@ Whip is not developed, maintained, or endorsed by the Herdr project or its autho
   - [Get push notifications](#get-push-notifications)
   - [Use Chat View](#use-chat-view)
   - [Browse websites and remote previews](#browse-websites-and-remote-previews)
-  - [Give agents Reverse Control](#give-agents-reverse-control)
+  - [Give agents Phone Use](#give-agents-phone-use)
   - [Work in terminals](#work-in-terminals)
   - [Move files and attachments](#move-files-and-attachments)
   - [Review Git changes](#review-git-changes)
@@ -113,7 +113,7 @@ We will not add first-class support for **tmux, Zellij, or Mosh**. This focus le
     <td align="center"><img src="assets/screenshots/ios/remote-files.webp" alt="Whip remote file browser showing the terminal's working directory over SFTP" width="320"></td>
   </tr>
   <tr>
-    <td align="center"><strong>Give agents phone tools</strong><br>Let a remote agent inspect connected hosts and use Whip's browser and device tools through Reverse Control.</td>
+    <td align="center"><strong>Give agents phone tools</strong><br>Let a remote agent inspect connected hosts and use Whip's browser and device tools through Phone Use.</td>
     <td align="center"><strong>Bring the filesystem with you</strong><br>Browse, transfer, edit, and preview remote files, including large text, Markdown, diagrams, PDF, and media.</td>
   </tr>
   <tr>
@@ -122,7 +122,7 @@ We will not add first-class support for **tmux, Zellij, or Mosh**. This focus le
   </tr>
   <tr>
     <td align="center"><strong>Review the changes</strong><br>Read highlighted Git diffs, expand context, and draft questions for the agent from selected lines.</td>
-    <td align="center"><strong>Open the preview</strong><br>Browse public websites or SSH-forwarded local services, keep tabs open, and let agents use Reverse Control.</td>
+    <td align="center"><strong>Open the preview</strong><br>Browse public websites or SSH-forwarded local services, keep tabs open, and let agents use Phone Use.</td>
   </tr>
   <tr>
     <td align="center"><img src="assets/screenshots/ios/terminal.webp" alt="Whip remote terminal with persistent tabs and mobile input controls" width="320"></td>
@@ -192,21 +192,21 @@ Chat View supports **Claude Code, Codex, OpenCode (v1 and v2), and Pi** panes. T
 - Keep multiple tabs with navigation history. Inactive pages can suspend and restore, and matching terminal links reuse an existing tab.
 - Switch between mobile and desktop browser profiles or choose a custom viewport size. Profile changes reload open pages immediately. Desktop mode uses a wider automatic viewport; custom dimensions take precedence.
 - Download files with the page's login session into the phone's **Downloads** library. Track progress, cancel a transfer, open completed files, and receive completion notifications.
-- Enable Reverse Control to let a supported agent operate browser tabs and phone tools. Ordinary browsing does not require it.
+- Enable Phone Use to let a supported agent operate browser tabs and phone tools. Ordinary browsing does not require it.
 
-### Give agents Reverse Control
+### Give agents Phone Use
 
-Reverse Control is available on Android and iOS for **Claude Code, Codex and OpenCode (v1 and v2)**. It gives an opted-in agent a `whip` MCP server with browser, device, saved-host, and Herdr tools.
+Phone Use is available on Android and iOS for **Claude Code, Codex and OpenCode (v1 and v2)**. It gives an opted-in agent a `whip` MCP server with browser, device, saved-host, and Herdr tools.
 
-1. In the **Herd** command launcher, enter a `claude`, `codex` or `opencode` command, turn on **Reverse Control**, and run it. The switch starts off and is offered only for supported commands.
-2. For an existing agent, long-press its Herd row, enable **Reverse Control**, then tap **Restart** when it shows **Restart to enable**. Restart resumes the same conversation; Whip asks before interrupting a busy agent.
+1. In the **Herd** command launcher, enter a `claude`, `codex` or `opencode` command, turn on **Phone Use**, and run it. The switch starts off and is offered only for supported commands.
+2. For an existing agent, long-press its Herd row, enable **Phone Use**, then tap **Restart** when it shows **Restart to enable**. Restart resumes the same conversation; Whip asks before interrupting a busy agent.
 3. Use **Open Browser** for that pane to view or interact with the agent's browser. Closing the browser hides it while retaining its tabs.
 
 The preference saves immediately and survives app restarts. Turning it off revokes that pane's access immediately. **Copy** starts a new conversation in another tab with the same preference; each agent then has independent access.
 
-On Android, enabling Reverse Control also offers **Allow Shizuku access** for that session. It starts off, including for copied agents. Turn it on only for sessions that should use privileged Android tools; turning it off cancels that session's running Shizuku commands.
+On Android, enabling Phone Use also offers **Allow Shizuku access** for that session. It starts off, including for copied agents. Turn it on only for sessions that should use privileged Android tools; turning it off cancels that session's running Shizuku commands.
 
-Set a **Global AGENTS.md** in Settings and an optional **Host AGENTS.md** in each host editor. Reverse Control agents read the global instructions first, then the target host's instructions before connecting or operating on it.
+Set a **Global AGENTS.md** in Settings and an optional **Host AGENTS.md** in each host editor. Phone Use agents read the global instructions first, then the target host's instructions before connecting or operating on it.
 
 | Capability | What the agent can do |
 | --- | --- |
@@ -214,7 +214,7 @@ Set a **Global AGENTS.md** in Settings and an optional **Host AGENTS.md** in eac
 | Downloads | Download a file using the browser's login session and transfer it to the SSH host over SFTP with `browser.download`. |
 | Hosts and agents | List and connect saved hosts, read per-host agent instructions, inspect Herdr state, and manage workspaces, tabs, panes, and agents through Whip's existing SSH connections. |
 | Phone | Read device, battery, network, location, and motion/sensor information; read or write clipboard text; trigger haptics, local notifications, and speech. |
-| Android Shizuku | Check Shizuku status and run commands on the phone as Shizuku's shell/root identity after you enable **Allow Shizuku access** for that session and authorize Whip in **More → Settings → Reverse Control → Shizuku → Pair with Shizuku**. |
+| Android Shizuku | Check Shizuku status and run commands on the phone as Shizuku's shell/root identity after you enable **Allow Shizuku access** for that session and authorize Whip in **More → Settings → Phone Use → Shizuku → Pair with Shizuku**. |
 
 For example, ask the agent:
 
@@ -415,7 +415,7 @@ tailcat serve --key=whip --ssh-authorized-keys='<selected-SSH-public-key>' ssh
 
 The placeholder is the public key corresponding to the private key selected in Whip; copying the generated command fills it in. This service requires SSH key authentication, uses tunnel port **22**, and runs shells as the user who starts Tailcat. It has a separate SSH host key from your system SSH daemon. Restart Tailcat after changing its authorized SSH keys.
 
-For Herdr connections, browser previews, and outbound port forwarding, install **OpenBSD netcat (`nc`) with `-N` and `-U` support** on the server. Shells and SFTP work without it. The built-in SSH service does not support reverse port forwarding, so **Reverse Control is unavailable**, and SSH agent forwarding is disabled. Use an existing SSH daemon through Tailcat when you need those features.
+For Herdr connections, browser previews, and outbound port forwarding, install **OpenBSD netcat (`nc`) with `-N` and `-U` support** on the server. Shells and SFTP work without it. The built-in SSH service does not support reverse port forwarding, so **Phone Use is unavailable**, and SSH agent forwarding is disabled. Use an existing SSH daemon through Tailcat when you need those features.
 
 #### Restrict tunnel access
 

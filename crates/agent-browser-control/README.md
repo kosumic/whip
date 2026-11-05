@@ -89,7 +89,7 @@ Raw `eval` deliberately runs caller-supplied page JavaScript, so permission to u
 it belongs to the embedding application. Normal DOM reads omit sensitive inputs;
 they are not a sandbox for raw eval or arbitrary page content.
 
-Whip retains its session registry, FIFO admission/leases, Reverse Control checks,
+Whip retains its session registry, FIFO admission/leases, Phone Use checks,
 native Android/iOS drivers, and remote download transport. Those depend on app
 ownership and cannot be moved into a general library without changing their trust
 contract. Its behavioral DOM and native WebView tests exercise this crate through

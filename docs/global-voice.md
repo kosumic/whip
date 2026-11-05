@@ -35,7 +35,7 @@ The shared global catalog contains `hosts_list`, `herdr_snapshot`, `app_snapshot
 `app_navigate`, `app_focus_host`, `app_focus_tab`, `app_open_agent`,
 `herdr_delegate`, safe device status tools, and `remain_silent`. Function names
 use underscores on the public voice wire; they map to the corresponding
-Whip namespaces. Shared Reverse Control parsers, typed host context, device
+Whip namespaces. Shared Phone Use parsers, typed host context, device
 result sanitizers, and Herdr execution validate the supported operations. Existing launch-scoped
 MCP behavior and its broader catalog are unchanged.
 
@@ -61,18 +61,18 @@ Global Live duration is recorded with global scope. Its displayed voice estimate
 excludes delegated Responses backend charges and remote coding-agent spending;
 those costs remain unknown in Whip.
 
-Each global call loads **Settings → Reverse Control → Global AGENTS.md** into
+Each global call loads **Settings → Phone Use → Global AGENTS.md** into
 its initial model instructions, before the first response or tool call. It uses
-the same document and formatting as Reverse Control, ahead of built-in global
+the same document and formatting as Phone Use, ahead of built-in global
 call guidance. Empty documents add no instructions; unavailable or oversized
 documents prevent startup. New calls use the latest saved text. Host-specific
 AGENTS.md documents are not included in global startup context.
 
-On Android, **Settings → Reverse Control → Allow Shizuku access for global calls**
+On Android, **Settings → Phone Use → Allow Shizuku access for global calls**
 defaults to off. The saved choice applies to new calls. Enabling it adds
 `device_shizuku_status` and `device_shizuku_exec`, using the same validated
 arguments, bounded results, live Shizuku authorization, and cancellation as
-Reverse Control. Pair Whip with Shizuku separately. Disabled calls cannot invoke
+Phone Use. Pair Whip with Shizuku separately. Disabled calls cannot invoke
 either tool, even by supplying a tool name directly. Hangup releases the call's
 device session and cancels its commands. Agent-session Shizuku choices are
 independent.

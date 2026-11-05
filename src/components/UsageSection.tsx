@@ -596,7 +596,7 @@ function formatHistoryDate(timestamp: number, language: string) {
       : day === yesterday.toDateString()
         ? -1
         : null;
-  return offset === null
+  return offset === null || typeof Intl.RelativeTimeFormat !== 'function'
     ? date.toLocaleDateString(language)
     : new Intl.RelativeTimeFormat(language, { numeric: 'auto' }).format(
         offset,

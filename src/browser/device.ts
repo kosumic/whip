@@ -85,7 +85,7 @@ export async function deviceAction(
     if (!identity)
       throw failure(
         'unauthorized',
-        'Privileged tools require an authorized reverse-control session',
+        'Privileged tools require an authorized Phone Use session',
       );
     return nativeRequest(
       () =>
@@ -201,7 +201,7 @@ export async function deviceAction(
     active();
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync(NOTIFICATION_CHANNEL, {
-        name: 'Reverse Control',
+        name: 'Phone Use',
         importance: Notifications.AndroidImportance.DEFAULT,
       });
       active();
