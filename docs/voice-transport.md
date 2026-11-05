@@ -82,3 +82,12 @@ interrupted ranges remain frozen when a later reply plays. The first caption
 anchors the fragment clock to current playback, so this estimates progress
 within fragments rather than claiming exact provider word boundaries. See the
 [Live transcript timing contract](https://developers.openai.com/api/docs/guides/live-conversations#transcript-deltas).
+
+Normal Realtime response boundaries preserve the device and decoder clock.
+Audio items share a bounded FIFO, with per-item offsets for captions and
+interruption truncation. A following reply may arrive while the previous reply
+still has samples in Rust or AudioTrack; this queues speech in order instead of
+pausing the call or discarding the previous tail. Actual interruptions still
+invalidate old playback epochs. Android diagnostics also report AudioTrack
+underruns and queued device audio to distinguish playback starvation from
+missing RTP packets.

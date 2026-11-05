@@ -26,6 +26,8 @@ internal object RealtimeVoice {
   private const val MAX_AUDIO_AGE_NS = NANOS_PER_SECOND / 2
   private const val LOG_TAG = "WhipRealtimeAudio"
   private const val DIAGNOSTIC_INTERVAL_MS = 5_000L
+  private const val EARLY_DIAGNOSTIC_INTERVAL_MS = 500L
+  private const val EARLY_DIAGNOSTIC_SECONDS = 10
   private const val CUE_POLL_MS = 20L
   private val CLIENT_STARTUP_FIELDS = listOf("transitionMs", "permissionMs", "speechSuspendMs", "callServiceMs")
   private var current: Session? = null
@@ -56,6 +58,7 @@ internal object RealtimeVoice {
     @Volatile var boundary = CaptureBoundary()
     @Volatile var playedAudioSamples = 0L
     @Volatile var playedAudioPeak = 0
+    @Volatile var playbackQueuedMs = 0L
     var captureMuted = VoiceCallService.muted(token)
     var captionDiagnostic: String? = null
     var startupDiagnostic: String? = null
@@ -183,13 +186,15 @@ internal object RealtimeVoice {
           }
           val audioDiagnostic = "phase=$phase speechEvents=${state.optLong("inputSpeechEvents")} gaps=${state.optLong("captureGaps")} captionEvents=${state.optLong("captionEvents")} messages=${state.optJSONArray("messages")?.length() ?: 0}"
           val diagnosticNow = SystemClock.elapsedRealtime()
-          if (session.audioDiagnostic != audioDiagnostic || diagnosticNow - session.audioDiagnosticAtMs >= DIAGNOSTIC_INTERVAL_MS) {
+          val diagnosticInterval = if (session.capturedSamples < Core.RATE * EARLY_DIAGNOSTIC_SECONDS) EARLY_DIAGNOSTIC_INTERVAL_MS else DIAGNOSTIC_INTERVAL_MS
+          if (session.audioDiagnostic != audioDiagnostic || diagnosticNow - session.audioDiagnosticAtMs >= diagnosticInterval) {
             session.audioDiagnostic = audioDiagnostic
             session.audioDiagnosticAtMs = diagnosticNow
             val playback = state.optJSONObject("playback")
             val signal = state.optJSONObject("signal")
             val media = state.optJSONObject("media")
-            val counters = "rawRms=${signal?.optDouble("rawRms")} processedRms=${signal?.optDouble("processedRms")} processingDrops=${signal?.optLong("droppedFrames")} receivedMs=${playback?.optLong("receivedMs")} heardMs=${playback?.optLong("heardMs")} durationMs=${playback?.optLong("expectedMs")} captionUtf16=${playback?.optLong("textUtf16")} spokenUtf16=${playback?.optLong("spokenUtf16")} media=${media?.toString()} nativeAudioSamples=${session.playedAudioSamples} nativeAudioPeak=${session.playedAudioPeak}"
+            val underruns = try { session.output?.underrunCount ?: 0 } catch (_: Exception) { 0 }
+            val counters = "rawRms=${signal?.optDouble("rawRms")} processedRms=${signal?.optDouble("processedRms")} processingDrops=${signal?.optLong("droppedFrames")} receivedMs=${playback?.optLong("receivedMs")} heardMs=${playback?.optLong("heardMs")} durationMs=${playback?.optLong("expectedMs")} captionUtf16=${playback?.optLong("textUtf16")} spokenUtf16=${playback?.optLong("spokenUtf16")} media=${media?.toString()} nativeAudioSamples=${session.playedAudioSamples} nativeAudioPeak=${session.playedAudioPeak} playbackUnderruns=$underruns playbackQueuedMs=${session.playbackQueuedMs}"
             Log.w(LOG_TAG, "Audio deviceSamples=${session.capturedSamples} rejected=${session.rejectedCapture} ageMs=${session.captureAgeNs / 1_000_000} devicePosition=${session.deviceFramePosition} capturePackets=${state.optLong("capturePackets")} uploadedPackets=${state.optLong("uploadedPackets")} rawLevel=${state.optDouble("captureLevel")} processedLevel=${state.optDouble("level")} events=${state.optLong("serverEvents")} $audioDiagnostic $counters")
           }
           if (phase == "error" || preview && phase == "closed") {
@@ -297,6 +302,7 @@ internal object RealtimeVoice {
           generation = nextEpoch; epochStart = submitted
         }
         val played = track.playbackHeadPosition.toLong() and 0xffffffffL
+        session.playbackQueuedMs = (submitted - played).coerceAtLeast(0) * 1000 / Core.RATE
         Core.played(session.call, generation, (played - epochStart).coerceAtLeast(0))
         // Keep at most 80ms in the platform buffer; Rust retains the rest.
         if (submitted - played > Core.FRAME * 3) { Thread.sleep(5); continue }

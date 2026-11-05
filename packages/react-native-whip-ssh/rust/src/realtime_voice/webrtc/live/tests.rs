@@ -305,6 +305,7 @@ async fn public_live_call_survives_a_minute_with_native_playback()
         view.phase = "starting";
     }
     owner.output.lock().live_transcript = Some(voice::live::captions::Transcript::default());
+    *owner.echo.lock() = Some(voice::echo::MediaEchoCanceller::new()?);
     let (commands, command_rx) = tokio::sync::mpsc::channel(8);
     let worker = tokio::spawn(voice::live::LiveVoiceAdapter::run(
         owner.clone(),
@@ -319,6 +320,8 @@ async fn public_live_call_survives_a_minute_with_native_playback()
     let mut offset = 0;
     let mut peak = 0_u16;
     let mut highlighted = false;
+    let mut device_epoch = 0;
+    let mut device_position = 0;
     let mut cue_samples = Some(voice::cue::load(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../../assets/audio/voice-ready.wav"
@@ -338,13 +341,13 @@ async fn public_live_call_survives_a_minute_with_native_playback()
             eprintln!("Full Live media ready_ms={}", startup::elapsed(started));
         }
         let mut pcm = [0_i16; voice::FRAME];
-        if ready_at.is_some_and(|at| at.elapsed() > Duration::from_millis(2800))
+        if ready_at.is_some()
             && let Some(samples) = cue_samples.take()
         {
             local_cue = owner.cue.lock().begin();
             assert!(owner.cue.lock().load(local_cue, samples));
         }
-        if ready_at.is_some_and(|at| at.elapsed() > Duration::from_secs(3)) {
+        if ready_at.is_some() {
             let count = pcm.len().min(input.len().saturating_sub(offset));
             pcm[..count].copy_from_slice(&input[offset..offset + count]);
             offset += count;
@@ -371,8 +374,16 @@ async fn public_live_call_survives_a_minute_with_native_playback()
         rendered_cue |= owner.cue.lock().playing(local_cue)
             && pcm.iter().any(|sample| sample.unsigned_abs() >= 64);
         let epoch = output.epoch;
-        let delivered = output.delivered;
-        output.acknowledge(epoch, delivered);
+        let rendered = if count == 0 { voice::FRAME } else { count };
+        if device_epoch != epoch {
+            device_epoch = epoch;
+            device_position = 0;
+        }
+        device_position += rendered;
+        if let Some(echo) = owner.echo.lock().as_mut() {
+            echo.render(epoch, &pcm[..rendered], count > 0, 40_000_000)?;
+            output.acknowledge(epoch, echo.played(epoch, device_position));
+        }
         highlighted |= output.live_transcript.as_ref().is_some_and(|transcript| {
             transcript.messages().as_array().is_some_and(|messages| {
                 messages.iter().any(|message| {
@@ -422,6 +433,28 @@ async fn public_live_call_survives_a_minute_with_native_playback()
         assert_eq!(late_packets, 0, "Reliable media lost received speech");
     }
     cleanup?;
+    if let Ok(word) = std::env::var("WHIP_LIVE_SMOKE_FIRST_WORD") {
+        let recognized = owner
+            .output
+            .lock()
+            .live_transcript
+            .as_ref()
+            .is_some_and(|transcript| {
+                transcript.messages().as_array().is_some_and(|messages| {
+                    messages.iter().any(|message| {
+                        message["role"] == "assistant"
+                            && message["text"].as_str().is_some_and(|text| {
+                                text.to_lowercase().contains(&word.to_lowercase())
+                            })
+                    })
+                })
+            });
+        eprintln!("Immediate first word recognized with AEC and ready cue: {recognized}");
+        assert!(
+            recognized,
+            "The assistant did not recognize the initial word"
+        );
+    }
     Ok(())
 }
 
@@ -485,8 +518,10 @@ async fn public_realtime_sideband_identifies_native_playback()
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut offset = 0;
     let mut peak = 0_u16;
-    let mut began = false;
-    let mut ended = false;
+    let mut began = 0;
+    let mut ended = 0;
+    let mut buffered_boundary = false;
+    let mut playback_ticks = 0_u32;
     let result = async {
         loop {
             tokio::select! {
@@ -494,12 +529,22 @@ async fn public_realtime_sideband_identifies_native_playback()
                     let Message::Text(text) = event? else { continue; };
                     let event: Value = serde_json::from_str(&text)?;
                     identity.lock().observe(&event);
-                    began |= event["type"] == "output_audio_buffer.started";
-                    ended |= event["type"] == "output_audio_buffer.stopped";
+                    if event["type"] == "output_audio_buffer.started" {
+                        let output = owner.output.lock();
+                        buffered_boundary |= began > 0 && output.generated > output.played;
+                        began += 1;
+                    }
+                    if event["type"] == "output_audio_buffer.stopped" {
+                        ended += 1;
+                        if ended < 3 {
+                            sideband.send(Message::Text(json!({"type":"conversation.item.create","item":{"type":"message","role":"user","content":[{"type":"input_text","text":"Repeat the same test sentence."}]}}).to_string().into())).await?;
+                            sideband.send(Message::Text(json!({"type":"response.create"}).to_string().into())).await?;
+                        }
+                    }
                     if event["type"] == "error" { return Err("Synthetic Realtime call rejected".into()); }
                 }
                 _ = tick.tick() => {
-                    if started.elapsed() > Duration::from_secs(25) { return Err("Sideband playback deadline exceeded".into()); }
+                    if started.elapsed() > Duration::from_secs(45) { return Err("Sideband playback deadline exceeded".into()); }
                     let mut pcm = [0_i16; voice::FRAME];
                     if started.elapsed() > Duration::from_secs(3) {
                         let count = pcm.len().min(input.len().saturating_sub(offset));
@@ -507,15 +552,20 @@ async fn public_realtime_sideband_identifies_native_playback()
                         offset += count;
                     }
                     owner.capture(&pcm, owner.input.generation(), Instant::now());
+                    playback_ticks += 1;
+                    // A slow first device keeps real audio buffered when the
+                    // next response starts; subsequent playback catches up.
+                    if began < 2 && !playback_ticks.is_multiple_of(5) { continue; }
                     let mut output = owner.output.lock();
                     let count = output.read(&mut pcm);
                     peak = pcm[..count].iter().map(|sample| sample.unsigned_abs()).max().unwrap_or(0).max(peak);
                     let epoch = output.epoch;
                     let delivered = output.delivered;
                     output.acknowledge(epoch, delivered);
+                    let drained = output.played == output.generated;
                     drop(output);
                     if media.is_finished() { return Err("Synthetic Realtime media ended".into()); }
-                    if began && ended && peak >= 512 { break; }
+                    if began >= 3 && ended >= 3 && drained && peak >= 512 { break; }
                 }
             }
         }
@@ -525,8 +575,15 @@ async fn public_realtime_sideband_identifies_native_playback()
     let retired = call.hangup().await;
     let drained = media.await?;
     let _ = sideband.close(None).await;
-    eprintln!("Realtime sideband: started={began} stopped={ended} peak={peak}");
+    eprintln!(
+        "Realtime sideband: started={began} stopped={ended} buffered_boundary={buffered_boundary} peak={peak}"
+    );
     retired?;
     drained?;
-    result
+    result?;
+    assert!(
+        buffered_boundary,
+        "Replies did not exercise buffered device audio"
+    );
+    Ok(())
 }

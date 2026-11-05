@@ -56,6 +56,7 @@ use captions::Language as TranscriptionLanguage;
 pub(super) const RATE: usize = 24_000;
 pub(super) const FRAME: usize = RATE / 50;
 const MAX_OUTPUT: usize = RATE * 30;
+const MAX_OUTPUT_ITEMS: usize = 64;
 const MAX_WIRE: usize = 512 * 1024;
 const MAX_TEXT: usize = 16 * 1024;
 const TYPED_PREFIX: &str = "[TYPED — already submitted to the bound coding agent]\n";
@@ -310,12 +311,19 @@ struct MediaDiagnostics {
     packet_overflows: u64,
 }
 
+struct OutputItem {
+    id: String,
+    index: u32,
+    start: usize,
+    end: usize,
+}
+
 struct Output {
     live_transcript: Option<live::captions::Transcript>,
     transcript: transcript::Transcript,
     epoch: u64,
     samples: VecDeque<i16>,
-    item: Option<(String, u32)>,
+    items: VecDeque<OutputItem>,
     played: usize,
     delivered: usize,
     generated: usize,
@@ -328,7 +336,7 @@ impl Default for Output {
             transcript: transcript::Transcript::default(),
             epoch: 1,
             samples: VecDeque::new(),
-            item: None,
+            items: VecDeque::new(),
             played: 0,
             delivered: 0,
             generated: 0,
@@ -346,12 +354,12 @@ impl Output {
         if let Some(transcript) = &mut self.live_transcript {
             transcript.stop();
         }
-        if let Some((item, index)) = &self.item {
-            self.transcript.stop_item(item, *index);
+        for item in &self.items {
+            self.transcript.stop_item(&item.id, item.index);
         }
         self.epoch += 1;
         self.samples.clear();
-        self.item = None;
+        self.items.clear();
         self.played = 0;
         self.delivered = 0;
         self.generated = 0;
@@ -361,29 +369,36 @@ impl Output {
         if !pcm.len().is_multiple_of(2) {
             return Err("OpenAI returned an invalid PCM frame.");
         }
-        if !self
-            .item
-            .as_ref()
-            .is_some_and(|(id, content)| *id == item && *content == index)
-        {
-            // An item boundary cannot replace audio still playing on the device.
-            if self.delivered > self.played || !self.samples.is_empty() {
-                return Err("Realtime audio items overlapped. Please call again.");
-            }
-            // First Live captions may precede the first RTP packet. Preserve
-            // their playback anchor when attaching the continuous track.
-            if self.live_transcript.is_none() || self.item.is_some() {
-                self.clear();
-            }
-            self.item = Some((item, index));
-        }
         let count = pcm.len() / 2;
         if self.generated - self.played + count > MAX_OUTPUT {
             return Err("Realtime playback fell behind. Please call again.");
         }
+        if !self
+            .items
+            .back()
+            .is_some_and(|last| last.id == item && last.index == index)
+        {
+            // Metadata can reach the client while the previous reply is still
+            // buffered in Rust or AudioTrack. Keep one continuous device clock
+            // and queue the next item without clearing or replacing its tail.
+            if self.items.len() >= MAX_OUTPUT_ITEMS {
+                return Err("Realtime playback has too many pending audio items.");
+            }
+            if let Some(previous) = self.items.back() {
+                self.transcript.finish_audio(&previous.id, previous.index);
+            }
+            self.items.push_back(OutputItem {
+                id: item,
+                index,
+                start: self.generated,
+                end: self.generated,
+            });
+        }
         self.generated += count;
-        if let Some((item, index)) = &self.item {
-            self.transcript.audio(item, *index, self.generated);
+        if let Some(item) = self.items.back_mut() {
+            item.end = self.generated;
+            self.transcript
+                .audio(&item.id, item.index, item.end - item.start);
         }
         self.samples.extend(
             pcm.as_chunks::<2>()
@@ -412,8 +427,22 @@ impl Output {
     fn acknowledge(&mut self, epoch: u64, count: usize) {
         if epoch == self.epoch {
             self.played = self.played.max(count.min(self.delivered));
-            if let Some((item, index)) = &self.item {
-                self.transcript.played(item, *index, self.played);
+            for item in &self.items {
+                self.transcript.played(
+                    &item.id,
+                    item.index,
+                    self.played
+                        .saturating_sub(item.start)
+                        .min(item.end - item.start),
+                );
+            }
+            while self.items.len() > 1
+                && self
+                    .items
+                    .front()
+                    .is_some_and(|item| item.end <= self.played)
+            {
+                self.items.pop_front();
             }
             if let Some(transcript) = &mut self.live_transcript {
                 transcript.played(self.played);
@@ -422,14 +451,24 @@ impl Output {
     }
     fn interrupt(&mut self) -> Option<ClientEvent> {
         self.transcript.stop();
-        let event = self.item.take().map(|(item_id, content_index)| {
-            ClientEvent::ConversationItemTruncate {
+        let event = self
+            .items
+            .iter()
+            .find(|item| item.end > self.played)
+            .or_else(|| self.items.back())
+            .map(|item| ClientEvent::ConversationItemTruncate {
                 event_id: None,
-                item_id,
-                content_index,
-                audio_end_ms: u32::try_from(self.played * 1000 / RATE).unwrap_or(u32::MAX),
-            }
-        });
+                item_id: item.id.clone(),
+                content_index: item.index,
+                audio_end_ms: u32::try_from(
+                    self.played
+                        .saturating_sub(item.start)
+                        .min(item.end - item.start)
+                        * 1000
+                        / RATE,
+                )
+                .unwrap_or(u32::MAX),
+            });
         self.clear();
         event
     }

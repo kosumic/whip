@@ -122,7 +122,10 @@ impl Identity {
                     .rev()
                     .find(|tag| tag.response == response)
                     .cloned();
-                self.epoch += 1;
+                // A normal response boundary is metadata on the continuous
+                // Opus track, not a cancellation. Resetting here discards the
+                // previous reply's jitter-buffer tail and decoder history.
+                self.epoch = self.epoch.max(1);
                 self.enabled = self.current.is_some();
                 self.ended = false;
                 self.finish_at = None;
@@ -210,6 +213,20 @@ mod tests {
         identity.observe(&started);
         assert_eq!(identity.epoch, epoch);
         assert!(identity.enabled);
+    }
+    #[test]
+    fn consecutive_replies_keep_the_media_clock_until_an_actual_interruption() {
+        let mut identity = Identity::default();
+        for response in ["one", "two"] {
+            identity.observe(&json!({"type":"response.content_part.added","response_id":response,"item_id":response,"content_index":0,"part":{"type":"audio"}}));
+            identity.observe(&json!({"type":"output_audio_buffer.started","response_id":response}));
+            assert!(identity.enabled);
+            assert_eq!(identity.epoch, 1);
+            identity.observe(&json!({"type":"output_audio_buffer.stopped","response_id":response}));
+        }
+        identity.observe(&json!({"type":"input_audio_buffer.speech_started"}));
+        assert!(!identity.enabled);
+        assert!(identity.epoch > 1);
     }
     #[test]
     fn cancelled_response_cannot_resume_or_clear_a_newer_audible_epoch() {

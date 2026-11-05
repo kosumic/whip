@@ -182,17 +182,56 @@ fn truncation_uses_played_sample_count_and_stale_acknowledgements_are_ignored()
 }
 
 #[test]
-fn audio_overflow_and_overlapping_items_fail_instead_of_reordering() -> Result<(), &'static str> {
+fn audio_overflow_and_invalid_frames_remain_bounded() {
     let mut output = Output::default();
-    output.append("one".into(), 0, vec![0; 2])?;
-    assert!(output.append("two".into(), 0, vec![0; 2]).is_err());
-    output.clear();
     assert!(
         output
             .append("three".into(), 0, vec![0; MAX_OUTPUT * 2 + 2])
             .is_err()
     );
     assert!(output.append("three".into(), 0, vec![0]).is_err());
+}
+
+#[test]
+fn consecutive_replies_preserve_queued_speech_and_the_device_tail() -> Result<(), &'static str> {
+    let mut output = Output::default();
+    let pcm = |samples: &[i16]| {
+        samples
+            .iter()
+            .flat_map(|sample| sample.to_le_bytes())
+            .collect()
+    };
+    output.append("one".into(), 0, pcm(&[1, 2, 3, 4]))?;
+    let epoch = output.epoch;
+    let mut submitted = [0; 2];
+    assert_eq!(output.read(&mut submitted), 2);
+    output.acknowledge(epoch, 1);
+    // Both the device tail and Rust's unread tail precede the next response.
+    output.append("two".into(), 0, pcm(&[5, 6, 7]))?;
+    let mut next = [0; 5];
+    assert_eq!(output.read(&mut next), 5);
+    assert_eq!(submitted, [1, 2]);
+    assert_eq!(next, [3, 4, 5, 6, 7]);
+    output.acknowledge(epoch, 7);
+    assert_eq!(output.played, output.generated);
+    Ok(())
+}
+
+#[test]
+fn interruption_uses_the_audible_items_offset_across_a_queued_reply() -> Result<(), &'static str> {
+    let mut output = Output::default();
+    output.append("one".into(), 0, vec![0; RATE * 2])?;
+    output.append("two".into(), 1, vec![0; RATE * 2])?;
+    let epoch = output.epoch;
+    output.read(&mut vec![0; RATE * 2]);
+    output.acknowledge(epoch, RATE + RATE / 4);
+    assert!(
+        matches!(output.interrupt(), Some(ClientEvent::ConversationItemTruncate {
+        item_id, content_index: 1, audio_end_ms: 250, ..
+    }) if item_id == "two")
+    );
+    output.acknowledge(epoch, RATE * 2);
+    assert_eq!(output.played, 0);
     Ok(())
 }
 
