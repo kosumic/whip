@@ -98,3 +98,31 @@ device acceptance checks. Browser control, host edits/connections/deletion,
 remote shell execution, clipboard, location, downloads/exports, and device speech
 are not granted by this global call catalog. Android commands require the
 separate Shizuku opt-in described above.
+
+## Testing provider tool arguments
+
+Run the explicitly billable API probe from the development shell:
+
+```bash
+WHIP_VOICE_API_KEY_FILE=../gymami/.api \
+  nix develop --command node scripts/test-voice-api-tools.cjs
+```
+
+The probe exports the actual Rust session configurations and tests all configured
+Realtime models plus GPT Live with its configured Responses backend. It checks
+host and space scopes, counts, lists, pagination, device queries, navigation and
+Shizuku command arguments. Every tool result is synthetic; no real host, agent,
+phone command or navigation action is executed. Realtime uses text output, and
+Live uses typed backend requests with synthetic silence streaming. This checks
+tool contracts rather than microphone, WebRTC or playback behavior.
+
+Generated arguments are checked against the published schemas and replayed
+through Whip's native dispatcher with a test platform. Credentials are read from
+the named file without printing them. Reports and usage observations are written
+to the ignored `.codex-voice-api/` directory. Set `WHIP_VOICE_API_MODELS` to a
+comma-separated model subset or `WHIP_VOICE_API_OUTPUT` to another output path.
+Set `WHIP_VOICE_API_SCENARIOS` to a comma-separated scenario subset for a focused
+probe. `WHIP_VOICE_API_TRACE=1` records synthetic non-audio Live events for
+protocol diagnostics in the same ignored output directory.
+The two Rust helpers are ignored in ordinary test runs and require explicit
+contract/report paths supplied by the script.

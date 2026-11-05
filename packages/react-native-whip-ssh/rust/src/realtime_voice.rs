@@ -1,5 +1,7 @@
 //! Public OpenAI Realtime WebRTC/WebSocket adapter. Native media never crosses JS.
 //! Active work stops on cancellation; shutdown briefly retains wire for billing.
+#[cfg(test)]
+mod api_tools_tests;
 mod captions;
 mod capture_worker;
 pub(crate) mod context;

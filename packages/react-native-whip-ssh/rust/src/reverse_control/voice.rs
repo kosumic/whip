@@ -14,6 +14,10 @@ use super::browser::model::{BrowserError, ErrorCode};
 use super::{application, device, hosts};
 use crate::host_runtime::realtime_agent::{Delegation, PinnedAgent};
 
+#[cfg(test)]
+#[path = "voice_api_tests.rs"]
+mod api_tests;
+
 const HOSTS_LIST: &str = "hosts_list";
 const APP_SNAPSHOT: &str = "app_snapshot";
 const APP_NAVIGATE: &str = "app_navigate";
