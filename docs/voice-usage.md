@@ -1,13 +1,27 @@
 # Voice usage ledger (issue #323)
 
-Settings → Voice → Usage & costs shows device-local voice API estimates,
-current calls, per-call history, and today/week/month/lifetime totals. Both
-provider and mode filters apply to the history, current calls, and totals.
+Settings → Usage & costs is a separate chart card matching Whipping time.
+Today/week/month/lifetime tabs share its local-calendar layout, tappable bars,
+theme, and reduced-motion support. Switch between estimated USD cost and activity
+counts; tap a bar to inspect its total and call history, and tap it again to
+return to the whole period. Provider, mode and scope filters sit behind Filters
+and apply to the history, current calls, totals and chart. The card's open state
+is remembered independently of the Voice settings.
 Calls belong to their **start date**, in the device's current local timezone;
 weeks start on Monday. Calls crossing midnight stay in their start period.
 Known estimates are explicitly separated from calls with unknown costs or
 incomplete accounting. Historical prices are never recomputed from a current
 rate card. USD estimates are not invoices.
+
+Rust aggregates each chart bucket from the same filtered calls as the totals.
+Unknown-price calls are counted as activity and shown with an outlined marker
+in the cost chart, excluded from the known estimate. Unknown-only totals display
+unknown rather than zero. History is limited to the chosen period or bucket;
+current calls remain visible independently of their start period. The existing
+native summary query accepts optional, strictly increasing calendar boundaries;
+older callers that omit them keep their existing response shape. Chart queries
+require an updated native build; an unsupported or failed query hides stale
+totals and exposes Retry.
 
 Local turn-based calls have no Whip cloud voice API charge. Remote coding-agent
 and API spending is unknown and excluded, including during a local call. Local

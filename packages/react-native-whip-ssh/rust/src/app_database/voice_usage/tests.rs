@@ -59,7 +59,79 @@ fn query() -> Query {
         provider: None,
         mode: None,
         scope: None,
+        chart_boundaries_ms: vec![],
     }
+}
+
+#[test]
+fn chart_buckets_keep_start_boundaries_unknown_costs_and_filters_consistent() {
+    let mut ledger = Ledger::default();
+    for (id, time, local) in [
+        ("before", 49, false),
+        ("first", 50, false),
+        ("second", 80, false),
+        ("unknown", 90, false),
+        ("local", 95, true),
+        ("end", 100, false),
+        ("future", 101, false),
+    ] {
+        ledger.apply(started(id, time, local)).unwrap();
+        if !local && id != "unknown" {
+            ledger
+                .apply(usage(id, "response", 1, Some(0.25), true))
+                .unwrap();
+        }
+    }
+    let chart_query = Query {
+        chart_boundaries_ms: vec![50, 80, 90, 100],
+        ..query()
+    };
+    let summary = ledger.summary(&chart_query).unwrap();
+    assert_eq!(summary.chart_buckets.len(), 3);
+    assert_eq!(summary.chart_buckets[0].calls, 1);
+    assert_eq!(summary.chart_buckets[0].known_estimated_usd, 0.25);
+    assert_eq!(summary.chart_buckets[1].known_estimated_usd, 0.25);
+    assert_eq!(summary.chart_buckets[2].calls, 2);
+    assert_eq!(summary.chart_buckets[2].unknown_cost_calls, 1);
+    assert_eq!(summary.chart_buckets[2].incomplete_calls, 1);
+    let filtered = ledger
+        .summary(&Query {
+            provider: Some(VoiceUsageProvider::Openai),
+            ..chart_query
+        })
+        .unwrap();
+    assert_eq!(filtered.chart_buckets[2].calls, 1);
+    assert_eq!(filtered.chart_buckets[2].unknown_cost_calls, 1);
+    assert_eq!(filtered.chart_buckets[2].known_estimated_usd, 0.0);
+    assert_eq!(filtered.totals["month"].calls, 4);
+}
+
+#[test]
+fn chart_rejects_invalid_boundaries_and_supports_unequal_calendar_days() {
+    let ledger = Ledger::default();
+    for boundaries in [
+        vec![10],
+        vec![20, 10],
+        vec![10, 10],
+        vec![0; MAX_CHART_BUCKETS + 2],
+    ] {
+        assert!(
+            ledger
+                .summary(&Query {
+                    chart_boundaries_ms: boundaries,
+                    ..query()
+                })
+                .is_err()
+        );
+    }
+    let summary = ledger
+        .summary(&Query {
+            chart_boundaries_ms: vec![0, 23, 48, 72],
+            ..query()
+        })
+        .unwrap();
+    assert_eq!(summary.chart_buckets.len(), 3);
+    assert!(summary.chart_buckets.iter().all(|bucket| bucket.calls == 0));
 }
 fn open(path: &std::path::Path) -> Store {
     Store::open(path, crate::runtime().unwrap()).unwrap()

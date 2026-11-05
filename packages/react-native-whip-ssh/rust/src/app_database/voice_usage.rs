@@ -11,6 +11,7 @@ pub(crate) use native::{NativeVoiceUsageSession, flush_native_voice_usage};
 
 pub(super) const KEY: &str = "whip.voice.usage";
 const VERSION: u32 = 1;
+const MAX_CHART_BUCKETS: usize = 512;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -318,6 +319,8 @@ struct Query {
     provider: Option<VoiceUsageProvider>,
     mode: Option<VoiceUsageMode>,
     scope: Option<VoiceUsageScope>,
+    #[serde(default)]
+    chart_boundaries_ms: Vec<u64>,
 }
 #[derive(Debug, Default, Serialize)]
 struct Total {
@@ -326,13 +329,38 @@ struct Total {
     incomplete_calls: usize,
     calls: usize,
 }
+impl Total {
+    fn observe(&mut self, call: &CallView) {
+        self.calls += 1;
+        if let Some(cost) = call.estimated_usd {
+            self.known_estimated_usd += cost;
+        } else {
+            self.unknown_cost_calls += 1;
+        }
+        if call.status == AccountingStatus::Incomplete
+            && call.identity.provider != VoiceUsageProvider::Local
+        {
+            self.incomplete_calls += 1;
+        }
+    }
+}
 #[derive(Debug, Serialize)]
 struct Summary {
     calls: Vec<CallView>,
     totals: BTreeMap<&'static str, Total>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    chart_buckets: Vec<Total>,
 }
 impl Ledger {
     fn summary(&self, query: &Query) -> Result<Summary, AppStorageError> {
+        let boundaries = &query.chart_boundaries_ms;
+        if !boundaries.is_empty()
+            && (boundaries.len() < 2
+                || boundaries.len() > MAX_CHART_BUCKETS + 1
+                || boundaries.windows(2).any(|pair| pair[0] >= pair[1]))
+        {
+            return Err(invalid());
+        }
         if [query.today_ms, query.week_ms, query.month_ms]
             .iter()
             .any(|start| *start > query.now_ms)
@@ -368,21 +396,26 @@ impl Ledger {
                 .iter()
                 .filter(|call| call.identity.started_at_ms >= start)
             {
-                total.calls += 1;
-                if let Some(cost) = call.estimated_usd {
-                    total.known_estimated_usd += cost;
-                } else {
-                    total.unknown_cost_calls += 1;
-                }
-                if call.status == AccountingStatus::Incomplete
-                    && call.identity.provider != VoiceUsageProvider::Local
-                {
-                    total.incomplete_calls += 1;
-                }
+                total.observe(call);
             }
             totals.insert(period, total);
         }
-        Ok(Summary { calls, totals })
+        let mut chart_buckets: Vec<_> = (0..boundaries.len().saturating_sub(1))
+            .map(|_| Total::default())
+            .collect();
+        for call in &calls {
+            let index = boundaries.partition_point(|start| *start <= call.identity.started_at_ms);
+            if index > 0
+                && let Some(bucket) = chart_buckets.get_mut(index - 1)
+            {
+                bucket.observe(call);
+            }
+        }
+        Ok(Summary {
+            calls,
+            totals,
+            chart_buckets,
+        })
     }
 }
 #[cfg(test)]

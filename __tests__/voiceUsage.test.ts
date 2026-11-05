@@ -1,4 +1,5 @@
 import { VoiceUsageLedger, voiceUsageQuery, type VoiceUsageEvent } from '../src/services/voiceUsage';
+import { usageChartPeriod } from '../src/lib/usagePeriods';
 
 const started: VoiceUsageEvent = { kind: 'started', call: { session_id: 'stable-call', provider: 'local', mode: 'turn_based', model: null, voice: null, scope: 'agent', started_at_ms: 100 } };
 const ended: VoiceUsageEvent = { kind: 'ended', session_id: 'stable-call', ended_at_ms: 200 };
@@ -50,4 +51,34 @@ test('calendar boundaries use local dates, Monday weeks, month/year changes and 
     expect(month.getDate()).toBe(1); expect(month.getMonth()).toBe(now.getMonth());
     expect(query).toMatchObject({ provider: 'openai', mode: 'live' });
   }
+});
+
+test('chart queries use calendar boundaries and preserve native unknown-cost buckets', async () => {
+  const { ledger, voiceUsageSummary } = setup();
+  const now = new Date(2026, 10, 4, 12);
+  const period = usageChartPeriod('week', now);
+  const bucket = { calls: 1, known_estimated_usd: 0, unknown_cost_calls: 1, incomplete_calls: 1 };
+  voiceUsageSummary.mockResolvedValue(JSON.stringify({ calls: [], totals: {}, chart_buckets: period.dates.map(() => bucket) }));
+  const summary = await ledger.summary({ provider: 'openai' }, now, 'week');
+  expect(JSON.parse(voiceUsageSummary.mock.calls[0][0])).toMatchObject({
+    provider: 'openai', chart_boundaries_ms: period.boundaries.map(Number),
+  });
+  expect(summary.chart?.buckets[0]).toEqual(bucket);
+  expect(summary.chart?.dates).toEqual(period.dates);
+});
+
+test('lifetime charts include the oldest recorded call and fail visibly if chart data is missing', async () => {
+  const { ledger, voiceUsageSummary } = setup();
+  const now = new Date(2026, 10, 4, 12);
+  const first = new Date(2020, 0, 1).getTime();
+  const period = usageChartPeriod('lifetime', now, BigInt(first));
+  const calls = [{ started_at_ms: first }];
+  voiceUsageSummary.mockResolvedValueOnce(JSON.stringify({ calls, totals: {} }))
+    .mockResolvedValueOnce(JSON.stringify({ calls, totals: {}, chart_buckets: period.dates.map(() => ({ calls: 0 })) }));
+  const summary = await ledger.summary({}, now, 'lifetime');
+  expect(summary.chart?.unit).toBe('year');
+  expect(summary.chart?.dates[0].getFullYear()).toBe(2020);
+  expect(JSON.parse(voiceUsageSummary.mock.calls[1][0]).chart_boundaries_ms).toEqual(period.boundaries.map(Number));
+  voiceUsageSummary.mockResolvedValue(JSON.stringify({ calls: [], totals: {} }));
+  await expect(ledger.summary({}, now, 'today')).rejects.toThrow('Voice usage chart is unavailable.');
 });

@@ -1,4 +1,9 @@
 export const zhHant: Record<string, string> = {
+  'voiceUsage.cost': '費用',
+  'voiceUsage.activity': '使用次數',
+  'voiceUsage.filters': '篩選',
+  'voiceUsage.estimatedCost': '語音費用估算 · 美元',
+  'voiceUsage.emptyRange': '此時段沒有通話或語音請求。',
   "globalCall.title": "全域通話",
   "globalCall.open": "開始或返回全域通話",
   "globalCall.start": "開始全域通話",

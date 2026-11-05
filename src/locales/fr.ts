@@ -1,6 +1,11 @@
 import type { en } from './en';
 
 export const fr = {
+  'voiceUsage.cost': 'Coût',
+  'voiceUsage.activity': 'Activité',
+  'voiceUsage.filters': 'Filtres',
+  'voiceUsage.estimatedCost': 'Coût vocal estimé · USD',
+  'voiceUsage.emptyRange': 'Aucun appel ni demande vocale sur cette période.',
   "globalCall.title": "Appel global",
   "globalCall.open": "Démarrer ou reprendre l’appel global",
   "globalCall.start": "Démarrer un appel global",
@@ -41,8 +46,8 @@ export const fr = {
   "voiceUsage.callCount": "{{count}} appels",
   "voiceUsage.noCalls": "Aucun appel",
   "voiceUsage.knownEstimate": "Estimation connue de l’API vocale : {{cost}}",
-  "voiceUsage.unknownCalls": "{{count}} appels ont des coûts inconnus, exclus de l’estimation.",
-  "voiceUsage.incompleteCalls": "{{count}} appels ont une comptabilité incomplète.",
+  "voiceUsage.unknownCalls": "Coûts inconnus : {{count}} · exclus de l’estimation.",
+  "voiceUsage.incompleteCalls": "Comptabilité incomplète : {{count}}.",
   "voiceUsage.history": "Historique des appels",
   "voiceUsage.empty": "Aucun appel ni demande vocale enregistré pour ces filtres.",
   "voiceUsage.cloudEmpty": "Aucune utilisation OpenAI enregistrée. Les nouveaux appels Realtime/GPT-Live, aperçus Realtime et demandes OpenAI TTS apparaissent ici ; les utilisations antérieures non enregistrées ne sont pas récupérées.",

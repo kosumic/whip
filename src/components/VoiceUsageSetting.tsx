@@ -1,21 +1,61 @@
 import { useEffect, useState } from 'react';
 import { AppState, View } from 'react-native';
+import ChartColumn from 'lucide-react-native/icons/chart-column';
+import SlidersHorizontal from 'lucide-react-native/icons/sliders-horizontal';
 import { useTranslation } from 'react-i18next';
-import { voiceUsageLedger, type UsageMode, type UsagePeriod, type UsageProvider, type UsageScope, type VoiceUsageCall, type VoiceUsageSummary } from '../services/voiceUsage';
-import { GlassButton } from './GlassControls';
-import { Text } from './ui/text';
+import {
+  voiceUsageLedger,
+  type UsageMode,
+  type UsageProvider,
+  type UsageScope,
+  type VoiceUsageCall,
+  type VoiceUsageSummary,
+  type VoiceUsageTotal,
+} from '../services/voiceUsage';
+import { useSectionExpansion } from '../hooks/useSectionExpansion';
+import {
+  formatUsageChartDate,
+  usagePeriodStarts,
+  type UsageRange,
+} from '../lib/usagePeriods';
 import { formatUsd as usd } from '../lib/formatUsd';
+import {
+  CollapsibleSectionCard,
+  SECTION_TITLE_CLASS_NAME,
+} from './CollapsibleSectionCard';
+import { DetailsTitle } from './SettingsDetails';
+import { UsageBarChart, UsageRangeTabs } from './UsageChart';
+import { GlassButton } from './GlassControls';
+import { Icon } from './ui/icon';
+import { Text } from './ui/text';
 
-const PERIODS: UsagePeriod[] = ['today', 'week', 'month', 'lifetime'];
 const PROVIDERS: (UsageProvider | undefined)[] = [undefined, 'local', 'openai'];
-const MODES: (UsageMode | undefined)[] = [undefined, 'turn_based', 'realtime', 'live', 'tts'];
-const SCOPES: (UsageScope | undefined)[] = [undefined, 'agent', 'global', 'speech', 'preview'];
+const MODES: (UsageMode | undefined)[] = [
+  undefined,
+  'turn_based',
+  'realtime',
+  'live',
+  'tts',
+];
+const SCOPES: (UsageScope | undefined)[] = [
+  undefined,
+  'agent',
+  'global',
+  'speech',
+  'preview',
+];
+const METRICS = ['cost', 'activity'] as const;
 const PAGE_SIZE = 20;
 const REFRESH_INTERVAL_MS = 2_000;
+const MIN_COST_AXIS = 0.0001;
 
 export function VoiceUsageSetting() {
-  const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(false);
+  const { t, i18n } = useTranslation();
+  const { expanded, toggleExpanded } = useSectionExpansion('voice-usage');
+  const [range, setRange] = useState<UsageRange>('week');
+  const [metric, setMetric] = useState<(typeof METRICS)[number]>('cost');
+  const [selected, setSelected] = useState<number | null>(null);
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [provider, setProvider] = useState<UsageProvider>();
   const [mode, setMode] = useState<UsageMode>();
   const [scope, setScope] = useState<UsageScope>();
@@ -29,79 +69,381 @@ export function VoiceUsageSetting() {
     let revision = 0;
     let loading = false;
     const load = () => {
-      if (loading) return;
+      if (loading || AppState.currentState !== 'active') return;
       loading = true;
       const request = ++revision;
-      void voiceUsageLedger.summary({ provider, mode, scope }).then(value => {
-        if (current && request === revision) { setSummary(value); setError(false); }
-      }, () => { if (current && request === revision) setError(true); }).finally(() => { loading = false; });
+      void voiceUsageLedger
+        .summary({ provider, mode, scope }, new Date(), range)
+        .then(
+          value => {
+            if (current && request === revision) {
+              setSummary(value);
+              setError(false);
+            }
+          },
+          () => {
+            if (current && request === revision) setError(true);
+          },
+        )
+        .finally(() => {
+          loading = false;
+        });
     };
-    setSummary(undefined); setLimit(PAGE_SIZE); load();
+    setSummary(undefined);
+    setSelected(null);
+    setLimit(PAGE_SIZE);
+    load();
     const unsubscribe = voiceUsageLedger.subscribe(load);
-    const appState = AppState.addEventListener('change', state => { if (state === 'active') load(); });
-    // Native speech can finish without a JS session event. Refresh only while
-    // this panel is open; this also keeps local-calendar totals current.
+    const appState = AppState.addEventListener('change', state => {
+      if (state === 'active') load();
+    });
     const timer = setInterval(load, REFRESH_INTERVAL_MS);
-    return () => { current = false; unsubscribe(); appState.remove(); clearInterval(timer); };
-  }, [expanded, provider, mode, scope, refresh]);
-  const cost = (call: VoiceUsageCall) => call.provider === 'local' ? t('voiceUsage.localFree')
-    : call.estimated_usd === null ? t('voiceUsage.unknown') : usd(call.estimated_usd);
-  return <View className="gap-2 border-b border-border px-3.5 py-3">
-    <GlassButton accessibilityRole="button" accessibilityState={{ expanded }} onPress={() => setExpanded(!expanded)}>
-      <Text className="text-sm font-medium">{t('voiceUsage.title')}</Text>
-    </GlassButton>
-    {expanded && <>
-      <Text className="text-xs text-muted-foreground">{t('voiceUsage.explanation')}</Text>
-      <Text className="text-xs text-muted-foreground">{t('voiceUsage.remoteUnknown')}</Text>
-      <Text className="text-xs text-muted-foreground">{t('voiceUsage.periodNote')}</Text>
-      <Text className="text-sm font-medium">{t('voiceUsage.provider')}</Text>
-      <View className="flex-row flex-wrap gap-2">
-        {PROVIDERS.map(value => <GlassButton key={value ?? 'all'} accessibilityRole="radio"
-          accessibilityState={{ selected: provider === value }} variant={provider === value ? 'secondary' : 'ghost'}
-          onPress={() => setProvider(value)}><Text>{t(value ? `voiceProvider.${value}` : 'voiceUsage.all')}</Text></GlassButton>)}
+    return () => {
+      current = false;
+      unsubscribe();
+      appState.remove();
+      clearInterval(timer);
+    };
+  }, [expanded, provider, mode, scope, range, refresh]);
+  const cost = (call: VoiceUsageCall) =>
+    call.provider === 'local'
+      ? t('voiceUsage.localFree')
+      : call.estimated_usd === null
+        ? t('voiceUsage.unknown')
+        : usd(call.estimated_usd);
+  const totalCost = (total: VoiceUsageTotal) =>
+    total.calls > 0 && total.unknown_cost_calls === total.calls
+      ? t('voiceUsage.unknown')
+      : usd(total.known_estimated_usd);
+  const chart = summary?.chart;
+  const total =
+    selected === null ? summary?.totals[range] : chart?.buckets[selected];
+  const date = selected === null ? undefined : chart?.dates[selected];
+  const activeCalls = summary?.calls.filter(call => call.active) ?? [];
+  const filterCount = [provider, mode, scope].filter(
+    value => value !== undefined,
+  ).length;
+  const starts = usagePeriodStarts();
+  const historyStart =
+    selected !== null && chart
+      ? Number(chart.boundaries[selected])
+      : range === 'lifetime'
+        ? 0
+        : Number(starts[range]);
+  const historyEnd =
+    selected !== null && chart
+      ? Number(chart.boundaries[selected + 1])
+      : Infinity;
+  const history =
+    summary?.calls.filter(
+      call =>
+        call.started_at_ms >= historyStart && call.started_at_ms < historyEnd,
+    ) ?? [];
+  const number = (value: number) =>
+    new Intl.NumberFormat(i18n.language, { maximumFractionDigits: 0 }).format(
+      value,
+    );
+  return (
+    <CollapsibleSectionCard
+      title={t('voiceUsage.title')}
+      icon={ChartColumn}
+      titleContent={
+        <DetailsTitle
+          title={t('voiceUsage.title')}
+          titleClassName={SECTION_TITLE_CLASS_NAME}
+          copy={`${t('voiceUsage.explanation')}\n\n${t('voiceUsage.remoteUnknown')}\n\n${t('voiceUsage.periodNote')}`}
+        />
+      }
+      expanded={expanded}
+      onToggle={toggleExpanded}
+      contentClassName="px-4 pb-4"
+    >
+      <UsageRangeTabs
+        range={range}
+        onChange={value => {
+          setSelected(null);
+          setRange(value);
+        }}
+      />
+      <View className="mb-4 flex-row flex-wrap items-center justify-between gap-2">
+        <View className="flex-row gap-1" accessibilityRole="tablist">
+          {METRICS.map(value => (
+            <GlassButton
+              key={value}
+              variant={metric === value ? 'secondary' : 'ghost'}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: metric === value }}
+              onPress={() => setMetric(value)}
+            >
+              <Text className="text-xs font-medium">
+                {t(`voiceUsage.${value}`)}
+              </Text>
+            </GlassButton>
+          ))}
+        </View>
+        <GlassButton
+          variant="ghost"
+          accessibilityLabel={t('voiceUsage.filters')}
+          accessibilityState={{ expanded: filtersExpanded }}
+          onPress={() => setFiltersExpanded(value => !value)}
+        >
+          <Icon as={SlidersHorizontal} size={16} />
+          <Text className="text-xs">
+            {t('voiceUsage.filters')}
+            {filterCount > 0 ? ` · ${filterCount}` : ''}
+          </Text>
+        </GlassButton>
       </View>
-      <Text className="text-sm font-medium">{t('voiceUsage.mode')}</Text>
-      <View className="flex-row flex-wrap gap-2">
-        {MODES.map(value => <GlassButton key={value ?? 'all'} accessibilityRole="radio"
-          accessibilityState={{ selected: mode === value }} variant={mode === value ? 'secondary' : 'ghost'}
-          onPress={() => setMode(value)}><Text>{t(value ? `voiceUsage.${value}` : 'voiceUsage.all')}</Text></GlassButton>)}
+      {filtersExpanded && (
+        <View className="mb-5 gap-3 border-b border-border pb-4">
+          <UsageFilter
+            title={t('voiceUsage.provider')}
+            options={PROVIDERS}
+            selected={provider}
+            onSelect={setProvider}
+            label={value =>
+              t(value ? `voiceProvider.${value}` : 'voiceUsage.all')
+            }
+          />
+          <UsageFilter
+            title={t('voiceUsage.mode')}
+            options={MODES}
+            selected={mode}
+            onSelect={setMode}
+            label={value => t(value ? `voiceUsage.${value}` : 'voiceUsage.all')}
+          />
+          <UsageFilter
+            title={t('voiceUsage.scope')}
+            options={SCOPES}
+            selected={scope}
+            onSelect={setScope}
+            label={value => t(value ? `voiceUsage.${value}` : 'voiceUsage.all')}
+          />
+        </View>
+      )}
+      {error ? (
+        <View className="gap-3 py-4">
+          <Text accessibilityRole="alert" className="text-sm text-destructive">
+            {t('voiceUsage.storageError')}
+          </Text>
+          <GlassButton onPress={() => setRefresh(value => value + 1)}>
+            <Text>{t('voiceUsage.retry')}</Text>
+          </GlassButton>
+        </View>
+      ) : !summary ? (
+        <Text className="py-6 text-sm text-muted-foreground">
+          {t('voiceUsage.loading')}
+        </Text>
+      ) : (
+        <>
+          <View className="mb-5 gap-1">
+            <Text className="text-xs font-medium text-muted-foreground">
+              {date && chart
+                ? formatUsageChartDate(date, chart.unit, range, i18n.language)
+                : t(`usage.${range}`)}
+            </Text>
+            <Text
+              accessibilityLiveRegion="polite"
+              className="text-[36px] font-semibold leading-[44px] tracking-tight"
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.55}
+            >
+              {total
+                ? metric === 'cost'
+                  ? totalCost(total)
+                  : number(total.calls)
+                : '—'}
+            </Text>
+            <Text className="text-xs text-muted-foreground">
+              {t(
+                metric === 'cost'
+                  ? 'voiceUsage.estimatedCost'
+                  : 'voiceUsage.activityCount',
+                { count: total?.calls ?? 0 },
+              )}
+            </Text>
+          </View>
+          <UsageBarChart
+            chart={
+              chart
+                ? {
+                    ...chart,
+                    values: chart.buckets.map(bucket =>
+                      metric === 'cost'
+                        ? bucket.known_estimated_usd
+                        : bucket.calls,
+                    ),
+                    unknown: chart.buckets.map(
+                      bucket =>
+                        metric === 'cost' && bucket.unknown_cost_calls > 0,
+                    ),
+                    empty: summary.totals[range].calls === 0,
+                  }
+                : null
+            }
+            range={range}
+            selected={selected}
+            onSelect={index => {
+              setSelected(previous => (previous === index ? null : index));
+              setLimit(PAGE_SIZE);
+            }}
+            formatValue={(_, index) => {
+              const bucket = chart!.buckets[index];
+              const value =
+                metric === 'cost'
+                  ? totalCost(bucket)
+                  : t('voiceUsage.activityCount', { count: bucket.calls });
+              return bucket.unknown_cost_calls > 0
+                ? `${value}. ${t('voiceUsage.unknownCalls', { count: bucket.unknown_cost_calls })}`
+                : value;
+            }}
+            formatAxis={metric === 'cost' ? usd : number}
+            minimumValue={metric === 'cost' ? MIN_COST_AXIS : 2}
+          />
+          <View className="mb-4 mt-2 gap-1">
+            <Text className="text-xs text-muted-foreground">
+              {t('voiceUsage.remoteUnknown')}
+            </Text>
+            {!!total?.unknown_cost_calls && (
+              <View className="flex-row items-center gap-2">
+                <View className="size-2 rounded-sm border border-dashed border-muted-foreground" />
+                <Text className="min-w-0 flex-1 text-xs text-muted-foreground">
+                  {t('voiceUsage.unknownCalls', {
+                    count: total.unknown_cost_calls,
+                  })}
+                </Text>
+              </View>
+            )}
+            {!!total?.incomplete_calls && (
+              <Text className="text-xs text-muted-foreground">
+                {t('voiceUsage.incompleteCalls', {
+                  count: total.incomplete_calls,
+                })}
+              </Text>
+            )}
+          </View>
+          {activeCalls.length > 0 && (
+            <View className="mb-4 gap-2 border-t border-border pt-4">
+              <Text className="text-xs font-semibold text-muted-foreground">
+                {t('voiceUsage.current')}
+              </Text>
+              {activeCalls.map(call => (
+                <View
+                  key={call.session_id}
+                  className="flex-row items-center justify-between gap-3"
+                >
+                  <Text className="min-w-0 flex-1 text-sm">
+                    {t(`voiceUsage.${call.mode}`)} · {t('voiceUsage.active')}
+                  </Text>
+                  <Text className="max-w-[60%] text-right text-sm font-medium">
+                    {cost(call)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+          <View className="border-t border-border pt-4">
+            <Text className="mb-2 text-xs font-semibold text-muted-foreground">
+              {t('voiceUsage.history')}
+            </Text>
+            {history.length === 0 && (
+              <Text className="py-3 text-sm text-muted-foreground">
+                {t(
+                  summary.calls.length > 0
+                    ? 'voiceUsage.emptyRange'
+                    : mode === 'realtime' ||
+                        mode === 'live' ||
+                        provider === 'openai'
+                      ? 'voiceUsage.cloudEmpty'
+                      : 'voiceUsage.empty',
+                )}
+              </Text>
+            )}
+            {history.slice(0, limit).map(call => (
+              <View
+                key={call.session_id}
+                className="gap-1 border-b border-border py-3"
+              >
+                <View className="flex-row items-start justify-between gap-3">
+                  <Text className="min-w-0 flex-1 text-sm font-medium">
+                    {t(`voiceUsage.${call.mode}`)}
+                  </Text>
+                  <Text className="max-w-[60%] text-right text-sm font-semibold">
+                    {cost(call)}
+                  </Text>
+                </View>
+                <Text className="text-xs text-muted-foreground">
+                  {new Date(call.started_at_ms).toLocaleString(i18n.language)} ·{' '}
+                  {t(`voiceUsage.${call.scope}`)}
+                </Text>
+                <Text className="text-xs text-muted-foreground">
+                  {t(`voiceProvider.${call.provider}`)}
+                  {call.model ? ` · ${call.model}` : ''}
+                  {call.voice ? ` · ${call.voice}` : ''}
+                </Text>
+                {call.provider !== 'local' && (
+                  <Text className="text-xs text-muted-foreground">
+                    {t(`voiceUsage.${call.status}`)}
+                  </Text>
+                )}
+                <Text className="text-xs text-muted-foreground">
+                  {call.active
+                    ? t('voiceUsage.active')
+                    : call.ended_at_ms === null
+                      ? t('voiceUsage.endUnknown')
+                      : t('voiceUsage.ended', {
+                          time: new Date(call.ended_at_ms).toLocaleTimeString(
+                            i18n.language,
+                          ),
+                        })}
+                </Text>
+              </View>
+            ))}
+            {history.length > limit && (
+              <GlassButton
+                variant="ghost"
+                onPress={() => setLimit(value => value + PAGE_SIZE)}
+              >
+                <Text>{t('voiceUsage.more')}</Text>
+              </GlassButton>
+            )}
+          </View>
+        </>
+      )}
+    </CollapsibleSectionCard>
+  );
+}
+
+function UsageFilter<T extends string>({
+  title,
+  options,
+  selected,
+  onSelect,
+  label,
+}: {
+  title: string;
+  options: (T | undefined)[];
+  selected: T | undefined;
+  onSelect: (value: T | undefined) => void;
+  label: (value: T | undefined) => string;
+}) {
+  return (
+    <View className="gap-1.5">
+      <Text className="text-xs font-medium text-muted-foreground">{title}</Text>
+      <View className="flex-row flex-wrap gap-1">
+        {options.map(value => (
+          <GlassButton
+            key={value ?? 'all'}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: selected === value }}
+            variant={selected === value ? 'secondary' : 'ghost'}
+            onPress={() => onSelect(value)}
+          >
+            <Text className="text-xs">{label(value)}</Text>
+          </GlassButton>
+        ))}
       </View>
-      <Text className="text-sm font-medium">{t('voiceUsage.scope')}</Text>
-      <View className="flex-row flex-wrap gap-2">
-        {SCOPES.map(value => <GlassButton key={value ?? 'all'} accessibilityRole="radio"
-          accessibilityState={{ selected: scope === value }} variant={scope === value ? 'secondary' : 'ghost'}
-          onPress={() => setScope(value)}><Text>{t(value ? `voiceUsage.${value}` : 'voiceUsage.all')}</Text></GlassButton>)}
-      </View>
-      {error ? <>
-        <Text accessibilityRole="alert" className="text-xs text-destructive">{t('voiceUsage.storageError')}</Text>
-        <GlassButton onPress={() => setRefresh(value => value + 1)}><Text>{t('voiceUsage.retry')}</Text></GlassButton>
-      </> : !summary ? <Text>{t('voiceUsage.loading')}</Text> : <>
-        <Text className="text-sm font-medium">{t('voiceUsage.current')}</Text>
-        {summary.calls.some(call => call.active) ? summary.calls.filter(call => call.active).map(call =>
-          <Text key={call.session_id}>{cost(call)}</Text>) : <Text className="text-xs text-muted-foreground">{t('voiceUsage.noCurrent')}</Text>}
-        {PERIODS.map(period => {
-          const total = summary.totals[period];
-          return <View key={period} className="gap-1 border-t border-border py-2">
-            <Text>{t(`voiceUsage.${period}`)} · {t('voiceUsage.activityCount', { count: total.calls })}</Text>
-            <Text>{total.calls === 0 ? t('voiceUsage.noCalls')
-              : total.unknown_cost_calls > 0 && total.known_estimated_usd === 0 ? t('voiceUsage.unknown')
-                : t('voiceUsage.knownEstimate', { cost: usd(total.known_estimated_usd) })}</Text>
-            {total.unknown_cost_calls > 0 && <Text className="text-xs text-muted-foreground">{t('voiceUsage.unknownCalls', { count: total.unknown_cost_calls })}</Text>}
-            {total.incomplete_calls > 0 && <Text className="text-xs text-muted-foreground">{t('voiceUsage.incompleteCalls', { count: total.incomplete_calls })}</Text>}
-          </View>;
-        })}
-        <Text className="text-sm font-medium">{t('voiceUsage.history')}</Text>
-        {summary.calls.length === 0 && <Text className="text-xs text-muted-foreground">{t(mode === 'realtime' || mode === 'live' || provider === 'openai' ? 'voiceUsage.cloudEmpty' : 'voiceUsage.empty')}</Text>}
-        {summary.calls.slice(0, limit).map(call => <View key={call.session_id} className="gap-1 border-t border-border py-2">
-          <Text>{new Date(call.started_at_ms).toLocaleString()} · {t(`voiceUsage.${call.mode}`)}</Text>
-          <Text className="text-xs text-muted-foreground">{t(`voiceProvider.${call.provider}`)} · {t(`voiceUsage.${call.scope}`)}{call.model ? ` · ${call.model}` : ''}{call.voice ? ` · ${call.voice}` : ''}</Text>
-          <Text>{cost(call)}</Text>
-          {call.mode === 'live' && <Text className="text-xs text-muted-foreground">{t('voiceUsage.remoteUnknown')}</Text>}
-          {call.provider !== 'local' && <Text className="text-xs text-muted-foreground">{t(`voiceUsage.${call.status}`)}</Text>}
-          <Text className="text-xs text-muted-foreground">{call.active ? t('voiceUsage.active') : call.ended_at_ms === null ? t('voiceUsage.endUnknown') : t('voiceUsage.ended', { time: new Date(call.ended_at_ms).toLocaleString() })}</Text>
-        </View>)}
-        {summary.calls.length > limit && <GlassButton onPress={() => setLimit(value => value + PAGE_SIZE)}><Text>{t('voiceUsage.more')}</Text></GlassButton>}
-      </>}
-    </>}
-  </View>;
+    </View>
+  );
 }

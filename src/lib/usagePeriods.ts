@@ -20,6 +20,31 @@ export type UsageChartPeriod = {
   unit: 'hour' | 'day' | 'month' | 'year';
 };
 
+export function formatUsageChartDate(
+  date: Date,
+  unit: UsageChartPeriod['unit'],
+  range: UsageRange,
+  language: string,
+  compact = false,
+) {
+  const options: Intl.DateTimeFormatOptions =
+    unit === 'hour'
+      ? {
+          hour: 'numeric',
+          ...(compact ? {} : { minute: '2-digit', timeZoneName: 'short' }),
+        }
+      : unit === 'day'
+        ? compact
+          ? range === 'week'
+            ? { weekday: 'narrow' }
+            : { day: 'numeric' }
+          : { weekday: 'short', month: 'short', day: 'numeric' }
+        : unit === 'month'
+          ? { month: 'short', ...(compact ? {} : { year: 'numeric' }) }
+          : { year: 'numeric' };
+  return new Intl.DateTimeFormat(language, options).format(date);
+}
+
 const HOUR_MS = 60 * 60 * 1_000;
 const MIN_LIFETIME_MONTHS = 6;
 const MAX_LIFETIME_MONTHS = 24;

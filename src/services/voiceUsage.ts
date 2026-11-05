@@ -1,5 +1,6 @@
 import { appStorage } from './appStorage';
 import { settledPromise } from '../lib/promises';
+import { usageChartPeriod, type UsageChartPeriod, type UsageRange } from '../lib/usagePeriods';
 
 export type UsageProvider = 'local' | 'openai';
 export type UsageMode = 'turn_based' | 'realtime' | 'live' | 'tts';
@@ -47,9 +48,10 @@ export interface VoiceUsageCall extends VoiceUsageIdentity {
   status: AccountingStatus;
   items: Record<string, VoiceUsageItem>;
 }
-export type UsagePeriod = 'today' | 'week' | 'month' | 'lifetime';
+export type UsagePeriod = UsageRange;
 export interface VoiceUsageTotal { known_estimated_usd: number; unknown_cost_calls: number; incomplete_calls: number; calls: number }
-export interface VoiceUsageSummary { calls: VoiceUsageCall[]; totals: Record<UsagePeriod, VoiceUsageTotal> }
+export type VoiceUsageChart = UsageChartPeriod & { buckets: VoiceUsageTotal[] };
+export interface VoiceUsageSummary { calls: VoiceUsageCall[]; totals: Record<UsagePeriod, VoiceUsageTotal>; chart?: VoiceUsageChart }
 export interface VoiceUsageFilter { provider?: UsageProvider; mode?: UsageMode; scope?: UsageScope }
 
 export function voiceUsageQuery(filter: VoiceUsageFilter, now = new Date()) {
@@ -95,10 +97,23 @@ export class VoiceUsageLedger {
       finally { for (const listener of this.listeners) listener(); }
     });
   }
-  summary(filter: VoiceUsageFilter = {}, now = new Date()): Promise<VoiceUsageSummary> {
+  summary(filter: VoiceUsageFilter = {}, now = new Date(), range?: UsageRange): Promise<VoiceUsageSummary> {
     return this.enqueue(async () => {
       await this.flush();
-      return JSON.parse(await this.bridge().voiceUsageSummary(JSON.stringify(voiceUsageQuery(filter, now)))) as VoiceUsageSummary;
+      const query = voiceUsageQuery(filter, now);
+      const read = async (period?: UsageChartPeriod) => JSON.parse(await this.bridge().voiceUsageSummary(JSON.stringify({
+        ...query, ...(period ? { chart_boundaries_ms: period.boundaries.map(Number) } : {}),
+      }))) as VoiceUsageSummary & { chart_buckets?: VoiceUsageTotal[] };
+      let period = range && range !== 'lifetime' ? usageChartPeriod(range, now) : undefined;
+      let summary = await read(period);
+      if (range === 'lifetime') {
+        const first = summary.calls.at(-1)?.started_at_ms;
+        period = usageChartPeriod(range, now, first === undefined ? undefined : BigInt(first));
+        summary = await read(period);
+      }
+      if (!period) return summary;
+      if (summary.chart_buckets?.length !== period.dates.length) throw new Error('Voice usage chart is unavailable.');
+      return { ...summary, chart: { ...period, buckets: summary.chart_buckets } };
     });
   }
 }
