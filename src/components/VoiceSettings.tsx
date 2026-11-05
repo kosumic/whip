@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { View } from 'react-native';
 import Volume2 from 'lucide-react-native/icons/volume-2';
 import Check from 'lucide-react-native/icons/check';
@@ -16,6 +16,7 @@ import { SpeechVoicePicker } from './SpeechVoicePicker';
 import { OpenAiVoiceKeySetting } from './OpenAiVoiceKeySetting';
 import { OpenAiIcon } from './OpenAiIcon';
 import { VoiceConversationSetting, type VoiceConversationSettingHandle } from './VoiceConversationSetting';
+import { VoiceConversationProviderSetting } from './VoiceConversationProviderSetting';
 import { Input } from './ui/input';
 import { Text } from './ui/text';
 import { Icon } from './ui/icon';
@@ -27,9 +28,9 @@ async function stopPreviewPlayback(owner: string) {
 const PREVIEW_TEXT_SAVE_DELAY_MS = 500;
 const SPEECH_BACKENDS = ['system', 'phonon', 'openai'] as const;
 
-export function SpeechBackendSetting() {
+export function VoiceSettings({ children }: { children?: ReactNode }) {
   const { t } = useTranslation();
-  const { expanded: speechExpanded, toggleExpanded: toggleSpeech } = useSectionExpansion('speech', true);
+  const { expanded: voiceExpanded, toggleExpanded: toggleVoice } = useSectionExpansion('voice', true);
   const { expanded: openaiExpanded, toggleExpanded: toggleOpenai } = useSectionExpansion('openai', true);
   const conversationSetting = useRef<VoiceConversationSettingHandle>(null);
   const [status, setStatus] = useState<SpeechBackendStatus>();
@@ -210,11 +211,16 @@ export function SpeechBackendSetting() {
       {previewTextError || error || status?.error || status?.fallback ? <Text accessibilityLiveRegion="polite" className="text-xs text-muted-foreground">{previewTextError ?? error ?? status?.error ?? status?.fallback}</Text> : null}
   </>;
   return <>
-    <CollapsibleSectionCard title={t('speech.backend')} icon={Volume2}
-      expanded={speechExpanded} onToggle={() => { stopPreview(); toggleSpeech(); }} contentClassName="pb-3.5">
+    <CollapsibleSectionCard title={t('settings.voice')} icon={Volume2}
+      expanded={voiceExpanded} onToggle={() => { stopPreview(); toggleVoice(); }} contentClassName="pb-3.5">
+      <VoiceConversationProviderSetting />
+      {children}
+      <View className="border-t border-border px-3.5 pt-3">
+        <Text className="text-sm font-medium">{t('speech.backend')}</Text>
+      </View>
       <View className="flex-row flex-wrap items-stretch gap-2 px-3.5 pt-3">
         {SPEECH_BACKENDS.map(backend => {
-          const disabled = busy || !status;
+          const disabled = busy || !status || (backend === 'openai' && !credential.ready);
           return <GlassButton key={backend}
             variant={displayedBackend === backend ? 'secondary' : 'ghost'} size="content" role="radio"
             className="min-h-12 flex-1 px-3 py-3"
@@ -224,7 +230,6 @@ export function SpeechBackendSetting() {
               if (disabled) return;
               if (setupBackend === backend && backendToActivate) void run(backendToActivate);
               else setSetupBackend(backend);
-              if (backend === 'openai' && !credential.ready && !openaiExpanded) toggleOpenai();
             })}>
             <Text className="text-center text-sm font-medium">{t(`speech.${backend}`)}</Text>
           </GlassButton>;

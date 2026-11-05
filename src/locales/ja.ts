@@ -66,7 +66,7 @@ export const ja = {
   'openai.configure': 'このプロバイダーは「設定 → OpenAI」で設定できます。',
   'openai.sharedKey': 'OpenAI の会話と音声合成は、1 つの API キーを共有します。',
   'openai.conversation': '会話',
-  "voiceProvider.title": "会話プロバイダー",
+  "voiceProvider.title": "音声通話プロバイダー",
   "voiceProvider.local": "ローカル",
   "voiceProvider.openai": "OpenAI API",
   "voiceProvider.independent": "会話設定はローカル音声入力、音声合成、読み上げ、お知らせとは独立しています。",

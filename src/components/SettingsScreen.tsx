@@ -90,10 +90,9 @@ import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { GlassButton, GlassIconBadge } from './GlassControls';
 import { CollapsibleSectionCard } from './CollapsibleSectionCard';
 import { SettingsChoiceRow } from './SettingsChoiceRow';
-import { SpeechBackendSetting } from './SpeechBackendSetting';
+import { VoiceSettings } from './VoiceSettings';
 import { VoiceCaptionHistory } from './VoiceCaptionHistory';
 import { MIN_VAD_SENSITIVITY, MAX_VAD_SENSITIVITY, VAD_SENSITIVITY_STEP } from '../lib/voiceVadSensitivity';
-import { VoiceConversationProviderSetting } from './VoiceConversationProviderSetting';
 import { DetailsTitle, SettingsDetailsProvider } from './SettingsDetails';
 import { ShizukuSection } from './ShizukuSection';
 import { VoiceConversationSettingsContext } from '../lib/voiceConversationSettingsContext';
@@ -211,7 +210,6 @@ function useBackgroundImageActions({
 
 export function SettingsSection(props: SettingsSectionProps) {
   const { expanded: notificationsExpanded, toggleExpanded: toggleNotifications } = useSectionExpansion('notifications', true);
-  const { expanded: voiceExpanded, toggleExpanded: toggleVoice } = useSectionExpansion('voice', true);
   const { expanded: securityExpanded, toggleExpanded: toggleSecurity } = useSectionExpansion('security', true);
   const { expanded: appearanceExpanded, toggleExpanded: toggleAppearance } = useSectionExpansion('appearance', true);
   const { expanded: herdExpanded, toggleExpanded: toggleHerd } = useSectionExpansion('herd', true);
@@ -300,12 +298,7 @@ export function SettingsSection(props: SettingsSectionProps) {
         />
       </CollapsibleSectionCard>
 
-      <CollapsibleSectionCard
-        title={t('settings.voice')}
-        icon={Volume2}
-        expanded={voiceExpanded}
-        onToggle={toggleVoice}>
-        <VoiceConversationProviderSetting />
+      <VoiceSettings>
         <SliderRow
           title={t('voiceChat.vadSensitivity')}
           copy={t('voiceChat.vadSensitivityDescription')}
@@ -318,9 +311,7 @@ export function SettingsSection(props: SettingsSectionProps) {
           divided
         />
         <SettingRow title={t('settings.speakChanges')} copy={t('settings.speakChangesCopy')} value={props.ttsEnabled} onChange={props.onTtsChange} divided />
-      </CollapsibleSectionCard>
-
-      <SpeechBackendSetting />
+      </VoiceSettings>
       <VoiceCaptionHistory />
 
       <CollapsibleSectionCard

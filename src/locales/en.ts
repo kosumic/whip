@@ -56,7 +56,7 @@ export const en = {
   'openai.configure': "Configure this provider in Settings → OpenAI.",
   'openai.sharedKey': "One API key is shared by OpenAI conversations and text-to-speech.",
   'openai.conversation': "Conversation",
-  'voiceProvider.title': 'Conversation provider',
+  'voiceProvider.title': 'Voice call provider',
   'voiceProvider.local': 'Local',
   'voiceProvider.openai': 'OpenAI API',
   'voiceProvider.independent': 'Conversation settings are separate from local dictation, speech synthesis, read-aloud and announcements.',

@@ -68,7 +68,7 @@ export const fr = {
   'openai.configure': 'Configurez ce fournisseur dans Réglages → OpenAI.',
   'openai.sharedKey': 'Une seule clé API est partagée entre les conversations et la synthèse vocale OpenAI.',
   'openai.conversation': 'Conversation',
-  "voiceProvider.title": "Fournisseur de conversation",
+  "voiceProvider.title": "Fournisseur d’appels vocaux",
   "voiceProvider.local": "Local",
   "voiceProvider.openai": "OpenAI API",
   "voiceProvider.independent": "Ces réglages sont indépendants de la dictée locale, de la synthèse vocale, de la lecture et des annonces.",

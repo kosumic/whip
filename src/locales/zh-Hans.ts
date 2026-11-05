@@ -66,7 +66,7 @@ export const zhHans = {
   'openai.configure': '在「设置 → OpenAI」中配置此提供商。',
   'openai.sharedKey': 'OpenAI 对话和语音合成共用一个 API 密钥。',
   'openai.conversation': '对话',
-  "voiceProvider.title": "对话提供商",
+  "voiceProvider.title": "语音通话提供商",
   "voiceProvider.local": "本地",
   "voiceProvider.openai": "OpenAI API",
   "voiceProvider.independent": "对话设置独立于本地听写、语音合成、朗读和播报。",

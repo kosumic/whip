@@ -66,7 +66,7 @@ export const zhHant: Record<string, string> = {
   'openai.configure': '在「設定 → OpenAI」中設定此供應商。',
   'openai.sharedKey': 'OpenAI 對話和語音合成共用一個 API 金鑰。',
   'openai.conversation': '對話',
-  "voiceProvider.title": "對話供應商",
+  "voiceProvider.title": "語音通話供應商",
   "voiceProvider.local": "本機",
   "voiceProvider.openai": "OpenAI API",
   "voiceProvider.independent": "對話設定獨立於本機聽寫、語音合成、朗讀和播報。",
