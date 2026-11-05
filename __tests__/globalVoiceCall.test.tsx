@@ -4,7 +4,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { GlobalVoiceCall, type GlobalVoiceCallHandle } from '../src/components/GlobalVoiceCall';
 import { VoiceChatScreen } from '../src/components/VoiceChatScreen';
 import { VoiceConversationSettingsContext } from '../src/lib/voiceConversationSettingsContext';
-import { DEFAULT_VOICE_CONVERSATION_SETTINGS as defaults } from '../src/lib/voiceConversationSettings';
+import { DEFAULT_VOICE_CONVERSATION_SETTINGS as defaults, type VoiceConversationSettings } from '../src/lib/voiceConversationSettings';
 import type { GlobalVoiceControlContext } from '../src/services/globalVoiceControl';
 import { Text } from '../src/components/ui/text';
 
@@ -46,40 +46,59 @@ test('an already selected OpenAI provider cannot start a global call without its
     mockCredentialReady = true;
     await act(async () => view.update(render()));
     expect(start().props.disabled).toBe(false);
+    expect(view.root.findAllByType(VoiceChatScreen)).toHaveLength(0);
+    await act(async () => start().props.onPress());
+    expect(view.root.findAllByType(VoiceChatScreen)).toHaveLength(1);
   } finally { await act(async () => view?.unmount()); }
 });
 
-test('Hosts call setup requires a supported cloud mode, then navigation preserves the global call view', async () => {
+test.each<Partial<VoiceConversationSettings>>([{ provider: 'local' }, { provider: 'openai', mode: 'Live' }])('unsupported saved configuration opens setup: %j', async settings => {
+  const ref = createRef<GlobalVoiceCallHandle>();
+  let view!: ReactTestRenderer;
+  try {
+    await act(async () => { view = create(<VoiceConversationSettingsContext value={{ settings: { ...defaults, ...settings }, onChange: jest.fn() }}>
+      <GlobalVoiceCall ref={ref} navigation={{} as never} sessions={{ presentationSessions: [] } as never} locked={false} visible />
+    </VoiceConversationSettingsContext>); });
+    await act(async () => ref.current!.open());
+    expect(view.root.findByType(Modal).props.visible).toBe(true);
+    const start = view.root.findAllByType(Text).find(node => node.props.children === 'globalCall.start')!.parent!;
+    expect(start.props.disabled).toBe(true);
+    await act(async () => start.props.onPress());
+    expect(view.root.findAllByType(VoiceChatScreen)).toHaveLength(0);
+  } finally { await act(async () => view?.unmount()); }
+});
+
+test('saved configuration starts directly, navigation preserves the call, and an ended call can restart', async () => {
   const ref = createRef<GlobalVoiceCallHandle>();
   const navigation = { state: { tab: 'hosts' } } as never;
   const sessions = { presentationSessions: [], activeSession: null } as never;
   let view!: ReactTestRenderer;
-  const render = (provider: 'local' | 'openai') => <VoiceConversationSettingsContext value={{ settings: { ...defaults, provider }, onChange: jest.fn() }}>
-    <GlobalVoiceCall ref={ref} navigation={navigation} sessions={sessions} locked={false} visible />
+  const render = (locked = false) => <VoiceConversationSettingsContext value={{ settings: { ...defaults, provider: 'openai' }, onChange: jest.fn() }}>
+    <GlobalVoiceCall ref={ref} navigation={navigation} sessions={sessions} locked={locked} visible />
   </VoiceConversationSettingsContext>;
   try {
-    await act(async () => { view = create(render('local')); });
+    await act(async () => { view = create(render(true)); });
     await act(async () => ref.current!.open());
-    expect(view.root.findByType(Modal).props.visible).toBe(true);
-    let start = view.root.findAllByType(Text).find(node => node.props.children === 'globalCall.start')!.parent!;
-    expect(start.props.disabled).toBe(true);
-    await act(async () => view.update(render('openai')));
-    start = view.root.findAllByType(Text).find(node => node.props.children === 'globalCall.start')!.parent!;
-    expect(start.props.disabled).toBe(false);
-    await act(async () => start.props.onPress());
+    expect(view.root.findAllByType(VoiceChatScreen)).toHaveLength(0);
+    expect(view.root.findByType(Modal).props.visible).toBe(false);
+    await act(async () => view.update(render()));
+    expect(view.root.findAllByType(VoiceChatScreen)).toHaveLength(0);
+    await act(async () => ref.current!.open());
     const call = view.root.findByType(VoiceChatScreen);
     expect(call.props.target).toEqual({ global: true, label: 'globalCall.title' });
     expect(view.root.findByType(Modal).props.visible).toBe(false);
     await act(async () => call.props.onMinimize());
-    await act(async () => view.update(render('openai')));
+    mockCredentialReady = false;
+    await act(async () => view.update(render()));
     expect(view.root.findByType(VoiceChatScreen)).toBe(call);
     expect(call.props.expanded).toBe(false);
     await act(async () => ref.current!.open());
     expect(call.props.expanded).toBe(true);
     mockActiveCall = false;
+    mockCredentialReady = true;
+    await act(async () => view.update(render()));
     await act(async () => ref.current!.open());
-    expect(view.root.findByType(Modal).props.visible).toBe(true);
-    await act(async () => view.root.findAllByType(Text).find(node => node.props.children === 'globalCall.start')!.parent!.props.onPress());
+    expect(view.root.findByType(Modal).props.visible).toBe(false);
     expect(view.root.findByType(VoiceChatScreen)).not.toBe(call);
   } finally { await act(async () => view?.unmount()); }
 });
@@ -92,7 +111,6 @@ test('a revoked native delegation confirmation resolves as denied and removes th
       <GlobalVoiceCall ref={ref} navigation={{} as never} sessions={{ presentationSessions: [] } as never} locked={false} visible />
     </VoiceConversationSettingsContext>); });
     await act(async () => ref.current!.open());
-    await act(async () => view.root.findAllByType(Text).find(node => node.props.children === 'globalCall.start')!.parent!.props.onPress());
     const abort = new AbortController();
     let pending!: Promise<boolean>;
     await act(async () => { pending = mockContext().confirm({ hostId: 'host', paneId: 'pane', prompt: 'Exact user request' }, abort.signal); });

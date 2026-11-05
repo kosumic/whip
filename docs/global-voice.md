@@ -1,9 +1,11 @@
 # Global voice calls (#326)
 
-The phone button on Hosts, More, and the Terminal control bar opens Global call
-settings, or returns to the current global call. Choose OpenAI API, Realtime,
-and a saved voice/model, then explicitly start the call. No SSH connection or
-saved host is required. Local turn-based calls remain agent-bound; GPT-Live is
+The phone button on Hosts, More, and the Terminal control bar starts a global
+call using the saved OpenAI Realtime provider, model, and voice, or returns to
+the current global call. If the saved configuration is unsupported or the API
+key is not ready, it opens Global call settings to complete setup and explicitly
+start the call. No SSH connection or saved host is required. Local turn-based
+calls remain agent-bound; GPT-Live is
 unavailable until the Stage 3 adapter (#325) is implemented.
 
 The app shell presents the call. Changing tabs, opening an agent, disconnecting

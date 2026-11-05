@@ -1,4 +1,4 @@
-import { useContext, useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
+import { useCallback, useContext, useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
 import { Modal, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -40,11 +40,17 @@ export function GlobalVoiceCall({ ref, navigation, sessions, locked, visible }: 
   const approvalSession = approval ? sessions.presentationSessions.find(item => item.hostId === approval.hostId) : undefined;
   const approvalPane = approvalSession?.snapshot.panes.find(item => item.pane_id === approval?.paneId);
   const approvalAgent = approvalPane?.label || approvalPane?.display_agent || approvalPane?.agent;
+  const canStart = credential.ready && settings.provider === 'openai' && settings.mode === 'Realtime';
+  const start = useCallback(() => {
+    if (locked || !canStart) return;
+    setCallAttempt(attempt => attempt + 1); setSetup(false); setExpanded(true); setCalling(true);
+  }, [locked, canStart]);
   useImperativeHandle(ref, () => ({ open() {
     if (locked) return;
     if (calling && voiceSessionManager.active?.scope.kind === 'Global' && !voiceSessionManager.active.ended) setExpanded(true);
+    else if (canStart) start();
     else setSetup(true);
-  } }), [calling, locked]);
+  } }), [calling, locked, canStart, start]);
   const context = { navigation, sessions, locked, showNavigation: () => {
     approvalRef.current?.complete(false); setComposing(false); setExpanded(false);
   },
@@ -71,10 +77,6 @@ export function GlobalVoiceCall({ ref, navigation, sessions, locked, visible }: 
   useEffect(() => {
     if (locked) { setSetup(false); setComposing(false); approvalRef.current?.complete(false); }
   }, [locked]);
-  const start = () => {
-    if (contextRef.current.locked || !credential.ready || settings.provider !== 'openai' || settings.mode !== 'Realtime') return;
-    setCallAttempt(attempt => attempt + 1); setSetup(false); setExpanded(true); setCalling(true);
-  };
   return <>
     <Modal visible={setup && visible && !locked} animationType="slide" onRequestClose={closeSetup}>
       <View className="flex-1 bg-background" style={{ paddingTop: top, paddingBottom: bottom }}>
@@ -86,7 +88,7 @@ export function GlobalVoiceCall({ ref, navigation, sessions, locked, visible }: 
           <Text className="px-5 pb-4 text-sm text-muted-foreground">{t('globalCall.permissions')}</Text>
           <VoiceConversationProviderSetting />
         </ScrollView>
-        <Button className="mx-5 my-3" disabled={!credential.ready || settings.provider !== 'openai' || settings.mode !== 'Realtime'} onPress={start}>
+        <Button className="mx-5 my-3" disabled={!canStart} onPress={start}>
           <Text>{t('globalCall.start')}</Text>
         </Button>
         {settings.provider === 'local' && <Text className="px-5 pb-3 text-sm text-muted-foreground">{t('globalCall.cloudRequired')}</Text>}
