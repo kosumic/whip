@@ -50,8 +50,8 @@ type Listener = (state: AgentChatState | null, baseline?: boolean) => void;
 export function transcriptCacheHostAvailability(state: HostRuntimeState): 'load' | 'retain' | 'unavailable' {
   if (!state.snapshot) return 'unavailable';
   if (state.syncStatus === 'synced' && state.freshness === 'fresh') return 'load';
-  const resyncing = state.syncStatus === 'syncing' || (state.syncStatus === 'synced' && state.needsResync);
-  return resyncing && state.freshness === 'stale' ? 'retain' : 'unavailable';
+  // Reconnects and failed resyncs still own the last snapshot and history.
+  return state.freshness === 'stale' ? 'retain' : 'unavailable';
 }
 
 export interface TranscriptCacheTarget {
@@ -254,8 +254,9 @@ export class NativeTranscriptService {
     for (const host of hosts) {
       const previous = this.cacheHostVersions.get(host.hostSessionId);
       const availability = transcriptCacheHostAvailability(host.state);
+      // SSH generations share the runtime's transcript manager and bindings.
       if (availability === 'unavailable' || (previous &&
-        (!sameRuntime(previous.transport, host.transport) || previous.connectionGeneration !== host.state.connectionGeneration))) {
+        !sameRuntime(previous.transport, host.transport))) {
         invalidHosts.add(host.hostSessionId);
       }
       this.cacheHostAvailability.set(host.hostSessionId, availability);

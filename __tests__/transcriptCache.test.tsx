@@ -347,7 +347,7 @@ test('a syncing host ranks only resident targets and still obeys capacity limits
   expect([...runtime.bindings.keys()].sort()).toEqual(['terminal-2', 'terminal-3', 'terminal-4']);
 });
 
-test.each(['session', 'pane', 'disconnected', 'removed', 'transport', 'generation'] as const)(
+test.each(['session', 'pane', 'disconnected', 'removed', 'transport'] as const)(
   '%s invalidation removes bindings and titles even for a foreground transcript during resync', async change => {
     const runtime = host('one', ['working', 'blocked', 'done']);
     const hosts = [runtime];
@@ -370,7 +370,6 @@ test.each(['session', 'pane', 'disconnected', 'removed', 'transport', 'generatio
     if (change === 'transport') fixture.runtimesRef.current.set(runtime.id, {
       client: { activeNative: { ...runtime.transport, runtimeIncarnation: 2 } },
     } as unknown as LiveRuntime);
-    if (change === 'generation') runtime.state.connectionGeneration += 1;
     await fixture.render();
     expect(runtime.transport.detachAgentChat).toHaveBeenCalledWith(pane.terminal_id);
     expect(agentTranscriptService.getState('one:terminal-0')).toBeNull();
@@ -379,6 +378,55 @@ test.each(['session', 'pane', 'disconnected', 'removed', 'transport', 'generatio
     await act(async () => { unsubscribe(); });
   },
 );
+
+test('reconnecting keeps the selected conversation and title through SSH replacement and resync retries', async () => {
+  const runtime = host('one', ['working', 'blocked']);
+  const fixture = setup([runtime], [[0, 0], [0, 1]]);
+  await fixture.render();
+  const binding = runtime.bindings.get('terminal-0')!;
+  const listener = jest.fn();
+  let unsubscribe = () => {};
+  await act(async () => {
+    unsubscribe = agentTranscriptService.subscribe(binding.bindingToken, listener);
+    binding.state = { ...binding.state, revision: 2, messages: [{
+      id: 'reply', role: 'assistant', diffs: [],
+      parts: [{ id: 'text', type: 'text', text: 'Keep this conversation visible' }],
+    }] };
+    runtime.handlers.get(binding.terminalId)!({
+      key: binding.transcriptKey, runtimeIncarnation: binding.runtimeIncarnation,
+      revision: 2, deltas: [{ type: 'reset', state: binding.state }],
+    });
+  });
+  const cached = agentTranscriptService.getState(binding.bindingToken);
+  const originalBindings = new Map(runtime.bindings);
+  titleObservations.length = 0;
+  listener.mockClear();
+  runtime.state.freshness = 'stale';
+  runtime.state.needsResync = true;
+  for (const syncStatus of ['synced', 'syncing', 'error', 'syncing', 'synced'] as const) {
+    runtime.state.syncStatus = syncStatus;
+    runtime.state.revision += 1;
+    if (syncStatus === 'syncing') runtime.state.connectionGeneration += 1;
+    await fixture.render();
+    expect(agentTranscriptService.getState(binding.bindingToken)).toBe(cached);
+    expect(cached?.transcript.messages[0].parts[0]).toMatchObject({ text: 'Keep this conversation visible' });
+    for (const [terminalId, original] of originalBindings) {
+      expect(runtime.bindings.get(terminalId)).toBe(original);
+    }
+    expectTitle(runtime, runtime.panes[0], 'Title session-0');
+  }
+  runtime.state.freshness = 'fresh';
+  runtime.state.needsResync = false;
+  runtime.state.revision += 1;
+  await fixture.render();
+  expect(agentTranscriptService.getState(binding.bindingToken)).toBe(cached);
+  expect(listener).not.toHaveBeenCalled();
+  expect(runtime.transport.detachAgentChat).not.toHaveBeenCalled();
+  expect(runtime.transport.openAgentChat).toHaveBeenCalledTimes(2);
+  expect(runtime.transport.startAgentChat).toHaveBeenCalledTimes(2);
+  expect(titleObservations.every(item => item.rail === `Title session-${item.terminal.slice(-1)}` && item.card === item.rail)).toBe(true);
+  await act(async () => { unsubscribe(); });
+});
 
 test('an in-flight transcript refresh keeps its binding and title across host resync', async () => {
   const runtime = host('one', ['working']);
