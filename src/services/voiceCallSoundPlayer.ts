@@ -1,3 +1,6 @@
+import * as Haptics from 'expo-haptics';
+
+import { reportBackgroundFailure } from './backgroundOperations';
 import type { NativeSpeechPlayback } from './speechPlayback';
 import { loadVoiceCallSound, type VoiceCallSound } from './voiceCallSounds';
 import { recordDiagnostic } from './diagnosticFormatting';
@@ -25,6 +28,12 @@ export class VoiceCallSoundPlayer {
     try {
       const uri = await this.sounds?.[sound];
       if (!uri || (sound === 'ready' && (generation !== this.generation || !this.canPlayReady()))) return;
+      if (sound === 'ready') {
+        reportBackgroundFailure(
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success),
+          'haptic-feedback',
+        );
+      }
       await this.playback.playVoiceCallSound(uri, sound === 'ready');
     } catch { recordDiagnostic('warn', 'VoiceChat', 'sound-playback-failed', { sound }); }
     finally { if (sound === 'ready' && generation === this.generation) this.readyPlaying = false; }

@@ -78,6 +78,8 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
        options:AVAudioSessionCategoryOptionAllowBluetooth error:&error]) {
     [action fail]; [self fail:error.localizedDescription]; return;
   }
+  // The ready cue includes haptic feedback after microphone capture starts.
+  [AVAudioSession.sharedInstance setAllowHapticsAndSystemSoundsDuringRecording:YES error:nil];
   CXCallUpdate *update = [CXCallUpdate new];
   update.remoteHandle = action.handle; update.localizedCallerName = self.label;
   update.hasVideo = NO; update.supportsHolding = NO; update.supportsGrouping = NO;
