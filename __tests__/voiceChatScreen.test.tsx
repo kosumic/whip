@@ -293,3 +293,24 @@ test('Live reports duration and keeps a public agent result visible when speech 
   expect(renderedText()).toContain('The build passed. Inspect the agent chat for details.');
   expect(JSON.stringify(renderedText())).toContain('voiceUsage.remoteUnknown');
 });
+
+test.each(['speaking', 'error'] as const)('Live shows the backend result once in transcript details while %s', phase => {
+  const backendText = 'Your battery is at 75% and charging.';
+  const caption = "It's 75 percent and charging.";
+  const messages = [
+    { id: 'request', role: 'user' as const, text: "What's my battery?", active: false, spokenUtf16: 0 },
+    { id: 'result', role: 'assistant' as const, text: 'Responses · responded', active: false, spokenUtf16: 0,
+      event: { kind: 'delegation' as const, name: 'Responses', status: 'responded', output: backendText } },
+    { id: 'caption', role: 'assistant' as const, text: caption, active: false, spokenUtf16: 0 },
+  ];
+  act(() => publish({ ...listening, provider: 'openai', liveSeconds: 29, backendText, phase, messages,
+    error: phase === 'error' ? 'Voice delivery failed.' : null }));
+  expect(renderer.root.findByProps({ accessibilityLabel: caption })).toBeDefined();
+  expect(renderedText()).not.toContain(backendText);
+
+  const details = renderer.root.findAllByProps({ accessibilityRole: 'button' })
+    .find(node => node.props.accessibilityState?.expanded === false);
+  expect(details).toBeDefined();
+  act(() => { details?.props.onPress(); });
+  expect(renderedText().filter(text => text === backendText)).toHaveLength(1);
+});
