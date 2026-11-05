@@ -3,6 +3,7 @@
 //! at c90354172c5c49535b122443e9a8ed52c2233b80. Native media ownership is shared;
 //! Live delegation/context events never become Realtime function calls.
 pub(super) mod captions;
+mod errors;
 mod global;
 mod preview;
 #[cfg(test)]
@@ -445,6 +446,7 @@ impl LiveVoiceAdapter {
                                     return Ok(());
                                 }
                                 ServerEvent::Updated {session,..} => { state.pin_session(&session,config)?; }
+                                ServerEvent::Error {error,..} => return Err(errors::rejected(&error, config.global)),
                                 _ if state.session_id.is_none() => return Err("GPT-Live session did not start correctly."),
                                 ServerEvent::UsageUpdated {usage:reported,..} => {
                                     usage.observe(reported.seconds,false)?;
@@ -501,7 +503,6 @@ impl LiveVoiceAdapter {
                                 ServerEvent::InputAudioUnmuted {..} => {
                                     if state.confirm_mute(frame.client_event_id.as_deref(),false) { owner.view.lock().muted=false; }
                                 }
-                                ServerEvent::Error {..} => return Err("GPT-Live rejected a session command. Please use the agent chat; no request will be replayed."),
                                 _ => {}
                             }
                         }
@@ -755,6 +756,7 @@ async fn send(
     socket: &mut super::socket::RawSocket,
     command: Command,
 ) -> Result<String, &'static str> {
+    let kind = command.kind();
     let id = format!("whip-live:{}", SEQUENCE.fetch_add(1, Ordering::Relaxed));
     let event = ClientEvent {
         event_id: Field::Value(id.clone()),
@@ -770,6 +772,11 @@ async fn send(
     .await
     .map_err(|_| "GPT-Live upload timed out.")?
     .map_err(|_| "GPT-Live connection ended.")?;
+    if kind != "session.input_audio.append" {
+        crate::host_runtime::diagnostics::log_lifecycle(format_args!(
+            "GPT-Live sent command={kind} client_event_id={id}"
+        ));
+    }
     Ok(id)
 }
 pub(super) fn public_result(value: &Value) -> String {
