@@ -20,7 +20,7 @@ fn session_identity_cannot_change_the_authorized_attach_endpoint() {
 #[tokio::test]
 #[ignore = "requires explicitly authorized OPENAI_API_KEY and network access"]
 async fn public_live_webrtc_api_smoke() -> Result<(), Box<dyn std::error::Error>> {
-    use oai_rt_rs::live::{ClientEvent, Codec, Command, Nullable, ServerEvent};
+    use oai_rt_rs::live::{ClientEvent, Codec, Command, Field, Nullable, ServerEvent};
     use std::ffi::c_void;
     unsafe extern "C" fn read(context: *mut c_void, out: *mut u8, capacity: usize) -> i32 {
         // SAFETY: this test lends its key for one synchronous, bounded read.
@@ -39,17 +39,28 @@ async fn public_live_webrtc_api_smoke() -> Result<(), Box<dyn std::error::Error>
     let credential = unsafe { NativeCredential::read(read, (&raw mut key).cast()) }
         .map_err(|_| "Credential ingress failed")?;
     key.clear();
-    let config: voice::Config = serde_json::from_value(
-        json!({"live":true,"webrtc":true,"voice":"quartz","target":{
-            "runtimeId":"synthetic","terminalId":"synthetic","paneId":"synthetic","bindingToken":"synthetic"
-        }}),
-    )?;
-    let session = serde_json::to_value(voice::live::LiveVoiceAdapter::session(&config)?)?;
+    let config: voice::Config =
+        serde_json::from_value(json!({"live":true,"webrtc":true,"voice":"quartz","global":true}))?;
+    let input = std::env::var_os("WHIP_LIVE_SMOKE_PCM")
+        .map(std::fs::read)
+        .transpose()?;
+    let input = input.map(|bytes| {
+        bytes
+            .chunks_exact(2)
+            .map(|b| i16::from_le_bytes([b[0], b[1]]))
+            .collect::<Vec<_>>()
+    });
+    let mut session = voice::live::LiveVoiceAdapter::session(&config)?;
+    if input.is_some() {
+        session.instructions=Field::Value("Wait silently until the user speaks. Once the user greets you, say exactly: The synthetic WebRTC test passed. Do not delegate or use tools.".into());
+    }
+    let session = serde_json::to_value(session)?;
+    let mut input_offset = 0;
     let (events, mut incoming) = futures::channel::mpsc::channel(256);
     let identity = Arc::new(Mutex::new(Identity::live()));
+    let owner = playback_owner()?;
     let started = Instant::now();
-    let mut peer = Transport::new(events, identity).await?;
-    peer.incoming.set_suppressed(false)?;
+    let mut peer = Transport::new(events, identity.clone()).await?;
     let offered = startup::elapsed(started);
     let call = Call::create(&credential, peer.offer(), session).await?;
     drop(credential);
@@ -67,14 +78,24 @@ async fn public_live_webrtc_api_smoke() -> Result<(), Box<dyn std::error::Error>
     let codec = Codec {
         max_event_bytes: voice::MAX_WIRE,
     };
-    let mut decoder = opus::Decoder::new(24_000, opus::Channels::Mono)?;
-    let mut decoded = vec![0_i16; voice::RATE * 120 / 1000];
+    let (stop, stopped) = watch::channel(false);
+    let attempt = recovery::Attempt::new(owner.clone());
+    attempt.activate().map_err(|failure| failure.message)?;
+    let media_owner = owner.clone();
+    let media = tokio::spawn(async move {
+        let result = media::run(&media_owner, &mut peer, identity.clone(), stopped, &attempt).await;
+        peer.close().await?;
+        result
+    });
+    let mut decoded = [0_i16; voice::FRAME];
+    let mut request_at = None;
     let mut seen = voice::wire::Seen::default();
     let mut sent_request = false;
     let mut audio_packets = 0;
     let mut audible = false;
     let mut text = String::new();
     let mut closing = false;
+    let mut kinds = std::collections::BTreeSet::new();
     let mut finalized = false;
     let mut seconds = 0.0;
     let mut tick = tokio::time::interval(Duration::from_millis(20));
@@ -87,14 +108,32 @@ async fn public_live_webrtc_api_smoke() -> Result<(), Box<dyn std::error::Error>
                 event = sideband.next() => event.ok_or("Sideband ended")?.map_err(|_| "Sideband failed")?,
                 _ = tick.tick() => {
                     if Instant::now() > deadline { return Err("WebRTC smoke deadline exceeded".into()); }
-                    if !closing { peer.audio.send_muted_silence(Instant::now()).await?; }
-                    for _ in 0..super::super::incoming::PACKETS {
-                        let Some(packet) = peer.incoming.take()? else { break; };
-                        let packet = super::super::packet::parse(packet.as_ref()).ok_or("Invalid RTP")?;
-                        let count = decoder.decode(&packet.payload, &mut decoded, false)?;
-                        audible |= decoded[..count].iter().any(|sample| sample.unsigned_abs() >= 64);
-                        audio_packets += 1;
+                    if !sent_request && request_at.is_some_and(|at| Instant::now() >= at) {
+                        sent_request = true;
+                        audible = false;
+                        text.clear();
+                        if input.is_none() { sideband.send(Message::Text(codec.encode(&ClientEvent::new(Command::InstructionsAppend {
+                            content: "Immediately say exactly: The synthetic WebRTC test passed. Then remain quiet. Do not delegate work.".into(),
+                            delegation_id: Nullable(None),
+                        }))?.into())).await?; }
                     }
+                    let mut capture = [0_i16; voice::FRAME];
+                    if sent_request && let Some(input) = &input {
+                        let count = capture.len().min(input.len().saturating_sub(input_offset));
+                        capture[..count].copy_from_slice(&input[input_offset..input_offset+count]);
+                        input_offset += count;
+                    }
+                    owner.capture(&capture, owner.input.generation(), Instant::now());
+                    {
+                        let mut output = owner.output.lock();
+                        let count = output.read(&mut decoded);
+                        if sent_request { audible |= decoded[..count].iter().any(|sample| sample.unsigned_abs() >= 64); }
+                        audio_packets += usize::from(count > 0);
+                        let epoch = output.epoch;
+                        let delivered = output.delivered;
+                        output.acknowledge(epoch, delivered);
+                    }
+                    if media.is_finished() { return Err("Native media worker ended before playback".into()); }
                     if audible && text.to_ascii_lowercase().contains("passed") && !closing {
                         sideband.send(Message::Text(codec.encode(&ClientEvent::new(Command::Close))?.into())).await?;
                         closing = true;
@@ -104,15 +143,12 @@ async fn public_live_webrtc_api_smoke() -> Result<(), Box<dyn std::error::Error>
             };
             let Message::Text(raw) = event else { continue; };
             let value: Value = serde_json::from_str(&raw)?;
+            if let Some(kind)=value["type"].as_str().filter(|s|s.len()<80&&s.bytes().all(|b|b.is_ascii_alphanumeric()||b==b'_'||b==b'.')) && kinds.insert(kind.to_owned()) { eprintln!("Live observed event type={kind}"); }
             if matches!(value["type"].as_str(), Some("session.output_audio.delta" | "session.input_audio.append")) { continue; }
             if !seen.accept(&raw)? { continue; }
             match codec.decode_server(&raw)?.event {
-                ServerEvent::Started {..} if !sent_request => {
-                    sent_request = true;
-                    sideband.send(Message::Text(codec.encode(&ClientEvent::new(Command::InstructionsAppend {
-                        content: "Immediately say exactly: The synthetic WebRTC test passed. Then remain quiet. Do not delegate work.".into(),
-                        delegation_id: Nullable(None),
-                    }))?.into())).await?;
+                ServerEvent::Started {..} if request_at.is_none() => {
+                    request_at = Some(Instant::now() + Duration::from_secs(5));
                 }
                 ServerEvent::OutputTranscriptDelta {delta,..} => text.push_str(&delta),
                 ServerEvent::Closed {usage,reason,..} => {
@@ -132,8 +168,8 @@ async fn public_live_webrtc_api_smoke() -> Result<(), Box<dyn std::error::Error>
         Ok::<(), Box<dyn std::error::Error>>(())
     }.await;
     let _ = call.retire().await;
-    peer.close().await?;
-    drop(peer);
+    stop.send_replace(true);
+    media.await??;
     let _ = sideband.close(None).await;
     result?;
     assert!(audible && audio_packets > 0, "No audible RTP output");
@@ -143,4 +179,64 @@ async fn public_live_webrtc_api_smoke() -> Result<(), Box<dyn std::error::Error>
         created - offered
     );
     Ok(())
+}
+
+fn playback_owner() -> Result<Arc<RealtimeVoiceAdapter>, &'static str> {
+    use std::sync::atomic::AtomicU64;
+    let speech = crate::speech_playback::RealtimeSpeechLease::claim(false)
+        .ok_or("Speech lease unavailable")?;
+    let (commands, _) = tokio::sync::mpsc::channel(8);
+    let (cancel, _) = watch::channel(false);
+    Ok(Arc::new(RealtimeVoiceAdapter {
+        started_at: Instant::now(),
+        client_elapsed_ms: 0,
+        webrtc: true,
+        media: Mutex::new(None),
+        view: Mutex::new(voice::View {
+            phase: "listening",
+            muted: false,
+            level: 0.0,
+            playback_level: 0.0,
+            text: String::new(),
+            user_text: String::new(),
+            error: None,
+            input_tokens: 0,
+            output_tokens: 0,
+            estimated_usd: None,
+            cost_incomplete: false,
+            messages: Vec::new(),
+            playback: voice::transcript::Timing::default(),
+            signal: voice::echo::Signal::default(),
+            startup: startup::Timings::default(),
+            media_ready: true,
+            recovery: recovery::State::Active,
+            startup_attempt: 0,
+            capture_packets: 0,
+            capture_gaps: 0,
+            caption_events: 0,
+            capture_level: 0.0,
+            uploaded_packets: 0,
+            server_events: 0,
+            input_speech_events: 0,
+            tool: None,
+            backend_text: None,
+            live_seconds: None,
+            usage_finalized: false,
+            captions: None,
+        }),
+        output: Mutex::new(voice::Output::default()),
+        echo: Mutex::new(None),
+        commands,
+        input: crate::audio_ingress::NativeIngress::realtime(24_000, voice::FRAME * 4, 32)?,
+        cancel,
+        closed: AtomicBool::new(false),
+        ready: AtomicBool::new(true),
+        stopped: AtomicBool::new(false),
+        attempt: AtomicU64::new(0),
+        devices_ready: AtomicBool::new(true),
+        allow_input: true,
+        credential_generation: crate::voice_credentials::generation(),
+        speech,
+        global: None,
+    }))
 }
