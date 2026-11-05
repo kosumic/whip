@@ -54,7 +54,7 @@ impl Call {
                     .map_err(|_| "Invalid voice session.")?,
             );
         let response = client
-            .post(CALLS)
+            .post(format!("{CALLS}?dcid={}", super::driver::DATA_CHANNEL_ID))
             .header(AUTHORIZATION, authorization.clone())
             .multipart(form)
             .send()

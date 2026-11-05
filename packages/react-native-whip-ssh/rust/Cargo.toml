@@ -37,8 +37,9 @@ parking_lot = "0.12"
 oai-rt-rs = "=0.5.1"
 opus = "=0.4.0"
 # Provider-backed DTLS avoids crypto-bigint 0.5 (RUSTSEC-2026-0387).
-rtc = "=0.21.1"
-webrtc = "=0.21.1"
+str0m = { version = "=0.25.0", default-features = false, features = ["aws-lc-rs"] }
+if-addrs = "0.15"
+tracing = "0.1"
 rayon = "1"
 rustfft = { version = "6.4", optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "multipart", "json"] }
@@ -114,3 +115,9 @@ wildcard_imports = "deny"
 codegen-units = 1
 lto = "thin"
 opt-level = 3
+
+# Stock WebRTC peer used only for transport interoperability tests.
+[dev-dependencies.rtc]
+version = "=0.21.1"
+[dev-dependencies.webrtc]
+version = "=0.21.1"

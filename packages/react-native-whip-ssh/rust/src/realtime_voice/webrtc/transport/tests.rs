@@ -1,25 +1,30 @@
-// Copyright 2025 OpenAI
-// SPDX-License-Identifier: Apache-2.0
-// Adapted from Codex voice-host transport_tests.rs at 021fccb046508938c4754982efccfb51d6e8356e.
-use super::super::{audio_track::AudioTrack, identity::Identity};
+//! Exercise accelerated clients against an independent, DTLS 1.2 stock peer.
 use super::*;
-use futures::StreamExt;
-use tokio::sync::mpsc;
-type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
-struct RemoteEvents(mpsc::Sender<Arc<dyn DataChannel>>, Arc<Notify>);
-impl PeerConnectionEventHandler for RemoteEvents {
-    fn on_data_channel<'a, 'async_trait>(
-        &'a self,
-        channel: Arc<dyn DataChannel>,
-    ) -> BoxFuture<'async_trait, ()>
-    where
-        'a: 'async_trait,
-        Self: 'async_trait,
-    {
-        Box::pin(async move {
-            let _ = self.0.try_send(channel);
-        })
-    }
+use futures::{StreamExt, future::BoxFuture};
+use rtc::{
+    media::Sample,
+    peer_connection::configuration::setting_engine::SettingEngineBuilder,
+    rtp_transceiver::rtp_sender::{
+        RTCRtpCodec, RTCRtpCodecParameters, RTCRtpCodingParameters, RTCRtpEncodingParameters,
+        RtpCodecKind,
+    },
+};
+use std::sync::Arc;
+use tokio::sync::Notify;
+use webrtc::{
+    data_channel::DataChannelEvent,
+    peer_connection::{
+        PeerConnection, PeerConnectionBuilder, PeerConnectionEventHandler, RTCIceGatheringState,
+        RTCSessionDescription,
+    },
+};
+use webrtc::{
+    media_stream::{MediaStreamTrack, track_local::static_sample::TrackLocalStaticSample},
+    peer_connection::MediaEngine,
+};
+type TestResult = Result<(), Box<dyn std::error::Error>>;
+struct Gathered(Arc<Notify>);
+impl PeerConnectionEventHandler for Gathered {
     fn on_ice_gathering_state_change<'a, 'async_trait>(
         &'a self,
         state: RTCIceGatheringState,
@@ -30,41 +35,82 @@ impl PeerConnectionEventHandler for RemoteEvents {
     {
         Box::pin(async move {
             if state == RTCIceGatheringState::Complete {
-                self.1.notify_one();
+                self.0.notify_one();
             }
         })
     }
 }
+fn audio() -> Result<(MediaEngine, Arc<TrackLocalStaticSample>), Box<dyn std::error::Error>> {
+    let codec = RTCRtpCodec {
+        mime_type: "audio/opus".into(),
+        clock_rate: 48_000,
+        channels: 2,
+        sdp_fmtp_line: "minptime=10;useinbandfec=1".into(),
+        rtcp_feedback: vec![],
+    };
+    let mut media = MediaEngine::default();
+    media.register_codec(
+        RTCRtpCodecParameters {
+            rtp_codec: codec.clone(),
+            payload_type: 111,
+        },
+        RtpCodecKind::Audio,
+    )?;
+    let track = TrackLocalStaticSample::new(
+        std::time::Instant::now(),
+        MediaStreamTrack::new(
+            "fixture".into(),
+            "audio".into(),
+            "microphone".into(),
+            RtpCodecKind::Audio,
+            vec![RTCRtpEncodingParameters {
+                rtp_coding_parameters: RTCRtpCodingParameters {
+                    ssrc: Some(1234),
+                    ..Default::default()
+                },
+                codec,
+                active: true,
+                ..Default::default()
+            }],
+        ),
+    )?;
+    Ok((media, Arc::new(track)))
+}
 #[tokio::test]
-async fn real_udp_and_tcp_peers_exchange_events_and_opus_without_an_api_call() -> TestResult {
-    for tcp in [false, true] {
-        timeout(Duration::from_secs(30), async {
-            let (sender, mut channels) = mpsc::channel(1);
+async fn udp_and_tcp_interoperate_with_stock_dtls12_and_exchange_events_and_opus() -> TestResult {
+    for protocol in [str0m::net::Protocol::Udp, str0m::net::Protocol::Tcp] {
+        tokio::time::timeout(Duration::from_secs(30), async {
             let gathered = Arc::new(Notify::new());
-            let settings =
-                rtc::peer_connection::configuration::setting_engine::SettingEngineBuilder::new()
-                    .with_lite(true)
-                    .build();
-            let (media, mut remote_audio) = AudioTrack::new()?;
+            let (media, audio) = audio()?;
             let builder = PeerConnectionBuilder::new()
                 .with_media_engine(media)
-                .with_setting_engine(settings)
-                .with_handler(Arc::new(RemoteEvents(sender, gathered.clone())));
-            let builder = if tcp {
+                .with_setting_engine(SettingEngineBuilder::new().with_lite(true).build())
+                .with_handler(Arc::new(Gathered(gathered.clone())));
+            let builder = if protocol == str0m::net::Protocol::Tcp {
                 builder.with_tcp_addrs(vec!["0.0.0.0:0"])
             } else {
                 builder.with_udp_addrs(vec!["0.0.0.0:0"])
             };
             let remote = Box::pin(builder.build()).await?;
-            remote.add_track(remote_audio.track.clone()).await?;
+            remote.add_track(audio.clone()).await?;
             let (mut socket, _commands, events) = crate::realtime_voice::socket::Socket::relay();
-            let mut local = Transport::new(
+            let mut local = Transport::with_protocol(
                 events,
-                Arc::new(parking_lot::Mutex::new(Identity::default())),
+                Arc::new(Mutex::new(Identity::default())),
+                Some(protocol),
             )
             .await?;
             remote
-                .set_remote_description(RTCSessionDescription::offer(local.offer().await?)?)
+                .set_remote_description(RTCSessionDescription::offer(local.offer())?)
+                .await?;
+            let channel = remote
+                .create_data_channel(
+                    "oai-events",
+                    Some(webrtc::data_channel::RTCDataChannelInit {
+                        negotiated: Some(super::super::driver::DATA_CHANNEL_ID),
+                        ..Default::default()
+                    }),
+                )
                 .await?;
             let answer = remote.create_answer(None).await?;
             remote.set_local_description(answer).await?;
@@ -72,22 +118,41 @@ async fn real_udp_and_tcp_peers_exchange_events_and_opus_without_an_api_call() -
             let answer = remote
                 .local_description()
                 .await
-                .ok_or("missing answer")?
+                .ok_or("Missing answer")?
                 .sdp;
             assert_eq!(local.apply_answer(answer).await?, AnswerOutcome::Ready);
-            let channel = channels.recv().await.ok_or("missing event channel")?;
-            assert_eq!(channel.label().await?, "oai-events");
-            assert!(channel.ordered().await?);
+            loop {
+                match channel.poll().await.ok_or("Event channel ended")? {
+                    DataChannelEvent::OnOpen => break,
+                    DataChannelEvent::OnClose | DataChannelEvent::OnError => {
+                        return Err("Event channel failed".into());
+                    }
+                    _ => {}
+                }
+            }
             let event = r#"{"type":"rate_limits.updated","event_id":"test","rate_limits":[]}"#;
             channel.send_text(event).await?;
-            let message = socket.next().await.ok_or("missing wire event")??;
-            assert_eq!(message.into_text()?.as_str(), event);
+            assert_eq!(
+                socket
+                    .next()
+                    .await
+                    .ok_or("No wire event")??
+                    .into_text()?
+                    .as_str(),
+                event
+            );
             local.incoming.set_suppressed(false)?;
-            remote_audio
-                .send(super::super::audio_track::EncodedAudio {
-                    data: vec![0xf8, 0xff, 0xfe],
-                    at: std::time::Instant::now(),
-                })
+            audio
+                .write_sample(
+                    1234,
+                    111,
+                    &Sample {
+                        data: vec![0xf8, 0xff, 0xfe].into(),
+                        duration: Duration::from_millis(20),
+                        ..Sample::new(std::time::Instant::now())
+                    },
+                    &[],
+                )
                 .await?;
             let received = loop {
                 if let Some(packet) = local.incoming.take()? {
@@ -95,17 +160,20 @@ async fn real_udp_and_tcp_peers_exchange_events_and_opus_without_an_api_call() -
                 }
                 tokio::time::sleep(Duration::from_millis(5)).await;
             };
-            let packet =
-                super::super::packet::parse(received.as_ref()).ok_or("invalid received RTP")?;
+            let packet = super::super::packet::parse(received.as_ref()).ok_or("Invalid RTP")?;
             drop(received);
             assert_eq!(packet.payload, [0xf8, 0xff, 0xfe]);
             let mut decoder = opus::Decoder::new(24_000, opus::Channels::Mono)?;
-            let mut pcm = vec![0; 2880];
-            assert!(decoder.decode(&packet.payload, &mut pcm, false)? > 0);
+            assert!(decoder.decode(&packet.payload, &mut [0; 2880], false)? > 0);
+            remote.close().await?;
+            tokio::time::timeout(
+                Duration::from_secs(5),
+                local.ready.wait_for(|ready| !*ready),
+            )
+            .await??;
             local.close().await?;
             drop(local);
-            remote.close().await?;
-            Ok::<_, Box<dyn std::error::Error>>(())
+            Ok::<(), Box<dyn std::error::Error>>(())
         })
         .await??;
     }
@@ -114,19 +182,66 @@ async fn real_udp_and_tcp_peers_exchange_events_and_opus_without_an_api_call() -
 #[tokio::test]
 async fn malformed_answer_is_redacted_and_peer_remains_closable() -> TestResult {
     let (_socket, _commands, events) = crate::realtime_voice::socket::Socket::relay();
-    let mut peer = Transport::new(
-        events,
-        Arc::new(parking_lot::Mutex::new(Identity::default())),
-    )
-    .await?;
-    peer.offer().await?;
+    let mut peer = Transport::new(events, Arc::new(Mutex::new(Identity::default()))).await?;
     assert_eq!(
         peer.apply_answer("synthetic-private-invalid-sdp".into())
             .await,
-        Err("invalid voice answer")
+        Err("Invalid voice answer.")
     );
-    assert!(peer.connection.remote_description().await.is_none());
     peer.close().await?;
     drop(peer);
+    Ok(())
+}
+
+#[tokio::test]
+async fn untrusted_answer_candidate_count_is_bounded_before_negotiation() -> TestResult {
+    let (_socket, _commands, events) = crate::realtime_voice::socket::Socket::relay();
+    let mut peer = Transport::new(events, Arc::new(Mutex::new(Identity::default()))).await?;
+    let answer = "a=candidate:1 1 udp 1 127.0.0.1 5000 typ host\r\n".repeat(33);
+    assert_eq!(
+        peer.apply_answer(answer).await,
+        Err("Too many voice candidates.")
+    );
+    peer.close().await?;
+    drop(peer);
+    Ok(())
+}
+
+#[tokio::test]
+async fn closing_before_negotiation_releases_udp_and_tcp_listeners() -> TestResult {
+    let (_socket, _commands, events) = crate::realtime_voice::socket::Socket::relay();
+    let mut peer = Transport::new(events, Arc::new(Mutex::new(Identity::default()))).await?;
+    let mut udp = None;
+    let mut tcp = None;
+    for line in peer
+        .offer()
+        .lines()
+        .filter(|line| line.starts_with("a=candidate:"))
+    {
+        let fields: Vec<_> = line.split_whitespace().collect();
+        let address: std::net::IpAddr = fields[4].parse()?;
+        if !address.is_ipv4() {
+            continue;
+        }
+        let port: u16 = fields[5].parse()?;
+        if fields[2] == "udp" {
+            udp = Some(port);
+        }
+        if fields[2] == "tcp" && line.contains("tcptype passive") {
+            tcp = Some(port);
+        }
+    }
+    peer.close().await?;
+    drop(peer);
+    let _udp = tokio::net::UdpSocket::bind((
+        std::net::Ipv4Addr::UNSPECIFIED,
+        udp.ok_or("No UDP candidate")?,
+    ))
+    .await?;
+    let _tcp = tokio::net::TcpListener::bind((
+        std::net::Ipv4Addr::UNSPECIFIED,
+        tcp.ok_or("No TCP candidate")?,
+    ))
+    .await?;
     Ok(())
 }

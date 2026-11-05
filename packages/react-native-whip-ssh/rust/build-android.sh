@@ -25,7 +25,20 @@ cargo build \
   --target "$target" \
   --release
 
-install -D -m 0644 "$source_library" "$destination_library"
+# AWS-LC probes sdallocx as an optional weak function. React Native's Folly
+# exports the same name as a data pointer, which makes crypto initialization
+# jump into .bss on Android. Namespace the Rust archive's reference so AWS-LC
+# takes its normal libc free fallback; Folly's own references stay unchanged.
+objcopy_candidates=("${ANDROID_NDK_HOME:?Android NDK is required}/toolchains/llvm/prebuilt/"*/bin/llvm-objcopy)
+if [[ ${#objcopy_candidates[@]} -ne 1 || ! -x "${objcopy_candidates[0]}" ]]; then
+  echo "error: expected one Android NDK llvm-objcopy executable" >&2
+  exit 1
+fi
+install -d "$(dirname "$destination_library")"
+"${objcopy_candidates[0]}" \
+  --redefine-sym sdallocx=whip_crypto_sdallocx \
+  "$source_library" "$destination_library"
+chmod 0644 "$destination_library"
 
 (
   cd "$rust_dir"

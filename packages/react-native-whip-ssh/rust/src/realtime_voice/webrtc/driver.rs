@@ -1,0 +1,236 @@
+//! One owner serializes every peer mutation and completely drains its output before the next.
+use super::{audio_track::OPUS_PAYLOAD_TYPE, incoming::Ingress, network::Network};
+use std::{sync::Arc, time::Instant};
+use str0m::{
+    Candidate, Event, Input, Output, Rtc, RtcConfig,
+    change::{SdpAnswer, SdpPendingOffer},
+    channel::ChannelId,
+    crypto::dtls::DtlsVersion,
+    media::{Direction, MediaKind, Mid},
+    net::{Protocol, Receive},
+    rtp::RtpWrite,
+};
+use tokio::sync::{mpsc, oneshot, watch};
+pub(super) const DATA_CHANNEL_ID: u16 = 4;
+const MAX_REMOTE_CANDIDATES: usize = 32;
+const MAX_EVENT_BYTES: usize = 64 * 1024;
+pub(super) enum Command {
+    Answer {
+        sdp: String,
+        complete: oneshot::Sender<Result<(), &'static str>>,
+    },
+    Audio {
+        data: Vec<u8>,
+        timestamp: u32,
+        at: Instant,
+        complete: oneshot::Sender<Result<(), &'static str>>,
+    },
+}
+pub(super) struct Driver {
+    rtc: Rtc,
+    network: Network,
+    pending: Option<SdpPendingOffer>,
+    mid: Mid,
+    channel: ChannelId,
+    sequence: u64,
+    ingress: Ingress,
+    events: mpsc::Sender<String>,
+    ready: watch::Sender<bool>,
+    commands: mpsc::Receiver<Command>,
+    stop: watch::Receiver<bool>,
+}
+impl Driver {
+    #[allow(
+        clippy::significant_drop_tightening,
+        reason = "network ownership moves into the peer driver; its sockets must remain open"
+    )]
+    pub async fn new(
+        ingress: Ingress,
+        events: mpsc::Sender<String>,
+        ready: watch::Sender<bool>,
+        commands: mpsc::Receiver<Command>,
+        stop: watch::Receiver<bool>,
+        protocol: Option<Protocol>,
+    ) -> Result<(Self, String), &'static str> {
+        let mut network = Network::bind().await?;
+        let candidates = network.candidates()?;
+        let (rtc, pending, mid, channel, offer) = tracing::subscriber::with_default(
+            tracing::subscriber::NoSubscriber::default(),
+            || {
+                let mut rtc = RtcConfig::new()
+                    .set_crypto_provider(Arc::new(str0m::crypto::from_feature_flags()))
+                    .clear_codecs()
+                    .enable_opus(true, false)
+                    .set_dtls_version(DtlsVersion::Auto)
+                    .set_snap_enabled(true)
+                    .set_rtp_mode(true)
+                    .set_sctp_max_message_size(
+                        u32::try_from(MAX_EVENT_BYTES).map_err(|_| "Invalid voice event limit.")?,
+                    )
+                    .set_sctp_max_buffered_amount(MAX_EVENT_BYTES)
+                    .build(Instant::now());
+                for candidate in candidates {
+                    if protocol.is_none_or(|protocol| candidate.proto() == protocol) {
+                        rtc.add_local_candidate(candidate)
+                            .ok_or("Voice candidate was rejected.")?;
+                        initial_drain(&mut rtc)?;
+                    }
+                }
+                let mut change = rtc.sdp_api();
+                let mid = change.add_media(MediaKind::Audio, Direction::SendRecv, None, None, None);
+                let channel = change.add_channel_with_config(str0m::channel::ChannelConfig {
+                    label: "oai-events".into(),
+                    negotiated: Some(DATA_CHANNEL_ID),
+                    ..Default::default()
+                });
+                let (offer, pending) = change.apply().ok_or("Voice offer is unavailable.")?;
+                initial_drain(&mut rtc)?;
+                Ok::<_, &'static str>((rtc, pending, mid, channel, offer.to_sdp_string()))
+            },
+        )?;
+        network.start();
+        let bytes = uuid::Uuid::new_v4();
+        let bytes = bytes.as_bytes();
+        let sequence = u64::from(u16::from_be_bytes([bytes[0], bytes[1]]));
+        Ok((
+            Self {
+                rtc,
+                network,
+                pending: Some(pending),
+                mid,
+                channel,
+                sequence,
+                ingress,
+                events,
+                ready,
+                commands,
+                stop,
+            },
+            offer,
+        ))
+    }
+    pub async fn run(mut self) -> Result<(), &'static str> {
+        let result = self.drive().await;
+        self.ready.send_replace(false);
+        self.network.close().await;
+        result
+    }
+    async fn drive(&mut self) -> Result<(), &'static str> {
+        let mut complete: Option<oneshot::Sender<Result<(), &'static str>>> = None;
+        loop {
+            let deadline = self.drain().await?;
+            if let Some(complete) = complete.take() {
+                let _: Result<_, _> = complete.send(Ok(()));
+            }
+            if !self.rtc.is_alive() {
+                return Err("Voice media connection ended.");
+            }
+            tokio::select! {
+                biased;
+                _=self.stop.changed()=>{
+                    self.rtc.close().map_err(|_|"Voice peer could not close.")?;
+                    self.drain().await?;
+                    return Ok(());
+                },
+                command=self.commands.recv()=>match command {
+                    Some(Command::Answer{sdp,complete:respond})=>{
+                        let result=self.answer(&sdp);
+                        if let Err(error)=result {let _=respond.send(Err(error));return Err(error);}
+                        complete=Some(respond);
+                    }
+                    Some(Command::Audio{data,timestamp,at,complete:respond})=>{
+                        if !*self.ready.borrow(){let _=respond.send(Err("Voice media is not connected."));continue;}
+                        let mut direct=self.rtc.direct_api();
+                        let stream=direct.stream_tx_by_mid(self.mid,None).ok_or("Voice send stream is unavailable.")?;
+                        stream.write_rtp(RtpWrite::new(OPUS_PAYLOAD_TYPE.into(),self.sequence.into(),timestamp,at,data));
+                        self.sequence=self.sequence.checked_add(1).ok_or("Voice sequence exhausted.")?;
+                        complete=Some(respond);
+                    }
+                    None=>return Ok(()),
+                },
+                packet=self.network.receive()=>{
+                    let packet=packet?;
+                    let Ok(contents)=packet.data.as_slice().try_into() else {continue;};
+                    let input=Input::Receive(Instant::now(),Receive{proto:packet.proto,source:packet.source,destination:packet.destination,contents});
+                    if self.rtc.accepts(&input) {self.rtc.handle_input(input).map_err(|_|"Voice network packet was rejected.")?;}
+                },
+                _=tokio::time::sleep_until(deadline.into())=>{
+                    self.rtc.handle_input(Input::Timeout(Instant::now())).map_err(|_|"Voice peer timed out.")?;
+                },
+            }
+        }
+    }
+    fn answer(&mut self, sdp: &str) -> Result<(), &'static str> {
+        if sdp.len() > super::super::MAX_WIRE {
+            return Err("Voice answer is too large.");
+        }
+        let mut count = 0;
+        for line in sdp.lines().filter(|line| line.starts_with("a=candidate:")) {
+            count += 1;
+            if count > MAX_REMOTE_CANDIDATES {
+                return Err("Too many voice candidates.");
+            }
+            Candidate::from_sdp_string(&line[2..]).map_err(|_| "Invalid voice candidate.")?;
+        }
+        let answer = SdpAnswer::from_sdp_string(sdp).map_err(|_| "Invalid voice answer.")?;
+        let pending = self
+            .pending
+            .take()
+            .ok_or("Voice answer was already applied.")?;
+        self.rtc
+            .sdp_api()
+            .accept_answer(pending, answer)
+            .map_err(|_| "Voice answer was rejected.")
+    }
+    async fn drain(&mut self) -> Result<Instant, &'static str> {
+        loop {
+            match self
+                .rtc
+                .poll_output()
+                .map_err(|_| "Voice peer output failed.")?
+            {
+                Output::Timeout(deadline) => return Ok(deadline),
+                Output::Transmit(packet) => self.network.send(packet).await?,
+                Output::Event(Event::Connected) => {
+                    self.ready.send_replace(true);
+                }
+                Output::Event(Event::IceConnectionStateChange(
+                    str0m::IceConnectionState::Disconnected,
+                )) => return Err("Voice network connection ended."),
+                Output::Event(Event::ChannelOpen(id, _)) if id != self.channel => {
+                    self.rtc.direct_api().close_data_channel(id);
+                }
+                Output::Event(Event::ChannelClose(id)) if id == self.channel => {
+                    return Err("Voice event channel ended.");
+                }
+                Output::Event(Event::ChannelData(packet)) => {
+                    if packet.id != self.channel {
+                        continue;
+                    }
+                    if packet.data.len() > MAX_EVENT_BYTES {
+                        return Err("Voice event is too large.");
+                    }
+                    let text = String::from_utf8(packet.data)
+                        .map_err(|_| "Invalid voice event encoding.")?;
+                    self.events
+                        .try_send(text)
+                        .map_err(|_| "Voice event consumer fell behind.")?;
+                }
+                Output::Event(Event::RtpPacket(packet)) => self.ingress.receive(packet),
+                Output::Event(_) => {}
+            }
+        }
+    }
+}
+fn initial_drain(rtc: &mut Rtc) -> Result<(), &'static str> {
+    loop {
+        match rtc
+            .poll_output()
+            .map_err(|_| "Voice offer initialization failed.")?
+        {
+            Output::Timeout(_) => return Ok(()),
+            Output::Event(_) => {}
+            Output::Transmit(_) => return Err("Unexpected voice offer output."),
+        }
+    }
+}

@@ -1,13 +1,14 @@
 //! Codex's WebRTC call startup: initial configuration in POST, sideband in parallel.
 mod api;
 mod audio_track;
+mod driver;
 mod identity;
 mod incoming;
 mod jitter;
 mod media;
+mod network;
 mod packet;
 mod transport;
-mod transport_runtime;
 
 use super::{ClientEvent, RealtimeSocket, RealtimeVoiceAdapter, recovery, socket, startup};
 use futures::{SinkExt, StreamExt, channel::mpsc as wire};
@@ -101,14 +102,11 @@ pub(super) async fn start(
     let identity = Arc::new(Mutex::new(identity::Identity::default()));
     let offer_started = Instant::now();
     let mut peer = transport::Transport::new(events.clone(), identity.clone()).await?;
-    let offer = match peer.offer().await {
-        Ok(offer) if attempt.current() => offer,
-        result => {
-            let message = result.err().unwrap_or(recovery::CANCELLED);
-            let _ = peer.close().await;
-            return Err(message.into());
-        }
-    };
+    if !attempt.current() {
+        let _ = peer.close().await;
+        return Err(recovery::CANCELLED.into());
+    }
+    let offer = peer.offer();
     owner.view.lock().startup.offer = Some(startup::elapsed(offer_started));
     let session = initial_session(update, config.model()?)?;
     let confirmation = confirmation(&session)?;

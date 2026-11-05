@@ -1,41 +1,23 @@
 // Copyright 2025 OpenAI
 // SPDX-License-Identifier: Apache-2.0
-// Adapted from Codex at 021fccb046508938c4754982efccfb51d6e8356e.
-//! Takes incoming Opus RTP before the upstream track queue, preserving network arrival time.
-//! Packet and byte permits follow owned data through the consumer, not merely through this queue.
-//! Stale or saturated media is discarded so a slow worker can resume with fresh speaker audio.
-
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::AtomicU64;
-use std::sync::atomic::Ordering;
-use std::time::Duration;
-use std::time::Instant;
-
-use rtc::interceptor::Interceptor;
-use rtc::interceptor::NoopInterceptor;
-use rtc::interceptor::Packet;
-use rtc::interceptor::StreamInfo;
-use rtc::interceptor::TaggedPacket;
-use rtc::sansio;
-use rtc::shared::error::Error;
-use rtc::shared::marshal::Marshal;
-use rtc::shared::marshal::MarshalSize;
-use tokio::sync::OwnedSemaphorePermit;
-use tokio::sync::Semaphore;
-use tokio::sync::mpsc;
+// Adapted from Codex's bounded RTP ingress; crypto and depacketization are owned by str0m.
+//! Packet/byte permits follow retained RTP; response epochs discard stale audio.
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicU64, Ordering},
+};
+use std::time::{Duration, Instant};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc};
 
 pub(super) const PACKETS: usize = 64;
 const BYTES: usize = 2 * 1024 * 1024;
 const PACKET_BYTES: usize = 64 * 1024;
-
 struct State {
     epoch: AtomicU64,
     failed: AtomicBool,
     packets: Arc<Semaphore>,
     bytes: Arc<Semaphore>,
 }
-
 pub(crate) struct ReceivedRtp {
     data: Vec<u8>,
     pub(crate) at: Instant,
@@ -43,48 +25,41 @@ pub(crate) struct ReceivedRtp {
     _packet: OwnedSemaphorePermit,
     _bytes: OwnedSemaphorePermit,
 }
-
 impl AsRef<[u8]> for ReceivedRtp {
     fn as_ref(&self) -> &[u8] {
         &self.data
     }
 }
-
 pub(crate) struct Incoming {
     state: Arc<State>,
     receiver: mpsc::Receiver<ReceivedRtp>,
 }
-
-pub(crate) struct Ingress {
-    next: NoopInterceptor,
+pub(super) struct Ingress {
     state: Arc<State>,
     sender: mpsc::Sender<ReceivedRtp>,
-    stream: Option<u32>,
+    stream: Option<str0m::rtp::Ssrc>,
 }
-
 impl Incoming {
-    pub(crate) fn new() -> (Self, Ingress) {
+    pub(super) fn new() -> (Self, Ingress) {
         let state = Arc::new(State {
-            epoch: AtomicU64::new(/*v*/ 1),
+            epoch: AtomicU64::new(1),
             failed: AtomicBool::new(false),
-            packets: Arc::new(Semaphore::new(/*permits*/ PACKETS)),
-            bytes: Arc::new(Semaphore::new(/*permits*/ BYTES)),
+            packets: Arc::new(Semaphore::new(PACKETS)),
+            bytes: Arc::new(Semaphore::new(BYTES)),
         });
-        let (sender, receiver) = mpsc::channel(/*buffer*/ PACKETS);
+        let (sender, receiver) = mpsc::channel(PACKETS);
         (
             Self {
                 state: state.clone(),
                 receiver,
             },
             Ingress {
-                next: NoopInterceptor::new(),
                 state,
                 sender,
                 stream: None,
             },
         )
     }
-
     pub(crate) fn set_suppressed(&self, suppressed: bool) -> Result<(), &'static str> {
         let epoch = self.state.epoch.load(Ordering::Acquire);
         if (epoch % 2 == 1) != suppressed {
@@ -95,7 +70,6 @@ impl Incoming {
         }
         Ok(())
     }
-
     pub(crate) fn take(&mut self) -> Result<Option<ReceivedRtp>, &'static str> {
         if self.state.failed.load(Ordering::Acquire) {
             return Err("incoming audio failed");
@@ -105,87 +79,59 @@ impl Incoming {
             let Ok(packet) = self.receiver.try_recv() else {
                 return Ok(None);
             };
-            if epoch.is_multiple_of(2) && packet.epoch == epoch {
-                if packet.at.elapsed() > Duration::from_secs(/*secs*/ 1) {
-                    continue;
-                }
+            if epoch.is_multiple_of(2)
+                && packet.epoch == epoch
+                && packet.at.elapsed() <= Duration::from_secs(1)
+            {
                 return Ok(Some(packet));
             }
         }
         Ok(None)
     }
 }
-
-impl sansio::Protocol<TaggedPacket, TaggedPacket, ()> for Ingress {
-    type Rout = TaggedPacket;
-    type Wout = TaggedPacket;
-    type Eout = ();
-    type Error = Error;
-    type Time = Instant;
-
-    fn handle_read(&mut self, message: TaggedPacket) -> Result<(), Self::Error> {
-        let Packet::Rtp(packet) = message.message.packet else {
-            return Ok(());
-        };
+impl Ingress {
+    pub(super) fn receive(&mut self, packet: str0m::rtp::RtpPacket) {
         let epoch = self.state.epoch.load(Ordering::Acquire);
         if epoch % 2 == 1 || self.state.failed.load(Ordering::Acquire) {
-            return Ok(());
+            return;
         }
-        let size = packet.marshal_size();
+        let size = 12 + packet.payload.len();
         if size > PACKET_BYTES
-            || packet.header.payload_type != super::audio_track::OPUS_PAYLOAD_TYPE
+            || packet.header.payload_type != super::audio_track::OPUS_PAYLOAD_TYPE.into()
             || self.stream.is_some_and(|ssrc| ssrc != packet.header.ssrc)
         {
             self.state.failed.store(true, Ordering::Release);
-            return Ok(());
+            return;
         }
         self.stream = Some(packet.header.ssrc);
-        if message.now.elapsed() > Duration::from_secs(/*secs*/ 1) {
-            return Ok(());
+        if packet.timestamp.elapsed() > Duration::from_secs(1) {
+            return;
         }
         let Ok(packet_permit) = self.state.packets.clone().try_acquire_owned() else {
-            return Ok(());
+            return;
         };
-        let Ok(bytes_permit) = self
+        let Ok(byte_permit) = self
             .state
             .bytes
             .clone()
             .try_acquire_many_owned(u32::try_from(size).unwrap_or(u32::MAX))
         else {
-            return Ok(());
+            return;
         };
-        let mut data = vec![0; size];
-        if packet.marshal_to(&mut data).ok() != Some(size) {
-            self.state.failed.store(true, Ordering::Release);
-            return Ok(());
-        }
+        // The consumer needs only Opus, sequence, and source-clock timestamp.
+        // str0m has already authenticated and removed SRTP/header extensions.
+        let mut data = Vec::with_capacity(size);
+        data.extend_from_slice(&[0x80, super::audio_track::OPUS_PAYLOAD_TYPE]);
+        data.extend_from_slice(&packet.header.sequence_number.to_be_bytes());
+        data.extend_from_slice(&packet.header.timestamp.to_be_bytes());
+        data.extend_from_slice(&packet.header.ssrc.to_be_bytes());
+        data.extend_from_slice(&packet.payload);
         let _ = self.sender.try_send(ReceivedRtp {
             data,
-            at: message.now,
+            at: packet.timestamp,
             epoch,
             _packet: packet_permit,
-            _bytes: bytes_permit,
+            _bytes: byte_permit,
         });
-        // Consume here: no second copy is retained by the upstream track-event queue.
-        Ok(())
     }
-
-    fn handle_write(&mut self, message: TaggedPacket) -> Result<(), Self::Error> {
-        self.next.handle_write(message)
-    }
-
-    fn poll_read(&mut self) -> Option<Self::Rout> {
-        None
-    }
-
-    fn poll_write(&mut self) -> Option<Self::Wout> {
-        self.next.poll_write()
-    }
-}
-
-impl Interceptor for Ingress {
-    fn bind_local_stream(&mut self, _info: &StreamInfo) {}
-    fn unbind_local_stream(&mut self, _info: &StreamInfo) {}
-    fn bind_remote_stream(&mut self, _info: &StreamInfo) {}
-    fn unbind_remote_stream(&mut self, _info: &StreamInfo) {}
 }

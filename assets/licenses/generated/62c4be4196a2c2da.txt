@@ -267,6 +267,7 @@ Used by:
 - crypto_secretbox 0.1.1
 - ctr 0.10.1
 - der 0.8.1
+- der_derive 0.8.0
 - digest 0.10.7
 - digest 0.11.3
 - elliptic-curve 0.14.1
@@ -1359,6 +1360,7 @@ Used by:
 - cmov 0.5.4
 - ctutils 0.4.8
 - encoding_rs 0.8.44
+- flagset 0.4.7
 - multiversion_no_op 1.0.0
 - tinyvec 1.13.3
 - utf16_iter 1.0.5

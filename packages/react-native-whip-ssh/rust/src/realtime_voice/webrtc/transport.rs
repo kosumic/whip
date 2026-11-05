@@ -1,319 +1,142 @@
 // Copyright 2025 OpenAI
 // SPDX-License-Identifier: Apache-2.0
 // Adapted from Codex at 021fccb046508938c4754982efccfb51d6e8356e.
-//! Owns one WebRTC peer and ordered event channel; the helper runtime bounds their lifetime.
-//! Raw upstream errors and data messages are discarded; typed events use the existing sideband.
-//! Candidate admission is bounded before an answer can mutate the peer or start ICE work.
-//! Remotely opened channels are rejected; only the locally created event channel is used.
-
-use std::collections::HashSet;
-use std::sync::Arc;
-use std::time::Duration;
-
-use futures::future::BoxFuture;
-use tokio::sync::Notify;
-use tokio::sync::watch;
-use tokio::task::JoinHandle;
-use tokio::time::timeout;
-use webrtc::data_channel::DataChannel;
-use webrtc::data_channel::DataChannelEvent;
-use webrtc::peer_connection::PeerConnection;
-use webrtc::peer_connection::PeerConnectionBuilder;
-use webrtc::peer_connection::PeerConnectionEventHandler;
-use webrtc::peer_connection::RTCIceCandidateInit;
-use webrtc::peer_connection::RTCIceGatheringState;
-use webrtc::peer_connection::RTCPeerConnectionState;
-use webrtc::peer_connection::RTCSessionDescription;
-
-const WAIT: Duration = Duration::from_secs(/*secs*/ 15);
-const MAX_REMOTE_CANDIDATES: usize = 32;
-type Result<T> = std::result::Result<T, &'static str>;
-
-struct Events {
-    gathered: Arc<Notify>,
-    media: watch::Sender<bool>,
-}
-
-// The upstream trait requires async-trait's boxed-future ABI.
-impl PeerConnectionEventHandler for Events {
-    fn on_connection_state_change<'a, 'async_trait>(
-        &'a self,
-        state: RTCPeerConnectionState,
-    ) -> BoxFuture<'async_trait, ()>
-    where
-        'a: 'async_trait,
-        Self: 'async_trait,
-    {
-        Box::pin(async move {
-            match state {
-                RTCPeerConnectionState::Connected => {
-                    self.media.send_replace(true);
-                }
-                RTCPeerConnectionState::Failed | RTCPeerConnectionState::Closed => {
-                    self.media.send_replace(false);
-                }
-                _ => {}
-            }
-        })
-    }
-    fn on_data_channel<'a, 'async_trait>(
-        &'a self,
-        channel: Arc<dyn DataChannel>,
-    ) -> BoxFuture<'async_trait, ()>
-    where
-        'a: 'async_trait,
-        Self: 'async_trait,
-    {
-        Box::pin(async move {
-            // Locally created channels do not invoke this callback.
-            let _ = channel.close().await;
-        })
-    }
-
-    fn on_ice_gathering_state_change<'a, 'async_trait>(
-        &'a self,
-        state: RTCIceGatheringState,
-    ) -> BoxFuture<'async_trait, ()>
-    where
-        'a: 'async_trait,
-        Self: 'async_trait,
-    {
-        Box::pin(async move {
-            if state == RTCIceGatheringState::Complete {
-                self.gathered.notify_one();
-            }
-        })
-    }
-}
-
+//! Owns the accelerated DTLS/SCTP peer and bounded native media/event channels.
+use super::{
+    audio_track::AudioTrack,
+    driver::{Command, Driver},
+    identity::Identity,
+    incoming::Incoming,
+};
+use futures::SinkExt;
+use parking_lot::Mutex;
+use std::{sync::Arc, time::Duration};
+use tokio::{
+    sync::{mpsc, oneshot, watch},
+    task::JoinHandle,
+};
+use tracing::instrument::WithSubscriber;
+const WAIT: Duration = Duration::from_secs(15);
+const CLOSE_WAIT: Duration = Duration::from_secs(3);
 #[derive(Debug, PartialEq)]
 pub(crate) enum AnswerOutcome {
     Ready,
     TimedOut,
 }
-
 pub(crate) struct Transport {
-    pub(crate) incoming: super::incoming::Incoming,
-    pub(crate) audio: super::audio_track::AudioTrack,
-    connection: Arc<dyn PeerConnection>,
-    closed: bool,
-    gathered: Arc<Notify>,
-    observer: JoinHandle<()>,
+    pub(crate) incoming: Incoming,
+    pub(crate) audio: AudioTrack,
     pub(crate) ready: watch::Receiver<bool>,
+    offer: String,
+    commands: mpsc::Sender<Command>,
+    stop: watch::Sender<bool>,
+    worker: Option<JoinHandle<Result<(), &'static str>>>,
+    observer: JoinHandle<()>,
 }
-
 impl Transport {
     pub(crate) async fn new(
         events: super::super::socket::Events,
-        identity: Arc<parking_lot::Mutex<super::identity::Identity>>,
-    ) -> Result<Self> {
-        Box::pin(Self::with_runtime(
-            Arc::new(super::transport_runtime::VoiceRuntime::default()),
-            events,
-            identity,
-        ))
-        .await
+        identity: Arc<Mutex<Identity>>,
+    ) -> Result<Self, &'static str> {
+        Self::with_protocol(events, identity, None).await
     }
-
-    async fn with_runtime(
-        runtime: Arc<dyn webrtc::runtime::Runtime>,
+    pub(super) async fn with_protocol(
         mut events: super::super::socket::Events,
-        identity: Arc<parking_lot::Mutex<super::identity::Identity>>,
-    ) -> Result<Self> {
-        let (media, audio) = super::audio_track::AudioTrack::new()?;
-        let (incoming, ingress) = super::incoming::Incoming::new();
-        let gathered = Arc::new(Notify::new());
-        let (media_ready, ready) = watch::channel(false);
-        // Upstream defaults exhaust checks after 1.4s, including checks sent before
-        // a TCP connection exists. Keep probing throughout our negotiation deadline.
-        let check_interval = Duration::from_millis(/*millis*/ 200);
-        let attempts = u16::try_from(WAIT.as_millis() / check_interval.as_millis())
-            .map_err(|_| "invalid voice ICE attempt budget")?;
-        let settings =
-            rtc::peer_connection::configuration::setting_engine::SettingEngineBuilder::new()
-                .with_ice_connection_attempts(Some(check_interval), Some(attempts))
-                .with_sctp_max_receive_buffer_size(/*bytes*/ 64 * 1024)
-                .build();
-        let connection: Arc<dyn PeerConnection> = Arc::new(
-            Box::pin(
-                PeerConnectionBuilder::new()
-                    .with_interceptor_registry(
-                        rtc::interceptor::Registry::new()
-                            .with(rtc::interceptor::Slot::from(0), ingress),
-                    )
-                    .with_media_engine(media)
-                    .with_runtime(runtime)
-                    .with_setting_engine(settings)
-                    .with_handler(Arc::new(Events {
-                        gathered: gathered.clone(),
-                        media: media_ready,
-                    }))
-                    .with_udp_addrs(vec!["0.0.0.0:0", "[::]:0"])
-                    .with_tcp_addrs(vec!["0.0.0.0:0", "[::]:0"])
-                    .with_data_channel_send_buffer_limit(/*bytes*/ 64 * 1024)
-                    .build(),
-            )
-            .await
-            .map_err(|_| "failed to create voice peer")?,
+        identity: Arc<Mutex<Identity>>,
+        protocol: Option<str0m::net::Protocol>,
+    ) -> Result<Self, &'static str> {
+        let (incoming, ingress) = Incoming::new();
+        let (sender, mut receiver) = mpsc::channel(32);
+        let (ready, connected) = watch::channel(false);
+        let (stop, stopped) = watch::channel(false);
+        let (commands, command_rx) = mpsc::channel(8);
+        let (driver, offer) =
+            Driver::new(ingress, sender, ready, command_rx, stopped, protocol).await?;
+        // Transport dependencies must never emit wire payloads, SDP, or keys,
+        // including when a host application installs a tracing subscriber.
+        let worker = tokio::spawn(
+            driver
+                .run()
+                .with_subscriber(tracing::subscriber::NoSubscriber::default()),
         );
-        if connection.add_track(audio.track.clone()).await.is_err() {
-            let _ = timeout(Duration::from_secs(/*secs*/ 2), connection.close()).await;
-            return Err("failed to attach voice track");
-        }
-        let Ok(channel) = connection.create_data_channel("oai-events", None).await else {
-            let _ = timeout(Duration::from_secs(2), connection.close()).await;
-            return Err("failed to create voice event channel");
-        };
         let observer = tokio::spawn(async move {
-            while let Some(event) = channel.poll().await {
-                match event {
-                    DataChannelEvent::OnError
-                    | DataChannelEvent::OnClosing
-                    | DataChannelEvent::OnClose => break,
-                    DataChannelEvent::OnMessage(message) => {
-                        use futures::SinkExt;
-                        if message.data.len() > 64 * 1024 {
-                            identity.lock().failed = true;
-                            break;
-                        }
-                        let Ok(text) = std::str::from_utf8(&message.data) else {
-                            identity.lock().failed = true;
-                            break;
-                        };
-                        let Ok(value) = serde_json::from_str::<serde_json::Value>(text) else {
-                            identity.lock().failed = true;
-                            break;
-                        };
-                        identity.lock().observe(&value);
-                        if events
-                            .send(Ok(tokio_tungstenite::tungstenite::Message::Text(
-                                text.to_owned().into(),
-                            )))
-                            .await
-                            .is_err()
-                        {
-                            break;
-                        }
-                    }
-                    _ => {}
+            while let Some(text) = receiver.recv().await {
+                let Ok(value) = serde_json::from_str(&text) else {
+                    identity.lock().failed = true;
+                    break;
+                };
+                identity.lock().observe(&value);
+                if events
+                    .send(Ok(tokio_tungstenite::tungstenite::Message::Text(
+                        text.into(),
+                    )))
+                    .await
+                    .is_err()
+                {
+                    break;
                 }
             }
         });
         Ok(Self {
             incoming,
-            audio,
-            connection,
-            closed: false,
-            gathered,
+            audio: AudioTrack::new(commands.clone()),
+            ready: connected,
+            offer,
+            commands,
+            stop,
+            worker: Some(worker),
             observer,
-            ready,
         })
     }
-
-    pub(crate) async fn offer(&self) -> Result<String> {
-        timeout(WAIT, async {
-            let offer = self
-                .connection
-                .create_offer(/*options*/ None)
-                .await
-                .map_err(|_| "failed to create voice offer")?;
-            self.connection
-                .set_local_description(offer)
-                .await
-                .map_err(|_| "failed to set voice offer")?;
-            self.gathered.notified().await;
-            self.connection
-                .local_description()
-                .await
-                .map(|offer| offer.sdp)
-                .ok_or("missing voice offer")
-        })
-        .await
-        .map_err(|_| "timed out gathering voice candidates")?
+    pub(crate) fn offer(&self) -> String {
+        self.offer.clone()
     }
-
-    pub(crate) async fn apply_answer(&self, sdp: String) -> Result<AnswerOutcome> {
-        let answer = RTCSessionDescription::answer(sdp).map_err(|_| "invalid voice answer")?;
-        let parsed = answer.unmarshal().map_err(|_| "invalid voice answer")?;
-        let mut seen = HashSet::new();
-        let mut candidates = Vec::new();
-        // Count all occurrences, including duplicates and other components/media sections.
-        // set_remote_description itself installs ICE candidates, so validate before that call.
-        for (index, attribute) in parsed
-            .media_descriptions
-            .iter()
-            .flat_map(|media| &media.attributes)
-            .filter(|attribute| attribute.key == "candidate")
-            .enumerate()
-        {
-            if index >= MAX_REMOTE_CANDIDATES {
-                return Err("too many voice candidates");
-            }
-            let candidate = attribute
-                .value
-                .as_deref()
-                .ok_or("invalid voice candidate")?;
-            let parsed = rtc::ice::candidate::unmarshal_candidate(candidate)
-                .map_err(|_| "invalid voice candidate")?;
-            if parsed.component() == 1 && seen.insert(candidate) {
-                candidates.push(RTCIceCandidateInit {
-                    candidate: format!("candidate:{candidate}"),
-                    ..Default::default()
-                });
-            }
+    pub(crate) async fn apply_answer(&self, sdp: String) -> Result<AnswerOutcome, &'static str> {
+        let (complete, result) = oneshot::channel();
+        self.commands
+            .send(Command::Answer { sdp, complete })
+            .await
+            .map_err(|_| "Voice peer ended.")?;
+        result.await.map_err(|_| "Voice answer failed.")??;
+        match tokio::time::timeout(WAIT, self.ready.clone().wait_for(|ready| *ready)).await {
+            Ok(Ok(_)) => Ok(AnswerOutcome::Ready),
+            Ok(Err(_)) => Err("Voice media connection closed."),
+            Err(_) => Ok(AnswerOutcome::TimedOut),
         }
-        timeout(WAIT, async {
-            self.connection
-                .set_remote_description(answer)
-                .await
-                .map_err(|_| "failed to apply voice answer")?;
-            // The async driver requires explicit candidates to start TCP dialing,
-            // even when they were bundled in the non-trickle answer.
-            for candidate in candidates {
-                self.connection
-                    .add_ice_candidate(candidate)
-                    .await
-                    .map_err(|_| "failed to apply voice candidate")?;
-            }
-            self.ready
-                .clone()
-                .wait_for(|ready| *ready)
-                .await
-                .map(|_| ())
-                .map_err(|_| "voice media connection closed")
-        })
-        .await
-        .map_or(Ok(AnswerOutcome::TimedOut), |result| {
-            result.map(|()| AnswerOutcome::Ready)
-        })
     }
-
-    pub(crate) async fn close(&mut self) -> Result<()> {
+    pub(crate) async fn close(&mut self) -> Result<(), &'static str> {
+        self.stop.send_replace(true);
         self.observer.abort();
         let _ = (&mut self.observer).await;
-        let result = timeout(Duration::from_secs(/*secs*/ 2), self.connection.close())
-            .await
-            .map_err(|_| "timed out closing voice peer")?
-            .map_err(|_| "failed to close voice peer");
-        self.closed = result.is_ok();
-        result
+        if let Some(mut worker) = self.worker.take() {
+            match tokio::time::timeout(CLOSE_WAIT, &mut worker).await {
+                Ok(Ok(_)) => {}
+                Ok(Err(_)) => return Err("Voice peer cleanup failed."),
+                Err(_) => {
+                    worker.abort();
+                    let _ = worker.await;
+                    return Err("Voice peer cleanup timed out.");
+                }
+            }
+        }
+        Ok(())
     }
 }
-
 impl Drop for Transport {
     fn drop(&mut self) {
+        self.stop.send_replace(true);
         self.observer.abort();
-        // Cancellation during offer/call creation must also release peer tasks.
-        if !self.closed
+        if let Some(mut worker) = self.worker.take()
             && let Ok(runtime) = crate::runtime()
         {
-            let connection = self.connection.clone();
             runtime.spawn(async move {
-                let _ = timeout(Duration::from_secs(2), connection.close()).await;
+                if tokio::time::timeout(CLOSE_WAIT, &mut worker).await.is_err() {
+                    worker.abort();
+                    let _ = worker.await;
+                }
             });
         }
     }
 }
-
 #[cfg(test)]
 mod tests;

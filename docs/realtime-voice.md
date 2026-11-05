@@ -105,7 +105,20 @@ providers, leaving settings, backgrounding and audio interruption cancel it.
 GPT-Live previews remain unavailable.
 
 Android and iOS use the shared native Rust WebRTC/Opus transport, including
-previews. iOS retains AVAudioEngine voice processing, CallKit routing and native
+previews. The str0m peer offers DTLS 1.3, SNAP (SCTP initialization in SDP),
+and a pre-negotiated ordered event channel with ID 4. Call creation includes
+`?dcid=4`, as documented in OpenAI's
+[accelerated WebRTC guide](https://developers.openai.com/api/docs/guides/realtime-webrtc-warp).
+DTLS 1.2 and ordinary SCTP negotiation remain interoperable with older peers.
+SPED (DTLS flights inside ICE checks) is not implemented by this transport;
+these are individually supported acceleration features, not full WARP.
+UDP and RFC 4571 TCP candidates share the existing Rust Opus, response-epoch,
+jitter and echo-processing pipeline. Native devices still start only after the
+authenticated media connection is ready, not on SNAP's early channel-open event.
+The peer driver serializes mutations and drains each output batch; event,
+packet, TCP connection and send queues are bounded. Dependency tracing is
+disabled around peer creation and its worker to avoid logging sensitive wire data.
+iOS retains AVAudioEngine voice processing, CallKit routing and native
 playback acknowledgements. There is no automatic WebSocket fallback. The
 explicit WebSocket configuration remains available to native integrations.
 Broad acoustic/route qualification remains acceptance work. Local-peer tests exercise
