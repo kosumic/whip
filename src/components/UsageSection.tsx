@@ -411,30 +411,21 @@ export function UsageSection() {
                     </Text>
                   </View>
                   <Text className="text-xs text-muted-foreground">
-                    {new Date(call.started_at_ms).toLocaleString(i18n.language)}{' '}
+                    {formatHistoryDate(call.started_at_ms, i18n.language)}{' '}
                     · {t(`voiceUsage.${call.scope}`)}
                   </Text>
+                  <CallHistoryTiming call={call} />
                   <Text className="text-xs text-muted-foreground">
                     {t(`voiceProvider.${call.provider}`)}
                     {call.model ? ` · ${call.model}` : ''}
                     {call.voice ? ` · ${call.voice}` : ''}
                   </Text>
-                  {call.provider !== 'local' && (
-                    <Text className="text-xs text-muted-foreground">
-                      {t(`voiceUsage.${call.status}`)}
-                    </Text>
-                  )}
-                  <Text className="text-xs text-muted-foreground">
-                    {call.active
-                      ? t('voiceUsage.active')
-                      : call.ended_at_ms === null
-                        ? t('voiceUsage.endUnknown')
-                        : t('voiceUsage.ended', {
-                            time: new Date(call.ended_at_ms).toLocaleTimeString(
-                              i18n.language,
-                            ),
-                          })}
-                  </Text>
+                  {call.provider !== 'local' &&
+                    call.status !== 'provider_usage_finalized' && (
+                      <Text className="text-xs text-muted-foreground">
+                        {t(`voiceUsage.${call.status}`)}
+                      </Text>
+                    )}
                 </View>
               ))}
               {history.length > limit && (
@@ -451,6 +442,81 @@ export function UsageSection() {
       </CollapsibleSectionCard>
     </View>
   );
+}
+
+function formatHistoryDate(timestamp: number, language: string) {
+  const date = new Date(timestamp);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const day = date.toDateString();
+  const offset =
+    day === today.toDateString()
+      ? 0
+      : day === yesterday.toDateString()
+        ? -1
+        : null;
+  return offset === null
+    ? date.toLocaleDateString(language)
+    : new Intl.RelativeTimeFormat(language, { numeric: 'auto' }).format(
+        offset,
+        'day',
+      );
+}
+
+function CallHistoryTiming({ call }: { call: VoiceUsageCall }) {
+  const { t, i18n } = useTranslation();
+  const start = new Date(call.started_at_ms);
+  const end = call.ended_at_ms === null ? null : new Date(call.ended_at_ms);
+  const formatTime = (date: Date) =>
+    date.toLocaleTimeString(i18n.language, {
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  const endLabel = call.active
+    ? t('voiceUsage.active')
+    : end === null
+      ? t('voiceUsage.endUnknown')
+      : start.toDateString() === end.toDateString()
+        ? formatTime(end)
+        : `${formatHistoryDate(end.getTime(), i18n.language)} ${formatTime(end)}`;
+  const durationEnd = call.active ? Date.now() : call.ended_at_ms;
+  return (
+    <View className="flex-row flex-wrap items-center justify-between gap-x-3 gap-y-1">
+      <Text className="text-xs text-muted-foreground">
+        {formatTime(start)} – {endLabel}
+      </Text>
+      {durationEnd !== null && (
+        <Text className="text-xs text-muted-foreground">
+          {formatCallDuration(durationEnd - call.started_at_ms, i18n.language)}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+function formatCallDuration(milliseconds: number, language: string) {
+  const secondsPerMinute = 60;
+  const secondsPerHour = secondsPerMinute * 60;
+  const seconds = Math.max(0, Math.floor(milliseconds / 1_000));
+  const parts = [
+    { unit: 'hour', value: Math.floor(seconds / secondsPerHour) },
+    {
+      unit: 'minute',
+      value: Math.floor((seconds % secondsPerHour) / secondsPerMinute),
+    },
+    { unit: 'second', value: seconds % secondsPerMinute },
+  ];
+  return parts
+    .filter(part => part.value > 0 || (part.unit === 'second' && seconds === 0))
+    .map(part =>
+      new Intl.NumberFormat(language, {
+        style: 'unit',
+        unit: part.unit,
+        unitDisplay: 'narrow',
+      }).format(part.value),
+    )
+    .join(' ');
 }
 
 function UsageFilter<T extends string>({
