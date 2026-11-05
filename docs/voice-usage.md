@@ -1,12 +1,18 @@
 # Voice usage ledger (issue #323)
 
-Settings → Usage & costs is a separate chart card matching Whipping time.
-Today/week/month/lifetime tabs share its local-calendar layout, tappable bars,
-theme, and reduced-motion support. Switch between estimated USD cost and activity
-counts; tap a bar to inspect its total and call history, and tap it again to
-return to the whole period. Provider, mode and scope filters sit behind Filters
-and apply to the history, current calls, totals and chart. The card's open state
-is remembered independently of the Voice settings.
+More → Usage & costs replaces the former Whipping time card and combines
+**Time**, **Cost** and **Activity** views. Time opens by default and retains
+Whipping time's native tracking data and counting rules. Today/week/month/lifetime
+tabs, tappable bars, theme and reduced-motion support are shared across views.
+The card keeps the former Whipping time expansion preference.
+
+Cost shows estimated voice API spending in USD; Activity shows call and speech
+request counts. Tap a bar to inspect its total and matching history, then tap it
+again to return to the whole period. Provider, mode and scope filters sit behind
+Filters and apply only to voice costs, activity and history. Time measures app
+and agent-working time independently of those filters. Only the displayed data
+source polls; a voice-ledger error does not hide Time. The separate cost card
+under Voice settings has been removed.
 Calls belong to their **start date**, in the device's current local timezone;
 weeks start on Monday. Calls crossing midnight stay in their start period.
 Known estimates are explicitly separated from calls with unknown costs or

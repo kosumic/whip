@@ -1,177 +1,487 @@
 import { useEffect, useState } from 'react';
-import ChartColumn from 'lucide-react-native/icons/chart-column';
 import { AppState, View } from 'react-native';
+import ChartColumn from 'lucide-react-native/icons/chart-column';
+import SlidersHorizontal from 'lucide-react-native/icons/sliders-horizontal';
 import { useTranslation } from 'react-i18next';
-import { usageChart, usageSummary } from 'react-native-whip-ssh';
-
 import {
-  usageChartPeriod,
-  usagePeriodStarts,
+  voiceUsageLedger,
+  type UsageMode,
+  type UsageProvider,
+  type UsageScope,
+  type VoiceUsageCall,
+  type VoiceUsageSummary,
+  type VoiceUsageTotal,
+} from '../services/voiceUsage';
+import { useSectionExpansion } from '../hooks/useSectionExpansion';
+import {
   formatUsageChartDate,
-  type UsageChartPeriod,
+  usagePeriodStarts,
   type UsageRange,
 } from '../lib/usagePeriods';
-import { useSectionExpansion } from '../hooks/useSectionExpansion';
-import { DetailsTitle } from './SettingsDetails';
-import { UsageBarChart, UsageRangeTabs } from './UsageChart';
+import { formatUsd as usd } from '../lib/formatUsd';
 import {
   CollapsibleSectionCard,
   SECTION_TITLE_CLASS_NAME,
 } from './CollapsibleSectionCard';
+import { DetailsTitle } from './SettingsDetails';
+import { UsageBarChart, UsageRangeTabs } from './UsageChart';
+import { GlassButton } from './GlassControls';
+import { Icon } from './ui/icon';
 import { Text } from './ui/text';
+import { WhippingTimeChart } from './WhippingTimeChart';
 
-const REFRESH_INTERVAL_MS = 5_000;
-const MS_PER_MINUTE = 60_000;
-const MINUTES_PER_HOUR = 60;
-
-type ChartView = UsageChartPeriod & {
-  range: UsageRange;
-  values: number[];
-  total: number;
-};
-
-function readChart(range: UsageRange): ChartView {
-  const now = new Date();
-  const starts = usagePeriodStarts(now);
-  const summary = usageSummary(starts.today, starts.week, starts.month);
-  const period = usageChartPeriod(range, now, summary.startedAtMs);
-  const chart = usageChart(period.boundaries);
-  return {
-    ...period,
-    range,
-    values: chart.bucketsMs.map(Number),
-    total: Number(range === 'lifetime' ? summary.lifetimeMs : chart.totalMs),
-  };
-}
+const PROVIDERS: (UsageProvider | undefined)[] = [undefined, 'local', 'openai'];
+const MODES: (UsageMode | undefined)[] = [
+  undefined,
+  'turn_based',
+  'realtime',
+  'live',
+  'tts',
+];
+const SCOPES: (UsageScope | undefined)[] = [
+  undefined,
+  'agent',
+  'global',
+  'speech',
+  'preview',
+];
+const METRICS = ['time', 'cost', 'activity'] as const;
+const PAGE_SIZE = 20;
+const REFRESH_INTERVAL_MS = 2_000;
+const MIN_COST_AXIS = 0.0001;
 
 export function UsageSection() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { expanded, toggleExpanded } = useSectionExpansion('usage');
   const [range, setRange] = useState<UsageRange>('week');
-
+  const [metric, setMetric] = useState<(typeof METRICS)[number]>('time');
+  const voiceMetricsVisible = metric !== 'time';
+  const [selected, setSelected] = useState<number | null>(null);
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [provider, setProvider] = useState<UsageProvider>();
+  const [mode, setMode] = useState<UsageMode>();
+  const [scope, setScope] = useState<UsageScope>();
+  const [summary, setSummary] = useState<VoiceUsageSummary>();
+  const [error, setError] = useState(false);
+  const [refresh, setRefresh] = useState(0);
+  const [limit, setLimit] = useState(PAGE_SIZE);
+  useEffect(() => {
+    if (!expanded || !voiceMetricsVisible) return;
+    let current = true;
+    let revision = 0;
+    let loading = false;
+    const load = () => {
+      if (loading || AppState.currentState !== 'active') return;
+      loading = true;
+      const request = ++revision;
+      void voiceUsageLedger
+        .summary({ provider, mode, scope }, new Date(), range)
+        .then(
+          value => {
+            if (current && request === revision) {
+              setSummary(value);
+              setError(false);
+            }
+          },
+          () => {
+            if (current && request === revision) setError(true);
+          },
+        )
+        .finally(() => {
+          loading = false;
+        });
+    };
+    setSummary(undefined);
+    setSelected(null);
+    setLimit(PAGE_SIZE);
+    load();
+    const unsubscribe = voiceUsageLedger.subscribe(load);
+    const appState = AppState.addEventListener('change', state => {
+      if (state === 'active') load();
+    });
+    const timer = setInterval(load, REFRESH_INTERVAL_MS);
+    return () => {
+      current = false;
+      unsubscribe();
+      appState.remove();
+      clearInterval(timer);
+    };
+  }, [expanded, voiceMetricsVisible, provider, mode, scope, range, refresh]);
+  const cost = (call: VoiceUsageCall) =>
+    call.provider === 'local'
+      ? t('voiceUsage.localFree')
+      : call.estimated_usd === null
+        ? call.known_estimated_usd == null
+          ? t('voiceUsage.unknown')
+          : t('voiceUsage.partialEstimate', {
+              cost: usd(call.known_estimated_usd),
+            })
+        : usd(call.estimated_usd);
+  const totalCost = (total: VoiceUsageTotal) =>
+    total.calls > 0 &&
+    total.unknown_cost_calls === total.calls &&
+    total.known_estimated_usd === 0
+      ? t('voiceUsage.unknown')
+      : usd(total.known_estimated_usd);
+  const chart = summary?.chart;
+  const total =
+    selected === null ? summary?.totals[range] : chart?.buckets[selected];
+  const date = selected === null ? undefined : chart?.dates[selected];
+  const activeCalls = summary?.calls.filter(call => call.active) ?? [];
+  const filterCount = [provider, mode, scope].filter(
+    value => value !== undefined,
+  ).length;
+  const starts = usagePeriodStarts();
+  const historyStart =
+    selected !== null && chart
+      ? Number(chart.boundaries[selected])
+      : range === 'lifetime'
+        ? 0
+        : Number(starts[range]);
+  const historyEnd =
+    selected !== null && chart
+      ? Number(chart.boundaries[selected + 1])
+      : Infinity;
+  const history =
+    summary?.calls.filter(
+      call =>
+        call.started_at_ms >= historyStart && call.started_at_ms < historyEnd,
+    ) ?? [];
+  const number = (value: number) =>
+    new Intl.NumberFormat(i18n.language, { maximumFractionDigits: 0 }).format(
+      value,
+    );
   return (
     <View className="px-4 py-2">
       <CollapsibleSectionCard
-        title={t('usage.title')}
+        title={t('voiceUsage.title')}
         icon={ChartColumn}
         titleContent={
           <DetailsTitle
-            title={t('usage.title')}
+            title={t('voiceUsage.title')}
             titleClassName={SECTION_TITLE_CLASS_NAME}
-            copy={`${t('usage.copy')}\n\n${t('usage.calendarCopy')}`}
+            copy={
+              metric === 'time'
+                ? `${t('usage.copy')}\n\n${t('usage.calendarCopy')}`
+                : `${t('voiceUsage.explanation')}\n\n${t('voiceUsage.remoteUnknown')}\n\n${t('voiceUsage.periodNote')}`
+            }
           />
         }
         expanded={expanded}
         onToggle={toggleExpanded}
         contentClassName="px-4 pb-4"
       >
-        <UsageContent range={range} onRangeChange={setRange} />
+        <UsageRangeTabs
+          range={range}
+          onChange={value => {
+            setSelected(null);
+            setRange(value);
+          }}
+        />
+        <View className="mb-4 flex-row flex-wrap items-center justify-between gap-2">
+          <View
+            className="min-w-0 flex-1 flex-row gap-1"
+            accessibilityRole="tablist"
+          >
+            {METRICS.map(value => (
+              <GlassButton
+                key={value}
+                size="content"
+                className="min-h-11 min-w-0 flex-1 px-2"
+                variant={metric === value ? 'secondary' : 'ghost'}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: metric === value }}
+                onPress={() => {
+                  if (value === 'time' || metric === 'time') setSelected(null);
+                  setMetric(value);
+                }}
+              >
+                <Text
+                  className="text-xs font-medium"
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.7}
+                >
+                  {t(`voiceUsage.${value}`)}
+                </Text>
+              </GlassButton>
+            ))}
+          </View>
+          {voiceMetricsVisible && (
+            <GlassButton
+              variant="ghost"
+              accessibilityLabel={t('voiceUsage.filters')}
+              accessibilityState={{ expanded: filtersExpanded }}
+              onPress={() => setFiltersExpanded(value => !value)}
+            >
+              <Icon as={SlidersHorizontal} size={16} />
+              <Text className="text-xs">
+                {t('voiceUsage.filters')}
+                {filterCount > 0 ? ` · ${filterCount}` : ''}
+              </Text>
+            </GlassButton>
+          )}
+        </View>
+        {voiceMetricsVisible && filtersExpanded && (
+          <View className="mb-5 gap-3 border-b border-border pb-4">
+            <UsageFilter
+              title={t('voiceUsage.provider')}
+              options={PROVIDERS}
+              selected={provider}
+              onSelect={setProvider}
+              label={value =>
+                t(value ? `voiceProvider.${value}` : 'voiceUsage.all')
+              }
+            />
+            <UsageFilter
+              title={t('voiceUsage.mode')}
+              options={MODES}
+              selected={mode}
+              onSelect={setMode}
+              label={value =>
+                t(value ? `voiceUsage.${value}` : 'voiceUsage.all')
+              }
+            />
+            <UsageFilter
+              title={t('voiceUsage.scope')}
+              options={SCOPES}
+              selected={scope}
+              onSelect={setScope}
+              label={value =>
+                t(value ? `voiceUsage.${value}` : 'voiceUsage.all')
+              }
+            />
+          </View>
+        )}
+        {metric === 'time' ? (
+          <WhippingTimeChart range={range} />
+        ) : error ? (
+          <View className="gap-3 py-4">
+            <Text
+              accessibilityRole="alert"
+              className="text-sm text-destructive"
+            >
+              {t('voiceUsage.storageError')}
+            </Text>
+            <GlassButton onPress={() => setRefresh(value => value + 1)}>
+              <Text>{t('voiceUsage.retry')}</Text>
+            </GlassButton>
+          </View>
+        ) : !summary ? (
+          <Text className="py-6 text-sm text-muted-foreground">
+            {t('voiceUsage.loading')}
+          </Text>
+        ) : (
+          <>
+            <View className="mb-5 gap-1">
+              <Text className="text-xs font-medium text-muted-foreground">
+                {date && chart
+                  ? formatUsageChartDate(date, chart.unit, range, i18n.language)
+                  : t(`usage.${range}`)}
+              </Text>
+              <Text
+                accessibilityLiveRegion="polite"
+                className="text-[36px] font-semibold leading-[44px] tracking-tight"
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.55}
+              >
+                {total
+                  ? metric === 'cost'
+                    ? totalCost(total)
+                    : number(total.calls)
+                  : '—'}
+              </Text>
+              <Text className="text-xs text-muted-foreground">
+                {t(
+                  metric === 'cost'
+                    ? 'voiceUsage.estimatedCost'
+                    : 'voiceUsage.activityCount',
+                  { count: total?.calls ?? 0 },
+                )}
+              </Text>
+            </View>
+            <UsageBarChart
+              chart={
+                chart
+                  ? {
+                      ...chart,
+                      values: chart.buckets.map(bucket =>
+                        metric === 'cost'
+                          ? bucket.known_estimated_usd
+                          : bucket.calls,
+                      ),
+                      unknown: chart.buckets.map(
+                        bucket =>
+                          metric === 'cost' && bucket.unknown_cost_calls > 0,
+                      ),
+                      empty: summary.totals[range].calls === 0,
+                    }
+                  : null
+              }
+              range={range}
+              selected={selected}
+              onSelect={index => {
+                setSelected(previous => (previous === index ? null : index));
+                setLimit(PAGE_SIZE);
+              }}
+              formatValue={(_, index) => {
+                const bucket = chart!.buckets[index];
+                const value =
+                  metric === 'cost'
+                    ? totalCost(bucket)
+                    : t('voiceUsage.activityCount', { count: bucket.calls });
+                return bucket.unknown_cost_calls > 0
+                  ? `${value}. ${t('voiceUsage.unknownCalls', { count: bucket.unknown_cost_calls })}`
+                  : value;
+              }}
+              formatAxis={metric === 'cost' ? usd : number}
+              minimumValue={metric === 'cost' ? MIN_COST_AXIS : 2}
+            />
+            <View className="mb-4 mt-2 gap-1">
+              <Text className="text-xs text-muted-foreground">
+                {t('voiceUsage.remoteUnknown')}
+              </Text>
+              {!!total?.unknown_cost_calls && (
+                <View className="flex-row items-center gap-2">
+                  <View className="size-2 rounded-sm border border-dashed border-muted-foreground" />
+                  <Text className="min-w-0 flex-1 text-xs text-muted-foreground">
+                    {t('voiceUsage.unknownCalls', {
+                      count: total.unknown_cost_calls,
+                    })}
+                  </Text>
+                </View>
+              )}
+              {!!total?.incomplete_calls && (
+                <Text className="text-xs text-muted-foreground">
+                  {t('voiceUsage.incompleteCalls', {
+                    count: total.incomplete_calls,
+                  })}
+                </Text>
+              )}
+            </View>
+            {activeCalls.length > 0 && (
+              <View className="mb-4 gap-2 border-t border-border pt-4">
+                <Text className="text-xs font-semibold text-muted-foreground">
+                  {t('voiceUsage.current')}
+                </Text>
+                {activeCalls.map(call => (
+                  <View
+                    key={call.session_id}
+                    className="flex-row items-center justify-between gap-3"
+                  >
+                    <Text className="min-w-0 flex-1 text-sm">
+                      {t(`voiceUsage.${call.mode}`)} · {t('voiceUsage.active')}
+                    </Text>
+                    <Text className="max-w-[60%] text-right text-sm font-medium">
+                      {cost(call)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+            <View className="border-t border-border pt-4">
+              <Text className="mb-2 text-xs font-semibold text-muted-foreground">
+                {t('voiceUsage.history')}
+              </Text>
+              {history.length === 0 && (
+                <Text className="py-3 text-sm text-muted-foreground">
+                  {t(
+                    summary.calls.length > 0
+                      ? 'voiceUsage.emptyRange'
+                      : mode === 'realtime' ||
+                          mode === 'live' ||
+                          provider === 'openai'
+                        ? 'voiceUsage.cloudEmpty'
+                        : 'voiceUsage.empty',
+                  )}
+                </Text>
+              )}
+              {history.slice(0, limit).map(call => (
+                <View
+                  key={call.session_id}
+                  className="gap-1 border-b border-border py-3"
+                >
+                  <View className="flex-row items-start justify-between gap-3">
+                    <Text className="min-w-0 flex-1 text-sm font-medium">
+                      {t(`voiceUsage.${call.mode}`)}
+                    </Text>
+                    <Text className="max-w-[60%] text-right text-sm font-semibold">
+                      {cost(call)}
+                    </Text>
+                  </View>
+                  <Text className="text-xs text-muted-foreground">
+                    {new Date(call.started_at_ms).toLocaleString(i18n.language)}{' '}
+                    · {t(`voiceUsage.${call.scope}`)}
+                  </Text>
+                  <Text className="text-xs text-muted-foreground">
+                    {t(`voiceProvider.${call.provider}`)}
+                    {call.model ? ` · ${call.model}` : ''}
+                    {call.voice ? ` · ${call.voice}` : ''}
+                  </Text>
+                  {call.provider !== 'local' && (
+                    <Text className="text-xs text-muted-foreground">
+                      {t(`voiceUsage.${call.status}`)}
+                    </Text>
+                  )}
+                  <Text className="text-xs text-muted-foreground">
+                    {call.active
+                      ? t('voiceUsage.active')
+                      : call.ended_at_ms === null
+                        ? t('voiceUsage.endUnknown')
+                        : t('voiceUsage.ended', {
+                            time: new Date(call.ended_at_ms).toLocaleTimeString(
+                              i18n.language,
+                            ),
+                          })}
+                  </Text>
+                </View>
+              ))}
+              {history.length > limit && (
+                <GlassButton
+                  variant="ghost"
+                  onPress={() => setLimit(value => value + PAGE_SIZE)}
+                >
+                  <Text>{t('voiceUsage.more')}</Text>
+                </GlassButton>
+              )}
+            </View>
+          </>
+        )}
       </CollapsibleSectionCard>
     </View>
   );
 }
 
-function UsageContent({
-  range,
-  onRangeChange,
+function UsageFilter<T extends string>({
+  title,
+  options,
+  selected,
+  onSelect,
+  label,
 }: {
-  range: UsageRange;
-  onRangeChange: (range: UsageRange) => void;
+  title: string;
+  options: (T | undefined)[];
+  selected: T | undefined;
+  onSelect: (value: T | undefined) => void;
+  label: (value: T | undefined) => string;
 }) {
-  const { t, i18n } = useTranslation();
-  const [chart, setChart] = useState<ChartView | null>(null);
-  const [selected, setSelected] = useState<number | null>(null);
-  const [unavailable, setUnavailable] = useState(false);
-  useEffect(() => {
-    const refresh = () => {
-      if (AppState.currentState !== 'active') return;
-      try {
-        setChart(readChart(range));
-        setUnavailable(false);
-      } catch {
-        setUnavailable(true);
-      }
-    };
-    refresh();
-    const timer = setInterval(refresh, REFRESH_INTERVAL_MS);
-    const subscription = AppState.addEventListener('change', refresh);
-    return () => {
-      clearInterval(timer);
-      subscription.remove();
-    };
-  }, [range]);
-
-  const duration = (milliseconds: number) => {
-    if (milliseconds > 0 && milliseconds < MS_PER_MINUTE)
-      return t('usage.lessThanMinute');
-    const minutes = Math.floor(milliseconds / MS_PER_MINUTE);
-    return t('usage.duration', {
-      hours: Math.floor(minutes / MINUTES_PER_HOUR),
-      minutes: minutes % MINUTES_PER_HOUR,
-    });
-  };
-  const axisDuration = (milliseconds: number) => {
-    const minutes = milliseconds / MS_PER_MINUTE;
-    const value =
-      minutes >= MINUTES_PER_HOUR ? minutes / MINUTES_PER_HOUR : minutes;
-    return t(
-      minutes >= MINUTES_PER_HOUR ? 'usage.axisHours' : 'usage.axisMinutes',
-      {
-        value: new Intl.NumberFormat(i18n.language, {
-          maximumFractionDigits: 1,
-        }).format(value),
-      },
-    );
-  };
-  const current = chart?.range === range ? chart : null;
-  const selectedDate = selected === null ? undefined : current?.dates[selected];
-  const value = selected === null ? current?.total : current?.values[selected];
-  const dateLabel = (date: Date, unit: UsageChartPeriod['unit']) =>
-    formatUsageChartDate(date, unit, range, i18n.language);
   return (
-    <>
-      <UsageRangeTabs
-        range={range}
-        onChange={option => {
-          setSelected(null);
-          onRangeChange(option);
-        }}
-      />
-      <View className="mb-5">
-        {selectedDate && current ? (
-          <Text className="mb-1 text-xs font-medium text-muted-foreground">
-            {dateLabel(selectedDate, current.unit)}
-          </Text>
-        ) : null}
-        <Text
-          accessibilityLiveRegion="polite"
-          className="text-[36px] font-semibold leading-[44px] tracking-tight"
-          numberOfLines={1}
-          adjustsFontSizeToFit
-        >
-          {unavailable
-            ? t('common.unavailable')
-            : value === undefined
-              ? '—'
-              : duration(value)}
-        </Text>
+    <View className="gap-1.5">
+      <Text className="text-xs font-medium text-muted-foreground">{title}</Text>
+      <View className="flex-row flex-wrap gap-1">
+        {options.map(value => (
+          <GlassButton
+            key={value ?? 'all'}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: selected === value }}
+            variant={selected === value ? 'secondary' : 'ghost'}
+            onPress={() => onSelect(value)}
+          >
+            <Text className="text-xs">{label(value)}</Text>
+          </GlassButton>
+        ))}
       </View>
-      <UsageBarChart
-        chart={
-          unavailable || !current
-            ? null
-            : { ...current, empty: current.total === 0 }
-        }
-        range={range}
-        selected={selected}
-        onSelect={index =>
-          setSelected(previous => (previous === index ? null : index))
-        }
-        formatValue={duration}
-        formatAxis={axisDuration}
-        minimumValue={MS_PER_MINUTE}
-        axisUnit={MS_PER_MINUTE}
-      />
-    </>
+    </View>
   );
 }

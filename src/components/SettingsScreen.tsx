@@ -93,7 +93,6 @@ import { SettingsChoiceRow } from './SettingsChoiceRow';
 import { SpeechBackendSetting } from './SpeechBackendSetting';
 import { MIN_VAD_SENSITIVITY, MAX_VAD_SENSITIVITY, VAD_SENSITIVITY_STEP } from '../lib/voiceVadSensitivity';
 import { VoiceConversationProviderSetting } from './VoiceConversationProviderSetting';
-import { VoiceUsageSetting } from './VoiceUsageSetting';
 import { DetailsTitle, SettingsDetailsProvider } from './SettingsDetails';
 import { ShizukuSection } from './ShizukuSection';
 import { VoiceConversationSettingsContext } from '../lib/voiceConversationSettingsContext';
@@ -321,7 +320,6 @@ export function SettingsSection(props: SettingsSectionProps) {
       </CollapsibleSectionCard>
 
       <SpeechBackendSetting />
-      <VoiceUsageSetting />
 
       <CollapsibleSectionCard
         title={t('settings.security')}

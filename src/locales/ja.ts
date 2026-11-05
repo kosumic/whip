@@ -1,5 +1,6 @@
 export const ja = {
   'voiceUsage.cost': '料金',
+  'voiceUsage.time': '時間',
   'voiceUsage.activity': '利用件数',
   'voiceUsage.filters': '絞り込み',
   'voiceUsage.estimatedCost': '音声料金の見積もり · USD',

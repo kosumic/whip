@@ -1,5 +1,6 @@
 export const zhHans = {
   'voiceUsage.cost': '费用',
+  'voiceUsage.time': '时间',
   'voiceUsage.activity': '使用次数',
   'voiceUsage.filters': '筛选',
   'voiceUsage.estimatedCost': '语音费用估算 · 美元',

@@ -2,6 +2,7 @@ import type { en } from './en';
 
 export const fr = {
   'voiceUsage.cost': 'Coût',
+  'voiceUsage.time': 'Temps',
   'voiceUsage.activity': 'Activité',
   'voiceUsage.filters': 'Filtres',
   'voiceUsage.estimatedCost': 'Coût vocal estimé · USD',

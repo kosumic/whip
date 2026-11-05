@@ -1,5 +1,6 @@
 export const zhHant: Record<string, string> = {
   'voiceUsage.cost': '費用',
+  'voiceUsage.time': '時間',
   'voiceUsage.activity': '使用次數',
   'voiceUsage.filters': '篩選',
   'voiceUsage.estimatedCost': '語音費用估算 · 美元',

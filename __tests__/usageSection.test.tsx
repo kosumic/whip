@@ -1,8 +1,9 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import { VoiceUsageSetting } from '../src/components/VoiceUsageSetting';
+import { UsageSection } from '../src/components/UsageSection';
 import { voiceUsageLedger, type VoiceUsageSummary } from '../src/services/voiceUsage';
 import { Text } from '../src/components/ui/text';
 import { usageChartPeriod } from '../src/lib/usagePeriods';
+import { usageChart, usageSummary } from 'react-native-whip-ssh';
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
 jest.mock('react-native', () => ({
@@ -33,6 +34,7 @@ jest.mock('../src/components/CollapsibleSectionCard', () => ({
       element('SectionHeader', { onPress: onToggle }, element('Text', null, title)), expanded ? children : null);
   },
 }));
+jest.mock('react-native-whip-ssh', () => ({ usageSummary: jest.fn(), usageChart: jest.fn() }));
 jest.mock('../src/services/voiceUsage', () => ({ voiceUsageLedger: { summary: jest.fn(), subscribe: jest.fn(() => () => {}) } }));
 const totals = { known_estimated_usd: 0, unknown_cost_calls: 0, incomplete_calls: 0, calls: 0 };
 const chartPeriod = usageChartPeriod('week');
@@ -43,15 +45,80 @@ function press(label: string) {
   if (labelled) { labelled.props.onPress(); return; }
   renderer.root.findAll(node => node.type === Text && node.props.children === label)[0].parent!.props.onPress();
 }
+async function openCost() {
+  await act(async () => press('voiceUsage.title'));
+  await act(async () => press('voiceUsage.cost'));
+}
 function visible() { return JSON.stringify(renderer.toJSON()); }
 beforeEach(async () => {
   jest.clearAllMocks(); jest.mocked(voiceUsageLedger.summary).mockResolvedValue(empty);
-  await act(async () => { renderer = create(<VoiceUsageSetting />); });
+  jest.mocked(usageSummary).mockReset().mockReturnValue({ todayMs: 7_200_000n, weekMs: 7_200_000n, monthMs: 7_200_000n, lifetimeMs: 14_400_000n, startedAtMs: BigInt(new Date(2026, 0, 1).getTime()) });
+  jest.mocked(usageChart).mockReset().mockImplementation(boundaries => ({ bucketsMs: boundaries.slice(1).map((_, index) => index < 2 ? 3_600_000n : 0n), totalMs: 7_200_000n }));
+  await act(async () => { renderer = create(<UsageSection />); });
 });
 afterEach(() => act(() => renderer.unmount()));
+
+test('opens one combined card on Whipping time without loading voice costs', async () => {
+  expect(usageSummary).not.toHaveBeenCalled();
+  await act(async () => press('voiceUsage.title'));
+  expect(renderer.root.findByProps({ accessibilityLiveRegion: 'polite' }).props.children).toBe('usage.duration {"hours":2,"minutes":0}');
+  expect(visible()).toContain('usage.title');
+  expect(visible()).toContain('voiceUsage.cost');
+  expect(visible()).toContain('voiceUsage.activity');
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'voiceUsage.filters' })).toHaveLength(0);
+  expect(voiceUsageLedger.summary).not.toHaveBeenCalled();
+});
+
+test('time bars use the shared period and switching metrics resets incompatible selections', async () => {
+  await act(async () => press('voiceUsage.title'));
+  const first = renderer.root.findAll(node => node.props.accessibilityRole === 'button' && node.props.accessibilityLabel?.includes('usage.duration {"hours":1'))[0];
+  await act(async () => first.props.onPress());
+  expect(renderer.root.findByProps({ accessibilityLiveRegion: 'polite' }).props.children).toBe('usage.duration {"hours":1,"minutes":0}');
+  await act(async () => press('usage.month'));
+  expect(usageChart).toHaveBeenLastCalledWith(usageChartPeriod('month').boundaries);
+  expect(renderer.root.findByProps({ accessibilityLiveRegion: 'polite' }).props.children).toBe('usage.duration {"hours":2,"minutes":0}');
+  await act(async () => press('voiceUsage.cost'));
+  expect(voiceUsageLedger.summary).toHaveBeenLastCalledWith({ provider: undefined, mode: undefined, scope: undefined }, expect.any(Date), 'month');
+  expect(visible()).toContain('voiceUsage.history');
+  await act(async () => press('voiceUsage.time'));
+  expect(visible()).not.toContain('voiceUsage.history');
+  expect(renderer.root.findByProps({ accessibilityLiveRegion: 'polite' }).props.children).toBe('usage.duration {"hours":2,"minutes":0}');
+});
+
+test('Whipping time remains available when voice accounting fails and keeps its native lifetime total', async () => {
+  jest.mocked(voiceUsageLedger.summary).mockRejectedValueOnce(new Error('voice ledger unavailable'));
+  await openCost();
+  expect(visible()).toContain('voiceUsage.storageError');
+  await act(async () => press('voiceUsage.time'));
+  expect(visible()).not.toContain('voiceUsage.storageError');
+  await act(async () => press('usage.lifetime'));
+  expect(renderer.root.findByProps({ accessibilityLiveRegion: 'polite' }).props.children).toBe('usage.duration {"hours":4,"minutes":0}');
+});
+
+test('polls only the visible metric and stops time updates when the card closes', async () => {
+  jest.useFakeTimers();
+  try {
+    await act(async () => press('voiceUsage.title'));
+    const timeReads = jest.mocked(usageSummary).mock.calls.length;
+    await act(async () => { jest.advanceTimersByTime(5_000); });
+    expect(usageSummary).toHaveBeenCalledTimes(timeReads + 1);
+    await act(async () => press('voiceUsage.cost'));
+    await act(async () => { jest.advanceTimersByTime(5_000); });
+    expect(usageSummary).toHaveBeenCalledTimes(timeReads + 1);
+    const voiceReads = jest.mocked(voiceUsageLedger.summary).mock.calls.length;
+    await act(async () => press('voiceUsage.time'));
+    await act(async () => { jest.advanceTimersByTime(5_000); });
+    expect(voiceUsageLedger.summary).toHaveBeenCalledTimes(voiceReads);
+    await act(async () => press('voiceUsage.title'));
+    const closedReads = jest.mocked(usageSummary).mock.calls.length;
+    await act(async () => { jest.advanceTimersByTime(5_000); });
+    expect(usageSummary).toHaveBeenCalledTimes(closedReads);
+  } finally { jest.useRealTimers(); }
+});
+
 test('loads only when opened and offers provider/mode filters with cloud empty states', async () => {
   expect(voiceUsageLedger.summary).not.toHaveBeenCalled();
-  await act(async () => press('voiceUsage.title'));
+  await openCost();
   expect(visible()).toContain('voiceUsage.empty');
   expect(visible()).toContain('voiceUsage.remoteUnknown');
   await act(async () => press('voiceUsage.filters'));
@@ -63,7 +130,7 @@ test('loads only when opened and offers provider/mode filters with cloud empty s
 });
 test('shows local charge qualification, current estimate and history without claiming remote costs are zero', async () => {
   jest.mocked(voiceUsageLedger.summary).mockResolvedValue({ ...empty, calls: [{ session_id: 'call', provider: 'local', mode: 'turn_based', model: null, voice: null, scope: 'agent', started_at_ms: 100, ended_at_ms: null, active: true, estimated_usd: 0, remote_agent_estimated_usd: null, status: 'live_estimate', items: {} }] });
-  await act(async () => press('voiceUsage.title'));
+  await openCost();
   expect(visible()).toContain('voiceUsage.localFree');
   expect(visible()).toContain('voiceUsage.remoteUnknown');
   expect(visible()).toContain('voiceUsage.active');
@@ -72,14 +139,14 @@ test('shows local charge qualification, current estimate and history without cla
 test('shows unknown and incomplete costs alongside known estimates for all periods', async () => {
   const partial = { known_estimated_usd: 0.3, calls: 2, unknown_cost_calls: 1, incomplete_calls: 1 };
   jest.mocked(voiceUsageLedger.summary).mockResolvedValue({ ...empty, totals: { today: partial, week: partial, month: partial, lifetime: partial } });
-  await act(async () => press('voiceUsage.title'));
+  await openCost();
   expect(visible()).toContain('voiceUsage.unknownCalls'); expect(visible()).toContain('voiceUsage.incompleteCalls');
   expect(visible()).toContain('$0.3000');
   for (const period of ['today', 'week', 'month', 'lifetime']) expect(visible()).toContain(`usage.${period}`);
 });
 test('storage failure hides totals and retry restores history', async () => {
   jest.mocked(voiceUsageLedger.summary).mockRejectedValueOnce(new Error('failed'));
-  await act(async () => press('voiceUsage.title'));
+  await openCost();
   expect(visible()).toContain('voiceUsage.storageError'); expect(visible()).not.toContain('voiceUsage.knownEstimate');
   await act(async () => press('voiceUsage.retry'));
   expect(visible()).not.toContain('voiceUsage.storageError'); expect(visible()).toContain('voiceUsage.history');
@@ -93,7 +160,7 @@ test('TTS requests have a filter and missing provider costs are shown as unknown
       remote_agent_estimated_usd: null, status: 'incomplete', items: {} }],
     totals: { today: unknown, week: unknown, month: unknown, lifetime: unknown },
   });
-  await act(async () => press('voiceUsage.title'));
+  await openCost();
   await act(async () => press('voiceUsage.filters'));
   await act(async () => press('voiceUsage.tts'));
   expect(voiceUsageLedger.summary).toHaveBeenLastCalledWith({ provider: undefined, mode: 'tts', scope: undefined }, expect.any(Date), 'week');
@@ -104,7 +171,7 @@ test('TTS requests have a filter and missing provider costs are shown as unknown
 test('refreshes native-only usage while the panel is open and stops after it is closed', async () => {
   jest.useFakeTimers();
   try {
-    await act(async () => press('voiceUsage.title'));
+    await openCost();
     const before = jest.mocked(voiceUsageLedger.summary).mock.calls.length;
     await act(async () => { jest.advanceTimersByTime(2_000); });
     expect(voiceUsageLedger.summary).toHaveBeenCalledTimes(before + 1);
@@ -115,7 +182,7 @@ test('refreshes native-only usage while the panel is open and stops after it is 
 });
 
 test('global call costs can be filtered separately from agent and speech usage', async () => {
-  await act(async () => press('voiceUsage.title'));
+  await openCost();
   await act(async () => press('voiceUsage.filters'));
   await act(async () => press('voiceUsage.global'));
   expect(voiceUsageLedger.summary).toHaveBeenLastCalledWith({ provider: undefined, mode: undefined, scope: 'global' }, expect.any(Date), 'week');
@@ -136,7 +203,7 @@ test('selecting a chart bar narrows the total and history, and changing period c
     totals: { today: full, week: full, month: full, lifetime: full },
     chart: { ...chartPeriod, buckets: chartPeriod.dates.map((_, index) => index === 0 ? daily : index === 1 ? { ...daily, known_estimated_usd: 0.2 } : totals) },
   });
-  await act(async () => press('voiceUsage.title'));
+  await openCost();
   expect(renderer.root.findByProps({ accessibilityLiveRegion: 'polite' }).props.children).toBe('$0.3000');
   const firstBar = renderer.root.findAll(node => node.props.accessibilityRole === 'button' && node.props.accessibilityLabel?.endsWith('$0.1000'))[0];
   await act(async () => firstBar.props.onPress());
@@ -156,7 +223,7 @@ test('an unknown-cost bucket remains selectable and is not shown as an empty cha
     totals: { today: unknown, week: unknown, month: unknown, lifetime: unknown },
     chart: { ...chartPeriod, buckets: chartPeriod.dates.map((_, index) => index === 0 ? unknown : totals) },
   });
-  await act(async () => press('voiceUsage.title'));
+  await openCost();
   expect(visible()).not.toContain('usage.empty');
   const unknownBar = renderer.root.findAll(node => node.props.accessibilityRole === 'button' && node.props.accessibilityLabel?.includes('voiceUsage.unknownCalls'))[0];
   await act(async () => unknownBar.props.onPress());
@@ -174,7 +241,7 @@ test('a partially priced call contributes its known charges to the chart and lab
     totals: { today: partial, week: partial, month: partial, lifetime: partial },
     chart: { ...chartPeriod, buckets: chartPeriod.dates.map((_, index) => index === 0 ? partial : totals) },
   });
-  await act(async () => press('voiceUsage.title'));
+  await openCost();
   expect(renderer.root.findByProps({ accessibilityLiveRegion: 'polite' }).props.children).toBe('$0.2500');
   expect(visible()).toContain('voiceUsage.partialEstimate');
   expect(visible()).toContain('voiceUsage.unknownCalls');

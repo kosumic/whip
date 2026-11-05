@@ -7,7 +7,6 @@ import { reportBackgroundFailure } from '../services/backgroundOperations';
 export function useSectionExpansion(
   section:
     | 'usage'
-    | 'voice-usage'
     | 'notifications'
     | 'voice'
     | 'speech'

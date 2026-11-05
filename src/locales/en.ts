@@ -1,5 +1,6 @@
 export const en = {
   'voiceUsage.cost': 'Cost',
+  'voiceUsage.time': 'Time',
   'voiceUsage.activity': 'Activity',
   'voiceUsage.filters': 'Filters',
   'voiceUsage.estimatedCost': 'Estimated voice cost · USD',
