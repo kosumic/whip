@@ -18,6 +18,7 @@ pub(crate) const MAX_AGENT_INSTRUCTIONS: usize = 32 * 1024;
 pub enum HostAuthMode {
     Password,
     Key,
+    None,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
@@ -80,6 +81,8 @@ pub enum HostProfileStoreError {
     EmptyUsername,
     #[error("SSH port is invalid: {0}")]
     InvalidPort(String),
+    #[error("tunnel authentication requires Tailcat's built-in SSH service")]
+    InvalidAuthentication,
     #[error("Host AGENTS.md exceeds 32768 UTF-8 bytes")]
     InstructionsTooLarge,
     #[error("host profile {0} does not exist")]
@@ -351,6 +354,11 @@ fn normalize_profile(
         .map(|id| id.trim().to_owned())
         .filter(|id| !id.is_empty());
     profile.forward_agent = profile.auth_mode == HostAuthMode::Key && profile.forward_agent;
+    if profile.auth_mode == HostAuthMode::None
+        && !(profile.tailcat_enabled && profile.tailcat_ssh_server)
+    {
+        return Err(HostProfileStoreError::InvalidAuthentication);
+    }
     trim_in_place(&mut profile.herdr_command);
     if profile.herdr_command.is_empty() {
         profile.herdr_command.push_str(DEFAULT_HERDR_COMMAND);

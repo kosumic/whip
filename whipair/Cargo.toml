@@ -27,7 +27,7 @@ sha2 = "0.10"
 ssh-key = { version = "=0.7.0-rc.11", default-features = false, features = ["ecdsa", "ed25519", "std"] }
 tempfile = "3"
 thiserror = "2"
-tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "time"] }
+tokio = { version = "1", features = ["io-util", "macros", "net", "process", "rt-multi-thread", "signal", "time"] }
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }

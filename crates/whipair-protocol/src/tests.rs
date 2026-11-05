@@ -8,6 +8,7 @@ fn payload() -> PairingPayload {
     PairingPayload {
         ssh_host: "100.64.0.2".into(),
         tailcat: false,
+        tailcat_no_auth: false,
         ssh_port: 22,
         ssh_user: "alice".into(),
         temporary_private_key_seed: [7; 32],
@@ -24,6 +25,24 @@ fn pairing_code_round_trips() {
     let qr = QrCode::with_error_correction_level(code.as_bytes(), EcLevel::L).unwrap();
     assert_eq!(qr.width(), 37);
     assert_eq!(decode_pairing_code(&code).unwrap(), payload);
+}
+
+#[test]
+fn builtin_tailcat_code_preserves_tunnel_authentication_without_a_temporary_key() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../tests/fixtures/tailcat-pairing.json")).unwrap();
+    let mut payload = decode_pairing_code(fixture["code"].as_str().unwrap()).unwrap();
+    let enrollment_code = encode_pairing_code(&payload).unwrap();
+    payload.tailcat_no_auth = true;
+    payload.temporary_private_key_seed = [0; ED25519_SEED_BYTES];
+    let code = encode_pairing_code(&payload).unwrap();
+    assert_eq!(decode_pairing_code(&code).unwrap(), payload);
+    assert!(code.len() < enrollment_code.len());
+    payload.tailcat = false;
+    assert!(encode_pairing_code(&payload).is_err());
+    payload.tailcat = true;
+    payload.ssh_port = 2222;
+    assert!(encode_pairing_code(&payload).is_err());
 }
 
 #[test]
@@ -426,7 +445,7 @@ proptest! {
         host_key in any::<[u8; SHA256_BYTES]>(),
     ) {
         let payload = PairingPayload {
-            ssh_host: IpAddr::from(address).to_string(), tailcat: false, ssh_port: port,
+            ssh_host: IpAddr::from(address).to_string(), tailcat: false, tailcat_no_auth: false, ssh_port: port,
             ssh_user: user, temporary_private_key_seed: seed, ssh_host_key_sha256: host_key,
         };
         let encoded = encode_pairing_code(&payload).unwrap();

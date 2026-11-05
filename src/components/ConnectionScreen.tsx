@@ -195,7 +195,8 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
   const canSave = Boolean(hostFieldValue.trim() && profile.username.trim()
     && (!profile.tailcatEnabled || (profile.tailcatPrivateKey && profile.tailcatPublicKey)));
   const builtinTailcatSsh = Boolean(profile.tailcatEnabled && profile.tailcatSshServer);
-  const canConnect = Boolean(canSave && profile.secret && (!builtinTailcatSsh || profile.authMode === 'key'));
+  const canConnect = Boolean(canSave && (profile.authMode === 'none'
+    ? builtinTailcatSsh : profile.secret && (!builtinTailcatSsh || profile.authMode === 'key')));
   const jumpHosts = jumpHostCandidates(hosts, profile.id);
   const privateKeyAccessibilityLabel = keyInspection.state === 'valid'
     ? t('connection.keyA11y', { fingerprint: keyInspection.fingerprint, keyType: keyInspection.keyType })
@@ -336,7 +337,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
         <View
           className={cn('mb-4 flex-row rounded-full p-1', appGlassEnabled ? 'border' : 'bg-muted')}
           style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}>
-          {(['password', 'key'] as const).map(mode => {
+          {(['password', 'key', ...(builtinTailcatSsh ? ['none' as const] : [])] as const).map(mode => {
             const selected = profile.authMode === mode;
             return (
               <Button
@@ -357,14 +358,16 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
                   !selected && 'text-muted-foreground',
                   appGlassEnabled && selected && 'text-primary',
                 )}>
-                  {mode === 'password' ? t('hosts.password') : t('connection.privateKey')}
+                  {mode === 'none' ? t('connection.tunnelAuthentication') : mode === 'password' ? t('hosts.password') : t('connection.privateKey')}
                 </Text>
               </Button>
             );
           })}
         </View>
 
-        {profile.authMode === 'password' ? (
+        {profile.authMode === 'none' ? (
+          <Text className="mb-3.5 text-xs leading-5 text-muted-foreground">{t('connection.tunnelAuthenticationCopy')}</Text>
+        ) : profile.authMode === 'password' ? (
           <Field label={t('connection.sshPassword')} value={profile.secret} onChangeText={value => {
             dispatchCredentials({ type: 'credential-changed', changes: { secret: value } });
           }} secureTextEntry autoCapitalize="none" />
@@ -421,12 +424,15 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
           enabled={Boolean(profile.tailcatEnabled)}
           onEnabledChange={value => {
             if (value && profile.tailcatSshServer) setAuthMode('key');
+            if (!value && profile.authMode === 'none') setAuthMode('key');
             dispatchCredentials({ type: 'profile-changed', changes: { tailcatEnabled: value, ...(value ? { jumpHostId: undefined } : {}) } });
           }}
           port={profile.port}
           sshServer={profile.tailcatSshServer}
+          tunnelAuth={profile.authMode === 'none'}
           onSshServerChange={value => {
             if (value) setAuthMode('key');
+            if (!value && profile.authMode === 'none') setAuthMode('key');
             update('tailcatSshServer', value);
           }}
           clientPublicKey={profile.tailcatPublicKey}

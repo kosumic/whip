@@ -25,6 +25,7 @@ import { hapticPress, IconButton, ScreenHeader, WhipMark } from './app-ui';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { GoogleQrScanner } from './GoogleQrScanner';
 import { JumpHostSelect } from './JumpHostSelect';
+import { TailcatQuickStartGuide } from './TailcatQuickStartGuide';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
@@ -281,8 +282,12 @@ export function NewHostScreen({ hosts, onCancel, onManual, onPaired, onAuthentic
           </Text>
         </View>
 
+        <TailcatQuickStartGuide />
+
         <GlassSurface className="mb-6 rounded-xl border border-white/30 px-4 py-3 dark:border-white/10">
-          <Text className="text-sm font-semibold">{t('pairing.runOnHost')}</Text>
+          <Text accessibilityRole="header" className="text-sm font-semibold">{t('pairing.sshConnectTitle')}</Text>
+          <Text className="mt-1 text-sm leading-5 text-muted-foreground">{t('pairing.sshConnectCopy')}</Text>
+          <Text className="mt-3 text-xs font-medium">{t('pairing.runOnHost')}</Text>
           <View className="mt-2 gap-2">
             <Text
               selectable

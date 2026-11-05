@@ -11,6 +11,9 @@ Tailcat addresses through `tailcat-client` with its transport feature disabled.
 Tailcat validation checks the CBOR structure, key sizes, required server and
 discovery keys, and relay configuration before either consumer attempts pairing.
 Payload debug output omits the temporary private seed and Tailcat bearer address.
+`tailcat_no_auth` uses address type `5` for the built-in, tunnel-authenticated
+SSH service on port 22. These envelopes omit the temporary SSH seed. The CLI and
+mobile core must both support this address type; older decoders reject it.
 
 The binary format is documented in [Whipair's README](https://github.com/kosumic/whip/tree/main/whipair#pairing-protocol-wp4).
 Golden Tailcat vectors live in `tests/fixtures/tailcat-pairing.json`.

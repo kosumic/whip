@@ -135,6 +135,7 @@ pub enum HostSshCredential {
         private_key: String,
         passphrase: Option<String>,
     },
+    None,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
@@ -1085,6 +1086,7 @@ pub(crate) fn workflow_host_connected(host: &crate::HostProfileRecord) -> bool {
             && matches!(
                 (&ssh.credential, host.auth_mode),
                 (HostSshCredential::Key { .. }, crate::HostAuthMode::Key)
+                    | (HostSshCredential::None, crate::HostAuthMode::None)
                     | (
                         HostSshCredential::Password { .. },
                         crate::HostAuthMode::Password

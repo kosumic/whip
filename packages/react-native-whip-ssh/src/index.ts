@@ -1,4 +1,5 @@
 import {type HerdrBackend,toNativeHerdrBackend,fromNativeHerdrBackend} from './herdrBackend';
+import { type AuthMode, fromNativeHostAuthMode, toNativeHostAuthMode } from './hostAuthMode';
 export { setWhipAppControl } from './generated-entry';
 export type { WhipToolPermit, WhipAppControl } from './generated-entry';
 import {
@@ -498,7 +499,7 @@ export type RuntimeSshConfig = {
   host: string;
   port: number;
   username: string;
-  authMode: 'password' | 'key';
+  authMode: AuthMode;
   secret: string;
   passphrase?: string;
   forwardAgent?: boolean;
@@ -1221,7 +1222,7 @@ export type NativeHostProfile = {
   username: string;
   jumpHostId?: string;
   forwardAgent: boolean;
-  authMode: 'password' | 'key';
+  authMode: AuthMode;
   herdrEnabled: boolean;
   herdrBackend?: HerdrBackend;
   herdrCommand: string;
@@ -1242,7 +1243,7 @@ export type HostProfileStoreProjection = {
 function nativeHostProfile(value: NativeHostProfileRecord): NativeHostProfile {
   return {
     ...value,
-    authMode: value.authMode === HostAuthMode.Key ? 'key' : 'password',
+    authMode: fromNativeHostAuthMode(value.authMode),
     herdrBackend: fromNativeHerdrBackend(value.herdrBackend),
   };
 }
@@ -1254,7 +1255,7 @@ function rustHostProfile(value: NativeHostProfile): NativeHostProfileRecord {
     tailcatSshServer: Boolean(value.tailcatSshServer),
     agentInstructions: value.agentInstructions ?? '',
     authMode:
-      value.authMode === 'key' ? HostAuthMode.Key : HostAuthMode.Password,
+      toNativeHostAuthMode(value.authMode),
     herdrBackend: toNativeHerdrBackend(value.herdrBackend),
   };
 }
@@ -1282,7 +1283,9 @@ function runtimeSshConfig(value: RuntimeSshConfig) {
     port: value.port,
     username: value.username,
     credential:
-      value.authMode === 'password'
+      value.authMode === 'none'
+        ? HostSshCredential.None.new()
+        : value.authMode === 'password'
         ? HostSshCredential.Password.new({ password: value.secret })
         : HostSshCredential.Key.new({
             privateKey: value.secret,

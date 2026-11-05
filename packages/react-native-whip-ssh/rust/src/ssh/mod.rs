@@ -550,6 +550,7 @@ pub(crate) struct SshSession {
 
 #[derive(Clone, Debug)]
 pub(crate) enum SshCredential {
+    None,
     Password(String),
     Key {
         private_key: String,
@@ -1047,6 +1048,13 @@ async fn connect_inner_guarded(
             "Tailcat's SSH server requires Tailcat mode".into(),
         ));
     }
+    if matches!(connection.credential, SshCredential::None)
+        && !(connection.tailcat_ssh_server && connection.tailcat_address.is_some())
+    {
+        return Err(TransportError::InvalidRequest(
+            "tunnel authentication requires Tailcat's built-in SSH service".into(),
+        ));
+    }
     let (host, port) = ssh_host_identity(connection);
     let username = connection.username.trim().to_owned();
     let config = Arc::new(client::Config {
@@ -1075,7 +1083,10 @@ async fn connect_inner_guarded(
             ));
         }
         if connection.tailcat_ssh_server
-            && !matches!(connection.credential, SshCredential::Key { .. })
+            && !matches!(
+                connection.credential,
+                SshCredential::Key { .. } | SshCredential::None
+            )
         {
             return Err(TransportError::InvalidRequest(
                 "Tailcat's SSH server requires an SSH private key".into(),
@@ -1103,6 +1114,7 @@ async fn connect_inner_guarded(
     check_workflow_control(control)?;
     let mut forwarding_key = None;
     let authenticated = match &connection.credential {
+        SshCredential::None => handle.authenticate_none(&username).await?.success(),
         SshCredential::Password(password) => {
             authenticate_password(&mut handle, &username, password, control).await?
         }

@@ -24,6 +24,7 @@ interface Props {
   onEnabledChange: (enabled: boolean) => void;
   port?: string;
   sshServer?: boolean;
+  tunnelAuth?: boolean;
   onSshServerChange?: (enabled: boolean) => void;
   clientPublicKey?: string;
   sshPublicKey?: string;
@@ -41,7 +42,7 @@ function TailcatCommand({ title, command, language = 'bash' }: { title: string; 
   );
 }
 
-export function TailcatSettings({ enabled, onEnabledChange, port, sshServer, onSshServerChange, clientPublicKey, sshPublicKey, identityError, identityPending, onRetryIdentity }: Props) {
+export function TailcatSettings({ enabled, onEnabledChange, port, sshServer, tunnelAuth, onSshServerChange, clientPublicKey, sshPublicKey, identityError, identityPending, onRetryIdentity }: Props) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const parsedPort = Number(port);
@@ -49,8 +50,9 @@ export function TailcatSettings({ enabled, onEnabledChange, port, sshServer, onS
     ? parsedPort : DEFAULT_SSH_PORT;
   const { serverCommand, allowlistCommand } = useMemo(() => {
     const command = (nodeKey?: string) => {
+      if (sshServer && !tunnelAuth && !sshPublicKey) return undefined;
       try {
-        return tailcatServerCommand(nodeKey, sshPort, Boolean(sshServer), sshPublicKey);
+        return tailcatServerCommand(nodeKey, sshPort, Boolean(sshServer), tunnelAuth ? undefined : sshPublicKey);
       } catch {
         return undefined;
       }
@@ -59,7 +61,7 @@ export function TailcatSettings({ enabled, onEnabledChange, port, sshServer, onS
       serverCommand: command(),
       allowlistCommand: clientPublicKey ? command(clientPublicKey) : undefined,
     };
-  }, [clientPublicKey, sshPort, sshServer, sshPublicKey]);
+  }, [clientPublicKey, sshPort, sshServer, sshPublicKey, tunnelAuth]);
   return (
     <View className="mb-3.5">
       <View className="min-h-[72px] flex-row items-center gap-4">
@@ -127,10 +129,10 @@ export function TailcatSettings({ enabled, onEnabledChange, port, sshServer, onS
           {serverCommand ? <TailcatCommand title={t('connection.tailcatStartServer')} command={serverCommand} /> : (
             <Text className="text-xs leading-5 text-muted-foreground">{t(sshServer ? 'connection.tailcatSshKeyRequired' : 'connection.tailcatIdentityInEditor')}</Text>
           )}
-          <Text className="text-xs leading-5 text-muted-foreground">{t(sshServer ? 'connection.tailcatBuiltinConnect' : 'connection.tailcatConnect')}</Text>
+          <Text className="text-xs leading-5 text-muted-foreground">{t(tunnelAuth ? 'connection.tunnelAuthenticationCopy' : sshServer ? 'connection.tailcatBuiltinConnect' : 'connection.tailcatConnect')}</Text>
           <View className="gap-1.5">
             <Text className="text-xs font-medium">{t('connection.tailcatAllowlist')}</Text>
-            <Text className="text-xs leading-5 text-muted-foreground">{t('connection.tailcatAllowlistCopy')}</Text>
+            <Text className="text-xs leading-5 text-muted-foreground">{t(tunnelAuth ? 'connection.tailcatTunnelAllowlistCopy' : 'connection.tailcatAllowlistCopy')}</Text>
             {allowlistCommand ? (
               <TailcatCommand
                 title={t('connection.tailcatAllowlistRestart')}

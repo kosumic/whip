@@ -245,6 +245,7 @@ mod tests {
         whipair_protocol::encode_pairing_code(&whipair_protocol::PairingPayload {
             ssh_host: "127.0.0.1".into(),
             tailcat: false,
+            tailcat_no_auth: false,
             ssh_port: 1,
             ssh_user: "test".into(),
             temporary_private_key_seed: [7; whipair_protocol::ED25519_SEED_BYTES],

@@ -1,4 +1,5 @@
 import { NativeModules, Platform } from 'react-native';
+import { fromNativeHostAuthMode, toNativeHostAuthMode } from 'react-native-whip-ssh/src/hostAuthMode';
 import {toNativeHerdrBackend,fromNativeHerdrBackend} from 'react-native-whip-ssh/src/herdrBackend';
 import * as Keychain from 'react-native-keychain';
 import {
@@ -9,7 +10,6 @@ import {
   CredentialTransactionError,
   CredentialStorageKey,
   CredentialSlot_Tags,
-  HostAuthMode,
   type CredentialPlatform,
   type CredentialProfileView,
   type CredentialRequest,
@@ -140,7 +140,7 @@ export function credentialPlatform(changed: (view: CredentialProfileView) => voi
 export function nativeHost(host: HostProfile): HostProfileRecord {
   return {
     id: host.id, name: host.name, host: host.host, port: host.port, username: host.username,
-    authMode: host.authMode === 'key' ? HostAuthMode.Key : HostAuthMode.Password,
+    authMode: toNativeHostAuthMode(host.authMode),
     jumpHostId: host.jumpHostId, forwardAgent: !!host.forwardAgent, tailcatEnabled: !!host.tailcatEnabled,
     tailcatSshServer: !!host.tailcatSshServer, herdrEnabled: host.herdrEnabled !== false,
     herdrCommand: host.herdrCommand, herdrSocketPath: host.herdrSocketPath ?? '', sessionName: host.sessionName,
@@ -150,7 +150,7 @@ export function nativeHost(host: HostProfile): HostProfileRecord {
   };
 }
 export function hostProfile(host: HostProfileRecord): HostProfile {
-  return { ...host, authMode: host.authMode === HostAuthMode.Key ? 'key' : 'password',herdrBackend:fromNativeHerdrBackend(host.herdrBackend) };
+  return { ...host, authMode: fromNativeHostAuthMode(host.authMode),herdrBackend:fromNativeHerdrBackend(host.herdrBackend) };
 }
 export function material(profile: Pick<ConnectionProfile, 'secret' | 'passphrase' | 'tailcatAddress' | 'tailcatPrivateKey' | 'tailcatPublicKey'>): CredentialMaterial {
   return { secret: profile.secret, passphrase: profile.passphrase ?? '', tailcatAddress: profile.tailcatAddress, tailcatPrivateKey: profile.tailcatPrivateKey, tailcatPublicKey: profile.tailcatPublicKey };

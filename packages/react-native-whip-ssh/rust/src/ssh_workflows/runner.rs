@@ -183,8 +183,10 @@ impl SshWorkflow {
                 if payload.tailcat && jump_host_id.is_some() {
                     return Err(SshWorkflowError::InvalidRoute);
                 }
-                crate::inspect_public_key(public_key.clone(), false)
-                    .map_err(SshWorkflowError::Installation)?;
+                if !payload.tailcat_no_auth {
+                    crate::inspect_public_key(public_key.clone(), false)
+                        .map_err(SshWorkflowError::Installation)?;
+                }
                 (self.control.id.clone(), jump_host_id.clone())
             }
             SshWorkflowRequest::Install {
@@ -241,7 +243,7 @@ impl SshWorkflow {
             else {
                 return Err(SshWorkflowError::InvalidRoute);
             };
-            if credential.secret.is_empty() {
+            if credential.secret.is_empty() && host.auth_mode != HostAuthMode::None {
                 return Err(SshWorkflowError::MissingCredential);
             }
             materials.push(credential);
@@ -348,6 +350,7 @@ fn config(host: &HostProfileRecord, material: CredentialMaterial) -> Result<Host
             .then(|| material.tailcat_private_key.unwrap_or_default()),
         tailcat_ssh_server: host.tailcat_enabled && host.tailcat_ssh_server,
         credential: match host.auth_mode {
+            HostAuthMode::None => HostSshCredential::None,
             HostAuthMode::Password => HostSshCredential::Password {
                 password: material.secret,
             },

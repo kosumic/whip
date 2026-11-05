@@ -342,8 +342,8 @@ Set up this computer so I can connect to it from the Whip mobile app.
 4. Keep the process running in a terminal I can return to, and show me its Whip pairing QR code so I can scan it on my phone. Tell me how to stop it when I am done. Keep the QR code and tc address private.
 ```
 
-In Whip, open **Add host → Quick connect with Tailcat** to copy this same prompt
-or scan the QR when your agent is ready. Keep the computer's terminal running
+In Whip, open **Add host → Scan pairing QR → Quick connect with Tailcat** to copy
+this same prompt or scan the QR when your agent is ready. Keep the computer's terminal running
 while using Whip.
 
 ### Pair with a QR code

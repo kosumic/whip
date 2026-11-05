@@ -225,6 +225,7 @@ impl Transport for FakeTransport {
             },
             SshWorkflowRequest::Pair { .. } => SshWorkflowResult::Paired {
                 result: PairHostResult {
+                    tailcat_no_auth: false,
                     ssh_host: "target.test".into(),
                     ssh_port: 22,
                     ssh_user: "user".into(),

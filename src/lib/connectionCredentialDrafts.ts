@@ -66,6 +66,9 @@ export function updateActiveCredential(
   secret: string,
   passphrase = profile.passphrase,
 ): ConnectionCredentialState {
+  if (profile.authMode === 'none') {
+    return { profile: { ...profile, secret: '', passphrase: '' }, drafts };
+  }
   if (profile.authMode === 'password') {
     return {
       profile: { ...profile, secret, passphrase: '' },
@@ -93,7 +96,7 @@ export function switchCredentialAuthMode(
     profile: {
       ...profile,
       authMode,
-      secret: authMode === 'password' ? captured.password : captured.privateKey,
+      secret: authMode === 'none' ? '' : authMode === 'password' ? captured.password : captured.privateKey,
       passphrase: authMode === 'key' ? captured.keyPassphrase : '',
       forwardAgent: authMode === 'key' && Boolean(profile.forwardAgent),
     },

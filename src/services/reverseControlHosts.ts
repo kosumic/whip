@@ -2,13 +2,13 @@ import {
   AppConnectionStatus,
   HostActionCoordinator,
   HostActionPlatformError,
-  HostAuthMode,
   fromNativeHostProfileRecord,
   fromNativeHerdrBackend,
   toNativeHostProfileRecord,
   type HostActionPermitLike,
   type HostActionProfilePatch,
 } from 'react-native-whip-ssh';
+import { fromNativeHostAuthMode } from 'react-native-whip-ssh/src/hostAuthMode';
 
 import type { LiveHostConnectionStatus } from '../liveHostSessions';
 import type { ConnectionProfile, HostProfile } from '../types';
@@ -56,7 +56,7 @@ function metadataPatch(patch: HostActionProfilePatch): HostMetadataPatch {
     ...(patch.port === undefined ? {} : { port: patch.port }),
     ...(patch.username === undefined ? {} : { username: patch.username }),
     ...(patch.authMode === undefined ? {} : {
-      authMode: patch.authMode === HostAuthMode.Key ? 'key' : 'password',
+      authMode: fromNativeHostAuthMode(patch.authMode),
     }),
     ...(patch.herdrCommand === undefined ? {} : { herdrCommand: patch.herdrCommand }),
     ...(patch.herdrBackend === undefined ? {} : {herdrBackend:fromNativeHerdrBackend(patch.herdrBackend)}),

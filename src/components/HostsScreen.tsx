@@ -210,7 +210,7 @@ export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId
                                 <Text accessibilityLabel={latencyMs == null ? t('hosts.latencyUnavailable') : t('hosts.latency', { value: latencyMs })} className="text-[11px] leading-[18px] text-muted-foreground/70">{latencyMs == null ? '— ms' : `${latencyMs} ms`}</Text>
                               </View>
                               <Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>
-                                {host.authMode === 'key' ? t('hosts.sshKey') : t('hosts.password')}
+                                {host.authMode === 'none' ? t('connection.tunnelAuthentication') : host.authMode === 'key' ? t('hosts.sshKey') : t('hosts.password')}
                                 {!connected && host.lastConnectedAt
                                   ? ` · ${t('hosts.lastConnected', { value: formatLastUsed(host.lastConnectedAt, t) })}`
                                   : ''}

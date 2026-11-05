@@ -2,12 +2,12 @@ import {
   CredentialCommand,
   CredentialResult_Tags,
   CredentialTransactionError,
-  HostAuthMode,
   type CredentialResult,
   type HostActionPermitLike,
   type HostActionProfilePatch,
 } from 'react-native-whip-ssh/src/credentialTransactions';
 import type { ConnectionProfile, HostProfile } from '../types';
+import { toNativeHostAuthMode } from 'react-native-whip-ssh/src/hostAuthMode';
 import {toNativeHerdrBackend} from 'react-native-whip-ssh/src/herdrBackend';
 import { CredentialTransactions, credentialTransactions, hostProfile, material, nativeHost } from './credentialTransactions';
 import { reportBackgroundFailure } from './backgroundOperations';
@@ -75,7 +75,7 @@ export class HostProfileRepository {
   async saveHostMetadata(id: string, patch: HostMetadataPatch, source?: string, guard?: HostActionPermitLike): Promise<{ host: HostProfile }> {
     const nativePatch: HostActionProfilePatch = {
       name: patch.name, host: patch.host, port: patch.port, username: patch.username,
-      authMode: patch.authMode === undefined ? undefined : patch.authMode === 'key' ? HostAuthMode.Key : HostAuthMode.Password,
+      authMode: patch.authMode === undefined ? undefined : toNativeHostAuthMode(patch.authMode),
       herdrCommand: patch.herdrCommand, herdrSocketPath: patch.herdrSocketPath,
       herdrBackend: patch.herdrBackend === undefined ? undefined : toNativeHerdrBackend(patch.herdrBackend),
       sessionName: patch.sessionName, forwardAgent: patch.forwardAgent,

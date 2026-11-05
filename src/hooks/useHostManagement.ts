@@ -292,14 +292,17 @@ export function useHostManagement({
   const loadProfileForConnection = useCallback(
     async (host: HostProfile): Promise<ConnectionProfile | null> => {
       let profile = await loadConnectionProfile(host);
+      const hasCredentials = () => profile.authMode === 'none'
+        ? Boolean(profile.tailcatAddress && profile.tailcatPrivateKey)
+        : Boolean(profile.secret);
       if (
-        !profile.secret
+        !hasCredentials()
         && credentialRecovery.state === 'locked'
         && await unlockCredentialRecovery()
       ) {
         profile = await loadConnectionProfile(host);
       }
-      if (profile.secret) return profile;
+      if (hasCredentials()) return profile;
       setEditorProfile(profile);
       setError(t('app.enterCredential'));
       return null;
@@ -324,7 +327,7 @@ export function useHostManagement({
   const savePairedHost = useCallback(
     async (result: PairHostResult, key: PairingKeySelection, jumpHostId?: string) => {
       await trustKnownHost({
-        host: result.sshHost,
+        host: result.tailcatNoAuth ? `tailcat-ssh:${result.sshHost}` : result.sshHost,
         port: result.sshPort,
         keyType: result.sshHostKeyType,
         publicKey: result.sshHostPublicKey,
@@ -334,7 +337,7 @@ export function useHostManagement({
       await persistProfile(profileFromPairing(result, key, jumpHostId));
       setCredentialRecovery(await credentialRecoveryStatus());
       setNewHostOpen(false);
-      if (key.privateKey) setPairingSuccess(result);
+      if (key.privateKey || result.tailcatNoAuth) setPairingSuccess(result);
     },
     [persistProfile, replaceKnownHostsState],
   );

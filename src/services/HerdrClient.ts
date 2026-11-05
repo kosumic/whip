@@ -79,7 +79,7 @@ export class HerdrClient {
       port: Number(value.port),
       username: value.username.trim(),
       authMode: value.authMode,
-      secret: value.authMode === 'password' ? value.secret : normalizePrivateKey(value.secret),
+      secret: value.authMode === 'key' ? normalizePrivateKey(value.secret) : value.secret,
       passphrase: value.passphrase || undefined,
       forwardAgent: value.forwardAgent,
       tailcatAddress: value.tailcatEnabled ? value.tailcatAddress?.trim() ?? '' : undefined,

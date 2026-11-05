@@ -406,7 +406,9 @@ impl Workflow {
                 })
                 .await?
                 .filter(|profile| {
-                    !profile.credential.secret.is_empty() && same_target(&profile.host, &host)
+                    (!profile.credential.secret.is_empty()
+                        || profile.host.auth_mode == HostAuthMode::None)
+                        && same_target(&profile.host, &host)
                 })
                 .ok_or_else(|| platform_failure(SessionConnectionFailureKind::Credential))?;
             jumps.push(jump);

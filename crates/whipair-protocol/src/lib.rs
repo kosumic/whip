@@ -13,6 +13,7 @@ const ADDRESS_IPV4: u8 = 1;
 const ADDRESS_IPV6: u8 = 2;
 const ADDRESS_HOSTNAME: u8 = 3;
 const ADDRESS_TAILCAT: u8 = 4;
+const ADDRESS_TAILCAT_NO_AUTH: u8 = 5;
 const MAX_HOSTNAME_BYTES: usize = 253;
 const MAX_TAILCAT_ADDRESS_BYTES: usize = 1024;
 const MAX_USERNAME_BYTES: usize = u8::MAX as usize;
@@ -24,6 +25,8 @@ const MAX_BASE45_BYTES: usize = MAX_PAYLOAD_BYTES.div_ceil(2) * 3;
 pub struct PairingPayload {
     pub ssh_host: String,
     pub tailcat: bool,
+    /// The Tailcat tunnel authenticates access to the built-in SSH service.
+    pub tailcat_no_auth: bool,
     pub ssh_port: u16,
     pub ssh_user: String,
     pub temporary_private_key_seed: [u8; ED25519_SEED_BYTES],
@@ -43,6 +46,7 @@ impl std::fmt::Debug for PairingPayload {
                 },
             )
             .field("tailcat", &self.tailcat)
+            .field("tailcat_no_auth", &self.tailcat_no_auth)
             .field("ssh_port", &self.ssh_port)
             .field("ssh_user", &self.ssh_user)
             .field("ssh_host_key_sha256", &self.ssh_host_key_sha256)
@@ -127,7 +131,11 @@ pub fn encode_pairing_code(payload: &PairingPayload) -> Result<String, ProtocolE
         let address = payload.ssh_host.as_bytes();
         let length = u16::try_from(address.len())
             .map_err(|_| ProtocolError::BadPayload("Tailcat address is too long".into()))?;
-        bytes.push(ADDRESS_TAILCAT);
+        bytes.push(if payload.tailcat_no_auth {
+            ADDRESS_TAILCAT_NO_AUTH
+        } else {
+            ADDRESS_TAILCAT
+        });
         bytes.extend_from_slice(&length.to_be_bytes());
         bytes.extend_from_slice(address);
     } else {
@@ -162,7 +170,9 @@ pub fn encode_pairing_code(payload: &PairingPayload) -> Result<String, ProtocolE
         .map_err(|_| ProtocolError::BadPayload("SSH username is too long".into()))?;
     bytes.push(user_length);
     bytes.extend_from_slice(user);
-    bytes.extend_from_slice(&payload.temporary_private_key_seed);
+    if !payload.tailcat_no_auth {
+        bytes.extend_from_slice(&payload.temporary_private_key_seed);
+    }
     bytes.extend_from_slice(&payload.ssh_host_key_sha256);
     Ok(format!("{ENVELOPE_PREFIX}{}", base45_encode(&bytes)))
 }
@@ -198,7 +208,7 @@ pub fn decode_pairing_code(code: &str) -> Result<PairingPayload, ProtocolError> 
             String::from_utf8(take_bytes(&decoded, &mut cursor, length)?.to_vec())
                 .map_err(|_| ProtocolError::BadEncoding)?
         }
-        ADDRESS_TAILCAT => {
+        ADDRESS_TAILCAT | ADDRESS_TAILCAT_NO_AUTH => {
             let length = u16::from_be_bytes(
                 take_bytes(&decoded, &mut cursor, 2)?
                     .try_into()
@@ -221,9 +231,13 @@ pub fn decode_pairing_code(code: &str) -> Result<PairingPayload, ProtocolError> 
     );
     let ssh_user = String::from_utf8(take_bytes(&decoded, &mut cursor, user_length)?.to_vec())
         .map_err(|_| ProtocolError::BadEncoding)?;
-    let temporary_private_key_seed = take_bytes(&decoded, &mut cursor, ED25519_SEED_BYTES)?
-        .try_into()
-        .map_err(|_| ProtocolError::BadEncoding)?;
+    let temporary_private_key_seed = if address_type == ADDRESS_TAILCAT_NO_AUTH {
+        [0; ED25519_SEED_BYTES]
+    } else {
+        take_bytes(&decoded, &mut cursor, ED25519_SEED_BYTES)?
+            .try_into()
+            .map_err(|_| ProtocolError::BadEncoding)?
+    };
     let ssh_host_key_sha256 = take_bytes(&decoded, &mut cursor, SHA256_BYTES)?
         .try_into()
         .map_err(|_| ProtocolError::BadEncoding)?;
@@ -232,7 +246,8 @@ pub fn decode_pairing_code(code: &str) -> Result<PairingPayload, ProtocolError> 
     }
     let payload = PairingPayload {
         ssh_host,
-        tailcat: address_type == ADDRESS_TAILCAT,
+        tailcat: matches!(address_type, ADDRESS_TAILCAT | ADDRESS_TAILCAT_NO_AUTH),
+        tailcat_no_auth: address_type == ADDRESS_TAILCAT_NO_AUTH,
         ssh_port,
         ssh_user,
         temporary_private_key_seed,
@@ -243,6 +258,15 @@ pub fn decode_pairing_code(code: &str) -> Result<PairingPayload, ProtocolError> 
 }
 
 fn validate_payload(payload: &PairingPayload) -> Result<(), ProtocolError> {
+    if payload.tailcat_no_auth
+        && (!payload.tailcat
+            || payload.ssh_port != 22
+            || payload.temporary_private_key_seed != [0; ED25519_SEED_BYTES])
+    {
+        return Err(ProtocolError::BadPayload(
+            "tunnel authentication requires Tailcat's built-in SSH service on port 22".into(),
+        ));
+    }
     if payload.ssh_host.is_empty()
         || (!payload.tailcat && payload.ssh_host.len() > MAX_HOSTNAME_BYTES)
         || payload.ssh_port == 0

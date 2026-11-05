@@ -1,8 +1,10 @@
 mod authorized_keys;
 mod network;
+mod tailcat;
 use whipair_protocol as protocol;
 
 use std::{
+    ffi::OsString,
     io::{self, IsTerminal, Read as _, Write},
     path::{Path, PathBuf},
     process::Command,
@@ -42,6 +44,7 @@ const DEFAULT_TTL_SECONDS: u64 = 120;
 const DEFAULT_SSH_PORT: u16 = 22;
 const MAX_MESSAGE_BYTES: usize = 16 * 1024;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+const TAILCAT_CONNECT_TIMEOUT: Duration = Duration::from_secs(60);
 const APPROVAL_TIMEOUT: Duration = Duration::from_secs(600);
 
 #[derive(Debug, Parser)]
@@ -74,15 +77,30 @@ enum Commands {
 
 #[derive(Debug, clap::Args)]
 struct ServeArgs {
-    /// Pair over this Tailcat tc address, skipping network setup (SSH port defaults to 22).
-    #[arg(value_name = "TC_ADDRESS", conflicts_with_all = ["advertise_host", "tailcat_address"])]
+    /// Start and supervise the installed Tailcat CLI, then display its pairing QR.
+    #[arg(long, conflicts_with_all = ["address", "tailcat_address", "advertise_host"])]
+    tailcat: bool,
+    /// Arguments passed directly to `tailcat serve`, in their original order.
+    #[arg(
+        index = 2,
+        last = true,
+        requires = "tailcat",
+        value_name = "TAILCAT_ARGS",
+        allow_hyphen_values = true
+    )]
+    tailcat_args: Vec<OsString>,
+    /// Tailcat tc address. Automatically selects built-in SSH or the local host's SSH server.
+    #[arg(index = 1, value_name = "TC_ADDRESS", conflicts_with_all = ["advertise_host", "tailcat_address"])]
     address: Option<String>,
     /// SSH hostname or address Whip should use. Without this, an interactive selector is shown.
     #[arg(long)]
     advertise_host: Option<String>,
-    /// Tailcat tc address forwarding to this host's existing SSH service.
+    /// Tailcat tc address (automatically detects the SSH service).
     #[arg(long, conflicts_with = "advertise_host")]
     tailcat_address: Option<String>,
+    /// Pair with the host's SSH server forwarded by Tailcat instead of the built-in service.
+    #[arg(long, conflicts_with = "advertise_host")]
+    host_ssh: bool,
     /// Port of the existing SSH service to advertise. Defaults to 22.
     #[arg(short = 'p', long)]
     ssh_port: Option<u16>,
@@ -127,6 +145,8 @@ struct ExchangeArgs {
 
 #[derive(Debug, thiserror::Error)]
 enum Error {
+    #[error("Tailcat exited ({0})")]
+    TailcatExit(std::process::ExitStatus),
     #[error("{0}")]
     Message(String),
     #[error(transparent)]
@@ -144,6 +164,9 @@ enum Error {
 #[tokio::main]
 async fn main() {
     if let Err(error) = run().await {
+        if let Error::TailcatExit(status) = error {
+            std::process::exit(status.code().unwrap_or(1));
+        }
         eprintln!("error: {error}");
         std::process::exit(1);
     }
@@ -151,7 +174,13 @@ async fn main() {
 
 async fn run() -> Result<(), Error> {
     match Cli::parse().into_command() {
-        Commands::Serve(args) => serve(args).await,
+        Commands::Serve(args) => {
+            if args.tailcat {
+                tailcat::serve_wrapped(args).await
+            } else {
+                serve(args).await
+            }
+        }
         Commands::Request(args) => request(args).await,
         Commands::Exchange(args) => exchange(args).await,
         Commands::Inspect { code } => inspect(&code),
@@ -166,6 +195,7 @@ fn inspect(code: &str) -> Result<(), Error> {
             "version": 4,
             "ssh_host": payload.ssh_host,
             "tailcat": payload.tailcat,
+            "tailcat_no_auth": payload.tailcat_no_auth,
             "ssh_port": payload.ssh_port,
             "ssh_user": payload.ssh_user,
             "temporary_private_key_seed": "<redacted>",
@@ -181,18 +211,12 @@ async fn serve(args: ServeArgs) -> Result<(), Error> {
             "--ttl must be between 1 and 600 seconds".into(),
         ));
     }
-    if !args.yes && !io::stdin().is_terminal() {
-        return Err(Error::Message(
-            "pairing approval requires a terminal; run whipair interactively".into(),
-        ));
-    }
-
     let tailcat_address = args.address.or(args.tailcat_address);
     let interactive_setup = args.advertise_host.is_none() && tailcat_address.is_none();
     let selected = choose_advertised_endpoint(args.advertise_host, tailcat_address)?;
     let ssh_port = match args.ssh_port {
         Some(port) => validate_ssh_port(port)?,
-        None if interactive_setup => prompt_ssh_port()?,
+        None if interactive_setup && (!selected.tailcat || args.host_ssh) => prompt_ssh_port()?,
         None => DEFAULT_SSH_PORT,
     };
     let ssh_host = selected.host.clone();
@@ -203,7 +227,50 @@ async fn serve(args: ServeArgs) -> Result<(), Error> {
             "--ssh-user must be the current local user ({local_user})"
         )));
     }
-    let fingerprint = match args.ssh_fingerprint {
+    let mut discovered_fingerprint = None;
+    if selected.tailcat && !args.host_ssh {
+        let (fingerprint, tunnel_auth) = match args.ssh_fingerprint.as_deref() {
+            Some(value) => (validate_ssh_fingerprint(value)?, true),
+            None => timeout(
+                TAILCAT_CONNECT_TIMEOUT,
+                probe_tailcat_ssh(&selected.host, ssh_port, &ssh_user),
+            )
+            .await
+            .map_err(|_| Error::Message("Tailcat SSH connection timed out".into()))??,
+        };
+        if tunnel_auth {
+            return serve_tailcat_builtin(
+                &selected,
+                ssh_port,
+                ssh_user,
+                &fingerprint,
+                args.print_code,
+                args.code_output.as_deref(),
+                args.tailcat,
+            );
+        }
+        let local_fingerprint = discover_ssh_fingerprint("127.0.0.1", ssh_port)?;
+        if fingerprint != local_fingerprint {
+            return Err(Error::Message(
+                "the Tailcat SSH endpoint requires a key and does not match the local host's SSH server; use no-auth-ssh for built-in pairing".into(),
+            ));
+        }
+        discovered_fingerprint = Some(fingerprint);
+    } else if selected.tailcat && args.tailcat && args.ssh_fingerprint.is_none() {
+        let (fingerprint, _) = timeout(
+            TAILCAT_CONNECT_TIMEOUT,
+            probe_tailcat_ssh(&selected.host, ssh_port, &ssh_user),
+        )
+        .await
+        .map_err(|_| Error::Message("Tailcat SSH connection timed out".into()))??;
+        discovered_fingerprint = Some(fingerprint);
+    }
+    if !args.yes && !io::stdin().is_terminal() {
+        return Err(Error::Message(
+            "pairing approval requires a terminal; run whipair interactively".into(),
+        ));
+    }
+    let fingerprint = match args.ssh_fingerprint.or(discovered_fingerprint) {
         Some(value) => validate_ssh_fingerprint(&value)?,
         None => discover_ssh_fingerprint(
             if selected.tailcat {
@@ -240,6 +307,7 @@ async fn serve(args: ServeArgs) -> Result<(), Error> {
     let payload = PairingPayload {
         ssh_host,
         tailcat: selected.tailcat,
+        tailcat_no_auth: false,
         ssh_port,
         ssh_user,
         temporary_private_key_seed,
@@ -251,7 +319,14 @@ async fn serve(args: ServeArgs) -> Result<(), Error> {
     }
     let deadline = Instant::now() + Duration::from_secs(args.ttl);
     let expires_at = unix_seconds()? + args.ttl;
-    print_pairing_screen(&selected, &payload, expires_at, &code, args.print_code)?;
+    print_pairing_screen(
+        &selected,
+        &payload,
+        expires_at,
+        &code,
+        args.print_code,
+        args.tailcat,
+    )?;
 
     let shutdown = tokio::signal::ctrl_c();
     tokio::pin!(shutdown);
@@ -294,6 +369,67 @@ async fn serve(args: ServeArgs) -> Result<(), Error> {
 enum ExchangeOutcome {
     Enrolled,
     Ignored,
+}
+
+async fn probe_tailcat_ssh(
+    address: &str,
+    port: u16,
+    username: &str,
+) -> Result<(String, bool), Error> {
+    let accepted = Arc::new(Mutex::new(None));
+    let handler = PinnedSshHostKey {
+        expected_sha256: None,
+        accepted_public_key: accepted.clone(),
+    };
+    let mut handle = client::connect_stream(
+        Arc::new(client::Config::default()),
+        tailcat::Stream::connect(address, port)?,
+        handler,
+    )
+    .await?;
+    let tunnel_auth = handle.authenticate_none(username).await?.success();
+    let _ = handle
+        .disconnect(russh::Disconnect::ByApplication, "", "en")
+        .await;
+    let public_key = accepted
+        .lock()
+        .ok()
+        .and_then(|key| key.clone())
+        .ok_or_else(|| Error::Message("Tailcat did not present an SSH host key".into()))?;
+    Ok((
+        fingerprint_public_key(&validate_public_key(&public_key)?),
+        tunnel_auth,
+    ))
+}
+
+fn serve_tailcat_builtin(
+    selected: &AdvertisedEndpoint,
+    port: u16,
+    username: String,
+    fingerprint: &str,
+    print_code: bool,
+    code_output: Option<&Path>,
+    qr_only: bool,
+) -> Result<(), Error> {
+    if port != DEFAULT_SSH_PORT {
+        return Err(Error::Message(
+            "Tailcat's built-in SSH service uses port 22; use --host-ssh with -p for a forwarded SSH port".into(),
+        ));
+    }
+    let payload = PairingPayload {
+        ssh_host: selected.host.clone(),
+        tailcat: true,
+        tailcat_no_auth: true,
+        ssh_port: port,
+        ssh_user: username,
+        temporary_private_key_seed: [0; 32],
+        ssh_host_key_sha256: decode_ssh_fingerprint(fingerprint)?,
+    };
+    let code = encode_pairing_code(&payload)?;
+    if let Some(path) = code_output {
+        write_secret_file(path, &code)?;
+    }
+    print_pairing_screen(selected, &payload, 0, &code, print_code, qr_only)
 }
 
 async fn handle_exchange(
@@ -471,14 +607,14 @@ async fn pair_over_ssh(
     payload: &PairingPayload,
     request: &EnrollmentRequest,
 ) -> Result<PairingResult, Error> {
-    if payload.tailcat {
+    if payload.tailcat && !payload.tailcat_no_auth {
         return Err(Error::Message(
             "Scan Tailcat pairing codes with Whip".into(),
         ));
     }
     let accepted_host_key = Arc::new(Mutex::new(None));
     let handler = PinnedSshHostKey {
-        expected_sha256: payload.ssh_host_key_sha256,
+        expected_sha256: Some(payload.ssh_host_key_sha256),
         accepted_public_key: accepted_host_key.clone(),
     };
     let config = Arc::new(client::Config {
@@ -486,16 +622,45 @@ async fn pair_over_ssh(
         ..Default::default()
     });
     let mut handle = timeout(
-        CONNECT_TIMEOUT,
-        client::connect(
-            config,
-            (payload.ssh_host.as_str(), payload.ssh_port),
-            handler,
-        ),
+        if payload.tailcat {
+            TAILCAT_CONNECT_TIMEOUT
+        } else {
+            CONNECT_TIMEOUT
+        },
+        async {
+            if payload.tailcat {
+                client::connect_stream(
+                    config,
+                    tailcat::Stream::connect(&payload.ssh_host, payload.ssh_port)?,
+                    handler,
+                )
+                .await
+            } else {
+                client::connect(
+                    config,
+                    (payload.ssh_host.as_str(), payload.ssh_port),
+                    handler,
+                )
+                .await
+            }
+        },
     )
     .await
     .map_err(|_| Error::Message("SSH pairing connection timed out".into()))??;
 
+    if payload.tailcat_no_auth {
+        if !handle.authenticate_none(&payload.ssh_user).await?.success() {
+            return Err(Error::Message(
+                "Tailcat tunnel authentication was not accepted".into(),
+            ));
+        }
+        let _ = handle
+            .disconnect(russh::Disconnect::ByApplication, "", "en")
+            .await;
+        return Ok(PairingResult {
+            response: EnrollmentResponse::approved("", true),
+        });
+    }
     let private_key = Arc::new(temporary_private_key(&payload.temporary_private_key_seed));
     let authentication = handle
         .authenticate_publickey(
@@ -549,7 +714,7 @@ async fn pair_over_ssh(
 
 #[derive(Clone)]
 struct PinnedSshHostKey {
-    expected_sha256: [u8; 32],
+    expected_sha256: Option<[u8; 32]>,
     accepted_public_key: Arc<Mutex<Option<String>>>,
 }
 
@@ -557,7 +722,10 @@ impl PinnedSshHostKey {
     fn verify_server_key(&self, server_public_key: &PublicKey) -> Result<bool, Error> {
         let encoded = server_public_key.to_bytes()?;
         let actual: [u8; 32] = Sha256::digest(&encoded).into();
-        if actual != self.expected_sha256 {
+        if self
+            .expected_sha256
+            .is_some_and(|expected| actual != expected)
+        {
             return Err(Error::Message(
                 "SSH host key did not match the fingerprint pinned in the QR code".into(),
             ));
@@ -822,6 +990,7 @@ fn print_pairing_screen(
     expires_at: u64,
     code: &str,
     print_code: bool,
+    qr_only: bool,
 ) -> Result<(), Error> {
     let qr = QrCode::with_error_correction_level(code.as_bytes(), EcLevel::L)
         .map_err(|error| Error::Message(format!("could not encode pairing QR: {error}")))?;
@@ -831,6 +1000,14 @@ fn print_pairing_screen(
         .light_color(unicode::Dense1x2::Light)
         .quiet_zone(true)
         .build();
+    if qr_only {
+        println!("{rendered}");
+        if print_code {
+            println!("{code}");
+        }
+        io::stdout().flush()?;
+        return Ok(());
+    }
     println!("\nWhipair\n");
     println!(
         "Endpoint: {} ({}, {})",
@@ -840,12 +1017,22 @@ fn print_pairing_screen(
         "SSH:     {}@{}:{}",
         payload.ssh_user, payload.ssh_host, payload.ssh_port
     );
-    println!(
-        "Expires: {} seconds\n",
-        expires_at.saturating_sub(unix_seconds()?)
-    );
+    if payload.tailcat_no_auth {
+        println!("Using Tailcat's built-in SSH server; the tunnel authenticates access.\n");
+    } else {
+        println!(
+            "Expires: {} seconds\n",
+            expires_at.saturating_sub(unix_seconds()?)
+        );
+    }
     println!("{rendered}");
-    println!("Scan with Whip. Press Ctrl-C to cancel.");
+    if payload.tailcat_no_auth {
+        println!(
+            "Scan with Whip to save this host. Keep this QR private; it grants access while the Tailcat address remains valid."
+        );
+    } else {
+        println!("Scan with Whip. Press Ctrl-C to cancel.");
+    }
     if print_code {
         println!("\n{code}");
     }
@@ -1096,7 +1283,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tailcat_shortcut_generates_pairing_code_without_setup_prompts() {
+    async fn host_ssh_option_generates_enrollment_codes_without_setup_prompts() {
         let fingerprint = format!("SHA256:{}", STANDARD_NO_PAD.encode([9; 32]));
         for port_args in [vec![], vec!["-p", "2222"]] {
             let directory = tempfile::tempdir().unwrap();
@@ -1105,6 +1292,7 @@ mod tests {
             let mut argv = vec![
                 "whipair",
                 TC_ADDRESS,
+                "--host-ssh",
                 "--ssh-fingerprint",
                 &fingerprint,
                 "--authorized-keys",
@@ -1148,6 +1336,101 @@ mod tests {
             fingerprint_from_ssh_keyscan(scan.as_bytes()),
             Some(fingerprint_public_key(&ed25519))
         );
+    }
+
+    #[tokio::test]
+    async fn tailcat_defaults_to_builtin_without_authorized_keys_or_approval() {
+        let directory = tempfile::tempdir().unwrap();
+        let code_path = directory.path().join("code");
+        let keys_path = directory.path().join("authorized_keys");
+        let fingerprint = format!("SHA256:{}", STANDARD_NO_PAD.encode([9; 32]));
+        let Commands::Serve(args) = Cli::try_parse_from([
+            "whipair",
+            TC_ADDRESS,
+            "--ssh-fingerprint",
+            &fingerprint,
+            "--authorized-keys",
+            keys_path.to_str().unwrap(),
+            "--code-output",
+            code_path.to_str().unwrap(),
+        ])
+        .unwrap()
+        .into_command() else {
+            panic!("expected pairing setup");
+        };
+        serve(args).await.unwrap();
+        let code = std::fs::read_to_string(code_path).unwrap();
+        let payload = decode_pairing_code(code.trim()).unwrap();
+        assert!(payload.tailcat_no_auth);
+        assert!(payload.tailcat);
+        assert_eq!(payload.ssh_host, TC_ADDRESS);
+        assert_eq!(payload.ssh_port, DEFAULT_SSH_PORT);
+        assert_eq!(payload.temporary_private_key_seed, [0; 32]);
+        assert!(!keys_path.exists());
+    }
+
+    #[tokio::test]
+    async fn builtin_rejects_nonstandard_port_before_connecting() {
+        let fingerprint = format!("SHA256:{}", STANDARD_NO_PAD.encode([9; 32]));
+        let Commands::Serve(args) = Cli::try_parse_from([
+            "whipair",
+            TC_ADDRESS,
+            "-p",
+            "2222",
+            "--ssh-fingerprint",
+            &fingerprint,
+        ])
+        .unwrap()
+        .into_command() else {
+            panic!("expected pairing setup");
+        };
+        assert!(
+            serve(args)
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("--host-ssh")
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires the separately provisioned upstream Tailcat fixture"]
+    async fn live_builtin_tailcat_pairing() {
+        let address = std::env::var("WHIP_BUILTIN_TAILCAT_ADDRESS").unwrap();
+        let code_path = PathBuf::from(std::env::var("WHIP_BUILTIN_PAIRING_CODE_FILE").unwrap());
+        let directory = tempfile::tempdir().unwrap();
+        let keys_path = directory.path().join("authorized_keys");
+        let Commands::Serve(args) = Cli::try_parse_from([
+            "whipair",
+            &address,
+            "--code-output",
+            code_path.to_str().unwrap(),
+            "--authorized-keys",
+            keys_path.to_str().unwrap(),
+        ])
+        .unwrap()
+        .into_command() else {
+            panic!("expected pairing setup");
+        };
+        serve(args).await.unwrap();
+        let code = std::fs::read_to_string(code_path).unwrap();
+        let payload = decode_pairing_code(code.trim()).unwrap();
+        assert!(payload.tailcat_no_auth);
+        assert!(!keys_path.exists());
+        let request = EnrollmentRequest {
+            device_name: "fixture".into(),
+            public_key: String::new(),
+        };
+        assert!(
+            pair_over_ssh(&payload, &request)
+                .await
+                .unwrap()
+                .response
+                .approved
+        );
+        let mut wrong_pin = payload;
+        wrong_pin.ssh_host_key_sha256 = [0; 32];
+        assert!(pair_over_ssh(&wrong_pin, &request).await.is_err());
     }
 
     #[test]

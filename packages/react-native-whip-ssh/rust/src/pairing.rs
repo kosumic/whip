@@ -73,6 +73,7 @@ pub struct PairHostResult {
     pub ssh_host_public_key: String,
     pub key_fingerprint: Option<String>,
     pub already_present: bool,
+    pub tailcat_no_auth: bool,
     pub tailcat: Option<PairedTailcat>,
 }
 
@@ -167,7 +168,10 @@ pub(crate) async fn pair_host_guarded(
         return Err(PairingError::TailcatJumpHost);
     }
     let public_key = public_key.trim();
-    if public_key.is_empty() || public_key.len() > 4096 || public_key.chars().any(char::is_control)
+    if !payload.tailcat_no_auth
+        && (public_key.is_empty()
+            || public_key.len() > 4096
+            || public_key.chars().any(char::is_control))
     {
         return Err(PairingError::InvalidResponse);
     }
@@ -206,17 +210,13 @@ pub(crate) async fn pair_host_guarded(
     };
     let mut handle = timeout(connect_timeout, async {
         if let Some(identity) = &tailcat_identity {
-            let client = tailcat_client::Client::connect(
+            let stream = crate::ssh::tailcat::connect(
                 &payload.ssh_host,
-                identity,
-                tailcat_client::ClientOptions::default(),
+                payload.ssh_port,
+                &identity.private_key(),
             )
             .await
             .map_err(|_| PairingError::TailcatConnection)?;
-            let stream = client
-                .dial_tcp(payload.ssh_port)
-                .await
-                .map_err(|_| PairingError::TailcatConnection)?;
             Ok(client::connect_stream(config, stream, handler).await?)
         } else if let Some(jump) = jumps.0.last() {
             let stream = jump
@@ -239,6 +239,18 @@ pub(crate) async fn pair_host_guarded(
         control
             .check()
             .map_err(|_| PairingError::CommandFailed(CANCELLED_OPERATION.into()))?;
+    }
+    if payload.tailcat_no_auth {
+        let authentication = timeout(CONNECT_TIMEOUT, handle.authenticate_none(&payload.ssh_user))
+            .await
+            .map_err(|_| PairingError::ConnectionTimeout)??;
+        if !authentication.success() {
+            return Err(PairingError::AuthenticationFailed);
+        }
+        let _ = handle
+            .disconnect(russh::Disconnect::ByApplication, "", "en")
+            .await;
+        return paired_result(payload, &accepted_host_key, tailcat_identity, None);
     }
     let private_key = Arc::new(temporary_private_key(&payload.temporary_private_key_seed));
     let authentication = handle
@@ -297,6 +309,20 @@ pub(crate) async fn pair_host_guarded(
             message: response.message.unwrap_or_else(|| "no detail".into()),
         });
     }
+    paired_result(
+        payload,
+        &accepted_host_key,
+        tailcat_identity,
+        Some(response),
+    )
+}
+
+fn paired_result(
+    payload: whipair_protocol::PairingPayload,
+    accepted_host_key: &Mutex<Option<AcceptedHostKey>>,
+    tailcat_identity: Option<tailcat_client::Identity>,
+    response: Option<EnrollmentResponse>,
+) -> Result<PairHostResult, PairingError> {
     let accepted = accepted_host_key
         .lock()
         .ok()
@@ -325,8 +351,13 @@ pub(crate) async fn pair_host_guarded(
         ssh_host_fingerprint,
         ssh_host_key_type: accepted.key_type,
         ssh_host_public_key: accepted.public_key,
-        key_fingerprint: response.fingerprint,
-        already_present: response.already_present.unwrap_or(false),
+        key_fingerprint: response
+            .as_ref()
+            .and_then(|value| value.fingerprint.clone()),
+        already_present: response
+            .and_then(|value| value.already_present)
+            .unwrap_or(false),
+        tailcat_no_auth: payload.tailcat_no_auth,
         tailcat,
     })
 }

@@ -10411,6 +10411,7 @@ const FfiConverterTypeCredentialMaterial = (() => {
 export enum HostAuthMode {
   Password,
   Key,
+  None,
 }
 
 const FfiConverterTypeHostAuthMode = (() => {
@@ -10423,6 +10424,8 @@ const FfiConverterTypeHostAuthMode = (() => {
           return HostAuthMode.Password;
         case 2:
           return HostAuthMode.Key;
+        case 3:
+          return HostAuthMode.None;
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
       }
@@ -10433,6 +10436,8 @@ const FfiConverterTypeHostAuthMode = (() => {
           return ordinalConverter.write(1, into);
         case HostAuthMode.Key:
           return ordinalConverter.write(2, into);
+        case HostAuthMode.None:
+          return ordinalConverter.write(3, into);
       }
     }
     allocationSize(value: TypeName): number {
@@ -13775,6 +13780,7 @@ const FfiConverterTypeHostProfileStoreView = (() => {
 export enum HostSshCredential_Tags {
   Password = 'Password',
   Key = 'Key',
+  None = 'None',
 }
 export const HostSshCredential = (() => {
   type Password__interface = {
@@ -13829,6 +13835,29 @@ export const HostSshCredential = (() => {
     }
   }
 
+  type None__interface = {
+    tag: HostSshCredential_Tags.None;
+  };
+  class None_ extends UniffiEnum implements None__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostSshCredential';
+    readonly tag = HostSshCredential_Tags.None;
+    constructor() {
+      super('HostSshCredential', 'None');
+    }
+
+    static new(): None_ {
+      return new None_();
+    }
+
+    static instanceOf(obj: any): obj is None_ {
+      return obj.tag === HostSshCredential_Tags.None;
+    }
+  }
+
   function instanceOf(obj: any): obj is HostSshCredential {
     return obj[uniffiTypeNameSymbol] === 'HostSshCredential';
   }
@@ -13837,10 +13866,11 @@ export const HostSshCredential = (() => {
     instanceOf,
     Password: Password_,
     Key: Key_,
+    None: None_,
   });
 })();
 export type HostSshCredential = InstanceType<
-  (typeof HostSshCredential)['Password' | 'Key']
+  (typeof HostSshCredential)['Password' | 'Key' | 'None']
 >;
 
 // FfiConverter for enum HostSshCredential
@@ -13859,6 +13889,8 @@ const FfiConverterTypeHostSshCredential = (() => {
             privateKey: FfiConverterString.read(from),
             passphrase: FfiConverterOptionalString.read(from),
           });
+        case 3:
+          return new HostSshCredential.None();
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
       }
@@ -13876,6 +13908,10 @@ const FfiConverterTypeHostSshCredential = (() => {
           const inner = value.inner;
           FfiConverterString.write(inner.privateKey, into);
           FfiConverterOptionalString.write(inner.passphrase, into);
+          return;
+        }
+        case HostSshCredential_Tags.None: {
+          ordinalConverter.write(3, into);
           return;
         }
         default:
@@ -13897,6 +13933,9 @@ const FfiConverterTypeHostSshCredential = (() => {
           size += FfiConverterString.allocationSize(inner.privateKey);
           size += FfiConverterOptionalString.allocationSize(inner.passphrase);
           return size;
+        }
+        case HostSshCredential_Tags.None: {
+          return ordinalConverter.allocationSize(3);
         }
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
@@ -15550,6 +15589,7 @@ export type PairHostResult = {
   sshHostPublicKey: string;
   keyFingerprint?: string;
   alreadyPresent: boolean;
+  tailcatNoAuth: boolean;
   tailcat?: PairedTailcat;
 };
 
@@ -15583,6 +15623,7 @@ const FfiConverterTypePairHostResult = (() => {
         sshHostPublicKey: FfiConverterString.read(from),
         keyFingerprint: FfiConverterOptionalString.read(from),
         alreadyPresent: FfiConverterBool.read(from),
+        tailcatNoAuth: FfiConverterBool.read(from),
         tailcat: FfiConverterOptionalTypePairedTailcat.read(from),
       };
     }
@@ -15595,6 +15636,7 @@ const FfiConverterTypePairHostResult = (() => {
       FfiConverterString.write(value.sshHostPublicKey, into);
       FfiConverterOptionalString.write(value.keyFingerprint, into);
       FfiConverterBool.write(value.alreadyPresent, into);
+      FfiConverterBool.write(value.tailcatNoAuth, into);
       FfiConverterOptionalTypePairedTailcat.write(value.tailcat, into);
     }
     allocationSize(value: TypeName): number {
@@ -15607,6 +15649,7 @@ const FfiConverterTypePairHostResult = (() => {
         FfiConverterString.allocationSize(value.sshHostPublicKey) +
         FfiConverterOptionalString.allocationSize(value.keyFingerprint) +
         FfiConverterBool.allocationSize(value.alreadyPresent) +
+        FfiConverterBool.allocationSize(value.tailcatNoAuth) +
         FfiConverterOptionalTypePairedTailcat.allocationSize(value.tailcat)
       );
     }
@@ -31268,6 +31311,7 @@ export enum HostProfileStoreError_Tags {
   EmptyHost = 'EmptyHost',
   EmptyUsername = 'EmptyUsername',
   InvalidPort = 'InvalidPort',
+  InvalidAuthentication = 'InvalidAuthentication',
   InstructionsTooLarge = 'InstructionsTooLarge',
   MissingHost = 'MissingHost',
   MissingJumpHost = 'MissingJumpHost',
@@ -31421,6 +31465,35 @@ export const HostProfileStoreError = (() => {
     }
   }
 
+  type InvalidAuthentication__interface = {
+    tag: HostProfileStoreError_Tags.InvalidAuthentication;
+  };
+  class InvalidAuthentication_
+    extends UniffiError
+    implements InvalidAuthentication__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostProfileStoreError';
+    readonly tag = HostProfileStoreError_Tags.InvalidAuthentication;
+    constructor() {
+      super('HostProfileStoreError', 'InvalidAuthentication');
+    }
+
+    static new(): InvalidAuthentication_ {
+      return new InvalidAuthentication_();
+    }
+
+    static instanceOf(obj: any): obj is InvalidAuthentication_ {
+      return obj.tag === HostProfileStoreError_Tags.InvalidAuthentication;
+    }
+    static hasInner(obj: any): obj is InvalidAuthentication_ {
+      return false;
+    }
+  }
+
   type InstructionsTooLarge__interface = {
     tag: HostProfileStoreError_Tags.InstructionsTooLarge;
   };
@@ -31556,6 +31629,7 @@ export const HostProfileStoreError = (() => {
     EmptyHost: EmptyHost_,
     EmptyUsername: EmptyUsername_,
     InvalidPort: InvalidPort_,
+    InvalidAuthentication: InvalidAuthentication_,
     InstructionsTooLarge: InstructionsTooLarge_,
     MissingHost: MissingHost_,
     MissingJumpHost: MissingJumpHost_,
@@ -31569,6 +31643,7 @@ export type HostProfileStoreError = InstanceType<
     | 'EmptyHost'
     | 'EmptyUsername'
     | 'InvalidPort'
+    | 'InvalidAuthentication'
     | 'InstructionsTooLarge'
     | 'MissingHost'
     | 'MissingJumpHost'
@@ -31597,16 +31672,18 @@ const FfiConverterTypeHostProfileStoreError = (() => {
             FfiConverterString.read(from),
           );
         case 6:
-          return new HostProfileStoreError.InstructionsTooLarge();
+          return new HostProfileStoreError.InvalidAuthentication();
         case 7:
+          return new HostProfileStoreError.InstructionsTooLarge();
+        case 8:
           return new HostProfileStoreError.MissingHost(
             FfiConverterString.read(from),
           );
-        case 8:
+        case 9:
           return new HostProfileStoreError.MissingJumpHost(
             FfiConverterString.read(from),
           );
-        case 9:
+        case 10:
           return new HostProfileStoreError.JumpHostCycle();
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
@@ -31638,24 +31715,28 @@ const FfiConverterTypeHostProfileStoreError = (() => {
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostProfileStoreError_Tags.InstructionsTooLarge: {
+        case HostProfileStoreError_Tags.InvalidAuthentication: {
           ordinalConverter.write(6, into);
           return;
         }
-        case HostProfileStoreError_Tags.MissingHost: {
+        case HostProfileStoreError_Tags.InstructionsTooLarge: {
           ordinalConverter.write(7, into);
-          const inner = value.inner;
-          FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostProfileStoreError_Tags.MissingJumpHost: {
+        case HostProfileStoreError_Tags.MissingHost: {
           ordinalConverter.write(8, into);
           const inner = value.inner;
           FfiConverterString.write(inner[0], into);
           return;
         }
-        case HostProfileStoreError_Tags.JumpHostCycle: {
+        case HostProfileStoreError_Tags.MissingJumpHost: {
           ordinalConverter.write(9, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner[0], into);
+          return;
+        }
+        case HostProfileStoreError_Tags.JumpHostCycle: {
+          ordinalConverter.write(10, into);
           return;
         }
         default:
@@ -31686,23 +31767,26 @@ const FfiConverterTypeHostProfileStoreError = (() => {
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
-        case HostProfileStoreError_Tags.InstructionsTooLarge: {
+        case HostProfileStoreError_Tags.InvalidAuthentication: {
           return ordinalConverter.allocationSize(6);
         }
-        case HostProfileStoreError_Tags.MissingHost: {
-          const inner = value.inner;
-          let size = ordinalConverter.allocationSize(7);
-          size += FfiConverterString.allocationSize(inner[0]);
-          return size;
+        case HostProfileStoreError_Tags.InstructionsTooLarge: {
+          return ordinalConverter.allocationSize(7);
         }
-        case HostProfileStoreError_Tags.MissingJumpHost: {
+        case HostProfileStoreError_Tags.MissingHost: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(8);
           size += FfiConverterString.allocationSize(inner[0]);
           return size;
         }
+        case HostProfileStoreError_Tags.MissingJumpHost: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(9);
+          size += FfiConverterString.allocationSize(inner[0]);
+          return size;
+        }
         case HostProfileStoreError_Tags.JumpHostCycle: {
-          return ordinalConverter.allocationSize(9);
+          return ordinalConverter.allocationSize(10);
         }
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();

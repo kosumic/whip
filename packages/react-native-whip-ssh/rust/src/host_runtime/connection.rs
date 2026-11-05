@@ -59,10 +59,19 @@ pub(super) fn validate_config(config: &HostRuntimeConfig) -> Result<(), HostRunt
         }
         if ssh.tailcat_ssh_server
             && (ssh.tailcat_address.is_none()
-                || !matches!(ssh.credential, HostSshCredential::Key { .. }))
+                || !matches!(
+                    ssh.credential,
+                    HostSshCredential::Key { .. } | HostSshCredential::None
+                ))
         {
             return Err(HostRuntimeError::InvalidConfiguration(
-                "Tailcat's SSH server requires Tailcat mode and an SSH private key".to_owned(),
+                "Tailcat's SSH server requires Tailcat mode with key or tunnel authentication"
+                    .to_owned(),
+            ));
+        }
+        if matches!(ssh.credential, HostSshCredential::None) && !ssh.tailcat_ssh_server {
+            return Err(HostRuntimeError::InvalidConfiguration(
+                "tunnel authentication requires Tailcat's built-in SSH service".into(),
             ));
         }
     }
@@ -163,6 +172,7 @@ pub(crate) fn ssh_config(config: &HostSshConfig) -> SshConnectionConfig {
         port: config.port,
         username: config.username.trim().to_owned(),
         credential: match &config.credential {
+            HostSshCredential::None => SshCredential::None,
             HostSshCredential::Password { password } => SshCredential::Password(password.clone()),
             HostSshCredential::Key {
                 private_key,

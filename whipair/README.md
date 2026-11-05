@@ -17,8 +17,8 @@ authorization.
 
 ## Install
 
-All non-Nix installations require `ssh-keyscan` from an OpenSSH client package
-to be available on `PATH`.
+Host SSH enrollment requires `ssh-keyscan` from an OpenSSH client package on
+`PATH`. Tailcat mode requires the separately installed `tailcat` CLI.
 
 ### uv
 
@@ -120,29 +120,65 @@ port, offering `22` as the default. Passing both options skips those questions.
 `whipair` does not bind a TCP listener; Whip connects to the host's existing
 SSH service.
 
-Choose **Tailcat**, the last interface option, to paste a `tc…` address from a
-running Tailcat server forwarding to the host's existing SSH service. Whip
-recognizes the transport from the QR, pairs over Tailcat, and saves the address
-and client identity for subsequent connections. No Tailcat toggle is needed on
-the Add Host screen. Tailcat pairing connects directly to the tunnel and cannot
-use a jump host.
+### Tailcat, without an installed SSH server
 
-Pair in one command by passing the address directly:
+Install [Tailcat](https://github.com/tailscale/tailcat/blob/main/INSTALL.md)
+yourself, then run:
+
+```bash
+whipair --tailcat
+```
+
+Whipair starts `tailcat serve no-auth-ssh`, passes through its stdout and
+stderr, and displays a Whip pairing QR. Scan it to save the server, verified SSH
+host key, and client tunnel identity. No sshd, SSH key, password, authorized-key
+enrollment, or host approval is required. Keep the command running; Ctrl-C stops
+the child server. The QR grants access for as long as its Tailcat address remains
+valid; the enrollment `--ttl` does not expire this address.
+
+Arguments after `--` are passed directly to `tailcat serve`, in order. Tailcat
+controls its own keys and configuration; whipair does not install it or generate
+saved server keys. For example, use an existing saved server key:
+
+```bash
+whipair --tailcat -- --key=my-server
+```
+
+To forward an installed host SSH server, pass its port after `--`:
+
+```bash
+whipair --tailcat -- 2222
+whipair --tailcat --host-ssh -- --key=my-server 22
+```
+
+A single forwarded port is also used in the QR, so `-p` is unnecessary. When
+serving multiple ports, select the SSH port with `-p`:
+
+```bash
+whipair --tailcat -p 2222 -- 2222,8080
+```
+
+Forwarded host SSH uses the temporary restricted credential and approval flow
+described below. For a server that is already running, pass its address directly
+or choose **Tailcat** in the interactive interface selector:
 
 ```bash
 whipair 'tc…'
+whipair 'tc…' --host-ssh -p 2222
 ```
 
-This skips the address and port prompts and displays the pairing QR. Scan it
-with Whip and approve the enrollment on the host. The SSH port defaults to `22`;
-if Tailcat forwards a different SSH port, use `whipair 'tc…' -p 2222`.
-The existing `whipair serve --tailcat-address 'tc…'` form also works.
+Whipair checks whether the endpoint accepts tunnel authentication. Otherwise it
+uses key enrollment only when the tunneled host key matches the local sshd's
+key. `--host-ssh` explicitly chooses host SSH enrollment. Host key discovery for
+that option uses `127.0.0.1`; use `--ssh-fingerprint` if sshd is bound elsewhere.
+An explicit fingerprint without `--host-ssh` selects the built-in service.
+The existing `serve --tailcat-address 'tc…'` form also works.
 
-The port must match the SSH port forwarded by Tailcat. Whipair discovers the
-SSH host key through `127.0.0.1` for this option; use `--ssh-fingerprint` if sshd
-is bound to a different local address. Whipair's one-time authorization requires
-the host's existing sshd. The development `request` client supports
-direct SSH codes; scan Tailcat codes with Whip.
+Tailcat's `ssh --ssh-authorized-keys` mode loads keys at startup and does not
+support this enrollment flow. Use `no-auth-ssh` for the built-in service or
+forward to OpenSSH. Tailcat pairing connects directly and cannot use an incoming
+jump host. Older Whip versions reject the new built-in-service QR; both the CLI
+and app need these changes.
 
 For a public endpoint behind NAT, forward the advertised public port to the
 host's SSH port and allow that SSH port through the relevant router, host, or
@@ -192,7 +228,7 @@ nix run .#whipair -- inspect 'WP4:...'
 
 ## Prototype limitations
 
-- The SSH server must use OpenSSH-compatible `authorized_keys`, support the
+- For host SSH enrollment, the server must use OpenSSH-compatible `authorized_keys`, support the
   `restrict` and `command` options, and read the current user's default
   `~/.ssh/authorized_keys` file.
 - The interactive network selector uses `curl` to offer the public IP reported
@@ -223,11 +259,11 @@ The QR contains `WP4:` followed by Base45-encoded binary data.
 
 | Field                       | Encoding                                            | Purpose                                     |
 | --------------------------- | --------------------------------------------------- | ------------------------------------------- |
-| Address type                | 1 byte                                              | `1` IPv4, `2` IPv6, `3` hostname, `4` Tailcat |
+| Address type                | 1 byte                                              | `1` IPv4, `2` IPv6, `3` hostname, `4` Tailcat enrollment, `5` Tailcat tunnel authentication |
 | SSH host                    | 4 or 16 bytes; 1-byte length plus ASCII hostname; or 2-byte big-endian length plus Tailcat address | Address selected or advertised by the host |
 | SSH port                    | 2-byte unsigned integer, big-endian                 | Existing SSH service port                   |
 | SSH username                | 1-byte length plus ASCII                            | Existing local account                      |
-| Temporary Ed25519 seed      | 32 random bytes                                     | Restricted SSH bearer credential            |
+| Temporary Ed25519 seed      | 32 random bytes; omitted for address type `5`        | Restricted SSH bearer credential            |
 | SSH host-key SHA-256 digest | 32 bytes                                            | Pins the SSH server identity during pairing |
 
 For an IPv4 address and a five-character username, the complete code is 120
@@ -235,10 +271,21 @@ characters and renders as a 37-module QR at error-correction level L. Expiry
 is enforced by the running host process and is intentionally omitted.
 Tailcat addresses may contain up to 1024 ASCII bytes and produce larger QR
 codes. Whip validates the complete Tailcat address before contacting a relay.
+Address type `5` requires tunnel port `22`; scanning verifies the pinned SSH
+host key and `none` authentication, then saves a built-in Tailcat host with no
+SSH credential. It sends no enrollment command and changes no authorized keys.
 The CLI and mobile Rust core share the published
 [`whipair-protocol`](../crates/whipair-protocol/) library. Both validate the full
 Tailcat CBOR structure, key lengths, required server and discovery keys, and
 relay configuration before accepting a pairing code.
+
+Run the optional local interoperability check (real upstream built-in SSH,
+CLI address discovery, host-key pin rejection, mobile pairing and reconnection)
+with:
+
+```bash
+nix develop .#tailcat-tests -c node whipair/tests/tailcat-builtin.cjs
+```
 
 ### Host authorization and exchange
 

@@ -39,7 +39,9 @@ pub fn tailcat_server_command(
         prefix.push_str(&client_public_key);
     }
     if builtin_ssh {
-        let public_key = ssh_public_key.ok_or(TailcatIdentityError::SshPublicKeyRequired)?;
+        let Some(public_key) = ssh_public_key else {
+            return Ok(format!("{prefix} no-auth-ssh"));
+        };
         let public_key = crate::public_keys::inspect_public_key(public_key, false)
             .map_err(|_| TailcatIdentityError::SshPublicKeyRequired)?;
         Ok(format!(
@@ -124,7 +126,7 @@ pub(crate) mod test_support {
     }
 }
 
-pub(super) async fn connect(address: &str, port: u16, private_key: &str) -> io::Result<Stream> {
+pub(crate) async fn connect(address: &str, port: u16, private_key: &str) -> io::Result<Stream> {
     connect_with_options(
         address,
         port,
@@ -222,8 +224,17 @@ mod tests {
             )?,
             builtin,
         );
-        assert!(tailcat_server_command(None, 22, true, None).is_err());
-        assert!(tailcat_server_command(Some(first.public_key.clone()), 22, true, None).is_err());
+        assert_eq!(
+            tailcat_server_command(None, 22, true, None)?,
+            "tailcat serve --key=whip no-auth-ssh"
+        );
+        assert_eq!(
+            tailcat_server_command(Some(first.public_key.clone()), 22, true, None)?,
+            format!(
+                "tailcat serve --key=whip --allow={} no-auth-ssh",
+                first.public_key
+            )
+        );
         assert!(tailcat_server_command(None, 0, false, None).is_err());
         assert!(tailcat_server_command(Some(first.public_key), 0, false, None).is_err());
         assert!(

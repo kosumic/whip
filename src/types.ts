@@ -13,7 +13,8 @@ import type {
   WhipWorkspaceInfo,
 } from 'react-native-whip-ssh';
 
-export type AuthMode = 'password' | 'key';
+export type { AuthMode } from 'react-native-whip-ssh/src/hostAuthMode';
+import type { AuthMode } from 'react-native-whip-ssh/src/hostAuthMode';
 export type AgentStatus = WhipAgentStatus;
 
 export interface HostProfile {

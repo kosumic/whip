@@ -9,6 +9,18 @@ import {
 jest.mock('react-native-whip-ssh', () => require('./mockWhipSsh').createMockWhipSshModule());
 
 describe('SSH QR pairing helpers', () => {
+  it('saves a built-in Tailcat host with tunnel authentication and no SSH credentials', () => {
+    const profile = profileFromPairing({
+      sshHost: 'tailcat-1234.invalid', sshPort: 22, sshUser: 'alice',
+      sshHostFingerprint: 'SHA256:test', sshHostKeyType: 'ssh-ed25519',
+      sshHostPublicKey: 'ssh-ed25519 AAAA', alreadyPresent: false, tailcatNoAuth: true,
+      tailcat: { address: 'tc-address', privateKey: 'privkey:client', publicKey: 'nodekey:client' },
+    }, { source: 'generated', label: 'Unused key', publicKey: '', privateKey: 'UNUSED', passphrase: 'UNUSED' });
+    expect(profile).toMatchObject({
+      authMode: 'none', secret: '', passphrase: '', tailcatEnabled: true, tailcatSshServer: true,
+      tailcatAddress: 'tc-address', tailcatPrivateKey: 'privkey:client', tailcatPublicKey: 'nodekey:client',
+    });
+  });
   it('recognizes only the current compact pairing envelope', () => {
     expect(isWhipPairingCode(' WP4:BB8 ')).toBe(true);
     expect(isWhipPairingCode('WP3:BB8')).toBe(false);

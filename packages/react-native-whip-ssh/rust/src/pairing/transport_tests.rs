@@ -17,6 +17,47 @@ const JUMP_USER: &str = "jump-user";
 const JUMP_PASSWORD: &str = "jump-password";
 const ENROLLED_KEY: &str = "ssh-ed25519 AAAA phone";
 
+#[tokio::test]
+#[ignore = "requires the separately provisioned upstream Tailcat fixture"]
+async fn live_builtin_tailcat_pairing_and_reconnect() -> Result<(), Box<dyn std::error::Error>> {
+    let path = std::env::var("WHIP_BUILTIN_PAIRING_CODE_FILE")?;
+    let code = std::fs::read_to_string(path)?;
+    let mut invalid = decode_pairing_code(code.trim())?;
+    invalid.ssh_host_key_sha256 = [0; SHA256_BYTES];
+    let invalid_code = whipair_protocol::encode_pairing_code(&invalid)?;
+    assert!(matches!(
+        pair_host(&invalid_code, "", "phone", &[]).await,
+        Err(PairingError::HostKeyMismatch)
+    ));
+    let result = pair_host(&code, "", "phone", &[]).await?;
+    assert!(result.tailcat_no_auth);
+    assert!(result.key_fingerprint.is_none());
+    let identity = result.tailcat.ok_or("missing Tailcat identity")?;
+    crate::ssh::set_trusted_host_keys(vec![crate::ssh::TrustedHostKey {
+        host: format!("tailcat-ssh:{}", result.ssh_host),
+        port: result.ssh_port,
+        key_type: result.ssh_host_key_type,
+        public_key: result.ssh_host_public_key,
+    }])?;
+    let config = crate::ssh::SshConnectionConfig {
+        tailcat_address: Some(identity.address),
+        tailcat_private_key: Some(identity.private_key),
+        tailcat_ssh_server: true,
+        host: result.ssh_host,
+        port: result.ssh_port,
+        username: result.ssh_user,
+        credential: crate::ssh::SshCredential::None,
+        forward_agent: false,
+    };
+    for _ in 0..2 {
+        let session = SshSession::connect(&config, None).await?;
+        session.execute("printf whipair-built-in-ok").await?;
+        session.disconnect().await;
+    }
+    crate::ssh::set_trusted_host_keys(vec![])?;
+    Ok(())
+}
+
 #[derive(Clone)]
 struct PairingServer {
     forward: Option<SocketAddr>,
@@ -208,6 +249,7 @@ impl Fixture {
                 "127.0.0.1".into()
             },
             tailcat: false,
+            tailcat_no_auth: false,
             ssh_port: if via_jump { 22 } else { self.address.port() },
             ssh_user: "alice".into(),
             temporary_private_key_seed: [7; ED25519_SEED_BYTES],

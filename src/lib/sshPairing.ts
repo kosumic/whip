@@ -23,6 +23,7 @@ export interface PairHostResult {
   sshHostPublicKey: string;
   keyFingerprint?: string;
   alreadyPresent: boolean;
+  tailcatNoAuth?: boolean;
   tailcat?: {
     address: string;
     privateKey: string;
@@ -51,11 +52,12 @@ export function profileFromPairing(
     username: result.sshUser,
     jumpHostId,
     tailcatEnabled: Boolean(result.tailcat),
+    tailcatSshServer: Boolean(result.tailcatNoAuth),
     tailcatAddress: result.tailcat?.address,
     tailcatPrivateKey: result.tailcat?.privateKey,
     tailcatPublicKey: result.tailcat?.publicKey,
-    authMode: 'key',
-    secret: key.privateKey || '',
-    passphrase: key.passphrase || '',
+    authMode: result.tailcatNoAuth ? 'none' : 'key',
+    secret: result.tailcatNoAuth ? '' : key.privateKey || '',
+    passphrase: result.tailcatNoAuth ? '' : key.passphrase || '',
   };
 }

@@ -1,8 +1,10 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { Alert, Platform } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
 
 import { NewHostScreen } from '../src/components/NewHostScreen';
 import { JumpHostSelect } from '../src/components/JumpHostSelect';
+import { TAILCAT_SETUP_PROMPT } from '../src/lib/tailcatSetupPrompt';
 import { pairHostWithRoute } from '../src/services/sshPairing';
 import type { HostProfile } from '../src/types';
 
@@ -89,6 +91,29 @@ async function openScanner(view: ReactTestRenderer) {
   });
 }
 
+test('the Tailcat guide copies the setup prompt and leaves scanning to the existing button', async () => {
+  const view = await mountSetup();
+  const guide = () => view.root.findByProps({ accessibilityLabel: 'pairing.tailcatGuideTitle' });
+  expect(guide().props.accessibilityState.expanded).toBe(false);
+  expect(view.root.findAllByProps({ children: 'pairing.tailcatGuideSummary' })).toHaveLength(1);
+  expect(view.root.findAllByProps({ children: 'pairing.sshConnectTitle' })).toHaveLength(1);
+  expect(view.root.findAllByProps({ children: 'pairing.sshConnectCopy' })).toHaveLength(1);
+  expect(view.root.findAllByProps({ children: TAILCAT_SETUP_PROMPT })).toHaveLength(0);
+  await act(async () => { guide().props.onPress(); });
+  expect(guide().props.accessibilityState.expanded).toBe(true);
+  expect(view.root.findByProps({ children: TAILCAT_SETUP_PROMPT }).props.selectable).toBe(true);
+  await act(async () => { view.root.findByProps({ accessibilityLabel: 'pairing.tailcatGuideCopy' }).props.onPress(); });
+  expect(Clipboard.setString).toHaveBeenCalledWith(TAILCAT_SETUP_PROMPT);
+  expect(view.root.findAllByProps({ children: 'markdown.copied' })).toHaveLength(1);
+  await act(async () => { guide().props.onPress(); });
+  expect(view.root.findAllByProps({ children: TAILCAT_SETUP_PROMPT })).toHaveLength(0);
+  await act(async () => { guide().props.onPress(); });
+  expect(view.root.findAllByProps({ children: 'pairing.scan' })).toHaveLength(1);
+  await openScanner(view);
+  expect(view.root.findAllByType('CameraView' as never)).toHaveLength(1);
+  await act(async () => { view.unmount(); });
+});
+
 test.each([undefined, bastion.id])('QR enrollment uses and saves the selected route %s', async jumpHostId => {
   const onPaired = jest.fn(async () => {});
   const view = await mountSetup(onPaired);
@@ -116,7 +141,7 @@ test.each([undefined, bastion.id])('QR enrollment uses and saves the selected ro
   await act(async () => { view.unmount(); });
 });
 
-test('Add Host offers scanning and manual setup without a Tailcat mode toggle', async () => {
+test('Add Host offers scan and manual choices without the quick-connect guide or Tailcat toggle', async () => {
   const onManual = jest.fn();
   let view!: ReactTestRenderer;
   await act(async () => {
@@ -131,6 +156,7 @@ test('Add Host offers scanning and manual setup without a Tailcat mode toggle', 
     />);
   });
   expect(view.root.findAllByProps({ accessibilityLabel: 'connection.tailcat' })).toHaveLength(0);
+  expect(view.root.findAllByProps({ accessibilityLabel: 'pairing.tailcatGuideTitle' })).toHaveLength(0);
   expect(view.root.findByProps({ accessibilityLabel: 'pairing.scan' }).props.disabled).toBeFalsy();
   await act(async () => { view.root.findByProps({ accessibilityLabel: 'pairing.manual' }).props.onPress(); });
   expect(onManual).toHaveBeenCalledWith();
