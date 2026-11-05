@@ -91,6 +91,52 @@ keeping capture active. First-input readiness no longer has a further
 cue-duration-plus-tail wait. The historical numbers above remain the baseline;
 session creation and media negotiation are separate remaining startup costs.
 
+## Local session-creation profile after the ready-cue fix
+
+On 2026-11-05, twelve accepted session-creation requests compared Whip's
+Reqwest configuration with independent curl requests. Each returned HTTP 201,
+and all twelve sessions were immediately closed with confirmed HTTP 200
+hangup responses. These measurements exclude media negotiation, microphone
+startup, and the first spoken response.
+
+| HTTP client | Backend | Fresh connection pool | Pooled repeats |
+| --- | --- | ---: | ---: |
+| Whip Reqwest | GPT-Live | 1,706 ms | 1,173 ms, 847 ms |
+| Whip Reqwest | Realtime 1.5 | 2,283 ms | 615 ms, 572 ms |
+| curl | GPT-Live | 2,932 ms | 463 ms, 1,355 ms |
+| curl | Realtime 1.5 | 1,106 ms | 659 ms, 1,281 ms |
+
+Native client construction took 0.8–1.2 ms. The initial native Live request
+spent 392 ms opening its connection, including DNS/TCP/TLS, and 1,313 ms from
+connection completion to response headers. Realtime spent 956 ms opening its
+connection and 1,323 ms afterward. Both clients' pooled repeats opened zero
+new connections; the native repeats also made zero DNS calls. Independent
+curl's cold Live request spent 1,983 ms in TLS setup alone.
+
+The probe used the app's exported session configuration, production ICE
+candidates, DTLS Auto/SNAP, and data-channel ID 4. It omitted Live's
+WebSocket-only PCM format and added the Realtime default model, matching the
+production WebRTC configuration branches. Models were `gpt-live-1` and
+`gpt-realtime-1.5`; voices were quartz and marin, respectively. Curl used
+HTTP/1.1 to match the built Reqwest features. The native probe wrapped the
+connector and timed Tokio system DNS lookup without changing app code. Fresh
+connection pools retained OS networking caches.
+
+These small local samples verify working HTTP connection reuse. They do not
+explain the phone's later 4,817 ms Live POST: that call reached first microphone
+input in 6,572 ms, including 1,133 ms of peer negotiation. The local and Android
+network paths differ, and the wait for response headers includes network
+round trips and remote processing. Android needs the same connection/response
+breakdown before assigning the delay to either implementation or server work.
+This profiling work does not change call-startup behavior.
+
+The probe also confirmed the documented
+[Live session hangup endpoint](https://developers.openai.com/api/reference/resources/live/subresources/sessions/methods/hangup).
+The app's sideband-based Live cleanup remains a separate follow-up for the
+previously observed ten-second close/quick-restart wait.
+
+[Raw local timing measurements](voice-session-creation-profile.json)
+
 ## Installed ChatGPT Android app
 
 Inspected version `1.2026.300` (version code `2630015`) and captured one
