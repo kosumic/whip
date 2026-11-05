@@ -114,16 +114,29 @@ Java_com_whipssh_RealtimeVoiceNative_capture(JNIEnv *env, jclass, jlong call, js
 }
 extern "C" JNIEXPORT jint JNICALL
 Java_com_whipssh_RealtimeVoiceNative_read(JNIEnv *env, jclass, jlong call, jshortArray samples, jlongArray epoch) {
-    std::array<int16_t, WhipRealtimeMaxFrame> pcm;
+    std::array<int16_t, WhipRealtimeMaxFrame> pcm{};
     const auto capacity = env->GetArrayLength(samples);
     if (capacity > static_cast<jsize>(pcm.size()) || env->GetArrayLength(epoch) < 1) return 0;
     uint64_t generation = 0;
     const auto count = whip_realtime_read(call, pcm.data(), capacity, &generation);
+    const auto rendered = count > 0 ? count : static_cast<size_t>(capacity);
+    whip_realtime_mix_cue(call, pcm.data(), rendered);
     const auto value = static_cast<jlong>(generation);
     env->SetLongArrayRegion(epoch, 0, 1, &value);
-    env->SetShortArrayRegion(samples, 0, count, pcm.data());
+    env->SetShortArrayRegion(samples, 0, rendered, pcm.data());
     return static_cast<jint>(count);
 }
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_whipssh_RealtimeVoiceNative_cueBegin(JNIEnv *, jclass, jlong call) { return static_cast<jlong>(whip_realtime_cue_begin(call)); }
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_whipssh_RealtimeVoiceNative_cueLoad(JNIEnv *env, jclass, jlong call, jlong generation, jstring path) {
+    const auto value = speechUtf8(env, path);
+    return !env->ExceptionCheck() && whip_realtime_cue_load(call, generation, value.c_str());
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_whipssh_RealtimeVoiceNative_cuePlaying(JNIEnv *, jclass, jlong call, jlong generation) { return whip_realtime_cue_playing(call, generation); }
+extern "C" JNIEXPORT void JNICALL
+Java_com_whipssh_RealtimeVoiceNative_cueStop(JNIEnv *, jclass, jlong call, jlong generation) { whip_realtime_cue_stop(call, generation); }
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_whipssh_RealtimeVoiceNative_render(JNIEnv *env, jclass, jlong call, jlong epoch, jshortArray samples, jint offset, jint count, jboolean audio, jlong delayNs) {
     std::array<int16_t, WhipRealtimeMaxFrame> pcm;

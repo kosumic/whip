@@ -78,12 +78,18 @@ settings confirmation arrived after media input had already started. The user
 confirmed smooth, complete speech. These traces show that startup latency
 remains in session/network setup even after the audio correction.
 
-Listening/first-input is not the end of the ready cue. The native microphone
+In the measured build above, Listening/first-input is not the end of the ready cue. The native microphone
 temporarily uploads silence while that cue plays, preventing the cue from
 triggering a response. In these two calls capture resumed 1,472 ms and
 1,445 ms after cue suppression began, respectively: about 5.44 seconds from
 the Live request and 6.62 seconds from the Realtime request. Those are the
 appropriate endpoints when measuring acceptance of speech after the cue.
+
+The subsequent ready-cue fix removes this microphone gate. It mixes the same
+tone into native device output and feeds that mix to the echo canceller, while
+keeping capture active. First-input readiness no longer has a further
+cue-duration-plus-tail wait. The historical numbers above remain the baseline;
+session creation and media negotiation are separate remaining startup costs.
 
 ## Installed ChatGPT Android app
 

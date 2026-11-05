@@ -66,8 +66,15 @@ Phone diagnostics contain numeric playout counters and separate startup timing
 for queued transitions, microphone permission, speech suspension, call-service
 activation, HTTP client construction, session creation, negotiation, and device
 startup. Shutdown logs separate device release from final transport cleanup.
-Bundled call cues retain their audible content with leading/trailing silence
-removed, reducing capture suppression and awaited hangup feedback.
+The Android ready cue is a bounded PCM16 mono WAV mixed by Rust into the same
+AudioTrack buffers as assistant speech. JNI supplies silence when no provider
+audio is available, mixes the cue, and retains the provider's original sample
+count. The device feeds the exact mixed samples and output delay to AEC3.
+Microphone capture stays live: there is no cue mute, capture-generation reset,
+or acoustic-tail timer. Cue-only samples do not advance assistant captions or
+the played-audio cursor. Generation checks cancel late cue loads and prevent
+an old request from stopping a replacement cue. Decode/file I/O runs off the
+UI and audio workers. The closed cue retains normal MediaPlayer playback.
 
 Live captions use approximate provider fragment intervals and advance from
 acknowledged native playback. Text delivery alone cannot advance highlighting;

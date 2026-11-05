@@ -4,6 +4,7 @@ mod captions;
 mod capture_worker;
 pub(crate) mod context;
 mod cost;
+mod cue;
 mod delegation;
 mod echo;
 pub(crate) mod feedback;
@@ -443,6 +444,7 @@ pub(super) enum Command {
     Submitted(String),
 }
 pub(super) struct RealtimeVoiceAdapter {
+    cue: Mutex<cue::Cue>,
     started_at: Instant,
     client_elapsed_ms: u64,
     webrtc: bool,
@@ -534,6 +536,7 @@ impl RealtimeVoiceAdapter {
         input.set_muted(config.preview);
         let (cancel, _) = watch::channel(false);
         let adapter = Arc::new(Self {
+            cue: Mutex::default(),
             started_at,
             client_elapsed_ms: config.client_elapsed_ms,
             webrtc: config.webrtc && !(config.live && config.preview),
@@ -677,6 +680,7 @@ impl RealtimeVoiceAdapter {
         self.cancel.send_replace(true);
     }
     fn close(&self) {
+        self.cue.lock().clear();
         if let Some(global) = &self.global {
             global.close();
         }

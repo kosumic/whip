@@ -18,6 +18,77 @@ fn call(id: u64) -> Option<Arc<RealtimeVoiceAdapter>> {
     calls().lock().get(&id).cloned()
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn whip_realtime_cue_begin(id: u64) -> u64 {
+    call(id)
+        .filter(|call| call.allow_input && !call.closed.load(Ordering::Acquire))
+        .map_or(0, |call| call.cue.lock().begin())
+}
+
+/// Load a bounded bundled PCM WAV off the device and UI threads.
+/// # Safety
+/// path is a live NUL-terminated UTF-8 path for this synchronous call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn whip_realtime_cue_load(
+    id: u64,
+    generation: u64,
+    path: *const c_char,
+) -> bool {
+    if path.is_null() {
+        return false;
+    }
+    // SAFETY: The native adapter lends this NUL-terminated path until return.
+    let path = unsafe { CStr::from_ptr(path) };
+    let Some(path) = path.to_str().ok().filter(|path| path.len() <= 4096) else {
+        return false;
+    };
+    let Some(call) = call(id).filter(|call| !call.closed.load(Ordering::Acquire)) else {
+        return false;
+    };
+    if !call.cue.lock().playing(generation) {
+        return false;
+    }
+    let Ok(samples) = super::cue::load(path) else {
+        call.cue.lock().stop(generation);
+        return false;
+    };
+    if call.closed.load(Ordering::Acquire) {
+        return false;
+    }
+    call.cue.lock().load(generation, samples)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn whip_realtime_cue_playing(id: u64, generation: u64) -> bool {
+    call(id).is_some_and(|call| {
+        !call.closed.load(Ordering::Acquire) && call.cue.lock().playing(generation)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn whip_realtime_cue_stop(id: u64, generation: u64) {
+    if let Some(call) = call(id) {
+        call.cue.lock().stop(generation);
+    }
+}
+
+/// Mix only local device output; provider reads and playback acknowledgements
+/// retain their original sample counts. The device submits the mix to AEC.
+/// # Safety
+/// samples points to count writable PCM16 samples until this call returns.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn whip_realtime_mix_cue(id: u64, samples: *mut i16, count: usize) {
+    if samples.is_null() || count > FRAME * 4 {
+        return;
+    }
+    if let Some(call) = call(id).filter(|call| !call.closed.load(Ordering::Acquire)) {
+        // SAFETY: The native output adapter owns this bounded writable buffer.
+        call.cue
+            .lock()
+            .mix(unsafe { std::slice::from_raw_parts_mut(samples, count) });
+    }
+}
+
 /// Native callers bracket Settings replacement/deletion, even on failure.
 #[unsafe(no_mangle)]
 pub extern "C" fn whip_voice_credentials_updating(updating: bool) {

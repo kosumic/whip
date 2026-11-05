@@ -2,7 +2,7 @@ import { Asset } from 'expo-asset';
 import { bundledAsset } from '../lib/bundledAsset';
 
 const SOURCES = {
-  ready: bundledAsset(require('../../assets/audio/voice-ready.mp3')),
+  ready: bundledAsset(require('../../assets/audio/voice-ready.wav')),
   closed: bundledAsset(require('../../assets/audio/voice-closed.mp3')),
 } as const;
 export type VoiceCallSound = keyof typeof SOURCES;

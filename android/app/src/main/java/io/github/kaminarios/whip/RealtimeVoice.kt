@@ -7,6 +7,7 @@ import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.AudioTimestamp
 import android.media.MediaRecorder
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -25,7 +26,7 @@ internal object RealtimeVoice {
   private const val MAX_AUDIO_AGE_NS = NANOS_PER_SECOND / 2
   private const val LOG_TAG = "WhipRealtimeAudio"
   private const val DIAGNOSTIC_INTERVAL_MS = 5_000L
-  private const val READY_CUE_TAIL_MS = 120L
+  private const val CUE_POLL_MS = 20L
   private val CLIENT_STARTUP_FIELDS = listOf("transitionMs", "permissionMs", "speechSuspendMs", "callServiceMs")
   private var current: Session? = null
   private var lastToken: String? = null
@@ -53,7 +54,6 @@ internal object RealtimeVoice {
     var playback: Thread? = null
     var monitor: Runnable? = null
     @Volatile var boundary = CaptureBoundary()
-    @Volatile var readyCue: Any? = null
     @Volatile var playedAudioSamples = 0L
     @Volatile var playedAudioPeak = 0
     var captureMuted = VoiceCallService.muted(token)
@@ -68,22 +68,42 @@ internal object RealtimeVoice {
     fun elapsedMs(): Long = clientElapsedMs + SystemClock.elapsedRealtime() - mediaStartedAt
   }
 
-  /** A MediaPlayer cue is outside the PCM echo reference. Never upload its echo. */
-  fun quietCaptureForReadyCue(): (() -> Unit)? {
+  /** Native mixing makes the cue part of the actual speaker echo reference. */
+  fun playReadyCue(source: Uri, completed: (String?) -> Unit): (() -> Unit)? {
     val session = current?.takeIf { !it.preview && it.running.get() } ?: return null
-    val cue = Any()
-    session.readyCue = cue
-    session.boundary = CaptureBoundary()
-    Log.i(LOG_TAG, "Ready cue capture suppressed")
-    return {
-      main.postDelayed({
-        if (current === session && session.readyCue === cue) {
-          session.boundary = CaptureBoundary()
-          session.readyCue = null
-          Log.i(LOG_TAG, "Ready cue capture resumed")
-        }
-      }, READY_CUE_TAIL_MS)
+    check(session.output != null) { "Voice output is not ready" }
+    val path = requireNotNull(source.path)
+    val cue = Core.cueBegin(session.call)
+    check(cue != 0L) { "Voice cue playback is unavailable" }
+    val active = AtomicBoolean(true)
+    fun finish(error: String?) {
+      if (active.compareAndSet(true, false)) {
+        Core.cueStop(session.call, cue)
+        Log.i(LOG_TAG, "Ready cue playback ended; microphone remained live")
+        completed(error)
+      }
     }
+    val poll = object : Runnable {
+      override fun run() {
+        if (!active.get()) return
+        if (current !== session || !session.running.get() || !Core.cuePlaying(session.call, cue)) finish(null)
+        else main.postDelayed(this, CUE_POLL_MS)
+      }
+    }
+    Thread({
+      val loaded = try { Core.cueLoad(session.call, cue, path) } catch (_: Exception) { false }
+      main.post {
+        if (active.get()) {
+          if (current !== session || !session.running.get()) finish(null)
+          else if (!loaded) finish("The bundled ready cue could not be loaded")
+          else {
+            Log.i(LOG_TAG, "Ready cue mixed into playback; microphone remains live")
+            poll.run()
+          }
+        }
+      }
+    }, "WhipReadyCue").start()
+    return { active.set(false); Core.cueStop(session.call, cue) }
   }
 
   @SuppressLint("MissingPermission")
@@ -253,9 +273,6 @@ internal object RealtimeVoice {
           session.rejectedCapture++
           continue
         }
-        // Keep the RTP input clock running with silence throughout the cue and
-        // its short acoustic tail. User mute state remains independently owned.
-        if (session.readyCue != null) pcm.fill(0, 0, count)
         if (!Core.captureTimed(session.call, pcm, count, generation, now - at)) break
       }
     } catch (_: Exception) { if (session.running.get()) Core.control(session.call, Core.AUDIO_FAILED) }
@@ -295,7 +312,9 @@ internal object RealtimeVoice {
         if (audioCount == 0 && session.preview) { Thread.sleep(5); continue }
         // Clock the render reference continuously, including silence between
         // responses. Rust excludes that silence from played-audio truncation.
-        val count = if (audioCount > 0) audioCount else pcm.size.also { pcm.fill(0) }
+        // JNI fills absent speech with silence and mixes the local cue. Keep
+        // its PCM for AudioTrack and AEC; only audioCount acknowledges speech.
+        val count = if (audioCount > 0) audioCount else pcm.size
         var offset = 0
         while (offset < count && session.running.get()) {
           val now = System.nanoTime()

@@ -40,7 +40,7 @@ class HerdrBackgroundModule(
   private var mediaPlayer: MediaPlayer? = null
   private var callSoundPlayer: MediaPlayer? = null
   private var callSoundPromise: Promise? = null
-  private var callSoundCaptureRelease: (() -> Unit)? = null
+  private var callSoundStop: (() -> Unit)? = null
   private val callSoundTimeout = Runnable { finishVoiceCallSound("Voice call sound timed out") }
   private var shakeListening = false
   private val shakeDetector = SpeechShakeDetector()
@@ -164,9 +164,17 @@ class HerdrBackgroundModule(
       try {
         val source = Uri.parse(uri)
         require(source.scheme == "file") { "Voice call sounds must be bundled local files" }
+        callSoundPromise = promise
+        val nativeCue = if (inCall) RealtimeVoice.playReadyCue(source) { error ->
+          if (callSoundPromise === promise) finishVoiceCallSound(error)
+        } else null
+        if (nativeCue != null) {
+          callSoundStop = nativeCue
+          mainHandler.postDelayed(callSoundTimeout, CALL_SOUND_TIMEOUT_MS)
+          return@post
+        }
         val player = MediaPlayer()
         callSoundPlayer = player
-        callSoundPromise = promise
         player.setAudioAttributes(if (inCall) VoiceCallService.audioAttributes else AudioAttributes.Builder()
           .setUsage(AudioAttributes.USAGE_MEDIA)
           .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
@@ -177,12 +185,7 @@ class HerdrBackgroundModule(
           if (callSoundPlayer === failed) finishVoiceCallSound("Voice call sound failed ($what/$extra)")
           true
         }
-        player.setOnPreparedListener {
-          if (callSoundPlayer === it) {
-            if (inCall) callSoundCaptureRelease = RealtimeVoice.quietCaptureForReadyCue()
-            it.start()
-          }
-        }
+        player.setOnPreparedListener { if (callSoundPlayer === it) it.start() }
         // Telecom owns audio focus during calls; cues must not request it again.
         player.prepareAsync()
         mainHandler.postDelayed(callSoundTimeout, CALL_SOUND_TIMEOUT_MS)
@@ -202,12 +205,12 @@ class HerdrBackgroundModule(
     mainHandler.removeCallbacks(callSoundTimeout)
     val player = callSoundPlayer
     val promise = callSoundPromise
-    val releaseCapture = callSoundCaptureRelease
+    val stopCue = callSoundStop
     callSoundPlayer = null
     callSoundPromise = null
-    callSoundCaptureRelease = null
+    callSoundStop = null
     player?.release()
-    releaseCapture?.invoke()
+    stopCue?.invoke()
     if (error == null) promise?.resolve(null) else promise?.reject(CALL_SOUND_ERROR, error)
   }
 

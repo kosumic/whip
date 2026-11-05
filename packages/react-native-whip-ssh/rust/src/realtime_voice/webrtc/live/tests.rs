@@ -173,6 +173,7 @@ fn playback_owner() -> Result<Arc<RealtimeVoiceAdapter>, &'static str> {
     let (commands, _) = tokio::sync::mpsc::channel(8);
     let (cancel, _) = watch::channel(false);
     Ok(Arc::new(RealtimeVoiceAdapter {
+        cue: Mutex::default(),
         started_at: Instant::now(),
         client_elapsed_ms: 0,
         webrtc: true,
@@ -249,6 +250,37 @@ fn authorized_credential() -> Result<NativeCredential, Box<dyn std::error::Error
     Ok(credential)
 }
 
+#[tokio::test]
+async fn local_cue_keeps_microphone_live_without_advancing_assistant_playback()
+-> Result<(), Box<dyn std::error::Error>> {
+    let owner = playback_owner()?;
+    let generation = owner.input.generation();
+    let cue = owner.cue.lock().begin();
+    assert!(owner.cue.lock().load(cue, vec![2000; voice::FRAME * 2]));
+    let input = [1000; voice::FRAME];
+    owner.capture(&input, generation, Instant::now());
+    let mut packet = ::audio_ingress::Packet::new(voice::FRAME * 4);
+    tokio::time::timeout(Duration::from_secs(1), owner.next_capture(&mut packet)).await??;
+    assert_eq!(packet.samples, input);
+    assert_eq!(owner.input.generation(), generation);
+
+    let mut rendered = [0; voice::FRAME];
+    let epoch = {
+        let mut output = owner.output.lock();
+        assert_eq!(output.read(&mut rendered), 0);
+        output.epoch
+    };
+    owner.cue.lock().mix(&mut rendered);
+    assert_eq!(rendered, [1000; voice::FRAME]);
+    let mut echo = voice::echo::MediaEchoCanceller::new()?;
+    echo.render(epoch, &rendered, false, 0)?;
+    assert_eq!(echo.played(epoch, voice::FRAME), 0);
+    assert_eq!(owner.output.lock().delivered, 0);
+    owner.close();
+    assert!(!owner.cue.lock().playing(cue));
+    Ok(())
+}
+
 /// Explicitly billable: exercise the full application actor beyond its heartbeat deadline.
 #[tokio::test]
 #[ignore = "requires explicitly authorized OPENAI_API_KEY and network access"]
@@ -287,6 +319,13 @@ async fn public_live_call_survives_a_minute_with_native_playback()
     let mut offset = 0;
     let mut peak = 0_u16;
     let mut highlighted = false;
+    let mut cue_samples = Some(voice::cue::load(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../assets/audio/voice-ready.wav"
+    ))?);
+    let mut local_cue = 0;
+    let mut captured_during_cue = false;
+    let mut rendered_cue = false;
     let mut tick = tokio::time::interval(Duration::from_millis(20));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     while ready_at.is_none_or(|at: Instant| at.elapsed() < duration) && !worker.is_finished() {
@@ -299,10 +338,17 @@ async fn public_live_call_survives_a_minute_with_native_playback()
             eprintln!("Full Live media ready_ms={}", startup::elapsed(started));
         }
         let mut pcm = [0_i16; voice::FRAME];
+        if ready_at.is_some_and(|at| at.elapsed() > Duration::from_millis(2800))
+            && let Some(samples) = cue_samples.take()
+        {
+            local_cue = owner.cue.lock().begin();
+            assert!(owner.cue.lock().load(local_cue, samples));
+        }
         if ready_at.is_some_and(|at| at.elapsed() > Duration::from_secs(3)) {
             let count = pcm.len().min(input.len().saturating_sub(offset));
             pcm[..count].copy_from_slice(&input[offset..offset + count]);
             offset += count;
+            captured_during_cue |= count > 0 && owner.cue.lock().playing(local_cue);
         }
         owner.capture(&pcm, owner.input.generation(), Instant::now());
         let mut output = owner.output.lock();
@@ -313,6 +359,17 @@ async fn public_live_call_survives_a_minute_with_native_playback()
             .max()
             .unwrap_or(0)
             .max(peak);
+        // Mirror JNI: classify provider speech before mixing the local cue.
+        // Only the original provider count advances transcript playback.
+        if count == 0 {
+            pcm.fill(0);
+        }
+        owner
+            .cue
+            .lock()
+            .mix(&mut pcm[..if count == 0 { voice::FRAME } else { count }]);
+        rendered_cue |= owner.cue.lock().playing(local_cue)
+            && pcm.iter().any(|sample| sample.unsigned_abs() >= 64);
         let epoch = output.epoch;
         let delivered = output.delivered;
         output.acknowledge(epoch, delivered);
@@ -338,7 +395,7 @@ async fn public_live_call_survives_a_minute_with_native_playback()
     };
     let view = owner.view.lock();
     eprintln!(
-        "Full Live call: elapsed_ms={} active_ms={} peak={peak} result={result:?} cleanup={cleanup:?} input_samples={offset} media={} uploaded={} caption_events={} server_events={} finalized={}",
+        "Full Live call: elapsed_ms={} active_ms={} peak={peak} result={result:?} cleanup={cleanup:?} cue_overlap={captured_during_cue} cue_rendered={rendered_cue} input_samples={offset} media={} uploaded={} caption_events={} server_events={} finalized={}",
         startup::elapsed(started),
         ready_at.map_or(0, startup::elapsed),
         serde_json::to_string(&view.media)?,
@@ -357,6 +414,10 @@ async fn public_live_call_survives_a_minute_with_native_playback()
     );
     assert!(peak >= 512, "No audible native playback");
     assert!(highlighted, "Captions did not follow acknowledged audio");
+    assert!(
+        captured_during_cue && rendered_cue,
+        "Microphone did not remain live through the local cue"
+    );
     if reliable {
         assert_eq!(late_packets, 0, "Reliable media lost received speech");
     }
