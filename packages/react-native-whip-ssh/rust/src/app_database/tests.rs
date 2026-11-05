@@ -382,11 +382,10 @@ fn live_captions_persist_separately_from_agent_history_and_survive_reopen() {
     let path = directory.path().join("app.db");
     let key = "whip.voice.live.transcripts";
     let value = r#"[{"id":"live-call","endedAtMs":1000,"fragments":[{"id":"caption","role":"user","text":"hello","startMs":0,"endMs":50}]}]"#;
-    {
-        let mut database = store(&path);
-        assert!(database.write(Vec::new(), true).is_ok());
-        assert!(database.write(vec![entry(key, Some(value))], false).is_ok());
-    }
+    let mut database = store(&path);
+    assert!(database.write(Vec::new(), true).is_ok());
+    assert!(database.write(vec![entry(key, Some(value))], false).is_ok());
+    drop(database);
     let database = store(&path);
     assert_eq!(
         database.read(vec![key.into()]).ok(),

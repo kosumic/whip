@@ -91,6 +91,17 @@ fn context_chunks_preserve_unicode_within_public_append_limit() {
 #[ignore = "requires explicitly authorized OPENAI_API_KEY and network access"]
 async fn public_live_api_smoke() -> Result<(), Box<dyn std::error::Error>> {
     use std::ffi::c_void;
+    unsafe extern "C" fn read(context: *mut c_void, out: *mut u8, capacity: usize) -> i32 {
+        // SAFETY: the test lends its live key string for this synchronous callback.
+        let key = unsafe { &*context.cast::<String>() };
+        if key.len() > capacity {
+            return -4;
+        }
+        // SAFETY: the caller supplies capacity writable bytes; the copy is bounded above.
+        unsafe { std::ptr::copy_nonoverlapping(key.as_ptr(), out, key.len()) };
+        i32::try_from(key.len()).unwrap_or(-4)
+    }
+
     let mut key =
         std::env::var("OPENAI_API_KEY").map_err(|_| "Missing API key for opt-in smoke test")?;
     let response=reqwest::Client::new().post("https://api.openai.com/v1/audio/speech")
@@ -109,16 +120,6 @@ async fn public_live_api_smoke() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|_| "Synthetic speech audio unavailable")?
         .to_vec();
     audio.extend(vec![0; super::super::RATE * 2 * 30]);
-    unsafe extern "C" fn read(context: *mut c_void, out: *mut u8, capacity: usize) -> i32 {
-        // SAFETY: the test lends its live key string for this synchronous callback.
-        let key = unsafe { &*context.cast::<String>() };
-        if key.len() > capacity {
-            return -4;
-        }
-        // SAFETY: the caller supplies capacity writable bytes; the copy is bounded above.
-        unsafe { std::ptr::copy_nonoverlapping(key.as_ptr(), out, key.len()) };
-        i32::try_from(key.len()).unwrap_or(-4)
-    }
     // SAFETY: key lives throughout this synchronous read; the callback retains no pointers.
     let credential =
         unsafe { native_credentials::NativeCredential::read(read, (&raw mut key).cast()) }
@@ -271,7 +272,7 @@ fn session_identity_model_and_voice_are_pinned() -> Result<(), Box<dyn std::erro
                     voice: &str|
      -> Result<api::SessionSnapshot, serde_json::Error> {
         serde_json::from_value(
-            json!({"id":id,"expires_at":2000000000,"model":model,"status":"active","audio":{"format":{"type":"audio/pcm","rate":24000},"output":{"voice":voice}},"delegation":{"type":"client"}}),
+            json!({"id":id,"expires_at":2_000_000_000,"model":model,"status":"active","audio":{"format":{"type":"audio/pcm","rate":24000},"output":{"voice":voice}},"delegation":{"type":"client"}}),
         )
     };
     let mut state = State::default();
