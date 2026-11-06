@@ -1,7 +1,7 @@
 //! Bounded RTP playout follows source timestamps and adapts to arrival-clock shifts.
 //! As in Codex's clock-slaved playout, valid queued speech survives network bursts.
 use super::packet::{self, Packet};
-use crate::realtime_voice::{FRAME, RATE};
+use crate::{FRAME, RATE};
 use std::{
     collections::VecDeque,
     time::{Duration, Instant},

@@ -1,13 +1,15 @@
-use super::*;
+use super::echo::*;
+use std::collections::VecDeque;
+const DSP_ERROR: &str = "Echo regression failed.";
 use std::time::{Duration, Instant};
 
 #[test]
 fn local_cue_playback_preserves_near_end_speech_and_partial_device_writes()
 -> Result<(), &'static str> {
-    const BLOCK: usize = super::super::RATE / 100;
+    const BLOCK: usize = super::RATE / 100;
     let mut mixed = MediaEchoCanceller::new()?;
     let mut control = MediaEchoCanceller::new()?;
-    let cue = super::super::cue::load(concat!(
+    let cue = super::cue::load(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../../assets/audio/voice-ready.wav"
     ))?;
@@ -60,24 +62,8 @@ fn local_cue_playback_preserves_near_end_speech_and_partial_device_writes()
 }
 
 #[test]
-fn silence_in_media_track_never_counts_as_heard_assistant_audio() -> Result<(), &'static str> {
-    let mut clock = PlaybackClock::default();
-    clock.submit(1, 240, false)?;
-    clock.submit(1, 240, true)?;
-    clock.submit(1, 240, false)?;
-    assert_eq!(clock.played(1, 120), 0);
-    assert_eq!(clock.played(1, 360), 120);
-    assert_eq!(clock.played(1, 720), 240);
-    assert_eq!(clock.played(1, 240), 240);
-    clock.submit(2, 240, false)?;
-    assert_eq!(clock.played(1, 720), 0);
-    assert_eq!(clock.played(2, 240), 0);
-    Ok(())
-}
-
-#[test]
 fn queued_speaker_echo_stays_suppressed_across_reply_boundaries() -> Result<(), &'static str> {
-    const BLOCK: usize = super::super::RATE / 100;
+    const BLOCK: usize = super::RATE / 100;
     let mut echo = MediaEchoCanceller::new()?;
     let fixture: Vec<_> = include_bytes!("../../tests/fixtures/voice-counting-16k.f32")
         .as_chunks::<4>()

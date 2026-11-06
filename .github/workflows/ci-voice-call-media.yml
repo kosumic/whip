@@ -1,0 +1,31 @@
+name: Voice call media
+on:
+  push:
+    branches: [main]
+    paths: &ingress-paths
+      - 'crates/voice-call-media/**'
+      - '.github/workflows/ci-voice-call-media.yml'
+      - 'crates/voice-call-media/rust-toolchain.toml'
+  pull_request:
+    branches: [main]
+    paths: *ingress-paths
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    strategy:
+      matrix:
+        os: [ubuntu-24.04-arm, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: crates/voice-call-media
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - run: rustup toolchain install
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked --all-targets
+      - run: cargo run --locked --example mocked

@@ -785,3 +785,9 @@ retry. Transport loss, timeout or cancellation after dispatch returns a typed
 commands are never automatically replayed. Authenticated hops close on
 cancellation. Rust tests use fake platform and transport effects; adapter tests
 cover callback permits, cancellation and result mapping.
+
+The provider-neutral `voice-call-media` crate owns the native WebRTC/Opus/RTP
+transport, bounded capture and playout scheduling, jitter buffer, resampling and
+echo processing. Whip supplies native PCM ingress, playback and call-policy
+adapters; provider signaling and credentials stay outside the media engine.
+Both Realtime and GPT-Live use the same engine on the existing Tokio runtime.

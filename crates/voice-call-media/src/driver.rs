@@ -11,7 +11,6 @@ use str0m::{
     rtp::RtpWrite,
 };
 use tokio::sync::{mpsc, oneshot, watch};
-pub(super) const DATA_CHANNEL_ID: u16 = 4;
 const MAX_REMOTE_CANDIDATES: usize = 32;
 const MAX_EVENT_BYTES: usize = 64 * 1024;
 const DISCONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
@@ -60,6 +59,7 @@ pub(super) struct Driver {
     pending: Option<SdpPendingOffer>,
     mid: Mid,
     channel: ChannelId,
+    first_event_kind: Option<String>,
     sequence: u64,
     ingress: Ingress,
     ready: watch::Sender<bool>,
@@ -75,6 +75,10 @@ impl Driver {
         clippy::significant_drop_tightening,
         reason = "network ownership moves into the peer driver; its sockets must remain open"
     )]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "one driver owns bounded transport channels and configuration"
+    )]
     pub async fn new(
         ingress: Ingress,
         ready: watch::Sender<bool>,
@@ -83,6 +87,7 @@ impl Driver {
         commands: mpsc::Receiver<Command>,
         stop: watch::Receiver<bool>,
         protocol: Option<Protocol>,
+        transport_config: crate::TransportConfig,
     ) -> Result<(Self, String, bool), &'static str> {
         let mut network = Network::bind().await?;
         let candidates = network.candidates()?;
@@ -122,8 +127,8 @@ impl Driver {
                     let mid =
                         change.add_media(MediaKind::Audio, Direction::SendRecv, None, None, None);
                     let channel = change.add_channel_with_config(str0m::channel::ChannelConfig {
-                        label: "oai-events".into(),
-                        negotiated: Some(DATA_CHANNEL_ID),
+                        label: transport_config.channel_label,
+                        negotiated: Some(transport_config.channel_id),
                         ..Default::default()
                     });
                     let (offer, pending) = change.apply().ok_or("Voice offer is unavailable.")?;
@@ -149,6 +154,7 @@ impl Driver {
                 pending: Some(pending),
                 mid,
                 channel,
+                first_event_kind: transport_config.first_event_kind,
                 sequence,
                 ingress,
                 ready,
@@ -174,9 +180,7 @@ impl Driver {
             self.failure.send_replace(Some(reason));
         }
         if result.is_err() {
-            crate::host_runtime::diagnostics::log_lifecycle(format_args!(
-                "Voice WebRTC transport ended: {reason}"
-            ));
+            tracing::info!(reason, "Voice WebRTC transport ended");
         }
         self.ready.send_replace(false);
         self.network.close().await;
@@ -233,7 +237,7 @@ impl Driver {
         }
     }
     fn answer(&mut self, sdp: &str) -> Result<(), &'static str> {
-        if sdp.len() > super::super::MAX_WIRE {
+        if sdp.len() > crate::MAX_SDP_BYTES {
             return Err("Voice answer is too large.");
         }
         let mut count = 0;
@@ -296,7 +300,10 @@ impl Driver {
                     if pending
                         && data.data.len() <= MAX_EVENT_BYTES
                         && let Ok(text) = std::str::from_utf8(&data.data)
-                        && super::live::is_started(text)
+                        && self
+                            .first_event_kind
+                            .as_deref()
+                            .is_some_and(|kind| crate::event_is(text, kind))
                     {
                         self.primary_started.send_if_modified(|started| {
                             if started.is_some() {

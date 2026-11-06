@@ -1,103 +1,24 @@
 //! Exercise accelerated clients against an independent, DTLS 1.2 stock peer.
 use super::*;
-use futures::future::BoxFuture;
-use rtc::{
-    media::Sample,
-    peer_connection::configuration::setting_engine::SettingEngineBuilder,
-    rtp_transceiver::rtp_sender::{
-        RTCRtpCodec, RTCRtpCodecParameters, RTCRtpCodingParameters, RTCRtpEncodingParameters,
-        RtpCodecKind,
-    },
-};
+#[path = "../../tests/support/mod.rs"]
+mod support;
+use rtc::peer_connection::configuration::setting_engine::SettingEngineBuilder;
 use std::sync::Arc;
+use support::{Gathered, TestResult, audio, send_silence};
 use tokio::sync::Notify;
 use webrtc::{
     data_channel::DataChannelEvent,
-    peer_connection::{
-        PeerConnection, PeerConnectionBuilder, PeerConnectionEventHandler, RTCIceGatheringState,
-        RTCSessionDescription,
-    },
+    peer_connection::{PeerConnection, PeerConnectionBuilder, RTCSessionDescription},
 };
-use webrtc::{
-    media_stream::{MediaStreamTrack, track_local::static_sample::TrackLocalStaticSample},
-    peer_connection::MediaEngine,
-};
-type TestResult = Result<(), Box<dyn std::error::Error>>;
-async fn send_silence(audio: &TrackLocalStaticSample) -> TestResult {
-    audio
-        .write_sample(
-            1234,
-            111,
-            &Sample {
-                data: vec![0xf8, 0xff, 0xfe].into(),
-                duration: Duration::from_millis(20),
-                ..Sample::new(std::time::Instant::now())
-            },
-            &[],
-        )
-        .await?;
-    Ok(())
-}
-struct Gathered(Arc<Notify>);
-impl PeerConnectionEventHandler for Gathered {
-    fn on_ice_gathering_state_change<'a, 'async_trait>(
-        &'a self,
-        state: RTCIceGatheringState,
-    ) -> BoxFuture<'async_trait, ()>
-    where
-        'a: 'async_trait,
-        Self: 'async_trait,
-    {
-        Box::pin(async move {
-            if state == RTCIceGatheringState::Complete {
-                self.0.notify_one();
-            }
-        })
-    }
-}
-fn audio() -> Result<(MediaEngine, Arc<TrackLocalStaticSample>), Box<dyn std::error::Error>> {
-    let codec = RTCRtpCodec {
-        mime_type: "audio/opus".into(),
-        clock_rate: 48_000,
-        channels: 2,
-        sdp_fmtp_line: "minptime=10;useinbandfec=1".into(),
-        rtcp_feedback: vec![],
-    };
-    let mut media = MediaEngine::default();
-    media.register_codec(
-        RTCRtpCodecParameters {
-            rtp_codec: codec.clone(),
-            payload_type: 111,
-        },
-        RtpCodecKind::Audio,
-    )?;
-    let track = TrackLocalStaticSample::new(
-        std::time::Instant::now(),
-        MediaStreamTrack::new(
-            "fixture".into(),
-            "audio".into(),
-            "microphone".into(),
-            RtpCodecKind::Audio,
-            vec![RTCRtpEncodingParameters {
-                rtp_coding_parameters: RTCRtpCodingParameters {
-                    ssrc: Some(1234),
-                    ..Default::default()
-                },
-                codec,
-                active: true,
-                ..Default::default()
-            }],
-        ),
-    )?;
-    Ok((media, Arc::new(track)))
-}
 #[tokio::test]
 async fn udp_and_tcp_media_survive_bursts_of_mirrored_data_channel_events() -> TestResult {
+    let _guard = crate::prepared::TEST_LOCK.lock().await;
     transport_bursts(false).await
 }
 
 #[tokio::test]
 async fn prepared_crypto_creates_fresh_udp_and_tcp_connections() -> TestResult {
+    let _guard = crate::prepared::TEST_LOCK.lock().await;
     super::super::prepared::configure(true);
     let result = transport_bursts(true).await;
     super::super::prepared::configure(false);
@@ -132,9 +53,9 @@ async fn transport_bursts(prepared: bool) -> TestResult {
                 .await?;
             let channel = remote
                 .create_data_channel(
-                    "oai-events",
+                    "events",
                     Some(webrtc::data_channel::RTCDataChannelInit {
-                        negotiated: Some(super::super::driver::DATA_CHANNEL_ID),
+                        negotiated: Some(crate::TransportConfig::default().channel_id),
                         ..Default::default()
                     }),
                 )
@@ -214,6 +135,7 @@ async fn transport_bursts(prepared: bool) -> TestResult {
 }
 #[tokio::test]
 async fn malformed_answer_is_redacted_and_peer_remains_closable() -> TestResult {
+    let _guard = crate::prepared::TEST_LOCK.lock().await;
     let mut peer = Transport::new().await?;
     assert_eq!(
         peer.apply_answer("synthetic-private-invalid-sdp".into())
@@ -227,6 +149,7 @@ async fn malformed_answer_is_redacted_and_peer_remains_closable() -> TestResult 
 
 #[tokio::test]
 async fn untrusted_answer_candidate_count_is_bounded_before_negotiation() -> TestResult {
+    let _guard = crate::prepared::TEST_LOCK.lock().await;
     let mut peer = Transport::new().await?;
     let answer = "a=candidate:1 1 udp 1 127.0.0.1 5000 typ host\r\n".repeat(33);
     assert_eq!(
@@ -240,6 +163,7 @@ async fn untrusted_answer_candidate_count_is_bounded_before_negotiation() -> Tes
 
 #[tokio::test]
 async fn closing_before_negotiation_releases_udp_and_tcp_listeners() -> TestResult {
+    let _guard = crate::prepared::TEST_LOCK.lock().await;
     let mut peer = Transport::new().await?;
     let mut udp = None;
     let mut tcp = None;

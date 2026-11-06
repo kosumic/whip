@@ -18,10 +18,10 @@ struct State {
     packets: Arc<Semaphore>,
     bytes: Arc<Semaphore>,
 }
-pub(crate) struct ReceivedRtp {
+pub struct ReceivedRtp {
     data: Vec<u8>,
-    pub(crate) at: Instant,
-    pub(crate) reliable: bool,
+    pub at: Instant,
+    pub reliable: bool,
     epoch: u64,
     _packet: OwnedSemaphorePermit,
     _bytes: OwnedSemaphorePermit,
@@ -31,7 +31,7 @@ impl AsRef<[u8]> for ReceivedRtp {
         &self.data
     }
 }
-pub(crate) struct Incoming {
+pub struct Incoming {
     state: Arc<State>,
     receiver: mpsc::Receiver<ReceivedRtp>,
 }
@@ -61,7 +61,7 @@ impl Incoming {
             },
         )
     }
-    pub(crate) fn set_suppressed(&self, suppressed: bool) -> Result<(), &'static str> {
+    pub fn set_suppressed(&self, suppressed: bool) -> Result<(), &'static str> {
         let epoch = self.state.epoch.load(Ordering::Acquire);
         if (epoch % 2 == 1) != suppressed {
             self.state.epoch.store(
@@ -71,7 +71,7 @@ impl Incoming {
         }
         Ok(())
     }
-    pub(crate) fn take(&mut self) -> Result<Option<ReceivedRtp>, &'static str> {
+    pub fn take(&mut self) -> Result<Option<ReceivedRtp>, &'static str> {
         if self.state.failed.load(Ordering::Acquire) {
             return Err("incoming audio failed");
         }

@@ -5,12 +5,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[derive(Clone, PartialEq)]
-pub(super) struct Tag {
-    pub response: String,
-    pub item: String,
-    pub index: u32,
-}
+pub(super) use voice_call_media::Tag;
 #[derive(Default)]
 pub(super) struct Identity {
     pub live: bool,

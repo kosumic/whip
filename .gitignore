@@ -115,3 +115,5 @@ AGENTS.md
 
 /crates/audio-ingress/target/
 /crates/ai-voice-call/target/
+/crates/voice-call-media/target/
+/crates/voice-openai/target/

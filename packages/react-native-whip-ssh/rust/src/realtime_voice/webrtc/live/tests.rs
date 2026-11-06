@@ -1,5 +1,8 @@
 use super::*;
 
+// These fixtures claim the process-wide device speech lease.
+static DEVICE_AUDIO_TEST: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 #[test]
 fn session_identity_cannot_change_the_authorized_attach_endpoint() {
     assert!(valid_id("live_test-123"));
@@ -244,6 +247,7 @@ fn starting_owner() -> Result<Arc<RealtimeVoiceAdapter>, &'static str> {
 #[tokio::test]
 async fn live_listening_requires_session_confirmation_devices_and_fresh_uploaded_audio()
 -> Result<(), Box<dyn std::error::Error>> {
+    let _device_audio = DEVICE_AUDIO_TEST.lock().await;
     for session_first in [false, true] {
         let mut owner = starting_owner()?;
         Arc::get_mut(&mut owner)
@@ -285,6 +289,7 @@ async fn live_listening_requires_session_confirmation_devices_and_fresh_uploaded
 #[tokio::test]
 async fn early_microphone_discards_startup_audio_and_accepts_fresh_audio_in_either_startup_order()
 -> Result<(), Box<dyn std::error::Error>> {
+    let _device_audio = DEVICE_AUDIO_TEST.lock().await;
     for devices_first in [true, false] {
         let owner = starting_owner()?;
         if devices_first {
@@ -324,6 +329,7 @@ async fn early_microphone_discards_startup_audio_and_accepts_fresh_audio_in_eith
 #[test]
 fn early_device_completion_preserves_mute_and_cannot_reopen_a_closed_call()
 -> Result<(), Box<dyn std::error::Error>> {
+    let _device_audio = DEVICE_AUDIO_TEST.blocking_lock();
     let owner = starting_owner()?;
     owner.view.lock().muted = true;
     owner.input.set_muted(true);
@@ -375,6 +381,7 @@ fn authorized_credential() -> Result<NativeCredential, Box<dyn std::error::Error
 #[tokio::test]
 async fn local_cue_keeps_microphone_live_without_advancing_assistant_playback()
 -> Result<(), Box<dyn std::error::Error>> {
+    let _device_audio = DEVICE_AUDIO_TEST.lock().await;
     let owner = playback_owner()?;
     let generation = owner.input.generation();
     let cue = owner.cue.lock().begin();

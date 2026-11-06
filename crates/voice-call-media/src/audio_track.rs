@@ -5,18 +5,18 @@
 use super::driver::Command;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot, watch};
-pub(crate) const OPUS_PAYLOAD_TYPE: u8 = 111;
-pub(crate) const SEND_TIMEOUT: Duration = super::super::capture_worker::SEND_TIMEOUT;
+pub const OPUS_PAYLOAD_TYPE: u8 = 111;
+pub const SEND_TIMEOUT: Duration = crate::capture_worker::SEND_TIMEOUT;
 const PACKET: Duration = Duration::from_millis(20);
 const RTP_SAMPLES: u32 = 960;
-pub(crate) struct EncodedAudio {
-    pub(crate) data: Vec<u8>,
-    pub(crate) at: Instant,
+pub struct EncodedAudio {
+    pub data: Vec<u8>,
+    pub at: Instant,
 }
 
 #[cfg(test)]
 mod tests;
-pub(crate) struct AudioTrack {
+pub struct AudioTrack {
     sender: mpsc::Sender<Command>,
     failure: watch::Receiver<Option<&'static str>>,
     end: Option<Instant>,
@@ -36,7 +36,7 @@ impl AudioTrack {
             silence: None,
         }
     }
-    pub(crate) async fn send_muted_silence(&mut self, at: Instant) -> Result<(), &'static str> {
+    pub async fn send_muted_silence(&mut self, at: Instant) -> Result<(), &'static str> {
         if self.end.is_some_and(|end| at < end) {
             return Ok(());
         }
@@ -61,7 +61,7 @@ impl AudioTrack {
         })
         .await
     }
-    pub(crate) async fn send(&mut self, frame: EncodedAudio) -> Result<(), &'static str> {
+    pub async fn send(&mut self, frame: EncodedAudio) -> Result<(), &'static str> {
         let skipped = self
             .end
             .map(|end| frame.at.saturating_duration_since(end).as_millis() / PACKET.as_millis())

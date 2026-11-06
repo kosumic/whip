@@ -42,7 +42,7 @@ impl Call {
             .map_err(|_| "Invalid voice credential.")?;
         authorization.set_sensitive(true);
         let mut response = api::client()?.post(SESSIONS).header(AUTHORIZATION, authorization)
-            .json(&json!({"session":session,"transport":{"type":"webrtc","sdp":offer,"dcid":super::driver::DATA_CHANNEL_ID}}))
+            .json(&json!({"session":session,"transport":{"type":"webrtc","sdp":offer,"dcid":super::media::transport_config().channel_id}}))
             .send().await.map_err(|_| CREATION_UNKNOWN)?;
         if response.status().as_u16() != 201 {
             let status = response.status().as_u16();
@@ -169,7 +169,7 @@ pub(in crate::realtime_voice) async fn start(
     let (socket, commands, events) = socket::Socket::relay();
     let identity = Arc::new(Mutex::new(Identity::live()));
     let offered = Instant::now();
-    let mut peer = Transport::new().await?;
+    let mut peer = Transport::configured(media::transport_config()).await?;
     owner.view.lock().startup.prepared_client = peer.prepared_client;
     owner.view.lock().startup.offer = Some(startup::elapsed(offered));
     let created = Instant::now();

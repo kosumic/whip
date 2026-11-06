@@ -5,6 +5,8 @@ module.exports = [
   'android/build',
   'build',
   'crates/audio-ingress/target',
+  'crates/voice-call-media/target',
+  'crates/voice-openai/target',
   'crates/agent-browser-control/target',
   'crates/agent-transcript-core/target',
   'crates/herdr-protocol/target',

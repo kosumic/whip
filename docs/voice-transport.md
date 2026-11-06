@@ -187,3 +187,18 @@ as final results for the replacement.
 
 See the official [WebRTC connection flow](https://developers.openai.com/api/docs/guides/voice-webrtc)
 and [session billing](https://developers.openai.com/api/docs/guides/voice-latency-cost).
+
+## Reusable media engine
+
+`crates/voice-call-media` owns WebRTC/Opus/RTP, native capture scheduling,
+bounded packet ingress, jitter playout, resampling and echo processing. It uses
+`audio-ingress` for PCM and accepts host capture/playback callbacks; it imports
+no Whip state or provider code. Both Realtime and GPT-Live use this engine on
+Whip's existing runtime and native audio path. Platform audio sessions and device
+callbacks remain in the Android/iOS host adapters.
+
+The host owns signaling and audio identity. Data-channel labels and the optional
+first retained control-event kind are injected through `TransportConfig`.
+Playback callbacks recheck cancellation epochs before committing samples. See
+`crates/voice-call-media/README.md` for adapter contracts, shutdown ordering and
+the credential-free bidirectional PCM/signaling example.

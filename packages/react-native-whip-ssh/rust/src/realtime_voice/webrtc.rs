@@ -1,14 +1,8 @@
 //! Codex's WebRTC call startup: initial configuration in POST, sideband in parallel.
 mod api;
-mod audio_track;
-mod driver;
 mod identity;
-mod incoming;
-mod jitter;
 mod live;
 mod media;
-mod network;
-mod packet;
 pub(in crate::realtime_voice) mod prepared;
 mod transport;
 
@@ -112,7 +106,7 @@ pub(super) async fn start(
     let (socket, commands, events) = socket::Socket::relay();
     let identity = Arc::new(Mutex::new(identity::Identity::default()));
     let offer_started = Instant::now();
-    let mut peer = transport::Transport::new().await?;
+    let mut peer = transport::Transport::configured(media::transport_config()).await?;
     owner.view.lock().startup.prepared_client = peer.prepared_client;
     if !attempt.current() {
         let _ = peer.close().await;

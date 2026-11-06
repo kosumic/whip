@@ -9,6 +9,8 @@ mod cost;
 mod cue;
 mod delegation;
 mod echo;
+#[cfg(test)]
+mod echo_tests;
 pub(crate) mod feedback;
 mod ffi;
 pub(crate) mod handoff_context;

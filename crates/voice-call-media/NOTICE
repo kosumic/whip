@@ -1,0 +1,7 @@
+Extracted from Whip (https://github.com/kosumic/whip).
+Whip-owned code is licensed AGPL-3.0-or-later.
+
+Transport, audio sender, RTP ingress and audio processing contain adaptations
+of OpenAI Codex. Copyright 2025 OpenAI, licensed under Apache License 2.0.
+The original per-file provenance and SPDX notices are retained. The Apache
+License 2.0 is included in LICENSE-APACHE.
