@@ -228,6 +228,86 @@ fn playback_owner() -> Result<Arc<RealtimeVoiceAdapter>, &'static str> {
     }))
 }
 
+fn starting_owner() -> Result<Arc<RealtimeVoiceAdapter>, &'static str> {
+    let owner = playback_owner()?;
+    owner.ready.store(false, Ordering::Release);
+    owner.devices_ready.store(false, Ordering::Release);
+    {
+        let mut view = owner.view.lock();
+        view.media_ready = false;
+        view.phase = "starting";
+    }
+    Ok(owner)
+}
+
+#[tokio::test]
+async fn early_microphone_discards_startup_audio_and_accepts_fresh_audio_in_either_startup_order()
+-> Result<(), Box<dyn std::error::Error>> {
+    for devices_first in [true, false] {
+        let owner = starting_owner()?;
+        if devices_first {
+            voice::webrtc::devices_started(&owner);
+        } else {
+            voice::webrtc::media_connected(&owner);
+        }
+        assert_eq!(owner.view.lock().phase, "starting");
+        assert!(owner.capture(
+            &[111; voice::FRAME],
+            owner.input.generation(),
+            Instant::now()
+        ));
+        assert_eq!(owner.input.diagnostics().0, 0);
+
+        if devices_first {
+            voice::webrtc::media_connected(&owner);
+        } else {
+            voice::webrtc::devices_started(&owner);
+        }
+        // Listening still requires a packet actually sent, not merely an open mic.
+        assert_eq!(owner.view.lock().phase, "starting");
+        assert!(owner.capture(
+            &[222; voice::FRAME],
+            owner.input.generation(),
+            Instant::now()
+        ));
+        let mut packet = ::audio_ingress::Packet::new(voice::FRAME * 4);
+        tokio::time::timeout(Duration::from_secs(1), owner.next_capture(&mut packet)).await??;
+        assert_eq!(packet.samples, [222; voice::FRAME]);
+        voice::webrtc::input_started(&owner);
+        assert_eq!(owner.view.lock().phase, "listening");
+    }
+    Ok(())
+}
+
+#[test]
+fn early_device_completion_preserves_mute_and_cannot_reopen_a_closed_call()
+-> Result<(), Box<dyn std::error::Error>> {
+    let owner = starting_owner()?;
+    owner.view.lock().muted = true;
+    owner.input.set_muted(true);
+    voice::webrtc::devices_started(&owner);
+    voice::webrtc::media_connected(&owner);
+    assert_eq!(owner.view.lock().phase, "muted");
+    assert!(owner.capture(
+        &[111; voice::FRAME],
+        owner.input.generation(),
+        Instant::now()
+    ));
+    assert_eq!(owner.input.diagnostics().0, 0);
+
+    owner.close();
+    voice::webrtc::media_connected(&owner);
+    voice::webrtc::devices_started(&owner);
+    assert_eq!(owner.view.lock().phase, "closed");
+    assert!(!owner.view.lock().media_ready);
+    assert!(!owner.capture(
+        &[222; voice::FRAME],
+        owner.input.generation(),
+        Instant::now()
+    ));
+    Ok(())
+}
+
 fn authorized_credential() -> Result<NativeCredential, Box<dyn std::error::Error>> {
     use std::ffi::c_void;
     unsafe extern "C" fn read(context: *mut c_void, out: *mut u8, capacity: usize) -> i32 {
@@ -282,7 +362,8 @@ async fn local_cue_keeps_microphone_live_without_advancing_assistant_playback()
 }
 
 /// Explicitly billable: exercise the full application actor beyond its heartbeat deadline.
-#[tokio::test]
+// Native audio callbacks run independently of network/DSP work in the app.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires explicitly authorized OPENAI_API_KEY and network access"]
 async fn public_live_call_survives_a_minute_with_native_playback()
 -> Result<(), Box<dyn std::error::Error>> {
@@ -298,12 +379,9 @@ async fn public_live_call_survives_a_minute_with_native_playback()
         .copied()
         .map(i16::from_le_bytes)
         .collect::<Vec<_>>();
-    let owner = playback_owner()?;
-    {
-        let mut view = owner.view.lock();
-        view.media_ready = false;
-        view.phase = "starting";
-    }
+    let owner = starting_owner()?;
+    // Model Android/iOS acquiring the microphone before the API exchange.
+    voice::webrtc::devices_started(&owner);
     owner.output.lock().live_transcript = Some(voice::live::captions::Transcript::default());
     *owner.echo.lock() = Some(voice::echo::MediaEchoCanceller::new()?);
     let (commands, command_rx) = tokio::sync::mpsc::channel(8);
@@ -406,19 +484,24 @@ async fn public_live_call_survives_a_minute_with_native_playback()
     };
     let view = owner.view.lock();
     eprintln!(
-        "Full Live call: elapsed_ms={} active_ms={} peak={peak} result={result:?} cleanup={cleanup:?} cue_overlap={captured_during_cue} cue_rendered={rendered_cue} input_samples={offset} media={} uploaded={} caption_events={} server_events={} finalized={}",
+        "Full Live call: elapsed_ms={} active_ms={} peak={peak} result={result:?} cleanup={cleanup:?} cue_overlap={captured_during_cue} cue_rendered={rendered_cue} input_samples={offset} media={} uploaded={} caption_events={} server_events={} finalized={} phase={} error={:?}",
         startup::elapsed(started),
         ready_at.map_or(0, startup::elapsed),
         serde_json::to_string(&view.media)?,
         view.uploaded_packets,
         view.caption_events,
         view.server_events,
-        view.usage_finalized
+        view.usage_finalized,
+        view.phase,
+        view.error
     );
     let reliable = view.media.reliable_rtp_packets == view.media.rtp_packets;
     let late_packets = view.media.late_packets;
+    let phase = view.phase;
+    let error = view.error;
     drop(view);
     result?;
+    assert_ne!(phase, "error", "Native call failed: {error:?}");
     assert!(
         ready_at.is_some_and(|at| at.elapsed() >= duration),
         "Call ended before its heartbeat deadline"

@@ -179,3 +179,43 @@ measured. The actionable follow-ups are to measure Whip's HTTP construction and
 network/server phases separately, add SPED support, and investigate overlapping
 native preparation with negotiation. ChatGPT's private prewarm paths should not
 be assumed to have equivalent public API lifecycle or billing behavior.
+
+## Early microphone acquisition
+
+The upload-signed arm64 APK with SHA-256
+`345db23b540458820bc2d79548a474cfaea16eb0b41c9267729489db3f319a19`
+opens Android call devices while Rust creates and negotiates the session.
+Both backends handle either device/transport completion order. The phone
+measurements below use the same app process. Live trial 1 was the first call
+after installation and relaunch; OS/DNS caches were not cleared. Realtime
+trials followed the Live trials, so they are not cold-process measurements.
+
+| Backend / trial | Microphone started | First captured frame | First RTP / Listening | Session POST | Negotiation |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Live 1 | 737 ms | 853 ms | 4,116 ms | 2,600 ms | 768 ms |
+| Live 2 | 654 ms | 763 ms | 2,545 ms | 969 ms | 981 ms |
+| Live 3 | 1,067 ms | 1,171 ms | 4,283 ms | 2,358 ms | 912 ms |
+| Realtime 1 | 892 ms | 1,009 ms | 4,693 ms | 3,138 ms | 735 ms |
+| Realtime 2 | 1,517 ms | 1,662 ms | 3,147 ms | 893 ms | 763 ms |
+| Realtime 3 | 968 ms | 1,076 ms | 5,166 ms | 3,580 ms | 677 ms |
+
+Device setup now overlaps the network wait instead of following negotiation.
+These six calls demonstrate that ordering; they do not establish an overall
+before/after speed improvement under varying network conditions. Repeat calls
+also had up to 977 ms of queued transition time, and suspending chat speech
+took 288–412 ms. Early acquisition does not remove those waits or shorten the
+session POST. Listening still means the first microphone packet was sent;
+pre-connection microphone frames are discarded rather than replayed.
+
+Validation includes 152 passing voice regressions, strict Rust lint, Android
+release build/lint, and a real Live actor call with devices ready before session
+creation. That API call stayed active for over 65 seconds, received/decoded
+3,153 reliable RTP packets with zero late packets or concealment, advanced
+captions, kept capture live through the cue, and finalized usage and transport
+cleanup. The host probe uses independent Tokio workers and optimized DSP
+dependencies, matching release DSP rather than timing scalar debug resamplers.
+Unoptimized/single-threaded attempts exceeded the playback budget; the budget
+was retained. The standalone probe did not configure app storage and reported
+a post-call history-save warning, outside the audio/transport checks.
+
+[Numeric phone measurements](voice-early-microphone-profile.json)

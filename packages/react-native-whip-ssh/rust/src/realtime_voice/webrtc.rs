@@ -223,15 +223,7 @@ pub(super) async fn start(
         workers: vec![sideband, media],
         live_closed: None,
     });
-    {
-        let mut view = owner.view.lock();
-        if !owner.closed.load(Ordering::Acquire) {
-            view.media_ready = true;
-        }
-    }
-    if owner.devices_ready.load(Ordering::Acquire) {
-        devices_started(&owner);
-    }
+    media_connected(&owner);
     Ok(socket)
 }
 
@@ -349,6 +341,21 @@ async fn relay_sideband(
                 if closed { return Ok(()); }
             }
         }
+    }
+}
+
+/// Devices and negotiation finish independently. Either completion order must
+/// activate input, without retaining microphone audio from session startup.
+pub(super) fn media_connected(owner: &RealtimeVoiceAdapter) {
+    {
+        let mut view = owner.view.lock();
+        if owner.closed.load(Ordering::Acquire) {
+            return;
+        }
+        view.media_ready = true;
+    }
+    if owner.devices_ready.load(Ordering::Acquire) {
+        devices_started(owner);
     }
 }
 

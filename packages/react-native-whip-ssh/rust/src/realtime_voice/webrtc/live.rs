@@ -258,15 +258,9 @@ pub(in crate::realtime_voice) async fn start(
         workers: vec![sideband, media],
         live_closed: Some(closed),
     });
-    // The POST already accepted the immutable Live configuration. Match
-    // Realtime/Codex: open devices after media negotiation, independently of
-    // when the sideband delivers its initial session snapshot.
-    {
-        let mut view = owner.view.lock();
-        if !owner.closed.load(Ordering::Acquire) {
-            view.media_ready = true;
-        }
-    }
+    // The POST accepted the immutable Live configuration. Devices may already
+    // be running; enable input now without waiting for the sideband snapshot.
+    super::media_connected(&owner);
     Ok((socket, id))
 }
 

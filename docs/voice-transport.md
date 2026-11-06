@@ -103,3 +103,23 @@ This matches the playback ownership in the
 it attaches the remote media stream directly to an autoplaying audio element,
 allowing the platform player to manage buffering. Its browser implementation
 does not supply Android device-routing code.
+
+Android calls acquire and drain the microphone as soon as the native call
+starts, overlapping device setup with the session POST and media negotiation.
+This follows early microphone acquisition in
+[Expo GPT-Live](https://github.com/davidmokos/expo-gpt-live/blob/9e83073ef5b3a986124d9141271c09443cbe8d5b/src/live/transport.ts#L8)
+and the
+[Agents SDK React Native example](https://github.com/openai/openai-agents-js/blob/628f6c6e1d475db53ceab27e91ff0d5c2a28b155/examples/realtime-react-native/src/ReactNativeWebRTCTransport.ts#L163).
+Those examples acquire the microphone before creating the SDP offer. Whip's
+Rust transport can create its offer independently of Android's recorder, so
+it runs both preparations concurrently. iOS already starts its audio engine
+without waiting for negotiation. Output-only Android previews still defer
+device startup and never acquire a microphone.
+
+Both Live and Realtime use the same two-way readiness handshake: the devices
+may start before or after negotiation. Rust discards pre-connection microphone
+frames rather than queueing them for later replay. Input remains muted when
+requested, and Listening/the ready cue still wait for the first microphone
+packet to reach the media sender. Early acquisition removes device setup from
+the end of the startup path; it does not shorten the session POST or network
+negotiation themselves.

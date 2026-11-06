@@ -160,7 +160,11 @@ internal object RealtimeVoice {
           val view = Core.view(session.call)
           val state = JSONObject(view)
           val phase = state.optString("phase")
-          if (phase != "error" && session.output == null && state.optBoolean("mediaReady")) {
+          // Acquire call devices while Rust creates and negotiates the session,
+          // as in the Agents SDK's early getUserMedia flow. Rust drops capture
+          // until both devices and transport are ready; never queue startup PCM.
+          // Output-only previews retain their existing deferred device open.
+          if (phase != "error" && phase != "closed" && session.output == null && (!preview || state.optBoolean("mediaReady"))) {
             try { openDevices(session) } catch (_: Exception) {
               Core.control(session.call, Core.AUDIO_FAILED); stop(token)
               if (!preview) VoiceCallService.end(token)
