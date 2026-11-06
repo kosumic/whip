@@ -95,10 +95,17 @@ pub extern "C" fn whip_voice_credentials_updating(updating: bool) {
     let calls = calls().lock();
     crate::voice_credentials::updating(updating);
     if updating {
+        super::webrtc::prepared::clear();
         for call in calls.values() {
             call.close();
         }
     }
+}
+
+/// Retain local WebRTC resources only; no credential access or HTTP requests.
+#[unsafe(no_mangle)]
+pub extern "C" fn whip_realtime_prepare(enabled: bool) -> bool {
+    super::webrtc::prepared::configure(enabled)
 }
 
 /// # Safety

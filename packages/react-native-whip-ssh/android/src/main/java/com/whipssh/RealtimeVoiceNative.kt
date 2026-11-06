@@ -11,6 +11,7 @@ object RealtimeVoiceNative {
   const val AUDIO_FAILED = 5
   const val MEDIA_READY = 6
   @JvmStatic external fun start(config: String, credentials: Any): Long
+  @JvmStatic external fun prepare(enabled: Boolean): Boolean
   @JvmStatic external fun credentialsUpdating(updating: Boolean)
   @JvmStatic external fun stop(call: Long)
   @JvmStatic external fun stopped(call: Long): Boolean

@@ -1,4 +1,6 @@
 export const es = {
+  'voiceProvider.prepareCalls': "Mantener listo el cliente de voz",
+  'voiceProvider.prepareCallsHelp': "Mantiene recursos WebRTC locales en memoria mientras Whip está abierto. El micrófono y la sesión de API se inician al llamar. La preparación no genera cargos de uso de la API.",
   'voiceUsage.cost': 'Coste',
   'voiceUsage.time': 'Tiempo',
   'voiceUsage.activity': 'Actividad',

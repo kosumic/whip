@@ -26,6 +26,7 @@ jest.mock('react-i18next', () => {
 jest.mock('../src/components/GlassControls', () => ({ GlassButton: 'GlassButton' }));
 jest.mock('../src/components/SettingsDetails', () => ({ DetailsTitle: 'DetailsTitle' }));
 jest.mock('../src/components/ui/input', () => ({ Input: 'Input' }));
+jest.mock('../src/components/ui/switch', () => ({ Switch: 'Switch' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
 jest.mock('../src/components/SpeechVoicePicker', () => ({ SpeechVoicePicker: 'SpeechVoicePicker' }));
 jest.mock('../src/services/openAiVoiceCredentials', () => require('../test-support/mockOpenAiVoiceCredentials').createMockOpenAiVoiceCredentials());
@@ -256,4 +257,13 @@ test('a saved key enables GPT-Live through the existing conversation provider se
   await act(async () => pressText('voiceProvider.openai'));
   expect(providerButton('openai').props.accessibilityState.selected).toBe(true);
   expect(renderer.root.findByType(SpeechVoicePicker).props.selected).toBe('marin');
+});
+
+test('local voice preparation defaults on and can be turned off and on again', async () => {
+  const control = () => renderer.root.findByProps({ accessibilityLabel: 'voiceProvider.prepareCalls' });
+  expect(control().props.checked).toBe(true);
+  await act(async () => control().props.onCheckedChange(false));
+  expect(control().props.checked).toBe(false);
+  await act(async () => control().props.onCheckedChange(true));
+  expect(control().props.checked).toBe(true);
 });

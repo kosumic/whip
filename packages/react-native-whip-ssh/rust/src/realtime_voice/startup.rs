@@ -48,6 +48,7 @@ impl Settings {
 #[derive(Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct Timings {
+    pub prepared_client: bool,
     #[serde(rename = "offerMs")]
     pub offer: Option<u64>,
     #[serde(rename = "negotiationMs")]
@@ -202,7 +203,7 @@ mod tests {
         assert_eq!(
             value,
             serde_json::json!({
-                "offerMs":null,"negotiationMs":null,"preparationMs":null,"credentialsMs":null,"websocketMs":null,
+                "preparedClient":false,"offerMs":null,"negotiationMs":null,"preparationMs":null,"credentialsMs":null,"websocketMs":null,
                 "configurationMs":null,"settingsConfirmedMs":null,"listeningMs":null,"firstInputMs":null
             })
         );

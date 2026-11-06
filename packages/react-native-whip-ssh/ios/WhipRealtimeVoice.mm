@@ -81,7 +81,11 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
   if (updating) [self invalidate];
 }
 - (void)invalidate {
+  whip_realtime_prepare(false);
   if (self.token) { [self stop:self.token]; [WhipVoiceCall.shared invalidate]; }
+}
+- (void)prepare:(BOOL)enabled {
+  whip_realtime_prepare(enabled && UIApplication.sharedApplication.applicationState == UIApplicationStateActive && UIApplication.sharedApplication.protectedDataAvailable);
 }
 - (void)protectedDataLost:(NSNotification *)notification { [self invalidate]; }
 - (void)start:(NSString *)token config:(NSString *)config resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {
@@ -272,7 +276,7 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
 - (void)interrupted:(NSNotification *)notification {
   if ([notification.userInfo[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue] == AVAudioSessionInterruptionTypeBegan) whip_realtime_control(_call.load(), WhipRealtimeAudioFailed);
 }
-- (void)backgrounded:(NSNotification *)notification { if (self.preview && self.token) [self stop:self.token]; }
+- (void)backgrounded:(NSNotification *)notification { whip_realtime_prepare(false); if (self.preview && self.token) [self stop:self.token]; }
 - (void)routeChanged:(NSNotification *)notification {
   if (self.preview && [notification.userInfo[AVAudioSessionRouteChangeReasonKey] unsignedIntegerValue] == AVAudioSessionRouteChangeReasonOldDeviceUnavailable)
     whip_realtime_control(_call.load(), WhipRealtimeAudioFailed);

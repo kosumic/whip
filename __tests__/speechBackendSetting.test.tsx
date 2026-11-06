@@ -12,6 +12,7 @@ jest.mock('../src/services/realtimeVoicePreview', () => ({ RealtimeVoicePreview:
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
 jest.mock('react-native', () => ({ View: 'View' }));
+jest.mock('../src/components/ui/switch', () => ({ Switch: 'Switch' }));
 jest.mock('lucide-react-native/icons/volume-2', () => 'Volume2');
 jest.mock('lucide-react-native/icons/check', () => 'Check');
 jest.mock('react-i18next', () => ({ useTranslation: () => ({

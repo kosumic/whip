@@ -9,6 +9,7 @@ mod live;
 mod media;
 mod network;
 mod packet;
+pub(in crate::realtime_voice) mod prepared;
 mod transport;
 
 use super::{ClientEvent, RealtimeSocket, RealtimeVoiceAdapter, recovery, socket, startup};
@@ -112,6 +113,7 @@ pub(super) async fn start(
     let identity = Arc::new(Mutex::new(identity::Identity::default()));
     let offer_started = Instant::now();
     let mut peer = transport::Transport::new().await?;
+    owner.view.lock().startup.prepared_client = peer.prepared_client;
     if !attempt.current() {
         let _ = peer.close().await;
         return Err(recovery::CANCELLED.into());

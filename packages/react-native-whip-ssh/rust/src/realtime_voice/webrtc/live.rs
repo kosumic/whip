@@ -170,6 +170,7 @@ pub(in crate::realtime_voice) async fn start(
     let identity = Arc::new(Mutex::new(Identity::live()));
     let offered = Instant::now();
     let mut peer = Transport::new().await?;
+    owner.view.lock().startup.prepared_client = peer.prepared_client;
     owner.view.lock().startup.offer = Some(startup::elapsed(offered));
     let created = Instant::now();
     // Retain the POST through cancellation so a returned session can be retired.

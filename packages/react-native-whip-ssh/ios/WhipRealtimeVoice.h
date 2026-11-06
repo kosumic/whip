@@ -13,6 +13,7 @@ int32_t WhipReadOpenAiVoiceCredential(void *context, uint8_t *destination, size_
 + (instancetype)shared;
 - (void)invalidate;
 - (void)credentialsUpdating:(BOOL)updating;
+- (void)prepare:(BOOL)enabled;
 - (void)start:(NSString *)token config:(NSString *)config resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
 - (void)preview:(NSString *)token config:(NSString *)config resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
 - (void)stop:(NSString *)token;

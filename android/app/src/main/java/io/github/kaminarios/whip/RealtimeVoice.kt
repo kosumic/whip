@@ -48,7 +48,11 @@ internal object RealtimeVoice {
     Core.credentialsUpdating(updating)
     if (updating) invalidate()
   }
-  fun invalidate() { current?.let { stop(it.token); VoiceCallService.end(it.token) } }
+  fun invalidate() { clearPrepared(); current?.let { stop(it.token); VoiceCallService.end(it.token) } }
+  fun clearPrepared() { Core.prepare(false) }
+  fun prepare(context: ReactApplicationContext, enabled: Boolean) {
+    Core.prepare(enabled && !context.getSystemService(KeyguardManager::class.java).isDeviceLocked)
+  }
   private class CaptureBoundary(val cutoff: Long = System.nanoTime())
   private class Session(val token: String, val call: Long, var input: AudioRecord?, var output: AudioTrack?, val preview: Boolean, val focus: VoiceMediaFocus?, val mediaStartedAt: Long, val clientElapsedMs: Long) {
     val running = AtomicBoolean(true)
@@ -173,7 +177,8 @@ internal object RealtimeVoice {
           }
           if (!preview) state.optJSONObject("startup")?.let { timings ->
             // Fixed numeric durations only. Never log the enclosing call view.
-            val diagnostic = listOf("preparationMs", "credentialsMs", "offerMs", "configurationMs", "negotiationMs", "websocketMs", "settingsConfirmedMs", "listeningMs", "firstInputMs")
+            val preparedClient = if (timings.optBoolean("preparedClient")) 1 else 0
+            val diagnostic = "preparedClient=$preparedClient " + listOf("preparationMs", "credentialsMs", "offerMs", "configurationMs", "negotiationMs", "websocketMs", "settingsConfirmedMs", "listeningMs", "firstInputMs")
               .filter { !timings.isNull(it) }.joinToString(" ") { "$it=${timings.optLong(it)}" }
             if (session.startupDiagnostic != diagnostic) {
               session.startupDiagnostic = diagnostic

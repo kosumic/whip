@@ -367,6 +367,21 @@ async fn local_cue_keeps_microphone_live_without_advancing_assistant_playback()
 #[ignore = "requires explicitly authorized OPENAI_API_KEY and network access"]
 async fn public_live_call_survives_a_minute_with_native_playback()
 -> Result<(), Box<dyn std::error::Error>> {
+    full_live_playback(false).await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires explicitly authorized OPENAI_API_KEY and network access"]
+async fn public_locally_prepared_live_call_survives_a_minute_with_native_playback()
+-> Result<(), Box<dyn std::error::Error>> {
+    full_live_playback(true).await
+}
+
+async fn full_live_playback(prepared: bool) -> Result<(), Box<dyn std::error::Error>> {
+    if prepared {
+        assert!(voice::webrtc::prepared::configure(true));
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
     let credential = authorized_credential()?;
     let config: voice::Config =
         serde_json::from_value(json!({"live":true,"webrtc":true,"voice":"quartz","global":true}))?;
@@ -415,6 +430,7 @@ async fn public_live_call_survives_a_minute_with_native_playback()
             break;
         }
         if ready_at.is_none() && owner.view.lock().media_ready {
+            assert_eq!(owner.view.lock().startup.prepared_client, prepared);
             ready_at = Some(Instant::now());
             eprintln!("Full Live media ready_ms={}", startup::elapsed(started));
         }

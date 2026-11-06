@@ -93,6 +93,10 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_whipssh_RealtimeVoiceNative_credentialsUpdating(JNIEnv *, jclass, jboolean updating) {
     whip_voice_credentials_updating(updating);
 }
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_whipssh_RealtimeVoiceNative_prepare(JNIEnv *, jclass, jboolean enabled) {
+    return whip_realtime_prepare(enabled);
+}
 extern "C" JNIEXPORT void JNICALL
 Java_com_whipssh_RealtimeVoiceNative_stop(JNIEnv *, jclass, jlong call) { whip_realtime_stop(call); }
 extern "C" JNIEXPORT jboolean JNICALL

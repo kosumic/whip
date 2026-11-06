@@ -26,6 +26,7 @@ pub(crate) struct Transport {
     pub(crate) audio: AudioTrack,
     pub(crate) ready: watch::Receiver<bool>,
     pub(super) failure: watch::Receiver<Option<&'static str>>,
+    pub(crate) prepared_client: bool,
     offer: String,
     commands: mpsc::Sender<Command>,
     stop: watch::Sender<bool>,
@@ -43,7 +44,7 @@ impl Transport {
         let (failed, failure) = watch::channel(None);
         let (stop, stopped) = watch::channel(false);
         let (commands, command_rx) = mpsc::channel(8);
-        let (driver, offer) =
+        let (driver, offer, prepared_client) =
             Driver::new(ingress, ready, failed, command_rx, stopped, protocol).await?;
         // Transport dependencies must never emit wire payloads, SDP, or keys,
         // including when a host application installs a tracing subscriber.
@@ -54,6 +55,7 @@ impl Transport {
         );
         Ok(Self {
             incoming,
+            prepared_client,
             audio: AudioTrack::new(commands.clone(), failure.clone()),
             ready: connected,
             failure,

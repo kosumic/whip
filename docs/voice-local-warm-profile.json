@@ -1,0 +1,886 @@
+{
+  "measuredAt": "2026-11-06T06:39:07.295Z",
+  "device": {
+    "model": "Pixel 9 Pro",
+    "androidSdk": 37,
+    "architecture": "arm64-v8a"
+  },
+  "apk": {
+    "sha256": "7ac5869e0f1013973e3788f5f867362bb021c65ec5c2086c9592692740bfb60e",
+    "artifact": "installed.apk",
+    "userConfirmedChanges": true,
+    "sourceRevision": "installed build; exact source snapshot not identified"
+  },
+  "method": {
+    "sameProcess": true,
+    "pid": "17608",
+    "processRestarted": false,
+    "conditionOrder": "GPT-Live off×3,on×3; memory on/off/off/on; Realtime on×2,off×2; GPT-Live off×2,on×2",
+    "startupMetric": "JS call request to microphone startup and first uploaded RTP; excludes first model response",
+    "firstTrial": "First observed call in an already-running process; not a controlled fresh-process cold start.",
+    "idleCheck": {
+      "trial": 7,
+      "minimumPreparedIdleSeconds": 65,
+      "result": "Fresh negotiation and settings confirmation succeeded"
+    },
+    "limitations": [
+      "Small sequential sample; server response time, CPU scheduling and thermal state are uncontrolled.",
+      "Startup tests do not verify subjective speech quality or caption highlighting.",
+      "Exact installed source snapshot not identified; installed APK hash is authoritative."
+    ]
+  },
+  "trials": [
+    {
+      "trial": 1,
+      "mode": "live",
+      "warm": "off",
+      "pid": "17608",
+      "transitionMs": 14,
+      "permissionMs": 12,
+      "speechSuspendMs": 54,
+      "callServiceMs": 39,
+      "preMediaMs": 120,
+      "coreStartMs": 75,
+      "mediaSetupMs": 242,
+      "micStartMs": 455,
+      "preparedClient": 0,
+      "preparationMs": 8,
+      "credentialsMs": 65,
+      "offerMs": 70,
+      "firstCaptureMs": 573,
+      "configurationMs": 5483,
+      "negotiationMs": 769,
+      "listeningMs": 6555,
+      "firstInputMs": 6555,
+      "websocketMs": 1985,
+      "settingsConfirmedMs": 7746
+    },
+    {
+      "trial": 2,
+      "mode": "live",
+      "warm": "off",
+      "pid": "17608",
+      "transitionMs": 20,
+      "permissionMs": 7,
+      "speechSuspendMs": 53,
+      "callServiceMs": 40,
+      "preMediaMs": 120,
+      "coreStartMs": 78,
+      "mediaSetupMs": 92,
+      "micStartMs": 305,
+      "preparedClient": 0,
+      "preparationMs": 10,
+      "credentialsMs": 68,
+      "offerMs": 12,
+      "firstCaptureMs": 411,
+      "configurationMs": 1269,
+      "websocketMs": 944,
+      "negotiationMs": 1089,
+      "settingsConfirmedMs": 2574,
+      "listeningMs": 2616,
+      "firstInputMs": 2616
+    },
+    {
+      "trial": 3,
+      "mode": "live",
+      "warm": "off",
+      "pid": "17608",
+      "transitionMs": 16,
+      "permissionMs": 22,
+      "speechSuspendMs": 87,
+      "callServiceMs": 28,
+      "preMediaMs": 154,
+      "coreStartMs": 79,
+      "mediaSetupMs": 100,
+      "micStartMs": 353,
+      "preparedClient": 0,
+      "preparationMs": 11,
+      "credentialsMs": 67,
+      "offerMs": 6,
+      "firstCaptureMs": 469,
+      "configurationMs": 931,
+      "negotiationMs": 860,
+      "listeningMs": 2076,
+      "firstInputMs": 2076,
+      "websocketMs": 995,
+      "settingsConfirmedMs": 2169
+    },
+    {
+      "trial": 4,
+      "mode": "live",
+      "warm": "on",
+      "pid": "17608",
+      "transitionMs": 16,
+      "permissionMs": 16,
+      "speechSuspendMs": 98,
+      "callServiceMs": 56,
+      "preMediaMs": 188,
+      "coreStartMs": 42,
+      "mediaSetupMs": 94,
+      "micStartMs": 336,
+      "preparedClient": 1,
+      "preparationMs": 9,
+      "credentialsMs": 32,
+      "firstCaptureMs": 437,
+      "offerMs": 10,
+      "configurationMs": 899,
+      "negotiationMs": 935,
+      "websocketMs": 937,
+      "settingsConfirmedMs": 2086,
+      "listeningMs": 2117,
+      "firstInputMs": 2117
+    },
+    {
+      "trial": 5,
+      "mode": "live",
+      "warm": "on",
+      "pid": "17608",
+      "transitionMs": 18,
+      "permissionMs": 20,
+      "speechSuspendMs": 65,
+      "callServiceMs": 44,
+      "preMediaMs": 149,
+      "coreStartMs": 77,
+      "mediaSetupMs": 91,
+      "micStartMs": 338,
+      "preparedClient": 1,
+      "preparationMs": 8,
+      "credentialsMs": 68,
+      "offerMs": 9,
+      "firstCaptureMs": 444,
+      "configurationMs": 713,
+      "negotiationMs": 934,
+      "websocketMs": 1000,
+      "settingsConfirmedMs": 1961,
+      "listeningMs": 1931,
+      "firstInputMs": 1931
+    },
+    {
+      "trial": 6,
+      "mode": "live",
+      "warm": "on",
+      "pid": "17608",
+      "transitionMs": 29,
+      "permissionMs": 14,
+      "speechSuspendMs": 48,
+      "callServiceMs": 31,
+      "preMediaMs": 122,
+      "coreStartMs": 77,
+      "mediaSetupMs": 79,
+      "micStartMs": 291,
+      "preparedClient": 1,
+      "preparationMs": 8,
+      "credentialsMs": 68,
+      "offerMs": 4,
+      "firstCaptureMs": 395,
+      "configurationMs": 697,
+      "negotiationMs": 826,
+      "listeningMs": 1764,
+      "firstInputMs": 1764,
+      "websocketMs": 975,
+      "settingsConfirmedMs": 1882
+    },
+    {
+      "trial": 7,
+      "mode": "realtime",
+      "warm": "on",
+      "pid": "17608",
+      "transitionMs": 22,
+      "permissionMs": 14,
+      "speechSuspendMs": 41,
+      "callServiceMs": 35,
+      "preMediaMs": 113,
+      "coreStartMs": 75,
+      "mediaSetupMs": 30,
+      "micStartMs": 231,
+      "preparedClient": 1,
+      "preparationMs": 9,
+      "credentialsMs": 66,
+      "offerMs": 4,
+      "firstCaptureMs": 345,
+      "configurationMs": 3156,
+      "negotiationMs": 757,
+      "listeningMs": 4147,
+      "firstInputMs": 4147,
+      "websocketMs": 955,
+      "settingsConfirmedMs": 4576
+    },
+    {
+      "trial": 8,
+      "mode": "realtime",
+      "warm": "on",
+      "pid": "17608",
+      "transitionMs": 16,
+      "permissionMs": 27,
+      "speechSuspendMs": 92,
+      "callServiceMs": 27,
+      "preMediaMs": 161,
+      "coreStartMs": 76,
+      "mediaSetupMs": 92,
+      "micStartMs": 346,
+      "preparedClient": 1,
+      "preparationMs": 8,
+      "credentialsMs": 66,
+      "offerMs": 15,
+      "firstCaptureMs": 457,
+      "configurationMs": 1228,
+      "websocketMs": 956,
+      "negotiationMs": 1135,
+      "settingsConfirmedMs": 2689,
+      "listeningMs": 2662,
+      "firstInputMs": 2662
+    },
+    {
+      "trial": 9,
+      "mode": "realtime",
+      "warm": "off",
+      "pid": "17608",
+      "transitionMs": 18,
+      "permissionMs": 13,
+      "speechSuspendMs": 53,
+      "callServiceMs": 51,
+      "preMediaMs": 134,
+      "coreStartMs": 42,
+      "mediaSetupMs": 93,
+      "micStartMs": 281,
+      "preparedClient": 0,
+      "preparationMs": 9,
+      "credentialsMs": 32,
+      "offerMs": 14,
+      "firstCaptureMs": 396,
+      "configurationMs": 2609,
+      "negotiationMs": 680,
+      "listeningMs": 3523,
+      "firstInputMs": 3523,
+      "websocketMs": 938,
+      "settingsConfirmedMs": 4002
+    },
+    {
+      "trial": 10,
+      "mode": "realtime",
+      "warm": "off",
+      "pid": "17608",
+      "transitionMs": 13,
+      "permissionMs": 13,
+      "speechSuspendMs": 45,
+      "callServiceMs": 28,
+      "preMediaMs": 101,
+      "coreStartMs": 76,
+      "mediaSetupMs": 81,
+      "micStartMs": 273,
+      "preparedClient": 0,
+      "preparationMs": 8,
+      "credentialsMs": 67,
+      "offerMs": 8,
+      "firstCaptureMs": 400,
+      "configurationMs": 1811,
+      "negotiationMs": 904,
+      "websocketMs": 981,
+      "listeningMs": 2949,
+      "firstInputMs": 2949,
+      "settingsConfirmedMs": 3234
+    },
+    {
+      "trial": 11,
+      "mode": "live",
+      "warm": "off",
+      "pid": "17608",
+      "transitionMs": 16,
+      "permissionMs": 14,
+      "speechSuspendMs": 96,
+      "callServiceMs": 32,
+      "preMediaMs": 158,
+      "coreStartMs": 77,
+      "mediaSetupMs": 40,
+      "micStartMs": 288,
+      "preparedClient": 0,
+      "preparationMs": 8,
+      "credentialsMs": 68,
+      "firstCaptureMs": 391,
+      "offerMs": 17,
+      "configurationMs": 2744,
+      "websocketMs": 965,
+      "negotiationMs": 1366,
+      "settingsConfirmedMs": 4366,
+      "listeningMs": 4391,
+      "firstInputMs": 4391
+    },
+    {
+      "trial": 12,
+      "mode": "live",
+      "warm": "off",
+      "pid": "17608",
+      "transitionMs": 50,
+      "permissionMs": 33,
+      "speechSuspendMs": 63,
+      "callServiceMs": 25,
+      "preMediaMs": 172,
+      "coreStartMs": 76,
+      "mediaSetupMs": 93,
+      "micStartMs": 357,
+      "preparedClient": 0,
+      "preparationMs": 8,
+      "credentialsMs": 67,
+      "offerMs": 8,
+      "firstCaptureMs": 472,
+      "configurationMs": 2395,
+      "negotiationMs": 931,
+      "listeningMs": 3621,
+      "firstInputMs": 3621,
+      "websocketMs": 1089,
+      "settingsConfirmedMs": 3748
+    },
+    {
+      "trial": 13,
+      "mode": "live",
+      "warm": "on",
+      "pid": "17608",
+      "transitionMs": 22,
+      "permissionMs": 35,
+      "speechSuspendMs": 52,
+      "callServiceMs": 25,
+      "preMediaMs": 134,
+      "coreStartMs": 79,
+      "mediaSetupMs": 85,
+      "micStartMs": 313,
+      "preparedClient": 1,
+      "preparationMs": 8,
+      "credentialsMs": 69,
+      "offerMs": 8,
+      "firstCaptureMs": 430,
+      "configurationMs": 992,
+      "websocketMs": 1002,
+      "negotiationMs": 1221,
+      "settingsConfirmedMs": 2442,
+      "listeningMs": 2478,
+      "firstInputMs": 2478
+    },
+    {
+      "trial": 14,
+      "mode": "live",
+      "warm": "on",
+      "pid": "17608",
+      "transitionMs": 48,
+      "permissionMs": 24,
+      "speechSuspendMs": 35,
+      "callServiceMs": 60,
+      "preMediaMs": 167,
+      "coreStartMs": 79,
+      "mediaSetupMs": 91,
+      "micStartMs": 356,
+      "preparedClient": 1,
+      "preparationMs": 10,
+      "credentialsMs": 68,
+      "offerMs": 6,
+      "firstCaptureMs": 465,
+      "configurationMs": 2407,
+      "websocketMs": 972,
+      "negotiationMs": 1001,
+      "settingsConfirmedMs": 3667,
+      "listeningMs": 3705,
+      "firstInputMs": 3705
+    }
+  ],
+  "memory": {
+    "unit": "KiB",
+    "order": [
+      "on-1",
+      "off-2",
+      "off-3",
+      "on-4"
+    ],
+    "noCallsDuringSampling": true,
+    "blocks": [
+      {
+        "enabled": true,
+        "label": "on-1",
+        "samples": [
+          {
+            "timestamp": "2026-11-06T06:41:01.791Z",
+            "processes": [
+              {
+                "pid": 17942,
+                "name": "com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0",
+                "reportedPssKb": 109408,
+                "rssKb": 194728,
+                "swapPssKb": 25615,
+                "nativeHeapAllocatedKb": 6479,
+                "javaHeapAllocatedKb": 2129,
+                "views": 0,
+                "webViews": 0
+              },
+              {
+                "pid": 17608,
+                "name": "io.github.kaminarios.whip",
+                "reportedPssKb": 1780032,
+                "rssKb": 1909088,
+                "swapPssKb": 44275,
+                "nativeHeapAllocatedKb": 1612995,
+                "javaHeapAllocatedKb": 35923,
+                "views": 2277,
+                "webViews": 1
+              }
+            ]
+          },
+          {
+            "timestamp": "2026-11-06T06:41:07.869Z",
+            "processes": [
+              {
+                "pid": 17942,
+                "name": "com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0",
+                "reportedPssKb": 114043,
+                "rssKb": 208600,
+                "swapPssKb": 24208,
+                "nativeHeapAllocatedKb": 6480,
+                "javaHeapAllocatedKb": 2133,
+                "views": 0,
+                "webViews": 0
+              },
+              {
+                "pid": 17608,
+                "name": "io.github.kaminarios.whip",
+                "reportedPssKb": 1765185,
+                "rssKb": 1897436,
+                "swapPssKb": 44167,
+                "nativeHeapAllocatedKb": 1606987,
+                "javaHeapAllocatedKb": 35427,
+                "views": 2277,
+                "webViews": 1
+              }
+            ]
+          },
+          {
+            "timestamp": "2026-11-06T06:41:10.479Z",
+            "processes": [
+              {
+                "pid": 17942,
+                "name": "com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0",
+                "reportedPssKb": 113866,
+                "rssKb": 208468,
+                "swapPssKb": 24185,
+                "nativeHeapAllocatedKb": 6480,
+                "javaHeapAllocatedKb": 2133,
+                "views": 0,
+                "webViews": 0
+              },
+              {
+                "pid": 17608,
+                "name": "io.github.kaminarios.whip",
+                "reportedPssKb": 1763228,
+                "rssKb": 1895544,
+                "swapPssKb": 44167,
+                "nativeHeapAllocatedKb": 1606841,
+                "javaHeapAllocatedKb": 35323,
+                "views": 2277,
+                "webViews": 1
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "enabled": false,
+        "label": "off-2",
+        "samples": [
+          {
+            "timestamp": "2026-11-06T06:41:16.881Z",
+            "processes": [
+              {
+                "pid": 17942,
+                "name": "com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0",
+                "reportedPssKb": 102927,
+                "rssKb": 197660,
+                "swapPssKb": 24161,
+                "nativeHeapAllocatedKb": 6480,
+                "javaHeapAllocatedKb": 2133,
+                "views": 0,
+                "webViews": 0
+              },
+              {
+                "pid": 17608,
+                "name": "io.github.kaminarios.whip",
+                "reportedPssKb": 1765548,
+                "rssKb": 1898036,
+                "swapPssKb": 44167,
+                "nativeHeapAllocatedKb": 1607726,
+                "javaHeapAllocatedKb": 35471,
+                "views": 2277,
+                "webViews": 1
+              }
+            ]
+          },
+          {
+            "timestamp": "2026-11-06T06:41:19.455Z",
+            "processes": [
+              {
+                "pid": 17942,
+                "name": "com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0",
+                "reportedPssKb": 100903,
+                "rssKb": 195640,
+                "swapPssKb": 24157,
+                "nativeHeapAllocatedKb": 6480,
+                "javaHeapAllocatedKb": 2133,
+                "views": 0,
+                "webViews": 0
+              },
+              {
+                "pid": 17608,
+                "name": "io.github.kaminarios.whip",
+                "reportedPssKb": 1765787,
+                "rssKb": 1898276,
+                "swapPssKb": 44167,
+                "nativeHeapAllocatedKb": 1608066,
+                "javaHeapAllocatedKb": 35703,
+                "views": 2272,
+                "webViews": 1
+              }
+            ]
+          },
+          {
+            "timestamp": "2026-11-06T06:41:21.970Z",
+            "processes": [
+              {
+                "pid": 17942,
+                "name": "com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0",
+                "reportedPssKb": 101587,
+                "rssKb": 196324,
+                "swapPssKb": 24157,
+                "nativeHeapAllocatedKb": 6480,
+                "javaHeapAllocatedKb": 2133,
+                "views": 0,
+                "webViews": 0
+              },
+              {
+                "pid": 17608,
+                "name": "io.github.kaminarios.whip",
+                "reportedPssKb": 1767745,
+                "rssKb": 1900240,
+                "swapPssKb": 44167,
+                "nativeHeapAllocatedKb": 1609759,
+                "javaHeapAllocatedKb": 35683,
+                "views": 2272,
+                "webViews": 1
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "enabled": false,
+        "label": "off-3",
+        "samples": [
+          {
+            "timestamp": "2026-11-06T06:41:28.782Z",
+            "processes": [
+              {
+                "pid": 17942,
+                "name": "com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0",
+                "reportedPssKb": 102327,
+                "rssKb": 197064,
+                "swapPssKb": 24157,
+                "nativeHeapAllocatedKb": 6480,
+                "javaHeapAllocatedKb": 2133,
+                "views": 0,
+                "webViews": 0
+              },
+              {
+                "pid": 17608,
+                "name": "io.github.kaminarios.whip",
+                "reportedPssKb": 1771589,
+                "rssKb": 1904116,
+                "swapPssKb": 44167,
+                "nativeHeapAllocatedKb": 1610276,
+                "javaHeapAllocatedKb": 35967,
+                "views": 2272,
+                "webViews": 1
+              }
+            ]
+          },
+          {
+            "timestamp": "2026-11-06T06:41:31.711Z",
+            "processes": [
+              {
+                "pid": 17942,
+                "name": "com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0",
+                "reportedPssKb": 102147,
+                "rssKb": 196884,
+                "swapPssKb": 24157,
+                "nativeHeapAllocatedKb": 6480,
+                "javaHeapAllocatedKb": 2133,
+                "views": 0,
+                "webViews": 0
+              },
+              {
+                "pid": 17608,
+                "name": "io.github.kaminarios.whip",
+                "reportedPssKb": 1767409,
+                "rssKb": 1899964,
+                "swapPssKb": 44167,
+                "nativeHeapAllocatedKb": 1609798,
+                "javaHeapAllocatedKb": 35891,
+                "views": 2272,
+                "webViews": 1
+              }
+            ]
+          },
+          {
+            "timestamp": "2026-11-06T06:41:34.331Z",
+            "processes": [
+              {
+                "pid": 17942,
+                "name": "com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0",
+                "reportedPssKb": 103195,
+                "rssKb": 197932,
+                "swapPssKb": 24157,
+                "nativeHeapAllocatedKb": 6480,
+                "javaHeapAllocatedKb": 2133,
+                "views": 0,
+                "webViews": 0
+              },
+              {
+                "pid": 17608,
+                "name": "io.github.kaminarios.whip",
+                "reportedPssKb": 1772137,
+                "rssKb": 1904692,
+                "swapPssKb": 44167,
+                "nativeHeapAllocatedKb": 1609482,
+                "javaHeapAllocatedKb": 35687,
+                "views": 2272,
+                "webViews": 1
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "enabled": true,
+        "label": "on-4",
+        "samples": [
+          {
+            "timestamp": "2026-11-06T06:41:40.718Z",
+            "processes": [
+              {
+                "pid": 17942,
+                "name": "com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0",
+                "reportedPssKb": 106209,
+                "rssKb": 200916,
+                "swapPssKb": 24157,
+                "nativeHeapAllocatedKb": 6480,
+                "javaHeapAllocatedKb": 2133,
+                "views": 0,
+                "webViews": 0
+              },
+              {
+                "pid": 17608,
+                "name": "io.github.kaminarios.whip",
+                "reportedPssKb": 1765765,
+                "rssKb": 1897824,
+                "swapPssKb": 44551,
+                "nativeHeapAllocatedKb": 1609909,
+                "javaHeapAllocatedKb": 35731,
+                "views": 2272,
+                "webViews": 1
+              }
+            ]
+          },
+          {
+            "timestamp": "2026-11-06T06:41:43.278Z",
+            "processes": [
+              {
+                "pid": 17942,
+                "name": "com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0",
+                "reportedPssKb": 106320,
+                "rssKb": 201028,
+                "swapPssKb": 24157,
+                "nativeHeapAllocatedKb": 6480,
+                "javaHeapAllocatedKb": 2133,
+                "views": 0,
+                "webViews": 0
+              },
+              {
+                "pid": 17608,
+                "name": "io.github.kaminarios.whip",
+                "reportedPssKb": 1765005,
+                "rssKb": 1897072,
+                "swapPssKb": 44551,
+                "nativeHeapAllocatedKb": 1609733,
+                "javaHeapAllocatedKb": 35619,
+                "views": 2272,
+                "webViews": 1
+              }
+            ]
+          },
+          {
+            "timestamp": "2026-11-06T06:41:45.863Z",
+            "processes": [
+              {
+                "pid": 17942,
+                "name": "com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0",
+                "reportedPssKb": 106875,
+                "rssKb": 201588,
+                "swapPssKb": 24149,
+                "nativeHeapAllocatedKb": 6480,
+                "javaHeapAllocatedKb": 2133,
+                "views": 0,
+                "webViews": 0
+              },
+              {
+                "pid": 17608,
+                "name": "io.github.kaminarios.whip",
+                "reportedPssKb": 1764441,
+                "rssKb": 1896512,
+                "swapPssKb": 44551,
+                "nativeHeapAllocatedKb": 1609802,
+                "javaHeapAllocatedKb": 35655,
+                "views": 2272,
+                "webViews": 1
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "summary": [
+      {
+        "enabled": false,
+        "count": 6,
+        "nativeHeapAllocatedKb": {
+          "median": 1609620.5,
+          "min": 1607726,
+          "max": 1610276
+        },
+        "rssKb": {
+          "median": 1900102,
+          "min": 1898036,
+          "max": 1904692
+        },
+        "reportedPssKb": {
+          "median": 1767577,
+          "min": 1765548,
+          "max": 1772137
+        }
+      },
+      {
+        "enabled": true,
+        "count": 6,
+        "nativeHeapAllocatedKb": {
+          "median": 1609767.5,
+          "min": 1606841,
+          "max": 1612995
+        },
+        "rssKb": {
+          "median": 1897254,
+          "min": 1895544,
+          "max": 1909088
+        },
+        "reportedPssKb": {
+          "median": 1765095,
+          "min": 1763228,
+          "max": 1780032
+        }
+      }
+    ]
+  },
+  "startupSummary": [
+    {
+      "mode": "live",
+      "warm": "off",
+      "count": 5,
+      "offerMs": {
+        "median": 12,
+        "min": 6,
+        "max": 70
+      },
+      "configurationMs": {
+        "median": 2395,
+        "min": 931,
+        "max": 5483
+      },
+      "listeningMs": {
+        "median": 3621,
+        "min": 2076,
+        "max": 6555
+      },
+      "settingsConfirmedMs": {
+        "median": 3748,
+        "min": 2169,
+        "max": 7746
+      }
+    },
+    {
+      "mode": "live",
+      "warm": "on",
+      "count": 5,
+      "offerMs": {
+        "median": 8,
+        "min": 4,
+        "max": 10
+      },
+      "configurationMs": {
+        "median": 899,
+        "min": 697,
+        "max": 2407
+      },
+      "listeningMs": {
+        "median": 2117,
+        "min": 1764,
+        "max": 3705
+      },
+      "settingsConfirmedMs": {
+        "median": 2086,
+        "min": 1882,
+        "max": 3667
+      }
+    },
+    {
+      "mode": "realtime",
+      "warm": "off",
+      "count": 2,
+      "offerMs": {
+        "median": 11,
+        "min": 8,
+        "max": 14
+      },
+      "configurationMs": {
+        "median": 2210,
+        "min": 1811,
+        "max": 2609
+      },
+      "listeningMs": {
+        "median": 3236,
+        "min": 2949,
+        "max": 3523
+      },
+      "settingsConfirmedMs": {
+        "median": 3618,
+        "min": 3234,
+        "max": 4002
+      }
+    },
+    {
+      "mode": "realtime",
+      "warm": "on",
+      "count": 2,
+      "offerMs": {
+        "median": 9.5,
+        "min": 4,
+        "max": 15
+      },
+      "configurationMs": {
+        "median": 2192,
+        "min": 1228,
+        "max": 3156
+      },
+      "listeningMs": {
+        "median": 3404.5,
+        "min": 2662,
+        "max": 4147
+      },
+      "settingsConfirmedMs": {
+        "median": 3632.5,
+        "min": 2689,
+        "max": 4576
+      }
+    }
+  ]
+}

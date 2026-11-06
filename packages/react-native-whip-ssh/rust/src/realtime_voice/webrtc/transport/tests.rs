@@ -93,6 +93,18 @@ fn audio() -> Result<(MediaEngine, Arc<TrackLocalStaticSample>), Box<dyn std::er
 }
 #[tokio::test]
 async fn udp_and_tcp_media_survive_bursts_of_mirrored_data_channel_events() -> TestResult {
+    transport_bursts(false).await
+}
+
+#[tokio::test]
+async fn prepared_crypto_creates_fresh_udp_and_tcp_connections() -> TestResult {
+    super::super::prepared::configure(true);
+    let result = transport_bursts(true).await;
+    super::super::prepared::configure(false);
+    result
+}
+
+async fn transport_bursts(prepared: bool) -> TestResult {
     for protocol in [str0m::net::Protocol::Udp, str0m::net::Protocol::Tcp] {
         tokio::time::timeout(Duration::from_secs(30), async {
             let gathered = Arc::new(Notify::new());
@@ -108,7 +120,13 @@ async fn udp_and_tcp_media_survive_bursts_of_mirrored_data_channel_events() -> T
             };
             let remote = Box::pin(builder.build()).await?;
             remote.add_track(audio.clone()).await?;
+            if prepared {
+                super::super::prepared::ready().await?;
+            }
             let mut local = Transport::with_protocol(Some(protocol)).await?;
+            if prepared {
+                assert!(local.prepared_client);
+            }
             remote
                 .set_remote_description(RTCSessionDescription::offer(local.offer())?)
                 .await?;

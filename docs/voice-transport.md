@@ -123,3 +123,35 @@ requested, and Listening/the ready cue still wait for the first microphone
 packet to reach the media sender. Early acquisition removes device setup from
 the end of the startup path; it does not shorten the session POST or network
 negotiation themselves.
+
+### Optional local client warmth
+
+Settings → OpenAI → Conversation → **Keep voice client warm** defaults to On.
+Existing saved Off choices remain Off; preferences without this field use On.
+When enabled, unlocked foreground Whip retains the shared HTTP client, a crypto
+provider, and one unused DTLS certificate. Consumed certificates are replenished;
+unused certificates are periodically refreshed. No API key, provider request,
+API session, microphone, audio device, tool authority, peer, SDP or network
+socket is retained by preparation. Disabling or backgrounding releases the
+spare material; the ordinary shared HTTP client stays reusable as before.
+
+Every actual call creates new sockets using current network interfaces and a
+fresh RTC with a new clock, ICE credentials, SDP offer, and data-channel state.
+It can consume the prepared certificate and provider. This follows the fresh
+peer setup in the OpenAI Agents SDK React Native example. Only an explicit Call
+or Preview action creates a provider session. Local warming cannot remove
+server session-creation or network negotiation latency.
+
+The [phone measurements](voice-local-warm-profile.md) include all 14 startup
+trials and the paired idle-memory comparison for the corrected local-only cache.
+
+The unshipped paid-session draft was removed because the requested trade is
+local memory for startup work, without idle API charges. A later whole-peer
+prototype was installed and measured, but a Realtime negotiation failure after
+idle made that cache unsuitable. Fresh-peer controls worked. Its preliminary
+0.7 MiB allocation and 4–5 ms offer observations belong to that rejected APK
+(db110cff…), not to the factory-only implementation. They must not be presented
+as final results for the replacement.
+
+See the official [WebRTC connection flow](https://developers.openai.com/api/docs/guides/voice-webrtc)
+and [session billing](https://developers.openai.com/api/docs/guides/voice-latency-cost).

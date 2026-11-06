@@ -1,4 +1,6 @@
 export const zhHant: Record<string, string> = {
+  'voiceProvider.prepareCalls': "保持語音用戶端預熱",
+  'voiceProvider.prepareCallsHelp': "Whip 在前景時保留本機 WebRTC 資源，會佔用額外記憶體。只有開始通話時才開啟麥克風和 API 工作階段，預熱不會產生 API 使用費用。",
   'voiceUsage.cost': '費用',
   'voiceUsage.time': '時間',
   'voiceUsage.activity': '使用次數',

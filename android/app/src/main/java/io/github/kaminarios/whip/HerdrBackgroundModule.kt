@@ -110,6 +110,13 @@ class HerdrBackgroundModule(
   }
 
   @ReactMethod
+  fun prepareRealtimeVoice(enabled: Boolean, promise: Promise) {
+    mainHandler.post {
+      RealtimeVoice.prepare(context, enabled && context.lifecycleState == LifecycleState.RESUMED)
+      promise.resolve(null)
+    }
+  }
+  @ReactMethod
   fun startRealtimeVoice(token: String, config: String, promise: Promise) {
     mainHandler.post {
       if (context.lifecycleState != LifecycleState.RESUMED) promise.reject("E_VOICE_CREDENTIAL_UNAVAILABLE", "Return to Whip to start a call.")
@@ -136,8 +143,8 @@ class HerdrBackgroundModule(
     context.addLifecycleEventListener(this)
   }
   override fun onHostResume() {}
-  override fun onHostPause() { mainHandler.post { RealtimeVoice.stopPreview() } }
-  override fun onHostDestroy() { mainHandler.post { RealtimeVoice.stopPreview() } }
+  override fun onHostPause() { mainHandler.post { RealtimeVoice.clearPrepared(); RealtimeVoice.stopPreview() } }
+  override fun onHostDestroy() { mainHandler.post { RealtimeVoice.clearPrepared(); RealtimeVoice.stopPreview() } }
   @ReactMethod
   fun stopRealtimeVoice(token: String, promise: Promise) { mainHandler.post { RealtimeVoice.stop(token, promise) } }
   @ReactMethod

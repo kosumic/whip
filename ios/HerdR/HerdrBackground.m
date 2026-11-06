@@ -37,6 +37,8 @@ RCT_EXPORT_METHOD(startVoiceCall:(NSString *)token label:(NSString *)label resol
 { [WhipVoiceCall.shared start:token label:label resolve:resolve reject:reject]; }
 RCT_EXPORT_METHOD(startRealtimeVoice:(NSString *)token config:(NSString *)config resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 { [WhipRealtimeVoice.shared start:token config:config resolve:resolve reject:reject]; }
+RCT_EXPORT_METHOD(prepareRealtimeVoice:(BOOL)enabled resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{ [WhipRealtimeVoice.shared prepare:enabled]; resolve(nil); }
 RCT_EXPORT_METHOD(startRealtimeVoicePreview:(NSString *)token config:(NSString *)config resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 { [WhipRealtimeVoice.shared preview:token config:config resolve:resolve reject:reject]; }
 RCT_EXPORT_METHOD(voiceCredentialsUpdating:(BOOL)updating resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)

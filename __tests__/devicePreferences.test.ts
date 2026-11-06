@@ -694,3 +694,15 @@ test('validates each model catalog independently and defaults old preferences to
   } }));
   expect((await loadDevicePreferences()).voiceConversation).toEqual(defaultDevicePreferences.voiceConversation);
 });
+
+test('local voice preparation defaults on and preserves an explicit choice across launches', async () => {
+  for (const keepVoiceClientWarm of [undefined, null, 'false', 0]) {
+    mockGetItem.mockResolvedValue(JSON.stringify({ voiceConversation: { keepVoiceClientWarm } }));
+    expect((await loadDevicePreferences()).voiceConversation.keepVoiceClientWarm).toBe(true);
+  }
+  for (const keepVoiceClientWarm of [false, true]) {
+    await saveDevicePreferences({ ...defaultDevicePreferences, voiceConversation: { ...defaultDevicePreferences.voiceConversation, keepVoiceClientWarm } });
+    mockGetItem.mockResolvedValue(mockSetItem.mock.calls.at(-1)?.[1] ?? null);
+    expect((await loadDevicePreferences()).voiceConversation.keepVoiceClientWarm).toBe(keepVoiceClientWarm);
+  }
+});

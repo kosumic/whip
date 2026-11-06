@@ -11,6 +11,7 @@ enum { WhipRealtimeSampleRate = 24000, WhipRealtimeFrame = 480, WhipRealtimeMaxF
 enum WhipVoiceCredentialStatus { WhipVoiceCredentialMissing = -1, WhipVoiceCredentialLocked = -2, WhipVoiceCredentialUnavailable = -3, WhipVoiceCredentialFailed = -4 };
 typedef int32_t (*WhipReadVoiceCredential)(void *context, uint8_t *destination, size_t capacity);
 int64_t whip_realtime_start(const char *config, WhipReadVoiceCredential reader, void *context);
+bool whip_realtime_prepare(bool enabled);
 void whip_voice_credentials_updating(bool updating);
 void whip_realtime_stop(uint64_t call);
 bool whip_realtime_stopped(uint64_t call);

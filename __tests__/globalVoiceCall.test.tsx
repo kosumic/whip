@@ -12,7 +12,7 @@ let mockContext: () => GlobalVoiceControlContext;
 let mockActiveCall = true;
 let mockCredentialReady = true;
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
-jest.mock('react-native', () => ({ Alert: { alert: jest.fn() }, ScrollView: 'ScrollView', TextInput: 'TextInput', View: 'View' }));
+jest.mock('react-native', () => ({ AppState: { currentState: 'active', addEventListener: jest.fn(() => ({ remove: jest.fn() })) }, Platform: { OS: 'android' }, Alert: { alert: jest.fn() }, ScrollView: 'ScrollView', TextInput: 'TextInput', View: 'View' }));
 jest.mock('react-native-whip-ssh', () => require('./mockWhipSsh').createMockWhipSshModule());
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));

@@ -81,43 +81,61 @@ impl Driver {
         commands: mpsc::Receiver<Command>,
         stop: watch::Receiver<bool>,
         protocol: Option<Protocol>,
-    ) -> Result<(Self, String), &'static str> {
+    ) -> Result<(Self, String, bool), &'static str> {
         let mut network = Network::bind().await?;
         let candidates = network.candidates()?;
-        let (rtc, pending, mid, channel, offer) = tracing::subscriber::with_default(
-            tracing::subscriber::NoSubscriber::default(),
-            || {
-                let mut rtc = RtcConfig::new()
-                    .set_crypto_provider(Arc::new(str0m::crypto::from_feature_flags()))
-                    .clear_codecs()
-                    .enable_opus(true, false)
-                    .set_dtls_version(DtlsVersion::Auto)
-                    .set_snap_enabled(true)
-                    .set_rtp_mode(true)
-                    .set_sctp_max_message_size(
-                        u32::try_from(MAX_EVENT_BYTES).map_err(|_| "Invalid voice event limit.")?,
-                    )
-                    .set_sctp_max_buffered_amount(MAX_EVENT_BYTES)
-                    .build(Instant::now());
-                for candidate in candidates {
-                    if protocol.is_none_or(|protocol| candidate.proto() == protocol) {
-                        rtc.add_local_candidate(candidate)
-                            .ok_or("Voice candidate was rejected.")?;
-                        initial_drain(&mut rtc)?;
+        let (rtc, pending, mid, channel, offer, prepared_client) =
+            tracing::subscriber::with_default(
+                tracing::subscriber::NoSubscriber::default(),
+                || {
+                    let material = super::prepared::take();
+                    let prepared_client = material.is_some();
+                    let config = match material {
+                        Some(material) => RtcConfig::new()
+                            .set_crypto_provider(material.provider)
+                            .set_dtls_cert(material.certificate),
+                        None => RtcConfig::new()
+                            .set_crypto_provider(Arc::new(str0m::crypto::from_feature_flags())),
+                    };
+                    let mut rtc = config
+                        .clear_codecs()
+                        .enable_opus(true, false)
+                        .set_dtls_version(DtlsVersion::Auto)
+                        .set_snap_enabled(true)
+                        .set_rtp_mode(true)
+                        .set_sctp_max_message_size(
+                            u32::try_from(MAX_EVENT_BYTES)
+                                .map_err(|_| "Invalid voice event limit.")?,
+                        )
+                        .set_sctp_max_buffered_amount(MAX_EVENT_BYTES)
+                        .build(Instant::now());
+                    for candidate in candidates {
+                        if protocol.is_none_or(|protocol| candidate.proto() == protocol) {
+                            rtc.add_local_candidate(candidate)
+                                .ok_or("Voice candidate was rejected.")?;
+                            initial_drain(&mut rtc)?;
+                        }
                     }
-                }
-                let mut change = rtc.sdp_api();
-                let mid = change.add_media(MediaKind::Audio, Direction::SendRecv, None, None, None);
-                let channel = change.add_channel_with_config(str0m::channel::ChannelConfig {
-                    label: "oai-events".into(),
-                    negotiated: Some(DATA_CHANNEL_ID),
-                    ..Default::default()
-                });
-                let (offer, pending) = change.apply().ok_or("Voice offer is unavailable.")?;
-                initial_drain(&mut rtc)?;
-                Ok::<_, &'static str>((rtc, pending, mid, channel, offer.to_sdp_string()))
-            },
-        )?;
+                    let mut change = rtc.sdp_api();
+                    let mid =
+                        change.add_media(MediaKind::Audio, Direction::SendRecv, None, None, None);
+                    let channel = change.add_channel_with_config(str0m::channel::ChannelConfig {
+                        label: "oai-events".into(),
+                        negotiated: Some(DATA_CHANNEL_ID),
+                        ..Default::default()
+                    });
+                    let (offer, pending) = change.apply().ok_or("Voice offer is unavailable.")?;
+                    initial_drain(&mut rtc)?;
+                    Ok::<_, &'static str>((
+                        rtc,
+                        pending,
+                        mid,
+                        channel,
+                        offer.to_sdp_string(),
+                        prepared_client,
+                    ))
+                },
+            )?;
         network.start();
         let bytes = uuid::Uuid::new_v4();
         let bytes = bytes.as_bytes();
@@ -139,6 +157,7 @@ impl Driver {
                 stop,
             },
             offer,
+            prepared_client,
         ))
     }
     pub async fn run(mut self) -> Result<(), &'static str> {

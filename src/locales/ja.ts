@@ -1,4 +1,6 @@
 export const ja = {
+  'voiceProvider.prepareCalls': "音声クライアントを待機状態にする",
+  'voiceProvider.prepareCallsHelp': "Whip を開いている間、ローカルの WebRTC リソースをメモリに保持します。マイクと API セッションは通話開始時のみ起動し、事前準備に API 利用料金はかかりません。",
   'voiceUsage.cost': '料金',
   'voiceUsage.time': '時間',
   'voiceUsage.activity': '利用件数',

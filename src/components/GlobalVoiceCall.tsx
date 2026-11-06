@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import type { AppNavigationController } from '../hooks/useAppNavigation';
 import type { SessionRuntimeController } from '../hooks/useSessionRuntimeManager';
 import { useOpenAiVoiceCredentialStatus } from '../hooks/useOpenAiVoiceCredentialStatus';
+import { usePreparedVoiceConnection } from '../hooks/usePreparedVoiceConnection';
 import { hostDisplayName } from '../lib/hostProfiles';
 import { GlobalVoiceControl, type GlobalVoiceApproval } from '../services/globalVoiceControl';
 import { voiceSessionManager } from '../services/voiceSessionManager';
@@ -25,6 +26,7 @@ export function GlobalVoiceCall({ ref, navigation, sessions, locked, visible, on
   const { t } = useTranslation();
   const { bottom, top } = useSafeAreaInsets();
   const credential = useOpenAiVoiceCredentialStatus();
+  usePreparedVoiceConnection(!locked && credential.ready);
   const [calling, setCalling] = useState(false);
   const [callAttempt, setCallAttempt] = useState(0);
   const [expanded, setExpanded] = useState(true);
