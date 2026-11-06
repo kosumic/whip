@@ -42,6 +42,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type HerdHostQueue, type HerdQueueAgent } from '@/src/herdQueue';
 import { useTranscriptTitle } from '@/src/hooks/useTranscriptTitle';
+import { useCommittedCallbacks } from '@/src/hooks/useCommittedCallbacks';
 import {
   HERD_TAB_MAX_DRAG,
   herdTabSwipeOffset,
@@ -151,7 +152,11 @@ interface Props {
   onOpenSshShell: (hostId: string) => void;
 }
 
-export function HerdScreen({
+export function HerdScreen(props: Props) {
+  return <HerdScreenContent {...useCommittedCallbacks(props)} />;
+}
+
+const HerdScreenContent = memo(function HerdContent({
   onSetAgentPinned,
   onMarkAgentUnread,
   onSetAgentReverseControl,
@@ -1075,7 +1080,7 @@ export function HerdScreen({
       />
     </View>
   );
-}
+});
 
 function commandSheetStyle(bottomInset: number) {
   return {

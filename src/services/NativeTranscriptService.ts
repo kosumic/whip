@@ -138,8 +138,8 @@ export class NativeTranscriptService {
     });
   }
 
-  private updateSpeechBinding(entry: TranscriptEntry): void {
-    const event = this.observed(entry, false);
+  private updateSpeechBinding(entry: TranscriptEntry, host?: TranscriptCacheHost): void {
+    const event = this.observed(entry, false, host);
     if (!event) return;
     const token = event.binding.bindingToken;
     const label = JSON.stringify([event.hostSessionId, event.tabName]);
@@ -292,7 +292,11 @@ export class NativeTranscriptService {
     this.capacity = terminalCacheCapacity(capacity);
     this.cacheManaged = true;
     this.reconcileCacheBindings(hosts);
-    for (const entry of this.entries.values()) this.updateSpeechBinding(entry);
+    const hostsById = new Map(hosts.map(host => [host.hostSessionId, host]));
+    for (const entry of this.entries.values()) {
+      const host = hostsById.get(entry.hostSessionId);
+      this.updateSpeechBinding(entry, host && sameRuntime(host.transport, entry.transport) ? host : undefined);
+    }
     const availableTargets = targets.filter(target => target.preload !== false || this.cachedTarget(target));
     this.cacheTargets = availableTargets;
     const connectedHosts = new Set(hosts.map(host => host.hostSessionId));
@@ -376,12 +380,12 @@ export class NativeTranscriptService {
     return () => { this.observers.delete(listener); };
   }
 
-  private observed(entry: TranscriptEntry, baseline: boolean): ObservedAgentTranscript | null {
+  private observed(entry: TranscriptEntry, baseline: boolean, host?: TranscriptCacheHost): ObservedAgentTranscript | null {
     const binding = entry.bindings.values().next().value;
     if (!binding) return null;
     let tabName = '';
     try {
-      const snapshot = entry.transport.hostState?.().snapshot;
+      const snapshot = host ? host.state.snapshot : entry.transport.hostState?.().snapshot;
       const pane = snapshot?.panes.find(item => item.pane_id === binding.paneId);
       const tab = snapshot?.tabs.find(item => item.tab_id === pane?.tab_id);
       if (tab && snapshot) tabName = this.titles.label(entry.hostSessionId, tab, snapshot.panes, binding.terminalId);

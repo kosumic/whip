@@ -7,8 +7,8 @@ jest.mock('react-native-keyboard-controller', () => ({ KeyboardAwareScrollView: 
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 jest.mock('../src/components/SettingsScreen', () => ({
   SettingsDetailsProvider: ({ children }: { children: React.ReactNode }) => children,
-  SettingsSection: ({ openAiSectionRef, onOpenAiLayout }: { openAiSectionRef: React.Ref<unknown>; onOpenAiLayout: () => void }) =>
-    jest.requireActual<typeof import('react')>('react').createElement('OpenAiAnchor', { ref: openAiSectionRef, onLayout: onOpenAiLayout }),
+  SettingsSection: (props: { openAiSectionRef: React.Ref<unknown>; onOpenAiLayout: () => void; alertsEnabled?: boolean; onAlertsChange?: (value: boolean) => void }) =>
+    jest.requireActual<typeof import('react')>('react').createElement('OpenAiAnchor', { ...props, ref: props.openAiSectionRef, onLayout: props.onOpenAiLayout }),
 }));
 jest.mock('../src/components/AboutScreen', () => ({ AboutSection: () => null }));
 jest.mock('../src/components/UsageSection', () => ({ UsageSection: () => null }));
@@ -49,4 +49,23 @@ test('OpenAI configuration jumps scroll on first mount and on repeated requests'
     await act(async () => view.update(<MoreScreen {...props} openAiConfigRequest={2} />));
     expect(scrollTo).toHaveBeenCalledWith({ y: 720, animated: true });
   } finally { await act(async () => view?.unmount()); }
+});
+
+test('switching away and back reuses settings while actions and changed preferences stay current', () => {
+  const first = jest.fn();
+  const latest = jest.fn();
+  const props = { membershipEnabled: false, alertsEnabled: true, onAlertsChange: first,
+    entitlements: { hasCapability: () => false } } as unknown as ComponentProps<typeof MoreScreen>;
+  let view!: ReactTestRenderer;
+  try {
+    act(() => { view = create(<MoreScreen {...props} />); });
+    const settings = view.root.findByType('OpenAiAnchor' as never).props;
+    act(() => { view.update(<MoreScreen {...props} onAlertsChange={latest} />); });
+    expect(view.root.findByType('OpenAiAnchor' as never).props).toBe(settings);
+    act(() => { settings.onAlertsChange(false); });
+    expect(latest).toHaveBeenCalledWith(false);
+    expect(first).not.toHaveBeenCalled();
+    act(() => { view.update(<MoreScreen {...props} alertsEnabled={false} />); });
+    expect(view.root.findByType('OpenAiAnchor' as never).props.alertsEnabled).toBe(false);
+  } finally { act(() => { view.unmount(); }); }
 });

@@ -314,3 +314,18 @@ test('trial deadlines and resume re-evaluate Rust policy against the current clo
   expect(lastInput().nowMs).toBe(BigInt(NOW + 5000));
   expect(getInstallationTimeAsync).toHaveBeenCalledTimes(2);
 });
+
+test('ordinary app renders preserve unchanged membership objects while policy changes still propagate', async () => {
+  await mount();
+  const previous = controller;
+  const capabilities = controller.capabilities;
+  jest.setSystemTime(NOW + 100);
+  await act(async () => { renderer!.update(<Harness />); });
+  expect(lastInput().nowMs).toBe(BigInt(NOW + 100));
+  expect(controller).toBe(previous);
+  expect(controller.capabilities).toBe(capabilities);
+  jest.mocked(evaluateBillingPolicy).mockReturnValue(nativeProjection({ capabilities: [BillingCapability.Glass] }));
+  await act(async () => { renderer!.update(<Harness />); });
+  expect(controller).not.toBe(previous);
+  expect(controller.hasCapability('glass')).toBe(true);
+});

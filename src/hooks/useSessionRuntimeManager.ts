@@ -181,6 +181,11 @@ export function useSessionRuntimeManager({
   });
   const { state, project } = useAppCoreSessions(() => appCore.view());
   const getState = useCallback(() => appCore.view(), [appCore]);
+  const herdView = useCallback<SessionRuntimeController['herdView']>(
+    (metadata, selectedHostId, selectedWorkspaceId) =>
+      appCore.herdView(metadata, selectedHostId, selectedWorkspaceId),
+    [appCore],
+  );
   const runtimesRef = useRef(new Map<string, LiveRuntime>());
   const sessionProfilesRef = useRef(new Map<string, HostProfile>());
   const persistTerminals = terminals.persistProjection;
@@ -307,8 +312,7 @@ export function useSessionRuntimeManager({
       connectingHostIds: connection.connectingHostIds,
       restoreComplete,
       terminalTargets: terminal.terminalTargets,
-      herdView: (metadata, selectedHostId, selectedWorkspaceId) =>
-        appCore.herdView(metadata, selectedHostId, selectedWorkspaceId),
+      herdView,
       getState: connection.getState,
       getClient: connection.getClient,
       select: connection.select,
@@ -343,8 +347,8 @@ export function useSessionRuntimeManager({
     }),
     [
       activeSession,
-      appCore,
       connection,
+      herdView,
       presentationSessions,
       restoreComplete,
       state,

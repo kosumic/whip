@@ -2,6 +2,7 @@ import type {
   NativeAgentChatBinding,
   NativeAgentTranscriptState,
   NativeAgentTranscriptUpdate,
+  HostRuntimeState,
 } from 'react-native-whip-ssh';
 
 import {
@@ -24,6 +25,7 @@ import {
 import { chatBindingLost, type AgentChatViewState } from '../src/lib/agentChatReconciliation';
 import { transcriptTitleKey } from '../src/lib/transcriptTabTitles';
 import { agentChatStateFromNative } from '../src/lib/nativeAgentTranscript';
+import * as speechPlayback from '../src/services/speechPlayback';
 
 const sessionId = '11111111-1111-4111-8111-111111111111';
 const transcriptKey = `profile\ncodex\n${sessionId}`;
@@ -379,6 +381,37 @@ describe('Rust-owned agent Chat projection', () => {
     expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({ tabName: 'debug' }));
     expect(remote.value.openAgentChat).toHaveBeenCalledTimes(1);
     expect(remote.value.agentTranscript).not.toHaveBeenCalled();
+  });
+
+  test('cache reconciliation reuses supplied host metadata while later transcript events read fresh labels', async () => {
+    const service = new NativeTranscriptService();
+    const remote = fakeTransport();
+    let current: HostRuntimeState = {
+      revision: 1, connectionGeneration: 1, syncGeneration: 1, syncStatus: 'synced', freshness: 'fresh', needsResync: false, focus: {},
+      snapshot: { version: 'test', protocol: 1, agents: [], workspaces: [], layouts: [],
+        tabs: [{ tab_id: 'tab', workspace_id: 'workspace', label: 'original', label_is_custom: true, number: 1, focused: false, pane_count: 1, agent_status: 'idle' }],
+        panes: [{ pane_id: 'pane-terminal-1', terminal_id: 'terminal-1', workspace_id: 'workspace', tab_id: 'tab', focused: false, agent_status: 'idle', revision: 1,
+          agent_session: { agent: 'codex', source: 'herdr:codex', kind: 'id', value: sessionId } }],
+      },
+    };
+    const hostState = jest.fn(() => current);
+    remote.value.hostState = hostState;
+    const speech = jest.spyOn(speechPlayback, 'setAutomaticSpeechBinding');
+    try {
+      const token = openedToken(service, remote.value);
+      await flush();
+      const listener = jest.fn();
+      service.observe(listener);
+      const supplied = { ...current, snapshot: { ...current.snapshot!, tabs: [{ ...current.snapshot!.tabs[0], label: 'supplied' }] } };
+      hostState.mockClear();
+      service.reconcileCache(3, [{ hostSessionId: 'host', terminalId: 'terminal-1', agent: 'codex', sessionId, transport: remote.value, preload: false }],
+        [{ hostSessionId: 'host', state: supplied, transport: remote.value }]);
+      expect(hostState).not.toHaveBeenCalled();
+      expect(speech).toHaveBeenLastCalledWith(token, 'host', 'supplied');
+      current = { ...supplied, snapshot: { ...supplied.snapshot, tabs: [{ ...supplied.snapshot.tabs[0], label: 'latest' }] } };
+      remote.emit({ revision: 2, deltas: [{ type: 'status-changed', status: 'stale' }] });
+      expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({ tabName: 'latest' }));
+    } finally { speech.mockRestore(); }
   });
 
   test('global observers deduplicate shared transcript bindings and retain them until the last pane closes', async () => {

@@ -1,4 +1,4 @@
-import { useContext, useImperativeHandle, type ComponentProps, type ReactNode, type Ref } from 'react';
+import { memo, useContext, useImperativeHandle, type ComponentProps, type ReactNode, type Ref } from 'react';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
 import * as Haptics from 'expo-haptics';
 import Clipboard from '@react-native-clipboard/clipboard';
@@ -1908,6 +1908,24 @@ test('chat selections use the same composer draft and stop accepting events when
   act(() => { renderer.root.findByType('button').props.onClick(); });
   expect(props.composerStore.snapshot(target.key).text).toBe('selected reply');
   expect(props.onHistoryEntry).not.toHaveBeenCalled();
+});
+
+test('routine host updates do not invalidate retained chat selection consumers', () => {
+  const renders = jest.fn();
+  const ChatSelection = memo(function RetainedSelection() {
+    const add = useContext(ChatComposerSelection);
+    renders();
+    return <button onClick={() => add?.('selected reply')} />;
+  });
+  const renderViewportOverlay = () => <ChatSelection />;
+  mount({ chatViewEnabled: true, renderViewportOverlay });
+  renders.mockClear();
+  const updatedTarget = { ...target, session: { ...target.session } };
+  act(() => renderer.update(<TerminalScreen {...props} chatViewEnabled
+    renderViewportOverlay={renderViewportOverlay} activeTarget={updatedTarget} targets={[updatedTarget]} />));
+  expect(renders).not.toHaveBeenCalled();
+  act(() => { renderer.root.findByType('button').props.onClick(); });
+  expect(props.composerStore.snapshot(target.key).text).toBe('selected reply');
 });
 
 test('reconnection preserves the visible keyboard without dismissing or refitting', async () => {

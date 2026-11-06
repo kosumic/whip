@@ -2,10 +2,10 @@ import {
   useCallback,
   useEffect,
   useEffectEvent,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
-  useState,
 } from 'react';
 import { BackHandler } from 'react-native';
 
@@ -57,6 +57,10 @@ const INITIAL_NAVIGATION: NavigationViewState = {
   selectedPaneId: null,
   licensesOpen: false,
 };
+
+function mountedTabsReducer(current: ReadonlySet<AppTab>, tab: AppTab): ReadonlySet<AppTab> {
+  return current.has(tab) ? current : new Set([...current, tab]);
+}
 
 function navigationReducer(current: NavigationViewState, action: NavigationAction): NavigationViewState {
   switch (action.type) {
@@ -133,13 +137,13 @@ export function useAppNavigation({
 }: AppNavigationOptions): AppNavigationController {
   const [{ state, herdHostFilterId, herdWorkspaceFilterIds, selectedPaneId, licensesOpen }, dispatch] =
     useReducer(navigationReducer, INITIAL_NAVIGATION);
-  const [mountedTabs, setMountedTabs] = useState<ReadonlySet<AppTab>>(
-    () => new Set(),
-  );
+  const [mountedTabs, mountTab] = useReducer(mountedTabsReducer, undefined, () => new Set<AppTab>());
   const hydratedRef = useRef(false);
   const firstTabMountedNotifiedRef = useRef(false);
   const startupTraceRef = useRef<AppPerformanceTrace | null>(null);
   const tabMountTracesRef = useRef(new Map<AppTab, AppPerformanceTrace>());
+  const selectionTraceRef = useRef<{ tab: AppTab; trace: AppPerformanceTrace } | null>(null);
+  const workspaceTraceRef = useRef<{ sessionId: string; workspaceId: string | null; trace: AppPerformanceTrace } | null>(null);
   const dismissOverlay = useEffectEvent(dismissTopOverlay);
   const notifyFirstTabMounted = useEffectEvent(() => onFirstTabMounted?.());
 
@@ -150,6 +154,8 @@ export function useAppNavigation({
     );
     return () => {
       endAppPerformanceTrace(startupTraceRef.current);
+      endAppPerformanceTrace(selectionTraceRef.current?.trace ?? null);
+      endAppPerformanceTrace(workspaceTraceRef.current?.trace ?? null);
       for (const trace of tabMountTraces.values()) {
         endAppPerformanceTrace(trace);
       }
@@ -168,12 +174,7 @@ export function useAppNavigation({
     const tab = state.tab;
     const trace = beginAppPerformanceTrace(`Whip first tab mount: ${tab}`);
     if (trace) tabMountTracesRef.current.set(tab, trace);
-    setMountedTabs(current => {
-      if (current.has(tab)) return current;
-      const next = new Set(current);
-      next.add(tab);
-      return next;
-    });
+    mountTab(tab);
   }, [appReady, mountedTabs, state.tab]);
 
   useEffect(() => {
@@ -188,6 +189,21 @@ export function useAppNavigation({
     startupTraceRef.current = null;
     notifyFirstTabMounted();
   }, [mountedTabs]);
+
+  useEffect(() => {
+    const selection = selectionTraceRef.current;
+    if (selection?.tab !== state.tab || !mountedTabs.has(state.tab)) return;
+    endAppPerformanceTrace(selection.trace);
+    selectionTraceRef.current = null;
+  }, [mountedTabs, state]);
+
+  useLayoutEffect(() => {
+    const selection = workspaceTraceRef.current;
+    if (!selection) return;
+    if (herdWorkspaceFilterIds[selection.sessionId] !== selection.workspaceId) return;
+    endAppPerformanceTrace(selection.trace);
+    workspaceTraceRef.current = null;
+  }, [herdWorkspaceFilterIds]);
 
   useEffect(() => {
     if (!hydratedRef.current) return;
@@ -216,14 +232,22 @@ export function useAppNavigation({
   }, [licensesOpen, selectedPaneId, state]);
 
   const selectTab = useCallback((tab: AppTab) => {
+    endAppPerformanceTrace(selectionTraceRef.current?.trace ?? null);
+    const trace = beginAppPerformanceTrace(`Whip navigation selection to commit: ${tab}`);
+    selectionTraceRef.current = trace ? { tab, trace } : null;
     dispatch({ type: 'tab-selected', tab });
   }, []);
 
   const setHerdWorkspaceFilter = useCallback(
     (sessionId: string, workspaceId: string | null) => {
+      if (herdWorkspaceFilterIds[sessionId] !== workspaceId) {
+        endAppPerformanceTrace(workspaceTraceRef.current?.trace ?? null);
+        const trace = beginAppPerformanceTrace('Whip workspace selection to commit');
+        workspaceTraceRef.current = trace ? { sessionId, workspaceId, trace } : null;
+      }
       dispatch({ type: 'workspace-selected', sessionId, workspaceId });
     },
-    [],
+    [herdWorkspaceFilterIds],
   );
 
   const showTerminal = useCallback((_sessionId?: string) => {

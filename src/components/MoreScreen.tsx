@@ -1,5 +1,6 @@
 import { KeyboardAwareScrollView as ScrollView, type KeyboardAwareScrollViewRef } from 'react-native-keyboard-controller';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useReducer, useRef } from 'react';
+import { useCommittedCallbacks } from '../hooks/useCommittedCallbacks';
 import type { ViewInstance } from 'react-native';
 
 import { useTranslation } from 'react-i18next';
@@ -36,8 +37,12 @@ type Props = Omit<
 };
 
 export function MoreScreen(props: Props) {
+  return <MoreScreenContent {...useCommittedCallbacks(props)} />;
+}
+
+const MoreScreenContent = memo(function MoreContent(props: Props) {
   const { t } = useTranslation();
-  const [purchaseScreenVisible, setPurchaseScreenVisible] = useState(false);
+  const [purchaseScreenVisible, setPurchaseScreenVisible] = useReducer((_current: boolean, visible: boolean) => visible, false);
   const scrollRef = useRef<KeyboardAwareScrollViewRef>(null);
   const openAiSectionRef = useRef<ViewInstance>(null);
   const handledConfigRequest = useRef(0);
@@ -155,4 +160,4 @@ export function MoreScreen(props: Props) {
       />
     </SettingsDetailsProvider>
   );
-}
+});

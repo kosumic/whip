@@ -168,6 +168,37 @@ function terminalProps() {
   };
 }
 
+test('terminal selection reuses unchanged buttons and dispatches their latest tab metadata', () => {
+  const props = terminalProps();
+  const many = Array.from({ length: 5 }, (_, index) => ({
+    ...tabs[0], id: `tab-${index}`, label: `Agent ${index}`,
+    herdrTab: { ...herdrTab, tab_id: `tab-${index}` },
+  }));
+  mount(<TerminalTabRail {...props} tabs={many} selectedTabId={many[0].id} />);
+  const unchanged = button('Open Agent 4 tab').props;
+  const current = many.map(item => ({ ...item, herdrTab: { ...item.herdrTab, number: 10 } }));
+  act(() => { tree.update(<TerminalTabRail {...props} tabs={current} selectedTabId={many[1].id} />); });
+  expect(button('Open Agent 4 tab').props).toBe(unchanged);
+  act(() => { unchanged.onPress(); });
+  expect(props.onSelect).toHaveBeenCalledWith(current[4]);
+  accessibilityAction('Open Agent 4 tab', RailAction.Rename);
+  expect(props.onRenameTab).toHaveBeenCalledWith(current[4].herdrTab);
+});
+
+test('workspace selection reuses unchanged chips and keeps their actions current', () => {
+  const workspaces = Array.from({ length: 4 }, (_, index) => ({ ...workspace, workspace_id: `space-${index}`, label: `Project ${index}` }));
+  const props = { workspaces, selectedWorkspaceId: workspaces[0].workspace_id, busy: false,
+    onSelect: jest.fn(), onNew: jest.fn(), onRename: jest.fn(), onClose: jest.fn() };
+  mount(<WorkspaceRail {...props} />);
+  const label = 'Project 3, idle';
+  const unchanged = button(label).props;
+  const current = workspaces.map(item => ({ ...item, number: 10 }));
+  act(() => { tree.update(<WorkspaceRail {...props} workspaces={current} selectedWorkspaceId={workspaces[1].workspace_id} />); });
+  expect(button(label).props).toBe(unchanged);
+  accessibilityAction(label, RailAction.Rename);
+  expect(props.onRename).toHaveBeenCalledWith(current[3]);
+});
+
 describe.each(['android', 'ios'] as const)('%s terminal rail', platform => {
   beforeEach(() => { Object.assign(Platform, { OS: platform, isPad: platform === 'ios' }); });
 

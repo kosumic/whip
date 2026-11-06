@@ -138,6 +138,7 @@ function setup() {
       knownHostsOpen: false,
     },
     sessions: {
+      state: { revision: 1, sessions: [session] },
       herdView: () => ({ agents: [] }),
       getClient: () => client,
       activeSession: session,
@@ -188,11 +189,45 @@ test.each([false, true])('prepares the first three agents before opening Termina
     expect(view.props.visible).toBe(false);
     expect(view.props.priorityChatTargets?.map((target: TerminalRenderTarget) => target.session.terminalId)).toEqual(['terminal-3', 'terminal-1', 'terminal-4']);
     const preparedTargets = view.props.priorityChatTargets;
+    const terminalState = view.props.terminalState;
     act(() => { renderer.update(<AppShell {...props} sessions={{ ...props.sessions }} />); });
     expect(renderer.root.findByType(LiveSessionView).props.priorityChatTargets).toBe(preparedTargets);
+    expect(renderer.root.findByType(LiveSessionView).props.terminalState).toBe(terminalState);
+    expect(herdView).toHaveBeenCalledTimes(1);
   } finally {
     act(() => renderer?.unmount());
   }
+});
+
+test('tab switches reuse Herd presentation until native session data changes', () => {
+  const { props: initial } = setup();
+  const session = {
+    ...initial.sessions.activeSession!, host: { name: 'Host', host: 'host', username: 'user' },
+    snapshot: { ...initial.sessions.activeSession!.snapshot, workspaces: [], tabs: [] },
+  };
+  const herdView = jest.fn(() => ({ hosts: [], agents: [] }));
+  let props = {
+    ...initial,
+    sessions: { ...initial.sessions, activeSession: session, presentationSessions: [session], herdView },
+    navigation: { ...initial.navigation, state: { ...initial.navigation.state, tab: 'herd' }, mountedTabs: new Set(['herd']),
+      herdHostFilterId: null, herdWorkspaceFilterIds: {} },
+  } as unknown as Props;
+  let renderer!: ReactTestRenderer;
+  const herd = () => renderer.root.find(node => String(node.type) === 'ScreenUpdates').props.children().props;
+  try {
+    act(() => { renderer = create(<AppShell {...props} />); });
+    const first = herd();
+    const calls = herdView.mock.calls.length;
+    props = { ...props, navigation: { ...props.navigation, state: { ...props.navigation.state, tab: 'more' } } };
+    act(() => { renderer.update(<AppShell {...props} />); });
+    expect(herd().agents).toBe(first.agents);
+    expect(herd().queues).toBe(first.queues);
+    expect(herdView).toHaveBeenCalledTimes(calls);
+    props = { ...props, sessions: { ...props.sessions, state: { ...props.sessions.state, revision: props.sessions.state.revision + 1 } } };
+    act(() => { renderer.update(<AppShell {...props} />); });
+    expect(herd().agents).not.toBe(first.agents);
+    expect(herdView.mock.calls.length).toBeGreaterThan(calls);
+  } finally { act(() => { renderer.unmount(); }); }
 });
 
 test.each([

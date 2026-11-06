@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { getInstallationTimeAsync } from 'expo-application';
 import { AppState, Linking } from 'react-native';
 import type {
@@ -47,6 +47,15 @@ interface ControllerState {
   installationTimePending: boolean;
 }
 
+function samePolicy(previous: BillingPolicy, next: BillingPolicy): boolean {
+  return (Object.keys(next) as (keyof BillingPolicy)[]).every(key => {
+    if (key === 'capabilities') return previous.capabilities.size === next.capabilities.size &&
+      [...next.capabilities].every(capability => previous.capabilities.has(capability));
+    if (key === 'trialEndsAt') return Object.is(previous.trialEndsAt?.getTime(), next.trialEndsAt?.getTime());
+    return Object.is(previous[key], next[key]);
+  });
+}
+
 interface CustomerAction {
   generation: number;
   eventRevision: number;
@@ -76,11 +85,12 @@ export function useWhipEntitlements(
   const actionRevision = useRef(0);
   const installationRevision = useRef(0);
   const [state, setState] = useState(INITIAL_STATE);
-  const [, updateClock] = useState(0);
+  const [, updateClock] = useReducer((revision: number) => revision + 1, 0);
+  const retainedPolicy = useRef<BillingPolicy | null>(null);
   const webPurchaseUrl = state.rancherPackage?.webCheckoutUrl
     ?? state.offering?.webCheckoutUrl
     ?? distribution.rancherWebPurchaseUrl;
-  const policy = resolveBillingPolicy({
+  const nextPolicy = resolveBillingPolicy({
     channel: distribution.channel,
     developerOptionsRequested,
     developerMembershipState,
@@ -93,6 +103,10 @@ export function useWhipEntitlements(
     packageAvailable: state.rancherPackage !== null,
     webCheckoutAvailable: webPurchaseUrl !== null,
   });
+  if (!retainedPolicy.current || !samePolicy(retainedPolicy.current, nextPolicy)) {
+    retainedPolicy.current = nextPolicy;
+  }
+  const policy = retainedPolicy.current;
   const billingEnabled = preferencesLoaded && policy.billingEnabled;
 
   const isCurrentCustomerRead = useCallback((owner: number, revision: number) => (
@@ -186,7 +200,7 @@ export function useWhipEntitlements(
       );
       appStateSubscription = AppState.addEventListener('change', next => {
         if (next !== 'active') return;
-        updateClock(current => current + 1);
+        updateClock();
         reportBackgroundFailure(refresh(), 'revenuecat-entitlements-refresh');
         reportBackgroundFailure(refreshTrial(), 'rancher-trial-refresh');
       });
@@ -201,7 +215,7 @@ export function useWhipEntitlements(
   useEffect(() => {
     if (!billingEnabled || policy.nextUpdateAtMs === null) return;
     const timeout = setTimeout(
-      () => updateClock(current => current + 1),
+      () => updateClock(),
       Math.max(0, policy.nextUpdateAtMs - Date.now()) + 1,
     );
     return () => clearTimeout(timeout);
@@ -256,7 +270,7 @@ export function useWhipEntitlements(
     completeCustomerAction(action, customerInfo);
   }, [billingEnabled, policy.canRestore, beginCustomerAction, completeCustomerAction]);
 
-  return {
+  return useMemo<WhipEntitlementsController>(() => ({
     ...policy,
     hasCapability: capability => policy.capabilities.has(capability),
     rancherPackage: state.rancherPackage,
@@ -266,5 +280,5 @@ export function useWhipEntitlements(
     presentRancherPaywall: openPaywall,
     restorePurchases,
     refresh,
-  };
+  }), [policy, state.rancherPackage, distribution.channel, purchaseRancher, openPaywall, restorePurchases, refresh]);
 }

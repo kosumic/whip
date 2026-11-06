@@ -734,17 +734,20 @@ export function SessionScreen({
   const mountedChatViews = chatViewportCandidates.filter(item =>
     viewportRetention.retained.has(item.identity),
   );
-  const pinnedChatKeys = JSON.stringify(priorityChatKeys.size ? [...new Set([
+  const pinnedChatKeys = new Set(priorityChatKeys.size ? [
     ...priorityChatKeys, ...mountedChatViews.map(item => item.key),
-  ])].sort() : []);
+  ] : []);
+  const pinnedChatTerminals = JSON.stringify(chatTargets
+    .filter(target => pinnedChatKeys.has(target.key))
+    .map(target => [target.hostSessionId, target.session.terminalId]).sort());
   useLayoutEffect(() => {
     // Protect both UI budgets even when the transcript cache is set to three.
     // Priority pins also allow speculative admission before a viewport mounts.
-    const keys = new Set(JSON.parse(pinnedChatKeys) as string[]);
-    const release = chatTargets.filter(target => keys.has(target.key)).map(target =>
-      agentTranscriptService.retainForegroundTerminal(target.hostSessionId, target.session.terminalId));
+    const terminals = JSON.parse(pinnedChatTerminals) as [string, string][];
+    const release = terminals.map(([host, terminal]) =>
+      agentTranscriptService.retainForegroundTerminal(host, terminal));
     return () => release.forEach(dispose => dispose());
-  }, [chatTargets, pinnedChatKeys]);
+  }, [pinnedChatTerminals]);
   const chatSubscriptionIdentity = [...chatViews.entries()]
     .map(([key, view]) =>
       [key, view.binding.bindingToken, view.presentation.generation].join(':'),
@@ -1152,8 +1155,8 @@ export function SessionScreen({
     });
   }, [appActive, priorityTargets, transcriptResidency, nextChatPresentationGeneration]);
 
-  useLayoutEffect(() => {
-    const subscriptions = [...chatViewsRef.current.entries()].flatMap(
+  const subscribeChatViews = useEffectEvent(() =>
+    [...chatViewsRef.current.entries()].flatMap(
       ([key, view]) => {
         // Priority viewports prepare and stay current without becoming selected.
         if (key !== activeChatKey && !priorityChatKeys.has(key)) return [];
@@ -1207,14 +1210,17 @@ export function SessionScreen({
           }),
         ];
       },
-    );
+    ),
+  );
+  const priorityChatSubscriptionIdentity = JSON.stringify([...priorityChatKeys].sort());
+  useLayoutEffect(() => {
+    const subscriptions = subscribeChatViews();
     return () => subscriptions.forEach(unsubscribe => unsubscribe());
   }, [
     activeChatKey,
     chatSubscriptionIdentity,
     nextChatPresentationGeneration,
-    chatTargets,
-    priorityChatKeys,
+    priorityChatSubscriptionIdentity,
   ]);
 
   useEffect(() => {
@@ -1380,7 +1386,7 @@ export function SessionScreen({
     if (nextPane) onActivateTerminal(nextPane);
     if (!client) return;
     reportBackgroundFailure(
-      run(async () => {
+      (async () => {
         if (item.workspace_id !== workspace?.workspace_id) {
           await client.native.requestHerdrApi({
             method: 'workspace.focus',
@@ -1391,7 +1397,7 @@ export function SessionScreen({
           method: 'tab.focus',
           params: { tab_id: item.tab_id },
         });
-      }),
+      })().catch(showHerdrError),
       'session-tab-focus',
     );
   };
@@ -1443,12 +1449,10 @@ export function SessionScreen({
     onActivateTerminal(pane);
     if (!client) return;
     reportBackgroundFailure(
-      run(() =>
-        client.native.requestHerdrApi({
+      client.native.requestHerdrApi({
           method: 'pane.focus',
           params: { pane_id: pane.pane_id },
-        }),
-      ),
+        }).catch(showHerdrError),
       'session-pane-focus',
     );
   };
@@ -1689,7 +1693,7 @@ export function SessionScreen({
               color={colors.text}
             />
           </Button>
-          <TerminalTabRail
+          <ScreenUpdates active={visible}>{() => <TerminalTabRail
             tabs={visibleTabs}
             selectedTabId={selectedVisibleTabId}
             readOnly={!client || !visible}
@@ -1700,7 +1704,7 @@ export function SessionScreen({
             onRenameSshTab={openRenameSshTab}
             onCloseTab={closeTab}
             onCloseTerminal={onCloseTerminal}
-          />
+          />}</ScreenUpdates>
           {browserRuntimeIdRef.current && (
             <OpenBrowserButton
               disabled={!client}
@@ -1967,7 +1971,8 @@ export function SessionScreen({
                         const chatTarget = chatTargets.find(target => target.key === key);
                         const chatClient = chatTarget?.client;
                         return (
-                          <ScreenUpdates key={identity} active={active || (appActive && priority)}>
+                          <ScreenUpdates key={identity} active={active}
+                            updateKey={appActive && priority ? chatView.state : undefined}>
                             {() => (
                               <View
                                 key={key}

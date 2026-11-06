@@ -2,6 +2,7 @@ import { createRef, Profiler, type ComponentProps } from 'react';
 import { Linking, Platform, type View } from 'react-native';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { SessionScreen } from '../src/components/SessionScreen';
+import { TerminalTabRail } from '../src/components/TerminalTabRail';
 import { moveKeyboard, publishKeyboard, resetKeyboardController } from '../test-support/keyboardAnimation';
 import { TerminalComposerStore } from '../src/lib/terminalComposerStore';
 import { readSavedAgentTranscript } from 'react-native-whip-ssh';
@@ -556,6 +557,30 @@ test('volume key tab navigation uses the current action after settings change', 
   expect(host.props.onActivateTerminal).toHaveBeenCalledWith(nextPane);
 });
 
+test('rapid terminal selections keep editing available while both server focus requests run', async () => {
+  const host = setup('codex');
+  const panes = Array.from({ length: 3 }, (_, index) => ({ ...host.pane,
+    pane_id: `pane-${index + 1}`, terminal_id: `terminal-${index + 1}`, tab_id: `tab-${index + 1}`,
+  }));
+  const snapshot = { ...host.props.snapshot, panes, tabs: panes.map(pane => ({
+    ...host.props.snapshot.tabs[0], tab_id: pane.tab_id,
+  })) };
+  host.props.snapshot = snapshot;
+  host.setSnapshot(snapshot);
+  const finish: Array<() => void> = [];
+  const request = jest.fn(() => new Promise<void>(resolve => finish.push(resolve)));
+  Object.assign(host.native, { requestHerdrApi: request });
+  await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+  const rail = () => renderer.root.findByType(TerminalTabRail);
+  act(() => { rail().props.onSelect(rail().props.tabs[1]); });
+  expect(rail().props.busy).toBe(false);
+  act(() => { rail().props.onSelect(rail().props.tabs[2]); });
+  expect(request).toHaveBeenCalledWith({ method: 'tab.focus', params: { tab_id: 'tab-2' } });
+  expect(request).toHaveBeenCalledWith({ method: 'tab.focus', params: { tab_id: 'tab-3' } });
+  expect(host.props.onActivateTerminal).toHaveBeenLastCalledWith(panes[2]);
+  await act(async () => { finish.forEach(resolve => resolve()); });
+});
+
 test('an active SSH tab remains selected when a focused Herdr workspace appears', () => {
   const host = setup('codex');
   const shell = {
@@ -694,6 +719,37 @@ test('prepares three priority chats before visiting and retains two other recent
   expect(host.native.detachAgentChat).not.toHaveBeenCalled();
 });
 
+test('hidden priority chats keep their pins and prepared UI across routine host updates', async () => {
+  const host = setup('codex');
+  const binding = bindTitledChat(host, 'codex', 'Prepared chat');
+  host.native.agentChatBindingIsCurrent.mockReturnValue(true);
+  host.props.visible = false;
+  host.props.priorityChatTargets = host.props.terminalTargets;
+  await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+  const viewport = ui('AgentChatView');
+  const preparedProps = viewport.props;
+  const residency = agentTranscriptService.residencyVersion();
+
+  host.props.terminalTargets = host.props.terminalTargets.map(target => ({ ...target, session: { ...target.session } }));
+  host.props.priorityChatTargets = [...host.props.terminalTargets];
+  host.props.terminalState = { ...host.props.terminalState, sessions: [...host.props.terminalState.sessions] };
+  await act(async () => { renderer.update(<SessionScreen {...host.props} latencyMs={25} />); });
+  expect(agentTranscriptService.residencyVersion()).toBe(residency);
+  expect(ui('AgentChatView').props).toBe(preparedProps);
+
+  await act(async () => {
+    binding.state = { ...binding.state, revision: binding.state.revision + 1 };
+    host.handlers.get(binding.terminalId)!({
+      runtimeIncarnation: binding.runtimeIncarnation, key: binding.transcriptKey,
+      revision: binding.state.revision, deltas: [{ type: 'reset', state: binding.state }],
+    });
+  });
+  expect(ui('AgentChatView').props.state.revision).toBe(binding.state.revision);
+  expect(ui('AgentChatView').props.active).toBe(false);
+  expect(ui('AgentChatView').props.prewarm).toBe(true);
+  expect(host.props.onTerminalChatSelect).not.toHaveBeenCalled();
+});
+
 test('a rejected priority preload does not retry itself or select Chat', async () => {
   const host = setup('codex');
   bindChat(host, 'codex');
@@ -795,7 +851,7 @@ test.each([true, undefined])('manual or unknown rename origin (%s) preserves the
   expect(tabLabels()).not.toContain('Changed automatic');
 });
 
-test('a title remains after transcript eviction without reloading, and never survives a session switch', async () => {
+test('a title survives eviction without reloading and is fresh when a switched session is revealed', async () => {
   const host = setup('codex');
   bindTitledChat(host, 'codex', 'Retained conversation');
   await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
@@ -809,11 +865,15 @@ test('a title remains after transcript eviction without reloading, and never sur
   }] };
   host.setSnapshot(snapshot);
   await act(async () => { renderer.update(<SessionScreen {...host.props} snapshot={snapshot} visible={false} />); });
-  expect(tabLabels()).toContain('Herdr label');
-  expect(tabLabels()).not.toContain('Retained conversation');
+  expect(agentTranscriptService.titles.label('host-1', snapshot.tabs[0], snapshot.panes, host.pane.terminal_id)).toBe('Herdr label');
   expect(host.native.openAgentChat).toHaveBeenCalledTimes(openCount);
   expect(host.native.startAgentChat).toHaveBeenCalledTimes(startCount);
   expect(readSavedAgentTranscript).not.toHaveBeenCalled();
+  host.bindings.clear();
+  host.availableBindings.clear();
+  await act(async () => { renderer.update(<SessionScreen {...host.props} snapshot={snapshot} visible />); });
+  expect(tabLabels()).toContain('Herdr label');
+  expect(tabLabels()).not.toContain('Retained conversation');
 });
 
 test('metadata changes and transcript resets update the label while Chat is open', async () => {

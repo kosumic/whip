@@ -2,6 +2,8 @@ import { memo, type ReactNode } from 'react';
 
 interface Props {
   active: boolean;
+  /** Allow retained content to prepare changed data without following parent renders. */
+  updateKey?: unknown;
   children: () => ReactNode;
 }
 
@@ -14,5 +16,6 @@ export const ScreenUpdates = memo(
   function DeferredScreen({ children }: Props) {
     return children();
   },
-  (previous, next) => !previous.active && !next.active,
+  (previous, next) => !previous.active && !next.active &&
+    Object.is(previous.updateKey, next.updateKey),
 );

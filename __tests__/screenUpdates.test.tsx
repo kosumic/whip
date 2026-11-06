@@ -37,3 +37,26 @@ test('hidden screens commit deactivation, skip parent updates, and reopen with c
   expect(selected).toHaveBeenCalledWith(5);
   act(() => { renderer.unmount(); });
 });
+
+test('retained screens prepare new data once and skip unrelated parent renders', () => {
+  const render = jest.fn();
+  const first = { revision: 1 };
+  const second = { revision: 2 };
+  let renderer!: ReactTestRenderer;
+  const screen = (updateKey: unknown) => (
+    <ScreenUpdates active={false} updateKey={updateKey}>{() => {
+      render(updateKey);
+      return null;
+    }}</ScreenUpdates>
+  );
+  act(() => { renderer = create(screen(first)); });
+  render.mockClear();
+  act(() => { renderer.update(screen(first)); });
+  expect(render).not.toHaveBeenCalled();
+  act(() => { renderer.update(screen(second)); });
+  expect(render).toHaveBeenCalledTimes(1);
+  expect(render).toHaveBeenLastCalledWith(second);
+  act(() => { renderer.update(screen(second)); });
+  expect(render).toHaveBeenCalledTimes(1);
+  act(() => { renderer.unmount(); });
+});

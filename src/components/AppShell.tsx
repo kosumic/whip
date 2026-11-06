@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import { BlurTargetView } from 'expo-blur';
 import { Platform, StyleSheet, View, type ViewInstance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -89,8 +89,15 @@ export function AppShell({
   const { isDark } = useTheme();
   const navigationBlurTargetRef = useRef<ViewInstance | null>(null);
   const globalCallRef = useRef<GlobalVoiceCallHandle>(null);
-  const [openAiConfigRequest, setOpenAiConfigRequest] = useState(0);
+  const [openAiConfigRequest, requestOpenAiConfig] = useReducer((request: number) => request + 1, 0);
   const storedPreferences = preferences.value;
+  const voiceConversation = storedPreferences.voiceConversation;
+  const setPreference = preferences.setPreference;
+  const voiceConversationContext = useMemo(() => ({
+    settings: voiceConversation,
+    onChange: (value: typeof voiceConversation) => setPreference('voiceConversation', value),
+  }), [setPreference, voiceConversation]);
+  const openGlobalCall = useCallback(() => globalCallRef.current?.open(), []);
   const capabilities = entitlements.capabilities;
   const effectivePreferences = useMemo(
     () => effectiveDevicePreferences(storedPreferences, capabilities),
@@ -117,12 +124,14 @@ export function AppShell({
     terminalControlUsage,
   } = effectivePreferences;
   const activeSession = sessions.activeSession;
+  const { getClient, herdView, state: sessionState } = sessions;
   const retainedPriorityTargets = useRef<TerminalRenderTarget[]>([]);
   const priorityChatTargets = useMemo(() => {
     const targets: TerminalRenderTarget[] = [];
+    if (sessionState.sessions.length === 0) return targets;
     // Rust owns the unfiltered, device-wide Herd attention order.
-    for (const item of sessions.herdView([]).agents) {
-      const client = sessions.getClient(item.hostId);
+    for (const item of herdView([]).agents) {
+      const client = getClient(item.hostId);
       const native = client?.activeNative;
       if (!client || !native) continue;
       const host = native.hostState();
@@ -152,10 +161,15 @@ export function AppShell({
     })) return previous;
     retainedPriorityTargets.current = targets;
     return targets;
-  }, [sessions]);
+  }, [getClient, herdView, sessionState]);
   // Mount the shared viewport owner while Herd is open, even before selecting a host.
   const viewportSession = activeSession ?? sessions.presentationSessions.find(
     session => session.id === priorityChatTargets[0]?.hostSessionId,
+  );
+  const viewportSessionId = viewportSession?.id;
+  const viewportTerminalState = useMemo(
+    () => viewportSessionId ? terminals.get(viewportSessionId, sessionState) : null,
+    [sessionState, terminals, viewportSessionId],
   );
   useEffect(() => {
     if (sessions.restoreComplete) void voiceSessionManager.retainAgentHosts(sessions.presentationSessions.map(session => session.id));
@@ -190,57 +204,73 @@ export function AppShell({
     if (pane) remoteFiles.open(sessionId, pane.terminal_id);
   };
 
+  const presentationSessions = sessions.presentationSessions;
+  const { herdHostFilterId, herdWorkspaceFilterIds } = navigation;
+  const getHerdPresentation = useMemo(() => {
+    const prepare = () => {
+      const herdProjectionRequest = resolveHerdProjectionRequest(
+        presentationSessions.map(session => session.id),
+        herdHostFilterId,
+        herdWorkspaceFilterIds,
+      );
+      const scopedSession = presentationSessions.find(
+        session => session.id === herdProjectionRequest.hostId,
+      );
+      const offline = Boolean(scopedSession && scopedSession.connectionStatus !== 'ready');
+      const herdProjection = herdView(
+        presentationSessions.map(session => ({
+          sessionId: session.id,
+          hostLabel: hostDisplayName(session.host),
+          address: session.host.host,
+        })),
+        herdProjectionRequest.hostId ?? undefined,
+        herdProjectionRequest.workspaceId ?? undefined,
+      );
+      const herdHostsById = new Map(herdProjection.hosts.map(host => [host.id, host]));
+      const railSessions: LiveSessionRailItem[] = presentationSessions.map(session => {
+        const herdHost = herdHostsById.get(session.id);
+        return {
+          hostId: session.id,
+          label: hostDisplayName(session.host),
+          status: session.connectionStatus,
+          // Herd defaults to idle without agents; the rail still summarizes
+          // workspaces in that case and defaults to unknown without workspaces.
+          agentStatus: herdHost && herdHost.agents.length > 0
+            ? herdHost.agentStatus
+            : aggregateAgentStatus(
+              session.snapshot.workspaces.map(workspace => workspace.agent_status),
+              'unknown',
+            ),
+          terminalCount: terminals.get(session.id, sessionState).sessions.length,
+        };
+      });
+      const herdQueues: HerdHostQueue[] = herdProjection.hosts.map(host => ({
+        ...host,
+        herdrEnabled: presentationSessions.find(session => session.id === host.id)?.host.herdrEnabled !== false,
+      }));
+      const agents = herdProjection.agents.map(item => ({
+        ...item,
+        terminalStatus: terminals.get(item.hostId, sessionState).sessions.find(
+          terminal => terminal.terminalId === item.agent.terminal_id,
+        )?.status,
+      }));
+      return { herdProjectionRequest, scopedSession, offline, herdProjection, railSessions, herdQueues, agents };
+    };
+    // A hidden screen does not need a native projection until it is revealed.
+    let prepared: ReturnType<typeof prepare> | undefined;
+    return () => {
+      prepared ??= prepare();
+      return prepared;
+    };
+  }, [herdHostFilterId, herdWorkspaceFilterIds, herdView, presentationSessions, sessionState, terminals]);
+
   const renderHerd = () => {
-    const herdProjectionRequest = resolveHerdProjectionRequest(
-      sessions.presentationSessions.map(session => session.id),
-      navigation.herdHostFilterId,
-      navigation.herdWorkspaceFilterIds,
-    );
-    const scopedSession = sessions.presentationSessions.find(
-      session => session.id === herdProjectionRequest.hostId,
-    );
-    const offline = Boolean(scopedSession && scopedSession.connectionStatus !== 'ready');
-    const herdProjection = sessions.herdView(
-      sessions.presentationSessions.map(session => ({
-        sessionId: session.id,
-        hostLabel: hostDisplayName(session.host),
-        address: session.host.host,
-      })),
-      herdProjectionRequest.hostId ?? undefined,
-      herdProjectionRequest.workspaceId ?? undefined,
-    );
-    const herdHostsById = new Map(herdProjection.hosts.map(host => [host.id, host]));
-    const railSessions: LiveSessionRailItem[] = sessions.presentationSessions.map(session => {
-      const herdHost = herdHostsById.get(session.id);
-      return {
-        hostId: session.id,
-        label: hostDisplayName(session.host),
-        status: session.connectionStatus,
-        // Herd defaults to idle without agents; the rail still summarizes
-        // workspaces in that case and defaults to unknown without workspaces.
-        agentStatus: herdHost && herdHost.agents.length > 0
-          ? herdHost.agentStatus
-          : aggregateAgentStatus(
-            session.snapshot.workspaces.map(workspace => workspace.agent_status),
-            'unknown',
-          ),
-        terminalCount: terminals.get(session.id, sessions.state).sessions.length,
-      };
-    });
-    const herdQueues: HerdHostQueue[] = herdProjection.hosts.map(host => ({
-      ...host,
-      herdrEnabled: sessions.presentationSessions.find(session => session.id === host.id)?.host.herdrEnabled !== false,
-    }));
+    const { herdProjectionRequest, scopedSession, offline, herdProjection, railSessions, herdQueues, agents } = getHerdPresentation();
 
     return (
       <HerdScreen
         queues={herdQueues}
-        agents={herdProjection.agents.map(item => ({
-          ...item,
-          terminalStatus: terminals.get(item.hostId, sessions.state).sessions.find(
-            terminal => terminal.terminalId === item.agent.terminal_id,
-          )?.status,
-        }))}
+        agents={agents}
         sessions={railSessions}
         selectedHostId={herdProjection.selectedHostId ?? null}
         workspaceFilterId={herdProjection.selectedWorkspaceId ?? null}
@@ -318,8 +348,8 @@ export function AppShell({
     navigation.licensesOpen;
 
   return (
-    <VoiceConversationSettingsContext value={{ settings: storedPreferences.voiceConversation, onChange: value => preferences.setPreference('voiceConversation', value) }}>
-    <GlobalCallContext value={() => globalCallRef.current?.open()}>
+    <VoiceConversationSettingsContext value={voiceConversationContext}>
+    <GlobalCallContext value={openGlobalCall}>
     <VoiceVadSensitivityContext value={storedPreferences.vadSensitivity}>
       <StableStatusBar
         hidden={fullscreenVisible}
@@ -675,7 +705,7 @@ export function AppShell({
               </View>
 
               {(navigation.mountedTabs.has('terminal') || priorityChatTargets.length > 0) &&
-                viewportSession && (
+                viewportSession && viewportTerminalState && (
                   <AgentStatusAnimationProvider enabled={terminalVisible}>
                     <LiveSessionView
                       session={viewportSession}
@@ -691,7 +721,7 @@ export function AppShell({
                         viewportSession.connectionStatus === 'ready' &&
                         Boolean(activeTelemetry?.latencyWarning.active)
                       }
-                      terminalState={terminals.get(viewportSession.id, sessions.state)}
+                      terminalState={viewportTerminalState}
                       terminalTargets={sessions.terminalTargets}
                       priorityChatTargets={priorityChatTargets}
                       appBackgroundImageUri={appBackgroundImageUri}
@@ -763,7 +793,7 @@ export function AppShell({
             <GlobalVoiceCall ref={globalCallRef} navigation={navigation} sessions={sessions} locked={security.locked} visible={!overlaysVisible}
               onConfigureOpenAi={() => {
                 navigation.selectTab('more');
-                setOpenAiConfigRequest(request => request + 1);
+                requestOpenAiConfig();
               }} />
           </View>
         </GlassProvider>

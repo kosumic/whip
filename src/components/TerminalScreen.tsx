@@ -1130,9 +1130,10 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     }, [composerStore, keyboardEnabled, replaceComposeText, setKeyboardEnabled, visible]);
 
     // Bind native selection callbacks to the pane that rendered their text.
+    const chatSelectionTargetKey = activeTarget?.key;
     const addChatSelectionToComposer = useCallback((text: string) => {
-      if (chatViewEnabled && activeTarget) addToComposer(text, activeTarget.key);
-    }, [activeTarget, addToComposer, chatViewEnabled]);
+      if (chatViewEnabled && chatSelectionTargetKey) addToComposer(text, chatSelectionTargetKey);
+    }, [chatSelectionTargetKey, addToComposer, chatViewEnabled]);
 
     const speechInput = useComposerSpeechInput({
       owner: JSON.stringify([activeTarget?.key, voiceContext?.key, chatViewEnabled]),
