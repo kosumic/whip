@@ -88,6 +88,7 @@ struct State {
     projections: usize,
     loaded_ids: Vec<String>,
     cleanup_error: bool,
+    connecting: Vec<Vec<String>>,
 }
 #[derive(Default)]
 struct Platform {
@@ -250,7 +251,9 @@ impl SessionConnectionPlatform for Platform {
     fn state_changed(&self) {
         self.state.lock().projections += 1;
     }
-    fn connecting_changed(&self, _: Vec<String>) {}
+    fn connecting_changed(&self, hosts: Vec<String>) {
+        self.state.lock().connecting.push(hosts);
+    }
     fn diagnostic(&self, _: String, _: SessionConnectionPhase, _: u64, _: bool) {}
 }
 struct Fixture {
@@ -487,9 +490,14 @@ async fn repeated_taps_do_not_start_a_second_transaction() -> TestResult {
     f.platform.state.lock().hold = Some("credential");
     let first = f.start();
     f.platform.wait("credential").await;
+    assert_eq!(
+        f.core.connecting_hosts(),
+        std::slice::from_ref(&f.request.host.id)
+    );
     assert_eq!(f.start().result().await, SessionConnectionOutcome::Busy);
     f.platform.release();
     assert_eq!(first.result().await, SessionConnectionOutcome::Ready);
+    assert!(f.core.connecting_hosts().is_empty());
     Ok(())
 }
 #[tokio::test]
@@ -746,11 +754,13 @@ async fn existing_runtime_selection_is_fenced_by_the_committed_target() -> TestR
     let mut f = Fixture::new();
     assert_eq!(f.start().result().await, SessionConnectionOutcome::Ready);
     f.platform.state.lock().calls.clear();
+    f.platform.state.lock().connecting.clear();
     f.request.existing_host = Some(f.request.host.clone());
     f.core
         .open_session(f.request.host.id.clone(), f.request.host.id.clone(), true);
     assert_eq!(f.start().result().await, SessionConnectionOutcome::Selected);
     assert!(f.platform.state.lock().calls.is_empty());
+    assert!(f.platform.state.lock().connecting.iter().all(Vec::is_empty));
     f.storage.hosts.lock()[0].host = "replacement.test".into();
     assert!(matches!(
         f.start().result().await,
@@ -792,10 +802,15 @@ async fn mode_replacement_releases_the_previous_binding_before_loading_credentia
     let operation = f.start();
     f.platform.wait("credential").await;
     assert!(!f.core.has_connection_runtime(&f.request.host.id));
+    assert_eq!(
+        f.core.connecting_hosts(),
+        std::slice::from_ref(&f.request.host.id)
+    );
     assert_eq!(f.platform.state.lock().cleanup_retain, [false]);
     f.platform.release();
     assert_eq!(operation.result().await, SessionConnectionOutcome::Ready);
     assert!(f.core.has_connection_runtime(&f.request.host.id));
+    assert!(f.core.connecting_hosts().is_empty());
     Ok(())
 }
 

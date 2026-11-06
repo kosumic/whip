@@ -346,6 +346,13 @@ impl Workflow {
     async fn begin_session(&mut self) -> EffectResult<()> {
         let host_id = self.request.host.id.clone();
         self.phase = SessionConnectionPhase::Admission;
+        // Selecting a reusable runtime never enters this connection phase.
+        let connecting = self
+            .transaction
+            .attempt
+            .while_current(|| self.transaction.core.set_connecting(host_id.clone(), true))
+            .ok_or(SessionConnectionPlatformError::Cancelled)?;
+        self.platform.connecting_changed(connecting);
         if self.request.saved || self.request.existing_host.is_some() {
             self.transaction.prepared.store(true, Ordering::Release);
             self.runtime = self.transaction.core.prepare_connection(
@@ -778,7 +785,7 @@ impl AppCore {
         let lane = lane(&host_id);
         let worker = Workflow {
             transaction,
-            platform: platform.clone(),
+            platform,
             request,
             phase: SessionConnectionPhase::Admission,
             runtime: None,
@@ -786,7 +793,6 @@ impl AppCore {
             attached: false,
             selected: false,
         };
-        platform.connecting_changed(self.set_connecting(host_id, true));
         match crate::runtime() {
             Ok(runtime) => {
                 runtime.spawn(async move {
