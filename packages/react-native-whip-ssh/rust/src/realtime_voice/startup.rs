@@ -2,46 +2,21 @@
 use serde::Serialize;
 use std::time::Instant;
 
-/// Only session.updated confirms effective settings. A transport's initial
-/// session.created can still contain defaults with transcription disabled.
 #[derive(Default)]
-pub(super) struct Settings {
-    confirmed: bool,
-    captions: Option<super::captions::Diagnostics>,
-}
-
+pub(super) struct Settings(voice_openai::settings::Settings);
 impl Settings {
     pub(super) fn observe(
         &mut self,
         config: &super::Config,
         event: &oai_rt_rs::ServerEvent,
     ) -> Result<bool, &'static str> {
-        let oai_rt_rs::ServerEvent::SessionUpdated { session, .. } = event else {
-            return Ok(false);
-        };
-        self.confirmed = false;
-        let audio = session
-            .config
-            .audio
-            .clone()
-            .ok_or("OpenAI did not negotiate audio.")?;
-        if !config.preview {
-            let captions = super::captions::Diagnostics::confirm(config.language, &audio);
-            let accepted = captions.validate();
-            self.captions = Some(captions);
-            accepted?;
-        }
-        config.validate_audio(audio)?;
-        self.confirmed = true;
-        Ok(true)
+        self.0.observe(&config.audio_settings()?, event)
     }
-
     pub(super) fn is_confirmed(&self) -> bool {
-        self.confirmed
+        self.0.is_confirmed()
     }
-
     pub(super) fn take_captions(&mut self) -> Option<super::captions::Diagnostics> {
-        self.captions.take()
+        self.0.take_captions()
     }
 }
 

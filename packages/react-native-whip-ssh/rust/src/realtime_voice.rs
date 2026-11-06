@@ -37,16 +37,14 @@ use std::sync::{
 use std::time::{Duration, Instant};
 
 use base64::{Engine, engine::general_purpose::STANDARD};
-use futures::{SinkExt, StreamExt};
+use futures::StreamExt;
 use oai_rt_rs::{ClientEvent, ServerEvent};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinSet;
-use tokio_tungstenite::tungstenite::{
-    Message, client::IntoClientRequest, protocol::WebSocketConfig,
-};
+use tokio_tungstenite::tungstenite::Message;
 
 use crate::host_runtime::realtime_agent::{
     AgentTarget, BACKGROUND_AGENT, PinnedAgent, REMAIN_SILENT,
@@ -55,18 +53,18 @@ use crate::host_runtime::realtime_terminal::{PinnedTerminal, TerminalTarget};
 use crate::reverse_control::voice::{self as global_tools, WhipToolSession};
 use captions::Language as TranscriptionLanguage;
 
-pub(super) const RATE: usize = 24_000;
-pub(super) const FRAME: usize = RATE / 50;
+pub(super) const RATE: usize = voice_call_media::RATE;
+pub(super) const FRAME: usize = voice_call_media::FRAME;
 const AUDIBLE_SAMPLE: u16 = 64;
 const MAX_OUTPUT: usize = RATE * 30;
 const MAX_OUTPUT_ITEMS: usize = 64;
-const MAX_WIRE: usize = 512 * 1024;
+#[cfg(test)]
+use voice_openai::MAX_WIRE;
+use voice_openai::{IO_TIMEOUT, typed};
 const MAX_TEXT: usize = 16 * 1024;
 const TYPED_PREFIX: &str = "[TYPED — already submitted to the bound coding agent]\n";
-const MAX_ARGUMENT_BYTES: usize = 64 * 1024;
-const MAX_CALLS: usize = 128;
-const IO_TIMEOUT: Duration = Duration::from_secs(10);
-static EVENT_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+use voice_openai::tools::{MAX_ARGUMENT_BYTES, MAX_CALLS};
+const EVENT_PREFIX: &str = "whip";
 const INSTRUCTIONS: &str = include_str!("realtime_voice/instructions.md");
 // Adapted from Codex's realtime_websocket/methods_v2.rs default tool description
 // at 93b4e5b4c6474cdbf12614c4ac3acbd006fbee89 (Apache-2.0).
@@ -154,42 +152,19 @@ impl Config {
         }
     }
 
+    fn audio_settings(&self) -> Result<voice_openai::settings::AudioSettings, &'static str> {
+        Ok(voice_openai::settings::AudioSettings {
+            voice: self.voice.clone(),
+            turn_detection: serde_json::to_value(&self.vad)
+                .and_then(serde_json::from_value)
+                .map_err(|_| "Invalid Realtime VAD settings.")?,
+            preview: self.preview,
+            language: self.language,
+        })
+    }
+    #[cfg(test)]
     fn validate_audio(&self, audio: oai_rt_rs::AudioConfig) -> Result<(), &'static str> {
-        let input = audio.input.ok_or("OpenAI did not negotiate input audio.")?;
-        let output = audio
-            .output
-            .ok_or("OpenAI did not negotiate output audio.")?;
-        if input.format != Some(oai_rt_rs::AudioFormat::pcm_24khz())
-            || output.format != Some(oai_rt_rs::AudioFormat::pcm_24khz())
-            || output.voice.as_ref().map(ToString::to_string).as_deref()
-                != Some(self.voice.as_str())
-        {
-            return Err("OpenAI did not accept the selected voice or PCM format.");
-        }
-        let accepted = serde_json::to_value(input.turn_detection)
-            .map_err(|_| "Invalid Realtime VAD confirmation.")?;
-        if self.preview {
-            return if accepted["type"] == "server_vad"
-                && accepted["create_response"] == false
-                && accepted["interrupt_response"] == false
-            {
-                Ok(())
-            } else {
-                Err("OpenAI did not accept preview server VAD settings.")
-            };
-        }
-        let requested =
-            serde_json::to_value(&self.vad).map_err(|_| "Invalid Realtime VAD settings.")?;
-        if !requested.as_object().is_some_and(|fields| {
-            fields
-                .iter()
-                .all(|(key, value)| accepted.get(key) == Some(value))
-        }) || accepted["create_response"] != true
-            || accepted["interrupt_response"] != true
-        {
-            return Err("OpenAI did not accept the selected Realtime VAD settings.");
-        }
-        Ok(())
+        self.audio_settings()?.validate_audio(audio)
     }
 
     fn session_update(&self) -> Result<ClientEvent, &'static str> {
@@ -255,10 +230,6 @@ impl Config {
             "tools":tools,"tool_choice":"auto"
         }}))
     }
-}
-
-fn typed(value: Value) -> Result<ClientEvent, &'static str> {
-    serde_json::from_value(value).map_err(|_| "Invalid Realtime event.")
 }
 
 #[derive(Serialize)]
@@ -1354,61 +1325,11 @@ fn terminal_submitted_message(text: &str) -> Result<ClientEvent, &'static str> {
     )
 }
 
-async fn connect_raw(
-    key: &native_credentials::NativeCredential,
-    url: &str,
-) -> Result<socket::RawSocket, &'static str> {
-    connect_request(authorized_request(key, url)?)
-        .await
-        .map_err(|error| error.message)
-}
-
-fn authorized_request(
-    key: &native_credentials::NativeCredential,
-    url: &str,
-) -> Result<tokio_tungstenite::tungstenite::http::Request<()>, &'static str> {
-    let mut request = url
-        .into_client_request()
-        .map_err(|_| "Realtime request could not be prepared.")?;
-    let header = key.authorization();
-    let mut authorization = tokio_tungstenite::tungstenite::http::HeaderValue::from_bytes(&header)
-        .map_err(|_| "Invalid OpenAI API credential.")?;
-    authorization.set_sensitive(true);
-    request.headers_mut().insert("Authorization", authorization);
-    drop(header);
-    Ok(request)
-}
-
-async fn connect_request(
-    request: tokio_tungstenite::tungstenite::http::Request<()>,
-) -> Result<socket::RawSocket, recovery::Failure> {
-    let socket_config = WebSocketConfig::default()
-        .max_message_size(Some(MAX_WIRE))
-        .max_frame_size(Some(MAX_WIRE));
-    let (socket, _) = tokio::time::timeout(
-        IO_TIMEOUT,
-        tokio_tungstenite::connect_async_with_config(request, Some(socket_config), false),
-    )
-    .await
-    .map_err(|_| recovery::Failure {
-        message: "OpenAI Realtime connection timed out.",
-        retryable: true,
-    })?
-    .map_err(|error| match error {
-        tokio_tungstenite::tungstenite::Error::Http(response) => {
-            recovery::Failure::from(match response.status().as_u16() {
-                401 | 403 | 404 => models::ACCESS_ERROR,
-                429 => "OpenAI Realtime quota or rate limit reached.",
-                _ => "OpenAI Realtime could not connect. Check model access and connectivity.",
-            })
-        }
-        _ => recovery::Failure {
-            message: "OpenAI Realtime could not connect. Check your network.",
-            retryable: true,
-        },
-    })?;
-    Ok(socket)
-}
+#[cfg(test)]
+use voice_openai::connection::authorized_request;
+use voice_openai::connection::connect_raw;
+#[cfg(test)]
+use voice_openai::connection::connect_request;
 
 fn next_response(
     responses: &response::ResponseCreateQueue,
@@ -1521,74 +1442,25 @@ async fn send<S>(socket: &mut S, event: ClientEvent) -> Result<(), &'static str>
 where
     S: futures::Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
 {
-    let value = serde_json::to_value(event).map_err(|_| "Realtime event could not be encoded.")?;
-    send_value(socket, value).await
+    voice_openai::events::send_with_prefix(socket, event, EVENT_PREFIX).await
 }
-
-async fn send_value<S>(socket: &mut S, mut value: Value) -> Result<(), &'static str>
-where
-    S: futures::Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
-{
-    let kind = value["type"]
-        .as_str()
-        .ok_or("Realtime event has no type.")?;
-    let id = format!(
-        "whip:{kind}:{}",
-        EVENT_SEQUENCE.fetch_add(1, Ordering::Relaxed)
-    );
-    value["event_id"] = json!(id);
-    let text = serde_json::to_string(&value).map_err(|_| "Realtime event could not be encoded.")?;
-    tokio::time::timeout(IO_TIMEOUT, socket.send(Message::Text(text.into())))
-        .await
-        .map_err(|_| "Realtime upload timed out.")?
-        .map_err(|_| "Realtime connection ended.")
-}
-
 #[derive(Default)]
-struct ToolLedger {
-    seen: HashSet<String>,
-    mutation_uncertain: bool,
-}
+struct ToolLedger(voice_openai::tools::Ledger);
 impl ToolLedger {
     fn begin(&mut self, id: &str, name: &str, arguments: &str) -> Result<bool, &'static str> {
-        if self.seen.contains(id) {
-            return Err("duplicate");
-        }
-        if self.seen.len() >= MAX_CALLS {
-            return Err("limit");
-        }
-        if id.is_empty() || id.len() > 128 {
-            return Err("invalid_call_id");
-        }
-        self.seen.insert(id.to_owned());
-        if !matches!(name, BACKGROUND_AGENT | REMAIN_SILENT) || arguments.len() > MAX_ARGUMENT_BYTES
-        {
-            return Err("invalid_tool");
-        }
-        let mutation = name == BACKGROUND_AGENT;
-        if mutation && self.mutation_uncertain {
-            return Err("outcome_unknown");
-        }
-        Ok(mutation)
+        use voice_openai::tools::Access;
+        let access = match name {
+            BACKGROUND_AGENT => Access::Mutate,
+            REMAIN_SILENT => Access::Read,
+            _ => Access::Unknown,
+        };
+        self.0.begin(id, arguments, access)
     }
     fn complete(&mut self, mutation: bool, uncertain: bool) {
-        if mutation {
-            self.mutation_uncertain |= uncertain;
-        }
+        self.0.complete(mutation, uncertain);
     }
 }
-fn function_output(call_id: String, value: Value) -> ClientEvent {
-    ClientEvent::ConversationItemCreate {
-        event_id: None,
-        previous_item_id: None,
-        item: Box::new(oai_rt_rs::Item::FunctionCallOutput {
-            id: None,
-            phase: None,
-            call_id,
-            output: value.to_string(),
-        }),
-    }
-}
+use voice_openai::tools::function_output;
 fn peak(samples: &[i16]) -> f32 {
     samples
         .iter()

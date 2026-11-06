@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths: &ingress-paths
       - 'crates/voice-call-media/**'
+      - 'crates/audio-ingress/**'
       - '.github/workflows/ci-voice-call-media.yml'
       - 'crates/voice-call-media/rust-toolchain.toml'
   pull_request:

@@ -14,6 +14,7 @@ default = []
 smart-turn = ["ai-voice-call/smart-turn", "dep:tract-onnx", "dep:rustfft"]
 
 [dependencies]
+voice-openai = { path = "../../../crates/voice-openai" }
 voice-call-media = { path = "../../../crates/voice-call-media" }
 ai-voice-call = { version = "0.1.0", path = "../../../crates/ai-voice-call" }
 mobile-speech = { version = "0.1.0", path = "../../../crates/mobile-speech" }
@@ -36,7 +37,6 @@ html5ever = "0.39"
 log = { version = "0.4", features = ["max_level_info"] }
 parking_lot = "0.12"
 oai-rt-rs = "=0.5.1"
-# Provider-backed DTLS avoids crypto-bigint 0.5 (RUSTSEC-2026-0387).
 tracing = "0.1"
 rayon = "1"
 rustfft = { version = "6.4", optional = true }

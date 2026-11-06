@@ -10,6 +10,7 @@ repository = "https://github.com/kosumic/whip"
 [dependencies]
 audio-ingress = { version = "0.1.0", path = "../audio-ingress" }
 opus = "=0.4.0"
+# Provider-backed DTLS avoids crypto-bigint 0.5 (RUSTSEC-2026-0387).
 str0m = { version = "=0.25.0", default-features = false, features = ["aws-lc-rs"] }
 if-addrs = "0.15"
 parking_lot = "0.12"

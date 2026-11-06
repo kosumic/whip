@@ -1,5 +1,5 @@
 import liveCatalog from '../../packages/react-native-whip-ssh/rust/src/realtime_voice/live/catalog.json';
-import realtimeCatalog from '../../packages/react-native-whip-ssh/rust/src/realtime_voice/models.json';
+import realtimeCatalog from '../../crates/voice-openai/src/models.json';
 
 // Rust validates calls and prices usage from this same catalog.
 export const REALTIME_MODELS = realtimeCatalog.models;

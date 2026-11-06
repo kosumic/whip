@@ -486,6 +486,21 @@ an official export for a cold snapshot and polls only newer durable events with
 divergence. Chat composer submissions return to the same Herdr pane and PTY used
 by the mounted terminal.
 
+### Native voice media and providers
+
+The provider-neutral `voice-call-media` crate owns the native WebRTC/Opus/RTP
+transport, bounded capture and playout scheduling, jitter buffer, resampling and
+echo processing. Whip supplies native PCM ingress, playback and call-policy
+adapters; provider signaling and credentials stay outside the media engine.
+Both Realtime and GPT-Live use the same engine on the existing Tokio runtime.
+
+`voice-openai` depends on `voice-call-media` and owns Realtime/GPT-Live signaling,
+sideband transport, effective settings validation, audio identity, response/tool
+admission and provider usage collection. Whip supplies call-attempt, device,
+context/tool, transcript/history and persistence integrations. Host policy and
+FFI remain in Whip; provider code imports neither application state nor native
+platform managers. The provider README documents reuse by GymAmi and other apps.
+
 ### Rust-owned remote operations
 
 `HostRuntime` owns Whip's non-UI remote-operation services. Its remote-filesystem
@@ -785,9 +800,3 @@ retry. Transport loss, timeout or cancellation after dispatch returns a typed
 commands are never automatically replayed. Authenticated hops close on
 cancellation. Rust tests use fake platform and transport effects; adapter tests
 cover callback permits, cancellation and result mapping.
-
-The provider-neutral `voice-call-media` crate owns the native WebRTC/Opus/RTP
-transport, bounded capture and playout scheduling, jitter buffer, resampling and
-echo processing. Whip supplies native PCM ingress, playback and call-policy
-adapters; provider signaling and credentials stay outside the media engine.
-Both Realtime and GPT-Live use the same engine on the existing Tokio runtime.

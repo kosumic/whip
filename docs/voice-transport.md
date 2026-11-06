@@ -202,3 +202,17 @@ first retained control-event kind are injected through `TransportConfig`.
 Playback callbacks recheck cancellation epochs before committing samples. See
 `crates/voice-call-media/README.md` for adapter contracts, shutdown ordering and
 the credential-free bidirectional PCM/signaling example.
+
+## Reusable OpenAI provider
+
+`crates/voice-openai` depends on the media engine. It owns OpenAI HTTP signaling,
+sideband/WebSocket framing, media identity, settings confirmation, response/tool
+admission and final-usage collection. GPT-Live protocol state, mute correlation
+and cumulative duration reports live there too. Whip's call-attempt, capture and
+playback callbacks are in `realtime_voice/webrtc/host.rs`; native FFI, agent and
+terminal tools, context, persistence and audio devices remain Whip-owned.
+
+The settings UI imports the Realtime model catalog from the provider crate so
+Rust and TypeScript keep one source. Android's Rust build inputs include both
+crates and their JSON assets. See `crates/voice-openai/README.md` for shutdown
+ordering and migration guidance for GymAmi or another native app.

@@ -69,12 +69,12 @@ fn cumulative_usage_is_monotonic_and_final_usage_is_not_added() -> Result<(), &'
     usage.observe(12.0, false)?;
     usage.observe(15.0, false)?;
     usage.observe(12.0, false)?;
-    assert_eq!(usage.seconds, 15.0);
-    assert!(!usage.finalized);
+    assert_eq!(usage.provider.seconds, 15.0);
+    assert!(!usage.provider.finalized);
     usage.observe(16.0, true)?;
     usage.observe(16.0, true)?;
     usage.observe(99.0, false)?;
-    assert_eq!(usage.seconds, 16.0);
+    assert_eq!(usage.provider.seconds, 16.0);
     assert!((usage.estimate().ok_or("missing estimate")? - 16.0 * 0.05 / 60.0).abs() < 1e-12);
     Ok(())
 }
@@ -84,8 +84,8 @@ fn duplicate_events_do_not_duplicate_requests_or_captions() -> Result<(), Box<dy
 {
     let mut state = State::default();
     let event=codec().decode_server(r#"{"type":"session.input_transcript.delta","event_id":"one","delta":"hello hello","start_ms":0,"end_ms":100}"#)?;
-    assert!(state.unique(&event)?);
-    assert!(!state.unique(&event)?);
+    assert!(state.protocol.unique(&event)?);
+    assert!(!state.protocol.unique(&event)?);
     Ok(())
 }
 
@@ -335,7 +335,7 @@ async fn public_live_api_smoke() -> Result<(), Box<dyn std::error::Error>> {
                 },
                 _=tick.tick()=>{
                     if Instant::now()>deadline {return Err("Live smoke deadline exceeded".into());}
-                    if state.session_id.is_some() && !closing {
+                    if state.protocol.session_id.is_some() && !closing {
                         if result_at.as_ref().is_some_and(|(_, at)| Instant::now() >= *at)
                             && let Some((id,_))=result_at.take()
                         {
@@ -363,9 +363,9 @@ async fn public_live_api_smoke() -> Result<(), Box<dyn std::error::Error>> {
     result?;
     eprintln!(
         "Live smoke observations: input={input}, output={output}, audio_bytes={audio_bytes}, delegations={delegations}, acks={acknowledgements}, seconds={}",
-        usage.seconds
+        usage.provider.seconds
     );
-    assert!(usage.finalized, "Final provider usage missing");
+    assert!(usage.provider.finalized, "Final provider usage missing");
     assert!(
         output_text.to_ascii_lowercase().contains("passed"),
         "The synthetic result was not spoken"
@@ -381,7 +381,7 @@ async fn public_live_api_smoke() -> Result<(), Box<dyn std::error::Error>> {
     );
     eprintln!(
         "Live API smoke: voice=quartz, input_events={input}, output_events={output}, audio_bytes={audio_bytes}, delegations={delegations}, context_acks={acknowledgements}, final_seconds={}",
-        usage.seconds
+        usage.provider.seconds
     );
     Ok(())
 }
@@ -419,7 +419,7 @@ fn session_identity_model_and_voice_are_pinned() -> Result<(), Box<dyn std::erro
     // identity before its parallel control connection becomes available.
     for session_id in [None, Some("one".to_owned())] {
         let mut state = State {
-            session_id,
+            protocol: voice_openai::live::Control::new(session_id),
             ..State::default()
         };
         state.pin_session(&snapshot("one", "gpt-live-1", "quartz")?, &config)?;
@@ -450,8 +450,8 @@ fn missing_final_usage_retains_an_estimate_and_invalid_reports_cannot_finalize()
     assert!(usage.observe(f64::NAN, true).is_err());
     assert!(usage.observe(11.0, true).is_err());
     assert!(usage.estimate().is_some());
-    assert_eq!(usage.seconds, 12.0);
-    assert!(!usage.finalized);
+    assert_eq!(usage.provider.seconds, 12.0);
+    assert!(!usage.provider.finalized);
     Ok(())
 }
 
@@ -507,16 +507,16 @@ fn delegation_ids_are_call_scoped_and_a_full_queue_does_not_replay() -> Result<(
 #[test]
 fn interruption_suppresses_audio_until_new_speech_and_mute_acks_cannot_cross_commands() {
     let mut state = State::default();
-    state.interrupted(100.0);
-    state.input_caption(90.0);
-    assert!(state.suppress_output_after.is_some());
-    state.input_caption(110.0);
-    assert!(state.suppress_output_after.is_none());
-    state.muted = Some(("new".into(), false, Instant::now()));
-    assert!(!state.confirm_mute(Some("old"), false));
-    assert!(!state.confirm_mute(Some("new"), true));
-    assert!(state.confirm_mute(Some("new"), false));
-    assert!(!state.confirm_mute(Some("new"), false));
+    state.protocol.interrupted(100.0);
+    state.protocol.input_caption(90.0);
+    assert!(state.protocol.suppress_output_after.is_some());
+    state.protocol.input_caption(110.0);
+    assert!(state.protocol.suppress_output_after.is_none());
+    state.protocol.muted = Some(("new".into(), false, Instant::now()));
+    assert!(!state.protocol.confirm_mute(Some("old"), false));
+    assert!(!state.protocol.confirm_mute(Some("new"), true));
+    assert!(state.protocol.confirm_mute(Some("new"), false));
+    assert!(!state.protocol.confirm_mute(Some("new"), false));
 }
 #[test]
 fn output_channels_use_public_context_commands_and_delegation_identity()

@@ -639,7 +639,7 @@ async function main() {
     fs.readFileSync(
       path.join(
         root,
-        'packages/react-native-whip-ssh/rust/src/realtime_voice/models.json',
+        'crates/voice-openai/src/models.json',
       ),
       'utf8',
     ),

@@ -4,21 +4,10 @@ use crate::app_database::{
     VoiceUsageItem, VoiceUsageMode, VoiceUsageScope,
 };
 
+#[derive(Default)]
 pub(super) struct Usage {
-    pub seconds: f64,
-    pub finalized: bool,
+    pub provider: voice_openai::live::usage::DurationUsage,
     persistence: Option<NativeVoiceUsageSession>,
-    observed: bool,
-}
-impl Default for Usage {
-    fn default() -> Self {
-        Self {
-            seconds: 0.0,
-            finalized: false,
-            persistence: None,
-            observed: false,
-        }
-    }
 }
 impl Usage {
     pub fn history_identity(&self) -> Option<&crate::app_database::VoiceUsageIdentity> {
@@ -47,24 +36,17 @@ impl Usage {
         Ok(usage)
     }
     pub fn observe(&mut self, seconds: f64, finalized: bool) -> Result<(), &'static str> {
-        if !seconds.is_finite() || seconds < 0.0 {
-            return Err("GPT-Live returned invalid duration usage.");
+        let was_finalized = self.provider.finalized;
+        self.provider.observe(seconds, finalized)?;
+        if !was_finalized {
+            self.record();
         }
-        if self.finalized {
-            return Ok(());
-        }
-        if finalized && seconds < self.seconds {
-            return Err("GPT-Live final duration disagrees with earlier usage.");
-        }
-        self.seconds = self.seconds.max(seconds);
-        self.observed = true;
-        self.finalized = finalized;
-        self.record();
         Ok(())
     }
     pub fn estimate(&self) -> Option<f64> {
-        self.observed
-            .then_some(self.seconds * super::catalog().ok()?.pricing.usd_per_minute / 60.0)
+        self.provider
+            .observed
+            .then_some(self.provider.seconds * super::catalog().ok()?.pricing.usd_per_minute / 60.0)
     }
     fn record(&mut self) {
         let Ok(catalog) = super::catalog() else {
@@ -76,7 +58,7 @@ impl Usage {
             reported_usage: vec![UsageQuantity {
                 metric: UsageMetric::Other,
                 unit: UsageUnit::Seconds,
-                amount: self.seconds,
+                amount: self.provider.seconds,
             }],
             estimated_usd: self.estimate(),
             price_snapshot: Some(VoicePriceSnapshot {
@@ -90,7 +72,7 @@ impl Usage {
                     usd_per_unit: pricing.usd_per_minute / 60.0,
                 }],
             }),
-            finalized: self.finalized,
+            finalized: self.provider.finalized,
         };
         if let Some(session) = &mut self.persistence {
             session.record("live-duration".into(), item);

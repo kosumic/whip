@@ -67,11 +67,11 @@ pub(super) async fn drive(
             frame = socket.next() => match frame {
                 Some(Ok(Message::Text(text))) => {
                     let frame = codec().decode_server(&text).map_err(|_| "GPT-Live returned an invalid preview event.")?;
-                    if !state.unique(&frame)? { continue; }
+                    if !state.protocol.unique(&frame)? { continue; }
                     owner.view.lock().server_events += 1;
                     match frame.event {
                         ServerEvent::Started { session, .. } => {
-                            if state.session_id.is_some() { return Err("GPT-Live preview started more than once."); }
+                            if state.protocol.session_id.is_some() { return Err("GPT-Live preview started more than once."); }
                             state.pin_session(&session, config)?;
                             owner.view.lock().media_ready = true;
                             owner.view.lock().phase = "muted";
@@ -82,7 +82,7 @@ pub(super) async fn drive(
                             }).await?;
                         }
                         ServerEvent::Error {error, ..} => return Err(super::errors::rejected(&error, false)),
-                        _ if state.session_id.is_none() => return Err("GPT-Live preview did not start correctly."),
+                        _ if state.protocol.session_id.is_none() => return Err("GPT-Live preview did not start correctly."),
                         ServerEvent::Updated { session, .. } => state.pin_session(&session, config)?,
                         ServerEvent::UsageUpdated { usage: reported, .. } => {
                             usage.observe(reported.seconds, false)?;
@@ -123,7 +123,7 @@ pub(super) async fn drive(
             _ = tick.tick() => {
                 if !owner.speech.is_current() { return Err("Voice preview was replaced by another speech session."); }
                 if started.elapsed() > PREVIEW_TIMEOUT { return Err("Voice preview timed out. Please try again."); }
-                if state.session_id.is_none() { continue; }
+                if state.protocol.session_id.is_none() { continue; }
                 let drained = { let output = owner.output.lock(); output.generated == output.played };
                 // Live has no audio-done event. Quiet plus native playback receipts
                 // gives this short sample a bounded, conservative completion point.

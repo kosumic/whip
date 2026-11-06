@@ -7592,6 +7592,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "voice-openai"
+version = "0.1.0"
+dependencies = [
+ "audio-ingress",
+ "futures",
+ "native-credentials",
+ "oai-rt-rs",
+ "parking_lot",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+ "voice-call-media",
+ "zeroize",
+]
+
+[[package]]
 name = "walkdir"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7822,6 +7841,7 @@ dependencies = [
  "url",
  "uuid",
  "voice-call-media",
+ "voice-openai",
  "whip-notify",
  "whipair-protocol",
  "zip",
