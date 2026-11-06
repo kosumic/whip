@@ -41,6 +41,7 @@ export const TERMINAL_TEXT_CONTROL_CLASS =
 
 const terminalControlIds = new Set<string>(defaultTerminalControlOrder);
 const sharedInputControls = new Set<TerminalControlId>([
+  'esc',
   'paste',
   'history',
   'compose',

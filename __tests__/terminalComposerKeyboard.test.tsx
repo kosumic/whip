@@ -367,16 +367,16 @@ test('the voice composer opens the text editor and preserves a draft when it los
   expect(renderer.root.findAllByType(MockMessageComposer)).toHaveLength(0);
 });
 
-test('switching to chat hides terminal keys and retains Paste, History, and Scan links', () => {
+test('switching to chat hides other terminal keys and retains Escape, Paste, History, and Scan links', () => {
   mount();
   expect(button('ctrlModifier')).toBeDefined();
   expect(button('upKey')).toBeDefined();
 
   act(() => renderer.update(<TerminalScreen {...props} chatViewEnabled />));
-  for (const label of ['enableKeyboard', 'disableKeyboard', 'ctrlModifier', 'escapeKey', 'tabKey', 'upKey', 'enterKey']) {
+  for (const label of ['enableKeyboard', 'disableKeyboard', 'ctrlModifier', 'tabKey', 'upKey', 'enterKey']) {
     expect(renderer.root.findAllByProps({ accessibilityLabel: `terminal.${label}` })).toHaveLength(0);
   }
-  for (const label of ['paste', 'history', 'scanLinks']) {
+  for (const label of ['escapeKey', 'paste', 'history', 'scanLinks']) {
     expect(button(label)).toBeDefined();
   }
 
@@ -384,6 +384,28 @@ test('switching to chat hides terminal keys and retains Paste, History, and Scan
   expect(button('ctrlModifier')).toBeDefined();
   expect(button('upKey')).toBeDefined();
   expect(button('enableKeyboard')).toBeDefined();
+});
+
+describe.each([false, true])('Escape availability (chat=%s)', chatViewEnabled => {
+  test.each(['closed', 'open', 'expanded'])('sends Escape with the composer %s without changing its draft', async state => {
+    props.composerStore.restore(target.key, {
+      text: 'Unsent draft', composeOpen: state !== 'closed', composeExpanded: state === 'expanded',
+    });
+    mount({ chatViewEnabled });
+    const draft = props.composerStore.snapshot(target.key);
+
+    for (const keyboardVisible of [false, true]) {
+      emitKeyboard(keyboardVisible);
+      const scope = state === 'expanded'
+        ? renderer.root.find(node => String(node.type) === 'Modal' && node.props.animationType === 'slide')
+        : renderer.root;
+      const escape = scope.find(node => String(node.type) === 'Button' && node.props.accessibilityLabel === 'terminal.escapeKey');
+      expectTouchEnabled(escape);
+      await act(async () => escape.props.onPress());
+      expect(terminalHandle.input).toHaveBeenLastCalledWith('\u001b');
+      expect(props.composerStore.snapshot(target.key)).toBe(draft);
+    }
+  });
 });
 
 test('removes the latency banner when RTT recovers even while warning state is latched', () => {

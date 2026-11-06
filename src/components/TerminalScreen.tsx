@@ -2399,6 +2399,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                   className="h-auto min-h-0 flex-1 rounded-none border-0 bg-transparent dark:bg-transparent px-4 py-4 font-mono text-[15px] leading-[22px] text-terminal-text shadow-none"
                 />
                 <View className="h-14 flex-row items-center border-t border-terminal-divider bg-terminal-panel px-2">
+                  {renderTerminalControl('esc')}
                   <Button
                     accessibilityLabel={t('terminal.attach')}
                     className="size-10 rounded-full px-0"

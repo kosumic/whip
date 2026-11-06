@@ -58,23 +58,23 @@ test('filters controls by keyboard visibility', () => {
   expect(terminalControlIsVisible('paste', true)).toBe(true);
 });
 
-test('chat hides terminal keys while retaining shared actions and keyboard visibility rules', () => {
+test('chat retains Escape and shared actions with keyboard visibility rules', () => {
   const visibleControls = (keyboardVisible: boolean) => defaultTerminalControlOrder
     .filter(control => terminalControlIsVisible(control, keyboardVisible, true));
 
   expect(visibleControls(false)).toEqual([
-    'paste', 'history', 'compose', 'chat', 'attach',
+    'esc', 'paste', 'history', 'compose', 'chat', 'attach',
     'files', 'github', 'links', 'find',
   ]);
   expect(visibleControls(true)).toEqual([
-    'paste', 'history', 'compose', 'chat', 'attach', 'find',
+    'esc', 'paste', 'history', 'compose', 'chat', 'attach', 'find',
   ]);
 });
 
-test.each([false, true])('composer hides terminal keys and duplicate attachments (keyboard=%s)', keyboardVisible => {
+test.each([false, true])('composer retains Escape and hides other terminal keys and duplicate attachments (keyboard=%s)', keyboardVisible => {
   const visibleControls = (chatViewEnabled: boolean) => defaultTerminalControlOrder
     .filter(control => terminalControlIsVisible(control, keyboardVisible, chatViewEnabled, true));
-  const sharedControls = ['paste', 'history', 'compose', 'chat',
+  const sharedControls = ['esc', 'paste', 'history', 'compose', 'chat',
     ...keyboardVisible ? [] : ['files', 'github', 'links'], 'find'];
 
   expect(visibleControls(false)).toEqual(['keyboard', ...sharedControls]);
