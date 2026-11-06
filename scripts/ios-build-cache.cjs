@@ -81,7 +81,7 @@ function nativeInputs(root, directories) {
       const file = path.join(directory, entry.name);
       if (entry.isDirectory()) {
         if (!['build', 'target', 'node_modules', 'TerminalAssets', 'android'].includes(entry.name)) visit(file);
-      } else if (/\.(podspec|swift|mm?|h|hpp|cpp|cc|cxx|c)$/.test(entry.name)
+      } else if (/\.(podspec|modulemap|swift|mm?|h|hpp|cpp|cc|cxx|c)$/.test(entry.name)
         || /^(Native.*\.tsx?|package\.json|react-native\.config\.js|expo-module\.config\.json)$/.test(entry.name)) {
         files.push(file);
       }

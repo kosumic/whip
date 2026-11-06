@@ -138,7 +138,7 @@ test('failed generation invalidates the old success stamp even after reverting i
   expect(count('ubrn', 'build')).toBe(3);
 });
 
-test.each(['NewView.swift', 'NewBridge.h'])(
+test.each(['NewView.swift', 'NewBridge.h', 'NewModule.modulemap'])(
   'dependency updates reinstall npm and CocoaPods while adding %s only refreshes CocoaPods', nativeFile => {
     prepareDependencies(root, execute);
     write('package-lock.json', 'updated dependencies');
@@ -150,6 +150,12 @@ test.each(['NewView.swift', 'NewBridge.h'])(
     prepareDependencies(root, execute);
     expect(count('npm', 'ci')).toBe(2);
     expect(count('pod', 'install')).toBe(3);
+    expect(count('ubrn', 'build')).toBe(2);
+
+    write(`modules/whip-native-spinner/ios/${nativeFile}`, 'updated native source');
+    prepareDependencies(root, execute);
+    expect(count('npm', 'ci')).toBe(2);
+    expect(count('pod', 'install')).toBe(4);
     expect(count('ubrn', 'build')).toBe(2);
   },
 );

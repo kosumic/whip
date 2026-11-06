@@ -1,0 +1,4 @@
+module WhipSsh {
+  header "WhipSyntaxHighlight.h"
+  export *
+}

@@ -16,6 +16,8 @@ Pod::Spec.new do |s|
   s.source       = { :git => "https://github.com/kosumic/whip.git", :tag => "#{s.version}" }
 
   s.source_files = "ios/**/*.{h,m,mm,swift}", "ios/generated/**/*.{h,m,mm}", "cpp/**/*.{hpp,cpp,c,h}", "cpp/generated/**/*.{hpp,cpp,c,h}"
+  # Expose the C highlighting API to Swift without importing the C++/JSI bridge.
+  s.module_map = "ios/WhipSsh.modulemap"
   s.vendored_frameworks = "build/WhipSsh.xcframework"
   s.frameworks = ["CoreFoundation", "Security", "LocalAuthentication", "Network", "CallKit", "AVFoundation"]
   s.libraries = "resolv"
@@ -43,4 +45,5 @@ Pod::Spec.new do |s|
       s.dependency "ReactCommon/turbomodule/core"
     end
   end
+  s.pod_target_xcconfig = (s.to_hash["pod_target_xcconfig"] || {}).merge("DEFINES_MODULE" => "YES")
 end
