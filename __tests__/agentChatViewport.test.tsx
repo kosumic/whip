@@ -2329,18 +2329,33 @@ describe('AgentChatView warm viewport restoration', () => {
     },
   );
 
-  test.each(['width', 'height', 'insets'] as const)('%s changes revalidate retained geometry', change => {
+  test.each(['hidden', 'reactivation'] as const)('chrome inset changes during %s keep a warm chat mounted and visible on return', timing => {
+    userScrollTo(250);
+    const list = flatList(renderer);
+    for (let visit = 0; visit < 4; visit++) {
+      observeCommits = false;
+      update(false);
+      overrides.contentInsets = { top: 0, bottom: CONTENT_INSETS.bottom + (visit % 2 ? 0 : 44) };
+      if (timing === 'hidden') update(false);
+      committedOpacities.length = 0;
+      observeCommits = true;
+      update(true);
+      expect(flatList(renderer)).toBe(list);
+      expect(committedOpacities.length).toBeGreaterThan(0);
+      expect(committedOpacities.every(opacity => opacity === 1)).toBe(true);
+    }
+    expect(scrollToOffset).not.toHaveBeenCalled();
+    expect(scrollToEnd).not.toHaveBeenCalled();
+    expect(latestButtons()).toHaveLength(1);
+  });
+
+  test.each(['width', 'height'] as const)('%s changes revalidate retained geometry', change => {
     act(() => { chatViewport(renderer).props.onLayout({ nativeEvent: { layout: { width: 300, height: 400 } } }); });
     update(false);
-    if (change === 'insets') {
-      overrides.contentInsets = { top: 24, bottom: 200 };
-      update(false);
-    } else {
-      act(() => { chatViewport(renderer).props.onLayout({ nativeEvent: { layout: {
-        width: change === 'width' ? 500 : 300,
-        height: change === 'height' ? 300 : 400,
-      } } }); });
-    }
+    act(() => { chatViewport(renderer).props.onLayout({ nativeEvent: { layout: {
+      width: change === 'width' ? 500 : 300,
+      height: change === 'height' ? 300 : 400,
+    } } }); });
     update(true);
     expect(onReady).not.toHaveBeenCalled();
     expect(chatViewport(renderer).parent?.props.style.opacity).toBe(0);

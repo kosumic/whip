@@ -1,5 +1,5 @@
 import { ChatSearchQuery, SearchText } from './SearchText';
-import { memo, useCallback, useContext, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { memo, startTransition, useCallback, useContext, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import {
   FlashList,
   type FlashListRef,
@@ -973,15 +973,21 @@ export function AgentChatView({
   );
 
   const updateScrollGeometry = (next: ChatScrollGeometry) => {
+    const previous = scrollGeometryRef.current;
     scrollGeometryRef.current = next;
     updatePinnedPrompt(next.offset);
-    setScrollGeometry(current => (
+    const update = () => setScrollGeometry(current => (
       current.contentHeight === next.contentHeight
       && current.offset === next.offset
       && current.viewportHeight === next.viewportHeight
         ? current
         : next
     ));
+    // Keep native position/checkpoints current immediately. Floating chrome can
+    // follow at transition priority so list cells render first during a fling.
+    if (previous.contentHeight === next.contentHeight && previous.viewportHeight === next.viewportHeight) {
+      startTransition(update);
+    } else update();
   };
 
   const setFollowEnd = (enabled: boolean) => {
@@ -1234,8 +1240,12 @@ export function AgentChatView({
     const previous = previousPaddingRef.current;
     previousPaddingRef.current = contentPadding;
     if (previous.top === contentPadding.top && previous.bottom === contentPadding.bottom) return;
-    // Native content-size callbacks remeasure changed list padding before reveal.
-    if (!continuouslyVisible && (!active || activeRef.current !== active)) remeasureViewport('content-insets-changed');
+    // Retained chats share changing composer/chrome clearance. FlashList lays
+    // out their spacers without discarding already measured conversation rows.
+    // Only a cold viewport still needs a fresh load/position confirmation.
+    if (!initialViewportRef.current.ready && !continuouslyVisible && (!active || activeRef.current !== active)) {
+      remeasureViewport('content-insets-changed');
+    }
   });
   useLayoutEffect(() => {
     updateViewportPadding();
@@ -1509,12 +1519,7 @@ export function AgentChatView({
     [onOpenFile, onOpenWebLink, state.transcript.info?.directory],
   );
 
-  const resumingWithChangedPadding = !continuouslyVisible && !activeRef.current && (
-    previousPaddingRef.current.top !== contentPadding.top
-    || previousPaddingRef.current.bottom !== contentPadding.bottom
-  );
   const viewportVisible = visible && !preparationChanged && projectionCurrent
-    && !resumingWithChangedPadding
     && (Boolean(rowStore.error) || (viewportReady && (continuouslyVisible || !active || activeRef.current || retainedPositionSafe())));
 
   useEffect(() => {
@@ -1581,6 +1586,7 @@ export function AgentChatView({
             revealSearchMatch();
           }}
           initialScrollIndex={initialScrollIndex}
+          drawDistance={scrollGeometry.viewportHeight || undefined}
           data={blocks}
           keyExtractor={block => block.id}
           extraData={state}
