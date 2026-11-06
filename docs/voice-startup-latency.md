@@ -219,3 +219,8 @@ was retained. The standalone probe did not configure app storage and reported
 a post-call history-save warning, outside the audio/transport checks.
 
 [Numeric phone measurements](voice-early-microphone-profile.json)
+
+A [fresh installed-ChatGPT comparison](chatgpt-voice-startup-comparison.md)
+records three microphone starts at 786–1,565 ms and examines its prepared
+transport/session path. That report distinguishes measured audio startup from
+unobserved cache hits and server-request timing.

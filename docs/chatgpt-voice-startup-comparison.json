@@ -1,0 +1,69 @@
+{
+  "whipCommit": "e5f425e0",
+  "device": "Pixel 9 Pro",
+  "chatgpt": {
+    "versionName": "1.2026.300",
+    "versionCode": 2630015,
+    "baseApkSha256": "38b17d766429d2ac7aa396f7ae2ec87182b1f581777dbb8f2089f6581458b148",
+    "captureKind": "Three automated silent voice startups in an already-running app",
+    "metric": "Android input dispatch UP to IAudioRecord.start server slice; not first RTP or first response.",
+    "rtcWorkersActiveBeforeFirstTapSeconds": 183,
+    "trials": [
+      {
+        "trial": 1,
+        "microphoneStartRequestMs": 1392,
+        "microphoneStartCompletedMs": 1406,
+        "nativeStartOperationMs": 14,
+        "recordThreadFirstRunMs": 101
+      },
+      {
+        "trial": 2,
+        "microphoneStartRequestMs": 1545,
+        "microphoneStartCompletedMs": 1565,
+        "nativeStartOperationMs": 20,
+        "recordThreadFirstRunMs": 41
+      },
+      {
+        "trial": 3,
+        "microphoneStartRequestMs": 774,
+        "microphoneStartCompletedMs": 786,
+        "nativeStartOperationMs": 12,
+        "recordThreadFirstRunMs": 64
+      }
+    ]
+  },
+  "whip": {
+    "apkSha256": "345db23b540458820bc2d79548a474cfaea16eb0b41c9267729489db3f319a19",
+    "trialCount": 6,
+    "microphoneStartMs": [
+      654,
+      1517
+    ],
+    "firstRtpListeningMs": [
+      2545,
+      5166
+    ],
+    "sessionPostMs": [
+      893,
+      3580
+    ],
+    "negotiationMs": [
+      677,
+      981
+    ],
+    "queuedTransitionMs": [
+      13,
+      977
+    ],
+    "speechSuspensionMs": [
+      288,
+      412
+    ],
+    "rawProfile": "voice-early-microphone-profile.json"
+  },
+  "limits": [
+    "Different microphone timing origins/endpoints; not a controlled causal speed comparison.",
+    "ChatGPT first RTP, encrypted session request timing, negotiated WARP features and runtime prewarm/cache-hit state were not measured.",
+    "ChatGPT selected UDP/TCP protocol was not attributable."
+  ]
+}
