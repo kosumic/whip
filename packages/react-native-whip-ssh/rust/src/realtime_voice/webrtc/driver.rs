@@ -63,6 +63,7 @@ pub(super) struct Driver {
     sequence: u64,
     ingress: Ingress,
     ready: watch::Sender<bool>,
+    primary_started: watch::Sender<Option<String>>,
     failure: watch::Sender<Option<&'static str>>,
     health: ConnectionHealth,
     input_protocol: Option<Protocol>,
@@ -77,6 +78,7 @@ impl Driver {
     pub async fn new(
         ingress: Ingress,
         ready: watch::Sender<bool>,
+        primary_started: watch::Sender<Option<String>>,
         failure: watch::Sender<Option<&'static str>>,
         commands: mpsc::Receiver<Command>,
         stop: watch::Receiver<bool>,
@@ -150,6 +152,7 @@ impl Driver {
                 sequence,
                 ingress,
                 ready,
+                primary_started,
                 failure,
                 health: ConnectionHealth::default(),
                 input_protocol: None,
@@ -284,6 +287,25 @@ impl Driver {
                 Output::Event(Event::RtpPacket(packet)) => {
                     self.ingress
                         .receive(packet, self.input_protocol == Some(Protocol::Tcp));
+                }
+                Output::Event(Event::ChannelData(data)) if data.id == self.channel => {
+                    // Live readiness belongs to its primary WebRTC stream.
+                    // Retain only this one bounded event; mirrored transcript,
+                    // audio and tool events continue exclusively on sideband.
+                    let pending = self.primary_started.borrow().is_none();
+                    if pending
+                        && data.data.len() <= MAX_EVENT_BYTES
+                        && let Ok(text) = std::str::from_utf8(&data.data)
+                        && super::live::is_started(text)
+                    {
+                        self.primary_started.send_if_modified(|started| {
+                            if started.is_some() {
+                                return false;
+                            }
+                            *started = Some(text.to_owned());
+                            true
+                        });
+                    }
                 }
                 // Match Codex's voice host: the sideband owns typed events.
                 // Mirrored data messages must never backpressure RTP/DTLS or

@@ -158,6 +158,10 @@ async fn transport_bursts(prepared: bool) -> TestResult {
                 }
             }
             let event = r#"{"type":"rate_limits.updated","event_id":"test","rate_limits":[]}"#;
+            let started = r#"{"type":"session.started","event_id":"primary-start","session":{"id":"live_fixture"}}"#;
+            channel.send_text(started).await?;
+            tokio::time::timeout(Duration::from_secs(5), local.primary_started.wait_for(Option::is_some)).await??;
+            assert_eq!(local.primary_started.borrow().as_deref(), Some(started));
             // A burst of mirrored messages cannot terminate media, even when
             // the application is busy and not polling its sideband receiver.
             for _ in 0..256 {
@@ -175,6 +179,7 @@ async fn transport_bursts(prepared: bool) -> TestResult {
             assert_eq!(received.reliable, protocol == str0m::net::Protocol::Tcp);
             drop(received);
             assert_eq!(packet.payload, [0xf8, 0xff, 0xfe]);
+            assert_eq!(local.primary_started.borrow().as_deref(), Some(started));
             let mut decoder = opus::Decoder::new(24_000, opus::Channels::Mono)?;
             assert!(decoder.decode(&packet.payload, &mut [0; 2880], false)? > 0);
             drop(packet);

@@ -55,6 +55,7 @@ use captions::Language as TranscriptionLanguage;
 
 pub(super) const RATE: usize = 24_000;
 pub(super) const FRAME: usize = RATE / 50;
+const AUDIBLE_SAMPLE: u16 = 64;
 const MAX_OUTPUT: usize = RATE * 30;
 const MAX_OUTPUT_ITEMS: usize = 64;
 const MAX_WIRE: usize = 512 * 1024;
@@ -395,6 +396,9 @@ impl Output {
             });
         }
         self.generated += count;
+        if let Some(transcript) = &mut self.live_transcript {
+            transcript.audio(self.generated - count, &pcm);
+        }
         if let Some(item) = self.items.back_mut() {
             item.end = self.generated;
             self.transcript
@@ -418,7 +422,7 @@ impl Output {
         if self.live_transcript.is_some()
             && out[..count]
                 .iter()
-                .any(|sample| sample.unsigned_abs() >= 64)
+                .any(|sample| sample.unsigned_abs() >= AUDIBLE_SAMPLE)
         {
             self.last_audible = Some(Instant::now());
         }
@@ -489,6 +493,7 @@ pub(super) struct RealtimeVoiceAdapter {
     started_at: Instant,
     client_elapsed_ms: u64,
     webrtc: bool,
+    live: bool,
     media: Mutex<Option<webrtc::Handle>>,
     view: Mutex<View>,
     output: Mutex<Output>,
@@ -581,6 +586,7 @@ impl RealtimeVoiceAdapter {
             started_at,
             client_elapsed_ms: config.client_elapsed_ms,
             webrtc: config.webrtc && !(config.live && config.preview),
+            live: config.live,
             media: Mutex::new(None),
             view: Mutex::new(View {
                 phase: "starting",

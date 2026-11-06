@@ -41,6 +41,7 @@ pub(in crate::realtime_voice) struct Transcript {
     discarded_through: f64,
     playback_samples: usize,
     playback_origin: Option<usize>,
+    caption_origin: Option<f64>,
     heard: Vec<(f64, f64)>,
 }
 
@@ -57,13 +58,13 @@ impl Transcript {
         if self.fragments.iter().any(|old| old.id == fragment.id) {
             return Ok(());
         }
-        if fragment.role == ASSISTANT && fragment.event.is_none() && self.playback_origin.is_none()
-        {
-            self.playback_origin = Some(self.playback_samples);
+        if fragment.role == ASSISTANT && fragment.event.is_none() && self.caption_origin.is_none() {
+            self.caption_origin = Some(fragment.start_ms);
             self.heard.push((fragment.start_ms, fragment.start_ms));
             if self.heard.len() > MAX_FRAGMENTS {
                 self.heard.remove(0);
             }
+            self.advance();
         }
         self.bytes += fragment.text.len()
             + fragment
@@ -170,12 +171,30 @@ impl Transcript {
         )
     }
 
-    /// Fragment timestamps are approximate. Anchor their session-relative clock
-    /// once captions arrive, then advance only with acknowledged device audio.
-    /// Interrupted ranges stay frozen instead of becoming heard on a later reply.
+    /// Locate provider speech before it enters the device queue. Caption text
+    /// may arrive before or after its audio; arrival time is not a playback mark.
+    pub(in crate::realtime_voice) fn audio(&mut self, start: usize, pcm: &[u8]) {
+        if self.playback_origin.is_none()
+            && let Some(offset) = pcm.as_chunks::<2>().0.iter().position(|sample| {
+                i16::from_le_bytes(*sample).unsigned_abs() >= super::super::AUDIBLE_SAMPLE
+            })
+        {
+            self.playback_origin = Some(start.saturating_add(offset));
+            self.advance();
+        }
+    }
+
+    /// Fragment timestamps are approximate. Pair the first caption timestamp
+    /// with the first provider speech sample and advance only with device audio.
+    /// Late captions catch up immediately; interrupted ranges remain frozen.
     pub(in crate::realtime_voice) fn played(&mut self, samples: usize) {
         self.playback_samples = self.playback_samples.max(samples);
+        self.advance();
+    }
+
+    fn advance(&mut self) {
         if let Some(origin) = self.playback_origin
+            && self.caption_origin.is_some()
             && let Some((start, end)) = self.heard.last_mut()
         {
             let samples =
@@ -187,6 +206,7 @@ impl Transcript {
 
     pub(in crate::realtime_voice) fn stop(&mut self) {
         self.playback_origin = None;
+        self.caption_origin = None;
         self.playback_samples = 0;
     }
 

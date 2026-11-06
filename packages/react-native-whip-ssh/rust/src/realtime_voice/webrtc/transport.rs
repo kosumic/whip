@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Adapted from Codex at 021fccb046508938c4754982efccfb51d6e8356e.
 //! Owns the accelerated DTLS/SCTP peer and bounded native media ingress.
-//! Typed events belong exclusively to the WebSocket sideband, as in Codex.
+//! Typed events use sideband; Live readiness uses the primary start event.
 use super::{
     audio_track::AudioTrack,
     driver::{Command, Driver},
@@ -25,6 +25,7 @@ pub(crate) struct Transport {
     pub(crate) incoming: Incoming,
     pub(crate) audio: AudioTrack,
     pub(crate) ready: watch::Receiver<bool>,
+    pub(super) primary_started: watch::Receiver<Option<String>>,
     pub(super) failure: watch::Receiver<Option<&'static str>>,
     pub(crate) prepared_client: bool,
     offer: String,
@@ -41,11 +42,20 @@ impl Transport {
     ) -> Result<Self, &'static str> {
         let (incoming, ingress) = Incoming::new();
         let (ready, connected) = watch::channel(false);
+        let (primary_started, started) = watch::channel(None);
         let (failed, failure) = watch::channel(None);
         let (stop, stopped) = watch::channel(false);
         let (commands, command_rx) = mpsc::channel(8);
-        let (driver, offer, prepared_client) =
-            Driver::new(ingress, ready, failed, command_rx, stopped, protocol).await?;
+        let (driver, offer, prepared_client) = Driver::new(
+            ingress,
+            ready,
+            primary_started,
+            failed,
+            command_rx,
+            stopped,
+            protocol,
+        )
+        .await?;
         // Transport dependencies must never emit wire payloads, SDP, or keys,
         // including when a host application installs a tracing subscriber.
         let worker = tokio::spawn(
@@ -58,6 +68,7 @@ impl Transport {
             prepared_client,
             audio: AudioTrack::new(commands.clone(), failure.clone()),
             ready: connected,
+            primary_started: started,
             failure,
             offer,
             commands,

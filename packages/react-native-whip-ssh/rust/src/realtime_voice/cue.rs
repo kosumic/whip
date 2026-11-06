@@ -1,4 +1,4 @@
-//! Local cues share device output and its echo reference, never provider audio.
+//! Local cues share device output; the speech echo reference stays unmixed.
 use std::io::Read;
 
 const MAX_SECONDS: usize = 5;

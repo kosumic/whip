@@ -177,6 +177,7 @@ fn playback_owner() -> Result<Arc<RealtimeVoiceAdapter>, &'static str> {
         started_at: Instant::now(),
         client_elapsed_ms: 0,
         webrtc: true,
+        live: false,
         media: Mutex::new(None),
         view: Mutex::new(voice::View {
             phase: "listening",
@@ -238,6 +239,47 @@ fn starting_owner() -> Result<Arc<RealtimeVoiceAdapter>, &'static str> {
         view.phase = "starting";
     }
     Ok(owner)
+}
+
+#[tokio::test]
+async fn live_listening_requires_session_confirmation_devices_and_fresh_uploaded_audio()
+-> Result<(), Box<dyn std::error::Error>> {
+    for session_first in [false, true] {
+        let mut owner = starting_owner()?;
+        Arc::get_mut(&mut owner)
+            .ok_or("Owner unexpectedly shared")?
+            .live = true;
+        voice::webrtc::devices_started(&owner);
+        if session_first {
+            owner.view.lock().startup.settings_confirmed = Some(10);
+        }
+        voice::webrtc::media_connected(&owner);
+        assert_eq!(owner.view.lock().phase, "starting");
+        if !session_first {
+            assert!(!owner.ready.load(Ordering::Acquire));
+            assert!(owner.capture(
+                &[111; voice::FRAME],
+                owner.input.generation(),
+                Instant::now()
+            ));
+            assert_eq!(owner.input.diagnostics().0, 0);
+            owner.view.lock().startup.settings_confirmed = Some(20);
+            voice::webrtc::media_connected(&owner);
+        }
+        assert!(owner.ready.load(Ordering::Acquire));
+        assert_eq!(owner.view.lock().phase, "starting");
+        assert!(owner.capture(
+            &[222; voice::FRAME],
+            owner.input.generation(),
+            Instant::now()
+        ));
+        let mut packet = ::audio_ingress::Packet::new(voice::FRAME * 4);
+        tokio::time::timeout(Duration::from_secs(1), owner.next_capture(&mut packet)).await??;
+        assert_eq!(packet.samples, [222; voice::FRAME]);
+        voice::webrtc::input_started(&owner);
+        assert_eq!(owner.view.lock().phase, "listening");
+    }
+    Ok(())
 }
 
 #[tokio::test]
@@ -367,17 +409,43 @@ async fn local_cue_keeps_microphone_live_without_advancing_assistant_playback()
 #[ignore = "requires explicitly authorized OPENAI_API_KEY and network access"]
 async fn public_live_call_survives_a_minute_with_native_playback()
 -> Result<(), Box<dyn std::error::Error>> {
-    full_live_playback(false).await
+    full_live_playback(false, TestAudio::Normal, Duration::from_secs(65)).await
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires explicitly authorized OPENAI_API_KEY and network access"]
 async fn public_locally_prepared_live_call_survives_a_minute_with_native_playback()
 -> Result<(), Box<dyn std::error::Error>> {
-    full_live_playback(true).await
+    full_live_playback(true, TestAudio::Normal, Duration::from_secs(65)).await
 }
 
-async fn full_live_playback(prepared: bool) -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires explicitly authorized OPENAI_API_KEY and network access"]
+async fn public_live_opening_word_without_echo_processing() -> Result<(), Box<dyn std::error::Error>>
+{
+    full_live_playback(true, TestAudio::WithoutEcho, Duration::from_secs(15)).await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires explicitly authorized OPENAI_API_KEY and network access"]
+async fn public_live_opening_word_without_ready_cue() -> Result<(), Box<dyn std::error::Error>> {
+    full_live_playback(true, TestAudio::WithoutCue, Duration::from_secs(15)).await
+}
+
+enum TestAudio {
+    Normal,
+    WithoutEcho,
+    WithoutCue,
+}
+
+async fn full_live_playback(
+    prepared: bool,
+    audio: TestAudio,
+    duration: Duration,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let software_echo = !matches!(audio, TestAudio::WithoutEcho);
+    let play_cue = !matches!(audio, TestAudio::WithoutCue);
+    let _storage = test_storage().await?;
     if prepared {
         assert!(voice::webrtc::prepared::configure(true));
         tokio::time::sleep(Duration::from_secs(2)).await;
@@ -394,11 +462,20 @@ async fn full_live_playback(prepared: bool) -> Result<(), Box<dyn std::error::Er
         .copied()
         .map(i16::from_le_bytes)
         .collect::<Vec<_>>();
-    let owner = starting_owner()?;
+    let mut owner = starting_owner()?;
+    Arc::get_mut(&mut owner)
+        .ok_or("Owner unexpectedly shared")?
+        .live = true;
     // Model Android/iOS acquiring the microphone before the API exchange.
     voice::webrtc::devices_started(&owner);
     owner.output.lock().live_transcript = Some(voice::live::captions::Transcript::default());
-    *owner.echo.lock() = Some(voice::echo::MediaEchoCanceller::new()?);
+    if software_echo {
+        *owner.echo.lock() = Some(voice::echo::MediaEchoCanceller::new()?);
+    }
+    let mut device_clock = (!software_echo)
+        .then(voice::echo::MediaEchoCanceller::new)
+        .transpose()?
+        .map(Box::new);
     let (commands, command_rx) = tokio::sync::mpsc::channel(8);
     let worker = tokio::spawn(voice::live::LiveVoiceAdapter::run(
         owner.clone(),
@@ -408,17 +485,20 @@ async fn full_live_playback(prepared: bool) -> Result<(), Box<dyn std::error::Er
         command_rx,
     ));
     let started = Instant::now();
-    let duration = Duration::from_secs(65);
     let mut ready_at = None;
     let mut offset = 0;
     let mut peak = 0_u16;
     let mut highlighted = false;
     let mut device_epoch = 0;
     let mut device_position = 0;
-    let mut cue_samples = Some(voice::cue::load(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../../assets/audio/voice-ready.wav"
-    ))?);
+    let mut cue_samples = if play_cue {
+        Some(voice::cue::load(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../assets/audio/voice-ready.wav"
+        ))?)
+    } else {
+        None
+    };
     let mut local_cue = 0;
     let mut captured_during_cue = false;
     let mut rendered_cue = false;
@@ -429,8 +509,12 @@ async fn full_live_playback(prepared: bool) -> Result<(), Box<dyn std::error::Er
         if started.elapsed() > Duration::from_secs(100) {
             break;
         }
-        if ready_at.is_none() && owner.view.lock().media_ready {
-            assert_eq!(owner.view.lock().startup.prepared_client, prepared);
+        if ready_at.is_none() && owner.view.lock().phase == "listening" {
+            let view = owner.view.lock();
+            assert_eq!(view.startup.prepared_client, prepared);
+            assert!(view.startup.settings_confirmed.is_some());
+            assert!(view.startup.first_input.is_some());
+            drop(view);
             ready_at = Some(Instant::now());
             eprintln!("Full Live media ready_ms={}", startup::elapsed(started));
         }
@@ -461,6 +545,7 @@ async fn full_live_playback(prepared: bool) -> Result<(), Box<dyn std::error::Er
         if count == 0 {
             pcm.fill(0);
         }
+        let provider = pcm[..if count == 0 { voice::FRAME } else { count }].to_vec();
         owner
             .cue
             .lock()
@@ -474,9 +559,13 @@ async fn full_live_playback(prepared: bool) -> Result<(), Box<dyn std::error::Er
             device_position = 0;
         }
         device_position += rendered;
-        if let Some(echo) = owner.echo.lock().as_mut() {
-            echo.render(epoch, &pcm[..rendered], count > 0, 40_000_000)?;
-            output.acknowledge(epoch, echo.played(epoch, device_position));
+        {
+            let mut echo = owner.echo.lock();
+            if let Some(echo) = echo.as_mut().or(device_clock.as_deref_mut()) {
+                echo.queue_reference(&provider)?;
+                echo.render(epoch, &pcm[..rendered], count > 0, 40_000_000)?;
+                output.acknowledge(epoch, echo.played(epoch, device_position));
+            }
         }
         highlighted |= output.live_transcript.as_ref().is_some_and(|transcript| {
             transcript.messages().as_array().is_some_and(|messages| {
@@ -524,15 +613,59 @@ async fn full_live_playback(prepared: bool) -> Result<(), Box<dyn std::error::Er
     );
     assert!(peak >= 512, "No audible native playback");
     assert!(highlighted, "Captions did not follow acknowledged audio");
-    assert!(
-        captured_during_cue && rendered_cue,
-        "Microphone did not remain live through the local cue"
-    );
+    if play_cue {
+        assert!(
+            captured_during_cue && rendered_cue,
+            "Microphone did not remain live through the local cue"
+        );
+    }
     if reliable {
         assert_eq!(late_packets, 0, "Reliable media lost received speech");
     }
     cleanup?;
+    check_first_word(&owner)
+}
+
+async fn test_storage() -> Result<tempfile::TempDir, Box<dyn std::error::Error>> {
+    let directory = tempfile::tempdir()?;
+    let path = std::ffi::CString::new(directory.path().to_string_lossy().as_bytes())?;
+    // SAFETY: this test owns the live NUL-terminated path for this call.
+    unsafe {
+        crate::app_database::whip_set_app_data_directory(path.as_ptr());
+    }
+    crate::app_database::import_legacy_app_data(Vec::new()).await?;
+    Ok(directory)
+}
+
+fn check_first_word(owner: &RealtimeVoiceAdapter) -> Result<(), Box<dyn std::error::Error>> {
     if let Ok(word) = std::env::var("WHIP_LIVE_SMOKE_FIRST_WORD") {
+        let input_recognized =
+            owner
+                .output
+                .lock()
+                .live_transcript
+                .as_ref()
+                .is_some_and(|transcript| {
+                    transcript.messages().as_array().is_some_and(|messages| {
+                        messages.iter().any(|message| {
+                            message["role"] == "user"
+                                && message["text"].as_str().is_some_and(|text| {
+                                    text.to_lowercase().contains(&word.to_lowercase())
+                                })
+                        })
+                    })
+                });
+        eprintln!(
+            "Expected synthetic first word in input transcript: {input_recognized}; capture={:?}; signal={}",
+            owner.input.diagnostics(),
+            serde_json::to_string(
+                &owner
+                    .echo
+                    .lock()
+                    .as_ref()
+                    .map(voice::echo::MediaEchoCanceller::diagnostics)
+            )?
+        );
         let recognized = owner
             .output
             .lock()
@@ -548,7 +681,7 @@ async fn full_live_playback(prepared: bool) -> Result<(), Box<dyn std::error::Er
                     })
                 })
             });
-        eprintln!("Immediate first word recognized with AEC and ready cue: {recognized}");
+        eprintln!("Immediate first word recognized with ready cue: {recognized}");
         assert!(
             recognized,
             "The assistant did not recognize the initial word"

@@ -69,7 +69,11 @@ startup. Shutdown logs separate device release from final transport cleanup.
 The Android ready cue is a bounded PCM16 mono WAV mixed by Rust into the same
 AudioTrack buffers as assistant speech. JNI supplies silence when no provider
 audio is available, mixes the cue, and retains the provider's original sample
-count. The device feeds the exact mixed samples and output delay to AEC3.
+count. Before mixing, Rust retains the provider PCM in a bounded reference FIFO.
+The device's actual write sizes and output delay clock that unmixed reference
+into AEC3, including partial writes. Local cue samples stay audible but cannot
+trigger echo suppression of the user's opening word; provider speech still
+supplies the echo reference.
 Microphone capture stays live: there is no cue mute, capture-generation reset,
 or acoustic-tail timer. Cue-only samples do not advance assistant captions or
 the played-audio cursor. Generation checks cancel late cue loads and prevent
@@ -123,6 +127,34 @@ requested, and Listening/the ready cue still wait for the first microphone
 packet to reach the media sender. Early acquisition removes device setup from
 the end of the startup path; it does not shorten the session POST or network
 negotiation themselves.
+
+GPT-Live's Listening state and ready cue wait for validated `session.started`
+from the primary WebRTC data channel, native device startup and the first fresh
+microphone packet uploaded over WebRTC.
+An accepted session POST and negotiated media transport do not alone establish
+application readiness. The media worker keeps the transport clock running with
+muted silence until confirmation, while early microphone acquisition continues.
+The actor also waits for confirmation before sending queued application commands.
+The peer retains only the first bounded primary start event, independently of
+the sideband attachment. Mirrored transcripts, audio and tools remain on sideband
+so they cannot create duplicate actions or backpressure the media driver.
+
+Live captions pair the first transcript timestamp with the first audible provider
+PCM sample, then advance from hardware playback acknowledgements. A late caption
+catches up to audio already heard rather than starting a new clock at text arrival.
+Leading provider silence, local ready tones and queued but unplayed audio do not
+advance highlighting. Provider fragment timestamps remain approximate.
+
+API verification on 2026-11-06 reproduced loss of an immediate opening
+“Tangerine” with the mixed cue reference. Bypassing either the cue or DSP
+preserved it. Keeping both enabled with the unmixed provider reference passed
+two 65-second calls: ordinary synthetic speech and a microphone fixture with
+simulated cue echo followed by speech after the chime. Both recognized and
+repeated the opening word, produced audible output and caption progress,
+finalized usage, and recorded no capture gaps, processing drops or late packets.
+The native suite passed 157 tests. Host API tests require optimized DSP
+dependencies (or a release test build); debug DSP can miss real-time deadlines.
+These synthetic checks do not replace a physical speaker/headphone check.
 
 ### Optional local client warmth
 

@@ -88,6 +88,7 @@ struct Handoff {
 #[derive(Default)]
 struct State {
     session_id: Option<String>,
+    started: bool,
     seen: HashSet<String>,
     delegations: HashSet<String>,
     pending: VecDeque<Pending>,
@@ -105,6 +106,36 @@ enum Admission {
 }
 
 impl State {
+    fn confirm_start(
+        &mut self,
+        owner: &RealtimeVoiceAdapter,
+        config: &Config,
+        session: &api::SessionSnapshot,
+    ) -> Result<bool, &'static str> {
+        self.pin_session(session, config)?;
+        self.started = true;
+        let muted = {
+            let mut view = owner.view.lock();
+            view.startup.settings_confirmed = Some(
+                owner
+                    .client_elapsed_ms
+                    .saturating_add(super::startup::elapsed(owner.started_at)),
+            );
+            if !config.webrtc {
+                view.media_ready = true;
+                view.phase = if view.muted { "muted" } else { "listening" };
+                view.recovery = super::recovery::State::Active;
+            }
+            view.muted
+        };
+        if config.webrtc {
+            super::webrtc::media_connected(owner);
+        } else {
+            owner.ready.store(true, Ordering::Release);
+        }
+        Ok(muted)
+    }
+
     fn delegate(
         &mut self,
         delegation: &api::Delegation,
@@ -410,7 +441,7 @@ impl LiveVoiceAdapter {
             tokio::select! {
                 biased;
                 _ = cancelled.changed() => return Ok(()),
-                command = commands.recv() => match command {
+                command = commands.recv(), if state.started => match command {
                     Some(super::Command::Mute(muted)) => {
                         if !config.webrtc { pending.reset(owner)?; }
                         // Native mute takes effect immediately; unmute waits for
@@ -450,11 +481,7 @@ impl LiveVoiceAdapter {
                             owner.view.lock().server_events += 1;
                             match frame.event {
                                 ServerEvent::Started {session,..} => {
-                                    state.pin_session(&session,config)?;
-                                    owner.view.lock().startup.settings_confirmed = Some(owner.client_elapsed_ms.saturating_add(super::startup::elapsed(owner.started_at)));
-                                    let muted = owner.view.lock().muted;
-                                    { let mut view = owner.view.lock(); view.media_ready = true; view.phase = if muted {"muted"} else if config.webrtc && view.startup.first_input.is_none() {"starting"} else {"listening"}; view.recovery = super::recovery::State::Active; }
-                                    if !config.webrtc { owner.ready.store(true,Ordering::Release); }
+                                    let muted = state.confirm_start(owner,config,&session)?;
                                     if muted { let id = send(socket,Command::InputAudioMute).await?; state.muted=Some((id,true,Instant::now())); }
                                 }
                                 ServerEvent::Closed {session,usage:final_usage,reason,..} => {
@@ -558,7 +585,7 @@ impl LiveVoiceAdapter {
                     if !owner.speech.is_current() { return Err("Voice audio was replaced by another speech session."); }
                     if let Some(agent) = agent { agent.check_liveness().map_err(|_| "The bound agent disconnected or changed. Please call again.")?; }
                     if let Some(global) = &owner.global { global.check().map_err(|_| "Global call authorization ended.")?; }
-                    if state.session_id.is_none() {
+                    if !state.started {
                         if started.elapsed()>super::IO_TIMEOUT { return Err("GPT-Live session startup timed out."); }
                         continue;
                     }

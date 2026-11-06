@@ -182,6 +182,11 @@ pub(in crate::realtime_voice) async fn start(
         return Err(recovery::CANCELLED);
     }
     let (stop, stopped) = watch::channel(false);
+    let primary = forward_primary_start(
+        peer.primary_started.clone(),
+        events.clone(),
+        stopped.clone(),
+    );
     let sideband = spawn_sideband(
         call.attach.clone(),
         commands,
@@ -256,13 +261,43 @@ pub(in crate::realtime_voice) async fn start(
     *owner.media.lock() = Some(Handle {
         identity,
         stop,
-        workers: vec![sideband, media],
+        workers: vec![primary, sideband, media],
         live_closed: Some(closed),
     });
-    // The POST accepted the immutable Live configuration. Devices may already
-    // be running; enable input now without waiting for the sideband snapshot.
-    super::media_connected(&owner);
+    // Negotiation only establishes transport. The Live actor enables capture
+    // after validating session.started; until then media sends muted silence.
     Ok((socket, id))
+}
+
+pub(super) fn is_started(text: &str) -> bool {
+    #[derive(serde::Deserialize)]
+    struct Kind<'a> {
+        #[serde(borrow, rename = "type")]
+        kind: &'a str,
+    }
+    serde_json::from_str::<Kind<'_>>(text).is_ok_and(|event| event.kind == "session.started")
+}
+
+fn forward_primary_start(
+    mut started: watch::Receiver<Option<String>>,
+    mut events: socket::Events,
+    mut stop: watch::Receiver<bool>,
+) -> JoinHandle<Result<(), &'static str>> {
+    tokio::spawn(async move {
+        let ready = tokio::select! {
+            biased;
+            _ = stop.changed() => return Ok(()),
+            ready = started.wait_for(Option::is_some) => ready
+                .map_err(|_| "GPT-Live primary event channel ended.")?
+                .clone().ok_or("GPT-Live primary start event is unavailable.")?,
+        };
+        tokio::select! {
+            biased;
+            _ = stop.changed() => Ok(()),
+            result = events.send(Ok(Message::Text(ready.into()))) => result
+                .map_err(|_| "GPT-Live startup consumer ended."),
+        }
+    })
 }
 
 fn spawn_sideband(
@@ -289,6 +324,9 @@ fn spawn_sideband(
                     }
                     event = socket::next_sideband_event(&mut socket) => {
                         let event = event?;
+                        // A sideband attachment is an observation of the call;
+                        // only primary session.started makes the microphone ready.
+                        if matches!(&event, Message::Text(text) if is_started(text)) { continue; }
                         let closed = matches!(event, Message::Close(_));
                         tokio::select! {
                             biased;

@@ -14,6 +14,12 @@ trial logged `preparedClient=0`. Trial 7 verified Realtime startup after at leas
 65 seconds of prepared idle time. No negotiation failure occurred in this run.
 Speech quality and caption highlighting were not evaluated by these startup tests.
 
+Later investigation found that this measured build could show GPT-Live Listening
+before `session.started`. The times below describe that build's UI transition,
+not proof that opening speech would be accepted. The readiness correction now
+requires session confirmation before showing Listening; these historical figures
+must not be used as post-fix readiness measurements.
+
 | Mode / preparation | Calls | Median local peer + offer | Median session POST | Median Listening |
 | --- | ---: | ---: | ---: | ---: |
 | GPT-Live / off | 5 | 12 ms | 2,395 ms | 3,621 ms |

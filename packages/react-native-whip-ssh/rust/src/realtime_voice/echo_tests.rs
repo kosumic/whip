@@ -2,6 +2,64 @@ use super::*;
 use std::time::{Duration, Instant};
 
 #[test]
+fn local_cue_playback_preserves_near_end_speech_and_partial_device_writes()
+-> Result<(), &'static str> {
+    const BLOCK: usize = super::super::RATE / 100;
+    let mut mixed = MediaEchoCanceller::new()?;
+    let mut control = MediaEchoCanceller::new()?;
+    let cue = super::super::cue::load(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../assets/audio/voice-ready.wav"
+    ))?;
+    let speech = include_bytes!("../../tests/fixtures/voice-counting-16k.f32");
+    let start = Instant::now() + Duration::from_millis(100);
+    let mut actual = Vec::new();
+    let mut expected = Vec::new();
+    for frame in 0..150 {
+        let at = start + Duration::from_millis(u64::try_from(frame).map_err(|_| DSP_ERROR)? * 10);
+        let device: Vec<_> = (0..BLOCK)
+            .map(|i| cue.get(frame * BLOCK + i).copied().unwrap_or(0) / 2)
+            .collect();
+        mixed.queue_reference(&[0; BLOCK])?;
+        // Hardware may accept only part of the mixed PCM in each write.
+        for (index, samples) in device.chunks(BLOCK / 2).enumerate() {
+            let delay = 40 + u64::try_from(index).map_err(|_| DSP_ERROR)? * 5;
+            mixed.submit_render(1, at + Duration::from_millis(delay), samples, true)?;
+        }
+        control.submit_render(1, at + Duration::from_millis(40), &[0; BLOCK], true)?;
+        mixed.played(1, (frame + 1) * BLOCK);
+        control.played(1, (frame + 1) * BLOCK);
+        let capture: Vec<_> = (0..BLOCK)
+            .map(|i| {
+                let offset = ((frame * BLOCK + i) * 2 / 3) % (speech.len() / 4) * 4;
+                let bytes = [
+                    speech[offset],
+                    speech[offset + 1],
+                    speech[offset + 2],
+                    speech[offset + 3],
+                ];
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    reason = "bounded normalized fixture converted to PCM16"
+                )]
+                {
+                    (f32::from_le_bytes(bytes).clamp(-1.0, 1.0) * 20_000.0) as i16
+                }
+            })
+            .collect();
+        let captured_at = at.checked_sub(Duration::from_millis(20)).ok_or(DSP_ERROR)?;
+        actual.extend(mixed.capture(&capture, captured_at, at)?);
+        expected.extend(control.capture(&capture, captured_at, at)?);
+    }
+    assert!(!actual.is_empty());
+    assert!(
+        actual == expected,
+        "A local cue must not suppress or alter unrelated microphone speech"
+    );
+    Ok(())
+}
+
+#[test]
 fn silence_in_media_track_never_counts_as_heard_assistant_audio() -> Result<(), &'static str> {
     let mut clock = PlaybackClock::default();
     clock.submit(1, 240, false)?;

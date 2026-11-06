@@ -364,7 +364,11 @@ pub(super) fn media_connected(owner: &RealtimeVoiceAdapter) {
 pub(super) fn devices_started(owner: &RealtimeVoiceAdapter) {
     owner.devices_ready.store(true, Ordering::Release);
     let mut view = owner.view.lock();
-    if !owner.webrtc || !view.media_ready || owner.closed.load(Ordering::Acquire) {
+    if !owner.webrtc
+        || !view.media_ready
+        || owner.closed.load(Ordering::Acquire)
+        || owner.live && view.startup.settings_confirmed.is_none()
+    {
         return;
     }
     owner.ready.store(true, Ordering::Release);
@@ -390,7 +394,11 @@ pub(super) fn input_started(owner: &RealtimeVoiceAdapter) {
     let mut view = owner.view.lock();
     view.startup.first_input.get_or_insert(elapsed);
     view.startup.listening.get_or_insert(elapsed);
-    if view.phase == "starting" && view.media_ready && !view.muted {
+    if view.phase == "starting"
+        && view.media_ready
+        && !view.muted
+        && (!owner.live || view.startup.settings_confirmed.is_some())
+    {
         view.phase = "listening";
     }
 }

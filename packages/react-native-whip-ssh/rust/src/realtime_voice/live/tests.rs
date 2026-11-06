@@ -117,6 +117,7 @@ fn late_caption_fragments_preserve_speaker_order_and_repeated_words() -> Result<
 fn live_highlighting_waits_for_device_playback_and_preserves_fragment_timing()
 -> Result<(), &'static str> {
     let mut captions = captions::Transcript::default();
+    captions.audio(0, &1000_i16.to_le_bytes());
     captions.append(fragment("one", "assistant", "hello", 1000.0, 1500.0))?;
     captions.append(fragment("two", "assistant", " world", 1700.0, 2300.0))?;
     let messages = captions.messages();
@@ -142,15 +143,66 @@ fn live_highlighting_waits_for_device_playback_and_preserves_fragment_timing()
 fn interrupted_live_captions_cannot_become_heard_during_a_later_reply() -> Result<(), &'static str>
 {
     let mut captions = captions::Transcript::default();
+    captions.audio(0, &1000_i16.to_le_bytes());
     captions.append(fragment("old", "assistant", "unfinished", 0.0, 1000.0))?;
     captions.played(super::super::RATE / 2);
     captions.stop();
+    captions.audio(0, &1000_i16.to_le_bytes());
     captions.append(fragment("new", "assistant", "new reply", 4000.0, 5000.0))?;
     captions.played(super::super::RATE);
     let messages = captions.messages();
     assert_eq!(messages[0]["spokenUtf16"], 5);
     assert_eq!(messages[0]["active"], false);
     assert_eq!(messages[1]["spokenUtf16"], 9);
+    Ok(())
+}
+
+#[test]
+fn late_live_captions_catch_up_to_heard_speech_without_including_leading_silence()
+-> Result<(), &'static str> {
+    use super::super::{Output, RATE};
+    // Exercise the same PCM queue and hardware acknowledgement path as a call.
+    for captions_first in [true, false] {
+        let mut output = Output {
+            live_transcript: Some(captions::Transcript::default()),
+            ..Output::default()
+        };
+        if captions_first {
+            output
+                .live_transcript
+                .as_mut()
+                .ok_or("missing captions")?
+                .append(fragment("words", "assistant", "hello", 4000.0, 5000.0))?;
+        }
+        let mut pcm = vec![0_i16; RATE];
+        pcm.extend(vec![1000_i16; RATE]);
+        output.append(
+            "live-stream".into(),
+            0,
+            pcm.iter().flat_map(|s| s.to_le_bytes()).collect(),
+        )?;
+        let mut device = vec![0; RATE + RATE / 2];
+        assert_eq!(output.read(&mut device), device.len());
+        // Speech is queued but not yet played by the device.
+        if captions_first {
+            assert_eq!(
+                output
+                    .live_transcript
+                    .as_ref()
+                    .ok_or("missing captions")?
+                    .messages()[0]["spokenUtf16"],
+                0
+            );
+        }
+        output.acknowledge(output.epoch, device.len());
+        let transcript = output.live_transcript.as_mut().ok_or("missing captions")?;
+        if !captions_first {
+            transcript.append(fragment("words", "assistant", "hello", 4000.0, 5000.0))?;
+        }
+        // Half the speech has played, regardless of caption delivery order.
+        assert_eq!(transcript.messages()[0]["spokenUtf16"], 2);
+        assert_eq!(transcript.messages()[0]["active"], true);
+    }
     Ok(())
 }
 #[test]
