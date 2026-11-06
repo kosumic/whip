@@ -1,5 +1,4 @@
 import { ChatSearchBar } from './ChatSearchBar';
-import { GlobalCallButton } from './GlobalCallButton';
 import { prepareTerminalPaste } from '../lib/terminalPaste';
 import { recordDiagnostic } from '../services/diagnosticFormatting';
 import { FLOATING_WARNING_BANNER_HEIGHT, FloatingWarningBanner, FloatingWarningOffsetContext } from './FloatingWarningBanner';
@@ -2330,7 +2329,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 ),
               )
               .map(renderTerminalControl)}
-            <GlobalCallButton />
           </ScrollView>
         </Animated.View>
         {visible && composeOpen && composeExpanded && (
