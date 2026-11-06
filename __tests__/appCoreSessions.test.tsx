@@ -116,3 +116,21 @@ test('caches the latest native projection queued before a commit', async () => {
     renderer.unmount();
   });
 });
+
+test('keeps the latest screen selection when unchanged or older native projections arrive', async () => {
+  let cache!: ReturnType<typeof useAppCoreSessions>;
+  function Probe() {
+    cache = useAppCoreSessions(() => view);
+    return null;
+  }
+  let renderer!: ReactTestRenderer;
+  await act(async () => { renderer = create(<Probe />); });
+  await act(async () => { cache.project({ ...view }); });
+  expect(cache.state).toBe(view);
+  const selected = { ...view, revision: 2, activeSessionId: 'second-host' };
+  await act(async () => { cache.project(selected); });
+  await act(async () => { cache.project(view); });
+  expect(cache.state.activeSessionId).toBe('second-host');
+  expect(cache.state).toBe(selected);
+  await act(async () => { renderer.unmount(); });
+});

@@ -126,6 +126,7 @@ export class NativeTranscriptService {
   private readonly residencyListeners = new Set<() => void>();
   private readonly foregroundTerminals = new Map<string, Set<symbol>>();
   private residencyRevision = 0;
+  private bindingRevision = 0;
   private readonly failedPreloads = new Map<string, string>();
   private readonly cacheHostVersions = new Map<string, { revision: number; connectionGeneration: number; transport: NativeTranscriptTransport }>();
   private readonly cacheHostAvailability = new Map<string, ReturnType<typeof transcriptCacheHostAvailability>>();
@@ -166,6 +167,8 @@ export class NativeTranscriptService {
   }
 
   readonly residencyVersion = (): number => this.residencyRevision;
+  /** Viewports only need invalidation when their cached bindings change. */
+  readonly bindingsVersion = (): number => this.bindingRevision;
   readonly subscribeResidency = (listener: () => void): (() => void) => {
     this.residencyListeners.add(listener);
     return () => { this.residencyListeners.delete(listener); };
@@ -174,6 +177,11 @@ export class NativeTranscriptService {
   private residencyChanged(): void {
     this.residencyRevision += 1;
     for (const listener of this.residencyListeners) listener();
+  }
+
+  private bindingsChanged(): void {
+    this.bindingRevision += 1;
+    this.residencyChanged();
   }
 
   private pinned(entry: TranscriptEntry): boolean {
@@ -579,7 +587,7 @@ export class NativeTranscriptService {
     }
     this.terminalBindings.set(terminalKey, binding.bindingToken);
     this.updateSpeechBinding(entry);
-    if (previousToken !== binding.bindingToken) this.residencyChanged();
+    if (previousToken !== binding.bindingToken) this.bindingsChanged();
     boundEntry.current = entry;
     this.notifyObservers(entry, isNewEntry);
 
@@ -658,7 +666,7 @@ export class NativeTranscriptService {
     this.cacheHostVersions.clear();
     this.cacheHostAvailability.clear();
     this.titles.clear();
-    this.residencyChanged();
+    this.bindingsChanged();
   }
 
   /** Apply Rust's authoritative retention decision without interpreting cache keys. */
@@ -818,7 +826,7 @@ export class NativeTranscriptService {
     } else {
       this.notifyObservers(entry);
     }
-    this.residencyChanged();
+    this.bindingsChanged();
   }
 
   private entryForBinding(bindingToken: string): TranscriptEntry | undefined {

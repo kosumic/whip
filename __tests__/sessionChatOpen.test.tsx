@@ -1758,16 +1758,19 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     expect(host.native.startAgentChat).toHaveBeenCalledTimes(1);
   });
 
-  test('foreground reconciles an agent exit missed while backgrounded', async () => {
+  test('foreground reconciles an agent exit without a new React snapshot', async () => {
     const host = setup(agent);
     const binding = await openReadyChat(host, agent);
     revealChat();
     host.injected.length = 0;
     act(() => { for (const listener of mockAppStateListeners) listener('background'); });
     host.native.currentAgentChat.mockReturnValue(undefined);
-    host.setSnapshot({
-      ...host.props.snapshot,
-      panes: [{ ...host.pane, agent: 'shell', display_agent: 'shell', agent_session: undefined }],
+    host.native.hostState.mockReturnValue({
+      syncStatus: 'synced', freshness: 'fresh',
+      snapshot: {
+        ...host.props.snapshot,
+        panes: [{ ...host.pane, agent: 'shell', display_agent: 'shell', agent_session: undefined }],
+      },
     });
 
     await act(async () => { for (const listener of mockAppStateListeners) listener('active'); });

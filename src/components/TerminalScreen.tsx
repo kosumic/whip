@@ -166,6 +166,7 @@ import type { ComposerDraftRequest } from '../lib/composerDraftRequest';
 import { ChatComposerSelection } from './ChatComposerSelection';
 
 const TERMINAL_INPUT_CONTEXT = 'terminal-input-send';
+const DEFAULT_TERMINAL_PROTOCOL: TerminalProtocolState = { kittyKeyboardReportAll: false };
 const VOICE_CONTEXT_MESSAGES = 10;
 const VOICE_CONTEXT_CHARACTERS = 12_000;
 
@@ -597,9 +598,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const { inset: keyboardInset, animatedInset: animatedKeyboardInset, animatedHeight, visible: keyboardVisible, onLayout: onKeyboardViewportLayout } = useKeyboardInset(keyboardViewportRef);
     const [alternateScreen, setAlternateScreen] = useState(false);
     const [reportedTitle, setReportedTitle] = useState('');
-    const [protocolState, setProtocolState] = useState<TerminalProtocolState>({
-      kittyKeyboardReportAll: false,
-    });
+    const [protocolState, setProtocolState] = useState(DEFAULT_TERMINAL_PROTOCOL);
     const [scrollPosition, getScrollPosition, setScrollPosition] =
       useSynchronousState(activeTarget?.scroll);
     const [visualBottomByTarget, setVisualBottomByTarget] = useState<
@@ -788,7 +787,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       setSearchResult(EMPTY_TERMINAL_SEARCH);
       setAlternateScreen(false);
       setReportedTitle('');
-      setProtocolState({ kittyKeyboardReportAll: false });
+      setProtocolState(current => current.kittyKeyboardReportAll ? DEFAULT_TERMINAL_PROTOCOL : current);
       setHistoryOpen(false);
       setCtrl('off');
       setShift('off');
@@ -2101,7 +2100,8 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 );
               }}
               onProtocolStateChange={(target, state) => {
-                if (target.key === activeTarget?.key) setProtocolState(state);
+                if (target.key === activeTarget?.key) setProtocolState(current =>
+                  current.kittyKeyboardReportAll === state.kittyKeyboardReportAll ? current : state);
               }}
               onTitleChange={(target, nextTitle) => {
                 if (target.key === activeTarget?.key) setReportedTitle(nextTitle);
@@ -2434,7 +2434,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           transparent
           visible={visible && historyOpen}
         >
-          <View className="flex-1 justify-end bg-black/50">
+          {historyOpen && <View className="flex-1 justify-end bg-black/50">
             <Pressable
               accessibilityLabel={t('terminal.closeHistory')}
               className="flex-1"
@@ -2504,7 +2504,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 </ScrollView>
               )}
             </GlassSurface>
-          </View>
+          </View>}
         </Modal>
       </View>
     );

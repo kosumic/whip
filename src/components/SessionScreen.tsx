@@ -37,7 +37,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-import { readSavedAgentTranscript } from 'react-native-whip-ssh';
+import { readSavedAgentTranscript, type HostRuntimeConnection, type HostRuntimeState } from 'react-native-whip-ssh';
 import WebView from 'react-native-webview';
 import Animated, { useAnimatedProps, useAnimatedStyle, useDerivedValue, type SharedValue } from 'react-native-reanimated';
 import { useAnimatedKeyboardHeight } from '../hooks/useKeyboardInset';
@@ -271,6 +271,19 @@ interface BrowserWebViewHandle {
 const BROWSER_WEBVIEW_STYLE = { flex: 1 } as const;
 const NO_PRIORITY_CHAT_TARGETS: readonly TerminalRenderTarget[] = [];
 
+// Share one decoded snapshot per runtime within an effect, never across resumes.
+function hostStatesForPass() {
+  const states = new Map<HostRuntimeConnection, HostRuntimeState>();
+  return (runtime: HostRuntimeConnection): HostRuntimeState => {
+    let state = states.get(runtime);
+    if (!state) {
+      state = runtime.hostState();
+      states.set(runtime, state);
+    }
+    return state;
+  };
+}
+
 export function SessionScreen({
   hostId,
   hostSessionId,
@@ -355,7 +368,7 @@ export function SessionScreen({
     () => new Map<string, AgentChatViewState>(),
   );
   const transcriptResidency = useSyncExternalStore(
-    agentTranscriptService.subscribeResidency, agentTranscriptService.residencyVersion,
+    agentTranscriptService.subscribeResidency, agentTranscriptService.bindingsVersion,
   );
   const [appActive, setAppActive] = useState(() => AppState.currentState !== 'background');
   useEffect(() => {
@@ -973,9 +986,10 @@ export function SessionScreen({
     const targets = new Map(chatTargets.map(target => [target.key, target]));
     const next = new Map(chatViewsRef.current);
     let changed = false;
+    const hostState = hostStatesForPass();
     for (const key of chatRestoreIntentsRef.current.keys()) {
       const target = targets.get(key);
-      if (!target || confirmedChatExit(target.client.native.hostState(), target.session.terminalId) ||
+      if (!target || confirmedChatExit(hostState(target.client.native), target.session.terminalId) ||
         next.get(key)?.presentation.phase === AgentChatPresentationPhase.Failed ||
         chatPresentationVisible(next.get(key)?.presentation)) {
         updateChatRestoreIntent(key);
@@ -1020,6 +1034,7 @@ export function SessionScreen({
     const projections = new Map<string, AgentChatProjection>();
     const reboundPresentations = new Map<string, AgentChatPresentation>();
     const exitedTerminalKeys = new Set<string>();
+    const hostState = hostStatesForPass();
     for (const [key, view] of chatViewsRef.current) {
       const target = targets.get(key);
       if (!target) continue; // The residency callback owns cleanup of removed targets.
@@ -1036,7 +1051,7 @@ export function SessionScreen({
         continue;
       }
       projections.set(key, projection);
-      if (confirmedChatExit(targetClient.native.hostState(), session.terminalId)) {
+      if (confirmedChatExit(hostState(targetClient.native), session.terminalId)) {
         exitedTerminalKeys.add(key);
       }
       if (
@@ -1117,9 +1132,10 @@ export function SessionScreen({
   useEffect(() => {
     if (!appActive || priorityTargets.length === 0) return;
     const views = new Map<string, AgentChatViewState>();
+    const hostState = hostStatesForPass();
     for (const target of priorityTargets) {
       try {
-        const host = target.client.native.hostState();
+        const host = hostState(target.client.native);
         const projection = host.syncStatus === 'synced' && host.freshness === 'fresh'
           ? agentTranscriptService.preload(target.hostSessionId, target.session.terminalId, target.client.native)
           : agentTranscriptService.reconcile(target.hostSessionId, target.session.terminalId, target.client.native);

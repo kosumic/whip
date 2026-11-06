@@ -16,8 +16,8 @@ type Arguments = Parameters<typeof useReverseControlHosts>;
 const connect = jest.fn(async () => true);
 const authenticate = jest.fn(async () => true);
 const context = {
-  hosts: { profilesLoaded: true, getHosts: () => [] } as unknown as Arguments[0],
-  sessions: { connect, closeHostById: jest.fn(), getState: () => ({ sessions: [] }) } as unknown as Arguments[1],
+  hosts: { profilesLoaded: true, hosts: [], getHosts: () => [] } as unknown as Arguments[0],
+  sessions: { connect, closeHostById: jest.fn(), state: { sessions: [] } } as unknown as Arguments[1],
   preferences: { hydration: { status: 'loaded' }, value: { reverseControlInstructions: '# Rules' } } as unknown as Arguments[2],
   security: { locked: false, isKeyProtectionEnabled: () => true, verifyBiometric: authenticate } as unknown as Arguments[3],
 };
@@ -31,6 +31,7 @@ function Harness({ locked = false }: { locked?: boolean }) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  context.sessions.state = { sessions: [] } as unknown as Arguments[1]['state'];
   bridges = [];
   jest.mocked(ReverseControlHosts).mockImplementation(getContext => {
     const bridge = { updateContext: jest.fn(() => { current = getContext(); }), dispose: jest.fn() };
@@ -62,6 +63,22 @@ test('connection effects use native biometric approval and preserve trust prompt
     promptForUnknownHosts: true, biometricVerified: true, signal,
   });
   expect(authenticate).not.toHaveBeenCalled();
+});
+
+test('navigation preserves host policy while connection changes publish the committed status', async () => {
+  const projection = (connectionStatus: string, terminalId: string) => ({
+    sessions: [{ hostId: 'mini', connectionStatus, activeTerminalId: terminalId }],
+  }) as unknown as Arguments[1]['state'];
+  context.sessions.state = projection('ready', 'first');
+  await act(async () => { renderer = create(<Harness />); });
+  expect(current.connections()).toEqual([{ host_id: 'mini', status: 'ready' }]);
+  context.sessions.state = projection('ready', 'second');
+  await act(async () => { renderer!.update(<Harness />); });
+  expect(bridges[0].updateContext).toHaveBeenCalledTimes(1);
+  context.sessions.state = projection('reconnecting', 'second');
+  await act(async () => { renderer!.update(<Harness />); });
+  expect(bridges[0].updateContext).toHaveBeenCalledTimes(2);
+  expect(current.connections()).toEqual([{ host_id: 'mini', status: 'reconnecting' }]);
 });
 
 test('Strict Mode replaces the disposed adapter rather than reusing revoked native permits', async () => {

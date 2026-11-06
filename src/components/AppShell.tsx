@@ -124,7 +124,7 @@ export function AppShell({
     terminalControlUsage,
   } = effectivePreferences;
   const activeSession = sessions.activeSession;
-  const { getClient, herdView, state: sessionState } = sessions;
+  const { getClient, herdView, state: sessionState, presentationSessions } = sessions;
   const retainedPriorityTargets = useRef<TerminalRenderTarget[]>([]);
   const priorityChatTargets = useMemo(() => {
     const targets: TerminalRenderTarget[] = [];
@@ -134,8 +134,9 @@ export function AppShell({
       const client = getClient(item.hostId);
       const native = client?.activeNative;
       if (!client || !native) continue;
-      const host = native.hostState();
-      const pane = host.snapshot?.panes.find(candidate => candidate.terminal_id === item.agent.terminal_id);
+      // The committed projection already decoded this host's native snapshot.
+      const host = presentationSessions.find(session => session.id === item.hostId);
+      const pane = host?.snapshot.panes.find(candidate => candidate.terminal_id === item.agent.terminal_id);
       const agent = chatAgentForPane(pane);
       const identity = pane?.agent_session;
       if (!pane || !agent || !identity?.value.trim() ||
@@ -161,7 +162,7 @@ export function AppShell({
     })) return previous;
     retainedPriorityTargets.current = targets;
     return targets;
-  }, [getClient, herdView, sessionState]);
+  }, [getClient, herdView, sessionState, presentationSessions]);
   // Mount the shared viewport owner while Herd is open, even before selecting a host.
   const viewportSession = activeSession ?? sessions.presentationSessions.find(
     session => session.id === priorityChatTargets[0]?.hostSessionId,
@@ -204,7 +205,6 @@ export function AppShell({
     if (pane) remoteFiles.open(sessionId, pane.terminal_id);
   };
 
-  const presentationSessions = sessions.presentationSessions;
   const { herdHostFilterId, herdWorkspaceFilterIds } = navigation;
   const getHerdPresentation = useMemo(() => {
     const prepare = () => {

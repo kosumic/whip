@@ -146,6 +146,25 @@ function openedToken(
   return result.binding.bindingToken;
 }
 
+test('resident-binding snapshots ignore pins and listeners while reporting bindings appearing and disappearing', () => {
+  const service = new NativeTranscriptService();
+  const remote = fakeTransport();
+  const empty = service.bindingsVersion();
+  const token = openedToken(service, remote.value);
+  const resident = service.bindingsVersion();
+  expect(resident).toBeGreaterThan(empty);
+  const release = service.retainForegroundTerminal('host', 'terminal-1');
+  const unsubscribe = service.subscribe(token, jest.fn());
+  expect(service.bindingsVersion()).toBe(resident);
+  unsubscribe();
+  release();
+  expect(service.bindingsVersion()).toBe(resident);
+  expect(service.getState(token)).not.toBeNull();
+  service.closeTerminal('host', 'terminal-1', remote.value);
+  expect(service.bindingsVersion()).toBeGreaterThan(resident);
+  expect(service.getState(token)).toBeNull();
+});
+
 function cacheRemote(index: number, hostSessionId = 'host', sharedSession = `session-${index}`) {
   const remote = fakeTransport();
   const terminalId = `terminal-${index}`;

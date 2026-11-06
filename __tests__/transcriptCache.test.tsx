@@ -81,6 +81,8 @@ afterEach(async () => {
 
 function setup(hosts: ReturnType<typeof host>[], order: [number, number][]) {
   let revision = 0;
+  const renderChrome = jest.fn();
+  function Chrome() { renderChrome(); return null; }
   const runtimesRef = { current: new Map(hosts.map(item => [item.id, item.runtime])) };
   const core = {
     herdView: () => ({ agents: order.flatMap(([hostIndex, paneIndex]) => {
@@ -91,12 +93,13 @@ function setup(hosts: ReturnType<typeof host>[], order: [number, number][]) {
   } as unknown as NativeAppCore;
   function Harness({ state, capacity }: { state: AppCoreProjection; capacity: number }) {
     useTranscriptCache({ state, runtimesRef }, core, capacity);
-    return <>{hosts.flatMap(runtime => runtime.panes.map(pane =>
+    return <><Chrome />{hosts.flatMap(runtime => runtime.panes.map(pane =>
       <TitleProbe key={runtime.id + pane.pane_id} runtime={runtime} pane={pane} />))}</>;
   }
   return {
     order,
     runtimesRef,
+    renderChrome,
     async render(capacity = 3) {
       const state = { revision: ++revision, sessions: hosts.map(item => ({ id: item.id })) } as AppCoreProjection;
       await act(async () => {
@@ -107,6 +110,26 @@ function setup(hosts: ReturnType<typeof host>[], order: [number, number][]) {
     },
   };
 }
+
+test('transcript pin and subscription changes preserve application chrome without reopening history', async () => {
+  const runtime = host('one', ['working', 'blocked']);
+  const fixture = setup([runtime], [[0, 0], [0, 1]]);
+  await fixture.render();
+  const binding = runtime.bindings.get('terminal-0')!;
+  const state = agentTranscriptService.getState(binding.bindingToken);
+  const renders = fixture.renderChrome.mock.calls.length;
+  let release = () => {};
+  let unsubscribe = () => {};
+  await act(async () => {
+    release = agentTranscriptService.retainForegroundTerminal(runtime.id, binding.terminalId);
+    unsubscribe = agentTranscriptService.subscribe(binding.bindingToken, jest.fn());
+  });
+  await act(async () => { unsubscribe(); release(); });
+  expect(agentTranscriptService.getState(binding.bindingToken)).toBe(state);
+  expect(runtime.transport.openAgentChat).toHaveBeenCalledTimes(2);
+  expect(runtime.transport.detachAgentChat).not.toHaveBeenCalled();
+  expect(fixture.renderChrome).toHaveBeenCalledTimes(renders);
+});
 
 function overlappingConsumers(runtime: Host) {
   const core = { herdView: () => ({ agents: runtime.panes.map(pane => ({ hostId: runtime.id, agent: pane })) }) } as unknown as NativeAppCore;

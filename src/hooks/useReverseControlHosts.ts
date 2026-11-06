@@ -21,7 +21,7 @@ export function useReverseControlHosts(
     biometricForKeys: security.isKeyProtectionEnabled(),
     globalInstructions: preferences.value.reverseControlInstructions,
     getHosts: hosts.getHosts,
-    connections: () => sessions.getState().sessions.map(session => ({ host_id: session.hostId, status: session.connectionStatus })),
+    connections: () => sessions.state.sessions.map(session => ({ host_id: session.hostId, status: session.connectionStatus })),
     authenticate: security.verifyBiometric,
     saveMetadata: saveHostMetadata,
     readCredential: loadConnectionProfile,
@@ -41,10 +41,15 @@ export function useReverseControlHosts(
   const contextRef = useRef(context);
   contextRef.current = context;
   const bridgeRef = useRef<ReverseControlHosts | null>(null);
+  // Terminal selection changes the app projection without changing host policy.
+  const connectionKey = JSON.stringify(sessions.state.sessions.map(session => [session.hostId, session.connectionStatus]));
   useLayoutEffect(() => {
     const bridge = new ReverseControlHosts(() => contextRef.current);
     bridgeRef.current = bridge;
     return () => { bridgeRef.current = null; bridge.dispose(); };
   }, []);
-  useLayoutEffect(() => { bridgeRef.current?.updateContext(); });
+  useLayoutEffect(() => { bridgeRef.current?.updateContext(); }, [
+    context.ready, context.locked, context.biometricForKeys, context.globalInstructions,
+    hosts.hosts, connectionKey,
+  ]);
 }

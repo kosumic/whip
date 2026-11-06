@@ -2034,7 +2034,12 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
           nativeCommands.current.clear();
           for (const command of commands) command.reject(error);
           const entry = activeKey.current ? entries.current.get(activeKey.current) : null;
-          if (entry) reportError(entry.target, String(error));
+          // View setup/teardown failures are local UI errors. Pending edits
+          // still reject, but this must not put a healthy SSH session in recovery.
+          recordNetworkDiagnostic('warn', 'terminal-native-input-command-failed', {
+            key: entry?.target.key,
+            reason: String(error),
+          });
         }}
         onTerminalInput={event => handleNativeInput(event.nativeEvent)} />
     </View>

@@ -174,12 +174,13 @@ test.each([false, true])('prepares the first three agents before opening Termina
     agent_session: { agent: 'codex', kind: 'id', value: `session-${index}` },
   }));
   const herdView = jest.fn(() => ({ agents: [3, 1, 4, 0, 2].map(index => ({ hostId: 'host-1', agent: panes[index] })) }));
-  const native = { ...host.native, hostState: () => ({ syncStatus: 'synced', freshness: 'fresh', snapshot: { panes } }) };
+  const native = { ...host.native, hostState: jest.fn(() => { throw new Error('Use the committed presentation snapshot'); }) };
   const client = { ...host.client, native, activeNative: native };
+  const session = { ...host.props.sessions.activeSession!, snapshot: { ...host.snapshot, panes } };
   const props = {
     ...host.props,
     navigation: { ...host.props.navigation, state: { ...host.props.navigation.state, tab: 'hosts' }, mountedTabs: new Set(['hosts']) },
-    sessions: { ...host.props.sessions, activeSession: selected ? host.props.sessions.activeSession : null, herdView, getClient: () => client },
+    sessions: { ...host.props.sessions, activeSession: selected ? session : null, presentationSessions: [session], herdView, getClient: () => client },
   } as unknown as Props;
   let renderer!: ReactTestRenderer;
   try {

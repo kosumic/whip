@@ -672,6 +672,16 @@ describe('TerminalRendererHost lifecycle', () => {
     expect(order).toEqual(['/', 'r', '\t', 'paste', 'x']);
   });
 
+  test('native input setup failure preserves a connected terminal', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const target = createTarget('term-1', createClient({ 'term-1': scroll }), scroll);
+    const { eventCallbacks } = await mountReadyHost(target);
+    const input = renderer.root.findByType('WhipTerminalInput' as never);
+    act(() => { input.props.onCommandError(new Error('Native view is unavailable')); });
+    expect(eventCallbacks.onError).not.toHaveBeenCalled();
+    expect(eventCallbacks.onInput).not.toHaveBeenCalled();
+  });
+
   test('Expo view command failure rejects pending barriers without sending the external edit', async () => {
     const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
     const target = createTarget('term-1', createClient({ 'term-1': scroll }), scroll);
