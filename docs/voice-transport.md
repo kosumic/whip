@@ -91,3 +91,15 @@ pausing the call or discarding the previous tail. Actual interruptions still
 invalidate old playback epochs. Android diagnostics also report AudioTrack
 underruns and queued device audio to distinguish playback starvation from
 missing RTP packets.
+
+Android playback is paced by AudioTrack's bounded buffer and blocking writes.
+It must be allowed to fill the platform's streaming start threshold, including
+after a route change. A fixed 80 ms producer limit previously deadlocked a
+Bluetooth track with an 8,228-frame buffer at 24 kHz: only 1,920 frames were
+queued, the device playback position remained zero, and captions could not
+advance. Diagnostics include both platform buffer size and start threshold.
+This matches the playback ownership in the
+[OpenAI Agents SDK WebRTC transport](https://github.com/openai/openai-agents-js/blob/628f6c6e1d475db53ceab27e91ff0d5c2a28b155/packages/agents-realtime/src/openaiRealtimeWebRtc.ts#L502):
+it attaches the remote media stream directly to an autoplaying audio element,
+allowing the platform player to manage buffering. Its browser implementation
+does not supply Android device-routing code.

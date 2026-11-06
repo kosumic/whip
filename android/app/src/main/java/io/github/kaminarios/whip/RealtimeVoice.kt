@@ -8,6 +8,7 @@ import android.media.AudioTrack
 import android.media.AudioTimestamp
 import android.media.MediaRecorder
 import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -194,7 +195,11 @@ internal object RealtimeVoice {
             val signal = state.optJSONObject("signal")
             val media = state.optJSONObject("media")
             val underruns = try { session.output?.underrunCount ?: 0 } catch (_: Exception) { 0 }
-            val counters = "rawRms=${signal?.optDouble("rawRms")} processedRms=${signal?.optDouble("processedRms")} processingDrops=${signal?.optLong("droppedFrames")} receivedMs=${playback?.optLong("receivedMs")} heardMs=${playback?.optLong("heardMs")} durationMs=${playback?.optLong("expectedMs")} captionUtf16=${playback?.optLong("textUtf16")} spokenUtf16=${playback?.optLong("spokenUtf16")} media=${media?.toString()} nativeAudioSamples=${session.playedAudioSamples} nativeAudioPeak=${session.playedAudioPeak} playbackUnderruns=$underruns playbackQueuedMs=${session.playbackQueuedMs}"
+            val bufferFrames = try { session.output?.bufferSizeInFrames ?: 0 } catch (_: Exception) { 0 }
+            val startFrames = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+              try { session.output?.startThresholdInFrames ?: 0 } catch (_: Exception) { 0 }
+            } else bufferFrames
+            val counters = "rawRms=${signal?.optDouble("rawRms")} processedRms=${signal?.optDouble("processedRms")} processingDrops=${signal?.optLong("droppedFrames")} receivedMs=${playback?.optLong("receivedMs")} heardMs=${playback?.optLong("heardMs")} durationMs=${playback?.optLong("expectedMs")} captionUtf16=${playback?.optLong("textUtf16")} spokenUtf16=${playback?.optLong("spokenUtf16")} media=${media?.toString()} nativeAudioSamples=${session.playedAudioSamples} nativeAudioPeak=${session.playedAudioPeak} playbackUnderruns=$underruns playbackQueuedMs=${session.playbackQueuedMs} playbackBufferFrames=$bufferFrames playbackStartFrames=$startFrames"
             Log.w(LOG_TAG, "Audio deviceSamples=${session.capturedSamples} rejected=${session.rejectedCapture} ageMs=${session.captureAgeNs / 1_000_000} devicePosition=${session.deviceFramePosition} capturePackets=${state.optLong("capturePackets")} uploadedPackets=${state.optLong("uploadedPackets")} rawLevel=${state.optDouble("captureLevel")} processedLevel=${state.optDouble("level")} events=${state.optLong("serverEvents")} $audioDiagnostic $counters")
           }
           if (phase == "error" || preview && phase == "closed") {
@@ -304,8 +309,9 @@ internal object RealtimeVoice {
         val played = track.playbackHeadPosition.toLong() and 0xffffffffL
         session.playbackQueuedMs = (submitted - played).coerceAtLeast(0) * 1000 / Core.RATE
         Core.played(session.call, generation, (played - epochStart).coerceAtLeast(0))
-        // Keep at most 80ms in the platform buffer; Rust retains the rest.
-        if (submitted - played > Core.FRAME * 3) { Thread.sleep(5); continue }
+        // AudioTrack's bounded buffer and WRITE_BLOCKING below pace output.
+        // A separate queue cap can prevent reaching its start threshold,
+        // especially after Bluetooth increases the platform buffer size.
         val audioCount = Core.read(session.call, pcm, epoch)
         if (audioCount > 0) {
           var peak = 0
