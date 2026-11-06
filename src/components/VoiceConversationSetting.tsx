@@ -6,9 +6,11 @@ import { VoiceConversationSettingsContext } from '../lib/voiceConversationSettin
 import { LIVE_MODEL, LIVE_VOICES, REALTIME_MODELS, REALTIME_VOICES, selectedConversationVoice, DEFAULT_REALTIME_VAD, parseRealtimeVad, VOICE_PREVIEW_TEXT_LIMIT } from '../lib/voiceConversationSettings';
 import { RealtimeVoicePreview } from '../services/realtimeVoicePreview';
 import { GlassButton } from './GlassControls';
+import { DetailsTitle } from './SettingsDetails';
 import { SpeechVoicePicker } from './SpeechVoicePicker';
 import { Text } from './ui/text';
 import { Input } from './ui/input';
+import { Switch } from './ui/switch';
 
 export interface VoiceConversationSettingHandle { stopPreview: () => Promise<void> }
 
@@ -70,6 +72,14 @@ export function VoiceConversationSetting({ ref, credentialSaved, credentialBusy 
     </View>
     <Text accessibilityRole="alert" className="text-xs text-muted-foreground">{t(settings.mode === 'Live' ? 'voiceProvider.liveNotice' : 'voiceProvider.realtimeNotice')}</Text>
     <Text className="text-xs text-muted-foreground">{t(settings.mode === 'Live' ? 'voiceProvider.liveBilling' : 'voiceProvider.realtimeBilling')}</Text>
+    <View className="flex-row items-center justify-between gap-3">
+      <View className="flex-1">
+        <DetailsTitle title={t('voiceProvider.prepareCalls')} titleClassName="text-sm font-medium"
+          copy={t('voiceProvider.prepareCallsHelp')} />
+      </View>
+      <Switch accessibilityLabel={t('voiceProvider.prepareCalls')} checked={settings.keepVoiceClientWarm === true}
+        onCheckedChange={keepVoiceClientWarm => onChange({ ...settings, keepVoiceClientWarm })} />
+    </View>
     {settings.mode === 'Realtime' && <>
       <Text className="text-sm font-medium">{t('voiceProvider.model')}</Text>
       <View className="flex-row flex-wrap gap-2">
