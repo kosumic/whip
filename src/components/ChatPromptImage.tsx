@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Image, Modal, Pressable, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, Image, Pressable, View } from 'react-native';
 import { cacheRemoteFile, type CachedRemoteFile, type RemoteFileClient } from '../services/remoteFileTransfer';
 import { remoteEntryName, remotePreviewKind } from '../lib/remoteFiles';
 import { transcriptFileLinkTarget } from '../lib/transcriptLinks';
 import { Text } from './ui/text';
-import { ZoomableImagePreview } from './ZoomableImagePreview';
+import { ChatImagePreview } from './ChatImagePreview';
 
 const THUMBNAIL_WIDTH = 240;
 const THUMBNAIL_HEIGHT = 180;
@@ -91,14 +90,7 @@ export function ChatPromptImage({ source, client, directory, active, visible = a
         </View>
       </Pressable>
       {uri && !failed && expandedUri === uri && (
-        <Modal visible animationType="fade" onRequestClose={close} statusBarTranslucent navigationBarTranslucent>
-          <SafeAreaView className="flex-1 bg-black">
-            <Pressable accessibilityRole="button" accessibilityLabel="Close image" className="ml-auto min-h-12 items-center justify-center px-5" onPress={close}>
-              <Text className="text-base text-white">Close</Text>
-            </Pressable>
-            <ZoomableImagePreview accessibilityLabel="Attached image" uri={uri} />
-          </SafeAreaView>
-        </Modal>
+        <ChatImagePreview uri={uri} onClose={close} />
       )}
     </>
   );

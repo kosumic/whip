@@ -51,6 +51,7 @@ import type {
 import { isQuestionTool, isRunningTool as isRunning } from '../lib/agentChatBlocks';
 import { resolveChatRow, type ChatBlock, type ChatRow, type ChatRowStore } from '../lib/nativeChatRows';
 import { useNativeChatRows } from '../hooks/useNativeChatRows';
+import { TranscriptMarkdownImages } from '../hooks/useTranscriptMarkdownImages';
 import { nativeTranscriptLookup } from '../lib/nativeAgentTranscript';
 import { CHAT_WORKING_LABEL, CHAT_WORKING_SHIMMER_PERIOD_MS, workingShimmerOpacity } from '../lib/chatWorkingAnimation';
 import type { ChatViewportState } from '../lib/chatViewportState';
@@ -697,6 +698,7 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
 }) {
   const { colors } = useTheme();
   const toggle = () => onToggle(block.id);
+  const markdownImages = useMemo(() => ({ client: imageClient, directory, active, visible }), [imageClient, directory, active, visible]);
   const content = () => {
     switch (block.type) {
       case 'user': return <UserPrompt message={block.message} imageClient={imageClient} directory={directory} active={active} visible={visible} />;
@@ -719,7 +721,9 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
       searchSelected && 'rounded-md bg-primary/10',
     )} style={block.type === 'meta' ? { minHeight: 1 } : undefined}>
       <ChatComposerSelection.Provider value={onAddToComposer}>
-        <ChatSearchQuery.Provider value={searchQuery}>{content()}</ChatSearchQuery.Provider>
+        <TranscriptMarkdownImages.Provider value={markdownImages}>
+          <ChatSearchQuery.Provider value={searchQuery}>{content()}</ChatSearchQuery.Provider>
+        </TranscriptMarkdownImages.Provider>
       </ChatComposerSelection.Provider>
     </View>
   );

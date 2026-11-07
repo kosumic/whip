@@ -7,6 +7,8 @@ import { ChatComposerSelection } from '../src/components/ChatComposerSelection';
 import { AppFontScaleContext } from '../src/hooks/useAppFontScale';
 import { SelectableChatText } from '../src/components/SelectableChatText';
 import { SPEECH_CAPTION_COLORS, SPEECH_CAPTION_WEIGHT } from '../src/lib/speechCaptionStyle';
+import { TranscriptMarkdownImages } from '../src/hooks/useTranscriptMarkdownImages';
+import { cacheRemoteFile, type CachedRemoteFile, type RemoteFileClient } from '../src/services/remoteFileTransfer';
 
 jest.mock('react-native-whip-ssh', () => require('../__mocks__/richTextHtml'));
 
@@ -24,6 +26,8 @@ jest.mock('react-native-enriched-markdown', () => ({
 }));
 jest.mock('../src/components/MermaidPreview', () => ({ MermaidPreview: 'MermaidPreview' }));
 jest.mock('../src/components/SvgPreview', () => ({ SvgPreview: 'SvgPreview' }));
+jest.mock('../src/components/ChatImagePreview', () => ({ ChatImagePreview: 'ChatImagePreview' }));
+jest.mock('../src/services/remoteFileTransfer', () => ({ cacheRemoteFile: jest.fn() }));
 jest.mock('@rn-primitives/portal', () => ({ Portal: 'Portal' }));
 jest.mock('react-native', () => ({ View: 'View', Text: 'Text' }));
 jest.mock('react-i18next', () => ({
@@ -85,6 +89,97 @@ describe('MarkdownText', () => {
     act(() => { renderer.update(<MarkdownText content={original} variant="transcript" />); });
     expect(native().props.readAloud).toBeUndefined();
     expect(native().props.markdown).toBe(original);
+  });
+
+  test('displays the Settings transcript image in the shared chat preview without downloading again', async () => {
+    const path = '/home/kosumi/repos/whip/.codex-base-tip-preview/preview.png';
+    const uri = 'file:///cache/preview.png';
+    const content = `Browser-rendered preview in light and dark mode:\n\n![Tip jar UI preview](${path})`;
+    const dispose = jest.fn();
+    const statRemotePath = jest.fn().mockResolvedValue({ path, name: 'preview.png', kind: 'file', size: 100 });
+    const client = { native: { statRemotePath } } as unknown as RemoteFileClient;
+    jest.mocked(cacheRemoteFile).mockClear().mockResolvedValue({ uri, dispose } as unknown as CachedRemoteFile);
+    const onLinkPress = jest.fn();
+    const render = (text: string, active: boolean, connected = true) => (
+      <TranscriptMarkdownImages.Provider value={{ client: connected ? client : undefined, active, visible: active }}>
+        <MarkdownText content={text} variant="transcript" onLinkPress={onLinkPress} />
+      </TranscriptMarkdownImages.Provider>
+    );
+    const native = () => renderer.root.find(node => String(node.type) === 'EnrichedMarkdownText');
+    await act(async () => { renderer = create(render(content, false)); });
+    expect(statRemotePath).not.toHaveBeenCalled();
+    await act(async () => { renderer.update(render(content, true)); });
+    expect(cacheRemoteFile).toHaveBeenCalledWith(client, path);
+    expect(native().props.markdown).toBe(content.replace(path, uri));
+    act(() => { native().props.onImagePress({ url: uri, alt: 'Tip jar UI preview' }); });
+    const preview = () => renderer.root.find(node => String(node.type) === 'ChatImagePreview');
+    expect(preview().props.uri).toBe(uri);
+    expect(onLinkPress).not.toHaveBeenCalled();
+    act(() => { preview().props.onClose(); });
+    expect(renderer.root.findAll(node => String(node.type) === 'ChatImagePreview')).toHaveLength(0);
+    act(() => { native().props.onImagePress({ url: uri, alt: 'Tip jar UI preview' }); });
+    expect(preview().props.uri).toBe(uri);
+    await act(async () => { renderer.update(render(`${content}\n\nMore text.`, false, false)); });
+    expect(native().props.markdown).toContain(uri);
+    expect(dispose).not.toHaveBeenCalled();
+    expect(renderer.root.findAll(node => String(node.type) === 'ChatImagePreview')).toHaveLength(0);
+    await act(async () => { renderer.update(render(content, true)); });
+    expect(renderer.root.findAll(node => String(node.type) === 'ChatImagePreview')).toHaveLength(0);
+    expect(cacheRemoteFile).toHaveBeenCalledTimes(1);
+    act(() => { renderer.unmount(); });
+    expect(dispose).toHaveBeenCalledTimes(1);
+  });
+
+  test('previews web images in chat without requiring a file or link handler', () => {
+    const uri = 'https://example.com/preview.png';
+    act(() => { renderer = create(<MarkdownText content={`![Preview](${uri})`} variant="transcript" />); });
+    act(() => { renderer.root.find(node => String(node.type) === 'EnrichedMarkdownText').props.onImagePress({ url: uri, alt: 'Preview' }); });
+    expect(renderer.root.find(node => String(node.type) === 'ChatImagePreview').props.uri).toBe(uri);
+  });
+
+  test('resolves relative and reference images while leaving code examples and web images alone', async () => {
+    const content = '![Relative](./preview.png)\n\n![Reference][image]\n\n[image]: ./other.png\n\n`![Example](example.png)`\n\n![Web](https://example.com/web.png)';
+    const statRemotePath = jest.fn(async (path: string) => ({ path, name: path.split('/').pop(), kind: 'file', size: 100 }));
+    const client = { native: { statRemotePath } } as unknown as RemoteFileClient;
+    jest.mocked(cacheRemoteFile).mockClear().mockImplementation(async (_client, path) => ({ uri: `file:///cache/${path.split('/').pop()}`, dispose: jest.fn() } as unknown as CachedRemoteFile));
+    await act(async () => { renderer = create(
+      <TranscriptMarkdownImages.Provider value={{ client, active: true, directory: '/repo' }}>
+        <MarkdownText content={content} variant="transcript" />
+      </TranscriptMarkdownImages.Provider>,
+    ); });
+    expect(statRemotePath.mock.calls.map(([path]) => path)).toEqual(['/repo/preview.png', '/repo/other.png']);
+    const native = renderer.root.find(node => String(node.type) === 'EnrichedMarkdownText');
+    expect(native.props.markdown).toBe(content.replace('./preview.png', 'file:///cache/preview.png').replace('./other.png', 'file:///cache/other.png'));
+  });
+
+  test('keeps image alt text and paths when host files are missing or too large', async () => {
+    const content = '![Missing](/repo/missing.png)\n\n![Huge](/repo/huge.png)';
+    const statRemotePath = jest.fn().mockRejectedValueOnce(new Error('missing'))
+      .mockResolvedValue({ path: '/repo/huge.png', name: 'huge.png', kind: 'file', size: 100 * 1024 * 1024 });
+    const client = { native: { statRemotePath } } as unknown as RemoteFileClient;
+    jest.mocked(cacheRemoteFile).mockClear();
+    await act(async () => { renderer = create(
+      <TranscriptMarkdownImages.Provider value={{ client, active: true }}>
+        <MarkdownText content={content} variant="transcript" />
+      </TranscriptMarkdownImages.Provider>,
+    ); });
+    expect(cacheRemoteFile).not.toHaveBeenCalled();
+    expect(renderer.root.find(node => String(node.type) === 'EnrichedMarkdownText').props.markdown).toBe(content);
+  });
+
+  test('disposes a host image download that finishes after the chat row unmounts', async () => {
+    let complete!: (file: CachedRemoteFile) => void;
+    const dispose = jest.fn();
+    jest.mocked(cacheRemoteFile).mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    const client = { native: { statRemotePath: jest.fn().mockResolvedValue({ path: '/repo/image.png', name: 'image.png', kind: 'file', size: 100 }) } } as unknown as RemoteFileClient;
+    await act(async () => { renderer = create(
+      <TranscriptMarkdownImages.Provider value={{ client, active: true }}>
+        <MarkdownText content="![Image](/repo/image.png)" variant="transcript" />
+      </TranscriptMarkdownImages.Provider>,
+    ); });
+    act(() => { renderer.unmount(); });
+    await act(async () => { complete({ uri: 'file:///cache/image.png', dispose } as unknown as CachedRemoteFile); });
+    expect(dispose).toHaveBeenCalledTimes(1);
   });
 
   test.each([0, 1])('keeps speech progress continuous across a diagram when text part %s is current', index => {

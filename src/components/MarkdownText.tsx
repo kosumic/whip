@@ -1,5 +1,5 @@
 import { ChatSearchQuery } from './SearchText';
-import { Fragment, useContext, useMemo } from 'react';
+import { Fragment, useContext, useEffect, useMemo, useState } from 'react';
 import {
   EnrichedMarkdownText,
   type MarkdownStyle,
@@ -9,12 +9,14 @@ import { useTranslation } from 'react-i18next';
 
 import { guiFontFamilies } from '../lib/guiFonts';
 import { useAppFontScale } from '../hooks/useAppFontScale';
+import { useTranscriptMarkdownImages } from '../hooks/useTranscriptMarkdownImages';
 import { normalizeRichTextMarkdown } from '../lib/richTextMarkdown';
 import { splitDiagramMarkdown } from '../lib/diagramMarkdown';
 import { hapticCopySuccess } from '../services/interactionFeedback';
 import { colorWithAlpha, useTheme } from '../theme';
 import { MermaidPreview } from './MermaidPreview';
 import { SvgPreview } from './SvgPreview';
+import { ChatImagePreview } from './ChatImagePreview';
 import { useChatComposerSelectionMenu } from './ChatComposerSelection';
 import { SPEECH_CAPTION_COLORS, SPEECH_CAPTION_WEIGHT } from '../lib/speechCaptionStyle';
 
@@ -263,6 +265,12 @@ export function MarkdownText({
       ? { ...part, content: normalizeRichTextMarkdown(part.content) }
       : part);
   }, [content, variant]);
+  const images = useTranscriptMarkdownImages(parts.filter(part => part.type === 'markdown').map(part => part.content).join('\n'));
+  const [expandedImage, setExpandedImage] = useState<string>();
+  const previewUri = expandedImage && images.visible ? images.previewUri(expandedImage) : undefined;
+  useEffect(() => {
+    if (!images.visible) setExpandedImage(undefined);
+  }, [images.visible]);
   const speechParts = useMemo(() => {
     if (speechOriginal === undefined) return undefined;
     const originals = variant === 'transcript' ? splitDiagramMarkdown(speechOriginal)
@@ -272,12 +280,12 @@ export function MarkdownText({
     if (current < 0) return undefined;
     return parts.map((part, index) => part.type !== 'markdown' ? undefined : JSON.stringify({
       phase: index < current ? 'heard' : index === current ? 'current' : 'upcoming',
-      original: normalizeRichTextMarkdown(originals[index]?.content ?? ''),
+      original: images.rewrite(normalizeRichTextMarkdown(originals[index]?.content ?? '')),
       heard: colors.text,
       upcoming: SPEECH_CAPTION_COLORS.upcoming,
       weight: SPEECH_CAPTION_WEIGHT,
     }));
-  }, [speechOriginal, parts, variant, colors.text]);
+  }, [speechOriginal, parts, variant, colors.text, images]);
   const accessibilityLabels = useMemo(() => ({
     list: {
       bulletPoint: t('markdown.a11y.bulletPoint'),
@@ -315,12 +323,13 @@ export function MarkdownText({
       enableLinkPreview
       enableTaskListItemToggle={false}
       flavor="github"
-      markdown={value}
+      markdown={images.rewrite(value)}
       searchQuery={searchQuery}
       readAloud={readAloud}
       markdownStyle={markdownStyle}
       md4cFlags={WHIP_MARKDOWN_FLAGS}
       onLinkPress={onLinkPress}
+      onImagePress={variant === 'transcript' ? ({ url }) => setExpandedImage(url) : undefined}
       onCopyPress={hapticCopySuccess}
       selectable={selectable}
       selectionColor={colorWithAlpha(colors.primary, '4D')}
@@ -351,6 +360,7 @@ export function MarkdownText({
           />
         ) : <Fragment key={part.start}>{renderMarkdown(part.content, speechParts?.[index])}</Fragment>
       ))}
+      {previewUri && <ChatImagePreview uri={previewUri} onClose={() => setExpandedImage(undefined)} />}
     </>
   );
 }
