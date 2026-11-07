@@ -308,7 +308,7 @@ Whip is available as a production release on [Google Play](https://play.google.c
 
 Signed ARM64 APKs are also published as normal latest releases on [GitHub Releases](https://github.com/kosumic/whip/releases). They use the project's existing release key and include a SHA-256 checksum alongside the APK.
 
-1. Read the [security policy](SECURITY.md) and [privacy notes](PRIVACY.md).
+1. Read the [security policy](SECURITY.md), [privacy notes](PRIVACY.md), and [Terms of Service](https://whip.kosumi.dev/terms).
 2. Install through Google Play, or download `whip-arm64.apk` and its checksum from the latest GitHub release.
 3. Allow installation from the app that downloaded the APK, then open Whip.
 4. Make the host reachable over SSH, through a Tailnet you trust, a saved jump host, or [Tailcat mode](#connect-with-tailcat). Whip can open a plain SSH shell even when Herdr is not installed.

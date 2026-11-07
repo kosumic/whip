@@ -1,0 +1,13 @@
+{
+  "name": "whip-legal",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "cf deploy --dry-run",
+    "deploy": "cf deploy"
+  },
+  "devDependencies": {
+    "cf": "1.0.0-beta.21",
+    "wrangler": "^4.156.1"
+  }
+}
