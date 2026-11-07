@@ -108,7 +108,7 @@ If the field was removed or its text differs, the action fails with
 The error does not expose the requested or retained value. Use a `value`
 expectation when the page may update the value asynchronously.
 
-`expect` is an ordered list of up to four `browser.wait` arguments, without
+`expect` is a combined list of up to four `browser.wait` arguments, without
 `tab_id`. Conditions include `target` (exactly one rendered match), `target_absent`
 (zero matches), `text`, `text_absent`, `value` (exact non-sensitive input value),
 `selector`, `url` (substring), `url_change`, and `stable`. A `url_change`
@@ -117,8 +117,11 @@ expectation defaults to the URL **before that step's action**. Each wait allows
 An ambiguous target expectation fails immediately. A missing observed ref fails
 with `stale_ref`, including in an absence check; use a semantic locator to wait
 for disappearance.
-Expectations are independent ordered waits: they may succeed at different times,
-and do not assert that every condition holds simultaneously.
+Every expectation must hold on the same observed DOM state. Previously true
+conditions are rechecked while other conditions are pending. Each condition's
+timeout starts when the group starts; the first currently unmet condition to
+expire stops the group. Reports retain the latest `expectation_outcomes` and
+`wait_ms`, including which conditions were unmet on failure.
 Text absence checks fail with `result_too_large` if the rendered text scan reaches
 its 262,144-character bound; truncated text cannot prove absence.
 
@@ -129,6 +132,22 @@ steps are pinned to that page. Split a navigation-triggering click and subsequen
 page work into separate calls after observing the new page. A same-document route
 change also stops the batch. Native view, driver, ownership and user-interaction
 fences continue to apply.
+
+Before every step after the first, Whip waits for 300 ms of DOM quiet, allowing
+up to 1,500 ms within the total deadline. A page that keeps changing stops with
+`unstable_page` before that action runs; `settle_ms` records the wait. A newly
+visible DOM dialog must be identified by a positive `target`, `selector` or
+`value` expectation referring to the dialog or a unique element inside it.
+Unexpected dialogs stop with `unexpected_popup`, including when requested text
+is visible behind them. Native JavaScript alert/confirm/prompt dialogs stop
+pending Android and iOS reads/actions immediately; Whip never answers them for
+the agent. The interrupted action may resume when the user answers the dialog,
+so its outcome remains uncertain and it is never replayed.
+
+A page with no rendered text or readable controls stops with `unreadable_page`;
+empty or hidden UI cannot satisfy a disappearance assertion. Blank tabs can
+still be navigated explicitly. Renderer/driver failures retain existing native
+error codes and stop the batch. These checks cover Whip-owned page UI only.
 
 The total execution deadline is 1–60,000 ms, default 60,000 ms, including actions
 and expectations. Admission/setup has a separate bounded transport allowance.
@@ -156,14 +175,17 @@ replayed and completed effects are not rolled back. Observe the current page
 before deciding how to continue after any failure or cancellation. These tools
 control only Whip-owned tabs and require no new platform permissions.
 
-The design reference is [Mika's architecture at f3bbbdf](https://github.com/wangzan101/Mika/blob/f3bbbdf92caeb4259d55922e12f61f6da11469fd/docs/dev/architecture.md),
+Checked execution is ported/adapted from [Mika by wangzan101](https://github.com/wangzan101/Mika),
+copyright 2026 wangzan101, under Apache-2.0. The source pin is
+[Mika f3bbbdf](https://github.com/wangzan101/Mika/blob/f3bbbdf92caeb4259d55922e12f61f6da11469fd/docs/dev/architecture.md),
 in particular `BatchRunner.kt`, `UntilWait.kt`, and `ActionEffect.kt` in its core
 module. Both designs bound batches, dispatch each action through the existing
-execution path, verify locally and stop with partial results. Mika also settles
-the UI before later steps, evaluates its combined wait conditions against one
-snapshot, and detects unexpected popups or unreadable UI. Whip currently requires
-explicit stability expectations, checks its expectation list in order, and guards
-tab/document/URL changes; it has no general popup or UI-effect classifier.
+execution path, verify locally and stop with partial results. Whip ports Mika's
+automatic pre-step settling, combined conditions, input verification and
+popup/unreadable-UI stops into its shared Rust engine and WebView adapters.
+Upstream attribution, license and modifications are retained in the crate's
+[NOTICE](../crates/agent-browser-control/NOTICE) and [LICENSE-APACHE](../crates/agent-browser-control/LICENSE-APACHE),
+and are visible in Whip's Licenses screen.
 Whip keeps its existing per-launch authorization and has no cross-app control.
 
 ## Browser downloads

@@ -1,3 +1,4 @@
+import { BROWSER_POPUP_CODE, BROWSER_POPUP_MESSAGE, isBrowserPopup } from './errors';
 import { terminalWebLinkTarget } from '../lib/terminalLinks';
 import { browserAddress } from './address';
 import type { BrowserAnnotations, BrowserDownload } from './native';
@@ -747,6 +748,25 @@ export class BrowserController {
 
   /** Typed WebView effects; no agent queue, timeout, identity or result policy. */
   async agentEffect(
+    permit: BrowserEffectPermitLike,
+    action: BrowserPlatformAction,
+    signal: AbortSignal,
+  ): Promise<BrowserPlatformResult> {
+    try {
+      return await this.performAgentEffect(permit, action, signal);
+    } catch (error) {
+      if (isBrowserPopup(error))
+        return new BrowserPlatformResult.Json({
+          valueJson: JSON.stringify({
+            ok: false,
+            error: { code: BROWSER_POPUP_CODE, message: BROWSER_POPUP_MESSAGE },
+          }),
+        });
+      throw error;
+    }
+  }
+
+  private async performAgentEffect(
     permit: BrowserEffectPermitLike,
     action: BrowserPlatformAction,
     signal: AbortSignal,

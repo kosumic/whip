@@ -372,13 +372,20 @@ fn batch(steps: Value) -> Value {
 fn page_result() -> Value {
     json!({"ok":true,"value":{"url":"https://example.test/","title":"Example","generation":"old:0","elements":[]}})
 }
+fn checked_result() -> Value {
+    json!({"ok":true,"value":{"readable":true,"dialogs":[],"stable_ms":1000,"waits":[]}})
+}
 fn successful_step() -> Vec<Result<Value, BrowserError>> {
     let doc = document("old", "https://example.test/");
     vec![
         Ok(doc.clone()),
         Ok(doc.clone()),
+        Ok(checked_result()),
+        Ok(doc.clone()),
         Ok(page_result()),
         Ok(doc.clone()),
+        Ok(doc.clone()),
+        Ok(checked_result()),
         Ok(doc),
     ]
 }
@@ -394,6 +401,8 @@ async fn batches_stop_at_the_first_failed_write_and_preserve_prior_results() -> 
         let doc = document("old", "https://example.test/");
         replies.extend([
             Ok(doc.clone()),
+            Ok(doc.clone()),
+            Ok(checked_result()),
             Ok(doc),
             Err(BrowserError::new(code.clone(), "Observe again")),
         ]);
@@ -424,7 +433,7 @@ async fn batches_stop_at_the_first_failed_write_and_preserve_prior_results() -> 
                 .iter()
                 .filter(|op| matches!(op, Primitive::Evaluate { .. }))
                 .count(),
-            2
+            5
         );
     }
     Ok(())
@@ -440,7 +449,14 @@ async fn unexpected_navigation_after_a_write_or_between_steps_stops_the_batch() 
             replies.push(Ok(new));
             replies
         } else {
-            vec![Ok(old.clone()), Ok(old), Ok(page_result()), Ok(new)]
+            vec![
+                Ok(old.clone()),
+                Ok(old.clone()),
+                Ok(checked_result()),
+                Ok(old),
+                Ok(page_result()),
+                Ok(new),
+            ]
         };
         let bridge = MemoryBridge::new(replies);
         let result = execute(
@@ -469,7 +485,7 @@ async fn unexpected_navigation_after_a_write_or_between_steps_stops_the_batch() 
                 .iter()
                 .filter(|op| matches!(op, Primitive::Evaluate { .. }))
                 .count(),
-            1
+            if between { 3 } else { 2 }
         );
     }
     Ok(())
@@ -481,15 +497,23 @@ async fn explicit_navigation_rebaselines_the_next_step() -> TestResult {
     let new = document("new", "https://example.test/new");
     let bridge = MemoryBridge::new(vec![
         Ok(old.clone()),
+        Ok(old.clone()),
+        Ok(checked_result()),
         Ok(old),
         Ok(json!({"navigated":true,"target":"https://example.test/new"})),
         Ok(new.clone()),
         Ok(new.clone()),
         Ok(new.clone()),
+        Ok(checked_result()),
         Ok(new.clone()),
+        Ok(new.clone()),
+        Ok(new.clone()),
+        Ok(checked_result()),
         Ok(new.clone()),
         Ok(page_result()),
         Ok(new.clone()),
+        Ok(new.clone()),
+        Ok(checked_result()),
         Ok(new),
     ]);
     let result = execute(
@@ -531,6 +555,8 @@ async fn batch_cancellation_and_total_expiry_drop_work_with_a_partial_report() -
         let mut replies = successful_step();
         replies.extend([
             Ok(document("old", "https://example.test/")),
+            Ok(document("old", "https://example.test/")),
+            Ok(checked_result()),
             Ok(document("old", "https://example.test/")),
         ]);
         let bridge = Arc::new(BatchPendingBridge {
@@ -582,6 +608,8 @@ async fn batch_report_limit_preserves_a_failure_without_running_the_next_step() 
     let doc = document("old", "https://example.test/");
     let bridge = MemoryBridge::new(vec![
         Ok(doc.clone()),
+        Ok(doc.clone()),
+        Ok(checked_result()),
         Ok(doc),
         Ok(json!({"ok":true,"value":{
             "url":"https://example.test/","title":"x".repeat(MAX_STEPS_RESULTS),"generation":"old:0","elements":[]
@@ -607,6 +635,6 @@ async fn batch_report_limit_preserves_a_failure_without_running_the_next_step() 
         Some(1)
     );
     assert!(result.to_string().len() < MAX_TEXT_RESULT);
-    assert_eq!(bridge.calls.lock().len(), 3);
+    assert_eq!(bridge.calls.lock().len(), 5);
     Ok(())
 }

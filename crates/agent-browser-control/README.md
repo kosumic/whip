@@ -4,6 +4,13 @@ MIT-licensed Rust library for browser-agent actions. It contains the typed actio
 schema, argument validation, DOM runtime, normalized results/errors, output limits,
 generation fences, and asynchronous execution engine extracted from Whip.
 
+Checked execution is ported/adapted from [Mika](https://github.com/wangzan101/Mika)
+by wangzan101, copyright 2026, under Apache-2.0. The Rust port adds bounded
+per-launch browser execution while retaining automatic settling, simultaneous
+wait conditions, popup/readability guards and local action verification.
+Adapted portions retain [NOTICE](NOTICE) and [LICENSE-APACHE](LICENSE-APACHE);
+Whip's original code and additions use MIT.
+
 ```toml
 [dependencies]
 agent-browser-control = "0.1.0"

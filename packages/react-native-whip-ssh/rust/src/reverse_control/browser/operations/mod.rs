@@ -811,14 +811,22 @@ impl OperationBridge {
                     json!({"id":document.id,"url":document.url,"public_url":session::public_url(&document.public_url),"ready":document.ready,"identity":document_identity(&tab)}),
                 )
             }
-            (Primitive::Evaluate { .. }, BrowserPlatformResult::Json { value_json }) => {
+            (
+                operation @ (Primitive::Evaluate { .. } | Primitive::DocumentState { .. }),
+                BrowserPlatformResult::Json { value_json },
+            ) => {
                 if value_json.len() > super::model::MAX_IMAGE_RESULT {
                     return Err(BrowserError::new(
                         ErrorCode::ResultTooLarge,
                         "Browser response too large",
                     ));
                 }
-                serde_json::from_str(&value_json).map_err(|_| invalid_result())
+                let value = serde_json::from_str(&value_json).map_err(|_| invalid_result())?;
+                if matches!(operation, Primitive::DocumentState { .. }) {
+                    agent_browser_control::programs::unwrap_dom(value)?;
+                    return Err(invalid_result());
+                }
+                Ok(value)
             }
             (
                 Primitive::Navigate { .. }

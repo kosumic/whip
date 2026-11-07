@@ -237,6 +237,103 @@ fn checked_batch_opens_a_dialog_types_and_verifies_state_in_one_call() -> TestRe
 }
 
 #[test]
+fn combined_expectations_must_hold_on_the_same_page_observation() -> TestResult {
+    crate::runtime()?.block_on(async {
+        let bridge = page_bridge()?;
+        bridge.page.lock().evaluate(
+            r"
+            document.querySelector('button').onclick = () => {
+                document.querySelector('h1').textContent = 'Phase A';
+                setTimeout(() => document.querySelector('h1').textContent = 'Phase B', 80);
+            };
+        ",
+        )?;
+        let result = run(
+            bridge.clone(),
+            &SessionId("a".into()),
+            "combined",
+            BrowserAction::parse(
+                "run_steps",
+                &json!({"steps":[
+                    {"action":"click","arguments":{"target":{"name":"Save"}},"expect":[
+                        {"condition":"text","text":"Phase A","timeout_ms":300},
+                        {"condition":"text","text":"Phase B","timeout_ms":300}
+                    ]},
+                    {"action":"type","arguments":{"target":{"label":"Query"},"text":"never"}}
+                ]}),
+            )?,
+            context(),
+        )
+        .await?
+        .mcp()?;
+        let report = &result["structuredContent"];
+        assert_eq!(report["error"]["code"], "wait_timeout", "{result}");
+        assert_eq!(report["steps"][0]["expectation_outcomes"][0]["met"], false);
+        assert_eq!(report["steps"][0]["expectation_outcomes"][1]["met"], true);
+        assert_eq!(
+            bridge
+                .page
+                .lock()
+                .evaluate("document.querySelector('#q').value")?,
+            ""
+        );
+        Ok(())
+    })
+}
+
+#[test]
+fn later_steps_wait_for_dom_quiet_and_stop_if_it_never_settles() -> TestResult {
+    crate::runtime()?.block_on(async {
+        for never_stable in [false, true] {
+            let bridge = page_bridge()?;
+            bridge.page.lock().evaluate(&format!(r"
+                window.updates = 0; window.early = false;
+                document.querySelector('button').onclick = () => {{
+                    const timer = setInterval(() => {{
+                        document.querySelector('h1').textContent = 'Update ' + (++window.updates);
+                        if (!{never_stable} && window.updates === 5) clearInterval(timer);
+                    }}, 20);
+                }};
+                document.querySelector('#q').oninput = () => window.early = window.updates < 5;
+            "))?;
+            let result = run(bridge.clone(), &SessionId("a".into()), "settling", BrowserAction::parse("run_steps", &json!({"steps":[
+                {"action":"click","arguments":{"target":{"name":"Save"}}},
+                {"action":"type","arguments":{"target":{"label":"Query"},"text":"after settling"}}
+            ]}))?, context()).await?.mcp()?;
+            if never_stable {
+                assert_eq!(result["structuredContent"]["error"]["code"], "unstable_page", "{result}");
+                assert_eq!(bridge.page.lock().evaluate("document.querySelector('#q').value")?, "");
+            } else {
+                assert_eq!(result["structuredContent"]["completed_steps"], 2, "{result}");
+                assert_eq!(bridge.page.lock().evaluate("window.early")?, false);
+            }
+        }
+        Ok(())
+    })
+}
+
+#[test]
+fn unexpected_dialogs_and_unreadable_pages_stop_actions_and_negative_assertions() -> TestResult {
+    crate::runtime()?.block_on(async {
+        for (change, error) in [
+            ("document.body.insertAdjacentHTML('beforeend', '<section role=dialog>Unexpected</section>')", "unexpected_popup"),
+            ("setTimeout(() => document.body.insertAdjacentHTML('beforeend', '<section role=dialog>Unexpected</section>'), 30)", "unexpected_popup"),
+            ("document.body.innerHTML = '<canvas></canvas>'", "unreadable_page"),
+        ] {
+            let bridge = page_bridge()?;
+            bridge.page.lock().evaluate(&format!("document.querySelector('button').onclick = () => {{ {change}; }}"))?;
+            let result = run(bridge, &SessionId("a".into()), "page-guard", BrowserAction::parse("run_steps", &json!({"steps":[
+                {"action":"click","arguments":{"target":{"name":"Save"}},"expect":[{"condition":"text_absent","text":"Report","timeout_ms":500}]},
+                {"action":"snapshot"}
+            ]}))?, context()).await?.mcp()?;
+            assert_eq!(result["structuredContent"]["error"]["code"], error, "{result}");
+            assert_eq!(result["structuredContent"]["steps"].as_array().map(Vec::len), Some(1));
+        }
+        Ok(())
+    })
+}
+
+#[test]
 fn batch_stops_when_the_page_rejects_typing_without_an_explicit_expectation() -> TestResult {
     crate::runtime()?.block_on(async {
         let bridge = page_bridge()?;

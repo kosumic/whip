@@ -9,6 +9,8 @@ static const CGFloat WhipBrowserScreenshotLimit = 1024;
 static const CGFloat WhipBrowserJPEGQuality = 0.75;
 static NSString *const WhipBrowserUnavailable = @"BROWSER_UNAVAILABLE";
 static NSString *const WhipBrowserEvaluation = @"BROWSER_EVALUATE";
+static NSString *const WhipBrowserPopupResult = @"{\"whipNativeError\":\"unexpected_popup\"}";
+static NSString *const WhipBrowserDialogOpened = @"WhipBrowserJavaScriptDialogOpened";
 static NSString *const WhipBrowserScreenshot = @"BROWSER_SCREENSHOT";
 static NSString *const WhipBrowserInvalidURL = @"BROWSER_URL";
 static NSString *const WhipBrowserDownloadError = @"DOWNLOAD_FAILED";
@@ -455,9 +457,25 @@ RCT_EXPORT_METHOD(evaluate:(NSNumber *)tag
                   reject:(RCTPromiseRejectBlock)reject)
 {
   [self withBrowser:tag reject:reject action:^(WKWebView *browser) {
+    __block BOOL finished = NO;
+    __block id observer = nil;
+    void (^finish)(NSString *, NSError *) = ^(NSString *encoded, NSError *failure) {
+      if (finished) return;
+      finished = YES;
+      if (observer) { [[NSNotificationCenter defaultCenter] removeObserver:observer]; observer = nil; }
+      if (failure) reject(WhipBrowserEvaluation, @"Could not evaluate browser action", failure);
+      else resolve(encoded);
+    };
+    observer = [[NSNotificationCenter defaultCenter] addObserverForName:WhipBrowserDialogOpened object:browser queue:nil usingBlock:^(__unused NSNotification *note) {
+      finish(WhipBrowserPopupResult, nil);
+    }];
+    if ([objc_getAssociatedObject(browser, NSSelectorFromString(@"whipJavaScriptDialogOpen")) boolValue]) {
+      finish(WhipBrowserPopupResult, nil);
+      return;
+    }
     [browser evaluateJavaScript:script completionHandler:^(id value, NSError *error) {
       if (error) {
-        reject(WhipBrowserEvaluation, @"Could not evaluate browser action", error);
+        finish(nil, error);
         return;
       }
       // Android returns JSON-encoded evaluateJavascript results. Preserve that
@@ -465,9 +483,11 @@ RCT_EXPORT_METHOD(evaluate:(NSNumber *)tag
       NSData *encoded = [NSJSONSerialization dataWithJSONObject:value ?: NSNull.null
                                                        options:NSJSONWritingFragmentsAllowed
                                                          error:&error];
-      if (!encoded) reject(WhipBrowserEvaluation, @"Browser action returned an unsupported value", error);
-      else resolve([[NSString alloc] initWithData:encoded encoding:NSUTF8StringEncoding]);
+      finish(encoded ? [[NSString alloc] initWithData:encoded encoding:NSUTF8StringEncoding] : nil, error);
     }];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 20 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+      finish(nil, [NSError errorWithDomain:WhipBrowserEvaluation code:1 userInfo:nil]);
+    });
   }];
 }
 

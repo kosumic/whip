@@ -146,7 +146,7 @@ impl BrowserOperationPlatform for Platform {
                 let tab = session.tab(tab_id).map_err(|_| BrowserPlatformError::Unavailable)?;
                 Ok(BrowserPlatformResult::Document { document: BrowserPageDocument { id: format!("document-{}", tab.generation), url: tab.url.clone(), public_url: tab.url, ready: true } })
             }
-            BrowserPlatformAction::Evaluate { .. } => Ok(BrowserPlatformResult::Json { value_json: json!({"ok":true,"value":{"url":"https://example.test/","title":format!("page-{id}"),"generation":"document:0","elements":[]}}).to_string() }),
+            BrowserPlatformAction::Evaluate { .. } => Ok(BrowserPlatformResult::Json { value_json: json!({"ok":true,"value":{"url":"https://example.test/","title":format!("page-{id}"),"generation":"document:0","elements":[],"readable":true,"dialogs":[],"stable_ms":1000,"waits":[]}}).to_string() }),
             BrowserPlatformAction::Navigate { tab_id, url } => {
                 session.location(tab_id, url.clone(), String::new()).map_err(|_| BrowserPlatformError::Unavailable)?;
                 Ok(BrowserPlatformResult::Navigation { target: Some(url), navigated: true })
@@ -370,6 +370,30 @@ fn cancelling_a_waiter_preserves_arrival_order_for_later_operations() -> TestRes
 }
 
 #[test]
+fn native_modal_dialog_errors_stop_batches_before_page_actions() -> TestResult {
+    crate::runtime()?.block_on(async {
+        for phase in [Phase::Document, Phase::Evaluate] {
+            let harness = Harness::new().await;
+            let owner = owner();
+            harness.platform.replies.lock().push_back((phase, BrowserPlatformResult::Json {
+                value_json: json!({"ok":false,"error":{"code":"unexpected_popup","message":"Page JavaScript dialog is open"}}).to_string(),
+            }));
+            let result = call(&owner, "a", "run_steps", json!({"steps":[
+                {"action":"type","arguments":{"target":{"label":"Query"},"text":"never"}},
+                {"action":"snapshot"}
+            ]}))?.await?;
+            assert_eq!(result["structuredContent"]["error"]["code"], "unexpected_popup", "{result}");
+            assert_eq!(result["structuredContent"]["completed_steps"], 0);
+            assert_eq!(result["structuredContent"]["steps"].as_array().map(Vec::len), Some(1));
+            assert_eq!(harness.platform.count(Phase::Evaluate), usize::from(phase == Phase::Evaluate));
+            owner.shutdown();
+            drop(harness);
+        }
+        Ok(())
+    })
+}
+
+#[test]
 fn batches_hold_one_arrival_tab_and_lease_while_other_sessions_remain_independent() -> TestResult {
     crate::runtime()?.block_on(async {
         let harness = Harness::new().await;
@@ -377,18 +401,18 @@ fn batches_hold_one_arrival_tab_and_lease_while_other_sessions_remain_independen
         call(&owner, "a", "list_tabs", json!({}))?.await?;
         let session = harness.platform.state("a")?;
         let first = session.tabs()[0].id.clone();
-        *harness.platform.hold_evaluation.lock() = Some(2);
+        *harness.platform.hold_evaluation.lock() = Some(5);
         let batch = call(&owner, "a", "run_steps", json!({"steps":[
             {"action":"snapshot"}, {"action":"snapshot"}, {"action":"snapshot"}
         ]}))?;
-        until(|| harness.platform.count(Phase::Evaluate) == 2).await?;
+        until(|| harness.platform.count(Phase::Evaluate) == 5).await?;
         let queued = call(&owner, "a", "snapshot", json!({}))?;
         session.create_tab(true)?;
         assert!(!session.can_suspend(first.clone()));
         let other = call(&owner, "b", "snapshot", json!({}))?.await?;
         assert_eq!(other["structuredContent"]["title"], "page-b");
         // The queued call did not interleave between batch steps.
-        assert_eq!(harness.platform.events.lock().iter().filter(|event| event.phase == Phase::Evaluate && event.session == "a").count(), 2);
+        assert_eq!(harness.platform.events.lock().iter().filter(|event| event.phase == Phase::Evaluate && event.session == "a").count(), 5);
         harness.platform.resume();
         let result = batch.await?;
         assert_eq!(result["structuredContent"]["completed_steps"], 3, "{result}");
@@ -414,7 +438,7 @@ fn cancelling_or_closing_a_batch_revokes_its_effect_and_keeps_partial_progress()
         for close in [false, true] {
             let harness = Harness::new().await;
             let owner = owner();
-            *harness.platform.hold_evaluation.lock() = Some(2);
+            *harness.platform.hold_evaluation.lock() = Some(5);
             let receiver = owner
                 .start_action(
                     "a",
@@ -424,14 +448,14 @@ fn cancelling_or_closing_a_batch_revokes_its_effect_and_keeps_partial_progress()
                     ]}}}),
                 )
                 .map_err(|e| e.to_string())?;
-            until(|| harness.platform.count(Phase::Evaluate) == 2).await?;
+            until(|| harness.platform.count(Phase::Evaluate) == 5).await?;
             let permit = harness
                 .platform
                 .events
                 .lock()
                 .iter()
                 .filter(|e| e.phase == Phase::Evaluate)
-                .nth(1)
+                .nth(4)
                 .ok_or("missing second effect")?
                 .permit
                 .clone();
@@ -472,7 +496,7 @@ fn cancelling_or_closing_a_batch_revokes_its_effect_and_keeps_partial_progress()
                     .iter()
                     .filter(|e| e.phase == Phase::Evaluate && e.session == "a")
                     .count(),
-                2
+                5
             );
             owner.shutdown();
             drop(harness);

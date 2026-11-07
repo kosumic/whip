@@ -72,6 +72,9 @@ pub enum ErrorCode {
     LocationUnavailable,
     SensorUnavailable,
     DownloadFailed,
+    UnexpectedPopup,
+    UnreadablePage,
+    UnstablePage,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
 #[error("{message}")]
@@ -239,7 +242,17 @@ pub struct StepReport {
     pub expectations: Vec<BrowserResult>,
     pub duration_ms: u64,
     pub failed_expectation: Option<usize>,
+    pub settle_ms: u64,
+    pub wait_ms: u64,
+    pub expectation_outcomes: Vec<ExpectationOutcome>,
     pub error: Option<BrowserError>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ExpectationOutcome {
+    pub index: usize,
+    pub condition: WaitCondition,
+    pub met: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

@@ -5,6 +5,7 @@
 //! DOM programs, result limits, deadlines, cancellation, and generation fences.
 #![forbid(unsafe_code)]
 
+mod checked;
 pub mod control;
 pub mod engine;
 pub mod fence;

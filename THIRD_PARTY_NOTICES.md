@@ -3,6 +3,16 @@
 Whip includes or adapts work from the projects listed below. Those portions
 remain subject to their original licenses.
 
+## Mika
+
+Whip's checked browser step execution is ported/adapted from
+[Mika](https://github.com/wangzan101/Mika), copyright 2026 wangzan101,
+under the Apache License 2.0. The port uses Mika's `BatchRunner`, `UntilWait`
+and action verification policies, adapted for Rust and Whip-owned Android/iOS
+browser tabs. The pinned source and modifications are recorded in the crate's
+[NOTICE](crates/agent-browser-control/NOTICE); the [Apache license and notice](assets/licenses/mika-Apache-2.0.txt)
+are bundled in Whip's Licenses screen.
+
 ## Phonon
 
 Whip optionally synthesizes English speech with Gradium's

@@ -213,24 +213,37 @@ impl Runner<'_> {
             })
             .await
     }
-    async fn dom(&self, action: &str, args: &Value) -> Result<Value, BrowserError> {
+    pub(crate) async fn dom(&self, action: &str, args: &Value) -> Result<Value, BrowserError> {
         let document = self.ready_document().await?;
         let identity = format!("{}:{}", document.identity, document.id);
         let mut arguments = args.clone();
-        if action == "wait"
+        if matches!(action, "wait" | "checked")
             && let (Ok(local), Ok(remote)) = (
                 url::Url::parse(&document.url),
                 url::Url::parse(&document.public_url),
             )
         {
-            for field in ["url", "previous_url"] {
-                if let Some(value) = arguments[field].as_str() {
-                    arguments[field] = json!(value.replacen(
-                        remote.origin().ascii_serialization().as_str(),
-                        local.origin().ascii_serialization().as_str(),
-                        1
-                    ));
+            let rewrite = |condition: &mut Value| {
+                for field in ["url", "previous_url"] {
+                    if let Some(value) = condition[field].as_str() {
+                        condition[field] = json!(value.replacen(
+                            remote.origin().ascii_serialization().as_str(),
+                            local.origin().ascii_serialization().as_str(),
+                            1
+                        ));
+                    }
                 }
+            };
+            if action == "checked" {
+                for field in ["conditions", "allowed_conditions"] {
+                    if let Some(conditions) = arguments[field].as_array_mut() {
+                        for condition in conditions {
+                            rewrite(condition);
+                        }
+                    }
+                }
+            } else {
+                rewrite(&mut arguments);
             }
         }
         let result = self
@@ -548,7 +561,7 @@ pub(crate) async fn run_inner(
     let runner = Runner {
         bridge: bridge.as_ref(),
         tab: context.tab_id.clone(),
-        key: format!("__whip_browser_{}", session.0),
+        key: runtime_key(session),
         strict,
     };
     let tab_id = context.tab_id;
@@ -644,11 +657,15 @@ pub(crate) async fn run_inner(
     }
 }
 
-pub(crate) fn observer(bridge: &dyn Bridge, tab: TabId) -> Runner<'_> {
+pub(crate) fn runtime_key(session: &SessionId) -> String {
+    format!("__whip_browser_{}", session.0)
+}
+
+pub(crate) fn observer<'a>(bridge: &'a dyn Bridge, tab: TabId, session: &SessionId) -> Runner<'a> {
     Runner {
         bridge,
         tab,
-        key: String::new(),
+        key: runtime_key(session),
         strict: true,
     }
 }

@@ -75,6 +75,19 @@ export const OPEN_SOURCE_LICENSES: readonly OpenSourceLicenseNotice[] = [
     licenseAsset: bundledAsset(require('../../assets/licenses/opencode-MIT.txt')),
   },
   {
+    id: 'mika',
+    projectName: 'Mika',
+    sourceUrl: 'https://github.com/wangzan101/Mika',
+    attribution:
+      'Checked browser step execution is ported/adapted from Mika, including automatic settling, combined expectations, UI guards and action verification.',
+    licenseName: 'Apache License 2.0',
+    copyright: 'Copyright 2026 wangzan101',
+    licenseAsset: bundledAsset(
+      require('../../assets/licenses/mika-Apache-2.0.txt'),
+    ),
+  },
+
+  {
     id: 'inter',
     projectName: 'Inter',
     sourceUrl: 'https://github.com/rsms/inter',

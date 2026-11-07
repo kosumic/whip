@@ -1,10 +1,13 @@
 //! Checked sequences share a caller's lease and never replay a page action.
+//! Ported/adapted from Mika (Copyright 2026 wangzan101, Apache-2.0).
+//! Modified for Whip's Rust engine; see NOTICE and LICENSE-APACHE.
 use std::sync::{Arc, Mutex};
 
 use futures::future::BoxFuture;
 use serde_json::{Value, json};
 use tokio::time::{Duration, Instant};
 
+use crate::checked::{self, Guard, Observation};
 use crate::control::OperationControl;
 use crate::engine::{self, BoundedBridge, Bridge, Context, Document, Primitive};
 use crate::model::{
@@ -91,6 +94,8 @@ struct PinnedBridge {
     inner: Arc<dyn Bridge>,
     tab: TabId,
     document: Document,
+    guard: Option<Guard>,
+    key: String,
 }
 impl Bridge for PinnedBridge {
     fn call(&self, operation: Primitive) -> BoxFuture<'_, Result<Value, BrowserError>> {
@@ -111,8 +116,9 @@ impl Bridge for PinnedBridge {
                         tab_id,
                         identity,
                         js: format!(
-                            "(() => {{ if (location.href !== {url}) return JSON.stringify({{ok:false,error:{{code:'stale_page',message:'Page URL changed during run_steps'}}}}); return ({js}); }})()",
-                            url = json!(self.document.url)
+                            "(() => {{ if (location.href !== {url}) return JSON.stringify({{ok:false,error:{{code:'stale_page',message:'Page URL changed during run_steps'}}}}); {guard} return ({js}); }})()",
+                            url = json!(self.document.url),
+                            guard = self.guard.as_ref().map_or_else(String::new, |guard| format!("const checked = ({}); if (!JSON.parse(checked).ok) return checked;", crate::programs::dom(&self.key, "checked", &json!(guard), &format!("{}:{}", self.document.identity, self.document.id))))
                         ),
                     }
                 }
@@ -167,12 +173,49 @@ struct Sequence<'a> {
 }
 
 impl Sequence<'_> {
-    fn pinned(&self, document: Document) -> Arc<dyn Bridge> {
+    fn pinned(&self, document: Document, guard: Option<Guard>) -> Arc<dyn Bridge> {
         Arc::new(PinnedBridge {
             inner: self.bridge.clone(),
             tab: self.context.tab_id.clone(),
             document,
+            guard,
+            key: engine::runtime_key(self.session),
         })
+    }
+
+    async fn prepare(
+        &self,
+        before: &Document,
+        previous: Option<&(Document, Observation)>,
+        index: usize,
+        report: &mut StepReport,
+        navigation: bool,
+    ) -> Result<(Arc<dyn Bridge>, Observation), BrowserError> {
+        let pre_guard = Guard {
+            baseline_dialogs: previous.map(|(_, observation)| observation.dialogs.clone()),
+            allowed_conditions: Vec::new(),
+            require_readable: !navigation,
+        };
+        let read_bridge = self.pinned(before.clone(), None);
+        let reader = engine::observer(
+            read_bridge.as_ref(),
+            self.context.tab_id.clone(),
+            self.session,
+        );
+        let observed = if index > 0 {
+            checked::settle(&reader, &pre_guard, report).await?
+        } else {
+            checked::observe(&reader, Some(&pre_guard), &[]).await?
+        };
+        let pinned = self.pinned(
+            before.clone(),
+            Some(Guard {
+                baseline_dialogs: Some(observed.dialogs.clone()),
+                allowed_conditions: Vec::new(),
+                require_readable: !navigation,
+            }),
+        );
+        Ok((pinned, observed))
     }
 
     async fn step(
@@ -180,12 +223,16 @@ impl Sequence<'_> {
         step: BrowserStep,
         index: usize,
         report: &mut StepsReport,
-        previous: Option<&Document>,
-    ) -> Result<Document, BrowserError> {
-        let observer = engine::observer(self.bridge.as_ref(), self.context.tab_id.clone());
+        previous: Option<&(Document, Observation)>,
+    ) -> Result<(Document, Observation), BrowserError> {
+        let observer = engine::observer(
+            self.bridge.as_ref(),
+            self.context.tab_id.clone(),
+            self.session,
+        );
         let before = observer.ready_document().await?;
         report.final_page = Some(page(&before));
-        if let Some(expected) = previous {
+        if let Some((expected, _)) = previous {
             same_page(expected, &before)?;
         }
         self.progress.publish(self.start, report);
@@ -197,7 +244,15 @@ impl Sequence<'_> {
                 | BrowserAction::Forward(_)
                 | BrowserAction::Reload(_)
         );
-        let pinned = self.pinned(before.clone());
+        let (pinned, observed) = self
+            .prepare(
+                &before,
+                previous,
+                index,
+                &mut report.steps[index],
+                navigation,
+            )
+            .await?;
         let result = engine::deadline(
             engine::action_timeout(&action),
             Box::pin(engine::run_inner(
@@ -222,28 +277,41 @@ impl Sequence<'_> {
         if !navigation {
             same_page(&before, &after)?;
         }
-        let pinned = if navigation {
-            self.pinned(after.clone())
-        } else {
-            pinned
-        };
-        for (expect_index, mut expectation) in step.expect.into_iter().enumerate() {
-            report.steps[index].failed_expectation = Some(expect_index);
+        let mut conditions = step.expect;
+        for expectation in &mut conditions {
             if expectation.condition == Some(WaitCondition::UrlChange)
                 && expectation.previous_url.is_none()
             {
                 expectation.previous_url = Some(before.url.clone());
             }
-            self.progress.publish(self.start, report);
-            let result = Box::pin(engine::run_inner(
-                pinned.clone(),
-                self.session,
-                self.request,
-                BrowserAction::Wait(expectation),
-                self.context.clone(),
-                true,
-            ))
-            .await?;
+        }
+        let post_guard = Guard {
+            baseline_dialogs: Some(if navigation {
+                Vec::new()
+            } else {
+                observed.dialogs
+            }),
+            allowed_conditions: conditions.clone(),
+            require_readable: true,
+        };
+        let post_bridge = self.pinned(after.clone(), None);
+        let post_reader = engine::observer(
+            post_bridge.as_ref(),
+            self.context.tab_id.clone(),
+            self.session,
+        );
+        let checked = checked::wait(
+            &post_reader,
+            &post_guard,
+            &conditions,
+            &mut report.steps[index],
+        )
+        .await?;
+        for wait in &checked.waits {
+            let result = BrowserResult::Wait {
+                tab_id: self.context.tab_id.clone(),
+                result: wait.clone(),
+            };
             retain_result(report, &result)?;
             report.steps[index].expectations.push(result);
             self.progress.publish(self.start, report);
@@ -252,7 +320,7 @@ impl Sequence<'_> {
         let final_document = observer.document().await?;
         report.final_page = Some(page(&final_document));
         same_page(&after, &final_document)?;
-        Ok(final_document)
+        Ok((final_document, checked))
     }
 }
 
@@ -298,7 +366,7 @@ pub async fn run(
         progress,
         start,
     };
-    let mut previous: Option<Document> = None;
+    let mut previous: Option<(Document, Observation)> = None;
     for (index, step) in args.steps.into_iter().enumerate() {
         let began = Instant::now();
         report.steps.push(StepReport {
@@ -309,6 +377,9 @@ pub async fn run(
             // While pending this is the start offset, used by cancellation snapshots.
             duration_ms: millis(start.elapsed()),
             failed_expectation: None,
+            settle_ms: 0,
+            wait_ms: 0,
+            expectation_outcomes: Vec::new(),
             error: None,
         });
         progress.publish(start, &report);
