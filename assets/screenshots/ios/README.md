@@ -1,59 +1,52 @@
 # iOS README previews
 
-The gallery uses frames from the Whip 1.9.1 launch recordings, captured on the
-configured iPhone 17 Pro simulator on `mini`, running iOS 26.5. The GitHub-channel
-arm64 Release simulator build uses commit `137bcd01`. It retains the saved
-waterfall background, glass mode, and developer Rancher appearance. These are actual
-app screens inside iPhone mockups, encoded as transparent 706×1466 WebP images.
+The gallery was refreshed on November 6, 2026 from the installed Whip 2.0.0
+arm64 simulator app on `mini`, using the configured iPhone 17 Pro running
+iOS 26.5. It retains the saved waterfall background, glass mode, and developer
+Rancher appearance. These are actual app screens inside iPhone mockups,
+encoded as transparent 706×1466 WebP images.
 The iPhone frame comes from `@sneas/telephone`; its screen opening is fitted to
 the capture's aspect ratio so the app remains proportional. The captured
 Dynamic Island is retained, and the frame's synthetic status UI is removed.
 
-The Herd capture focuses on `thinker` and its Whip space so both rails are
-visible. `chat-view.webp` shows a completed coding-agent reply with an expanded
-inline file diff. The composer contains the unsent question “What hosts do I
-have in Whip?” over that demo's completed conversation. `reverse-control.webp`
-shows the actual `hosts.list` phone-tool call and its four-host response.
-The Git preview shows a tracked CSS source change with line numbers and context
+The Herd capture focuses on `thinker` with both host and space rails visible.
+`chat-view.webp` shows a completed Codex reply with tool calls and the changed-file
+summary collapsed. The composer contains the unsent prompt “Explain this change.”, which
+was cleared after capture. Terminal, Chat View, and its composer use full-screen
+terminal mode. `reverse-control.webp` shows the per-agent Phone Use access
+switch in the Agent actions menu; the agent's access state was left unchanged.
+The Git preview shows this README refresh with line numbers and context
 controls. The terminal preview shows real coding-agent output and the mobile
-input controls. The Markdown preview opens the repository's root `README.md`.
+input controls. The Markdown preview opens the repository's root `README.md`
+at its “Use Chat View” section.
+
+`voice-call.webp` shows the global voice-call connecting screen with its message,
+microphone, speaker, and hang-up controls. `mini` had no microphone input, so
+CallKit could not activate audio for an active-call capture. The supplied API
+credential remains saved in the simulator's native credential store.
 
 The browser preview shows this README served locally on `mini` at
-`http://127.0.0.1:8794`, using Desktop WebKit with the automatic viewport.
+`http://127.0.0.1:8795`, using the saved browser preferences.
 
-## Source frames
+## Source captures
 
-All ten gallery images use the unframed 1206×2622 recordings in
-[`launch-videos/source-assets/ios/current`](../../../launch-videos/source-assets/ios/current/README.md).
-Times below are seconds within those MP4 files, before the launch film's scene
-timing or 3D phone framing is applied.
+All eleven gallery images use direct, unframed 1206×2622 PNG screenshots.
+The ten original views use `xcrun simctl io … screenshot`; the voice-call image
+uses `XCUIScreen.main.screenshot()` during call startup, selecting
+`voice-call-7.png` from the retained sequence. The originals are retained outside version
+control in `build/readme-2.0/screenshots/` under the persistent
+`/Users/kosumi/repos/whip-ios-device` worktree on `mini`, and mirrored locally
+in `.codex-readme-raw/2.0.0/`. Each PNG has the same base name as its WebP.
 
-| Preview | Recording | Time |
-| --- | --- | --- |
-| `hosts.webp` | `hosts.mp4` | 0.2 |
-| `herd.webp` | `herd.mp4` | 4.0 |
-| `chat-view.webp` | `chat.mp4` | 2.25 |
-| `chat-composer.webp` | `composer.mp4` | 1.85 |
-| `reverse-control.webp` | `reverse-control.mp4` | 1.75 |
-| `remote-files.webp` | `files.mp4` | 0.7 |
-| `git-diff.webp` | `git-diff.mp4` | 0.2 |
-| `browser.webp` | `browser.mp4` | 1.75 |
-| `terminal.webp` | `terminal.mp4` | 1.325 |
-| `markdown-preview.webp` | `readme.mp4` | 2.5 |
-
-Extract each selected frame to `.codex-readme-raw/1.9.1/` using its preview's base
-name. For example, from the repository root:
+Regenerate the current gallery from those PNGs:
 
 ```sh
-mkdir -p .codex-readme-raw/1.9.1
-nix develop -c ffmpeg -ss 0.2 \
-  -i launch-videos/source-assets/ios/current/hosts.mp4 \
-  -frames:v 1 -update 1 .codex-readme-raw/1.9.1/hosts.png
-nix develop -c npm run generate:readme-phone-mockups -- --ios .codex-readme-raw/1.9.1
+nix develop -c npm run generate:readme-phone-mockups -- --ios .codex-readme-raw/2.0.0
 ```
 
-Use the original phone recordings rather than rendered film frames so the
-gallery retains the full app resolution and receives only one device frame.
+The [launch recordings](../../../launch-videos/source-assets/ios/current/README.md)
+remain Whip 1.9.1 footage; they are no longer the source for this gallery.
+Always use unframed captures so each screenshot receives only one device frame.
 The unused `chat-details.webp` and `settings.webp` remain earlier 1.9.0 captures.
 
 ## Capture new screens
@@ -63,9 +56,10 @@ background image, and preferences. Build with
 `WHIP_DISTRIBUTION_CHANNEL=github` and an embedded production JavaScript bundle.
 Use Metro's `--max-workers 1` setting for this Nix/macOS build environment.
 
-When capturing new screens, disable app and terminal full-screen mode so the
-status bar and Dynamic Island do not cover navigation or pinned chat context.
-Restore the simulator's saved full-screen preferences after capture.
+Keep full-screen terminal mode enabled for Terminal, Chat View, and composer
+captures. Disable full-screen app mode for the other screens, and retain the
+native layout of file-preview sheets. Restore the simulator's saved full-screen
+preferences after capture.
 
 The configured simulator's existing Keychain access group is
 `52863FPC7A.io.github.kaminarios.whip`. Keep that group in the simulator
@@ -88,11 +82,11 @@ xcrun simctl io 35AF86B7-DC94-48B9-8215-82C9DE8E08F7 \
   screenshot build/readme/screenshots/hosts.png
 ```
 
-Copy the raw 1206×2622 PNGs to `.codex-readme-raw/1.9.1/` in the local checkout, then
+Copy the raw 1206×2622 PNGs to `.codex-readme-raw/2.0.0/` in the local checkout, then
 run the shared mockup generator with its iPhone preset:
 
 ```sh
-nix develop -c npm run generate:readme-phone-mockups -- --ios .codex-readme-raw/1.9.1
+nix develop -c npm run generate:readme-phone-mockups -- --ios .codex-readme-raw/2.0.0
 ```
 
 The iPhone preset preserves the raw PNGs outside version control. To regenerate

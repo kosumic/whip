@@ -52,6 +52,7 @@ const knownScreenshotNames = [
         'markdown-preview',
         'reverse-control',
         'chat-details',
+        'voice-call',
       ]
     : []),
 ];
