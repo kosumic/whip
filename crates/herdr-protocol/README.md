@@ -7,7 +7,7 @@ No SSH, sockets, Tokio runtime, UniFFI, mobile dependencies, or process/global s
 
 ```toml
 [dependencies]
-herdr-protocol = "0.2.0"
+herdr-protocol = "0.2.1"
 ```
 
 ```rust
@@ -49,6 +49,9 @@ the older protocol; its original root exports remain compatible.
 - `hc::documents` and `hc::edits` preserve unknown JSON and mod nodes, perform CAS
   writes, and rebase only confirmed conflicts. `projection::View` holds private
   client focus and zoom. Missing desktop documents produce terminal-only views.
+- `hc::attention` shares viewed-turn, unread, and pinned state between clients.
+  `hc::hierarchy` groups delegated child agents while preserving terminal
+  navigation targets and stable ordering.
 
 Use an SSH direct-streamlocal channel to the discovered core Unix socket where
 available. `hc connect` carries the same bytes over an SSH exec channel when

@@ -9,7 +9,7 @@ on:
       version:
         description: Version from crates/herdr-protocol/Cargo.toml, without a leading v
         required: true
-        default: 0.2.0
+        default: 0.2.1
         type: string
       bootstrap_with_token:
         description: Bootstrap first release with API token

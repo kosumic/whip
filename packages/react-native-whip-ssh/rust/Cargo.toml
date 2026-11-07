@@ -19,9 +19,9 @@ voice-call-media = { path = "../../../crates/voice-call-media" }
 ai-voice-call = { version = "0.1.0", path = "../../../crates/ai-voice-call" }
 mobile-speech = { version = "0.1.0", path = "../../../crates/mobile-speech" }
 audio-ingress = { version = "0.1.0", path = "../../../crates/audio-ingress" }
-herdr-protocol = { version = "0.2.0", path = "../../../crates/herdr-protocol" }
+herdr-protocol = { version = "0.2.1", path = "../../../crates/herdr-protocol" }
 agent-transcript-view = { version = "0.1.0", path = "../../../crates/agent-transcript-view" }
-agent-transcript-core = { version = "0.1.0", path = "../../../crates/agent-transcript-core" }
+agent-transcript-core = { version = "0.2.0", path = "../../../crates/agent-transcript-core" }
 agent-browser-control = { version = "0.1.0", path = "../../../crates/agent-browser-control" }
 whipair-protocol = { version = "0.2.0", path = "../../../crates/whipair-protocol" }
 async-trait = "0.1"

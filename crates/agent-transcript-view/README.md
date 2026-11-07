@@ -4,6 +4,12 @@ Provider-neutral row projection and transcript-search presentation extracted fro
 Whip. Both this crate and its `agent-transcript-core` dependency use **MIT**. This crate has no Whip, UniFFI, transport, database, async runtime, or global
 state dependency. See `NOTICE` for the retained OpenCode attribution.
 
+```toml
+[dependencies]
+agent-transcript-view = "0.1.0"
+agent-transcript-core = "0.2.0"
+```
+
 ## Ownership and API
 
 The caller owns the canonical `agent_transcript_core::AgentTranscriptState` and

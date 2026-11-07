@@ -1,0 +1,134 @@
+name: Publish standalone libraries
+
+on:
+  push:
+    tags:
+      - 'agent-transcript-view-v*'
+      - 'audio-ingress-v*'
+      - 'mobile-speech-v*'
+      - 'ai-voice-call-v*'
+      - 'voice-call-media-v*'
+      - 'whip-notify-v*'
+  workflow_dispatch:
+    inputs:
+      crate:
+        description: Standalone crate to publish
+        required: true
+        type: choice
+        options:
+          - agent-transcript-view
+          - audio-ingress
+          - mobile-speech
+          - ai-voice-call
+          - voice-call-media
+          - whip-notify
+      version:
+        description: Version from the crate's Cargo.toml
+        required: true
+        default: 0.1.0
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-standalone-${{ inputs.crate || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Verify and publish crate
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    environment: crates-io
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      crate: ${{ steps.release.outputs.crate }}
+      version: ${{ steps.release.outputs.version }}
+      manifest: ${{ steps.release.outputs.manifest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install
+      - name: Resolve and validate release
+        id: release
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          MANUAL_CRATE: ${{ inputs.crate }}
+          MANUAL_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$EVENT_NAME" == push ]]; then
+            crate="${RELEASE_TAG%-v*}"
+            version="${RELEASE_TAG##*-v}"
+          else
+            crate="$MANUAL_CRATE"
+            version="$MANUAL_VERSION"
+          fi
+          case "$crate" in
+            agent-transcript-view|audio-ingress|mobile-speech|ai-voice-call|voice-call-media)
+              directory="crates/$crate" ;;
+            whip-notify) directory=whip-notify ;;
+            *) echo 'Unsupported release crate' >&2; exit 1 ;;
+          esac
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          manifest="$directory/Cargo.toml"
+          metadata="$(cargo metadata --locked --format-version 1 --no-deps --manifest-path "$manifest")"
+          jq --exit-status --arg crate "$crate" --arg version "$version" \
+            '.packages[0] | .name == $crate and .version == $version and (.license == "MIT" or .license == "AGPL-3.0-or-later")' \
+            <<< "$metadata"
+          printf 'crate=%s\nversion=%s\nmanifest=%s\ndirectory=%s\n' \
+            "$crate" "$version" "$manifest" "$directory" >> "$GITHUB_OUTPUT"
+          printf 'CRATE_NAME=%s\nCRATE_VERSION=%s\nCRATE_MANIFEST=%s\n' \
+            "$crate" "$version" "$manifest" >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: ${{ steps.release.outputs.directory }}
+      - name: Check formatting
+        run: cargo fmt --manifest-path "$CRATE_MANIFEST" --check
+      - name: Lint all features
+        run: cargo clippy --locked --manifest-path "$CRATE_MANIFEST" --all-targets --all-features -- -D warnings
+      - name: Test all features
+        run: cargo test --locked --manifest-path "$CRATE_MANIFEST" --all-features
+      - name: Verify crates.io package
+        run: cargo publish --locked --manifest-path "$CRATE_MANIFEST" --dry-run
+      - name: Check whether this version is already published
+        id: registry
+        run: |
+          status="$(curl --silent --show-error --user-agent 'whip-release/0.1 (+https://github.com/kosumic/whip)' \
+            --output "$RUNNER_TEMP/crate-version.json" --write-out '%{http_code}' \
+            "https://crates.io/api/v1/crates/$CRATE_NAME/$CRATE_VERSION")"
+          case "$status" in
+            200) echo 'published=true' >> "$GITHUB_OUTPUT" ;;
+            404) echo 'published=false' >> "$GITHUB_OUTPUT" ;;
+            *) echo "Registry lookup failed: HTTP $status" >&2; exit 1 ;;
+          esac
+      - name: Authenticate with crates.io trusted publishing
+        id: auth
+        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+      - name: Publish with trusted publishing
+        if: steps.registry.outputs.published != 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: cargo publish --locked --manifest-path "$CRATE_MANIFEST"
+
+  github-release:
+    name: Publish GitHub Release
+    needs: publish
+    if: needs.publish.outputs.crate != 'whip-notify'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Publish the verified registry artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CRATE_NAME: ${{ needs.publish.outputs.crate }}
+          CRATE_VERSION: ${{ needs.publish.outputs.version }}
+          CRATE_MANIFEST: ${{ needs.publish.outputs.manifest }}
+        run: bash scripts/publish-crate-github-release.sh "$CRATE_NAME" "$CRATE_VERSION" "$CRATE_MANIFEST"

@@ -3,7 +3,12 @@
 Bounded, owned PCM16 delivery for native audio consumers. The safe Rust core uses
 Crossbeam's bounded queues and owns no recorder, OS recognizer, executor, model,
 or provider transport.
-It is a local path crate under Whip's AGPL-3.0-or-later license.
+It is distributed under Whip's AGPL-3.0-or-later license.
+
+```toml
+[dependencies]
+audio-ingress = "0.1.0"
+```
 
 Create an `Ingress` with an explicit mono sample rate, packet count, maximum
 samples per packet, and maximum packet age. Admission validates the entire format,

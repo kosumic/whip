@@ -32,6 +32,13 @@ WHIP_NOTIFY_BINARY="$PWD/target/release/whip-notify" sh install.sh
 cargo test --locked
 ```
 
+Rust consumers can use the MIT-licensed protocol library without host support:
+
+```toml
+[dependencies]
+whip-notify = { version = "0.1.5", default-features = false }
+```
+
 The binary supports `paths`, `identity`, `register` (JSON on stdin), `unregister <device-id>`, `lease renew <device-id>`, `hook` and explicit administrator `uninstall`. It uses Herdr's `HERDR_PLUGIN_CONFIG_DIR` / `HERDR_PLUGIN_STATE_DIR`; `--dirs <config> <state>` supplies those same discovered paths for authenticated SSH commands outside a hook. The protocol library builds independently using `--no-default-features`.
 
 ## Releasing

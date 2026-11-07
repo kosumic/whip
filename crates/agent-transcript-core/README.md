@@ -6,8 +6,13 @@ Code, Codex legacy and paginated rollouts, OpenCode v1/v2, and Pi.
 
 ```toml
 [dependencies]
-agent-transcript-core = "0.1.0"
+agent-transcript-core = "0.2.0"
 ```
+
+Version 0.2.0 adds `AgentTranscriptView::provider_turns` to distinguish
+provider-owned turn identities from display grouping. Existing struct
+initializers must set this field explicitly; ordinary state-derived views use
+`false`. Codex protocol views report `true`.
 
 `SessionCore` owns one provider's state. Supply bytes or exported records through
 `SourceRecords`, then read the canonical messages, turns, tool states, and deltas.

@@ -3,7 +3,10 @@ name = "whip-notify"
 version = "0.1.5"
 edition = "2024"
 license = "MIT"
+description = "Authenticated HPKE notification envelopes and a short-lived Herdr push plugin"
 repository = "https://github.com/kosumic/whip"
+documentation = "https://docs.rs/whip-notify"
+readme = "README.md"
 
 [features]
 default = ["host"]

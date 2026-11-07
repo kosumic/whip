@@ -2,14 +2,18 @@
 # Publish the exact crates.io artifact under its existing package tag.
 set -euo pipefail
 
-if [[ $# != 2 ]]; then
-  echo "Usage: $0 CRATE VERSION" >&2
+if [[ $# -lt 2 || $# -gt 3 ]]; then
+  echo "Usage: $0 CRATE VERSION [MANIFEST]" >&2
   exit 1
 fi
 : "${GH_REPO:?Set GH_REPO to the GitHub owner/repository}"
 crate="$1"
 version="$2"
 tag="$crate-v$version"
+manifest="${3:-crates/$crate/Cargo.toml}"
+source_directory="${manifest%/Cargo.toml}"
+license="$(git show "$tag:$manifest" | sed -n 's/^license = "\([^"]*\)"$/\1/p')"
+[[ -n "$license" ]]
 registry="https://crates.io/api/v1/crates/$crate/$version"
 user_agent="whip-release/0.1 (+https://github.com/$GH_REPO)"
 temporary="$(mktemp -d)"
@@ -17,8 +21,8 @@ trap 'rm -rf "$temporary"' EXIT
 
 curl --fail --silent --show-error --retry 3 --user-agent "$user_agent" \
   "$registry" --output "$temporary/registry.json"
-jq --exit-status --arg crate "$crate" --arg version "$version" \
-  '.version | .crate == $crate and .num == $version and .license == "MIT" and .yanked == false' \
+jq --exit-status --arg crate "$crate" --arg version "$version" --arg license "$license" \
+  '.version | .crate == $crate and .num == $version and .license == $license and .yanked == false' \
   "$temporary/registry.json" >/dev/null
 checksum="$(jq --exit-status --raw-output '.version.checksum' "$temporary/registry.json")"
 description="$(jq --exit-status --raw-output '.version.description // empty' "$temporary/registry.json")"
@@ -41,7 +45,7 @@ else
   cat > "$temporary/notes.md" <<EOF
 $description
 
-Published on [crates.io](https://crates.io/crates/$crate/$version) under the MIT license.
+Published on [crates.io](https://crates.io/crates/$crate/$version) under the $license license.
 Third-party code and dependencies retain their original license notices.
 
 Add to your Cargo dependencies:
@@ -50,7 +54,7 @@ Add to your Cargo dependencies:
 $crate = "$version"
 \`\`\`
 
-[API documentation](https://docs.rs/$crate/$version) · [Usage and source](https://github.com/$GH_REPO/tree/$tag/crates/$crate)
+[API documentation](https://docs.rs/$crate/$version) · [Usage and source](https://github.com/$GH_REPO/tree/$tag/$source_directory)
 
 The attached crate is the unchanged crates.io package, verified against its registry SHA-256 checksum.
 EOF

@@ -4,6 +4,11 @@ Portable synchronous policy extracted from Whip's local voice conversation.
 Licensed AGPL-3.0-or-later, as is the original implementation. Earshot 1.2.2
 remains the VAD implementation and retains its upstream attribution/license.
 
+```toml
+[dependencies]
+ai-voice-call = "0.1.0"
+```
+
 `Call` owns local turn boundaries, sensitivity/hysteresis, mute, recognized
 barge-in, finish/skip/close, and generation versus playback-drain gating.
 `view()` borrows read-only state. Mono 16 kHz `audio()` borrows the host's

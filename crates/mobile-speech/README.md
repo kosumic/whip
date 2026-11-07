@@ -3,7 +3,12 @@
 App-independent speech playback ownership and completion-driven queueing for
 Android, iOS, and other native backends. The Rust core has **no dependencies**:
 no application globals, executor, bindings, transcript parsers, model downloads,
-or platform SDK is required to build it. It is currently a local path crate.
+or platform SDK is required to build it.
+
+```toml
+[dependencies]
+mobile-speech = "0.1.0"
+```
 
 The application supplies plain text and its existing native speech backend.
 `Arbiter` provides generation-fenced ownership; `PlaybackQueue` orders utterances

@@ -5,6 +5,11 @@ clocked jitter-buffer playout, resampling, noise suppression and AEC3 extracted
 from Whip. The crate has no app, provider, React Native, credentials or recorder
 dependency. `audio-ingress` supplies generation-fenced native PCM storage.
 
+```toml
+[dependencies]
+voice-call-media = "0.1.0"
+```
+
 The caller supplies its Tokio runtime and implements `Capture`/`Host` around its
 existing device ingress and playback sink. `Transport::configured` creates a
 fresh peer and SDP offer; the caller sends that offer through its own signaling

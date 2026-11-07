@@ -6,10 +6,11 @@ rust-version = "1.99"
 license = "MIT"
 description = "Provider-neutral transcript row projection and search presentation"
 repository = "https://github.com/kosumic/whip"
+documentation = "https://docs.rs/agent-transcript-view"
 readme = "README.md"
 
 [dependencies]
-agent-transcript-core = { version = "0.1.0", path = "../agent-transcript-core" }
+agent-transcript-core = { version = "0.2.0", path = "../agent-transcript-core" }
 serde_json = "1"
 
 [profile.release]
