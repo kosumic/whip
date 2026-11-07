@@ -24,7 +24,10 @@ tokio-tungstenite = { version = "0.26", default-features = false, features = ["c
 tracing = "0.1"
 
 [dev-dependencies]
+rcgen = { version = "0.14", default-features = false, features = ["ring"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 tokio = { version = "1", features = ["rt-multi-thread", "test-util"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
 
 [lints.rust]
 unsafe_code = "forbid"

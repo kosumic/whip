@@ -1,6 +1,6 @@
 export const zhHans = {
   'voiceProvider.prepareCalls': "保持语音客户端预热",
-  'voiceProvider.prepareCallsHelp': "Whip 在前台时保留本地 WebRTC 资源，会占用额外内存。只有开始通话时才开启麦克风和 API 会话，预热不会产生 API 使用费用。",
+  'voiceProvider.prepareCallsHelp': "Whip 在前台时保持 WebRTC 资源和 HTTPS 连接就绪。会占用额外内存，并定期发送不含 API 密钥的网络请求。只有开始通话时才开启麦克风和 API 会话，预热不会产生 API 使用费用。",
   'voiceUsage.cost': '费用',
   'voiceUsage.time': '时间',
   'voiceUsage.activity': '使用次数',

@@ -156,26 +156,37 @@ The native suite passed 157 tests. Host API tests require optimized DSP
 dependencies (or a release test build); debug DSP can miss real-time deadlines.
 These synthetic checks do not replace a physical speaker/headphone check.
 
-### Optional local client warmth
+### Optional voice client warmth
 
 Settings → OpenAI → Conversation → **Keep voice client warm** defaults to On.
 Existing saved Off choices remain Off; preferences without this field use On.
-When enabled, unlocked foreground Whip retains the shared HTTP client, a crypto
-provider, and one unused DTLS certificate. Consumed certificates are replenished;
-unused certificates are periodically refreshed. No API key, provider request,
-API session, microphone, audio device, tool authority, peer, SDP or network
-socket is retained by preparation. Disabling or backgrounding releases the
-spare material; the ordinary shared HTTP client stays reusable as before.
+When enabled, unlocked foreground Whip retains a crypto provider and one unused
+DTLS certificate, and prepares DNS/TCP/TLS in the shared voice HTTP client.
+Consumed certificates are replenished; unused certificates are periodically
+refreshed. An immediate, anonymous `HEAD https://api.openai.com/v1/models` repeats
+30 seconds after each completion, with a five-second request timeout. Its
+response, including HTTP 401/405, can leave a reusable HTTPS connection in the
+same Reqwest pool used by both Realtime and GPT-Live session creation. Redirects
+are disabled. Preparation sends no API key, audio, SDP or conversation data and
+creates no provider session or API usage charge. It uses memory and network data.
 
-Every actual call creates new sockets using current network interfaces and a
+Disabling, backgrounding, locking or changing credentials cancels the HTTP
+worker and releases spare crypto material. Idle HTTP connections may expire
+normally; stopping preparation does not close an active call's shared client.
+Failures are best effort, with no immediate retries and no call-start wait.
+
+Every actual call creates new media sockets using current network interfaces and a
 fresh RTC with a new clock, ICE credentials, SDP offer, and data-channel state.
 It can consume the prepared certificate and provider. This follows the fresh
 peer setup in the OpenAI Agents SDK React Native example. Only an explicit Call
-or Preview action creates a provider session. Local warming cannot remove
-server session-creation or network negotiation latency.
+or Preview action creates a provider session. Its HTTP POST can reuse a prepared
+connection, but reconnects normally if it expired or the network changed. This
+cannot remove the wait for session-creation response headers or media negotiation.
 
 The [phone measurements](voice-local-warm-profile.md) include all 14 startup
-trials and the paired idle-memory comparison for the corrected local-only cache.
+trials and the paired idle-memory comparison for the earlier local-only cache.
+Those measurements predate HTTPS preparation and do not measure its latency,
+memory or network cost.
 
 The unshipped paid-session draft was removed because the requested trade is
 local memory for startup work, without idle API charges. A later whole-peer

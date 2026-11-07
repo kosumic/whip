@@ -61,11 +61,15 @@ The native-allocation ranges overlap: off 1,607,726–1,610,276 KiB, on
 lower RSS median does not establish memory savings. Associated WebView samples
 are retained separately in the JSON; reported PSS and SwapPSS must not be added.
 
-The corrected preparation retains local crypto material and initializes the
+The preparation measured here retains local crypto material and initializes the
 shared HTTP client. It keeps no provider session, microphone, negotiated peer,
 SDP, ICE state or socket open while idle. Provider session creation still occurs
 on Call. Unlike the rejected whole-peer prototype, a new peer and sockets are
 created for every call.
+
+This profile predates the anonymous HTTPS preparation added after #379. Current
+behavior also keeps the HTTP pool warm while foregrounded; these measurements
+do not establish the performance or memory cost of that addition.
 
 Private raw logs, screenshots and memory dumps are under
 `build/local-factory-profile/`. Testing ended with all calls closed, GPT-Live /

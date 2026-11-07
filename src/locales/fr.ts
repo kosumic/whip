@@ -2,7 +2,7 @@ import type { en } from './en';
 
 export const fr = {
   'voiceProvider.prepareCalls': "Garder le client vocal prêt",
-  'voiceProvider.prepareCallsHelp': "Conserve les ressources WebRTC locales en mémoire lorsque Whip est ouvert. Le microphone et la session API démarrent lors de l’appel. La préparation n’entraîne aucun frais d’utilisation de l’API.",
+  'voiceProvider.prepareCallsHelp': "Garde les ressources WebRTC et une connexion HTTPS prêtes lorsque Whip est ouvert. Utilise de la mémoire supplémentaire et des requêtes réseau périodiques sans votre clé API. Le microphone et la session API démarrent lors de l’appel. La préparation n’entraîne aucun frais d’utilisation de l’API.",
   'voiceUsage.cost': 'Coût',
   'voiceUsage.time': 'Temps',
   'voiceUsage.activity': 'Activité',

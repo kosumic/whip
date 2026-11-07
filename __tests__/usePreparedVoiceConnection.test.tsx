@@ -18,7 +18,7 @@ const render = (eligible = true) => <VoiceConversationSettingsContext value={{ s
 beforeEach(() => { mockPrepare.mockClear(); settings = { ...defaults }; });
 afterEach(async () => { await act(async () => renderer?.unmount()); });
 
-test('local preparation is on by default and can be disabled and enabled again', async () => {
+test('voice preparation is on by default and can be disabled and enabled again', async () => {
   await act(async () => { renderer = create(render()); });
   expect(mockPrepare).toHaveBeenLastCalledWith(true);
   settings = { ...settings, keepVoiceClientWarm: false };
@@ -29,7 +29,7 @@ test('local preparation is on by default and can be disabled and enabled again',
   expect(mockPrepare).toHaveBeenLastCalledWith(true);
 });
 
-test('backgrounding or locking releases local resources; returning prepares again', async () => {
+test('backgrounding or locking stops preparation; returning prepares again', async () => {
   settings.keepVoiceClientWarm = true;
   await act(async () => { renderer = create(render()); });
   expect(mockPrepare).toHaveBeenLastCalledWith(true);
@@ -43,7 +43,7 @@ test('backgrounding or locking releases local resources; returning prepares agai
   expect(mockPrepare).toHaveBeenLastCalledWith(true);
 });
 
-test('local client preparation survives voice and mode changes without creating API sessions', async () => {
+test('voice preparation survives voice and mode changes without restarting', async () => {
   settings.keepVoiceClientWarm = true;
   await act(async () => { renderer = create(render()); });
   const count = mockPrepare.mock.calls.length;

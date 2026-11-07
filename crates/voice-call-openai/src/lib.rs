@@ -6,6 +6,7 @@ pub mod connection;
 pub mod events;
 pub mod live;
 pub mod models;
+pub mod prepared;
 pub mod recovery;
 pub mod response;
 pub mod session;

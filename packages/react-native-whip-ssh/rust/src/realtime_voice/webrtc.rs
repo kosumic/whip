@@ -1,5 +1,6 @@
 //! Whip call ownership and native device readiness over voice-call-openai.
 use super::startup;
+#[cfg(test)]
 mod api;
 mod host;
 #[cfg(test)]

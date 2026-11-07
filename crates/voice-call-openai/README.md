@@ -12,6 +12,15 @@ session/mute/interruption gates, and bounded final-usage collection.
 It reuses `oai-rt-rs` wire types and the existing native media engine. It creates
 no runtime, recorder, platform audio session, JS PCM bridge or persistence layer.
 
+Hosts may call `prepared::configure(true)` inside their existing Tokio runtime
+to prepare the HTTP pool for both voice backends. It sends an anonymous HEAD to
+the models endpoint immediately and every 30 seconds after completion, with a
+five-second timeout. It reads no credentials and creates no voice session.
+Call `prepared::clear()` on background, lock, credential changes or opt-out.
+Preparation is optional; call startup never waits for it. Idle connections can
+expire and reconnect normally. Local DTLS preparation remains separately owned
+by `voice_call_media::prepared`.
+
 ## Make a call from another app
 
 Use `Call` for an owned connection and lifecycle. It supports native WebRTC and

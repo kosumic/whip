@@ -137,6 +137,38 @@ previously observed ten-second close/quick-restart wait.
 
 [Raw local timing measurements](voice-session-creation-profile.json)
 
+## Anonymous HTTPS preparation after #379
+
+The foreground **Keep voice client warm** option now prepares DNS/TCP/TLS in
+the shared Reqwest client with an anonymous HEAD to `/v1/models`. Both voice
+backends use this same pool. Preparation sends no credentials and creates no
+session. It starts immediately, refreshes 30 seconds after each completion,
+and bounds each request to five seconds. Opt-out, background, lock and
+credential changes cancel the worker. See [lifecycle details](voice-transport.md#optional-voice-client-warmth).
+
+Local HTTPS tests verify one DNS lookup and one TLS connection across an
+unauthenticated HEAD and subsequent authenticated mock session POSTs for both
+backends. They also cover credential-free refresh, server-closed idle sockets,
+idempotent enable/disable/re-enable, cancellation of an unanswered HEAD, and a
+call proceeding while preparation is unanswered. No real sessions are created
+by these tests.
+
+Validation passed in `nix develop`: all 42 provider tests, strict all-target
+provider Clippy, the native Rust library check, native formatting, the three
+existing preparation lifecycle Jest tests, and lint for the edited TypeScript.
+
+On 2026-11-07, two sequential anonymous HTTP/1.1 curl HEADs to the production
+models endpoint returned 401. The first opened one connection (TLS completion
+at 398 ms, total 655 ms); the second opened zero connections (no TLS handshake,
+total 222 ms). This confirms endpoint keep-alive from this host, not a measured
+Whip call-startup improvement. No device build or paid session was used.
+
+The earlier 392/956 ms connection-opening samples identify work that preparation
+can move before Call if its connection is still reusable. The separate
+1,313/1,323 ms wait for session response headers still occurs on Call. Expiry,
+network changes and a call racing the initial HEAD can require a new connection;
+preparation never delays or retries session creation to force reuse.
+
 ## Installed ChatGPT Android app
 
 Inspected version `1.2026.300` (version code `2630015`) and captured one

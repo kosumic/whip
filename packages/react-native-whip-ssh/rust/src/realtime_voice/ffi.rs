@@ -113,7 +113,7 @@ pub extern "C" fn whip_voice_credentials_updating(updating: bool) {
     }
 }
 
-/// Retain local WebRTC resources only; no credential access or HTTP requests.
+/// Prepare local WebRTC resources and anonymous HTTPS; no key, mic or API session.
 #[unsafe(no_mangle)]
 pub extern "C" fn whip_realtime_prepare(enabled: bool) -> bool {
     super::webrtc::prepared::configure(enabled)

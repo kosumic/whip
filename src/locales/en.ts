@@ -1,6 +1,6 @@
 export const en = {
   'voiceProvider.prepareCalls': "Keep voice client warm",
-  'voiceProvider.prepareCallsHelp': "Keep local WebRTC resources ready while Whip is open. Uses extra memory. The microphone and API session start only when you call; preparation adds no API usage charges.",
+  'voiceProvider.prepareCallsHelp': "Keep WebRTC resources and an HTTPS connection ready while Whip is open. Uses extra memory and periodic network requests without your API key. The microphone and API session start only when you call; preparation adds no API usage charges.",
   'voiceUsage.cost': 'Cost',
   'voiceUsage.time': 'Time',
   'voiceUsage.activity': 'Activity',
