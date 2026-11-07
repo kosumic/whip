@@ -144,13 +144,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ai-voice-call"
-version = "0.1.0"
-dependencies = [
- "earshot",
-]
-
-[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7574,6 +7567,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "voice-call-local"
+version = "0.1.0"
+dependencies = [
+ "earshot",
+]
+
+[[package]]
 name = "voice-call-media"
 version = "0.1.0"
 dependencies = [
@@ -7592,7 +7592,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "voice-openai"
+name = "voice-call-openai"
 version = "0.1.0"
 dependencies = [
  "audio-ingress",
@@ -7797,7 +7797,6 @@ dependencies = [
  "agent-browser-control",
  "agent-transcript-core",
  "agent-transcript-view",
- "ai-voice-call",
  "async-trait",
  "audio-ingress",
  "axum",
@@ -7841,8 +7840,9 @@ dependencies = [
  "uniffi",
  "url",
  "uuid",
+ "voice-call-local",
  "voice-call-media",
- "voice-openai",
+ "voice-call-openai",
  "whip-notify",
  "whipair-protocol",
  "zip",

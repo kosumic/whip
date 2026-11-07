@@ -6,7 +6,7 @@ use super::{
 };
 use oai_rt_rs::live::ServerEvent;
 use tokio::sync::watch;
-use voice_openai::session::{Delegate, Event, Flow, Session};
+use voice_call_openai::session::{Delegate, Event, Flow, Session};
 
 pub(super) enum Work {
     Command(super::super::Command),
@@ -78,7 +78,7 @@ impl Delegate for App<'_> {
                         transcript.admit(offset);
                     }
                     self.adapter.state.through = self.adapter.state.through.max(offset);
-                    session.append_context(None, &format!("Already submitted to the bound agent; context only, never delegate again: {text}"), voice_openai::session::Context::Thinking).await?;
+                    session.append_context(None, &format!("Already submitted to the bound agent; context only, never delegate again: {text}"), voice_call_openai::session::Context::Thinking).await?;
                 }
             }
             Work::Completion(completion) => {
@@ -151,7 +151,7 @@ impl Delegate for App<'_> {
             tasks,
             usage,
         } = adapter;
-        let voice_openai::session::Protocol::Live(provider) = &mut session.protocol else {
+        let voice_call_openai::session::Protocol::Live(provider) = &mut session.protocol else {
             return Err("Invalid voice protocol.");
         };
         let socket = &mut *session.socket;

@@ -1,1 +1,1 @@
-pub(super) use voice_openai::captions::*;
+pub(super) use voice_call_openai::captions::*;

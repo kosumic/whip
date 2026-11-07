@@ -1,6 +1,6 @@
 //! Native audio and device state owned by Whip, shared by both provider modes.
 use super::{ClientEvent, Ordering, RealtimeVoiceAdapter, startup};
-use voice_openai::session::Audio;
+use voice_call_openai::session::Audio;
 
 impl Audio for RealtimeVoiceAdapter {
     fn is_muted(&self) -> bool {

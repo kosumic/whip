@@ -114,6 +114,6 @@ AGENTS.md
 !/notify-relay/.dev.vars.example
 
 /crates/audio-ingress/target/
-/crates/ai-voice-call/target/
+/crates/voice-call-local/target/
 /crates/voice-call-media/target/
-/crates/voice-openai/target/
+/crates/voice-call-openai/target/

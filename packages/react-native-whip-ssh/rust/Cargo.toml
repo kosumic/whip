@@ -11,12 +11,12 @@ crate-type = ["staticlib", "rlib"]
 [features]
 default = []
 # Optional end-of-turn inference; standard builds use Earshot silence detection.
-smart-turn = ["ai-voice-call/smart-turn", "dep:tract-onnx", "dep:rustfft"]
+smart-turn = ["voice-call-local/smart-turn", "dep:tract-onnx", "dep:rustfft"]
 
 [dependencies]
-voice-openai = { path = "../../../crates/voice-openai" }
+voice-call-openai = { path = "../../../crates/voice-call-openai" }
 voice-call-media = { path = "../../../crates/voice-call-media" }
-ai-voice-call = { version = "0.1.0", path = "../../../crates/ai-voice-call" }
+voice-call-local = { version = "0.1.0", path = "../../../crates/voice-call-local" }
 mobile-speech = { version = "0.1.0", path = "../../../crates/mobile-speech" }
 audio-ingress = { version = "0.1.0", path = "../../../crates/audio-ingress" }
 herdr-protocol = { version = "0.2.1", path = "../../../crates/herdr-protocol" }

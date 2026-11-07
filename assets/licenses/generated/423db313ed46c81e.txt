@@ -663,7 +663,7 @@ For more information on this, and how to apply and follow the GNU AGPL, see
 <https://www.gnu.org/licenses/>.
 
 
-ai-voice-call production transitive dependency notices (Android/iOS)
+voice-call-local production transitive dependency notices (Android/iOS)
 
 Apache License 2.0 (Apache-2.0)
 

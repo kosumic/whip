@@ -8,7 +8,7 @@ use std::sync::{
 };
 use tokio::sync::watch;
 
-pub(super) use voice_openai::recovery::{CANCELLED, Failure, State};
+pub(super) use voice_call_openai::recovery::{CANCELLED, Failure, State};
 
 pub(super) struct Attempt {
     pub id: u64,

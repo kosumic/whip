@@ -59,11 +59,11 @@ const AUDIBLE_SAMPLE: u16 = 64;
 const MAX_OUTPUT: usize = RATE * 30;
 const MAX_OUTPUT_ITEMS: usize = 64;
 #[cfg(test)]
-use voice_openai::MAX_WIRE;
-use voice_openai::typed;
+use voice_call_openai::MAX_WIRE;
+use voice_call_openai::typed;
 const MAX_TEXT: usize = 16 * 1024;
 const TYPED_PREFIX: &str = "[TYPED — already submitted to the bound coding agent]\n";
-use voice_openai::tools::{MAX_ARGUMENT_BYTES, MAX_CALLS};
+use voice_call_openai::tools::{MAX_ARGUMENT_BYTES, MAX_CALLS};
 const EVENT_PREFIX: &str = "whip";
 const INSTRUCTIONS: &str = include_str!("realtime_voice/instructions.md");
 // Adapted from Codex's realtime_websocket/methods_v2.rs default tool description
@@ -144,8 +144,8 @@ impl Config {
         models::selected(self.model.as_deref())
     }
 
-    fn audio_settings(&self) -> Result<voice_openai::settings::AudioSettings, &'static str> {
-        Ok(voice_openai::settings::AudioSettings {
+    fn audio_settings(&self) -> Result<voice_call_openai::settings::AudioSettings, &'static str> {
+        Ok(voice_call_openai::settings::AudioSettings {
             voice: self.voice.clone(),
             turn_detection: serde_json::to_value(&self.vad)
                 .and_then(serde_json::from_value)
@@ -864,12 +864,13 @@ impl RealtimeVoiceAdapter {
         tools: &mut JoinSet<ToolCompletion>,
         costs: &mut cost::CurrentChat,
     ) -> Result<(), &'static str> {
-        let settings = voice_openai::session::RealtimeConfig {
+        let settings = voice_call_openai::session::RealtimeConfig {
             model: config.model()?.id.clone(),
             audio: config.audio_settings()?,
         };
-        let mut session = voice_openai::session::Session::realtime(socket, settings, config.webrtc)
-            .with_prefix(EVENT_PREFIX);
+        let mut session =
+            voice_call_openai::session::Session::realtime(socket, settings, config.webrtc)
+                .with_prefix(EVENT_PREFIX);
         let mut app = session_host::App::new(
             self,
             config,
@@ -1022,10 +1023,10 @@ fn terminal_submitted_message(text: &str) -> Result<ClientEvent, &'static str> {
 }
 
 #[cfg(test)]
-use voice_openai::connection::authorized_request;
-use voice_openai::connection::connect_raw;
+use voice_call_openai::connection::authorized_request;
+use voice_call_openai::connection::connect_raw;
 #[cfg(test)]
-use voice_openai::connection::connect_request;
+use voice_call_openai::connection::connect_request;
 
 fn next_response(
     responses: &response::ResponseCreateQueue,
@@ -1138,13 +1139,13 @@ async fn send<S>(socket: &mut S, event: ClientEvent) -> Result<(), &'static str>
 where
     S: futures::Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
 {
-    voice_openai::events::send_with_prefix(socket, event, EVENT_PREFIX).await
+    voice_call_openai::events::send_with_prefix(socket, event, EVENT_PREFIX).await
 }
 #[derive(Default)]
-struct ToolLedger(voice_openai::tools::Ledger);
+struct ToolLedger(voice_call_openai::tools::Ledger);
 impl ToolLedger {
     fn begin(&mut self, id: &str, name: &str, arguments: &str) -> Result<bool, &'static str> {
-        use voice_openai::tools::Access;
+        use voice_call_openai::tools::Access;
         let access = match name {
             BACKGROUND_AGENT => Access::Mutate,
             REMAIN_SILENT => Access::Read,
@@ -1156,7 +1157,7 @@ impl ToolLedger {
         self.0.complete(mutation, uncertain);
     }
 }
-use voice_openai::tools::function_output;
+use voice_call_openai::tools::function_output;
 fn peak(samples: &[i16]) -> f32 {
     samples
         .iter()

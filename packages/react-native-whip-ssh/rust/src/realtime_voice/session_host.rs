@@ -7,7 +7,7 @@ use super::{
     handoff_context, json, limit_text, live, mpsc, next_response, preview_response, send,
     spawn_delegation, submitted_message, terminal, terminal_submitted_message, watch, webrtc,
 };
-use voice_openai::session::{Delegate, Event, Flow, Session};
+use voice_call_openai::session::{Delegate, Event, Flow, Session};
 
 pub(super) enum Work {
     Command(Command),
@@ -244,7 +244,7 @@ impl Delegate for App<'_> {
             ledger,
             ..
         } = self;
-        let voice_openai::session::Protocol::Realtime(state) = &mut session.protocol else {
+        let voice_call_openai::session::Protocol::Realtime(state) = &mut session.protocol else {
             return Err("Invalid voice protocol.");
         };
         let socket = &mut *session.socket;
@@ -339,7 +339,7 @@ impl Delegate for App<'_> {
             deferred,
             ..
         } = self;
-        let voice_openai::session::Protocol::Realtime(state) = &mut session.protocol else {
+        let voice_call_openai::session::Protocol::Realtime(state) = &mut session.protocol else {
             return Err("Invalid voice protocol.");
         };
         let socket = &mut *session.socket;
@@ -445,7 +445,7 @@ impl Delegate for App<'_> {
             last_audio_response,
             ..
         } = self;
-        let voice_openai::session::Protocol::Realtime(state) = &mut session.protocol else {
+        let voice_call_openai::session::Protocol::Realtime(state) = &mut session.protocol else {
             return Err("Invalid voice protocol.");
         };
         let socket = &mut *session.socket;

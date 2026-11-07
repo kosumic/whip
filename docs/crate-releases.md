@@ -8,7 +8,7 @@ including before 1.0. Publish registry dependencies before their consumers:
 - `audio-ingress` before `voice-call-media`.
 
 `publish-standalone-libraries.yml` publishes `agent-transcript-view`,
-`audio-ingress`, `mobile-speech`, `ai-voice-call`, `voice-call-media`, and
+`audio-ingress`, `mobile-speech`, `voice-call-local`, `voice-call-media`, and
 `whip-notify`. It checks formatting, all-feature Clippy and tests, and a publish
 dry run before publishing on an ARM64 runner. Create `<crate>-v<version>`, then
 manually dispatch the workflow from `main` with the matching crate and manifest
@@ -19,6 +19,10 @@ workflows. The shared GitHub release helper verifies the registry artifact's
 checksum and its license against the tagged manifest before attaching it to a
 GitHub release. Releases do not replace the mobile app's latest release.
 Whip Notify retains its separate binary release workflow and installer tag.
+
+The renamed `voice-call-local` package uses the initial-release procedure below;
+renaming a source crate does not rename existing registry releases. Both voice
+crates can be consumed as path or Git dependencies.
 
 For an initial crates.io release, create a short-lived API token with permission
 to publish the new crate, publish it, and configure its Trusted Publisher:
@@ -34,4 +38,4 @@ does not require any additional allowed deployment tag patterns.
 
 The speech, audio, and media crates retain AGPL-3.0-or-later. The transcript,
 Herdr, and notification libraries retain MIT. `native-credentials` remains
-private; `voice-openai` cannot be published with its current private dependency.
+private; `voice-call-openai` cannot be published with its current private dependency.

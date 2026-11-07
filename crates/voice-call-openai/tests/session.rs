@@ -4,7 +4,9 @@ use futures::SinkExt;
 use serde_json::json;
 use std::sync::{Arc, atomic::Ordering};
 use tokio_tungstenite::tungstenite::Message;
-use voice_openai::session::{Call, Config, Delegate, Event, Flow, LiveConfig, Session, Transport};
+use voice_call_openai::session::{
+    Call, Config, Delegate, Event, Flow, LiveConfig, Session, Transport,
+};
 mod support;
 
 #[tokio::test]
@@ -28,7 +30,7 @@ async fn cancelled_owned_calls_do_not_access_credentials_for_either_transport() 
     for transport in [Transport::WebRtc, Transport::WebSocket] {
         let config = Config::Realtime {
             settings: flows::realtime_config(),
-            update: voice_openai::typed(
+            update: voice_call_openai::typed(
                 json!({"type":"session.update","session":{"type":"realtime"}}),
             )?,
         };
@@ -36,7 +38,7 @@ async fn cancelled_owned_calls_do_not_access_credentials_for_either_transport() 
             .await
             .err()
             .ok_or("Cancelled call connected")?;
-        assert_eq!(failure.message, voice_openai::recovery::CANCELLED);
+        assert_eq!(failure.message, voice_call_openai::recovery::CANCELLED);
     }
     for transport in [Transport::WebRtc, Transport::WebSocket] {
         let config = Config::Live {
@@ -48,7 +50,7 @@ async fn cancelled_owned_calls_do_not_access_credentials_for_either_transport() 
             .await
             .err()
             .ok_or("Cancelled call connected")?;
-        assert_eq!(failure.message, voice_openai::recovery::CANCELLED);
+        assert_eq!(failure.message, voice_call_openai::recovery::CANCELLED);
     }
     assert_eq!(credential.0.load(Ordering::Relaxed), 0);
     Ok(())
@@ -89,7 +91,7 @@ impl Delegate for Observer {
 #[tokio::test(start_paused = true)]
 async fn server_hangup_finishes_without_an_app_stop_command() -> flows::TestResult {
     let audio = support::App::new(true)?;
-    let (socket, _commands, mut events) = voice_openai::RealtimeSocket::relay();
+    let (socket, _commands, mut events) = voice_call_openai::RealtimeSocket::relay();
     let snapshot =
         json!({"id":"call","model":"custom-live","status":"active","expires_at":2_000_000_000});
     for event in [
@@ -123,13 +125,13 @@ async fn server_hangup_finishes_without_an_app_stop_command() -> flows::TestResu
 #[tokio::test(start_paused = true)]
 async fn wrong_provider_model_ends_the_call_without_opening_capture() -> flows::TestResult {
     let audio = support::App::new(true)?;
-    let (socket, _commands, mut events) = voice_openai::RealtimeSocket::relay();
+    let (socket, _commands, mut events) = voice_call_openai::RealtimeSocket::relay();
     events.send(Ok(Message::Text(json!({"type":"session.created","event_id":"wrong-model","session":{"id":"session","object":"realtime.session","type":"realtime","model":"other-model","expires_at":2_000_000_000,"output_modalities":["audio"]}}).to_string().into()))).await?;
     let call = Call::from_realtime(socket, flows::realtime_config());
     let mut observer = Observer::default();
     assert_eq!(
         call.run(&audio, &mut observer).await,
-        Err(voice_openai::models::MISMATCH)
+        Err(voice_call_openai::models::MISMATCH)
     );
     assert_eq!(observer.events, 0);
     assert!(audio.rendered().is_empty());

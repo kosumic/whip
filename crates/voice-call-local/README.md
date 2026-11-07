@@ -1,4 +1,4 @@
-# ai-voice-call
+# voice-call-local
 
 Portable synchronous policy extracted from Whip's local voice conversation.
 Licensed AGPL-3.0-or-later, as is the original implementation. Earshot 1.2.2
@@ -6,7 +6,7 @@ remains the VAD implementation and retains its upstream attribution/license.
 
 ```toml
 [dependencies]
-ai-voice-call = "0.1.0"
+voice-call-local = { path = "../whip/crates/voice-call-local" }
 ```
 
 `Call` owns local turn boundaries, sensitivity/hysteresis, mute, recognized

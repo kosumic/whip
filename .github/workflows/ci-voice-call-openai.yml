@@ -1,14 +1,14 @@
-name: OpenAI voice provider
+name: OpenAI voice call provider
 on:
   push:
     branches: [main]
     paths: &ingress-paths
-      - 'crates/voice-openai/**'
+      - 'crates/voice-call-openai/**'
       - 'crates/audio-ingress/**'
       - 'crates/voice-call-media/**'
       - 'crates/native-credentials/**'
-      - '.github/workflows/ci-voice-openai.yml'
-      - 'crates/voice-openai/rust-toolchain.toml'
+      - '.github/workflows/ci-voice-call-openai.yml'
+      - 'crates/voice-call-openai/rust-toolchain.toml'
   pull_request:
     branches: [main]
     paths: *ingress-paths
@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 20
     defaults:
       run:
-        working-directory: crates/voice-openai
+        working-directory: crates/voice-call-openai
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: rustup toolchain install
