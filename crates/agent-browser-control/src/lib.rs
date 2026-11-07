@@ -10,6 +10,7 @@ pub mod engine;
 pub mod fence;
 pub mod model;
 pub mod programs;
+pub mod steps;
 
 #[cfg(test)]
 mod engine_tests;

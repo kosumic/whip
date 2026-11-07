@@ -6,6 +6,7 @@ type TestResult = Result<(), Box<dyn std::error::Error>>;
 fn all_actions_round_trip_with_typed_arguments() -> TestResult {
     for name in BrowserAction::NAMES {
         let args = match *name {
+            "run_steps" => json!({"steps":[{"action":"snapshot","arguments":{}}]}),
             "navigate" => json!({"url":"https://example.test/"}),
             "download" => {
                 json!({"url":"https://example.test/report.pdf","destination_path":"~/report.pdf"})
@@ -178,4 +179,32 @@ fn tab_authorization_is_checked_in_rust() -> TestResult {
         Some(ErrorCode::Unauthorized)
     );
     Ok(())
+}
+
+#[test]
+fn batches_validate_every_step_and_expectation_before_execution() {
+    for args in [
+        json!({"steps":[]}),
+        json!({"steps":vec![json!({"action":"snapshot"}); MAX_STEPS + 1]}),
+        json!({"steps":[{"action":"run_steps","arguments":{"steps":[]}}]}),
+        json!({"steps":[{"action":"eval","arguments":{"js":"1"}}]}),
+        json!({"steps":[{"action":"snapshot","arguments":{"tab_id":"b-tab-1"}}]}),
+        json!({"steps":[{"action":"snapshot","arguments":{"tab_id":"a-tab-1"}}]}),
+        json!({"steps":[{"action":"snapshot","expect":[{"tab_id":"b-tab-1"}]}]}),
+        json!({"steps":[{"action":"snapshot","expect":vec![json!({});MAX_EXPECTATIONS+1]}]}),
+        json!({"steps":[{"action":"snapshot","expect":[{"condition":"value","target":{"label":"Query"}}]}]}),
+        json!({"steps":[{"action":"snapshot","expect":[{"condition":"target_absent"}]}]}),
+        json!({"steps":[{"action":"snapshot"},{"action":"type","arguments":{"ref":"observed","text":42}}]}),
+        json!({"steps":[{"action":"snapshot"}],"timeout_ms":MAX_STEPS_MS+1}),
+        json!({"steps":[{"action":"snapshot"}],"timeout_ms":0}),
+        json!({"steps":[{"action":"snapshot","retry":true}]}),
+    ] {
+        assert_eq!(
+            BrowserAction::parse("run_steps", &args)
+                .err()
+                .map(|e| e.code),
+            Some(ErrorCode::InvalidArgument),
+            "{args}"
+        );
+    }
 }

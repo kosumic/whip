@@ -204,6 +204,145 @@ fn page_bridge() -> Result<Arc<PageBridge>, Box<dyn std::error::Error>> {
         calls: Mutex::new(Vec::new()),
     }))
 }
+
+#[test]
+fn checked_batch_opens_a_dialog_types_and_verifies_state_in_one_call() -> TestResult {
+    crate::runtime()?.block_on(async {
+        let bridge = page_bridge()?;
+        bridge.page.lock().evaluate(r#"
+            document.querySelector('button').onclick = () => {
+                const dialog = document.createElement('section');
+                dialog.setAttribute('role', 'dialog');
+                dialog.innerHTML = '<label for="message">Message</label><input id="message"><p>Ready to edit</p>';
+                document.body.appendChild(dialog);
+            };
+        "#)?;
+        let result = run(bridge.clone(), &SessionId("a".into()), "batch", BrowserAction::parse("run_steps", &json!({"steps":[
+            {"action":"click","arguments":{"target":{"role":"button","name":"Save"}},"expect":[{"condition":"target","target":{"role":"dialog"}}]},
+            {"action":"type","arguments":{"target":{"label":"Message"},"text":"Hello"},"expect":[
+                {"condition":"value","target":{"label":"Message"},"value":"Hello"},
+                {"condition":"text","text":"Ready to edit"}
+            ]},
+            {"action":"get","arguments":{"property":"value","target":{"label":"Message"}}}
+        ]}))?, context()).await?.mcp()?;
+        let report = &result["structuredContent"];
+        assert!(report["error"].is_null(), "{result}");
+        assert_eq!(report["completed_steps"], 3);
+        assert_eq!(report["steps"][1]["expectations"].as_array().map(Vec::len), Some(2));
+        assert_eq!(report["steps"][2]["result"]["value"], "Hello");
+        assert_eq!(bridge.page.lock().evaluate("document.querySelectorAll('[role=dialog]').length")?, 1);
+        assert!(!result.to_string().contains("private-token"));
+        Ok(())
+    })
+}
+
+#[test]
+fn batch_expectations_report_failure_and_never_continue_after_timeout_or_navigation() -> TestResult
+{
+    crate::runtime()?.block_on(async {
+        for navigation in [false, true] {
+            let bridge = page_bridge()?;
+            if navigation {
+                bridge.page.lock().evaluate("document.querySelector('button').onclick=()=>history.pushState({},'', '/new')")?;
+            }
+            let result = run(bridge.clone(), &SessionId("a".into()), "batch-failure", BrowserAction::parse("run_steps", &json!({"steps":[
+                {"action":"click","arguments":{"target":{"name":"Save"}},"expect":[{"condition":"text","text":"Missing message","timeout_ms":50}]},
+                {"action":"type","arguments":{"target":{"label":"Query"},"text":"never"}}
+            ]}))?, context()).await?.mcp()?;
+            let report = &result["structuredContent"];
+            assert_eq!(result["isError"], true);
+            assert_eq!(report["error"]["code"], if navigation { "stale_page" } else { "wait_timeout" });
+            assert_eq!(report["steps"].as_array().map(Vec::len), Some(1));
+            assert_eq!(report["steps"][0]["result"]["performed"], "click");
+            if !navigation { assert_eq!(report["steps"][0]["failed_expectation"], 0); }
+            assert_eq!(bridge.page.lock().evaluate("document.querySelector('#q').value")?, "");
+        }
+        Ok(())
+    })
+}
+
+#[test]
+fn absence_value_and_ambiguous_expectations_use_the_live_dom() -> TestResult {
+    let mut page = PageProcess::new()?;
+    assert_eq!(
+        page.dom(
+            "wait",
+            json!({"condition":"target_absent","target":{"role":"dialog"}})
+        )?["ready"],
+        true
+    );
+    assert_eq!(
+        page.dom(
+            "wait",
+            json!({"condition":"text_absent","text":"Readable content."})
+        )?["ready"],
+        false
+    );
+    page.evaluate("document.querySelector('p').remove()")?;
+    assert_eq!(
+        page.dom(
+            "wait",
+            json!({"condition":"text_absent","text":"Readable content."})
+        )?["ready"],
+        true
+    );
+    page.evaluate("document.querySelector('#q').value='Hello'")?;
+    assert_eq!(
+        page.dom(
+            "wait",
+            json!({"condition":"value","target":{"label":"Query"},"value":"Hello"})
+        )?["ready"],
+        true
+    );
+    assert_eq!(page.dom("wait", json!({"condition":"value","target":{"css":"input[type=password]"},"value":"private-password"})).err().map(|e|e.code), Some(ErrorCode::SensitiveTarget));
+    page.evaluate(
+        "document.querySelector('main').insertAdjacentHTML('beforeend','<button>Save</button>')",
+    )?;
+    assert_eq!(
+        page.dom(
+            "wait",
+            json!({"condition":"target","target":{"name":"Save"}})
+        )
+        .err()
+        .map(|e| e.code),
+        Some(ErrorCode::AmbiguousTarget)
+    );
+    page.evaluate("document.querySelector('main').insertAdjacentHTML('beforeend','<p>'+'x'.repeat(300000)+'</p>')")?;
+    assert_eq!(
+        page.dom(
+            "wait",
+            json!({"condition":"text_absent","text":"Unobserved"})
+        )
+        .err()
+        .map(|e| e.code),
+        Some(ErrorCode::ResultTooLarge)
+    );
+    Ok(())
+}
+
+#[test]
+fn batch_url_change_uses_the_actual_pre_action_url_including_query() -> TestResult {
+    crate::runtime()?.block_on(async {
+        let bridge = page_bridge()?;
+        let result = run(
+            bridge,
+            &SessionId("a".into()),
+            "url-batch",
+            BrowserAction::parse(
+                "run_steps",
+                &json!({"steps":[
+                    {"action":"snapshot","expect":[{"condition":"url_change","timeout_ms":50}]}
+                ]}),
+            )?,
+            context(),
+        )
+        .await?
+        .mcp()?;
+        assert_eq!(result["structuredContent"]["error"]["code"], "wait_timeout");
+        assert!(!result.to_string().contains("private-token"));
+        Ok(())
+    })
+}
 #[test]
 fn download_binds_the_document_and_returns_host_metadata_without_page_eval() -> TestResult {
     crate::runtime()?.block_on(async {

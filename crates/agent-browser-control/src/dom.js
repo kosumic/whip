@@ -120,7 +120,7 @@ function domRuntime(runtimeKey, action, args, identity) {
     return { ...page, ready: true };
   }
   // Read rendered text nodes only, never form values or hidden descendants.
-  const textOf = (el, limit = 65536) => {
+  const textOf = (el, limit = 65536, requireComplete = false) => {
     let text = '';
     const visit = node => {
       if (text.length >= limit) return;
@@ -141,6 +141,11 @@ function domRuntime(runtimeKey, action, args, identity) {
       }
     };
     visit(el);
+    if (requireComplete && text.length >= limit)
+      fail(
+        'result_too_large',
+        'Cannot verify text absence beyond the text scan limit',
+      );
     return clean(text, limit);
   };
   const role = el =>
@@ -521,12 +526,36 @@ function domRuntime(runtimeKey, action, args, identity) {
       args.condition ||
       (args.target ? 'target' : args.selector ? 'selector' : 'stable');
     let ready;
-    if (condition === 'target') ready = locate(args.target).length > 0;
-    else if (condition === 'selector')
+    if (
+      condition === 'target' ||
+      condition === 'target_absent' ||
+      condition === 'value'
+    ) {
+      const matches = locate(args.target);
+      if (matches.length > 1 && condition !== 'target_absent')
+        fail('ambiguous_target', 'Expectation requires one target', {
+          matches: matches.length,
+        });
+      if (condition === 'value') {
+        const el = matches[0];
+        if (el && sensitive(el))
+          fail('sensitive_target', 'Cannot inspect a sensitive value');
+        ready = !!el && 'value' in el && String(el.value) === args.value;
+      } else
+        ready =
+          condition === 'target_absent'
+            ? matches.length === 0
+            : matches.length === 1;
+    } else if (condition === 'selector')
       ready = query(args.selector).some(rendered);
-    else if (condition === 'text')
-      ready = textOf(document.body, 262144).includes(args.text);
-    else if (condition === 'url') ready = location.href.includes(args.url);
+    else if (condition === 'text' || condition === 'text_absent') {
+      ready = textOf(
+        document.body,
+        262144,
+        condition === 'text_absent',
+      ).includes(args.text);
+      if (condition === 'text_absent') ready = !ready;
+    } else if (condition === 'url') ready = location.href.includes(args.url);
     else if (condition === 'url_change')
       ready = args.previous_url !== location.href;
     else if (condition === 'stable')

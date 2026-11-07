@@ -27,6 +27,7 @@ pub(crate) struct Platform {
     sessions: Mutex<HashMap<String, Arc<BrowserOperationSession>>>,
     pub events: Mutex<Vec<Event>>,
     pub hold: Mutex<Option<Phase>>,
+    hold_evaluation: Mutex<Option<usize>>,
     release: Notify,
     replies: Mutex<VecDeque<(Phase, BrowserPlatformResult)>>,
 }
@@ -48,7 +49,9 @@ impl Platform {
         let release = self.release.notified();
         tokio::pin!(release);
         release.as_mut().enable();
-        if *self.hold.lock() == Some(phase) {
+        if *self.hold.lock() == Some(phase)
+            || (phase == Phase::Evaluate && *self.hold_evaluation.lock() == Some(self.count(phase)))
+        {
             release.await;
         }
         permit
@@ -57,6 +60,7 @@ impl Platform {
     }
     pub fn resume(&self) {
         *self.hold.lock() = None;
+        *self.hold_evaluation.lock() = None;
         self.release.notify_waiters();
     }
     fn state(&self, id: &str) -> Result<Arc<BrowserOperationSession>, BrowserPlatformError> {
@@ -361,6 +365,118 @@ fn cancelling_a_waiter_preserves_arrival_order_for_later_operations() -> TestRes
         assert!(tabs.iter().any(|tab| tab["tab_id"] == created));
         owner.shutdown();
         drop(harness);
+        Ok(())
+    })
+}
+
+#[test]
+fn batches_hold_one_arrival_tab_and_lease_while_other_sessions_remain_independent() -> TestResult {
+    crate::runtime()?.block_on(async {
+        let harness = Harness::new().await;
+        let owner = owner();
+        call(&owner, "a", "list_tabs", json!({}))?.await?;
+        let session = harness.platform.state("a")?;
+        let first = session.tabs()[0].id.clone();
+        *harness.platform.hold_evaluation.lock() = Some(2);
+        let batch = call(&owner, "a", "run_steps", json!({"steps":[
+            {"action":"snapshot"}, {"action":"snapshot"}, {"action":"snapshot"}
+        ]}))?;
+        until(|| harness.platform.count(Phase::Evaluate) == 2).await?;
+        let queued = call(&owner, "a", "snapshot", json!({}))?;
+        session.create_tab(true)?;
+        assert!(!session.can_suspend(first.clone()));
+        let other = call(&owner, "b", "snapshot", json!({}))?.await?;
+        assert_eq!(other["structuredContent"]["title"], "page-b");
+        // The queued call did not interleave between batch steps.
+        assert_eq!(harness.platform.events.lock().iter().filter(|event| event.phase == Phase::Evaluate && event.session == "a").count(), 2);
+        harness.platform.resume();
+        let result = batch.await?;
+        assert_eq!(result["structuredContent"]["completed_steps"], 3, "{result}");
+        assert_eq!(result["structuredContent"]["tab_id"], first);
+        assert_eq!(queued.await?["structuredContent"]["tab_id"], first);
+        assert!(harness.platform.events.lock().iter().filter(|event| event.phase == Phase::Evaluate && event.session == "a").all(|event|
+            matches!(&event.action, Some(BrowserPlatformAction::Evaluate { tab_id, .. }) if tab_id == &first)));
+        until(|| session.can_suspend(first.clone())).await?;
+        // A foreign outer tab and any per-step tab override fail before dispatch.
+        let count = harness.platform.events.lock().len();
+        assert!(call(&owner, "b", "run_steps", json!({"tab_id":first,"steps":[{"action":"snapshot"}]})).is_err());
+        assert!(call(&owner, "a", "run_steps", json!({"steps":[{"action":"snapshot","arguments":{"tab_id":"b-tab-1"}}]})).is_err());
+        assert_eq!(harness.platform.events.lock().len(), count);
+        owner.shutdown();
+        drop(harness);
+        Ok(())
+    })
+}
+
+#[test]
+fn cancelling_or_closing_a_batch_revokes_its_effect_and_keeps_partial_progress() -> TestResult {
+    crate::runtime()?.block_on(async {
+        for close in [false, true] {
+            let harness = Harness::new().await;
+            let owner = owner();
+            *harness.platform.hold_evaluation.lock() = Some(2);
+            let receiver = owner
+                .start_action(
+                    "a",
+                    json!(373),
+                    &json!({"params":{"name":"browser.run_steps","arguments":{"steps":[
+                        {"action":"snapshot"}, {"action":"snapshot"}, {"action":"snapshot"}
+                    ]}}}),
+                )
+                .map_err(|e| e.to_string())?;
+            until(|| harness.platform.count(Phase::Evaluate) == 2).await?;
+            let permit = harness
+                .platform
+                .events
+                .lock()
+                .iter()
+                .filter(|e| e.phase == Phase::Evaluate)
+                .nth(1)
+                .ok_or("missing second effect")?
+                .permit
+                .clone();
+            if close {
+                owner.close_session("a");
+            } else {
+                owner
+                    .request(
+                        "a",
+                        &json!({"method":"notifications/cancelled","params":{"requestId":373}}),
+                    )
+                    .await;
+            }
+            let result = receiver.await?;
+            assert_eq!(result["isError"], true);
+            let error = &result["structuredContent"]["error"];
+            assert_eq!(
+                error["code"],
+                if close { "session_closed" } else { "cancelled" }
+            );
+            assert_eq!(error["details"]["report"]["completed_steps"], 1, "{result}");
+            assert_eq!(
+                error["details"]["report"]["steps"].as_array().map(Vec::len),
+                Some(2)
+            );
+            assert!(permit.check_active().is_err());
+            harness.platform.resume();
+            // Another launch still works and no unexecuted step runs.
+            assert_eq!(
+                call(&owner, "b", "snapshot", json!({}))?.await?["structuredContent"]["title"],
+                "page-b"
+            );
+            assert_eq!(
+                harness
+                    .platform
+                    .events
+                    .lock()
+                    .iter()
+                    .filter(|e| e.phase == Phase::Evaluate && e.session == "a")
+                    .count(),
+                2
+            );
+            owner.shutdown();
+            drop(harness);
+        }
         Ok(())
     })
 }

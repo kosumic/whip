@@ -365,3 +365,248 @@ fn tab_fences_reject_document_view_driver_user_and_owner_changes() -> Result<(),
     })?;
     Ok(())
 }
+
+fn batch(steps: Value) -> Value {
+    json!({"steps":steps})
+}
+fn page_result() -> Value {
+    json!({"ok":true,"value":{"url":"https://example.test/","title":"Example","generation":"old:0","elements":[]}})
+}
+fn successful_step() -> Vec<Result<Value, BrowserError>> {
+    let doc = document("old", "https://example.test/");
+    vec![
+        Ok(doc.clone()),
+        Ok(doc.clone()),
+        Ok(page_result()),
+        Ok(doc.clone()),
+        Ok(doc),
+    ]
+}
+
+#[tokio::test]
+async fn batches_stop_at_the_first_failed_write_and_preserve_prior_results() -> TestResult {
+    for code in [
+        ErrorCode::StaleRef,
+        ErrorCode::AmbiguousTarget,
+        ErrorCode::InputRejected,
+    ] {
+        let mut replies = successful_step();
+        let doc = document("old", "https://example.test/");
+        replies.extend([
+            Ok(doc.clone()),
+            Ok(doc),
+            Err(BrowserError::new(code.clone(), "Observe again")),
+        ]);
+        let bridge = MemoryBridge::new(replies);
+        let result = execute(
+            bridge.clone(),
+            "run_steps",
+            batch(json!([
+                {"action":"snapshot"}, {"action":"click","arguments":{"ref":"observed"}},
+                {"action":"type","arguments":{"target":{"label":"Query"},"text":"never"}}
+            ])),
+        )
+        .await?
+        .mcp()?;
+        let report = &result["structuredContent"];
+        assert_eq!(result["isError"], true);
+        assert_eq!(report["completed_steps"], 1);
+        assert_eq!(report["steps"].as_array().map(Vec::len), Some(2));
+        assert_eq!(report["steps"][0]["result"]["kind"], "snapshot");
+        assert_eq!(
+            report["steps"][1]["error"]["code"],
+            serde_json::to_value(code)?
+        );
+        assert_eq!(
+            bridge
+                .calls
+                .lock()
+                .iter()
+                .filter(|op| matches!(op, Primitive::Evaluate { .. }))
+                .count(),
+            2
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn unexpected_navigation_after_a_write_or_between_steps_stops_the_batch() -> TestResult {
+    for between in [false, true] {
+        let old = document("old", "https://example.test/");
+        let new = document("new", "https://example.test/new");
+        let replies = if between {
+            let mut replies = successful_step();
+            replies.push(Ok(new));
+            replies
+        } else {
+            vec![Ok(old.clone()), Ok(old), Ok(page_result()), Ok(new)]
+        };
+        let bridge = MemoryBridge::new(replies);
+        let result = execute(
+            bridge.clone(),
+            "run_steps",
+            batch(json!([
+                {"action":"click","arguments":{"target":{"name":"Open"}}},
+                {"action":"type","arguments":{"target":{"label":"Query"},"text":"never"}}
+            ])),
+        )
+        .await?
+        .mcp()?;
+        let report = &result["structuredContent"];
+        assert_eq!(report["error"]["code"], "stale_page");
+        assert_eq!(report["completed_steps"], usize::from(between));
+        assert_eq!(report["final_page"]["url"], "https://example.test/new");
+        assert!(
+            report["final_page"]["generation"]
+                .as_str()
+                .is_some_and(|value| value.contains("new"))
+        );
+        assert_eq!(
+            bridge
+                .calls
+                .lock()
+                .iter()
+                .filter(|op| matches!(op, Primitive::Evaluate { .. }))
+                .count(),
+            1
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn explicit_navigation_rebaselines_the_next_step() -> TestResult {
+    let old = document("old", "https://example.test/");
+    let new = document("new", "https://example.test/new");
+    let bridge = MemoryBridge::new(vec![
+        Ok(old.clone()),
+        Ok(old),
+        Ok(json!({"navigated":true,"target":"https://example.test/new"})),
+        Ok(new.clone()),
+        Ok(new.clone()),
+        Ok(new.clone()),
+        Ok(new.clone()),
+        Ok(new.clone()),
+        Ok(page_result()),
+        Ok(new.clone()),
+        Ok(new),
+    ]);
+    let result = execute(
+        bridge,
+        "run_steps",
+        batch(json!([
+            {"action":"navigate","arguments":{"url":"https://example.test/new"}},
+            {"action":"snapshot"}
+        ])),
+    )
+    .await?
+    .mcp()?;
+    assert_eq!(result["structuredContent"]["completed_steps"], 2);
+    assert!(result["structuredContent"]["error"].is_null());
+    Ok(())
+}
+
+struct BatchPendingBridge {
+    replies: Mutex<VecDeque<Result<Value, BrowserError>>>,
+    pending: Arc<PendingBridge>,
+}
+impl Bridge for BatchPendingBridge {
+    fn call(&self, operation: Primitive) -> BoxFuture<'_, Result<Value, BrowserError>> {
+        Box::pin(async move {
+            let reply = self.replies.lock().pop_front();
+            if let Some(reply) = reply {
+                reply
+            } else {
+                self.pending.call(operation).await
+            }
+        })
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn batch_cancellation_and_total_expiry_drop_work_with_a_partial_report() -> TestResult {
+    for cancel in [true, false] {
+        let pending = pending_bridge();
+        let mut replies = successful_step();
+        replies.extend([
+            Ok(document("old", "https://example.test/")),
+            Ok(document("old", "https://example.test/")),
+        ]);
+        let bridge = Arc::new(BatchPendingBridge {
+            replies: Mutex::new(replies.into()),
+            pending: pending.clone(),
+        });
+        let control = OperationControl::new(Duration::from_secs(60));
+        let action = BrowserAction::parse(
+            "run_steps",
+            &json!({"timeout_ms":500,"steps":[
+                {"action":"snapshot"}, {"action":"click","arguments":{"target":{"name":"Save"}}},
+                {"action":"snapshot"}
+            ]}),
+        )?;
+        let session = SessionId("a".into());
+        let work = run_with_control(
+            bridge,
+            &session,
+            "batch-cancel",
+            action,
+            context(),
+            &control,
+        );
+        let (result, ()) = tokio::join!(work, async {
+            pending.started.notified().await;
+            if cancel {
+                control.cancel();
+            }
+        });
+        let result = result?.mcp()?;
+        assert_eq!(result["structuredContent"]["completed_steps"], 1);
+        assert_eq!(
+            result["structuredContent"]["steps"]
+                .as_array()
+                .map(Vec::len),
+            Some(2)
+        );
+        assert_eq!(
+            result["structuredContent"]["error"]["code"],
+            if cancel { "cancelled" } else { "timeout" }
+        );
+        assert_eq!(pending.dropped.load(Ordering::Relaxed), 1);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn batch_report_limit_preserves_a_failure_without_running_the_next_step() -> TestResult {
+    let doc = document("old", "https://example.test/");
+    let bridge = MemoryBridge::new(vec![
+        Ok(doc.clone()),
+        Ok(doc),
+        Ok(json!({"ok":true,"value":{
+            "url":"https://example.test/","title":"x".repeat(MAX_STEPS_RESULTS),"generation":"old:0","elements":[]
+        }})),
+    ]);
+    let result = execute(
+        bridge.clone(),
+        "run_steps",
+        batch(json!([
+            {"action":"snapshot"}, {"action":"click","arguments":{"ref":"never"}}
+        ])),
+    )
+    .await?
+    .mcp()?;
+    assert_eq!(
+        result["structuredContent"]["error"]["code"],
+        "result_too_large"
+    );
+    assert_eq!(
+        result["structuredContent"]["steps"]
+            .as_array()
+            .map(Vec::len),
+        Some(1)
+    );
+    assert!(result.to_string().len() < MAX_TEXT_RESULT);
+    assert_eq!(bridge.calls.lock().len(), 3);
+    Ok(())
+}

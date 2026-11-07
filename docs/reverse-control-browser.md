@@ -61,6 +61,96 @@ Agent → remote loopback port → existing SSH connection
       → phone loopback HTTP MCP listener → browser controller → WebView
 ```
 
+## Checked browser sequences
+
+`browser.run_steps` executes 1–20 existing DOM/navigation actions in one MCP call
+on Android and iOS. Rust runs the sequence through the same native WebView/WKWebView
+adapters as standalone actions. The selected tab is captured at call arrival;
+only the outer call accepts `tab_id`. The session's serialization lease stays held
+through every action and expectation, so another agent call cannot interleave.
+Selecting another tab in the UI does not redirect the batch.
+
+For example, click a button, wait for its dialog, enter text, and verify the input:
+
+```json
+{
+  "tab_id": "<owned tab from browser.list_tabs>",
+  "timeout_ms": 15000,
+  "steps": [
+    {
+      "action": "click",
+      "arguments": { "target": { "role": "button", "name": "Compose" } },
+      "expect": [{ "condition": "target", "target": { "role": "dialog" } }]
+    },
+    {
+      "action": "type",
+      "arguments": { "target": { "label": "Message" }, "text": "Hello" },
+      "expect": [
+        { "condition": "value", "target": { "label": "Message" }, "value": "Hello" },
+        { "condition": "text", "text": "Draft saved" }
+      ]
+    }
+  ]
+}
+```
+
+Each `arguments` object uses the standalone tool's typed arguments. All steps and
+expectations are validated before any action runs. Supported actions are
+`navigate`, `snapshot`, `find`, `get`, `extract`, `click`, `type`, `keys`, `select`,
+`check`, `uncheck`, `scroll`, `wait`, `back`, `forward`, and `reload`. Use standalone
+tools for arbitrary JavaScript, screenshots, downloads and tab lifecycle actions;
+nested sequences are rejected. Targets are resolved against the current DOM at
+each step. Use unique semantic locators for later steps, since DOM changes can
+invalidate refs observed earlier. Ambiguous writes never choose a target.
+
+`expect` is an ordered list of up to four `browser.wait` arguments, without
+`tab_id`. Conditions include `target` (exactly one rendered match), `target_absent`
+(zero matches), `text`, `text_absent`, `value` (exact non-sensitive input value),
+`selector`, `url` (substring), `url_change`, and `stable`. A `url_change`
+expectation defaults to the URL **before that step's action**. Each wait allows
+1–10,000 ms, default 5,000 ms; `stable_ms` allows 1–2,000 ms, default 300 ms.
+An ambiguous target expectation fails immediately. A missing observed ref fails
+with `stale_ref`, including in an absence check; use a semantic locator to wait
+for disappearance.
+Text absence checks fail with `result_too_large` if the rendered text scan reaches
+its 262,144-character bound; truncated text cannot prove absence.
+
+Unexpected document or URL changes abort the batch, including navigation caused
+by a click and navigation during a wait. An explicit `navigate`, `back`, `forward`
+or `reload` action may establish a new document; subsequent expectations and
+steps are pinned to that page. Split a navigation-triggering click and subsequent
+page work into separate calls after observing the new page. A same-document route
+change also stops the batch. Native view, driver, ownership and user-interaction
+fences continue to apply.
+
+The total execution deadline is 1–60,000 ms, default 60,000 ms, including actions
+and expectations. Admission/setup has a separate bounded transport allowance.
+Requests retain the 64 KiB browser input limit. The structured report contains
+`steps` with zero-based `index`, `action`, optional `result`, successful
+`expectations`, `failed_expectation` when applicable, `duration_ms` and `error`;
+it also contains `completed_steps`, `total_steps`, total `duration_ms`, `tab_id`
+and the last observed `final_page` public URL and native document `generation`.
+This generation identifies the native document; extraction results keep their
+separate DOM/content generation. Unexecuted steps are omitted.
+
+The first failed action, expectation, page fence or deadline stops execution.
+The MCP result sets `isError: true` and retains the partial structured report.
+Accumulated observations have a 64 KiB budget within the usual 128 KiB result
+limit. If an action would exceed that budget, its result is omitted and the batch
+stops with `result_too_large`; that action may already have completed.
+
+MCP cancellation, launch closure, tab closure, transport loss and adapter shutdown
+revoke outstanding native effect permits and stop unexecuted steps. When an
+active native request is externally aborted, its cancellation/error envelope
+includes the latest partial report in `error.details.report` when available.
+Cancellation while queued has no executed steps. An in-flight action may already
+have changed the page even if its result is missing: no action is automatically
+replayed and completed effects are not rolled back. Observe the current page
+before deciding how to continue after any failure or cancellation. These tools
+control only Whip-owned tabs and require no new platform permissions.
+
+## Browser downloads
+
 `browser.download` fetches an absolute HTTP(S) URL using the selected tab's native
 login session and uploads the file to that launch's SSH host over SFTP. For example:
 

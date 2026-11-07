@@ -920,6 +920,34 @@ fn tool_surface_includes_browser_device_host_and_herdr_namespaces() {
         tools::ACTIONS.len() + device::NAMES.len() + application::tools().len()
     );
     assert!(tools.iter().any(|tool| tool["name"] == "browser.eval"));
+    let batch = tools
+        .iter()
+        .find(|tool| tool["name"] == "browser.run_steps")
+        .unwrap_or_else(|| panic!("batch tool missing"));
+    let properties = &batch["inputSchema"]["properties"];
+    assert_eq!(properties["steps"]["minItems"], 1);
+    assert_eq!(properties["steps"]["maxItems"], browser::model::MAX_STEPS);
+    let variants = properties["steps"]["items"]["oneOf"]
+        .as_array()
+        .unwrap_or_else(|| panic!("step schemas missing"));
+    assert_eq!(variants.len(), browser::model::STEP_ACTIONS.len());
+    for (variant, action) in variants.iter().zip(browser::model::STEP_ACTIONS) {
+        assert_eq!(variant["properties"]["action"]["const"], *action);
+        assert!(
+            variant["properties"]["arguments"]["properties"]
+                .get("tab_id")
+                .is_none()
+        );
+        assert_eq!(
+            variant["properties"]["expect"]["maxItems"],
+            browser::model::MAX_EXPECTATIONS
+        );
+        assert!(
+            variant["properties"]["expect"]["items"]["properties"]
+                .get("tab_id")
+                .is_none()
+        );
+    }
     for tool in tools {
         let name = tool["name"].as_str().unwrap_or_default();
         assert!(

@@ -65,7 +65,7 @@ pub trait Bridge: Send + Sync {
     fn call(&self, operation: Primitive) -> BoxFuture<'_, Result<Value, BrowserError>>;
 }
 
-struct BoundedBridge(Arc<dyn Bridge>);
+pub(crate) struct BoundedBridge(pub(crate) Arc<dyn Bridge>);
 impl Bridge for BoundedBridge {
     fn call(&self, operation: Primitive) -> BoxFuture<'_, Result<Value, BrowserError>> {
         Box::pin(async move {
@@ -157,13 +157,14 @@ pub fn validate_context(
     Ok(())
 }
 
-struct Runner<'a> {
+pub(crate) struct Runner<'a> {
     bridge: &'a dyn Bridge,
     tab: TabId,
     key: String,
+    strict: bool,
 }
 impl Runner<'_> {
-    async fn document(&self) -> Result<Document, BrowserError> {
+    pub(crate) async fn document(&self) -> Result<Document, BrowserError> {
         let document: Document = decode(
             self.bridge
                 .call(Primitive::DocumentState {
@@ -190,7 +191,7 @@ impl Runner<'_> {
         }
         Ok(document)
     }
-    async fn ready_document(&self) -> Result<Document, BrowserError> {
+    pub(crate) async fn ready_document(&self) -> Result<Document, BrowserError> {
         loop {
             let document = self.document().await?;
             if document.ready {
@@ -317,7 +318,7 @@ impl Runner<'_> {
                             });
                         }
                     }
-                    Err(error) if error.code == ErrorCode::StalePage => {}
+                    Err(error) if error.code == ErrorCode::StalePage && !self.strict => {}
                     Err(error) => return Err(error),
                 }
                 tokio::time::sleep(Duration::from_millis(100)).await;
@@ -477,7 +478,12 @@ pub async fn run(
     run_with_control(bridge, session, request, action, context, &control).await
 }
 
-fn action_timeout(action: &BrowserAction) -> Duration {
+pub fn action_timeout(action: &BrowserAction) -> Duration {
+    if let BrowserAction::RunSteps(args) = action {
+        return Duration::from_millis(u64::from(
+            args.timeout_ms.unwrap_or(super::model::MAX_STEPS_MS),
+        ));
+    }
     Duration::from_secs(if matches!(action, BrowserAction::Download(_)) {
         120
     } else {
@@ -500,6 +506,18 @@ pub async fn run_with_control(
         return Err(BrowserError::invalid("Invalid browser request identity"));
     }
     let action = BrowserAction::parse(action.name(), &action.arguments()?)?;
+    if let BrowserAction::RunSteps(args) = action {
+        return Box::pin(super::steps::run(
+            bridge,
+            session,
+            request,
+            args,
+            context,
+            control,
+            &super::steps::StepsProgress::default(),
+        ))
+        .await;
+    }
     let timeout = action_timeout(&action);
     control
         .run(deadline(timeout, async {
@@ -509,6 +527,7 @@ pub async fn run_with_control(
                 request,
                 action,
                 context,
+                false,
             ))
             .await?;
             result.validate()?;
@@ -517,18 +536,20 @@ pub async fn run_with_control(
         .await
 }
 
-async fn run_inner(
+pub(crate) async fn run_inner(
     bridge: Arc<dyn Bridge>,
     session: &SessionId,
     request: &str,
     action: BrowserAction,
     context: Context,
+    strict: bool,
 ) -> Result<BrowserResult, BrowserError> {
     validate_context(session, &action, &context)?;
     let runner = Runner {
         bridge: bridge.as_ref(),
         tab: context.tab_id.clone(),
         key: format!("__whip_browser_{}", session.0),
+        strict,
     };
     let tab_id = context.tab_id;
     let args = action.arguments()?;
@@ -553,6 +574,7 @@ async fn run_inner(
                     bridge: bridge.as_ref(),
                     tab: tab.clone(),
                     key: runner.key,
+                    strict,
                 };
                 if let Err(error) = new_runner
                     .navigation(Primitive::Navigate {
@@ -619,5 +641,14 @@ async fn run_inner(
                 }),
             }
         }
+    }
+}
+
+pub(crate) fn observer(bridge: &dyn Bridge, tab: TabId) -> Runner<'_> {
+    Runner {
+        bridge,
+        tab,
+        key: String::new(),
+        strict: true,
     }
 }

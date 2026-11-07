@@ -66,7 +66,10 @@ impl BrowserOperationCoordinator {
             .collect::<Vec<_>>();
         for request in active {
             if let Some(owner) = request.owner.upgrade() {
-                owner.reject_host_action(&request.parent, error(BrowserOperationError::Cancelled));
+                owner.reject_host_action(
+                    &request.parent,
+                    request.failure(error(BrowserOperationError::Cancelled)),
+                );
             }
             request.stop();
         }
@@ -93,9 +96,39 @@ struct Request {
     created: Mutex<Vec<String>>,
     committed: AtomicBool,
     last_read: Mutex<Option<Fence>>,
+    progress: Option<Arc<agent_browser_control::steps::StepsProgress>>,
+}
+
+pub(crate) fn with_progress(
+    owner: &ReverseControl,
+    parent: &str,
+    error: BrowserError,
+) -> BrowserError {
+    let progress = registry().lock().upgrade().and_then(|coordinator| {
+        coordinator
+            .active
+            .lock()
+            .values()
+            .filter_map(Weak::upgrade)
+            .find(|request| request.parent == parent && std::ptr::eq(request.owner.as_ptr(), owner))
+            .and_then(|request| request.progress.clone())
+    });
+    if let Some(progress) = progress {
+        progress.with_error(error)
+    } else {
+        error
+    }
 }
 
 impl Request {
+    fn failure(&self, error: BrowserError) -> BrowserError {
+        if let Some(progress) = &self.progress {
+            progress.with_error(error)
+        } else {
+            error
+        }
+    }
+
     fn check(&self) -> Result<(), BrowserOperationError> {
         if self.stopped.load(Ordering::Acquire) || self.coordinator.closed.load(Ordering::Acquire) {
             return Err(BrowserOperationError::Cancelled);
@@ -190,9 +223,10 @@ impl Request {
             let pending = owner.pending.lock().remove(&self.parent);
             if let Some(pending) = pending {
                 let result = if !valid {
-                    error(BrowserOperationError::Cancelled).mcp()
+                    self.failure(error(BrowserOperationError::Cancelled)).mcp()
                 } else if self.route.lock().is_some_and(|epoch| epoch != route_epoch) {
-                    error(BrowserOperationError::Unavailable).mcp()
+                    self.failure(error(BrowserOperationError::Unavailable))
+                        .mcp()
                 } else if result["isError"] != true {
                     last_read
                         .as_ref()
@@ -203,7 +237,7 @@ impl Request {
                                     fence.check(tab).err()
                                 })
                         })
-                        .map_or(result, |failure| error(failure).mcp())
+                        .map_or(result, |failure| self.failure(error(failure)).mcp())
                 } else {
                     result
                 };
@@ -419,6 +453,8 @@ impl Admission {
             created: Mutex::default(),
             committed: AtomicBool::new(false),
             last_read: Mutex::new(None),
+            progress: matches!(&action, BrowserAction::RunSteps(_))
+                .then(|| Arc::new(agent_browser_control::steps::StepsProgress::default())),
         });
         let _guard = RequestGuard(request.clone());
         coordinator
@@ -463,14 +499,25 @@ impl Admission {
         let bridge: Arc<dyn Bridge> = Arc::new(OperationBridge {
             request: request.clone(),
         });
-        let result = engine::run(
-            bridge,
-            &SessionId(request.identity.session_id.clone()),
-            &self.parent,
-            action,
-            context,
-        )
-        .await;
+        let session = SessionId(request.identity.session_id.clone());
+        let result =
+            if let (BrowserAction::RunSteps(args), Some(progress)) = (&action, &request.progress) {
+                let control = agent_browser_control::control::OperationControl::new(
+                    engine::action_timeout(&action),
+                );
+                agent_browser_control::steps::run(
+                    bridge,
+                    &session,
+                    &self.parent,
+                    args.clone(),
+                    context,
+                    &control,
+                    progress,
+                )
+                .await
+            } else {
+                engine::run(bridge, &session, &self.parent, action, context).await
+            };
         let result = result
             .and_then(|result| result.mcp())
             .unwrap_or_else(|error| error.mcp());
