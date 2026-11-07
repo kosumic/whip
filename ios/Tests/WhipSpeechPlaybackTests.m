@@ -25,7 +25,7 @@ bool whip_speech_complete(uint64_t lease) {
 }
 bool whip_speech_stop(uint64_t lease) { if (!whip_speech_is_current(lease)) return false; activeLease = 0; return true; }
 uint64_t whip_speech_timeout_ms(uint8_t kind, uint64_t units) { return 30000; }
-uint64_t whip_speech_caption_start(const char *text) { return 1; }
+uint64_t whip_speech_caption_start(const char *text, uintptr_t prefix_utf16) { return 1; }
 uintptr_t whip_speech_caption_progress(uint64_t id, uintptr_t played, uintptr_t samples, bool complete) { return 0; }
 uint64_t whip_speech_stop_owner(uint8_t kind, const char *owner) {
   if (activeKind != kind || ![activeOwner isEqualToString:@(owner)]) return 0;
@@ -88,7 +88,7 @@ int32_t WhipReadOpenAiVoiceCredential(void *context, uint8_t *destination, size_
 void whip_phonon_set_supported(bool supported) {}
 void whip_speech_pcm_playback_failed(void) {}
 int32_t whip_phonon_speak(uint64_t lease, const char *text, WhipPcmCallback callback, void *context) { return 0; }
-int32_t whip_speech_pcm_speak(uint64_t lease, const char *text, WhipPcmCallback callback, void *context,
+int32_t whip_speech_pcm_speak(uint64_t lease, const char *text, uint64_t caption_id, WhipPcmCallback callback, void *context,
                             WhipReadVoiceCredential reader, void *credential_context) { return 0; }
 
 @implementation WhipVoiceCall
@@ -106,6 +106,9 @@ int32_t whip_speech_pcm_speak(uint64_t lease, const char *text, WhipPcmCallback 
 
 @interface WhipSpeechPlayback (TestEngine) <AVSpeechSynthesizerDelegate>
 @property(nonatomic, strong) AVSpeechUtterance *utterance;
+@property(nonatomic, strong) NSMutableDictionary *caption;
+@property(nonatomic) NSInteger captionPrefix;
+@property(nonatomic) NSInteger captionPosition;
 - (BOOL)play:(NSString *)text language:(NSString *)language rate:(double)rate started:(void (^)(void))started preview:(BOOL)preview;
 - (void)watchShake;
 - (void)drainAutomatic;
@@ -194,6 +197,48 @@ int32_t whip_speech_pcm_speak(uint64_t lease, const char *text, WhipPcmCallback 
   XCTAssertEqualObjects(self.player.spoken, (@[@"current update", @"fresh update"]));
   XCTAssertEqual(automaticActive, 3u);
   XCTAssertEqual(automaticCompleted.count, 0u);
+}
+
+- (void)testSystemWordRangesSkipTabPrefixAndIgnoreInterruptedUtterance {
+  [self.player startChat:@"reader" label:@"Chat" resolve:^(id value) {} reject:self.unexpectedError];
+  NSString *prefix = @"Long, paused 👋 debug tab: ";
+  NSString *response = @"One two three.";
+  [self.player speakChat:@"reader" text:[prefix stringByAppendingString:response]
+                resolve:^(id value) {} reject:self.unexpectedError];
+  AVSpeechUtterance *utterance = self.player.utterance;
+  self.player.caption = [@{@"id": @"range-test", @"messageId": @"response", @"partId": @"part",
+    @"text": response, @"startUtf16": @42} mutableCopy];
+  self.player.captionPrefix = prefix.length;
+  self.player.captionPosition = -1;
+  NSMutableArray *events = [NSMutableArray new];
+  id observer = [NSNotificationCenter.defaultCenter addObserverForName:WhipSpeechCaption object:self.player queue:nil
+    usingBlock:^(NSNotification *event) { [events addObject:[event.userInfo copy]]; }];
+  AVSpeechSynthesizer *engine = [AVSpeechSynthesizer new];
+  [self.player speechSynthesizer:engine willSpeakRangeOfSpeechString:NSMakeRange(0, 4) utterance:utterance];
+  [self.player speechSynthesizer:engine willSpeakRangeOfSpeechString:NSMakeRange(prefix.length - 5, 4) utterance:utterance];
+  XCTestExpectation *prefixSkipped = [self expectationWithDescription:@"prefix ranges emit no response caption"];
+  dispatch_async(dispatch_get_main_queue(), ^{ XCTAssertEqual(events.count, 0u); [prefixSkipped fulfill]; });
+  [self waitForExpectations:@[prefixSkipped] timeout:2];
+
+  [self.player speechSynthesizer:engine willSpeakRangeOfSpeechString:NSMakeRange(prefix.length, 3) utterance:utterance];
+  [self.player speechSynthesizer:engine willSpeakRangeOfSpeechString:NSMakeRange(prefix.length + 4, 3) utterance:utterance];
+  XCTestExpectation *words = [self expectationWithDescription:@"native word ranges preserve source offsets"];
+  dispatch_async(dispatch_get_main_queue(), ^{
+    XCTAssertEqual(events.count, 2u);
+    XCTAssertEqualObjects(events[0][@"spokenUtf16"], @42);
+    XCTAssertEqualObjects(events[1][@"spokenUtf16"], @46);
+    XCTAssertEqualObjects(events[1][@"messageId"], @"response");
+    [words fulfill];
+  });
+  [self waitForExpectations:@[words] timeout:2];
+  [self.player stop];
+  XCTAssertEqualObjects(events.lastObject[@"ended"], @YES);
+  NSUInteger endedCount = events.count;
+  [self.player speechSynthesizer:engine willSpeakRangeOfSpeechString:NSMakeRange(prefix.length + 8, 5) utterance:utterance];
+  XCTestExpectation *stopped = [self expectationWithDescription:@"late word callback cannot restore a stopped caption"];
+  dispatch_async(dispatch_get_main_queue(), ^{ XCTAssertEqual(events.count, endedCount); [stopped fulfill]; });
+  [self waitForExpectations:@[stopped] timeout:2];
+  [NSNotificationCenter.defaultCenter removeObserver:observer];
 }
 
 - (void)testChatChunkFinishesBeforeStatusAndContinuesAfterward {

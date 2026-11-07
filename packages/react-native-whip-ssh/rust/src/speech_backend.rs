@@ -483,6 +483,62 @@ pub unsafe extern "C" fn whip_speech_pcm_enabled(
 pub unsafe extern "C" fn whip_speech_pcm_speak(
     lease: u64,
     text: *const c_char,
+    caption_id: u64,
+    callback: PcmCallback,
+    context: *mut c_void,
+    reader: Option<native_credentials::ReadCredential>,
+    credential_context: *mut c_void,
+) -> i32 {
+    if text.is_null() {
+        return -1;
+    }
+    // SAFETY: The caller guarantees a live NUL-terminated text string.
+    let Ok(text) = (unsafe { CStr::from_ptr(text) }).to_str() else {
+        return -1;
+    };
+    if text.encode_utf16().count() > MAX_TEXT_UNITS {
+        return -1;
+    }
+    crate::speech_captions::synthesize(
+        caption_id,
+        text,
+        |segment, sink| {
+            let Ok(segment) = CString::new(segment) else {
+                return -1;
+            };
+            let mut sink = PcmSink(sink);
+            // SAFETY: All borrowed strings and contexts live for the synchronous
+            // call. The adapter consumes each PCM slice before returning.
+            unsafe {
+                pcm_speak_segment(
+                    lease,
+                    segment.as_ptr(),
+                    consume_pcm,
+                    (&raw mut sink).cast(),
+                    reader,
+                    credential_context,
+                )
+            }
+        },
+        |samples| {
+            // SAFETY: The caller consumes this borrowed PCM synchronously.
+            unsafe { callback(context, samples.as_ptr(), samples.len()) }
+        },
+    )
+}
+
+struct PcmSink<'a>(&'a mut dyn FnMut(&[f32]) -> bool);
+
+unsafe extern "C" fn consume_pcm(context: *mut c_void, samples: *const f32, count: usize) -> bool {
+    // SAFETY: pcm_speak_segment passes the live PcmSink and a borrowed PCM slice.
+    let sink = unsafe { &mut *context.cast::<PcmSink<'_>>() };
+    // SAFETY: The backend supplies count live samples for this synchronous call.
+    (sink.0)(unsafe { std::slice::from_raw_parts(samples, count) })
+}
+
+unsafe fn pcm_speak_segment(
+    lease: u64,
+    text: *const c_char,
     callback: PcmCallback,
     context: *mut c_void,
     reader: Option<native_credentials::ReadCredential>,

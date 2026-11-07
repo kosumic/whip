@@ -19,7 +19,7 @@ object SpeechPolicy {
   @JvmStatic external fun complete(lease: Long): Boolean
   @JvmStatic external fun stop(lease: Long): Boolean
   @JvmStatic external fun timeoutMs(kind: Int, textUnits: Long): Long
-  @JvmStatic external fun captionStart(text: String): Long
+  @JvmStatic external fun captionStart(text: String, prefixUtf16: Long): Long
   @JvmStatic external fun captionProgress(id: Long, played: Long, samples: Long, complete: Boolean): Long
   @JvmStatic external fun stopOwner(kind: Int, owner: String): Long
   @JvmStatic external fun cancelRequest(kind: Int, request: String): Long
@@ -30,5 +30,5 @@ object SpeechPolicy {
   @JvmStatic external fun pcmPlaybackFailed()
   // Invoked on an audio worker; the callback writes directly to AudioTrack.
   interface PcmSink { fun write(samples: FloatArray): Boolean }
-  @JvmStatic external fun pcmSpeak(lease: Long, text: String, sink: PcmSink, credentials: Any?): Int
+  @JvmStatic external fun pcmSpeak(lease: Long, text: String, captionId: Long, sink: PcmSink, credentials: Any?): Int
 }

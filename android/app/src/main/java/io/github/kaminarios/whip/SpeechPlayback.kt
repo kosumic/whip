@@ -515,7 +515,7 @@ object SpeechPlayback : SensorEventListener {
     }
     captionPrefix = caption?.optString("text")?.let { text.length - it.length } ?: 0
     captionPosition = -1
-    captionClock = if (caption != null) SpeechPolicy.captionStart(text) else 0L
+    captionClock = if (caption != null) SpeechPolicy.captionStart(text, captionPrefix.toLong()) else 0L
     val listener = AudioManager.OnAudioFocusChangeListener { change ->
       // Immediate agent notifications may duck audio; their sound must not
       // turn deferred status delivery into an interruption of the current chunk.
@@ -548,7 +548,7 @@ object SpeechPlayback : SensorEventListener {
           started()
         }
       }
-      PcmSpeechPlayback.start(current.id, text, rate, attributes, { reportStarted(current); playbackStarted() }, { reportLevel(current, it) }, { played, samples, complete ->
+      PcmSpeechPlayback.start(current.id, text, rate, attributes, captionClock, { reportStarted(current); playbackStarted() }, { reportLevel(current, it) }, { played, samples, complete ->
         if (session === current && utteranceId == id && captionClock != 0L && played > 0L)
           reportCaption(SpeechPolicy.captionProgress(captionClock, played, samples, complete).toInt())
       }) { completed, spoke, error ->

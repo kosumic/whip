@@ -101,14 +101,14 @@ object PcmSpeechPlayback {
 
   fun start(lease: Long, text: String, rate: Double, attributes: AudioAttributes,
             started: () -> Unit, level: (Float) -> Unit, ended: (Boolean, Boolean, String?) -> Unit) {
-    start(lease, text, rate, attributes, started, level, { _, _, _ -> }, ended)
+    start(lease, text, rate, attributes, 0L, started, level, { _, _, _ -> }, ended)
   }
 
-  fun start(lease: Long, text: String, rate: Double, attributes: AudioAttributes,
+  fun start(lease: Long, text: String, rate: Double, attributes: AudioAttributes, captionId: Long,
             started: () -> Unit, level: (Float) -> Unit, progress: (Long, Long, Boolean) -> Unit,
             ended: (Boolean, Boolean, String?) -> Unit) {
     stop()
-    begin(lease, rate, attributes, retained = false).enqueue(text, started, level, ended, progress)
+    begin(lease, rate, attributes, retained = false).enqueue(text, started, level, ended, progress, captionId)
   }
 
   /** Voice chat may prepare one following utterance while this track is playing. */
@@ -165,7 +165,7 @@ object PcmSpeechPlayback {
     @Volatile private var starvationCount = 0
 
     fun enqueue(text: String, started: () -> Unit, level: (Float) -> Unit, ended: (Boolean, Boolean, String?) -> Unit,
-                progress: (Long, Long, Boolean) -> Unit = { _, _, _ -> }) {
+                progress: (Long, Long, Boolean) -> Unit = { _, _, _ -> }, captionId: Long = 0L) {
       check(utterances.size < SpeechPlayback.MAX_CHAT_UTTERANCES) { "Speech lookahead is full" }
       val utterance = Utterance(started, level, ended, progress)
       utterances.add(utterance)
@@ -173,7 +173,7 @@ object PcmSpeechPlayback {
         if (!offer(Packet.Begin(utterance))) return@execute
         var error: String? = null
         try {
-          val result = SpeechPolicy.pcmSpeak(lease, text, object : SpeechPolicy.PcmSink {
+          val result = SpeechPolicy.pcmSpeak(lease, text, captionId, object : SpeechPolicy.PcmSink {
             override fun write(samples: FloatArray): Boolean {
               // Cap individual packets as well as queue capacity. Phonon owns
               // its generation workers; this handoff only decouples their sink.

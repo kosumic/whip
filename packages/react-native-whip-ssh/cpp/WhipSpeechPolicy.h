@@ -26,7 +26,9 @@ void whip_alert_speech_free(char *value);
 void whip_automatic_speech_register(void (*wake)(void));
 char *whip_automatic_speech_command(const char *command);
 uint64_t whip_speech_timeout_ms(uint8_t kind, uint64_t text_units);
-uint64_t whip_speech_caption_start(const char *text);
+// PCM progress includes the UTF-16 prefix offset only after its audio has played.
+// System TTS continues to use the platform's original utterance range callbacks.
+uint64_t whip_speech_caption_start(const char *text, uintptr_t prefix_utf16);
 uintptr_t whip_speech_caption_progress(uint64_t id, uintptr_t played, uintptr_t samples, bool complete);
 uint64_t whip_speech_stop_owner(uint8_t kind, const char *owner);
 uint64_t whip_speech_cancel_request(uint8_t kind, const char *request);
@@ -38,9 +40,10 @@ bool whip_speech_network_selected(void);
 void whip_phonon_set_supported(bool supported);
 void whip_speech_pcm_playback_failed(void);
 // Synchronous worker call. PCM is borrowed only for the callback; false cancels.
+// A nonzero caption_id aligns a prefixed utterance to its generated PCM boundary.
 typedef bool (*WhipPcmCallback)(void *context, const float *samples, uintptr_t count);
 int32_t whip_phonon_speak(uint64_t lease, const char *text, WhipPcmCallback callback, void *context);
-int32_t whip_speech_pcm_speak(uint64_t lease, const char *text, WhipPcmCallback callback, void *context,
+int32_t whip_speech_pcm_speak(uint64_t lease, const char *text, uint64_t caption_id, WhipPcmCallback callback, void *context,
                               WhipReadVoiceCredential reader, void *credential_context);
 #ifdef __cplusplus
 }
