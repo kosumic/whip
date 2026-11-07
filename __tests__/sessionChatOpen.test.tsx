@@ -2239,6 +2239,26 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
   });
 });
 
+test('session renders before attachment and after its host runtime disconnects', async () => {
+  const host = setup('codex');
+  let runtime: typeof host.native | null = null;
+  Object.defineProperties(host.client, {
+    activeNative: { get: () => runtime },
+    native: { get: () => {
+      if (!runtime) throw new Error('Host runtime is not active');
+      return runtime;
+    } },
+  });
+  await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+  expect(ui('TerminalScreen')).toBeDefined();
+
+  runtime = host.native;
+  await act(async () => { renderer.update(<SessionScreen {...host.props} />); });
+  runtime = null;
+  await act(async () => { renderer.update(<SessionScreen {...host.props} />); });
+  expect(ui('TerminalScreen')).toBeDefined();
+});
+
 test('the neighboring browser control keeps its toolbar slot while disconnected', async () => {
   const host = setup('codex');
   const identity = { runtimeId: host.native.runtimeId, sessionId: 'browser-reconnect', paneId: host.pane.pane_id, terminalId: host.pane.terminal_id };

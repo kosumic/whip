@@ -58,7 +58,7 @@ export interface TerminalRenderTarget {
 
 export type TerminalRuntimeClient = Pick<
   HerdrClient,
-  'native' | 'snapshot' | 'terminal'
+  'native' | 'activeNative' | 'snapshot' | 'terminal'
 >;
 
 export function terminalRendererKey(

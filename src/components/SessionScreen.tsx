@@ -343,8 +343,9 @@ export function SessionScreen({
   const [{ chat: savedChat, open: savedChatOpen, loading: savedChatLoading, error: savedChatError }, dispatchSavedChat] =
     useReducer(savedChatReducer, CLOSED_SAVED_CHAT);
   const savedChatGeneration = useRef(0);
-  const browserRuntimeIdRef = useRef(client?.native.runtimeId);
-  if (client) browserRuntimeIdRef.current = client.native.runtimeId;
+  const clientRuntime = client?.activeNative;
+  const browserRuntimeIdRef = useRef(clientRuntime?.runtimeId);
+  if (clientRuntime) browserRuntimeIdRef.current = clientRuntime.runtimeId;
   const [terminalControlBarHeight, setTerminalControlBarHeight] =
     useState(() => terminalControlBarInset(safeAreaInsets.bottom));
   const keyboardHeight = useAnimatedKeyboardHeight();
@@ -637,7 +638,7 @@ export function SessionScreen({
   const cancelChatOpen = chatOpen.cancel;
   const pendingChatOpenTerminalId = chatOpen.pendingTerminalId;
   const visibleAppAlert = appAlert || (chatOpen.notice?.type === 'error' ? chatOpen.notice : null);
-  const viewedNative = activeTarget?.client.native;
+  const viewedNative = activeTarget?.client.activeNative ?? undefined;
   const viewedTerminal = attentionVisible && visible && appActive && !browserUrl && !savedChatOpen && !attachmentsOpen &&
     !linksOpen && editorMode === null && !chatOpen.notice && !visibleAppAlert &&
     activeTarget?.session.kind === 'herdr' && activeTarget.session.status === 'connected' &&
@@ -989,7 +990,8 @@ export function SessionScreen({
     const hostState = hostStatesForPass();
     for (const key of chatRestoreIntentsRef.current.keys()) {
       const target = targets.get(key);
-      if (!target || confirmedChatExit(hostState(target.client.native), target.session.terminalId) ||
+      const native = target?.client.activeNative;
+      if (!target || (native && confirmedChatExit(hostState(native), target.session.terminalId)) ||
         next.get(key)?.presentation.phase === AgentChatPresentationPhase.Failed ||
         chatPresentationVisible(next.get(key)?.presentation)) {
         updateChatRestoreIntent(key);
@@ -1039,10 +1041,12 @@ export function SessionScreen({
       const target = targets.get(key);
       if (!target) continue; // The residency callback owns cleanup of removed targets.
       const { client: targetClient, hostSessionId: targetHost, session } = target;
+      const native = targetClient.activeNative;
+      if (!native) continue;
       let projection: AgentChatProjection;
       try {
         projection = agentTranscriptService.reconcile(
-          targetHost, session.terminalId, targetClient.native,
+          targetHost, session.terminalId, native,
         );
       } catch (error) {
         // Runtime replacement can race a snapshot/foreground notification.
@@ -1051,7 +1055,7 @@ export function SessionScreen({
         continue;
       }
       projections.set(key, projection);
-      if (confirmedChatExit(hostState(targetClient.native), session.terminalId)) {
+      if (confirmedChatExit(hostState(native), session.terminalId)) {
         exitedTerminalKeys.add(key);
       }
       if (
@@ -1068,12 +1072,13 @@ export function SessionScreen({
       !chatRestoreIntentsRef.current.has(activeTarget.key)
       ? activeTarget : null;
     const existing = preloadTarget && chatViewsRef.current.get(preloadTarget.key);
-    const preload = preloadTarget &&
+    const preloadNative = preloadTarget?.client.activeNative;
+    const preload = preloadTarget && preloadNative &&
       projections.get(preloadTarget.key)?.type !== 'bound' &&
       (!existing || existing.presentation.phase === AgentChatPresentationPhase.Dormant ||
         existing.presentation.phase === AgentChatPresentationPhase.Warm)
       ? agentTranscriptService.preload(
-          preloadTarget.hostSessionId, preloadTarget.session.terminalId, preloadTarget.client.native,
+          preloadTarget.hostSessionId, preloadTarget.session.terminalId, preloadNative,
         )
       : null;
     const selectedProjection = preload?.type === 'bound'
@@ -1923,16 +1928,16 @@ export function SessionScreen({
                   tabId: activePane.tab_id,
                   label: chatAgentDisplayName(liveVoiceChatAgent),
                 }
-              : !savedChatOpen && !liveVoiceChatAgent && terminalVoiceAvailable && activeTarget?.session.status === 'connected'
+              : !savedChatOpen && !liveVoiceChatAgent && terminalVoiceAvailable && viewedNative && activeTarget?.session.status === 'connected'
                 ? {
                     hostId: hostSessionId,
                     paneId: activePane?.pane_id ?? activeTarget.session.terminalId,
                     tabId: activePane?.tab_id ?? activeTarget.session.terminalId,
                     label: activeTarget.session.title || t('terminal.sshShell'),
                     terminal: {
-                      runtimeId: activeTarget.client.native.runtimeId,
-                      runtimeIncarnation: activeTarget.client.native.runtimeIncarnation,
-                      connectionGeneration: activeTarget.client.native.hostState().connectionGeneration,
+                      runtimeId: viewedNative.runtimeId,
+                      runtimeIncarnation: viewedNative.runtimeIncarnation,
+                      connectionGeneration: viewedNative.hostState().connectionGeneration,
                       terminalId: activeTarget.session.terminalId,
                       paneId: activeTarget.session.kind === 'ssh' ? undefined : activePane?.pane_id,
                     },
@@ -2009,7 +2014,7 @@ export function SessionScreen({
                                     chatView.presentation.generation,
                                   ].join(':')}
                                   state={chatView.state}
-                                  searchRuntime={chatClient?.native}
+                                  searchRuntime={chatClient?.activeNative ?? undefined}
                                   searchKey={chatView.binding.transcriptKey}
                                   readAloud={visible && selected ? chatReadAloud : undefined}
                                   imageClient={chatClient}
@@ -2313,9 +2318,9 @@ export function SessionScreen({
                     <X size={19} color={colors.text} />
                   </Button>
                 </View>
-                {client && (
+                {clientRuntime && (
                   <View className="border-b border-border px-4 py-3">
-                    <BrowserTunnelingSetting runtimeId={client.native.runtimeId} />
+                    <BrowserTunnelingSetting runtimeId={clientRuntime.runtimeId} />
                   </View>
                 )}
                 {client && supportsBrowserControl() && (

@@ -271,7 +271,23 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
   whip_realtime_free(view); return result;
 }
 - (void)audioChanged:(NSNotification *)notification {
-  if (notification.object == self.engine && !self.engine.running) whip_realtime_control(_call.load(), WhipRealtimeAudioFailed);
+  AVAudioEngine *engine = notification.object;
+  // Configuration notifications arrive on an internal engine queue, including
+  // while startup is still settling. Recheck on the owner's queue and restart
+  // the existing graph without replacing the Rust call or its media session.
+  dispatch_async(dispatch_get_main_queue(), ^{
+    uint64_t call = self->_call.load();
+    if (!call || engine != self.engine || engine.running) return;
+    dispatch_sync(self.media, ^{
+      if (self->_call.load() != call || engine.running) return;
+      NSError *error = nil;
+      if (![engine startAndReturnError:&error]) {
+        whip_realtime_control(call, WhipRealtimeAudioFailed);
+        return;
+      }
+      [self.player play];
+    });
+  });
 }
 - (void)interrupted:(NSNotification *)notification {
   if ([notification.userInfo[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue] == AVAudioSessionInterruptionTypeBegan) whip_realtime_control(_call.load(), WhipRealtimeAudioFailed);

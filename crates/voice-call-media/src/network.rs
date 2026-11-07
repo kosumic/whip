@@ -22,6 +22,15 @@ const ACTIVE_PORT: u16 = 9;
 const MAX_LOCAL_CANDIDATES: usize = 96;
 const UDP_FALLBACK_TYPE_PREFERENCE: u32 = 80;
 const ICE_LOCAL_PRIORITY_MASK: u32 = 0x00ff_ffff;
+
+fn is_usable_interface(ip: &IpAddr) -> bool {
+    !ip.is_loopback()
+        && !matches!(ip, IpAddr::V6(ip) if ip.is_unicast_link_local())
+        // An interface can bind successfully yet be rejected by ICE, notably
+        // a 169.254.x.x address on an Apple USB interface. Exclude it before
+        // opening sockets so it cannot abort a call with usable Wi-Fi routes.
+        && Candidate::host(SocketAddr::new(*ip, 0), Protocol::Udp).is_ok()
+}
 pub(super) struct Packet {
     pub proto: Protocol,
     pub source: SocketAddr,
@@ -52,11 +61,7 @@ impl Network {
             .map_err(|_| "Voice network interfaces are unavailable.")?
             .into_iter()
             .map(|interface| interface.ip())
-            .filter(|ip| {
-                !ip.is_unspecified()
-                    && !ip.is_loopback()
-                    && !matches!(ip, IpAddr::V6(ip) if ip.is_unicast_link_local())
-            })
+            .filter(is_usable_interface)
             .collect();
         if interfaces.is_empty() || interfaces.len() > MAX_LOCAL_CANDIDATES / 3 {
             return Err("No usable voice network interface is available.");
@@ -265,5 +270,51 @@ impl Network {
         self.connections.clear();
         self.workers.abort_all();
         while self.workers.join_next().await.is_some() {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn link_local_ipv4_does_not_disqualify_usable_wifi_and_ipv6_addresses()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let wifi: IpAddr = "192.168.1.20".parse()?;
+        let ipv6: IpAddr = "fd00::20".parse()?;
+        let interfaces = ["169.254.10.20".parse()?, wifi, ipv6]
+            .into_iter()
+            .filter(is_usable_interface)
+            .collect::<HashSet<_>>();
+
+        assert_eq!(interfaces, HashSet::from([wifi, ipv6]));
+        for ip in interfaces {
+            let address = SocketAddr::new(ip, 5000);
+            Candidate::host(address, Protocol::Udp)?;
+            Candidate::builder()
+                .tcp()
+                .tcptype(str0m::net::TcpType::Passive)
+                .host(address)
+                .build()?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn non_routable_interfaces_are_not_advertised() -> Result<(), Box<dyn std::error::Error>> {
+        for address in [
+            "0.0.0.0",
+            "::",
+            "127.0.0.1",
+            "::1",
+            "169.254.10.20",
+            "fe80::20",
+            "255.255.255.255",
+            "224.0.0.1",
+            "ff02::1",
+        ] {
+            assert!(!is_usable_interface(&address.parse()?), "{address}");
+        }
+        Ok(())
     }
 }
