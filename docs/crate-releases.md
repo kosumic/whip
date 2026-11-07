@@ -10,8 +10,9 @@ including before 1.0. Publish registry dependencies before their consumers:
 `publish-standalone-libraries.yml` publishes `agent-transcript-view`,
 `audio-ingress`, `mobile-speech`, `ai-voice-call`, `voice-call-media`, and
 `whip-notify`. It checks formatting, all-feature Clippy and tests, and a publish
-dry run before publishing on an ARM64 runner. Push `<crate>-v<version>` or use
-manual dispatch with the matching crate and manifest version.
+dry run before publishing on an ARM64 runner. Create `<crate>-v<version>`, then
+manually dispatch the workflow from `main` with the matching crate and manifest
+version. This uses the environment's existing allowed `main` deployment branch.
 
 `agent-transcript-core` and `herdr-protocol` retain their dedicated publish
 workflows. The shared GitHub release helper verifies the registry artifact's
@@ -28,8 +29,8 @@ to publish the new crate, publish it, and configure its Trusted Publisher:
 - Environment: `crates-io`.
 
 Revoke the bootstrap token after configuring and verifying trusted publishing.
-Subsequent releases use short-lived GitHub OIDC credentials. Add each new tag
-pattern to the `crates-io` environment's allowed deployment tags.
+Subsequent releases use short-lived GitHub OIDC credentials. The shared workflow
+does not require any additional allowed deployment tag patterns.
 
 The speech, audio, and media crates retain AGPL-3.0-or-later. The transcript,
 Herdr, and notification libraries retain MIT. `native-credentials` remains

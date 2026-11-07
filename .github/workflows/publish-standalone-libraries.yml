@@ -1,14 +1,6 @@
 name: Publish standalone libraries
 
 on:
-  push:
-    tags:
-      - 'agent-transcript-view-v*'
-      - 'audio-ingress-v*'
-      - 'mobile-speech-v*'
-      - 'ai-voice-call-v*'
-      - 'voice-call-media-v*'
-      - 'whip-notify-v*'
   workflow_dispatch:
     inputs:
       crate:
@@ -55,18 +47,11 @@ jobs:
       - name: Resolve and validate release
         id: release
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          RELEASE_TAG: ${{ github.ref_name }}
           MANUAL_CRATE: ${{ inputs.crate }}
           MANUAL_VERSION: ${{ inputs.version }}
         run: |
-          if [[ "$EVENT_NAME" == push ]]; then
-            crate="${RELEASE_TAG%-v*}"
-            version="${RELEASE_TAG##*-v}"
-          else
-            crate="$MANUAL_CRATE"
-            version="$MANUAL_VERSION"
-          fi
+          crate="$MANUAL_CRATE"
+          version="$MANUAL_VERSION"
           case "$crate" in
             agent-transcript-view|audio-ingress|mobile-speech|ai-voice-call|voice-call-media)
               directory="crates/$crate" ;;
@@ -124,6 +109,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ format('{0}-v{1}', needs.publish.outputs.crate, needs.publish.outputs.version) }}
       - name: Publish the verified registry artifact
         env:
           GH_TOKEN: ${{ github.token }}
