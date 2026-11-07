@@ -73,6 +73,10 @@
           "NSAllowsArbitraryLoadsInWebContent": true
         },
         "ITSAppUsesNonExemptEncryption": false,
+        "UIBackgroundModes": [
+          "audio",
+          "voip"
+        ],
         "NSBonjourServices": [
           "_expo._tcp"
         ],

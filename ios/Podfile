@@ -1,9 +1,12 @@
-# Resolve react_native_pods.rb with node to allow for hoisting
-require Pod::Executable.execute_command('node', ['-p',
-  'require.resolve(
-    "react-native/scripts/react_native_pods.rb",
-    {paths: [process.argv[1]]},
-  )', __dir__]).strip
+# Resolve Ruby setup scripts with Node to allow for hoisting.
+def node_require(script)
+  require Pod::Executable.execute_command('node', ['-p',
+    "require.resolve('#{script}', {paths: [process.argv[1]]})",
+    __dir__]).strip
+end
+
+node_require('react-native/scripts/react_native_pods.rb')
+node_require('react-native-permissions/scripts/setup.rb')
 require File.join(File.dirname(Pod::Executable.execute_command('node', ['-p',
   'require.resolve(
     "expo/package.json",
@@ -16,6 +19,7 @@ Pod::Executable.execute_command('node', [File.expand_path('../scripts/sync-termi
 
 platform :ios, '16.4'
 prepare_react_native_project!
+setup_permissions(['Microphone'])
 
 linkage = ENV['USE_FRAMEWORKS']
 if linkage != nil
