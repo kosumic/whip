@@ -5,7 +5,6 @@ edition = "2024"
 license = "AGPL-3.0-or-later"
 description = "Bounded native credential ingress for trusted Rust cloud clients"
 repository = "https://github.com/kosumic/whip"
-publish = false
 
 [dependencies]
 zeroize = "1"

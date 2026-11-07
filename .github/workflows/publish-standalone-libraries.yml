@@ -11,8 +11,10 @@ on:
           - agent-transcript-view
           - audio-ingress
           - mobile-speech
+          - native-credentials
           - voice-call-local
           - voice-call-media
+          - voice-call-openai
           - whip-notify
       version:
         description: Version from the crate's Cargo.toml
@@ -53,7 +55,7 @@ jobs:
           crate="$MANUAL_CRATE"
           version="$MANUAL_VERSION"
           case "$crate" in
-            agent-transcript-view|audio-ingress|mobile-speech|voice-call-local|voice-call-media)
+            agent-transcript-view|audio-ingress|mobile-speech|native-credentials|voice-call-local|voice-call-media|voice-call-openai)
               directory="crates/$crate" ;;
             whip-notify) directory=whip-notify ;;
             *) echo 'Unsupported release crate' >&2; exit 1 ;;

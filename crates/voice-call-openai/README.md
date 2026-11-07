@@ -176,7 +176,18 @@ stock WebRTC peer over real local transport.
 
 ## Migration for GymAmi and other apps
 
-Add `voice-call-openai` and `voice-call-media` as path dependencies from `crates/`.
+Add the provider and media crates to your Cargo dependencies:
+
+```toml
+voice-call-openai = "0.1.0"
+voice-call-media = "0.1.0"
+```
+
+Add `native-credentials = "0.1.0"` to use its portable `NativeCredential`
+adapter, or implement `voice_call_openai::Credential` for your own credential
+type. For development inside this repository, keep using path dependencies
+from `crates/`.
+
 Use the existing runtime and device callbacks, and wrap the app's credential
 store, capture queue, playback sink, tool executor, event/history sink and usage
 sink in the interfaces above. Build session context in that app; never import

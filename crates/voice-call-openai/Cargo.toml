@@ -11,7 +11,7 @@ repository = "https://github.com/kosumic/whip"
 base64 = "0.22"
 voice-call-media = { version = "0.1.0", path = "../voice-call-media" }
 audio-ingress = { version = "0.1.0", path = "../audio-ingress" }
-native-credentials = { path = "../native-credentials" }
+native-credentials = { version = "0.1.0", path = "../native-credentials" }
 zeroize = "1"
 oai-rt-rs = "=0.5.1"
 futures = "0.3"
