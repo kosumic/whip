@@ -4637,8 +4637,8 @@ MIT License (MIT)
 
 Used by:
 - tailcat-client 0.1.1
-- whipair-protocol 0.1.0
-- whipair 0.1.5
+- whipair-protocol 0.2.0
+- whipair 0.1.6
 
 MIT License
 
