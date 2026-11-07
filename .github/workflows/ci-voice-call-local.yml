@@ -1,11 +1,11 @@
-name: AI voice call CI
+name: Local voice call CI
 
 on:
   push:
     branches: [main]
     paths: &call-paths
-      - 'crates/ai-voice-call/**'
-      - '.github/workflows/ci-ai-voice-call.yml'
+      - 'crates/voice-call-local/**'
+      - '.github/workflows/ci-voice-call-local.yml'
       - 'rust-toolchain.toml'
   pull_request:
     branches: [main]
@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-ai-voice-call-${{ github.event_name }}-${{ github.ref }}
+  group: ci-voice-call-local-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -30,7 +30,7 @@ jobs:
     timeout-minutes: 10
     defaults:
       run:
-        working-directory: crates/ai-voice-call
+        working-directory: crates/voice-call-local
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

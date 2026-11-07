@@ -1,4 +1,4 @@
-//! Whip call ownership and native device readiness over voice-openai.
+//! Whip call ownership and native device readiness over voice-call-openai.
 use super::startup;
 mod api;
 mod host;
@@ -12,7 +12,7 @@ pub(in crate::realtime_voice) mod prepared;
 mod transport;
 use super::{ClientEvent, RealtimeSocket, RealtimeVoiceAdapter, recovery};
 use std::sync::{Arc, atomic::Ordering};
-pub(super) use voice_openai::Handle;
+pub(super) use voice_call_openai::Handle;
 
 pub(super) async fn start(
     owner: Arc<RealtimeVoiceAdapter>,
@@ -26,7 +26,7 @@ pub(super) async fn start(
         attempt,
     });
     let (socket, handle) =
-        voice_openai::connect_realtime(host, key, update, &config.model()?.id).await?;
+        voice_call_openai::connect_realtime(host, key, update, &config.model()?.id).await?;
     *owner.media.lock() = Some(handle);
     media_connected(&owner);
     Ok(socket)
@@ -37,7 +37,7 @@ fn initial_session(
     update: ClientEvent,
     model: &super::models::Model,
 ) -> Result<serde_json::Value, &'static str> {
-    voice_openai::initial_session(update, &model.id)
+    voice_call_openai::initial_session(update, &model.id)
 }
 /// Devices and negotiation finish independently. Either completion order must
 /// activate input, without retaining microphone audio from session startup.

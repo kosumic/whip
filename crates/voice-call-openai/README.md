@@ -1,7 +1,7 @@
-# voice-openai
+# voice-call-openai
 
 Reusable OpenAI Realtime and GPT-Live provider support for native Rust hosts.
-`voice-openai → voice-call-media → audio-ingress` is a one-way dependency chain.
+`voice-call-openai → voice-call-media → audio-ingress` is a one-way dependency chain.
 Neither voice crate imports Whip, React Native, app storage, agents or UI state.
 The crate retains AGPL-3.0-or-later and the adapted Codex Apache-2.0 notices.
 
@@ -18,7 +18,7 @@ Use `Call` for an owned connection and lifecycle. It supports native WebRTC and
 WebSocket PCM for both protocols:
 
 ```rust,ignore
-use voice_openai::{Call, CallConfig, CallTransport};
+use voice_call_openai::{Call, CallConfig, CallTransport};
 
 // native implements Host + session::Audio over this app's devices/PCM queue.
 // application implements session::Delegate over this app's commands and tools.
@@ -104,7 +104,7 @@ Whip, rather than a separate implementation or cancelled startup alone.
 5. Connect on the host's existing Tokio runtime:
 
 ```rust,ignore
-let (mut events, media) = voice_openai::connect_realtime(
+let (mut events, media) = voice_call_openai::connect_realtime(
     app_attempt, &credential, session_update, &model,
 ).await?;
 // Or: connect_live(app_attempt, &credential, serde_json::to_value(config)?).
@@ -176,7 +176,7 @@ stock WebRTC peer over real local transport.
 
 ## Migration for GymAmi and other apps
 
-Add `voice-openai` and `voice-call-media` as path dependencies from `crates/`.
+Add `voice-call-openai` and `voice-call-media` as path dependencies from `crates/`.
 Use the existing runtime and device callbacks, and wrap the app's credential
 store, capture queue, playback sink, tool executor, event/history sink and usage
 sink in the interfaces above. Build session context in that app; never import

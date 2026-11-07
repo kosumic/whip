@@ -36,7 +36,7 @@ async fn public_live_webrtc_api_smoke() -> Result<(), Box<dyn std::error::Error>
     let identity = Arc::new(Mutex::new(Identity::live()));
     let owner = playback_owner()?;
     let started = Instant::now();
-    let mut peer = Transport::configured(voice_openai::media::transport_config()).await?;
+    let mut peer = Transport::configured(voice_call_openai::media::transport_config()).await?;
     let offered = startup::elapsed(started);
     let call = Call::create(&credential, peer.offer(), session).await?;
     drop(credential);
@@ -232,7 +232,7 @@ fn starting_owner() -> Result<Arc<RealtimeVoiceAdapter>, &'static str> {
 #[tokio::test]
 async fn hangup_rejects_late_pcm_before_it_can_reach_native_playback()
 -> Result<(), Box<dyn std::error::Error>> {
-    use voice_openai::Host;
+    use voice_call_openai::Host;
     let _device_audio = DEVICE_AUDIO_TEST.lock().await;
     let owner = playback_owner()?;
     let host = super::super::host::AppHost {
@@ -722,7 +722,7 @@ async fn public_realtime_sideband_identifies_native_playback()
         json!("When greeted, say exactly: The synthetic WebRTC test passed. Then remain quiet.");
     session["tools"] = json!([]);
     session["tool_choice"] = json!("none");
-    let mut peer = Transport::configured(voice_openai::media::transport_config()).await?;
+    let mut peer = Transport::configured(voice_call_openai::media::transport_config()).await?;
     let call = api::Call::create(&credential, peer.offer(), session).await?;
     let request = voice::authorized_request(
         &credential,

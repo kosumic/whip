@@ -11,7 +11,7 @@ pub(super) async fn run(
     stop: watch::Receiver<bool>,
     attempt: &Arc<recovery::Attempt>,
 ) -> Result<(), &'static str> {
-    voice_openai::media::run(
+    voice_call_openai::media::run(
         &AppHost {
             owner: owner.clone(),
             attempt: attempt.clone(),

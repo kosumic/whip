@@ -1,1 +1,1 @@
-pub(super) use voice_openai::socket::*;
+pub(super) use voice_call_openai::socket::*;

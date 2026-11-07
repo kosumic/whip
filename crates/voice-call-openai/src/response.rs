@@ -184,10 +184,10 @@ mod tests {
     fn provider_errors_use_correlated_request_kind_without_leaking_payloads()
     -> Result<(), serde_json::Error> {
         let mut error: oai_rt_rs::ServerError = serde_json::from_value(
-            serde_json::json!({"type":"invalid_request_error","code":"conversation_already_has_active_response","message":"private prompt sk-secret","event_id":"voice-openai:response.create:123"}),
+            serde_json::json!({"type":"invalid_request_error","code":"conversation_already_has_active_response","message":"private prompt sk-secret","event_id":"voice-call-openai:response.create:123"}),
         )?;
         assert!(is_active_response_error(&error));
-        error.event_id = Some("voice-openai:conversation.item.truncate:124".into());
+        error.event_id = Some("voice-call-openai:conversation.item.truncate:124".into());
         assert!(!is_active_response_error(&error));
         assert_eq!(
             provider_error_message(&error),

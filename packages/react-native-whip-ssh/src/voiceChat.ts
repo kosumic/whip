@@ -21,7 +21,7 @@ const PHASE = {
   [VoiceChatPhase.Closed]: 'closed',
 } as const;
 
-/** Marshals the stable native API. ai-voice-call owns turn policy; Whip's Rust adapter correlates transcripts. */
+/** Marshals the stable native API. voice-call-local owns turn policy; Whip's Rust adapter correlates transcripts. */
 export class NativeVoiceChat {
   private readonly core: VoiceChat;
   private transcriptSession?: string;

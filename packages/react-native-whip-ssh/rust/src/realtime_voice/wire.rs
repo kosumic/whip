@@ -1,1 +1,1 @@
-pub(super) use voice_openai::wire::*;
+pub(super) use voice_call_openai::wire::*;

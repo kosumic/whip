@@ -2479,7 +2479,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "voice-openai"
+name = "voice-call-openai"
 version = "0.1.0"
 dependencies = [
  "audio-ingress",

@@ -28,7 +28,7 @@ pub use webrtc::{Handle, api, identity, initial_session, media, start as connect
 
 pub const MAX_WIRE: usize = 512 * 1024;
 pub const IO_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
-pub const EVENT_PREFIX: &str = "voice-openai";
+pub const EVENT_PREFIX: &str = "voice-call-openai";
 pub const DATA_CHANNEL_ID: u16 = 4;
 
 /// Return a temporary authorization value; plaintext is wiped after header creation.

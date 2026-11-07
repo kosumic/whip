@@ -32,9 +32,9 @@ use tokio::{sync::mpsc, task::JoinSet};
 #[cfg(test)]
 use tokio_tungstenite::tungstenite::Message;
 #[cfg(test)]
-use voice_openai::live::commands::CONTEXT_BYTES;
+use voice_call_openai::live::commands::CONTEXT_BYTES;
 
-const URL: &str = voice_openai::live::URL;
+const URL: &str = voice_call_openai::live::URL;
 const EVENT_PREFIX: &str = "whip-live";
 const INSTRUCTIONS: &str = include_str!("live/instructions.md");
 const MAX_PENDING: usize = 8;
@@ -64,7 +64,7 @@ fn catalog() -> Result<&'static Catalog, &'static str> {
         .map_err(|_| "GPT-Live catalog is unavailable. Install an updated Whip build.")
 }
 #[cfg(test)]
-use voice_openai::live::{chunks, codec};
+use voice_call_openai::live::{chunks, codec};
 
 pub(super) struct LiveVoiceAdapter {
     state: State,
@@ -88,7 +88,7 @@ struct Handoff {
 #[derive(Default)]
 struct State {
     #[cfg(test)]
-    protocol: voice_openai::live::Control,
+    protocol: voice_call_openai::live::Control,
     delegations: HashSet<String>,
     pending: VecDeque<Pending>,
     through: f64,
@@ -144,7 +144,7 @@ impl State {
         let catalog = catalog()?;
         self.protocol.pin_session(
             session,
-            &voice_openai::live::Selection {
+            &voice_call_openai::live::Selection {
                 model: &catalog.model,
                 voice: &config.voice,
                 backend_model: config.global.then_some(catalog.backend_model.as_str()),
@@ -252,7 +252,7 @@ impl LiveVoiceAdapter {
         };
         let provider = provider_config(&config, session_id)?;
         let mut provider =
-            voice_openai::session::Session::live(&mut socket, provider, owner.webrtc)
+            voice_call_openai::session::Session::live(&mut socket, provider, owner.webrtc)
                 .with_prefix(EVENT_PREFIX);
         let mut result = if config.preview {
             preview::drive(&owner, &config, &mut provider, &mut adapter.usage, commands).await
@@ -333,7 +333,7 @@ impl LiveVoiceAdapter {
         owner: &Arc<RealtimeVoiceAdapter>,
         config: &Config,
         agent: Option<&Arc<PinnedAgent>>,
-        session: &mut voice_openai::session::Session<'_>,
+        session: &mut voice_call_openai::session::Session<'_>,
         commands: mpsc::Receiver<super::Command>,
     ) -> Result<(), &'static str> {
         let mut app = session_host::App::new(owner, config, agent, self, commands);
@@ -428,7 +428,7 @@ impl LiveVoiceAdapter {
         state: &mut State,
         usage: &mut usage::Usage,
     ) -> Result<(), &'static str> {
-        let mut provider = voice_openai::session::Session::live(
+        let mut provider = voice_call_openai::session::Session::live(
             socket,
             provider_config(config, state.protocol.session_id.clone())?,
             config.webrtc,
@@ -443,14 +443,14 @@ impl LiveVoiceAdapter {
     }
 }
 
-use voice_openai::live::commands::Context as Channel;
+use voice_call_openai::live::commands::Context as Channel;
 async fn append(
     socket: &mut super::RealtimeSocket,
     id: Option<&str>,
     text: &str,
     channel: Channel,
 ) -> Result<(), &'static str> {
-    voice_openai::live::commands::append_context_with_prefix(
+    voice_call_openai::live::commands::append_context_with_prefix(
         socket,
         id,
         text,
@@ -464,7 +464,7 @@ async fn send(
     command: Command,
 ) -> Result<String, &'static str> {
     let kind = command.kind();
-    let id = voice_openai::live::send_with_prefix(socket, command, EVENT_PREFIX).await?;
+    let id = voice_call_openai::live::send_with_prefix(socket, command, EVENT_PREFIX).await?;
     if kind != "session.input_audio.append" {
         crate::host_runtime::diagnostics::log_lifecycle(format_args!(
             "GPT-Live sent command={kind} client_event_id={id}"
@@ -548,9 +548,9 @@ fn public_text(text: &str) -> String {
 fn provider_config(
     config: &Config,
     session_id: Option<String>,
-) -> Result<voice_openai::session::LiveConfig, &'static str> {
+) -> Result<voice_call_openai::session::LiveConfig, &'static str> {
     let catalog = catalog()?;
-    Ok(voice_openai::session::LiveConfig {
+    Ok(voice_call_openai::session::LiveConfig {
         model: catalog.model.clone(),
         voice: config.voice.clone(),
         backend_model: config.global.then(|| catalog.backend_model.clone()),

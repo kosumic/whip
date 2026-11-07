@@ -739,15 +739,6 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/40ea587c428481af.txt"),
   },
   {
-    id: "cargo-ai-voice-call-0-1-0",
-    category: "cargo",
-    projectName: "ai-voice-call",
-    sourceUrl: "https://github.com/kosumic/whip",
-    attribution: "Direct Rust dependency · version 0.1.0 · used by whip-ssh",
-    licenseName: "AGPL-3.0-or-later",
-    licenseAsset: require("../../assets/licenses/generated/a778735219d95350.txt"),
-  },
-  {
     id: "cargo-async-trait-0-1-92",
     category: "cargo",
     projectName: "async-trait",
@@ -1126,6 +1117,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/d00aa65d7a05d267.txt"),
   },
   {
+    id: "cargo-voice-call-local-0-1-0",
+    category: "cargo",
+    projectName: "voice-call-local",
+    sourceUrl: "https://github.com/kosumic/whip",
+    attribution: "Direct Rust dependency · version 0.1.0 · used by whip-ssh",
+    licenseName: "AGPL-3.0-or-later",
+    licenseAsset: require("../../assets/licenses/generated/423db313ed46c81e.txt"),
+  },
+  {
     id: "cargo-voice-call-media-0-1-0",
     category: "cargo",
     projectName: "voice-call-media",
@@ -1135,13 +1135,13 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/065332bb86733577.txt"),
   },
   {
-    id: "cargo-voice-openai-0-1-0",
+    id: "cargo-voice-call-openai-0-1-0",
     category: "cargo",
-    projectName: "voice-openai",
+    projectName: "voice-call-openai",
     sourceUrl: "https://github.com/kosumic/whip",
     attribution: "Direct Rust dependency · version 0.1.0 · used by whip-ssh",
     licenseName: "AGPL-3.0-or-later",
-    licenseAsset: require("../../assets/licenses/generated/1abcbfbac4460336.txt"),
+    licenseAsset: require("../../assets/licenses/generated/3b5b10aa0f170e6c.txt"),
   },
   {
     id: "cargo-whip-notify-0-1-5",
