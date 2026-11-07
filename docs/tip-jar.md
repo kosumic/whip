@@ -8,9 +8,10 @@ Options. Users can choose either destination (USDC on Base is selected initially
 | USDC | Base | `0x5424bcf743D265BA8Ac4ACdE0d0A5DfC187eeB05` |
 | USDT | Solana | `59Nqb3jEvexJV7HAwHJDMrqnipaxhN7VJbJe7C7pz7uV` |
 
-The currency selector uses the issuers' official token logos, bundled locally
-under `assets/brand/`. Selecting a destination updates the network instructions, full selectable
-address, QR code, and copy action together. A copy icon sits inside the bordered
+The currency selector uses official token and chain logos, bundled locally
+under `assets/brand/`, with each chain icon beside its network name. Selecting a
+destination updates the network instructions, full selectable address, QR code,
+and copy action together. A copy icon sits inside the bordered
 address box. Switching destinations clears earlier copy feedback. Users select
 the displayed token and network in their own wallet and confirm the transfer there.
 Whip does not initiate or track the transfer, invoke store billing, or report a

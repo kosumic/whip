@@ -18,12 +18,14 @@ const TIP_JAR_DESTINATIONS = [
     token: 'USDC',
     icon: bundledAsset(require('../../assets/brand/usdc.svg')),
     network: 'Base',
+    networkIcon: bundledAsset(require('../../assets/brand/base.svg')),
     address: '0x5424bcf743D265BA8Ac4ACdE0d0A5DfC187eeB05',
   },
   {
     token: 'USDT',
     icon: bundledAsset(require('../../assets/brand/usdt.svg')),
     network: 'Solana',
+    networkIcon: bundledAsset(require('../../assets/brand/solana.svg')),
     address: '59Nqb3jEvexJV7HAwHJDMrqnipaxhN7VJbJe7C7pz7uV',
   },
 ] as const;
@@ -83,7 +85,15 @@ export function CryptoTipJarContents() {
             />
             <View className="items-center">
               <Text className="text-sm font-semibold">{option.token}</Text>
-              <Text className="text-xs opacity-70">{option.network}</Text>
+              <View className="flex-row items-center gap-1">
+                <LocalSvg
+                  accessible={false}
+                  asset={option.networkIcon}
+                  width={14}
+                  height={14}
+                />
+                <Text className="text-xs opacity-70">{option.network}</Text>
+              </View>
             </View>
           </GlassButton>
         ))}
@@ -94,14 +104,17 @@ export function CryptoTipJarContents() {
       <Text className="mt-2 text-sm leading-5 text-muted-foreground">
         {t('tipJar.cryptoInstructions', destination)}
       </Text>
-      <View className="my-4 aspect-square w-full max-w-[240px] self-center overflow-hidden rounded-xl bg-white p-1">
-        <SvgXml
-          accessibilityLabel={t('tipJar.addressQr')}
-          accessibilityRole="image"
-          xml={qr}
-          width="100%"
-          height="100%"
-        />
+      {/* Resolve the width cap before Yoga calculates the square's height. */}
+      <View className="my-4 w-full max-w-[240px] self-center">
+        <View className="aspect-square w-full overflow-hidden rounded-xl bg-white p-1">
+          <SvgXml
+            accessibilityLabel={t('tipJar.addressQr')}
+            accessibilityRole="image"
+            xml={qr}
+            width="100%"
+            height="100%"
+          />
+        </View>
       </View>
       <View className="flex-row items-center gap-2 rounded-2xl border border-border p-3">
         <Text

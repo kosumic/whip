@@ -9,3 +9,8 @@ Downloaded on 2026-08-25. The logos remain trademarks of their respective owners
 - `usdt.svg` is the unmodified circular token logo from Tether's official [media assets](https://tether.to/en/media/) ([SVG](https://tether.to/images/logoCircle.svg)).
 
 Token logos downloaded on 2026-11-07. They remain trademarks of their respective owners and identify the available tip currencies.
+
+- `base.svg` is the unmodified `The Square/Base_square_blue.svg` from Base's official [brand archive](https://brand.base.org/base-brand.zip), linked from its [brand guidelines](https://brand.base.org/core-identifiers).
+- `solana.svg` is the unmodified gradient logomark from the Solana Foundation's official [brand assets](https://solana.org/branding) ([SVG](https://solana.org/pages/branding/logomark/logomark.svg)).
+
+Chain logos downloaded on 2026-11-07. They remain trademarks of their respective owners and identify the available tip networks.
