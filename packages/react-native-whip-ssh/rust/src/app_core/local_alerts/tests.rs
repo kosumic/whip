@@ -562,7 +562,7 @@ fn foreground_and_disabled_voice_preserve_notification_delivery_modes() {
 }
 
 #[test]
-fn working_to_idle_alerts_briefly_unless_afk_mode_is_enabled() {
+fn working_to_idle_alerts_follow_afk_mode_regardless_of_foreground_state() {
     for afk_mode in [false, true] {
         for foreground in [false, true] {
             for delivery in [LocalAlertDelivery::Regular, LocalAlertDelivery::Persistent] {
@@ -582,7 +582,7 @@ fn working_to_idle_alerts_briefly_unless_afk_mode_is_enabled() {
                 });
                 let notification = schedule(&effects);
                 assert!(
-                    matches!(notification.action, LocalAlertAction::Schedule { request } if request.delivery == if afk_mode { delivery } else { LocalAlertDelivery::Brief })
+                    matches!(&notification.action, LocalAlertAction::Schedule { request } if request.delivery == if afk_mode { delivery } else { LocalAlertDelivery::Silent })
                 );
                 let voice = speech(&effects);
                 register(&owner, &voice);
@@ -593,6 +593,14 @@ fn working_to_idle_alerts_briefly_unless_afk_mode_is_enabled() {
                         .is_empty()
                 );
                 assert_eq!(take(&owner).unwrap().token, token(&voice));
+                let follow_up = scheduled(&owner, &notification, "idle-notification");
+                assert_eq!(
+                    follow_up.iter().any(|effect| matches!(
+                        effect.action,
+                        LocalAlertAction::ArmPersistent { .. }
+                    )),
+                    afk_mode && delivery == LocalAlertDelivery::Persistent
+                );
             }
         }
     }

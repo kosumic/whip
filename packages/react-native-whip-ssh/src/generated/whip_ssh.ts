@@ -14580,6 +14580,7 @@ export enum LocalAlertDelivery {
   Persistent,
   Brief,
   Regular,
+  Silent,
 }
 
 const FfiConverterTypeLocalAlertDelivery = (() => {
@@ -14594,6 +14595,8 @@ const FfiConverterTypeLocalAlertDelivery = (() => {
           return LocalAlertDelivery.Brief;
         case 3:
           return LocalAlertDelivery.Regular;
+        case 4:
+          return LocalAlertDelivery.Silent;
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
       }
@@ -14606,6 +14609,8 @@ const FfiConverterTypeLocalAlertDelivery = (() => {
           return ordinalConverter.write(2, into);
         case LocalAlertDelivery.Regular:
           return ordinalConverter.write(3, into);
+        case LocalAlertDelivery.Silent:
+          return ordinalConverter.write(4, into);
       }
     }
     allocationSize(value: TypeName): number {

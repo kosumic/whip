@@ -42,6 +42,7 @@ import {
 const PERSISTENT_CHANNEL_ID = 'agent-state-v3';
 const BRIEF_CHANNEL_ID = 'agent-state-brief-v1';
 const REGULAR_CHANNEL_ID = 'agent-state-regular-v1';
+const SILENT_CHANNEL_ID = 'agent-state-silent-v1';
 const ALERT_LEVEL_DATA_KEY = 'agentAlertLevel';
 const ALERT_VIBRATION_PATTERN = [
   300, 100, 300, 100, 300, 100, 300, 2000, 300, 100, 300, 100, 300, 100, 300,
@@ -120,10 +121,12 @@ Notifications.setNotificationHandler({
         shouldShowList: false,
       });
     }
-    const regular =
-      notification.request.content.data?.[ALERT_LEVEL_DATA_KEY] === 'regular';
+    const delivery = notification.request.content.data?.[ALERT_LEVEL_DATA_KEY];
+    const regular = delivery === 'regular';
     return Promise.resolve({
-      shouldPlaySound: true,
+      // Android uses the silent channel so vibration and heads-up presentation
+      // remain available. iOS controls foreground sound through this handler.
+      shouldPlaySound: Platform.OS === 'android' || delivery !== 'silent',
       shouldSetBadge: false,
       shouldShowBanner: true,
       shouldShowList: true,
@@ -156,6 +159,14 @@ export async function prepareAlerts(): Promise<void> {
       await Notifications.setNotificationChannelAsync(REGULAR_CHANNEL_ID, {
         name: i18n.t('alerts.regularChannelName'),
         importance: Notifications.AndroidImportance.DEFAULT,
+      });
+      await Notifications.setNotificationChannelAsync(SILENT_CHANNEL_ID, {
+        name: i18n.t('alerts.channelName'),
+        importance: Notifications.AndroidImportance.HIGH,
+        sound: null,
+        enableLights: true,
+        enableVibrate: true,
+        vibrationPattern: BRIEF_VIBRATION_PATTERN,
       });
     } catch (error) {
       recordNotificationFailure('error', 'notification-setup-failed', error, {
@@ -431,18 +442,24 @@ async function performEffect({
       const request = action.inner.request;
       const regular = request.delivery === LocalAlertDelivery.Regular;
       const persistent = request.delivery === LocalAlertDelivery.Persistent;
-      const managedSound = Platform.OS === 'android' && request.announcement !== undefined;
-      const channelId = regular
-        ? REGULAR_CHANNEL_ID
-        : persistent
-          ? PERSISTENT_CHANNEL_ID
-          : BRIEF_CHANNEL_ID;
+      const silent = request.delivery === LocalAlertDelivery.Silent;
+      const managedSound =
+        !silent && Platform.OS === 'android' && request.announcement !== undefined;
+      const channelId = silent
+        ? SILENT_CHANNEL_ID
+        : regular
+          ? REGULAR_CHANNEL_ID
+          : persistent
+            ? PERSISTENT_CHANNEL_ID
+            : BRIEF_CHANNEL_ID;
       if (Platform.OS !== 'android' && !regular) Vibration.vibrate();
-      const delivery: AgentAlertDelivery = regular
-        ? 'regular'
-        : persistent
-          ? 'persistent'
-          : 'brief';
+      const delivery: AgentAlertDelivery | 'silent' = silent
+        ? 'silent'
+        : regular
+          ? 'regular'
+          : persistent
+            ? 'persistent'
+            : 'brief';
       const content: Notifications.NotificationContentInput = {
         title: request.title,
         body: request.body,
@@ -455,7 +472,10 @@ async function performEffect({
           [ALERT_LEVEL_DATA_KEY]: delivery,
         },
       };
-      if (managedSound) {
+      if (silent) {
+        content.sound = false;
+        content.vibrate = BRIEF_VIBRATION_PATTERN;
+      } else if (managedSound) {
         // The native player owns spoken alerts' sound and vibration so Android's
         // independent channel ringtone cannot play over the announcement.
         content.sound = false;

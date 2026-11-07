@@ -311,6 +311,48 @@ test('spoken iOS alerts retain system notification audio', async () => {
   expect(prepareSpokenAgentAlert).not.toHaveBeenCalled();
 });
 
+test.each(['android', 'ios'] as const)(
+  'AFK-off idle alerts on %s keep notification, vibration and speech without a ringtone',
+  async platform => {
+    Platform.OS = platform;
+    mockNative.transition.mockImplementation(({ request }: { request: LocalAlertRequest }) => {
+      request.delivery = LocalAlertDelivery.Silent;
+      return [
+        effect('schedule', new LocalAlertAction.Schedule({ request })),
+        ...speak(request),
+      ];
+    });
+    await transitionAgentAlert({ ...agent, agent_status: 'idle' }, 'idle', target, {
+      enabled: true,
+      afkMode: false,
+      previousStatus: 'working',
+      speak: true,
+      foreground: false,
+      delivery: 'persistent',
+      timeoutMs: 30_000,
+    });
+    const scheduled = jest.mocked(Notifications.scheduleNotificationAsync).mock.calls[0][0];
+    expect(scheduled.content).toMatchObject({
+      title: 'codex finished',
+      sound: false,
+      vibrate: [0, 200],
+      data: { ...target, agentAlertLevel: 'silent' },
+    });
+    expect(scheduled.trigger).toEqual({ channelId: 'agent-state-silent-v1' });
+    const behavior = await notificationHandler.handleNotification({
+      request: { content: scheduled.content },
+    } as unknown as Notifications.Notification);
+    expect(behavior).toMatchObject({
+      shouldPlaySound: platform === 'android',
+      shouldShowBanner: true,
+      shouldShowList: true,
+    });
+    expect(mockPlayback.speakStatusAnnouncement).toHaveBeenCalledWith('native-token');
+    expect(prepareSpokenAgentAlert).not.toHaveBeenCalled();
+    expect(armPersistentAgentAlert).not.toHaveBeenCalled();
+  },
+);
+
 test.each(['brief', 'regular'] as const)(
   'iOS %s mode preserves platform vibration',
   async delivery => {
@@ -777,6 +819,15 @@ test('prepares Android channels and permissions and keeps iOS channel setup plat
     { name: 'alerts.regularChannelName', importance: 'default' },
   );
   expect(Notifications.requestPermissionsAsync).toHaveBeenCalled();
+  expect(Notifications.setNotificationChannelAsync).toHaveBeenCalledWith(
+    'agent-state-silent-v1',
+    expect.objectContaining({
+      importance: 'high',
+      sound: null,
+      enableVibrate: true,
+      vibrationPattern: [0, 200],
+    }),
+  );
   jest.mocked(Notifications.setNotificationChannelAsync).mockClear();
   Platform.OS = 'ios';
   await prepareAlerts();

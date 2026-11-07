@@ -15,6 +15,8 @@ pub enum LocalAlertDelivery {
     Persistent,
     Brief,
     Regular,
+    /// Keep the notification and brief vibration without a ringtone.
+    Silent,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
@@ -607,10 +609,11 @@ impl LocalAlertCoordinator {
         {
             return Vec::new();
         }
-        if (finished_working && !transition.afk_mode)
-            || (!finished_working
-                && transition.foreground
-                && request.delivery == LocalAlertDelivery::Persistent)
+        if finished_working && !transition.afk_mode {
+            request.delivery = LocalAlertDelivery::Silent;
+        } else if !finished_working
+            && transition.foreground
+            && request.delivery == LocalAlertDelivery::Persistent
         {
             request.delivery = LocalAlertDelivery::Brief;
         }
