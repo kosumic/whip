@@ -625,6 +625,12 @@ function domRuntime(runtimeKey, action, args, identity) {
         }),
       );
       el.dispatchEvent(new Event('change', { bubbles: true }));
+      const retained = el.isContentEditable ? el.textContent : el.value;
+      if (!el.isConnected || retained !== args.text)
+        fail(
+          'input_rejected',
+          'Page did not retain typed text; observe the input before continuing',
+        );
     } else if (action === 'select') {
       if (el.tagName !== 'SELECT' || el.multiple)
         fail('not_select', 'Target must be a single-choice native select');

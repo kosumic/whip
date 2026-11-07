@@ -102,6 +102,11 @@ tools for arbitrary JavaScript, screenshots, downloads and tab lifecycle actions
 nested sequences are rejected. Targets are resolved against the current DOM at
 each step. Use unique semantic locators for later steps, since DOM changes can
 invalidate refs observed earlier. Ambiguous writes never choose a target.
+Typing reads the field back immediately after its input/change handlers run.
+If the field was removed or its text differs, the action fails with
+`input_rejected`, even without an explicit expectation, and later steps do not run.
+The error does not expose the requested or retained value. Use a `value`
+expectation when the page may update the value asynchronously.
 
 `expect` is an ordered list of up to four `browser.wait` arguments, without
 `tab_id`. Conditions include `target` (exactly one rendered match), `target_absent`
@@ -112,6 +117,8 @@ expectation defaults to the URL **before that step's action**. Each wait allows
 An ambiguous target expectation fails immediately. A missing observed ref fails
 with `stale_ref`, including in an absence check; use a semantic locator to wait
 for disappearance.
+Expectations are independent ordered waits: they may succeed at different times,
+and do not assert that every condition holds simultaneously.
 Text absence checks fail with `result_too_large` if the rendered text scan reaches
 its 262,144-character bound; truncated text cannot prove absence.
 
@@ -148,6 +155,16 @@ have changed the page even if its result is missing: no action is automatically
 replayed and completed effects are not rolled back. Observe the current page
 before deciding how to continue after any failure or cancellation. These tools
 control only Whip-owned tabs and require no new platform permissions.
+
+The design reference is [Mika's architecture at f3bbbdf](https://github.com/wangzan101/Mika/blob/f3bbbdf92caeb4259d55922e12f61f6da11469fd/docs/dev/architecture.md),
+in particular `BatchRunner.kt`, `UntilWait.kt`, and `ActionEffect.kt` in its core
+module. Both designs bound batches, dispatch each action through the existing
+execution path, verify locally and stop with partial results. Mika also settles
+the UI before later steps, evaluates its combined wait conditions against one
+snapshot, and detects unexpected popups or unreadable UI. Whip currently requires
+explicit stability expectations, checks its expectation list in order, and guards
+tab/document/URL changes; it has no general popup or UI-effect classifier.
+Whip keeps its existing per-launch authorization and has no cross-app control.
 
 ## Browser downloads
 

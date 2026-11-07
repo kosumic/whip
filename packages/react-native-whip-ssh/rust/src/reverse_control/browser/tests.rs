@@ -237,6 +237,35 @@ fn checked_batch_opens_a_dialog_types_and_verifies_state_in_one_call() -> TestRe
 }
 
 #[test]
+fn batch_stops_when_the_page_rejects_typing_without_an_explicit_expectation() -> TestResult {
+    crate::runtime()?.block_on(async {
+        let bridge = page_bridge()?;
+        bridge.page.lock().evaluate(r"
+            window.typeAttempts = 0;
+            window.submissions = 0;
+            document.querySelector('#q').oninput = event => {
+                window.typeAttempts++;
+                event.target.value = 'page-private-value';
+            };
+            document.querySelector('button').onclick = () => window.submissions++;
+        ")?;
+        let result = run(bridge.clone(), &SessionId("a".into()), "rejected-input", BrowserAction::parse("run_steps", &json!({"steps":[
+            {"action":"type","arguments":{"target":{"label":"Query"},"text":"requested-private-value"}},
+            {"action":"click","arguments":{"target":{"name":"Save"}}}
+        ]}))?, context()).await?.mcp()?;
+        let report = &result["structuredContent"];
+        assert_eq!(result["isError"], true);
+        assert_eq!(report["error"]["code"], "input_rejected");
+        assert_eq!(report["completed_steps"], 0);
+        assert_eq!(report["steps"].as_array().map(Vec::len), Some(1));
+        assert_eq!(bridge.page.lock().evaluate("window.typeAttempts")?, 1);
+        assert_eq!(bridge.page.lock().evaluate("window.submissions")?, 0);
+        assert!(!result.to_string().contains("private-value"));
+        Ok(())
+    })
+}
+
+#[test]
 fn batch_expectations_report_failure_and_never_continue_after_timeout_or_navigation() -> TestResult
 {
     crate::runtime()?.block_on(async {

@@ -165,6 +165,32 @@ test('wait requires a visible matching element and handles missing selectors', (
   expect(call('wait', { selector: '#missing' }).value.ready).toBe(false);
 });
 
+test('typing fails when page event handlers rewrite or remove the input without exposing its value', () => {
+  const input = dom.window.document.querySelector(
+    '#search',
+  ) as HTMLInputElement;
+  const rewrite = () => {
+    input.value = 'page-private-value';
+  };
+  input.addEventListener('input', rewrite);
+  const result = call('type', {
+    target: { label: 'Search' },
+    text: 'requested-private-value',
+  });
+  expect(result).toMatchObject({ ok: false, code: 'input_rejected' });
+  expect(JSON.stringify(result)).not.toMatch(
+    /page-private-value|requested-private-value/,
+  );
+  input.removeEventListener('input', rewrite);
+  input.addEventListener('change', () => input.remove());
+  expect(call('type', { target: { label: 'Search' }, text: '' })).toMatchObject(
+    {
+      ok: false,
+      code: 'input_rejected',
+    },
+  );
+});
+
 test('a fresh blank tab can be observed before its first navigation', () => {
   dom.reconfigure({ url: 'about:blank' });
   expect(call('snapshot').value.url).toBe('about:blank');
