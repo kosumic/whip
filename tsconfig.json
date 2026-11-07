@@ -28,6 +28,7 @@
     "**/.cloudflare",
     "feedback-worker",
     "notify-relay",
+    "legal-site",
     "**/Pods",
     "launch-videos"
   ]

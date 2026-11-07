@@ -8,6 +8,7 @@ modules/whip-terminal-assets/ios/TerminalAssets/
 dist/
 launch-videos/
 feedback-worker/
+legal-site/
 packages/react-native-whip-ssh/build/
 packages/react-native-whip-ssh/src/generated/
 packages/react-native-whip-ssh/src/generated-entry.tsx
