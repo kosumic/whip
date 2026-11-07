@@ -3,20 +3,24 @@
 //! at c90354172c5c49535b122443e9a8ed52c2233b80. Native media ownership is shared;
 //! Live delegation/context events never become Realtime function calls.
 pub(super) mod captions;
-pub(super) mod errors;
 mod global;
 mod preview;
+mod session_host;
 #[cfg(test)]
 mod tests;
 mod usage;
 
-use super::{Config, RealtimeVoiceAdapter, capture_worker, feedback};
+use super::{Config, RealtimeVoiceAdapter, feedback};
 use crate::host_runtime::realtime_agent::{Delegation, Delivery, PinnedAgent};
+#[cfg(test)]
 use base64::{Engine, engine::general_purpose::STANDARD};
-use futures::{SinkExt, StreamExt};
+#[cfg(test)]
+use futures::StreamExt;
 #[cfg(test)]
 use oai_rt_rs::live::ClientEvent;
-use oai_rt_rs::live::{self as api, Command, Field, Nullable, ServerEvent};
+use oai_rt_rs::live::{self as api, Command, Field};
+#[cfg(test)]
+use oai_rt_rs::live::{Nullable, ServerEvent};
 use serde::Deserialize;
 use serde_json::Value;
 use std::{
@@ -25,15 +29,16 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::{sync::mpsc, task::JoinSet};
+#[cfg(test)]
 use tokio_tungstenite::tungstenite::Message;
 #[cfg(test)]
 use voice_openai::live::commands::CONTEXT_BYTES;
 
-const URL: &str = "wss://api.openai.com/v1/live/sessions";
+const URL: &str = voice_openai::live::URL;
+const EVENT_PREFIX: &str = "whip-live";
 const INSTRUCTIONS: &str = include_str!("live/instructions.md");
 const MAX_PENDING: usize = 8;
 const CAPTION_GRACE: Duration = Duration::from_millis(750);
-pub(super) const CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -58,6 +63,7 @@ fn catalog() -> Result<&'static Catalog, &'static str> {
         .as_ref()
         .map_err(|_| "GPT-Live catalog is unavailable. Install an updated Whip build.")
 }
+#[cfg(test)]
 use voice_openai::live::{chunks, codec};
 
 pub(super) struct LiveVoiceAdapter {
@@ -81,6 +87,7 @@ struct Handoff {
 
 #[derive(Default)]
 struct State {
+    #[cfg(test)]
     protocol: voice_openai::live::Control,
     delegations: HashSet<String>,
     pending: VecDeque<Pending>,
@@ -96,36 +103,6 @@ enum Admission {
 }
 
 impl State {
-    fn confirm_start(
-        &mut self,
-        owner: &RealtimeVoiceAdapter,
-        config: &Config,
-        session: &api::SessionSnapshot,
-    ) -> Result<bool, &'static str> {
-        self.pin_session(session, config)?;
-        self.protocol.started = true;
-        let muted = {
-            let mut view = owner.view.lock();
-            view.startup.settings_confirmed = Some(
-                owner
-                    .client_elapsed_ms
-                    .saturating_add(super::startup::elapsed(owner.started_at)),
-            );
-            if !config.webrtc {
-                view.media_ready = true;
-                view.phase = if view.muted { "muted" } else { "listening" };
-                view.recovery = super::recovery::State::Active;
-            }
-            view.muted
-        };
-        if config.webrtc {
-            super::webrtc::media_connected(owner);
-        } else {
-            owner.ready.store(true, Ordering::Release);
-        }
-        Ok(muted)
-    }
-
     fn delegate(
         &mut self,
         delegation: &api::Delegation,
@@ -158,6 +135,7 @@ impl State {
         });
         Ok(Admission::Queued)
     }
+    #[cfg(test)]
     fn pin_session(
         &mut self,
         session: &api::SessionSnapshot,
@@ -268,26 +246,19 @@ impl LiveVoiceAdapter {
             return Ok(());
         }
         let mut adapter = Self {
-            state: State {
-                protocol: voice_openai::live::Control::new(session_id),
-                ..State::default()
-            },
+            state: State::default(),
             tasks: JoinSet::new(),
             usage,
         };
+        let provider = provider_config(&config, session_id)?;
+        let mut provider =
+            voice_openai::session::Session::live(&mut socket, provider, owner.webrtc)
+                .with_prefix(EVENT_PREFIX);
         let mut result = if config.preview {
-            preview::drive(
-                &owner,
-                &config,
-                &mut socket,
-                &mut adapter.state,
-                &mut adapter.usage,
-                commands,
-            )
-            .await
+            preview::drive(&owner, &config, &mut provider, &mut adapter.usage, commands).await
         } else if config.global || agent.is_some() {
             adapter
-                .drive(&owner, &config, agent.as_ref(), &mut socket, commands)
+                .drive(&owner, &config, agent.as_ref(), &mut provider, commands)
                 .await
         } else {
             Err("Open a connected coding agent before calling GPT-Live.")
@@ -305,9 +276,15 @@ impl LiveVoiceAdapter {
         }
         owner.output.lock().clear();
         if !adapter.usage.provider.finalized {
-            let closed =
-                Self::graceful_close(&config, &mut socket, &mut adapter.state, &mut adapter.usage)
-                    .await;
+            let closed = provider
+                .finish_live(
+                    || {
+                        !crate::voice_credentials::is_updating()
+                            && crate::voice_credentials::generation() == owner.credential_generation
+                    },
+                    |seconds, finalized| adapter.usage.observe(seconds, finalized),
+                )
+                .await;
             if closed.is_ok()
                 && let Some(media) = owner.media.lock().as_ref()
             {
@@ -356,211 +333,11 @@ impl LiveVoiceAdapter {
         owner: &Arc<RealtimeVoiceAdapter>,
         config: &Config,
         agent: Option<&Arc<PinnedAgent>>,
-        socket: &mut super::RealtimeSocket,
-        mut commands: mpsc::Receiver<super::Command>,
+        session: &mut voice_openai::session::Session<'_>,
+        commands: mpsc::Receiver<super::Command>,
     ) -> Result<(), &'static str> {
-        let Self {
-            state,
-            tasks,
-            usage,
-        } = self;
-        let mut cancelled = owner.cancel.subscribe();
-        let mut backend = config.global.then(global::Backend::default);
-        let started = Instant::now();
-        let mut tick = tokio::time::interval(capture_worker::PACKET_DURATION);
-        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        let mut capture = ::audio_ingress::Packet::new(owner.input.packet_samples);
-        let mut pending = capture_worker::Pending::new(owner);
-        let mut last_feedback = Instant::now();
-        loop {
-            if owner.closed.load(Ordering::Acquire) {
-                return Ok(());
-            }
-            tokio::select! {
-                biased;
-                _ = cancelled.changed() => return Ok(()),
-                command = commands.recv(), if state.protocol.started => match command {
-                    Some(super::Command::Mute(muted)) => {
-                        if !config.webrtc { pending.reset(owner)?; }
-                        // Native mute takes effect immediately; unmute waits for
-                        // provider acknowledgement before accepting microphone frames.
-                        owner.view.lock().muted = true;
-                        let id = send(socket, if muted {Command::InputAudioMute} else {Command::InputAudioUnmute}).await?;
-                        state.protocol.muted = Some((id,muted,Instant::now()));
-                    }
-                    Some(super::Command::Skip) => {
-                        state.protocol.interrupted(started.elapsed().as_secs_f64() * 1000.0);
-                        if let Some(media) = owner.media.lock().as_ref() { media.cancel_audio(None); }
-                        owner.output.lock().clear();
-                        owner.view.lock().playback_level = 0.0;
-                        append(socket, None, "The user interrupted your spoken reply. Stop speaking now and listen. This does not cancel coding-agent work.", Channel::Instructions).await?;
-                    }
-                    Some(super::Command::Submitted(text)) => {
-                        if let Some(backend) = &mut backend {
-                            send(socket,Command::ResponseItemCreate { item: api::ResponseInputItem::user_text(text) }).await?;
-                            backend.request();
-                            continue;
-                        }
-                        // Typed input is already an agent submission. Advance
-                        // the native speech cursor so a model handoff caused by
-                        // this context cannot replay old spoken input.
-                        let offset=started.elapsed().as_secs_f64()*1000.0;
-                        if let Some(transcript)=owner.output.lock().live_transcript.as_mut() { transcript.admit(offset); }
-                        state.through=state.through.max(offset);
-                        append(socket,None,&format!("Already submitted to the bound agent; context only, never delegate again: {text}"),Channel::Thinking).await?;
-                    }
-                    None => return Ok(()),
-                },
-                frame = socket.next() => {
-                    match frame {
-                        Some(Ok(Message::Text(text))) => {
-                            let frame = codec().decode_server(&text).map_err(|_| "GPT-Live returned an invalid session event.")?;
-                            if !state.protocol.unique(&frame)? { continue; }
-                            owner.view.lock().server_events += 1;
-                            match frame.event {
-                                ServerEvent::Started {session,..} => {
-                                    let muted = state.confirm_start(owner,config,&session)?;
-                                    if muted { let id = send(socket,Command::InputAudioMute).await?; state.protocol.muted=Some((id,true,Instant::now())); }
-                                }
-                                ServerEvent::Closed {session,usage:final_usage,reason,..} => {
-                                    state.pin_session(&session,config)?;
-                                    if let Some(media) = owner.media.lock().as_ref() { media.confirm_live_closed(); }
-                                    let confirmed = !matches!(reason,api::CloseReason::ConnectionLost);
-                                    usage.observe(final_usage.seconds,confirmed)?;
-                                    update_usage(owner,usage);
-                                    if !confirmed { return Err("GPT-Live disconnected. Usage is an estimate; check the agent chat for pending results."); }
-                                    owner.close();
-                                    return Ok(());
-                                }
-                                ServerEvent::Updated {session,..} => { state.pin_session(&session,config)?; }
-                                ServerEvent::Error {error,..} => return Err(errors::rejected(&error, config.global)),
-                                _ if state.protocol.session_id.is_none() => return Err("GPT-Live session did not start correctly."),
-                                ServerEvent::UsageUpdated {usage:reported,..} => {
-                                    usage.observe(reported.seconds,false)?;
-                                    update_usage(owner,usage);
-                                }
-                                ServerEvent::InputTranscriptDelta {event_id,delta,start_ms,end_ms} => {
-                                    if state.protocol.input_caption(end_ms) && let Some(media) = owner.media.lock().as_ref() { media.resume_live_audio(); }
-                                    owner.view.lock().user_text = super::limit_text(delta.clone());
-                                    owner.view.lock().caption_events += 1;
-                                    if let Some(transcript) = owner.output.lock().live_transcript.as_mut() { transcript.append(captions::Fragment {id:event_id,role:"user".into(),text:delta,start_ms,end_ms,event:None})?; }
-                                }
-                                ServerEvent::OutputTranscriptDelta {event_id,delta,start_ms,end_ms} => {
-                                    super::bounded_text(&mut owner.view.lock().text,&delta);
-                                    if let Some(transcript) = owner.output.lock().live_transcript.as_mut() { transcript.append(captions::Fragment {id:event_id,role:"assistant".into(),text:delta,start_ms,end_ms,event:None})?; }
-                                }
-                                ServerEvent::OutputAudioDelta {delta,..} => {
-                                    if config.webrtc || state.protocol.suppress_output_after.is_some() { continue; }
-                                    let pcm = STANDARD.decode(delta).map_err(|_| "GPT-Live returned invalid audio.")?;
-                                    owner.output.lock().append("live-stream".into(),0,pcm)?;
-                                }
-                                ServerEvent::DelegationCreated {delegation,offset_ms,..} => {
-                                    if let Some(transcript) = owner.output.lock().live_transcript.as_mut() {
-                                        transcript.event(&delegation.id, crate::voice_history::Event::new("delegation", if config.global { "Responses" } else { "Coding agent" }, "requested"));
-                                    }
-                                    if config.global {
-                                        if delegation.target != api::DelegationTarget::Responses || delegation.response_id.is_none() {
-                                            return Err("Global GPT-Live requires Responses delegation.");
-                                        }
-                                    } else if state.delegate(&delegation,offset_ms,tasks.len())? == Admission::Full {
-                                        if let Some(transcript) = owner.output.lock().live_transcript.as_mut() { transcript.event_result(&delegation.id, &serde_json::json!({"error":"queue_full"})); }
-                                        append(socket,Some(&delegation.id),"No request was sent: the call's agent queue is full. Use the agent chat.",Channel::Commentary).await?;
-                                    }
-                                }
-                                ServerEvent::Response {delegation_id,event,..} => {
-                                    let backend = backend.as_mut().ok_or("Unexpected GPT-Live backend response.")?;
-                                    let event = api::ResponseEvent::decode(Value::Object(event)).map_err(|_| "Invalid global Live backend event.")?;
-                                    if let Some(batch) = backend.observe(delegation_id.value().map(String::as_str), &event)? {
-                                        let global = owner.global.clone().ok_or("Global call controls are unavailable.")?;
-                                        let owner = owner.clone();
-                                        tasks.spawn(async move { Completion::Global(batch.execute(global, owner).await) });
-                                    }
-                                    if let api::ResponseEvent::OutputTextDone {text,..} = event {
-                                        let text = public_text(&super::limit_text(text));
-                                        if let Some(id) = delegation_id.value() && let Some(transcript) = owner.output.lock().live_transcript.as_mut() {
-                                            let mut event = crate::voice_history::Event::new("delegation", "Responses", "responded");
-                                            event.output = Some(text.clone()); transcript.event(id, event);
-                                        }
-                                        owner.view.lock().backend_text = Some(text);
-                                    }
-                                }
-                                ServerEvent::InputAudioMuted {..} => {
-                                    if state.protocol.confirm_mute(frame.client_event_id.as_deref(),true) { owner.view.lock().muted=true; }
-                                }
-                                ServerEvent::InputAudioUnmuted {..} if state.protocol.confirm_mute(frame.client_event_id.as_deref(),false) => {
-                                    owner.view.lock().muted=false;
-                                }
-                                _ => {}
-                            }
-                        }
-                        Some(Ok(Message::Ping(bytes))) => { tokio::time::timeout(capture_worker::SEND_TIMEOUT,socket.send(Message::Pong(bytes))).await.map_err(|_| "GPT-Live upload timed out.")?.map_err(|_| "GPT-Live disconnected.")?; }
-                        Some(Ok(Message::Close(_)) | Err(_)) | None => return Err("GPT-Live disconnected. Use the agent chat for results; prompts were not replayed."),
-                        _ => {}
-                    }
-                },
-                completion = tasks.join_next(), if !tasks.is_empty() => {
-                    let completion = completion.ok_or("GPT-Live agent observation stopped.")?.map_err(|_| "GPT-Live agent observation failed.")?;
-                    match completion {
-                        Completion::Agent {id,value} => {
-                            if let Some(agent) = agent && let Ok(Some(snapshot)) = agent.feedback_snapshot(None) { owner.agent_events(&snapshot); }
-                            state.uncertain |= value["error"]=="outcome_unknown";
-                            let text = public_result(&value);
-                            if let Some(transcript) = owner.output.lock().live_transcript.as_mut() { transcript.event_result(&id, &serde_json::json!({"completion":value["completion"], "error":value["error"], "result":text})); }
-                            // Text fallback survives failed voice/context delivery.
-                            owner.view.lock().backend_text = Some(text.clone());
-                            append(socket,Some(&id),&text,Channel::Commentary).await?;
-                            if state.handoff.as_ref().is_some_and(|handoff| handoff.id==id) { state.handoff=None; }
-                        }
-                        Completion::Global(results) => {
-                            let results = results?;
-                            let backend = backend.as_mut().ok_or("Global Live backend is unavailable.")?;
-                            backend.finished(&results)?;
-                            for item in results.items { send(socket,Command::ResponseItemCreate {item}).await?; }
-                        }
-                    }
-                },
-                _ = tick.tick() => {
-                    if !owner.speech.is_current() { return Err("Voice audio was replaced by another speech session."); }
-                    if let Some(agent) = agent { agent.check_liveness().map_err(|_| "The bound agent disconnected or changed. Please call again.")?; }
-                    if let Some(global) = &owner.global { global.check().map_err(|_| "Global call authorization ended.")?; }
-                    if !state.protocol.started {
-                        if started.elapsed()>super::IO_TIMEOUT { return Err("GPT-Live session startup timed out."); }
-                        continue;
-                    }
-                    if state.protocol.muted.as_ref().is_some_and(|(_,_,at)| at.elapsed()>super::IO_TIMEOUT) { return Err("GPT-Live did not confirm the microphone state."); }
-                    {
-                        let speaking = {
-                            let output = owner.output.lock();
-                            if config.webrtc { output.live_speaking() } else { !output.samples.is_empty() }
-                        };
-                        let mut view = owner.view.lock();
-                        view.phase = if speaking { "speaking" } else if view.muted { "muted" } else if config.webrtc && view.startup.first_input.is_none() { "starting" } else { "listening" };
-                    }
-                    if let Some(backend) = &mut backend && backend.take_continuation() {
-                        send(socket,Command::ResponseCreate).await?;
-                    }
-                    if let Some(agent) = agent {
-                        Self::dispatch(owner,agent,socket,state,tasks).await?;
-                        if last_feedback.elapsed()>=Duration::from_millis(500) {
-                            last_feedback=Instant::now();
-                            if let Some(handoff) = &mut state.handoff {
-                                let snapshot = agent.feedback_snapshot(handoff.feedback.revision()).map_err(|_| "The bound agent changed.")?;
-                                if let Some(snapshot)=snapshot { owner.agent_events(&snapshot); for text in handoff.feedback.observe(snapshot) { let text = public_text(&text); append(socket,Some(&handoff.id),&text,Channel::Thinking).await?; } }
-                            }
-                        }
-                    }
-                    if !config.webrtc {
-                        upload_pcm(owner, socket, &mut pending).await?;
-                    }
-                },
-                packet = owner.next_capture(&mut capture), if !config.webrtc && !pending.ready() && state.protocol.session_id.is_some() => {
-                    if packet? { pending.reset(owner)?; }
-                    pending.refresh(owner)?;
-                    owner.process_capture(&mut capture)?;
-                    pending.push(&capture)?;
-                },
-            }
-        }
+        let mut app = session_host::App::new(owner, config, agent, self, commands);
+        session.drive(&**owner, &mut app).await
     }
 
     async fn dispatch(
@@ -644,118 +421,50 @@ impl LiveVoiceAdapter {
         });
         Ok(())
     }
+    #[cfg(test)]
     async fn graceful_close(
         config: &Config,
         socket: &mut super::RealtimeSocket,
         state: &mut State,
         usage: &mut usage::Usage,
     ) -> Result<(), &'static str> {
-        tokio::time::timeout(CLOSE_TIMEOUT, async {
-            send(socket, Command::Close).await?;
-            while let Some(frame) = socket.next().await {
-                let Message::Text(text) =
-                    frame.map_err(|_| "GPT-Live final usage is unavailable.")?
-                else {
-                    continue;
-                };
-                let frame = codec()
-                    .decode_server(&text)
-                    .map_err(|_| "GPT-Live final usage is unavailable.")?;
-                match frame.event {
-                    ServerEvent::Closed {
-                        session,
-                        reason,
-                        usage: reported,
-                        ..
-                    } => {
-                        state.pin_session(&session, config)?;
-                        usage.observe(
-                            reported.seconds,
-                            reason != api::CloseReason::ConnectionLost,
-                        )?;
-                        return Ok(());
-                    }
-                    ServerEvent::UsageUpdated {
-                        usage: reported, ..
-                    } => usage.observe(reported.seconds, false)?,
-                    _ => {}
-                }
-            }
-            Err("GPT-Live closed without final usage.")
-        })
-        .await
-        .map_err(|_| "GPT-Live final usage timed out.")?
+        let mut provider = voice_openai::session::Session::live(
+            socket,
+            provider_config(config, state.protocol.session_id.clone())?,
+            config.webrtc,
+        )
+        .with_prefix(EVENT_PREFIX);
+        provider
+            .finish_live(
+                || true,
+                |seconds, finalized| usage.observe(seconds, finalized),
+            )
+            .await
     }
 }
 
-#[derive(Clone, Copy)]
-enum Channel {
-    Thinking,
-    Commentary,
-    Instructions,
-}
-
-async fn upload_pcm(
-    owner: &RealtimeVoiceAdapter,
-    socket: &mut super::RealtimeSocket,
-    pending: &mut capture_worker::Pending,
-) -> Result<(), &'static str> {
-    pending.refresh(owner)?;
-    let samples = pending
-        .take()
-        .filter(|frame| frame.current(owner))
-        .map_or([0; super::FRAME], |frame| frame.samples);
-    let bytes: Vec<_> = samples
-        .iter()
-        .flat_map(|sample| sample.to_le_bytes())
-        .collect();
-    send(
-        socket,
-        Command::InputAudioAppend {
-            audio: STANDARD.encode(bytes),
-        },
-    )
-    .await?;
-    owner.view.lock().uploaded_packets += 1;
-    Ok(())
-}
+use voice_openai::live::commands::Context as Channel;
 async fn append(
     socket: &mut super::RealtimeSocket,
     id: Option<&str>,
     text: &str,
     channel: Channel,
 ) -> Result<(), &'static str> {
-    // Strict byte bound also bounds tokens. Never truncate UTF-8 or repeat a
-    // context append after uncertain transport delivery.
-    for chunk in chunks(text) {
-        let delegation_id = Nullable(id.map(str::to_owned));
-        send(
-            socket,
-            match channel {
-                Channel::Thinking => Command::ThinkingAppend {
-                    content: chunk.into(),
-                    delegation_id,
-                },
-                Channel::Commentary => Command::CommentaryAppend {
-                    content: chunk.into(),
-                    delegation_id,
-                },
-                Channel::Instructions => Command::InstructionsAppend {
-                    content: chunk.into(),
-                    delegation_id,
-                },
-            },
-        )
-        .await?;
-    }
-    Ok(())
+    voice_openai::live::commands::append_context_with_prefix(
+        socket,
+        id,
+        text,
+        channel,
+        EVENT_PREFIX,
+    )
+    .await
 }
 async fn send(
     socket: &mut super::RealtimeSocket,
     command: Command,
 ) -> Result<String, &'static str> {
     let kind = command.kind();
-    let id = voice_openai::live::send_with_prefix(socket, command, "whip-live").await?;
+    let id = voice_openai::live::send_with_prefix(socket, command, EVENT_PREFIX).await?;
     if kind != "session.input_audio.append" {
         crate::host_runtime::diagnostics::log_lifecycle(format_args!(
             "GPT-Live sent command={kind} client_event_id={id}"
@@ -834,4 +543,17 @@ fn public_text(text: &str) -> String {
     } else {
         super::limit_text(text.to_owned())
     }
+}
+
+fn provider_config(
+    config: &Config,
+    session_id: Option<String>,
+) -> Result<voice_openai::session::LiveConfig, &'static str> {
+    let catalog = catalog()?;
+    Ok(voice_openai::session::LiveConfig {
+        model: catalog.model.clone(),
+        voice: config.voice.clone(),
+        backend_model: config.global.then(|| catalog.backend_model.clone()),
+        session_id,
+    })
 }

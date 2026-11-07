@@ -32,3 +32,4 @@ jobs:
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked --all-targets
       - run: cargo run --locked --example mocked
+      - run: cargo run --locked --example call
