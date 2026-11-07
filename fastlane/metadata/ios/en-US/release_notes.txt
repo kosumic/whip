@@ -1,7 +1,1 @@
-Set up encrypted push notifications for each host, with clearer setup guidance and detailed plugin installation progress.
-
-Edit remote files with the new code editor, including pinch-to-zoom, and view Mermaid diagrams in Markdown. Adjust the app's font size in Settings.
-
-This update also adds Pi agent support in Chat View and improves host details, plugin upgrades, terminal scrolling, and SVG rendering.
-
-Core SSH, SFTP, terminal, and Herdr features remain free.
+Fixes microphone permissions and voice-call startup on iOS.
