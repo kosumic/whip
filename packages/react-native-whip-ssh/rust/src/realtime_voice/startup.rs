@@ -4,7 +4,7 @@ use std::time::Instant;
 
 #[cfg(test)]
 #[derive(Default)]
-pub(super) struct Settings(voice_openai::settings::Settings);
+pub(super) struct Settings(voice_call_openai::settings::Settings);
 #[cfg(test)]
 impl Settings {
     pub(super) fn observe(

@@ -1,4 +1,4 @@
-use ai_voice_call::{Call, Phase};
+use voice_call_local::{Call, Phase};
 
 fn main() -> Result<(), &'static str> {
     let mut call = Call::default();

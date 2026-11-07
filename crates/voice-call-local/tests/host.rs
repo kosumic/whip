@@ -2,7 +2,7 @@
     clippy::unwrap_used,
     reason = "Unexpected policy errors must fail tests"
 )]
-use ai_voice_call::{Call, Generation, Phase};
+use voice_call_local::{Call, Generation, Phase};
 
 #[derive(Default)]
 struct Host {

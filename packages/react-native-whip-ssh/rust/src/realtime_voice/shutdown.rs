@@ -1,8 +1,8 @@
 //! Whip persistence sink for the provider's bounded final-usage collector.
 #[cfg(test)]
-use voice_openai::shutdown::FINAL_USAGE_TIMEOUT;
-pub(super) use voice_openai::shutdown::collect;
-impl voice_openai::shutdown::UsageSink for super::cost::CurrentChat {
+use voice_call_openai::shutdown::FINAL_USAGE_TIMEOUT;
+pub(super) use voice_call_openai::shutdown::collect;
+impl voice_call_openai::shutdown::UsageSink for super::cost::CurrentChat {
     fn has_pending_usage(&self) -> bool {
         self.has_pending_usage()
     }
@@ -19,6 +19,6 @@ use serde_json::json;
 #[cfg(test)]
 use std::time::Duration;
 #[cfg(test)]
-use voice_openai::shutdown::QUIET_PERIOD;
+use voice_call_openai::shutdown::QUIET_PERIOD;
 #[cfg(test)]
 mod tests;

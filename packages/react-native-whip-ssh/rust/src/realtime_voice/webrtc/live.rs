@@ -10,7 +10,7 @@ pub(in crate::realtime_voice) async fn start(
         owner: owner.clone(),
         attempt,
     });
-    let (socket, handle, id) = voice_openai::connect_live(host, key, session).await?;
+    let (socket, handle, id) = voice_call_openai::connect_live(host, key, session).await?;
     *owner.media.lock() = Some(handle);
     Ok((socket, id))
 }
@@ -41,6 +41,6 @@ use tokio::sync::watch;
 #[cfg(test)]
 use tokio_tungstenite::tungstenite::Message;
 #[cfg(test)]
-use voice_openai::LiveCall as Call;
+use voice_call_openai::LiveCall as Call;
 #[cfg(test)]
 mod tests;

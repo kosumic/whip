@@ -7,7 +7,6 @@ mod smart_turn;
 mod waiting_filler;
 
 use crate::{AgentTranscriptKind, ChatSpeechMessage, ChatSpeechQueue};
-use ai_voice_call::{Call, Phase, UserTurn};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use parking_lot::Mutex;
 #[cfg(feature = "smart-turn")]
@@ -24,6 +23,7 @@ use std::{
     },
     time::Instant,
 };
+use voice_call_local::{Call, Phase, UserTurn};
 use waiting_filler::WaitingFiller;
 
 #[cfg(feature = "smart-turn")]

@@ -2,7 +2,7 @@
 use super::super::{RealtimeVoiceAdapter, recovery};
 use std::sync::{Arc, atomic::Ordering};
 use voice_call_media::{Capture, Statistics, Tag};
-use voice_openai::{Host, Timing};
+use voice_call_openai::{Host, Timing};
 impl Capture for RealtimeVoiceAdapter {
     fn packet_samples(&self) -> usize {
         self.input.packet_samples

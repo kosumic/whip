@@ -6,7 +6,7 @@ use crate::app_database::{
 
 #[derive(Default)]
 pub(super) struct Usage {
-    pub provider: voice_openai::live::usage::DurationUsage,
+    pub provider: voice_call_openai::live::usage::DurationUsage,
     persistence: Option<NativeVoiceUsageSession>,
 }
 impl Usage {

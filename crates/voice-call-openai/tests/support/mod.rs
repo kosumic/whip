@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 use tokio::sync::Notify;
 use voice_call_media::{Capture, FRAME, RATE, Statistics, Tag};
-use voice_openai::{
+use voice_call_openai::{
     Credential, Host, Timing,
     recovery::{CANCELLED, Failure},
 };
@@ -72,7 +72,7 @@ impl App {
         })
     }
 }
-impl voice_openai::session::Audio for App {
+impl voice_call_openai::session::Audio for App {
     fn is_muted(&self) -> bool {
         !self.input.accepts(self.input.ticket())
     }
@@ -83,7 +83,7 @@ impl voice_openai::session::Audio for App {
         self.input.set_muted(muted);
         Ok(())
     }
-    fn interrupt(&self) -> Option<voice_openai::ClientEvent> {
+    fn interrupt(&self) -> Option<voice_call_openai::ClientEvent> {
         None
     }
     fn render_pcm(&self, _: String, _: u32, pcm: Vec<u8>) -> Result<(), &'static str> {
@@ -96,7 +96,7 @@ impl voice_openai::session::Audio for App {
             .iter()
             .map(|bytes| i16::from_le_bytes(*bytes))
             .collect();
-        voice_openai::Host::render(
+        voice_call_openai::Host::render(
             self,
             &Tag {
                 response: String::new(),

@@ -494,7 +494,7 @@ echo processing. Whip supplies native PCM ingress, playback and call-policy
 adapters; provider signaling and credentials stay outside the media engine.
 Both Realtime and GPT-Live use the same engine on the existing Tokio runtime.
 
-`voice-openai` depends on `voice-call-media` and owns Realtime/GPT-Live signaling,
+`voice-call-openai` depends on `voice-call-media` and owns Realtime/GPT-Live signaling,
 sideband transport, the serialized Realtime/GPT-Live receive and capture driver,
 effective settings validation, audio identity, response/tool admission and final
 provider usage collection. Other apps use `Call::connect` / `Call::run`; Whip's

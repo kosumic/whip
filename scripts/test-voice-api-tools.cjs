@@ -639,7 +639,7 @@ async function main() {
     fs.readFileSync(
       path.join(
         root,
-        'crates/voice-openai/src/models.json',
+        'crates/voice-call-openai/src/models.json',
       ),
       'utf8',
     ),

@@ -155,8 +155,8 @@ jobs:
           cargo test --locked --all-targets
           cargo run --locked --example mocked
 
-      - name: Check reusable OpenAI voice provider
-        working-directory: crates/voice-openai
+      - name: Check OpenAI voice-call provider
+        working-directory: crates/voice-call-openai
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/packages/react-native-whip-ssh/rust/target
         run: |
@@ -165,8 +165,8 @@ jobs:
           cargo test --locked --all-targets
           cargo run --locked --example mocked
 
-      - name: Check independent AI voice-call policy
-        working-directory: crates/ai-voice-call
+      - name: Check local voice-call policy
+        working-directory: crates/voice-call-local
         run: |
           cargo fmt --check
           cargo clippy --locked --all-targets --all-features -- -D warnings

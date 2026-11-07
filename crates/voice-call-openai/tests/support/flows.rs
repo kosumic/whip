@@ -7,7 +7,7 @@ use std::{sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 use voice_call_media::{Capture, FRAME};
-use voice_openai::{
+use voice_call_openai::{
     ServerEvent,
     captions::Language,
     session::{Call, Delegate, Event, Flow, LiveConfig, RealtimeConfig, Session},

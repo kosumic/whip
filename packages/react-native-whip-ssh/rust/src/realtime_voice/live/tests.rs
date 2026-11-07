@@ -419,7 +419,7 @@ fn session_identity_model_and_voice_are_pinned() -> Result<(), Box<dyn std::erro
     // identity before its parallel control connection becomes available.
     for session_id in [None, Some("one".to_owned())] {
         let mut state = State {
-            protocol: voice_openai::live::Control::new(session_id),
+            protocol: voice_call_openai::live::Control::new(session_id),
             ..State::default()
         };
         state.pin_session(&snapshot("one", "gpt-live-1", "quartz")?, &config)?;

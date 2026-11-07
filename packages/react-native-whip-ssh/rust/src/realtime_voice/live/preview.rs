@@ -11,7 +11,7 @@ use std::{
 };
 use tokio::sync::{mpsc, watch};
 use voice_call_media::Capture;
-use voice_openai::session::{Audio, Delegate, Event, Flow, Session};
+use voice_call_openai::session::{Audio, Delegate, Event, Flow, Session};
 const QUIET: Duration = Duration::from_secs(2);
 const AUDIBLE: u16 = 64;
 const REQUEST: &str = "Speak the preview sample in your startup developer message now, exactly once, in its original language, then remain silent. Do not delegate work.";
@@ -76,7 +76,7 @@ impl Audio for PreviewAudio<'_> {
     fn set_muted(&self, muted: bool) -> Result<(), &'static str> {
         self.owner.set_muted(muted)
     }
-    fn interrupt(&self) -> Option<voice_openai::ClientEvent> {
+    fn interrupt(&self) -> Option<voice_call_openai::ClientEvent> {
         Audio::interrupt(self.owner)
     }
     fn render_pcm(&self, _item: String, _index: u32, pcm: Vec<u8>) -> Result<(), &'static str> {

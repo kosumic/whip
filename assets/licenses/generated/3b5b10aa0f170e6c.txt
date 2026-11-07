@@ -874,7 +874,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 
-voice-openai production transitive dependency notices (Android/iOS)
+voice-call-openai production transitive dependency notices (Android/iOS)
 
 Apache License 2.0 (Apache-2.0)
 

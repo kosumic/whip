@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 use std::sync::{Arc, atomic::Ordering};
 use support::{App, MockCredential};
 use tokio_tungstenite::tungstenite::Message;
-use voice_openai::{
+use voice_call_openai::{
     live::{Control, Selection, usage::DurationUsage},
     recovery::CANCELLED,
     socket::Socket,
@@ -18,15 +18,19 @@ async fn cancelled_startup_creates_neither_realtime_nor_live_provider_sessions()
     let credential = MockCredential::default();
     let app = Arc::new(App::new(false)?);
     let update =
-        voice_openai::typed(json!({"type":"session.update","session":{"type":"realtime"}}))?;
-    let result =
-        voice_openai::connect_realtime(app.clone(), &credential, update, "custom-realtime-model")
-            .await;
+        voice_call_openai::typed(json!({"type":"session.update","session":{"type":"realtime"}}))?;
+    let result = voice_call_openai::connect_realtime(
+        app.clone(),
+        &credential,
+        update,
+        "custom-realtime-model",
+    )
+    .await;
     assert_eq!(
         result.err().ok_or("cancelled Realtime connected")?.message,
         CANCELLED
     );
-    let result = voice_openai::connect_live(
+    let result = voice_call_openai::connect_live(
         app.clone(),
         &credential,
         json!({"model":"custom-live-model"}),
@@ -140,12 +144,12 @@ fn cumulative_live_usage_is_monotonic_and_finalized_only_by_valid_reports() -> R
 struct UsageSink {
     responses: usize,
 }
-impl voice_openai::shutdown::UsageSink for UsageSink {
+impl voice_call_openai::shutdown::UsageSink for UsageSink {
     fn has_pending_usage(&self) -> bool {
         true
     }
-    fn observe(&mut self, event: &voice_openai::ServerEvent) {
-        if matches!(event, voice_openai::ServerEvent::ResponseDone { .. }) {
+    fn observe(&mut self, event: &voice_call_openai::ServerEvent) {
+        if matches!(event, voice_call_openai::ServerEvent::ResponseDone { .. }) {
             self.responses += 1;
         }
     }
@@ -188,7 +192,7 @@ async fn shutdown_collects_usage_without_dispatching_tools_or_replaying_work() -
         Ok::<_, &'static str>(())
     });
     let mut usage = UsageSink::default();
-    voice_openai::shutdown::collect(&mut socket, &mut usage, true, || true).await;
+    voice_call_openai::shutdown::collect(&mut socket, &mut usage, true, || true).await;
     assert_eq!(usage.responses, 1);
     provider.abort();
     let _ = provider.await;
@@ -198,14 +202,15 @@ async fn shutdown_collects_usage_without_dispatching_tools_or_replaying_work() -
 #[tokio::test(start_paused = true)]
 async fn revoked_credentials_skip_the_entire_shutdown_exchange() {
     let (mut socket, mut commands, _events) = Socket::relay();
-    voice_openai::shutdown::collect(&mut socket, &mut UsageSink::default(), true, || false).await;
+    voice_call_openai::shutdown::collect(&mut socket, &mut UsageSink::default(), true, || false)
+        .await;
     drop(socket);
     assert!(commands.next().await.is_none());
 }
 
 #[test]
 fn effective_realtime_settings_gate_native_capture_and_reject_later_mismatches() -> Result {
-    use voice_openai::{
+    use voice_call_openai::{
         captions::Language,
         settings::{AudioSettings, Settings},
     };
@@ -243,7 +248,7 @@ fn effective_realtime_settings_gate_native_capture_and_reject_later_mismatches()
 
 #[test]
 fn realtime_hosts_can_disable_automatic_responses_or_turn_detection() -> Result {
-    use voice_openai::{captions::Language, settings::AudioSettings};
+    use voice_call_openai::{captions::Language, settings::AudioSettings};
     let mut expected = AudioSettings {
         voice: "cedar".into(),
         preview: false,

@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 use std::sync::{Arc, atomic::Ordering};
 use support::{App, MockCredential};
 use tokio_tungstenite::tungstenite::Message;
-use voice_openai::{
+use voice_call_openai::{
     live,
     socket::Socket,
     tools::{Access, Ledger, function_output},
@@ -18,15 +18,16 @@ async fn main() -> Result {
     // This attempt is cancelled before signaling. It must not access credentials.
     let app = Arc::new(App::new(false)?);
     let credential = MockCredential::default();
-    let update = voice_openai::typed(json!({"type":"session.update","session":{
+    let update = voice_call_openai::typed(json!({"type":"session.update","session":{
         "type":"realtime", "instructions":"A second app's prompt", "tools":[],
         "audio":{"output":{"voice":"cedar"}}
     }}))?;
     let result =
-        voice_openai::connect_realtime(app.clone(), &credential, update, "gpt-realtime-1.5").await;
+        voice_call_openai::connect_realtime(app.clone(), &credential, update, "gpt-realtime-1.5")
+            .await;
     assert_eq!(
         result.err().ok_or("cancelled call connected")?.message,
-        voice_openai::recovery::CANCELLED
+        voice_call_openai::recovery::CANCELLED
     );
     assert_eq!(credential.0.load(Ordering::Relaxed), 0);
 
@@ -54,7 +55,7 @@ async fn main() -> Result {
         assert_eq!(output["item"]["call_id"], "mock-tool");
         Ok::<_, &'static str>(())
     });
-    voice_openai::send_value(&mut socket, json!({"type":"session.update","session":{
+    voice_call_openai::send_value(&mut socket, json!({"type":"session.update","session":{
         "type":"realtime", "instructions":"Host-supplied context", "tools":[{"type":"function","name":"status",
         "parameters":{"type":"object","properties":{},"additionalProperties":false}}],
         "audio":{"input":{"turn_detection":{"type":"server_vad","threshold":0.5,"prefix_padding_ms":300,"silence_duration_ms":500}},"output":{"voice":"cedar"}}
@@ -69,7 +70,7 @@ async fn main() -> Result {
     let id = event["call_id"].as_str().ok_or("missing call ID")?;
     // The host's own tool catalog authorizes status as read-only, then executes it.
     let mutation = ledger.begin(id, "{}", Access::Read)?;
-    voice_openai::send(
+    voice_call_openai::send(
         &mut socket,
         function_output(id.into(), json!({"status":"ready"})),
     )
