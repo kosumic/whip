@@ -78,7 +78,7 @@ export function sessionConnectionPlatform({
   security: ReturnType<typeof useApplicationSecurity>;
   terminals: ReturnType<typeof useTerminalSessions>;
   navigation: AppNavigationController;
-  createRuntime: (id: string, profile: ConnectionProfile) => LiveRuntime;
+  createRuntime: (id: string, profile: HostProfile) => LiveRuntime;
   refresh: (id: string) => Promise<void>;
   trackConnecting: (ids: string[]) => void;
   t: TFunction;
@@ -112,7 +112,7 @@ export function sessionConnectionPlatform({
     async connectRuntime(permit, value, jumps) {
       check(permit);
       const connection = profile(value);
-      const runtime = handles.get(permit.operationId()) ?? bind(permit, createRuntime(value.host.id, connection));
+      const runtime = handles.get(permit.operationId()) ?? bind(permit, createRuntime(value.host.id, hostProfile(value.host)));
       runtimesRef.current.set(value.host.id, runtime);
       try {
         await runtime.client.connect(connection, jumps.map(profile), () => permit.isCurrent());

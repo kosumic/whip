@@ -7845,6 +7845,7 @@ dependencies = [
  "voice-call-openai",
  "whip-notify",
  "whipair-protocol",
+ "zeroize",
  "zip",
 ]
 

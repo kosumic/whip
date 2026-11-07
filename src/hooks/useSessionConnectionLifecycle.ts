@@ -168,7 +168,7 @@ export function useSessionConnectionLifecycle({
         sessionId,
         cause: networkErrorMessage(cause),
       });
-      runtime.client.reconnectControl(runtime.profile).catch(reconnectError => {
+      runtime.client.reconnectControl().catch(reconnectError => {
         if (runtimesRef.current.get(sessionId) !== runtime) return;
         recordNetworkDiagnostic('warn', 'control-recovery-native-failed', {
           sessionId,
@@ -180,7 +180,7 @@ export function useSessionConnectionLifecycle({
   );
 
   const createRuntime = useCallback(
-    (sessionId: string, profile: ConnectionProfile): LiveRuntime => {
+    (sessionId: string, profile: HostProfile): LiveRuntime => {
       const runtime = {
         client: new HerdrClient(),
         profile,

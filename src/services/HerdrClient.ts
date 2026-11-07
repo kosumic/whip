@@ -11,7 +11,7 @@ import type { HostLatencyMeasurement } from './latencyDiagnostics';
 import { errorCode } from '../lib/connectionErrors';
 import { DEFAULT_HERDR_COMMAND } from '../lib/hostProfiles';
 import { normalizePrivateKey } from '../lib/privateKey';
-import type { ConnectionProfile, HerdrSnapshot, ServerInfo } from '../types';
+import type { ConnectionProfile, HerdrSnapshot, HostProfile, ServerInfo } from '../types';
 import {
   networkErrorKind,
   networkErrorMessage,
@@ -46,7 +46,7 @@ export class HerdrClient {
   private disconnecting: Promise<void> | null = null;
   private runtimeAwaitingHostKeyTrust = false;
   private runtimeEventHandler: ((event: HostRuntimeLifecycleEvent) => void) | null = null;
-  private profile: ConnectionProfile | null = null;
+  private profile: Pick<HostProfile, 'id' | 'herdrSocketPath'> | null = null;
   private attachmentEpoch = 0;
 
   readonly terminal = new TerminalBridgeController(() => this.runtime);
@@ -147,7 +147,7 @@ export class HerdrClient {
       cachedSocketPath,
     }, handleEvent);
     this.runtime = runtime;
-    this.profile = profile;
+    this.profile = { id: profile.id, herdrSocketPath: profile.herdrSocketPath };
     try {
       const state = runtime.status().state;
       if (state !== 'connected' && state !== 'connecting' && state !== 'reconnecting') {
@@ -182,8 +182,7 @@ export class HerdrClient {
   }
 
   /** Ask the Rust-owned runtime to recover its transport and native resources. */
-  async reconnectControl(profile: ConnectionProfile = this.requireProfile()): Promise<void> {
-    this.profile = profile;
+  async reconnectControl(): Promise<void> {
     await this.native.recover(true, 'control connection unavailable');
   }
 
@@ -291,7 +290,7 @@ export class HerdrClient {
     this.native.setMonitoringState(appActive, hostsVisible, accessLocked);
   }
 
-  private requireProfile(): ConnectionProfile {
+  private requireProfile(): Pick<HostProfile, 'id' | 'herdrSocketPath'> {
     if (!this.profile) throw new Error('SSH connection is not active');
     return this.profile;
   }

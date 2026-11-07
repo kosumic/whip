@@ -73,6 +73,25 @@ describe('SSH control reconnects', () => {
     expect(control.disconnect).toHaveBeenCalledTimes(1);
   });
 
+  test('requests native recovery after the caller releases its credential', async () => {
+    const stale = nativeClient();
+    const fresh = nativeClient();
+    connectWithPassword.mockResolvedValueOnce(stale).mockResolvedValueOnce(fresh);
+    const client = new HerdrClient();
+    const connection = { ...profile };
+    await client.connect(connection);
+    connection.secret = '';
+    connection.passphrase = '';
+
+    await client.reconnectControl();
+
+    expect(connectWithPassword).toHaveBeenLastCalledWith(
+      profile.host, Number(profile.port), profile.username, profile.secret,
+    );
+    expect(stale.disconnect).toHaveBeenCalledTimes(1);
+    await client.disconnect();
+  });
+
   test('reconnects once and retries an idempotent workspace focus', async () => {
     const stale = nativeClient({ startError: 'channel is not opened.' });
     const fresh = nativeClient();

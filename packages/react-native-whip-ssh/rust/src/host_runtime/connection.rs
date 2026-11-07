@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tokio::sync::watch;
+use zeroize::{Zeroize, Zeroizing};
 
 use super::{
     HERDR_READINESS_ATTEMPT_TIMEOUT, HERDR_READINESS_INITIAL_BACKOFF, HERDR_READINESS_MAX_BACKOFF,
@@ -30,6 +31,56 @@ use crate::herdr_terminal::close_all_herdr_terminal_bridges;
 use crate::host_state::{ApplyResult, HostFreshness, HostSyncStatus, SnapshotToken, now_ms};
 use crate::remote_ops::shell_quote;
 use crate::ssh::{SshConnectionConfig, SshCredential, SshSession};
+
+impl HostSshConfig {
+    /// Keep only the unlocked key needed by future connections, never its passphrase.
+    pub(super) fn retain_unlocked_key(&mut self) -> Result<(), HostRuntimeError> {
+        if let HostSshCredential::Key {
+            private_key,
+            passphrase,
+        } = &mut self.credential
+        {
+            let encoded = Zeroizing::new(std::mem::take(private_key));
+            let passphrase = passphrase.take().map(Zeroizing::new);
+            let key = russh::keys::decode_secret_key(
+                &encoded,
+                passphrase.as_ref().map(|value| value.as_str()),
+            )
+            .map_err(crate::ssh::TransportError::from)
+            .map_err(crate::ssh::SshFailure::from)?;
+            *private_key = key
+                .to_openssh(russh::keys::ssh_key::LineEnding::LF)
+                .map_err(crate::ssh::TransportError::from)
+                .map_err(crate::ssh::SshFailure::from)?
+                .to_string();
+        }
+        Ok(())
+    }
+}
+
+impl Zeroize for HostSshConfig {
+    fn zeroize(&mut self) {
+        self.tailcat_private_key.zeroize();
+        match &mut self.credential {
+            HostSshCredential::None => {}
+            HostSshCredential::Password { password } => password.zeroize(),
+            HostSshCredential::Key {
+                private_key,
+                passphrase,
+            } => {
+                private_key.zeroize();
+                passphrase.zeroize();
+            }
+        }
+    }
+}
+
+impl Zeroize for HostRuntimeConfig {
+    fn zeroize(&mut self) {
+        self.ssh.zeroize();
+        self.jump_hosts.zeroize();
+    }
+}
 
 pub(super) fn validate_config(config: &HostRuntimeConfig) -> Result<(), HostRuntimeError> {
     for ssh in std::iter::once(&config.ssh).chain(config.jump_hosts.iter()) {
@@ -1297,7 +1348,8 @@ impl HostRuntime {
     }
 
     pub fn matches_ssh_config(&self, config: HostSshConfig) -> bool {
-        self.inner.config.ssh == config
+        let mut config = Zeroizing::new(config);
+        config.retain_unlocked_key().is_ok() && self.inner.config.ssh == *config
     }
 
     pub fn resolved_socket_path(&self) -> Option<String> {

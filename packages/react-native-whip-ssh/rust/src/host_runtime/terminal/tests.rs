@@ -306,7 +306,7 @@ impl TerminalFixture {
         )?);
         let ssh = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO).await?;
         let seed = super::super::tests::connected_runtime_inner("terminal-retry-config");
-        let mut config = seed.config.clone();
+        let mut config = (*seed.config).clone();
         config.runtime_id = id.to_owned();
         config.socket_path = Some(
             directory

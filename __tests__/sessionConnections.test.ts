@@ -40,7 +40,7 @@ function setup() {
     security: { verifyBiometric: jest.fn(async () => true) },
     terminals: { restore: jest.fn(async (_sessionId: string, _hostId: string, _isCurrent: () => boolean) => ({ activeTerminalId: 'terminal' })) },
     navigation: { showHerd: jest.fn(), showTerminal: jest.fn(), selectPane: jest.fn(), selectTab: jest.fn() },
-    createRuntime: jest.fn(() => runtime as unknown as LiveRuntime), refresh: jest.fn(async () => {}), trackConnecting: jest.fn(),
+    createRuntime: jest.fn((_id: string, _profile: LiveRuntime['profile']) => runtime as unknown as LiveRuntime), refresh: jest.fn(async () => {}), trackConnecting: jest.fn(),
     t: (key: string) => key,
   };
   const adapter = sessionConnectionPlatform(options as unknown as Parameters<typeof sessionConnectionPlatform>[0]);
@@ -67,6 +67,23 @@ test('transport callback reuses its physical handle across a native trust retry'
   await adapter.connectRuntime(permit, value(), []);
   expect(options.createRuntime).toHaveBeenCalledTimes(1);
   expect(runtime.client.connect).toHaveBeenCalledTimes(2);
+});
+
+test('UI runtime receives host metadata while credentials go only to the connection', async () => {
+  const { adapter, options, runtime } = setup();
+  const connection = value();
+  connection.credential.passphrase = 'key-passphrase';
+  connection.credential.tailcatPrivateKey = 'tailcat-private-key';
+  await adapter.connectRuntime(lease(), connection, []);
+
+  const metadata = options.createRuntime.mock.calls[0];
+  expect(metadata[1]).toMatchObject({ id: host.id, host: host.host });
+  for (const key of ['secret', 'passphrase', 'tailcatPrivateKey']) {
+    expect(metadata[1]).not.toHaveProperty(key);
+  }
+  expect(runtime.client.connect).toHaveBeenCalledWith(
+    expect.objectContaining(connection.credential), [], expect.any(Function),
+  );
 });
 
 test('initial offline-cache publication waits for the native prepared presentation', async () => {
@@ -110,7 +127,7 @@ test('terminal restoration receives the native lease predicate', async () => {
 test('cleanup releases only the handle belonging to its transaction', async () => {
   const { adapter, options, runtime } = setup(); const permit = lease();
   await adapter.connectRuntime(permit, value(), []);
-  const replacement = { profile: host } as LiveRuntime;
+  const replacement = { ...runtime, client: { ...runtime.client } } as unknown as LiveRuntime;
   options.runtimesRef.current.set(host.id, replacement);
   await adapter.cleanup(permit, host.id, false);
   expect(runtime.client.disconnect).toHaveBeenCalledTimes(1);

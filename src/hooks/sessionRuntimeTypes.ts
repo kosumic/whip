@@ -8,11 +8,12 @@ import type {
 } from 'react-native-whip-ssh';
 
 import type { HerdrClient } from '../services/HerdrClient';
-import type { ConnectionProfile, HostProfile } from '../types';
+import type { HostProfile } from '../types';
 
 export interface LiveRuntime {
   client: HerdrClient;
-  profile: ConnectionProfile;
+  /** UI metadata only; Rust owns credentials for the runtime's reconnect lifetime. */
+  profile: HostProfile;
   latencyDiagnosticFailureRecorded: boolean;
   acceptHostState: (
     state: HostRuntimeState,

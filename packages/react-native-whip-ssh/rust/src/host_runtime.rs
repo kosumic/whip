@@ -610,7 +610,7 @@ struct RuntimeInner {
     interaction_response: AsyncMutex<HashMap<String, String>>,
     id: String,
     incarnation: u64,
-    config: HostRuntimeConfig,
+    config: zeroize::Zeroizing<HostRuntimeConfig>,
     state: Mutex<RuntimeState>,
     herdr: Arc<HerdrConnection>,
     jump_sessions: Mutex<Vec<Arc<SshSession>>>,
@@ -894,7 +894,14 @@ impl HostRuntime {
 pub fn create_host_runtime(
     config: HostRuntimeConfig,
 ) -> Result<Arc<HostRuntime>, HostRuntimeError> {
+    let mut config = zeroize::Zeroizing::new(config);
     validate_config(&config)?;
+    let HostRuntimeConfig {
+        ssh, jump_hosts, ..
+    } = &mut *config;
+    for ssh in std::iter::once(ssh).chain(jump_hosts.iter_mut()) {
+        ssh.retain_unlocked_key()?;
+    }
     let id = if config.runtime_id.trim().is_empty() {
         format!(
             "host-runtime-{}",

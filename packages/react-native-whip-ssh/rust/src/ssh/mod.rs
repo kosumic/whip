@@ -570,6 +570,25 @@ pub(crate) struct SshConnectionConfig {
     pub forward_agent: bool,
 }
 
+impl Drop for SshConnectionConfig {
+    fn drop(&mut self) {
+        use zeroize::Zeroize;
+
+        self.tailcat_private_key.zeroize();
+        match &mut self.credential {
+            SshCredential::None => {}
+            SshCredential::Password(password) => password.zeroize(),
+            SshCredential::Key {
+                private_key,
+                passphrase,
+            } => {
+                private_key.zeroize();
+                passphrase.zeroize();
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum SshFailure {
     Authentication(String),

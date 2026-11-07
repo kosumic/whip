@@ -63,6 +63,7 @@ uniffi = "=0.31"
 url = "2"
 uuid = { version = "1", features = ["v4"] }
 native-credentials = { path = "../../../crates/native-credentials" }
+zeroize = "1"
 
 [target.'cfg(not(target_os = "ios"))'.dependencies]
 ptts = { version = "=0.6.0", default-features = false, features = ["hf"] }

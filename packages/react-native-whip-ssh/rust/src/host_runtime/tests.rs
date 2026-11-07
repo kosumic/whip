@@ -113,6 +113,53 @@ fn config() -> HostRuntimeConfig {
 }
 
 #[test]
+fn runtime_retains_unlocked_keys_for_reconnect_without_their_passphrases()
+-> Result<(), Box<dyn std::error::Error>> {
+    use russh::keys::{Algorithm, PrivateKey, ssh_key};
+
+    let mut rng = ssh_key::rand_core::UnwrapErr(ssh_key::getrandom::SysRng);
+    let key = PrivateKey::random(&mut rng, Algorithm::Ed25519)?;
+    let encrypted = key.encrypt(&mut ssh_key::getrandom::SysRng, "test-passphrase")?;
+    let mut value = config();
+    value.runtime_id = uuid::Uuid::new_v4().to_string();
+    value.ssh.credential = HostSshCredential::Key {
+        private_key: encrypted.to_openssh(ssh_key::LineEnding::LF)?.to_string(),
+        passphrase: Some("test-passphrase".into()),
+    };
+    let supplied = value.ssh.clone();
+    value.jump_hosts.push(HostSshConfig {
+        host: "jump.test".into(),
+        ..supplied.clone()
+    });
+
+    let runtime = create_host_runtime(value)?;
+    // Both target and jump hops must remain usable on every new SSH connection.
+    for host in
+        std::iter::once(&runtime.inner.config.ssh).chain(runtime.inner.config.jump_hosts.iter())
+    {
+        let HostSshCredential::Key {
+            private_key,
+            passphrase,
+        } = &host.credential
+        else {
+            panic!("runtime lost its SSH key");
+        };
+        assert!(passphrase.is_none());
+        let retained_key = russh::keys::decode_secret_key(private_key, None)?;
+        assert_eq!(retained_key.public_key(), key.public_key());
+    }
+    // A trust retry or UI reattachment still recognizes the original encrypted key.
+    assert!(runtime.matches_ssh_config(supplied.clone()));
+    let mut wrong_passphrase = supplied;
+    if let HostSshCredential::Key { passphrase, .. } = &mut wrong_passphrase.credential {
+        *passphrase = Some("wrong-passphrase".into());
+    }
+    assert!(!runtime.matches_ssh_config(wrong_passphrase));
+    unregister_runtime(&runtime.inner);
+    Ok(())
+}
+
+#[test]
 fn plain_ssh_connect_and_refresh_never_discover_or_open_herdr_sockets()
 -> Result<(), Box<dyn std::error::Error>> {
     let _sink_lock = EVENT_SINK_TEST_LOCK.lock();
@@ -182,7 +229,7 @@ fn runtime_inner_with_state(
         interaction_response: AsyncMutex::new(HashMap::new()),
         id: id.to_owned(),
         incarnation: 1,
-        config: runtime_config,
+        config: zeroize::Zeroizing::new(runtime_config),
         state: Mutex::new(state),
         agents: AgentSessionManager::new(id.to_owned(), 1, herdr.clone()),
         operations: RemoteOperationManager::default(),
