@@ -1,6 +1,6 @@
 [package]
 name = "whipair"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2024"
 rust-version = "1.99"
 license = "MIT"
@@ -13,7 +13,7 @@ publish = ["crates-io"]
 exclude = ["/npm", "/pyproject.toml"]
 
 [dependencies]
-whipair-protocol = { version = "0.1.0", path = "../crates/whipair-protocol" }
+whipair-protocol = { version = "0.2.0", path = "../crates/whipair-protocol" }
 base64 = "0.22"
 clap = { version = "4.5", features = ["derive"] }
 fs2 = "0.4"

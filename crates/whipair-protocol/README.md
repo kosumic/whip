@@ -15,6 +15,10 @@ Payload debug output omits the temporary private seed and Tailcat bearer address
 SSH service on port 22. These envelopes omit the temporary SSH seed. The CLI and
 mobile core must both support this address type; older decoders reject it.
 
+Version 0.2.0 adds the public `PairingPayload::tailcat_no_auth` field. Existing
+struct initializers must set it to `false` for ordinary SSH enrollment. The new
+decoder continues to accept existing WP4 enrollment codes.
+
 The binary format is documented in [Whipair's README](https://github.com/kosumic/whip/tree/main/whipair#pairing-protocol-wp4).
 Golden Tailcat vectors live in `tests/fixtures/tailcat-pairing.json`.
 
@@ -27,7 +31,7 @@ nix develop -c cargo test --locked --manifest-path crates/whipair-protocol/Cargo
 ```
 
 Dependencies specify both a local path and registry version. Publish
-`tailcat-client` 0.1.1 before `whipair-protocol` 0.1.0, then publish Whipair.
+`tailcat-client` 0.1.1 before `whipair-protocol` 0.2.0, then publish Whipair.
 The `Publish whipair-protocol to crates.io` workflow runs on
 `whipair-protocol-v*` tags and supports manual dispatch. Bootstrap the first
 release with a short-lived crates.io publishing token, then configure its

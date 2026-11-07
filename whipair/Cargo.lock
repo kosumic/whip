@@ -2026,7 +2026,7 @@ dependencies = [
 
 [[package]]
 name = "whipair"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "base64",
  "clap",
@@ -2047,7 +2047,7 @@ dependencies = [
 
 [[package]]
 name = "whipair-protocol"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "ssh-key",

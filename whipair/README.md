@@ -336,7 +336,7 @@ prompt.
 
 The CLI uses versioned registry dependencies with local development paths.
 Publish `tailcat-client` 0.1.1 (offline validation support), then
-`whipair-protocol` 0.1.0 before publishing a CLI release that uses them.
+`whipair-protocol` 0.2.0 before publishing a CLI release that uses them.
 Each library has a tag-triggered crates.io workflow. See the
 [protocol release instructions](../crates/whipair-protocol/README.md).
 
@@ -388,8 +388,8 @@ Commit those changes, then push a tag whose version matches `Cargo.toml`
 exactly:
 
 ```bash
-git tag whipair-v0.1.5
-git push origin whipair-v0.1.5
+git tag whipair-v0.1.6
+git push origin whipair-v0.1.6
 ```
 
 ## License

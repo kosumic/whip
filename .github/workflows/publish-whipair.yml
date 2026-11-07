@@ -9,7 +9,7 @@ on:
       version:
         description: Version from whipair/Cargo.toml, without a leading v
         required: true
-        default: 0.1.5
+        default: 0.1.6
         type: string
       bootstrap_with_token:
         description: Bootstrap first release with API token

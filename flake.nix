@@ -71,7 +71,7 @@
         rustc = rustToolchain;
       }).buildRustPackage {
         pname = "whipair";
-        version = "0.1.5";
+        version = "0.1.6";
         src = pkgs.lib.cleanSourceWith {
           src = ./.;
           filter = path: type:

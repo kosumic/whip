@@ -23,7 +23,7 @@ herdr-protocol = { version = "0.2.0", path = "../../../crates/herdr-protocol" }
 agent-transcript-view = { version = "0.1.0", path = "../../../crates/agent-transcript-view" }
 agent-transcript-core = { version = "0.1.0", path = "../../../crates/agent-transcript-core" }
 agent-browser-control = { version = "0.1.0", path = "../../../crates/agent-browser-control" }
-whipair-protocol = { version = "0.1.0", path = "../../../crates/whipair-protocol" }
+whipair-protocol = { version = "0.2.0", path = "../../../crates/whipair-protocol" }
 async-trait = "0.1"
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio"] }
 base64 = "0.22"
