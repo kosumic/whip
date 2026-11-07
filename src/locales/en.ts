@@ -416,6 +416,13 @@ export const en = {
 
   'tipJar.title': 'Tip jar',
   'tipJar.copy': 'Support Whip’s development.',
+  'tipJar.selectAsset': 'Choose a tip currency and network',
+  'tipJar.cryptoAsset': '{{token}} on {{network}}',
+  'tipJar.cryptoInstructions': 'Send any amount of {{token}} on the {{network}} network to this address. Select {{token}} and {{network}} in your wallet before sending.',
+  'tipJar.addressQr': 'Tip wallet address QR code',
+  'tipJar.copyAddress': 'Copy wallet address',
+  'tipJar.addressCopied': 'Wallet address copied.',
+  'tipJar.copyError': 'Could not copy the address. You can select and copy it above.',
   'tipJar.optional': 'Each tip is a separate, one-time purchase. Tips do not unlock features or change your membership.',
   'tipJar.loading': 'Loading tip price…',
   'tipJar.amount': 'Leave a {{price}} tip',

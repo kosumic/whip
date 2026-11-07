@@ -419,6 +419,13 @@ export const zhHans = {
 
   'tipJar.title': '打赏',
   'tipJar.copy': '支持 Whip 的开发。',
+  'tipJar.selectAsset': '选择打赏币种和网络',
+  'tipJar.cryptoAsset': '{{network}} 网络上的 {{token}}',
+  'tipJar.cryptoInstructions': '通过 {{network}} 网络向此地址发送任意金额的 {{token}}。发送前请在钱包中选择 {{token}} 和 {{network}} 网络。',
+  'tipJar.addressQr': '打赏钱包地址二维码',
+  'tipJar.copyAddress': '复制钱包地址',
+  'tipJar.addressCopied': '已复制钱包地址。',
+  'tipJar.copyError': '无法复制地址。你可以选中上方地址并复制。',
   'tipJar.optional': '每次打赏都是单独的一次性购买，不会解锁功能或更改会员状态。',
   'tipJar.loading': '正在加载打赏价格…',
   'tipJar.amount': '打赏 {{price}}',

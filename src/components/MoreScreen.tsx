@@ -18,6 +18,7 @@ import {
 import { GlassSurface } from './GlassSurface';
 import { Text } from './ui/text';
 import type { WhipEntitlementsController } from '../billing/useWhipEntitlements';
+import { getBillingDistribution } from '../billing/distribution';
 import { MembershipSection } from './MembershipSection';
 import { RancherPurchaseSheet } from './RancherPurchaseSheet';
 import { GlobalCallButton } from './GlobalCallButton';
@@ -78,7 +79,7 @@ const MoreScreenContent = memo(function MoreContent(props: Props) {
           />
         ) : null}
         <AboutSection onOpenLicenses={props.onOpenLicenses} />
-        {props.developerOptionsEnabled ? (
+        {getBillingDistribution().channel === 'github' || props.developerOptionsEnabled ? (
           <TipJarSection />
         ) : null}
         <UsageSection />

@@ -1,14 +1,31 @@
-# $5 tip jar
+# Tip jar
 
-More → Tip jar is currently a developer preview. It appears only when
-**Developer Options** is enabled under More → Settings → Developer; submitting
-feedback is not required. Store builds disable Developer Options, so the tip jar
-stays hidden from App Store and Google Play users during setup.
+GitHub builds always show **More → Tip jar**, without requiring Developer
+Options. Users can choose either destination (USDC on Base is selected initially):
 
-Purchasing is restricted to `google-play` and `app-store` builds. The developer
-preview in GitHub builds displays the unavailable state and does not invoke
-Google Play Billing. Remove the Developer Options visibility gate only when the
-products are ready for public rollout.
+| Token | Network | Recipient |
+| --- | --- | --- |
+| USDC | Base | `0x5424bcf743D265BA8Ac4ACdE0d0A5DfC187eeB05` |
+| USDT | Solana | `59Nqb3jEvexJV7HAwHJDMrqnipaxhN7VJbJe7C7pz7uV` |
+
+The currency selector uses the issuers' official token logos, bundled locally
+under `assets/brand/`. Selecting a destination updates the network instructions, full selectable
+address, QR code, and copy action together. A copy icon sits inside the bordered
+address box. Switching destinations clears earlier copy feedback. Users select
+the displayed token and network in their own wallet and confirm the transfer there.
+Whip does not initiate or track the transfer, invoke store billing, or report a
+payment as completed. The QR code contains only the address; it does not select
+the token or network for the wallet.
+
+The $5 store tip remains a developer preview, visible only when **Developer
+Options** is enabled under More → Settings → Developer. Store builds disable
+Developer Options, so the tip jar stays hidden from App Store and Google Play
+users during setup. Submitting feedback is not required. Crypto tip controls
+appear only on the explicit `github` distribution channel.
+
+Store purchasing is restricted to `google-play` and `app-store` builds. Remove
+the Developer Options visibility gate for stores only when the products are
+ready for public rollout.
 Each tip is an optional, repeatable, one-time purchase. It grants no entitlement,
 feature, membership, priority, or other benefit.
 
@@ -94,6 +111,12 @@ Consumable tips do not need a restore action because they unlock no access.
 
 ## Release validation
 
+- On a GitHub build with Developer Options disabled, open More → Tip jar.
+  Switch between USDC/Base and USDT/Solana, verify each network's instructions,
+  scan each QR code, and copy each address. Both QR and clipboard must match
+  the selected recipient above; neither action indicates payment success.
+- Confirm normal App Store and Google Play builds keep the tip jar hidden and
+  never display the crypto address or controls.
 - Test the product with Play license testers/internal testing and Apple sandbox
   testers/TestFlight, using the real platform public SDK keys.
 - For store purchase testing, enable the tip jar in a dedicated test build; the

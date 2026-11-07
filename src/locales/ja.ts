@@ -419,6 +419,13 @@ export const ja = {
 
   'tipJar.title': 'チップ',
   'tipJar.copy': 'Whip の開発を応援する。',
+  'tipJar.selectAsset': 'チップの通貨とネットワークを選択',
+  'tipJar.cryptoAsset': '{{network}} ネットワークの {{token}}',
+  'tipJar.cryptoInstructions': '{{network}} ネットワークの {{token}} を任意の金額でこのアドレスに送れます。送金前にウォレットで {{token}} と {{network}} を選択してください。',
+  'tipJar.addressQr': 'チップ送金先ウォレットアドレスの QR コード',
+  'tipJar.copyAddress': 'ウォレットアドレスをコピー',
+  'tipJar.addressCopied': 'ウォレットアドレスをコピーしました。',
+  'tipJar.copyError': 'アドレスをコピーできませんでした。上のアドレスを選択してコピーできます。',
   'tipJar.optional': 'チップはその都度のお支払いです。機能の追加やメンバーシップの変更はありません。',
   'tipJar.loading': 'チップの価格を読み込み中…',
   'tipJar.amount': '{{price}} のチップを贈る',

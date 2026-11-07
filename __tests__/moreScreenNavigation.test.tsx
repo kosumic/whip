@@ -1,6 +1,11 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import type { ComponentProps } from 'react';
 import { MoreScreen } from '../src/components/MoreScreen';
+import { getBillingDistribution } from '../src/billing/distribution';
+
+jest.mock('../src/billing/distribution', () => ({
+  getBillingDistribution: jest.fn(() => ({ channel: null, rancherWebPurchaseUrl: null })),
+}));
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
 jest.mock('react-native-keyboard-controller', () => ({ KeyboardAwareScrollView: 'ScrollView' }));
@@ -14,12 +19,30 @@ jest.mock('../src/components/AboutScreen', () => ({ AboutSection: () => null }))
 jest.mock('../src/components/UsageSection', () => ({ UsageSection: () => null }));
 jest.mock('../src/components/AppLogsScreen', () => ({ AppLogsSection: () => null }));
 jest.mock('../src/components/FeedbackSection', () => ({ FeedbackSection: () => null }));
-jest.mock('../src/components/TipJarSection', () => ({ TipJarSection: () => null }));
+jest.mock('../src/components/TipJarSection', () => ({ TipJarSection: 'TipJarSection' }));
 jest.mock('../src/components/MembershipSection', () => ({ MembershipSection: () => null }));
 jest.mock('../src/components/RancherPurchaseSheet', () => ({ RancherPurchaseSheet: () => null }));
 jest.mock('../src/components/GlobalCallButton', () => ({ GlobalCallButton: () => null }));
 jest.mock('../src/components/GlassSurface', () => ({ GlassSurface: 'GlassSurface' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
+
+test.each([
+  ['github', false, true],
+  ['github', true, true],
+  ['app-store', false, false],
+  ['google-play', false, false],
+  [null, false, false],
+  [null, true, true],
+] as const)('tip jar visibility for channel %s and developer options %s', (channel, developerOptionsEnabled, visible) => {
+  jest.mocked(getBillingDistribution).mockReturnValue({ channel, rancherWebPurchaseUrl: null });
+  const props = { membershipEnabled: false, developerOptionsEnabled,
+    entitlements: { hasCapability: () => false } } as unknown as ComponentProps<typeof MoreScreen>;
+  let view!: ReactTestRenderer;
+  try {
+    act(() => { view = create(<MoreScreen {...props} />); });
+    expect(view.root.findAllByType('TipJarSection' as never)).toHaveLength(visible ? 1 : 0);
+  } finally { act(() => { view.unmount(); }); }
+});
 
 test('OpenAI configuration jumps scroll on first mount and on repeated requests', async () => {
   const scrollTo = jest.fn();

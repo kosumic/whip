@@ -419,6 +419,13 @@ export const es = {
 
   'tipJar.title': 'Propinas',
   'tipJar.copy': 'Apoya el desarrollo de Whip.',
+  'tipJar.selectAsset': 'Elige la moneda y la red para la propina',
+  'tipJar.cryptoAsset': '{{token}} en {{network}}',
+  'tipJar.cryptoInstructions': 'Envía cualquier cantidad de {{token}} en la red {{network}} a esta dirección. Selecciona {{token}} y {{network}} en tu billetera antes de enviar.',
+  'tipJar.addressQr': 'Código QR de la dirección de la billetera para propinas',
+  'tipJar.copyAddress': 'Copiar dirección de la billetera',
+  'tipJar.addressCopied': 'Dirección de la billetera copiada.',
+  'tipJar.copyError': 'No se pudo copiar la dirección. Puedes seleccionarla y copiarla arriba.',
   'tipJar.optional': 'Cada propina es una compra única e independiente. Las propinas no desbloquean funciones ni cambian tu membresía.',
   'tipJar.loading': 'Cargando el importe de la propina…',
   'tipJar.amount': 'Dejar una propina de {{price}}',

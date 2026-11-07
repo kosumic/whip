@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
+import { getBillingDistribution } from '../billing/distribution';
 import {
   loadTipJarProduct,
   purchaseTipProduct,
@@ -11,11 +12,13 @@ import {
 import { hapticPress } from './app-ui';
 import { CollapsibleSectionCard } from './CollapsibleSectionCard';
 import { GlassButton } from './GlassControls';
+import { CryptoTipJarContents } from './CryptoTipJarContents';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
 
 export function TipJarSection() {
   const { t } = useTranslation();
+  const cryptoTips = getBillingDistribution().channel === 'github';
   const [expanded, setExpanded] = useState(false);
   const [product, setProduct] = useState<TipJarProduct | null>(null);
   const [loading, setLoading] = useState(false);
@@ -27,7 +30,7 @@ export function TipJarSection() {
   const purchaseInProgress = useRef(false);
 
   useEffect(() => {
-    if (!expanded) return;
+    if (!expanded || cryptoTips) return;
     let mounted = true;
     setLoading(true);
     loadTipJarProduct()
@@ -43,7 +46,7 @@ export function TipJarSection() {
     return () => {
       mounted = false;
     };
-  }, [expanded, reload]);
+  }, [expanded, reload, cryptoTips]);
 
   const purchase = async () => {
     if (!product || purchaseInProgress.current) return;
@@ -71,67 +74,75 @@ export function TipJarSection() {
         onToggle={() => setExpanded(value => !value)}
         contentClassName="p-4"
       >
-        <Text className="text-sm leading-5 text-muted-foreground">
-          {t('tipJar.optional')}
-        </Text>
-        {loading ? (
-          <View className="mt-4 flex-row items-center gap-2">
-            <ActivityIndicator />
-            <Text className="text-sm text-muted-foreground">
-              {t('tipJar.loading')}
-            </Text>
-          </View>
-        ) : product ? (
-          <GlassButton
-            accessibilityLabel={t('tipJar.amount', {
-              price: product.localizedPrice,
-            })}
-            className="mt-4"
-            disabled={purchasing || result === 'pending'}
-            onPress={hapticPress(purchase)}
-          >
-            {purchasing ? (
-              <ActivityIndicator size="small" />
-            ) : (
-              <Icon as={Heart} size={18} />
-            )}
-            <Text>{t('tipJar.amount', { price: product.localizedPrice })}</Text>
-          </GlassButton>
+        {cryptoTips ? (
+          <CryptoTipJarContents />
         ) : (
-          <View className="mt-4">
-            <Text
-              accessibilityLiveRegion="polite"
-              className="text-sm leading-5 text-muted-foreground"
-            >
-              {t('tipJar.unavailable')}
+          <>
+            <Text className="text-sm leading-5 text-muted-foreground">
+              {t('tipJar.optional')}
             </Text>
-            <GlassButton
-              className="mt-3"
-              variant="outline"
-              onPress={hapticPress(() => setReload(value => value + 1))}
-            >
-              <Text>{t('tipJar.retry')}</Text>
-            </GlassButton>
-          </View>
-        )}
-        {result ? (
-          <Text
-            accessibilityLiveRegion="polite"
-            className={
-              result === 'error'
-                ? 'mt-3 text-sm leading-5 text-destructive'
-                : 'mt-3 text-sm leading-5 text-muted-foreground'
-            }
-          >
-            {t(
-              result === 'purchased'
-                ? 'tipJar.thanks'
-                : result === 'pending'
-                  ? 'tipJar.pending'
-                  : 'tipJar.error',
+            {loading ? (
+              <View className="mt-4 flex-row items-center gap-2">
+                <ActivityIndicator />
+                <Text className="text-sm text-muted-foreground">
+                  {t('tipJar.loading')}
+                </Text>
+              </View>
+            ) : product ? (
+              <GlassButton
+                accessibilityLabel={t('tipJar.amount', {
+                  price: product.localizedPrice,
+                })}
+                className="mt-4"
+                disabled={purchasing || result === 'pending'}
+                onPress={hapticPress(purchase)}
+              >
+                {purchasing ? (
+                  <ActivityIndicator size="small" />
+                ) : (
+                  <Icon as={Heart} size={18} />
+                )}
+                <Text>
+                  {t('tipJar.amount', { price: product.localizedPrice })}
+                </Text>
+              </GlassButton>
+            ) : (
+              <View className="mt-4">
+                <Text
+                  accessibilityLiveRegion="polite"
+                  className="text-sm leading-5 text-muted-foreground"
+                >
+                  {t('tipJar.unavailable')}
+                </Text>
+                <GlassButton
+                  className="mt-3"
+                  variant="outline"
+                  onPress={hapticPress(() => setReload(value => value + 1))}
+                >
+                  <Text>{t('tipJar.retry')}</Text>
+                </GlassButton>
+              </View>
             )}
-          </Text>
-        ) : null}
+            {result ? (
+              <Text
+                accessibilityLiveRegion="polite"
+                className={
+                  result === 'error'
+                    ? 'mt-3 text-sm leading-5 text-destructive'
+                    : 'mt-3 text-sm leading-5 text-muted-foreground'
+                }
+              >
+                {t(
+                  result === 'purchased'
+                    ? 'tipJar.thanks'
+                    : result === 'pending'
+                      ? 'tipJar.pending'
+                      : 'tipJar.error',
+                )}
+              </Text>
+            ) : null}
+          </>
+        )}
       </CollapsibleSectionCard>
     </View>
   );

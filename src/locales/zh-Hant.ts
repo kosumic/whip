@@ -419,6 +419,13 @@ export const zhHant: Record<string, string> = {
 
   'tipJar.title': '打賞',
   'tipJar.copy': '支持 Whip 的開發。',
+  'tipJar.selectAsset': '選擇打賞幣種和網路',
+  'tipJar.cryptoAsset': '{{network}} 網路上的 {{token}}',
+  'tipJar.cryptoInstructions': '透過 {{network}} 網路向此地址傳送任意金額的 {{token}}。傳送前請在錢包中選擇 {{token}} 和 {{network}} 網路。',
+  'tipJar.addressQr': '打賞錢包地址 QR 碼',
+  'tipJar.copyAddress': '複製錢包地址',
+  'tipJar.addressCopied': '已複製錢包地址。',
+  'tipJar.copyError': '無法複製地址。你可以選取上方地址並複製。',
   'tipJar.optional': '每次打賞都是獨立的一次性購買，不會解鎖功能或變更會員狀態。',
   'tipJar.loading': '正在載入打賞價格…',
   'tipJar.amount': '打賞 {{price}}',

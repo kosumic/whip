@@ -423,6 +423,13 @@ export const fr = {
 
   'tipJar.title': 'Pourboires',
   'tipJar.copy': 'Soutenez le développement de Whip.',
+  'tipJar.selectAsset': 'Choisissez la devise et le réseau du pourboire',
+  'tipJar.cryptoAsset': '{{token}} sur {{network}}',
+  'tipJar.cryptoInstructions': 'Envoyez le montant de votre choix en {{token}} sur le réseau {{network}} à cette adresse. Sélectionnez {{token}} et {{network}} dans votre portefeuille avant l’envoi.',
+  'tipJar.addressQr': 'Code QR de l’adresse du portefeuille pour les pourboires',
+  'tipJar.copyAddress': 'Copier l’adresse du portefeuille',
+  'tipJar.addressCopied': 'Adresse du portefeuille copiée.',
+  'tipJar.copyError': 'Impossible de copier l’adresse. Vous pouvez la sélectionner et la copier ci-dessus.',
   'tipJar.optional': 'Chaque pourboire est un achat ponctuel et indépendant. Les pourboires ne débloquent aucune fonctionnalité et ne modifient pas votre formule.',
   'tipJar.loading': 'Chargement du montant du pourboire…',
   'tipJar.amount': 'Laisser un pourboire de {{price}}',
