@@ -20,9 +20,14 @@ controls. The terminal preview shows real coding-agent output and the mobile
 input controls. The Markdown preview opens the repository's root `README.md`
 at its “Use Chat View” section.
 
-`voice-call.webp` shows the global voice-call connecting screen with its message,
-microphone, speaker, and hang-up controls. `mini` had no microphone input, so
-CallKit could not activate audio for an active-call capture. The supplied API
+`voice-call.webp` was refreshed on November 7, 2026. It shows the production
+global call UI with a mock ongoing conversation: a sample question and reply,
+the speaking orb, elapsed call time, and enabled microphone and speaker controls.
+CallKit could not activate a real call on `mini`, even with a temporary loopback
+microphone input. A capture-only JavaScript entry point supplied the mock session
+state without starting audio, submitting agent work, or saving mock usage
+history. The original simulator app was restored
+after capture, and the temporary audio driver was removed. The supplied API
 credential remains saved in the simulator's native credential store.
 
 The browser preview shows this README served locally on `mini` at
@@ -30,13 +35,15 @@ The browser preview shows this README served locally on `mini` at
 
 ## Source captures
 
-All eleven gallery images use direct, unframed 1206×2622 PNG screenshots.
-The ten original views use `xcrun simctl io … screenshot`; the voice-call image
-uses `XCUIScreen.main.screenshot()` during call startup, selecting
-`voice-call-7.png` from the retained sequence. The originals are retained outside version
-control in `build/readme-2.0/screenshots/` under the persistent
+All eleven gallery images use direct, unframed 1206×2622 PNG screenshots from
+`xcrun simctl io … screenshot`; the voice-call image captures the mock
+conversation after its transcript and orb finish rendering. The originals are
+retained outside version control in `build/readme-2.0/screenshots/` under the persistent
 `/Users/kosumi/repos/whip-ios-device` worktree on `mini`, and mirrored locally
 in `.codex-readme-raw/2.0.0/`. Each PNG has the same base name as its WebP.
+The voice fixture entry point is retained as `.codex-readme-ongoing-voice.js` in
+that worktree. Its bundle and the original app backup are in
+`build/readme-2.0/mock-call/` and `build/readme-2.0/ongoing-call-original.app`.
 
 Regenerate the current gallery from those PNGs:
 

@@ -110,10 +110,10 @@ We will not add first-class support for **tmux, Zellij, or Mosh**. This focus le
     <td align="center"><strong>Chat naturally</strong><br>Write or dictate a prompt, attach a file, and send it to your agent.</td>
   </tr>
   <tr>
-    <td colspan="2" align="center"><img src="assets/screenshots/ios/voice-call.webp" alt="Whip global voice-call connecting screen with message, microphone, speaker, and hang-up controls" width="320"></td>
+    <td colspan="2" align="center"><img src="assets/screenshots/ios/voice-call.webp" alt="Whip global voice-call UI with a mock ongoing conversation, transcript, active voice orb, microphone, speaker, and hang-up controls" width="320"></td>
   </tr>
   <tr>
-    <td colspan="2" align="center"><strong>Start a voice call</strong><br>Check host and agent status and coordinate your work by voice.</td>
+    <td colspan="2" align="center"><strong>Coordinate by voice</strong><br>Check host and agent status and coordinate your work by voice.</td>
   </tr>
   <tr>
     <td align="center"><img src="assets/screenshots/ios/reverse-control.webp" alt="Whip's per-agent actions with session details and the Phone Use access switch" width="320"></td>
