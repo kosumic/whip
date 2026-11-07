@@ -15,7 +15,7 @@ fn identifier(value: Option<&str>) -> &str {
 }
 
 pub fn rejected(error: &ProviderError, global: bool) -> &'static str {
-    rejected_for(error, global, "voice-live")
+    rejected_for(error, global, super::EVENT_PREFIX)
 }
 
 pub fn rejected_for(error: &ProviderError, global: bool, prefix: &str) -> &'static str {

@@ -8,6 +8,7 @@ description = "Reusable OpenAI Realtime and GPT-Live native voice provider"
 repository = "https://github.com/kosumic/whip"
 
 [dependencies]
+base64 = "0.22"
 voice-call-media = { version = "0.1.0", path = "../voice-call-media" }
 audio-ingress = { version = "0.1.0", path = "../audio-ingress" }
 native-credentials = { path = "../native-credentials" }

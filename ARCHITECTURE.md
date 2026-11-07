@@ -495,8 +495,12 @@ adapters; provider signaling and credentials stay outside the media engine.
 Both Realtime and GPT-Live use the same engine on the existing Tokio runtime.
 
 `voice-openai` depends on `voice-call-media` and owns Realtime/GPT-Live signaling,
-sideband transport, effective settings validation, audio identity, response/tool
-admission and provider usage collection. Whip supplies call-attempt, device,
+sideband transport, the serialized Realtime/GPT-Live receive and capture driver,
+effective settings validation, audio identity, response/tool admission and final
+provider usage collection. Other apps use `Call::connect` / `Call::run`; Whip's
+existing attempt owner uses the same borrowed `Session::drive`, with application
+callbacks for commands, tool completion, feedback and typed events. Neither host
+copies the provider receive loop. Whip supplies call-attempt, device,
 context/tool, transcript/history and persistence integrations. Host policy and
 FFI remain in Whip; provider code imports neither application state nor native
 platform managers. The provider README documents reuse by GymAmi and other apps.

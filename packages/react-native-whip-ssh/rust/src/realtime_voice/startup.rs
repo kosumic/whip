@@ -2,8 +2,10 @@
 use serde::Serialize;
 use std::time::Instant;
 
+#[cfg(test)]
 #[derive(Default)]
 pub(super) struct Settings(voice_openai::settings::Settings);
+#[cfg(test)]
 impl Settings {
     pub(super) fn observe(
         &mut self,

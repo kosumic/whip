@@ -1,4 +1,8 @@
 //! A second app's mock native-audio and credential adapters.
+#![allow(
+    dead_code,
+    reason = "Shared fixtures support independent test binaries and examples."
+)]
 use audio_ingress::{Format, Ingress, Limits, Packet, Ticket};
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -27,6 +31,25 @@ pub struct App {
     rendered: Mutex<Vec<i16>>,
 }
 impl App {
+    pub fn rendered(&self) -> Vec<i16> {
+        self.rendered.lock().clone()
+    }
+    pub fn feed(&self, sequence: u64, samples: &[i16]) -> Result<(), &'static str> {
+        self.input
+            .push(
+                self.input.ticket(),
+                Format {
+                    sample_rate: RATE as u32,
+                    channels: 1,
+                },
+                sequence,
+                std::time::Instant::now(),
+                samples,
+            )
+            .map_err(|_| "Mock capture rejected")?;
+        self.wake.notify_one();
+        Ok(())
+    }
     pub fn new(current: bool) -> Result<Self, &'static str> {
         Ok(Self {
             current: AtomicBool::new(current),
@@ -48,6 +71,45 @@ impl App {
             rendered: Mutex::new(Vec::new()),
         })
     }
+}
+impl voice_openai::session::Audio for App {
+    fn is_muted(&self) -> bool {
+        !self.input.accepts(self.input.ticket())
+    }
+    fn current(&self) -> bool {
+        self.current.load(Ordering::Acquire)
+    }
+    fn set_muted(&self, muted: bool) -> Result<(), &'static str> {
+        self.input.set_muted(muted);
+        Ok(())
+    }
+    fn interrupt(&self) -> Option<voice_openai::ClientEvent> {
+        None
+    }
+    fn render_pcm(&self, _: String, _: u32, pcm: Vec<u8>) -> Result<(), &'static str> {
+        if !pcm.len().is_multiple_of(2) {
+            return Err("Invalid mock PCM");
+        }
+        let samples: Vec<_> = pcm
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|bytes| i16::from_le_bytes(*bytes))
+            .collect();
+        voice_openai::Host::render(
+            self,
+            &Tag {
+                response: String::new(),
+                item: String::new(),
+                index: 0,
+            },
+            &samples,
+        )
+    }
+    fn cancel_audio(&self, _: Option<&str>) {}
+    fn resume_live_audio(&self) {}
+    fn confirm_live_closed(&self) {}
+    fn uploaded(&self) {}
 }
 impl Capture for App {
     fn packet_samples(&self) -> usize {
