@@ -1162,6 +1162,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/f32337571825750a.txt"),
   },
   {
+    id: "cargo-zeroize-1-9-0",
+    category: "cargo",
+    projectName: "zeroize",
+    sourceUrl: "https://github.com/RustCrypto/utils",
+    attribution: "Direct Rust dependency · version 1.9.0 · used by whip-ssh",
+    licenseName: "Apache-2.0",
+    licenseAsset: require("../../assets/licenses/generated/74941fe6a14a3473.txt"),
+  },
+  {
     id: "cargo-zip-9-0-5",
     category: "cargo",
     projectName: "zip",
