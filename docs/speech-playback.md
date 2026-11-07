@@ -117,6 +117,8 @@ entries. Native Stop, shake, dictation and audio interruption discard waiting
 status speech immediately. Notification scheduling, vibration, and persistent
 feedback start independently of speech and its errors.
 
+Spoken Android alerts are posted without system sound/vibration so the notification channel cannot start a second, independent ringtone over speech. The native adapter preserves channel sound, vibration, volume and mute choices and owns the audible feedback for brief, regular and persistent spoken alerts. Ringtone playback pauses while an announcement owns the speech player, including synthesis preparation. Brief alerts play once afterward; persistent alerts resume ringing while still active. Dismissal, timeout, shake, or replacement during speech cannot revive an expired alert. This coordination runs natively while JavaScript is suspended. Alerts without speech retain their existing system notification behavior.
+
 Device speech may replace an utterance from the same Phone Use session;
 other owners receive `device_unavailable`.
 
@@ -170,6 +172,8 @@ entered draft and credential presence pass through JS; saved keys go directly
 from native credential storage to Rust. Speech text is sent to OpenAI and API
 charges apply. Local-only conversations keep their offline speech policy.
 OpenAI failures stop the utterance rather than silently choosing another voice.
+
+OpenAI speech and conversation share a native memory cache of the saved credential, held in a zeroing Rust buffer. Android warms it from the existing encrypted slot at native-module initialization and after credential changes, so background and screen-locked announcements can read it immediately. Replacement or deletion first clears the old cache and blocks credential admission until the vault mutation finishes; missing or failed reads are not cached. Temporary request copies and evicted cached keys are cleared after use. No saved key is returned to JS or logged, and no new plaintext file is written. Android can also refill the cache while backgrounded or screen-locked, subject to Android Keystore access rules; iOS vault access rules are unchanged.
 
 OpenAI TTS requests, including read-aloud and previews, now appear in Usage &
 costs under Text to speech. The native adapter requests SSE and decodes audio

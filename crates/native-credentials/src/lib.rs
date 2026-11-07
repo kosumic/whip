@@ -14,7 +14,8 @@ pub enum CredentialError {
     Failed = -4,
 }
 
-/// Shared by cloud adapters; ownership ends as soon as the request is built.
+/// Native-only key storage. Cached keys and short-lived request copies zero on drop.
+#[derive(Clone)]
 pub struct NativeCredential {
     bytes: Zeroizing<Vec<u8>>,
     length: usize,

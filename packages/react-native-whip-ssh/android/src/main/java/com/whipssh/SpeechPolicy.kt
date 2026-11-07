@@ -28,6 +28,7 @@ object SpeechPolicy {
   @JvmStatic external fun pcmEnabled(language: String, localOnly: Boolean): Boolean
   @JvmStatic external fun networkSelected(): Boolean
   @JvmStatic external fun pcmPlaybackFailed()
+  @JvmStatic external fun prepareCredentials(credentials: Any): Boolean
   // Invoked on an audio worker; the callback writes directly to AudioTrack.
   interface PcmSink { fun write(samples: FloatArray): Boolean }
   @JvmStatic external fun pcmSpeak(lease: Long, text: String, captionId: Long, sink: PcmSink, credentials: Any?): Int

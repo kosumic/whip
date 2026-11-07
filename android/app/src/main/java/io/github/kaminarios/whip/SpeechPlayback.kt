@@ -278,8 +278,10 @@ object SpeechPlayback : SensorEventListener {
   var onChatStarted: ((String) -> Unit)? = null
   var onChatLevel: ((String, Float) -> Unit)? = null
   var onCaption: ((String) -> Unit)? = null
+  var onAnnouncementStateChanged: ((Boolean) -> Unit)? = null
   private val resetLevel = Runnable { session?.let { reportLevel(it, 0f) } }
   val active: Boolean get() = session != null
+  val announcing: Boolean get() = session?.kind == SpeechPolicy.ANNOUNCEMENT
   val label: String? get() = session?.label
   private val timeout = Runnable { stop(error = "Speech engine timed out") }
   private val noisyReceiver = object : BroadcastReceiver() {
@@ -395,6 +397,7 @@ object SpeechPlayback : SensorEventListener {
     appContext = context.applicationContext
     clear(REPLACED, null)
     session = Session(id, kind, owner, name, ready, ended)
+    if (announcing) onAnnouncementStateChanged?.invoke(true)
     shakeDetector.reset()
     try {
       val app = context.applicationContext
@@ -681,6 +684,7 @@ object SpeechPlayback : SensorEventListener {
     handler.removeCallbacks(timeout)
     utteranceId = null
     PcmSpeechPlayback.stop()
+    if (stopped?.kind == SpeechPolicy.ANNOUNCEMENT) onAnnouncementStateChanged?.invoke(false)
     // Keep the service connection warm between replies in the same voice call.
     engine?.stop()
     if (error != null || !VoiceCallService.active) releaseEngine()

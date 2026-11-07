@@ -94,6 +94,11 @@ Java_com_whipssh_RealtimeVoiceNative_credentialsUpdating(JNIEnv *, jclass, jbool
     whip_voice_credentials_updating(updating);
 }
 extern "C" JNIEXPORT jboolean JNICALL
+Java_com_whipssh_SpeechPolicy_prepareCredentials(JNIEnv *env, jclass, jobject reader) {
+    VoiceCredentialContext context{env, reader};
+    return whip_voice_credentials_prepare(reader ? readVoiceCredential : nullptr, &context);
+}
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_whipssh_RealtimeVoiceNative_prepare(JNIEnv *, jclass, jboolean enabled) {
     return whip_realtime_prepare(enabled);
 }

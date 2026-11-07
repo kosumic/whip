@@ -24,6 +24,7 @@ import { agentTranscriptService } from './NativeTranscriptService';
 import {
   armPersistentAgentAlert,
   dismissPersistentAgentAlert,
+  prepareSpokenAgentAlert,
 } from './backgroundMonitoring';
 import i18n from '../i18n';
 import { getSpeechPlayback, type SpeechEndReason } from './speechPlayback';
@@ -430,6 +431,12 @@ async function performEffect({
       const request = action.inner.request;
       const regular = request.delivery === LocalAlertDelivery.Regular;
       const persistent = request.delivery === LocalAlertDelivery.Persistent;
+      const managedSound = Platform.OS === 'android' && request.announcement !== undefined;
+      const channelId = regular
+        ? REGULAR_CHANNEL_ID
+        : persistent
+          ? PERSISTENT_CHANNEL_ID
+          : BRIEF_CHANNEL_ID;
       if (Platform.OS !== 'android' && !regular) Vibration.vibrate();
       const delivery: AgentAlertDelivery = regular
         ? 'regular'
@@ -448,7 +455,11 @@ async function performEffect({
           [ALERT_LEVEL_DATA_KEY]: delivery,
         },
       };
-      if (!regular) {
+      if (managedSound) {
+        // The native player owns spoken alerts' sound and vibration so Android's
+        // independent channel ringtone cannot play over the announcement.
+        content.sound = false;
+      } else if (!regular) {
         content.sound = 'default';
         content.vibrate = persistent
           ? ALERT_VIBRATION_PATTERN
@@ -456,14 +467,16 @@ async function performEffect({
       }
       const notificationId = await Notifications.scheduleNotificationAsync({
         content,
-        trigger: {
-          channelId: regular
-            ? REGULAR_CHANNEL_ID
-            : persistent
-              ? PERSISTENT_CHANNEL_ID
-              : BRIEF_CHANNEL_ID,
-        },
+        trigger: { channelId },
       });
+      if (managedSound) {
+        await prepareSpokenAgentAlert(
+          notificationId,
+          channelId,
+          persistent,
+          regular ? [] : persistent ? ALERT_VIBRATION_PATTERN : BRIEF_VIBRATION_PATTERN,
+        );
+      }
       setNotificationDeliveryAvailable(true);
       return new LocalAlertOutcome.Scheduled({ notificationId });
     }

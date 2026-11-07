@@ -13,6 +13,7 @@ typedef int32_t (*WhipReadVoiceCredential)(void *context, uint8_t *destination, 
 int64_t whip_realtime_start(const char *config, WhipReadVoiceCredential reader, void *context);
 bool whip_realtime_prepare(bool enabled);
 void whip_voice_credentials_updating(bool updating);
+bool whip_voice_credentials_prepare(WhipReadVoiceCredential reader, void *context);
 void whip_realtime_stop(uint64_t call);
 bool whip_realtime_stopped(uint64_t call);
 enum WhipRealtimeControl { WhipRealtimeSkip = 1, WhipRealtimeMute = 3, WhipRealtimeUnmute = 4, WhipRealtimeAudioFailed = 5, WhipRealtimeMediaReady = 6 };

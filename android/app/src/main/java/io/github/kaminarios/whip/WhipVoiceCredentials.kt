@@ -1,10 +1,8 @@
 package io.github.kaminarios.whip
 
-import android.app.KeyguardManager
 import android.security.keystore.UserNotAuthenticatedException
 import androidx.annotation.Keep
 import com.facebook.react.bridge.ReactApplicationContext
-import com.facebook.react.common.LifecycleState
 import com.oblador.keychain.KeychainModule
 import java.security.Key
 import java.security.KeyStore
@@ -53,11 +51,12 @@ internal class WhipVoiceCredentials(private val context: ReactApplicationContext
     return cipher.doFinal(encrypted, offset, encrypted.size - offset)
   }
 
+  // Status announcements also run while backgrounded or screen-locked. Read the
+  // existing vault slot on demand; the Android Keystore still enforces its policy.
   // Called synchronously by Rust through JNI; the buffer cannot escape to JS.
   @Keep
   fun read(destination: ByteArray): Int {
-    if (context.lifecycleState != LifecycleState.RESUMED || !context.hasActiveReactInstance()) return UNAVAILABLE
-    if (context.getSystemService(KeyguardManager::class.java).isDeviceLocked) return LOCKED
+    if (!context.hasActiveReactInstance()) return UNAVAILABLE
     return try {
       val module = context.getNativeModule(KeychainModule::class.java) ?: return UNAVAILABLE
       val entry = module.getWhipVoiceEncryptedEntry() ?: return MISSING
@@ -68,7 +67,6 @@ internal class WhipVoiceCredentials(private val context: ReactApplicationContext
       val encrypted = entry.password ?: return FAILED
       val plaintext = decryptPassword(entry.cipherStorageName, encrypted, key)
       try {
-        if (context.getSystemService(KeyguardManager::class.java).isDeviceLocked) return LOCKED
         if (plaintext.isEmpty() || plaintext.size > destination.size) return FAILED
         plaintext.copyInto(destination)
         plaintext.size

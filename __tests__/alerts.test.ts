@@ -54,6 +54,7 @@ jest.mock('react-native', () => ({
 jest.mock('../src/services/backgroundMonitoring', () => ({
   armPersistentAgentAlert: jest.fn(),
   dismissPersistentAgentAlert: jest.fn(),
+  prepareSpokenAgentAlert: jest.fn(),
 }));
 jest.mock('../src/i18n', () => ({
   __esModule: true,
@@ -97,6 +98,7 @@ import {
 import {
   armPersistentAgentAlert,
   dismissPersistentAgentAlert,
+  prepareSpokenAgentAlert,
 } from '../src/services/backgroundMonitoring';
 import { setChatSpeechFocus } from '../src/services/chatSpeechFocus';
 import { agentTranscriptService } from '../src/services/NativeTranscriptService';
@@ -177,6 +179,7 @@ beforeEach(() => {
     .mockResolvedValue('notification-1');
   jest.mocked(Notifications.dismissNotificationAsync).mockResolvedValue();
   jest.mocked(armPersistentAgentAlert).mockResolvedValue();
+  jest.mocked(prepareSpokenAgentAlert).mockResolvedValue();
   jest.mocked(dismissPersistentAgentAlert).mockResolvedValue();
 });
 
@@ -284,6 +287,29 @@ test.each(['persistent', 'brief', 'regular'] as const)(
     expect(armPersistentAgentAlert).not.toHaveBeenCalled();
   },
 );
+
+test.each(['persistent', 'brief', 'regular'] as const)(
+  'spoken Android %s alerts use coordinated native audio without a second system ringtone',
+  async delivery => {
+    await alertAgent(agent, true, target, 'work', delivery, 45_000);
+    const scheduled = jest.mocked(Notifications.scheduleNotificationAsync).mock.calls[0][0];
+    expect(scheduled.content.sound).toBe(false);
+    expect(scheduled.content).not.toHaveProperty('vibrate');
+    expect(prepareSpokenAgentAlert).toHaveBeenCalledWith(
+      'notification-1',
+      delivery === 'persistent' ? 'agent-state-v3' : `agent-state-${delivery}-v1`,
+      delivery === 'persistent',
+      expect.any(Array),
+    );
+  },
+);
+
+test('spoken iOS alerts retain system notification audio', async () => {
+  Platform.OS = 'ios';
+  await alertAgent(agent, true, target, 'work', 'brief');
+  expect(jest.mocked(Notifications.scheduleNotificationAsync).mock.calls[0][0].content.sound).toBe('default');
+  expect(prepareSpokenAgentAlert).not.toHaveBeenCalled();
+});
 
 test.each(['brief', 'regular'] as const)(
   'iOS %s mode preserves platform vibration',
@@ -471,14 +497,18 @@ test.each(['android', 'ios'] as const)(
   async platform => {
     Platform.OS = platform;
     const playback = deferred<SpeechEndReason>();
+    const scheduled = deferred<boolean>();
+    mockNative.completeEffect.mockImplementation(id => {
+      if (id === 'schedule') scheduled.resolve(true);
+      return [];
+    });
     mockNative.alert.mockImplementation(request => [
       effect('schedule', new LocalAlertAction.Schedule({ request })),
       ...speak(request),
     ]);
     mockPlayback.speakStatusAnnouncement.mockReturnValue(playback.promise);
     const pending = alertAgent(agent, true, target);
-    await Promise.resolve();
-    await Promise.resolve();
+    await scheduled.promise;
     expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledTimes(1);
     expect(Vibration.vibrate).toHaveBeenCalledTimes(platform === 'ios' ? 1 : 0);
     expect(mockPlayback.speakStatusAnnouncement).toHaveBeenCalledWith(

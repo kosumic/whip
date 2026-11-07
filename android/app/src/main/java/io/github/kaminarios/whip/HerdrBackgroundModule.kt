@@ -17,9 +17,11 @@ import android.os.Handler
 import android.os.Looper
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.os.VibrationEffect
 import android.util.Log
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
@@ -37,6 +39,8 @@ class HerdrBackgroundModule(
   private val mainHandler = Handler(Looper.getMainLooper())
   private var activeAlertIdentifier: String? = null
   private var activeAlertChannelId: String? = null
+  private var briefAlertIdentifier: String? = null
+  private var briefAlertChannelId: String? = null
   private var mediaPlayer: MediaPlayer? = null
   private var callSoundPlayer: MediaPlayer? = null
   private var callSoundPromise: Promise? = null
@@ -48,7 +52,7 @@ class HerdrBackgroundModule(
   private val stopAlertRunnable = Runnable { stopPersistentAlert("Agent alert timed out") }
   private val notificationWatchRunnable = object : Runnable {
     override fun run() {
-      val identifier = activeAlertIdentifier ?: return
+      val identifier = activeAlertIdentifier ?: briefAlertIdentifier ?: return
       if (notificationManager.activeNotifications.any { it.tag == identifier }) {
         mainHandler.postDelayed(this, NOTIFICATION_CHECK_INTERVAL_MS)
       } else {
@@ -60,6 +64,19 @@ class HerdrBackgroundModule(
   override fun getName(): String = "HerdrBackground"
 
   init {
+    SpeechPlayback.onAnnouncementStateChanged = { announcing ->
+      mainHandler.removeCallbacks(startSoundRunnable)
+      if (announcing) {
+        try {
+          mediaPlayer?.takeIf { it.isPlaying }?.pause()
+        } catch (_: IllegalStateException) {
+          releaseMediaPlayer()
+        }
+        if (activeAlertIdentifier != null || briefAlertIdentifier != null) Log.i(TAG, "Agent alert sound paused for speech")
+      } else if (activeAlertIdentifier != null || briefAlertIdentifier != null) {
+        mainHandler.postDelayed(startSoundRunnable, SOUND_START_DELAY_MS)
+      }
+    }
     SpeechPlayback.onCaption = { json ->
       context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
         .emit("WhipSpeechCaption", json)
@@ -134,12 +151,14 @@ class HerdrBackgroundModule(
   fun voiceCredentialsUpdating(updating: Boolean, promise: Promise) {
     mainHandler.post {
       RealtimeVoice.credentialsUpdating(updating)
+      if (!updating) PcmSpeechPlayback.prepareCredentials(context)
       if (updating && SpeechPolicy.networkSelected()) SpeechPlayback.stop()
       promise.resolve(null)
     }
   }
   override fun initialize() {
     super.initialize()
+    PcmSpeechPlayback.prepareCredentials(context)
     context.addLifecycleEventListener(this)
   }
   override fun onHostResume() {}
@@ -381,6 +400,34 @@ class HerdrBackgroundModule(
   }
 
   @ReactMethod
+  fun prepareSpokenAlert(
+    notificationIdentifier: String,
+    channelId: String,
+    persistent: Boolean,
+    vibrationPattern: ReadableArray,
+    promise: Promise,
+  ) {
+    mainHandler.post {
+      try {
+        val pattern = LongArray(vibrationPattern.size()) { vibrationPattern.getDouble(it).toLong() }
+        vibrateSpokenAlert(channelId, pattern)
+        if (!persistent && activeAlertIdentifier == null) {
+          stopPersistentAlert()
+          briefAlertIdentifier = notificationIdentifier
+          briefAlertChannelId = channelId
+          updateShakeListener()
+          mainHandler.postDelayed(startSoundRunnable, SOUND_START_DELAY_MS)
+          mainHandler.postDelayed(notificationWatchRunnable, NOTIFICATION_POST_GRACE_MS)
+          mainHandler.postDelayed(stopAlertRunnable, MAX_ALERT_WINDOW_MS)
+        }
+        promise.resolve(null)
+      } catch (error: Throwable) {
+        promise.reject("E_SPOKEN_ALERT_PREPARE", error)
+      }
+    }
+  }
+
+  @ReactMethod
   fun armPersistentAlert(
     notificationIdentifier: String,
     channelId: String,
@@ -412,11 +459,11 @@ class HerdrBackgroundModule(
     mainHandler.post {
       try {
         // A late cleanup must not cancel a newer alert's sound or vibration.
-        if (notificationIdentifier != null && activeAlertIdentifier != notificationIdentifier) {
+        if (notificationIdentifier != null && (activeAlertIdentifier ?: briefAlertIdentifier) != notificationIdentifier) {
           promise.resolve(null)
           return@post
         }
-        activeAlertIdentifier?.let { identifier ->
+        (activeAlertIdentifier ?: briefAlertIdentifier)?.let { identifier ->
           notificationManager.cancel(identifier, EXPO_NOTIFICATION_ID)
         }
         cancelVibration()
@@ -439,7 +486,7 @@ class HerdrBackgroundModule(
     // Stop playback before notifying JS so queued chat cannot keep speaking
     // while the app is backgrounded or the JS thread is busy.
     SpeechPlayback.stop(reason = SpeechPlayback.SHAKE)
-    activeAlertIdentifier?.let { identifier ->
+    (activeAlertIdentifier ?: briefAlertIdentifier)?.let { identifier ->
       notificationManager.cancel(identifier, EXPO_NOTIFICATION_ID)
       cancelVibration()
     }
@@ -460,6 +507,7 @@ class HerdrBackgroundModule(
       SpeechPlayback.onChatLevel = null
       SpeechPlayback.onCaption = null
       SpeechPlayback.onAutomaticFocus = null
+      SpeechPlayback.onAnnouncementStateChanged = null
       SpeechPlayback.detachPresentation()
       stopPersistentAlert()
     }
@@ -467,9 +515,31 @@ class HerdrBackgroundModule(
   }
 
   private fun startLoopingSound() {
-    val channelId = activeAlertChannelId ?: return
+    val channelId = activeAlertChannelId ?: briefAlertChannelId ?: return
+    val persistent = activeAlertIdentifier != null
+    if (SpeechPlayback.announcing) {
+      Log.i(TAG, "Agent alert sound deferred until speech finishes")
+      return
+    }
+    mediaPlayer?.let { player ->
+      try {
+        player.start()
+        Log.i(TAG, "Agent alert sound resumed after speech")
+        return
+      } catch (_: IllegalStateException) {
+        releaseMediaPlayer()
+      }
+    }
+    if (!notificationManager.areNotificationsEnabled()) return
+    val channel = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      notificationManager.getNotificationChannel(channelId)
+    } else null
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+      (channel == null || channel.importance == NotificationManager.IMPORTANCE_NONE)) return
+    if (!persistent && notificationManager.currentInterruptionFilter != NotificationManager.INTERRUPTION_FILTER_ALL &&
+      channel?.canBypassDnd() != true) return
     val sound = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      notificationManager.getNotificationChannel(channelId)?.sound
+      channel?.sound
     } else {
       RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
     }
@@ -479,7 +549,9 @@ class HerdrBackgroundModule(
     }
     val audioManager = context.getSystemService(AudioManager::class.java)
     val privateListeningDevice = findPrivateListeningDevice(audioManager)
-    val streamType = if (privateListeningDevice != null) {
+    val streamType = if (!persistent) {
+      AudioManager.STREAM_NOTIFICATION
+    } else if (privateListeningDevice != null) {
       AudioManager.STREAM_MUSIC
     } else {
       AudioManager.STREAM_ALARM
@@ -494,7 +566,9 @@ class HerdrBackgroundModule(
         setAudioAttributes(
           AudioAttributes.Builder()
             .setUsage(
-              if (privateListeningDevice != null) {
+              if (!persistent) {
+                AudioAttributes.USAGE_NOTIFICATION
+              } else if (privateListeningDevice != null) {
                 AudioAttributes.USAGE_MEDIA
               } else {
                 AudioAttributes.USAGE_ALARM
@@ -510,13 +584,18 @@ class HerdrBackgroundModule(
             }
           }
         }
-        isLooping = true
+        isLooping = persistent
+        if (!persistent) setOnCompletionListener { completed ->
+          if (mediaPlayer === completed) stopPersistentAlert("Brief agent alert sound finished")
+        }
         prepare()
         start()
       }
       Log.i(
         TAG,
-        if (privateListeningDevice != null) {
+        if (!persistent) {
+          "Brief agent alert sound started after speech"
+        } else if (privateListeningDevice != null) {
           "Persistent agent alert sound started on private audio device"
         } else {
           "Persistent agent alert sound started on alarm route"
@@ -551,6 +630,8 @@ class HerdrBackgroundModule(
     mainHandler.removeCallbacks(notificationWatchRunnable)
     activeAlertIdentifier = null
     activeAlertChannelId = null
+    briefAlertIdentifier = null
+    briefAlertChannelId = null
     updateShakeListener()
     releaseMediaPlayer()
     reason?.let { Log.i(TAG, it) }
@@ -558,7 +639,7 @@ class HerdrBackgroundModule(
 
   /** Persistent alerts keep shake detection after their announcement finishes. */
   private fun updateShakeListener(): Boolean {
-    val needed = activeAlertIdentifier != null
+    val needed = activeAlertIdentifier != null || briefAlertIdentifier != null
     if (!needed) {
       if (shakeListening) sensorManager.unregisterListener(this)
       shakeListening = false
@@ -587,6 +668,25 @@ class HerdrBackgroundModule(
       player.release()
     }
     mediaPlayer = null
+  }
+
+  @Suppress("DEPRECATION")
+  private fun vibrateSpokenAlert(channelId: String, fallbackPattern: LongArray) {
+    if (!notificationManager.areNotificationsEnabled()) return
+    val channel = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) notificationManager.getNotificationChannel(channelId) else null
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+      (channel == null || channel.importance == NotificationManager.IMPORTANCE_NONE || !channel.shouldVibrate())) return
+    if (notificationManager.currentInterruptionFilter != NotificationManager.INTERRUPTION_FILTER_ALL && channel?.canBypassDnd() != true) return
+    if (context.getSystemService(AudioManager::class.java).ringerMode == AudioManager.RINGER_MODE_SILENT) return
+    val pattern = channel?.vibrationPattern ?: fallbackPattern
+    if (pattern.isEmpty()) return
+    val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+      context.getSystemService(VibratorManager::class.java).defaultVibrator
+    } else context.getSystemService(Vibrator::class.java)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      val attributes = channel?.audioAttributes ?: AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).build()
+      vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1), attributes)
+    } else vibrator.vibrate(pattern, -1)
   }
 
   @Suppress("DEPRECATION")

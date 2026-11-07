@@ -66,7 +66,11 @@ object PcmSpeechPlayback {
   }
 
   fun prepareCredentials(context: Context) {
-    if (context is ReactApplicationContext) credentials = WhipVoiceCredentials(context)
+    if (context is ReactApplicationContext) {
+      val reader = WhipVoiceCredentials(context)
+      credentials = reader
+      settingsWorker.execute { SpeechPolicy.prepareCredentials(reader) }
+    }
   }
 
   private fun listSystemVoices(context: Context, promise: Promise?) {

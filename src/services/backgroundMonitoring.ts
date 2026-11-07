@@ -9,6 +9,12 @@ interface HerdrBackgroundNativeModule {
     timeoutMs: number,
   ): Promise<void>;
   dismissPersistentAlert(notificationIdentifier: string | null): Promise<void>;
+  prepareSpokenAlert(
+    notificationIdentifier: string,
+    channelId: string,
+    persistent: boolean,
+    vibrationPattern: number[],
+  ): Promise<void>;
 }
 
 function nativeModule(): HerdrBackgroundNativeModule | null {
@@ -52,4 +58,15 @@ export async function dismissPersistentAgentAlert(notificationIdentifier?: strin
   const module = nativeModule();
   if (!module) return;
   await module.dismissPersistentAlert(notificationIdentifier ?? null);
+}
+
+export async function prepareSpokenAgentAlert(
+  notificationIdentifier: string,
+  channelId: string,
+  persistent: boolean,
+  vibrationPattern: number[],
+): Promise<void> {
+  const module = nativeModule();
+  if (!module) return;
+  await module.prepareSpokenAlert(notificationIdentifier, channelId, persistent, vibrationPattern);
 }
