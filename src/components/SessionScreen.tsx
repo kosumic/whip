@@ -997,15 +997,28 @@ export function SessionScreen({
         updateChatRestoreIntent(key);
       }
     }
-    if (client && activeTarget && activeId && !next.has(activeId) && chatRestoreIntentsRef.current.has(activeId)) {
+    const activeView = activeId ? next.get(activeId) : undefined;
+    // Priority preparation can recreate an evicted view before selection returns.
+    // Its hidden viewport still needs the saved Chat intent applied.
+    if (client && activeTarget && activeId &&
+      (!activeView || !chatPresentationRequested(activeView.presentation)) &&
+      chatRestoreIntentsRef.current.has(activeId)) {
       const transcriptKey = chatRestoreIntentsRef.current.get(activeId);
       try {
-        const projection = agentTranscriptService.activate(hostSessionId, activeTarget.session.terminalId, client.native);
+        const projection = activeView
+          ? agentTranscriptService.reconcile(hostSessionId, activeTarget.session.terminalId, client.native)
+          : agentTranscriptService.activate(hostSessionId, activeTarget.session.terminalId, client.native);
         if (projection.type === 'bound') {
           if (projection.binding.transcriptKey === transcriptKey) {
             next.set(activeId, {
               binding: projection.binding,
-              presentation: requestedChatPresentation(projection.state),
+              presentation: activeView?.binding.bindingToken === projection.binding.bindingToken
+                ? requestChatPresentation(
+                    activeView.presentation,
+                    agentTranscriptReadiness(projection.state),
+                    nextChatPresentationGeneration(),
+                  )
+                : requestedChatPresentation(projection.state),
               state: projection.state,
             });
             changed = true;
@@ -1028,7 +1041,8 @@ export function SessionScreen({
       setChatViews(next);
     }
   }, [visible, appActive, terminalState.activeTerminalId, terminalState.sessions, snapshot.panes,
-    client, hostSessionId, requestedChatPresentation, updateChatRestoreIntent, activeTarget, chatTargets, chatViews]);
+    client, hostSessionId, requestedChatPresentation, nextChatPresentationGeneration,
+    updateChatRestoreIntent, activeTarget, chatTargets, chatViews]);
 
   useEffect(() => {
     const targets = new Map(chatTargets.map(target => [target.key, target]));

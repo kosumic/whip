@@ -1856,6 +1856,28 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     expect(agentTranscriptService.getState(binding.bindingToken)).not.toBeNull();
   });
 
+  test('restores selected Chat when priority preparation reloads it before returning', async () => {
+    const host = setup(agent);
+    const binding = await openReadyChat(host, agent);
+    revealChat();
+    act(() => renderer.update(<SessionScreen {...host.props} visible={false} />));
+    act(createTranscriptCachePressure(agent));
+    expect(agentTranscriptService.getState(binding.bindingToken)).toBeNull();
+
+    host.props.priorityChatTargets = host.props.terminalTargets;
+    await act(async () => renderer.update(<SessionScreen {...host.props} visible={false} />));
+    const viewport = ui('AgentChatView');
+    expect(viewport.props.prewarm).toBe(true);
+    expect(viewport.props.active).toBe(false);
+    act(() => { viewport.props.onInitialViewportReady(); });
+
+    await act(async () => renderer.update(<SessionScreen {...host.props} visible />));
+    expect(ui('AgentChatView').props.active).toBe(true);
+    revealChat();
+    expect(control()).toMatchObject({ active: true, loading: false, disabled: false });
+    expect(ui('AgentChatView').props.state.sessionId).toBe(binding.sessionId);
+  });
+
   test.each(['inactive', 'background'] as const)('%s keeps the selected Chat resident under cache pressure', async appState => {
     const host = setup(agent);
     const binding = await openReadyChat(host, agent);
