@@ -2483,6 +2483,7 @@ name = "voice-openai"
 version = "0.1.0"
 dependencies = [
  "audio-ingress",
+ "base64 0.22.1",
  "futures",
  "native-credentials",
  "oai-rt-rs",
