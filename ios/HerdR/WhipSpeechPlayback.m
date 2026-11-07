@@ -593,9 +593,9 @@ static void WhipWakeAutomaticSpeech(void)
   self.utterance = utterance;
   self.caption = self.kind == WhipSpeechChat && !WhipVoiceCall.shared.active && self.captionSource.count
     ? [self.captionSource mutableCopy] : nil;
-  self.captionClock = self.caption ? whip_speech_caption_start(text.UTF8String) : 0;
-  self.caption[@"id"] = [NSString stringWithFormat:@"%llu", (unsigned long long)self.captionClock];
   self.captionPrefix = self.caption ? (NSInteger)text.length - (NSInteger)[self.caption[@"text"] length] : 0;
+  self.captionClock = self.caption ? whip_speech_caption_start(text.UTF8String, MAX(0, self.captionPrefix)) : 0;
+  self.caption[@"id"] = [NSString stringWithFormat:@"%llu", (unsigned long long)self.captionClock];
   self.captionPosition = -1;
   uint64_t lease = self.lease;
   NSTimeInterval timeout = whip_speech_timeout_ms(preview ? WhipSpeechChat : self.kind, text.length) / 1000.0;
@@ -644,8 +644,9 @@ static void WhipWakeAutomaticSpeech(void)
       playbackStarted();
       return YES;
     }
+    uint64_t captionClock = self.captionClock;
     dispatch_async(WhipPcmSpeechWorker(), ^{
-      int result = whip_speech_pcm_speak(lease, text.UTF8String, WhipConsumeSpeechPcm, (__bridge void *)player,
+      int result = whip_speech_pcm_speak(lease, text.UTF8String, captionClock, WhipConsumeSpeechPcm, (__bridge void *)player,
                                          WhipReadOpenAiVoiceCredential, NULL);
       BOOL completed = result > 0 && [player drain];
       dispatch_async(dispatch_get_main_queue(), ^{

@@ -8,6 +8,10 @@ use std::{
 
 struct Caption {
     id: u64,
+    spoken: String,
+    prefix_bytes: usize,
+    prefix_utf16: usize,
+    response_start: Option<usize>,
     text: Text,
     clock: Clock,
 }
@@ -16,6 +20,10 @@ impl Default for Caption {
     fn default() -> Self {
         Self {
             id: 0,
+            spoken: String::new(),
+            prefix_bytes: 0,
+            prefix_utf16: 0,
+            response_start: Some(0),
             text: Text::default(),
             clock: Clock::new(Pace::default()),
         }
@@ -26,7 +34,10 @@ static CAPTION: LazyLock<Mutex<Caption>> = LazyLock::new(Mutex::default);
 /// # Safety
 /// `text` must be a live, NUL-terminated UTF-8 string for this call.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn whip_speech_caption_start(text: *const c_char) -> u64 {
+pub unsafe extern "C" fn whip_speech_caption_start(
+    text: *const c_char,
+    prefix_utf16: usize,
+) -> u64 {
     if text.is_null() {
         return 0;
     }
@@ -34,9 +45,95 @@ pub unsafe extern "C" fn whip_speech_caption_start(text: *const c_char) -> u64 {
     let text = unsafe { CStr::from_ptr(text) }.to_string_lossy();
     let mut caption = CAPTION.lock();
     caption.id = caption.id.saturating_add(1);
-    caption.text.update(&text);
-    caption.clock = Clock::new(Pace::default());
+    caption.start(&text, prefix_utf16);
     caption.id
+}
+
+impl Caption {
+    fn start(&mut self, spoken: &str, prefix_utf16: usize) {
+        let mut units = 0;
+        let prefix_bytes = spoken
+            .char_indices()
+            .chain(std::iter::once((spoken.len(), '\0')))
+            .find_map(|(byte, character)| {
+                let matches = units == prefix_utf16;
+                units += character.len_utf16();
+                matches.then_some(byte)
+            })
+            .unwrap_or(0);
+        self.spoken = spoken.into();
+        self.prefix_bytes = prefix_bytes;
+        self.prefix_utf16 = spoken[..prefix_bytes].encode_utf16().count();
+        self.response_start = (prefix_bytes == 0).then_some(0);
+        self.text.update(&spoken[prefix_bytes..]);
+        self.clock = Clock::new(Pace::default());
+    }
+
+    fn progress(&mut self, played: usize, samples: usize, complete: bool) -> usize {
+        let Some(start) = self.response_start else {
+            return 0;
+        };
+        // The exact prefix duration includes its trailing pause. Even synthesis
+        // completion cannot advance captions until native playback crosses it.
+        if self.prefix_utf16 > 0 && played <= start {
+            return 0;
+        }
+        self.prefix_utf16
+            + self.clock.advance(
+                &self.text,
+                played.min(samples).saturating_sub(start),
+                samples.saturating_sub(start),
+                complete,
+            )
+    }
+}
+
+/// Synthesize the announcement and response separately on the same PCM sink.
+/// Count source frames, not wall time: native playback rates and buffering then
+/// cannot move the handoff. No audio or extra silence is inserted by this layer.
+pub(crate) fn synthesize(
+    id: u64,
+    text: &str,
+    mut generate: impl FnMut(&str, &mut dyn FnMut(&[f32]) -> bool) -> i32,
+    mut sink: impl FnMut(&[f32]) -> bool,
+) -> i32 {
+    let prefix = {
+        let caption = CAPTION.lock();
+        if id != 0 && caption.id == id && caption.spoken == text {
+            caption.prefix_bytes
+        } else {
+            0
+        }
+    };
+    if prefix == 0 {
+        return generate(text, &mut sink);
+    }
+    let mut frames = 0;
+    let result = generate(&text[..prefix], &mut |pcm| {
+        frames += pcm.len();
+        sink(pcm)
+    });
+    if result <= 0 || text[prefix..].is_empty() {
+        return result;
+    }
+    let mut aligned = false;
+    generate(&text[prefix..], &mut |pcm| {
+        // Some voices start the response with silence. Keep that silence on the
+        // prefix side of the boundary, without trimming or changing playback.
+        const AUDIBLE_SAMPLE: f32 = 0.001;
+        if !aligned
+            && let Some(offset) = pcm.iter().position(|sample| sample.abs() >= AUDIBLE_SAMPLE)
+        {
+            let mut caption = CAPTION.lock();
+            if caption.id == id {
+                caption.response_start = Some(frames + offset);
+            }
+            drop(caption);
+            aligned = true;
+        }
+        frames += pcm.len();
+        sink(pcm)
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -50,8 +147,7 @@ pub extern "C" fn whip_speech_caption_progress(
     if caption.id != id || id == 0 {
         return 0;
     }
-    let Caption { text, clock, .. } = &mut *caption;
-    let progress = clock.advance(text, played.min(samples), samples, complete);
+    let progress = caption.progress(played, samples, complete);
     drop(caption);
     progress
 }
@@ -168,6 +264,9 @@ fn open_delimiter(text: &str, marker: char) -> Option<(usize, usize)> {
     }
     opening
 }
+
+#[cfg(test)]
+mod pcm_tests;
 
 #[cfg(test)]
 mod tests {

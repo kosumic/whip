@@ -219,7 +219,7 @@ static bool writeSpeechPcm(void *opaque, const float *samples, uintptr_t count) 
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_whipssh_SpeechPolicy_pcmSpeak(JNIEnv *env, jclass, jlong lease, jstring text, jobject sink, jobject reader) {
+Java_com_whipssh_SpeechPolicy_pcmSpeak(JNIEnv *env, jclass, jlong lease, jstring text, jlong captionId, jobject sink, jobject reader) {
     const auto value = speechUtf8(env, text);
     if (env->ExceptionCheck()) return -1;
     jclass sinkClass = env->GetObjectClass(sink);
@@ -227,7 +227,7 @@ Java_com_whipssh_SpeechPolicy_pcmSpeak(JNIEnv *env, jclass, jlong lease, jstring
     if (!write) { env->DeleteLocalRef(sinkClass); return -1; }
     PcmSinkContext context{env, sink, write};
     VoiceCredentialContext credentialContext{env, reader};
-    const auto result = whip_speech_pcm_speak(static_cast<uint64_t>(lease), value.c_str(), writeSpeechPcm, &context,
+    const auto result = whip_speech_pcm_speak(static_cast<uint64_t>(lease), value.c_str(), static_cast<uint64_t>(captionId), writeSpeechPcm, &context,
                                              reader ? readVoiceCredential : nullptr, &credentialContext);
     env->DeleteLocalRef(sinkClass);
     return result;
@@ -307,9 +307,9 @@ Java_com_whipssh_SpeechPolicy_isCurrent(JNIEnv *, jclass, jlong lease) {
 }
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_com_whipssh_SpeechPolicy_captionStart(JNIEnv *env, jclass, jstring text) {
+Java_com_whipssh_SpeechPolicy_captionStart(JNIEnv *env, jclass, jstring text, jlong prefix) {
     const auto value = speechUtf8(env, text);
-    return static_cast<jlong>(whip_speech_caption_start(value.c_str()));
+    return static_cast<jlong>(whip_speech_caption_start(value.c_str(), prefix > 0 ? static_cast<uintptr_t>(prefix) : 0));
 }
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_whipssh_SpeechPolicy_captionProgress(JNIEnv *, jclass, jlong id, jlong played, jlong samples, jboolean complete) {
