@@ -6,43 +6,67 @@ flowchart TB
 
   subgraph Native["Whip Rust core · one static library / Tokio runtime"]
     direction TB
-    AppCore["AppCore · Rust-owned application/session state<br/>sessions across hosts · active session<br/>workspace/tab/pane client selection + reconciliation<br/>terminal rails · revisioned AppCoreView"]
+    AppCore["AppCore · Rust-owned application/session state<br/>sessions across hosts · active session<br/>selection/reconciliation · terminal rails<br/>connection transactions · alerts · revisioned views"]
     Herd["Herd/application projections<br/>multi-host aggregation · filtering · ordering<br/>typed revisioned views"]
 
     subgraph Hosts["HostRuntime × N · authoritative per-host runtimes"]
       direction TB
-      Host["HostRuntime<br/>HostState · reconnect/lifecycle/restoration<br/>Herdr readiness · monitoring · diagnostics"]
+      Host["HostRuntime<br/>HostState · reconnect/lifecycle/restoration<br/>Rust-retained reconnect credentials<br/>Herdr readiness · monitoring · diagnostics"]
 
       subgraph Services["Per-host services"]
         direction LR
         Control["Herdr control/state<br/>API requests · subscriptions/events<br/>mutations + HostState reconciliation"]
-        Agents["Agent sessions/transcripts<br/>Claude Code + Codex + OpenCode<br/>normalization · retries · checkpoints"]
+        Agents["Agent sessions/transcripts<br/>Claude Code · Codex · OpenCode v1/v2 · Pi<br/>normalization · native chat rows/search · checkpoints"]
         Terminals["Terminal services<br/>Herdr binary protocol · registry/lifecycle<br/>direct SSH shell PTYs"]
         RemoteOps["Remote operations<br/>SFTP/files · transfers/attachments<br/>Git · previews/forwarding"]
+        PhoneUse["Phone Use / reverse control<br/>launch-scoped HTTP MCP · authorization/recovery<br/>browser/device effects · saved-host/Herdr tools"]
       end
 
       Host --> Control
       Host --> Agents
       Host --> Terminals
       Host --> RemoteOps
+      Host --> PhoneUse
     end
 
     Connection["HerdrConnection<br/>stable logical connection abstraction<br/>sole owner/coordinator of installed SSH session + generation<br/>socket discovery · logical API/event/terminal/exec streams<br/>generation guards + stale-callback suppression"]
-    SSH["SshSession<br/>russh transport · ProxyJump · known_hosts<br/>exec · shell/PTY · SFTP · forwarding · stream-local"]
+    SSH["SshSession<br/>russh · ProxyJump · known_hosts<br/>exec · shell/PTY · SFTP · forwarding · stream-local"]
+    Tailcat["Optional Tailcat transport<br/>tailcat-client · WireGuard<br/>direct UDP / encrypted relay fallback"]
+    Credentials["CredentialCoordinator + SSH workflows<br/>host profiles · global keys · backup/recovery<br/>ordered transactions · cancellation/lock fences<br/>platform secure-storage/authentication effects"]
     Pairing["WP4 pairing<br/>separate QR-pinned bootstrap"]
     Conversations["Local embedded Turso database<br/>one ordered I/O worker · durable commits<br/>host-isolated catalog + opaque checkpoints<br/>offline restoration · retention · future indexing"]
     AppData["Durable embedded Turso app data<br/>separate ordered I/O worker · backed up<br/>transactional settings + snapshots<br/>atomic legacy import receipt · preserve on errors"]
     Mailbox["Bounded renderer mailboxes<br/>ordered ANSI/SSH/graphics chunks<br/>renderer generation · completion credits"]
 
+    subgraph Voice["Voice and speech · shared Tokio runtime"]
+      direction TB
+      VoiceApp["Whip voice adapters<br/>agent dispatch/tools · call lifecycle · captions<br/>history/usage · dictation · read-aloud/announcements"]
+      LocalVoice["voice-call-local<br/>on-device turn policy · VAD · barge-in"]
+      CloudVoice["voice-call-openai<br/>Realtime / GPT-Live provider sessions<br/>native-credentials authorization"]
+      Media["voice-call-media + audio-ingress<br/>WebRTC/Opus · echo cancellation · bounded PCM"]
+      Speech["mobile-speech + speech backends<br/>speech arbitration · STT/TTS · playback fencing"]
+      VoiceApp --> LocalVoice
+      VoiceApp --> CloudVoice
+      CloudVoice --> Media
+      VoiceApp --> Speech
+    end
+
     AppCore -->|"references one runtime per application session"| Host
     AppCore --> Herd
+    AppCore <--> Credentials
     Control --> Connection
     Agents --> Connection
     Agents <--> Conversations
     Terminals --> Connection
     Terminals --> Mailbox
     RemoteOps --> Connection
+    PhoneUse <-->|"reverse TCP forwarding"| Connection
+    PhoneUse <--> AppCore
+    VoiceApp <--> PhoneUse
+    VoiceApp <--> Agents
+    VoiceApp <--> AppData
     Connection --> SSH
+    SSH <--> Tailcat
   end
 
   subgraph Rendering["Native terminal delivery · bypasses Hermes"]
@@ -54,13 +78,24 @@ flowchart TB
 
   Mailbox <-->|"output batches / native write credits"| NativeDelivery
 
+  Platform["Platform adapters · Android/iOS<br/>browser/device effects · Keychain/Keystore<br/>audio capture/playback · STT/TTS · Telecom/CallKit"]
+  Credentials <--> Platform
+  PhoneUse <--> Platform
+  Media <-->|"native PCM · bypasses Hermes"| Platform
+  Speech <--> Platform
+  CloudVoice <-->|"native-only saved-key read"| Platform
+  Provider["Cloud voice provider<br/>HTTPS signaling · WebRTC / WebSocket audio"]
+  CloudVoice <--> Provider
+  Media <-->|"WebRTC media"| Provider
+
   subgraph Remote["Remote host"]
     direction TB
     SSHD["sshd"]
     API["Herdr API + event socket"]
     Terminal["Herdr terminal socket"]
     Shell["Interactive shell / PTY"]
-    AgentSources["Claude/Codex/OpenCode transcript sources"]
+    AgentSources["Claude/Codex/OpenCode/Pi transcript sources"]
+    AgentMcp["Phone Use agent<br/>launch-scoped whip MCP client"]
     FilesGit["Filesystem · Git"]
     Forwarded["Forwarded services"]
 
@@ -70,19 +105,24 @@ flowchart TB
     SSHD <--> AgentSources
     SSHD <--> FilesGit
     SSHD <--> Forwarded
+    SSHD <-->|"loopback MCP endpoint"| AgentMcp
   end
 
   JSI <--> AppCore
   JSI <--> AppData
+  JSI <--> Credentials
+  JSI <--> VoiceApp
+  JSI <--> PhoneUse
   JSI --> Pairing
   SSH <-->|"one encrypted SSH path · direct or ProxyJump"| SSHD
+  Tailcat <-->|"carries SSH to daemon or Tailcat SSH service"| SSHD
   Pairing -.->|"pinned host key"| SSHD
 
   classDef native fill:#e9f7f5,stroke:#23847a,color:#172033
   classDef app fill:#fff0e7,stroke:#c45f24,color:#172033
   classDef runtime fill:#fff8df,stroke:#a77713,color:#172033
   classDef remote fill:#edf7e8,stroke:#5f8f45,color:#172033
-  class JSI,NativeDelivery,Xterm native
-  class AppCore,Herd,Connection,SSH,Pairing,Conversations,AppData,Mailbox app
-  class Host,Control,Agents,Terminals,RemoteOps runtime
-  class SSHD,API,Terminal,Shell,AgentSources,FilesGit,Forwarded remote
+  class JSI,NativeDelivery,Xterm,Platform native
+  class AppCore,Herd,Connection,SSH,Tailcat,Credentials,Pairing,Conversations,AppData,Mailbox,VoiceApp,LocalVoice,CloudVoice,Media,Speech app
+  class Host,Control,Agents,Terminals,RemoteOps,PhoneUse runtime
+  class SSHD,API,Terminal,Shell,AgentSources,AgentMcp,FilesGit,Forwarded,Provider remote

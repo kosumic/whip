@@ -7,20 +7,23 @@ flowchart TB
     subgraph Presentation["Presentation state"]
       direction LR
       Projections["Mechanical render projections<br/>revisioned AppCore/HostRuntime views<br/>connection and diagnostic presentation"]
-      SessionViews["Pane/session presentation<br/>Terminal View ⇄ Chat View<br/>same pane/session · composer"]
+      SessionViews["Pane/session presentation<br/>Terminal View ⇄ Chat View<br/>composer · voice call controls/captions"]
       Secondary["Secondary surfaces<br/>files/Git · previews<br/>presentation preferences"]
     end
 
     subgraph Platform["Platform-owned adapters and rendering"]
       direction LR
       Renderer["TerminalRendererHost<br/>renderer identity/configuration · mounted lifecycle<br/>visibility · input/gestures · visual caches"]
-      Device["Platform integration<br/>credentials · pickers/share<br/>navigation · UI previews"]
+      Device["Platform integration<br/>pickers/share · permissions · notifications<br/>navigation · UI previews"]
+      Credentials["Credential I/O adapters<br/>Keychain/Keystore · authentication · vault<br/>Rust chooses transaction ordering/recovery"]
+      Browser["Browser and Phone Use adapters<br/>WebView tabs · checked browser effects<br/>device tools · optional Android Shizuku"]
+      Audio["Native audio adapters<br/>capture/playback · STT/TTS · audio routing<br/>Android Telecom · iOS CallKit"]
       Cache["Saved conversation views<br/>typed metadata + offline projections<br/>persistence stays in Rust"]
       Storage["App-data persistence adapter<br/>batched startup · ordered mutations<br/>read-only legacy import before consumers"]
     end
 
     Adapters["Thin TypeScript adapters<br/>HerdrClient + AppCore projection adapters<br/>typed semantic application/runtime operations"]
-    NativeCalls["UI/native module traffic<br/>typed views + semantic operations<br/>protocol/presentation events<br/>no JavaScript protocol codecs"]
+    NativeCalls["UI/native module traffic<br/>typed views + semantic operations<br/>platform effects + presentation events<br/>no JavaScript SSH/Herdr protocol codecs"]
 
     Navigation --> Projections
     Navigation --> SessionViews
@@ -33,6 +36,9 @@ flowchart TB
     Adapters <--> NativeCalls
     Renderer <--> NativeCalls
     Device <--> NativeCalls
+    Credentials <--> NativeCalls
+    Browser <--> NativeCalls
+    SessionViews <--> Audio
     Cache <--> NativeCalls
     Secondary <--> Storage
     Storage <--> NativeCalls
@@ -42,7 +48,7 @@ flowchart TB
     Module["WhipSsh TurboModule<br/>typed TypeScript · generated C++ JSI · UniFFI<br/>records/enums · binary buffers"]
   end
 
-  Rust["Whip Rust core<br/>Rust-owned application/runtime state and transport<br/>AppCore projections · HostRuntime × N<br/>see Rust Core architecture diagram"]
+  Rust["Whip Rust core<br/>AppCore projections · HostRuntime × N · SSH/Tailcat<br/>credential/connection workflows · Phone Use MCP<br/>transcripts · voice/speech policy · persistence<br/>see Rust Core architecture diagram"]
 
   subgraph Output["Native terminal delivery · Android/iOS"]
     direction TB
@@ -53,6 +59,7 @@ flowchart TB
 
   NativeCalls <--> Module
   Module <--> Rust
+  Audio <-->|"native PCM ingress/playback · speech callbacks"| Rust
   Rust <-->|"bounded output / native write credits"| NativeDelivery
   Renderer -.->|"configuration · visibility · lifecycle"| Xterm
 
@@ -60,5 +67,5 @@ flowchart TB
   classDef native fill:#e9f7f5,stroke:#23847a,color:#172033
   classDef rust fill:#fff0e7,stroke:#c45f24,color:#172033
   class Navigation,Projections,SessionViews,Secondary,Renderer,Device,Cache,Storage,Adapters,NativeCalls react
-  class Module,NativeDelivery,Xterm native
+  class Module,Credentials,Browser,Audio,NativeDelivery,Xterm native
   class Rust rust

@@ -507,6 +507,11 @@ renderer, and its write-completion credits return directly to Rust. React Native
 owns visibility, input, renderer configuration, and lifecycle; renderer identities
 and generations fence replacement and reconnect delivery.
 
+The diagrams also show Rust-owned credential and connection workflows, Phone Use
+MCP, and local/cloud voice services. Platform adapters provide secure storage,
+browser and device effects, and native audio capture/playback. Tailcat optionally
+carries the SSH transport over WireGuard.
+
 ### React Native Frontend
 
 [![React Native frontend architecture](docs/react-native-frontend-architecture.svg)](docs/react-native-frontend-architecture.svg)
@@ -537,10 +542,25 @@ terminal domain model. Rust serializes terminal resume data as an opaque string
 for the Rust Turso app-data store, including migration of older records. Terminal font sizes are
 stored separately as presentation preferences. React Native sends typed semantic
 operations through thin AppCore adapters and the `HerdrClient` runtime facade.
-It still owns navigation, sheets/forms, platform credentials, pickers/share and
-previews, presentation preferences, and
-the mounted WebView/xterm rendering lifecycle. QR-pinned WP4 pairing and
-key-management/native-diagnostic utilities share the same native module.
+It still owns navigation, sheets/forms, pickers/share and previews, presentation
+preferences, and the mounted WebView/xterm rendering lifecycle. Rust coordinates
+credential transactions, recovery, SSH connection workflows, and retained
+reconnect credentials; platform adapters perform secure-storage and authentication
+effects. Cloud voice retrieves saved credentials directly through a native-to-Rust
+boundary. QR-pinned WP4 pairing and key-management/native-diagnostic utilities
+share the same native module.
+
+Per-host Phone Use serves launch-scoped MCP over SSH reverse forwarding, routes
+saved-host and Herdr operations through Rust, and delegates browser/device effects
+to platform adapters. Transcript services normalize Claude Code, Codex, OpenCode
+v1/v2, and Pi records into native chat views with durable offline checkpoints.
+
+Voice orchestration stays in Rust: Whip integrates `voice-call-local` for on-device
+turn policy, `voice-call-openai` for Realtime/GPT-Live sessions, `voice-call-media`
+and `audio-ingress` for native media, and `mobile-speech` for speech arbitration.
+Android/iOS own audio devices, platform speech adapters, routing, and system call
+controls. Native PCM delivery bypasses React Native JavaScript; cloud voice uses
+its own provider connection alongside the SSH host connection.
 
 After editing either Mermaid source, regenerate the committed SVGs from `nix develop` with `npm run generate:readme-diagrams`.
 
