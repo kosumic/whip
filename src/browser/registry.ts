@@ -8,6 +8,7 @@ import {
   closeDeviceSession,
   deviceAction,
   DEVICE_LOCATION_TIMEOUT_MS,
+  DEVICE_PHOTO_TIMEOUT_MS,
 } from './device';
 import type { SessionPresentation } from '../liveHostSessions';
 import {
@@ -594,6 +595,8 @@ export class BrowserRegistry {
       },
       event.action === 'device.location'
         ? DEVICE_LOCATION_TIMEOUT_MS
+        : event.action === 'device.capture_photo'
+        ? DEVICE_PHOTO_TIMEOUT_MS
         : BROWSER_ACTION_TIMEOUT_MS,
     );
     let response: unknown;
@@ -648,6 +651,7 @@ export class BrowserRegistry {
               'cancelled',
               'unknown_action',
               'invalid_argument',
+              'result_too_large',
             ].includes(deviceCode)
           ? deviceCode
           : message.includes('timed out')

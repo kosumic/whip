@@ -61,6 +61,135 @@ Agent → remote loopback port → existing SSH connection
       → phone loopback HTTP MCP listener → browser controller → WebView
 ```
 
+## Checked browser sequences
+
+`browser.run_steps` executes 1–20 existing DOM/navigation actions in one MCP call
+on Android and iOS. Rust runs the sequence through the same native WebView/WKWebView
+adapters as standalone actions. The selected tab is captured at call arrival;
+only the outer call accepts `tab_id`. The session's serialization lease stays held
+through every action and expectation, so another agent call cannot interleave.
+Selecting another tab in the UI does not redirect the batch.
+
+For example, click a button, wait for its dialog, enter text, and verify the input:
+
+```json
+{
+  "tab_id": "<owned tab from browser.list_tabs>",
+  "timeout_ms": 15000,
+  "steps": [
+    {
+      "action": "click",
+      "arguments": { "target": { "role": "button", "name": "Compose" } },
+      "expect": [{ "condition": "target", "target": { "role": "dialog" } }]
+    },
+    {
+      "action": "type",
+      "arguments": { "target": { "label": "Message" }, "text": "Hello" },
+      "expect": [
+        { "condition": "value", "target": { "label": "Message" }, "value": "Hello" },
+        { "condition": "text", "text": "Draft saved" }
+      ]
+    }
+  ]
+}
+```
+
+Each `arguments` object uses the standalone tool's typed arguments. All steps and
+expectations are validated before any action runs. Supported actions are
+`navigate`, `snapshot`, `find`, `get`, `extract`, `click`, `type`, `keys`, `select`,
+`check`, `uncheck`, `scroll`, `wait`, `back`, `forward`, and `reload`. Use standalone
+tools for arbitrary JavaScript, screenshots, downloads and tab lifecycle actions;
+nested sequences are rejected. Targets are resolved against the current DOM at
+each step. Use unique semantic locators for later steps, since DOM changes can
+invalidate refs observed earlier. Ambiguous writes never choose a target.
+Typing reads the field back immediately after its input/change handlers run.
+If the field was removed or its text differs, the action fails with
+`input_rejected`, even without an explicit expectation, and later steps do not run.
+The error does not expose the requested or retained value. Use a `value`
+expectation when the page may update the value asynchronously.
+
+`expect` is a combined list of up to four `browser.wait` arguments, without
+`tab_id`. Conditions include `target` (exactly one rendered match), `target_absent`
+(zero matches), `text`, `text_absent`, `value` (exact non-sensitive input value),
+`selector`, `url` (substring), `url_change`, and `stable`. A `url_change`
+expectation defaults to the URL **before that step's action**. Each wait allows
+1–10,000 ms, default 5,000 ms; `stable_ms` allows 1–2,000 ms, default 300 ms.
+An ambiguous target expectation fails immediately. A missing observed ref fails
+with `stale_ref`, including in an absence check; use a semantic locator to wait
+for disappearance.
+Every expectation must hold on the same observed DOM state. Previously true
+conditions are rechecked while other conditions are pending. Each condition's
+timeout starts when the group starts; the first currently unmet condition to
+expire stops the group. Reports retain the latest `expectation_outcomes` and
+`wait_ms`, including which conditions were unmet on failure.
+Text absence checks fail with `result_too_large` if the rendered text scan reaches
+its 262,144-character bound; truncated text cannot prove absence.
+
+Unexpected document or URL changes abort the batch, including navigation caused
+by a click and navigation during a wait. An explicit `navigate`, `back`, `forward`
+or `reload` action may establish a new document; subsequent expectations and
+steps are pinned to that page. Split a navigation-triggering click and subsequent
+page work into separate calls after observing the new page. A same-document route
+change also stops the batch. Native view, driver, ownership and user-interaction
+fences continue to apply.
+
+Before every step after the first, Whip waits for 300 ms of DOM quiet, allowing
+up to 1,500 ms within the total deadline. A page that keeps changing stops with
+`unstable_page` before that action runs; `settle_ms` records the wait. A newly
+visible DOM dialog must be identified by a positive `target`, `selector` or
+`value` expectation referring to the dialog or a unique element inside it.
+Unexpected dialogs stop with `unexpected_popup`, including when requested text
+is visible behind them. Native JavaScript alert/confirm/prompt dialogs stop
+pending Android and iOS reads/actions immediately; Whip never answers them for
+the agent. The interrupted action may resume when the user answers the dialog,
+so its outcome remains uncertain and it is never replayed.
+
+A page with no rendered text or readable controls stops with `unreadable_page`;
+empty or hidden UI cannot satisfy a disappearance assertion. Blank tabs can
+still be navigated explicitly. Renderer/driver failures retain existing native
+error codes and stop the batch. These checks cover Whip-owned page UI only.
+
+The total execution deadline is 1–60,000 ms, default 60,000 ms, including actions
+and expectations. Admission/setup has a separate bounded transport allowance.
+Requests retain the 64 KiB browser input limit. The structured report contains
+`steps` with zero-based `index`, `action`, optional `result`, successful
+`expectations`, `failed_expectation` when applicable, `duration_ms` and `error`;
+it also contains `completed_steps`, `total_steps`, total `duration_ms`, `tab_id`
+and the last observed `final_page` public URL and native document `generation`.
+This generation identifies the native document; extraction results keep their
+separate DOM/content generation. Unexecuted steps are omitted.
+
+The first failed action, expectation, page fence or deadline stops execution.
+The MCP result sets `isError: true` and retains the partial structured report.
+Accumulated observations have a 64 KiB budget within the usual 128 KiB result
+limit. If an action would exceed that budget, its result is omitted and the batch
+stops with `result_too_large`; that action may already have completed.
+
+MCP cancellation, launch closure, tab closure, transport loss and adapter shutdown
+revoke outstanding native effect permits and stop unexecuted steps. When an
+active native request is externally aborted, its cancellation/error envelope
+includes the latest partial report in `error.details.report` when available.
+Cancellation while queued has no executed steps. An in-flight action may already
+have changed the page even if its result is missing: no action is automatically
+replayed and completed effects are not rolled back. Observe the current page
+before deciding how to continue after any failure or cancellation. These tools
+control only Whip-owned tabs and require no new platform permissions.
+
+Checked execution is ported/adapted from [Mika by wangzan101](https://github.com/wangzan101/Mika),
+copyright 2026 wangzan101, under Apache-2.0. The source pin is
+[Mika f3bbbdf](https://github.com/wangzan101/Mika/blob/f3bbbdf92caeb4259d55922e12f61f6da11469fd/docs/dev/architecture.md),
+in particular `BatchRunner.kt`, `UntilWait.kt`, and `ActionEffect.kt` in its core
+module. Both designs bound batches, dispatch each action through the existing
+execution path, verify locally and stop with partial results. Whip ports Mika's
+automatic pre-step settling, combined conditions, input verification and
+popup/unreadable-UI stops into its shared Rust engine and WebView adapters.
+Upstream attribution, license and modifications are retained in the crate's
+[NOTICE](../crates/agent-browser-control/NOTICE) and [LICENSE-APACHE](../crates/agent-browser-control/LICENSE-APACHE),
+and are visible in Whip's Licenses screen.
+Whip keeps its existing per-launch authorization and has no cross-app control.
+
+## Browser downloads
+
 `browser.download` fetches an absolute HTTP(S) URL using the selected tab's native
 login session and uploads the file to that launch's SSH host over SFTP. For example:
 
@@ -264,6 +393,7 @@ The same authenticated MCP server also exposes phone tools to opted-in launches:
 | `device.info` | `{}` | Platform, OS version, model, manufacturer, app version, locale and time zone; no unique device identifiers. |
 | `device.battery` | `{}` | `level` from 0 to 1 (or null when unknown), `state` (`unknown`, `unplugged`, `charging`, `full`), and `low_power_mode`. |
 | `device.location` | `{}` | One fix with `latitude`, `longitude`, `accuracy_m`, and `timestamp_ms` (Unix milliseconds). |
+| `device.capture_photo` | `{ "facing": "back" }` (optional) | Opens Whip's camera preview; returns the photo taken with the shutter as an MCP JPEG image, plus width, height, MIME type and facing. Supports `back` (default) and `front`. |
 | `device.haptic` | `{ "style": "light" }` | One short haptic; styles are `light`, `medium`, `heavy`. The OS may suppress physical feedback. |
 | `device.clipboard_read` | `{ "max_chars": 16384 }` (optional) | Foreground clipboard text and a `truncated` flag; read limits are 1–16384 characters. |
 | `device.clipboard_write` | `{ "text": "..." }` | Replaces foreground clipboard text, up to 16384 characters. Empty text clears it. |
@@ -289,6 +419,16 @@ APIs. Haptics use the existing Expo adapter.
 Clipboard and notifications reuse existing packages; speech and networking use
 platform APIs. Raw sensor snapshots and DeviceMotion share a TypeScript adapter
 over the SDK-compatible `expo-sensors` package.
+
+Photo capture also returns an MCP image content block, so the agent can inspect
+the photo directly. Keep Whip foregrounded and tap **Take photo** to send it, or
+**Cancel** to dismiss the preview. OS camera permission is requested when needed;
+gallery access and Shizuku are not required. The image is bounded to 1600 pixels
+per side and 1 MiB of JPEG data. Temporary camera files are deleted after capture;
+file paths and EXIF fields are not included in the result. Only one photo preview
+can be open at a time. Backgrounding Whip, cancelling the call or closing its
+Phone Use session closes the preview and discards late captures. Photo capture
+has a three-minute deadline to allow time for framing the shot.
 
 Shizuku commands run on the Android phone as shell/root through a UserService.
 See [Shizuku integration](shizuku.md#privileged-phone-use-tools) for

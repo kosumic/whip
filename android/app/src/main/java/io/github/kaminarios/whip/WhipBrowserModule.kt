@@ -47,12 +47,14 @@ import androidx.webkit.WebStorageCompat
 import androidx.core.content.ContextCompat
 import android.content.pm.PackageManager
 import android.Manifest
+import com.reactnativecommunity.webview.RNCWebView
 
 /** Native operations are reachable only from React Native, never a webpage bridge. */
 class WhipBrowserModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(context) {
   private companion object {
     const val MOUNT_RETRY_COUNT = 30
     const val MOUNT_RETRY_DELAY_MS = 16L
+    const val POPUP_RESULT = "{\"whipNativeError\":\"unexpected_popup\"}"
   }
   private val views = WeakHashMap<WebView, String>()
   private val savedStates = mutableMapOf<String, Bundle>()
@@ -446,7 +448,30 @@ class WhipBrowserModule(context: ReactApplicationContext) : ReactContextBaseJava
 
   @ReactMethod
   fun evaluate(tag: Double, script: String, promise: Promise) {
-    withBrowser(tag, promise) { webView -> webView.evaluateJavascript(script) { promise.resolve(it) } }
+    withBrowser(tag, promise) { webView ->
+      val owner = webView as? RNCWebView
+      var finished = false
+      lateinit var opened: Runnable
+      fun finish(value: String) {
+        if (finished) return
+        finished = true
+        owner?.removeWhipDialogObserver(opened)
+        promise.resolve(value)
+      }
+      opened = Runnable { finish(POPUP_RESULT) }
+      if (owner?.isWhipJavaScriptDialogOpen == true) finish(POPUP_RESULT)
+      else {
+        owner?.addWhipDialogObserver(opened)
+        webView.evaluateJavascript(script) { finish(it ?: "null") }
+        Handler(Looper.getMainLooper()).postDelayed({
+          if (!finished) {
+            finished = true
+            owner?.removeWhipDialogObserver(opened)
+            promise.reject("BROWSER_EVALUATE", "Browser evaluation timed out")
+          }
+        }, 20_000L)
+      }
+    }
   }
 
   @ReactMethod

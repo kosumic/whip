@@ -7,6 +7,7 @@ import {
 import Clipboard from '@react-native-clipboard/clipboard';
 import { motionSnapshot } from './motion';
 import { sensorSnapshot } from './sensors';
+import { photoCapture, type PhotoCaptureOptions } from './photoCapture';
 import {
   cancelShizukuCommand,
   executeShizukuCommand,
@@ -17,6 +18,7 @@ import {
 const NOTIFICATION_CHANNEL = 'reverse-control-v1';
 // Includes the native acquisition window plus permission and bridge overhead.
 export const DEVICE_LOCATION_TIMEOUT_MS = 40_000;
+export const DEVICE_PHOTO_TIMEOUT_MS = 175_000;
 
 interface NativeDevice {
   location(requestId: string): Promise<Record<string, unknown>>;
@@ -118,6 +120,10 @@ export async function deviceAction(
       );
   };
   active();
+  if (action === 'device.capture_photo') {
+    foreground();
+    return photoCapture.capture(args as unknown as PhotoCaptureOptions, signal);
+  }
   if (action === 'device.motion') return motionSnapshot(signal, foreground);
   if (action === 'device.info') {
     const Device = require('expo-device') as typeof import('expo-device');

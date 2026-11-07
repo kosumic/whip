@@ -57,6 +57,27 @@ const driver = nativeBrowserDriver(42, {
   reload: jest.fn(),
 });
 
+test.each(['android', 'ios'])(
+  '%s stops native document reads and actions on an open JavaScript dialog',
+  async platform => {
+    const original = Platform.OS;
+    Platform.OS = platform as typeof Platform.OS;
+    native.evaluate.mockResolvedValueOnce(
+      JSON.stringify({ whipNativeError: 'unexpected_popup' }),
+    );
+    await expect(driver.documentState()).rejects.toMatchObject({
+      browserCode: 'unexpected_popup',
+    });
+    native.evaluate.mockResolvedValueOnce(
+      JSON.stringify({ whipNativeError: 'unexpected_popup' }),
+    );
+    await expect(driver.evaluate('1')).rejects.toMatchObject({
+      browserCode: 'unexpected_popup',
+    });
+    Platform.OS = original;
+  },
+);
+
 test('native profiles target the existing view and clear custom agents for native WebKit modes', async () => {
   await configureBrowserProfile(42, { contentMode: 'desktop' });
   expect(native.configureProfile).toHaveBeenLastCalledWith(42, null, 'desktop');

@@ -11,7 +11,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Whip to scan QR codes for host pairing and browser links, and attach photos you take to remote terminals.",
+          "cameraPermission": "Allow Whip to scan QR codes and share photos you take with your remote terminals and Phone Use agents.",
           "recordAudioAndroid": false,
           "barcodeScannerEnabled": true
         }
@@ -19,7 +19,7 @@
       [
         "expo-image-picker",
         {
-          "cameraPermission": "Allow Whip to scan QR codes for host pairing and browser links, and attach photos you take to remote terminals.",
+          "cameraPermission": "Allow Whip to scan QR codes and share photos you take with your remote terminals and Phone Use agents.",
           "photosPermission": "Allow Whip to attach selected photos to the remote terminal."
         }
       ],

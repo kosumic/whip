@@ -5,11 +5,13 @@
 //! DOM programs, result limits, deadlines, cancellation, and generation fences.
 #![forbid(unsafe_code)]
 
+mod checked;
 pub mod control;
 pub mod engine;
 pub mod fence;
 pub mod model;
 pub mod programs;
+pub mod steps;
 
 #[cfg(test)]
 mod engine_tests;

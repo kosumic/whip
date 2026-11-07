@@ -79,6 +79,7 @@ Whip is not developed, maintained, or endorsed by the Herdr project or its autho
   - [Google Play publishing](#google-play-publishing)
   - [Validation](#validation)
 - [Community](#community)
+- [Tip jar](#tip-jar)
 - [Credits](#credits)
 - [License](#license)
 
@@ -767,6 +768,32 @@ TurboModule; there is no legacy or second SSH native fallback.
 - Follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 Feedback is especially useful around Android and iOS device compatibility, real-world Herdr workflows, terminal ergonomics, and safe SSH trust UX.
+
+## Tip jar
+
+If Whip is useful to you, you can support its development with an optional tip.
+
+Scan a QR code or copy its address, then select the matching token and network
+in your wallet before sending. The QR codes contain only the recipient address.
+Send any amount. GitHub builds also offer **More → Tip jar**, with QR codes and
+address copying. See the
+[tip jar documentation](docs/tip-jar.md) for details.
+
+### <img src="assets/brand/usdc.svg" alt="" width="20" height="20"> USDC on <img src="assets/brand/base.svg" alt="" width="16" height="16"> Base
+
+<img src="assets/tip-jar/usdc-base.png" alt="Wallet address QR code for USDC on Base" width="220" height="220">
+
+```text
+0x5424bcf743D265BA8Ac4ACdE0d0A5DfC187eeB05
+```
+
+### <img src="assets/brand/usdt.svg" alt="" width="20" height="20"> USDT on <img src="assets/brand/solana.svg" alt="" width="16" height="16"> Solana
+
+<img src="assets/tip-jar/usdt-solana.png" alt="Wallet address QR code for USDT on Solana" width="220" height="220">
+
+```text
+59Nqb3jEvexJV7HAwHJDMrqnipaxhN7VJbJe7C7pz7uV
+```
 
 ## Credits
 

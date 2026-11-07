@@ -9,6 +9,11 @@ pub const MAX_READ: u32 = 16_000;
 pub const MAX_INPUT: usize = 16_384;
 pub const MAX_WAIT_MS: u32 = 10_000;
 pub const MAX_DOWNLOAD_BYTES: u32 = 64 * 1024 * 1024;
+pub const MAX_STEPS: usize = 20;
+pub const MAX_EXPECTATIONS: usize = 4;
+pub const MAX_STEPS_MS: u32 = 60_000;
+// Reserve room for the final failure and page metadata in a partial report.
+pub const MAX_STEPS_RESULTS: usize = MAX_TEXT_RESULT / 2;
 
 macro_rules! identifier {
     ($name:ident) => {
@@ -67,6 +72,9 @@ pub enum ErrorCode {
     LocationUnavailable,
     SensorUnavailable,
     DownloadFailed,
+    UnexpectedPopup,
+    UnreadablePage,
+    UnstablePage,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, thiserror::Error)]
 #[error("{message}")]
@@ -173,7 +181,96 @@ args!(TypeArgs { target: Option<Target>, r#ref: Option<ElementRef>, text: String
 args!(KeysArgs { target: Option<Target>, r#ref: Option<ElementRef>, key: String });
 args!(SelectArgs { target: Option<Target>, r#ref: Option<ElementRef>, option: String });
 args!(ScrollArgs { x: Option<i32>, y: i32 });
-args!(WaitArgs { condition: Option<WaitCondition>, target: Option<Target>, selector: Option<String>, text: Option<String>, url: Option<String>, previous_url: Option<String>, stable_ms: Option<u32>, timeout_ms: Option<u32> });
+args!(WaitArgs { condition: Option<WaitCondition>, target: Option<Target>, selector: Option<String>, text: Option<String>, url: Option<String>, previous_url: Option<String>, value: Option<String>, stable_ms: Option<u32>, timeout_ms: Option<u32> });
+args!(RunStepsArgs { steps: Vec<BrowserStep>, timeout_ms: Option<u32> });
+
+/// Each action is parsed with the same typed arguments as its standalone tool.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BrowserStep {
+    pub action: String,
+    #[serde(default = "empty_arguments")]
+    pub arguments: Value,
+    #[serde(default)]
+    pub expect: Vec<WaitArgs>,
+}
+fn empty_arguments() -> Value {
+    json!({})
+}
+
+/// Tab lifecycle, arbitrary JS, downloads and images remain standalone tools.
+pub const STEP_ACTIONS: &[&str] = &[
+    "navigate", "snapshot", "find", "get", "extract", "click", "type", "keys", "select", "check",
+    "uncheck", "scroll", "wait", "back", "forward", "reload",
+];
+
+impl RunStepsArgs {
+    pub fn validate(&self) -> Result<(), BrowserError> {
+        if self.steps.is_empty() || self.steps.len() > MAX_STEPS {
+            return Err(BrowserError::invalid("Provide between 1 and 20 steps"));
+        }
+        limit(self.timeout_ms, 1, MAX_STEPS_MS)?;
+        for step in &self.steps {
+            if !STEP_ACTIONS.contains(&step.action.as_str()) {
+                return Err(BrowserError::invalid(
+                    "Unsupported run_steps action; use a standalone tool",
+                ));
+            }
+            let action = BrowserAction::parse(&step.action, &step.arguments)?;
+            if action.tab_id().is_some() {
+                return Err(BrowserError::invalid("Set tab_id on run_steps only"));
+            }
+            if step.expect.len() > MAX_EXPECTATIONS {
+                return Err(BrowserError::invalid("At most 4 expectations per step"));
+            }
+            for expectation in &step.expect {
+                if expectation.tab_id.is_some() {
+                    return Err(BrowserError::invalid("Expectations use the batch tab"));
+                }
+                validate_wait(expectation)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct StepReport {
+    pub index: usize,
+    pub action: String,
+    pub result: Option<Box<BrowserResult>>,
+    pub expectations: Vec<BrowserResult>,
+    pub duration_ms: u64,
+    pub failed_expectation: Option<usize>,
+    pub settle_ms: u64,
+    pub wait_ms: u64,
+    pub expectation_outcomes: Vec<ExpectationOutcome>,
+    pub error: Option<BrowserError>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ExpectationOutcome {
+    pub index: usize,
+    pub condition: WaitCondition,
+    pub met: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct StepsReport {
+    pub tab_id: TabId,
+    pub steps: Vec<StepReport>,
+    pub total_steps: usize,
+    pub completed_steps: usize,
+    pub duration_ms: u64,
+    /// Last observed public URL and native document generation, even on failure.
+    pub final_page: Option<StepsPage>,
+    pub error: Option<BrowserError>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct StepsPage {
+    pub url: String,
+    pub generation: String,
+}
 args!(ScreenshotArgs { annotate: Option<bool> });
 args!(EvalArgs { js: String });
 args!(DownloadArgs { url: String, destination_path: String, max_bytes: Option<u32> });
@@ -192,7 +289,10 @@ pub enum GetProperty {
 pub enum WaitCondition {
     Selector,
     Target,
+    TargetAbsent,
     Text,
+    TextAbsent,
+    Value,
     Url,
     UrlChange,
     Stable,
@@ -219,6 +319,7 @@ actions! {
     Forward(TabArgs) => "forward", Reload(TabArgs) => "reload", ListTabs(TabArgs) => "list_tabs",
     NewTab(NewTabArgs) => "new_tab", CloseTab(TabArgs) => "close_tab",
     Download(DownloadArgs) => "download",
+    RunSteps(RunStepsArgs) => "run_steps",
 }
 
 fn validate_target(
@@ -292,6 +393,7 @@ impl BrowserAction {
             tab.validate()?;
         }
         match self {
+            Self::RunSteps(args) => args.validate()?,
             Self::Download(args) => {
                 validate_url(&args.url)?;
                 text(&args.destination_path, 4096, false)?;
@@ -466,6 +568,10 @@ pub enum InteractionKind {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BrowserResult {
+    RunSteps {
+        #[serde(flatten)]
+        report: StepsReport,
+    },
     Download {
         tab_id: TabId,
         destination_path: String,
@@ -611,9 +717,11 @@ impl BrowserResult {
             }
             Ok(json!({"content":content}))
         } else {
-            Ok(
-                json!({"content":[{"type":"text","text":value.to_string()}],"structuredContent":value}),
-            )
+            let mut envelope = json!({"content":[{"type":"text","text":value.to_string()}],"structuredContent":value});
+            if matches!(self, Self::RunSteps { report } if report.error.is_some()) {
+                envelope["isError"] = json!(true);
+            }
+            Ok(envelope)
         }
     }
 }
@@ -678,7 +786,7 @@ fn validate_wait(args: &WaitArgs) -> Result<(), BrowserError> {
     } else {
         WaitCondition::Stable
     }) {
-        WaitCondition::Target => args
+        WaitCondition::Target | WaitCondition::TargetAbsent | WaitCondition::Value => args
             .target
             .as_ref()
             .ok_or_else(|| BrowserError::invalid("Target required"))?
@@ -690,7 +798,7 @@ fn validate_wait(args: &WaitArgs) -> Result<(), BrowserError> {
             1024,
             false,
         )?,
-        WaitCondition::Text => text(
+        WaitCondition::Text | WaitCondition::TextAbsent => text(
             args.text
                 .as_deref()
                 .ok_or_else(|| BrowserError::invalid("Text required"))?,
@@ -708,6 +816,15 @@ fn validate_wait(args: &WaitArgs) -> Result<(), BrowserError> {
     }
     if let Some(url) = &args.previous_url {
         text(url, 8192, false)?;
+    }
+    if args.condition == Some(WaitCondition::Value) {
+        text(
+            args.value
+                .as_deref()
+                .ok_or_else(|| BrowserError::invalid("Value required"))?,
+            MAX_INPUT,
+            true,
+        )?;
     }
 
     Ok(())

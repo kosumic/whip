@@ -62,6 +62,41 @@ test('native permit revocation rejects late evaluations and bounds platform erro
   adapter.dispose();
 });
 
+test('native modal errors preserve the popup code across typed document and evaluation effects', async () => {
+  const { tab, driver, adapter } = fixture();
+  const blocked = Object.assign(new Error('private dialog content'), {
+    browserCode: 'unexpected_popup',
+  });
+  jest.mocked(driver.documentState).mockRejectedValueOnce(blocked);
+  const document = await adapter.platform.perform(
+    permit().value,
+    'session',
+    new BrowserPlatformAction.Document({ tabId: tab.id }),
+  );
+  jest.mocked(driver.evaluate).mockRejectedValueOnce(blocked);
+  const evaluation = await adapter.platform.perform(
+    permit().value,
+    'session',
+    new BrowserPlatformAction.Evaluate({
+      tabId: tab.id,
+      script: 'page script',
+    }),
+  );
+  for (const result of [document, evaluation]) {
+    expect(result.tag).toBe(BrowserPlatformResult_Tags.Json);
+    const content = JSON.parse(
+      (result as { inner: { valueJson: string } }).inner.valueJson,
+    );
+    expect(content).toMatchObject({
+      ok: false,
+      error: { code: 'unexpected_popup' },
+    });
+    expect(JSON.stringify(content)).not.toContain('private dialog content');
+  }
+  adapter.dispose();
+});
+
+
 test('cancelled native view preparation releases late SSH previews without mounting them', async () => {
   const { controller, tab, transport, adapter } = fixture();
   controller.navigation(tab.id, { url: 'http://localhost:3000/page', title: 'Remote', canGoBack: false, canGoForward: false });

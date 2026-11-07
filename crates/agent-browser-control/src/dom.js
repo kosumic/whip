@@ -120,7 +120,7 @@ function domRuntime(runtimeKey, action, args, identity) {
     return { ...page, ready: true };
   }
   // Read rendered text nodes only, never form values or hidden descendants.
-  const textOf = (el, limit = 65536) => {
+  const textOf = (el, limit = 65536, requireComplete = false) => {
     let text = '';
     const visit = node => {
       if (text.length >= limit) return;
@@ -141,6 +141,11 @@ function domRuntime(runtimeKey, action, args, identity) {
       }
     };
     visit(el);
+    if (requireComplete && text.length >= limit)
+      fail(
+        'result_too_large',
+        'Cannot verify text absence beyond the text scan limit',
+      );
     return clean(text, limit);
   };
   const role = el =>
@@ -516,23 +521,126 @@ function domRuntime(runtimeKey, action, args, identity) {
       truncated: capped,
     };
   }
-  if (action === 'wait') {
+  const waitFor = conditionArgs => {
     const condition =
-      args.condition ||
-      (args.target ? 'target' : args.selector ? 'selector' : 'stable');
+      conditionArgs.condition ||
+      (conditionArgs.target
+        ? 'target'
+        : conditionArgs.selector
+          ? 'selector'
+          : 'stable');
     let ready;
-    if (condition === 'target') ready = locate(args.target).length > 0;
-    else if (condition === 'selector')
-      ready = query(args.selector).some(rendered);
-    else if (condition === 'text')
-      ready = textOf(document.body, 262144).includes(args.text);
-    else if (condition === 'url') ready = location.href.includes(args.url);
+    if (
+      condition === 'target' ||
+      condition === 'target_absent' ||
+      condition === 'value'
+    ) {
+      const matches = locate(conditionArgs.target);
+      if (matches.length > 1 && condition !== 'target_absent')
+        fail('ambiguous_target', 'Expectation requires one target', {
+          matches: matches.length,
+        });
+      if (condition === 'value') {
+        const el = matches[0];
+        if (el && sensitive(el))
+          fail('sensitive_target', 'Cannot inspect a sensitive value');
+        ready =
+          !!el && 'value' in el && String(el.value) === conditionArgs.value;
+      } else
+        ready =
+          condition === 'target_absent'
+            ? matches.length === 0
+            : matches.length === 1;
+    } else if (condition === 'selector')
+      ready = query(conditionArgs.selector).some(rendered);
+    else if (condition === 'text' || condition === 'text_absent') {
+      ready = textOf(
+        document.body,
+        262144,
+        condition === 'text_absent',
+      ).includes(conditionArgs.text);
+      if (condition === 'text_absent') ready = !ready;
+    } else if (condition === 'url')
+      ready = location.href.includes(conditionArgs.url);
     else if (condition === 'url_change')
-      ready = args.previous_url !== location.href;
+      ready = conditionArgs.previous_url !== location.href;
     else if (condition === 'stable')
-      ready = Date.now() - state.changedAt >= (args.stable_ms || 300);
+      ready = Date.now() - state.changedAt >= (conditionArgs.stable_ms || 300);
     else fail('invalid_argument', 'Invalid wait condition');
     return { ...page, ready, condition };
+  };
+  if (action === 'wait') return waitFor(args);
+  // Whip DOM adapter for Mika's UntilWait policy (wangzan101, Apache-2.0).
+  // Ported/modified for owned WebViews; see NOTICE and LICENSE-APACHE.
+  if (action === 'checked') {
+    const conditions = args.conditions || [];
+    const dialogs = query(
+      'dialog[open],[role="dialog"],[role="alertdialog"],[aria-modal="true"]',
+    ).filter(visible);
+    if (!state.dialogIds) {
+      state.dialogIds = new WeakMap();
+      state.dialogSequence = 0;
+    }
+    const ids = dialogs.map(dialog => {
+      if (!state.dialogIds.has(dialog))
+        state.dialogIds.set(dialog, ++state.dialogSequence);
+      return state.dialogIds.get(dialog);
+    });
+    if (args.baseline_dialogs) {
+      const allowed = args.allowed_conditions || [];
+      const unexpected = dialogs.some(
+        (dialog, index) =>
+          !args.baseline_dialogs.includes(ids[index]) &&
+          !allowed.some(condition => {
+            const kind =
+              condition.condition ||
+              (condition.target
+                ? 'target'
+                : condition.selector
+                  ? 'selector'
+                  : 'stable');
+            const matches =
+              kind === 'target' || kind === 'value'
+                ? locate(condition.target)
+                : kind === 'selector'
+                  ? query(condition.selector).filter(rendered)
+                  : [];
+            return (
+              matches.length === 1 &&
+              (matches[0] === dialog || dialog.contains(matches[0]))
+            );
+          }),
+      );
+      if (unexpected)
+        fail(
+          'unexpected_popup',
+          'Unexpected dialog; inspect the page before continuing',
+        );
+    }
+    const readable =
+      !!document.body &&
+      (textOf(document.body, 4096).length > 0 ||
+        query(interactive + ',img[alt]').some(visible));
+    if (args.require_readable !== false && !readable)
+      fail(
+        'unreadable_page',
+        'Page has no readable rendered UI; inspect it before continuing',
+      );
+    // All predicates see this DOM state in one synchronous JavaScript turn.
+    return {
+      ...page,
+      readable,
+      dialogs: ids,
+      stable_ms: Math.max(0, Date.now() - state.changedAt),
+      waits: conditions.map((condition, index) => {
+        try {
+          return waitFor(condition);
+        } catch (error) {
+          error.details = { ...error.details, expectation_index: index };
+          throw error;
+        }
+      }),
+    };
   }
   if (action === 'scroll') {
     scrollBy({
@@ -596,6 +704,12 @@ function domRuntime(runtimeKey, action, args, identity) {
         }),
       );
       el.dispatchEvent(new Event('change', { bubbles: true }));
+      const retained = el.isContentEditable ? el.textContent : el.value;
+      if (!el.isConnected || retained !== args.text)
+        fail(
+          'input_rejected',
+          'Page did not retain typed text; observe the input before continuing',
+        );
     } else if (action === 'select') {
       if (el.tagName !== 'SELECT' || el.multiple)
         fail('not_select', 'Target must be a single-choice native select');

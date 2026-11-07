@@ -42,6 +42,7 @@ use crate::ssh::{RemoteForward, SshSession};
 const MAX_RESPONSE: usize = browser::model::MAX_IMAGE_RESULT;
 const ACTION_TIMEOUT: Duration = Duration::from_secs(20);
 const LOCATION_ACTION_TIMEOUT: Duration = Duration::from_secs(45);
+const PHOTO_ACTION_TIMEOUT: Duration = Duration::from_secs(180);
 const MCP_TOOL_TIMEOUT: Duration = Duration::from_secs(330);
 const APPLICATION_TIMEOUT: Duration = Duration::from_secs(325);
 const INSTRUCTIONS_TIMEOUT: Duration = Duration::from_secs(5);
@@ -603,13 +604,18 @@ impl ReverseControl {
         };
         drop(transport);
         for request in requests {
+            let error = browser::operations::with_progress(
+                self,
+                &request,
+                browser::model::BrowserError::new(
+                    browser::model::ErrorCode::DeviceUnavailable,
+                    "SSH connection interrupted; command outcome may be unknown. Reconnect before issuing another call",
+                ),
+            );
             if let Some(task) = self.tasks.lock().remove(&request) {
                 task.abort();
             }
-            self.finish_action(&request, browser::model::BrowserError::new(
-                browser::model::ErrorCode::DeviceUnavailable,
-                "SSH connection interrupted; command outcome may be unknown. Reconnect before issuing another call",
-            ).mcp());
+            self.finish_action(&request, error.mcp());
         }
         self.emit_state_changed();
     }
@@ -907,9 +913,16 @@ impl ReverseControl {
             }
         };
         let timeout = match &action {
+            ToolAction::Browser(action)
+                if matches!(action.as_ref(), BrowserAction::RunSteps(_)) =>
+            {
+                // Allow bounded admission/setup; the engine enforces the batch deadline.
+                engine::action_timeout(action) + ACTION_TIMEOUT
+            }
             ToolAction::Application(action) if action.is_instructions() => INSTRUCTIONS_TIMEOUT,
             ToolAction::Application(_) => APPLICATION_TIMEOUT,
             ToolAction::Device(device::DeviceAction::Location) => LOCATION_ACTION_TIMEOUT,
+            ToolAction::Device(device::DeviceAction::CapturePhoto(_)) => PHOTO_ACTION_TIMEOUT,
             ToolAction::Browser(action)
                 if matches!(action.as_ref(), BrowserAction::Download(_)) =>
             {
@@ -1093,6 +1106,7 @@ impl ReverseControl {
     }
 
     fn reject_action(&self, request: &str, error: browser::model::BrowserError) {
+        let error = browser::operations::with_progress(self, request, error);
         if let Some(task) = self.tasks.lock().remove(request) {
             task.abort();
         }
@@ -1100,6 +1114,7 @@ impl ReverseControl {
     }
 
     fn reject_host_action(&self, request: &str, error: browser::model::BrowserError) {
+        let error = browser::operations::with_progress(self, request, error);
         if let Some(task) = self.tasks.lock().remove(request) {
             task.abort();
         }
@@ -1241,17 +1256,19 @@ impl ReverseControl {
             .map(|(request, call)| (request, call.response))
             .collect();
         for (request, response) in requests {
+            let error = browser::operations::with_progress(
+                self,
+                &request,
+                browser::model::BrowserError::new(
+                    browser::model::ErrorCode::SessionClosed,
+                    "Browser session closed",
+                ),
+            );
             if let Some(task) = self.tasks.lock().remove(&request) {
                 task.abort();
             }
             self.cancel_steps(&request);
-            let _ = response.send(
-                browser::model::BrowserError::new(
-                    browser::model::ErrorCode::SessionClosed,
-                    "Browser session closed",
-                )
-                .mcp(),
-            );
+            let _ = response.send(error.mcp());
         }
         let roots: Vec<_> = self
             .steps

@@ -2,6 +2,7 @@ import { NativeModules, Platform } from 'react-native';
 import type { BrowserDocumentState, BrowserDriver } from './controller';
 import type { BrowserSiteInfo } from './siteInfo';
 import type { BrowserProfile } from './preferences';
+import { BROWSER_POPUP_CODE, BROWSER_POPUP_MESSAGE } from './errors';
 export interface BrowserAnnotations {
   elements: { ref: string; x: number; y: number }[];
   viewport_width: number;
@@ -87,6 +88,15 @@ export function nativeBrowserDriver(
   const evaluate = async (script: string): Promise<unknown> => {
     const encoded = await nativeBrowser().evaluate(tag, script);
     const value: unknown = JSON.parse(encoded);
+    if (
+      value &&
+      typeof value === 'object' &&
+      'whipNativeError' in value &&
+      value.whipNativeError === BROWSER_POPUP_CODE
+    )
+      throw Object.assign(new Error(BROWSER_POPUP_MESSAGE), {
+        browserCode: BROWSER_POPUP_CODE,
+      });
     return typeof value === 'string' ? (JSON.parse(value) as unknown) : value;
   };
   return {

@@ -1,0 +1,13 @@
+Mika
+Copyright 2026 wangzan101
+
+Checked browser execution is ported/adapted from Mika's BatchRunner.kt,
+UntilWait.kt and ActionEffect.kt (Apache License 2.0).
+Upstream: https://github.com/wangzan101/Mika
+Revision: f3bbbdf92caeb4259d55922e12f61f6da11469fd
+
+Modified for Whip's shared Rust engine and owned Android/iOS browser tabs:
+bounded/cancellable execution, automatic DOM settling, simultaneous conditions,
+popup/readability guards, immediate input readback and structured partial reports.
+Whip's original code and additions are MIT licensed; adapted Mika portions
+retain the Apache License 2.0 in LICENSE-APACHE.

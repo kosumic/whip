@@ -4,6 +4,13 @@ MIT-licensed Rust library for browser-agent actions. It contains the typed actio
 schema, argument validation, DOM runtime, normalized results/errors, output limits,
 generation fences, and asynchronous execution engine extracted from Whip.
 
+Checked execution is ported/adapted from [Mika](https://github.com/wangzan101/Mika)
+by wangzan101, copyright 2026, under Apache-2.0. The Rust port adds bounded
+per-launch browser execution while retaining automatic settling, simultaneous
+wait conditions, popup/readability guards and local action verification.
+Adapted portions retain [NOTICE](NOTICE) and [LICENSE-APACHE](LICENSE-APACHE);
+Whip's original code and additions use MIT.
+
 ```toml
 [dependencies]
 agent-browser-control = "0.1.0"
@@ -68,10 +75,20 @@ native effects.
   deadline or cancellation; it cannot undo an already completed browser action.
 
 `engine::run` validates directly constructed actions as well as parsed ones and
-enforces a 20-second deadline (120 seconds for downloads). Use
+enforces a 20-second deadline (120 seconds for downloads; `run_steps` defaults to
+60 seconds and accepts a shorter total deadline). Use
 `engine::run_with_control` with a clonable `control::OperationControl` to shorten
 expiry or cancel an operation. `OperationControl::check` is also available for
 adapter effect/result fences. The default deadline remains an upper bound.
+
+`run_steps` accepts 1–20 existing DOM/navigation actions and up to four `wait`
+expectations per step, under the adapter's single exclusive lease. It stops at
+the first failure and returns a bounded partial `StepsReport`; it never replays
+an action. Unexpected document/URL changes abort; explicit navigation steps can
+establish a new page. `steps::run` additionally accepts `StepsProgress` so an
+adapter can attach partial progress when externally aborting its task. See
+[Whip's Phone Use guidance](https://github.com/kosumic/whip/blob/main/docs/reverse-control-browser.md#checked-browser-sequences)
+for the schema, supported actions, cancellation semantics and example.
 
 ## Limits and trust
 
