@@ -115,6 +115,7 @@ export interface SettingsSectionProps {
   backgroundMonitoringAvailable: boolean;
   persistentAlertDurationSeconds: number;
   ttsEnabled: boolean;
+  readAloudWhileLocked: boolean;
   vadSensitivity: number;
   onVadSensitivityChange: (value: number) => void;
   biometricForKeys: boolean;
@@ -147,6 +148,7 @@ export interface SettingsSectionProps {
   onPersistentAlertDurationChange: (value: number) => void;
   onTestAgentNotification: () => void;
   onTtsChange: (value: boolean) => void;
+  onReadAloudWhileLockedChange: (value: boolean) => void;
   onBiometricForKeysChange: (value: boolean) => void;
   onBiometricOnResumeChange: (value: boolean) => void;
   onManageGlobalKeychain: () => void;
@@ -313,6 +315,7 @@ export function SettingsSection(props: SettingsSectionProps) {
           divided
         />
         <SettingRow title={t('settings.speakChanges')} copy={t('settings.speakChangesCopy')} value={props.ttsEnabled} onChange={props.onTtsChange} divided />
+        {props.ttsEnabled ? <SettingRow title={t('settings.readAloudWhileLocked')} copy={t('settings.readAloudWhileLockedCopy')} value={props.readAloudWhileLocked} onChange={props.onReadAloudWhileLockedChange} divided /> : null}
       </VoiceSettings>
 
       <CollapsibleSectionCard

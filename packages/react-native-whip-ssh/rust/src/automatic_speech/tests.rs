@@ -217,6 +217,74 @@ fn disabled_readers_do_not_consume_prose_and_stale_baseline_jobs_cannot_reenable
 }
 
 #[test]
+fn opted_in_reader_finishes_current_and_new_updates_while_locked() {
+    let mut coordinator = coordinator(AgentTranscriptKind::Codex);
+    coordinator.command(Command::ReadWhileLocked { enabled: true }, 1);
+    update(&mut coordinator, 2, &message("first", "First reply.", true));
+    let current = take(&mut coordinator);
+    coordinator.command(Command::Lock { locked: true }, 3);
+    assert_eq!(
+        coordinator.command(Command::Valid { id: id(&current) }, 3),
+        true
+    );
+    update(
+        &mut coordinator,
+        3,
+        &message("locked", "Reply while locked.", true),
+    );
+    assert_eq!(
+        coordinator.command(Command::Completed { id: id(&current) }, 4),
+        true
+    );
+    let locked = take(&mut coordinator);
+    assert_eq!(locked["text"], "Reply while locked.");
+    assert_eq!(
+        coordinator.command(Command::Completed { id: id(&locked) }, 5),
+        true
+    );
+    coordinator.command(Command::Lock { locked: false }, 6);
+    update(
+        &mut coordinator,
+        4,
+        &message("locked", "Reply while locked.", true),
+    );
+    assert!(take(&mut coordinator).is_null());
+}
+
+#[test]
+fn opting_in_while_locked_does_not_replay_suppressed_updates_and_opt_out_stops_playback() {
+    let mut coordinator = coordinator(AgentTranscriptKind::Codex);
+    coordinator.command(Command::Lock { locked: true }, 1);
+    update(&mut coordinator, 2, &message("muted", "Stay silent.", true));
+    coordinator.command(Command::ReadWhileLocked { enabled: true }, 2);
+    assert!(take(&mut coordinator).is_null());
+    update(
+        &mut coordinator,
+        3,
+        &message("fresh", "Fresh locked reply.", true),
+    );
+    let current = take(&mut coordinator);
+    assert_eq!(current["text"], "Debug tab: Fresh locked reply.");
+    update(
+        &mut coordinator,
+        4,
+        &message("waiting", "Discard waiting reply.", true),
+    );
+    coordinator.command(Command::ReadWhileLocked { enabled: false }, 4);
+    assert_eq!(
+        coordinator.command(Command::Valid { id: id(&current) }, 4),
+        false
+    );
+    assert!(take(&mut coordinator).is_null());
+    coordinator.command(Command::Lock { locked: false }, 5);
+    assert!(take(&mut coordinator).is_null());
+    assert_eq!(
+        coordinator.command(Command::Completed { id: id(&current) }, 6),
+        false
+    );
+}
+
+#[test]
 fn pause_lock_disable_and_native_stop_suppress_existing_content_on_resume() {
     for control in ["pause", "lock", "disable", "stop"] {
         let mut coordinator = coordinator(AgentTranscriptKind::Codex);

@@ -10,6 +10,7 @@ describe('billing presentation adapters', () => {
       agentAlertLevel: 'regular',
       persistentAlertDurationSeconds: 30,
       ttsEnabled: false,
+      readAloudWhileLocked: false,
       vadSensitivity: 50,
       voiceConversation: DEFAULT_VOICE_CONVERSATION_SETTINGS,
       biometricForKeys: false,

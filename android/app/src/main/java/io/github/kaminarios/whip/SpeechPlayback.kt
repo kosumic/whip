@@ -106,7 +106,11 @@ object SpeechPlayback : SensorEventListener {
       else appContext!!.registerReceiver(lockReceiver, filter)
       automaticRegistered = true
     }
-    automaticCommand(action, (if (action == "enable") "enabled" else "paused") to value)
+    val key = when (action) {
+      "enable", "read-while-locked" -> "enabled"
+      else -> "paused"
+    }
+    automaticCommand(action, key to value)
     automaticCommand("lock", "locked" to (context.getSystemService(KeyguardManager::class.java)?.isDeviceLocked == true))
     // Pausing must release native audio before its JS control promise resolves.
     drainAutomatic()
@@ -130,7 +134,6 @@ object SpeechPlayback : SensorEventListener {
     }
     if (VoiceCallService.active || suspendedChat != null ||
       session?.let { it.owner != AUTOMATIC_OWNER || !it.readyReported } == true) return
-    if (context.getSystemService(KeyguardManager::class.java)?.isDeviceLocked == true) return
     val json = automaticCommand("take")
     if (json == "null") {
       if (session?.owner == AUTOMATIC_OWNER) stopOwner(SpeechPolicy.CHAT, AUTOMATIC_OWNER)

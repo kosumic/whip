@@ -761,6 +761,8 @@ export const fr = {
   'settings.testAgentNotificationCopy': 'Envoyez une notification avec le niveau d’alerte sélectionné.',
   'settings.testAgentNotificationTab': 'Test d’alerte',
   'settings.speakChanges': 'Annonces vocales',
+  'settings.readAloudWhileLocked': 'Lire à voix haute lorsque l’écran est verrouillé',
+  'settings.readAloudWhileLockedCopy': 'Continuer à lire les nouvelles réponses lorsque l’écran est éteint ou verrouillé. Nécessite les annonces vocales.',
   'settings.speakChangesCopy': 'Annoncez les changements d’état des agents et lisez les nouvelles réponses à voix haute dans la conversation sélectionnée.',
   'settings.changeNotificationSettings': 'Modifier les paramètres de notification',
   'settings.changeNotificationSettingsCopy': 'Gérez les notifications de Whip dans les paramètres système.',

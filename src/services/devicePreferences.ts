@@ -91,6 +91,7 @@ export interface DevicePreferences {
   agentAlertLevel: AgentAlertLevel;
   persistentAlertDurationSeconds: number;
   ttsEnabled: boolean;
+  readAloudWhileLocked: boolean;
   vadSensitivity: number;
   voiceConversation: VoiceConversationSettings;
   biometricForKeys: boolean;
@@ -118,6 +119,7 @@ export const defaultDevicePreferences: DevicePreferences = {
   agentAlertLevel: 'persistent',
   persistentAlertDurationSeconds: 30,
   ttsEnabled: false,
+  readAloudWhileLocked: false,
   vadSensitivity: DEFAULT_VAD_SENSITIVITY,
   voiceConversation: DEFAULT_VOICE_CONVERSATION_SETTINGS,
   biometricForKeys: false,
@@ -273,6 +275,7 @@ function parseDevicePreferences(
         defaultDevicePreferences.persistentAlertDurationSeconds,
       ),
       ttsEnabled: parsed.ttsEnabled ?? defaultDevicePreferences.ttsEnabled,
+      readAloudWhileLocked: parsed.readAloudWhileLocked === true,
       voiceConversation: parseVoiceConversationSettings(parsed.voiceConversation),
       vadSensitivity: clampNumber(
         parsed.vadSensitivity,

@@ -252,7 +252,8 @@ static void WhipWakeAutomaticSpeech(void)
 {
   static dispatch_once_t once;
   dispatch_once(&once, ^{ whip_automatic_speech_register(WhipWakeAutomaticSpeech); });
-  WhipAutomaticCommand(@{@"action": action, [action isEqualToString:@"enable"] ? @"enabled" : @"paused": @(value)});
+  NSString *key = [action isEqualToString:@"enable"] || [action isEqualToString:@"read-while-locked"] ? @"enabled" : @"paused";
+  WhipAutomaticCommand(@{@"action": action, key: @(value)});
   WhipAutomaticCommand(@{@"action": @"lock", @"locked": @(!UIApplication.sharedApplication.protectedDataAvailable)});
   [self drainAutomatic];
   [NSNotificationCenter.defaultCenter postNotificationName:WhipAutomaticSpeechFocus object:self userInfo:self.automaticFocus ?: @{}];
@@ -284,8 +285,7 @@ static void WhipWakeAutomaticSpeech(void)
     self.automaticId = 0;
   }
   if (WhipVoiceCall.shared.active || self.suspendedChat ||
-      (self.owner && ![self.owner isEqualToString:WhipAutomaticOwner]) ||
-      !UIApplication.sharedApplication.protectedDataAvailable) return;
+      (self.owner && ![self.owner isEqualToString:WhipAutomaticOwner])) return;
   NSDictionary *next = WhipAutomaticCommand(@{@"action": @"take"});
   if (!next) { [self stopOwner:WhipAutomaticOwner kind:WhipSpeechChat]; return; }
   uint64_t identity = [next[@"id"] unsignedLongLongValue];

@@ -9,7 +9,7 @@ export function setAutomaticSpeechBinding(bindingToken: string, hostId: string, 
 export type SpeechEndReason = 'completed' | 'stopped' | 'shake' | 'replaced' | 'interrupted' | 'busy';
 
 export interface NativeSpeechPlayback {
-  automaticSpeechControl(action: 'enable' | 'pause', value: boolean): Promise<void>;
+  automaticSpeechControl(action: 'enable' | 'pause' | 'read-while-locked', value: boolean): Promise<void>;
   automaticSpeechBinding(bindingToken: string, hostId: string, tabName: string): void;
   speechBackendCommand(action: SpeechBackendAction | 'system-voices'): Promise<string>;
   startChatSpeech(token: string, label: string): Promise<void>;

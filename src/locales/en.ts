@@ -758,6 +758,8 @@ export const en = {
   'settings.testAgentNotificationCopy': 'Send a notification using the selected alert level.',
   'settings.testAgentNotificationTab': 'Alert test',
   'settings.speakChanges': 'Voice announcements',
+  'settings.readAloudWhileLocked': 'Read aloud while locked',
+  'settings.readAloudWhileLockedCopy': 'Continue reading new replies aloud when the screen is off or locked. Requires Voice announcements.',
   'settings.speakChangesCopy': 'Announce agent status changes and read new replies aloud in the selected chat.',
   'settings.changeNotificationSettings': 'Change notification settings',
   'settings.changeNotificationSettingsCopy': 'Manage Whip notifications in system settings.',

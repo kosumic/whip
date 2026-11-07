@@ -748,6 +748,8 @@ export const ja = {
   'settings.testAgentNotificationCopy': '選択した通知レベルで通知を送信します。',
   'settings.testAgentNotificationTab': 'アラートテスト',
   'settings.speakChanges': '音声アナウンス',
+  'settings.readAloudWhileLocked': 'ロック中も読み上げる',
+  'settings.readAloudWhileLockedCopy': '画面がオフまたはロック中も新しい返信を読み上げます。音声アナウンスを有効にする必要があります。',
   'settings.speakChangesCopy': 'エージェントの状態変化を音声で通知し、選択中のチャットの新しい返信を読み上げます。',
   'settings.changeNotificationSettings': '通知設定を変更する',
   'settings.changeNotificationSettingsCopy': 'システム設定で Whip の通知を管理します。',

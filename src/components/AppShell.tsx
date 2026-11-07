@@ -534,6 +534,7 @@ export function AppShell({
                             persistentAlertDurationSeconds
                           }
                           ttsEnabled={ttsEnabled}
+                          readAloudWhileLocked={preferences.value.readAloudWhileLocked}
                           vadSensitivity={storedPreferences.vadSensitivity}
                           onVadSensitivityChange={value => preferences.setPreference('vadSensitivity', value)}
                           biometricForKeys={biometricForKeys}
@@ -621,6 +622,9 @@ export function AppShell({
                           }}
                           onTtsChange={value =>
                             preferences.setPreference('ttsEnabled', value)
+                          }
+                          onReadAloudWhileLockedChange={value =>
+                            preferences.setPreference('readAloudWhileLocked', value)
                           }
                           onBiometricForKeysChange={value => {
                             ignoreExpectedCancellation(

@@ -1,9 +1,17 @@
 import { useEffect } from 'react';
 import { Platform } from 'react-native';
-import { listenToAllTranscripts, setAutomaticChatSpeechEnabled } from '../services/automaticChatSpeech';
+import { listenToAllTranscripts, setAutomaticChatSpeechEnabled, setAutomaticChatSpeechReadWhileLocked } from '../services/automaticChatSpeech';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 
-export function useAutomaticChatSpeech(enabled: boolean, preferencesReady = true): void {
+export function useAutomaticChatSpeech(enabled: boolean, preferencesReady = true, readAloudWhileLocked = false): void {
+  useEffect(() => {
+    if (!preferencesReady || (Platform.OS !== 'android' && Platform.OS !== 'ios')) return;
+    reportBackgroundFailure(
+      setAutomaticChatSpeechReadWhileLocked(readAloudWhileLocked),
+      'automatic-chat-speech-lock-preference',
+    );
+  }, [preferencesReady, readAloudWhileLocked]);
+
   useEffect(() => {
     if (!preferencesReady) return;
     if (Platform.OS !== 'android' && Platform.OS !== 'ios') return;

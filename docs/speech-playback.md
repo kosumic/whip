@@ -59,8 +59,12 @@ rows advance before that delivery. There is still one Rust runtime and player.
 
 React presentation detach releases only its listeners, leaving the enabled
 reader with Rust/native. An explicit setting change disables it; repeating
-enable on remount does not undo native Stop. Native lock notifications pause
-automatic speech and discard waiting audio. Native playback still depends on
+enable on remount does not undo native Stop. **Read aloud while locked** defaults
+off. When off, native lock notifications pause automatic speech and discard
+waiting audio. When on, automatic reading continues through screen lock and can
+read new replies received while locked. Turning it off while locked stops that
+reading; enabling it does not replay replies received while it was off. It still
+requires **Voice announcements** to be enabled. Native playback still depends on
 OS execution limits; process suspension or termination cannot guarantee speech.
 
 Chat speech also reads structured agent questions from question tools and

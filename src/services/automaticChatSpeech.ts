@@ -13,6 +13,10 @@ export function setAutomaticChatSpeechEnabled(enabled: boolean): Promise<void> {
   return getSpeechPlayback().automaticSpeechControl('enable', enabled);
 }
 
+export function setAutomaticChatSpeechReadWhileLocked(enabled: boolean): Promise<void> {
+  return getSpeechPlayback().automaticSpeechControl('read-while-locked', enabled);
+}
+
 /** Attach controls/presentation to the process-owned Rust/native reader.
  * Detaching a React surface leaves playback and preferences with that reader.
  */

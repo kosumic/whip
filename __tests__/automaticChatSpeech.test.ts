@@ -1,4 +1,4 @@
-import { listenToAllTranscripts, setAutomaticChatSpeechEnabled } from '../src/services/automaticChatSpeech';
+import { listenToAllTranscripts, setAutomaticChatSpeechEnabled, setAutomaticChatSpeechReadWhileLocked } from '../src/services/automaticChatSpeech';
 import { setSpeechInputActive } from '../src/services/speechInputFocus';
 import { isChatSpeechTarget } from '../src/services/chatSpeechFocus';
 
@@ -36,6 +36,12 @@ test('the shared setting enables the native reader and explicitly disables it', 
   expect(mockNative.automaticSpeechControl).toHaveBeenCalledWith('enable', true);
   await setAutomaticChatSpeechEnabled(false);
   expect(mockNative.automaticSpeechControl).toHaveBeenLastCalledWith('enable', false);
+});
+
+test.each([false, true])('forwards the lock-screen opt-in %s without changing speech ownership', async enabled => {
+  mockNative.automaticSpeechControl.mockClear();
+  await setAutomaticChatSpeechReadWhileLocked(enabled);
+  expect(mockNative.automaticSpeechControl.mock.calls).toEqual([['read-while-locked', enabled]]);
 });
 
 test('manual reading and dictation pause native audio before resuming fresh updates', async () => {

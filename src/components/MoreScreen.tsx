@@ -93,6 +93,7 @@ const MoreScreenContent = memo(function MoreContent(props: Props) {
           backgroundMonitoringAvailable={props.backgroundMonitoringAvailable}
           persistentAlertDurationSeconds={props.persistentAlertDurationSeconds}
           ttsEnabled={props.ttsEnabled}
+          readAloudWhileLocked={props.readAloudWhileLocked}
           vadSensitivity={props.vadSensitivity}
           onVadSensitivityChange={props.onVadSensitivityChange}
           biometricForKeys={props.biometricForKeys}
@@ -128,6 +129,7 @@ const MoreScreenContent = memo(function MoreContent(props: Props) {
           }
           onTestAgentNotification={props.onTestAgentNotification}
           onTtsChange={props.onTtsChange}
+          onReadAloudWhileLockedChange={props.onReadAloudWhileLockedChange}
           onBiometricForKeysChange={props.onBiometricForKeysChange}
           onBiometricOnResumeChange={props.onBiometricOnResumeChange}
           onManageGlobalKeychain={props.onManageGlobalKeychain}

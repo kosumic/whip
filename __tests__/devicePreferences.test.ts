@@ -54,6 +54,19 @@ const mockRemoveBackground = jest.mocked(removeTerminalBackgroundImage);
 const mockMigrateAppBackground = jest.mocked(migrateAppBackgroundImage);
 const mockRemoveAppBackground = jest.mocked(removeAppBackgroundImage);
 
+test('locked-screen read-aloud defaults off and preserves explicit opt-in', async () => {
+  expect(defaultDevicePreferences.readAloudWhileLocked).toBe(false);
+  for (const value of [undefined, 'true', 1, false, true]) {
+    mockGetItem.mockResolvedValueOnce(JSON.stringify({ readAloudWhileLocked: value }));
+    const preferences = await loadDevicePreferences();
+    expect(preferences.readAloudWhileLocked).toBe(value === true);
+  }
+  const preferences = { ...defaultDevicePreferences, readAloudWhileLocked: true };
+  await saveDevicePreferences(preferences);
+  mockGetItem.mockResolvedValueOnce(mockSetItem.mock.calls.at(-1)?.[1] ?? null);
+  await expect(loadDevicePreferences()).resolves.toMatchObject({ readAloudWhileLocked: true });
+});
+
 test('VAD sensitivity defaults to the existing behavior and survives saving', async () => {
   mockGetItem.mockResolvedValue('{}');
   expect((await loadDevicePreferences()).vadSensitivity).toBe(50);
@@ -217,6 +230,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
     agentAlertLevel: 'persistent',
     persistentAlertDurationSeconds: 30,
     ttsEnabled: true,
+    readAloudWhileLocked: false,
     vadSensitivity: 50,
     voiceConversation: defaultDevicePreferences.voiceConversation,
     biometricForKeys: false,

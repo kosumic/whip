@@ -52,6 +52,7 @@ struct Coordinator {
     enabled: bool,
     paused: bool,
     locked: bool,
+    read_while_locked: bool,
     silenced: bool,
     initializing: bool,
     baseline_generation: u64,
@@ -86,6 +87,9 @@ enum Command {
     },
     Lock {
         locked: bool,
+    },
+    ReadWhileLocked {
+        enabled: bool,
     },
     Bind {
         binding_token: String,
@@ -146,7 +150,11 @@ impl Coordinator {
             })
     }
     fn allowed(&self) -> bool {
-        self.enabled && !self.initializing && !self.paused && !self.locked && !self.silenced
+        self.enabled
+            && !self.initializing
+            && !self.paused
+            && (!self.locked || self.read_while_locked)
+            && !self.silenced
     }
 
     fn command(&mut self, command: Command, now: u64) -> Value {
@@ -177,7 +185,13 @@ impl Coordinator {
             }
             Command::Lock { locked } => {
                 self.locked = locked;
-                if locked {
+                if locked && !self.read_while_locked {
+                    self.queue.clear_pending();
+                }
+            }
+            Command::ReadWhileLocked { enabled } => {
+                self.read_while_locked = enabled;
+                if self.locked && !enabled {
                     self.queue.clear_pending();
                 }
             }
