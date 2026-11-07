@@ -223,6 +223,8 @@ fn currently_obsolete_status_is_stopped_by_token_and_late_results_do_not_stop_ne
         status: Some(HerdrAgentStatus::Working),
         request: None,
         enabled: false,
+        afk_mode: false,
+        previous_status: None,
         foreground: false,
     });
     assert!(effects.iter().any(|e| matches!(&e.action, LocalAlertAction::StopSpeech { token: stopped } if stopped == &token(&a))));
@@ -381,6 +383,8 @@ fn runtime_incarnation_and_disconnect_invalidate_queue_but_old_events_cannot_dis
                 status: None,
                 request: None,
                 enabled: false,
+                afk_mode: false,
+                previous_status: None,
                 foreground: false
             })
             .is_empty()
@@ -547,11 +551,83 @@ fn foreground_and_disabled_voice_preserve_notification_delivery_modes() {
             status: Some(HerdrAgentStatus::Done),
             request: Some(request),
             enabled: true,
+            afk_mode: false,
+            previous_status: None,
             foreground,
         }));
         assert!(
             matches!(effect.action, LocalAlertAction::Schedule { request } if request.delivery == if foreground { LocalAlertDelivery::Brief } else { LocalAlertDelivery::Persistent })
         );
+    }
+}
+
+#[test]
+fn working_to_idle_alerts_briefly_unless_afk_mode_is_enabled() {
+    for afk_mode in [false, true] {
+        for foreground in [false, true] {
+            for delivery in [LocalAlertDelivery::Regular, LocalAlertDelivery::Persistent] {
+                let owner = LocalAlertCoordinator::new();
+                let mut request = request("host", "focused-pane", HerdrAgentStatus::Idle, true);
+                request.delivery = delivery;
+                let effects = owner.transition(LocalAlertTransition {
+                    host_id: "host".into(),
+                    pane_id: "focused-pane".into(),
+                    runtime: None,
+                    status: Some(HerdrAgentStatus::Idle),
+                    previous_status: Some(HerdrAgentStatus::Working),
+                    request: Some(request.clone()),
+                    enabled: true,
+                    afk_mode,
+                    foreground,
+                });
+                let notification = schedule(&effects);
+                assert!(
+                    matches!(notification.action, LocalAlertAction::Schedule { request } if request.delivery == if afk_mode { delivery } else { LocalAlertDelivery::Brief })
+                );
+                let voice = speech(&effects);
+                register(&owner, &voice);
+                // Subsequent idle snapshots keep the completion announcement valid.
+                assert!(
+                    owner
+                        .retain_speech("host".into(), None, vec![request])
+                        .is_empty()
+                );
+                assert_eq!(take(&owner).unwrap().token, token(&voice));
+            }
+        }
+    }
+}
+
+#[test]
+fn unrelated_idle_transitions_and_disabled_alerts_do_not_notify() {
+    for afk_mode in [false, true] {
+        for previous_status in [
+            None,
+            Some(HerdrAgentStatus::Idle),
+            Some(HerdrAgentStatus::Done),
+            Some(HerdrAgentStatus::Unknown),
+            Some(HerdrAgentStatus::Blocked),
+            Some(HerdrAgentStatus::Working),
+        ] {
+            for enabled in [false, true] {
+                if enabled && previous_status == Some(HerdrAgentStatus::Working) {
+                    continue;
+                }
+                let owner = LocalAlertCoordinator::new();
+                let effects = owner.transition(LocalAlertTransition {
+                    host_id: "host".into(),
+                    pane_id: "a".into(),
+                    runtime: None,
+                    status: Some(HerdrAgentStatus::Idle),
+                    previous_status,
+                    request: Some(request("host", "a", HerdrAgentStatus::Idle, true)),
+                    enabled,
+                    afk_mode,
+                    foreground: false,
+                });
+                assert!(effects.is_empty());
+            }
+        }
     }
 }
 

@@ -15098,6 +15098,8 @@ export type LocalAlertTransition = {
   status?: HerdrAgentStatus;
   request?: LocalAlertRequest;
   enabled: boolean;
+  afkMode: boolean;
+  previousStatus?: HerdrAgentStatus;
   foreground: boolean;
 };
 
@@ -15130,6 +15132,8 @@ const FfiConverterTypeLocalAlertTransition = (() => {
         status: FfiConverterOptionalTypeHerdrAgentStatus.read(from),
         request: FfiConverterOptionalTypeLocalAlertRequest.read(from),
         enabled: FfiConverterBool.read(from),
+        afkMode: FfiConverterBool.read(from),
+        previousStatus: FfiConverterOptionalTypeHerdrAgentStatus.read(from),
         foreground: FfiConverterBool.read(from),
       };
     }
@@ -15140,6 +15144,11 @@ const FfiConverterTypeLocalAlertTransition = (() => {
       FfiConverterOptionalTypeHerdrAgentStatus.write(value.status, into);
       FfiConverterOptionalTypeLocalAlertRequest.write(value.request, into);
       FfiConverterBool.write(value.enabled, into);
+      FfiConverterBool.write(value.afkMode, into);
+      FfiConverterOptionalTypeHerdrAgentStatus.write(
+        value.previousStatus,
+        into,
+      );
       FfiConverterBool.write(value.foreground, into);
     }
     allocationSize(value: TypeName): number {
@@ -15154,6 +15163,10 @@ const FfiConverterTypeLocalAlertTransition = (() => {
           value.request,
         ) +
         FfiConverterBool.allocationSize(value.enabled) +
+        FfiConverterBool.allocationSize(value.afkMode) +
+        FfiConverterOptionalTypeHerdrAgentStatus.allocationSize(
+          value.previousStatus,
+        ) +
         FfiConverterBool.allocationSize(value.foreground)
       );
     }

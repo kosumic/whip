@@ -48,6 +48,8 @@ pub struct LocalAlertTransition {
     pub status: Option<HerdrAgentStatus>,
     pub request: Option<LocalAlertRequest>,
     pub enabled: bool,
+    pub afk_mode: bool,
+    pub previous_status: Option<HerdrAgentStatus>,
     pub foreground: bool,
 }
 
@@ -277,7 +279,7 @@ impl CoordinatorState {
             self.runtime_current(&alert.request)
                 && matches!(
                     alert.request.status,
-                    HerdrAgentStatus::Blocked | HerdrAgentStatus::Done
+                    HerdrAgentStatus::Blocked | HerdrAgentStatus::Done | HerdrAgentStatus::Idle
                 )
                 && alert.request.announcement.is_some()
                 && (self.announcement.as_deref() == Some(token)
@@ -576,10 +578,14 @@ impl LocalAlertCoordinator {
         if !state.source_current(&transition.host_id, transition.runtime.as_ref()) {
             return Vec::new();
         }
-        if !matches!(
-            transition.status,
-            Some(HerdrAgentStatus::Blocked | HerdrAgentStatus::Done)
-        ) {
+        let finished_working = transition.previous_status == Some(HerdrAgentStatus::Working)
+            && transition.status == Some(HerdrAgentStatus::Idle);
+        if !finished_working
+            && !matches!(
+                transition.status,
+                Some(HerdrAgentStatus::Blocked | HerdrAgentStatus::Done)
+            )
+        {
             return state.dismiss(&LocalAlertScope::Pane {
                 host_id: transition.host_id,
                 pane_id: transition.pane_id,
@@ -601,7 +607,11 @@ impl LocalAlertCoordinator {
         {
             return Vec::new();
         }
-        if transition.foreground && request.delivery == LocalAlertDelivery::Persistent {
+        if (finished_working && !transition.afk_mode)
+            || (!finished_working
+                && transition.foreground
+                && request.delivery == LocalAlertDelivery::Persistent)
+        {
             request.delivery = LocalAlertDelivery::Brief;
         }
         state.admit(request)

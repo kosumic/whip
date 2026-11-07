@@ -38,7 +38,7 @@ describe('billing presentation adapters', () => {
         xtermCacheCapacity: 8,
         cursorBlink: true,
         doubleTapAction: 'tab',
-        pauseResizeInBackground: true,
+        afkMode: false,
         visualHints: false,
         backgroundImageUri: 'file:///terminal.jpg',
         backgroundDimming: 45,

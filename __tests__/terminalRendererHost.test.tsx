@@ -110,7 +110,7 @@ const preferences: TerminalPreferences = {
   xtermCacheCapacity: 4,
   cursorBlink: true,
   doubleTapAction: 'none',
-  pauseResizeInBackground: false,
+  afkMode: true,
   visualHints: false,
   backgroundImageUri: null,
   backgroundDimming: 0,
@@ -287,9 +287,10 @@ describe('TerminalRendererHost lifecycle', () => {
   const mountReadyHost = async (
     activeTarget: TerminalRenderTarget,
     targets: TerminalRenderTarget[] = [activeTarget],
-    pauseResizeInBackground = true,
+    initialAfkMode = false,
     xtermCacheCapacity = preferences.xtermCacheCapacity,
   ) => {
+    let afkMode = initialAfkMode;
     const eventCallbacks = createCallbacks();
     const injected: string[] = [];
     const handle = createRef<TerminalRendererHandle>();
@@ -304,7 +305,7 @@ describe('TerminalRendererHost lifecycle', () => {
         ref={handle}
         {...eventCallbacks}
         activeTarget={target}
-        preferences={{ ...preferences, fontSize, pauseResizeInBackground, xtermCacheCapacity }}
+        preferences={{ ...preferences, fontSize, afkMode, xtermCacheCapacity }}
         targets={targets}
         visible={visible}
         renderingEnabled={renderingEnabled}
@@ -360,6 +361,10 @@ describe('TerminalRendererHost lifecycle', () => {
       });
     };
     return {
+      setAfkMode: async (value: boolean) => {
+        afkMode = value;
+        await activateTarget(activeTarget);
+      },
       activateTarget,
       setPresentation,
       setFontPreference,
@@ -398,7 +403,7 @@ describe('TerminalRendererHost lifecycle', () => {
     const targets = Array.from({ length: 6 }, (_, index) => ({
       ...createTarget(`term-${index}`, client, scroll), prewarm: true,
     }));
-    const { activateTarget, injected } = await mountReadyHost(targets[0], targets, true, MIN_XTERM_CACHE_CAPACITY);
+    const { activateTarget, injected } = await mountReadyHost(targets[0], targets, false, MIN_XTERM_CACHE_CAPACITY);
     expect(injected.filter(script => script.includes('window.herdrCreate'))).toHaveLength(MIN_XTERM_CACHE_CAPACITY);
     injected.length = 0;
     await activateTarget({ ...targets[0] });
@@ -1593,11 +1598,11 @@ describe('TerminalRendererHost lifecycle', () => {
     },
   );
 
-  test.each([true, false])('resume passes the measured grid into attachment with resize pausing %s', async pauseResizeInBackground => {
+  test.each([true, false])('resume passes the measured grid into attachment with AFK mode %s', async afkMode => {
     const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 31 };
     const client = createClient({ 'term-1': scroll });
     const target = createTarget('term-1', client, scroll);
-    const { webView } = await mountReadyHost(target, [target], pauseResizeInBackground);
+    const { webView } = await mountReadyHost(target, [target], afkMode);
     const size = { columns: 33, rows: 31, cellWidthPx: 28, cellHeightPx: 68 };
     await sendRendererMessage(webView, {
       type: 'resize', source: 'fit', key: target.key,
@@ -1610,54 +1615,81 @@ describe('TerminalRendererHost lifecycle', () => {
     for (let cycle = 0; cycle < 3; cycle += 1) {
       await emitAppState('background');
       await emitAppState('active');
-      expect(client.openTerminal).toHaveBeenLastCalledWith(
-        'term-1', expect.any(Function), expect.any(Function), expect.any(Function), size,
-        expect.objectContaining({ key: target.key, identity: expect.any(String) }),
-      );
+      if (!afkMode) {
+        expect(client.openTerminal).toHaveBeenLastCalledWith(
+          'term-1', expect.any(Function), expect.any(Function), expect.any(Function), size,
+          expect.objectContaining({ key: target.key, identity: expect.any(String) }),
+        );
+      }
       await sendRendererMessage(webView, { type: 'fit-complete', key: target.key });
     }
 
-    expect(client.openTerminal).toHaveBeenCalledTimes(3);
+    expect(client.openTerminal).toHaveBeenCalledTimes(!afkMode ? 3 : 0);
     expect(client.resizeTerminal).not.toHaveBeenCalled();
   });
 
-  test.each([true, false])('background releases Herdr sizing with resize pausing %s', async pauseResizeInBackground => {
+  test.each([true, false])('background respects Herdr AFK mode %s', async afkMode => {
     const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
     const client = createClient({ 'term-1': scroll });
     const target = createTarget('term-1', client, scroll);
-    const { activateTarget, webView, injected } = await mountReadyHost(target, [target], pauseResizeInBackground);
+    const { activateTarget, webView, injected } = await mountReadyHost(target, [target], afkMode);
     client.resizeTerminal.mockClear();
     injected.length = 0;
 
     await emitAppState('inactive');
     await emitAppState('background');
-    expect(client.releaseTerminal).toHaveBeenCalledTimes(1);
-    expect(client.isTerminalBridgeRetained()).toBe(false);
+    expect(client.releaseTerminal).toHaveBeenCalledTimes(!afkMode ? 1 : 0);
+    expect(client.isTerminalBridgeRetained()).toBe(afkMode);
     await sendRendererMessage(webView, {
       type: 'resize', source: 'fit', key: target.key,
       cols: 90, rows: 30, cellWidthPx: 8, cellHeightPx: 16,
     });
+    expect(client.resizeTerminal).toHaveBeenCalledTimes(!afkMode ? 0 : 1);
     await sendRendererMessage(webView, { type: 'terminal-ready', key: target.key });
     await activateTarget({ ...target });
-    expect(client.resizeTerminal).not.toHaveBeenCalled();
     expect(client.openTerminal).toHaveBeenCalledTimes(1);
-    expect(client.isTerminalBridgeRetained()).toBe(false);
+    expect(client.isTerminalBridgeRetained()).toBe(afkMode);
 
     await emitAppState('active');
 
-    expect(client.releaseTerminal).toHaveBeenCalledTimes(1);
+    expect(client.releaseTerminal).toHaveBeenCalledTimes(!afkMode ? 1 : 0);
     expect(client.detachTerminal).not.toHaveBeenCalled();
     expect(client.closeTerminalBridge).not.toHaveBeenCalled();
-    expect(client.openTerminal).toHaveBeenCalledTimes(2);
+    expect(client.openTerminal).toHaveBeenCalledTimes(!afkMode ? 2 : 1);
     expect(client.isTerminalBridgeRetained()).toBe(true);
     expect(injected.join('\n')).toContain('window.herdrFit');
   });
 
-  test.each([true, false])('foreground reconnects a failed bridge with resize pausing %s', async pauseResizeInBackground => {
+  test('enabling AFK mode retains the terminal on the next app switch', async () => {
+    const scroll = { offset_from_bottom: 200, max_offset_from_bottom: 1_000, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { setAfkMode, webView } = await mountReadyHost(target);
+
+    await setAfkMode(true);
+    await emitAppState('inactive');
+    await emitAppState('background');
+    await emitAppState('active');
+    await sendRendererMessage(webView, { type: 'fit-complete', key: target.key });
+
+    expect(client.releaseTerminal).not.toHaveBeenCalled();
+    expect(client.detachTerminal).not.toHaveBeenCalled();
+    expect(client.closeTerminalBridge).not.toHaveBeenCalled();
+    expect(client.openTerminal).toHaveBeenCalledTimes(1);
+    expect(client.snapshot).not.toHaveBeenCalled();
+    expect(client.scrollTerminal).not.toHaveBeenCalled();
+
+    await setAfkMode(false);
+    await emitAppState('background');
+    expect(client.releaseTerminal).toHaveBeenCalledTimes(1);
+    expect(client.isTerminalBridgeRetained()).toBe(false);
+  });
+
+  test.each([true, false])('foreground reconnects a failed bridge with AFK mode %s', async afkMode => {
     const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
     const client = createClient({ 'term-1': scroll });
     const target = createTarget('term-1', client, scroll);
-    const { injected } = await mountReadyHost(target, [target], pauseResizeInBackground);
+    const { injected } = await mountReadyHost(target, [target], afkMode);
     act(() => client.disconnect());
     expect(client.isTerminalBridgeRetained()).toBe(false);
     await emitAppState('background');
@@ -1676,12 +1708,12 @@ describe('TerminalRendererHost lifecycle', () => {
     expect(client.openTerminal).toHaveBeenCalledTimes(2);
   });
 
-  test.each([true, false])('background keeps plain SSH attached with resize pausing %s', async pauseResizeInBackground => {
+  test.each([true, false])('background keeps plain SSH attached with AFK mode %s', async afkMode => {
     const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
     const client = createClient({ 'term-1': scroll });
     const target = createTarget('term-1', client, scroll);
     target.session.kind = 'ssh';
-    const { webView } = await mountReadyHost(target, [target], pauseResizeInBackground);
+    const { webView } = await mountReadyHost(target, [target], afkMode);
     client.resizeTerminal.mockClear();
 
     await emitAppState('background');
@@ -1689,7 +1721,7 @@ describe('TerminalRendererHost lifecycle', () => {
       type: 'resize', source: 'fit', key: target.key,
       cols: 90, rows: 30, cellWidthPx: 8, cellHeightPx: 16,
     });
-    expect(client.resizeTerminal).toHaveBeenCalledTimes(pauseResizeInBackground ? 0 : 1);
+    expect(client.resizeTerminal).toHaveBeenCalledTimes(!afkMode ? 0 : 1);
     await emitAppState('active');
     await sendRendererMessage(webView, { type: 'fit-complete', key: target.key });
     expect(client.resizeTerminal).toHaveBeenCalledTimes(1);
@@ -1704,26 +1736,26 @@ describe('TerminalRendererHost lifecycle', () => {
     expect(client.isTerminalBridgeRetained()).toBe(true);
   });
 
-  test('a renderer mounted in background waits for foreground before claiming Herdr sizing', async () => {
+  test.each([true, false])('a renderer mounted in background respects AFK mode %s', async afkMode => {
     const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
     const client = createClient({ 'term-1': scroll });
     const target = createTarget('term-1', client, scroll);
     mockAppState.currentState = 'background';
-    await mountReadyHost(target);
-    expect(client.openTerminal).not.toHaveBeenCalled();
-    expect(client.resizeTerminal).not.toHaveBeenCalled();
+    await mountReadyHost(target, [target], afkMode);
+    expect(client.openTerminal).toHaveBeenCalledTimes(!afkMode ? 0 : 1);
+    expect(client.resizeTerminal).toHaveBeenCalledTimes(!afkMode ? 0 : 1);
 
     await emitAppState('active');
     expect(client.openTerminal).toHaveBeenCalledTimes(1);
   });
 
-  test('background also releases warm bridges belonging to evicted renderers', async () => {
+  test.each([true, false])('background respects AFK mode %s for evicted renderers', async afkMode => {
     const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
     const client = createClient({});
     const targets = Array.from({ length: MIN_XTERM_CACHE_CAPACITY + 1 }, (_, index) =>
       createTarget(`term-${index + 1}`, client, scroll),
     );
-    const { activateTarget, webView } = await mountReadyHost(targets[0], targets, true, MIN_XTERM_CACHE_CAPACITY);
+    const { activateTarget, webView } = await mountReadyHost(targets[0], targets, afkMode, MIN_XTERM_CACHE_CAPACITY);
     for (const target of targets.slice(1)) {
       await activateTarget(target);
       await sendRendererMessage(webView, { type: 'terminal-ready', key: target.key });
@@ -1737,10 +1769,14 @@ describe('TerminalRendererHost lifecycle', () => {
 
     await emitAppState('background');
 
-    expect(client.closeTerminalBridge).toHaveBeenCalledWith('term-1');
-    expect(client.releaseTerminal).toHaveBeenCalledTimes(MIN_XTERM_CACHE_CAPACITY);
+    if (!afkMode) {
+      expect(client.closeTerminalBridge).toHaveBeenCalledWith('term-1');
+    } else {
+      expect(client.closeTerminalBridge).not.toHaveBeenCalled();
+    }
+    expect(client.releaseTerminal).toHaveBeenCalledTimes(!afkMode ? MIN_XTERM_CACHE_CAPACITY : 0);
     for (const target of targets) {
-      expect(client.isTerminalBridgeRetained(target.session.terminalId)).toBe(false);
+      expect(client.isTerminalBridgeRetained(target.session.terminalId)).toBe(afkMode);
     }
   });
 
@@ -1793,7 +1829,7 @@ describe('TerminalRendererHost lifecycle', () => {
         <TerminalRendererHost
           {...eventCallbacks}
           activeTarget={target}
-          preferences={{ ...preferences, pauseResizeInBackground: true }}
+          preferences={{ ...preferences, afkMode: false }}
           targets={[target]}
           visible={false}
         />,
@@ -1804,7 +1840,7 @@ describe('TerminalRendererHost lifecycle', () => {
         <TerminalRendererHost
           {...eventCallbacks}
           activeTarget={target}
-          preferences={{ ...preferences, pauseResizeInBackground: true }}
+          preferences={{ ...preferences, afkMode: false }}
           targets={[target]}
           visible
         />,

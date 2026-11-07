@@ -150,6 +150,7 @@ function AppContent() {
     terminalHistoryLoaded: history.loaded,
     reopenTerminalOnLaunch: preferences.value.reopenTerminalOnLaunch,
     alertsEnabled: preferences.value.alertsEnabled,
+    afkMode: preferences.value.terminal.afkMode,
     agentAlertLevel: preferences.value.agentAlertLevel,
     persistentAlertDurationSeconds:
       preferences.value.persistentAlertDurationSeconds,

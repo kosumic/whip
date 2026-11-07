@@ -709,7 +709,11 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
 
   const connectEntry = useCallback((entry: RendererEntry, showConnecting = true) => {
     // Herdr's direct attachment holds the pane's resize lock until released.
-    if (entry.target.session.kind !== 'ssh' && appState.current !== 'active') return;
+    if (
+      !preferences.afkMode
+      && entry.target.session.kind !== 'ssh'
+      && appState.current !== 'active'
+    ) return;
     if (entry.arbitration.state.yielded) return;
     // Opening the remote terminal before xterm has measured the WebView starts
     // it at HerdrClient's 80x24 fallback and immediately sends a second resize.
@@ -850,6 +854,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   }, [
     inject,
     injectFrame,
+    preferences.afkMode,
     relinquishController,
     requestFullFrame,
     settleResumeConnection,
@@ -1412,7 +1417,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
             }
           }
         }
-        if (wasActive) {
+        if (wasActive && !preferences.afkMode) {
           // Release Herdr's resize lock, preserving Chat and the host connection.
           resumeScrolls.current.clear();
           for (const entry of entries.current.values()) {
@@ -1490,7 +1495,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       const activeEntry = activeKey.current ? entries.current.get(activeKey.current) : null;
       if (
         visible && activeEntry
-        && (preferences.pauseResizeInBackground || activeEntry.target.session.kind !== 'ssh')
+        && (!preferences.afkMode || activeEntry.target.session.kind !== 'ssh')
       ) {
         inject(`window.herdrFit(${JSON.stringify(activeKey.current)});`);
       }
@@ -1500,7 +1505,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     activeCall,
     connectEntry,
     inject,
-    preferences.pauseResizeInBackground,
+    preferences.afkMode,
     relinquishController,
     settleResumeConnection,
     syncPresentation,
@@ -1679,7 +1684,10 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       return;
     }
     if (message.type === 'fit-complete') {
-      if (appState.current !== 'active' || !entry.arbitration.shouldSendResize()) return;
+      if (
+        (appState.current !== 'active' && !preferences.afkMode)
+        || !entry.arbitration.shouldSendResize()
+      ) return;
       const resume = resumeScrolls.current.get(entry.target.key);
       const pending = entry.pendingResize;
       if (pending) {
@@ -1817,7 +1825,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         }
         if (
           appState.current !== 'active'
-          && (preferences.pauseResizeInBackground || entry.target.session.kind !== 'ssh')
+          && !preferences.afkMode
         ) {
           terminalResizeRequestReady(resizeTrace);
           abandonTerminalResizeTrace(resizeTrace);

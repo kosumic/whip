@@ -234,7 +234,7 @@ const props: Props = {
     xtermCacheCapacity: 4,
     cursorBlink: true,
     doubleTapAction: 'none',
-    pauseResizeInBackground: false,
+    afkMode: false,
     visualHints: false,
     backgroundImageUri: null,
     backgroundDimming: 0,

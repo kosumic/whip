@@ -72,7 +72,7 @@ export interface TerminalPreferences {
   xtermCacheCapacity: number;
   cursorBlink: boolean;
   doubleTapAction: TerminalDoubleTapAction;
-  pauseResizeInBackground: boolean;
+  afkMode: boolean;
   visualHints: boolean;
   backgroundImageUri: string | null;
   backgroundDimming: number;
@@ -146,7 +146,7 @@ export const defaultDevicePreferences: DevicePreferences = {
     xtermCacheCapacity: DEFAULT_XTERM_CACHE_CAPACITY,
     cursorBlink: true,
     doubleTapAction: 'tab',
-    pauseResizeInBackground: true,
+    afkMode: false,
     visualHints: false,
     backgroundImageUri: null,
     backgroundDimming: 60,
@@ -344,9 +344,9 @@ function parseDevicePreferences(
             ? terminal.doubleTapTab ? 'tab' : 'none'
             : defaultDevicePreferences.terminal.doubleTapAction,
         ),
-        pauseResizeInBackground: typeof terminal.pauseResizeInBackground === 'boolean'
-          ? terminal.pauseResizeInBackground
-          : defaultDevicePreferences.terminal.pauseResizeInBackground,
+        afkMode: typeof terminal.afkMode === 'boolean'
+          ? terminal.afkMode
+          : defaultDevicePreferences.terminal.afkMode,
         visualHints: parsed.developerOptionsEnabled === true && terminal.visualHints === true,
         backgroundImageUri: typeof terminal.backgroundImageUri === 'string' && terminal.backgroundImageUri
           ? terminal.backgroundImageUri

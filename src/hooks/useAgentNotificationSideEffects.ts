@@ -34,22 +34,26 @@ interface AgentStateChange {
 
 export function useAgentNotificationSideEffects({
   alertsEnabled,
+  afkMode,
   agentAlertLevel,
   persistentAlertDurationSeconds,
   ttsEnabled,
 }: {
   alertsEnabled: boolean;
+  afkMode: boolean;
   agentAlertLevel: AgentAlertLevel;
   persistentAlertDurationSeconds: number;
   ttsEnabled: boolean;
 }) {
   const alertsEnabledRef = useRef(alertsEnabled);
+  const afkModeRef = useRef(afkMode);
   const agentAlertLevelRef = useRef(defaultDevicePreferences.agentAlertLevel);
   const persistentAlertDurationSecondsRef = useRef(
     defaultDevicePreferences.persistentAlertDurationSeconds,
   );
   const ttsEnabledRef = useRef(ttsEnabled);
   alertsEnabledRef.current = alertsEnabled;
+  afkModeRef.current = afkMode;
   agentAlertLevelRef.current = agentAlertLevel;
   persistentAlertDurationSecondsRef.current = persistentAlertDurationSeconds;
   ttsEnabledRef.current = ttsEnabled;
@@ -81,6 +85,8 @@ export function useAgentNotificationSideEffects({
             { hostId: sessionId, paneId },
             {
               enabled: alertsEnabledRef.current,
+              afkMode: afkModeRef.current,
+              previousStatus: transition.previous,
               speak: fresh && ttsEnabledRef.current,
               foreground: AppState.currentState === 'active',
               delivery: agentAlertLevelRef.current,

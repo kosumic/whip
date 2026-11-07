@@ -258,6 +258,8 @@ export function transitionAgentAlert(
   target: AlertTarget,
   options: {
     enabled: boolean;
+    afkMode?: boolean;
+    previousStatus?: AgentStatus | null;
     speak: boolean;
     foreground: boolean;
     delivery: AgentAlertLevel;
@@ -273,6 +275,8 @@ export function transitionAgentAlert(
       runtime: runtimeFor(target.hostId),
       status: status ? STATUS[status] : undefined,
       enabled: options.enabled,
+      afkMode: options.afkMode ?? false,
+      previousStatus: options.previousStatus ? STATUS[options.previousStatus] : undefined,
       foreground: options.foreground,
       request: agent
         ? alertRequest(

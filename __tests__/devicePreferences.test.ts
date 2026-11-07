@@ -157,7 +157,7 @@ test('terminal preference defaults match the mobile renderer', () => {
     xtermCacheCapacity: 20,
     cursorBlink: true,
     doubleTapAction: 'tab',
-    pauseResizeInBackground: true,
+    afkMode: false,
     visualHints: false,
     backgroundImageUri: null,
     backgroundDimming: 60,
@@ -245,7 +245,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
       xtermCacheCapacity: 20,
       cursorBlink: false,
       doubleTapAction: 'tab',
-      pauseResizeInBackground: true,
+      afkMode: false,
       visualHints: false,
       backgroundImageUri: null,
       backgroundDimming: 60,
@@ -440,20 +440,25 @@ test('drops the retired global browser choice when loading device preferences', 
   expect(preferences.terminal.fontSize).toBe(defaultDevicePreferences.terminal.fontSize);
 });
 
-test('pauses background resize commands by default and allows it to be disabled', async () => {
+test('AFK mode defaults off and can be enabled explicitly', async () => {
   mockGetItem.mockResolvedValueOnce(JSON.stringify({
-    terminal: { pauseResizeInBackground: false },
+    terminal: { afkMode: true },
   }));
   await expect(loadDevicePreferences()).resolves.toMatchObject({
-    terminal: { pauseResizeInBackground: false },
+    terminal: { afkMode: true },
   });
 
   mockGetItem.mockResolvedValueOnce(JSON.stringify({
-    terminal: { pauseResizeInBackground: 'no' },
+    terminal: { afkMode: 'no' },
   }));
   await expect(loadDevicePreferences()).resolves.toMatchObject({
-    terminal: { pauseResizeInBackground: true },
+    terminal: { afkMode: false },
   });
+});
+
+test.each([true, false])('the retired resize setting %s does not opt users into AFK mode', async pauseResizeInBackground => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({ terminal: { pauseResizeInBackground } }));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({ terminal: { afkMode: false } });
 });
 
 test('enables terminal visual hints only through developer options', async () => {

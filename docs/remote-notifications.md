@@ -4,6 +4,10 @@ Remote notifications are optional for each mobile device and saved Herdr session
 
 ## Components and delivery
 
+The terminal setting **AFK mode (away from keyboard)** defaults off. With AFK mode on, Whip retains terminal resize control when backgrounded. With it off, Whip releases Herdr terminal control and reattaches on return. Existing resize preferences do not opt users into AFK mode.
+
+The local alert pipeline also notifies on **working → idle**, including the focused terminal tab: AFK mode uses the configured alert level, while AFK mode off always uses a brief alert. Other transitions into idle do not count as completion. Notification permissions and the global alerts switch still apply. Host push hooks continue to handle blocked/done events when the local consumer is unavailable.
+
 ```mermaid
 flowchart LR
   H[Herdr status hook] --> L{Device lease younger than 10s?}

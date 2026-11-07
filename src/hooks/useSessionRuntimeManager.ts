@@ -62,6 +62,7 @@ interface SessionRuntimeManagerOptions {
   terminalHistoryLoaded: boolean;
   reopenTerminalOnLaunch: boolean;
   alertsEnabled: boolean;
+  afkMode?: boolean;
   agentAlertLevel: AgentAlertLevel;
   persistentAlertDurationSeconds: number;
   ttsEnabled: boolean;
@@ -160,6 +161,7 @@ export function useSessionRuntimeManager({
   terminalHistoryLoaded,
   reopenTerminalOnLaunch,
   alertsEnabled,
+  afkMode = false,
   agentAlertLevel,
   persistentAlertDurationSeconds,
   ttsEnabled,
@@ -211,6 +213,7 @@ export function useSessionRuntimeManager({
   useNotificationLeases(alertsEnabled && notifications.ready);
   const handleAgentStateChange = useAgentNotificationSideEffects({
     alertsEnabled,
+    afkMode,
     agentAlertLevel,
     persistentAlertDurationSeconds,
     ttsEnabled,

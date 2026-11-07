@@ -504,7 +504,7 @@ export function SettingsSection(props: SettingsSectionProps) {
           }}
           divided
         />
-        <SettingRow title={t('settings.pauseResizeInBackground')} copy={t('settings.pauseResizeInBackgroundCopy')} value={props.terminalPreferences.pauseResizeInBackground} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, pauseResizeInBackground: value })} divided />
+        <SettingRow title={t('settings.afkMode')} copy={t('settings.afkModeCopy')} value={props.terminalPreferences.afkMode} onChange={value => props.onTerminalPreferencesChange({ ...props.terminalPreferences, afkMode: value })} divided />
         <SliderRow
           title={t('settings.fontSize')}
           icon={CaseSensitive}

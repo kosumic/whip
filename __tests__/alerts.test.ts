@@ -299,6 +299,24 @@ test.each(['brief', 'regular'] as const)(
   },
 );
 
+test.each([false, true])('forwards working to idle with AFK mode %s for Rust admission', async afkMode => {
+  await transitionAgentAlert({ ...agent, agent_status: 'idle' }, 'idle', target, {
+    enabled: true,
+    afkMode,
+    previousStatus: 'working',
+    speak: false,
+    foreground: false,
+    delivery: 'persistent',
+    timeoutMs: 30_000,
+  });
+  expect(mockNative.transition).toHaveBeenCalledWith(expect.objectContaining({
+    afkMode,
+    previousStatus: HerdrAgentStatus.Working,
+    status: HerdrAgentStatus.Idle,
+    request: expect.objectContaining({ status: HerdrAgentStatus.Idle }),
+  }));
+});
+
 test('dispatches status, preferences and foreground state for Rust admission', async () => {
   await transitionAgentAlert(agent, 'blocked', target, {
     enabled: true,
