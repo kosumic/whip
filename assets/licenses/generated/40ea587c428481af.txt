@@ -1040,7 +1040,7 @@ limitations under the License.
 MIT License (MIT)
 
 Used by:
-- agent-transcript-core 0.1.0
+- agent-transcript-core 0.2.0
 
 MIT License
 
