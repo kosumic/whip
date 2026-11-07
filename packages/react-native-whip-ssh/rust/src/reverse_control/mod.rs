@@ -42,6 +42,7 @@ use crate::ssh::{RemoteForward, SshSession};
 const MAX_RESPONSE: usize = browser::model::MAX_IMAGE_RESULT;
 const ACTION_TIMEOUT: Duration = Duration::from_secs(20);
 const LOCATION_ACTION_TIMEOUT: Duration = Duration::from_secs(45);
+const PHOTO_ACTION_TIMEOUT: Duration = Duration::from_secs(180);
 const MCP_TOOL_TIMEOUT: Duration = Duration::from_secs(330);
 const APPLICATION_TIMEOUT: Duration = Duration::from_secs(325);
 const INSTRUCTIONS_TIMEOUT: Duration = Duration::from_secs(5);
@@ -910,6 +911,7 @@ impl ReverseControl {
             ToolAction::Application(action) if action.is_instructions() => INSTRUCTIONS_TIMEOUT,
             ToolAction::Application(_) => APPLICATION_TIMEOUT,
             ToolAction::Device(device::DeviceAction::Location) => LOCATION_ACTION_TIMEOUT,
+            ToolAction::Device(device::DeviceAction::CapturePhoto(_)) => PHOTO_ACTION_TIMEOUT,
             ToolAction::Browser(action)
                 if matches!(action.as_ref(), BrowserAction::Download(_)) =>
             {

@@ -264,6 +264,7 @@ The same authenticated MCP server also exposes phone tools to opted-in launches:
 | `device.info` | `{}` | Platform, OS version, model, manufacturer, app version, locale and time zone; no unique device identifiers. |
 | `device.battery` | `{}` | `level` from 0 to 1 (or null when unknown), `state` (`unknown`, `unplugged`, `charging`, `full`), and `low_power_mode`. |
 | `device.location` | `{}` | One fix with `latitude`, `longitude`, `accuracy_m`, and `timestamp_ms` (Unix milliseconds). |
+| `device.capture_photo` | `{ "facing": "back" }` (optional) | Opens Whip's camera preview; returns the photo taken with the shutter as an MCP JPEG image, plus width, height, MIME type and facing. Supports `back` (default) and `front`. |
 | `device.haptic` | `{ "style": "light" }` | One short haptic; styles are `light`, `medium`, `heavy`. The OS may suppress physical feedback. |
 | `device.clipboard_read` | `{ "max_chars": 16384 }` (optional) | Foreground clipboard text and a `truncated` flag; read limits are 1–16384 characters. |
 | `device.clipboard_write` | `{ "text": "..." }` | Replaces foreground clipboard text, up to 16384 characters. Empty text clears it. |
@@ -289,6 +290,16 @@ APIs. Haptics use the existing Expo adapter.
 Clipboard and notifications reuse existing packages; speech and networking use
 platform APIs. Raw sensor snapshots and DeviceMotion share a TypeScript adapter
 over the SDK-compatible `expo-sensors` package.
+
+Photo capture also returns an MCP image content block, so the agent can inspect
+the photo directly. Keep Whip foregrounded and tap **Take photo** to send it, or
+**Cancel** to dismiss the preview. OS camera permission is requested when needed;
+gallery access and Shizuku are not required. The image is bounded to 1600 pixels
+per side and 1 MiB of JPEG data. Temporary camera files are deleted after capture;
+file paths and EXIF fields are not included in the result. Only one photo preview
+can be open at a time. Backgrounding Whip, cancelling the call or closing its
+Phone Use session closes the preview and discards late captures. Photo capture
+has a three-minute deadline to allow time for framing the shot.
 
 Shizuku commands run on the Android phone as shell/root through a UserService.
 See [Shizuku integration](shizuku.md#privileged-phone-use-tools) for

@@ -19,6 +19,7 @@ const USAGE_GUIDANCE: &str = concat!(
     "Use device.* to read phone state or act on the phone. ",
     "Examples: device.location for nearby places or local weather; device.clipboard_read and device.clipboard_write for text copied on or sent to the phone; ",
     "device.notify for a phone alert; device.speak for requested spoken feedback; device.network for phone connectivity. ",
+    "Use device.capture_photo to open Whip's camera and receive a photo the user takes, with optional front/back facing. Keep Whip foregrounded; no Shizuku is needed. ",
     "Use device.motion for screen orientation, fused attitude, linear acceleration and rotation rate; ",
     "use device.sensor_snapshot for raw accelerometer, gyroscope, magnetometer or pressure readings. ",
     "For privileged Android access, check device.shizuku_status, then use device.shizuku_exec with an absolute phone executable path and literal argv. ",

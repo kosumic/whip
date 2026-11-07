@@ -1734,6 +1734,16 @@ fn device_arguments_are_validated_before_native_dispatch() -> Result<(), Box<dyn
         ),
         ("device.info", json!([]), "invalid_argument"),
         (
+            "device.capture_photo",
+            json!({"facing":"side"}),
+            "invalid_argument",
+        ),
+        (
+            "device.capture_photo",
+            json!({"max_dimension":9999}),
+            "invalid_argument",
+        ),
+        (
             "device.haptic",
             json!({"style":"forever"}),
             "invalid_argument",
@@ -2090,6 +2100,54 @@ fn device_calls_need_no_tabs_and_keep_session_isolation_and_cancellation()
         assert!(owner.pending.lock().is_empty());
         assert!(owner.steps.lock().is_empty());
         assert!(owner.tasks.lock().is_empty());
+        owner.shutdown();
+        Ok(())
+    })
+}
+
+#[test]
+fn photo_capture_needs_no_tab_or_shizuku_and_honors_session_cancellation()
+-> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        use base64::{Engine, engine::general_purpose::STANDARD};
+        let owner = Arc::new(ReverseControl::default());
+        insert(&owner, "a", "pane-a");
+        let action = device::DeviceAction::parse("device.capture_photo", &json!({}))?;
+        assert_eq!(action.wire().1["facing"], "back");
+        let receiver = owner
+            .start_action(
+                "a",
+                json!(1),
+                &json!({"params":{"name":"device.capture_photo"}}),
+            )
+            .map_err(|_| "photo start failed")?;
+        let step = next_step(&owner, "a").await?;
+        let native = json!({"ok":true,"value": {
+            "image": STANDARD.encode([0xff, 0xd8, 0xff, 0xd9]),
+            "width": 1280, "height": 960, "mime_type": "image/jpeg",
+        }})
+        .to_string();
+        owner.reply("b", &step, &native);
+        assert!(owner.steps.lock().contains_key(&step));
+        owner.reply("a", &step, &native);
+        assert_eq!(receiver.await?["content"][0]["type"], "image");
+        assert!(owner.browser_sessions.lock().is_empty());
+
+        let receiver = owner
+            .start_action(
+                "a",
+                json!(2),
+                &json!({"params":{"name":"device.capture_photo"}}),
+            )
+            .map_err(|_| "photo start failed")?;
+        let step = next_step(&owner, "a").await?;
+        owner.close_session("a");
+        assert_eq!(
+            receiver.await?["structuredContent"]["error"]["code"],
+            "session_closed"
+        );
+        owner.reply("a", &step, &native);
+        assert!(owner.steps.lock().is_empty());
         owner.shutdown();
         Ok(())
     })

@@ -42,7 +42,7 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSCameraUsageDescription</key>
-	<string>Allow Whip to scan QR codes for host pairing and browser links, and attach photos you take to remote terminals.</string>
+	<string>Allow Whip to scan QR codes and share photos you take with your remote terminals and Phone Use agents.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 	  <!-- Do not change NSAllowsArbitraryLoads to true, or you will risk app rejection! -->

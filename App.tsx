@@ -10,6 +10,7 @@ import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { useTranslation } from 'react-i18next';
 
 import { AppShell } from './src/components/AppShell';
+import { PhonePhotoCapture } from './src/browser/PhonePhotoCapture';
 import { ReducedMotionProvider } from './src/components/app-ui';
 import { chatCjkFontFamily, guiFontFamilies } from './src/lib/guiFonts';
 import { bundledAsset } from './src/lib/bundledAsset';
@@ -206,6 +207,7 @@ function AppContent() {
         />
       </View>
       <PortalHost />
+      <PhonePhotoCapture />
     </AppFontScaleContext.Provider>
   );
 }

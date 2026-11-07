@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::browser::model::{BrowserError, ErrorCode};
+mod photo;
 mod shizuku;
 use shizuku::{EXEC as SHIZUKU_EXEC, STATUS as SHIZUKU_STATUS};
 
@@ -39,6 +40,7 @@ pub const NAMES: &[&str] = &[
     NETWORK,
     SENSOR,
     MOTION,
+    photo::NAME,
     SHIZUKU_STATUS,
     SHIZUKU_EXEC,
 ];
@@ -129,6 +131,7 @@ pub enum DeviceAction {
     Network,
     Sensor(SensorArgs),
     Motion,
+    CapturePhoto(photo::Args),
     ShizukuStatus,
     ShizukuExec(shizuku::ExecArgs),
 }
@@ -150,6 +153,7 @@ impl DeviceAction {
             NOTIFY => Self::Notify(arguments_as(arguments)?),
             SPEAK => Self::Speak(arguments_as(arguments)?),
             SENSOR => Self::Sensor(arguments_as(arguments)?),
+            photo::NAME => Self::CapturePhoto(arguments_as(arguments)?),
             SHIZUKU_EXEC => Self::ShizukuExec(arguments_as(arguments)?),
             INFO | BATTERY | LOCATION | STOP_SPEAKING | NETWORK | MOTION | SHIZUKU_STATUS => {
                 let _: EmptyArgs = arguments_as(arguments)?;
@@ -218,12 +222,16 @@ impl DeviceAction {
             Self::Network => (NETWORK, json!({})),
             Self::Sensor(args) => (SENSOR, json!(args)),
             Self::Motion => (MOTION, json!({})),
+            Self::CapturePhoto(args) => (photo::NAME, args.wire()),
             Self::ShizukuStatus => (SHIZUKU_STATUS, json!({})),
             Self::ShizukuExec(args) => (SHIZUKU_EXEC, json!(args)),
         }
     }
 
     pub fn result(&self, value: Value) -> Result<Value, BrowserError> {
+        if let Self::CapturePhoto(args) = self {
+            return args.result(value);
+        }
         if value.to_string().len() > super::browser::model::MAX_TEXT_RESULT {
             return Err(BrowserError::new(
                 ErrorCode::ResultTooLarge,
@@ -276,6 +284,7 @@ impl DeviceAction {
             Self::Speak(_) => json!(decode::<SpeechResult>(value)?),
             Self::StopSpeaking => json!(decode::<StopResult>(value)?),
             Self::Motion => motion_result(value)?,
+            Self::CapturePhoto(_) => unreachable!("photo results are handled separately"),
             Self::Network => {
                 let result: NetworkResult = decode(value)?;
                 if (result.connection_type == ConnectionType::Offline && result.connected)
@@ -476,7 +485,7 @@ fn motion_result(value: Value) -> Result<Value, BrowserError> {
 }
 
 pub fn tools() -> Vec<Value> {
-    let mut tools: Vec<_> = NAMES.iter().filter(|name| !shizuku::NAMES.contains(name)).map(|name| {
+    let mut tools: Vec<_> = NAMES.iter().filter(|name| !shizuku::NAMES.contains(name) && **name != photo::NAME).map(|name| {
         let (description, properties, required) = match *name {
             INFO => ("Use for phone environment, locale or time-zone context. Read the phone's platform, OS, model, app version, locale and time zone. Does not return unique identifiers.", json!({}), json!([])),
             BATTERY => ("Use for phone charge and power-state questions. Read current battery level (0..1 or null), charging state and low-power mode.", json!({}), json!([])),
@@ -494,5 +503,6 @@ pub fn tools() -> Vec<Value> {
         json!({"name":name,"description":description,"inputSchema":{"type":"object","properties":properties,"required":required,"additionalProperties":false}})
     }).collect();
     tools.extend(shizuku::tools());
+    tools.push(photo::tool());
     tools
 }
