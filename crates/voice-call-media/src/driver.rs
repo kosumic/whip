@@ -1,4 +1,5 @@
 //! One owner serializes every peer mutation and completely drains its output before the next.
+use super::timing::{Stage, Timing};
 use super::{audio_track::OPUS_PAYLOAD_TYPE, incoming::Ingress, network::Network};
 use std::{sync::Arc, time::Instant};
 use str0m::{
@@ -54,6 +55,7 @@ pub(super) enum Command {
     },
 }
 pub(super) struct Driver {
+    timing: Timing,
     rtc: Rtc,
     network: Network,
     pending: Option<SdpPendingOffer>,
@@ -109,6 +111,7 @@ impl Driver {
                         .enable_opus(true, false)
                         .set_dtls_version(DtlsVersion::Auto)
                         .set_snap_enabled(true)
+                        .set_sped_enabled(true)
                         .set_rtp_mode(true)
                         .set_sctp_max_message_size(
                             u32::try_from(MAX_EVENT_BYTES)
@@ -149,6 +152,7 @@ impl Driver {
         let sequence = u64::from(u16::from_be_bytes([bytes[0], bytes[1]]));
         Ok((
             Self {
+                timing: Timing::new(),
                 rtc,
                 network,
                 pending: Some(pending),
@@ -249,6 +253,9 @@ impl Driver {
             Candidate::from_sdp_string(&line[2..]).map_err(|_| "Invalid voice candidate.")?;
         }
         let answer = SdpAnswer::from_sdp_string(sdp).map_err(|_| "Invalid voice answer.")?;
+        // The host owns session-POST timing. This clock starts only when its
+        // SDP answer reaches the provider-neutral transport.
+        self.timing.start();
         let pending = self
             .pending
             .take()
@@ -260,25 +267,43 @@ impl Driver {
     }
     async fn drain(&mut self) -> Result<Instant, &'static str> {
         loop {
-            match self
+            let output = self
                 .rtc
                 .poll_output()
-                .map_err(|_| "Voice peer output failed.")?
-            {
+                .map_err(|_| "Voice peer output failed.")?;
+            if self.rtc.is_dtls_connected() {
+                self.timing.record(Stage::Dtls, self.rtc.sped_stats());
+            }
+            match output {
                 Output::Timeout(deadline) => return Ok(deadline),
-                Output::Transmit(packet) => self.network.send(packet).await?,
+                Output::Transmit(packet) => {
+                    let rtp = packet.contents.len() >= 12
+                        && packet.contents[0] >> 6 == 2
+                        && packet.contents[1] & 0x7f == OPUS_PAYLOAD_TYPE;
+                    self.network.send(packet).await?;
+                    if rtp {
+                        self.timing.record(Stage::RtpSent, self.rtc.sped_stats());
+                    }
+                }
                 Output::Event(Event::Connected) => {
+                    self.timing.record(Stage::Ready, self.rtc.sped_stats());
                     if self.failure.borrow().is_none() {
                         self.ready.send_replace(true);
                     }
                 }
                 Output::Event(Event::IceConnectionStateChange(state)) => {
+                    if state.is_connected() {
+                        self.timing.record(Stage::Ice, self.rtc.sped_stats());
+                    }
                     // ICE Disconnected is recoverable, unlike a closed peer.
                     // Keep this connection alive for its bounded recovery window.
                     self.health.observe(state, Instant::now());
                 }
                 Output::Event(Event::ChannelOpen(id, _)) if id != self.channel => {
                     self.rtc.direct_api().close_data_channel(id);
+                }
+                Output::Event(Event::ChannelOpen(_, _)) => {
+                    self.timing.record(Stage::Channel, self.rtc.sped_stats());
                 }
                 Output::Event(Event::ChannelClose(id)) if id == self.channel => {
                     // Like Codex's channel observer, report readiness loss to
@@ -289,6 +314,8 @@ impl Driver {
                     self.ready.send_replace(false);
                 }
                 Output::Event(Event::RtpPacket(packet)) => {
+                    self.timing
+                        .record(Stage::RtpReceived, self.rtc.sped_stats());
                     self.ingress
                         .receive(packet, self.input_protocol == Some(Protocol::Tcp));
                 }

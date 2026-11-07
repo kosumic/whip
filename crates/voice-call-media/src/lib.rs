@@ -12,6 +12,7 @@ mod network;
 mod packet;
 pub mod prepared;
 pub mod processing;
+mod timing;
 pub mod transport;
 
 pub use media::run;

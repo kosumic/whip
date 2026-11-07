@@ -48,7 +48,9 @@ or connected media transport.
 
 The matching APK's native factory initialization uses the DTLS 1.3, SPED and
 SNAP field trials. Whip's str0m configuration enables DTLS Auto/1.3, SNAP and a
-pre-negotiated data channel, but does not implement SPED. OpenAI documents that
+pre-negotiated data channel in the measured build, which did not implement SPED.
+A subsequent [Rust SPED implementation and local benchmark](voice-sped.md)
+does not establish equivalent device-level startup results. OpenAI documents that
 these optimizations reduce connection round trips and can be enabled
 individually. A configured feature is not proof that it was negotiated on every
 call. [Official WARP guide](https://developers.openai.com/api/docs/guides/realtime-webrtc-warp).

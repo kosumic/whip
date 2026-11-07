@@ -130,8 +130,10 @@ and a pre-negotiated ordered event channel with ID 4. Call creation includes
 `?dcid=4`, as documented in OpenAI's
 [accelerated WebRTC guide](https://developers.openai.com/api/docs/guides/realtime-webrtc-warp).
 DTLS 1.2 and ordinary SCTP negotiation remain interoperable with older peers.
-SPED (DTLS flights inside ICE checks) is not implemented by this transport;
-these are individually supported acceleration features, not full WARP.
+SPED (DTLS flights inside ICE checks) is offered through an upstreamable Rust
+transport patch. Peers that do not negotiate the SDP `sped` option use ordinary
+ICE/DTLS. [Local benchmark results and compatibility limits](voice-sped.md)
+distinguish configured features, actual SPED use and full WARP.
 UDP and RFC 4571 TCP candidates share the existing Rust Opus, response-epoch,
 jitter and echo-processing pipeline. Native devices still start only after the
 authenticated media connection is ready, not on SNAP's early channel-open event.

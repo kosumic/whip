@@ -7,11 +7,17 @@ license = "AGPL-3.0-or-later"
 description = "Provider-neutral bounded native PCM, WebRTC/Opus transport and echo processing"
 repository = "https://github.com/kosumic/whip"
 
+[features]
+# Enables upstream SPED diagnostics in the host-local benchmark. Keeping these
+# hooks behind a feature also lets the same harness run against stock 0.25.0.
+sped-benchmark = []
+
 [dependencies]
 audio-ingress = { version = "0.1.0", path = "../audio-ingress" }
 opus = "=0.4.0"
 # Provider-backed DTLS avoids crypto-bigint 0.5 (RUSTSEC-2026-0387).
-str0m = { version = "=0.25.0", default-features = false, features = ["aws-lc-rs"] }
+# Temporary immutable upstream-PR pin; return to a release after SPED lands.
+str0m = { git = "https://github.com/kosumic/str0m", rev = "51b8a99b1262b249b7f84b2df1ec3cc810b6cc77", version = "=0.25.0", default-features = false, features = ["aws-lc-rs"] }
 if-addrs = "0.15"
 parking_lot = "0.12"
 serde = { version = "1", features = ["derive"] }

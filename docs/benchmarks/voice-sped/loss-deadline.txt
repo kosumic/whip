@@ -1,0 +1,11 @@
+Final recorded run, str0m 51b8a99b1262b249b7f84b2df1ec3cc810b6cc77
+Command arguments: handshake_bench 30 180 7
+Case: patched baseline (SPED off), cold, UDP; 1 of 30 iterations failed.
+Completion requires verified inbound RTP and the authenticated data-channel
+message in both directions. Both RTP stages completed; at least one channel
+message had not arrived by the 15-second simulated deadline. Stock runs used
+independent cryptographic randomness and DTLS retransmission timers, so this
+single discrepancy is not an isolated causal regression result.
+
+Captured stderr:
+handshake failed: Handshake deadline: Stages { ice: Some(180ms), dtls_start: Some(180ms), authenticated: Some(360ms), channel: Some(360ms), channel_open: Some(360ms), first_rtp: Some(3.277299354s), ready: Some(360ms) } / Stages { ice: Some(270ms), dtls_start: Some(270ms), authenticated: Some(3.187298354s), channel: Some(3.187298354s), channel_open: Some(3.187298354s), first_rtp: Some(3.197181464s), ready: Some(3.187298354s) }

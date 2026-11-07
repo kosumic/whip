@@ -37,8 +37,9 @@ private Codex/ChatGPT bootstrap endpoints. Voice previews retain their bounded,
 playback-only PCM WebSocket path.
 
 Device PCM remains 24 kHz and is encoded into bounded 20 ms Opus frames. The
-native peer uses DTLS 1.3, SCTP SNAP and a pre-negotiated data channel; SPED is not
-implemented. Late capture is dropped through the
+native peer uses DTLS 1.3, SCTP SNAP and a pre-negotiated data channel, and offers
+SPED with safe ordinary-ICE/DTLS fallback. [Local SPED results](voice-sped.md)
+document negotiation and interoperability limits. Late capture is dropped through the
 existing ingress/DSP generation checks. Silence maintains the continuous Live
 stream, including while input is muted. Provider mute/unmute acknowledgements
 are correlated by client event ID. Interruption clears local playback immediately,

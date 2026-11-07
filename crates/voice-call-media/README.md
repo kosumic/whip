@@ -46,6 +46,12 @@ cargo clippy --locked --all-targets -- -D warnings
 
 Tests include stock-peer UDP/TCP interoperability, cancellation/clock behavior,
 packet validation, burst/backpressure limits and echo-processing regressions.
+SPED is offered with ordinary ICE/DTLS fallback through a pinned upstream PR.
+See [the SPED implementation and local benchmark](../../docs/voice-sped.md) for
+wire compatibility, authenticated readiness, duration-only diagnostics, and
+repeatable comparisons with unmodified str0m. Run its peer scenarios with
+`cargo test --locked --all-targets --features sped-benchmark` and its benchmark
+with `cargo run --locked --release --features sped-benchmark --example handshake_bench -- 30 40 0`.
 Whip retains its device/cue fixtures and uses this same engine in Realtime and
 GPT-Live calls. This crate retains AGPL-3.0-or-later; adapted Codex components
 retain their Apache-2.0 notices.

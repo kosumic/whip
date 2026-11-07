@@ -159,8 +159,8 @@ to a particular optimization.
 Verified differences and limits:
 
 - ChatGPT's native WebRTC factory constructs a `livekit.org.webrtc.Environment`
-  with DTLS 1.3, SNAP and SPED enabled. Whip currently enables DTLS 1.3/Auto,
-  SNAP and a pre-negotiated data channel, but does not implement SPED. This
+  with DTLS 1.3, SNAP and SPED enabled. The Whip build measured here enabled DTLS 1.3/Auto,
+  SNAP and a pre-negotiated data channel, but did not implement SPED. This
   establishes the inspected client configuration, not the features negotiated
   in every call. [OpenAI's WARP guide](https://developers.openai.com/api/docs/guides/realtime-webrtc-warp)
   documents how these features reduce connection round trips.
@@ -177,7 +177,9 @@ Verified differences and limits:
 ChatGPT's first RTP packet and individual server-request phases were not
 measured. The actionable follow-ups are to measure Whip's HTTP construction and
 network/server phases separately, add SPED support, and investigate overlapping
-native preparation with negotiation. ChatGPT's private prewarm paths should not
+native preparation with negotiation. A subsequent [host-local SPED implementation
+and benchmark](voice-sped.md) does not replace these phone measurements.
+ChatGPT's private prewarm paths should not
 be assumed to have equivalent public API lifecycle or billing behavior.
 
 ## Early microphone acquisition
