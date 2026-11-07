@@ -14580,6 +14580,9 @@ export enum LocalAlertDelivery {
   Persistent,
   Brief,
   Regular,
+  /**
+   * Keep the notification and brief vibration without a ringtone.
+   */
   Silent,
 }
 
