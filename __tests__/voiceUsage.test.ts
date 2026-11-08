@@ -1,5 +1,11 @@
 import { VoiceUsageLedger, voiceUsageQuery, type VoiceUsageEvent } from '../src/services/voiceUsage';
 import { usageChartPeriod } from '../src/lib/usagePeriods';
+import { recordStorageDiagnostic } from '../src/services/storageDiagnostics';
+
+jest.mock('../src/services/storageDiagnostics', () => ({
+  ...jest.requireActual('../src/services/storageDiagnostics'),
+  recordStorageDiagnostic: jest.fn(),
+}));
 
 const started: VoiceUsageEvent = { kind: 'started', call: { session_id: 'stable-call', provider: 'local', mode: 'turn_based', model: null, voice: null, scope: 'agent', started_at_ms: 100 } };
 const ended: VoiceUsageEvent = { kind: 'ended', session_id: 'stable-call', ended_at_ms: 200 };
@@ -40,6 +46,41 @@ test('failed app initialization can retry without discarding events or reading a
   expect(recordVoiceUsage).not.toHaveBeenCalled();
   await ledger.summary({ provider: 'openai', mode: 'realtime' });
   expect(recordVoiceUsage.mock.calls.map(([json]) => JSON.parse(json))).toEqual([{ kind: 'recover' }, started]);
+});
+test('reports repeated failures once per operation until that operation recovers', async () => {
+  jest.mocked(recordStorageDiagnostic).mockClear();
+  const { ledger, recordVoiceUsage } = setup();
+  const failure = new Error('storage unavailable');
+  recordVoiceUsage.mockRejectedValue(failure);
+  await expect(ledger.summary()).rejects.toBe(failure);
+  await expect(ledger.summary()).rejects.toBe(failure);
+  expect(recordStorageDiagnostic).toHaveBeenCalledTimes(1);
+  expect(recordStorageDiagnostic).toHaveBeenLastCalledWith('error', 'storage-write-failed', expect.objectContaining({
+    store: 'voice-usage', operation: 'recover', error: 'storage unavailable',
+  }));
+  recordVoiceUsage.mockResolvedValue(undefined);
+  await ledger.summary();
+  recordVoiceUsage.mockRejectedValue(failure);
+  await expect(ledger.record(started)).rejects.toBe(failure);
+  expect(recordStorageDiagnostic).toHaveBeenLastCalledWith('error', 'storage-write-failed', expect.objectContaining({ operation: 'record' }));
+  recordVoiceUsage.mockResolvedValue(undefined);
+  await ledger.summary();
+  recordVoiceUsage.mockRejectedValue(failure);
+  await expect(ledger.record(ended)).rejects.toBe(failure);
+  expect(recordStorageDiagnostic).toHaveBeenCalledTimes(3);
+});
+test('distinguishes migration, summary and unsupported chart failures without logging call data', async () => {
+  jest.mocked(recordStorageDiagnostic).mockClear();
+  const { ledger, initialize, voiceUsageSummary } = setup();
+  initialize.mockRejectedValueOnce(new Error('migration failed'));
+  await expect(ledger.record(started)).rejects.toThrow('migration failed');
+  expect(recordStorageDiagnostic).toHaveBeenLastCalledWith('error', 'storage-write-failed', expect.objectContaining({ operation: 'initialize' }));
+  voiceUsageSummary.mockRejectedValueOnce(new Error('database unavailable'));
+  await expect(ledger.summary()).rejects.toThrow('database unavailable');
+  expect(recordStorageDiagnostic).toHaveBeenLastCalledWith('error', 'storage-read-failed', expect.objectContaining({ operation: 'summary' }));
+  await expect(ledger.summary({}, new Date(), 'week')).rejects.toThrow('Voice usage chart is unavailable.');
+  expect(recordStorageDiagnostic).toHaveBeenLastCalledWith('error', 'storage-read-failed', expect.objectContaining({ operation: 'chart' }));
+  expect(JSON.stringify(jest.mocked(recordStorageDiagnostic).mock.calls)).not.toContain('stable-call');
 });
 test('calendar boundaries use local dates, Monday weeks, month/year changes and DST-safe dates', () => {
   for (const now of [new Date(2026, 0, 1, 12), new Date(2026, 10, 1, 12), new Date(2026, 2, 9, 12)]) {

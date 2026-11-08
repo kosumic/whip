@@ -64,6 +64,29 @@ fn query() -> Query {
 }
 
 #[test]
+fn bridge_accepts_recovery_and_local_speech_accounting() {
+    let mut ledger = Ledger::default();
+    for json in [
+        r#"{"kind":"recover"}"#,
+        r#"{"kind":"started","call":{"session_id":"speech:one","provider":"local","mode":"stt","model":null,"voice":null,"scope":"speech","started_at_ms":1794097500000}}"#,
+        r#"{"kind":"ended","session_id":"speech:one","ended_at_ms":1794097501000}"#,
+    ] {
+        let Recording::Accounting(event) = serde_json::from_str(json).unwrap() else {
+            panic!("expected accounting event");
+        };
+        ledger.apply(event).unwrap();
+    }
+    let query: Query = serde_json::from_str(
+        r#"{"now_ms":1794097501000,"today_ms":1794067200000,"week_ms":1793548800000,"month_ms":1793462400000,"chart_boundaries_ms":[1794067200000,1794153600000]}"#,
+    )
+    .unwrap();
+    let summary = ledger.summary(&query).unwrap();
+    assert_eq!(summary.totals["today"].calls, 1);
+    assert_eq!(summary.chart_buckets[0].calls, 1);
+    assert!(!summary.calls[0].active);
+}
+
+#[test]
 fn chart_buckets_keep_start_boundaries_unknown_costs_and_filters_consistent() {
     let mut ledger = Ledger::default();
     for (id, time, local) in [

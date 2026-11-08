@@ -70,6 +70,14 @@ across crashes. On first ledger access each process, a recovery event marks old
 open calls interrupted/incomplete with an unknown end time. It never invents an
 end time or displays these records as currently active.
 
+Usage failures emit `[StorageDiagnostics]` entries with `store: "voice-usage"`
+and an operation (`initialize`, `recover`, `record`, `summary`, or `chart`).
+Repeated identical failures for the same operation are logged once until that
+operation succeeds. These entries include error details without the accounting
+event, call identity, or transcript. A persistent Retry error needs this diagnostic
+to distinguish a pending write from a failed read; the visible message alone does
+not establish that stored history is corrupt.
+
 Local calls have a known zero voice API estimate; no provider usage is fabricated
 for them. Their history displays the no-charge explanation instead of a provider
 accounting status. Cloud records expose `live_estimate`,

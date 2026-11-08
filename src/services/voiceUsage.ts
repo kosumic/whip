@@ -2,6 +2,7 @@ import { appStorage } from './appStorage';
 import { settledPromise } from '../lib/promises';
 import { usageChartPeriod, type UsageChartPeriod, type UsageRange } from '../lib/usagePeriods';
 import type { VoiceTranscriptEntry } from '../lib/voiceTranscript';
+import { recordStorageDiagnostic, storageErrorDetails } from './storageDiagnostics';
 
 export type UsageProvider = 'local' | 'openai';
 export type UsageMode = 'turn_based' | 'realtime' | 'live' | 'tts' | 'stt';
@@ -68,6 +69,7 @@ export function voiceUsageQuery(filter: VoiceUsageFilter, now = new Date()) {
     month_ms: new Date(now.getFullYear(), now.getMonth(), 1).getTime() };
 }
 interface UsageBridge { recordVoiceUsage(event: string): Promise<void>; voiceUsageSummary(query: string): Promise<string> }
+type LedgerOperation = 'initialize' | 'recover' | 'record' | 'summary' | 'chart';
 const nativeBridge = (): UsageBridge => require('react-native-whip-ssh') as UsageBridge;
 
 /** Persistence never gates call I/O. Errors remain visible in Usage & costs.
@@ -77,6 +79,7 @@ export class VoiceUsageLedger {
   private pending: (VoiceUsageEvent | VoiceHistoryCommand)[] = [];
   private operations: Promise<unknown> = Promise.resolve();
   private readonly listeners = new Set<() => void>();
+  private readonly failures = new Map<LedgerOperation, string>();
   constructor(private readonly bridge = nativeBridge, private readonly initialize = () => appStorage.initialize()) {}
   subscribe = (listener: () => void): (() => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {
@@ -84,14 +87,33 @@ export class VoiceUsageLedger {
     this.operations = settledPromise(next);
     return next;
   }
+  private async attempt<T>(operation: LedgerOperation, run: () => Promise<T>): Promise<T> {
+    try {
+      const value = await run();
+      this.failures.delete(operation);
+      return value;
+    } catch (error) {
+      const details = storageErrorDetails(error);
+      const signature = JSON.stringify(details);
+      // Settings polls every two seconds. Keep the first failure observable
+      // without flooding device logs with identical errors until recovery.
+      if (this.failures.get(operation) !== signature) {
+        this.failures.set(operation, signature);
+        recordStorageDiagnostic('error', operation === 'summary' || operation === 'chart' ? 'storage-read-failed' : 'storage-write-failed', {
+          store: 'voice-usage', operation, ...details,
+        });
+      }
+      throw error;
+    }
+  }
   private async flush(): Promise<void> {
-    await this.initialize();
+    await this.attempt('initialize', this.initialize);
     if (!this.recovered) {
-      await this.bridge().recordVoiceUsage(JSON.stringify({ kind: 'recover' }));
+      await this.attempt('recover', () => this.bridge().recordVoiceUsage(JSON.stringify({ kind: 'recover' })));
       this.recovered = true;
     }
     while (this.pending.length) {
-      await this.bridge().recordVoiceUsage(JSON.stringify(this.pending[0]));
+      await this.attempt('record', () => this.bridge().recordVoiceUsage(JSON.stringify(this.pending[0])));
       this.pending.shift();
     }
   }
@@ -107,19 +129,20 @@ export class VoiceUsageLedger {
     return this.enqueue(async () => {
       await this.flush();
       const query = voiceUsageQuery(filter, now);
-      const read = async (period?: UsageChartPeriod) => JSON.parse(await this.bridge().voiceUsageSummary(JSON.stringify({
-        ...query, ...(period ? { chart_boundaries_ms: period.boundaries.map(Number) } : {}),
-      }))) as VoiceUsageSummary & { chart_buckets?: VoiceUsageTotal[] };
-      let period = range && range !== 'lifetime' ? usageChartPeriod(range, now) : undefined;
-      let summary = await read(period);
-      if (range === 'lifetime') {
-        const first = summary.calls.at(-1)?.started_at_ms;
-        period = usageChartPeriod(range, now, first === undefined ? undefined : BigInt(first));
-        summary = await read(period);
-      }
-      if (!period) return summary;
-      if (summary.chart_buckets?.length !== period.dates.length) throw new Error('Voice usage chart is unavailable.');
-      return { ...summary, chart: { ...period, buckets: summary.chart_buckets } };
+      const read = async (period?: UsageChartPeriod) => this.attempt(period ? 'chart' : 'summary', async () => {
+        const summary = JSON.parse(await this.bridge().voiceUsageSummary(JSON.stringify({
+          ...query, ...(period ? { chart_boundaries_ms: period.boundaries.map(Number) } : {}),
+        }))) as VoiceUsageSummary & { chart_buckets?: VoiceUsageTotal[] };
+        if (!period) return summary;
+        const buckets = summary.chart_buckets;
+        if (buckets?.length !== period.dates.length) throw new Error('Voice usage chart is unavailable.');
+        return { ...summary, chart: { ...period, buckets } };
+      });
+      const period = range && range !== 'lifetime' ? usageChartPeriod(range, now) : undefined;
+      const summary = await read(period);
+      if (range !== 'lifetime') return summary;
+      const first = summary.calls.at(-1)?.started_at_ms;
+      return read(usageChartPeriod(range, now, first === undefined ? undefined : BigInt(first)));
     });
   }
 }
