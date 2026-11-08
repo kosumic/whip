@@ -204,18 +204,39 @@ index 80c6803..82f6402 100644
              mWebChromeClient.onHideCustomView();
          }
 diff --git a/node_modules/react-native-webview/apple/RNCWebViewImpl.m b/node_modules/react-native-webview/apple/RNCWebViewImpl.m
-index 3890426..b09abdf 100644
+index 3890426..de74eac 100644
 --- a/node_modules/react-native-webview/apple/RNCWebViewImpl.m
 +++ b/node_modules/react-native-webview/apple/RNCWebViewImpl.m
-@@ -517,6 +517,7 @@ RCTAutoInsetsProtocol>
+@@ -48,6 +48,11 @@ NSString *const CUSTOM_SELECTOR = @"_CUSTOM_SELECTOR_";
+ @end
+ #endif // TARGET_OS_IOS
+ 
++// Optional app-owned factory; this is an application method, not WebKit SPI.
++@interface NSObject (WhipBrowserStore)
+++ (WKWebsiteDataStore *)websiteDataStoreForRoute:(NSString *)route;
++@end
++
+ @interface RNCWKWebView : WKWebView
+ #if !TARGET_OS_OSX
+ @property (nonatomic, copy) NSArray<NSDictionary *> * _Nullable menuItems;
+@@ -516,7 +521,16 @@ RCTAutoInsetsProtocol>
+ {
    if (self.window != nil && _webView == nil) {
      WKWebViewConfiguration *wkWebViewConfig = [self setUpWkWebViewConfig];
++    if (_whipBrowserRoute.length) {
++      Class factory = NSClassFromString(@"WhipBrowserRoute");
++      // A missing adapter must not turn a tunnel request into direct browsing.
++      if (![factory respondsToSelector:@selector(websiteDataStoreForRoute:)]) return;
++      wkWebViewConfig.websiteDataStore = [factory websiteDataStoreForRoute:_whipBrowserRoute];
++      wkWebViewConfig.processPool = [WKProcessPool new];
++      wkWebViewConfig.allowsAirPlayForMediaPlayback = NO;
++    }
      _webView = [[RNCWKWebView alloc] initWithFrame:self.bounds configuration: wkWebViewConfig];
 +    [[NSNotificationCenter defaultCenter] postNotificationName:@"RNCWebViewLocalBridgeCreated" object:_webView];
      [self setBackgroundColor: _savedBackgroundColor];
  #if !TARGET_OS_OSX
      // Apply once at creation time. The prop is documented as non-reactive —
-@@ -628,6 +629,7 @@ RCTAutoInsetsProtocol>
+@@ -628,6 +642,7 @@ RCTAutoInsetsProtocol>
  #endif
  {
    if (_webView) {
@@ -223,7 +244,7 @@ index 3890426..b09abdf 100644
      [_webView.configuration.userContentController removeScriptMessageHandlerForName:HistoryShimName];
      [_webView.configuration.userContentController removeScriptMessageHandlerForName:MessageHandlerName];
      [_webView removeObserver:self forKeyPath:@"estimatedProgress"];
-@@ -1215,6 +1217,12 @@ RCTAutoInsetsProtocol>
+@@ -1215,6 +1230,12 @@ RCTAutoInsetsProtocol>
   */
  - (void)webView:(WKWebView *)webView runJavaScriptAlertPanelWithMessage:(NSString *)message initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(void))completionHandler
  {
@@ -236,7 +257,7 @@ index 3890426..b09abdf 100644
  #if !TARGET_OS_OSX
    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"" message:message preferredStyle:UIAlertControllerStyleAlert];
    [alert addAction:[UIAlertAction actionWithTitle:@"Ok" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-@@ -1234,6 +1242,12 @@ RCTAutoInsetsProtocol>
+@@ -1234,6 +1255,12 @@ RCTAutoInsetsProtocol>
   * confirm
   */
  - (void)webView:(WKWebView *)webView runJavaScriptConfirmPanelWithMessage:(NSString *)message initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(BOOL))completionHandler{
@@ -249,7 +270,7 @@ index 3890426..b09abdf 100644
  #if !TARGET_OS_OSX
    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"" message:message preferredStyle:UIAlertControllerStyleAlert];
    [alert addAction:[UIAlertAction actionWithTitle:@"Ok" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-@@ -1259,6 +1273,12 @@ RCTAutoInsetsProtocol>
+@@ -1259,6 +1286,12 @@ RCTAutoInsetsProtocol>
   * prompt
   */
  - (void)webView:(WKWebView *)webView runJavaScriptTextInputPanelWithPrompt:(NSString *)prompt defaultText:(NSString *)defaultText initiatedByFrame:(WKFrameInfo *)frame completionHandler:(void (^)(NSString *))completionHandler{
@@ -262,7 +283,7 @@ index 3890426..b09abdf 100644
  #if !TARGET_OS_OSX
    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"" message:prompt preferredStyle:UIAlertControllerStyleAlert];
    [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
-@@ -1362,6 +1382,12 @@ RCTAutoInsetsProtocol>
+@@ -1362,6 +1395,12 @@ RCTAutoInsetsProtocol>
      BOOL isTopFrame = [request.URL isEqual:request.mainDocumentURL];
      BOOL hasTargetFrame = navigationAction.targetFrame != nil;
  
@@ -275,7 +296,7 @@ index 3890426..b09abdf 100644
      if (_onOpenWindow && !hasTargetFrame) {
        // When OnOpenWindow should be called, we want to prevent the navigation
        // If not prevented, the `decisionHandler` is called first and after that `createWebViewWithConfiguration` is called
-@@ -1476,6 +1502,11 @@ RCTAutoInsetsProtocol>
+@@ -1476,6 +1515,11 @@ RCTAutoInsetsProtocol>
      }
      BOOL isAttachment = disposition != nil && [disposition hasPrefix:@"attachment"];
      if (isAttachment || !navigationResponse.canShowMIMEType) {
@@ -287,7 +308,7 @@ index 3890426..b09abdf 100644
        if (_onFileDownload) {
          policy = WKNavigationResponsePolicyCancel;
  
-@@ -1491,6 +1522,16 @@ RCTAutoInsetsProtocol>
+@@ -1491,6 +1535,16 @@ RCTAutoInsetsProtocol>
    decisionHandler(policy);
  }
  
@@ -304,7 +325,7 @@ index 3890426..b09abdf 100644
  /**
   * Called when an error occurs while the web view is loading content.
   * @see https://fburl.com/km6vqenw
-@@ -1575,6 +1616,11 @@ RCTAutoInsetsProtocol>
+@@ -1575,6 +1629,11 @@ RCTAutoInsetsProtocol>
    }
  }
  
@@ -316,3 +337,106 @@ index 3890426..b09abdf 100644
  /**
   * Called when the navigation is complete.
   * @see https://fburl.com/rtys6jlb
+diff --git a/node_modules/react-native-webview/android/src/newarch/com/reactnativecommunity/webview/RNCWebViewManager.java b/node_modules/react-native-webview/android/src/newarch/com/reactnativecommunity/webview/RNCWebViewManager.java
+index fa8efb8..816f22c 100644
+--- a/node_modules/react-native-webview/android/src/newarch/com/reactnativecommunity/webview/RNCWebViewManager.java
++++ b/node_modules/react-native-webview/android/src/newarch/com/reactnativecommunity/webview/RNCWebViewManager.java
+@@ -100,6 +100,10 @@ public class RNCWebViewManager extends ViewGroupManager<RNCWebViewWrapper>
+         mRNCWebViewManagerImpl.setAndroidLayerType(view, value);
+     }
+ 
++    // iOS-only store selection. Android keeps its existing prepare/profile path.
++    @Override
++    public void setWhipBrowserRoute(RNCWebViewWrapper view, @Nullable String value) {}
++
+     @Override
+     @ReactProp(name = "applicationNameForUserAgent")
+     public void setApplicationNameForUserAgent(RNCWebViewWrapper view, @Nullable String value) {
+diff --git a/node_modules/react-native-webview/apple/RNCWebView.mm b/node_modules/react-native-webview/apple/RNCWebView.mm
+index 2be7877..741dbad 100644
+--- a/node_modules/react-native-webview/apple/RNCWebView.mm
++++ b/node_modules/react-native-webview/apple/RNCWebView.mm
+@@ -311,6 +311,7 @@ static inline std::string nullSafeStringWithLength(id value) {
+     REMAP_WEBVIEW_PROP(incognito)
+     REMAP_WEBVIEW_PROP(pagingEnabled)
+     REMAP_WEBVIEW_STRING_PROP(applicationNameForUserAgent)
++    REMAP_WEBVIEW_STRING_PROP(whipBrowserRoute)
+     REMAP_WEBVIEW_PROP(cacheEnabled)
+     REMAP_WEBVIEW_PROP(allowsLinkPreview)
+     REMAP_WEBVIEW_STRING_PROP(allowingReadAccessToURL)
+diff --git a/node_modules/react-native-webview/apple/RNCWebViewImpl.h b/node_modules/react-native-webview/apple/RNCWebViewImpl.h
+index 1f637c1..6ed4909 100644
+--- a/node_modules/react-native-webview/apple/RNCWebViewImpl.h
++++ b/node_modules/react-native-webview/apple/RNCWebViewImpl.h
+@@ -95,6 +95,7 @@ shouldStartLoadForRequest:(NSMutableDictionary<NSString *, id> *)request
+ @property (nonatomic, assign) BOOL useSharedProcessPool;
+ @property (nonatomic, copy) NSString * _Nullable userAgent;
+ @property (nonatomic, copy) NSString * _Nullable applicationNameForUserAgent;
++@property (nonatomic, copy) NSString * _Nullable whipBrowserRoute;
+ @property (nonatomic, assign) BOOL cacheEnabled;
+ @property (nonatomic, assign) BOOL javaScriptEnabled;
+ @property (nonatomic, assign) BOOL javaScriptCanOpenWindowsAutomatically;
+diff --git a/node_modules/react-native-webview/apple/RNCWebViewManager.mm b/node_modules/react-native-webview/apple/RNCWebViewManager.mm
+index a510ffd..7fadaaf 100644
+--- a/node_modules/react-native-webview/apple/RNCWebViewManager.mm
++++ b/node_modules/react-native-webview/apple/RNCWebViewManager.mm
+@@ -76,6 +76,7 @@ RCT_EXPORT_VIEW_PROPERTY(allowsBackForwardNavigationGestures, BOOL)
+ RCT_EXPORT_VIEW_PROPERTY(incognito, BOOL)
+ RCT_EXPORT_VIEW_PROPERTY(pagingEnabled, BOOL)
+ RCT_EXPORT_VIEW_PROPERTY(applicationNameForUserAgent, NSString)
++RCT_EXPORT_VIEW_PROPERTY(whipBrowserRoute, NSString)
+ RCT_EXPORT_VIEW_PROPERTY(cacheEnabled, BOOL)
+ RCT_EXPORT_VIEW_PROPERTY(allowsLinkPreview, BOOL)
+ RCT_EXPORT_VIEW_PROPERTY(allowingReadAccessToURL, NSString)
+diff --git a/node_modules/react-native-webview/lib/WebViewTypes.d.ts b/node_modules/react-native-webview/lib/WebViewTypes.d.ts
+index f666e81..541fe72 100644
+--- a/node_modules/react-native-webview/lib/WebViewTypes.d.ts
++++ b/node_modules/react-native-webview/lib/WebViewTypes.d.ts
+@@ -208,6 +208,7 @@ export interface CommonNativeWebViewProps extends ViewProps {
+      * Append to the existing user-agent. Overridden if `userAgent` is set.
+      */
+     applicationNameForUserAgent?: string;
++    whipBrowserRoute?: string;
+     basicAuthCredential?: BasicAuthCredential;
+ }
+ export declare type ContentInsetAdjustmentBehavior = 'automatic' | 'scrollableAxes' | 'never' | 'always';
+@@ -1109,6 +1110,7 @@ export interface WebViewSharedProps extends ViewProps {
+      * Append to the existing user-agent. Overridden if `userAgent` is set.
+      */
+     applicationNameForUserAgent?: string;
++    whipBrowserRoute?: string;
+     /**
+      * An object that specifies the credentials of a user to be used for basic authentication.
+      */
+diff --git a/node_modules/react-native-webview/src/RNCWebViewNativeComponent.ts b/node_modules/react-native-webview/src/RNCWebViewNativeComponent.ts
+index ca3af15..eef22eb 100644
+--- a/node_modules/react-native-webview/src/RNCWebViewNativeComponent.ts
++++ b/node_modules/react-native-webview/src/RNCWebViewNativeComponent.ts
+@@ -230,6 +230,7 @@ export interface NativeProps extends ViewProps {
+   allowFileAccessFromFileURLs?: boolean;
+   allowUniversalAccessFromFileURLs?: boolean;
+   applicationNameForUserAgent?: string;
++  whipBrowserRoute?: string;
+   basicAuthCredential?: Readonly<{
+     username: string;
+     password: string;
+diff --git a/node_modules/react-native-webview/src/WebViewTypes.ts b/node_modules/react-native-webview/src/WebViewTypes.ts
+index 4e7247f..05f9fd4 100644
+--- a/node_modules/react-native-webview/src/WebViewTypes.ts
++++ b/node_modules/react-native-webview/src/WebViewTypes.ts
+@@ -306,6 +306,7 @@ export interface CommonNativeWebViewProps extends ViewProps {
+    * Append to the existing user-agent. Overridden if `userAgent` is set.
+    */
+   applicationNameForUserAgent?: string;
++  whipBrowserRoute?: string;
+   basicAuthCredential?: BasicAuthCredential;
+ }
+ 
+@@ -1338,6 +1339,7 @@ export interface WebViewSharedProps extends ViewProps {
+    * Append to the existing user-agent. Overridden if `userAgent` is set.
+    */
+   applicationNameForUserAgent?: string;
++  whipBrowserRoute?: string;
+ 
+   /**
+    * An object that specifies the credentials of a user to be used for basic authentication.

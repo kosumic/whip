@@ -4,6 +4,105 @@
 #import <UserNotifications/UserNotifications.h>
 #import <objc/runtime.h>
 #import <errno.h>
+#import <Network/Network.h>
+#import <Network/NSURLSession+Network.h>
+
+static NSString *const WhipBrowserProxyError = @"BROWSER_PROXY";
+static NSString *const WhipBrowserRouteChanged = @"WhipBrowserRouteChanged";
+static NSString *const WhipBrowserDirectStoreIdentifier = @"C8A940F8-4763-4BAF-84EB-5138CB12184E";
+static const NSInteger WhipBrowserBlockedProxyPort = 9;
+
+@interface WhipBrowserRoute ()
+@property(nonatomic, copy) NSString *runtime;
+@property(nonatomic) NSInteger port;
+@property(nonatomic, strong) NSMutableDictionary<NSString *, WKWebsiteDataStore *> *stores;
+@property(nonatomic, strong) NSHashTable<WKWebsiteDataStore *> *retired;
+@end
+
+@implementation WhipBrowserRoute
++ (WhipBrowserRoute *)shared {
+  static WhipBrowserRoute *route;
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{
+    route = [WhipBrowserRoute new];
+    route.runtime = @"";
+    route.port = -1;
+    route.stores = [NSMutableDictionary new];
+    route.retired = [NSHashTable weakObjectsHashTable];
+  });
+  return route;
+}
++ (nw_proxy_config_t)proxyForPort:(NSInteger)port API_AVAILABLE(ios(17.0)) {
+  NSString *service = [NSString stringWithFormat:@"%ld", (long)(port > 0 ? port : WhipBrowserBlockedProxyPort)];
+  nw_endpoint_t endpoint = nw_endpoint_create_host("127.0.0.1", service.UTF8String);
+  nw_proxy_config_t proxy = nw_proxy_config_create_socksv5(endpoint);
+  nw_proxy_config_set_failover_allowed(proxy, false);
+  return proxy;
+}
++ (WKWebsiteDataStore *)websiteDataStoreForRoute:(NSString *)encoded {
+  NSAssert(NSThread.isMainThread, @"Browser routes belong to the main queue");
+  id value = [NSJSONSerialization JSONObjectWithData:[encoded dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+  BOOL valid = [value isKindOfClass:NSArray.class] && [value count] == 2
+    && [value[0] isKindOfClass:NSString.class]
+    && (value[1] == NSNull.null || ([value[1] isKindOfClass:NSString.class] && [value[1] length]));
+  BOOL tunneled = valid && value[1] != NSNull.null;
+  if (valid) encoded = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:value
+    options:NSJSONWritingWithoutEscapingSlashes error:nil] encoding:NSUTF8StringEncoding];
+  WhipBrowserRoute *route = self.shared;
+  // Production capability remains disabled until WebKit can enforce this for
+  // loopback too. Preserve the existing untunneled data store in the meantime.
+  if (valid && !tunneled && route.port == -1) return WKWebsiteDataStore.defaultDataStore;
+  BOOL allowed = valid && ((route.port == 0 && !tunneled && [route.runtime isEqual:@"*"])
+    || (route.port > 0 && tunneled && [route.runtime isEqual:value[0]]));
+  if (@available(iOS 17.0, *)) {
+    if (allowed && route.stores[encoded]) return route.stores[encoded];
+    // Never change a retired tunnel store back to a live proxy. Its workers,
+    // sockets and delayed JS remain pinned to a non-failing-over dead route.
+    WKWebsiteDataStore *store = [WKWebsiteDataStore nonPersistentDataStore];
+    if (allowed && !tunneled) {
+      store = [WKWebsiteDataStore dataStoreForIdentifier:
+        [[NSUUID alloc] initWithUUIDString:WhipBrowserDirectStoreIdentifier]];
+    }
+    store.proxyConfigurations = allowed && route.port == 0 ? @[] : @[[self proxyForPort:allowed ? route.port : -1]];
+    if (allowed) route.stores[encoded] = store;
+    else [route.retired addObject:store];
+    return store;
+  }
+  // On 16.4 there is no public proxy API. prepare rejects tunnel descriptors
+  // before BrowserSurface supplies a source or restores navigation state.
+  return tunneled || !valid ? [WKWebsiteDataStore nonPersistentDataStore] : WKWebsiteDataStore.defaultDataStore;
+}
++ (BOOL)allowsBrowser:(WKWebView *)browser {
+  if (self.shared.port == -1 && browser.configuration.websiteDataStore == WKWebsiteDataStore.defaultDataStore) return YES;
+  if (@available(iOS 17.0, *)) {
+    return [self.shared.stores.allValues containsObject:browser.configuration.websiteDataStore];
+  }
+  return YES;
+}
++ (NSArray<WKWebsiteDataStore *> *)allStores {
+  NSMutableSet *stores = [NSMutableSet setWithArray:self.shared.stores.allValues];
+  [stores addObjectsFromArray:self.shared.retired.allObjects];
+  [stores addObject:WKWebsiteDataStore.defaultDataStore];
+  if (@available(iOS 17.0, *)) [stores addObject:[WKWebsiteDataStore dataStoreForIdentifier:
+    [[NSUUID alloc] initWithUUIDString:WhipBrowserDirectStoreIdentifier]]];
+  return stores.allObjects;
+}
++ (void)configureRuntime:(NSString *)runtime port:(NSInteger)port {
+  WhipBrowserRoute *route = self.shared;
+  route.runtime = @"";
+  route.port = -1;
+  if (@available(iOS 17.0, *)) {
+    for (WKWebsiteDataStore *store in route.stores.allValues) {
+      store.proxyConfigurations = @[[self proxyForPort:-1]];
+      [route.retired addObject:store];
+    }
+  }
+  [route.stores removeAllObjects];
+  [[NSNotificationCenter defaultCenter] postNotificationName:WhipBrowserRouteChanged object:nil];
+  route.runtime = runtime;
+  route.port = port;
+}
+@end
 
 static const CGFloat WhipBrowserScreenshotLimit = 1024;
 static const CGFloat WhipBrowserJPEGQuality = 0.75;
@@ -291,6 +390,7 @@ static NSURL *WhipDownloadManifest(NSString *identifier) {
 @property(nonatomic, strong) NSHashTable<WKWebView *> *managedBrowsers;
 @property(nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *restoredDownloads;
 @property(nonatomic, strong) UIDocumentInteractionController *downloadPreview;
+@property(nonatomic, strong) NSMutableSet<NSURLSession *> *faviconSessions;
 @end
 
 /** Native operations are reachable only from React Native, never a webpage bridge. */
@@ -306,6 +406,8 @@ RCT_EXPORT_MODULE(WhipBrowser)
   if ((self = [super init])) {
     _savedDownloads = [NSMutableDictionary new];
     _managedBrowsers = [NSHashTable weakObjectsHashTable];
+    _faviconSessions = [NSMutableSet new];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(routeChanged:) name:WhipBrowserRouteChanged object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(downloadStarted:) name:@"WhipBrowserDownloadStarted" object:nil];
   }
   return self;
@@ -313,9 +415,87 @@ RCT_EXPORT_MODULE(WhipBrowser)
 
 - (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self]; }
 
+- (NSDictionary *)constantsToExport {
+  return @{@"supportsProxy": @([self.class supportsProxy])};
+}
+
++ (BOOL)supportsProxy {
+  // Public iOS 17+ proxy APIs bypass loopback, even with failover disabled.
+  // See docs/ios-browser-tunneling.md and WhipBrowserProxyTests. Keep the
+  // feature fail closed until a public configuration passes that regression.
+  return NO;
+}
+
+- (void)routeChanged:(NSNotification *)notification {
+  for (NSURLSession *session in self.faviconSessions) [session invalidateAndCancel];
+  [self.faviconSessions removeAllObjects];
+  for (WhipBrowserDownload *job in self.downloads.allValues) [job cancel];
+  for (WhipBrowserDownload *job in self.savedDownloads.allValues)
+    if (WhipDownloadIsActive(job.state)) {
+      job.state = WhipDownloadInterrupted;
+      job.error = WhipDownloadInterruption;
+      [job cancel];
+    }
+  [self.savedStates removeAllObjects];
+  for (WKWebView *browser in self.managedBrowsers) {
+    [browser stopLoading];
+    [browser loadHTMLString:@"" baseURL:nil];
+  }
+}
+
+RCT_EXPORT_METHOD(configureProxy:(NSString *)runtimeId port:(double)port
+                  resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject) {
+  if (![self.class supportsProxy]) {
+    reject(WhipBrowserProxyError, @"SSH browser tunneling is unavailable because WebKit cannot guarantee routing for all destinations", nil);
+    return;
+  }
+  if (@available(iOS 17.0, *)) {
+    // Invalid setup also retires the previous route, rather than leaving it live.
+    BOOL valid = isfinite(port) && port == floor(port) && port >= -1 && port <= UINT16_MAX
+      && ((port == -1 && !runtimeId.length) || (port == 0 && [runtimeId isEqual:@"*"])
+        || (port > 0 && runtimeId.length && ![runtimeId isEqual:@"*"]));
+    [WhipBrowserRoute configureRuntime:valid ? runtimeId : @"" port:valid ? (NSInteger)port : -1];
+    if (valid) resolve(nil);
+    else reject(WhipBrowserProxyError, @"Invalid browser proxy route", nil);
+  } else reject(WhipBrowserProxyError, @"Browser tunneling requires iOS 17 or later", nil);
+}
+
+RCT_EXPORT_METHOD(favicon:(NSString *)runtimeId url:(NSString *)url
+                  resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject) {
+  NSURLComponents *address = [NSURLComponents componentsWithString:url];
+  WhipBrowserRoute *route = WhipBrowserRoute.shared;
+  BOOL supported = [self.class supportsProxy];
+  if (![@[@"http", @"https"] containsObject:address.scheme] || !address.host.length
+      || address.user != nil || address.password != nil || !address.URL
+      || (supported && (route.port < 0 || (route.port > 0 && ![route.runtime isEqual:runtimeId])))) {
+    reject(WhipBrowserProxyError, @"Browser icon route is unavailable", nil); return;
+  }
+  NSURLSessionConfiguration *configuration = NSURLSessionConfiguration.ephemeralSessionConfiguration;
+  configuration.HTTPCookieStorage = nil;
+  configuration.URLCredentialStorage = nil;
+  configuration.timeoutIntervalForResource = 15;
+  if (@available(iOS 17.0, *))
+    configuration.proxyConfigurations = route.port > 0 ? @[[WhipBrowserRoute proxyForPort:route.port]] : @[];
+  NSURLSession *session = [NSURLSession sessionWithConfiguration:configuration];
+  [self.faviconSessions addObject:session];
+  [[session dataTaskWithURL:address.URL completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+      BOOL current = [self.faviconSessions containsObject:session];
+      [self.faviconSessions removeObject:session];
+      [session finishTasksAndInvalidate];
+      if (!current || error || !data.length || data.length > 256 * 1024
+          || ![response.MIMEType hasPrefix:@"image/"]) {
+        reject(WhipBrowserProxyError, @"Could not load browser icon", nil); return;
+      }
+      resolve([NSString stringWithFormat:@"data:%@;base64,%@", response.MIMEType, [data base64EncodedStringWithOptions:0]]);
+    });
+  }] resume];
+}
+
 - (void)downloadStarted:(NSNotification *)notification {
   WKDownload *download = notification.userInfo[@"download"];
   if (![self.managedBrowsers containsObject:notification.object] || !download) return;
+  if (![WhipBrowserRoute allowsBrowser:notification.object]) { [download cancel:nil]; return; }
   if (![@[@"http", @"https", @"blob", @"data"] containsObject:download.originalRequest.URL.scheme]) {
     [download cancel:nil];
     return;
@@ -354,14 +534,35 @@ RCT_EXPORT_MODULE(WhipBrowser)
     reject(WhipBrowserUnavailable, @"Browser tab is no longer mounted", nil);
     return;
   }
+  if ([self.managedBrowsers containsObject:browser] && ![WhipBrowserRoute allowsBrowser:browser]) {
+    reject(WhipBrowserProxyError, @"Browser route changed. Reopen this tab.", nil);
+    return;
+  }
   action(browser);
 }
 
 RCT_EXPORT_METHOD(prepare:(NSNumber *)tag
+                  runtimeId:(NSString *)runtimeId
+                  tunnelHostId:(NSString *)tunnelHostId
                   resolve:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject)
 {
   [self withBrowser:tag reject:reject action:^(WKWebView *browser) {
+    if (tunnelHostId.length) {
+      if (![self.class supportsProxy]) {
+        reject(WhipBrowserProxyError, @"SSH browser tunneling is unavailable on this device", nil); return;
+      }
+      if (@available(iOS 17.0, *)) {} else {
+        reject(WhipBrowserProxyError, @"Browser tunneling requires iOS 17 or later", nil); return;
+      }
+    }
+    if ([self.class supportsProxy]) {
+      NSData *data = [NSJSONSerialization dataWithJSONObject:@[runtimeId ?: @"", tunnelHostId.length ? tunnelHostId : NSNull.null] options:0 error:nil];
+      NSString *encoded = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+      if (![WhipBrowserRoute allowsBrowser:browser] || browser.configuration.websiteDataStore != [WhipBrowserRoute websiteDataStoreForRoute:encoded]) {
+        reject(WhipBrowserProxyError, @"Browser route is unavailable or changed", nil); return;
+      }
+    }
     browser.allowsBackForwardNavigationGestures = YES;
     [self.managedBrowsers addObject:browser];
     objc_setAssociatedObject(browser, NSSelectorFromString(@"whipManagedDownloads"), @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -534,6 +735,7 @@ RCT_EXPORT_METHOD(cancelDownload:(NSString *)identifier)
 
 - (void)invalidate
 {
+  [WhipBrowserRoute configureRuntime:@"" port:-1];
   [[NSNotificationCenter defaultCenter] removeObserver:self];
   for (WhipBrowserDownload *job in self.savedDownloads.allValues)
     if (WhipDownloadIsActive(job.state)) {
@@ -759,43 +961,59 @@ RCT_EXPORT_METHOD(clearCurrentSiteData:(NSNumber *)tag url:(NSString *)url
 RCT_EXPORT_METHOD(siteData:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject)
 {
-  [[WKWebsiteDataStore defaultDataStore].httpCookieStore getAllCookies:^(NSArray<NSHTTPCookie *> *cookies) {
-    NSMutableSet<NSString *> *domains = [NSMutableSet new];
-    for (NSHTTPCookie *cookie in cookies) {
-      NSString *domain = cookie.domain.lowercaseString;
-      if ([domain hasPrefix:@"."]) domain = [domain substringFromIndex:1];
-      if (domain.length) [domains addObject:domain];
-    }
-    resolve(@{@"hasCookies": @(cookies.count > 0), @"canClearDomains": @YES,
+  dispatch_group_t reads = dispatch_group_create();
+  NSMutableSet<NSString *> *domains = [NSMutableSet new];
+  for (WKWebsiteDataStore *store in WhipBrowserRoute.allStores) {
+    dispatch_group_enter(reads);
+    [store.httpCookieStore getAllCookies:^(NSArray<NSHTTPCookie *> *cookies) {
+      for (NSHTTPCookie *cookie in cookies) {
+        NSString *domain = cookie.domain.lowercaseString;
+        if ([domain hasPrefix:@"."]) domain = [domain substringFromIndex:1];
+        if (domain.length) [domains addObject:domain];
+      }
+      dispatch_group_leave(reads);
+    }];
+  }
+  dispatch_group_notify(reads, dispatch_get_main_queue(), ^{
+    resolve(@{@"hasCookies": @(domains.count > 0), @"canClearDomains": @YES,
               @"domains": [domains.allObjects sortedArrayUsingSelector:@selector(compare:)]});
-  }];
+  });
 }
 
 RCT_EXPORT_METHOD(clearDomainCookies:(NSString *)domain
                   resolve:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject)
 {
-  WKHTTPCookieStore *store = [WKWebsiteDataStore defaultDataStore].httpCookieStore;
-  [store getAllCookies:^(NSArray<NSHTTPCookie *> *cookies) {
-    dispatch_group_t deletions = dispatch_group_create();
-    for (NSHTTPCookie *cookie in cookies) {
-      NSString *cookieDomain = cookie.domain.lowercaseString;
-      if ([cookieDomain hasPrefix:@"."]) cookieDomain = [cookieDomain substringFromIndex:1];
-      if (![cookieDomain isEqualToString:domain.lowercaseString]) continue;
-      dispatch_group_enter(deletions);
-      [store deleteCookie:cookie completionHandler:^{ dispatch_group_leave(deletions); }];
-    }
-    dispatch_group_notify(deletions, dispatch_get_main_queue(), ^{ resolve(nil); });
-  }];
+  dispatch_group_t deletions = dispatch_group_create();
+  for (WKWebsiteDataStore *dataStore in WhipBrowserRoute.allStores) {
+    WKHTTPCookieStore *store = dataStore.httpCookieStore;
+    dispatch_group_enter(deletions);
+    [store getAllCookies:^(NSArray<NSHTTPCookie *> *cookies) {
+      for (NSHTTPCookie *cookie in cookies) {
+        NSString *cookieDomain = cookie.domain.lowercaseString;
+        if ([cookieDomain hasPrefix:@"."]) cookieDomain = [cookieDomain substringFromIndex:1];
+        if (![cookieDomain isEqualToString:domain.lowercaseString]) continue;
+        dispatch_group_enter(deletions);
+        [store deleteCookie:cookie completionHandler:^{ dispatch_group_leave(deletions); }];
+      }
+      dispatch_group_leave(deletions);
+    }];
+  }
+  dispatch_group_notify(deletions, dispatch_get_main_queue(), ^{ resolve(nil); });
 }
 
 RCT_EXPORT_METHOD(clearSiteData:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject)
 {
   [self.savedStates removeAllObjects];
-  [[WKWebsiteDataStore defaultDataStore] removeDataOfTypes:[WKWebsiteDataStore allWebsiteDataTypes]
+  dispatch_group_t deletions = dispatch_group_create();
+  for (WKWebsiteDataStore *store in WhipBrowserRoute.allStores) {
+    dispatch_group_enter(deletions);
+    [store removeDataOfTypes:[WKWebsiteDataStore allWebsiteDataTypes]
                                           modifiedSince:NSDate.distantPast
-                                      completionHandler:^{ resolve(nil); }];
+                                      completionHandler:^{ dispatch_group_leave(deletions); }];
+  }
+  dispatch_group_notify(deletions, dispatch_get_main_queue(), ^{ resolve(nil); });
 }
 
 RCT_EXPORT_METHOD(clearTabData:(NSNumber *)tag

@@ -1,9 +1,17 @@
-import { BrowserRouting, LOCAL_BROWSER_RUNTIME_ID } from '../src/browser/routing';
+import {
+  BrowserRouting,
+  LOCAL_BROWSER_RUNTIME_ID,
+} from '../src/browser/routing';
 import { browserLibrary } from '../src/browser/library';
 import { configureBrowserProxy } from '../src/browser/native';
-import { BrowserRegistry, connectedBrowserRuntimes, type BrowserRuntime } from '../src/browser/registry';
+import {
+  BrowserRegistry,
+  connectedBrowserRuntimes,
+  type BrowserRuntime,
+} from '../src/browser/registry';
 
 const mockTunnels = new Set<string>();
+let mockSupportsProxy = true;
 jest.mock('../src/browser/library', () => ({
   browserLibrary: {
     load: jest.fn(async () => undefined),
@@ -15,7 +23,7 @@ jest.mock('../src/browser/library', () => ({
   },
 }));
 jest.mock('../src/browser/native', () => ({
-  supportsBrowserProxy: () => true,
+  supportsBrowserProxy: () => mockSupportsProxy,
   configureBrowserProxy: jest.fn(async () => undefined),
 }));
 function fixture() {
@@ -44,6 +52,48 @@ function fixture() {
 beforeEach(() => {
   jest.clearAllMocks();
   mockTunnels.clear();
+  mockSupportsProxy = true;
+});
+test('unsupported native proxy capabilities reject saved tunnel settings without a direct route', async () => {
+  const { routing, a } = fixture();
+  mockSupportsProxy = false;
+  mockTunnels.add('saved-a');
+  await expect(routing.activate(a.runtimeId)).rejects.toThrow(
+    'secure SSH proxy',
+  );
+  expect(routing.allows(a.runtimeId)).toBe(false);
+  expect(configureBrowserProxy).not.toHaveBeenCalled();
+});
+
+test('native setup failure keeps the route blocked and closes its SSH listener', async () => {
+  const { routing, a } = fixture();
+  mockTunnels.add('saved-a');
+  jest
+    .mocked(configureBrowserProxy)
+    .mockResolvedValueOnce(undefined)
+    .mockRejectedValueOnce(new Error('Native proxy failed'));
+  await expect(routing.activate(a.runtimeId)).rejects.toThrow(
+    'Native proxy failed',
+  );
+  expect(routing.allows(a.runtimeId)).toBe(false);
+  expect(a.stopBrowserProxy).toHaveBeenCalledWith(9001);
+});
+
+test('host removal while native setup is pending retires the newly configured route', async () => {
+  const { routing, a, hosts } = fixture();
+  mockTunnels.add('saved-a');
+  jest
+    .mocked(configureBrowserProxy)
+    .mockResolvedValueOnce(undefined)
+    .mockImplementationOnce(async () => {
+      hosts.delete(a.runtimeId);
+    });
+  await expect(routing.activate(a.runtimeId)).rejects.toThrow(
+    'Host disconnected',
+  );
+  expect(configureBrowserProxy).toHaveBeenLastCalledWith('', -1);
+  expect(routing.ready).toBe(false);
+  expect(a.stopBrowserProxy).toHaveBeenCalledWith(9001);
 });
 test('tunneling is saved per stable host and blocks the old route before switching', async () => {
   const { routing, a, b } = fixture();
@@ -97,18 +147,27 @@ test('host removal during proxy startup closes the port and keeps browsing block
 test('a retained launch restores its SSH browser proxy after reconnect without direct fallback', async () => {
   const { a } = fixture();
   const registry = new BrowserRegistry(undefined, true);
-  const runtimes = (status: 'ready' | 'reconnecting') => connectedBrowserRuntimes(
-    [{ id: a.runtimeId, connectionStatus: status, hostId: 'saved-a' }], () => a,
-  );
+  const runtimes = (status: 'ready' | 'reconnecting') =>
+    connectedBrowserRuntimes(
+      [{ id: a.runtimeId, connectionStatus: status, hostId: 'saved-a' }],
+      () => a,
+    );
   registry.registerRuntimes(runtimes('ready'));
-  const identity = { runtimeId: a.runtimeId, sessionId: 'launch-a', paneId: 'pane-a', terminalId: 'term-a' };
+  const identity = {
+    runtimeId: a.runtimeId,
+    sessionId: 'launch-a',
+    paneId: 'pane-a',
+    terminalId: 'term-a',
+  };
   const entry = registry.ensure(identity, a);
   registry.visibleId = identity.sessionId;
   mockTunnels.add('saved-a');
   await registry.routing!.activate(a.runtimeId);
   expect(a.startBrowserProxy).toHaveBeenCalledTimes(1);
   registry.registerRuntimes(runtimes('reconnecting'));
-  await expect(registry.routing!.activate(a.runtimeId)).rejects.toThrow('reconnecting');
+  await expect(registry.routing!.activate(a.runtimeId)).rejects.toThrow(
+    'reconnecting',
+  );
   expect(configureBrowserProxy).toHaveBeenLastCalledWith('', -1);
   expect(registry.entries.get(identity.sessionId)).toBe(entry);
   registry.registerRuntimes(runtimes('ready'));
@@ -119,7 +178,6 @@ test('a retained launch restores its SSH browser proxy after reconnect without d
   expect(registry.entries.get(identity.sessionId)).toBe(entry);
   await registry.closeHost(a.runtimeId);
 });
-
 
 test('the Hosts browser uses the phone network and switches away from an SSH tunnel', async () => {
   const { routing, a, hosts } = fixture();
@@ -137,5 +195,8 @@ test('the Hosts browser uses the phone network and switches away from an SSH tun
   expect(configureBrowserProxy).toHaveBeenLastCalledWith('*', 0);
   expect(routing.allows(LOCAL_BROWSER_RUNTIME_ID)).toBe(true);
   expect(routing.allows(a.runtimeId)).toBe(false);
-  expect(browserLibrary.setTunneling).not.toHaveBeenCalledWith('saved-a', false);
+  expect(browserLibrary.setTunneling).not.toHaveBeenCalledWith(
+    'saved-a',
+    false,
+  );
 });

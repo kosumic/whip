@@ -1059,7 +1059,7 @@ export const zhHans = {
   'browser.tunnelingThrough': '通过 {{host}} 建立隧道',
   'browser.tunnelingCopy': '通过此 SSH 主机路由所有 HTTP 和 HTTPS 流量。启用时，localhost 指的是此主机。',
   'browser.tunnelingDataCopy': '隧道浏览为每台主机使用独立的 Cookie 和网站数据。',
-  'browser.tunnelingUnavailable': '需要 Android WebView 支持代理。',
+  'browser.tunnelingUnavailable': '此设备无法使用 SSH 浏览器隧道。',
   'browser.tunnelingFailed': '无法更改隧道设置。',
   'terminal.openBrowser': '打开浏览器',
   'terminal.scanningLinks': '扫描当前终端...',

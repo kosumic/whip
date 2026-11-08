@@ -1077,7 +1077,7 @@ export const fr = {
   'browser.tunnelingThrough': 'Tunnel via {{host}}',
   'browser.tunnelingCopy': 'Faites passer tout le trafic HTTP et HTTPS par cet hôte SSH. Lorsque cette option est activée, localhost désigne cet hôte.',
   'browser.tunnelingDataCopy': 'La navigation par tunnel utilise des cookies et des données de sites séparés pour chaque hôte.',
-  'browser.tunnelingUnavailable': 'Nécessite la prise en charge des proxys par Android WebView.',
+  'browser.tunnelingUnavailable': 'Le tunnel SSH du navigateur est indisponible sur cet appareil.',
   'browser.tunnelingFailed': 'Impossible de modifier le tunnel.',
   'terminal.openBrowser': 'Ouvrir le navigateur',
   'terminal.scanningLinks': 'Analyse du terminal actuel…',

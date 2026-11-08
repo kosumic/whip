@@ -21,6 +21,8 @@ react = File.join(root, 'node_modules', 'react-native')
 end
 project = Xcodeproj::Project.new(File.join(build, 'BrowserTests.xcodeproj'))
 host = project.new_target(:application, 'BrowserTestHost', :ios, '16.4')
+host_info = File.join(build, 'Host-Info.plist')
+Xcodeproj::Plist.write_to_path({'NSAppTransportSecurity' => {'NSAllowsArbitraryLoads' => true}}, host_info)
 host.add_system_frameworks(['UIKit'])
 host.source_build_phase.add_file_reference(project.main_group.new_file(File.join(root, 'ios', 'Tests', 'BrowserTestHost.m')))
 input_directory = File.join(root, 'packages', 'expo-whip-terminal-input', 'ios')
@@ -31,14 +33,15 @@ host.build_configurations.each do |config|
     'ARCHS' => 'arm64', 'ONLY_ACTIVE_ARCH' => 'YES', 'CLANG_ENABLE_OBJC_ARC' => 'YES',
     'HEADER_SEARCH_PATHS' => [input_directory],
     'GENERATE_INFOPLIST_FILE' => 'YES', 'INFOPLIST_KEY_UILaunchScreen_Generation' => 'YES',
+    'INFOPLIST_FILE' => host_info,
     'PRODUCT_BUNDLE_IDENTIFIER' => 'io.github.kaminarios.whip.browser-test-host',
     'CODE_SIGNING_ALLOWED' => 'NO'
   })
 end
 target = project.new_target(:unit_test_bundle, 'BrowserTests', :ios, '16.4')
 target.add_dependency(host)
-target.add_system_frameworks(%w[UIKit WebKit UserNotifications UniformTypeIdentifiers XCTest])
-%w[ios/HerdR/WhipBrowser.m ios/Tests/WhipBrowserTests.m ios/Tests/WhipBrowserDownloadTests.m ios/Tests/WhipClipboardTests.m
+target.add_system_frameworks(%w[UIKit WebKit Network UserNotifications UniformTypeIdentifiers XCTest])
+%w[ios/HerdR/WhipBrowser.m ios/Tests/WhipBrowserTests.m ios/Tests/WhipBrowserDownloadTests.m ios/Tests/WhipBrowserProxyTests.m ios/Tests/WhipClipboardTests.m
    packages/expo-whip-terminal-input/tests/ios/WhipTerminalInputTests.m].each do |path|
   target.source_build_phase.add_file_reference(project.main_group.new_file(File.join(root, path)))
 end

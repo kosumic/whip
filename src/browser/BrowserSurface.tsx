@@ -264,6 +264,14 @@ const TabRenderer = memo(function BrowserTabRenderer({
     >
       <WebView
         ref={ref}
+        whipBrowserRoute={JSON.stringify([
+          entry.identity.runtimeId,
+          browserLibrary.tunneling(
+            browserRegistry.host(entry.identity.runtimeId)?.id || '',
+          )
+            ? browserRegistry.host(entry.identity.runtimeId)?.id
+            : null,
+        ])}
         source={prepared ? initialSource.current : undefined}
         style={styles.webView}
         userAgent={initialProfile.current.userAgent}

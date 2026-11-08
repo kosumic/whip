@@ -1059,7 +1059,7 @@ export const zhHant: Record<string, string> = {
   'browser.tunnelingThrough': '透過 {{host}} 建立通道',
   'browser.tunnelingCopy': '透過此 SSH 主機路由所有 HTTP 和 HTTPS 流量。啟用時，localhost 指的是此主機。',
   'browser.tunnelingDataCopy': '通道瀏覽為每台主機使用獨立的 Cookie 和網站資料。',
-  'browser.tunnelingUnavailable': '需要 Android WebView 支援 Proxy。',
+  'browser.tunnelingUnavailable': '此裝置無法使用 SSH 瀏覽器通道。',
   'browser.tunnelingFailed': '無法變更通道設定。',
   'terminal.openBrowser': '開啟瀏覽器',
   'terminal.scanningLinks': '正在掃描目前的終端機…',

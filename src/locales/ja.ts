@@ -1059,7 +1059,7 @@ export const ja = {
   'browser.tunnelingThrough': '{{host}} 経由のトンネル',
   'browser.tunnelingCopy': 'すべての HTTP と HTTPS 通信をこの SSH ホスト経由で送信します。有効な場合、localhost はこのホストを指します。',
   'browser.tunnelingDataCopy': 'トンネル経由の閲覧では、ホストごとに Cookie とサイトデータを分けて保存します。',
-  'browser.tunnelingUnavailable': 'Android WebView のプロキシ対応が必要です。',
+  'browser.tunnelingUnavailable': 'このデバイスでは SSH 経由のブラウジングを利用できません。',
   'browser.tunnelingFailed': 'トンネル設定を変更できませんでした。',
   'terminal.openBrowser': 'ブラウザを開く',
   'terminal.scanningLinks': '現在の端末をスキャンしています…',

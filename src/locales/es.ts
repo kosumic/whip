@@ -1059,7 +1059,7 @@ export const es = {
   'browser.tunnelingThrough': 'Túnel a través de {{host}}',
   'browser.tunnelingCopy': 'Envía todo el tráfico HTTP y HTTPS a través de este host SSH. Cuando está activado, localhost se refiere a este host.',
   'browser.tunnelingDataCopy': 'La navegación por túnel usa cookies y datos de sitios separados para cada host.',
-  'browser.tunnelingUnavailable': 'Requiere compatibilidad con proxy en Android WebView.',
+  'browser.tunnelingUnavailable': 'El túnel SSH del navegador no está disponible en este dispositivo.',
   'browser.tunnelingFailed': 'No se pudo cambiar el túnel.',
   'terminal.openBrowser': 'Abrir navegador',
   'terminal.scanningLinks': 'Escaneando el terminal actual…',
