@@ -67,7 +67,7 @@ function renderHighlights(text: string, ranges: HighlightRange[], expandTabs = f
 export function SearchText({ text }: { text: string }) {
   const query = useContext(ChatSearchQuery);
   const ranges = useMemo(() => searchTextRanges(text, query), [text, query]);
-  return renderHighlights(text, ranges);
+  return useMemo(() => renderHighlights(text, ranges), [text, ranges]);
 }
 
 /** Highlight ranges crossing syntax-token boundaries using the full rendered row. */
@@ -75,8 +75,8 @@ export function SearchCodeToken({ text, start, row, expandTabs = false }: { text
   const query = useContext(ChatSearchQuery);
   const scope = useContext(CodeSearchRanges);
   const ranges = useMemo(() => scope?.text === row ? scope.ranges : searchTextRanges(row, query), [scope, row, query]);
-  return renderHighlights(text, ranges.map(range => ({
+  return useMemo(() => renderHighlights(text, ranges.map(range => ({
     start: Math.max(0, range.start - start),
     end: Math.min(text.length, range.end - start),
-  })).filter(range => range.end > range.start), expandTabs);
+  })).filter(range => range.end > range.start), expandTabs), [text, ranges, start, expandTabs]);
 }

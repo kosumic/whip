@@ -30,7 +30,7 @@ import {
 import { commitKeyboardState, endKeyboard, moveKeyboard, publishKeyboard, resetKeyboardController } from '../test-support/keyboardAnimation';
 import { uploadPastedComposerImage } from '../src/services/composerImagePaste';
 import { TerminalComposerStore } from '../src/lib/terminalComposerStore';
-import { ChatComposerSelection } from '../src/components/ChatComposerSelection';
+import { ChatComposerSelection, ChatComposerSelectionScope } from '../src/components/ChatComposerSelection';
 import { FLOATING_WARNING_BANNER_HEIGHT } from '../src/components/FloatingWarningBanner';
 import { useAppGlassEnabled } from '../src/components/GlassSurface';
 import type { TerminalSubmissionPermitLike } from 'react-native-whip-ssh/src/terminalSubmissions';
@@ -1948,6 +1948,42 @@ test('routine host updates do not invalidate retained chat selection consumers',
   expect(renders).not.toHaveBeenCalled();
   act(() => { renderer.root.findByType('button').props.onClick(); });
   expect(props.composerStore.snapshot(target.key).text).toBe('selected reply');
+});
+
+test('tab switches keep retained chat menus stable and late selections stay with their terminal', () => {
+  const other = { ...target, key: 'target-2', session: { ...target.session, terminalId: 'terminal-2' } };
+  const renders = jest.fn();
+  const ChatSelection = memo(function RetainedSelection({ id }: { id: string }) {
+    const add = useContext(ChatComposerSelection);
+    renders(id);
+    return <button id={id} onClick={() => add?.(`reply from ${id}`)} />;
+  });
+  let selected = target.key;
+  const renderViewportOverlay = () => <>{[target, other].map(item => (
+    <ChatComposerSelectionScope key={item.key} enabled={selected === item.key}>
+      <ChatSelection id={item.key} />
+    </ChatComposerSelectionScope>
+  ))}</>;
+  const targets = [target, other];
+  mount({ targets, chatViewEnabled: true, renderViewportOverlay });
+  const menu = (id: string) => renderer.root.findAllByType('button').find(node => node.props.id === id)!;
+  const lateSelection = menu(target.key).props.onClick;
+  renders.mockClear();
+  selected = other.key;
+  act(() => renderer.update(<TerminalScreen {...props} targets={targets} activeTarget={other}
+    chatViewEnabled renderViewportOverlay={renderViewportOverlay} />));
+  expect(renders).not.toHaveBeenCalled();
+  act(() => { lateSelection(); });
+  expect(props.composerStore.snapshot(target.key).text).toBe('');
+  expect(props.composerStore.snapshot(other.key).text).toBe('');
+  act(() => { menu(other.key).props.onClick(); });
+  expect(props.composerStore.snapshot(other.key).text).toBe(`reply from ${other.key}`);
+  selected = target.key;
+  act(() => renderer.update(<TerminalScreen {...props} targets={targets} activeTarget={target}
+    chatViewEnabled renderViewportOverlay={renderViewportOverlay} />));
+  expect(renders).not.toHaveBeenCalled();
+  act(() => { lateSelection(); });
+  expect(props.composerStore.snapshot(target.key).text).toBe(`reply from ${target.key}`);
 });
 
 test('reconnection preserves the visible keyboard without dismissing or refitting', async () => {

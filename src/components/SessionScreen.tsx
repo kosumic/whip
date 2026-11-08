@@ -123,6 +123,7 @@ import {
   recordAgentChatDiagnostic,
 } from '../services/agentChatDiagnostics';
 import { terminalTabSelectionStarted } from '../services/performanceTrace';
+import { ChatComposerSelectionScope } from './ChatComposerSelection';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import type { TerminalSessionsState } from '../terminalSessions';
 import type { TerminalSessionStatus } from '../terminalSessions';
@@ -2009,111 +2010,113 @@ export function SessionScreen({
                           <ScreenUpdates key={identity} active={active}
                             updateKey={appActive && priority ? chatView.state : undefined}>
                             {() => (
-                              <View
-                                key={key}
-                                // Keep retained chats under a stable native parent when shown/hidden.
-                                collapsable={false}
-                                testID="agent-chat-layer"
-                                className="absolute inset-0"
-                                style={{ opacity: shown ? 1 : 0 }}
-                                pointerEvents={shown ? 'auto' : 'none'}
-                                accessibilityElementsHidden={!shown}
-                                importantForAccessibility={
-                                  shown ? 'auto' : 'no-hide-descendants'
-                                }
-                              >
-                                <AgentChatView
-                                  key={[
-                                    chatView.binding.bindingToken,
-                                    chatView.presentation.generation,
-                                  ].join(':')}
-                                  state={chatView.state}
-                                  searchRuntime={chatClient?.activeNative ?? undefined}
-                                  searchKey={chatView.binding.transcriptKey}
-                                  readAloud={visible && selected ? chatReadAloud : undefined}
-                                  imageClient={chatClient}
-                                  active={active}
-                                  prewarm={appActive && priority}
-                                  visible={visible && selected && chatPresentationRequested(chatView.presentation)}
-                                  savedViewport={viewportRetention.snapshots.get(
-                                    identity,
-                                  )}
-                                  onSaveViewport={state =>
-                                    viewportRetention.snapshots.set(
+                              <ChatComposerSelectionScope enabled={visible && selected && chatPresentationRequested(chatView.presentation)}>
+                                <View
+                                  key={key}
+                                  // Keep retained chats under a stable native parent when shown/hidden.
+                                  collapsable={false}
+                                  testID="agent-chat-layer"
+                                  className="absolute inset-0"
+                                  style={{ opacity: shown ? 1 : 0 }}
+                                  pointerEvents={shown ? 'auto' : 'none'}
+                                  accessibilityElementsHidden={!shown}
+                                  importantForAccessibility={
+                                    shown ? 'auto' : 'no-hide-descendants'
+                                  }
+                                >
+                                  <AgentChatView
+                                    key={[
+                                      chatView.binding.bindingToken,
+                                      chatView.presentation.generation,
+                                    ].join(':')}
+                                    state={chatView.state}
+                                    searchRuntime={chatClient?.activeNative ?? undefined}
+                                    searchKey={chatView.binding.transcriptKey}
+                                    readAloud={visible && selected ? chatReadAloud : undefined}
+                                    imageClient={chatClient}
+                                    active={active}
+                                    prewarm={appActive && priority}
+                                    visible={visible && selected && chatPresentationRequested(chatView.presentation)}
+                                    savedViewport={viewportRetention.snapshots.get(
                                       identity,
-                                      state,
-                                    )
-                                  }
-                                  agent={chatView.binding.agent}
-                                  agentStatus={
-                                    selected && activePane
-                                      ? activePane.agent_status
-                                      : chatTarget?.agentStatus ?? 'idle'
-                                  }
-                                  contentInsets={insets}
-                                  animatedBottomInset={animatedBottomInset}
-                                  latestButtonBottom={latestButtonBottom}
-                                  searchOpen={search.open}
-                                  onCloseSearch={search.onClose}
-                                  onOpenFile={openChatFile}
-                                  onOpenWebLink={handleOpenWebLink}
-                                  onInitialViewportReady={() => {
-                                    const generation =
-                                      chatView.presentation.generation;
-                                    recordAgentChatDiagnostic(
-                                      'initial-viewport-callback-received',
-                                      {
-                                        activeTerminalId:
-                                          activeTerminalIdRef.current,
-                                        bindingToken: agentChatDiagnosticToken(
-                                          chatView.binding.bindingToken,
-                                        ),
-                                        generation,
-                                        terminalId,
-                                      },
-                                    );
-                                    setChatViews(current => {
-                                      const view = current.get(key);
-                                      if (
-                                        view?.binding.bindingToken !==
-                                          chatView.binding.bindingToken ||
-                                        agentTranscriptReadiness(view.state) !==
-                                          'usable'
-                                      ) {
-                                        recordAgentChatDiagnostic(
-                                          'initial-viewport-callback-rejected',
-                                          {
-                                            reason:
-                                              'binding-or-readiness-changed',
-                                            terminalId,
-                                          },
-                                        );
-                                        return current;
-                                      }
-                                      const presentation = revealPreparedChat(
-                                        view.presentation,
-                                        generation,
-                                      );
-                                      if (presentation === view.presentation)
-                                        return current;
+                                    )}
+                                    onSaveViewport={state =>
+                                      viewportRetention.snapshots.set(
+                                        identity,
+                                        state,
+                                      )
+                                    }
+                                    agent={chatView.binding.agent}
+                                    agentStatus={
+                                      selected && activePane
+                                        ? activePane.agent_status
+                                        : chatTarget?.agentStatus ?? 'idle'
+                                    }
+                                    contentInsets={insets}
+                                    animatedBottomInset={animatedBottomInset}
+                                    latestButtonBottom={latestButtonBottom}
+                                    searchOpen={search.open}
+                                    onCloseSearch={search.onClose}
+                                    onOpenFile={openChatFile}
+                                    onOpenWebLink={handleOpenWebLink}
+                                    onInitialViewportReady={() => {
+                                      const generation =
+                                        chatView.presentation.generation;
                                       recordAgentChatDiagnostic(
-                                        'chat-open-visible',
+                                        'initial-viewport-callback-received',
                                         {
-                                          bindingToken:
-                                            agentChatDiagnosticToken(
-                                              view.binding.bindingToken,
-                                            ),
+                                          activeTerminalId:
+                                            activeTerminalIdRef.current,
+                                          bindingToken: agentChatDiagnosticToken(
+                                            chatView.binding.bindingToken,
+                                          ),
                                           generation,
                                           terminalId,
                                         },
                                       );
-                                      const next = new Map(current);
-                                      next.set(key, { ...view, presentation });
-                                      return next;
-                                    });
-                                  }}
-                                />
-                              </View>
+                                      setChatViews(current => {
+                                        const view = current.get(key);
+                                        if (
+                                          view?.binding.bindingToken !==
+                                            chatView.binding.bindingToken ||
+                                          agentTranscriptReadiness(view.state) !==
+                                            'usable'
+                                        ) {
+                                          recordAgentChatDiagnostic(
+                                            'initial-viewport-callback-rejected',
+                                            {
+                                              reason:
+                                                'binding-or-readiness-changed',
+                                              terminalId,
+                                            },
+                                          );
+                                          return current;
+                                        }
+                                        const presentation = revealPreparedChat(
+                                          view.presentation,
+                                          generation,
+                                        );
+                                        if (presentation === view.presentation)
+                                          return current;
+                                        recordAgentChatDiagnostic(
+                                          'chat-open-visible',
+                                          {
+                                            bindingToken:
+                                              agentChatDiagnosticToken(
+                                                view.binding.bindingToken,
+                                              ),
+                                            generation,
+                                            terminalId,
+                                          },
+                                        );
+                                        const next = new Map(current);
+                                        next.set(key, { ...view, presentation });
+                                        return next;
+                                      });
+                                    }}
+                                  />
+                                </View>
+                              </ChatComposerSelectionScope>
                             )}
                           </ScreenUpdates>
                         );
