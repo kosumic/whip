@@ -377,6 +377,7 @@ fn a_prepared_atomic_alert_keeps_its_speech_while_another_unit_plays() {
     assert_eq!(next.token, token(&second));
     state.finish_speech(&next.token);
     assert!(!state.speech_valid(&token(&first), Instant::now() + MAX_WAIT));
+    drop(state);
 }
 
 #[test]
