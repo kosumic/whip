@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AppState, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { usageChart, usageSummary } from 'react-native-whip-ssh';
+import { useScreenVisible } from '../lib/screenVisibility';
 import {
   usageChartPeriod,
   usagePeriodStarts,
@@ -38,11 +39,15 @@ function readChart(range: UsageRange): ChartView {
 
 export function WhippingTimeChart({ range }: { range: UsageRange }) {
   const { t, i18n } = useTranslation();
+  const visible = useScreenVisible();
   const [chart, setChart] = useState<ChartView | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   useEffect(() => {
     setSelected(null);
+  }, [range]);
+  useEffect(() => {
+    if (!visible) return;
     const refresh = () => {
       if (AppState.currentState !== 'active') return;
       try {
@@ -59,7 +64,7 @@ export function WhippingTimeChart({ range }: { range: UsageRange }) {
       clearInterval(timer);
       subscription.remove();
     };
-  }, [range]);
+  }, [range, visible]);
 
   const duration = (milliseconds: number) => {
     if (milliseconds > 0 && milliseconds < MS_PER_MINUTE)

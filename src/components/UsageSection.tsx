@@ -13,6 +13,7 @@ import {
   type VoiceUsageTotal,
 } from '../services/voiceUsage';
 import { useSectionExpansion } from '../hooks/useSectionExpansion';
+import { useScreenVisible } from '../lib/screenVisibility';
 import {
   formatUsageChartDate,
   usagePeriodStarts,
@@ -56,6 +57,7 @@ const MIN_COST_AXIS = 0.0001;
 
 export function UsageSection() {
   const { t, i18n } = useTranslation();
+  const visible = useScreenVisible();
   const { expanded, toggleExpanded } = useSectionExpansion('usage');
   const [range, setRange] = useState<UsageRange>('week');
   const [metric, setMetric] = useState<(typeof METRICS)[number]>('time');
@@ -76,6 +78,14 @@ export function UsageSection() {
   const [limit, setLimit] = useState(PAGE_SIZE);
   useEffect(() => {
     if (!expanded || !voiceMetricsVisible) return;
+    setSummary(undefined);
+    setSavedCalls([]);
+    setSelectedCallId(undefined);
+    setSelected(null);
+    setLimit(PAGE_SIZE);
+  }, [expanded, voiceMetricsVisible, provider, mode, scope, range, refresh]);
+  useEffect(() => {
+    if (!visible || !expanded || !voiceMetricsVisible) return;
     let current = true;
     let revision = 0;
     let loading = false;
@@ -129,11 +139,6 @@ export function UsageSection() {
           loading = false;
         });
     };
-    setSummary(undefined);
-    setSavedCalls([]);
-    setSelectedCallId(undefined);
-    setSelected(null);
-    setLimit(PAGE_SIZE);
     load();
     const unsubscribe = voiceUsageLedger.subscribe(load);
     const appState = AppState.addEventListener('change', state => {
@@ -146,7 +151,7 @@ export function UsageSection() {
       appState.remove();
       clearInterval(timer);
     };
-  }, [expanded, voiceMetricsVisible, provider, mode, scope, range, refresh]);
+  }, [visible, expanded, voiceMetricsVisible, provider, mode, scope, range, refresh]);
   const cost = (call: VoiceUsageCall) =>
     call.provider === 'local'
       ? t('voiceUsage.localFree')
