@@ -13,7 +13,7 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
 const terminalTarget: TerminalVoiceChatTarget = { hostId: 'host', paneId: 'shell', tabId: 'shell', label: 'SSH shell',
   terminal: { runtimeId: 'runtime', runtimeIncarnation: 1, connectionGeneration: 1, terminalId: 'shell' } };
 
-test.each(['Realtime', 'Live'] as const)('global %s uses OpenAI independently of agent preferences, survives host changes and closes on app lock', async mode => {
+test.each(['Realtime', 'Live'] as const)('global %s uses OpenAI independently of agent preferences and survives host changes and app lock', async mode => {
   const local = jest.fn();
   const cloud = { start: jest.fn(async () => {}), close: jest.fn(async () => {}), setTranscriptBinding: jest.fn(), setVadSensitivity: jest.fn(), submitted: jest.fn(), toggleMuted: jest.fn(), toggleSpeaker: jest.fn(), finish: jest.fn(), skip: jest.fn(async () => {}) };
   const realtime = jest.fn(async () => cloud);
@@ -32,6 +32,11 @@ test.each(['Realtime', 'Live'] as const)('global %s uses OpenAI independently of
   expect(cloud.close).not.toHaveBeenCalled();
   expect(local).not.toHaveBeenCalled();
   await manager.setLocked(true);
+  await manager.setLocked(false);
+  expect(manager.active).toBe(call);
+  expect(cloud.close).not.toHaveBeenCalled();
+  expect(realtime).toHaveBeenCalledTimes(1);
+  await manager.hangup();
   expect(cloud.close).toHaveBeenCalledTimes(1);
   expect(manager.active).toBeUndefined();
 });
@@ -90,6 +95,9 @@ test('Realtime selects its own adapter and keeps its initial voice and server VA
   expect(session.settings.realtimeVoice).toBe('cedar');
   expect(session.settings.realtimeVad).toEqual({ type: 'server_vad', threshold: 0.6, prefix_padding_ms: 400, silence_duration_ms: 700 });
   await manager.setLocked(true);
+  expect(cloud.close).not.toHaveBeenCalled();
+  expect(manager.active).toBe(session);
+  await manager.hangup();
   expect(cloud.close).toHaveBeenCalledTimes(1);
   expect(voiceUsageLedger.record).not.toHaveBeenCalled();
 });
@@ -162,23 +170,71 @@ test('rapid target replacements cancel intermediate calls before they acquire na
   await manager.hangup();
 });
 
-test('app lock cancels pending startup, blocks sends and prevents new calls until unlock', async () => {
+test('app lock preserves local sends and rejects replacement calls without disturbing the owner', async () => {
   const { manager, create, adapters } = setup();
-  manager.start({ kind: 'Agent', target }, () => true);
+  const send = jest.fn(() => true);
+  const session = manager.start({ kind: 'Agent', target }, send);
   await flush();
-  const closing = manager.setLocked(true);
-  expect(adapters[0].send('locked')).toBe(false);
-  await closing;
-  expect(adapters[0].close).toHaveBeenCalledTimes(1);
-  const blocked = manager.start({ kind: 'Agent', target }, () => true);
+  adapters[0].publish({ ...view, muted: true, speaker: true, text: 'Still speaking' });
+  const snapshot = session.getSnapshot();
+  await manager.setLocked(true);
+  expect(adapters[0].send('locked')).toBe(true);
+  expect(send).toHaveBeenCalledWith('locked');
+  const blocked = manager.start({ kind: 'Agent', target: { ...target, paneId: 'different' } }, () => true);
   await flush();
   expect(blocked.getSnapshot().phase).toBe('error');
+  expect(manager.active).toBe(session);
+  expect(session.ended).toBe(false);
+  expect(session.getSnapshot()).toBe(snapshot);
+  expect(adapters[0].close).not.toHaveBeenCalled();
+  expect(adapters[0].toggleMuted).not.toHaveBeenCalled();
+  expect(adapters[0].toggleSpeaker).not.toHaveBeenCalled();
   expect(create).toHaveBeenCalledTimes(1);
   await manager.setLocked(false);
+  expect(manager.start({ kind: 'Agent', target }, send)).toBe(session);
   expect(create).toHaveBeenCalledTimes(1);
-  manager.start({ kind: 'Agent', target }, () => true); await flush();
-  expect(create).toHaveBeenCalledTimes(2);
   await manager.hangup();
+  expect(adapters[0].send('after hangup')).toBe(false);
+});
+
+test('a call admitted before locking retains pending adapter startup', async () => {
+  const { create, adapters } = setup();
+  let loaded!: (adapter: VoiceSessionAdapter) => void;
+  const factory = jest.fn(() => new Promise<VoiceSessionAdapter>(resolve => { loaded = resolve; }));
+  const manager = new VoiceSessionManager(factory);
+  const session = manager.start({ kind: 'Agent', target }, () => true);
+  // Lock before the serialized transition runs as well as while loading.
+  await manager.setLocked(true);
+  await flush();
+  const adapter = await create(target, () => true, () => {});
+  loaded(adapter);
+  await flush();
+  expect(adapters[0].start).toHaveBeenCalledTimes(1);
+  expect(adapters[0].close).not.toHaveBeenCalled();
+  expect(manager.active).toBe(session);
+  await manager.setLocked(false);
+  expect(factory).toHaveBeenCalledTimes(1);
+  await manager.hangup();
+});
+
+test('new calls stay denied while locked and unlocking after hangup never restarts audio', async () => {
+  const { manager, create, adapters } = setup();
+  await manager.setLocked(true);
+  const denied = manager.start({ kind: 'Agent', target }, () => true);
+  await flush();
+  expect(denied.getSnapshot()).toMatchObject({ phase: 'error', error: 'Unlock Whip to start a call.' });
+  expect(manager.active).toBeUndefined();
+  expect(create).not.toHaveBeenCalled();
+  await manager.setLocked(false);
+  expect(create).not.toHaveBeenCalled();
+  manager.start({ kind: 'Agent', target }, () => true);
+  await flush();
+  await manager.setLocked(true);
+  await manager.hangup();
+  await manager.setLocked(false);
+  expect(manager.active).toBeUndefined();
+  expect(create).toHaveBeenCalledTimes(1);
+  expect(adapters[0].close).toHaveBeenCalledTimes(1);
 });
 
 test('hanging up before adapter loading finishes closes it without starting audio', async () => {

@@ -25,11 +25,15 @@ export class GlobalVoiceControl {
   private disposed = false;
   private operationSequence = 0;
   private readonly deviceSessions = new Set<string>();
+  private readonly appStateSubscription;
 
   constructor(private readonly context: () => GlobalVoiceControlContext) {
     setWhipAppControl({
       execute: (permit, action, args) => this.execute(permit, action, args),
       cancel: id => this.cancel(id),
+    });
+    this.appStateSubscription = AppState.addEventListener('change', state => {
+      if (state !== 'active') this.suspend();
     });
   }
 
@@ -94,6 +98,12 @@ export class GlobalVoiceControl {
 
   dispose(): void {
     this.disposed = true;
+    this.appStateSubscription.remove();
+    this.suspend();
+  }
+
+  /** Cancel privileged work without revoking the call's audio owner. */
+  suspend(): void {
     for (const id of new Set([...this.operations.keys(), ...this.deviceSessions])) this.cancel(id);
   }
 }

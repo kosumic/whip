@@ -59,11 +59,34 @@ remain authoritative. A submitted remote job can continue after hangup.
 
 Unknown submission outcomes block additional prompts for that call. Mutations
 are never automatically retried. Function IDs are bounded and deduplicated;
-results use the initiating function ID. Calls expire after 55 minutes. Hangup,
-replacement, or app lock revokes capabilities and cancels outstanding UI
-confirmations. An unlock cannot reactivate an old permit. Already dispatched
-remote work may have committed; cancellation does not promise remote rollback.
-Presentation and OS effects require the app in the foreground.
+results use the initiating function ID. Calls expire after 55 minutes. Hangup
+or replacement revokes capabilities. App lock and leaving the foreground cancel
+outstanding UI confirmations and device operations without ending the call.
+Presentation, delegation confirmation and OS effects require unlocked foreground
+Whip. Unlocking never approves or replays a cancelled action; a fresh request
+must pass the same checks. Already dispatched remote work may have committed;
+cancellation does not promise remote rollback.
+
+## Lock and background lifetime (#390)
+
+A call started while Whip is unlocked retains its microphone, playback, native
+audio owner and provider session across backgrounding, screen-off, app lock,
+biometric prompts and successful, failed or cancelled unlock. Mute, speaker route,
+conversation and original target remain with the same call. This applies to
+global and agent-bound calls whose audio mode supports background operation.
+There is no opt-in, pause-on-lock state or restart on unlock. A new call is
+unavailable while locked; a rejected replacement cannot interrupt the current one.
+
+The locked call UI stays hidden. Protected credentials and SSH workflows retain
+their existing authentication checks. Continuing an authorized conversation does
+not authorize new protected UI actions or agent approvals. Android retains its
+microphone/media foreground service and notification; iOS retains CallKit and
+background audio. OS interruptions, permission loss and system lifecycle limits
+still apply. Explicit Hang Up ends the call even while locked, and unlock never
+resurrects it. Session rotation and connection recovery remain separate in #378.
+
+See [lock lifecycle device checks](voice-lock-lifecycle.md) for the Android/iOS
+acceptance procedure and the limits of automated bridge tests.
 
 Global transcript/captions stay separate from agent transcripts. Provider
 usage is recorded with global scope and never follows UI focus. Usage & costs

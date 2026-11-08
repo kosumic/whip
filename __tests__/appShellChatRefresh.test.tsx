@@ -167,6 +167,28 @@ function setup() {
   };
 }
 
+test('app lock hides agent/terminal presentation without replacing the mounted session', () => {
+  const { props } = setup();
+  let renderer!: ReactTestRenderer;
+  try {
+    act(() => { renderer = create(<AppShell {...props} />); });
+    const terminal = renderer.root.findByType(LiveSessionView);
+    const session = terminal.props.session;
+    const client = terminal.props.client;
+    expect(terminal.props.visible).toBe(true);
+    act(() => { renderer.update(<AppShell {...props} security={{ ...props.security, locked: true }} />); });
+    expect(renderer.root.findByType(LiveSessionView)).toBe(terminal);
+    expect(terminal.props.visible).toBe(false);
+    expect(terminal.props.attentionVisible).toBe(false);
+    expect(terminal.props.session).toBe(session);
+    expect(terminal.props.client).toBe(client);
+    act(() => { renderer.update(<AppShell {...props} security={{ ...props.security, locked: false }} />); });
+    expect(renderer.root.findByType(LiveSessionView)).toBe(terminal);
+    expect(terminal.props.visible).toBe(true);
+    expect(terminal.props.session).toBe(session);
+  } finally { act(() => renderer?.unmount()); }
+});
+
 test.each([false, true])('prepares the first three agents before opening Terminal (host selected=%s)', selected => {
   const host = setup();
   const panes = Array.from({ length: 5 }, (_, index) => ({

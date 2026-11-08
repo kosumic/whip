@@ -118,6 +118,7 @@ export function useApplicationSecurity(options: ApplicationSecurityOptions) {
       );
       previousState = state;
       if (action === 'lock') {
+        // This only blocks new calls. Active audio has an independent lifetime.
         void voiceSessionManager.setLocked(true);
         setSshWorkflowLocked(true);
         setLocked(true);

@@ -34,6 +34,7 @@ export function GlobalVoiceCall({ ref, navigation, sessions, locked, visible, on
   const [draft, setDraft] = useState('');
   const [approval, setApproval] = useState<Approval>();
   const approvalRef = useRef<Approval | undefined>(undefined);
+  const controlRef = useRef<GlobalVoiceControl | undefined>(undefined);
   const voice = useRef<VoiceChatHandle>(null);
   const approvalSession = approval ? sessions.presentationSessions.find(item => item.hostId === approval.hostId) : undefined;
   const approvalPane = approvalSession?.snapshot.panes.find(item => item.pane_id === approval?.paneId);
@@ -73,10 +74,11 @@ export function GlobalVoiceCall({ ref, navigation, sessions, locked, visible, on
   contextRef.current = context;
   useEffect(() => {
     const control = new GlobalVoiceControl(() => contextRef.current);
-    return () => { control.dispose(); approvalRef.current?.complete(false); };
+    controlRef.current = control;
+    return () => { controlRef.current = undefined; control.dispose(); approvalRef.current?.complete(false); };
   }, []);
   useEffect(() => {
-    if (locked) { setComposing(false); approvalRef.current?.complete(false); }
+    if (locked) { controlRef.current?.suspend(); setComposing(false); approvalRef.current?.complete(false); }
   }, [locked]);
   return <>
     {calling && <VoiceChatScreen key={callAttempt} ref={voice} target={{ global: true, label: t('globalCall.title') }} send={NO_AGENT_SEND}

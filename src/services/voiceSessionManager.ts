@@ -96,6 +96,14 @@ export class VoiceSessionManager {
       this.current.send = send;
       return this.current;
     }
+    // Lock gates admission, never an existing owner (including pending startup).
+    // Reject before replacing current so a denied call cannot end a running one.
+    if (this.locked) {
+      const denied = new VoiceSession(scope, settings);
+      denied.ended = true;
+      denied.publish({ ...initialView(), phase: 'error', error: 'Unlock Whip to start a call.' });
+      return denied;
+    }
     const previous = this.current;
     const session = new VoiceSession(scope, settings);
     session.send = send;
@@ -104,9 +112,9 @@ export class VoiceSessionManager {
     this.transition = this.transition.then(async () => {
       if (previous) await this.end(previous);
       if (session.ended || this.current !== session) return;
-      if (this.locked || (scope.kind === 'Terminal' && session.mode !== 'Realtime') || (session.mode !== 'TurnBased' && !this.createRealtime)) {
+      if ((scope.kind === 'Terminal' && session.mode !== 'Realtime') || (session.mode !== 'TurnBased' && !this.createRealtime)) {
         session.ended = true;
-        session.publish({ ...initialView(), phase: 'error', error: this.locked ? 'Unlock Whip to start a call.' : 'This conversation mode is not available yet.' });
+        session.publish({ ...initialView(), phase: 'error', error: 'This conversation mode is not available yet.' });
         return;
       }
       this.observe('started', session);
@@ -117,7 +125,7 @@ export class VoiceSessionManager {
       };
       const adapter = scope.kind === 'Global' || scope.kind === 'Terminal' || session.mode !== 'TurnBased'
         ? await this.createRealtime!(scope.kind === 'Global' ? { global: true, label: 'Global call' } : scope.target, session.settings, publish, session.startedMonotonic)
-        : await this.createLocal(scope.target, text => this.current === session && !session.ended && !this.locked && Boolean(session.send?.(text)), publish);
+        : await this.createLocal(scope.target, text => this.current === session && !session.ended && Boolean(session.send?.(text)), publish);
       session.adapter = adapter;
       if (session.ended || this.current !== session) { await adapter.close(); return; }
       adapter.setTranscriptBinding(session.bindingToken);
@@ -163,7 +171,7 @@ export class VoiceSessionManager {
 
   setLocked(locked: boolean): Promise<void> {
     this.locked = locked;
-    return locked ? this.hangup() : Promise.resolve();
+    return Promise.resolve();
   }
 
   retainAgentHosts(hostIds: readonly string[]): Promise<void> {
