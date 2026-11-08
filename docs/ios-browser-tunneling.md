@@ -28,32 +28,78 @@ proxy change, VPN entitlement, NSURLProtocol interception, or TLS interception.
 Apple describes these APIs together in [WWDC23: Ready, set, relay](https://developer.apple.com/videos/play/wwdc2023/10002/).
 The iOS 16.4 path retains ordinary untunneled browsing and rejects tunnel setup.
 
-## Blocking result: loopback bypass
+## Debugged result: numeric IP destinations bypass the proxy
 
-On the arm64 **iOS 26.5 simulator, built with Xcode 27.1**, a WKWebView with a
-SOCKS proxy configured before creation, with failover disabled, connected
-**directly to 127.0.0.1** when its proxy was unavailable. The regression uses a
-local destination trap: four connections began with `47 45` (`GE`, from an HTTP
-GET), rather than a SOCKS handshake. This is a bypass, not just an error message
-or an inability to resolve a remote host.
+On the arm64 **iOS 26.5 simulator, built with Xcode 27.1**, requests to
+`localhost` and `ssh-only.invalid` went through the configured proxy. Requests
+to literal `127.0.0.1`, `[::1]`, and a reachable IPv4 LAN address connected
+**directly to the destination**. This happened with a healthy proxy too: the
+proxy received zero connections for those IP requests. Disabling failover does
+not prevent this bypass; the hostname control does fail closed when its proxy
+is unavailable.
 
-The same test also reproduced the bypass with public HTTP CONNECT proxy
-configuration. Explicit `localhost`, `127.0.0.1`, and `::1` match domains,
-combined with either an empty suffix or `*`, did not prevent it. HTTP CONNECT
-therefore does not justify changing the existing Rust transport.
+Independent controls bypass Whip's route manager and React Native entirely:
 
-`testUnavailableProxyDoesNotFallBackEvenForLoopback` records the exact
-zero-direct-connections assertion as a **strict expected failure**, scoped only
-to that assertion. If WebKit stops bypassing the proxy, the test reports an
-unexpected success and prompts a review of the capability gate. Other failures
-are not masked. The production capability/rejection test is an ordinary passing
-regression and verifies that untunneled preparation still works.
+| Client / configuration | Hostname destination | Numeric IPv4 destination |
+| --- | --- | --- |
+| Fresh WKWebView / SOCKS5, HTTP and HTTPS | Proxy used | Direct connection |
+| Fresh WKWebView / HTTP CONNECT, explicit IP match | Not probed in this variant | Direct connection |
+| Fresh WKWebView / HTTP CONNECT with TLS to proxy | Not probed in this variant | Direct connection |
+| Fresh WKWebView / secure HTTP/2 relay configuration | Not probed in this variant | Direct connection |
+| URLSession / Network proxy configuration | Proxy used | Direct connection |
+| URLSession / legacy SOCKS dictionary, empty exceptions | Proxy used | Direct connection |
+| Raw Network.framework TCP / privacy context with SOCKS5 | Proxy used | Direct connection |
 
-No claim is made that other iOS versions share this behavior, or that any
-version has been validated safe. API availability alone cannot establish that.
-A connected iPhone XR reported iOS 18.7.11 with Developer Mode enabled, but
-`devicectl` could not mount its developer disk image. Physical-device validation
-has not been completed; no Whip installation or app data was removed.
+The SOCKS WebKit matrix also checks IPv6 loopback and the local LAN address for
+both HTTP and HTTPS. The destination trap records HTTP GET bytes (`47 45`) or
+TLS ClientHello bytes (`16 03`). It now serves a distinguishable successful
+HTTP response on direct connections, so the result does not depend on treating
+a navigation error as a leak. HTTPS probes inspect the socket destination;
+the fixture intentionally closes TLS handshakes and **does not validate HTTPS
+page loading or certificate behavior**.
+
+Changing the proxy endpoint from `127.0.0.1` to `localhost` or an alternate
+loopback address did not fix numeric-IP routing. Explicit match domains and
+wildcard variants did not fix it either. The bypass reproduces without a
+preexisting connection pool or changes to a live data store. It is therefore
+not explained by Whip's route transitions or the separate WebKit connection
+pool reuse issue described in [Safari Technology Preview 256 release notes](https://webkit.org/blog/18602/release-notes-for-safari-technology-preview-256/).
+
+The observations locate the problem in the tested Apple networking stack,
+below WebKit. An IP endpoint skipping hostname-based proxy selection is a
+possible explanation, **not a verified account of Apple's internal code**.
+They do not prove that all iOS versions or physical devices behave identically.
+No public configuration tested so far enforces the required route for both
+hostnames and numeric IPs.
+
+### Security regression coverage
+
+The native tests include raw API controls, a working `localhost` tunnel, a
+hostname request with an unavailable proxy, and a hostname redirect to a numeric
+IP for both navigation and WKDownload. Only the exact zero-direct-connections
+assertions for known native bypasses use **strict expected failures**. Other
+failures are not masked. If a platform fixes those paths, unexpected successes
+force a review of the capability gate. The production capability/rejection test
+remains an ordinary regression.
+
+Run the focused raw WebKit reproduction on macOS:
+
+```sh
+nix develop -c ruby scripts/test-ios-browser.rb \
+  -only-testing:BrowserTests/WhipBrowserProxyTests/testPublicWebKitProxyRoutingMatrix
+```
+
+Simply replacing a user's `127.0.0.1` URL with `localhost` cannot make arbitrary
+browsing safe: a hostname page can redirect or download from a numeric IP.
+Hostname-only support would need native enforcement across every request path,
+including subresources, redirects, downloads and workers. That restricted
+feature has not been implemented or substituted for #394's requirements.
+
+The connected iPhone XR reports iOS 18.7.11. The detailed CoreDevice error
+identifies a **locked device** (error 10003), nested inside the generic DDI mount
+error 12040; the available developer image itself is marked usable. Physical
+validation was not performed because the user requested simulator-only
+continuation. No Whip installation or app data was removed.
 
 ## Candidate lifecycle and state
 

@@ -420,7 +420,9 @@ RCT_EXPORT_MODULE(WhipBrowser)
 }
 
 + (BOOL)supportsProxy {
-  // Public iOS 17+ proxy APIs bypass loopback, even with failover disabled.
+  // On the tested iOS 26.5 simulator, public proxy APIs bypass numeric IP
+  // destinations (including LAN/IPv6), even with a healthy proxy. Hostnames,
+  // including localhost, do use the proxy. This reproduces below WebKit too.
   // See docs/ios-browser-tunneling.md and WhipBrowserProxyTests. Keep the
   // feature fail closed until a public configuration passes that regression.
   return NO;

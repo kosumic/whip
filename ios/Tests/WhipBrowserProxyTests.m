@@ -1,9 +1,13 @@
 #import <XCTest/XCTest.h>
 #import <WebKit/WebKit.h>
 #import <Network/Network.h>
+#import <Network/NSURLSession+Network.h>
 #import <sys/socket.h>
 #import <netinet/in.h>
 #import <unistd.h>
+#import <arpa/inet.h>
+#import <ifaddrs.h>
+#import <net/if.h>
 #import "WhipBrowser.h"
 
 @interface WhipBrowser (ProxyTesting)
@@ -32,6 +36,8 @@
 @property(nonatomic, strong) NSMutableArray<NSString *> *prefixes;
 @property(nonatomic, strong) NSMutableArray<NSString *> *requests;
 @property(nonatomic, strong) NSMutableArray<NSString *> *hosts;
+@property(nonatomic, copy) NSString *redirectURL;
+- (instancetype)initWithAddress:(NSString *)address;
 @end
 @implementation BrowserSOCKSFixture
 static BOOL ReadBytes(int socket, void *buffer, size_t length) {
@@ -43,16 +49,23 @@ static BOOL ReadBytes(int socket, void *buffer, size_t length) {
   }
   return YES;
 }
-- (instancetype)init {
+- (instancetype)init { return [self initWithAddress:@"127.0.0.1"]; }
+- (instancetype)initWithAddress:(NSString *)host {
+  BOOL ipv6 = [host containsString:@":"];
   if ((self = [super init])) {
     _requests = [NSMutableArray new]; _hosts = [NSMutableArray new]; _prefixes = [NSMutableArray new];
-    _listener = socket(AF_INET, SOCK_STREAM, 0);
-    struct sockaddr_in address = {.sin_len = sizeof(address), .sin_family = AF_INET,
-      .sin_addr.s_addr = htonl(INADDR_LOOPBACK)};
-    if (bind(_listener, (struct sockaddr *)&address, sizeof(address)) || listen(_listener, 16)) return nil;
-    socklen_t size = sizeof(address);
-    getsockname(_listener, (struct sockaddr *)&address, &size);
-    _port = ntohs(address.sin_port);
+    _listener = socket(ipv6 ? AF_INET6 : AF_INET, SOCK_STREAM, 0);
+    if (ipv6) {
+      struct sockaddr_in6 address = {.sin6_len = sizeof(address), .sin6_family = AF_INET6};
+      inet_pton(AF_INET6, host.UTF8String, &address.sin6_addr);
+      if (bind(_listener, (struct sockaddr *)&address, sizeof(address)) || listen(_listener, 16)) return nil;
+      socklen_t size = sizeof(address); getsockname(_listener, (struct sockaddr *)&address, &size); _port = ntohs(address.sin6_port);
+    } else {
+      struct sockaddr_in address = {.sin_len = sizeof(address), .sin_family = AF_INET};
+      inet_pton(AF_INET, host.UTF8String, &address.sin_addr);
+      if (bind(_listener, (struct sockaddr *)&address, sizeof(address)) || listen(_listener, 16)) return nil;
+      socklen_t size = sizeof(address); getsockname(_listener, (struct sockaddr *)&address, &size); _port = ntohs(address.sin_port);
+    }
     int listener = _listener;
     __weak BrowserSOCKSFixture *weakSelf = self;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
@@ -75,7 +88,11 @@ static BOOL ReadBytes(int socket, void *buffer, size_t length) {
   uint8_t greeting[2], methods[255], head[4], length, host[255], port[2];
   if (!ReadBytes(client, greeting, 2)) return;
   @synchronized(self) { [self.prefixes addObject:[NSString stringWithFormat:@"%02x%02x", greeting[0], greeting[1]]]; }
-  if (greeting[0] == 'C') {
+  BOOL directHTTP = greeting[0] == 'G' && greeting[1] == 'E';
+  if (directHTTP) {
+    // A working HTTP destination makes a direct leak observable as a successful
+    // response too, rather than inferring it only from a network error.
+  } else if (greeting[0] == 'C') {
     NSMutableData *connect = [NSMutableData dataWithBytes:greeting length:2];
     uint8_t byte;
     while (connect.length < 32768 && ReadBytes(client, &byte, 1)) {
@@ -88,29 +105,34 @@ static BOOL ReadBytes(int socket, void *buffer, size_t length) {
     const char *response = "HTTP/1.1 200 Connection Established\r\n\r\n";
     write(client, response, strlen(response));
   } else {
-  if (greeting[0] != 5 || !ReadBytes(client, methods, greeting[1])) return;
-  write(client, (uint8_t[]){5, 0}, 2);
-  if (!ReadBytes(client, head, 4) || head[0] != 5 || head[1] != 1) return;
-  if (head[3] == 3) { if (!ReadBytes(client, &length, 1)) return; }
-  else length = head[3] == 1 ? 4 : 16;
-  if (!ReadBytes(client, host, length) || !ReadBytes(client, port, 2)) return;
-  NSString *name = head[3] == 3 ? [[NSString alloc] initWithBytes:host length:length encoding:NSUTF8StringEncoding] : @"IP";
-  @synchronized(self) { [self.hosts addObject:name ?: @""]; }
-  write(client, (uint8_t[]){5, 0, 0, 1, 127, 0, 0, 1, 0, 80}, 10);
+    if (greeting[0] != 5 || !ReadBytes(client, methods, greeting[1])) return;
+    write(client, (uint8_t[]){5, 0}, 2);
+    if (!ReadBytes(client, head, 4) || head[0] != 5 || head[1] != 1) return;
+    if (head[3] == 3) { if (!ReadBytes(client, &length, 1)) return; }
+    else length = head[3] == 1 ? 4 : 16;
+    if (!ReadBytes(client, host, length) || !ReadBytes(client, port, 2)) return;
+    NSString *name = head[3] == 3 ? [[NSString alloc] initWithBytes:host length:length encoding:NSUTF8StringEncoding] : @"IP";
+    @synchronized(self) { [self.hosts addObject:name ?: @""]; }
+    write(client, (uint8_t[]){5, 0, 0, 1, 127, 0, 0, 1, 0, 80}, 10);
   }
-  NSMutableData *data = [NSMutableData new];
+  NSMutableData *data = directHTTP ? [NSMutableData dataWithBytes:greeting length:2] : [NSMutableData new];
   uint8_t byte;
   while (data.length < 32768 && ReadBytes(client, &byte, 1)) {
+    // TLS probes measure the socket destination, not certificate validation.
+    // Close immediately on ClientHello; this fixture intentionally has no TLS.
+    if (data.length == 0 && byte == 0x16) return;
     [data appendBytes:&byte length:1];
     if (data.length >= 4 && !memcmp((const char *)data.bytes + data.length - 4, "\r\n\r\n", 4)) break;
   }
   NSString *request = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
   if (!request) return;
   @synchronized(self) { [self.requests addObject:request]; }
-  NSString *body = @"through-ssh";
+  NSString *body = directHTTP ? @"direct-leak" : @"through-ssh";
   NSString *extra = @"Content-Type: text/plain\r\n";
   NSString *status = @"200 OK";
-  if ([request containsString:@"GET /start "]) {
+  if ([request containsString:@"GET /escape "] && self.redirectURL) {
+    status = @"302 Found"; extra = [NSString stringWithFormat:@"Location: %@\r\n", self.redirectURL]; body = @"";
+  } else if ([request containsString:@"GET /start "]) {
     status = @"302 Found"; extra = @"Location: /page\r\nSet-Cookie: session=host-a; Path=/; HttpOnly\r\n"; body = @"";
   } else if ([request containsString:@"GET /page "]) {
     extra = @"Content-Type: text/html\r\n";
@@ -138,6 +160,8 @@ static BOOL ReadBytes(int socket, void *buffer, size_t length) {
 @property(nonatomic, strong) BrowserSOCKSFixture *proxy;
 @property(nonatomic, strong) XCTestExpectation *navigation;
 @property(nonatomic) BOOL expectFailure;
+@property(nonatomic) BOOL probing;
+@property(nonatomic, strong) NSError *probeError;
 @end
 @implementation WhipBrowserProxyTests
 - (void)setUp {
@@ -243,12 +267,225 @@ static BOOL ReadBytes(int socket, void *buffer, size_t length) {
   [self configure:@"a" port:deadPort];
   WKWebView *browser = [self browserForRuntime:@"a" host:@"saved-a"];
   self.expectFailure = YES;
+  self.probing = YES;
   self.navigation = [self expectationWithDescription:@"no direct fallback"];
   NSString *url = [NSString stringWithFormat:@"http://127.0.0.1:%u/", self.proxy.port];
   [browser loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:url]]];
   [self waitForExpectations:@[self.navigation] timeout:60];
   XCTExpectFailureInBlock(@"#394: public WebKit proxy configuration bypasses loopback; production iOS proxy capability must remain disabled", ^{
     @synchronized(self.proxy) { XCTAssertEqual(self.proxy.connections, 0, @"prefixes: %@, hosts: %@, dead: %u, destination: %u", self.proxy.prefixes, self.proxy.hosts, deadPort, self.proxy.port); }
+  });
+}
+- (void)testPublicWebKitProxyRoutingMatrix {
+  if (@available(iOS 17.0, *)) {} else { XCTSkip(@"Requires public iOS 17 proxy API"); return; }
+  self.probing = YES;
+  NSMutableArray *cases = [@[
+    @[@"socks", @"127.0.0.1", @"127.0.0.1", @[]],
+    @[@"connect", @"127.0.0.1", @"127.0.0.1", @[@"127.0.0.1"]],
+    @[@"relay", @"127.0.0.1", @"127.0.0.1", @[]],
+    @[@"tls-connect", @"127.0.0.1", @"127.0.0.1", @[]],
+    @[@"socks", @"127.0.0.1", @"[::1]", @[]],
+    @[@"socks", @"127.0.0.1", @"localhost", @[]],
+    @[@"socks", @"127.0.0.1", @"ssh-only.invalid", @[]]
+  ] mutableCopy];
+  NSString *lan = [self localLANAddress];
+  if (lan) [cases addObject:@[@"socks", @"127.0.0.1", lan, @[]]];
+  for (NSString *scheme in @[@"http", @"https"]) {
+    for (NSArray *probe in cases) {
+      BrowserSOCKSFixture *target = [[BrowserSOCKSFixture alloc] initWithAddress:[probe[2] isEqual:@"[::1]"] ? @"::1" : [probe[2] isEqual:lan] ? lan : @"127.0.0.1"];
+      NSUInteger before;
+      @synchronized(self.proxy) { before = self.proxy.connections; }
+      nw_endpoint_t endpoint = nw_endpoint_create_host([probe[1] UTF8String], [@(self.proxy.port).stringValue UTF8String]);
+      nw_proxy_config_t proxy;
+      if ([probe[0] isEqual:@"relay"]) proxy = nw_proxy_config_create_relay(nw_relay_hop_create(nil, endpoint, nil), nil);
+      else if ([probe[0] isEqual:@"tls-connect"]) proxy = nw_proxy_config_create_http_connect(endpoint, nw_tls_create_options());
+      else proxy = [probe[0] isEqual:@"socks"] ? nw_proxy_config_create_socksv5(endpoint) : nw_proxy_config_create_http_connect(endpoint, nil);
+      nw_proxy_config_set_failover_allowed(proxy, false);
+      for (NSString *match in probe[3]) nw_proxy_config_add_match_domain(proxy, match.UTF8String);
+      WKWebViewConfiguration *config = [WKWebViewConfiguration new];
+      config.websiteDataStore = WKWebsiteDataStore.nonPersistentDataStore;
+      config.websiteDataStore.proxyConfigurations = @[proxy];
+      config.processPool = [WKProcessPool new];
+      WKWebView *browser = [[WKWebView alloc] initWithFrame:CGRectMake(0, 0, 400, 400) configuration:config];
+      self.registry.browser = browser;
+      browser.navigationDelegate = self;
+      self.probeError = nil;
+      self.navigation = [self expectationWithDescription:@"raw proxy probe"];
+      [browser loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:[NSString stringWithFormat:@"%@://%@:%u/", scheme, probe[2], target.port]] cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:3]];
+      [self waitForExpectations:@[self.navigation] timeout:60];
+      @synchronized(self.proxy) { @synchronized(target) {
+        BOOL hostname = [probe[2] isEqual:@"localhost"] || [probe[2] isEqual:@"ssh-only.invalid"];
+        NSLog(@"PROXY_DIAGNOSTIC scheme=%@ kind=%@ host=%@ proxied=%lu direct=%lu prefixes=%@ error=%ld", scheme, probe[0], probe[2],
+          (unsigned long)(self.proxy.connections - before), (unsigned long)target.connections, target.prefixes, (long)self.probeError.code);
+        if (hostname) {
+          XCTAssertGreaterThan(self.proxy.connections - before, 0);
+          XCTAssertEqual(target.connections, 0);
+        } else {
+          XCTExpectFailureInBlock(@"#394: numeric IP destinations bypass the public proxy API, independently of Whip", ^{
+            XCTAssertEqual(target.connections, 0, @"%@ %@ must not bypass its proxy", scheme, probe[2]);
+          });
+        }
+      }}
+      browser.navigationDelegate = nil;
+      [browser stopLoading];
+    }
+  }
+}
+- (void)testPublicURLSessionProxyRouting {
+  if (@available(iOS 17.0, *)) {} else { XCTSkip(@"Requires public iOS 17 proxy API"); return; }
+  for (NSString *kind in @[@"network", @"dictionary"]) {
+    for (NSString *host in @[@"127.0.0.1", @"localhost", @"ssh-only.invalid"]) {
+      BrowserSOCKSFixture *target = [BrowserSOCKSFixture new];
+      NSUInteger before;
+      @synchronized(self.proxy) { before = self.proxy.connections; }
+      NSURLSessionConfiguration *configuration = NSURLSessionConfiguration.ephemeralSessionConfiguration;
+      configuration.timeoutIntervalForRequest = 3;
+      configuration.timeoutIntervalForResource = 5;
+      if ([kind isEqual:@"network"]) {
+        nw_endpoint_t endpoint = nw_endpoint_create_host("127.0.0.1", @(self.proxy.port).stringValue.UTF8String);
+        nw_proxy_config_t proxy = nw_proxy_config_create_socksv5(endpoint);
+        nw_proxy_config_set_failover_allowed(proxy, false);
+        configuration.proxyConfigurations = @[proxy];
+      } else {
+        configuration.connectionProxyDictionary = @{@"SOCKSEnable":@YES, @"SOCKSProxy":@"127.0.0.1", @"SOCKSPort":@(self.proxy.port),
+          @"ExceptionsList":@[], @"ExcludeSimpleHostnames":@NO};
+      }
+      NSURLSession *session = [NSURLSession sessionWithConfiguration:configuration];
+      XCTestExpectation *done = [self expectationWithDescription:@"URLSession proxy probe"];
+      NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"http://%@:%u/", host, target.port]];
+      [[session dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        @synchronized(self.proxy) { @synchronized(target) {
+          NSLog(@"URLSESSION_DIAGNOSTIC kind=%@ host=%@ proxied=%lu direct=%lu error=%ld", kind, host,
+            (unsigned long)(self.proxy.connections - before), (unsigned long)target.connections, (long)error.code);
+        }}
+        [done fulfill];
+      }] resume];
+      [self waitForExpectations:@[done] timeout:10];
+      [session invalidateAndCancel];
+      if ([host isEqual:@"127.0.0.1"]) {
+        XCTExpectFailureInBlock(@"#394: URLSession also bypasses the proxy for numeric IP destinations", ^{
+          @synchronized(target) { XCTAssertEqual(target.connections, 0); }
+        });
+      } else {
+        @synchronized(self.proxy) { XCTAssertGreaterThan(self.proxy.connections - before, 0); }
+        @synchronized(target) { XCTAssertEqual(target.connections, 0); }
+      }
+    }
+  }
+}
+- (void)testPublicNetworkFrameworkProxyRouting {
+  if (@available(iOS 17.0, *)) {} else { XCTSkip(@"Requires public iOS 17 proxy API"); return; }
+  for (NSString *host in @[@"127.0.0.1", @"localhost", @"ssh-only.invalid"]) {
+    BrowserSOCKSFixture *target = [BrowserSOCKSFixture new];
+    NSUInteger before;
+    @synchronized(self.proxy) { before = self.proxy.connections; }
+    nw_parameters_t parameters = nw_parameters_create_secure_tcp(NW_PARAMETERS_DISABLE_PROTOCOL, NW_PARAMETERS_DEFAULT_CONFIGURATION);
+    nw_privacy_context_t privacy = nw_privacy_context_create("whip-proxy-diagnostic");
+    nw_endpoint_t endpoint = nw_endpoint_create_host("127.0.0.1", @(self.proxy.port).stringValue.UTF8String);
+    nw_proxy_config_t proxy = nw_proxy_config_create_socksv5(endpoint);
+    nw_proxy_config_set_failover_allowed(proxy, false);
+    nw_privacy_context_add_proxy(privacy, proxy);
+    nw_parameters_set_privacy_context(parameters, privacy);
+    nw_connection_t connection = nw_connection_create(nw_endpoint_create_host(host.UTF8String, @(target.port).stringValue.UTF8String), parameters);
+    XCTestExpectation *done = [self expectationWithDescription:@"Network proxy probe"];
+    __block BOOL finished = NO;
+    void (^finish)(void) = ^{
+      if (finished) return; finished = YES;
+      @synchronized(self.proxy) { @synchronized(target) {
+        NSLog(@"NETWORK_DIAGNOSTIC host=%@ proxied=%lu direct=%lu", host, (unsigned long)(self.proxy.connections - before), (unsigned long)target.connections);
+      }}
+      [done fulfill]; nw_connection_set_state_changed_handler(connection, nil); nw_connection_cancel(connection);
+    };
+    nw_connection_set_queue(connection, dispatch_get_main_queue());
+    nw_connection_set_state_changed_handler(connection, ^(nw_connection_state_t state, nw_error_t error) {
+      if (state == nw_connection_state_ready) {
+        const char *request = "GET / HTTP/1.1\r\nHost: fixture\r\nConnection: close\r\n\r\n";
+        dispatch_data_t data = dispatch_data_create(request, strlen(request), dispatch_get_main_queue(), DISPATCH_DATA_DESTRUCTOR_DEFAULT);
+        nw_connection_send(connection, data, NW_CONNECTION_DEFAULT_MESSAGE_CONTEXT, true, ^(nw_error_t error) {
+          dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_MSEC * 200), dispatch_get_main_queue(), ^{ finish(); });
+        });
+      } else if (state == nw_connection_state_failed) finish();
+    });
+    nw_connection_start(connection);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ finish(); });
+    [self waitForExpectations:@[done] timeout:5];
+    if ([host isEqual:@"127.0.0.1"]) {
+      XCTExpectFailureInBlock(@"#394: the IP-literal bypass reproduces with Network.framework without WebKit or URLSession", ^{
+        @synchronized(target) { XCTAssertEqual(target.connections, 0); }
+      });
+    } else {
+      @synchronized(self.proxy) { XCTAssertGreaterThan(self.proxy.connections - before, 0); }
+      @synchronized(target) { XCTAssertEqual(target.connections, 0); }
+    }
+  }
+}
+- (NSString *)localLANAddress {
+  struct ifaddrs *interfaces;
+  if (getifaddrs(&interfaces)) return nil;
+  NSString *host = nil;
+  for (struct ifaddrs *item = interfaces; item; item = item->ifa_next) {
+    if (!item->ifa_addr || item->ifa_addr->sa_family != AF_INET || !(item->ifa_flags & IFF_UP)
+        || (item->ifa_flags & IFF_LOOPBACK)) continue;
+    const struct sockaddr_in *address = (const struct sockaddr_in *)item->ifa_addr;
+    char buffer[INET_ADDRSTRLEN];
+    if (inet_ntop(AF_INET, &address->sin_addr, buffer, sizeof(buffer))) {
+      host = [NSString stringWithUTF8String:buffer]; break;
+    }
+  }
+  freeifaddrs(interfaces);
+  return host;
+}
+- (void)testHostnameUsesProxyAndDoesNotFallBackWhenProxyIsUnavailable {
+  if (@available(iOS 17.0, *)) {} else { XCTSkip(@"Requires public iOS 17 proxy API"); return; }
+  BrowserSOCKSFixture *target = [BrowserSOCKSFixture new];
+  [self configure:@"a" port:self.proxy.port];
+  WKWebView *browser = [self browserForRuntime:@"a" host:@"saved-a"];
+  NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"http://localhost:%u/", target.port]];
+  self.navigation = [self expectationWithDescription:@"hostname goes through proxy"];
+  [browser loadRequest:[NSURLRequest requestWithURL:url]];
+  [self waitForExpectations:@[self.navigation] timeout:15];
+  @synchronized(self.proxy) { XCTAssertTrue([self.proxy.hosts containsObject:@"localhost"]); }
+  @synchronized(target) { XCTAssertEqual(target.connections, 0); }
+  [self configure:@"" port:-1];
+  BrowserSOCKSFixture *unused = [BrowserSOCKSFixture new];
+  uint16_t port = unused.port; unused = nil;
+  [self configure:@"a" port:port];
+  browser = [self browserForRuntime:@"a" host:@"saved-a"];
+  self.expectFailure = YES;
+  self.navigation = [self expectationWithDescription:@"hostname fails closed"];
+  [browser loadRequest:[NSURLRequest requestWithURL:url]];
+  [self waitForExpectations:@[self.navigation] timeout:15];
+  @synchronized(target) { XCTAssertEqual(target.connections, 0); }
+}
+- (void)testHostnameNavigationRedirectDoesNotEscapeToNumericIP {
+  if (@available(iOS 17.0, *)) {} else { XCTSkip(@"Requires public iOS 17 proxy API"); return; }
+  BrowserSOCKSFixture *target = [BrowserSOCKSFixture new];
+  self.proxy.redirectURL = [NSString stringWithFormat:@"http://127.0.0.1:%u/", target.port];
+  [self configure:@"a" port:self.proxy.port];
+  WKWebView *browser = [self browserForRuntime:@"a" host:@"saved-a"];
+  self.probing = YES;
+  self.navigation = [self expectationWithDescription:@"redirect finishes"];
+  [browser loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:@"http://ssh-only.invalid/escape"]]];
+  [self waitForExpectations:@[self.navigation] timeout:15];
+  @synchronized(self.proxy) { XCTAssertTrue([self.proxy.hosts containsObject:@"ssh-only.invalid"]); }
+  XCTExpectFailureInBlock(@"#394: a proxied hostname navigation can redirect into an unproxied numeric IP connection", ^{
+    @synchronized(target) { XCTAssertEqual(target.connections, 0); }
+  });
+}
+- (void)testHostnameDownloadRedirectDoesNotEscapeToNumericIP {
+  if (@available(iOS 17.0, *)) {} else { XCTSkip(@"Requires public iOS 17 proxy API"); return; }
+  BrowserSOCKSFixture *target = [BrowserSOCKSFixture new];
+  self.proxy.redirectURL = [NSString stringWithFormat:@"http://127.0.0.1:%u/file", target.port];
+  [self configure:@"a" port:self.proxy.port];
+  [self browserForRuntime:@"a" host:@"saved-a"];
+  XCTestExpectation *done = [self expectationWithDescription:@"download redirect finishes"];
+  [self.adapter download:@42 identifier:NSUUID.UUID.UUIDString url:@"http://ssh-only.invalid/escape" maxBytes:@1024 resolve:^(NSDictionary *result) {
+    [[NSFileManager defaultManager] removeItemAtPath:result[@"local_path"] error:nil]; [done fulfill];
+  } reject:^(NSString *code, NSString *message, NSError *error) { [done fulfill]; }];
+  [self waitForExpectations:@[done] timeout:15];
+  @synchronized(self.proxy) { XCTAssertTrue([self.proxy.hosts containsObject:@"ssh-only.invalid"]); }
+  XCTExpectFailureInBlock(@"#394: WKDownload can redirect from the SSH hostname route to a direct numeric IP connection", ^{
+    @synchronized(target) { XCTAssertEqual(target.connections, 0); }
   });
 }
 - (void)testProductionCapabilityRejectsTunnelingAndPreservesUntunneledBrowsing {
@@ -271,11 +508,16 @@ static BOOL ReadBytes(int socket, void *buffer, size_t length) {
   XCTAssertTrue(rejected);
 }
 - (void)webView:(WKWebView *)browser didFinishNavigation:(WKNavigation *)navigation {
-  if (self.expectFailure) XCTFail(@"Request escaped unavailable proxy");
+  // Retiring a route blanks old views asynchronously. Those callbacks must
+  // not complete a newer renderer's expectation or look like direct fallback.
+  if (browser != self.registry.browser || !self.navigation) return;
+  if (!self.probing && self.expectFailure) XCTFail(@"Request escaped unavailable proxy");
   [self.navigation fulfill]; self.navigation = nil;
 }
 - (void)webView:(WKWebView *)browser didFailProvisionalNavigation:(WKNavigation *)navigation withError:(NSError *)error {
-  if (!self.expectFailure) XCTFail(@"%@", error);
+  if (browser != self.registry.browser || !self.navigation) return;
+  self.probeError = error;
+  if (!self.probing && !self.expectFailure) XCTFail(@"%@", error);
   [self.navigation fulfill]; self.navigation = nil;
 }
 @end
