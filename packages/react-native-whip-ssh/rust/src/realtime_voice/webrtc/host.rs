@@ -17,7 +17,10 @@ impl Capture for RealtimeVoiceAdapter {
         self.allow_input
             && self.ready.load(Ordering::Acquire)
             && !self.closed.load(Ordering::Acquire)
-            && !self.view.lock().muted
+            && !self
+                .microphone
+                .lock()
+                .blocks_capture(std::time::Instant::now())
     }
     fn recover(&self) -> bool {
         self.input.recover()

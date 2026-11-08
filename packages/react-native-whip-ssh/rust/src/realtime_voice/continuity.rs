@@ -42,7 +42,7 @@ impl RealtimeVoiceAdapter {
     }
 
     pub(super) fn global_session(
-        &self,
+        self: &Arc<Self>,
         shizuku: bool,
     ) -> Result<Arc<WhipToolSession>, &'static str> {
         if self.closed.load(Ordering::Acquire) || self.retiring.load(Ordering::Acquire) {
@@ -55,7 +55,9 @@ impl RealtimeVoiceAdapter {
         if global.is_none() {
             // Fresh authority only when an action is requested while unlocked.
             // Rotation itself needs no protected UI or capability admission.
-            *global = Some(WhipToolSession::new(shizuku)?);
+            let session = WhipToolSession::new(shizuku)?;
+            session.bind_microphone(self);
+            *global = Some(session);
         }
         global
             .clone()
@@ -64,6 +66,7 @@ impl RealtimeVoiceAdapter {
 
     pub(super) fn retire_session(&self) {
         self.retiring.store(true, Ordering::Release);
+        self.microphone.lock().cancel();
         self.ready.store(false, Ordering::Release);
         self.input.set_muted(true);
         if let Some(global) = self.global.lock().take() {
@@ -83,6 +86,7 @@ impl RealtimeVoiceAdapter {
             return Err(error.message);
         }
         if !self.continuity_enabled {
+            self.microphone_tick(std::time::Instant::now());
             return Ok(false);
         }
         let mut policy = self.continuity.lock();
@@ -96,6 +100,7 @@ impl RealtimeVoiceAdapter {
             return Ok(true);
         }
         drop(policy);
+        self.microphone_tick(std::time::Instant::now());
         Ok(false)
     }
 

@@ -217,6 +217,14 @@ class VoiceCallService : Service() {
       }
     }
     fun invalidate() { current?.let { end(it.token) } }
+    /** Projection of Rust state; never send a control back or replace its timer. */
+    fun syncMuted(token: String, muted: Boolean) {
+      val session = current?.takeIf { it.token == token && !it.ending } ?: return
+      if (session.muted == muted) return
+      session.muted = muted
+      emit(session, "muted", muted = muted)
+      instance?.promote(session)
+    }
     fun setMuted(token: String, muted: Boolean, promise: Promise? = null) {
       val session = current?.takeIf { it.token == token && !it.ending }
       if (session == null) { promise?.reject("E_VOICE_CALL", "Voice chat has ended."); return }

@@ -5,7 +5,7 @@ mod api;
 mod host;
 #[cfg(test)]
 mod identity;
-mod live;
+pub(super) mod live;
 #[cfg(test)]
 mod media;
 pub(in crate::realtime_voice) mod prepared;

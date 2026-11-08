@@ -50,6 +50,39 @@ delegated agents follow their parent's space, matching Herd.
 Empty scope strings are treated as omitted filters, including when GPT Live
 sends `{"host_id":""}` to request all hosts.
 
+## Microphone control (#389)
+
+Global Realtime and GPT-Live calls also expose `voice_set_microphone`:
+
+- `{"muted":true,"duration_minutes":10}` mutes now and unmutes after ten minutes.
+- `{"muted":true}` mutes indefinitely, replacing any previous timer.
+- `{"muted":false}` unmutes now and cancels the timer.
+
+The optional duration is a positive number of **minutes**, including fractional
+minutes, bounded at 60. A duration on unmute, unknown fields, nonnumeric values,
+zero and negative values are rejected natively. No confirmation is required.
+Agent-bound and terminal calls do not expose this tool.
+
+The native Rust call owner keeps the authoritative microphone intent and
+deadline. Tools and manual controls update it; the call screen, Android service
+and iOS call owner observe its published state. Navigation, minimization and JS
+suspension do not own or cancel the timer. Every manual set/toggle cancels the
+deadline, including a redundant set; every later tool command replaces it.
+Expiry is checked by the native call loop. Hangup, replacement, interruption,
+credential revocation and provider-session retirement cancel the deadline;
+an expired timer never reactivates inactive capture. App lock follows the
+existing policy below: an already authorized call keeps running, but locked
+tool requests cannot obtain fresh capability authority.
+
+Each actual state change queues the matching bundled spoken “Muted” or
+“Unmuted” announcement on native call output. Repeating the same state changes
+only the deadline. These announcements use no OpenAI TTS or model response.
+Microphone delivery is suppressed throughout local announcement playback and
+its device-output tail. Live unmute additionally waits for the matching server
+acknowledgement, and a stale acknowledgement cannot override a newer mute.
+
+## Delegation and capability lifetime
+
 Every delegation requires explicit host and pane IDs, plus confirmation showing
 the exact prompt in Whip. The native dispatcher pins the original agent before
 confirmation and checks it again before sending. Native transcript observation

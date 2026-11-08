@@ -11,6 +11,7 @@ export interface VoiceSessionAdapter {
   setVadSensitivity(value: number): void;
   submitted(text: string): void;
   toggleMuted(): void;
+  setMuted?(muted: boolean): void;
   toggleSpeaker(): void;
   finish(): void;
   skip(): Promise<void>;
@@ -71,6 +72,11 @@ export class VoiceSession {
   setVadSensitivity(value: number): void { this.vadSensitivity = value; if (!this.ended) this.adapter?.setVadSensitivity(value); }
   submitted(text: string): void { if (!this.ended) this.adapter?.submitted(text); }
   toggleMuted(): void { if (!this.ended) this.adapter?.toggleMuted(); }
+  setMuted(muted: boolean): void {
+    if (this.ended) return;
+    if (this.adapter?.setMuted) this.adapter.setMuted(muted);
+    else if (this.view.muted !== muted) this.adapter?.toggleMuted();
+  }
   toggleSpeaker(): void { if (!this.ended) this.adapter?.toggleSpeaker(); }
   finish(): void { if (!this.ended) this.adapter?.finish(); }
   async skip(): Promise<void> { if (!this.ended) await this.adapter?.skip(); }

@@ -245,7 +245,12 @@ impl Delegate for App<'_> {
                     self.owner.view.lock().playback_level = 0.0;
                     self.owner.view.lock().phase = "listening";
                 }
-                Command::Mute(muted) => session.mute(&**self.owner, muted).await?,
+                Command::Mute(muted) => {
+                    let current = self.owner.microphone.lock().muted;
+                    if current == muted {
+                        session.mute(&**self.owner, muted).await?;
+                    }
+                }
             }
             return Ok(Flow::Continue);
         }

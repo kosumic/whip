@@ -97,6 +97,7 @@ pub unsafe extern "C" fn whip_realtime_mix_cue(id: u64, samples: *mut i16, count
             }
         }
         call.cue.lock().mix(samples);
+        call.microphone.lock().mix(samples, Instant::now());
     }
 }
 
@@ -190,16 +191,11 @@ pub extern "C" fn whip_realtime_stopped(id: u64) -> bool {
 #[unsafe(no_mangle)]
 pub extern "C" fn whip_realtime_control(id: u64, action: u8) {
     if let Some(call) = call(id) {
-        if (action == 3 || action == 4) && !call.input.set_muted(action == 3) {
-            return;
-        }
-        if action == 3 {
-            call.view.lock().muted = true;
-        }
         match action {
             1 => call.command(Command::Skip),
-            3 => call.command(Command::Mute(true)),
-            4 => call.command(Command::Mute(false)),
+            3 | 4 => {
+                let _ = call.set_microphone(action == 3, None);
+            }
             6 => super::webrtc::devices_started(&call),
             5 => call.fail("The native audio device was interrupted or became unavailable."),
             _ => {}

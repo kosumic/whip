@@ -60,7 +60,10 @@ impl Delegate for App<'_> {
     async fn work(&mut self, session: &mut Session<'_>, work: Work) -> Result<Flow, &'static str> {
         match work {
             Work::Command(super::super::Command::Mute(muted)) => {
-                session.mute(&**self.owner, muted).await?;
+                let current = self.owner.microphone.lock().muted;
+                if current == muted {
+                    session.mute(&**self.owner, muted).await?;
+                }
             }
             Work::Command(super::super::Command::Skip) => {
                 session.interrupt(&**self.owner).await?;

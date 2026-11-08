@@ -43,4 +43,4 @@ use tokio_tungstenite::tungstenite::Message;
 #[cfg(test)]
 use voice_call_openai::LiveCall as Call;
 #[cfg(test)]
-mod tests;
+pub(in crate::realtime_voice) mod tests;

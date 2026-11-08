@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 use super::browser::model::{BrowserError, ErrorCode};
 use super::{application, device, hosts};
 use crate::host_runtime::realtime_agent::{Delegation, PinnedAgent};
+use crate::realtime_voice::{RealtimeVoiceAdapter, microphone};
 
 #[cfg(test)]
 #[path = "voice_api_tests.rs"]
@@ -86,6 +87,7 @@ pub(crate) struct WhipToolSession {
     authority: hosts::VoiceAuthority,
     delegation: tokio::sync::Mutex<()>,
     shizuku_access: bool,
+    microphone: Mutex<Weak<RealtimeVoiceAdapter>>,
 }
 
 #[derive(Deserialize)]
@@ -161,6 +163,7 @@ impl WhipToolSession {
             authority,
             delegation: tokio::sync::Mutex::new(()),
             shizuku_access,
+            microphone: Mutex::default(),
         });
         session
             .check()
@@ -182,6 +185,10 @@ impl WhipToolSession {
         } else {
             format!("{global}\n\n{built_in}")
         })
+    }
+
+    pub(crate) fn bind_microphone(&self, owner: &Arc<RealtimeVoiceAdapter>) {
+        *self.microphone.lock() = Arc::downgrade(owner);
     }
 
     pub(crate) fn check(&self) -> Result<(), BrowserError> {
@@ -295,6 +302,23 @@ impl WhipToolSession {
             let args: Value = serde_json::from_str(arguments)
                 .map_err(|_| BrowserError::invalid("Expected JSON arguments"))?;
             match name {
+                microphone::TOOL => {
+                    let request: microphone::Request = decode(args)?;
+                    let duration = request.duration().map_err(BrowserError::invalid)?;
+                    let owner = self.microphone.lock().upgrade().ok_or_else(|| {
+                        BrowserError::new(ErrorCode::Cancelled, "The global voice call has ended")
+                    })?;
+                    self.check()?;
+                    owner.set_microphone(request.muted, duration).map_err(|_| {
+                        BrowserError::new(
+                            ErrorCode::Cancelled,
+                            "The microphone control is unavailable",
+                        )
+                    })?;
+                    Ok(
+                        json!({"muted":request.muted,"duration_minutes":duration.map(|duration| duration.as_secs_f64() / 60.0)}),
+                    )
+                }
                 HOSTS_LIST => {
                     application::Action::parse(application::LIST, &args)?;
                     let context = hosts::voice_context()?;
@@ -438,12 +462,20 @@ pub(crate) fn base_instructions(shizuku_access: bool) -> String {
     } else {
         "Shizuku access is disabled for this call. This session cannot run shell commands."
     };
-    format!("{INSTRUCTIONS}\n\n{permissions}")
+    format!(
+        "{INSTRUCTIONS}\n\nUse voice_set_microphone to mute or unmute the user's microphone in this global call without asking for confirmation. For 'mute me for 10 minutes', set muted:true and duration_minutes:10. Omit duration_minutes for an indefinite mute; use muted:false without a duration to unmute. Whip announces each change locally; do not repeat the announcement. This controls microphone input, never assistant playback.\n\n{permissions}"
+    )
 }
 
 pub(crate) fn schemas(shizuku_access: bool) -> Vec<Value> {
     let string = || json!({"type":"string","maxLength":256});
     let mut tools = vec![
+        schema(
+            microphone::TOOL,
+            "Mute or unmute the user's microphone in this global call immediately, without confirmation. Optional positive duration_minutes (up to 60) automatically unmutes; omit for indefinite mute. Unmuting must omit duration_minutes. Whip speaks the state change locally.",
+            json!({"muted":{"type":"boolean"},"duration_minutes":{"type":"number","exclusiveMinimum":0,"maximum":microphone::MAX_MINUTES}}),
+            &["muted"],
+        ),
         schema(
             HOSTS_LIST,
             "List saved host metadata and connection status, without credentials or instructions.",
@@ -545,6 +577,74 @@ mod tests {
             }.to_string()
         }
         fn cancel(&self, _: String) {}
+    }
+
+    #[test]
+    fn microphone_tool_validates_and_changes_only_its_bound_global_call_without_platform_confirmation()
+    -> Result<(), Box<dyn std::error::Error>> {
+        crate::runtime()?.block_on(async {
+            let coordinator =
+                hosts::HostActionCoordinator::new(Arc::new(hosts::tests::Platform::default()));
+            coordinator.update_context(hosts::tests::context());
+            let platform = Arc::new(Platform::default());
+            set_whip_app_control(platform.clone());
+            let session = WhipToolSession::new(false)?;
+            let (owner, _commands) = crate::realtime_voice::playback_owner_with_commands()?;
+            let mute = r#"{"muted":true,"duration_minutes":10}"#;
+            assert!(
+                session
+                    .execute(microphone::TOOL, mute)
+                    .await
+                    .get("error")
+                    .is_some()
+            );
+            session.bind_microphone(&owner);
+            for invalid in [
+                r#"{"muted":true,"duration_minutes":0}"#,
+                r#"{"muted":true,"duration_minutes":61}"#,
+                r#"{"muted":false,"duration_minutes":1}"#,
+                r#"{"muted":true,"duration_seconds":10}"#,
+            ] {
+                assert_eq!(
+                    session.execute(microphone::TOOL, invalid).await["error"],
+                    "invalid_argument"
+                );
+            }
+            assert_eq!(
+                session.execute(microphone::TOOL, mute).await,
+                json!({"muted":true,"duration_minutes":10.0})
+            );
+            assert_eq!(
+                session
+                    .execute(microphone::TOOL, r#"{"muted":false}"#)
+                    .await["muted"],
+                false
+            );
+            assert!(platform.calls.lock().is_empty());
+            let catalog = schemas(false);
+            let schema = catalog
+                .iter()
+                .find(|tool| tool["name"] == microphone::TOOL)
+                .ok_or("No microphone schema")?;
+            assert_eq!(schema["parameters"]["required"], json!(["muted"]));
+            assert_eq!(
+                schema["parameters"]["properties"]["duration_minutes"]["maximum"],
+                microphone::MAX_MINUTES
+            );
+            let mut locked = hosts::tests::context();
+            locked.locked = true;
+            coordinator.update_context(locked);
+            assert!(
+                session
+                    .execute(microphone::TOOL, mute)
+                    .await
+                    .get("error")
+                    .is_some()
+            );
+            session.close();
+            coordinator.close();
+            Ok(())
+        })
     }
 
     #[test]

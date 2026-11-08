@@ -79,7 +79,7 @@ pub(super) fn load(path: &str) -> Result<Vec<i16>, &'static str> {
     decode(&bytes)
 }
 
-fn decode(bytes: &[u8]) -> Result<Vec<i16>, &'static str> {
+pub(super) fn decode(bytes: &[u8]) -> Result<Vec<i16>, &'static str> {
     if bytes.get(..4) != Some(b"RIFF") || bytes.get(8..12) != Some(b"WAVE") {
         return Err(INVALID);
     }

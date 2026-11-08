@@ -166,7 +166,11 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
     if (!playback?.realtimeVoiceSubmitted) { this.fail('Install an updated Whip build to share typed messages with voice.'); return; }
     void playback.realtimeVoiceSubmitted(this.token, text).catch(() => this.fail('The typed message could not be shared with voice. Start a new call.'));
   }
-  toggleMuted(): void { void this.playback?.setVoiceCallMuted(this.token, !this.view.muted).catch(() => this.fail('The call mute state could not be changed.')); }
+  setMuted(muted: boolean): void {
+    if (this.closed) return;
+    void this.playback?.setVoiceCallMuted(this.token, muted).catch(() => this.fail('The call mute state could not be changed.'));
+  }
+  toggleMuted(): void { this.setMuted(!this.view.muted); }
   toggleSpeaker(): void { void this.playback?.setVoiceCallSpeaker(this.token, !this.view.speaker).catch(() => this.publish({ error: 'The requested audio route is unavailable.' })); }
   finish(): void { /* Realtime server VAD owns turn commits. */ }
   async skip(): Promise<void> { if (!this.closed) await this.playback?.realtimeVoiceControl?.(this.token, CONTROL.skip).catch(() => this.fail('The spoken reply could not be interrupted.')); }

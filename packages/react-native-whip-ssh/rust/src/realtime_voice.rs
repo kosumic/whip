@@ -15,6 +15,7 @@ pub(crate) mod feedback;
 mod ffi;
 pub(crate) mod handoff_context;
 mod live;
+pub(crate) mod microphone;
 mod models;
 mod processing;
 mod recovery;
@@ -29,6 +30,8 @@ mod terminal;
 mod tests;
 mod transcript;
 mod webrtc;
+#[cfg(test)]
+pub(crate) use webrtc::live::tests::playback_owner_with_commands;
 #[cfg(test)]
 mod wire;
 
@@ -456,6 +459,7 @@ pub(super) enum Command {
 }
 pub(super) struct RealtimeVoiceAdapter {
     cue: Mutex<cue::Cue>,
+    microphone: Mutex<microphone::State>,
     started_at: Instant,
     client_elapsed_ms: u64,
     webrtc: bool,
@@ -555,6 +559,7 @@ impl RealtimeVoiceAdapter {
         let (cancel, _) = watch::channel(false);
         let adapter = Arc::new(Self {
             cue: Mutex::default(),
+            microphone: Mutex::new(microphone::State::new(config.preview)),
             started_at,
             client_elapsed_ms: config.client_elapsed_ms,
             webrtc: config.webrtc && !(config.live && config.preview),
@@ -628,6 +633,9 @@ impl RealtimeVoiceAdapter {
             failure: Mutex::new(None),
             replacement: Mutex::new(None),
         });
+        if let Some(global) = adapter.global.lock().as_ref() {
+            global.bind_microphone(&adapter);
+        }
         let owner = adapter.clone();
         let runtime = crate::runtime().map_err(|_| "Realtime runtime could not start.")?;
         adapter.view.lock().startup.preparation = Some(startup::elapsed(started_at));
@@ -647,6 +655,7 @@ impl RealtimeVoiceAdapter {
                 owner.fail(message);
             }
             owner.ready.store(false, Ordering::Release);
+            owner.microphone.lock().cancel();
             let media = owner.media.lock().take();
             if let Some(media) = media {
                 let _ = media.close().await;
@@ -678,6 +687,7 @@ impl RealtimeVoiceAdapter {
             view.cost_incomplete = true;
         }
         drop(view);
+        self.microphone.lock().cancel();
         self.output.lock().clear();
         self.cancel.send_replace(true);
     }
@@ -697,6 +707,7 @@ impl RealtimeVoiceAdapter {
                 view.phase = "closed";
             }
         }
+        self.microphone.lock().cancel();
         self.cancel.send_replace(true);
         self.input.close();
         self.output.lock().clear();
@@ -735,7 +746,7 @@ impl RealtimeVoiceAdapter {
             return false;
         }
         if !self.ready.load(Ordering::Acquire)
-            || self.view.lock().muted
+            || self.microphone.lock().blocks_capture(Instant::now())
             || !self.input.accepts(generation)
         {
             return true;
@@ -766,7 +777,7 @@ impl RealtimeVoiceAdapter {
         }
         if !self.input.accepts(packet.ticket.generation)
             || !self.ready.load(Ordering::Acquire)
-            || self.view.lock().muted
+            || self.microphone.lock().blocks_capture(Instant::now())
         {
             packet.samples.clear();
             return Ok(false);

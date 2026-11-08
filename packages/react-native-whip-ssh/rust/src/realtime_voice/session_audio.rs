@@ -4,7 +4,7 @@ use voice_call_openai::session::Audio;
 
 impl Audio for RealtimeVoiceAdapter {
     fn is_muted(&self) -> bool {
-        self.view.lock().muted
+        self.microphone.lock().muted
     }
     fn current(&self) -> bool {
         !self.closed.load(Ordering::Acquire)
@@ -14,9 +14,10 @@ impl Audio for RealtimeVoiceAdapter {
             && crate::voice_credentials::generation() == self.credential_generation
     }
     fn set_muted(&self, muted: bool) -> Result<(), &'static str> {
-        self.view.lock().muted = muted;
         self.view.lock().level = 0.0;
-        self.input.set_muted(muted);
+        // Live can acknowledge an older command after a newer user/tool mute.
+        // Provider acknowledgements may gate capture, never replace intent.
+        self.input.set_muted(muted || self.microphone.lock().muted);
         if let Some(echo) = self.echo.lock().as_mut() {
             echo.reset_capture()?;
         }

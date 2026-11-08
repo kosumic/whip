@@ -156,72 +156,86 @@ async fn public_live_webrtc_api_smoke() -> Result<(), Box<dyn std::error::Error>
 
 pub(in crate::realtime_voice) fn playback_owner() -> Result<Arc<RealtimeVoiceAdapter>, &'static str>
 {
+    Ok(playback_owner_with_commands()?.0)
+}
+
+pub(crate) fn playback_owner_with_commands() -> Result<
+    (
+        Arc<RealtimeVoiceAdapter>,
+        tokio::sync::mpsc::Receiver<voice::Command>,
+    ),
+    &'static str,
+> {
     use std::sync::atomic::AtomicU64;
     let speech = crate::speech_playback::RealtimeSpeechLease::claim(false)
         .ok_or("Speech lease unavailable")?;
-    let (commands, _) = tokio::sync::mpsc::channel(8);
+    let (commands, receiver) = tokio::sync::mpsc::channel(8);
     let (cancel, _) = watch::channel(false);
-    Ok(Arc::new(RealtimeVoiceAdapter {
-        cue: Mutex::default(),
-        started_at: Instant::now(),
-        client_elapsed_ms: 0,
-        webrtc: true,
-        live: false,
-        media: Mutex::new(None),
-        view: Mutex::new(voice::View {
-            phase: "listening",
-            muted: false,
-            level: 0.0,
-            playback_level: 0.0,
-            text: String::new(),
-            user_text: String::new(),
-            error: None,
-            input_tokens: 0,
-            output_tokens: 0,
-            estimated_usd: None,
-            cost_incomplete: false,
-            messages: Vec::new(),
-            playback: voice::transcript::Timing::default(),
-            signal: voice::echo::Signal::default(),
-            startup: startup::Timings::default(),
-            media: voice::MediaDiagnostics::default(),
-            media_ready: true,
-            recovery: recovery::State::Active,
-            startup_attempt: 0,
-            capture_packets: 0,
-            capture_gaps: 0,
-            caption_events: 0,
-            capture_level: 0.0,
-            uploaded_packets: 0,
-            server_events: 0,
-            input_speech_events: 0,
-            tool: None,
-            backend_text: None,
-            live_seconds: None,
-            usage_finalized: false,
-            captions: None,
+    Ok((
+        Arc::new(RealtimeVoiceAdapter {
+            cue: Mutex::default(),
+            microphone: Mutex::default(),
+            started_at: Instant::now(),
+            client_elapsed_ms: 0,
+            webrtc: true,
+            live: false,
+            media: Mutex::new(None),
+            view: Mutex::new(voice::View {
+                phase: "listening",
+                muted: false,
+                level: 0.0,
+                playback_level: 0.0,
+                text: String::new(),
+                user_text: String::new(),
+                error: None,
+                input_tokens: 0,
+                output_tokens: 0,
+                estimated_usd: None,
+                cost_incomplete: false,
+                messages: Vec::new(),
+                playback: voice::transcript::Timing::default(),
+                signal: voice::echo::Signal::default(),
+                startup: startup::Timings::default(),
+                media: voice::MediaDiagnostics::default(),
+                media_ready: true,
+                recovery: recovery::State::Active,
+                startup_attempt: 0,
+                capture_packets: 0,
+                capture_gaps: 0,
+                caption_events: 0,
+                capture_level: 0.0,
+                uploaded_packets: 0,
+                server_events: 0,
+                input_speech_events: 0,
+                tool: None,
+                backend_text: None,
+                live_seconds: None,
+                usage_finalized: false,
+                captions: None,
+            }),
+            output: Mutex::new(voice::Output::default()),
+            echo: Mutex::new(None),
+            commands,
+            input: crate::audio_ingress::NativeIngress::realtime(24_000, voice::FRAME * 4, 32)?,
+            cancel,
+            closed: AtomicBool::new(false),
+            ready: AtomicBool::new(true),
+            stopped: AtomicBool::new(false),
+            attempt: AtomicU64::new(0),
+            devices_ready: AtomicBool::new(true),
+            allow_input: true,
+            credential_generation: crate::voice_credentials::generation(),
+            speech,
+            global: Mutex::new(None),
+            global_instructions: String::new(),
+            continuity: Mutex::default(),
+            continuity_enabled: true,
+            retiring: AtomicBool::new(false),
+            failure: Mutex::new(None),
+            replacement: Mutex::new(None),
         }),
-        output: Mutex::new(voice::Output::default()),
-        echo: Mutex::new(None),
-        commands,
-        input: crate::audio_ingress::NativeIngress::realtime(24_000, voice::FRAME * 4, 32)?,
-        cancel,
-        closed: AtomicBool::new(false),
-        ready: AtomicBool::new(true),
-        stopped: AtomicBool::new(false),
-        attempt: AtomicU64::new(0),
-        devices_ready: AtomicBool::new(true),
-        allow_input: true,
-        credential_generation: crate::voice_credentials::generation(),
-        speech,
-        global: Mutex::new(None),
-        global_instructions: String::new(),
-        continuity: Mutex::default(),
-        continuity_enabled: true,
-        retiring: AtomicBool::new(false),
-        failure: Mutex::new(None),
-        replacement: Mutex::new(None),
-    }))
+        receiver,
+    ))
 }
 
 fn starting_owner() -> Result<Arc<RealtimeVoiceAdapter>, &'static str> {
@@ -239,9 +253,9 @@ fn starting_owner() -> Result<Arc<RealtimeVoiceAdapter>, &'static str> {
 #[tokio::test(start_paused = true)]
 async fn two_rotations_keep_the_device_lease_and_fence_retired_audio_and_failures()
 -> Result<(), Box<dyn std::error::Error>> {
-    use voice_call_openai::{Host, continuity::Reason, session::Audio};
+    use voice_call_openai::{Host, continuity::Reason};
     let _device_audio = DEVICE_AUDIO_TEST.lock().await;
-    let owner = playback_owner()?;
+    let (owner, _commands) = playback_owner_with_commands()?;
     let tag = voice_call_media::Tag {
         response: "reply".into(),
         item: "item".into(),
@@ -278,7 +292,7 @@ async fn two_rotations_keep_the_device_lease_and_fence_retired_audio_and_failure
         assert!(owner.output.lock().epoch > epoch);
         owner.continuity.lock().replacing(Reason::Lifetime);
         // Mute intent survives even though retirement suppresses native capture.
-        owner.set_muted(true)?;
+        owner.set_microphone(true, None)?;
         assert!(owner.view.lock().muted);
     }
     owner.close();

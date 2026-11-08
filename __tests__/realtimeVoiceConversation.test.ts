@@ -298,6 +298,38 @@ test('background presentation retains native ownership and system hangup closes 
 });
 
 describe.each(['android', 'ios'])('%s native bridge lifecycle', os => {
+  test('native tool changes reach the shared UI snapshot across minimization without a JS timer', async () => {
+    mockOs = os;
+    const factory = jest.fn(async (target, settings, changed) => new RealtimeVoiceConversation(target, settings, changed));
+    const manager = new VoiceSessionManager(jest.fn(), undefined, factory);
+    const scope = { kind: 'Global' } as const;
+    const session = manager.start(scope, () => false, { ...defaults, provider: 'openai', mode: 'Realtime' });
+    await flush();
+    const firstScreen = jest.fn();
+    const unsubscribe = session.subscribe(firstScreen);
+    const token = (mockNative.startVoiceCall.mock.calls[0] as unknown as [string])[0];
+    mockEvents.get('WhipVoiceCall')?.({ token, type: 'muted', muted: true });
+    expect(firstScreen).toHaveBeenLastCalledWith(expect.objectContaining({ muted: true }));
+    unsubscribe();
+    mockApp.currentState = 'background';
+    mockNative.realtimeVoiceView.mockResolvedValueOnce(JSON.stringify({ phase: 'muted', muted: true }));
+    await jest.advanceTimersByTimeAsync(100);
+    expect(manager.start(scope, () => false)).toBe(session);
+    const nextScreen = jest.fn();
+    session.subscribe(nextScreen);
+    expect(nextScreen).toHaveBeenLastCalledWith(expect.objectContaining({ muted: true }));
+    // The native deadline expires while presentation is detached/backgrounded.
+    mockEvents.get('WhipVoiceCall')?.({ token, type: 'muted', muted: false });
+    expect(nextScreen).toHaveBeenLastCalledWith(expect.objectContaining({ muted: false }));
+    session.setMuted(true);
+    expect(mockNative.setVoiceCallMuted).toHaveBeenLastCalledWith(token, true);
+    expect(factory).toHaveBeenCalledTimes(1);
+    await manager.hangup();
+    session.setMuted(false);
+    expect(mockNative.setVoiceCallMuted).toHaveBeenCalledTimes(1);
+    expect(mockNative.playVoiceCallSound.mock.calls.every(([uri]) => !uri.includes('muted'))).toBe(true);
+  });
+
   test.each(['Global', 'Agent', 'Terminal'] as const)('%s lock/unlock retains one native owner and provider with no audio control changes', async kind => {
     mockOs = os;
     const scope: CallScope = kind === 'Global' ? { kind } : kind === 'Terminal'

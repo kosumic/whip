@@ -228,6 +228,12 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
     NSData *data = [NSData dataWithBytes:json length:strlen(json)];
     NSDictionary *view = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
     whip_realtime_free(json);
+    if (!self.preview && view[@"muted"]) {
+      BOOL muted = [view[@"muted"] boolValue];
+      dispatch_async(dispatch_get_main_queue(), ^{
+        if (self->_call.load() == call) [WhipVoiceCall.shared syncMuted:token muted:muted];
+      });
+    }
     if ([view[@"phase"] isEqualToString:@"error"] || (self.preview && [view[@"phase"] isEqualToString:@"closed"])) {
       dispatch_async(dispatch_get_main_queue(), ^{
         if (self->_call.load() != call) return;
@@ -247,9 +253,15 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
     self.epoch = epoch; self.scheduled = 0; self.queued = 0;
     [self.player play];
   }
-  if (!count) return;
+  NSUInteger providerCount = count;
+  if (!count) {
+    if (self.preview) return;
+    count = WhipRealtimeFrame;
+    memset(buffer.int16ChannelData[0], 0, count * sizeof(int16_t));
+  }
+  whip_realtime_mix_cue(call, buffer.int16ChannelData[0], count);
   buffer.frameLength = (AVAudioFrameCount)count;
-  self.scheduled += count;
+  self.scheduled += providerCount;
   self.queued++;
   uint64_t played = self.scheduled;
   __weak WhipRealtimeVoice *weakSelf = self;

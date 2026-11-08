@@ -19,6 +19,7 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
 @property(nonatomic, copy) RCTPromiseRejectBlock failed;
 @property(nonatomic, strong) NSTimer *timeout;
 @property(nonatomic, strong) NSMutableArray *endings;
+@property(nonatomic, strong) NSMutableSet<NSUUID *> *mirroredMuteActions;
 @property(nonatomic) BOOL ending;
 @property(nonatomic) BOOL audioActive;
 @property(nonatomic) BOOL soundOwnsSession;
@@ -55,6 +56,7 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
     [_provider setDelegate:self queue:dispatch_get_main_queue()];
     _controller = [CXCallController new];
     _endings = [NSMutableArray new];
+    _mirroredMuteActions = [NSMutableSet new];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(routeChanged:) name:AVAudioSessionRouteChangeNotification object:nil];
   }
   return self;
@@ -222,10 +224,28 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
 - (void)provider:(CXProvider *)provider performSetMutedCallAction:(CXSetMutedCallAction *)action
 {
   if (![action.callUUID isEqual:self.uuid]) { [action fail]; return; }
+  if ([self.mirroredMuteActions containsObject:action.UUID]) {
+    [self.mirroredMuteActions removeObject:action.UUID];
+    [action fulfill];
+    return;
+  }
   self.muted = action.muted;
   [WhipRealtimeVoice.shared mute:self.token muted:action.muted];
   [self emit:@{@"type": @"muted", @"muted": @(action.muted)}];
   [action fulfill];
+}
+- (void)syncMuted:(NSString *)token muted:(BOOL)muted
+{
+  if (![self.token isEqualToString:token] || self.muted == muted) return;
+  self.muted = muted;
+  [self emit:@{@"type": @"muted", @"muted": @(muted)}];
+  // Reflect native tools/timers in system CallKit UI without treating its
+  // callback as a manual override (which would cancel the Rust deadline).
+  CXSetMutedCallAction *action = [[CXSetMutedCallAction alloc] initWithCallUUID:self.uuid muted:muted];
+  [self.mirroredMuteActions addObject:action.UUID];
+  [self.controller requestTransaction:[[CXTransaction alloc] initWithAction:action] completion:^(NSError *error) {
+    if (error) dispatch_async(dispatch_get_main_queue(), ^{ [self.mirroredMuteActions removeObject:action.UUID]; });
+  }];
 }
 - (void)speaker:(NSString *)token enabled:(BOOL)speaker resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
@@ -259,6 +279,7 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
   [WhipSpeechPlayback.shared cancelPlayback:turn];
   [WhipRealtimeVoice.shared stop:self.token];
   self.muted = NO;
+  [self.mirroredMuteActions removeAllObjects];
   [self emit:error ? @{@"type": @"ended", @"error": error} : @{@"type": @"ended"}];
   RCTPromiseRejectBlock failed = self.failed;
   self.ready = nil; self.failed = nil;

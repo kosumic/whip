@@ -197,6 +197,7 @@ internal object RealtimeVoice {
           val view = Core.view(session.call)
           val state = JSONObject(view)
           val phase = state.optString("phase")
+          if (!preview && state.has("muted")) VoiceCallService.syncMuted(token, state.getBoolean("muted"))
           if (!preview) VoiceCallService.reconnecting(token, phase == "reconnecting")
           // Acquire call devices while Rust creates and negotiates the session,
           // as in the Agents SDK's early getUserMedia flow. Rust drops capture
