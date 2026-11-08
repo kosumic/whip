@@ -34,9 +34,14 @@ const VOICE_COLORS = { canvas: '#000000', text: '#ffffff', muted: '#a3a3a3', con
 const INITIAL: VoiceConversationView = { phase: 'starting', muted: false, smartTurn: false, speaker: false, text: '', level: 0, progress: 0, error: null, transcript: null };
 const STATUS = {
   starting: 'voiceChat.starting',
+  reconnecting: 'voiceChat.reconnecting',
   setup: 'voiceChat.setup', preparing: 'voiceChat.preparing', listening: 'voiceChat.listening',
   finishing: 'voiceChat.finishing', waiting: 'voiceChat.waiting', speaking: 'voiceChat.speaking',
   muted: 'voiceChat.muted', closed: 'voiceChat.closed', error: 'voiceChat.error',
+} as const;
+
+const RECOVERY_REASON = {
+  lifetime: 'voiceChat.recoveryLifetime', drain_deadline: 'voiceChat.recoveryDrain', connection_lost: 'voiceChat.recoveryConnection',
 } as const;
 
 interface VoiceChatScreenProps {
@@ -182,6 +187,8 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
         </View>
         <Animated.View pointerEvents="none" className="items-center gap-3 px-8 pb-5" style={[styles.status, chromeMotion]}>
           <Text accessibilityLiveRegion="polite" className="text-center text-xs" style={styles.statusText}>{status}</Text>
+          {view.phase === 'reconnecting' && view.continuity?.lastReason && <Text className="text-center text-xs" style={styles.statusText}>{t(RECOVERY_REASON[view.continuity.lastReason])}</Text>}
+          {view.continuity && view.continuity.sessions > 1 && <Text className="text-center text-xs" style={styles.statusText}>{t('voiceChat.freshSessions', { count: view.continuity.sessions })}</Text>}
           {estimatedCost !== null && <Text accessibilityHint={t('voiceProvider.costHint')} className="text-center text-xs" style={styles.statusText}>{t(view.costIncomplete ? 'voiceUsage.partialEstimate' : 'voiceProvider.costEstimate', { cost: estimatedCost })}</Text>}
           {view.liveSeconds != null && <Text className="text-center text-xs" style={styles.statusText}>{t('voiceUsage.liveDuration', { seconds: Math.ceil(view.liveSeconds) })}</Text>}
           {!hasTranscript && view.backendText && <Text selectable numberOfLines={4} className="text-center text-sm" style={styles.statusText}>{view.backendText}</Text>}

@@ -121,6 +121,14 @@ impl<'a> Session<'a> {
         self.prefix = prefix.into();
         self
     }
+    /// The host owns proactive retirement and replacement. Startup validation
+    /// remains enforced; the legacy 55-minute shutdown must not win after sleep.
+    pub fn with_managed_lifetime(mut self) -> Self {
+        if let Protocol::Realtime(state) = &mut self.protocol {
+            state.managed_lifetime = true;
+        }
+        self
+    }
     pub fn realtime_state(&mut self) -> Result<&mut Realtime> {
         match &mut self.protocol {
             Protocol::Realtime(state) => Ok(state),

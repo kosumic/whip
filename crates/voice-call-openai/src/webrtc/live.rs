@@ -181,6 +181,7 @@ pub async fn start(
     let created = Instant::now();
     // Retain the POST through cancellation so a returned session can be retired.
     let call = Call::create(key, peer.offer(), session).await?;
+    owner.timing(Timing::Accepted);
     owner.timing(Timing::Configuration(startup::elapsed(created)));
     if !owner.current() {
         call.retire().await?;

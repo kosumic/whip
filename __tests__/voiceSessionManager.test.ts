@@ -13,6 +13,38 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
 const terminalTarget: TerminalVoiceChatTarget = { hostId: 'host', paneId: 'shell', tabId: 'shell', label: 'SSH shell',
   terminal: { runtimeId: 'runtime', runtimeIncarnation: 1, connectionGeneration: 1, terminalId: 'shell' } };
 
+test.each(['Global', 'Agent', 'Terminal'] as const)('%s recovery retains one logical owner through lock and two provider replacements; Hang Up fences late events', async kind => {
+  let publish!: (next: VoiceConversationView) => void;
+  const cloud = { start: jest.fn(async () => {}), close: jest.fn(async () => {}), setTranscriptBinding: jest.fn(), setVadSensitivity: jest.fn(), submitted: jest.fn(), toggleMuted: jest.fn(), toggleSpeaker: jest.fn(), finish: jest.fn(), skip: jest.fn(async () => {}) };
+  const factory = jest.fn(async (_target, _settings, changed) => { publish = changed; return cloud; });
+  const manager = new VoiceSessionManager(jest.fn(), undefined, factory);
+  const scope = kind === 'Global' ? { kind } : kind === 'Agent' ? { kind, target } : { kind, target: terminalTarget };
+  const session = manager.start(scope, () => false, { ...defaults, provider: 'openai', mode: 'Realtime' });
+  await flush();
+  publish(view);
+  await manager.setLocked(true);
+  for (let i = 0; i < 2; i++) {
+    publish({ ...view, phase: 'reconnecting' });
+    expect(manager.active).toBe(session);
+    expect(session.ended).toBe(false);
+    expect(session.getSnapshot().phase).toBe('reconnecting');
+    publish(view);
+  }
+  await manager.setLocked(false);
+  expect(manager.start(scope, () => false)).toBe(session);
+  expect(factory).toHaveBeenCalledTimes(1);
+  expect(cloud.close).not.toHaveBeenCalled();
+  publish({ ...view, phase: 'reconnecting' });
+  await manager.hangup();
+  publish(view);
+  await manager.setLocked(true);
+  await manager.setLocked(false);
+  expect(manager.active).toBeUndefined();
+  expect(session.getSnapshot().phase).toBe('closed');
+  expect(cloud.close).toHaveBeenCalledTimes(1);
+  expect(factory).toHaveBeenCalledTimes(1);
+});
+
 test.each(['Realtime', 'Live'] as const)('global %s uses OpenAI independently of agent preferences and survives host changes and app lock', async mode => {
   const local = jest.fn();
   const cloud = { start: jest.fn(async () => {}), close: jest.fn(async () => {}), setTranscriptBinding: jest.fn(), setVadSensitivity: jest.fn(), submitted: jest.fn(), toggleMuted: jest.fn(), toggleSpeaker: jest.fn(), finish: jest.fn(), skip: jest.fn(async () => {}) };

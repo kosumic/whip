@@ -108,6 +108,12 @@ pub(super) struct Session {
     remaining_feedback: Mutex<usize>,
 }
 impl Session {
+    pub(super) fn busy(&self) -> bool {
+        self.jobs
+            .lock()
+            .values()
+            .any(|job| job.state.lock().result.is_none())
+    }
     pub(super) fn new(target: Arc<PinnedTerminal>) -> Arc<Self> {
         Arc::new(Self {
             target,

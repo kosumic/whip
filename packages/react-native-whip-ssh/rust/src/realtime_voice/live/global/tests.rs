@@ -103,6 +103,30 @@ fn tools_wait_for_response_completion_and_duplicates_cannot_dispatch_again()
 }
 
 #[test]
+fn a_tool_identity_cannot_be_replayed_in_a_new_backend_response_after_denial()
+-> Result<(), Box<dyn std::error::Error>> {
+    let mut backend = Backend::default();
+    backend.observe(Some("first"), &lifecycle("first", "response.created")?)?;
+    backend.observe(Some("first"), &tool("denied", 0)?)?;
+    let batch = backend
+        .observe(Some("first"), &lifecycle("first", "response.completed")?)?
+        .ok_or("No batch")?;
+    // The protected action was denied; a later response cannot replay its ID.
+    backend.finished(&Results {
+        key: batch.key,
+        items: vec![],
+    })?;
+    backend.observe(Some("second"), &lifecycle("second", "response.created")?)?;
+    backend.observe(Some("second"), &tool("denied", 0)?)?;
+    assert!(
+        backend
+            .observe(Some("second"), &lifecycle("second", "response.completed")?)
+            .is_err()
+    );
+    Ok(())
+}
+
+#[test]
 fn overlapping_responses_require_every_tool_batch_before_continuation()
 -> Result<(), Box<dyn std::error::Error>> {
     let mut backend = Backend::default();

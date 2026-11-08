@@ -48,6 +48,7 @@ pub(super) struct Backend {
     batches: BTreeSet<ResponseKey>,
     continuation: bool,
     requested: bool,
+    calls: BTreeSet<String>,
 }
 
 pub(super) struct Batch {
@@ -61,6 +62,9 @@ pub(super) struct Results {
 }
 
 impl Backend {
+    pub(super) fn busy(&self) -> bool {
+        !self.open.is_empty() || !self.batches.is_empty() || self.requested || self.continuation
+    }
     /// Only a complete, attributed, successful response can authorize tool dispatch.
     pub fn observe(
         &mut self,
@@ -134,6 +138,13 @@ impl Backend {
             return Err("Global Live tool request exceeds the call limits.");
         }
         let calls = calls.to_vec();
+        for call in &calls {
+            if self.calls.len() >= super::super::MAX_CALLS
+                || !self.calls.insert(call.call_id.clone())
+            {
+                return Err("Global Live repeated a tool identity. No request will be replayed.");
+            }
+        }
         self.completed.insert(key.clone());
         self.open.remove(&key);
         if calls.is_empty() {
@@ -170,15 +181,14 @@ impl Backend {
 impl Batch {
     pub async fn execute(
         self,
-        session: Arc<WhipToolSession>,
+        session: Result<Arc<WhipToolSession>, &'static str>,
         owner: Arc<super::RealtimeVoiceAdapter>,
     ) -> Result<Results, &'static str> {
         // Admit the entire batch before any effect. Duplicate IDs never replay work.
-        session
-            .check()
-            .map_err(|_| "Global call authorization ended.")?;
         for call in &self.calls {
-            if !session.admit(&call.call_id)? {
+            if let Ok(session) = &session
+                && !session.admit(&call.call_id)?
+            {
                 return Err("Global Live repeated a tool identity. No request will be replayed.");
             }
         }
@@ -197,7 +207,10 @@ impl Batch {
             if let Some(transcript) = owner.output.lock().live_transcript.as_mut() {
                 transcript.event(&call.call_id, event);
             }
-            let value = session.execute(&call.name, &call.args).await;
+            let value = match &session {
+                Ok(session) => session.execute(&call.name, &call.args).await,
+                Err(_) => serde_json::json!({"error":"authorization_unavailable"}),
+            };
             if let Some(transcript) = owner.output.lock().live_transcript.as_mut() {
                 transcript.event_result(&call.call_id, &value);
             }

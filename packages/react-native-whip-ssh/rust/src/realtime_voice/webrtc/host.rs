@@ -51,7 +51,7 @@ impl Capture for AppHost {
         self.owner.accepts(generation)
     }
     fn capture_enabled(&self) -> bool {
-        self.owner.capture_enabled()
+        self.attempt.current() && self.owner.capture_enabled()
     }
     fn recover(&self) -> bool {
         self.owner.recover()
@@ -86,8 +86,16 @@ impl Host for AppHost {
         self.owner.view.lock().recovery = recovery::State::Retiring;
     }
     fn timing(&self, timing: Timing) {
+        if !self.attempt.current() {
+            return;
+        }
+        if matches!(timing, Timing::Accepted) {
+            self.owner.continuity.lock().created(None);
+            return;
+        }
         let mut view = self.owner.view.lock();
         match timing {
+            Timing::Accepted => {}
             Timing::Prepared(value) => view.startup.prepared_client = value,
             Timing::Offer(ms) => view.startup.offer = Some(ms),
             Timing::Configuration(ms) => view.startup.configuration = Some(ms),
@@ -99,7 +107,7 @@ impl Host for AppHost {
     fn render(&self, tag: &Tag, pcm: &[i16]) -> Result<(), &'static str> {
         let bytes = pcm.iter().flat_map(|sample| sample.to_le_bytes()).collect();
         let mut output = self.owner.output.lock();
-        if self.owner.closed.load(Ordering::Acquire) {
+        if !self.attempt.current() {
             return Ok(());
         }
         let result = output.append(tag.item.clone(), tag.index, bytes);
@@ -107,6 +115,9 @@ impl Host for AppHost {
         result
     }
     fn finish_audio(&self, tag: &Tag) {
+        if !self.attempt.current() {
+            return;
+        }
         self.owner
             .output
             .lock()
@@ -114,6 +125,9 @@ impl Host for AppHost {
             .finish_audio(&tag.item, tag.index);
     }
     fn statistics(&self, delta: Statistics) {
+        if !self.attempt.current() {
+            return;
+        }
         let mut view = self.owner.view.lock();
         let media = &mut view.media;
         media.rtp_packets += delta.rtp_packets;
@@ -130,6 +144,9 @@ impl Host for AppHost {
         drop(view);
     }
     fn uploaded(&self) {
+        if !self.attempt.current() {
+            return;
+        }
         self.owner.view.lock().uploaded_packets += 1;
         super::input_started(&self.owner);
     }

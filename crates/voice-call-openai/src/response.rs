@@ -23,6 +23,9 @@ impl ResponseCreateQueue {
     pub fn can_respond(&self) -> bool {
         !self.is_active() && !self.speaking && !self.awaiting_vad
     }
+    pub fn is_idle(&self) -> bool {
+        self.can_respond() && !self.pending_create
+    }
     pub fn mark_requested(&mut self) {
         self.pending_create = false;
         self.requested = true;

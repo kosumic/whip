@@ -10,6 +10,13 @@ use tokio::task::JoinHandle;
 const ENDPOINT: &str = "https://api.openai.com/v1/models";
 const REFRESH: Duration = Duration::from_secs(30);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+/// Credential-free reachability check; never creates a provider session.
+pub async fn reachable() -> bool {
+    match crate::api::client() {
+        Ok(client) => warm(&client, ENDPOINT).await.is_ok(),
+        Err(_) => false,
+    }
+}
 static PREPARATION: Mutex<Preparation> = Mutex::new(Preparation { task: None });
 
 /// Start or stop best-effort HTTPS preparation on the caller's Tokio runtime.

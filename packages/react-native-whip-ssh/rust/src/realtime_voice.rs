@@ -4,6 +4,7 @@
 mod api_tools_tests;
 mod captions;
 pub(crate) mod context;
+mod continuity;
 mod cost;
 mod cue;
 mod delegation;
@@ -474,7 +475,13 @@ pub(super) struct RealtimeVoiceAdapter {
     allow_input: bool,
     credential_generation: u64,
     speech: crate::speech_playback::RealtimeSpeechLease,
-    global: Option<Arc<WhipToolSession>>,
+    global: Mutex<Option<Arc<WhipToolSession>>>,
+    continuity: Mutex<voice_call_openai::continuity::Policy>,
+    continuity_enabled: bool,
+    retiring: AtomicBool,
+    failure: Mutex<Option<recovery::Failure>>,
+    replacement: Mutex<Option<voice_call_openai::continuity::Reason>>,
+    global_instructions: String,
 }
 enum StartError {
     Session,
@@ -609,7 +616,17 @@ impl RealtimeVoiceAdapter {
             allow_input: !config.preview,
             credential_generation: crate::voice_credentials::generation(),
             speech,
-            global,
+            global_instructions: global
+                .as_ref()
+                .map(|global| global.instructions())
+                .transpose()?
+                .unwrap_or_default(),
+            global: Mutex::new(global),
+            continuity: Mutex::default(),
+            continuity_enabled: !config.preview && config.webrtc,
+            retiring: AtomicBool::new(false),
+            failure: Mutex::new(None),
+            replacement: Mutex::new(None),
         });
         let owner = adapter.clone();
         let runtime = crate::runtime().map_err(|_| "Realtime runtime could not start.")?;
@@ -619,39 +636,11 @@ impl RealtimeVoiceAdapter {
         adapter.view.lock().startup.credentials = Some(startup::elapsed(credential_start));
         runtime.spawn(async move {
             let mut tools: JoinSet<ToolCompletion> = JoinSet::new();
-            let result = if config.live {
-                live::LiveVoiceAdapter::run(owner.clone(), config, key, agent, command_rx).await
-            } else if let Some(update) = update {
-                // Keep driving startup through cancellation: an in-flight POST
-                // may create a call whose identity must be read and retired.
-                let connection = owner
-                    .prepare_connection(&config, &key, update, agent.as_ref(), terminal.as_ref())
-                    .await;
-                drop(key);
-                match connection {
-                    Ok((socket, configuration_started))
-                        if !owner.closed.load(Ordering::Acquire) =>
-                    {
-                        owner
-                            .run(
-                                config,
-                                socket,
-                                configuration_started,
-                                BoundTargets { agent, terminal },
-                                command_rx,
-                                &mut tools,
-                            )
-                            .await
-                    }
-                    Ok(_) => Ok(()),
-                    Err(_) if owner.closed.load(Ordering::Acquire) => Ok(()),
-                    Err(error) => Err(error),
-                }
-            } else {
-                Err("Voice configuration failed.")
-            };
+            let result = owner
+                .run_call(config, key, update, agent, terminal, command_rx, &mut tools)
+                .await;
             tools.shutdown().await;
-            if let Some(global) = &owner.global {
+            if let Some(global) = owner.global.lock().take() {
                 global.close();
             }
             if let Err(message) = result {
@@ -675,7 +664,8 @@ impl RealtimeVoiceAdapter {
     }
 
     fn fail(&self, error: &'static str) {
-        if let Some(global) = &self.global {
+        self.continuity.lock().diagnostics.status = voice_call_openai::continuity::Status::Failed;
+        if let Some(global) = self.global.lock().take() {
             global.close();
         }
         let mut view = self.view.lock();
@@ -692,8 +682,9 @@ impl RealtimeVoiceAdapter {
         self.cancel.send_replace(true);
     }
     fn close(&self) {
+        self.continuity.lock().diagnostics.status = voice_call_openai::continuity::Status::Ended;
         self.cue.lock().clear();
-        if let Some(global) = &self.global {
+        if let Some(global) = self.global.lock().take() {
             global.close();
         }
         {
@@ -711,6 +702,13 @@ impl RealtimeVoiceAdapter {
         self.output.lock().clear();
     }
     fn command(&self, command: Command) {
+        if self.retiring.load(Ordering::Acquire) || self.view.lock().phase == "reconnecting" {
+            if let Command::Mute(muted) = command {
+                self.view.lock().muted = muted;
+            }
+            // No old prompt or control may enter the next provider session.
+            return;
+        }
         if !self.ready.load(Ordering::Acquire)
             && let Command::Mute(muted) = &command
         {
@@ -806,7 +804,7 @@ impl RealtimeVoiceAdapter {
         mut socket: RealtimeSocket,
         configuration_started: Instant,
         targets: BoundTargets,
-        commands: mpsc::Receiver<Command>,
+        commands: &mut mpsc::Receiver<Command>,
         tools: &mut JoinSet<ToolCompletion>,
     ) -> Result<(), &'static str> {
         let mut costs = cost::CurrentChat::start(&config)?;
@@ -823,13 +821,13 @@ impl RealtimeVoiceAdapter {
                 result = self.run_events(config, &mut socket, configuration_started, targets, commands, tools, &mut costs) => result,
             }
         };
-        // Stop local I/O and authority before retaining only the event stream.
-        if let Err(error) = result {
-            self.fail(error);
-        } else {
-            self.close();
+        if self.continuity_enabled
+            && result.is_err_and(voice_call_openai::continuity::connection_lost)
+        {
+            self.recovering(voice_call_openai::continuity::Reason::ConnectionLost);
         }
-        tools.abort_all();
+        self.retire_session();
+        tools.shutdown().await;
         shutdown::collect(&mut socket, &mut costs, webrtc, || {
             !crate::voice_credentials::is_updating()
                 && crate::voice_credentials::generation() == self.credential_generation
@@ -860,7 +858,7 @@ impl RealtimeVoiceAdapter {
         socket: &mut RealtimeSocket,
         configuration_started: Instant,
         targets: BoundTargets,
-        commands: mpsc::Receiver<Command>,
+        commands: &mut mpsc::Receiver<Command>,
         tools: &mut JoinSet<ToolCompletion>,
         costs: &mut cost::CurrentChat,
     ) -> Result<(), &'static str> {
@@ -871,6 +869,9 @@ impl RealtimeVoiceAdapter {
         let mut session =
             voice_call_openai::session::Session::realtime(socket, settings, config.webrtc)
                 .with_prefix(EVENT_PREFIX);
+        if self.continuity_enabled {
+            session = session.with_managed_lifetime();
+        }
         let mut app = session_host::App::new(
             self,
             config,
@@ -919,7 +920,7 @@ impl RealtimeVoiceAdapter {
         update: ClientEvent,
         agent: Option<&Arc<PinnedAgent>>,
         terminal: Option<&Arc<terminal::Session>>,
-    ) -> Result<(RealtimeSocket, Instant), &'static str> {
+    ) -> Result<(RealtimeSocket, Instant), recovery::Failure> {
         let connection = self.connect_session(config, key, update);
         tokio::pin!(connection);
         let mut tick = tokio::time::interval(Duration::from_millis(100));
@@ -946,13 +947,13 @@ impl RealtimeVoiceAdapter {
         config: &Config,
         key: &native_credentials::NativeCredential,
         update: ClientEvent,
-    ) -> Result<(RealtimeSocket, Instant), &'static str> {
+    ) -> Result<(RealtimeSocket, Instant), recovery::Failure> {
         let started = Instant::now();
         if config.webrtc {
             let encoded = serde_json::to_value(update).map_err(|_| "Invalid voice session.")?;
             loop {
                 if self.closed.load(Ordering::Acquire) {
-                    return Err(recovery::CANCELLED);
+                    return Err(recovery::CANCELLED.into());
                 }
                 let attempt = recovery::Attempt::new(self.clone());
                 {
@@ -977,7 +978,7 @@ impl RealtimeVoiceAdapter {
                         if error.retryable
                             && attempt.id == 1
                             && !self.closed.load(Ordering::Acquire) => {}
-                    Err(error) => return Err(error.message),
+                    Err(error) => return Err(error),
                 }
             }
         }

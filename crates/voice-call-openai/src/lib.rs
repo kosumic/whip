@@ -3,6 +3,7 @@
 //! this crate owns provider signaling, sideband transport and media control.
 pub mod captions;
 pub mod connection;
+pub mod continuity;
 pub mod events;
 pub mod live;
 pub mod models;
@@ -45,6 +46,7 @@ impl Credential for native_credentials::NativeCredential {
 
 #[derive(Clone, Copy)]
 pub enum Timing {
+    Accepted,
     Prepared(bool),
     Offer(u64),
     Configuration(u64),

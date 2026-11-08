@@ -99,7 +99,13 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
 - (void)prepare:(BOOL)enabled {
   whip_realtime_prepare(enabled && UIApplication.sharedApplication.applicationState == UIApplicationStateActive && UIApplication.sharedApplication.protectedDataAvailable);
 }
-- (void)protectedDataLost:(NSNotification *)notification { [self invalidate]; }
+- (void)protectedDataLost:(NSNotification *)notification {
+  whip_realtime_prepare(false);
+  if (self.preview && self.token) [self stop:self.token];
+  if ([self.pendingStart[@"preview"] boolValue]) [self stop:self.pendingStart[@"token"]];
+  // An admitted phone call retains its native credential and audio owner.
+  // Protected UI/tool checks remain independent of transport continuity.
+}
 - (void)start:(NSString *)token config:(NSString *)config resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {
   [self start:token config:config preview:NO resolve:resolve reject:reject];
 }

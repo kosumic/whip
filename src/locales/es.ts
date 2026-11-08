@@ -1,4 +1,9 @@
 export const es = {
+  'voiceChat.reconnecting': 'Reconectando la llamada… La escucha volverá automáticamente.',
+  'voiceChat.freshSessions': '{{count}} sesiones de API creadas. Cada sesión tiene cargos de uso separados.',
+  'voiceChat.recoveryLifetime': 'Renovando la sesión del proveedor.',
+  'voiceChat.recoveryDrain': 'El límite de la sesión interrumpió la escucha o el trabajo pendiente. Las solicitudes sin terminar no se repetirán.',
+  'voiceChat.recoveryConnection': 'Se perdió la conexión con el proveedor.',
   'voiceProvider.prepareCalls': "Mantener listo el cliente de voz",
   'voiceProvider.prepareCallsHelp': "Mantiene los recursos WebRTC y una conexión HTTPS listos mientras Whip está abierto. Usa memoria adicional y solicitudes de red periódicas sin tu clave de API. El micrófono y la sesión de API se inician al llamar. La preparación no genera cargos de uso de la API.",
   'voiceUsage.cost': 'Coste',

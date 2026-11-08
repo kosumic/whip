@@ -198,9 +198,62 @@ cannot enter the next attempt. Hangup, credential replacement, interruption,
 speech-owner replacement or a changed bound agent prevents pending recovery.
 Mute and route intent remain with the native call owner.
 
-Recovery ends at confirmed startup. Losing an established session ends the call
-visibly; there is no transparent resume or fresh-session continuation. Agent
-prompts and function calls are never resubmitted. Physical Wi-Fi/mobile-network,
+### Logical calls and fresh provider sessions (#378)
+
+Every user-started cloud call now retains one logical native call across provider
+sessions: global and agent Realtime, terminal Realtime, and global/agent GPT-Live.
+There is no opt-in setting. Local turn-based calls have no provider session to
+rotate and retain their existing lifecycle. Voice previews remain bounded and do
+not recover. Whip never starts capture on launch or after Hang Up.
+
+Native Rust schedules retirement 50 minutes after accepted provider creation.
+The [Realtime session limit is 60 minutes](https://developers.openai.com/api/docs/guides/realtime-conversations).
+Server `session.created` expiry can shorten the deadline; a mirrored creation
+event or clock change cannot extend it. GPT-Live uses the same conservative
+50-minute client retirement policy, not a claim about its provider lifetime or
+its different billing. Rotation waits for user speech, played assistant audio,
+pending responses and native tool jobs to drain. The drain is bounded to one
+minute (or earlier server expiry minus 30 seconds). A forced retirement is shown
+as an interruption in the call UI. Unfinished work is never replayed.
+
+Known transport failures transition to **Reconnecting** and automatically create
+a fresh session after old media, sideband and server retirement are confirmed.
+The retry budget is five retries per outage, with exponential delays of 1–16
+seconds plus up to 500 ms jitter, and a 120-second admission window. A
+credential-free HTTPS HEAD checks reachability before a recovery POST; offline
+checks consume the same budget. Short reconnection flaps share that budget;
+30 seconds of connected operation resets it. An uncertain creation POST,
+unconfirmed cleanup, authentication/quota/settings failure, lost credentials,
+changed bound target or native audio interruption ends the call. Retry does not
+guarantee recovery on every network or within an OS suspension interval.
+
+The Android microphone foreground service and iOS audio owner stay admitted
+through replacements. Rust timers and generation checks run independently of
+JS timers and presentation. The existing recorder, intended mute state, speaker
+route, selected model/voice/VAD and pinned scope remain owned by that call.
+Neither app lock, screen lock, backgrounding nor unlock requests a rotation or
+changes healthy audio. Starting a new call remains foreground/unlock gated.
+System audio interruptions and OS termination still end capture; Whip never
+automatically restarts a microphone owner after those events.
+
+Retirement closes the old tool capability session and clears queued PCM,
+playback epochs, captions, prompts, function IDs, unsent delegations and pending
+approvals before another generation can use them. No conversation context is
+copied into the new provider session. Global instructions and settings are
+retained; a new protected action obtains fresh authority only while unlocked.
+Unlock never replays a denied action. Hang Up, including notification/CallKit
+controls, cancels native retry waits and drains in-flight creation so a returned
+call identity can still be retired. It is terminal for the logical call.
+
+`continuity` diagnostics expose connected/reconnecting/failed/ended status, the
+last recovery reason, replacement/session counts, retry count and the most recent
+16 attempt generations/durations/outcomes. No raw audio, keys or transcripts are
+included. Each new provider session has a separate usage-ledger identity and
+saved history. The call estimate refers to the current provider session; the UI
+also shows the number of created sessions. Fresh sessions can add API usage and
+GPT-Live duration/backend charges; background operation is not guaranteed free.
+
+Agent prompts and function calls are never resubmitted. Physical Wi-Fi/mobile-network,
 Bluetooth/route, echo, backgrounding and latency qualification remains tracked
 with #359; simulator compilation does not establish physical audio quality.
 

@@ -42,6 +42,7 @@ impl Handle {
         for mut task in self.workers {
             match tokio::time::timeout(recovery::WORKER_DRAIN_TIMEOUT, &mut task).await {
                 Ok(Ok(Ok(()))) => {}
+                Ok(Ok(Err(message))) if crate::continuity::connection_lost(message) => {}
                 Ok(_) => clean = false,
                 Err(_) => {
                     task.abort();
@@ -125,6 +126,7 @@ pub async fn start(
             return Err(error.into());
         }
     };
+    owner.timing(Timing::Accepted);
     if !attempt.current() {
         let _ = call.hangup().await;
         let _ = peer.close().await;

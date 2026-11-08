@@ -154,7 +154,8 @@ async fn public_live_webrtc_api_smoke() -> Result<(), Box<dyn std::error::Error>
     Ok(())
 }
 
-fn playback_owner() -> Result<Arc<RealtimeVoiceAdapter>, &'static str> {
+pub(in crate::realtime_voice) fn playback_owner() -> Result<Arc<RealtimeVoiceAdapter>, &'static str>
+{
     use std::sync::atomic::AtomicU64;
     let speech = crate::speech_playback::RealtimeSpeechLease::claim(false)
         .ok_or("Speech lease unavailable")?;
@@ -213,7 +214,13 @@ fn playback_owner() -> Result<Arc<RealtimeVoiceAdapter>, &'static str> {
         allow_input: true,
         credential_generation: crate::voice_credentials::generation(),
         speech,
-        global: None,
+        global: Mutex::new(None),
+        global_instructions: String::new(),
+        continuity: Mutex::default(),
+        continuity_enabled: true,
+        retiring: AtomicBool::new(false),
+        failure: Mutex::new(None),
+        replacement: Mutex::new(None),
     }))
 }
 
@@ -227,6 +234,82 @@ fn starting_owner() -> Result<Arc<RealtimeVoiceAdapter>, &'static str> {
         view.phase = "starting";
     }
     Ok(owner)
+}
+
+#[tokio::test(start_paused = true)]
+async fn two_rotations_keep_the_device_lease_and_fence_retired_audio_and_failures()
+-> Result<(), Box<dyn std::error::Error>> {
+    use voice_call_openai::{Host, continuity::Reason, session::Audio};
+    let _device_audio = DEVICE_AUDIO_TEST.lock().await;
+    let owner = playback_owner()?;
+    let tag = voice_call_media::Tag {
+        response: "reply".into(),
+        item: "item".into(),
+        index: 0,
+    };
+    for _ in 0..2 {
+        owner.retiring.store(false, Ordering::Release);
+        let attempt = recovery::Attempt::new(owner.clone());
+        let host = super::super::host::AppHost {
+            owner: owner.clone(),
+            attempt: attempt.clone(),
+        };
+        attempt.activate()?;
+        owner.ready.store(true, Ordering::Release);
+        owner
+            .continuity
+            .lock()
+            .created(Some(Duration::from_secs(310)));
+        assert!(!owner.continuity_tick(true)?);
+        tokio::time::advance(Duration::from_secs(10)).await;
+        assert!(owner.continuity_tick(true)?);
+        assert_eq!(owner.replacement.lock().take(), Some(Reason::Lifetime));
+        host.render(&tag, &[1000; voice::FRAME])?;
+        let epoch = owner.output.lock().epoch;
+        owner.retire_session();
+        host.render(&tag, &[2000; voice::FRAME])?;
+        attempt.fail("late provider error".into());
+        owner.output.lock().acknowledge(epoch, voice::FRAME);
+        assert!(owner.output.lock().samples.is_empty());
+        assert!(owner.failure.lock().is_none());
+        assert!(!owner.closed.load(Ordering::Acquire));
+        assert!(owner.speech.is_current());
+        assert!(owner.devices_ready.load(Ordering::Acquire));
+        assert!(owner.output.lock().epoch > epoch);
+        owner.continuity.lock().replacing(Reason::Lifetime);
+        // Mute intent survives even though retirement suppresses native capture.
+        owner.set_muted(true)?;
+        assert!(owner.view.lock().muted);
+    }
+    owner.close();
+    assert!(!owner.capture(
+        &[3000; voice::FRAME],
+        owner.input.generation(),
+        Instant::now()
+    ));
+    assert!(owner.closed.load(Ordering::Acquire));
+    Ok(())
+}
+
+#[tokio::test]
+async fn established_transport_failure_requests_recovery_without_releasing_microphone_owner()
+-> Result<(), Box<dyn std::error::Error>> {
+    let _device_audio = DEVICE_AUDIO_TEST.lock().await;
+    let owner = playback_owner()?;
+    let attempt = recovery::Attempt::new(owner.clone());
+    attempt.activate()?;
+    attempt.fail(recovery::Failure {
+        message: "Voice network connection did not recover.",
+        retryable: true,
+    });
+    assert!(owner.continuity_tick(true).is_err());
+    assert!(!owner.closed.load(Ordering::Acquire));
+    assert!(!owner.ready.load(Ordering::Acquire));
+    assert!(owner.speech.is_current());
+    owner.close();
+    attempt.fail("late failure".into());
+    assert_eq!(owner.view.lock().phase, "closed");
+    Ok(())
 }
 
 #[tokio::test]
@@ -490,14 +573,12 @@ async fn full_live_playback(
         .then(voice::echo::MediaEchoCanceller::new)
         .transpose()?
         .map(Box::new);
-    let (commands, command_rx) = tokio::sync::mpsc::channel(8);
-    let worker = tokio::spawn(voice::live::LiveVoiceAdapter::run(
-        owner.clone(),
-        config,
-        credential,
-        None,
-        command_rx,
-    ));
+    let (commands, mut command_rx) = tokio::sync::mpsc::channel(8);
+    let worker_owner = owner.clone();
+    let worker = tokio::spawn(async move {
+        voice::live::LiveVoiceAdapter::run(worker_owner, config, &credential, None, &mut command_rx)
+            .await
+    });
     let started = Instant::now();
     let mut ready_at = None;
     let mut offset = 0;

@@ -59,7 +59,8 @@ remain authoritative. A submitted remote job can continue after hangup.
 
 Unknown submission outcomes block additional prompts for that call. Mutations
 are never automatically retried. Function IDs are bounded and deduplicated;
-results use the initiating function ID. Calls expire after 55 minutes. Hangup
+results use the initiating function ID. Tool capability permits expire after 55 minutes;
+this is separate from the provider session lifetime. Hangup
 or replacement revokes capabilities. App lock and leaving the foreground cancel
 outstanding UI confirmations and device operations without ending the call.
 Presentation, delegation confirmation and OS effects require unlocked foreground
@@ -83,7 +84,10 @@ not authorize new protected UI actions or agent approvals. Android retains its
 microphone/media foreground service and notification; iOS retains CallKit and
 background audio. OS interruptions, permission loss and system lifecycle limits
 still apply. Explicit Hang Up ends the call even while locked, and unlock never
-resurrects it. Session rotation and connection recovery remain separate in #378.
+resurrects it. Native session rotation and bounded connection recovery apply to
+all user-started cloud voice calls, including agent and terminal scopes and
+GPT-Live. See [the logical call lifecycle](realtime-voice.md#logical-calls-and-fresh-provider-sessions-378)
+for retirement, retries, fresh authority and separate provider-session billing.
 
 See [lock lifecycle device checks](voice-lock-lifecycle.md) for the Android/iOS
 acceptance procedure and the limits of automated bridge tests.

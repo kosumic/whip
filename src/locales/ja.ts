@@ -1,4 +1,9 @@
 export const ja = {
+  'voiceChat.reconnecting': '通話に再接続中… 聞き取りは自動で再開します。',
+  'voiceChat.freshSessions': 'API セッションを {{count}} 件作成しました。各セッションの利用料金は別々に発生します。',
+  'voiceChat.recoveryLifetime': 'プロバイダーのセッションを更新しています。',
+  'voiceChat.recoveryDrain': 'セッションの期限により聞き取りや処理が中断されました。未完了のリクエストは再実行されません。',
+  'voiceChat.recoveryConnection': 'プロバイダーへの接続が切れました。',
   'voiceProvider.prepareCalls': "音声クライアントを待機状態にする",
   'voiceProvider.prepareCallsHelp': "Whip を開いている間、WebRTC リソースと HTTPS 接続を準備します。追加のメモリを使用し、API キーを含まないネットワークリクエストを定期的に送信します。マイクと API セッションは通話開始時のみ起動し、事前準備に API 利用料金はかかりません。",
   'voiceUsage.cost': '料金',
