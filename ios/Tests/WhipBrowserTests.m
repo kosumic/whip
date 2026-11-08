@@ -215,6 +215,15 @@ static const NSTimeInterval WebKitNavigationTimeout = 60;
 - (void)testRegistrationAndNestedFabricContainer
 {
   XCTAssertEqual(registeredModule, WhipBrowser.class);
+  if (@available(iOS 17.0, *)) {
+    [self resultOf:^(RCTPromiseResolveBlock resolve, RCTPromiseRejectBlock reject) {
+      [self.adapter configureProxy:@"*" port:0 resolve:resolve reject:reject];
+    }];
+    WKWebViewConfiguration *config = [WKWebViewConfiguration new];
+    config.websiteDataStore = [WhipBrowserRoute websiteDataStoreForRoute:@"[\"\",null]"];
+    self.browser = [[WKWebView alloc] initWithFrame:CGRectZero configuration:config];
+    self.registry.view = self.browser;
+  }
   [self resultOf:^(RCTPromiseResolveBlock resolve, RCTPromiseRejectBlock reject) {
     [self.adapter prepare:@42 runtimeId:nil tunnelHostId:nil resolve:resolve reject:reject];
   }];

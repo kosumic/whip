@@ -1073,6 +1073,8 @@ export const en = {
   'browser.tunneling': 'Tunneling',
   'browser.tunnelingThrough': 'Tunneling through {{host}}',
   'browser.tunnelingCopy': 'Route all HTTP and HTTPS traffic through this SSH host. Localhost refers to this host while enabled.',
+  'browser.tunnelingIosCopy': 'Attempts to route through this SSH host. Websites and downloads may connect directly if the proxy fails. Numeric IP addresses may bypass SSH.',
+  'browser.tunnelingIosDataCopy': 'Tunnel tabs use separate cookies and site data. Switching hosts, changing tunneling, or reconnecting clears that session.',
   'browser.tunnelingDataCopy': 'Tunneled browsing uses separate cookies and site data for each host.',
   'browser.tunnelingUnavailable': 'SSH browser tunneling is unavailable on this device.',
   'browser.tunnelingFailed': 'Could not change tunneling.',

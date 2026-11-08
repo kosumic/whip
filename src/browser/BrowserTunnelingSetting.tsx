@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { View } from 'react-native';
+import { Platform, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Switch } from '../components/ui/switch';
 import { Text } from '../components/ui/text';
@@ -58,10 +58,18 @@ export function BrowserTunnelingSetting({ runtimeId }: { runtimeId: string }) {
         />
       </View>
       <Text className="text-xs text-muted-foreground">
-        {t('browser.tunnelingCopy')}
+        {t(
+          Platform.OS === 'ios'
+            ? 'browser.tunnelingIosCopy'
+            : 'browser.tunnelingCopy',
+        )}
       </Text>
       <Text className="text-xs text-muted-foreground">
-        {t('browser.tunnelingDataCopy')}
+        {t(
+          Platform.OS === 'ios'
+            ? 'browser.tunnelingIosDataCopy'
+            : 'browser.tunnelingDataCopy',
+        )}
       </Text>
       {!supportsBrowserProxy() && (
         <Text className="text-xs text-muted-foreground">

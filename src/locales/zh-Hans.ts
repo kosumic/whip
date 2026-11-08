@@ -1058,6 +1058,8 @@ export const zhHans = {
   'browser.tunneling': '隧道',
   'browser.tunnelingThrough': '通过 {{host}} 建立隧道',
   'browser.tunnelingCopy': '通过此 SSH 主机路由所有 HTTP 和 HTTPS 流量。启用时，localhost 指的是此主机。',
+  'browser.tunnelingIosCopy': '尝试通过此 SSH 主机连接。代理失败时，网站和下载可能直接连接。数字 IP 地址可能绕过 SSH。',
+  'browser.tunnelingIosDataCopy': '隧道标签页使用独立的 Cookie 和网站数据。切换主机、更改隧道设置或重新连接会清除此会话。',
   'browser.tunnelingDataCopy': '隧道浏览为每台主机使用独立的 Cookie 和网站数据。',
   'browser.tunnelingUnavailable': '此设备无法使用 SSH 浏览器隧道。',
   'browser.tunnelingFailed': '无法更改隧道设置。',

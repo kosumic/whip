@@ -9,7 +9,6 @@
 
 static NSString *const WhipBrowserProxyError = @"BROWSER_PROXY";
 static NSString *const WhipBrowserRouteChanged = @"WhipBrowserRouteChanged";
-static NSString *const WhipBrowserDirectStoreIdentifier = @"C8A940F8-4763-4BAF-84EB-5138CB12184E";
 static const NSInteger WhipBrowserBlockedProxyPort = 9;
 
 @interface WhipBrowserRoute ()
@@ -36,7 +35,9 @@ static const NSInteger WhipBrowserBlockedProxyPort = 9;
   NSString *service = [NSString stringWithFormat:@"%ld", (long)(port > 0 ? port : WhipBrowserBlockedProxyPort)];
   nw_endpoint_t endpoint = nw_endpoint_create_host("127.0.0.1", service.UTF8String);
   nw_proxy_config_t proxy = nw_proxy_config_create_socksv5(endpoint);
-  nw_proxy_config_set_failover_allowed(proxy, false);
+  // Active iOS routes explicitly allow direct fallback. Retired routes keep
+  // fallback disabled so old documents are not deliberately reactivated.
+  nw_proxy_config_set_failover_allowed(proxy, port > 0);
   return proxy;
 }
 + (WKWebsiteDataStore *)websiteDataStoreForRoute:(NSString *)encoded {
@@ -49,21 +50,19 @@ static const NSInteger WhipBrowserBlockedProxyPort = 9;
   if (valid) encoded = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:value
     options:NSJSONWritingWithoutEscapingSlashes error:nil] encoding:NSUTF8StringEncoding];
   WhipBrowserRoute *route = self.shared;
-  // Production capability remains disabled until WebKit can enforce this for
-  // loopback too. Preserve the existing untunneled data store in the meantime.
-  if (valid && !tunneled && route.port == -1) return WKWebsiteDataStore.defaultDataStore;
   BOOL allowed = valid && ((route.port == 0 && !tunneled && [route.runtime isEqual:@"*"])
     || (route.port > 0 && tunneled && [route.runtime isEqual:value[0]]));
   if (@available(iOS 17.0, *)) {
     if (allowed && route.stores[encoded]) return route.stores[encoded];
-    // Never change a retired tunnel store back to a live proxy. Its workers,
-    // sockets and delayed JS remain pinned to a non-failing-over dead route.
+    // Never point a retired tunnel store at a different host's live proxy.
     WKWebsiteDataStore *store = [WKWebsiteDataStore nonPersistentDataStore];
     if (allowed && !tunneled) {
-      store = [WKWebsiteDataStore dataStoreForIdentifier:
-        [[NSUUID alloc] initWithUUIDString:WhipBrowserDirectStoreIdentifier]];
+      // Keep existing untunneled cookies/storage without applying a proxy to
+      // the default store shared by unrelated app WebViews.
+      store = WKWebsiteDataStore.defaultDataStore;
     }
-    store.proxyConfigurations = allowed && route.port == 0 ? @[] : @[[self proxyForPort:allowed ? route.port : -1]];
+    if (store != WKWebsiteDataStore.defaultDataStore)
+      store.proxyConfigurations = @[[self proxyForPort:allowed ? route.port : -1]];
     if (allowed) route.stores[encoded] = store;
     else [route.retired addObject:store];
     return store;
@@ -73,7 +72,6 @@ static const NSInteger WhipBrowserBlockedProxyPort = 9;
   return tunneled || !valid ? [WKWebsiteDataStore nonPersistentDataStore] : WKWebsiteDataStore.defaultDataStore;
 }
 + (BOOL)allowsBrowser:(WKWebView *)browser {
-  if (self.shared.port == -1 && browser.configuration.websiteDataStore == WKWebsiteDataStore.defaultDataStore) return YES;
   if (@available(iOS 17.0, *)) {
     return [self.shared.stores.allValues containsObject:browser.configuration.websiteDataStore];
   }
@@ -83,8 +81,6 @@ static const NSInteger WhipBrowserBlockedProxyPort = 9;
   NSMutableSet *stores = [NSMutableSet setWithArray:self.shared.stores.allValues];
   [stores addObjectsFromArray:self.shared.retired.allObjects];
   [stores addObject:WKWebsiteDataStore.defaultDataStore];
-  if (@available(iOS 17.0, *)) [stores addObject:[WKWebsiteDataStore dataStoreForIdentifier:
-    [[NSUUID alloc] initWithUUIDString:WhipBrowserDirectStoreIdentifier]]];
   return stores.allObjects;
 }
 + (void)configureRuntime:(NSString *)runtime port:(NSInteger)port {
@@ -93,7 +89,8 @@ static const NSInteger WhipBrowserBlockedProxyPort = 9;
   route.port = -1;
   if (@available(iOS 17.0, *)) {
     for (WKWebsiteDataStore *store in route.stores.allValues) {
-      store.proxyConfigurations = @[[self proxyForPort:-1]];
+      if (store != WKWebsiteDataStore.defaultDataStore)
+        store.proxyConfigurations = @[[self proxyForPort:-1]];
       [route.retired addObject:store];
     }
   }
@@ -420,11 +417,9 @@ RCT_EXPORT_MODULE(WhipBrowser)
 }
 
 + (BOOL)supportsProxy {
-  // On the tested iOS 26.5 simulator, public proxy APIs bypass numeric IP
-  // destinations (including LAN/IPv6), even with a healthy proxy. Hostnames,
-  // including localhost, do use the proxy. This reproduces below WebKit too.
-  // See docs/ios-browser-tunneling.md and WhipBrowserProxyTests. Keep the
-  // feature fail closed until a public configuration passes that regression.
+  // Public per-data-store proxy APIs are available from iOS 17. This feature
+  // intentionally permits direct fallback; it is not a traffic privacy guard.
+  if (@available(iOS 17.0, *)) return YES;
   return NO;
 }
 
@@ -448,7 +443,7 @@ RCT_EXPORT_MODULE(WhipBrowser)
 RCT_EXPORT_METHOD(configureProxy:(NSString *)runtimeId port:(double)port
                   resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject) {
   if (![self.class supportsProxy]) {
-    reject(WhipBrowserProxyError, @"SSH browser tunneling is unavailable because WebKit cannot guarantee routing for all destinations", nil);
+    reject(WhipBrowserProxyError, @"Browser tunneling requires iOS 17 or later", nil);
     return;
   }
   if (@available(iOS 17.0, *)) {

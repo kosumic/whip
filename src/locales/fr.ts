@@ -1076,6 +1076,8 @@ export const fr = {
   'browser.tunneling': 'Tunnel',
   'browser.tunnelingThrough': 'Tunnel via {{host}}',
   'browser.tunnelingCopy': 'Faites passer tout le trafic HTTP et HTTPS par cet hôte SSH. Lorsque cette option est activée, localhost désigne cet hôte.',
+  'browser.tunnelingIosCopy': 'Tente de passer par cet hôte SSH. Les sites et les téléchargements peuvent se connecter directement si le proxy échoue. Les adresses IP numériques peuvent contourner SSH.',
+  'browser.tunnelingIosDataCopy': 'Les onglets du tunnel utilisent des cookies et des données de sites séparés. Changer d’hôte, modifier le tunnel ou se reconnecter efface cette session.',
   'browser.tunnelingDataCopy': 'La navigation par tunnel utilise des cookies et des données de sites séparés pour chaque hôte.',
   'browser.tunnelingUnavailable': 'Le tunnel SSH du navigateur est indisponible sur cet appareil.',
   'browser.tunnelingFailed': 'Impossible de modifier le tunnel.',

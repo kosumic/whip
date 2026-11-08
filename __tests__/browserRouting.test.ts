@@ -59,7 +59,7 @@ test('unsupported native proxy capabilities reject saved tunnel settings without
   mockSupportsProxy = false;
   mockTunnels.add('saved-a');
   await expect(routing.activate(a.runtimeId)).rejects.toThrow(
-    'secure SSH proxy',
+    'unavailable on this device',
   );
   expect(routing.allows(a.runtimeId)).toBe(false);
   expect(configureBrowserProxy).not.toHaveBeenCalled();

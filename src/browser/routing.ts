@@ -45,7 +45,7 @@ export class BrowserRouting {
       if (!supportsBrowserProxy()) {
         if (enabled)
           throw new Error(
-            'This browser does not support secure SSH proxy routing.',
+            'SSH browser tunneling is unavailable on this device.',
           );
         return;
       }
@@ -58,7 +58,8 @@ export class BrowserRouting {
             this.active.port > 0))
       )
         return;
-      // A failed proxy stays blocked, never falls back to the phone connection.
+      // Do not activate documents until native route setup completes. Active
+      // request fallback is a native platform policy (allowed on iOS).
       this.runtimeId = runtimeId;
       this.ready = false;
       this.invalidate();

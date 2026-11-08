@@ -19,14 +19,6 @@
 - (void)invalidate;
 @end
 
-// Exercise the candidate behind the production capability gate. This override
-// is compiled only into the standalone XCTest target, never into Whip.
-@interface ProxyCandidateAdapter : WhipBrowser
-@end
-@implementation ProxyCandidateAdapter
-+ (BOOL)supportsProxy { return YES; }
-@end
-
 // Real loopback SOCKS5 endpoint. Requests for .invalid can succeed only if
 // WebKit sends the hostname to the proxy instead of resolving it on the phone.
 @interface BrowserSOCKSFixture : NSObject
@@ -165,7 +157,7 @@ static BOOL ReadBytes(int socket, void *buffer, size_t length) {
 @end
 @implementation WhipBrowserProxyTests
 - (void)setUp {
-  self.adapter = [ProxyCandidateAdapter new]; self.registry = [ProxyTestRegistry new];
+  self.adapter = [WhipBrowser new]; self.registry = [ProxyTestRegistry new];
   self.adapter.viewRegistry_DEPRECATED = (RCTViewRegistry *)self.registry;
   self.proxy = [BrowserSOCKSFixture new]; XCTAssertNotNil(self.proxy);
 }
@@ -259,7 +251,7 @@ static BOOL ReadBytes(int socket, void *buffer, size_t length) {
   }];
   [self waitForExpectations:@[read] timeout:10];
 }
-- (void)testUnavailableProxyDoesNotFallBackEvenForLoopback {
+- (void)testUnavailableProxyAllowsDirectNumericIPRequest {
   if (@available(iOS 17.0, *)) {} else { XCTSkip(@"Requires public iOS 17 proxy API"); return; }
   // The HTTP destination is reachable locally, but the configured proxy is dead.
   BrowserSOCKSFixture *unused = [BrowserSOCKSFixture new];
@@ -268,13 +260,12 @@ static BOOL ReadBytes(int socket, void *buffer, size_t length) {
   WKWebView *browser = [self browserForRuntime:@"a" host:@"saved-a"];
   self.expectFailure = YES;
   self.probing = YES;
-  self.navigation = [self expectationWithDescription:@"no direct fallback"];
+  self.navigation = [self expectationWithDescription:@"direct IP fallback"];
   NSString *url = [NSString stringWithFormat:@"http://127.0.0.1:%u/", self.proxy.port];
   [browser loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:url]]];
   [self waitForExpectations:@[self.navigation] timeout:60];
-  XCTExpectFailureInBlock(@"#394: public WebKit proxy configuration bypasses loopback; production iOS proxy capability must remain disabled", ^{
-    @synchronized(self.proxy) { XCTAssertEqual(self.proxy.connections, 0, @"prefixes: %@, hosts: %@, dead: %u, destination: %u", self.proxy.prefixes, self.proxy.hosts, deadPort, self.proxy.port); }
-  });
+  @synchronized(self.proxy) { XCTAssertGreaterThan(self.proxy.connections, 0); }
+  XCTAssertNil(self.probeError);
 }
 - (void)testPublicWebKitProxyRoutingMatrix {
   if (@available(iOS 17.0, *)) {} else { XCTSkip(@"Requires public iOS 17 proxy API"); return; }
@@ -435,7 +426,7 @@ static BOOL ReadBytes(int socket, void *buffer, size_t length) {
   freeifaddrs(interfaces);
   return host;
 }
-- (void)testHostnameUsesProxyAndDoesNotFallBackWhenProxyIsUnavailable {
+- (void)testHostnameUsesProxyAndFallsBackWhenProxyIsUnavailable {
   if (@available(iOS 17.0, *)) {} else { XCTSkip(@"Requires public iOS 17 proxy API"); return; }
   BrowserSOCKSFixture *target = [BrowserSOCKSFixture new];
   [self configure:@"a" port:self.proxy.port];
@@ -451,13 +442,15 @@ static BOOL ReadBytes(int socket, void *buffer, size_t length) {
   uint16_t port = unused.port; unused = nil;
   [self configure:@"a" port:port];
   browser = [self browserForRuntime:@"a" host:@"saved-a"];
-  self.expectFailure = YES;
-  self.navigation = [self expectationWithDescription:@"hostname fails closed"];
+  self.expectFailure = NO;
+  self.probeError = nil;
+  self.navigation = [self expectationWithDescription:@"hostname falls back directly"];
   [browser loadRequest:[NSURLRequest requestWithURL:url]];
   [self waitForExpectations:@[self.navigation] timeout:15];
-  @synchronized(target) { XCTAssertEqual(target.connections, 0); }
+  @synchronized(target) { XCTAssertGreaterThan(target.connections, 0); }
+  XCTAssertNil(self.probeError);
 }
-- (void)testHostnameNavigationRedirectDoesNotEscapeToNumericIP {
+- (void)testHostnameNavigationRedirectAllowsDirectNumericIP {
   if (@available(iOS 17.0, *)) {} else { XCTSkip(@"Requires public iOS 17 proxy API"); return; }
   BrowserSOCKSFixture *target = [BrowserSOCKSFixture new];
   self.proxy.redirectURL = [NSString stringWithFormat:@"http://127.0.0.1:%u/", target.port];
@@ -468,44 +461,51 @@ static BOOL ReadBytes(int socket, void *buffer, size_t length) {
   [browser loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:@"http://ssh-only.invalid/escape"]]];
   [self waitForExpectations:@[self.navigation] timeout:15];
   @synchronized(self.proxy) { XCTAssertTrue([self.proxy.hosts containsObject:@"ssh-only.invalid"]); }
-  XCTExpectFailureInBlock(@"#394: a proxied hostname navigation can redirect into an unproxied numeric IP connection", ^{
-    @synchronized(target) { XCTAssertEqual(target.connections, 0); }
-  });
+  @synchronized(target) { XCTAssertGreaterThan(target.connections, 0); }
+  XCTAssertNil(self.probeError);
 }
-- (void)testHostnameDownloadRedirectDoesNotEscapeToNumericIP {
+- (void)testHostnameDownloadRedirectAllowsDirectNumericIP {
   if (@available(iOS 17.0, *)) {} else { XCTSkip(@"Requires public iOS 17 proxy API"); return; }
   BrowserSOCKSFixture *target = [BrowserSOCKSFixture new];
   self.proxy.redirectURL = [NSString stringWithFormat:@"http://127.0.0.1:%u/file", target.port];
   [self configure:@"a" port:self.proxy.port];
   [self browserForRuntime:@"a" host:@"saved-a"];
   XCTestExpectation *done = [self expectationWithDescription:@"download redirect finishes"];
+  __block NSString *body;
   [self.adapter download:@42 identifier:NSUUID.UUID.UUIDString url:@"http://ssh-only.invalid/escape" maxBytes:@1024 resolve:^(NSDictionary *result) {
+    body = [NSString stringWithContentsOfFile:result[@"local_path"] encoding:NSUTF8StringEncoding error:nil];
     [[NSFileManager defaultManager] removeItemAtPath:result[@"local_path"] error:nil]; [done fulfill];
-  } reject:^(NSString *code, NSString *message, NSError *error) { [done fulfill]; }];
+  } reject:^(NSString *code, NSString *message, NSError *error) { XCTFail(@"%@", message); [done fulfill]; }];
   [self waitForExpectations:@[done] timeout:15];
   @synchronized(self.proxy) { XCTAssertTrue([self.proxy.hosts containsObject:@"ssh-only.invalid"]); }
-  XCTExpectFailureInBlock(@"#394: WKDownload can redirect from the SSH hostname route to a direct numeric IP connection", ^{
-    @synchronized(target) { XCTAssertEqual(target.connections, 0); }
-  });
+  @synchronized(target) { XCTAssertGreaterThan(target.connections, 0); }
+  XCTAssertEqualObjects(body, @"direct-leak");
 }
-- (void)testProductionCapabilityRejectsTunnelingAndPreservesUntunneledBrowsing {
-  WhipBrowser *production = [WhipBrowser new];
-  production.viewRegistry_DEPRECATED = (RCTViewRegistry *)self.registry;
-  XCTAssertEqualObjects(production.constantsToExport[@"supportsProxy"], @NO);
-  __block BOOL rejected = NO;
-  [production configureProxy:@"a" port:self.proxy.port resolve:^(id value) { XCTFail(@"Unsafe proxy capability enabled"); }
-    reject:^(NSString *code, NSString *message, NSError *error) { rejected = YES; }];
-  XCTAssertTrue(rejected);
-  WKWebViewConfiguration *config = [WKWebViewConfiguration new];
-  config.websiteDataStore = [WhipBrowserRoute websiteDataStoreForRoute:@"[\"a\",null]"];
-  XCTAssertEqual(config.websiteDataStore, WKWebsiteDataStore.defaultDataStore);
-  self.registry.browser = [[WKWebView alloc] initWithFrame:CGRectZero configuration:config];
-  [production prepare:@42 runtimeId:@"a" tunnelHostId:nil resolve:^(id value) {}
-    reject:^(NSString *code, NSString *message, NSError *error) { XCTFail(@"Untunneled browsing rejected"); }];
-  rejected = NO;
-  [production prepare:@42 runtimeId:@"a" tunnelHostId:@"saved-a" resolve:^(id value) { XCTFail(@"Tunnel silently became direct browsing"); }
-    reject:^(NSString *code, NSString *message, NSError *error) { rejected = YES; }];
-  XCTAssertTrue(rejected);
+- (void)testProductionCapabilityFollowsOSAndPreservesUntunneledStore {
+  if (@available(iOS 17.0, *)) {
+    XCTAssertEqualObjects(self.adapter.constantsToExport[@"supportsProxy"], @YES);
+    [self configure:@"*" port:0];
+    WKWebView *direct = [self browserForRuntime:@"a" host:nil];
+    XCTAssertEqual(direct.configuration.websiteDataStore, WKWebsiteDataStore.defaultDataStore);
+    [self configure:@"a" port:self.proxy.port];
+    WKWebView *tunnel = [self browserForRuntime:@"a" host:@"saved-a"];
+    XCTAssertNotEqual(tunnel.configuration.websiteDataStore, WKWebsiteDataStore.defaultDataStore);
+    XCTAssertEqual(WKWebsiteDataStore.defaultDataStore.proxyConfigurations.count, 0);
+    XCTAssertTrue(nw_proxy_config_get_failover_allowed(tunnel.configuration.websiteDataStore.proxyConfigurations.firstObject));
+  } else {
+    XCTAssertEqualObjects(self.adapter.constantsToExport[@"supportsProxy"], @NO);
+    __block BOOL rejected = NO;
+    [self.adapter configureProxy:@"a" port:self.proxy.port resolve:^(id value) { XCTFail(@"Unsupported proxy enabled"); }
+      reject:^(NSString *code, NSString *message, NSError *error) { rejected = YES; }];
+    XCTAssertTrue(rejected);
+    self.registry.browser = [[WKWebView alloc] initWithFrame:CGRectZero];
+    [self.adapter prepare:@42 runtimeId:@"a" tunnelHostId:nil resolve:^(id value) {}
+      reject:^(NSString *code, NSString *message, NSError *error) { XCTFail(@"Untunneled browsing rejected"); }];
+    rejected = NO;
+    [self.adapter prepare:@42 runtimeId:@"a" tunnelHostId:@"saved-a" resolve:^(id value) { XCTFail(@"Unsupported tunnel prepared"); }
+      reject:^(NSString *code, NSString *message, NSError *error) { rejected = YES; }];
+    XCTAssertTrue(rejected);
+  }
 }
 - (void)webView:(WKWebView *)browser didFinishNavigation:(WKNavigation *)navigation {
   // Retiring a route blanks old views asynchronously. Those callbacks must
