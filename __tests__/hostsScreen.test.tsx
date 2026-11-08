@@ -10,7 +10,7 @@ jest.mock('react-native-css-interop/jsx-runtime', () =>
 );
 jest.mock('react-native', () => ({
   View: 'View',
-  ScrollView: 'ScrollView',
+  FlatList: 'FlatList',
   Platform: { OS: 'android' },
   NativeModules: { WhipBrowser: {} },
 }));

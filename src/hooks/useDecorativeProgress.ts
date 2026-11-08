@@ -1,5 +1,6 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useContext, useEffect } from 'react';
 import { useFrameCallback, useSharedValue, type FrameInfo } from 'react-native-reanimated';
+import { AnimationVisibilityContext } from '../lib/animationVisibility';
 
 export const DECORATIVE_FRAMES_PER_SECOND = 30;
 export const SPINNER_FRAMES_PER_SECOND = 60;
@@ -11,6 +12,7 @@ export function useDecorativeProgress(
   reverse = true,
   framesPerSecond = DECORATIVE_FRAMES_PER_SECOND,
 ) {
+  const visible = useContext(AnimationVisibilityContext);
   const progress = useSharedValue(0);
   const timing = useSharedValue({ startedAt: -1, lastFrame: -1 });
   const callback = useFrameCallback(useCallback(({ timestamp }: FrameInfo) => {
@@ -35,9 +37,9 @@ export function useDecorativeProgress(
   useEffect(() => {
     timing.value = { startedAt: -1, lastFrame: -1 };
     progress.value = 0;
-    callback.setActive(enabled);
+    callback.setActive(enabled && visible);
     return () => callback.setActive(false);
-  }, [callback, durationMs, enabled, progress, reverse, timing]);
+  }, [callback, durationMs, enabled, progress, reverse, timing, visible]);
 
   return progress;
 }

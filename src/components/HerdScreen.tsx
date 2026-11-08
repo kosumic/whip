@@ -43,6 +43,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { type HerdHostQueue, type HerdQueueAgent } from '@/src/herdQueue';
 import { useTranscriptTitle } from '@/src/hooks/useTranscriptTitle';
 import { useCommittedCallbacks } from '@/src/hooks/useCommittedCallbacks';
+import { ANIMATION_VIEWABILITY_CONFIG, useViewableKeys } from '@/src/hooks/useViewableKeys';
+import { AnimationVisibilityProvider } from '@/src/lib/animationVisibility';
 import {
   HERD_TAB_MAX_DRAG,
   herdTabSwipeOffset,
@@ -498,24 +500,27 @@ const HerdScreenContent = memo(function HerdContent({
     ? agents.find(item => herdAgentKey(item) === herdAgentKey(agentMenuTarget))
     : undefined;
   const menuPreference = menuItem?.control;
+  const { viewableKeys, onViewableItemsChanged } = useViewableKeys();
   const renderAgent = useCallback(
     ({ item }: ListRenderItemInfo<HerdQueueAgent>) => (
-      <AgentRow
-        collapsed={collapsedGroups.has(herdAgentKey(item))}
-        onToggleGroup={toggleGroup}
-        item={item}
-        preference={item.control}
-        showHost={resolvedHostId === null}
-        showSpace={selectedWorkspaceId === null}
-        onOpenTerminal={onOpenTerminal}
-        onOpenFiles={onOpenFiles}
-        readOnly={offline}
-        closing={closingTabKey === `${item.hostId}:${item.agent.tab_id}`}
-        onCloseTab={closeTab}
-        busy={agentActionKey === herdAgentKey(item)}
-        actionPending={agentActionKey !== null}
-        onActions={setAgentMenuTarget}
-      />
+      <AnimationVisibilityProvider enabled={viewableKeys.has(herdAgentKey(item))}>
+        <AgentRow
+          collapsed={collapsedGroups.has(herdAgentKey(item))}
+          onToggleGroup={toggleGroup}
+          item={item}
+          preference={item.control}
+          showHost={resolvedHostId === null}
+          showSpace={selectedWorkspaceId === null}
+          onOpenTerminal={onOpenTerminal}
+          onOpenFiles={onOpenFiles}
+          readOnly={offline}
+          closing={closingTabKey === `${item.hostId}:${item.agent.tab_id}`}
+          onCloseTab={closeTab}
+          busy={agentActionKey === herdAgentKey(item)}
+          actionPending={agentActionKey !== null}
+          onActions={setAgentMenuTarget}
+        />
+      </AnimationVisibilityProvider>
     ),
     [
       agentActionKey,
@@ -528,6 +533,7 @@ const HerdScreenContent = memo(function HerdContent({
       onOpenTerminal,
       resolvedHostId,
       selectedWorkspaceId,
+      viewableKeys,
     ],
   );
 
@@ -740,6 +746,8 @@ const HerdScreenContent = memo(function HerdContent({
         updateCellsBatchingPeriod={50}
         removeClippedSubviews={Platform.OS === 'android'}
         keyExtractor={herdAgentKey}
+        viewabilityConfig={ANIMATION_VIEWABILITY_CONFIG}
+        onViewableItemsChanged={onViewableItemsChanged}
         renderItem={renderAgent}
         ItemSeparatorComponent={AgentRowSeparator}
         refreshControl={

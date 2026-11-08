@@ -410,7 +410,7 @@ export function AppShell({
                     }
                   >
                     <AgentStatusAnimationProvider
-                      enabled={navigation.state.tab === 'hosts'}
+                      enabled={navigation.state.tab === 'hosts' && !overlaysVisible}
                     >
                       <ScreenUpdates active={navigation.state.tab === 'hosts'}>
                         {() => (
@@ -487,7 +487,7 @@ export function AppShell({
                     }
                   >
                     <AgentStatusAnimationProvider
-                      enabled={navigation.state.tab === 'herd'}
+                      enabled={navigation.state.tab === 'herd' && !overlaysVisible}
                     >
                       <ScreenUpdates active={navigation.state.tab === 'herd'}>
                         {renderHerd}
@@ -710,7 +710,7 @@ export function AppShell({
 
               {(navigation.mountedTabs.has('terminal') || priorityChatTargets.length > 0) &&
                 viewportSession && viewportTerminalState && (
-                  <AgentStatusAnimationProvider enabled={terminalVisible}>
+                  <AgentStatusAnimationProvider enabled={terminalVisible && !overlaysVisible}>
                     <LiveSessionView
                       session={viewportSession}
                       client={activeSession ? liveClient : sessions.getClient(viewportSession.id) ?? null}

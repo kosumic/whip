@@ -35,6 +35,7 @@ import { useCopyFeedback } from '../hooks/useCopyFeedback';
 import type { ChatReadAloudControl } from '../hooks/useChatReadAloud';
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 import { useDecorativeProgress } from '../hooks/useDecorativeProgress';
+import { AnimationVisibilityContext } from '../lib/animationVisibility';
 import { useChatSearch } from '../hooks/useChatSearch';
 import { useChatActivity, type ChatActivity, type ChatToolActivity } from '../hooks/useChatActivity';
 import { useScrollActivity } from '../hooks/useScrollActivity';
@@ -292,22 +293,24 @@ function WorkingLetter({ letter, index, progress, reduceMotion }: {
 
 function ChatWorkingStatus({ startedAt, active }: { startedAt?: number; active: boolean }) {
   const { colors } = useTheme();
+  const visible = useContext(AnimationVisibilityContext);
+  const running = active && visible;
   const reduceMotion = useReducedMotion();
   const [fallbackStartedAt] = useState(Date.now);
   const [now, setNow] = useState(fallbackStartedAt);
-  const progress = useDecorativeProgress(active && !reduceMotion, CHAT_WORKING_SHIMMER_PERIOD_MS, false);
+  const progress = useDecorativeProgress(running && !reduceMotion, CHAT_WORKING_SHIMMER_PERIOD_MS, false);
   useEffect(() => {
-    if (!active) return;
+    if (!running) return;
     setNow(Date.now());
     const timer = setInterval(() => setNow(Date.now()), CHAT_WORKING_TICK_MS);
     return () => clearInterval(timer);
-  }, [active]);
+  }, [running]);
   const start = startedAt ?? fallbackStartedAt;
   const duration = formatDuration(start, Math.max(start, now));
   const label = `${CHAT_WORKING_LABEL} (${duration})`;
   return (
     <View testID="chat-inline-working" className="min-h-11 flex-row items-center gap-2">
-      <ActivityIndicator animating={active && !reduceMotion} hidesWhenStopped={false} size={13} color={colors.textTertiary} />
+      <ActivityIndicator animating={running && !reduceMotion} hidesWhenStopped={false} size={13} color={colors.textTertiary} />
       <View testID="chat-working-status" accessible accessibilityLabel={label} className="flex-row items-center">
         {CHAT_WORKING_LETTERS.map((letter, index) => (
           <WorkingLetter key={index} letter={letter} index={index} progress={progress} reduceMotion={reduceMotion} />
@@ -324,6 +327,7 @@ function ChatActivityStrip({ activity, onPress }: {
 }) {
   const { colors } = useTheme();
   const glass = useAppGlassEnabled();
+  const visible = useContext(AnimationVisibilityContext);
   const reduceMotion = useReducedMotion();
   return (
     <GlassSurface
@@ -340,7 +344,7 @@ function ChatActivityStrip({ activity, onPress }: {
         className="min-h-11 flex-row items-center gap-2 px-3"
         onPress={hapticPress(onPress)}
       >
-        <ActivityIndicator animating={!reduceMotion} hidesWhenStopped={false} size={13} color={colors.textTertiary} />
+        <ActivityIndicator animating={visible && !reduceMotion} hidesWhenStopped={false} size={13} color={colors.textTertiary} />
         <Text numberOfLines={1} className="min-w-0 flex-1 text-[12px] leading-5 text-foreground">
           {activity.title}{activity.detail ? ` · ${activity.detail}` : ''}
         </Text>

@@ -29,6 +29,7 @@ import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/src/lib/utils';
 import { bundledAsset } from '@/src/lib/bundledAsset';
+import { AnimationVisibilityContext as AgentStatusAnimationContext, AnimationVisibilityProvider } from '@/src/lib/animationVisibility';
 import {
   statusMotionKind,
   statusTone,
@@ -47,7 +48,6 @@ import { Button } from './ui/button';
 import { Text } from './ui/text';
 
 const ReducedMotionContext = createContext(false);
-const AgentStatusAnimationContext = createContext(true);
 const AGENT_SPINNER_ROTATION_MS = 700;
 const AGENT_STATUS_STROKE_WIDTH = 2.5;
 
@@ -101,9 +101,9 @@ export function AgentStatusAnimationProvider({
   }, []);
 
   return (
-    <AgentStatusAnimationContext.Provider value={enabled && appActive}>
+    <AnimationVisibilityProvider enabled={enabled && appActive}>
       {children}
-    </AgentStatusAnimationContext.Provider>
+    </AnimationVisibilityProvider>
   );
 }
 

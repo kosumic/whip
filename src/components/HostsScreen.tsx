@@ -14,7 +14,7 @@ import Server from 'lucide-react-native/icons/server';
 import ServerOff from 'lucide-react-native/icons/server-off';
 import Trash2 from 'lucide-react-native/icons/trash';
 import { useEffect, useRef, useState } from 'react';
-import { PanResponder, Platform, ScrollView, View } from 'react-native';
+import { FlatList, PanResponder, Platform, View } from 'react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -23,6 +23,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supportsBrowserControl } from '@/src/browser/native';
 import { browserRegistry } from '@/src/browser/registry';
 import { orderByConnectionAndAgentStatusPriority } from '@/src/herdQueue';
+import { ANIMATION_VIEWABILITY_CONFIG, useViewableKeys } from '@/src/hooks/useViewableKeys';
+import { AnimationVisibilityProvider } from '@/src/lib/animationVisibility';
 import { bottomNavigationInset } from '@/src/lib/floatingChrome';
 import { DEFAULT_SSH_PORT, hostDisplayName } from '@/src/lib/hostProfiles';
 import type { HostRuntimeSummary } from '@/src/lib/hostRuntimeSummary';
@@ -75,6 +77,7 @@ export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId
   const { colors } = useTheme();
   const { bottom } = useSafeAreaInsets();
   const [pushEnabledHostIds, setPushEnabledHostIds] = useState<Set<string>>(() => new Set());
+  const { viewableKeys, onViewableItemsChanged } = useViewableKeys();
   useEffect(() => {
     let active = true;
     let request = 0;
@@ -146,148 +149,154 @@ export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId
         </View>
       ) : null}
 
-      <ScrollView
+      <FlatList
         className="flex-1"
-        contentContainerStyle={{ paddingBottom: bottomNavigationInset(bottom) }}>
-        <View className="flex-grow p-4 pb-6">
-          {hosts.length === 0 ? (
-            <View className="min-h-[440px] flex-1 items-center justify-center px-7">
-              <View className="size-[72px] items-center justify-center rounded-full bg-muted"><Icon as={Server} size={30} /></View>
-              <Text className="mt-5 text-[22px] font-semibold leading-7">{t('hosts.emptyTitle')}</Text>
-              <Text className="mt-2 max-w-[310px] text-center text-[15px] leading-[22px] text-muted-foreground">{t('hosts.emptyCopy')}</Text>
-              <Button className="mt-6 rounded-full" onPress={hapticPress(onAdd)}><Icon as={Plus} className="text-primary-foreground" size={17} /><Text>{t('hosts.addFirst')}</Text></Button>
-            </View>
-          ) : (
-            <>
-              <Text className="mb-3 px-1 text-sm font-semibold text-muted-foreground">{t('hosts.count', { count: hosts.length })}</Text>
-              <View className="gap-3">
-                {orderedHosts.map(host => {
-                  const connecting = connectingHostIdSet.has(host.id);
-                  const active = activeHostId === host.id;
-                  const connected = connectedHostIdSet.has(host.id);
-                  const pushEnabled = pushEnabledHostIds.has(host.id);
-                  const state = connecting ? 'working' : connected ? 'done' : 'idle';
-                  const label = connecting ? t('hosts.opening') : active && connected ? t('hosts.active') : connected ? t('hosts.open') : t('hosts.offline');
-                  const displayName = hostDisplayName(host);
-                  const jumpHost = host.jumpHostId ? hostsById.get(host.jumpHostId) : undefined;
-                  const latencyMs = latencyMsByHostId[host.id];
-                  const runtime = connected ? runtimeByHostId[host.id] : undefined;
-                  return (
-                    <SwipeableHostRow
-                      key={host.id}
-                      connected={connected}
-                      connecting={connecting}
-                      displayName={displayName}
-                      onConnect={() => onConnect(host)}
-                      onDelete={() => onDelete(host)}
-                      onDisconnect={() => onDisconnect(host)}>
-                      {({ closeActions, actionsOpen }) => (
-                        <GlassSurface className="min-h-[88px] flex-row items-center rounded-lg border border-white/30 pr-2 dark:border-white/10">
-                          <Button
-                            accessibilityLabel={t('hosts.connectTo', { host: displayName })}
-                            className="h-auto min-h-[88px] min-w-0 flex-1 self-stretch justify-start gap-3 rounded-none px-3 py-3 sm:h-auto"
-                            size="content"
-                            variant="ghost"
-                            onPress={hapticPress(() => {
-                              if (actionsOpen) closeActions();
-                              else onConnect(host);
-                            })}>
-                            <AgentStatusMedallion
-                              accessibilityLabel={runtime
-                                ? t('hosts.agentStatus', { status: t(`status.${runtime.agentStatus}`) })
-                                : t('status.disconnected')}
-                              status={runtime?.agentStatus ?? 'unknown'}
-                              connected={connected}
-                              color={runtime
-                                ? statusColor(runtime.agentStatus, colors)
-                                : colors.textSecondary}
-                              icon={runtime ? undefined : ServerOff}
-                            />
-                            <View className="min-w-0 flex-1">
-                              <View className="flex-row items-center gap-2"><Text className="flex-1 text-base font-semibold" numberOfLines={1}>{displayName}</Text><StatusBadge status={state} label={label} /></View>
-                              <View className="mt-1 flex-row items-center gap-2">
-                                <Text className="min-w-0 flex-1 text-[13px] leading-[18px] text-muted-foreground" numberOfLines={1}>{host.username}@{host.host}{host.port !== DEFAULT_SSH_PORT ? `:${host.port}` : ''}</Text>
-                                <Text accessibilityLabel={latencyMs == null ? t('hosts.latencyUnavailable') : t('hosts.latency', { value: latencyMs })} className="text-[11px] leading-[18px] text-muted-foreground/70">{latencyMs == null ? '— ms' : `${latencyMs} ms`}</Text>
-                              </View>
-                              <Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>
-                                {host.authMode === 'none' ? t('connection.tunnelAuthentication') : host.authMode === 'key' ? t('hosts.sshKey') : t('hosts.password')}
-                                {!connected && host.lastConnectedAt
-                                  ? ` · ${t('hosts.lastConnected', { value: formatLastUsed(host.lastConnectedAt, t) })}`
-                                  : ''}
-                              </Text>
-                              {connected ? (
-                                <View className="mt-1.5 flex-row flex-wrap items-center gap-x-2.5 gap-y-1">
-                                  {host.jumpHostId ? (
-                                    <View
-                                      accessible
-                                      accessibilityLabel={t('hosts.jumpHost', {
-                                        host: jumpHost ? hostDisplayName(jumpHost) : t('hosts.jumpHostUnavailable'),
-                                      })}
-                                      className={HOST_FEATURE_BADGE_CLASS_NAME}>
-                                      <View className={HOST_FEATURE_ICON_FRAME_CLASS_NAME}>
-                                        <Icon as={Network} className="text-muted-foreground" size={HOST_FEATURE_ICON_SIZE} />
-                                      </View>
-                                      <Text style={HOST_FEATURE_VALUE_STYLE} className={HOST_FEATURE_VALUE_CLASS_NAME}>
-                                        {jumpHost ? hostDisplayName(jumpHost) : t('hosts.jumpHostUnavailable')}
-                                      </Text>
-                                    </View>
-                                  ) : null}
-                                  <View
-                                    accessible
-                                    accessibilityLabel={t('hosts.agents', { count: runtime?.agentTotal ?? 0 })}
-                                    className={HOST_FEATURE_BADGE_CLASS_NAME}>
-                                    <View className={HOST_FEATURE_ICON_FRAME_CLASS_NAME}>
-                                      <Icon as={Bot} className="text-muted-foreground" size={HOST_FEATURE_ICON_SIZE} />
-                                    </View>
-                                    <Text style={HOST_FEATURE_VALUE_STYLE} className={HOST_FEATURE_VALUE_CLASS_NAME}>
-                                      {runtime?.agentTotal ?? 0}
-                                    </Text>
-                                  </View>
-                                  <View
-                                    accessible
-                                    accessibilityLabel={runtime?.protocol == null
-                                      ? t('hosts.herdrProtocolNone')
-                                      : t('hosts.herdrProtocol', { version: runtime.protocol })}
-                                    className={HOST_FEATURE_BADGE_CLASS_NAME}>
-                                    <View className={HOST_FEATURE_ICON_FRAME_CLASS_NAME}>
-                                      <HerdrMark size={HOST_FEATURE_ICON_SIZE} />
-                                    </View>
-                                    <Text style={HOST_FEATURE_VALUE_STYLE} className={HOST_FEATURE_VALUE_CLASS_NAME}>
-                                      {runtime?.protocol == null
-                                        ? t('hosts.herdrProtocolNoneValue')
-                                        : t('hosts.herdrProtocolValue', { version: runtime.protocol })}
-                                    </Text>
-                                  </View>
-                                  {host.tailcatEnabled ? (
-                                    <View accessible accessibilityLabel={t('connection.tailcat')} className={HOST_FEATURE_ICON_FRAME_CLASS_NAME}>
-                                      <Icon as={Cat} className="text-muted-foreground" size={HOST_FEATURE_ICON_SIZE} />
-                                    </View>
-                                  ) : null}
-                                  {pushEnabled ? (
-                                    <View accessible accessibilityLabel={t('settings.notifications')} className={HOST_FEATURE_ICON_FRAME_CLASS_NAME}>
-                                      <Icon as={Bell} className="text-muted-foreground" size={HOST_FEATURE_ICON_SIZE} />
-                                    </View>
-                                  ) : null}
+        contentContainerStyle={{ flexGrow: 1, padding: 16, paddingBottom: bottomNavigationInset(bottom) + 24 }}
+        data={orderedHosts}
+        keyExtractor={host => host.id}
+        viewabilityConfig={ANIMATION_VIEWABILITY_CONFIG}
+        onViewableItemsChanged={onViewableItemsChanged}
+        ItemSeparatorComponent={HostRowSeparator}
+        ListEmptyComponent={
+          <View className="min-h-[440px] flex-1 items-center justify-center px-7">
+            <View className="size-[72px] items-center justify-center rounded-full bg-muted"><Icon as={Server} size={30} /></View>
+            <Text className="mt-5 text-[22px] font-semibold leading-7">{t('hosts.emptyTitle')}</Text>
+            <Text className="mt-2 max-w-[310px] text-center text-[15px] leading-[22px] text-muted-foreground">{t('hosts.emptyCopy')}</Text>
+            <Button className="mt-6 rounded-full" onPress={hapticPress(onAdd)}><Icon as={Plus} className="text-primary-foreground" size={17} /><Text>{t('hosts.addFirst')}</Text></Button>
+          </View>
+        }
+        ListHeaderComponent={hosts.length > 0
+          ? <Text className="mb-3 px-1 text-sm font-semibold text-muted-foreground">{t('hosts.count', { count: hosts.length })}</Text>
+          : undefined}
+        renderItem={({ item: host }) => {
+          const connecting = connectingHostIdSet.has(host.id);
+          const active = activeHostId === host.id;
+          const connected = connectedHostIdSet.has(host.id);
+          const pushEnabled = pushEnabledHostIds.has(host.id);
+          const state = connecting ? 'working' : connected ? 'done' : 'idle';
+          const label = connecting ? t('hosts.opening') : active && connected ? t('hosts.active') : connected ? t('hosts.open') : t('hosts.offline');
+          const displayName = hostDisplayName(host);
+          const jumpHost = host.jumpHostId ? hostsById.get(host.jumpHostId) : undefined;
+          const latencyMs = latencyMsByHostId[host.id];
+          const runtime = connected ? runtimeByHostId[host.id] : undefined;
+          return (
+            <AnimationVisibilityProvider enabled={viewableKeys.has(host.id)}>
+              <SwipeableHostRow
+                key={host.id}
+                connected={connected}
+                connecting={connecting}
+                displayName={displayName}
+                onConnect={() => onConnect(host)}
+                onDelete={() => onDelete(host)}
+                onDisconnect={() => onDisconnect(host)}>
+                {({ closeActions, actionsOpen }) => (
+                  <GlassSurface className="min-h-[88px] flex-row items-center rounded-lg border border-white/30 pr-2 dark:border-white/10">
+                    <Button
+                      accessibilityLabel={t('hosts.connectTo', { host: displayName })}
+                      className="h-auto min-h-[88px] min-w-0 flex-1 self-stretch justify-start gap-3 rounded-none px-3 py-3 sm:h-auto"
+                      size="content"
+                      variant="ghost"
+                      onPress={hapticPress(() => {
+                        if (actionsOpen) closeActions();
+                        else onConnect(host);
+                      })}>
+                      <AgentStatusMedallion
+                        accessibilityLabel={runtime
+                          ? t('hosts.agentStatus', { status: t(`status.${runtime.agentStatus}`) })
+                          : t('status.disconnected')}
+                        status={runtime?.agentStatus ?? 'unknown'}
+                        connected={connected}
+                        color={runtime
+                          ? statusColor(runtime.agentStatus, colors)
+                          : colors.textSecondary}
+                        icon={runtime ? undefined : ServerOff}
+                      />
+                      <View className="min-w-0 flex-1">
+                        <View className="flex-row items-center gap-2"><Text className="flex-1 text-base font-semibold" numberOfLines={1}>{displayName}</Text><StatusBadge status={state} label={label} /></View>
+                        <View className="mt-1 flex-row items-center gap-2">
+                          <Text className="min-w-0 flex-1 text-[13px] leading-[18px] text-muted-foreground" numberOfLines={1}>{host.username}@{host.host}{host.port !== DEFAULT_SSH_PORT ? `:${host.port}` : ''}</Text>
+                          <Text accessibilityLabel={latencyMs == null ? t('hosts.latencyUnavailable') : t('hosts.latency', { value: latencyMs })} className="text-[11px] leading-[18px] text-muted-foreground/70">{latencyMs == null ? '— ms' : `${latencyMs} ms`}</Text>
+                        </View>
+                        <Text className="mt-0.5 text-[11px] leading-[15px] text-muted-foreground/70" numberOfLines={1}>
+                          {host.authMode === 'none' ? t('connection.tunnelAuthentication') : host.authMode === 'key' ? t('hosts.sshKey') : t('hosts.password')}
+                          {!connected && host.lastConnectedAt
+                            ? ` · ${t('hosts.lastConnected', { value: formatLastUsed(host.lastConnectedAt, t) })}`
+                            : ''}
+                        </Text>
+                        {connected ? (
+                          <View className="mt-1.5 flex-row flex-wrap items-center gap-x-2.5 gap-y-1">
+                            {host.jumpHostId ? (
+                              <View
+                                accessible
+                                accessibilityLabel={t('hosts.jumpHost', {
+                                  host: jumpHost ? hostDisplayName(jumpHost) : t('hosts.jumpHostUnavailable'),
+                                })}
+                                className={HOST_FEATURE_BADGE_CLASS_NAME}>
+                                <View className={HOST_FEATURE_ICON_FRAME_CLASS_NAME}>
+                                  <Icon as={Network} className="text-muted-foreground" size={HOST_FEATURE_ICON_SIZE} />
                                 </View>
-                              ) : null}
+                                <Text style={HOST_FEATURE_VALUE_STYLE} className={HOST_FEATURE_VALUE_CLASS_NAME}>
+                                  {jumpHost ? hostDisplayName(jumpHost) : t('hosts.jumpHostUnavailable')}
+                                </Text>
+                              </View>
+                            ) : null}
+                            <View
+                              accessible
+                              accessibilityLabel={t('hosts.agents', { count: runtime?.agentTotal ?? 0 })}
+                              className={HOST_FEATURE_BADGE_CLASS_NAME}>
+                              <View className={HOST_FEATURE_ICON_FRAME_CLASS_NAME}>
+                                <Icon as={Bot} className="text-muted-foreground" size={HOST_FEATURE_ICON_SIZE} />
+                              </View>
+                              <Text style={HOST_FEATURE_VALUE_STYLE} className={HOST_FEATURE_VALUE_CLASS_NAME}>
+                                {runtime?.agentTotal ?? 0}
+                              </Text>
                             </View>
-                          </Button>
-                          <IconButton icon={Ellipsis} accessibilityLabel={t('hosts.edit', { host: displayName })} onPress={() => {
-                            if (actionsOpen) closeActions();
-                            else onEdit(host);
-                          }} />
-                        </GlassSurface>
-                      )}
-                    </SwipeableHostRow>
-                  );
-                })}
-              </View>
-            </>
-          )}
-        </View>
-      </ScrollView>
+                            <View
+                              accessible
+                              accessibilityLabel={runtime?.protocol == null
+                                ? t('hosts.herdrProtocolNone')
+                                : t('hosts.herdrProtocol', { version: runtime.protocol })}
+                              className={HOST_FEATURE_BADGE_CLASS_NAME}>
+                              <View className={HOST_FEATURE_ICON_FRAME_CLASS_NAME}>
+                                <HerdrMark size={HOST_FEATURE_ICON_SIZE} />
+                              </View>
+                              <Text style={HOST_FEATURE_VALUE_STYLE} className={HOST_FEATURE_VALUE_CLASS_NAME}>
+                                {runtime?.protocol == null
+                                  ? t('hosts.herdrProtocolNoneValue')
+                                  : t('hosts.herdrProtocolValue', { version: runtime.protocol })}
+                              </Text>
+                            </View>
+                            {host.tailcatEnabled ? (
+                              <View accessible accessibilityLabel={t('connection.tailcat')} className={HOST_FEATURE_ICON_FRAME_CLASS_NAME}>
+                                <Icon as={Cat} className="text-muted-foreground" size={HOST_FEATURE_ICON_SIZE} />
+                              </View>
+                            ) : null}
+                            {pushEnabled ? (
+                              <View accessible accessibilityLabel={t('settings.notifications')} className={HOST_FEATURE_ICON_FRAME_CLASS_NAME}>
+                                <Icon as={Bell} className="text-muted-foreground" size={HOST_FEATURE_ICON_SIZE} />
+                              </View>
+                            ) : null}
+                          </View>
+                        ) : null}
+                      </View>
+                    </Button>
+                    <IconButton icon={Ellipsis} accessibilityLabel={t('hosts.edit', { host: displayName })} onPress={() => {
+                      if (actionsOpen) closeActions();
+                      else onEdit(host);
+                    }} />
+                  </GlassSurface>
+                )}
+              </SwipeableHostRow>
+            </AnimationVisibilityProvider>
+          );
+        }}
+      />
     </View>
   );
+}
+
+function HostRowSeparator() {
+  return <View className="h-3" />;
 }
 
 function SwipeableHostRow({
