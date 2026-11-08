@@ -8,6 +8,9 @@ import {
   recordBrowserSite,
   clearBrowserDomainCookies,
   supportsBrowserControl,
+  supportsBrowserProxy,
+  prepareBrowserView,
+  browserFavicon,
 } from '../src/browser/native';
 import type { JSDOM as Dom } from 'jsdom';
 
@@ -18,6 +21,9 @@ jest.mock('react-native', () => ({
   Platform: { OS: 'android' },
   NativeModules: {
     WhipBrowser: {
+      supportsProxy: false,
+      prepare: jest.fn(),
+      favicon: jest.fn(),
       saveState: jest.fn(),
       restoreState: jest.fn(),
       discardState: jest.fn(),
@@ -36,6 +42,9 @@ jest.mock('react-native', () => ({
 }));
 
 const native = NativeModules.WhipBrowser as {
+  supportsProxy: boolean;
+  prepare: jest.Mock;
+  favicon: jest.Mock;
   saveState: jest.Mock;
   restoreState: jest.Mock;
   discardState: jest.Mock;
@@ -51,6 +60,38 @@ const native = NativeModules.WhipBrowser as {
   cancelDownload: jest.Mock;
 };
 let page: Dom;
+test.each(['android', 'ios'])(
+  '%s passes host identity and uses the native capability and icon route',
+  async platform => {
+    const original = Platform.OS;
+    try {
+      Platform.OS = platform as typeof Platform.OS;
+      native.supportsProxy = true;
+      expect(supportsBrowserProxy()).toBe(true);
+      await prepareBrowserView(42, 'runtime-a', 'host-a');
+      expect(native.prepare).toHaveBeenLastCalledWith(
+        42,
+        'runtime-a',
+        'host-a',
+      );
+      await prepareBrowserView(42, 'runtime-a');
+      expect(native.prepare).toHaveBeenLastCalledWith(42, 'runtime-a', null);
+      native.favicon.mockResolvedValueOnce('data:image/png;base64,aQ==');
+      expect(
+        await browserFavicon('runtime-a', 'https://example.test/icon'),
+      ).toBe('data:image/png;base64,aQ==');
+      expect(native.favicon).toHaveBeenLastCalledWith(
+        'runtime-a',
+        'https://example.test/icon',
+      );
+      native.supportsProxy = false;
+      expect(supportsBrowserProxy()).toBe(false);
+    } finally {
+      Platform.OS = original;
+      native.supportsProxy = false;
+    }
+  },
+);
 const driver = nativeBrowserDriver(42, {
   goBack: jest.fn(),
   goForward: jest.fn(),

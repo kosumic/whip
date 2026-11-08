@@ -1,4 +1,5 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { Platform } from 'react-native';
 jest.mock('../src/services/appStorage', () => ({
   appStorage: { getItem: jest.fn(async () => null), setItem: jest.fn(async () => undefined) },
 }));
@@ -116,6 +117,7 @@ const textContent = () =>
 beforeEach(async () => {
   jest.clearAllMocks();
   mockSupportsProxy = false;
+  Platform.OS = 'android';
   mockTunneledHosts.clear();
   jest.mocked(browserSiteData).mockResolvedValue({
     hasCookies: true,
@@ -191,6 +193,36 @@ test('both controls disable tunneling when the native proxy is unsupported', asy
   expect(controls).toHaveLength(2);
   expect(controls.map(node => node.props.disabled)).toEqual([true, true]);
   expect(browserLibrary.setTunneling).not.toHaveBeenCalled();
+});
+
+test('iOS enables available tunneling and explains direct fallback and session lifetime', async () => {
+  Platform.OS = 'ios';
+  mockSupportsProxy = true;
+  const { a } = registerHosts();
+  await act(async () =>
+    view.update(<BrowserTunnelingSetting runtimeId={a.runtimeId} />),
+  );
+  const control = input('Tunneling through A');
+  expect(control.props.disabled).toBe(false);
+  expect(textContent()).toContain('may connect directly if the proxy fails');
+  expect(textContent()).toContain('Numeric IP addresses may bypass SSH');
+  expect(textContent()).toContain('reconnecting clears that session');
+  expect(textContent()).not.toContain('Route all HTTP and HTTPS traffic');
+  await act(async () => control.props.onCheckedChange(true));
+  expect(browserLibrary.setTunneling).toHaveBeenCalledWith('saved-a', true);
+  expect(configureBrowserProxy).toHaveBeenLastCalledWith(a.runtimeId, 9001);
+});
+
+test('Android keeps its existing tunneling copy', async () => {
+  mockSupportsProxy = true;
+  const { a } = registerHosts();
+  await act(async () =>
+    view.update(<BrowserTunnelingSetting runtimeId={a.runtimeId} />),
+  );
+  expect(textContent()).toContain('Route all HTTP and HTTPS traffic');
+  expect(textContent()).not.toContain(
+    'may connect directly if the proxy fails',
+  );
 });
 
 test('settings inputs reflect preferences hydrated after the screen mounts', async () => {

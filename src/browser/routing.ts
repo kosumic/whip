@@ -13,7 +13,7 @@ async function stopProxy(runtime: BrowserRuntime, port: number) {
     await Promise.allSettled([runtime.stopBrowserProxy(port)]);
 }
 
-/** Android proxy changes are serialized; old documents are stopped before the switch. */
+/** Proxy changes are serialized; old documents are stopped before the switch. */
 export class BrowserRouting {
   runtimeId: string | null = null;
   ready = true;
@@ -45,7 +45,7 @@ export class BrowserRouting {
       if (!supportsBrowserProxy()) {
         if (enabled)
           throw new Error(
-            'Browser tunneling requires an Android WebView with proxy support.',
+            'SSH browser tunneling is unavailable on this device.',
           );
         return;
       }
@@ -58,7 +58,8 @@ export class BrowserRouting {
             this.active.port > 0))
       )
         return;
-      // A failed proxy stays blocked, never falls back to the phone connection.
+      // Do not activate documents until native route setup completes. Active
+      // request fallback is a native platform policy (allowed on iOS).
       this.runtimeId = runtimeId;
       this.ready = false;
       this.invalidate();
@@ -80,6 +81,14 @@ export class BrowserRouting {
       }
       try {
         await configureBrowserProxy(enabled ? runtimeId : '*', port);
+        if (
+          !local &&
+          (this.lookup(runtimeId)?.runtime !== owner?.runtime ||
+            (enabled && !this.available(runtimeId)))
+        ) {
+          await configureBrowserProxy('', -1);
+          throw new Error('Host disconnected while preparing the browser.');
+        }
       } catch (error) {
         if (port && owner) await stopProxy(owner.runtime, port);
         throw error;
@@ -113,10 +122,10 @@ export class BrowserRouting {
       this.active = null;
       this.runtimeId = runtimeId;
       this.ready = false;
+      this.invalidate();
       await configureBrowserProxy('', -1);
       if (previous.port && previous.runtime)
         await stopProxy(previous.runtime, previous.port);
-      this.invalidate();
     });
     this.queue = operation.then(
       () => undefined,

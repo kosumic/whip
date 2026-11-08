@@ -11,7 +11,8 @@ void RCTRegisterModule(Class module) { registeredModule = module; }
 static const NSTimeInterval WebKitNavigationTimeout = 60;
 
 @interface WhipBrowser (Testing)
-- (void)prepare:(NSNumber *)tag resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
+- (void)configureProxy:(NSString *)runtime port:(double)port resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
+- (void)prepare:(NSNumber *)tag runtimeId:(NSString *)runtimeId tunnelHostId:(NSString *)tunnelHostId resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
 - (void)defaultUserAgent:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
 - (void)configureProfile:(NSNumber *)tag userAgent:(NSString *)userAgent contentMode:(NSString *)contentMode resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
 - (void)evaluate:(NSNumber *)tag script:(NSString *)script resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
@@ -214,13 +215,22 @@ static const NSTimeInterval WebKitNavigationTimeout = 60;
 - (void)testRegistrationAndNestedFabricContainer
 {
   XCTAssertEqual(registeredModule, WhipBrowser.class);
+  if (@available(iOS 17.0, *)) {
+    [self resultOf:^(RCTPromiseResolveBlock resolve, RCTPromiseRejectBlock reject) {
+      [self.adapter configureProxy:@"*" port:0 resolve:resolve reject:reject];
+    }];
+    WKWebViewConfiguration *config = [WKWebViewConfiguration new];
+    config.websiteDataStore = [WhipBrowserRoute websiteDataStoreForRoute:@"[\"\",null]"];
+    self.browser = [[WKWebView alloc] initWithFrame:CGRectZero configuration:config];
+    self.registry.view = self.browser;
+  }
   [self resultOf:^(RCTPromiseResolveBlock resolve, RCTPromiseRejectBlock reject) {
-    [self.adapter prepare:@42 resolve:resolve reject:reject];
+    [self.adapter prepare:@42 runtimeId:nil tunnelHostId:nil resolve:resolve reject:reject];
   }];
   XCTAssertTrue(self.browser.allowsBackForwardNavigationGestures);
   self.registry.view = nil;
   XCTestExpectation *done = [self expectationWithDescription:@"unmounted tag rejected"];
-  [self.adapter prepare:@42 resolve:^(id value) { XCTFail(@"Unmounted browser resolved"); [done fulfill]; }
+  [self.adapter prepare:@42 runtimeId:nil tunnelHostId:nil resolve:^(id value) { XCTFail(@"Unmounted browser resolved"); [done fulfill]; }
                  reject:^(NSString *code, NSString *message, NSError *error) {
     XCTAssertEqualObjects(code, @"BROWSER_UNAVAILABLE");
     [done fulfill];

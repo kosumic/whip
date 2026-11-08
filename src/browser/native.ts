@@ -159,17 +159,14 @@ export const prepareBrowserView = (
   tag: number,
   runtimeId?: string,
   tunnelHostId?: string | null,
-) =>
-  Platform.OS === 'android'
-    ? nativeBrowser().prepare(tag, runtimeId, tunnelHostId || null)
-    : nativeBrowser().prepare(tag);
+) => nativeBrowser().prepare(tag, runtimeId, tunnelHostId || null);
 export const supportsBrowserProxy = () =>
-  Platform?.OS === 'android' &&
+  (Platform?.OS === 'android' || Platform?.OS === 'ios') &&
   !!(NativeModules?.WhipBrowser as NativeBrowser | undefined)?.supportsProxy;
 export const configureBrowserProxy = (runtimeId: string, port: number) =>
   nativeBrowser().configureProxy(runtimeId, port);
 export const browserFavicon = (runtimeId: string, url: string) =>
-  Platform.OS === 'android'
+  Platform.OS === 'android' || Platform.OS === 'ios'
     ? nativeBrowser().favicon(runtimeId, url)
     : Promise.resolve(url);
 export const defaultBrowserUserAgent = () => nativeBrowser().defaultUserAgent();
