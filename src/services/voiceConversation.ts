@@ -28,7 +28,7 @@ export type GlobalVoiceChatTarget = {
 export type RealtimeVoiceChatTarget = VoiceChatTarget | GlobalVoiceChatTarget;
 
 export interface VoiceConversationView {
-  phase: VoiceChatView['phase'] | 'error' | 'starting';
+  phase: VoiceChatView['phase'] | 'error' | 'starting' | 'reconnecting';
   muted: boolean;
   smartTurn: boolean;
   speaker: boolean;
@@ -48,6 +48,14 @@ export interface VoiceConversationView {
   backendText?: string | null;
   liveSeconds?: number | null;
   usageFinalized?: boolean;
+  continuity?: {
+    status: 'connecting' | 'connected' | 'reconnecting' | 'failed' | 'ended';
+    lastReason: 'lifetime' | 'drain_deadline' | 'connection_lost' | null;
+    retryCount: number;
+    replacements: number;
+    sessions: number;
+    attempts: readonly { generation: number; elapsedMs: number; connected: boolean }[];
+  };
 }
 const STOPPED = 'WhipChatSpeechStopped';
 const STARTED = 'WhipChatSpeechStarted';

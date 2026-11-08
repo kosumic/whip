@@ -114,7 +114,7 @@ struct Preview<'a> {
     owner: &'a Arc<RealtimeVoiceAdapter>,
     audio: &'a PreviewAudio<'a>,
     usage: &'a mut usage::Usage,
-    commands: mpsc::Receiver<super::super::Command>,
+    commands: &'a mut mpsc::Receiver<super::super::Command>,
     cancelled: watch::Receiver<bool>,
     started: Instant,
 }
@@ -211,7 +211,7 @@ pub(super) async fn drive(
     _config: &Config,
     session: &mut Session<'_>,
     usage: &mut usage::Usage,
-    commands: mpsc::Receiver<super::super::Command>,
+    commands: &mut mpsc::Receiver<super::super::Command>,
 ) -> Result<(), &'static str> {
     let audio = PreviewAudio {
         owner,

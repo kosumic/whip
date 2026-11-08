@@ -1,4 +1,9 @@
 export const zhHans = {
+  'voiceChat.reconnecting': '正在重新连接通话… 聆听将自动恢复。',
+  'voiceChat.freshSessions': '已创建 {{count}} 个 API 会话。每个会话单独计费。',
+  'voiceChat.recoveryLifetime': '正在更新服务商会话。',
+  'voiceChat.recoveryDrain': '会话期限中断了聆听或待处理工作。未完成的请求不会重放。',
+  'voiceChat.recoveryConnection': '与服务商的连接已断开。',
   'voiceProvider.prepareCalls': "保持语音客户端预热",
   'voiceProvider.prepareCallsHelp': "Whip 在前台时保持 WebRTC 资源和 HTTPS 连接就绪。会占用额外内存，并定期发送不含 API 密钥的网络请求。只有开始通话时才开启麦克风和 API 会话，预热不会产生 API 使用费用。",
   'voiceUsage.cost': '费用',

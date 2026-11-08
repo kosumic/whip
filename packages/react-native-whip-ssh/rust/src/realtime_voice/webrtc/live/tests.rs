@@ -154,7 +154,8 @@ async fn public_live_webrtc_api_smoke() -> Result<(), Box<dyn std::error::Error>
     Ok(())
 }
 
-fn playback_owner() -> Result<Arc<RealtimeVoiceAdapter>, &'static str> {
+pub(in crate::realtime_voice) fn playback_owner() -> Result<Arc<RealtimeVoiceAdapter>, &'static str>
+{
     use std::sync::atomic::AtomicU64;
     let speech = crate::speech_playback::RealtimeSpeechLease::claim(false)
         .ok_or("Speech lease unavailable")?;
@@ -213,7 +214,13 @@ fn playback_owner() -> Result<Arc<RealtimeVoiceAdapter>, &'static str> {
         allow_input: true,
         credential_generation: crate::voice_credentials::generation(),
         speech,
-        global: None,
+        global: Mutex::new(None),
+        global_instructions: String::new(),
+        continuity: Mutex::default(),
+        continuity_enabled: true,
+        retiring: AtomicBool::new(false),
+        failure: Mutex::new(None),
+        replacement: Mutex::new(None),
     }))
 }
 
@@ -227,6 +234,82 @@ fn starting_owner() -> Result<Arc<RealtimeVoiceAdapter>, &'static str> {
         view.phase = "starting";
     }
     Ok(owner)
+}
+
+#[tokio::test(start_paused = true)]
+async fn two_rotations_keep_the_device_lease_and_fence_retired_audio_and_failures()
+-> Result<(), Box<dyn std::error::Error>> {
+    use voice_call_openai::{Host, continuity::Reason, session::Audio};
+    let _device_audio = DEVICE_AUDIO_TEST.lock().await;
+    let owner = playback_owner()?;
+    let tag = voice_call_media::Tag {
+        response: "reply".into(),
+        item: "item".into(),
+        index: 0,
+    };
+    for _ in 0..2 {
+        owner.retiring.store(false, Ordering::Release);
+        let attempt = recovery::Attempt::new(owner.clone());
+        let host = super::super::host::AppHost {
+            owner: owner.clone(),
+            attempt: attempt.clone(),
+        };
+        attempt.activate()?;
+        owner.ready.store(true, Ordering::Release);
+        owner
+            .continuity
+            .lock()
+            .created(Some(Duration::from_secs(310)));
+        assert!(!owner.continuity_tick(true)?);
+        tokio::time::advance(Duration::from_secs(10)).await;
+        assert!(owner.continuity_tick(true)?);
+        assert_eq!(owner.replacement.lock().take(), Some(Reason::Lifetime));
+        host.render(&tag, &[1000; voice::FRAME])?;
+        let epoch = owner.output.lock().epoch;
+        owner.retire_session();
+        host.render(&tag, &[2000; voice::FRAME])?;
+        attempt.fail("late provider error".into());
+        owner.output.lock().acknowledge(epoch, voice::FRAME);
+        assert!(owner.output.lock().samples.is_empty());
+        assert!(owner.failure.lock().is_none());
+        assert!(!owner.closed.load(Ordering::Acquire));
+        assert!(owner.speech.is_current());
+        assert!(owner.devices_ready.load(Ordering::Acquire));
+        assert!(owner.output.lock().epoch > epoch);
+        owner.continuity.lock().replacing(Reason::Lifetime);
+        // Mute intent survives even though retirement suppresses native capture.
+        owner.set_muted(true)?;
+        assert!(owner.view.lock().muted);
+    }
+    owner.close();
+    assert!(!owner.capture(
+        &[3000; voice::FRAME],
+        owner.input.generation(),
+        Instant::now()
+    ));
+    assert!(owner.closed.load(Ordering::Acquire));
+    Ok(())
+}
+
+#[tokio::test]
+async fn established_transport_failure_requests_recovery_without_releasing_microphone_owner()
+-> Result<(), Box<dyn std::error::Error>> {
+    let _device_audio = DEVICE_AUDIO_TEST.lock().await;
+    let owner = playback_owner()?;
+    let attempt = recovery::Attempt::new(owner.clone());
+    attempt.activate()?;
+    attempt.fail(recovery::Failure {
+        message: "Voice network connection did not recover.",
+        retryable: true,
+    });
+    assert!(owner.continuity_tick(true).is_err());
+    assert!(!owner.closed.load(Ordering::Acquire));
+    assert!(!owner.ready.load(Ordering::Acquire));
+    assert!(owner.speech.is_current());
+    owner.close();
+    attempt.fail("late failure".into());
+    assert_eq!(owner.view.lock().phase, "closed");
+    Ok(())
 }
 
 #[tokio::test]
@@ -490,14 +573,12 @@ async fn full_live_playback(
         .then(voice::echo::MediaEchoCanceller::new)
         .transpose()?
         .map(Box::new);
-    let (commands, command_rx) = tokio::sync::mpsc::channel(8);
-    let worker = tokio::spawn(voice::live::LiveVoiceAdapter::run(
-        owner.clone(),
-        config,
-        credential,
-        None,
-        command_rx,
-    ));
+    let (commands, mut command_rx) = tokio::sync::mpsc::channel(8);
+    let worker_owner = owner.clone();
+    let worker = tokio::spawn(async move {
+        voice::live::LiveVoiceAdapter::run(worker_owner, config, &credential, None, &mut command_rx)
+            .await
+    });
     let started = Instant::now();
     let mut ready_at = None;
     let mut offset = 0;
@@ -830,6 +911,141 @@ async fn public_realtime_sideband_identifies_native_playback()
     assert!(
         buffered_boundary,
         "Replies did not exercise buffered device audio"
+    );
+    Ok(())
+}
+
+/// Explicitly billable: exercise the real provider through Whip's logical owner.
+/// The microphone/playback devices are synthetic; no personal audio is recorded.
+#[tokio::test]
+#[ignore = "requires explicitly authorized OPENAI_API_KEY and network access"]
+async fn public_realtime_call_rotates_twice_and_recovers_without_replacing_device_owner()
+-> Result<(), Box<dyn std::error::Error>> {
+    let _device_audio = DEVICE_AUDIO_TEST.lock().await;
+    let _storage = test_storage().await?;
+    let key = authorized_credential()?;
+    let config: voice::Config = serde_json::from_value(json!({
+        "webrtc":true,"global":true,"voice":"cedar",
+        "vad":{"type":"server_vad","threshold":0.5,"prefix_padding_ms":300,"silence_duration_ms":500}
+    }))?;
+    let mut update = serde_json::to_value(config.session_update()?)?;
+    update["session"]["instructions"] = json!(
+        "This is a synthetic connection test. Follow the user's requested test sentence and otherwise stay quiet."
+    );
+    update["session"]["tools"] = json!([]);
+    update["session"]["tool_choice"] = json!("none");
+    let update = serde_json::from_value(update)?;
+    let mut owner = playback_owner()?;
+    let (commands, command_rx) = tokio::sync::mpsc::channel(8);
+    Arc::get_mut(&mut owner)
+        .ok_or("Owner unexpectedly shared")?
+        .commands = commands;
+    owner.ready.store(false, Ordering::Release);
+    {
+        let mut view = owner.view.lock();
+        view.phase = "starting";
+        view.media_ready = false;
+    }
+    let input_id = owner.input.id();
+    let worker_owner = owner.clone();
+    let worker = tokio::spawn(async move {
+        let mut tools = tokio::task::JoinSet::new();
+        let result = worker_owner
+            .run_call(
+                config,
+                key,
+                Some(update),
+                None,
+                None,
+                command_rx,
+                &mut tools,
+            )
+            .await;
+        if let Err(error) = result {
+            worker_owner.fail(error);
+        }
+        worker_owner.stopped.store(true, Ordering::Release);
+        result
+    });
+    let started = Instant::now();
+    let mut tick = tokio::time::interval(Duration::from_millis(20));
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut prompted = false;
+    let mut peak = 0_u16;
+    let mut armed = 0;
+    let mut ready_sessions = std::collections::BTreeSet::new();
+    let mut injected_loss = false;
+    let mut saw_reconnecting = false;
+    let result = async {
+        loop {
+            tick.tick().await;
+            if started.elapsed() > Duration::from_secs(120) { return Err("Realtime continuity test exceeded its deadline"); }
+            if worker.is_finished() { return Err("Realtime logical call ended before continuity checks finished"); }
+            if owner.input.id() != input_id { return Err("The microphone owner changed"); }
+            if !owner.speech.is_current() { return Err("The device speech lease changed"); }
+            let (phase, confirmed, uploaded, error) = {
+                let view = owner.view.lock();
+                (view.phase, view.startup.settings_confirmed.is_some(), view.uploaded_packets, view.error)
+            };
+            if let Some(error) = error { return Err(error); }
+            saw_reconnecting |= phase == "reconnecting";
+            let sessions = owner.continuity.lock().diagnostics.sessions;
+            let mut pcm = [0_i16; voice::FRAME];
+            if !owner.capture(&pcm, owner.input.generation(), Instant::now()) {
+                return Err("Synthetic microphone delivery stopped");
+            }
+            let drained = {
+                let mut output = owner.output.lock();
+                let count = output.read(&mut pcm);
+                peak = peak.max(pcm[..count].iter().map(|sample| sample.unsigned_abs()).max().unwrap_or(0));
+                let epoch = output.epoch;
+                let delivered = output.delivered;
+                output.acknowledge(epoch, delivered);
+                output.generated == output.played
+            };
+            if phase != "listening" || !confirmed || uploaded == 0 { continue; }
+            if ready_sessions.insert(sessions) {
+                eprintln!("Realtime continuity: session={sessions} listening_ms={} uploaded_packets={uploaded}", startup::elapsed(started));
+            }
+            if !prompted {
+                prompted = true;
+                owner.command(voice::Command::Submitted("Say exactly: Realtime connection test passed. Then remain quiet.".into()));
+            }
+            if peak < 512 || !drained { continue; }
+            if sessions <= 2 && armed != sessions {
+                // Shorten the accepted session's deadline, using the production
+                // expiry path, without introducing a user setting or replaying input.
+                owner.continuity.lock().expires_in(Duration::from_secs(303));
+                armed = sessions;
+            } else if sessions == 3 && !injected_loss {
+                injected_loss = true;
+                // Inject the same native failure signal as a lost media worker.
+                // Production retirement must hang up the real server call before
+                // creating its replacement; do not remove/close the handle here.
+                *owner.failure.lock() = Some(recovery::Failure { message: "Voice media connection ended.", retryable: true });
+                owner.ready.store(false, Ordering::Release);
+                owner.input.set_muted(true);
+                owner.recovering(voice_call_openai::continuity::Reason::ConnectionLost);
+            } else if sessions >= 4 && injected_loss && saw_reconnecting {
+                break;
+            }
+        }
+        Ok(())
+    }.await;
+    // Always drain POSTs and server hangup, including failed assertions/deadlines.
+    owner.close();
+    let stopped = tokio::time::timeout(Duration::from_secs(45), worker).await;
+    owner.speech.release();
+    let stopped = stopped.map_err(|_| "Realtime Hang Up did not drain within its deadline")??;
+    result?;
+    stopped?;
+    assert!(owner.stopped.load(Ordering::Acquire));
+    assert_eq!(owner.view.lock().phase, "closed");
+    assert_eq!(ready_sessions.len(), 4);
+    eprintln!(
+        "Realtime continuity passed: rotations=2 recoveries=1 ready_sessions={} peak={peak} elapsed_ms={} hangup_drained=true",
+        ready_sessions.len(),
+        startup::elapsed(started)
     );
     Ok(())
 }

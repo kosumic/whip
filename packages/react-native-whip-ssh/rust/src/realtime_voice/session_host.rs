@@ -18,7 +18,7 @@ pub(super) struct App<'a> {
     config: Config,
     agent: Option<Arc<PinnedAgent>>,
     terminal: Option<Arc<terminal::Session>>,
-    commands: mpsc::Receiver<Command>,
+    commands: &'a mut mpsc::Receiver<Command>,
     cancellation: watch::Receiver<bool>,
     tools: &'a mut JoinSet<ToolCompletion>,
     costs: &'a mut cost::CurrentChat,
@@ -26,6 +26,7 @@ pub(super) struct App<'a> {
     started: tokio::time::Instant,
     input_item: String,
     ledger: ToolLedger,
+    global_calls: voice_call_openai::tools::Ledger,
     preview_done: bool,
     preview_requested: bool,
     handoff: Option<feedback::Handoff>,
@@ -38,7 +39,7 @@ impl<'a> App<'a> {
         owner: &'a Arc<RealtimeVoiceAdapter>,
         config: Config,
         targets: BoundTargets,
-        commands: mpsc::Receiver<Command>,
+        commands: &'a mut mpsc::Receiver<Command>,
         tools: &'a mut JoinSet<ToolCompletion>,
         costs: &'a mut cost::CurrentChat,
         configuration_started: Instant,
@@ -56,6 +57,7 @@ impl<'a> App<'a> {
             started: tokio::time::Instant::now(),
             input_item: String::new(),
             ledger: ToolLedger::default(),
+            global_calls: voice_call_openai::tools::Ledger::default(),
             preview_done: false,
             preview_requested: false,
             handoff: None,
@@ -76,6 +78,7 @@ impl<'a> App<'a> {
             terminal,
             tools,
             ledger,
+            global_calls,
             deferred,
             handoff,
             context,
@@ -104,7 +107,23 @@ impl<'a> App<'a> {
             event.input = Some(limit_text(arguments.clone()));
             owner.output.lock().transcript.event(&call_id, event);
         }
-        if let Some(global) = &owner.global {
+        if self.config.global {
+            // Remember denied requests too: unlocking may admit a new action,
+            // never replay the identity of one denied while locked.
+            match global_calls.begin(&call_id, &arguments, voice_call_openai::tools::Access::Read) {
+                Ok(_) => {}
+                Err("duplicate") => return Ok(Flow::Continue),
+                Err(_) => return Err("Global tool admission failed."),
+            }
+            let Ok(global) = owner.global_session(self.config.global_shizuku_access) else {
+                send(
+                    socket,
+                    function_output(call_id, json!({"error":"authorization_unavailable"})),
+                )
+                .await?;
+                responses.request_create();
+                return Ok(Flow::Continue);
+            };
             if !global.admit(&call_id)? {
                 return Ok(Flow::Continue);
             }
@@ -209,7 +228,7 @@ impl Delegate for App<'_> {
         if let Work::Command(command) = work {
             match command {
                 Command::Submitted(text) => {
-                    let event = if self.owner.global.is_some() {
+                    let event = if self.config.global {
                         global_submitted_message(&text)?
                     } else if self.terminal.is_some() {
                         terminal_submitted_message(&text)?
@@ -217,7 +236,7 @@ impl Delegate for App<'_> {
                         submitted_message(&text)?
                     };
                     session.send(event).await?;
-                    if self.owner.global.is_some() {
+                    if self.config.global {
                         session.realtime_state()?.responses.request_create();
                     }
                 }
@@ -255,7 +274,7 @@ impl Delegate for App<'_> {
             deferred: was_deferred,
             mut value,
         } = completion.map_err(|_| "Realtime tool task failed.")?;
-        let transcript_result = if owner.global.is_none() && terminal.is_none() {
+        let transcript_result = if !self.config.global && terminal.is_none() {
             json!({"completion":value["completion"], "error":value["error"], "result":live::public_result(&value)})
         } else {
             value.clone()
@@ -265,7 +284,7 @@ impl Delegate for App<'_> {
             .lock()
             .transcript
             .event_result(&call_id, &transcript_result);
-        if owner.global.is_some() {
+        if self.config.global {
             if owner.closed.load(Ordering::Acquire) {
                 return Ok(Flow::Continue);
             }
@@ -327,6 +346,21 @@ impl Delegate for App<'_> {
         Ok(Flow::Continue)
     }
     async fn tick(&mut self, session: &mut Session<'_>) -> Result<Flow, &'static str> {
+        let drained = {
+            let output = self.owner.output.lock();
+            output.generated == output.played
+        };
+        let idle = self.tools.is_empty()
+            && self.deferred.len() == 0
+            && session.realtime_state()?.responses.is_idle()
+            && drained
+            && self
+                .terminal
+                .as_ref()
+                .is_none_or(|terminal| !terminal.busy());
+        if self.owner.continuity_tick(idle)? {
+            return Ok(Flow::Stop);
+        }
         let Self {
             owner,
             config,
@@ -470,7 +504,8 @@ impl Delegate for App<'_> {
         ) {
             owner.view.lock().caption_events += 1;
         }
-        if matches!(event, ServerEvent::SessionCreated { .. }) {
+        if let ServerEvent::SessionCreated { session, .. } = &event {
+            owner.provider_expiry(session);
             return Ok(Flow::Continue);
         }
         if costs.observe(&event) {

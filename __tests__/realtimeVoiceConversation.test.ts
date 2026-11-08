@@ -51,6 +51,30 @@ jest.mock('../src/services/NativeTranscriptService', () => ({ agentTranscriptSer
 
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 
+test.each(['Realtime', 'Live'] as const)('%s native recovery publishes status without opening a second phone call, microphone or replaying input', async mode => {
+  const changed = jest.fn();
+  const call = new RealtimeVoiceConversation({ global: true, label: 'Global call' }, { ...defaults, provider: 'openai', mode }, changed);
+  await call.start();
+  mockApp.currentState = 'background';
+  for (let sessions = 1; sessions <= 2; sessions++) {
+    const continuity = { status: 'reconnecting', lastReason: 'connection_lost', sessions, retryCount: 1, replacements: sessions, attempts: [] };
+    mockNative.realtimeVoiceView.mockResolvedValueOnce(JSON.stringify({ phase: 'reconnecting', continuity }));
+    await jest.advanceTimersByTimeAsync(100);
+    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'reconnecting', continuity }));
+    call.submitted('Do not queue this unfinished prompt');
+    await jest.advanceTimersByTimeAsync(100);
+  }
+  expect(mockNative.startVoiceCall).toHaveBeenCalledTimes(1);
+  expect(mockNative.startRealtimeVoice).toHaveBeenCalledTimes(1);
+  expect(mockNative.realtimeVoiceSubmitted).not.toHaveBeenCalled();
+  expect(mockNative.stopRealtimeVoice).not.toHaveBeenCalled();
+  await call.close();
+  const count = changed.mock.calls.length;
+  await jest.advanceTimersByTimeAsync(1000);
+  expect(changed).toHaveBeenCalledTimes(count);
+  expect(mockNative.endVoiceCall).toHaveBeenCalledTimes(1);
+});
+
 test.each(['Realtime', 'Live'] as const)('global %s starts without a transcript or SSH target and retains its own native scope', async mode => {
   const changed = jest.fn();
   const call = new RealtimeVoiceConversation({ global: true, label: 'Global call' }, { ...defaults, provider: 'openai', mode, liveVoice: 'quartz' }, changed);

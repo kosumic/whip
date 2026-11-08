@@ -211,27 +211,27 @@ impl LiveVoiceAdapter {
     pub(super) async fn run(
         owner: Arc<RealtimeVoiceAdapter>,
         config: Config,
-        key: native_credentials::NativeCredential,
+        key: &native_credentials::NativeCredential,
         agent: Option<Arc<PinnedAgent>>,
-        commands: mpsc::Receiver<super::Command>,
+        commands: &mut mpsc::Receiver<super::Command>,
     ) -> Result<(), &'static str> {
         let mut session = Self::session(&config)?;
-        if let Some(global) = &owner.global {
-            global::configure(&config, &mut session, global.instructions()?)?;
+        if config.global {
+            global::configure(&config, &mut session, owner.global_instructions.clone())?;
         }
         let usage = usage::Usage::start(&config.voice, config.preview, config.global)?;
         let mut cancelled = owner.cancel.subscribe();
-        // No retries after session.start: a lost acknowledgement may still mean
-        // a billable session exists. A new user-initiated call gets a new ledger ID.
+        // No blind retries of session.start: a lost acknowledgement may still
+        // mean a billable session exists. Each confirmed replacement has its own ledger ID.
         let (mut socket, session_id) = if config.webrtc && !config.preview {
             let session = serde_json::to_value(session).map_err(|_| "Invalid GPT-Live session.")?;
-            let (socket, id) = super::webrtc::start_live(owner.clone(), &key, session).await?;
+            let (socket, id) = super::webrtc::start_live(owner.clone(), key, session).await?;
             (socket, Some(id))
         } else {
             let connected = tokio::select! {
                 biased;
                 _ = cancelled.changed() => return Ok(()),
-                result = super::connect_raw(&key, URL) => result,
+                result = super::connect_raw(key, URL) => result,
             };
             let socket = connected.map_err(
                 |_| "GPT-Live could not connect. Check the saved API key, model access and network.",
@@ -241,7 +241,6 @@ impl LiveVoiceAdapter {
             send(&mut socket, Command::Start { session }).await?;
             (socket, None)
         };
-        drop(key);
         if owner.closed.load(Ordering::Acquire) {
             return Ok(());
         }
@@ -265,9 +264,12 @@ impl LiveVoiceAdapter {
         };
         // Dropping observation futures never invokes remote cancel. Dispatched
         // agent prompts continue; only this call's unsent pending requests stop.
-        if let Some(global) = &owner.global {
-            global.close();
+        if owner.continuity_enabled
+            && result.is_err_and(voice_call_openai::continuity::connection_lost)
+        {
+            owner.recovering(voice_call_openai::continuity::Reason::ConnectionLost);
         }
+        owner.retire_session();
         adapter.tasks.shutdown().await;
         adapter.state.pending.clear();
         owner.ready.store(false, Ordering::Release);
@@ -334,7 +336,7 @@ impl LiveVoiceAdapter {
         config: &Config,
         agent: Option<&Arc<PinnedAgent>>,
         session: &mut voice_call_openai::session::Session<'_>,
-        commands: mpsc::Receiver<super::Command>,
+        commands: &mut mpsc::Receiver<super::Command>,
     ) -> Result<(), &'static str> {
         let mut app = session_host::App::new(owner, config, agent, self, commands);
         session.drive(&**owner, &mut app).await

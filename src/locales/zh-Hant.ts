@@ -1,4 +1,9 @@
 export const zhHant: Record<string, string> = {
+  'voiceChat.reconnecting': '正在重新連線通話… 聆聽將自動恢復。',
+  'voiceChat.freshSessions': '已建立 {{count}} 個 API 工作階段。每個工作階段單獨計費。',
+  'voiceChat.recoveryLifetime': '正在更新服務商工作階段。',
+  'voiceChat.recoveryDrain': '工作階段期限中斷了聆聽或待處理工作。未完成的請求不會重播。',
+  'voiceChat.recoveryConnection': '與服務商的連線已中斷。',
   'voiceProvider.prepareCalls': "保持語音用戶端預熱",
   'voiceProvider.prepareCallsHelp': "Whip 在前景時保持 WebRTC 資源和 HTTPS 連線就緒。會佔用額外記憶體，並定期傳送不含 API 金鑰的網路請求。只有開始通話時才開啟麥克風和 API 工作階段，預熱不會產生 API 使用費用。",
   'voiceUsage.cost': '費用',

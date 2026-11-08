@@ -193,10 +193,11 @@ internal object RealtimeVoice {
       session.monitor = object : Runnable {
         override fun run() {
           if (current !== session) return
-          if (context.getSystemService(KeyguardManager::class.java).isDeviceLocked) { invalidate(); return }
+          if (preview && context.getSystemService(KeyguardManager::class.java).isDeviceLocked) { stopPreview(); return }
           val view = Core.view(session.call)
           val state = JSONObject(view)
           val phase = state.optString("phase")
+          if (!preview) VoiceCallService.reconnecting(token, phase == "reconnecting")
           // Acquire call devices while Rust creates and negotiates the session,
           // as in the Agents SDK's early getUserMedia flow. Rust drops capture
           // until both devices and transport are ready; never queue startup PCM.

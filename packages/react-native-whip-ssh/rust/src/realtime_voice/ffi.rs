@@ -391,6 +391,10 @@ pub extern "C" fn whip_realtime_view(id: u64) -> *mut c_char {
     (view.capture_packets, view.capture_gaps) = call.input.diagnostics();
     let mut value = serde_json::to_value(&*view).ok();
     drop(view);
+    if let Some(value) = &mut value {
+        value["continuity"] =
+            serde_json::to_value(&call.continuity.lock().diagnostics).unwrap_or_default();
+    }
     if let (Some(value), Some(transcript)) = (&mut value, &call.output.lock().live_transcript) {
         value["messages"] = transcript.messages();
     }

@@ -21,6 +21,7 @@ pub struct Realtime {
     pub ignored: HashSet<String>,
     seen: crate::wire::Seen,
     started: Instant,
+    pub(super) managed_lifetime: bool,
     pub(super) truncate: Option<ClientEvent>,
 }
 impl Realtime {
@@ -32,6 +33,7 @@ impl Realtime {
             ignored: HashSet::new(),
             seen: crate::wire::Seen::default(),
             started: Instant::now(),
+            managed_lifetime: false,
             truncate: None,
         }
     }
@@ -46,7 +48,7 @@ impl Realtime {
         if !self.settings.is_confirmed() && self.started.elapsed() > crate::IO_TIMEOUT {
             return Err("OpenAI did not confirm the Realtime session settings.");
         }
-        if self.started.elapsed() > Duration::from_mins(55) {
+        if !self.managed_lifetime && self.started.elapsed() > Duration::from_mins(55) {
             return Err("Realtime call time limit reached. Start a new call.");
         }
         Ok(())
@@ -115,5 +117,40 @@ impl Realtime {
             _ => {}
         }
         Ok(Some(Event::Realtime(event)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn managed_calls_leave_lifetime_retirement_to_the_host_after_suspension()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let mut state = Realtime::new(RealtimeConfig {
+            model: "gpt-realtime".into(),
+            audio: AudioSettings {
+                voice: "cedar".into(),
+                turn_detection: None,
+                preview: false,
+                language: crate::captions::Language::Auto,
+            },
+        });
+        state.started = Instant::now() - Duration::from_mins(56);
+        state.managed_lifetime = true;
+        // Lifetime management must never bypass effective-settings validation.
+        assert!(state.check_deadline().is_err());
+        let event = serde_json::from_value(
+            json!({"type":"session.updated","event_id":"confirmed","session":{
+                "id":"session","object":"realtime.session","type":"realtime","model":"gpt-realtime","expires_at":2_000_000_000,"output_modalities":["audio"],
+                "audio":{"input":{"format":{"type":"audio/pcm","rate":24000},"transcription":{"model":"gpt-4o-mini-transcribe"},"turn_detection":null},
+                    "output":{"format":{"type":"audio/pcm","rate":24000},"voice":"cedar"}}
+            }}),
+        )?;
+        state.settings.observe(&state.config.audio, &event)?;
+        assert!(state.check_deadline().is_ok());
+        state.managed_lifetime = false;
+        assert!(state.check_deadline().is_err());
+        Ok(())
     }
 }

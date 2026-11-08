@@ -17,11 +17,12 @@ pub(super) struct App<'a> {
     config: &'a Config,
     agent: Option<&'a Arc<PinnedAgent>>,
     adapter: &'a mut LiveVoiceAdapter,
-    commands: mpsc::Receiver<super::super::Command>,
+    commands: &'a mut mpsc::Receiver<super::super::Command>,
     cancellation: watch::Receiver<bool>,
     backend: Option<global::Backend>,
     started: Instant,
     last_feedback: Instant,
+    last_input: Instant,
     active: bool,
 }
 impl<'a> App<'a> {
@@ -30,7 +31,7 @@ impl<'a> App<'a> {
         config: &'a Config,
         agent: Option<&'a Arc<PinnedAgent>>,
         adapter: &'a mut LiveVoiceAdapter,
-        commands: mpsc::Receiver<super::super::Command>,
+        commands: &'a mut mpsc::Receiver<super::super::Command>,
     ) -> Self {
         Self {
             owner,
@@ -42,6 +43,7 @@ impl<'a> App<'a> {
             backend: config.global.then(global::Backend::default),
             started: Instant::now(),
             last_feedback: Instant::now(),
+            last_input: Instant::now(),
             active: false,
         }
     }
@@ -157,7 +159,8 @@ impl Delegate for App<'_> {
         let socket = &mut *session.socket;
         owner.view.lock().server_events += 1;
         match frame.event {
-            ServerEvent::Started { .. } => {
+            ServerEvent::Started { session, .. } => {
+                owner.provider_expiry(&session);
                 let muted = confirm_start(owner, config);
                 if muted {
                     let id = send(socket, Command::InputAudioMute).await?;
@@ -177,12 +180,9 @@ impl Delegate for App<'_> {
                 usage.observe(final_usage.seconds, confirmed)?;
                 update_usage(owner, usage);
                 if !confirmed {
-                    return Err(
-                        "GPT-Live disconnected. Usage is an estimate; check the agent chat for pending results.",
-                    );
+                    return Err("GPT-Live disconnected before final usage was confirmed.");
                 }
-                owner.close();
-                return Ok(Flow::Stop);
+                return Err("GPT-Live ended the call.");
             }
             ServerEvent::UsageUpdated {
                 usage: reported, ..
@@ -196,6 +196,7 @@ impl Delegate for App<'_> {
                 start_ms,
                 end_ms,
             } => {
+                self.last_input = Instant::now();
                 owner.view.lock().user_text = super::super::limit_text(delta.clone());
                 owner.view.lock().caption_events += 1;
                 if let Some(transcript) = owner.output.lock().live_transcript.as_mut() {
@@ -281,10 +282,7 @@ impl Delegate for App<'_> {
                 if let Some(batch) =
                     backend.observe(delegation_id.value().map(String::as_str), &event)?
                 {
-                    let global = owner
-                        .global
-                        .clone()
-                        .ok_or("Global call controls are unavailable.")?;
+                    let global = owner.global_session(config.global_shizuku_access);
                     let owner = owner.clone();
                     tasks.spawn(
                         async move { Completion::Global(batch.execute(global, owner).await) },
@@ -312,6 +310,18 @@ impl Delegate for App<'_> {
         Ok(Flow::Continue)
     }
     async fn tick(&mut self, session: &mut Session<'_>) -> Result<Flow, &'static str> {
+        let idle = self.adapter.tasks.is_empty()
+            && self.adapter.state.pending.is_empty()
+            && self.backend.as_ref().is_none_or(|backend| !backend.busy())
+            && {
+                let output = self.owner.output.lock();
+                !output.live_speaking() && output.generated == output.played
+            }
+            && self.last_input.elapsed() > Duration::from_secs(2)
+            && self.owner.view.lock().level < 0.02;
+        if self.owner.continuity_tick(idle)? {
+            return Ok(Flow::Stop);
+        }
         let active = session.ready();
         let Self {
             owner,
@@ -331,11 +341,6 @@ impl Delegate for App<'_> {
             agent
                 .check_liveness()
                 .map_err(|_| "The bound agent disconnected or changed. Please call again.")?;
-        }
-        if let Some(global) = &owner.global {
-            global
-                .check()
-                .map_err(|_| "Global call authorization ended.")?;
         }
         if !active {
             return Ok(Flow::Continue);

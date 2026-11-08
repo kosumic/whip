@@ -104,7 +104,7 @@ class VoiceCallService : Service() {
     val caller = Person.Builder().setName(session?.label ?: getString(R.string.app_name))
       .setIcon(Icon.createWithResource(this, avatar)).setBot(true).build()
     val builder = Notification.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_notification_whip)
-      .setContentTitle(session?.label ?: getString(R.string.app_name)).setContentText(getString(R.string.voice_call_ongoing))
+      .setContentTitle(session?.label ?: getString(R.string.app_name)).setContentText(getString(if (session?.reconnecting == true) R.string.voice_call_reconnecting else R.string.voice_call_ongoing))
       .setCategory(Notification.CATEGORY_CALL).setContentIntent(launch).setOngoing(true).setOnlyAlertOnce(true)
       .setStyle(Notification.CallStyle.forOngoingCall(caller, hangup))
     if (session != null) builder.addAction(Notification.Action.Builder(null,
@@ -156,6 +156,7 @@ class VoiceCallService : Service() {
     var ready = false
     var ending = false
     var muted = false
+    var reconnecting = false
     var speaker = true
     var output: AudioDeviceInfo? = null
     val endings = mutableListOf<Promise>()
@@ -180,6 +181,12 @@ class VoiceCallService : Service() {
     internal fun owns(token: String): Boolean = current?.let { it.token == token && it.ready && !it.ending } == true
     internal fun playbackKey(token: String): Any? = current?.takeIf { it.token == token && !it.ending }
     internal fun muted(token: String): Boolean = current?.takeIf { it.token == token }?.muted == true
+    internal fun reconnecting(token: String, reconnecting: Boolean) {
+      val session = current?.takeIf { it.token == token && !it.ending } ?: return
+      if (session.reconnecting == reconnecting) return
+      session.reconnecting = reconnecting
+      instance?.promote(session)
+    }
     val audioAttributes get() = VoiceMediaAudio.attributes
     fun start(context: ReactApplicationContext, token: String, label: String, promise: Promise, mode: Mode = Mode.LOCAL) {
       if (current != null) { promise.reject("E_VOICE_CALL", "Voice chat is already active."); return }

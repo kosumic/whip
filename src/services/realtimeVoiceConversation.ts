@@ -12,14 +12,13 @@ import { onOpenAiVoiceCredentialChange, voiceCredentialError } from './openAiVoi
 import { agentTranscriptService } from './NativeTranscriptService';
 import { retainVoiceCallBackground } from './voiceCallBackground';
 import { suppressAgentAlertsForTab } from './alerts';
-import { settledPromise } from '../lib/promises';
 import { VoiceCallSoundPlayer } from './voiceCallSoundPlayer';
 
 const CONTROL = { skip: 1 } as const;
 const MAX_PENDING_CONTEXT = 8;
 let sequence = 0;
 type CallEvent = { token: string; type: string; muted?: boolean; speaker?: boolean };
-type NativeView = Pick<VoiceConversationView, 'phase' | 'muted' | 'level' | 'playbackLevel' | 'text' | 'userText' | 'error' | 'inputTokens' | 'outputTokens' | 'estimatedUsd' | 'costIncomplete' | 'messages' | 'backendText' | 'liveSeconds' | 'usageFinalized'>;
+type NativeView = Pick<VoiceConversationView, 'phase' | 'muted' | 'level' | 'playbackLevel' | 'text' | 'userText' | 'error' | 'inputTokens' | 'outputTokens' | 'estimatedUsd' | 'costIncomplete' | 'messages' | 'backendText' | 'liveSeconds' | 'usageFinalized' | 'continuity'>;
 function requireForeground(): void { if (AppState.currentState !== 'active') throw new Error('Return to Whip to start the call.'); }
 
 /** Only call controls and presentation cross this bridge. PCM and tools stay native. */
@@ -48,7 +47,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
     const clientStartup = { transitionMs: elapsed(this.requestedAt), permissionMs: 0, speechSuspendMs: 0, callServiceMs: 0 };
     try {
       if (this.closed) return;
-      this.cleanups.push(onOpenAiVoiceCredentialChange(() => { void settledPromise(this.close()); }));
+      this.cleanups.push(onOpenAiVoiceCredentialChange(() => { this.fail('OpenAI voice credentials changed. Start a new call.'); }));
       if (!composerSpeechInput.reserve(this.token)) throw new Error('Finish the current speech session before starting a call.');
       this.cleanups.push(() => composerSpeechInput.releaseReservation(this.token));
       this.playback = getSpeechPlayback();
@@ -154,6 +153,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
   setVadSensitivity(_value: number): void { /* Local VAD settings never configure server VAD. */ }
   submitted(text: string): void {
     if (this.closed || !text.trim()) return;
+    if (this.view.phase === 'reconnecting') return;
     if (!this.mediaStarted) {
       if (this.pendingSubmissions.length === MAX_PENDING_CONTEXT) { this.fail('Voice context is still starting. Start a new call.'); return; }
       this.pendingSubmissions.push(text);

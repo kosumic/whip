@@ -70,7 +70,9 @@ pub(super) fn devices_started(owner: &RealtimeVoiceAdapter) {
     if owner.allow_input && !view.muted && view.startup.first_input.is_none() {
         // Accept capture now; advertise listening after its first encoded
         // packet has reached the media sender, rather than at device open.
-        view.phase = "starting";
+        if view.phase != "reconnecting" {
+            view.phase = "starting";
+        }
         return;
     }
     view.phase = if view.muted { "muted" } else { "listening" };
@@ -88,7 +90,7 @@ pub(super) fn input_started(owner: &RealtimeVoiceAdapter) {
     let mut view = owner.view.lock();
     view.startup.first_input.get_or_insert(elapsed);
     view.startup.listening.get_or_insert(elapsed);
-    if view.phase == "starting"
+    if matches!(view.phase, "starting" | "reconnecting")
         && view.media_ready
         && !view.muted
         && (!owner.live || view.startup.settings_confirmed.is_some())
