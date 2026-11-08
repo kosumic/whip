@@ -537,6 +537,21 @@ correlation cannot make remote verification and dispatch atomic.
 
 ## Validation and remaining qualification
 
+On 2026-11-08, an explicitly authorized local test connected to the real
+`gpt-realtime-1.5` WebRTC API through the native logical-call owner. Four provider
+sessions reached listening in 31 seconds: the initial call, two replacements
+using shortened expiry deadlines, and one recovery after an injected native
+media-connection-loss signal. Generated audio reached synthetic playback, the
+capture ingress and speech lease stayed unchanged, and explicit Hang Up drained
+server/media cleanup. The fixture sends silence and one synthetic typed test
+request; it records no device microphone and enables no tools. Run the ignored
+`public_realtime_call_rotates_twice_and_recovers_without_replacing_device_owner`
+test only with an explicitly authorized `OPENAI_API_KEY`; it creates billable
+sessions. This verifies real provider replacement and cleanup, while physical
+network handoffs, device audio and OS background/screen-lock qualification remain
+outstanding. Connection-loss injection exercises the native recovery signal,
+not a physical network disconnect.
+
 The Codex port passes the full Rust suite (1,062 passed, 13 ignored), strict
 Clippy, formatting, TypeScript, changed-file lint, 176 affected JavaScript tests,
 and three license tests. The delayed-echo test disables noise suppression and
