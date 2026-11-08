@@ -256,6 +256,8 @@ See the [browser and device tool reference](docs/reverse-control-browser.md), [a
 
 - Browse the active terminal's current directory over SFTP, remember a location per terminal, and sort by name, modification time, or size.
 - Upload, download, edit, or swipe-delete remote files; preview code, text, Markdown with remote links and images, raster images, SVG, standalone Mermaid diagrams, streamed PDF, audio, and video, and sandboxed HTML.
+- Follow SSH download progress, recent transfer speed, and estimated time remaining from the file menu or preview. Saving to your selected location is shown as a separate stage.
+- After saving succeeds, use **Open in file browser** to find the local destination. Android opens the saved folder or system document navigator; iOS opens the system document picker. Some providers may start in another folder. Missing files or expired access show an error without restarting the download.
 - Read large UTF-8 files in pages, including files without an extension, with line numbers and horizontal scrolling. Long-press a file for its context menu.
 - Upload a photo, file, camera capture, or clipboard image to the host and paste its remote path into the terminal composer.
 

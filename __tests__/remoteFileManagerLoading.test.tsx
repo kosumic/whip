@@ -17,6 +17,7 @@ import { recordOperationalDiagnostic } from '../src/services/operationalDiagnost
 import * as remoteGit from '../src/lib/remoteGit';
 import { useRemoteFileViewPreferences } from '../src/hooks/useRemoteFileViewPreferences';
 import { loadGitReviewState } from '../src/services/gitReviewState';
+import { revealSavedRemoteDestination } from '../src/services/savedRemoteDestination';
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
 jest.mock('react-native-css-interop', () => {
@@ -75,7 +76,11 @@ jest.mock('react-native', () => {
   }, native);
 });
 jest.mock('react-i18next', () => ({ useTranslation: () => ({
-  t: (key: string, values?: { name?: string }) => values?.name ? `${key}:${values.name}` : key,
+  t: (key: string, values?: { name?: string; speed?: string; eta?: string; seconds?: number }) => {
+    if (key === 'files.networkRate') return `${key}:${values?.speed}:${values?.eta}`;
+    if (key === 'files.etaSeconds') return `~${values?.seconds} s`;
+    return values?.name ? `${key}:${values.name}` : key;
+  },
 }) }));
 jest.mock('../src/theme', () => ({ useTheme: () => ({ colors: { canvas: '#101218' } }), colorWithAlpha: () => '#000' }));
 jest.mock('../src/components/GlassSurface', () => ({
@@ -102,6 +107,7 @@ jest.mock('../src/components/RemoteVideoPreview', () => ({ RemoteVideoPreview: '
 jest.mock('../src/components/SvgPreview', () => ({ SvgPreview: 'SvgPreview' }));
 jest.mock('../src/components/ZoomableImagePreview', () => ({ ZoomableImagePreview: 'ZoomableImagePreview' }));
 jest.mock('../src/services/remoteFileTransfer', () => ({ cacheRemoteFile: jest.fn(), downloadRemoteEntry: jest.fn() }));
+jest.mock('../src/services/savedRemoteDestination', () => ({ revealSavedRemoteDestination: jest.fn() }));
 jest.mock('../src/services/backgroundOperations', () => ({
   bestEffortCleanup: jest.fn(),
   reportBackgroundFailure: jest.fn((promise: Promise<unknown>, context: string) => {
@@ -1154,37 +1160,56 @@ it.each(['context', 'preview'] as const)('shows shared progress, saving, complet
   expect(text()).toContain('files.downloadSelecting');
   expect(button('files.download').props.disabled).toBe(true);
   const totalBytes = entry.size!;
+  act(() => { report({ phase: 'downloading', bytesTransferred: 0, totalBytes, rateCalculating: true }); });
+  expect(text()).toContain('files.networkRate:—:files.etaCalculating');
   for (const bytesTransferred of [totalBytes / 4, totalBytes / 2, totalBytes]) {
-    act(() => { report({ phase: 'downloading', bytesTransferred, totalBytes }); });
+    act(() => { report({ phase: 'downloading', bytesTransferred, totalBytes, bytesPerSecond: 3_355_443, remainingSeconds: 24 }); });
     expect(text()).toContain('files.downloadSsh');
+    expect(text()).toContain('files.networkRate');
+    expect(text()).toContain('3.2 MiB/s');
+    expect(text()).toContain('~25 s');
+    expect(hasButton('files.openInFileBrowser')).toBe(false);
     const bar = tree.root.findByProps({ accessibilityRole: 'progressbar' });
     expect(bar.props.accessibilityValue.now).toBe(Math.min(99, bytesTransferred / totalBytes * 100));
     expect(text()).not.toContain('files.downloadedTitle');
   }
+  act(() => { report({ phase: 'downloading', bytesTransferred: totalBytes / 2, totalBytes }); });
+  expect(text()).toContain('files.networkRate:—:files.etaUnknown');
   act(() => { report({ phase: 'saving', bytesTransferred: totalBytes, totalBytes }); });
   expect(text()).toContain('files.downloadSaving');
+  expect(text()).not.toContain('files.networkRate');
+  expect(hasButton('files.openInFileBrowser')).toBe(false);
   expect(text()).toContain('files.downloadCopyNotice');
   expect(button('files.cancelDownload').props.disabled).toBe(true);
   expect(tree.root.findAllByProps({ accessibilityRole: 'progressbar' })).toHaveLength(0);
   expect(text()).not.toContain('files.downloadedTitle');
+  const destination = { entry: { uri: 'content://provider/document/saved' }, directory: { uri: 'content://provider/tree/picked' } } as NonNullable<RemoteDownloadProgress['destination']>;
   await act(async () => {
-    report({ phase: 'completed', bytesTransferred: totalBytes, totalBytes });
+    report({ phase: 'completed', bytesTransferred: totalBytes, totalBytes, destination });
     pending.resolve(true);
   });
   expect(text()).toContain('files.downloadedTitle');
   expect(tree.root.findByProps({ accessibilityRole: 'progressbar' }).props.accessibilityValue.now).toBe(100);
   expect(button('files.download').props.disabled).toBe(false);
+  expect(text()).not.toContain('files.networkRate');
+  await act(async () => { await button('files.openInFileBrowser').props.onPress(); });
+  expect(revealSavedRemoteDestination).toHaveBeenLastCalledWith(destination);
+  expect(downloadRemoteEntry).toHaveBeenCalledTimes(1);
+  jest.mocked(revealSavedRemoteDestination).mockRejectedValueOnce(new Error('Destination moved'));
+  await act(async () => { await button('files.openInFileBrowser').props.onPress(); });
+  expect(text()).toContain('files.fileBrowserFailed');
 });
 
 it('shows bytes and indeterminate progress for an unknown-size directory download', async () => {
   await openDownloadEntry('context', true);
   const pending = deferred<boolean>();
   jest.mocked(downloadRemoteEntry).mockImplementation((_client, _path, progress) => {
-    progress({ phase: 'downloading', bytesTransferred: 125829120 });
+    progress({ phase: 'downloading', bytesTransferred: 125829120, bytesPerSecond: 1048576 });
     return pending.promise;
   });
   await act(async () => { void button('files.download').props.onPress(); });
   expect(text()).toContain('120 MB');
+  expect(text()).toContain('files.networkRate:1.0 MiB/s:files.etaUnknown');
   expect(tree.root.findAllByProps({ accessibilityRole: 'progressbar' })).toHaveLength(0);
   expect(text()).toContain('ActivityIndicator');
   await act(async () => { pending.resolve(true); });
@@ -1200,6 +1225,7 @@ it.each(['context', 'preview'] as const)('keeps destination errors visible and s
   expect(text()).toContain('Destination already exists');
   expect(text()).toContain('files.downloadCopyNotice');
   expect(text()).not.toContain('files.downloadedTitle');
+  expect(hasButton('files.openInFileBrowser')).toBe(false);
   jest.mocked(downloadRemoteEntry).mockImplementationOnce(async (_client, _path, progress) => {
     progress({ phase: 'completed', bytesTransferred: 128, totalBytes: 128 });
     return true;
@@ -1228,6 +1254,7 @@ it.each(['context', 'preview'] as const)('cancels an SSH download from %s withou
     pending.resolve(false);
   });
   expect(text()).toContain('files.downloadCancelled');
+  expect(hasButton('files.openInFileBrowser')).toBe(false);
   expect(text()).not.toContain('files.downloadFailed');
   expect(button('files.retry')).toBeDefined();
 });
@@ -1268,10 +1295,13 @@ it('aborts preview downloads on host changes and ignores old-host progress', asy
   await act(async () => { tree.update(<RemoteFileManager {...props} hostId="replacement" />); });
   expect(signal.aborted).toBe(true);
   await act(async () => {
+    report({ phase: 'downloading', bytesTransferred: 2048, bytesPerSecond: 1024, remainingSeconds: 1 });
     report({ phase: 'completed', bytesTransferred: 2048 });
     pending.resolve(true);
   });
   expect(text()).not.toContain('files.downloadedTitle');
+  expect(text()).not.toContain('files.networkRate');
+  expect(hasButton('files.openInFileBrowser')).toBe(false);
 });
 
 it('shows available properties without recursively listing directories', async () => {

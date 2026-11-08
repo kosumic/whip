@@ -318,6 +318,17 @@ class WhipBrowserModule(context: ReactApplicationContext) : ReactContextBaseJava
     catch (_: Exception) { promise.reject("DOWNLOAD_OPEN", "Could not open downloaded file") }
   }
 
+  /** Shared system document navigation, also used by remote SFTP downloads. */
+  @ReactMethod
+  fun revealSavedDestination(savedUri: String, directoryUri: String, promise: Promise) {
+    try {
+      SavedDestinationBrowser.open(reactApplicationContext, savedUri, directoryUri)
+      promise.resolve(null)
+    } catch (_: Exception) {
+      promise.reject("DESTINATION_OPEN", "The saved file is missing, access has expired, or no file browser is available")
+    }
+  }
+
   override fun invalidate() {
     UiThreadUtil.runOnUiThread { savedStates.clear() }
     downloads.values.forEach { it.cancel() }

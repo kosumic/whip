@@ -18045,6 +18045,9 @@ export type TransferProgress = {
   bytesTransferred: bigint;
   totalBytes?: bigint;
   state: TransferState;
+  bytesPerSecond?: bigint;
+  remainingSeconds?: bigint;
+  rateCalculating: boolean;
 };
 
 /**
@@ -18073,6 +18076,9 @@ const FfiConverterTypeTransferProgress = (() => {
         bytesTransferred: FfiConverterUInt64.read(from),
         totalBytes: FfiConverterOptionalUInt64.read(from),
         state: FfiConverterTypeTransferState.read(from),
+        bytesPerSecond: FfiConverterOptionalUInt64.read(from),
+        remainingSeconds: FfiConverterOptionalUInt64.read(from),
+        rateCalculating: FfiConverterBool.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
@@ -18080,13 +18086,19 @@ const FfiConverterTypeTransferProgress = (() => {
       FfiConverterUInt64.write(value.bytesTransferred, into);
       FfiConverterOptionalUInt64.write(value.totalBytes, into);
       FfiConverterTypeTransferState.write(value.state, into);
+      FfiConverterOptionalUInt64.write(value.bytesPerSecond, into);
+      FfiConverterOptionalUInt64.write(value.remainingSeconds, into);
+      FfiConverterBool.write(value.rateCalculating, into);
     }
     allocationSize(value: TypeName): number {
       return (
         FfiConverterString.allocationSize(value.transferId) +
         FfiConverterUInt64.allocationSize(value.bytesTransferred) +
         FfiConverterOptionalUInt64.allocationSize(value.totalBytes) +
-        FfiConverterTypeTransferState.allocationSize(value.state)
+        FfiConverterTypeTransferState.allocationSize(value.state) +
+        FfiConverterOptionalUInt64.allocationSize(value.bytesPerSecond) +
+        FfiConverterOptionalUInt64.allocationSize(value.remainingSeconds) +
+        FfiConverterBool.allocationSize(value.rateCalculating)
       );
     }
   }
