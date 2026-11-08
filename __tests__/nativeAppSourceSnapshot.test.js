@@ -1,5 +1,4 @@
 const {mkdtempSync, mkdirSync, writeFileSync, rmSync} = require('node:fs');
-const {Buffer} = require('node:buffer');
 const {tmpdir} = require('node:os');
 const {join, dirname} = require('node:path');
 const {captureNativeAppSources} = require('../scripts/native-app-source-snapshot.cjs');
@@ -50,12 +49,4 @@ test('allows bindings, assets and compiler output to be regenerated', () => {
     'android/app/src/main/assets/terminal.html',
   ]) write(path, 'regenerated build output');
   expect(captureNativeAppSources(root)).toEqual(initial);
-});
-
-test.each(['voice-muted.wav', 'voice-unmuted.wav'])('detects changes to embedded microphone speech: %s', name => {
-  const path = `assets/audio/${name}`;
-  write(path, Buffer.from([0, 1]));
-  const initial = captureNativeAppSources(root);
-  write(path, Buffer.from([2, 3]));
-  expect(captureNativeAppSources(root)[path]).not.toBe(initial[path]);
 });

@@ -54,6 +54,7 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
 @property(nonatomic, strong) AVAudioPCMBuffer *capture;
 @property(nonatomic, strong) AVAudioFormat *format;
 @property(nonatomic, strong) dispatch_source_t timer;
+@property(atomic, strong) NSNumber *announcementId;
 @property(nonatomic, strong) dispatch_queue_t media;
 @property(nonatomic) uint64_t epoch;
 @property(nonatomic) uint64_t scheduled;
@@ -228,6 +229,22 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
     NSData *data = [NSData dataWithBytes:json length:strlen(json)];
     NSDictionary *view = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
     whip_realtime_free(json);
+    NSDictionary *announcement = [view[@"microphoneAnnouncement"] isKindOfClass:NSDictionary.class] ? view[@"microphoneAnnouncement"] : nil;
+    if (!self.preview && announcement && ![self.announcementId isEqual:announcement[@"id"]]) {
+      NSNumber *identity = announcement[@"id"];
+      self.announcementId = identity;
+      dispatch_async(dispatch_get_main_queue(), ^{
+        if (self->_call.load() != call || ![self.announcementId isEqual:identity]) return;
+        [WhipSpeechPlayback.shared speakCallAnnouncement:[announcement[@"lease"] unsignedLongLongValue] text:announcement[@"text"] completed:^{
+          whip_realtime_announcement_finished(call, identity.unsignedLongLongValue);
+        }];
+      });
+    } else if (!announcement && self.announcementId) {
+      self.announcementId = nil;
+      dispatch_async(dispatch_get_main_queue(), ^{
+        if (self->_call.load() == call && !self.announcementId) [WhipSpeechPlayback.shared cancelCallAnnouncement];
+      });
+    }
     if (!self.preview && view[@"muted"]) {
       BOOL muted = [view[@"muted"] boolValue];
       dispatch_async(dispatch_get_main_queue(), ^{
@@ -287,6 +304,8 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
   id turn = self.turn;
   BOOL preview = self.preview;
   uint64_t call = _call.exchange(0);
+  self.announcementId = nil;
+  [WhipSpeechPlayback.shared cancelCallAnnouncement];
   self.lastToken = token;
   char *view = whip_realtime_view(call);
   self.lastView = view ? [NSString stringWithUTF8String:view] : @"{\"phase\":\"closed\"}";

@@ -74,12 +74,18 @@ an expired timer never reactivates inactive capture. App lock follows the
 existing policy below: an already authorized call keeps running, but locked
 tool requests cannot obtain fresh capability authority.
 
-Each actual state change queues the matching bundled spoken “Muted” or
-“Unmuted” announcement on native call output. Repeating the same state changes
-only the deadline. These announcements use no OpenAI TTS or model response.
-Microphone delivery is suppressed throughout local announcement playback and
-its device-output tail. Live unmute additionally waits for the matching server
-acknowledgement, and a stale acknowledgement cannot override a newer mute.
+Each actual state change queues the matching spoken “Muted” or “Unmuted”
+announcement using the speech backend and voice selected in Settings. Speech
+is synthesized on each transition, without bundled recordings or an audio
+cache. System TTS and Phonon run locally; selecting OpenAI TTS makes the normal
+speech request for each announcement, using existing credential protections.
+Mute state changes do not wait for synthesis. Native playback borrows the call's
+speech lease without replacing or completing it. Repeating the same state
+changes only the deadline. Microphone delivery is suppressed until announcement
+playback and its device-output tail finish, including backend initialization.
+Failure or timeout releases that suppression without ending or changing the
+call. Live unmute additionally waits for the matching server acknowledgement,
+and a stale acknowledgement cannot override a newer mute.
 
 ## Delegation and capability lifetime
 

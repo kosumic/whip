@@ -16,6 +16,7 @@ object RealtimeVoiceNative {
   @JvmStatic external fun stop(call: Long)
   @JvmStatic external fun stopped(call: Long): Boolean
   @JvmStatic external fun control(call: Long, action: Int)
+  @JvmStatic external fun announcementFinished(call: Long, announcement: Long)
   @JvmStatic external fun submitted(call: Long, text: String): Boolean
   @JvmStatic external fun capture(call: Long, samples: ShortArray, count: Int): Boolean
   @JvmStatic external fun inputGeneration(call: Long): Long

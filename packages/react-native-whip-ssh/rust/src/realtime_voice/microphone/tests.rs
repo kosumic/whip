@@ -167,14 +167,9 @@ fn an_inactive_session_cancels_expiry_without_reactivating_capture() -> Result<(
 }
 
 #[test]
-fn native_speech_is_audible_and_capture_is_suppressed_through_the_device_tail()
+fn backend_announcements_keep_capture_suppressed_until_playback_and_the_device_tail_finish()
 -> Result<(), &'static str> {
     let (owner, _commands) = playback_owner_with_commands()?;
-    for muted in [true, false] {
-        let samples = super::super::cue::decode(if muted { MUTED } else { UNMUTED })?;
-        assert!(samples.len() > super::super::FRAME);
-        assert!(samples.iter().any(|sample| sample.unsigned_abs() > 64));
-    }
     owner.set_microphone(true, None)?;
     owner.set_microphone(false, None)?;
     let now = Instant::now();
@@ -182,15 +177,47 @@ fn native_speech_is_audible_and_capture_is_suppressed_through_the_device_tail()
     assert!(owner.capture(&[1000; 480], generation, now));
     assert_eq!(owner.input.diagnostics().0, 0);
     let mut state = owner.microphone.lock();
-    let mut audible = false;
-    while !state.announcements.is_empty() {
-        let mut output = [0_i16; 480];
-        state.mix(&mut output, now);
-        audible |= output.iter().any(|sample| sample.unsigned_abs() > 64);
-    }
-    assert!(audible);
+    let muted = state
+        .announcement(owner.speech.id())
+        .ok_or("Missing announcement")?;
+    assert_eq!(muted["text"], "Muted");
+    assert_eq!(muted["lease"], owner.speech.id());
+    assert_eq!(state.announcement(owner.speech.id()), Some(muted.clone()));
+    let id = muted["id"]
+        .as_u64()
+        .ok_or("Missing announcement identity")?;
+    state.announcement_finished(id, now);
+    let unmuted = state
+        .announcement(owner.speech.id())
+        .ok_or("Missing unmute announcement")?;
+    assert_eq!(unmuted["text"], "Unmuted");
+    state.announcement_finished(id, now); // Old completion cannot consume its successor.
+    assert_eq!(state.announcement(owner.speech.id()), Some(unmuted.clone()));
+    assert!(state.blocks_capture(now + OUTPUT_TAIL)); // Synthesis may still be running.
+    state.announcement_finished(unmuted["id"].as_u64().ok_or("Missing identity")?, now);
     assert!(state.blocks_capture(now));
     assert!(!state.blocks_capture(now + OUTPUT_TAIL));
+    drop(state);
+    owner.close();
+    Ok(())
+}
+
+#[test]
+fn cancelled_announcement_callbacks_cannot_consume_speech_for_a_new_transition()
+-> Result<(), &'static str> {
+    let (owner, _commands) = playback_owner_with_commands()?;
+    owner.set_microphone(true, None)?;
+    let old = owner.microphone.lock().announcement_id;
+    owner.microphone.lock().cancel();
+    owner.set_microphone(false, None)?;
+    let mut state = owner.microphone.lock();
+    state.announcement_finished(old, Instant::now());
+    assert_eq!(
+        state
+            .announcement(owner.speech.id())
+            .ok_or("Missing speech")?["text"],
+        "Unmuted"
+    );
     drop(state);
     owner.close();
     Ok(())

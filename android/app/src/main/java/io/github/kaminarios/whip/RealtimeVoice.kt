@@ -74,6 +74,8 @@ internal object RealtimeVoice {
     var capture: Thread? = null
     var playback: Thread? = null
     var monitor: Runnable? = null
+    var announcement: CallAnnouncementSpeaker? = null
+    var announcementId = -1L
     @Volatile var boundary = CaptureBoundary()
     @Volatile var playedAudioSamples = 0L
     @Volatile var playedAudioPeak = 0
@@ -197,6 +199,15 @@ internal object RealtimeVoice {
           val view = Core.view(session.call)
           val state = JSONObject(view)
           val phase = state.optString("phase")
+          val announcement = state.optJSONObject("microphoneAnnouncement")
+          if (!preview && announcement != null && announcement.getLong("id") != session.announcementId) {
+            val id = announcement.getLong("id")
+            session.announcementId = id
+            val speaker = session.announcement ?: CallAnnouncementSpeaker(context).also { session.announcement = it }
+            speaker.speak(announcement.getLong("lease"), announcement.getString("text")) {
+              Core.announcementFinished(session.call, id)
+            }
+          } else if (announcement == null) session.announcement?.cancel()
           if (!preview && state.has("muted")) VoiceCallService.syncMuted(token, state.getBoolean("muted"))
           if (!preview) VoiceCallService.reconnecting(token, phase == "reconnecting")
           // Acquire call devices while Rust creates and negotiates the session,
@@ -425,6 +436,7 @@ internal object RealtimeVoice {
       return
     }
     current = null
+    session.announcement?.close()
     closingToken = token
     if (promise != null) endings.add(promise)
     lastToken = token; lastView = Core.view(session.call)

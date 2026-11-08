@@ -220,7 +220,90 @@ static bool WhipConsumeSpeechPcm(void *context, const float *samples, uintptr_t 
   @autoreleasepool { return [(__bridge WhipPcmSpeechAudio *)context write:samples count:count]; }
 }
 
+static AVSpeechSynthesisVoice *WhipConfiguredSystemVoice(NSString *identifier, NSString *language, BOOL explicitLanguage)
+{
+  AVSpeechSynthesisVoice *selected = identifier.length ? [AVSpeechSynthesisVoice voiceWithIdentifier:identifier] : nil;
+  if (selected && (!explicitLanguage ||
+      [[selected.language componentsSeparatedByString:@"-"].firstObject caseInsensitiveCompare:
+       [language componentsSeparatedByString:@"-"].firstObject] == NSOrderedSame)) return selected;
+  return [AVSpeechSynthesisVoice voiceWithLanguage:language];
+}
+
+/** Borrow the live call's lease, without claiming or completing speech ownership. */
+@interface WhipCallAnnouncement : NSObject <AVSpeechSynthesizerDelegate>
+@property(nonatomic, strong) AVSpeechSynthesizer *speech;
+@property(nonatomic, strong) AVSpeechUtterance *utterance;
+@property(nonatomic, strong) WhipPcmSpeechAudio *pcm;
+@property(nonatomic, strong) NSTimer *timer;
+@property(nonatomic, copy) dispatch_block_t completed;
+@property(nonatomic) BOOL active;
+- (void)start:(uint64_t)lease text:(NSString *)text voice:(NSString *)voice completed:(dispatch_block_t)completed;
+- (void)cancel;
+@end
+
+@implementation WhipCallAnnouncement
+- (void)finish
+{
+  if (!self.active) return;
+  dispatch_block_t completed = self.completed;
+  [self cancel];
+  if (completed) completed();
+}
+- (void)start:(uint64_t)lease text:(NSString *)text voice:(NSString *)voice completed:(dispatch_block_t)completed
+{
+  [self cancel];
+  self.active = YES;
+  self.completed = completed;
+  if (!whip_speech_is_current(lease)) { [self finish]; return; }
+  __weak WhipCallAnnouncement *weakSelf = self;
+  self.timer = [NSTimer scheduledTimerWithTimeInterval:WhipModelInitializationTimeout repeats:NO block:^(NSTimer *timer) {
+    NSLog(@"Whip call announcement timed out");
+    [weakSelf finish];
+  }];
+  NSString *language = AVSpeechSynthesisVoice.currentLanguageCode;
+  if (whip_speech_pcm_enabled(language.UTF8String, false)) {
+    WhipPcmSpeechAudio *player = [WhipPcmSpeechAudio new];
+    player.lease = lease;
+    self.pcm = player;
+    NSError *error = nil;
+    if (![player open:1 error:&error]) { [self finish]; return; }
+    dispatch_async(WhipPcmSpeechWorker(), ^{
+      int result = whip_speech_pcm_speak(lease, text.UTF8String, 0, WhipConsumeSpeechPcm, (__bridge void *)player,
+                                        WhipReadOpenAiVoiceCredential, NULL);
+      BOOL drained = result > 0 && [player drain];
+      dispatch_async(dispatch_get_main_queue(), ^{
+        WhipCallAnnouncement *announcement = weakSelf;
+        if (announcement.pcm != player) return;
+        if (!drained) NSLog(@"Whip call announcement speech did not complete");
+        [announcement finish];
+      });
+    });
+  } else {
+    self.speech = [AVSpeechSynthesizer new];
+    self.speech.delegate = self;
+    self.utterance = [AVSpeechUtterance speechUtteranceWithString:text];
+    self.utterance.voice = WhipConfiguredSystemVoice(voice, language, NO);
+    if (!self.utterance.voice) { [self finish]; return; }
+    [self.speech speakUtterance:self.utterance];
+  }
+}
+- (void)cancel
+{
+  self.active = NO;
+  self.completed = nil;
+  [self.timer invalidate]; self.timer = nil;
+  [self.speech stopSpeakingAtBoundary:AVSpeechBoundaryImmediate];
+  self.speech = nil; self.utterance = nil;
+  [self.pcm stop]; self.pcm = nil;
+}
+- (void)speechSynthesizer:(AVSpeechSynthesizer *)speech didFinishSpeechUtterance:(AVSpeechUtterance *)utterance
+{ dispatch_async(dispatch_get_main_queue(), ^{ if (self.utterance == utterance) [self finish]; }); }
+- (void)speechSynthesizer:(AVSpeechSynthesizer *)speech didCancelSpeechUtterance:(AVSpeechUtterance *)utterance
+{ dispatch_async(dispatch_get_main_queue(), ^{ if (self.utterance == utterance) [self finish]; }); }
+@end
+
 @interface WhipSpeechPlayback () <AVSpeechSynthesizerDelegate, AVAudioPlayerDelegate>
+@property(nonatomic, strong) WhipCallAnnouncement *callAnnouncement;
 @property(nonatomic, strong) AVSpeechSynthesizer *speech;
 @property(nonatomic, strong) AVSpeechUtterance *utterance;
 @property(nonatomic, copy) NSDictionary *captionSource;
@@ -884,6 +967,18 @@ static void WhipWakeAutomaticSpeech(void)
 {
   return [self play:text language:language rate:rate started:nil];
 }
+- (void)speakCallAnnouncement:(uint64_t)lease text:(NSString *)text completed:(dispatch_block_t)completed
+{
+  [self cancelCallAnnouncement];
+  self.callAnnouncement = [self newCallAnnouncement];
+  [self.callAnnouncement start:lease text:text voice:self.systemVoice completed:completed];
+}
+- (WhipCallAnnouncement *)newCallAnnouncement { return [WhipCallAnnouncement new]; }
+- (void)cancelCallAnnouncement
+{
+  [self.callAnnouncement cancel];
+  self.callAnnouncement = nil;
+}
 - (BOOL)play:(NSString *)text language:(NSString *)language rate:(double)rate started:(void (^)(void))started
 {
   return [self play:text language:language rate:rate started:started preview:NO];
@@ -893,15 +988,12 @@ static void WhipWakeAutomaticSpeech(void)
   NSString *requestedLanguage = language.length ? language : AVSpeechSynthesisVoice.currentLanguageCode;
   BOOL local = whip_speech_pcm_enabled(requestedLanguage.UTF8String, self.localOnly);
   BOOL cloud = !self.localOnly && whip_speech_network_selected();
-  AVSpeechSynthesisVoice *voice = [AVSpeechSynthesisVoice voiceWithLanguage:requestedLanguage];
+  AVSpeechSynthesisVoice *voice = WhipConfiguredSystemVoice(self.systemVoice, requestedLanguage, language.length > 0);
   AVSpeechSynthesisVoice *selected = self.systemVoice.length ? [AVSpeechSynthesisVoice voiceWithIdentifier:self.systemVoice] : nil;
   if (self.localOnly && !local && self.systemVoice.length && !selected) {
     [self stopWithReason:WhipSpeechStopped error:@"The voice selected in Settings is unavailable. Select an installed voice."];
     return NO;
   }
-  if (selected && (!language.length ||
-      [[selected.language componentsSeparatedByString:@"-"].firstObject caseInsensitiveCompare:
-       [requestedLanguage componentsSeparatedByString:@"-"].firstObject] == NSOrderedSame)) voice = selected;
   if ((!local && !voice) || !isfinite(rate) || rate <= 0) {
     [self stopWithReason:WhipSpeechStopped error:@"Requested speech voice or rate is unavailable"];
     return NO;

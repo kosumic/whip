@@ -8,7 +8,7 @@ const {verifyNativeMarkdownPatch} = require('./check-native-markdown-patch.cjs')
 const SOURCE_ROOTS = ['src', 'packages', 'modules', 'crates', 'whip-notify/src', 'scripts', 'patches', 'android/app/src/main'];
 const OUTPUT_DIRECTORIES = new Set(['node_modules', 'build', 'target', '.git', '.cxx', 'generated', 'Pods', 'TerminalAssets', 'assets', 'jniLibs']);
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.cjs', '.mjs', '.rs', '.toml', '.lock', '.go', '.mod', '.sum', '.cpp', '.c', '.h', '.hpp', '.m', '.mm', '.swift', '.kt', '.java', '.gradle', '.properties', '.cmake', '.txt', '.json', '.xml', '.yaml', '.yml', '.sh', '.html', '.css', '.sql', '.patch']);
-const ROOT_FILES = ['index.js', 'package.json', 'package-lock.json', 'app.json', 'app.config.js', 'babel.config.js', 'metro.config.js', 'tailwind.config.js', 'global.css', 'flake.nix', 'flake.lock', 'android/build.gradle', 'android/settings.gradle', 'android/gradle.properties', 'android/app/build.gradle', 'whip-notify/Cargo.toml', 'whip-notify/Cargo.lock', 'whip-notify/platform.sh', 'assets/audio/voice-muted.wav', 'assets/audio/voice-unmuted.wav'];
+const ROOT_FILES = ['index.js', 'package.json', 'package-lock.json', 'app.json', 'app.config.js', 'babel.config.js', 'metro.config.js', 'tailwind.config.js', 'global.css', 'flake.nix', 'flake.lock', 'android/build.gradle', 'android/settings.gradle', 'android/gradle.properties', 'android/app/build.gradle', 'whip-notify/Cargo.toml', 'whip-notify/Cargo.lock', 'whip-notify/platform.sh'];
 
 function captureNativeAppSources(root) {
   const files = new Map();

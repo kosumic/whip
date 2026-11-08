@@ -108,6 +108,10 @@ extern "C" JNIEXPORT jboolean JNICALL
 Java_com_whipssh_RealtimeVoiceNative_stopped(JNIEnv *, jclass, jlong call) { return whip_realtime_stopped(call); }
 extern "C" JNIEXPORT void JNICALL
 Java_com_whipssh_RealtimeVoiceNative_control(JNIEnv *, jclass, jlong call, jint action) { whip_realtime_control(call, static_cast<uint8_t>(action)); }
+extern "C" JNIEXPORT void JNICALL
+Java_com_whipssh_RealtimeVoiceNative_announcementFinished(JNIEnv *, jclass, jlong call, jlong announcement) {
+    whip_realtime_announcement_finished(call, announcement);
+}
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_whipssh_RealtimeVoiceNative_submitted(JNIEnv *env, jclass, jlong call, jstring text) {
     if (!text) return false;

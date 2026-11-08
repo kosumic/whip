@@ -1,4 +1,4 @@
-//! Logical-call microphone intent, deadline and offline transition speech.
+//! Logical-call microphone intent, deadline and backend-driven transition speech.
 use super::{Command, Duration, Instant, Ordering, RealtimeVoiceAdapter};
 use serde::Deserialize;
 use std::collections::VecDeque;
@@ -7,8 +7,6 @@ pub(crate) const TOOL: &str = "voice_set_microphone";
 pub(crate) const MAX_MINUTES: u32 = 60;
 const OUTPUT_TAIL: Duration = Duration::from_millis(500);
 const MAX_ANNOUNCEMENTS: usize = 128;
-const MUTED: &[u8] = include_bytes!("../../../../../assets/audio/voice-muted.wav");
-const UNMUTED: &[u8] = include_bytes!("../../../../../assets/audio/voice-unmuted.wav");
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -44,20 +42,8 @@ pub(super) struct State {
     pub muted: bool,
     deadline: Option<Instant>,
     announcements: VecDeque<bool>,
-    offset: usize,
+    announcement_id: u64,
     capture_after: Option<Instant>,
-}
-
-fn speech(muted: bool) -> &'static [i16] {
-    use std::sync::OnceLock;
-    static MUTED_PCM: OnceLock<Vec<i16>> = OnceLock::new();
-    static UNMUTED_PCM: OnceLock<Vec<i16>> = OnceLock::new();
-    let (pcm, bytes) = if muted {
-        (&MUTED_PCM, MUTED)
-    } else {
-        (&UNMUTED_PCM, UNMUTED)
-    };
-    pcm.get_or_init(|| super::cue::decode(bytes).unwrap_or_default())
 }
 
 impl State {
@@ -71,7 +57,7 @@ impl State {
     pub fn cancel(&mut self) {
         self.deadline = None;
         self.announcements.clear();
-        self.offset = 0;
+        self.announcement_id = self.announcement_id.saturating_add(1);
         self.capture_after = None;
     }
 
@@ -81,23 +67,21 @@ impl State {
             || self.capture_after.is_some_and(|after| now < after)
     }
 
-    pub fn mix(&mut self, output: &mut [i16], now: Instant) {
-        let Some(muted) = self.announcements.front().copied() else {
-            return;
-        };
-        let samples = speech(muted);
-        let count = output.len().min(samples.len().saturating_sub(self.offset));
-        for (output, sample) in output[..count]
-            .iter_mut()
-            .zip(&samples[self.offset..][..count])
-        {
-            *output = output.saturating_add(sample / 2);
-        }
-        self.offset += count;
-        self.capture_after = Some(now + OUTPUT_TAIL);
-        if self.offset == samples.len() {
+    pub fn announcement(&self, lease: u64) -> Option<serde_json::Value> {
+        self.announcements.front().map(|muted| {
+            serde_json::json!({
+                "id": self.announcement_id,
+                "lease": lease,
+                "text": if *muted { "Muted" } else { "Unmuted" },
+            })
+        })
+    }
+
+    pub fn announcement_finished(&mut self, id: u64, now: Instant) {
+        if self.announcement_id == id && !self.announcements.is_empty() {
             self.announcements.pop_front();
-            self.offset = 0;
+            self.announcement_id = self.announcement_id.saturating_add(1);
+            self.capture_after = Some(now + OUTPUT_TAIL);
         }
     }
 }

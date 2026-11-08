@@ -137,6 +137,7 @@ int32_t whip_speech_pcm_speak(uint64_t lease, const char *text, uint64_t caption
 - (void)start:(NSString *)token label:(NSString *)label resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {}
 - (void)end:(NSString *)token resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {}
 - (void)mute:(NSString *)token muted:(BOOL)muted resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {}
+- (void)syncMuted:(NSString *)token muted:(BOOL)muted {}
 - (void)speaker:(NSString *)token enabled:(BOOL)speaker resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {}
 - (void)invalidate {}
 - (void)playSound:(NSString *)uri inCall:(BOOL)inCall resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject { resolve(nil); }
@@ -167,6 +168,8 @@ int32_t whip_speech_pcm_speak(uint64_t lease, const char *text, uint64_t caption
 @property(nonatomic, strong) NSMutableDictionary *caption;
 @property(nonatomic) NSInteger captionPrefix;
 @property(nonatomic) NSInteger captionPosition;
+@property(nonatomic, copy) NSString *systemVoice;
+- (id)newCallAnnouncement;
 - (BOOL)play:(NSString *)text language:(NSString *)language rate:(double)rate started:(void (^)(void))started preview:(BOOL)preview;
 - (void)watchShake;
 - (void)drainAutomatic;
@@ -174,14 +177,34 @@ int32_t whip_speech_pcm_speak(uint64_t lease, const char *text, uint64_t caption
 - (void)playAlertRingtone:(NSString *)token;
 - (void)armSpeechTimeout:(NSTimeInterval)interval initialization:(BOOL)initialization;
 @end
+@interface TestCallAnnouncement : NSObject
+@property(nonatomic) uint64_t lease;
+@property(nonatomic, copy) NSString *text;
+@property(nonatomic, copy) NSString *voice;
+@property(nonatomic, copy) dispatch_block_t completed;
+@property(nonatomic) BOOL cancelled;
+- (void)start:(uint64_t)lease text:(NSString *)text voice:(NSString *)voice completed:(dispatch_block_t)completed;
+- (void)cancel;
+@end
+@implementation TestCallAnnouncement
+- (void)start:(uint64_t)lease text:(NSString *)text voice:(NSString *)voice completed:(dispatch_block_t)completed
+{ self.lease = lease; self.text = text; self.voice = voice; self.completed = completed; }
+- (void)cancel { self.cancelled = YES; self.completed = nil; }
+@end
 @interface TestSpeechPlayback : WhipSpeechPlayback
 @property(nonatomic, strong) NSMutableArray<NSString *> *spoken;
 @property(nonatomic, copy) void (^onPlay)(NSString *);
 @property(nonatomic, strong) NSMutableArray<NSString *> *ringtones;
 @property(nonatomic) BOOL holdRingtone;
 @property(nonatomic, copy) void (^onRingtone)(NSString *);
+@property(nonatomic, strong) NSMutableArray<TestCallAnnouncement *> *callAnnouncements;
 @end
 @implementation TestSpeechPlayback
+- (id)newCallAnnouncement {
+  TestCallAnnouncement *announcement = [TestCallAnnouncement new];
+  [self.callAnnouncements addObject:announcement];
+  return announcement;
+}
 - (void)backendCommand:(NSString *)action resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject { resolve(@"{}"); }
 - (void)watchShake {}
 - (void)playAlertRingtone:(NSString *)token {
@@ -213,11 +236,12 @@ int32_t whip_speech_pcm_speak(uint64_t lease, const char *text, uint64_t caption
   automaticActive = 0; automaticEnabled = NO; automaticPaused = NO;
   self.player = [TestSpeechPlayback new]; fixturePlayer = self.player; self.player.spoken = [NSMutableArray new]; self.stopped = [NSMutableArray new];
   self.player.ringtones = [NSMutableArray new];
+  self.player.callAnnouncements = [NSMutableArray new];
   self.observer = [NSNotificationCenter.defaultCenter addObserverForName:WhipChatSpeechStopped object:self.player queue:nil usingBlock:^(NSNotification *event) {
     [self.stopped addObject:event.userInfo[@"token"]];
   }];
 }
-- (void)tearDown { [self.player stop]; fixturePlayer = nil; [NSNotificationCenter.defaultCenter removeObserver:self.observer]; [super tearDown]; }
+- (void)tearDown { [self.player cancelCallAnnouncement]; [self.player stop]; fixturePlayer = nil; [NSNotificationCenter.defaultCenter removeObserver:self.observer]; [super tearDown]; }
 - (RCTPromiseRejectBlock)unexpectedError {
   return ^(NSString *code, NSString *message, NSError *error) { XCTFail(@"%@ %@", code, message); };
 }
@@ -230,6 +254,33 @@ int32_t whip_speech_pcm_speak(uint64_t lease, const char *text, uint64_t caption
 - (void)queueAutomatic:(uint64_t)identity text:(NSString *)text {
   [automaticWaiting addObject:@{@"id": @(identity), @"token": @"automatic-chat-speech", @"text": text,
     @"hostId": @"host", @"paneId": @"pane", @"label": @"Native automatic test"}];
+}
+
+- (void)testCallAnnouncementsUseTheCurrentConfiguredVoiceOnEveryRequestAndRetainCallOwnership {
+  uint64_t lease = whip_speech_claim(WhipSpeechChat, "openai-realtime", "");
+  __block NSUInteger completions = 0;
+  self.player.systemVoice = @"selected-voice-a";
+  [self.player speakCallAnnouncement:lease text:@"Muted" completed:^{ completions++; }];
+  TestCallAnnouncement *first = self.player.callAnnouncements.lastObject;
+  XCTAssertEqual(first.lease, lease);
+  XCTAssertEqualObjects(first.text, @"Muted");
+  XCTAssertEqualObjects(first.voice, @"selected-voice-a");
+  first.completed();
+  XCTAssertEqual(completions, 1u);
+  XCTAssertEqual(activeLease, lease);
+  self.player.systemVoice = @"selected-voice-b";
+  [self.player speakCallAnnouncement:lease text:@"Muted" completed:^{ completions++; }];
+  XCTAssertTrue(first.cancelled);
+  XCTAssertEqual(self.player.callAnnouncements.count, 2u);
+  TestCallAnnouncement *second = self.player.callAnnouncements.lastObject;
+  XCTAssertEqualObjects(second.text, @"Muted");
+  XCTAssertEqualObjects(second.voice, @"selected-voice-b");
+  XCTAssertEqual(second.lease, lease);
+  [self.player cancelCallAnnouncement];
+  XCTAssertTrue(second.cancelled);
+  XCTAssertNil(second.completed);
+  XCTAssertEqual(completions, 1u);
+  XCTAssertEqual(activeLease, lease);
 }
 
 - (void)testLongAnnouncementContinuesBeyondBudgetWhenNothingElseIsWaiting {

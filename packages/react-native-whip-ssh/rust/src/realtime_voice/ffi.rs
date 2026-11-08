@@ -97,7 +97,6 @@ pub unsafe extern "C" fn whip_realtime_mix_cue(id: u64, samples: *mut i16, count
             }
         }
         call.cue.lock().mix(samples);
-        call.microphone.lock().mix(samples, Instant::now());
     }
 }
 
@@ -200,6 +199,15 @@ pub extern "C" fn whip_realtime_control(id: u64, action: u8) {
             5 => call.fail("The native audio device was interrupted or became unavailable."),
             _ => {}
         }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn whip_realtime_announcement_finished(id: u64, announcement: u64) {
+    if let Some(call) = call(id).filter(|call| !call.closed.load(Ordering::Acquire)) {
+        call.microphone
+            .lock()
+            .announcement_finished(announcement, Instant::now());
     }
 }
 
@@ -388,6 +396,11 @@ pub extern "C" fn whip_realtime_view(id: u64) -> *mut c_char {
     let mut value = serde_json::to_value(&*view).ok();
     drop(view);
     if let Some(value) = &mut value {
+        value["microphoneAnnouncement"] = call
+            .microphone
+            .lock()
+            .announcement(call.speech.id())
+            .unwrap_or_default();
         value["continuity"] =
             serde_json::to_value(&call.continuity.lock().diagnostics).unwrap_or_default();
     }

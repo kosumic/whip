@@ -117,6 +117,10 @@ static PLAYBACK: LazyLock<Mutex<SpeechPlayback>> = LazyLock::new(Mutex::default)
 pub(crate) struct RealtimeSpeechLease(AtomicU64);
 
 impl RealtimeSpeechLease {
+    pub(crate) fn id(&self) -> u64 {
+        self.0.load(Ordering::Acquire)
+    }
+
     pub(crate) fn claim(preview: bool) -> Option<Self> {
         let kind = if preview {
             SpeechKind::Announcement
