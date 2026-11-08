@@ -33,7 +33,7 @@
   <a href="https://youtu.be/M7oXwtNDbpI"><strong>Watch the Whip launch video</strong></a>
 </p>
 
-Whip gives [Herdr](https://github.com/herdrdev/herdr) a touch-friendly mobile interface without exposing Herdr itself to the network. **No extra host software is needed when SSH and Herdr are already running.** Optional [push notifications](#get-push-notifications) use a host plugin. Whip connects to your machine over SSH—directly, through saved jump hosts, or with [Tailcat mode](#connect-with-tailcat)—and rebuilds the management experience as native screens. Watch the whole herd, follow Claude Code, Codex, OpenCode, and Pi conversations, dictate a prompt, review a Git diff, or attach to a full terminal. Plain SSH hosts work too, with multiple independent shell tabs even without Herdr.
+Whip gives [Herdr](https://github.com/herdrdev/herdr) a touch-friendly mobile interface without exposing Herdr itself to the network. **No extra host software is needed when SSH and Herdr are already running.** Opt-in [push notifications](#get-push-notifications) use a Herdr host plugin and remain off until explicitly enabled for each device and session. Whip connects to your machine over SSH—directly, through saved jump hosts, or with [Tailcat mode](#connect-with-tailcat)—and rebuilds the management experience as native screens. Watch the whole herd, follow Claude Code, Codex, OpenCode, and Pi conversations, dictate a prompt, review a Git diff, or attach to a full terminal. Plain SSH hosts work too, with multiple independent shell tabs even without Herdr.
 
 With **Phone Use**, a remote Claude Code, Codex or OpenCode agent can also use Whip's browser and phone tools, inspect connected hosts, and coordinate other Herdr agents through the same SSH connections.
 
@@ -87,7 +87,7 @@ Whip is not developed, maintained, or endorsed by the Herdr project or its autho
 
 Whip is opinionated: **Herdr is the only tool that will receive first-class support.** Our native supervision, navigation, and agent workflows are built around Herdr's hosts, spaces, tabs, and panes.
 
-Herdr is optional for ordinary SSH work: connect to a host and open independent login-shell tabs, browse files, or forward a web preview.
+Herdr is not required for ordinary SSH work: connect to a host and open independent login-shell tabs, browse files, or forward a web preview.
 
 We will not add first-class support for **tmux, Zellij, or Mosh**. This focus lets us build a cohesive mobile experience for Herdr.
 
@@ -159,13 +159,15 @@ Captured from Whip 2.0.0 on an iPhone 17 Pro simulator running iOS 26.5, with a 
 
 ### Get push notifications
 
-Whip uses local agent alerts by default. Enable optional push notifications on Android or iOS to hear when an agent needs you or finishes, even when Whip is not running. Setup is separate for each device and saved Herdr session.
+Whip uses local agent alerts by default. Remote push notifications are **opt-in** and stay off until enabled separately for each device and saved Herdr session. Once enabled, they can notify you when an agent needs attention or finishes, even when Whip is not running.
 
 1. Connect to the saved host, open its **⋯** detail screen from **Hosts**, and find **Server-side push notification**.
-2. Tap **Install on host** to install and enable the `whip-notify` Herdr plugin over SSH. Installation alone does not enable push for this device.
-3. Choose **End-to-end encryption (E2EE)**, then tap **Enable / rotate keys**. Grant notification permission and keep Whip open while it verifies push delivery and registers this device.
+2. Turn on the push notification switch. Whip installs or enables the `whip-notify` Herdr plugin over SSH if needed, then registers this device. Grant notification permission and keep Whip open for delivery verification.
+3. After registration, turn on **End-to-end encryption (E2EE)** if you want notification previews to hide agent details. New registrations start with E2EE off.
 
-New registrations default to E2EE **off**, with readable previews showing the tab, agent, status, and task title when available. The relay and push providers can read those details. Turn E2EE **on** for generic system previews with agent details encrypted for this device. Existing encrypted registrations stay encrypted until you change the setting. Tap a notification to reconnect and open its pane, if it still exists.
+Installing the host plugin alone does not opt any device into remote push.
+
+**Privacy:** By default, push previews can show the tab, agent, status, and task title, and the notification relay and push providers can read those details. Turn E2EE **on** to show only generic system previews while keeping agent details encrypted for this device. Existing encrypted registrations stay encrypted until you change the setting. Tap a notification to reconnect and open its pane, if it still exists.
 
 The plugin requires Herdr **0.9.5+**, Git, curl, and either `sha256sum` or `shasum`. Prebuilt binaries support arm64/x86_64 Linux and Apple Silicon macOS; no Rust compiler is needed on the host. Push travels through Whip's default notification relay and Expo Push Service to FCM on Android or APNs on iOS. You can select a **Custom relay** per saved host.
 
@@ -190,7 +192,7 @@ Chat View supports **Claude Code, Codex, OpenCode (v1 and v2), and Pi** panes. T
 - Load existing history once, then follow new agent records incrementally over SSH. View transcript metadata and cache status, or open a saved chat from Hosts without reconnecting to the host.
 - Keep using the terminal control strip in Chat View. Its Compose control opens the same native composer, draft, attachments, and per-tab send queue used by Terminal; closing the composer leaves Chat View open.
 - Dictate with the composer's microphone on Android and iOS. Whip uses the draft and recent chat or terminal text as recognition hints, then appends the result to your draft for review before sending. Paste clipboard images or attach photos and files, and add selected chat or terminal text directly to the composer.
-- Start [voice chat](docs/voice-chat.md) with the waveform button in an empty live-chat composer. Take turns with the agent using strictly on-device recognition, local VAD, and the voice selected in Settings. Interrupt spoken replies by speaking on devices with echo cancellation. Smart Turn is an optional download. Android Telecom and iOS CallKit provide system call controls and audio routing.
+- Start [voice chat](docs/voice-chat.md) with the waveform button in an empty live-chat composer. Take turns with the agent using strictly on-device recognition, local VAD, and the voice selected in Settings. Interrupt spoken replies by speaking on devices with echo cancellation. Smart Turn is available as an on-demand download. Android Telecom and iOS CallKit provide system call controls and audio routing.
 - Enable **Voice announcements** in Settings to announce agent status changes and read new replies from the focused chat aloud on Android and iOS, including in the background or with the screen locked. Announcements are off by default and skip loaded history, reasoning, tools, and code blocks. Shake the device to stop speech; switching to Terminal or leaving the session also stops chat reading. Android's ongoing notification has a **Stop listening** action.
 - Follow Whip's existing system, GitHub Light, and Tokyo Night themes. When the app background and glass mode are enabled, Chat View applies the same translucent material while keeping the transcript legible.
 
@@ -204,7 +206,7 @@ Chat View supports **Claude Code, Codex, OpenCode (v1 and v2), and Pi** panes. T
 
 ### Give agents Phone Use
 
-Phone Use is available on Android and iOS for **Claude Code, Codex and OpenCode (v1 and v2)**. It gives an opted-in agent a `whip` MCP server with browser, device, saved-host, and Herdr tools.
+Phone Use is available on Android and iOS for **Claude Code, Codex and OpenCode (v1 and v2)**. Enable it per agent to expose a `whip` MCP server with browser, device, saved-host, and Herdr tools.
 
 1. In the **Herd** command launcher, enter a `claude`, `codex` or `opencode` command, turn on **Phone Use**, and run it. The switch starts off and is offered only for supported commands.
 2. For an existing agent, long-press its Herd row, enable **Phone Use**, then tap **Restart** when it shows **Restart to enable**. Restart resumes the same conversation; Whip asks before interrupting a busy agent.
@@ -287,7 +289,7 @@ On the connected SSH host, install GitHub CLI (`gh`) and sign in with `gh auth l
 ### Make it yours
 
 - Hide the status bar across the app or while a terminal is open with Rancher fullscreen settings.
-- Configure local agent alerts with notifications, vibration, and optional speech, or enable [push notifications](#get-push-notifications) per saved host.
+- Configure local agent alerts with notifications and vibration, enable voice announcements (off by default), or opt in to [remote push notifications](#get-push-notifications) per saved host.
 - Set the duration of background agent alerts, dismiss active alerts by returning to Whip, and customize terminal gestures, controls, history, fonts, and cached sessions.
 - Use the app in English, French, Japanese, Spanish, Simplified Chinese, or Traditional Chinese, with system, light, GitHub Light, dark, and Tokyo Night appearance options.
 - Track time spent in Whip with the usage charts and keep settings sections expanded or collapsed as you prefer.
@@ -326,8 +328,8 @@ CI also compiles a thin unsigned device app and uploads `whip-ios-unsigned-compi
 
 Connect to an existing SSH server, or use [Tailcat's built-in SSH service](#connect-with-tailcat).
 **No extra host software is needed when SSH and Herdr are already running.**
-Enter the SSH details in Whip, use the optional QR pairing helper below, or set up Tailcat for access across networks.
-The optional [push notification feature](#get-push-notifications) adds a host plugin.
+Enter the SSH details in Whip, pair with the QR helper below, or set up Tailcat for access across networks.
+Opt-in [remote push notifications](#get-push-notifications) use a separate Herdr host plugin; they are not required for SSH or local alerts.
 
 Managing Herdr needs a host that can execute `/bin/sh`, such as Linux, macOS, or WSL.
 Whip runs its setup and start scripts through `/bin/sh`, so the SSH login shell itself
@@ -457,7 +459,7 @@ Whip connects from the mobile device to the configured SSH host, directly, throu
 
 Native screens read snapshots and live events from Herdr's local API sockets through the authenticated SSH connection. Actions use the same structured API, while each open pane terminal uses Herdr's client-protocol socket for live input, resize, scroll, and render frames. The remote file manager and terminal attachments use SFTP on that connection. Links found in terminal scrollback open directly when they are public; loopback and private-network addresses are forwarded through SSH first.
 
-Optional [push notifications](#get-push-notifications) use a separate path: the `whip-notify` Herdr status hook sends notifications over HTTPS through a Whip-operated or custom relay, then Expo and APNs/FCM. The hook opens no new listening port on the host. Device registration and lease renewal use the existing SSH connection.
+When enabled, opt-in [remote push notifications](#get-push-notifications) use a separate path: the `whip-notify` Herdr status hook sends notifications over HTTPS through a Whip-operated or custom relay, then Expo and APNs/FCM. The hook opens no new listening port on the host. Device registration and lease renewal use the existing SSH connection.
 
 Chat View reads agent conversation records rather than terminal scrollback. The Rust host runtime follows Claude Code session logs, Codex rollout JSONL, Pi session JSONL, and the installed OpenCode version's export/database interfaces, matching each conversation to Herdr's native session identity. These sources become one typed Rust transcript model on the device. The embedded Rust Turso database stores transcript checkpoints for fast reopening and saved-chat reading without an SSH connection; live updates resume when the host is available.
 
