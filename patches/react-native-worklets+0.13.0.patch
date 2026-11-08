@@ -1,0 +1,89 @@
+diff --git a/node_modules/react-native-worklets/apple/worklets/apple/AnimationFrameQueue.mm b/node_modules/react-native-worklets/apple/worklets/apple/AnimationFrameQueue.mm
+--- a/node_modules/react-native-worklets/apple/worklets/apple/AnimationFrameQueue.mm
++++ b/node_modules/react-native-worklets/apple/worklets/apple/AnimationFrameQueue.mm
+@@ -34,6 +34,11 @@
+   std::chrono::duration<double, std::milli> timeDeltas_[TIME_SAMPLES_AMOUNT];
+   int timeDeltaIndex_;
+   CAFrameRateRange currentFrameRate_;
++#if !TARGET_OS_OSX
++  bool appActive_;
++  id activeObserver_;
++  id inactiveObserver_;
++#endif
+ }
+ 
+ typedef void (^AnimationFrameCallback)(WorkletsDisplayLink *displayLink);
+@@ -65,6 +70,35 @@
+ #endif // TARGET_OS_OSX
+   [displayLink_ setPaused:TRUE];
+   [displayLink_ addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
++#if !TARGET_OS_OSX
++  // Keep pending work registered while inactive, so native foregrounding can
++  // resume the UI runtime without an AppState round trip through JavaScript.
++  __weak AnimationFrameQueue *weakSelf = self;
++  RCTUnsafeExecuteOnMainQueueSync(^{
++    appActive_ = [UIApplication sharedApplication].applicationState == UIApplicationStateActive;
++    activeObserver_ = [[NSNotificationCenter defaultCenter]
++      addObserverForName:UIApplicationDidBecomeActiveNotification
++                  object:nil
++                   queue:[NSOperationQueue mainQueue]
++              usingBlock:^(NSNotification *) {
++                AnimationFrameQueue *queue = weakSelf;
++                if (queue == nil) return;
++                queue->appActive_ = true;
++                std::lock_guard<std::mutex> lock(queue->callbacksMutex_);
++                if (!queue->frameCallbacks_.empty()) [queue->displayLink_ setPaused:FALSE];
++              }];
++    inactiveObserver_ = [[NSNotificationCenter defaultCenter]
++      addObserverForName:UIApplicationWillResignActiveNotification
++                  object:nil
++                   queue:[NSOperationQueue mainQueue]
++              usingBlock:^(NSNotification *) {
++                AnimationFrameQueue *queue = weakSelf;
++                if (queue == nil) return;
++                queue->appActive_ = false;
++                [queue->displayLink_ setPaused:TRUE];
++              }];
++  });
++#endif
+   return self;
+ }
+ 
+@@ -80,6 +114,10 @@
+ - (void)invalidate
+ {
+   AssertTurboModuleManagerQueue();
++#if !TARGET_OS_OSX
++  [[NSNotificationCenter defaultCenter] removeObserver:activeObserver_];
++  [[NSNotificationCenter defaultCenter] removeObserver:inactiveObserver_];
++#endif
+   [displayLink_ invalidate];
+ }
+ 
+@@ -87,13 +125,26 @@
+ 
+ - (void)scheduleQueueExecution
+ {
++#if !TARGET_OS_OSX
++  // requestAnimationFrame can arrive from a runtime queue. Serialize lifecycle
++  // decisions and display-link state on the main queue.
++  __weak AnimationFrameQueue *weakSelf = self;
++  dispatch_async(dispatch_get_main_queue(), ^{
++    AnimationFrameQueue *queue = weakSelf;
++    if (queue != nil && queue->appActive_) [queue->displayLink_ setPaused:FALSE];
++  });
++#else
+   [displayLink_ setPaused:FALSE];
++#endif
+ }
+ 
+ - (void)executeQueue:(WorkletsDisplayLink *)displayLink
+ {
+   RCTAssertMainQueue();
+ 
++#if !TARGET_OS_OSX
++  if (!appActive_) return;
++#endif
+   auto frameCallbacks = [self pullCallbacks];
+   [displayLink_ setPaused:TRUE];
+ 

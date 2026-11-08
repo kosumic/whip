@@ -11,7 +11,6 @@ import {
 } from 'react';
 import {
   AccessibilityInfo,
-  AppState,
   Image,
   StyleSheet,
   View,
@@ -91,17 +90,10 @@ export function AgentStatusAnimationProvider({
   children: ReactNode;
   enabled: boolean;
 }) {
-  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
-
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', state => {
-      setAppActive(state === 'active');
-    });
-    return () => subscription.remove();
-  }, []);
-
   return (
-    <AnimationVisibilityProvider enabled={enabled && appActive}>
+    // App lifecycle suspension belongs to the native animation schedulers.
+    // Keeping it out of this prop avoids waiting for JS on foreground resume.
+    <AnimationVisibilityProvider enabled={enabled}>
       {children}
     </AnimationVisibilityProvider>
   );
@@ -200,7 +192,7 @@ export function StatusBadge({ status, label, agentStatus = false, showIndicator 
 
 export function AnimatedStatusIndicator({ status, color, size = 7 }: { status: string; color: string; size?: number }) {
   const animationsEnabled = useContext(AgentStatusAnimationContext);
-  const { motion, style, reduceMotion } = useStatusMotion(status, true, true, animationsEnabled);
+  const { motion, style, reduceMotion } = useStatusMotion(status);
   const bloomStyle = useStatusBloom(status, reduceMotion, animationsEnabled);
 
   if (motion === 'spin') {
@@ -239,7 +231,7 @@ export function AnimatedAgentStatusGlyph({
   const reduceMotion = useReducedMotion();
   const animationsEnabled = useContext(AgentStatusAnimationContext);
   const spins = status === 'working' || status === 'running';
-  const { style } = useStatusMotion(status, false, false, animationsEnabled);
+  const { style } = useStatusMotion(status, false, false);
   const glyphBoxSize = size + 4;
   return (
     <Animated.View className="items-center justify-center" style={[{ width: glyphBoxSize, height: glyphBoxSize }, style]}>
@@ -363,12 +355,11 @@ function useStatusMotion(
   status: string,
   rotateSpinning = true,
   scalePulsing = true,
-  animationsEnabled = true,
 ) {
   const motion = statusMotionKind(status);
   const reduceMotion = useReducedMotion();
   const progress = useDecorativeProgress(
-    animationsEnabled && !reduceMotion && motion !== 'static' && (motion !== 'spin' || rotateSpinning),
+    !reduceMotion && motion !== 'static' && (motion !== 'spin' || rotateSpinning),
     motion === 'spin' ? 900 : 700,
     motion !== 'spin',
     motion === 'spin' ? SPINNER_FRAMES_PER_SECOND : undefined,
@@ -398,7 +389,7 @@ export function useReducedMotion() {
 
 function useStatusBloom(status: string, reduceMotion: boolean, animationsEnabled: boolean) {
   const breathes = ['done', 'connected', 'active'].includes(status);
-  const progress = useDecorativeProgress(animationsEnabled && breathes && !reduceMotion, 1100);
+  const progress = useDecorativeProgress(breathes && !reduceMotion, 1100);
 
   return useAnimatedStyle(() => {
     if (!animationsEnabled || !breathes || reduceMotion) {
@@ -412,7 +403,7 @@ function useStatusBloom(status: string, reduceMotion: boolean, animationsEnabled
 }
 
 function useConnectedHostBloom(connected: boolean, reduceMotion: boolean, animationsEnabled: boolean) {
-  const progress = useDecorativeProgress(animationsEnabled && connected && !reduceMotion, 1400);
+  const progress = useDecorativeProgress(connected && !reduceMotion, 1400);
 
   return useAnimatedStyle(() => ({
     opacity: !animationsEnabled || reduceMotion ? 0.62 : 0.32 + (progress.value * 0.5),

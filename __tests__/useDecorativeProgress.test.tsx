@@ -2,6 +2,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import type { FrameInfo } from 'react-native-reanimated';
 import { useDecorativeProgress } from '../src/hooks/useDecorativeProgress';
 import { NativeAgentSpinner } from '../src/components/NativeAgentSpinner';
+import { AnimationVisibilityProvider } from '../src/lib/animationVisibility';
 
 jest.mock('expo-modules-core', () => ({
   requireNativeViewManager: () => 'NativeSpinner',
@@ -70,31 +71,67 @@ describe('decorative animation timing', () => {
     expect(renderer.root.findByProps({ pointerEvents: 'none' }).props.framesPerSecond).toBe(60);
   });
 
-  test('preserves animation speed and skips directly over missed frames', () => {
+  test('preserves animation speed across dropped frames', () => {
     act(() => { renderer = create(<Harness />); });
     expect(frame(0)).toBe(0);
-    expect(frame(500)).toBe(0.5);
-    expect(frame(2750)).toBe(0.75);
+    expect(frame(100)).toBeCloseTo(0.1);
+    expect(frame(250)).toBeCloseTo(0.25);
+    expect(frame(450)).toBeCloseTo(0.45);
   });
 
   test('preserves the breathing curve and reversal', () => {
     act(() => { renderer = create(<Harness reverse />); });
     expect(frame(0)).toBe(0);
-    expect(frame(250)).toBe(0.125);
+    expect(frame(250)).toBeCloseTo(0.125);
+    frame(500);
+    frame(750);
     expect(frame(1000)).toBe(1);
-    expect(frame(1500)).toBe(0.5);
+    frame(1250);
+    expect(frame(1500)).toBeCloseTo(0.5);
+    frame(1750);
     expect(frame(2000)).toBe(0);
   });
 
   test('stops and resets disabled motion, then resumes from its starting pose', () => {
     act(() => { renderer = create(<Harness />); });
     frame(0);
-    expect(frame(500)).toBe(0.5);
+    frame(250);
+    expect(frame(500)).toBeCloseTo(0.5);
     act(() => { renderer.update(<Harness enabled={false} />); });
     expect([...mockCallbacks].every(callback => !callback.active)).toBe(true);
     expect(frame(800)).toBe(0);
     act(() => { renderer.update(<Harness />); });
     expect(frame(2000)).toBe(0);
-    expect(frame(2500)).toBe(0.5);
+    frame(2250);
+    expect(frame(2500)).toBeCloseTo(0.5);
+  });
+
+  test('resumes the first native frame after suspension without a React update or phase reset', () => {
+    act(() => { renderer = create(<Harness framesPerSecond={60} />); });
+    frame(0);
+    frame(200);
+    expect(frame(400)).toBeCloseTo(0.4);
+    expect(frame(10400)).toBeCloseTo(0.4 + 1 / 60);
+    expect(frame(10420)).toBeCloseTo(0.4 + 1 / 60 + 0.02);
+    expect(mockCallbacks.size).toBe(1);
+  });
+
+  test('retains phase while a screen is hidden and repeated visibility changes keep one loop', () => {
+    const screen = (visible: boolean) => (
+      <AnimationVisibilityProvider enabled={visible}><Harness /></AnimationVisibilityProvider>
+    );
+    act(() => { renderer = create(screen(true)); });
+    frame(0);
+    frame(200);
+    expect(frame(400)).toBeCloseTo(0.4);
+    for (let index = 0; index < 10; index += 1) {
+      act(() => { renderer.update(screen(false)); });
+      expect([...mockCallbacks].every(callback => !callback.active)).toBe(true);
+      expect(frame(5000)).toBeCloseTo(0.4);
+      act(() => { renderer.update(screen(true)); });
+      expect(frame(6000)).toBeCloseTo(0.4);
+      expect(mockCallbacks.size).toBe(1);
+    }
+    expect(frame(6200)).toBeCloseTo(0.6);
   });
 });

@@ -12,6 +12,13 @@ public final class WhipAgentSpinnerView: ExpoView {
   private var rotationDuration = 0.7
   private var framesPerSecond: Float = 60
   private var spinnerColor = UIColor.white
+  private var appActive = UIApplication.shared.applicationState == .active
+  private var rotationPhase = 0.0
+  private var startedAt: CFTimeInterval?
+
+  public override var isHidden: Bool {
+    didSet { updateAnimationState() }
+  }
 
   public required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
@@ -19,6 +26,28 @@ public final class WhipAgentSpinnerView: ExpoView {
     isUserInteractionEnabled = false
     layer.addSublayer(spinnerLayer)
     dotLayers.forEach { spinnerLayer.addSublayer($0) }
+    NotificationCenter.default.addObserver(
+      self, selector: #selector(appDidBecomeActive),
+      name: UIApplication.didBecomeActiveNotification, object: nil
+    )
+    NotificationCenter.default.addObserver(
+      self, selector: #selector(appWillResignActive),
+      name: UIApplication.willResignActiveNotification, object: nil
+    )
+  }
+
+  deinit {
+    NotificationCenter.default.removeObserver(self)
+  }
+
+  @objc private func appDidBecomeActive() {
+    appActive = true
+    updateAnimationState()
+  }
+
+  @objc private func appWillResignActive() {
+    appActive = false
+    updateAnimationState()
   }
 
   public override func layoutSubviews() {
@@ -40,10 +69,9 @@ public final class WhipAgentSpinnerView: ExpoView {
   public func setRotationDuration(_ durationMs: Double) {
     let nextDuration = max(durationMs, 100) / 1000
     guard rotationDuration != nextDuration else { return }
+    stopAnimation()
     rotationDuration = nextDuration
-    if spinnerLayer.animation(forKey: Self.animationKey) != nil {
-      startAnimation()
-    }
+    updateAnimationState()
   }
 
   public func setAnimationEnabled(_ enabled: Bool) {
@@ -55,10 +83,9 @@ public final class WhipAgentSpinnerView: ExpoView {
   public func setFramesPerSecond(_ value: Float) {
     let nextFrameRate = min(max(value, 1), 120)
     guard framesPerSecond != nextFrameRate else { return }
+    stopAnimation()
     framesPerSecond = nextFrameRate
-    if spinnerLayer.animation(forKey: Self.animationKey) != nil {
-      startAnimation()
-    }
+    updateAnimationState()
   }
 
   private func layoutDots() {
@@ -96,7 +123,7 @@ public final class WhipAgentSpinnerView: ExpoView {
   }
 
   private func updateAnimationState() {
-    if animationEnabled && window != nil {
+    if animationEnabled && appActive && window != nil && !isHidden {
       if spinnerLayer.animation(forKey: Self.animationKey) == nil {
         startAnimation()
       }
@@ -106,10 +133,10 @@ public final class WhipAgentSpinnerView: ExpoView {
   }
 
   private func startAnimation() {
-    spinnerLayer.removeAnimation(forKey: Self.animationKey)
+    startedAt = CACurrentMediaTime()
     let animation = CABasicAnimation(keyPath: "transform.rotation.z")
-    animation.fromValue = 0
-    animation.toValue = CGFloat.pi * 2
+    animation.fromValue = rotationPhase * .pi * 2
+    animation.toValue = (rotationPhase + 1) * .pi * 2
     animation.duration = rotationDuration
     animation.preferredFrameRateRange = CAFrameRateRange(
       minimum: framesPerSecond,
@@ -123,7 +150,15 @@ public final class WhipAgentSpinnerView: ExpoView {
   }
 
   private func stopAnimation() {
+    if let startedAt {
+      rotationPhase = (rotationPhase + (CACurrentMediaTime() - startedAt) / rotationDuration)
+        .truncatingRemainder(dividingBy: 1)
+    }
+    startedAt = nil
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
     spinnerLayer.removeAnimation(forKey: Self.animationKey)
-    spinnerLayer.transform = CATransform3DIdentity
+    spinnerLayer.setValue(rotationPhase * .pi * 2, forKeyPath: "transform.rotation.z")
+    CATransaction.commit()
   }
 }

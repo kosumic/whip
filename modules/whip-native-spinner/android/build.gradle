@@ -3,12 +3,19 @@ plugins {
   id 'expo-module-gradle-plugin'
 }
 
+dependencies {
+  implementation 'com.facebook.react:react-android'
+  androidTestImplementation 'androidx.test:runner:1.7.0'
+  androidTestImplementation 'androidx.test.ext:junit:1.3.0'
+}
+
 group = 'io.github.kaminarios.whip'
 version = '1.0.0'
 
 android {
   namespace "io.github.kaminarios.whip.spinner"
   defaultConfig {
+    testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     versionCode 1
     versionName "1.0.0"
   }
