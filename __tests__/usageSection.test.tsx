@@ -1,5 +1,6 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { UsageSection } from '../src/components/UsageSection';
+import { ScreenUpdates } from '../src/components/ScreenUpdates';
 import { voiceUsageLedger, type VoiceUsageSummary } from '../src/services/voiceUsage';
 import { Text } from '../src/components/ui/text';
 import { usageChartPeriod } from '../src/lib/usagePeriods';
@@ -57,12 +58,15 @@ async function openCost() {
   await act(async () => press('voiceUsage.cost'));
 }
 function visible() { return JSON.stringify(renderer.toJSON()); }
+function usageScreen(active: boolean) {
+  return <ScreenUpdates active={active}>{() => <UsageSection />}</ScreenUpdates>;
+}
 beforeEach(async () => {
   jest.clearAllMocks(); jest.mocked(voiceUsageLedger.summary).mockResolvedValue(empty);
   jest.mocked(loadVoiceHistory).mockResolvedValue([]);
   jest.mocked(usageSummary).mockReset().mockReturnValue({ todayMs: 7_200_000n, weekMs: 7_200_000n, monthMs: 7_200_000n, lifetimeMs: 14_400_000n, startedAtMs: BigInt(new Date(2026, 0, 1).getTime()) });
   jest.mocked(usageChart).mockReset().mockImplementation(boundaries => ({ bucketsMs: boundaries.slice(1).map((_, index) => index < 2 ? 3_600_000n : 0n), totalMs: 7_200_000n }));
-  await act(async () => { renderer = create(<UsageSection />); });
+  await act(async () => { renderer = create(usageScreen(true)); });
 });
 afterEach(() => act(() => renderer.unmount()));
 
@@ -121,6 +125,62 @@ test('polls only the visible metric and stops time updates when the card closes'
     const closedReads = jest.mocked(usageSummary).mock.calls.length;
     await act(async () => { jest.advanceTimersByTime(5_000); });
     expect(usageSummary).toHaveBeenCalledTimes(closedReads);
+  } finally { jest.useRealTimers(); }
+});
+
+test('retained voice usage pauses offscreen and refreshes the same filters on return', async () => {
+  jest.useFakeTimers();
+  try {
+    await openCost();
+    await act(async () => press('voiceUsage.filters'));
+    await act(async () => press('voiceProvider.openai'));
+    await act(async () => press('usage.month'));
+    const reads = jest.mocked(voiceUsageLedger.summary).mock.calls.length;
+    const retained = visible();
+    await act(async () => { renderer.update(usageScreen(false)); });
+    await act(async () => { jest.advanceTimersByTime(10_000); });
+    expect(voiceUsageLedger.summary).toHaveBeenCalledTimes(reads);
+    expect(visible()).toBe(retained);
+    await act(async () => { renderer.update(usageScreen(true)); });
+    expect(voiceUsageLedger.summary).toHaveBeenCalledTimes(reads + 1);
+    expect(voiceUsageLedger.summary).toHaveBeenLastCalledWith(
+      { provider: 'openai', mode: undefined, scope: undefined }, expect.any(Date), 'month',
+    );
+    expect(visible()).toBe(retained);
+  } finally { jest.useRealTimers(); }
+});
+
+test('retained Whipping time stops offscreen reads and preserves the selected bar', async () => {
+  jest.useFakeTimers();
+  try {
+    await act(async () => press('voiceUsage.title'));
+    const first = renderer.root.findAll(node => node.props.accessibilityRole === 'button' && node.props.accessibilityLabel?.includes('usage.duration {"hours":1'))[0];
+    await act(async () => first.props.onPress());
+    const reads = jest.mocked(usageSummary).mock.calls.length;
+    await act(async () => { renderer.update(usageScreen(false)); });
+    await act(async () => { jest.advanceTimersByTime(10_000); });
+    expect(usageSummary).toHaveBeenCalledTimes(reads);
+    await act(async () => { renderer.update(usageScreen(true)); });
+    expect(usageSummary).toHaveBeenCalledTimes(reads + 1);
+    expect(renderer.root.findByProps({ accessibilityLiveRegion: 'polite' }).props.children).toBe('usage.duration {"hours":1,"minutes":0}');
+  } finally { jest.useRealTimers(); }
+});
+
+test('a usage refresh completing after navigation does not redraw the hidden screen', async () => {
+  jest.useFakeTimers();
+  try {
+    await openCost();
+    let resolve!: (value: VoiceUsageSummary) => void;
+    jest.mocked(voiceUsageLedger.summary).mockReturnValueOnce(new Promise(done => { resolve = done; }));
+    await act(async () => { jest.advanceTimersByTime(2_000); });
+    const retained = visible();
+    await act(async () => { renderer.update(usageScreen(false)); });
+    await act(async () => { resolve({ ...empty, calls: [{
+      session_id: 'new-call', provider: 'local', mode: 'turn_based', model: null, voice: null,
+      scope: 'agent', started_at_ms: Date.now(), ended_at_ms: null, active: true,
+      estimated_usd: 0, remote_agent_estimated_usd: null, status: 'live_estimate', items: {},
+    }] }); });
+    expect(visible()).toBe(retained);
   } finally { jest.useRealTimers(); }
 });
 

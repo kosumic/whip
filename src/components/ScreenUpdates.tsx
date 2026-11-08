@@ -1,4 +1,5 @@
 import { memo, type ReactNode } from 'react';
+import { ScreenVisibilityContext } from '../lib/screenVisibility';
 
 interface Props {
   active: boolean;
@@ -13,8 +14,12 @@ interface Props {
  * Transport and session lifecycle owners must remain outside this boundary.
  */
 export const ScreenUpdates = memo(
-  function DeferredScreen({ children }: Props) {
-    return children();
+  function DeferredScreen({ active, children }: Props) {
+    return (
+      <ScreenVisibilityContext.Provider value={active}>
+        {children()}
+      </ScreenVisibilityContext.Provider>
+    );
   },
   (previous, next) => !previous.active && !next.active &&
     Object.is(previous.updateKey, next.updateKey),
