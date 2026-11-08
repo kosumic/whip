@@ -13,6 +13,16 @@ export interface RemoteDownloadProgress {
   totalBytes?: number;
   failedPhase?: RemoteDownloadPhase;
   error?: string;
+  bytesPerSecond?: number;
+  remainingSeconds?: number;
+  rateCalculating?: boolean;
+  destination?: SavedRemoteDestination;
+}
+
+/** Kept only by the completed UI, never persisted or converted to a bookmark. */
+export interface SavedRemoteDestination {
+  entry: File | Directory;
+  directory: Directory;
 }
 
 const TRANSFER_POLL_INTERVAL_MS = 250;
@@ -109,24 +119,25 @@ async function saveDownloadedEntry(
   overwrite: boolean,
   context: DownloadContext,
   signal?: AbortSignal,
-): Promise<void> {
+): Promise<SavedRemoteDestination> {
   const provider = destination.uri.startsWith('content://') ? 'android-saf' : 'filesystem';
   try {
     const expectedSize = source instanceof Directory ? undefined : source.size;
     await source.copy(destination, { overwrite });
     if (signal?.aborted) throw new Error('Download cancelled');
+    // SAF document IDs are opaque; enumerate the actual child URI.
+    const saved = provider === 'android-saf'
+      ? destination.list().find(entry => entry.name === source.name && (entry instanceof Directory) === (source instanceof Directory))
+      : source instanceof Directory ? new Directory(destination, source.name) : new File(destination, source.name);
+    if (!saved?.exists) throw new Error('The destination file has an unexpected byte count or is missing');
     if (typeof expectedSize === 'number' && Number.isFinite(expectedSize) && expectedSize >= 0) {
-      // SAF document IDs are opaque. Let Expo enumerate the actual child URI
-      // instead of appending a filename to the picked tree's content URI.
-      const saved = provider === 'android-saf'
-        ? destination.list().find((entry): entry is File => entry instanceof File && !(entry instanceof Directory) && entry.name === source.name)
-        : new File(destination, source.name);
-      const actualSize = saved?.size;
-      if (!saved?.exists || (typeof actualSize === 'number' && Number.isFinite(actualSize) && actualSize >= 0 && actualSize !== expectedSize)) {
+      const actualSize = saved.size;
+      if (typeof actualSize === 'number' && Number.isFinite(actualSize) && actualSize >= 0 && actualSize !== expectedSize) {
         throw new Error('The destination file has an unexpected byte count or is missing');
       }
     }
     recordDownloadOutcome(context, 'destination-save', 'completed', provider);
+    return { entry: saved, directory: destination };
   } catch (error) {
     recordDownloadOutcome(context, 'destination-save', signal?.aborted ? 'cancelled' : 'failed', provider);
     throw new RemoteFileDownloadError('save', context.transferId, error);
@@ -146,6 +157,11 @@ export async function downloadRemoteEntry(
   let progress: RemoteDownloadProgress = { phase: 'selecting', bytesTransferred: 0 };
   const report = (update: Partial<RemoteDownloadProgress>) => {
     progress = { ...progress, ...update };
+    if (progress.phase !== 'downloading') {
+      delete progress.bytesPerSecond;
+      delete progress.remainingSeconds;
+      delete progress.rateCalculating;
+    }
     onProgress(progress);
   };
   let directory: Directory | undefined;
@@ -192,7 +208,7 @@ export async function downloadRemoteEntry(
       throw error;
     }
     check();
-    report({ phase: 'downloading' });
+    report({ phase: 'downloading', rateCalculating: true });
     const sourcePath = typeof remotePath === 'string' ? remotePath : await remotePath();
     check();
     directory = createDownloadDirectory(DOWNLOAD_PREFIX);
@@ -206,7 +222,11 @@ export async function downloadRemoteEntry(
       try {
         check();
         const value = native.transferProgress(id);
-        if (value) report({ bytesTransferred: value.bytesTransferred, totalBytes: value.totalBytes });
+        if (value) report({
+          bytesTransferred: value.bytesTransferred, totalBytes: value.totalBytes,
+          bytesPerSecond: value.bytesPerSecond, remainingSeconds: value.remainingSeconds,
+          rateCalculating: value.rateCalculating,
+        });
       } catch (error) {
         connectionError = error instanceof Error ? error : new Error(String(error));
         cancel();
@@ -233,10 +253,10 @@ export async function downloadRemoteEntry(
     // Let Expo resolve children of the picked directory. Android SAF URIs
     // cannot be joined as ordinary filesystem paths. Its copy operation checks
     // conflicts and recurses only over the safe, native-created staging tree.
-    await saveDownloadedEntry(source, destination, false, context);
+    const saved = await saveDownloadedEntry(source, destination, false, context);
     // Expo's asynchronous copy cannot be interrupted. Once it starts, wait for
     // its real outcome, even if the owning UI goes away, before deleting staging.
-    report({ phase: 'completed' });
+    report({ phase: 'completed', destination: saved });
     return true;
   } catch (error) {
     if (signal?.aborted && progress.phase !== 'saving') {

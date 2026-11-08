@@ -173,19 +173,24 @@ it('expires abandoned staging after app termination while preserving active prev
   } finally { clock.mockRestore(); }
 });
 
-it('polls native transfer progress while awaiting completion', async () => {
+it('polls native transfer progress and its rate while awaiting completion', async () => {
   jest.useFakeTimers();
   try {
     let finish!: (value: { localPath: string }) => void;
     native.startDownload.mockReturnValue({ id: 'transfer', result: new Promise(resolve => { finish = resolve; }) });
     const progress = jest.fn();
+    native.transferProgress.mockReturnValue({ bytesTransferred: 123, totalBytes: 456, bytesPerSecond: 50, remainingSeconds: 7, rateCalculating: false });
     const download = downloadRemoteEntry(client(), '/repo/source', progress);
     await Promise.resolve();
     jest.advanceTimersByTime(250);
-    expect(progress).toHaveBeenCalledWith(expect.objectContaining({ phase: 'downloading', bytesTransferred: 123, totalBytes: 456 }));
+    expect(progress).toHaveBeenCalledWith(expect.objectContaining({ phase: 'downloading', bytesTransferred: 123, totalBytes: 456, bytesPerSecond: 50, remainingSeconds: 7, rateCalculating: false }));
     finish({ localPath: '/cache/source' });
     await download;
     expect(jest.getTimerCount()).toBe(0);
+    const complete = progress.mock.calls.at(-1)![0];
+    expect(complete).toMatchObject({ phase: 'completed', destination: { entry: { uri: 'file:///picked/source' }, directory: { uri: 'file:///picked' } } });
+    expect(complete.bytesPerSecond).toBeUndefined();
+    expect(complete.remainingSeconds).toBeUndefined();
   } finally { jest.useRealTimers(); }
 });
 
@@ -244,6 +249,26 @@ it('accepts a provider copy when the destination cannot report a size', async ()
   mockFileMetadata.set('file:///cache/source', { exists: true, size: 1024 });
   mockFileMetadata.set('file:///picked/source', { exists: true, size: null });
   await expect(downloadRemoteEntry(client(), '/repo/source', jest.fn())).resolves.toBe(true);
+});
+
+it('does not offer a destination before saving and preserves the actual SAF document URI afterwards', async () => {
+  const saved = new File('content://provider/tree/opaque/document/child');
+  Object.defineProperty(saved, 'name', { value: 'source' });
+  mockFileMetadata.set(saved.uri, { exists: true, size: 123 });
+  const directory = new Directory('content://provider/tree/opaque');
+  picker.mockResolvedValue(directory);
+  jest.mocked(directory.list).mockReturnValue([saved]);
+  const copy = deferred<undefined>();
+  jest.mocked(source().copy).mockReturnValueOnce(copy.promise);
+  const progress = jest.fn();
+  const download = downloadRemoteEntry(client(), '/repo/source', progress);
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'saving' }));
+  expect(progress.mock.calls.every(([value]) => value.destination === undefined)).toBe(true);
+  copy.resolve(undefined);
+  await download;
+  expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'completed', destination: { entry: saved, directory } }));
 });
 
 it.each(['context', 'preview'])('correlates %s provider errors without logging paths or raw errors', async entryPoint => {

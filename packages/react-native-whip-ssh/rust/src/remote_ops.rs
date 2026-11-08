@@ -1,8 +1,9 @@
 //! Whip-level remote operation policy layered over the product-neutral SSH transport.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use tokio::sync::{Notify, watch};
@@ -52,6 +53,93 @@ pub struct TransferProgress {
     pub bytes_transferred: u64,
     pub total_bytes: Option<u64>,
     pub state: TransferState,
+    pub bytes_per_second: Option<u64>,
+    pub remaining_seconds: Option<u64>,
+    pub rate_calculating: bool,
+}
+
+const RATE_WINDOW: Duration = Duration::from_secs(5);
+const RATE_WARMUP: Duration = Duration::from_secs(1);
+const RATE_STALL: Duration = Duration::from_secs(3);
+const RATE_SAMPLE_INTERVAL: Duration = Duration::from_millis(100);
+
+/// Bounded, monotonic byte history. Polling also expires stalled estimates,
+/// even when SSH has stopped delivering progress callbacks.
+#[derive(Debug)]
+pub(crate) struct TransferRate {
+    samples: VecDeque<(Instant, u64)>,
+    bytes: u64,
+    last_change: Instant,
+}
+
+impl TransferRate {
+    pub fn new(now: Instant) -> Self {
+        Self {
+            samples: VecDeque::from([(now, 0)]),
+            bytes: 0,
+            last_change: now,
+        }
+    }
+
+    pub fn observe(&mut self, now: Instant, bytes: u64) {
+        if bytes < self.bytes
+            || (bytes > self.bytes && now.duration_since(self.last_change) >= RATE_STALL)
+        {
+            // Restart/resume offsets are a new baseline, never network bytes.
+            self.samples.clear();
+            self.samples.push_back((now, bytes));
+        }
+        if bytes != self.bytes {
+            self.last_change = now;
+            self.bytes = bytes;
+        }
+        if self
+            .samples
+            .back()
+            .is_some_and(|(time, _)| now.duration_since(*time) >= RATE_SAMPLE_INTERVAL)
+        {
+            self.samples.push_back((now, bytes));
+        }
+        self.expire(now);
+    }
+
+    fn expire(&mut self, now: Instant) {
+        while self.samples.len() > 1 && now.duration_since(self.samples[1].0) >= RATE_WINDOW {
+            self.samples.pop_front();
+        }
+    }
+
+    pub fn apply(&mut self, now: Instant, progress: &mut TransferProgress) {
+        progress.bytes_per_second = None;
+        progress.remaining_seconds = None;
+        progress.rate_calculating = false;
+        if !matches!(
+            progress.state,
+            TransferState::Pending | TransferState::Running
+        ) {
+            return;
+        }
+        self.expire(now);
+        if now.duration_since(self.last_change) >= RATE_STALL {
+            return;
+        }
+        let (start, bytes) = self.samples[0];
+        let elapsed = now.duration_since(start);
+        if elapsed < RATE_WARMUP {
+            progress.rate_calculating = true;
+            return;
+        }
+        let rate = u64::try_from(
+            u128::from(self.bytes.saturating_sub(bytes)) * 1_000_000_000 / elapsed.as_nanos(),
+        )
+        .unwrap_or(u64::MAX);
+        if rate > 0 {
+            progress.bytes_per_second = Some(rate);
+            progress.remaining_seconds = progress
+                .total_bytes
+                .map(|total| total.saturating_sub(self.bytes).div_ceil(rate));
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
@@ -277,6 +365,7 @@ pub(crate) struct TransferSlot {
     pub resumable_download: bool,
     pub cancel: watch::Sender<bool>,
     pub progress: TransferProgress,
+    pub rate: TransferRate,
     pub result: Option<Result<TransferResult, String>>,
     pub notify: Arc<Notify>,
 }
@@ -344,7 +433,11 @@ impl RemoteOperationManager {
                     bytes_transferred: 0,
                     total_bytes: None,
                     state: TransferState::Pending,
+                    bytes_per_second: None,
+                    remaining_seconds: None,
+                    rate_calculating: true,
                 },
+                rate: TransferRate::new(Instant::now()),
                 result: None,
                 notify: notify.clone(),
             },
@@ -871,6 +964,108 @@ fn attachment_filename_with_suffix(source: &str, suffix: &str) -> Result<String,
 mod tests {
     use super::*;
     use std::fmt::Write;
+
+    fn rate_progress(total_bytes: Option<u64>) -> TransferProgress {
+        TransferProgress {
+            transfer_id: "rate-test".into(),
+            bytes_transferred: 0,
+            total_bytes,
+            state: TransferState::Running,
+            bytes_per_second: None,
+            remaining_seconds: None,
+            rate_calculating: true,
+        }
+    }
+
+    #[test]
+    fn transfer_rate_warms_up_smooths_fluctuations_and_expires_without_callbacks() {
+        let start = Instant::now();
+        let mut rate = TransferRate::new(start);
+        let mut progress = rate_progress(Some(20_000));
+        rate.observe(start + Duration::from_millis(100), 100);
+        rate.apply(start + Duration::from_millis(100), &mut progress);
+        assert!(progress.rate_calculating);
+        assert_eq!(progress.bytes_per_second, None);
+        for (seconds, bytes, expected) in [(1, 1_000, 1_000), (2, 5_000, 2_500), (3, 6_000, 2_000)]
+        {
+            let now = start + Duration::from_secs(seconds);
+            rate.observe(now, bytes);
+            rate.apply(now, &mut progress);
+            assert!(!progress.rate_calculating);
+            assert_eq!(progress.bytes_per_second, Some(expected));
+            assert_eq!(
+                progress.remaining_seconds,
+                Some((20_000u64 - bytes).div_ceil(expected))
+            );
+        }
+        // Brief pauses lower the average rather than flickering to zero.
+        rate.apply(start + Duration::from_secs(4), &mut progress);
+        assert_eq!(progress.bytes_per_second, Some(1_500));
+        rate.apply(start + Duration::from_secs(6), &mut progress);
+        assert_eq!(progress.bytes_per_second, None);
+        assert_eq!(progress.remaining_seconds, None);
+        assert!(!progress.rate_calculating);
+        // Resume offsets after a stall never become an instantaneous rate.
+        rate.observe(start + Duration::from_secs(7), 6_500);
+        rate.apply(start + Duration::from_secs(7), &mut progress);
+        assert!(progress.rate_calculating);
+        rate.observe(start + Duration::from_secs(8), 7_500);
+        rate.apply(start + Duration::from_secs(8), &mut progress);
+        assert_eq!(progress.bytes_per_second, Some(1_000));
+    }
+
+    #[test]
+    fn transfer_rate_uses_recent_bytes_and_resets_restarted_attempts() {
+        let start = Instant::now();
+        let mut rate = TransferRate::new(start);
+        let mut progress = rate_progress(None);
+        for seconds in 1..=10 {
+            let now = start + Duration::from_secs(seconds);
+            rate.observe(
+                now,
+                if seconds <= 5 {
+                    seconds * 10_000
+                } else {
+                    50_000 + (seconds - 5) * 1_000
+                },
+            );
+            rate.apply(now, &mut progress);
+        }
+        assert_eq!(progress.bytes_per_second, Some(1_000));
+        assert_eq!(progress.remaining_seconds, None);
+        let now = start + Duration::from_secs(11);
+        rate.observe(now, 0);
+        rate.apply(now, &mut progress);
+        assert!(progress.rate_calculating);
+        assert_eq!(progress.bytes_per_second, None);
+        rate.observe(now + RATE_WARMUP, 500);
+        rate.apply(now + RATE_WARMUP, &mut progress);
+        assert_eq!(progress.bytes_per_second, Some(500));
+    }
+
+    #[test]
+    fn transfer_rate_handles_empty_tiny_large_and_terminal_transfers() {
+        let start = Instant::now();
+        for size in [0, 1, u64::MAX] {
+            let mut rate = TransferRate::new(start);
+            let mut progress = rate_progress(Some(size));
+            rate.observe(start + RATE_WARMUP, size);
+            rate.apply(start + RATE_WARMUP, &mut progress);
+            assert_eq!(progress.bytes_per_second, (size > 0).then_some(size));
+            assert_eq!(progress.remaining_seconds, (size > 0).then_some(0));
+            for state in [
+                TransferState::Completed,
+                TransferState::Failed,
+                TransferState::Cancelled,
+            ] {
+                progress.state = state;
+                rate.apply(start + RATE_WARMUP, &mut progress);
+                assert_eq!(progress.bytes_per_second, None);
+                assert_eq!(progress.remaining_seconds, None);
+                assert!(!progress.rate_calculating);
+            }
+        }
+    }
 
     #[test]
     fn remote_paths_are_unix_normalized_and_root_bounded() {

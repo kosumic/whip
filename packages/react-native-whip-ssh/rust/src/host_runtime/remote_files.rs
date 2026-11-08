@@ -2,7 +2,7 @@
 
 use std::future::Future;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tokio::sync::watch;
 
@@ -91,6 +91,9 @@ pub(super) fn update_transfer_progress(
         slot.progress.state = TransferState::Running;
         slot.progress.bytes_transferred = bytes_transferred;
         slot.progress.total_bytes = total_bytes;
+        let now = Instant::now();
+        slot.rate.observe(now, bytes_transferred);
+        slot.rate.apply(now, &mut slot.progress);
         let progress = slot.progress.clone();
         drop(transfers);
         progress
@@ -135,6 +138,7 @@ pub(super) fn finish_transfer(
             };
             slot.result = Some(result);
         }
+        slot.rate.apply(Instant::now(), &mut slot.progress);
         let result = (slot.progress.clone(), slot.notify.clone());
         drop(transfers);
         result
@@ -764,8 +768,11 @@ impl HostRuntime {
             .operations
             .transfers
             .lock()
-            .get(&transfer_id)
-            .map(|slot| slot.progress.clone())
+            .get_mut(&transfer_id)
+            .map(|slot| {
+                slot.rate.apply(Instant::now(), &mut slot.progress);
+                slot.progress.clone()
+            })
     }
 
     pub async fn await_transfer(

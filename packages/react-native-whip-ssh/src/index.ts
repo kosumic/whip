@@ -669,6 +669,9 @@ export type RuntimeTransferProgress = {
   bytesTransferred: number;
   totalBytes?: number;
   state: RuntimeTransferState;
+  bytesPerSecond?: number;
+  remainingSeconds?: number;
+  rateCalculating: boolean;
 };
 
 export type RuntimeTransferResult = {
@@ -2289,6 +2292,9 @@ function runtimeTransferProgress(
     totalBytes:
       value.totalBytes === undefined ? undefined : Number(value.totalBytes),
     state: runtimeTransferState(value.state),
+    bytesPerSecond: value.bytesPerSecond === undefined ? undefined : Number(value.bytesPerSecond),
+    remainingSeconds: value.remainingSeconds === undefined ? undefined : Number(value.remainingSeconds),
+    rateCalculating: value.rateCalculating,
   };
 }
 

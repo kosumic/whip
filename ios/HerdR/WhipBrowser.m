@@ -2,6 +2,7 @@
 #import <WebKit/WebKit.h>
 #import <Security/Security.h>
 #import <UserNotifications/UserNotifications.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import <objc/runtime.h>
 #import <errno.h>
 #import <Network/Network.h>
@@ -809,6 +810,35 @@ RCT_EXPORT_METHOD(openSavedDownload:(NSString *)identifier name:(NSString *)name
   sheet.popoverPresentationController.sourceView = presenter.view;
   sheet.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(presenter.view.bounds), CGRectGetMidY(presenter.view.bounds), 1, 1);
   [presenter presentViewController:sheet animated:YES completion:nil];
+  resolve(nil);
+}
+
+// Public iOS APIs provide a document navigator with an initial folder hint,
+// rather than a guaranteed reveal in the standalone Files app.
+RCT_EXPORT_METHOD(revealSavedDestination:(NSString *)savedUri directoryUri:(NSString *)directoryUri
+                  resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  NSURL *saved = [NSURL URLWithString:savedUri];
+  NSURL *directory = [NSURL URLWithString:directoryUri];
+  if (!saved.isFileURL || !directory.isFileURL) {
+    reject(@"DESTINATION_OPEN", @"Unsupported saved destination", nil); return;
+  }
+  BOOL scoped = [directory startAccessingSecurityScopedResource];
+  BOOL exists = [[NSFileManager defaultManager] fileExistsAtPath:saved.path];
+  if (scoped) [directory stopAccessingSecurityScopedResource];
+  if (!exists) {
+    reject(@"DESTINATION_OPEN", @"The saved file is missing or access has expired", nil); return;
+  }
+  UIViewController *presenter = [self downloadPresenter];
+  if (!presenter || presenter.isBeingDismissed) {
+    reject(@"DESTINATION_OPEN", @"The system document browser is unavailable", nil); return;
+  }
+  UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc]
+    initForOpeningContentTypes:@[UTTypeItem] asCopy:NO];
+  picker.directoryURL = directory;
+  picker.allowsMultipleSelection = NO;
+  // No delegate consumes the selection, starts a scope, or stores a bookmark.
+  [presenter presentViewController:picker animated:YES completion:nil];
   resolve(nil);
 }
 
