@@ -257,6 +257,95 @@ class StatusSpeechTest {
     }
   }
 
+  @Test fun automaticInputCancellationIsDistinctFromUserStop() {
+    assumeTrue("Run only with no user speech or call active", !SpeechPlayback.active && !VoiceCallService.active)
+    assumeTrue("Unlock the device", context.getSystemService(android.app.KeyguardManager::class.java)?.isDeviceLocked != true)
+    val originalAutomatic = SpeechPlayback.automaticPolicy
+    val originalStatus = SpeechPlayback.statusPolicy
+    val originalStarted = SpeechPlayback.onChatStarted
+    val started = ArrayDeque<CountDownLatch>()
+    val endings = mutableListOf<JSONObject>()
+    val texts = ArrayDeque<String>()
+    var activeId = 0L
+    var sequence = 0L
+    var paused = false
+    try {
+      main {
+        SpeechPlayback.statusPolicy = { _, _, _ -> "null" }
+        SpeechPlayback.onChatStarted = { token -> if (token == "automatic-chat-speech") started.removeFirstOrNull()?.countDown() }
+        SpeechPlayback.automaticPolicy = { input ->
+          val command = JSONObject(input)
+          when (command.getString("action")) {
+            "pause" -> { paused = command.getBoolean("paused"); if (paused) activeId = 0L; "null" }
+            "valid" -> (!paused && activeId == command.getLong("id")).toString()
+            "take" -> if (paused || activeId != 0L || texts.isEmpty()) "null" else {
+              activeId = ++sequence
+              JSONObject().put("id", activeId).put("text", texts.removeFirst())
+                .put("hostId", "test").put("paneId", "pane").put("label", "Automatic test").toString()
+            }
+            "ended" -> { endings.add(command); if (activeId == command.getLong("id")) activeId = 0L; "null" }
+            "completed" -> { activeId = 0L; "true" }
+            else -> "null"
+          }
+        }
+      }
+      val otherAudio = Any()
+      main {
+        SpeechPlayback.playback.started(otherAudio)
+        texts.add("Automatic speech waiting for audio admission.")
+        SpeechPlayback.automaticControl(context, "pause", false)
+        assertTrue(activeId != 0L)
+        SpeechPlayback.cancel()
+        assertEquals("replaced", endings.last().getString("reason"))
+        SpeechPlayback.playback.finished(otherAudio)
+      }
+      instrumentation.waitForIdleSync()
+      // Reproduce a global takeover arriving before pause, then the reverse order.
+      for (cancelFirst in listOf(true, false)) {
+        val first = CountDownLatch(1)
+        main {
+          started.add(first); texts.add("A long automatic reply that is interrupted by input before finishing.")
+          SpeechPlayback.automaticControl(context, "pause", false)
+        }
+        assertTrue("Automatic audio did not start", first.await(30, TimeUnit.SECONDS))
+        main {
+          assertFalse(SpeechPlayback.stopOwner(SpeechPolicy.CHAT, "unrelated-owner"))
+          if (cancelFirst) SpeechPlayback.cancel()
+          SpeechPlayback.automaticControl(context, "pause", true)
+          if (!cancelFirst) SpeechPlayback.cancel()
+          assertFalse(SpeechPlayback.active)
+          assertEquals("replaced", endings.last().getString("reason"))
+          assertFalse(endings.last().getBoolean("failed"))
+        }
+      }
+      val fresh = CountDownLatch(1)
+      main {
+        started.add(fresh); texts.add("Fresh single-agent reply after the input takeover has finished.")
+        SpeechPlayback.automaticControl(context, "pause", false)
+      }
+      assertTrue("Fresh audio did not start", fresh.await(30, TimeUnit.SECONDS))
+      val recovered = CountDownLatch(1)
+      main {
+        SpeechPlayback.stop(error = "Scripted speech engine failure")
+        assertTrue(endings.last().getBoolean("failed"))
+        started.add(recovered); texts.add("Fresh single-agent reply after speech engine recovery.")
+        SpeechPlayback.automaticControl(context, "pause", false)
+      }
+      assertTrue("Audio did not recover from engine failure", recovered.await(30, TimeUnit.SECONDS))
+      main {
+        SpeechPlayback.stop()
+        assertEquals("stopped", endings.last().getString("reason"))
+      }
+    } finally {
+      main {
+        texts.clear(); SpeechPlayback.cancel()
+        SpeechPlayback.automaticPolicy = originalAutomatic
+        SpeechPlayback.statusPolicy = originalStatus
+        SpeechPlayback.onChatStarted = originalStarted
+      }
+    }
+  }
+
   @Test fun automaticReaderCompletesNativeAudioAndContinuesWithoutJavaScript() {
     assumeTrue("Run only with no user speech or call active", !SpeechPlayback.active && !VoiceCallService.active)
     assumeTrue("Unlock the device for automatic speech playback", context.getSystemService(android.app.KeyguardManager::class.java)?.isDeviceLocked != true)

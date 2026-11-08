@@ -86,6 +86,7 @@ char *whip_alert_speech_command(const char *command, const char *token, uint64_t
 void whip_alert_speech_free(char *value) { free(value); }
 static NSMutableArray<NSDictionary *> *automaticWaiting;
 static NSMutableArray<NSNumber *> *automaticCompleted;
+static NSMutableArray<NSDictionary *> *automaticEndings;
 static uint64_t automaticActive;
 static BOOL automaticEnabled;
 static BOOL automaticPaused;
@@ -100,7 +101,10 @@ char *whip_automatic_speech_command(const char *input) {
     if (automaticPaused) [automaticWaiting removeAllObjects];
   }
   else if ([action isEqualToString:@"valid"]) result = @(automaticEnabled && !automaticPaused && automaticActive == [command[@"id"] unsignedLongLongValue]);
-  else if ([action isEqualToString:@"ended"]) automaticActive = 0;
+  else if ([action isEqualToString:@"ended"]) {
+    [automaticEndings addObject:command];
+    if (automaticActive == [command[@"id"] unsignedLongLongValue]) automaticActive = 0;
+  }
   else if ([action isEqualToString:@"completed"]) {
     uint64_t identity = [command[@"id"] unsignedLongLongValue];
     result = @(automaticActive == identity);
@@ -205,6 +209,7 @@ int32_t whip_speech_pcm_speak(uint64_t lease, const char *text, uint64_t caption
   waiting = [NSMutableArray new]; valid = [NSMutableSet new];
   turnSequence = 0; turnOwner = 0; turnWaiting = [NSMutableArray new];
   automaticWaiting = [NSMutableArray new]; automaticCompleted = [NSMutableArray new];
+  automaticEndings = [NSMutableArray new];
   automaticActive = 0; automaticEnabled = NO; automaticPaused = NO;
   self.player = [TestSpeechPlayback new]; fixturePlayer = self.player; self.player.spoken = [NSMutableArray new]; self.stopped = [NSMutableArray new];
   self.player.ringtones = [NSMutableArray new];
@@ -352,6 +357,73 @@ int32_t whip_speech_pcm_speak(uint64_t lease, const char *text, uint64_t caption
   XCTAssertEqualObjects(self.player.spoken, (@[@"current update", @"fresh update"]));
   XCTAssertEqual(automaticActive, 3u);
   XCTAssertEqual(automaticCompleted.count, 0u);
+}
+
+- (void)testInternalCancellationBeforePauseDoesNotReportUserStopOrAcceptLateAudio {
+  [self queueAutomatic:1 text:@"interrupted update"];
+  [self.player automaticControl:@"enable" value:YES];
+  AVSpeechUtterance *old = self.player.utterance;
+  XCTAssertFalse([self.player stopOwner:@"unrelated-owner" kind:WhipSpeechChat]);
+  XCTAssertEqual(automaticActive, 1u);
+  [self.player cancel];
+  XCTAssertEqual(activeLease, 0u);
+  XCTAssertEqualObjects(automaticEndings.lastObject[@"reason"], @"replaced");
+  XCTAssertEqualObjects(automaticEndings.lastObject[@"failed"], @NO);
+  [self.player automaticControl:@"pause" value:YES];
+  [self.player automaticControl:@"pause" value:NO];
+  [self queueAutomatic:2 text:@"fresh update"];
+  [self.player drainAutomatic];
+  [self.player speechSynthesizer:[AVSpeechSynthesizer new] didFinishSpeechUtterance:old];
+  XCTestExpectation *fenced = [self expectationWithDescription:@"old callback cannot finish fresh audio"];
+  dispatch_async(dispatch_get_main_queue(), ^{
+    XCTAssertEqual(automaticActive, 2u);
+    XCTAssertEqual(automaticCompleted.count, 0u);
+    XCTAssertEqualObjects(self.player.spoken, (@[@"interrupted update", @"fresh update"]));
+    // The native user Stop still publishes the distinct, intentional reason.
+    [self.player stop];
+    XCTAssertEqualObjects(automaticEndings.lastObject[@"reason"], @"stopped");
+    [fenced fulfill];
+  });
+  [self waitForExpectations:@[fenced] timeout:2];
+}
+
+- (void)testInternalCancellationOfAutomaticSpeechWaitingForAudioAdmission {
+  NSObject *otherAudio = [NSObject new];
+  [self.player startPlayback:otherAudio];
+  [self queueAutomatic:1 text:@"waiting automatic update"];
+  [self.player automaticControl:@"enable" value:YES];
+  XCTAssertEqual(automaticActive, 1u);
+  XCTAssertEqual(self.player.spoken.count, 0u);
+  [self.player cancel];
+  XCTAssertEqualObjects(automaticEndings.lastObject[@"reason"], @"replaced");
+  [self.player finishPlayback:otherAudio];
+  XCTestExpectation *drained = [self expectationWithDescription:@"cancelled admission cannot play later"];
+  dispatch_async(dispatch_get_main_queue(), ^{
+    XCTAssertEqual(self.player.spoken.count, 0u);
+    [self queueAutomatic:2 text:@"fresh update"];
+    [self.player drainAutomatic];
+    XCTAssertEqualObjects(self.player.spoken, (@[@"fresh update"]));
+    [drained fulfill];
+  });
+  [self waitForExpectations:@[drained] timeout:2];
+}
+
+- (void)testAutomaticEngineInterruptionReleasesAudioAndAllowsFreshReplies {
+  [self queueAutomatic:1 text:@"interrupted update"];
+  [self.player automaticControl:@"enable" value:YES];
+  AVSpeechUtterance *old = self.player.utterance;
+  [self.player speechSynthesizer:[AVSpeechSynthesizer new] didCancelSpeechUtterance:old];
+  XCTestExpectation *recovered = [self expectationWithDescription:@"fresh audio after native interruption"];
+  dispatch_async(dispatch_get_main_queue(), ^{
+    XCTAssertEqual(activeLease, 0u);
+    XCTAssertEqualObjects(automaticEndings.lastObject[@"reason"], @"interrupted");
+    [self queueAutomatic:2 text:@"fresh update"];
+    [self.player drainAutomatic];
+    XCTAssertEqual(automaticActive, 2u);
+    XCTAssertEqualObjects(self.player.spoken, (@[@"interrupted update", @"fresh update"]));
+    [recovered fulfill];
+  });
+  [self waitForExpectations:@[recovered] timeout:2];
 }
 
 - (void)testSystemWordRangesSkipTabPrefixAndIgnoreInterruptedUtterance {

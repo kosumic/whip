@@ -142,6 +142,7 @@ object SpeechPlayback : SensorEventListener {
 
   private fun automaticEnded(reason: String, error: String?) {
     val id = automaticId
+    Log.i(TAG, "automatic-ended id=$id reason=$reason failed=${error != null}")
     automaticId = 0L
     automaticFocus = null
     onAutomaticFocus?.invoke(null, null)
@@ -804,13 +805,14 @@ object SpeechPlayback : SensorEventListener {
   }
 
   fun stopOwner(kind: Int, owner: String): Boolean {
-    val waiting = cancelBeginnings { it.kind == kind && it.owner == owner }
+    val reason = if (kind == SpeechPolicy.CHAT && owner == AUTOMATIC_OWNER) REPLACED else STOPPED
+    val waiting = cancelBeginnings(reason) { it.kind == kind && it.owner == owner }
     if (kind == SpeechPolicy.ANNOUNCEMENT && alertUnits.containsKey(owner)) {
       finishAlert(owner, STOPPED)
       return true
     }
     if (kind == SpeechPolicy.CHAT && suspendedChat?.owner == owner) {
-      discardSuspendedChat(STOPPED, null)
+      discardSuspendedChat(reason, null)
       return true
     }
     val stopped = stopLease(SpeechPolicy.stopOwner(kind, owner))
@@ -828,9 +830,12 @@ object SpeechPlayback : SensorEventListener {
 
   private fun stopLease(id: Long): Boolean {
     if (id == 0L || session?.id != id) return false
-    clear(STOPPED, null)
+    clear(if (session?.owner == AUTOMATIC_OWNER) REPLACED else STOPPED, null)
     return true
   }
+
+  /** Internal reset/takeover must never be reported as an intentional user Stop. */
+  fun cancel() = stop(reason = REPLACED)
 
   fun stop(reason: String = STOPPED, error: String? = null) {
     if (error != null || reason == INTERRUPTED) {
@@ -838,7 +843,7 @@ object SpeechPlayback : SensorEventListener {
       if (SpeechPolicy.stop(current.id)) clear(reason, error)
       return
     }
-    cancelBeginnings { true }
+    cancelBeginnings(reason) { true }
     for (unit in alertUnits.values.toList()) finishAlert(unit.token, reason)
     alertCommand("clear")
     discardSuspendedChat(reason, error)
@@ -853,7 +858,7 @@ object SpeechPlayback : SensorEventListener {
   /** Release even an idle engine when the call or native module is torn down. */
   fun shutdown() {
     releaseEngine()
-    stop()
+    cancel()
   }
 
   fun detachPresentation() {
@@ -871,6 +876,8 @@ object SpeechPlayback : SensorEventListener {
   private fun clear(reason: String, error: String?) {
     clearCaption()
     val stopped = session
+    if (stopped?.owner == AUTOMATIC_OWNER)
+      Log.i(TAG, "automatic-clear id=$automaticId lease=${stopped.id} reason=$reason failed=${error != null}")
     stopped?.let { playback.cancel(it.turn) }
     handler.removeCallbacks(resetLevel)
     stopped?.let { reportLevel(it, 0f) }
@@ -963,13 +970,13 @@ object SpeechPlayback : SensorEventListener {
     playback.finished(current.turn)
   }
 
-  private fun cancelBeginnings(matches: (BeginRequest) -> Boolean): Boolean {
+  private fun cancelBeginnings(reason: String = STOPPED, matches: (BeginRequest) -> Boolean): Boolean {
     val cancelled = pendingBeginnings.filter(matches)
     for (pending in cancelled) {
       pendingBeginnings.remove(pending)
       playback.cancel(pending.turn)
       playback.finished(pending.turn)
-      pending.ended(STOPPED, null)
+      pending.ended(reason, null)
     }
     return cancelled.isNotEmpty()
   }

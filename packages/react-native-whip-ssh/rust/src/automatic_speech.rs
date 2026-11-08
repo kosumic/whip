@@ -61,7 +61,7 @@ struct Coordinator {
     queue: AutomaticChatSpeechQueue,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 enum EndReason {
     Completed,
@@ -157,6 +157,16 @@ impl Coordinator {
             && !self.silenced
     }
 
+    fn diagnostic(&self, event: &str, id: Option<u64>) {
+        log::info!(
+            target: "automatic_speech",
+            "event={event} id={id:?} active={:?} enabled={} paused={} silenced={} locked={} read_while_locked={} initializing={} generation={} sources={} resume_at={:?}",
+            self.queue.active_id(), self.enabled, self.paused, self.silenced,
+            self.locked, self.read_while_locked, self.initializing,
+            self.baseline_generation, self.sources.len(), self.resume_at,
+        );
+    }
+
     fn command(&mut self, command: Command, now: u64) -> Value {
         match command {
             Command::Enable { enabled } => {
@@ -176,24 +186,28 @@ impl Coordinator {
                     }
                     self.initializing = enabled && !self.sources.is_empty();
                 }
+                self.diagnostic("enable", None);
             }
             Command::Pause { paused } => {
                 self.paused = paused;
                 if paused {
                     self.queue.clear_pending();
                 }
+                self.diagnostic("pause", None);
             }
             Command::Lock { locked } => {
                 self.locked = locked;
                 if locked && !self.read_while_locked {
                     self.queue.clear_pending();
                 }
+                self.diagnostic("lock", None);
             }
             Command::ReadWhileLocked { enabled } => {
                 self.read_while_locked = enabled;
                 if self.locked && !enabled {
                     self.queue.clear_pending();
                 }
+                self.diagnostic("read-while-locked", None);
             }
             Command::Bind {
                 binding_token,
@@ -214,15 +228,18 @@ impl Coordinator {
             }
             Command::Take => {
                 if !self.allowed() || self.resume_at.is_some_and(|at| now < at) {
+                    self.diagnostic("take-suppressed", None);
                     return Value::Null;
                 }
                 let Some(playback) = self.queue.take_native(now) else {
+                    self.diagnostic("take-empty", None);
                     return Value::Null;
                 };
                 let Some(source) = self.sources.get(&playback.item.source) else {
                     self.queue.remove(playback.item.source);
                     return Value::Null;
                 };
+                self.diagnostic("take", Some(playback.id));
                 return json!({ "id": playback.id, "token": OWNER, "text": playback.item.text,
                     "hostId": source.host_id, "paneId": source.pane_id, "label": source.tab_name,
                     "bindingTokens": source.bindings.values().filter(|binding| binding.pane == source.pane_id).map(|binding| &binding.token).collect::<Vec<_>>(),
@@ -231,8 +248,20 @@ impl Coordinator {
             Command::Valid { id } => {
                 return json!(self.allowed() && self.queue.active_id() == Some(id));
             }
-            Command::Completed { id } => return json!(self.queue.complete_native(id)),
+            Command::Completed { id } => {
+                let completed = self.queue.complete_native(id);
+                self.diagnostic(
+                    if completed {
+                        "completed"
+                    } else {
+                        "completed-stale"
+                    },
+                    Some(id),
+                );
+                return json!(completed);
+            }
             Command::Ended { id, reason, failed } => {
+                log::info!(target: "automatic_speech", "event=ended id={id} reason={reason:?} failed={failed} current={}", self.queue.active_id() == Some(id));
                 if self.queue.active_id() != Some(id) {
                     return Value::Null;
                 }
@@ -240,9 +269,14 @@ impl Coordinator {
                     self.queue.dismiss_current();
                     self.resume_at = Some(now.saturating_add(SHAKE_PAUSE_MS));
                 } else {
-                    self.silenced = matches!(reason, EndReason::Stopped) && !failed;
+                    // Only a deliberate native Stop latches suppression. Internal
+                    // cleanup uses Replaced, even when it beats Pause to Rust.
+                    if matches!(reason, EndReason::Stopped) && !failed {
+                        self.silenced = true;
+                    }
                     self.queue.clear_pending();
                 }
+                self.diagnostic("ended", Some(id));
             }
         }
         Value::Null
@@ -271,12 +305,14 @@ impl Coordinator {
                 && revision <= source.revision
                 && !(reset && source.pending_baseline))
         {
+            log::info!(target: "automatic_speech", "event=revision-stale epoch={epoch} revision={revision} current_epoch={} current_revision={}", source.epoch, source.revision);
             return;
         }
         let baseline = reset
             || epoch != source.epoch
             || source.status != AgentTranscriptStatus::Live
             || !allowed;
+        log::info!(target: "automatic_speech", "event=revision epoch={epoch} revision={revision} status={status:?} baseline={baseline} reset={reset} allowed={allowed}");
         if reset || epoch != source.epoch {
             self.queue.remove(key.into());
         }

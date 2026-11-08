@@ -44,10 +44,11 @@ export const isChatResponsePlaying = (): boolean => active !== null;
 
 /** Wait for native playback to release its audio session before recording. */
 export async function suspendChatSpeechForInput(): Promise<void> {
+  setSpeechInputActive(true);
   const automaticStopped = automatic?.pause();
   const stopped = active?.silence();
-  setSpeechInputActive(true);
-  await Promise.all([automaticStopped, stopped, getSpeechPlayback().stopSpeech()]);
+  await Promise.all([automaticStopped, stopped]);
+  await getSpeechPlayback().stopSpeech();
 }
 
 /** One process-wide listener, independent of the chat viewport's lifecycle. */

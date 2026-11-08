@@ -146,7 +146,7 @@ class HerdrBackgroundModule(
     mainHandler.post {
       RealtimeVoice.credentialsUpdating(updating)
       if (!updating) PcmSpeechPlayback.prepareCredentials(context)
-      if (updating && SpeechPolicy.networkSelected()) SpeechPlayback.stop()
+      if (updating && SpeechPolicy.networkSelected()) SpeechPlayback.cancel()
       promise.resolve(null)
     }
   }
@@ -365,7 +365,7 @@ class HerdrBackgroundModule(
 
   @ReactMethod
   fun stopSpeech(promise: Promise) {
-    mainHandler.post { SpeechPlayback.stop(); promise.resolve(null) }
+    mainHandler.post { SpeechPlayback.cancel(); promise.resolve(null) }
   }
 
   @ReactMethod

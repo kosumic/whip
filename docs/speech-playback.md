@@ -109,10 +109,19 @@ flush automatic backlog and resume with fresh baselines. Shaking dismisses the
 currently spoken update, including its remaining chunks, then pauses for one
 second before reading other queued or future updates. It preserves automatic
 reading and the rest of the queue. Native Stop silences automatic reading until
-the voice setting is toggled again. Speech engine failures and audio interruptions
+the voice setting is toggled again. Internal cancellation (input takeover,
+backend/credential changes, owner cleanup, and service teardown) reports
+`replaced`, preserving automatic reading of future replies. Dictation marks
+input active and awaits automatic pause and manual playback release before
+global cancellation; internal cancellation remains safe if it arrives first.
+Speech engine failures and audio interruptions
 discard the affected playback backlog, then allow new replies to start a fresh
 player without toggling the voice setting. Existing transcript content is
 baselined during recovery so a partially heard reply is not replayed.
+
+Rust `automatic_speech` diagnostics record control state, admission/suppression,
+source epoch/revision and baseline decisions, native request IDs, end reasons,
+and stale callbacks. They contain no transcript text, binding labels, or credentials.
 
 On Android and iOS, new speech requests wait for the current speech or alert unit to
 finish. A unit holds playback through synthesis preparation and audio drain;

@@ -29,6 +29,8 @@ FOUNDATION_EXPORT NSString *const WhipSpeechCaption;
 - (void)cancelDeviceRequest:(NSString *)request;
 - (void)stopDevice;
 - (void)stop;
+/** Internal reset/takeover, preserving automatic reading of future replies. */
+- (void)cancel;
 // Native callback handoff; the process-wide Rust queue owns admission.
 - (BOOL)deferPlayback:(id)key block:(dispatch_block_t)block;
 - (void)startPlayback:(id)key;

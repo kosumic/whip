@@ -70,11 +70,29 @@ test('dictation waits for native speech playback to stop before recording', asyn
   const pause = suspendChatSpeechForInput().then(() => { released = true; });
   await flush();
   expect(isSpeechInputActive()).toBe(true);
-  expect(mockNative.stopSpeech).toHaveBeenCalledTimes(1);
+  expect(mockNative.stopSpeech).not.toHaveBeenCalled();
   expect(released).toBe(false);
   finishStop();
   await pause;
   expect(released).toBe(true);
+  expect(mockNative.stopSpeech).toHaveBeenCalledTimes(1);
+});
+
+test.each(['android', 'ios'] as const)('dictation on %s pauses automatic selection before global cleanup', async platform => {
+  Platform.OS = platform;
+  let finishPause!: () => void;
+  const pause = jest.fn(() => new Promise<void>(resolve => { finishPause = resolve; }));
+  const unregister = registerAutomaticSpeech({ pause, resume: jest.fn() });
+  try {
+    const suspended = suspendChatSpeechForInput();
+    await flush();
+    expect(isSpeechInputActive()).toBe(true);
+    expect(pause).toHaveBeenCalledTimes(1);
+    expect(mockNative.stopSpeech).not.toHaveBeenCalled();
+    finishPause();
+    await suspended;
+    expect(mockNative.stopSpeech).toHaveBeenCalledTimes(1);
+  } finally { unregister(); }
 });
 
 test('dictation waits for announcement or device playback even without a chat session', async () => {

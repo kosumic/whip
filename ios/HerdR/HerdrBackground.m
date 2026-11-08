@@ -44,7 +44,7 @@ RCT_EXPORT_METHOD(startRealtimeVoicePreview:(NSString *)token config:(NSString *
 RCT_EXPORT_METHOD(voiceCredentialsUpdating:(BOOL)updating resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 {
   [WhipRealtimeVoice.shared credentialsUpdating:updating];
-  if (updating && whip_speech_network_selected()) [WhipSpeechPlayback.shared stop];
+  if (updating && whip_speech_network_selected()) [WhipSpeechPlayback.shared cancel];
   resolve(nil);
 }
 RCT_EXPORT_METHOD(stopRealtimeVoice:(NSString *)token resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
@@ -128,7 +128,7 @@ RCT_EXPORT_METHOD(stopAnnouncement:(NSString *)token resolve:(RCTPromiseResolveB
 }
 RCT_EXPORT_METHOD(stopSpeech:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 {
-  [WhipSpeechPlayback.shared stop];
+  [WhipSpeechPlayback.shared cancel];
   resolve(nil);
 }
 RCT_EXPORT_METHOD(prepareSpokenAlert:(NSString *)notification channelId:(NSString *)channelId persistent:(BOOL)persistent vibrationPattern:(NSArray *)vibrationPattern effectId:(NSString *)effectId resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)

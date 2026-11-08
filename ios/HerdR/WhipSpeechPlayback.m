@@ -42,6 +42,7 @@ NSString *const WhipSpeechCaption = @"WhipSpeechCaption";
 static NSString *const WhipSpeechError = @"E_SPEECH";
 static NSString *const WhipSpeechCompleted = @"completed";
 static NSString *const WhipSpeechStopped = @"stopped";
+static NSString *const WhipSpeechReplaced = @"replaced";
 static NSString *const WhipSpeechInterrupted = @"interrupted";
 static NSString *const WhipAutomaticOwner = @"automatic-chat-speech";
 static const double WhipShakeGravityThreshold = 2.7;
@@ -343,6 +344,7 @@ static void WhipWakeAutomaticSpeech(void)
 - (void)automaticEnded:(NSString *)reason error:(NSString *)error
 {
   uint64_t identity = self.automaticId;
+  NSLog(@"[SpeechPlayback] automatic-ended id=%llu reason=%@ failed=%d", identity, reason, error != nil);
   self.automaticId = 0;
   self.automaticFocus = nil;
   [NSNotificationCenter.defaultCenter postNotificationName:WhipAutomaticSpeechFocus object:self userInfo:@{}];
@@ -397,7 +399,7 @@ static void WhipWakeAutomaticSpeech(void)
 - (void)detachPresentation
 {
   if (![self.owner isEqualToString:WhipAutomaticOwner] &&
-      ![self.suspendedChat[@"owner"] isEqualToString:WhipAutomaticOwner]) [self stop];
+      ![self.suspendedChat[@"owner"] isEqualToString:WhipAutomaticOwner]) [self cancel];
 }
 
 - (void)backendCommand:(NSString *)action resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
@@ -412,7 +414,7 @@ static void WhipWakeAutomaticSpeech(void)
     return;
   }
   if ([@[@"system", @"phonon", @"openai", @"delete"] containsObject:action] ||
-      [action hasPrefix:@"openai-voice:"] || [action hasPrefix:@"voice:"] || [action hasPrefix:@"system-voice:"] || [action hasPrefix:@"remove-voice:"]) [self stop];
+      [action hasPrefix:@"openai-voice:"] || [action hasPrefix:@"voice:"] || [action hasPrefix:@"system-voice:"] || [action hasPrefix:@"remove-voice:"]) [self cancel];
   static dispatch_queue_t settings;
   static dispatch_once_t once;
   dispatch_once(&once, ^{ settings = dispatch_queue_create("whip.speech.settings", DISPATCH_QUEUE_SERIAL); });
@@ -534,7 +536,7 @@ static void WhipWakeAutomaticSpeech(void)
   pending.ready();
   if (self.turn == pending.turn && self.kind == WhipSpeechChat && !self.utterance) [self finishTurn:self.turn];
 }
-- (BOOL)cancelPendingSpeech:(BOOL (^)(WhipPendingSpeech *))matches
+- (BOOL)cancelPendingSpeech:(BOOL (^)(WhipPendingSpeech *))matches reason:(NSString *)reason
 {
   BOOL cancelled = NO;
   for (WhipPendingSpeech *pending in self.pendingSpeech.allObjects) if (matches(pending)) {
@@ -542,7 +544,7 @@ static void WhipWakeAutomaticSpeech(void)
     [self.pendingSpeech removeObject:pending];
     [self cancelPlayback:pending.turn];
     [self finishPlayback:pending.turn];
-    if (pending.ended) pending.ended(WhipSpeechStopped, nil);
+    if (pending.ended) pending.ended(reason, nil);
   }
   return cancelled;
 }
@@ -806,9 +808,16 @@ static void WhipWakeAutomaticSpeech(void)
 - (void)startChat:(NSString *)owner localOnly:(BOOL)localOnly atomic:(BOOL)atomic resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
   __block BOOL ready = NO;
+  uint64_t identity = self.automaticId;
   [self queueSpeech:WhipSpeechChat owner:owner request:@"" localOnly:localOnly atomic:atomic ready:^{ ready = YES; resolve(nil); }
     ended:^(NSString *reason, NSString *error) {
-      if (!ready) reject(WhipSpeechError, error ?: @"Speech cancelled before starting", nil);
+      if (!ready) {
+        // Admission cancellation has no active lease for clear: to finish.
+        // Preserve its reason before the rejected startup promise runs.
+        if ([owner isEqualToString:WhipAutomaticOwner] && self.automaticId == identity && identity)
+          [self automaticEnded:reason error:error];
+        reject(WhipSpeechError, error ?: @"Speech cancelled before starting", nil);
+      }
     }];
 }
 - (void)speakChat:(NSString *)owner text:(NSString *)text resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
@@ -977,23 +986,24 @@ static void WhipWakeAutomaticSpeech(void)
 }
 - (BOOL)stopOwner:(NSString *)owner kind:(enum WhipSpeechKind)kind
 {
-  BOOL waiting = [self cancelPendingSpeech:^BOOL(WhipPendingSpeech *pending) { return pending.kind == kind && [pending.owner isEqualToString:owner]; }];
+  NSString *reason = kind == WhipSpeechChat && [owner isEqualToString:WhipAutomaticOwner] ? WhipSpeechReplaced : WhipSpeechStopped;
+  BOOL waiting = [self cancelPendingSpeech:^BOOL(WhipPendingSpeech *pending) { return pending.kind == kind && [pending.owner isEqualToString:owner]; } reason:reason];
   if (kind == WhipSpeechAnnouncement && self.alertUnits[owner]) {
     [self finishAlert:owner reason:WhipSpeechStopped]; return YES;
   }
   if (kind == WhipSpeechChat && [self.suspendedChat[@"owner"] isEqualToString:owner]) {
-    [self discardSuspendedChat:WhipSpeechStopped error:nil];
+    [self discardSuspendedChat:reason error:nil];
     return YES;
   }
   uint64_t stopped = whip_speech_stop_owner(kind, owner.UTF8String);
   if (!stopped || self.lease != stopped) return waiting;
-  [self clear:WhipSpeechStopped error:nil];
+  [self clear:reason error:nil];
   dispatch_async(dispatch_get_main_queue(), ^{ [self drainStatus]; });
   return YES;
 }
 - (void)cancelDeviceRequest:(NSString *)request
 {
-  [self cancelPendingSpeech:^BOOL(WhipPendingSpeech *pending) { return pending.kind == WhipSpeechDevice && [pending.request isEqualToString:request]; }];
+  [self cancelPendingSpeech:^BOOL(WhipPendingSpeech *pending) { return pending.kind == WhipSpeechDevice && [pending.request isEqualToString:request]; } reason:WhipSpeechStopped];
   uint64_t stopped = whip_speech_cancel_request(WhipSpeechDevice, request.UTF8String);
   if (stopped && self.lease == stopped) {
     [self clear:WhipSpeechStopped error:nil];
@@ -1017,10 +1027,11 @@ static void WhipWakeAutomaticSpeech(void)
   [NSRunLoop.mainRunLoop addTimer:self.timer forMode:NSRunLoopCommonModes];
 }
 - (void)stopDevice {
-  [self cancelPendingSpeech:^BOOL(WhipPendingSpeech *pending) { return pending.kind == WhipSpeechDevice; }];
+  [self cancelPendingSpeech:^BOOL(WhipPendingSpeech *pending) { return pending.kind == WhipSpeechDevice; } reason:WhipSpeechStopped];
   if (self.kind == WhipSpeechDevice) [self stopOwner:self.owner kind:self.kind];
 }
 - (void)stop { [self stopWithReason:WhipSpeechStopped error:nil]; }
+- (void)cancel { [self stopWithReason:WhipSpeechReplaced error:nil]; }
 - (void)stopWithReason:(NSString *)reason error:(NSString *)error
 {
   if ([reason isEqualToString:@"shake"]) { [self shake]; return; }
@@ -1029,7 +1040,7 @@ static void WhipWakeAutomaticSpeech(void)
     else if (whip_speech_stop(self.lease)) [self clear:reason error:error];
     return;
   }
-  [self cancelPendingSpeech:^BOOL(WhipPendingSpeech *pending) { return YES; }];
+  [self cancelPendingSpeech:^BOOL(WhipPendingSpeech *pending) { return YES; } reason:reason];
   for (WhipAlertUnit *unit in self.alertUnits.allValues) [self finishAlert:unit.token reason:reason];
   [self alertCommand:@"clear" token:@"" lease:0];
   [self discardSuspendedChat:reason error:error];
@@ -1088,6 +1099,8 @@ static void WhipWakeAutomaticSpeech(void)
   [self clearCaption];
   self.captionSource = nil;
   NSString *owner = self.owner;
+  if ([owner isEqualToString:WhipAutomaticOwner])
+    NSLog(@"[SpeechPlayback] automatic-clear id=%llu lease=%llu reason=%@ failed=%d", self.automaticId, self.lease, reason, error != nil);
   id turn = self.turn;
   enum WhipSpeechKind kind = self.kind;
   void (^ended)(NSString *, NSString *) = self.ended;

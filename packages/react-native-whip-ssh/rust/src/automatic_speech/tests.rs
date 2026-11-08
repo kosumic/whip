@@ -482,7 +482,12 @@ fn closing_cancels_speech_and_reopening_preserves_attribution_without_replay() {
 
 #[test]
 fn engine_failures_and_interruptions_flush_backlog_without_disabling_future_replies() {
-    for (reason, failed) in [(EndReason::Stopped, true), (EndReason::Interrupted, false)] {
+    for (reason, failed) in [
+        (EndReason::Stopped, true),
+        (EndReason::Interrupted, false),
+        (EndReason::Replaced, false),
+        (EndReason::Busy, false),
+    ] {
         let mut coordinator = coordinator(AgentTranscriptKind::Claude);
         update(
             &mut coordinator,
@@ -507,6 +512,96 @@ fn engine_failures_and_interruptions_flush_backlog_without_disabling_future_repl
         update(&mut coordinator, 4, &message("fresh", "Fresh reply.", true));
         assert_eq!(take(&mut coordinator)["text"], "Debug tab: Fresh reply.");
     }
+}
+
+#[test]
+fn single_agent_input_cancellation_recovers_in_either_pause_order_without_replay() {
+    for cancel_first in [false, true] {
+        let mut coordinator = coordinator(AgentTranscriptKind::Codex);
+        update(&mut coordinator, 2, &message("first", "First reply.", true));
+        let current = take(&mut coordinator);
+        let cancel = serde_json::from_value::<Command>(json!({
+            "action": "ended", "id": id(&current), "reason": "replaced", "failed": false,
+        }))
+        .unwrap();
+        if cancel_first {
+            coordinator.command(cancel, 3);
+            coordinator.command(Command::Pause { paused: true }, 3);
+        } else {
+            coordinator.command(Command::Pause { paused: true }, 3);
+            coordinator.command(cancel, 3);
+        }
+        update(
+            &mut coordinator,
+            3,
+            &message("muted", "Input-time reply.", true),
+        );
+        coordinator.command(Command::Pause { paused: false }, 4);
+        // Presentation reattachment must neither toggle nor replay history.
+        coordinator.command(Command::Enable { enabled: true }, 4);
+        update(
+            &mut coordinator,
+            4,
+            &message("muted", "Input-time reply.", true),
+        );
+        assert!(take(&mut coordinator).is_null());
+        update(&mut coordinator, 5, &message("fresh", "Fresh reply.", true));
+        let fresh = take(&mut coordinator);
+        assert_eq!(fresh["text"], "Debug tab: Fresh reply.");
+        coordinator.command(
+            Command::Ended {
+                id: id(&current),
+                reason: EndReason::Stopped,
+                failed: false,
+            },
+            6,
+        );
+        assert_eq!(
+            coordinator.command(Command::Valid { id: id(&fresh) }, 6),
+            true
+        );
+        coordinator.command(Command::Completed { id: id(&fresh) }, 6);
+        update(&mut coordinator, 6, &message("fresh", "Fresh reply.", true));
+        assert!(take(&mut coordinator).is_null());
+    }
+}
+
+#[test]
+fn legacy_global_stop_before_pause_reproduces_single_agent_silence_until_toggle() {
+    // The old native internal stop and deliberate user Stop were identical.
+    // Keep this behavior for user Stop; internal stops must send Replaced.
+    let mut coordinator = coordinator(AgentTranscriptKind::Codex);
+    update(&mut coordinator, 2, &message("first", "First reply.", true));
+    let current = take(&mut coordinator);
+    coordinator.command(
+        Command::Ended {
+            id: id(&current),
+            reason: EndReason::Stopped,
+            failed: false,
+        },
+        3,
+    );
+    coordinator.command(Command::Pause { paused: true }, 4);
+    coordinator.command(Command::Lock { locked: true }, 4);
+    coordinator.command(Command::Pause { paused: false }, 5);
+    coordinator.command(Command::Lock { locked: false }, 5);
+    coordinator.command(Command::Enable { enabled: true }, 5);
+    update(
+        &mut coordinator,
+        3,
+        &message("suppressed", "Stay silent.", true),
+    );
+    assert!(take(&mut coordinator).is_null());
+    coordinator.command(Command::Enable { enabled: false }, 6);
+    coordinator.command(Command::Enable { enabled: true }, 6);
+    update(
+        &mut coordinator,
+        4,
+        &message("suppressed", "Stay silent.", true),
+    );
+    assert!(take(&mut coordinator).is_null());
+    update(&mut coordinator, 5, &message("fresh", "Fresh reply.", true));
+    assert_eq!(take(&mut coordinator)["text"], "Debug tab: Fresh reply.");
 }
 
 #[test]

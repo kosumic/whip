@@ -44,7 +44,7 @@ object PcmSpeechPlayback {
     prepareCredentials(context)
     if (action == "system-voices") { listSystemVoices(context, promise); return }
     if (action == "delete" || action == "system" || action == "phonon" || action == "openai" ||
-      action.startsWith("openai-voice:") || action.startsWith("voice:") || action.startsWith("system-voice:") || action.startsWith("remove-voice:")) SpeechPlayback.stop()
+      action.startsWith("openai-voice:") || action.startsWith("voice:") || action.startsWith("system-voice:") || action.startsWith("remove-voice:")) SpeechPlayback.cancel()
     settingsWorker.execute {
       try {
         val root = File(context.noBackupFilesDir, "phonon").absolutePath

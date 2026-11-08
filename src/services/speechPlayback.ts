@@ -42,6 +42,7 @@ export interface NativeSpeechPlayback {
   speakAnnouncement(token: string, text: string, language: string): Promise<SpeechEndReason>;
   speakPreview(token: string, text: string, language: string): Promise<SpeechEndReason>;
   stopAnnouncement(token: string): Promise<void>;
+  /** Internal cancellation for input takeover; does not mean user Stop listening. */
   stopSpeech(): Promise<void>;
   addListener(event: string): void;
   removeListeners(count: number): void;

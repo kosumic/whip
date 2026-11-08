@@ -49,7 +49,7 @@ class HerdrBackgroundService : Service() {
     HostRuntimeMonitoring.setOwnerActive(this, false)
     Log.i(TAG, "Foreground monitoring disabled; SSH remains process-owned")
     instance = null
-    SpeechPlayback.stop()
+    SpeechPlayback.cancel()
     wakeLock?.let { if (it.isHeld) it.release() }
     wakeLock = null
     super.onDestroy()
