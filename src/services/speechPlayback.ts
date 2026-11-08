@@ -13,6 +13,8 @@ export interface NativeSpeechPlayback {
   automaticSpeechBinding(bindingToken: string, hostId: string, tabName: string): void;
   speechBackendCommand(action: SpeechBackendAction | 'system-voices'): Promise<string>;
   startChatSpeech(token: string, label: string): Promise<void>;
+  /** Keeps a selected response's chunks in one playback turn until stopped. */
+  startResponseSpeech?(token: string, label: string): Promise<void>;
   startLocalChatSpeech(token: string, label: string): Promise<void>;
   startVoiceCall(token: string, label: string): Promise<void>;
   startRealtimeVoiceCall?(token: string, label: string): Promise<void>;

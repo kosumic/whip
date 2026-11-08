@@ -30,6 +30,7 @@ import com.facebook.react.common.LifecycleState
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.whipssh.SpeechPolicy
 import kotlin.math.sqrt
+import org.json.JSONObject
 
 class HerdrBackgroundModule(
   private val context: ReactApplicationContext,
@@ -42,6 +43,11 @@ class HerdrBackgroundModule(
   private var briefAlertIdentifier: String? = null
   private var briefAlertChannelId: String? = null
   private var mediaPlayer: MediaPlayer? = null
+  private class PreparedAlert(val identifier: String, val token: String, val channelId: String,
+    val persistent: Boolean, val silent: Boolean, var timeoutMs: Long, val vibration: LongArray)
+  private val preparedAlerts = linkedMapOf<String, PreparedAlert>()
+  private var activeAlert: PreparedAlert? = null
+  private var alertRinging = false
   private var callSoundPlayer: MediaPlayer? = null
   private var callSoundPromise: Promise? = null
   private var callSoundStop: (() -> Unit)? = null
@@ -64,19 +70,7 @@ class HerdrBackgroundModule(
   override fun getName(): String = "HerdrBackground"
 
   init {
-    SpeechPlayback.onAnnouncementStateChanged = { announcing ->
-      mainHandler.removeCallbacks(startSoundRunnable)
-      if (announcing) {
-        try {
-          mediaPlayer?.takeIf { it.isPlaying }?.pause()
-        } catch (_: IllegalStateException) {
-          releaseMediaPlayer()
-        }
-        if (activeAlertIdentifier != null || briefAlertIdentifier != null) Log.i(TAG, "Agent alert sound paused for speech")
-      } else if (activeAlertIdentifier != null || briefAlertIdentifier != null) {
-        mainHandler.postDelayed(startSoundRunnable, SOUND_START_DELAY_MS)
-      }
-    }
+    SpeechPlayback.onPlaybackStateChanged = { updateShakeListener() }
     SpeechPlayback.onCaption = { json ->
       context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
         .emit("WhipSpeechCaption", json)
@@ -282,6 +276,11 @@ class HerdrBackgroundModule(
   }
 
   @ReactMethod
+  fun startResponseSpeech(token: String, label: String, promise: Promise) {
+    mainHandler.post { SpeechPlayback.startChat(context, token, label, promise, atomic = true) }
+  }
+
+  @ReactMethod
   fun startLocalChatSpeech(token: String, label: String, promise: Promise) {
     mainHandler.post {
       try {
@@ -405,21 +404,43 @@ class HerdrBackgroundModule(
     channelId: String,
     persistent: Boolean,
     vibrationPattern: ReadableArray,
+    effectId: String,
     promise: Promise,
   ) {
     mainHandler.post {
       try {
         val pattern = LongArray(vibrationPattern.size()) { vibrationPattern.getDouble(it).toLong() }
-        vibrateSpokenAlert(channelId, pattern)
-        if (!persistent && activeAlertIdentifier == null) {
-          stopPersistentAlert()
-          briefAlertIdentifier = notificationIdentifier
-          briefAlertChannelId = channelId
-          updateShakeListener()
-          mainHandler.postDelayed(startSoundRunnable, SOUND_START_DELAY_MS)
-          mainHandler.postDelayed(notificationWatchRunnable, NOTIFICATION_POST_GRACE_MS)
-          mainHandler.postDelayed(stopAlertRunnable, MAX_ALERT_WINDOW_MS)
+        val json = SpeechPolicy.alertSpeech("effect-alert", effectId, 0L)
+        if (json == "null") {
+          notificationManager.cancel(notificationIdentifier, EXPO_NOTIFICATION_ID)
+          promise.resolve(null)
+          return@post
         }
+        val info = JSONObject(json)
+        val alert = PreparedAlert(notificationIdentifier, info.getString("token"), channelId,
+          persistent, info.getBoolean("silent"), info.getLong("timeoutMs"), pattern)
+        preparedAlerts[notificationIdentifier] = alert
+        SpeechPlayback.prepareAlert(context, alert.token, info.getBoolean("speech"), started = {
+          if (notificationManager.activeNotifications.none { it.tag == alert.identifier }) {
+            SpeechPlayback.finishAlert(alert.token, SpeechPlayback.STOPPED)
+            return@prepareAlert
+          }
+          activeAlert = alert
+          if (alert.persistent) { activeAlertIdentifier = alert.identifier; activeAlertChannelId = alert.channelId }
+          else { briefAlertIdentifier = alert.identifier; briefAlertChannelId = alert.channelId }
+          if (!alert.silent) vibrateSpokenAlert(channelId, pattern)
+          updateShakeListener()
+          mainHandler.postDelayed(notificationWatchRunnable, NOTIFICATION_POST_GRACE_MS)
+        }, ring = {
+          alertRinging = true
+          updateShakeListener()
+          if (alert.silent) SpeechPlayback.finishAlert(alert.token)
+          else mainHandler.postDelayed(startSoundRunnable, SOUND_START_DELAY_MS)
+        }, ended = { reason ->
+          preparedAlerts.remove(alert.identifier)
+          if (activeAlert === alert) releaseAlertResources()
+          if (reason != SpeechPlayback.COMPLETED) notificationManager.cancel(alert.identifier, EXPO_NOTIFICATION_ID)
+        })
         promise.resolve(null)
       } catch (error: Throwable) {
         promise.reject("E_SPOKEN_ALERT_PREPARE", error)
@@ -436,19 +457,9 @@ class HerdrBackgroundModule(
   ) {
     mainHandler.post {
       try {
-        stopPersistentAlert()
-        activeAlertIdentifier = notificationIdentifier
-        activeAlertChannelId = channelId
-        if (!updateShakeListener()) throw IllegalStateException("Could not start accelerometer listener")
-        mainHandler.postDelayed(startSoundRunnable, SOUND_START_DELAY_MS)
-        mainHandler.postDelayed(notificationWatchRunnable, NOTIFICATION_POST_GRACE_MS)
-        mainHandler.postDelayed(
-          stopAlertRunnable,
-          timeoutMs.toLong().coerceIn(MIN_ALERT_WINDOW_MS, MAX_ALERT_WINDOW_MS),
-        )
+        preparedAlerts[notificationIdentifier]?.timeoutMs = timeoutMs.toLong().coerceIn(MIN_ALERT_WINDOW_MS, MAX_ALERT_WINDOW_MS)
         promise.resolve(null)
       } catch (error: Throwable) {
-        stopPersistentAlert()
         promise.reject("E_PERSISTENT_ALERT_ARM", error)
       }
     }
@@ -458,16 +469,12 @@ class HerdrBackgroundModule(
   fun dismissPersistentAlert(notificationIdentifier: String?, promise: Promise) {
     mainHandler.post {
       try {
-        // A late cleanup must not cancel a newer alert's sound or vibration.
-        if (notificationIdentifier != null && (activeAlertIdentifier ?: briefAlertIdentifier) != notificationIdentifier) {
-          promise.resolve(null)
-          return@post
+        val alerts = if (notificationIdentifier == null) preparedAlerts.values.toList()
+          else listOfNotNull(preparedAlerts[notificationIdentifier])
+        for (alert in alerts) {
+          SpeechPlayback.finishAlert(alert.token, SpeechPlayback.STOPPED)
         }
-        (activeAlertIdentifier ?: briefAlertIdentifier)?.let { identifier ->
-          notificationManager.cancel(identifier, EXPO_NOTIFICATION_ID)
-        }
-        cancelVibration()
-        stopPersistentAlert("App returned to the foreground")
+        notificationIdentifier?.let { notificationManager.cancel(it, EXPO_NOTIFICATION_ID) }
         promise.resolve(null)
       } catch (error: Throwable) {
         promise.reject("E_PERSISTENT_ALERT_DISMISS", error)
@@ -485,12 +492,7 @@ class HerdrBackgroundModule(
 
     // Stop playback before notifying JS so queued chat cannot keep speaking
     // while the app is backgrounded or the JS thread is busy.
-    SpeechPlayback.stop(reason = SpeechPlayback.SHAKE)
-    (activeAlertIdentifier ?: briefAlertIdentifier)?.let { identifier ->
-      notificationManager.cancel(identifier, EXPO_NOTIFICATION_ID)
-      cancelVibration()
-    }
-    stopPersistentAlert("Shake detected; stopped speech and agent alerts")
+    SpeechPlayback.shake()
   }
 
   override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
@@ -507,29 +509,25 @@ class HerdrBackgroundModule(
       SpeechPlayback.onChatLevel = null
       SpeechPlayback.onCaption = null
       SpeechPlayback.onAutomaticFocus = null
-      SpeechPlayback.onAnnouncementStateChanged = null
+      SpeechPlayback.onPlaybackStateChanged = null
       SpeechPlayback.detachPresentation()
-      stopPersistentAlert()
+      for (alert in preparedAlerts.values.toList()) SpeechPlayback.finishAlert(alert.token, SpeechPlayback.STOPPED)
     }
     super.invalidate()
   }
 
   private fun startLoopingSound() {
+    val alert = activeAlert ?: return
+    startAlertSound()
+    if (mediaPlayer == null) SpeechPlayback.finishAlert(alert.token)
+    else mainHandler.postDelayed(stopAlertRunnable,
+      if (alert.persistent) alert.timeoutMs.coerceIn(MIN_ALERT_WINDOW_MS, MAX_ALERT_WINDOW_MS) else MAX_ALERT_WINDOW_MS)
+  }
+
+  private fun startAlertSound() {
     val channelId = activeAlertChannelId ?: briefAlertChannelId ?: return
     val persistent = activeAlertIdentifier != null
-    if (SpeechPlayback.announcing) {
-      Log.i(TAG, "Agent alert sound deferred until speech finishes")
-      return
-    }
-    mediaPlayer?.let { player ->
-      try {
-        player.start()
-        Log.i(TAG, "Agent alert sound resumed after speech")
-        return
-      } catch (_: IllegalStateException) {
-        releaseMediaPlayer()
-      }
-    }
+    if (mediaPlayer != null) return
     if (!notificationManager.areNotificationsEnabled()) return
     val channel = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       notificationManager.getNotificationChannel(channelId)
@@ -561,7 +559,9 @@ class HerdrBackgroundModule(
       return
     }
     try {
-      mediaPlayer = MediaPlayer().apply {
+      val player = MediaPlayer()
+      mediaPlayer = player
+      player.apply {
         setDataSource(context, sound)
         setAudioAttributes(
           AudioAttributes.Builder()
@@ -586,7 +586,11 @@ class HerdrBackgroundModule(
         }
         isLooping = persistent
         if (!persistent) setOnCompletionListener { completed ->
-          if (mediaPlayer === completed) stopPersistentAlert("Brief agent alert sound finished")
+          if (mediaPlayer === completed) stopPersistentAlert("Brief agent alert sound finished", completed = true)
+        }
+        setOnErrorListener { failed, _, _ ->
+          if (mediaPlayer === failed) stopPersistentAlert("Agent alert sound failed")
+          true
         }
         prepare()
         start()
@@ -624,7 +628,12 @@ class HerdrBackgroundModule(
         }
       }
 
-  private fun stopPersistentAlert(reason: String? = null) {
+  private fun stopPersistentAlert(reason: String? = null, completed: Boolean = false) {
+    activeAlert?.let { SpeechPlayback.finishAlert(it.token, if (completed) SpeechPlayback.COMPLETED else SpeechPlayback.STOPPED) }
+    reason?.let { Log.i(TAG, it) }
+  }
+
+  private fun releaseAlertResources() {
     mainHandler.removeCallbacks(startSoundRunnable)
     mainHandler.removeCallbacks(stopAlertRunnable)
     mainHandler.removeCallbacks(notificationWatchRunnable)
@@ -632,14 +641,16 @@ class HerdrBackgroundModule(
     activeAlertChannelId = null
     briefAlertIdentifier = null
     briefAlertChannelId = null
+    activeAlert = null
+    alertRinging = false
     updateShakeListener()
     releaseMediaPlayer()
-    reason?.let { Log.i(TAG, it) }
+    cancelVibration()
   }
 
   /** Persistent alerts keep shake detection after their announcement finishes. */
   private fun updateShakeListener(): Boolean {
-    val needed = activeAlertIdentifier != null || briefAlertIdentifier != null
+    val needed = activeAlert != null && alertRinging || RealtimeVoice.playing
     if (!needed) {
       if (shakeListening) sensorManager.unregisterListener(this)
       shakeListening = false
@@ -659,15 +670,14 @@ class HerdrBackgroundModule(
   }
 
   private fun releaseMediaPlayer() {
-    mediaPlayer?.let { player ->
-      try {
-        player.stop()
-      } catch (_: IllegalStateException) {
-        // The player may not have reached its prepared state.
-      }
-      player.release()
-    }
+    val player = mediaPlayer ?: return
     mediaPlayer = null
+    try {
+      player.stop()
+    } catch (_: IllegalStateException) {
+      // The player may not have reached its prepared state.
+    }
+    player.release()
   }
 
   @Suppress("DEPRECATION")

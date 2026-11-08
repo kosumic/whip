@@ -1,4 +1,5 @@
 #import "WhipRealtimeVoice.h"
+#import "../../../ios/HerdR/WhipSpeechPlayback.h"
 #import "WhipVoiceCall.h"
 #import "../cpp/WhipRealtimeVoice.h"
 #import <AVFoundation/AVFoundation.h>
@@ -60,9 +61,19 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
 @property(nonatomic) NSUInteger ticks;
 @property(nonatomic) uint64_t closingCall;
 @property(nonatomic) BOOL preview;
+@property(nonatomic, strong) id turn;
+@property(nonatomic, strong) id closingTurn;
+@property(nonatomic, strong) NSDictionary *pendingStart;
 @end
 
 @implementation WhipRealtimeVoice
+- (id)playbackKey { return self.token ? self.turn : nil; }
+- (BOOL)shake {
+  if (!self.token) return NO;
+  if (self.preview) [self stop:self.token];
+  else whip_realtime_control(_call.load(), WhipRealtimeSkip);
+  return YES;
+}
 + (instancetype)shared { static WhipRealtimeVoice *owner; static dispatch_once_t once; dispatch_once(&once, ^{ owner = [WhipRealtimeVoice new]; }); return owner; }
 - (instancetype)init {
   if ((self = [super init])) {
@@ -82,6 +93,7 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
 }
 - (void)invalidate {
   whip_realtime_prepare(false);
+  if (self.pendingStart) [self stop:self.pendingStart[@"token"]];
   if (self.token) { [self stop:self.token]; [WhipVoiceCall.shared invalidate]; }
 }
 - (void)prepare:(BOOL)enabled {
@@ -96,6 +108,26 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
   [self start:token config:config preview:YES resolve:resolve reject:reject];
 }
 - (void)start:(NSString *)token config:(NSString *)config preview:(BOOL)preview resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {
+  if (self.token || self.pendingStart || (preview ? WhipVoiceCall.shared.active : ![WhipVoiceCall.shared owns:token])) {
+    reject(@"E_REALTIME", @"The requested voice audio session is unavailable.", nil); return;
+  }
+  id turn = [WhipVoiceCall.shared playbackKey:token] ?: [NSObject new];
+  NSDictionary *pending = @{@"token": token, @"preview": @(preview), @"reject": [reject copy], @"turn": turn};
+  self.pendingStart = pending;
+  dispatch_block_t start = ^{
+    if (self.pendingStart != pending) { if (preview) [WhipSpeechPlayback.shared finishPlayback:turn]; return; }
+    self.pendingStart = nil;
+    [self startAdmitted:token config:config preview:preview turn:turn resolve:resolve reject:reject];
+  };
+  if (![WhipSpeechPlayback.shared deferPlayback:turn block:start]) start();
+}
+- (void)startAdmitted:(NSString *)token config:(NSString *)config preview:(BOOL)preview turn:(id)turn resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)callerReject {
+  RCTPromiseRejectBlock reject = ^(NSString *code, NSString *message, NSError *error) {
+    if (preview && self.closingTurn != turn) [WhipSpeechPlayback.shared finishPlayback:turn];
+    callerReject(code, message, error);
+  };
+  [WhipSpeechPlayback.shared startPlayback:turn];
+  [WhipSpeechPlayback.shared yieldIdlePlayback];
   if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive || !UIApplication.sharedApplication.protectedDataAvailable) { reject(@"E_VOICE_CREDENTIAL_LOCKED", @"Unlock Whip to start voice.", nil); return; }
   if (self.token || (preview ? WhipVoiceCall.shared.active : ![WhipVoiceCall.shared owns:token])) { reject(@"E_REALTIME", @"The requested voice audio session is unavailable.", nil); return; }
   NSData *requestedConfig = [config dataUsingEncoding:NSUTF8StringEncoding];
@@ -142,6 +174,8 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
   uint64_t call = (uint64_t)result;
   if (WhipVoiceCall.shared.muted) whip_realtime_control(call, WhipRealtimeMute);
   self.token = token; self.preview = preview; _call.store(call);
+  self.turn = turn;
+  [WhipSpeechPlayback.shared watchPlaybackShake];
   self.engine = engine; self.format = format; self.converter = converter;
   if (!preview) self.capture = [[AVAudioPCMBuffer alloc] initWithPCMFormat:format frameCapacity:WhipRealtimeMaxFrame];
   self.player = [AVAudioPlayerNode new];
@@ -224,7 +258,16 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
   }];
 }
 - (void)stop:(NSString *)token {
+  if ([self.pendingStart[@"token"] isEqualToString:token]) {
+    NSDictionary *pending = self.pendingStart; self.pendingStart = nil;
+    [WhipSpeechPlayback.shared cancelPlayback:pending[@"turn"]];
+    if ([pending[@"preview"] boolValue]) [WhipSpeechPlayback.shared finishPlayback:pending[@"turn"]];
+    RCTPromiseRejectBlock reject = pending[@"reject"];
+    reject(@"E_REALTIME", @"Voice audio was cancelled before playback started.", nil);
+  }
   if (![self.token isEqualToString:token]) return;
+  id turn = self.turn;
+  BOOL preview = self.preview;
   uint64_t call = _call.exchange(0);
   self.lastToken = token;
   char *view = whip_realtime_view(call);
@@ -244,10 +287,16 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
   if (self.preview) [AVAudioSession.sharedInstance setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:nil];
   whip_realtime_stop(call);
   self.closingCall = call;
+  if (preview) self.closingTurn = turn;
   dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
     while (!whip_realtime_stopped(call)) [NSThread sleepForTimeInterval:0.005];
+    dispatch_async(dispatch_get_main_queue(), ^{
+      if (preview) { [WhipSpeechPlayback.shared finishPlayback:turn]; if (self.closingTurn == turn) self.closingTurn = nil; }
+    });
   });
   self.player = nil; self.engine = nil; self.converter = nil; self.capture = nil; self.format = nil; self.token = nil;
+  self.turn = nil;
+  [WhipSpeechPlayback.shared watchPlaybackShake];
 }
 - (void)stop:(NSString *)token resolve:(RCTPromiseResolveBlock)resolve {
   [self stop:token];
@@ -292,7 +341,11 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
 - (void)interrupted:(NSNotification *)notification {
   if ([notification.userInfo[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue] == AVAudioSessionInterruptionTypeBegan) whip_realtime_control(_call.load(), WhipRealtimeAudioFailed);
 }
-- (void)backgrounded:(NSNotification *)notification { whip_realtime_prepare(false); if (self.preview && self.token) [self stop:self.token]; }
+- (void)backgrounded:(NSNotification *)notification {
+  whip_realtime_prepare(false);
+  if ([self.pendingStart[@"preview"] boolValue]) [self stop:self.pendingStart[@"token"]];
+  if (self.preview && self.token) [self stop:self.token];
+}
 - (void)routeChanged:(NSNotification *)notification {
   if (self.preview && [notification.userInfo[AVAudioSessionRouteChangeReasonKey] unsignedIntegerValue] == AVAudioSessionRouteChangeReasonOldDeviceUnavailable)
     whip_realtime_control(_call.load(), WhipRealtimeAudioFailed);

@@ -90,12 +90,17 @@ test('dictation waits for announcement or device playback even without a chat se
   expect(released).toBe(true);
 });
 
-test('manual playback pauses global automatic speech and resumes it after releasing native playback', async () => {
+test('manual playback waits for native admission before pausing automatic selection', async () => {
   const pause = jest.fn(async () => {});
   const resume = jest.fn();
   const unregister = registerAutomaticSpeech({ pause, resume });
   try {
+    let admitted!: () => void;
+    mockNative.startChatSpeech.mockImplementationOnce(() => new Promise(resolve => { admitted = resolve; }));
     stop = readChatResponse(target, [], jest.fn(), jest.fn());
+    await flush();
+    expect(pause).not.toHaveBeenCalled();
+    admitted();
     await flush();
     expect(pause).toHaveBeenCalledTimes(1);
     expect(resume).toHaveBeenCalledTimes(1);
@@ -105,6 +110,16 @@ test('manual playback pauses global automatic speech and resumes it after releas
 });
 
 describe.each(['android', 'ios'] as const)('%s chat speech', platform => {
+  test('selected responses reserve one native turn for all their chunks', async () => {
+    const startResponseSpeech = jest.fn(async () => {});
+    Object.assign(mockNative, { startResponseSpeech });
+    try {
+      stop = readChatResponse(target, state.transcript.messages, jest.fn(), jest.fn());
+      await flush();
+      expect(startResponseSpeech).toHaveBeenCalledWith(expect.any(String), target.label);
+      expect(mockNative.startChatSpeech).not.toHaveBeenCalled();
+    } finally { Reflect.deleteProperty(mockNative, 'startResponseSpeech'); }
+  });
   test('manual read-aloud carries original response identity and chunk offsets to native playback', async () => {
     const speakChatWithSource = jest.fn(async () => {});
     Object.assign(mockNative, { speakChatWithSource });
@@ -182,24 +197,24 @@ describe.each(['android', 'ios'] as const)('%s chat speech', platform => {
     expect(isChatSpeechActive()).toBe(true);
   });
 
-  test('switching focus cancels old playback and cannot drain its remaining queue', async () => {
+  test('switching focus lets the current response finish all its queued chunks', async () => {
     let finishSpeech: () => void = () => {};
     mockNative.speakChat.mockImplementationOnce(() => new Promise(resolve => { finishSpeech = resolve; }));
-    stop = listenToChat(target, jest.fn(), jest.fn());
-    await flush();
-    mockQueues[0].next.mockReturnValueOnce('First').mockReturnValueOnce('Must not read');
-    mockListeners.get('one')!(state);
+    stop = readChatResponse(target, state.transcript.messages, jest.fn(), jest.fn());
+    mockQueues[0].next.mockReturnValueOnce('First').mockReturnValueOnce('Remaining');
     await flush();
     expect(mockNative.speakChat).toHaveBeenCalledTimes(1);
     const oldToken = mockNative.startChatSpeech.mock.calls[0][0];
     stop = listenToChat({ ...target, bindingToken: 'two', paneId: 'other' }, jest.fn(), jest.fn());
     await flush();
     expect(mockListeners.has('one')).toBe(false);
-    expect(mockQueues[0].dispose).toHaveBeenCalledTimes(1);
-    expect(mockNative.stopChatSpeech).toHaveBeenCalledWith(oldToken);
+    expect(mockQueues[0].dispose).not.toHaveBeenCalled();
+    expect(mockNative.stopChatSpeech).not.toHaveBeenCalledWith(oldToken);
     finishSpeech();
     await flush();
-    expect(mockNative.speakChat).toHaveBeenCalledTimes(1);
+    expect(mockQueues[0].dispose).toHaveBeenCalledTimes(1);
+    expect(mockNative.stopChatSpeech).toHaveBeenCalledWith(oldToken);
+    expect(mockNative.speakChat.mock.calls.map(call => call[1])).toEqual(['First', 'Remaining']);
   });
 
   test('native stop removes the listener and ignores a delayed stop from an old owner', async () => {

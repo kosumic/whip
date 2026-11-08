@@ -153,9 +153,9 @@ class PhononSpeechTest {
       Log.i("PhononAcceptance", "cold_first_output_ms=${firstMs.get()} total_ms=${SystemClock.elapsedRealtime() - began}")
       var generatedSamples = 0L
       val generationBegan = SystemClock.elapsedRealtime()
-      assertEquals(1, SpeechPolicy.phononSpeak(lease, "This sentence measures sustained generation speed without playback backpressure.", object : SpeechPolicy.PcmSink {
+      assertEquals(1, SpeechPolicy.pcmSpeak(lease, "This sentence measures sustained generation speed without playback backpressure.", 0L, object : SpeechPolicy.PcmSink {
         override fun write(samples: FloatArray): Boolean { generatedSamples += samples.size; return true }
-      }))
+      }, null))
       val generationMs = SystemClock.elapsedRealtime() - generationBegan
       Log.i("PhononAcceptance", "generation_ms=$generationMs audio_ms=${generatedSamples * 1000 / 24000} realtime_factor=${generatedSamples.toDouble() / 24 / generationMs.coerceAtLeast(1)}")
       SpeechPolicy.stop(lease)

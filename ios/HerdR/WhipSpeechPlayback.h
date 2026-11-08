@@ -13,6 +13,7 @@ FOUNDATION_EXPORT NSString *const WhipSpeechCaption;
 + (instancetype)shared;
 - (void)backendCommand:(NSString *)action resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
 - (void)startChat:(NSString *)owner label:(NSString *)label resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
+- (void)startResponse:(NSString *)owner label:(NSString *)label resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
 - (void)startLocalChat:(NSString *)owner label:(NSString *)label resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
 - (void)speakChat:(NSString *)owner text:(NSString *)text resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
 - (void)speakChat:(NSString *)owner text:(NSString *)text source:(NSDictionary *)source resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
@@ -28,4 +29,15 @@ FOUNDATION_EXPORT NSString *const WhipSpeechCaption;
 - (void)cancelDeviceRequest:(NSString *)request;
 - (void)stopDevice;
 - (void)stop;
+// Native callback handoff; the process-wide Rust queue owns admission.
+- (BOOL)deferPlayback:(id)key block:(dispatch_block_t)block;
+- (void)startPlayback:(id)key;
+- (void)cancelPlayback:(id)key;
+- (void)finishPlayback:(id)key;
+- (void)prepareAlertNotification:(NSString *)notification effect:(NSString *)effect;
+- (void)dismissAlertNotification:(NSString *)notification;
+- (void)finishAlert:(NSString *)token reason:(NSString *)reason;
+- (void)shake;
+- (void)watchPlaybackShake;
+- (void)yieldIdlePlayback;
 @end

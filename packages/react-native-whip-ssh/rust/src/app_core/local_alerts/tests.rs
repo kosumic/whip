@@ -335,7 +335,7 @@ fn every_scope_stops_its_current_speech_and_preserves_unrelated_waiting_speech()
 }
 
 #[test]
-fn current_shake_dismisses_all_notifications_and_fences_pending_schedules() {
+fn current_shake_dismisses_its_entire_alert_and_preserves_other_queued_alerts() {
     let owner = LocalAlertCoordinator::new();
     let effects = owner.alert(done("a"));
     let notification = schedule(&effects);
@@ -346,11 +346,59 @@ fn current_shake_dismisses_all_notifications_and_fences_pending_schedules() {
     let b = speech(&owner.alert(done("b")));
     register(&owner, &b);
     ended(&owner, &voice, LocalAlertSpeechEnd::Shake);
-    assert!(take(&owner).is_none());
+    assert_eq!(take(&owner).unwrap().token, token(&b));
     assert!(matches!(
         one(scheduled(&owner, &notification, "late")).action,
         LocalAlertAction::DismissNotification { .. }
     ));
+}
+
+#[test]
+fn a_prepared_atomic_alert_keeps_its_speech_while_another_unit_plays() {
+    let owner = LocalAlertCoordinator::new();
+    let first = speech(&owner.alert(done("a")));
+    let second = speech(&owner.alert(done("b")));
+    register(&owner, &first);
+    register(&owner, &second);
+    let mut state = owner.state.lock();
+    state
+        .alerts
+        .get_mut(&token(&second))
+        .unwrap()
+        .playback_prepared = true;
+    let next = state
+        .take_speech_for(
+            Some(&token(&second)),
+            0,
+            Instant::now() + MAX_WAIT,
+            |_, _| 1,
+        )
+        .unwrap();
+    assert_eq!(next.token, token(&second));
+    state.finish_speech(&next.token);
+    assert!(!state.speech_valid(&token(&first), Instant::now() + MAX_WAIT));
+}
+
+#[test]
+fn an_atomic_alert_can_claim_only_its_own_speech() {
+    let owner = LocalAlertCoordinator::new();
+    let first = speech(&owner.alert(request("host", "blocked", HerdrAgentStatus::Blocked, true)));
+    let second = speech(&owner.alert(done("done")));
+    register(&owner, &first);
+    register(&owner, &second);
+    let mut state = owner.state.lock();
+    let next = state
+        .take_speech_for(Some(&token(&second)), 0, Instant::now(), |_, _| 1)
+        .unwrap();
+    assert_eq!(next.token, token(&second));
+    state.finish_speech(&next.token);
+    assert_eq!(
+        state
+            .take_speech(0, Instant::now(), |_, _| 2)
+            .unwrap()
+            .token,
+        token(&first)
+    );
 }
 
 #[test]

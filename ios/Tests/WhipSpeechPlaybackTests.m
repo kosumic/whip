@@ -2,6 +2,7 @@
 #import <AVFoundation/AVFoundation.h>
 #import "WhipSpeechPlayback.h"
 #import "WhipVoiceCall.h"
+#import "WhipRealtimeVoice.h"
 
 // Script the Rust policy boundary; Rust's queue and lease races have their own
 // tests. This fixture drives real adapter callbacks without audible OS output.
@@ -12,6 +13,8 @@ static NSString *activeRequest;
 static NSMutableArray<NSString *> *waiting;
 static NSMutableSet<NSString *> *valid;
 static __weak WhipSpeechPlayback *fixturePlayer;
+static uint64_t turnSequence, turnOwner;
+static NSMutableArray<NSNumber *> *turnWaiting;
 
 uint64_t whip_speech_claim(uint8_t kind, const char *owner, const char *request) {
   if (activeLease && kind != WhipSpeechChat && !(kind == WhipSpeechAnnouncement && activeKind == kind)) return 0;
@@ -37,12 +40,43 @@ uint64_t whip_speech_cancel_request(uint8_t kind, const char *request) {
 }
 char *whip_alert_speech_command(const char *command, const char *token, uint64_t observed) {
   NSString *action = @(command), *owner = @(token), *result = @"null";
+  if ([action hasPrefix:@"playback-"]) {
+    NSString *operation = [action substringFromIndex:@"playback-".length];
+    uint64_t key = owner.longLongValue;
+    if ([operation isEqualToString:@"id"]) result = [NSString stringWithFormat:@"%llu", ++turnSequence];
+    else if ([operation isEqualToString:@"active"]) result = turnOwner ? @"true" : @"false";
+    else if ([operation isEqualToString:@"timeout-delay-ms"]) result = turnWaiting.count ? @"0" : @"1000";
+    else if ([operation isEqualToString:@"owns"]) result = turnOwner == key ? @"true" : @"false";
+    else if ([operation isEqualToString:@"start"]) {
+      BOOL admitted = !turnOwner || turnOwner == key;
+      if (admitted) turnOwner = key;
+      result = admitted ? @"true" : @"false";
+    } else if ([operation isEqualToString:@"defer"]) {
+      BOOL deferred = turnOwner != key && (turnOwner || turnWaiting.count);
+      if (deferred && ![turnWaiting containsObject:@(key)]) [turnWaiting addObject:@(key)];
+      result = deferred ? @"true" : @"false";
+    } else if ([operation isEqualToString:@"cancel"]) [turnWaiting removeObject:@(key)];
+    else if ([operation isEqualToString:@"finish"]) { BOOL current = turnOwner == key; if (current) turnOwner = 0; result = current ? @"true" : @"false"; }
+    else if ([operation isEqualToString:@"next"] && !turnOwner && turnWaiting.count) {
+      turnOwner = turnWaiting.firstObject.unsignedLongLongValue; [turnWaiting removeObjectAtIndex:0];
+      result = [NSString stringWithFormat:@"%llu", turnOwner];
+    }
+    return strdup(result.UTF8String);
+  }
+  if ([action isEqualToString:@"effect-alert"]) {
+    NSDictionary *info = @{@"token": owner, @"speech": @YES, @"silent": @NO, @"persistent": @NO, @"timeoutMs": @1000};
+    return strdup([[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:info options:0 error:nil] encoding:NSUTF8StringEncoding].UTF8String);
+  }
+  if ([action isEqualToString:@"alert-valid"]) return strdup([valid containsObject:owner] ? "true" : "false");
+  if ([action isEqualToString:@"dismiss-alert"]) { [valid removeObject:owner]; [waiting removeObject:owner]; return strdup("null"); }
   if ([action isEqualToString:@"register"] || [action isEqualToString:@"valid"]) result = [valid containsObject:owner] ? @"true" : @"false";
   else if ([action isEqualToString:@"clear"]) { [waiting removeAllObjects]; [valid removeAllObjects]; }
   else if ([action isEqualToString:@"finish"]) [valid removeObject:owner];
-  else if ([action isEqualToString:@"take"] && waiting.count &&
+  else if (([action isEqualToString:@"take"] || [action isEqualToString:@"take-token"]) && waiting.count &&
            ((!activeLease && !observed) || (activeLease == observed && activeKind == WhipSpeechChat))) {
-    NSString *next = waiting.firstObject; [waiting removeObjectAtIndex:0];
+    NSString *next = [action isEqualToString:@"take-token"] ? owner : waiting.firstObject;
+    if (![waiting containsObject:next]) return strdup("null");
+    [waiting removeObject:next];
     activeLease = ++sequence; activeKind = WhipSpeechAnnouncement; activeOwner = next;
     NSDictionary *value = @{@"token": next, @"text": next, @"language": @"en-US", @"lease": @(activeLease)};
     result = [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:value options:0 error:nil] encoding:NSUTF8StringEncoding];
@@ -95,6 +129,7 @@ int32_t whip_speech_pcm_speak(uint64_t lease, const char *text, uint64_t caption
 + (instancetype)shared { static WhipVoiceCall *call; if (!call) call = [WhipVoiceCall new]; return call; }
 - (BOOL)active { return NO; }
 - (BOOL)owns:(NSString *)token { return NO; }
+- (id)playbackKey:(NSString *)token { return nil; }
 - (void)start:(NSString *)token label:(NSString *)label resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {}
 - (void)end:(NSString *)token resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {}
 - (void)mute:(NSString *)token muted:(BOOL)muted resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {}
@@ -104,8 +139,27 @@ int32_t whip_speech_pcm_speak(uint64_t lease, const char *text, uint64_t caption
 - (void)stopSound {}
 @end
 
+@implementation WhipRealtimeVoice
++ (instancetype)shared { static WhipRealtimeVoice *voice; if (!voice) voice = [WhipRealtimeVoice new]; return voice; }
+- (id)playbackKey { return nil; }
+- (BOOL)shake { return NO; }
+- (void)invalidate {}
+- (void)credentialsUpdating:(BOOL)updating {}
+- (void)prepare:(BOOL)enabled {}
+- (void)start:(NSString *)token config:(NSString *)config resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {}
+- (void)preview:(NSString *)token config:(NSString *)config resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {}
+- (void)stop:(NSString *)token {}
+- (void)stop:(NSString *)token resolve:(RCTPromiseResolveBlock)resolve { resolve(nil); }
+- (void)mute:(NSString *)token muted:(BOOL)muted {}
+- (void)control:(NSString *)token action:(uint8_t)action {}
+- (BOOL)submitted:(NSString *)token text:(NSString *)text { return NO; }
+- (NSString *)view:(NSString *)token { return @"{}"; }
+@end
+
 @interface WhipSpeechPlayback (TestEngine) <AVSpeechSynthesizerDelegate>
++ (NSData *)alertRingtoneData;
 @property(nonatomic, strong) AVSpeechUtterance *utterance;
+@property(nonatomic, strong) NSTimer *timer;
 @property(nonatomic, strong) NSMutableDictionary *caption;
 @property(nonatomic) NSInteger captionPrefix;
 @property(nonatomic) NSInteger captionPosition;
@@ -113,19 +167,29 @@ int32_t whip_speech_pcm_speak(uint64_t lease, const char *text, uint64_t caption
 - (void)watchShake;
 - (void)drainAutomatic;
 - (NSString *)alertCommand:(NSString *)action token:(NSString *)token lease:(uint64_t)lease;
+- (void)playAlertRingtone:(NSString *)token;
+- (void)armSpeechTimeout:(NSTimeInterval)interval initialization:(BOOL)initialization;
 @end
 @interface TestSpeechPlayback : WhipSpeechPlayback
 @property(nonatomic, strong) NSMutableArray<NSString *> *spoken;
 @property(nonatomic, copy) void (^onPlay)(NSString *);
+@property(nonatomic, strong) NSMutableArray<NSString *> *ringtones;
+@property(nonatomic) BOOL holdRingtone;
+@property(nonatomic, copy) void (^onRingtone)(NSString *);
 @end
 @implementation TestSpeechPlayback
 - (void)backendCommand:(NSString *)action resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject { resolve(@"{}"); }
 - (void)watchShake {}
+- (void)playAlertRingtone:(NSString *)token {
+  [self.ringtones addObject:token]; if (self.onRingtone) self.onRingtone(token);
+  if (!self.holdRingtone) [self finishAlert:token reason:@"completed"];
+}
 - (NSString *)alertCommand:(NSString *)action token:(NSString *)token lease:(uint64_t)lease {
   return fixturePlayer == self ? [super alertCommand:action token:token lease:lease] : @"null";
 }
 - (BOOL)play:(NSString *)text language:(NSString *)language rate:(double)rate started:(void (^)(void))started preview:(BOOL)preview {
   self.utterance = [AVSpeechUtterance speechUtteranceWithString:text];
+  [self armSpeechTimeout:30 initialization:NO];
   [self.spoken addObject:text]; if (started) started(); if (self.onPlay) self.onPlay(text); return YES;
 }
 @end
@@ -139,9 +203,11 @@ int32_t whip_speech_pcm_speak(uint64_t lease, const char *text, uint64_t caption
 - (void)setUp {
   [super setUp]; activeLease = 0; activeOwner = nil;
   waiting = [NSMutableArray new]; valid = [NSMutableSet new];
+  turnSequence = 0; turnOwner = 0; turnWaiting = [NSMutableArray new];
   automaticWaiting = [NSMutableArray new]; automaticCompleted = [NSMutableArray new];
   automaticActive = 0; automaticEnabled = NO; automaticPaused = NO;
   self.player = [TestSpeechPlayback new]; fixturePlayer = self.player; self.player.spoken = [NSMutableArray new]; self.stopped = [NSMutableArray new];
+  self.player.ringtones = [NSMutableArray new];
   self.observer = [NSNotificationCenter.defaultCenter addObserverForName:WhipChatSpeechStopped object:self.player queue:nil usingBlock:^(NSNotification *event) {
     [self.stopped addObject:event.userInfo[@"token"]];
   }];
@@ -150,13 +216,102 @@ int32_t whip_speech_pcm_speak(uint64_t lease, const char *text, uint64_t caption
 - (RCTPromiseRejectBlock)unexpectedError {
   return ^(NSString *code, NSString *message, NSError *error) { XCTFail(@"%@ %@", code, message); };
 }
-- (void)queue:(NSString *)token { [waiting addObject:token]; [valid addObject:token]; }
+- (void)queue:(NSString *)token {
+  [waiting addObject:token]; [valid addObject:token];
+  [self.player prepareAlertNotification:token effect:token];
+}
 - (void)finish { [self.player speechSynthesizer:[AVSpeechSynthesizer new] didFinishSpeechUtterance:self.player.utterance]; }
 
 - (void)queueAutomatic:(uint64_t)identity text:(NSString *)text {
   [automaticWaiting addObject:@{@"id": @(identity), @"token": @"automatic-chat-speech", @"text": text,
     @"hostId": @"host", @"paneId": @"pane", @"label": @"Native automatic test"}];
 }
+
+- (void)testLongAnnouncementContinuesBeyondBudgetWhenNothingElseIsWaiting {
+  XCTestExpectation *completed = [self expectationWithDescription:@"long reading finishes naturally"];
+  [self.player announce:@"gettysburg" text:@"A long reading" language:@"en-US" resolve:^(id value) {
+    XCTAssertEqualObjects(value, @"completed"); [completed fulfill];
+  } reject:self.unexpectedError];
+  AVSpeechUtterance *utterance = self.player.utterance;
+  for (NSUInteger check = 0; check < 3; check++) {
+    [self.player.timer fire];
+    XCTAssertEqual(self.player.utterance, utterance);
+    XCTAssertTrue(self.player.timer.valid);
+  }
+  [self finish]; [self waitForExpectations:@[completed] timeout:2];
+  XCTAssertNil(self.player.timer);
+}
+
+- (void)testLongDeviceSpeechYieldsWhenSpeechArrivesAfterItsBudget {
+  XCTestExpectation *ack = [self expectationWithDescription:@"device speech acknowledged"];
+  [self.player speakDevice:@"phone-use" request:@"reading" text:@"A long reading" language:@"en-US" rate:1 resolve:^(id value) {
+    [ack fulfill];
+  } reject:self.unexpectedError];
+  [self waitForExpectations:@[ack] timeout:2];
+  [self.player.timer fire];
+  XCTAssertEqualObjects(self.player.utterance.speechString, @"A long reading");
+  XCTestExpectation *next = [self expectationWithDescription:@"waiting speech starts after expired reading"];
+  self.player.onPlay = ^(NSString *text) { if ([text isEqualToString:@"Next speech"]) [next fulfill]; };
+  XCTestExpectation *completed = [self expectationWithDescription:@"next speech completes"];
+  [self.player announce:@"next" text:@"Next speech" language:@"en-US" resolve:^(id value) {
+    XCTAssertEqualObjects(value, @"completed"); [completed fulfill];
+  } reject:self.unexpectedError];
+  XCTAssertEqual(self.player.spoken.count, 1u);
+  [self.player.timer fire];
+  [self waitForExpectations:@[next] timeout:2];
+  [self finish]; [self waitForExpectations:@[completed] timeout:2];
+}
+
+- (void)testCancelledWaitingSpeechDoesNotCutOffAnExpiredReading {
+  XCTestExpectation *completed = [self expectationWithDescription:@"active reading finishes naturally"];
+  [self.player announce:@"reading" text:@"A long reading" language:@"en-US" resolve:^(id value) {
+    XCTAssertEqualObjects(value, @"completed"); [completed fulfill];
+  } reject:self.unexpectedError];
+  XCTestExpectation *cancelled = [self expectationWithDescription:@"waiting speech cancelled"];
+  [self.player speakDevice:@"waiting" request:@"cancel-me" text:@"Cancelled speech" language:@"en-US" rate:1 resolve:^(id value) {
+    XCTFail(@"Cancelled speech must never start");
+  } reject:^(NSString *code, NSString *message, NSError *error) { [cancelled fulfill]; }];
+  [self.player cancelDeviceRequest:@"cancel-me"];
+  [self waitForExpectations:@[cancelled] timeout:2];
+  [self.player.timer fire];
+  XCTAssertEqualObjects(self.player.utterance.speechString, @"A long reading");
+  [self finish]; [self waitForExpectations:@[completed] timeout:2];
+}
+
+- (void)testEngineInitializationStillTimesOutWithAnEmptyQueue {
+  XCTestExpectation *failed = [self expectationWithDescription:@"stalled engine rejected"];
+  [self.player announce:@"stalled" text:@"Not started" language:@"en-US" resolve:^(id value) {
+    XCTFail(@"Initialization must fail");
+  } reject:^(NSString *code, NSString *message, NSError *error) {
+    XCTAssertTrue([message containsString:@"timed out"]); [failed fulfill];
+  }];
+  [self.player armSpeechTimeout:60 initialization:YES];
+  [self.player.timer fire];
+  [self waitForExpectations:@[failed] timeout:2];
+  XCTAssertNil(self.player.utterance);
+}
+
+- (void)testExpiredAlertSpeechStillPlaysItsRingtoneBeforeWaitingSpeech {
+  self.player.holdRingtone = YES;
+  [self queue:@"alert"];
+  XCTestExpectation *expired = [self expectationWithDescription:@"contended alert speech reaches its budget"];
+  [self.player announceStatus:@"alert" resolve:^(id value) { XCTFail(@"Speech should reach its budget"); }
+    reject:^(NSString *code, NSString *message, NSError *error) { [expired fulfill]; }];
+  XCTestExpectation *started = [self expectationWithDescription:@"other speech starts after the whole alert"];
+  self.player.onPlay = ^(NSString *text) { if ([text isEqualToString:@"Other speech"]) [started fulfill]; };
+  XCTestExpectation *completed = [self expectationWithDescription:@"other speech completes"];
+  [self.player announce:@"other" text:@"Other speech" language:@"en-US" resolve:^(id value) {
+    [completed fulfill];
+  } reject:self.unexpectedError];
+  [self.player.timer fire];
+  [self waitForExpectations:@[expired] timeout:2];
+  XCTAssertEqualObjects(self.player.ringtones, (@[@"alert"]));
+  XCTAssertEqualObjects(self.player.spoken, (@[@"alert"]));
+  [self.player finishAlert:@"alert" reason:@"completed"];
+  [self waitForExpectations:@[started] timeout:2];
+  [self finish]; [self waitForExpectations:@[completed] timeout:2];
+}
+
 - (void)testAutomaticAudioCompletionAdvancesWithoutJavaScriptAndIgnoresLateCallbacks {
   [self queueAutomatic:1 text:@"first automatic update"];
   [self queueAutomatic:2 text:@"second automatic update"];
@@ -320,6 +475,128 @@ int32_t whip_speech_pcm_speak(uint64_t lease, const char *text, uint64_t caption
   XCTAssertEqualObjects(self.player.spoken, (@[@"first"]));
   XCTAssertEqualObjects(self.stopped, (@[@"reader"]));
   XCTAssertEqual(activeLease, 0u);
+}
+
+- (void)testSpeechWaitsForEarlierSpeechWithoutReplacingIt {
+  XCTestExpectation *first = [self expectationWithDescription:@"first speech completes"];
+  XCTestExpectation *second = [self expectationWithDescription:@"second speech completes"];
+  XCTestExpectation *secondStarted = [self expectationWithDescription:@"second waits for first"];
+  self.player.onPlay = ^(NSString *text) { if ([text isEqualToString:@"second"]) [secondStarted fulfill]; };
+  [self.player announce:@"first" text:@"first" language:@"en-US" resolve:^(id reason) {
+    XCTAssertEqualObjects(reason, @"completed"); [first fulfill];
+  } reject:self.unexpectedError];
+  [self.player announce:@"second" text:@"second" language:@"en-US" resolve:^(id reason) {
+    XCTAssertEqualObjects(reason, @"completed"); [second fulfill];
+  } reject:self.unexpectedError];
+  XCTAssertEqualObjects(self.player.spoken, (@[@"first"]));
+  [self finish]; [self waitForExpectations:@[first, secondStarted] timeout:2];
+  XCTAssertEqualObjects(self.player.spoken, (@[@"first", @"second"]));
+  [self finish]; [self waitForExpectations:@[second] timeout:2];
+}
+
+- (void)testAlertRingtoneContainsPlayableAudio {
+  NSError *error = nil;
+  AVAudioPlayer *ringtone = [[AVAudioPlayer alloc] initWithData:[WhipSpeechPlayback alertRingtoneData] error:&error];
+  XCTAssertNotNil(ringtone);
+  XCTAssertNil(error);
+  XCTAssertGreaterThan(ringtone.duration, 0);
+}
+
+- (void)testSelectedResponseKeepsItsChunksTogetherBeforeOtherSpeech {
+  [self.player startResponse:@"reader" label:@"Chat" resolve:^(id value) {} reject:self.unexpectedError];
+  XCTestExpectation *first = [self expectationWithDescription:@"first response chunk completes"];
+  XCTestExpectation *second = [self expectationWithDescription:@"second response chunk completes"];
+  XCTestExpectation *otherStarted = [self expectationWithDescription:@"other speech waits for entire response"];
+  XCTestExpectation *otherDone = [self expectationWithDescription:@"other speech completes"];
+  self.player.onPlay = ^(NSString *text) { if ([text isEqualToString:@"other"]) [otherStarted fulfill]; };
+  [self.player speakChat:@"reader" text:@"first" resolve:^(id value) { [first fulfill]; } reject:self.unexpectedError];
+  [self.player announce:@"other" text:@"other" language:@"en-US" resolve:^(id value) { [otherDone fulfill]; } reject:self.unexpectedError];
+  [self finish]; [self waitForExpectations:@[first] timeout:2];
+  XCTAssertEqualObjects(self.player.spoken, (@[@"first"]));
+  [self.player speakChat:@"reader" text:@"second" resolve:^(id value) { [second fulfill]; } reject:self.unexpectedError];
+  [self finish]; [self waitForExpectations:@[second] timeout:2];
+  XCTAssertEqualObjects(self.player.spoken, (@[@"first", @"second"]));
+  [self.player stopOwner:@"reader" kind:WhipSpeechChat];
+  [self waitForExpectations:@[otherStarted] timeout:2];
+  [self finish]; [self waitForExpectations:@[otherDone] timeout:2];
+}
+
+- (void)testAlertOwnsSpeechThenRingtoneAndShakePreservesOtherQueuedUnits {
+  self.player.holdRingtone = YES;
+  [self queue:@"first"]; [self queue:@"second"];
+  XCTestExpectation *firstRing = [self expectationWithDescription:@"first speech hands off to its own ringtone"];
+  XCTestExpectation *secondStarted = [self expectationWithDescription:@"second alert starts after whole first alert"];
+  XCTestExpectation *ordinaryStarted = [self expectationWithDescription:@"ordinary speech waits for both alert stages"];
+  XCTestExpectation *ordinaryDone = [self expectationWithDescription:@"ordinary speech completes"];
+  self.player.onRingtone = ^(NSString *token) { if ([token isEqualToString:@"first"]) [firstRing fulfill]; };
+  self.player.onPlay = ^(NSString *text) {
+    if ([text isEqualToString:@"second"]) [secondStarted fulfill];
+    if ([text isEqualToString:@"ordinary"]) [ordinaryStarted fulfill];
+  };
+  [self.player announceStatus:@"first" resolve:^(id value) {} reject:self.unexpectedError];
+  [self.player announceStatus:@"second" resolve:^(id value) {} reject:self.unexpectedError];
+  [self.player announce:@"ordinary" text:@"ordinary" language:@"en-US" resolve:^(id value) { [ordinaryDone fulfill]; } reject:self.unexpectedError];
+  [self finish]; [self waitForExpectations:@[firstRing] timeout:2];
+  XCTAssertEqualObjects(self.player.spoken, (@[@"first"]));
+  XCTAssertEqualObjects(self.player.ringtones, (@[@"first"]));
+  [self.player shake];
+  XCTAssertTrue([valid containsObject:@"second"]);
+  [self waitForExpectations:@[secondStarted] timeout:2];
+  self.player.holdRingtone = NO;
+  [self finish]; [self waitForExpectations:@[ordinaryStarted] timeout:2];
+  XCTAssertEqualObjects(self.player.ringtones, (@[@"first", @"second"]));
+  XCTAssertEqualObjects(self.player.spoken, (@[@"first", @"second", @"ordinary"]));
+  [self finish]; [self waitForExpectations:@[ordinaryDone] timeout:2];
+}
+
+- (void)testShakeDuringAlertSpeechRemovesItsPendingRingtoneOnly {
+  [self queue:@"first"]; [self queue:@"second"];
+  XCTestExpectation *dismissed = [self expectationWithDescription:@"whole first alert dismissed"];
+  XCTestExpectation *secondStarted = [self expectationWithDescription:@"other alert preserved"];
+  XCTestExpectation *secondDone = [self expectationWithDescription:@"other alert completes"];
+  self.player.onPlay = ^(NSString *text) { if ([text isEqualToString:@"second"]) [secondStarted fulfill]; };
+  [self.player announceStatus:@"first" resolve:^(id reason) { XCTAssertEqualObjects(reason, @"shake"); [dismissed fulfill]; } reject:self.unexpectedError];
+  AVSpeechUtterance *old = self.player.utterance;
+  [self.player announceStatus:@"second" resolve:^(id reason) { [secondDone fulfill]; } reject:self.unexpectedError];
+  [self.player shake];
+  [self waitForExpectations:@[dismissed, secondStarted] timeout:2];
+  [self.player speechSynthesizer:[AVSpeechSynthesizer new] didFinishSpeechUtterance:old];
+  [self finish]; [self waitForExpectations:@[secondDone] timeout:2];
+  XCTAssertEqualObjects(self.player.ringtones, (@[@"second"]));
+}
+
+- (void)testCancellingQueuedSpeechDoesNotInterruptCurrentSpeechOrReplayLater {
+  [self.player announce:@"current" text:@"current" language:@"en-US" resolve:^(id reason) {} reject:self.unexpectedError];
+  uint64_t current = activeLease;
+  XCTestExpectation *cancelled = [self expectationWithDescription:@"queued speech cancelled"];
+  [self.player announce:@"queued" text:@"queued" language:@"en-US" resolve:^(id reason) {
+    XCTAssertEqualObjects(reason, @"stopped"); [cancelled fulfill];
+  } reject:self.unexpectedError];
+  XCTAssertTrue([self.player stopOwner:@"queued" kind:WhipSpeechAnnouncement]);
+  XCTAssertTrue(whip_speech_is_current(current));
+  [self finish];
+  XCTestExpectation *drained = [self expectationWithDescription:@"no cancelled audio returns"];
+  dispatch_async(dispatch_get_main_queue(), ^{
+    XCTAssertEqualObjects(self.player.spoken, (@[@"current"])); [drained fulfill];
+  });
+  [self waitForExpectations:@[cancelled, drained] timeout:2];
+}
+
+- (void)testIdleReaderYieldsAndResumesAfterAnotherPlaybackUnit {
+  [self.player startChat:@"reader" label:@"Chat" resolve:^(id value) {} reject:self.unexpectedError];
+  uint64_t old = activeLease;
+  NSObject *preview = [NSObject new];
+  [self.player startPlayback:preview];
+  [self.player yieldIdlePlayback];
+  XCTestExpectation *started = [self expectationWithDescription:@"reader resumes after preview"];
+  XCTestExpectation *completed = [self expectationWithDescription:@"deferred reader audio completes"];
+  self.player.onPlay = ^(NSString *text) { if ([text isEqualToString:@"after preview"]) [started fulfill]; };
+  [self.player speakChat:@"reader" text:@"after preview" resolve:^(id value) { [completed fulfill]; } reject:self.unexpectedError];
+  XCTAssertEqual(self.player.spoken.count, 0u);
+  [self.player finishPlayback:preview]; [self waitForExpectations:@[started] timeout:2];
+  XCTAssertFalse(whip_speech_complete(old));
+  XCTAssertEqual(self.stopped.count, 0u);
+  [self finish]; [self waitForExpectations:@[completed] timeout:2];
 }
 
 @end

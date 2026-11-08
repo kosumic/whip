@@ -61,16 +61,18 @@ test('reads on demand, switches to stop, and allows replay after completion', ()
   expect(control.readingTurnId).toBeNull();
 });
 
-test('switches between responses and passes only the selected response messages to speech', () => {
+test('queues another response without stopping its predecessor or accepting its late UI callback', () => {
   const older: TranscriptTurn = {
     ...turn, id: 'older-response',
     assistants: [{ ...messages[0], id: 'older-message', parts: [{ id: 'older-text', type: 'text', text: 'Older response' }] }],
   };
   act(() => control.toggle(turn));
   act(() => control.toggle(older));
-  expect(stop).toHaveBeenCalledTimes(1);
+  expect(stop).not.toHaveBeenCalled();
   expect(control.readingTurnId).toBe(older.id);
   expect(jest.mocked(readChatResponse).mock.calls.map(call => call[1])).toEqual([turn.assistants, older.assistants]);
+  act(() => jest.mocked(readChatResponse).mock.calls[0][2]());
+  expect(control.readingTurnId).toBe(older.id);
 });
 
 test.each(['leave', 'switch', 'dictate'] as const)('stops manual playback on %s', reason => {

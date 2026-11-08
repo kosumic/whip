@@ -71,12 +71,19 @@ class VoiceCallService : Service() {
   }
   @android.annotation.SuppressLint("WakelockTimeout")
   private fun connect(session: Session) {
+    if (current !== session || session.ready || session.ending) return
+    if (SpeechPlayback.playback.defer(session) { connect(session) }) {
+      main.removeCallbacks(session.timeout)
+      return
+    }
     try {
+      SpeechPlayback.playback.started(session)
       focus = VoiceMediaFocus(this) { if (current === session) finish(session, "Voice chat was interrupted by another audio session.") }
       check(focus!!.acquire())
       HostRuntimeMonitoring.setOwnerActive(this, true)
       wakeLock = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:voice-call").apply { acquire() }
       session.ready = true
+      SpeechPlayback.notifyPlaybackStateChanged()
       main.removeCallbacks(session.timeout)
       publishRoute()
       if (session.mode == Mode.LOCAL) SpeechPlayback.warmUp(this)
@@ -109,6 +116,7 @@ class VoiceCallService : Service() {
   private fun finish(session: Session, error: String?) {
     if (current !== session || session.ending) return
     session.ending = true
+    SpeechPlayback.playback.cancel(session)
     session.ready = false
     main.removeCallbacks(session.timeout)
     RealtimeVoice.stop(session.token)
@@ -122,6 +130,7 @@ class VoiceCallService : Service() {
   override fun onDestroy() {
     audio.unregisterAudioDeviceCallback(devices)
     current?.let { session ->
+      SpeechPlayback.playback.cancel(session)
       RealtimeVoice.stop(session.token)
       SpeechPlayback.shutdown()
       session.finishBackgroundTask()
@@ -129,6 +138,8 @@ class VoiceCallService : Service() {
       session.start?.reject("E_VOICE_CALL", "Android stopped voice chat.")
       if (!session.ending) emit(session, "ended")
       calls.release(session)
+      SpeechPlayback.playback.finished(session)
+      SpeechPlayback.notifyPlaybackStateChanged()
       session.endings.forEach { it.resolve(null) }
     }
     VoiceMediaAudio.reset()
@@ -167,6 +178,7 @@ class VoiceCallService : Service() {
     var onEvent: ((String, String, Boolean?, Boolean?, String?) -> Unit)? = null
     val active: Boolean get() = current?.let { it.ready && !it.ending } == true
     internal fun owns(token: String): Boolean = current?.let { it.token == token && it.ready && !it.ending } == true
+    internal fun playbackKey(token: String): Any? = current?.takeIf { it.token == token && !it.ending }
     internal fun muted(token: String): Boolean = current?.takeIf { it.token == token }?.muted == true
     val audioAttributes get() = VoiceMediaAudio.attributes
     fun start(context: ReactApplicationContext, token: String, label: String, promise: Promise, mode: Mode = Mode.LOCAL) {
@@ -190,7 +202,9 @@ class VoiceCallService : Service() {
       val service = instance
       if (service != null) service.finish(session, null)
       else {
+        SpeechPlayback.playback.cancel(session)
         session.finishBackgroundTask(); main.removeCallbacks(session.timeout); calls.release(session)
+        SpeechPlayback.playback.finished(session)
         session.start?.reject("E_VOICE_CALL", "Voice chat was cancelled.")
         session.endings.forEach { it.resolve(null) }
       }

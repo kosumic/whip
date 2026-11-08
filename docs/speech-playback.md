@@ -6,6 +6,19 @@ tool share one native player per platform. `SpeechPlayback.kt` and
 watchdog. `speech_playback.rs` owns admission, session ownership, and deadlines;
 `chat_speech.rs` selects, formats, and queues chat prose.
 
+Speech deadlines are contention budgets sized like chat read-aloud: 250 ms per
+UTF-16 text unit, capped at ten minutes. The minimum budgets are ten seconds for
+announcements, sixty seconds for Phone Use `device.speak`, and thirty seconds for
+chat. Long announcements and device readings therefore get the same time as
+equally long chat text. When the budget expires with no other playback unit
+waiting, the active speech keeps playing until completion. Native players recheck
+the Rust queue every second after that budget, yielding if another unit arrives.
+Cancelled waiting requests
+do not cause a cutoff, and an alert's own pending ringtone does not count as a
+competing unit. An alert still retains its turn through its ringtone. Engine and
+model initialization retain their hard watchdogs; shake and explicit stop still
+cancel immediately.
+
 Automatic read-aloud and the response read button highlight the current word in
 the original chat response, only while that prose row is visible. Reading never
 opens a caption panel, switches chats, or scrolls to a hidden response. Native
@@ -101,30 +114,56 @@ discard the affected playback backlog, then allow new replies to start a fresh
 player without toggling the voice setting. Existing transcript content is
 baselined during recovery so a partially heard reply is not replayed.
 
-Explicitly starting chat replaces the previous speaker. Automatic reading releases
+On Android and iOS, new speech requests wait for the current speech or alert unit to
+finish. A unit holds playback through synthesis preparation and audio drain;
+an idle chat lease does not hold the playback queue. A selected response keeps
+all its chunks in one turn, releasing playback after the complete response.
+Manual playback pauses automatic selection after the ongoing automatic utterance
+drains. Selecting another response lets the previous response finish; explicit
+Stop and recording still stop audio immediately. Automatic reading releases
 playback when its queue empties. Agent status speech waits for the current
 utterance to finish. `local_alerts.rs` owns a queue shared across hosts and panes:
 one waiting entry per pane, at most four waiting entries, and a 15-second waiting
-expiry. Blocked entries precede done entries; each tier preserves FIFO. Overload
+expiry before native preparation. Prepared atomic units keep their speech while
+another unit plays and enter Rust's shared FIFO playback queue. Overload
 drops the oldest entry in the lowest priority tier. A pane's new status replaces
 its waiting entry and promptly stops its own obsolete announcement. Other panes
 and device-tool speech are never stopped by a status transition.
 
 Both native players ask Rust for the next valid announcement at completion,
 before allowing chat's next chunk to drain. They hold the completed chat promise
-and restore the reader with a new lease after announcements finish. This works
+and restore the reader with a new lease after the whole alert unit finishes. This works
 with suspended JavaScript and prevents starvation behind a growing chat backlog.
 Voice-call output retains its explicit priority. Snapshot updates revalidate
 host/runtime incarnation, pane, tab, terminal/session identity, status, freshness,
 and voice preferences; dismissal, suppression and disconnect discard matching
-entries. Native Stop, shake, dictation and audio interruption discard waiting
-status speech immediately. Notification scheduling, vibration, and persistent
-feedback start independently of speech and its errors.
+entries. Native Stop and dictation discard waiting speech. Shaking dismisses
+the currently playing unit. Other queued alerts remain queued. Notification
+scheduling remains independent of playback; its sound waits for admission.
 
-Spoken Android alerts are posted without system sound/vibration so the notification channel cannot start a second, independent ringtone over speech. The native adapter preserves channel sound, vibration, volume and mute choices and owns the audible feedback for brief, regular and persistent spoken alerts. Ringtone playback pauses while an announcement owns the speech player, including synthesis preparation. Brief alerts play once afterward; persistent alerts resume ringing while still active. Dismissal, timeout, shake, or replacement during speech cannot revive an expired alert. This coordination runs natively while JavaScript is suspended. Alerts without speech retain their existing system notification behavior.
+Android and iOS alerts are atomic playback units: their announcement plays first, then
+their ringtone. No other speech, alert, or voice call can play between those
+stages. Alerts without announcements contain only the ringtone; silent alerts
+end after their announcement. Notifications use no independent system sound, so
+the channel cannot bypass this ordering. Android preserves channel volume,
+mute, DND, routing, and vibration preferences. Brief ringtones play once; persistent
+ringtones hold the unit until dismissal or timeout. A shake during either the
+announcement or ringtone dismisses the whole active alert, removes its pending
+audio, and releases the next queued unit. It does not dismiss other alerts.
+Android switches shake detection from the speech engine to the alert adapter
+for ringing; iOS uses the same motion owner for both stages. Playback
+watchdogs start after queue admission. This coordination runs natively while
+JavaScript is suspended.
 
-Device speech may replace an utterance from the same Phone Use session;
-other owners receive `device_unavailable`.
+iOS uses a cancellable app tone rather than an independent system notification
+sound. App notification sound permissions apply. Brief tones use ambient audio;
+persistent tones use playback audio so the alert can continue while locked.
+These categories follow Apple's [audio-session behavior](https://developer.apple.com/library/archive/documentation/Audio/Conceptual/AudioSessionProgrammingGuide/AudioSessionCategoriesandModes/AudioSessionCategoriesandModes.html).
+Simulator regressions compile the real speech, voice-call, and React bridge
+adapters and verify ordering and cancellation without playing audible output.
+
+Device speech waits for the ongoing playback unit, including speech from the
+same Phone Use session. Request-scoped cancellation removes waiting speech.
 
 Agent status announcements use the current conversation's cached session title,
 for example, "Fix keyboard latency finished" or "Fix keyboard latency needs attention".
@@ -235,8 +274,8 @@ visually nested below them. Preview text is an editable input prefilled with
 the default sample on first use. User edits, including an empty input, persist
 in the Rust speech preferences. Preview speaks exactly the input's contents;
 an empty or whitespace-only input disables playback. Previews retain
-announcement admission but use Rust's text-sized speech deadline, so a longer
-sample can finish beyond the ten-second status-announcement limit.
+announcement admission but use the chat budget's thirty-second minimum before
+yielding to competing playback.
 
 Android arm64 uses `ptts = 0.6.0`, with the `hf` tokenizer feature and without
 `hub`, CLI, or audio-file features. CPU Q8 files are pinned to Hugging Face

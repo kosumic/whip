@@ -73,6 +73,10 @@ RCT_EXPORT_METHOD(startChatSpeech:(NSString *)token label:(NSString *)label reso
 {
   [WhipSpeechPlayback.shared startChat:token label:label resolve:resolve reject:reject];
 }
+RCT_EXPORT_METHOD(startResponseSpeech:(NSString *)token label:(NSString *)label resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  [WhipSpeechPlayback.shared startResponse:token label:label resolve:resolve reject:reject];
+}
 RCT_EXPORT_METHOD(automaticSpeechControl:(NSString *)action value:(BOOL)value resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 {
   [WhipSpeechPlayback.shared automaticControl:action value:value]; resolve(nil);
@@ -125,6 +129,16 @@ RCT_EXPORT_METHOD(stopAnnouncement:(NSString *)token resolve:(RCTPromiseResolveB
 RCT_EXPORT_METHOD(stopSpeech:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 {
   [WhipSpeechPlayback.shared stop];
+  resolve(nil);
+}
+RCT_EXPORT_METHOD(prepareSpokenAlert:(NSString *)notification channelId:(NSString *)channelId persistent:(BOOL)persistent vibrationPattern:(NSArray *)vibrationPattern effectId:(NSString *)effectId resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  [WhipSpeechPlayback.shared prepareAlertNotification:notification effect:effectId];
+  resolve(nil);
+}
+RCT_EXPORT_METHOD(dismissPersistentAlert:(NSString *)notification resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  [WhipSpeechPlayback.shared dismissAlertNotification:notification];
   resolve(nil);
 }
 - (void)invalidate

@@ -19,12 +19,14 @@ export function useChatReadAloud(
 ): ChatReadAloudControl {
   const [readingTurnId, setReadingTurnId] = useState<string | null>(null);
   const stop = useRef<(() => void) | undefined>(undefined);
+  const generation = useRef(0);
   const dictating = useSyncExternalStore(subscribeSpeechInput, isSpeechInputActive);
   const bindingToken = target?.bindingToken;
   const hostId = target?.hostId;
   const paneId = target?.paneId;
 
   useLayoutEffect(() => () => {
+    generation.current++;
     stop.current?.();
     stop.current = undefined;
     setReadingTurnId(null);
@@ -40,10 +42,14 @@ export function useChatReadAloud(
       return;
     }
     if (!canRead(turn) || !target) return;
-    stop.current?.();
+    const request = ++generation.current;
     setReadingTurnId(turn.id);
     try {
-      stop.current = readChatResponse(target, turn.assistants, () => setReadingTurnId(null), onError);
+      stop.current = readChatResponse(target, turn.assistants, () => {
+        if (generation.current !== request) return;
+        stop.current = undefined;
+        setReadingTurnId(null);
+      }, onError);
     } catch (error) {
       setReadingTurnId(null);
       onError(error);

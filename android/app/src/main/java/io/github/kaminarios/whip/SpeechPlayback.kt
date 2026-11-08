@@ -45,13 +45,16 @@ object SpeechPlayback : SensorEventListener {
   private data class QueuedChat(val text: String, val promise: Promise, val source: JSONObject? = null)
   private val queuedChat = ArrayDeque<QueuedChat>()
 
-  private data class Session(
+  private class Session(
     val id: Long,
     val kind: Int,
     val owner: String,
     val label: String,
     val ready: () -> Unit,
     val ended: (String, String?) -> Unit,
+    val turn: Any,
+    val atomic: Boolean = false,
+    var atomicPlaying: Boolean = false,
     var localOnly: Boolean = false,
     var reportedStart: Boolean = false,
     var readyReported: Boolean = false,
@@ -59,6 +62,26 @@ object SpeechPlayback : SensorEventListener {
   )
 
   private val handler = Handler(Looper.getMainLooper())
+  internal val playback = PlaybackQueue { handler.post(it) }
+  private class BeginRequest(
+    val context: Context, val kind: Int, val owner: String, val request: String,
+    val name: String, val ready: () -> Unit, val claimedLease: Long?,
+    val ended: (String, String?) -> Unit, val turn: Any,
+    val localOnly: Boolean,
+    val atomic: Boolean,
+    var queued: Boolean = false,
+  )
+  private val pendingBeginnings = mutableSetOf<BeginRequest>()
+  private class AlertUnit(val token: String) {
+    var prepared = false
+    var speech = true
+    var started: (() -> Unit)? = null
+    var ring: (() -> Unit)? = null
+    var ended: ((String) -> Unit)? = null
+    var ringing = false
+  }
+  private val alertUnits = linkedMapOf<String, AlertUnit>()
+  private var currentAlert: AlertUnit? = null
   private var session: Session? = null
   private var appContext: Context? = null
   // Callback bookkeeping only. Rust owns queue contents, expiry and priority.
@@ -183,25 +206,93 @@ object SpeechPlayback : SensorEventListener {
     appContext = context.applicationContext
     if (alertCommand("register", owner) != "true") { promise.resolve("busy"); return }
     statusCallbacks[owner] = promise
+    alertUnits.getOrPut(owner) { AlertUnit(owner) }
     drainStatus()
+  }
+
+  fun prepareAlert(context: Context, token: String, speech: Boolean, started: () -> Unit, ring: () -> Unit, ended: (String) -> Unit) {
+    appContext = context.applicationContext
+    val unit = alertUnits.getOrPut(token) { AlertUnit(token) }
+    unit.prepared = true
+    unit.speech = speech
+    unit.started = started
+    unit.ring = ring
+    unit.ended = ended
+    drainStatus()
+  }
+
+  fun finishAlert(token: String, reason: String = COMPLETED) {
+    val unit = alertUnits.remove(token) ?: return
+    playback.cancel(unit)
+    // Remove the whole unit before stopping speech, so its end callback cannot
+    // advance into a ringtone after a shake or dismissal.
+    if (currentAlert === unit) currentAlert = null
+    val speaking = session?.takeIf { it.turn === unit }
+    if (speaking != null && SpeechPolicy.stop(speaking.id)) clear(reason, null)
+    if (reason != COMPLETED) alertCommand("dismiss-alert", token)
+    statusCallbacks.remove(token)?.resolve(reason)
+    unit.ended?.invoke(reason)
+    playback.finished(unit)
+    handler.post { drainStatus(); resumeChat(); drainAutomatic() }
+  }
+
+  fun shake() {
+    currentAlert?.let { finishAlert(it.token, SHAKE); return }
+    if (RealtimeVoice.shake()) return
+    val current = session ?: return
+    if (SpeechPolicy.stop(current.id)) clear(SHAKE, null)
   }
 
   fun refreshStatus() { drainStatus() }
 
+  fun yieldIdlePlayback() {
+    val current = session ?: return
+    if (current.kind != SpeechPolicy.CHAT || utteranceId != null || queuedChat.isNotEmpty() || VoiceCallService.playbackKey(current.owner) === current.turn) return
+    SpeechPolicy.stop(current.id)
+    suspendedChat = current
+    playback.cancel(current.turn)
+    session = null
+    clear(COMPLETED, null)
+  }
+
   private fun drainStatus(): Boolean {
+    for (unit in alertUnits.values) {
+      // A failed notification backend must not strand its native speech promise.
+      if (!unit.prepared && alertCommand("speech-only", unit.token) == "true") unit.prepared = true
+    }
     val invalid = statusCallbacks.keys.filter { it != statusOwner && alertCommand("valid", it) != "true" }
-    for (token in invalid) statusCallbacks.remove(token)?.resolve("busy")
+    for (token in invalid) {
+      statusCallbacks.remove(token)?.resolve("busy")
+      alertUnits[token]?.takeIf { it !== currentAlert }?.let { unit ->
+        if (unit.prepared) unit.speech = false
+        else { alertUnits.remove(token); playback.cancel(unit) }
+      }
+    }
+    for (unit in alertUnits.values.toList()) {
+      if (!unit.prepared || unit === currentAlert || unit.speech && !statusCallbacks.containsKey(unit.token)) continue
+      if (playback.defer(unit) { startAlert(unit) }) continue
+      startAlert(unit)
+    }
+    return currentAlert != null || alertUnits.values.any { it.prepared && (!it.speech || statusCallbacks.containsKey(it.token)) }
+  }
+
+  private fun startAlert(unit: AlertUnit) {
+    if (alertUnits[unit.token] !== unit) { playback.finished(unit); return }
+    if (playback.defer(unit) { startAlert(unit) }) return
+    playback.started(unit)
+    if (alertCommand("alert-valid", unit.token) != "true") { finishAlert(unit.token, STOPPED); return }
+    currentAlert = unit
+    unit.started?.invoke()
+    if (alertUnits[unit.token] !== unit) return
+    if (!unit.speech || alertCommand("valid", unit.token) != "true") { ringAlert(unit); return }
     val current = session
-    if (utteranceId != null || queuedChat.isNotEmpty() ||
-        current != null && (current.kind != SpeechPolicy.CHAT || !current.readyReported)) return false
-    // Voice-call output may have prepared PCM. Calls keep their explicit priority.
-    if (VoiceCallService.active) return false
-    val json = alertCommand("take", lease = current?.id ?: 0L)
-    if (json == "null") { resumeChat(); handler.post(automaticWake); return false }
+    val json = alertCommand("take-token", unit.token, current?.id ?: 0L)
+    if (json == "null") { ringAlert(unit); return }
     val next = JSONObject(json)
-    val context = appContext ?: return false
+    val context = appContext ?: run { finishAlert(unit.token); return }
     if (current != null) {
       suspendedChat = current
+      playback.cancel(current.turn)
       // Detach the listening session without publishing a user stop. Its last
       // chunk promise remains held until playback is restored.
       session = null
@@ -211,16 +302,21 @@ object SpeechPlayback : SensorEventListener {
     statusOwner = token
     begin(context, SpeechPolicy.ANNOUNCEMENT, token, "", context.getString(R.string.app_name), {
       session?.let { speak(it, next.getString("text"), next.getString("language"), 1.0) }
-    }, claimedLease = next.getLong("lease"), ended = { reason, error ->
+    }, claimedLease = next.getLong("lease"), turn = unit, ended = { reason, error ->
       statusOwner = null
-      // Shake completion must remain current until JS dismisses notification
-      // state. Other completions release the queue synchronously in Rust.
-      if (reason != SHAKE) alertCommand("finish", token)
+      alertCommand("finish", token)
       val callback = statusCallbacks.remove(token)
       if (error != null) callback?.reject(ERROR_CODE, error) else callback?.resolve(reason)
-      handler.post { drainStatus() }
+      if (alertUnits[token] === unit) {
+        if (reason == COMPLETED || error != null) ringAlert(unit) else finishAlert(token, reason)
+      }
     })
-    return true
+  }
+
+  private fun ringAlert(unit: AlertUnit) {
+    if (alertUnits[unit.token] !== unit || unit.ringing) return
+    unit.ringing = true
+    unit.ring?.invoke() ?: finishAlert(unit.token)
   }
 
   private fun resumeChat() {
@@ -235,9 +331,8 @@ object SpeechPlayback : SensorEventListener {
     val accepted = begin(context, SpeechPolicy.CHAT, previous.owner, "", previous.label, {
       completed?.resolve(null)
       if (pending != null) speakChat(previous.owner, pending.text, pending.promise, pending.source)
-    }, ended = previous.ended)
-    if (accepted) session?.localOnly = previous.localOnly
-    else {
+    }, localOnly = previous.localOnly, atomic = previous.atomic, ended = previous.ended)
+    if (!accepted) {
       previous.ended(INTERRUPTED, "Could not resume chat speech")
       completed?.reject(ERROR_CODE, "Could not resume chat speech")
       pending?.promise?.reject(ERROR_CODE, "Could not resume chat speech")
@@ -281,29 +376,43 @@ object SpeechPlayback : SensorEventListener {
   var onChatStarted: ((String) -> Unit)? = null
   var onChatLevel: ((String, Float) -> Unit)? = null
   var onCaption: ((String) -> Unit)? = null
-  var onAnnouncementStateChanged: ((Boolean) -> Unit)? = null
+  var onPlaybackStateChanged: ((Boolean) -> Unit)? = null
   private val resetLevel = Runnable { session?.let { reportLevel(it, 0f) } }
   val active: Boolean get() = session != null
-  val announcing: Boolean get() = session?.kind == SpeechPolicy.ANNOUNCEMENT
+  // An idle chat retains its Rust lease between replies, but has no audio to
+  // delay an alert. Include synthesis and queued output before audio starts.
+  val busy: Boolean get() = VoiceCallService.active || RealtimeVoice.active || utteranceId != null || queuedChat.isNotEmpty() ||
+    session?.let { it.kind != SpeechPolicy.CHAT || !it.readyReported } == true
+  internal fun notifyPlaybackStateChanged() { onPlaybackStateChanged?.invoke(busy) }
   val label: String? get() = session?.label
-  private val timeout = Runnable { stop(error = "Speech engine timed out") }
+  private val initializationTimeout = Runnable { stop(error = "Speech engine timed out") }
+  private val timeout = object : Runnable {
+    override fun run() {
+      val delayMs = playback.timeoutDelayMs
+      if (delayMs == 0L) stop(error = "Speech playback timed out")
+      else handler.postDelayed(this, delayMs)
+    }
+  }
+  private fun clearTimeout() {
+    handler.removeCallbacks(initializationTimeout)
+    handler.removeCallbacks(timeout)
+  }
   private val noisyReceiver = object : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
       if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) stop(reason = INTERRUPTED)
     }
   }
 
-  fun startChat(context: Context, owner: String, name: String, promise: Promise, localOnly: Boolean = false) {
+  fun startChat(context: Context, owner: String, name: String, promise: Promise, localOnly: Boolean = false, atomic: Boolean = false) {
     var initialized = false
     val accepted = begin(context, SpeechPolicy.CHAT, owner, "", name, {
       initialized = true
       promise.resolve(null)
-    }) { reason, error ->
+    }, localOnly = localOnly, atomic = atomic) { reason, error ->
       if (owner == AUTOMATIC_OWNER) automaticEnded(reason, error)
       onChatStopped?.invoke(owner, reason, error)
       if (!initialized) promise.reject(ERROR_CODE, error ?: "Speech stopped before initialization")
     }
-    if (accepted) session?.localOnly = localOnly
     if (!accepted) promise.reject(ERROR_CODE, "Could not start chat speech")
   }
 
@@ -317,7 +426,18 @@ object SpeechPlayback : SensorEventListener {
       promise.reject(ERROR_CODE, "Chat listening is no longer available for this utterance")
       return
     }
+    val pending = QueuedChat(text, promise, source)
+    if (playback.defer(current.turn) {
+        if (session === current && deferredChat === pending) {
+          deferredChat = null
+          speakChat(owner, text, promise, source)
+        } else playback.finished(current.turn)
+      }) {
+      deferredChat = pending
+      return
+    }
     utterance = promise
+    current.atomicPlaying = current.atomic
     current.captionSource = source
     speak(current, text, null, 1.0)
   }
@@ -337,19 +457,27 @@ object SpeechPlayback : SensorEventListener {
     val local = VoiceCallService.active && SpeechPolicy.phononEnabled(Locale.getDefault().toLanguageTag())
     val entry = QueuedChat(text, promise)
     queuedChat.addLast(entry)
+    notifyPlaybackStateChanged()
     if (!local) {
       if (queuedChat.size == 1) playQueuedChat(current)
       return
     }
-    if (queuedChat.size == 1) {
-      handler.removeCallbacks(timeout)
-      handler.postDelayed(timeout, MODEL_INITIALIZATION_TIMEOUT_MS)
+    enqueuePcm(current, entry)
+  }
+
+  private fun enqueuePcm(current: Session, entry: QueuedChat) {
+    if (session !== current || !queuedChat.contains(entry) || !SpeechPolicy.isCurrent(current.id)) return
+    if (playback.defer(current.turn) { enqueuePcm(current, entry) }) return
+    playback.started(current.turn)
+    if (queuedChat.firstOrNull() === entry) {
+      clearTimeout()
+      handler.postDelayed(initializationTimeout, MODEL_INITIALIZATION_TIMEOUT_MS)
     }
-    PcmSpeechPlayback.enqueue(current.id, text, attributes, {
+    PcmSpeechPlayback.enqueue(current.id, entry.text, attributes, {
       if (session === current && queuedChat.contains(entry)) {
         reportStarted(current)
-        handler.removeCallbacks(timeout)
-        handler.postDelayed(timeout, SpeechPolicy.timeoutMs(SpeechPolicy.CHAT, text.length.toLong()))
+        clearTimeout()
+        handler.postDelayed(timeout, SpeechPolicy.timeoutMs(SpeechPolicy.CHAT, entry.text.length.toLong()))
       }
     }, { if (session === current) reportLevel(current, it) }) { completed, spoke, error ->
       if (session !== current || !queuedChat.contains(entry)) return@enqueue
@@ -358,7 +486,9 @@ object SpeechPlayback : SensorEventListener {
         return@enqueue
       }
       queuedChat.remove(entry)
-      if (queuedChat.isEmpty()) handler.removeCallbacks(timeout)
+      if (queuedChat.isEmpty()) clearTimeout()
+      if (queuedChat.isEmpty()) finishTurn(current)
+      notifyPlaybackStateChanged()
       entry.promise.resolve(null)
     }
   }
@@ -392,15 +522,46 @@ object SpeechPlayback : SensorEventListener {
     if (!accepted) promise.reject("device_unavailable", "Another speech session is active")
   }
 
-  private fun begin(context: Context, kind: Int, owner: String, request: String, name: String, ready: () -> Unit, claimedLease: Long? = null, ended: (String, String?) -> Unit): Boolean {
+  private fun begin(context: Context, kind: Int, owner: String, request: String, name: String, ready: () -> Unit, claimedLease: Long? = null, turn: Any = VoiceCallService.playbackKey(owner) ?: Any(), localOnly: Boolean = false, atomic: Boolean = false, ended: (String, String?) -> Unit): Boolean {
+    val pending = BeginRequest(context, kind, owner, request, name, ready, claimedLease, ended, turn, localOnly, atomic)
+    pendingBeginnings.add(pending)
+    return admitBegin(pending)
+  }
+
+  private fun admitBegin(pending: BeginRequest): Boolean {
+    if (!pendingBeginnings.contains(pending)) { playback.finished(pending.turn); return false }
+    if (playback.defer(pending.turn) { admitBegin(pending) }) { pending.queued = true; return true }
+    pendingBeginnings.remove(pending)
+    val context = pending.context
+    val kind = pending.kind
+    val owner = pending.owner
+    val request = pending.request
+    val name = pending.name
+    val ready = pending.ready
+    val claimedLease = pending.claimedLease
+    val ended = pending.ended
+    // Retained idle readers yield only at a completed utterance boundary.
+    val previous = session
+    if (previous?.kind == SpeechPolicy.CHAT && kind != SpeechPolicy.CHAT && claimedLease == null) {
+      SpeechPolicy.stop(previous.id)
+      suspendedChat = previous
+      playback.cancel(previous.turn)
+      session = null
+      clear(COMPLETED, null)
+    }
     PcmSpeechPlayback.prepareCredentials(context)
     val id = claimedLease ?: SpeechPolicy.claim(kind, owner, request)
-    if (id == 0L) return false
-    if (claimedLease == null) discardSuspendedChat(REPLACED, null)
+    if (id == 0L) {
+      playback.finished(pending.turn)
+      if (pending.queued) ended(STOPPED, "Could not start speech")
+      return false
+    }
+    if (claimedLease == null && kind == SpeechPolicy.CHAT) discardSuspendedChat(REPLACED, null)
     appContext = context.applicationContext
     clear(REPLACED, null)
-    session = Session(id, kind, owner, name, ready, ended)
-    if (announcing) onAnnouncementStateChanged?.invoke(true)
+    playback.started(pending.turn)
+    session = Session(id, kind, owner, name, ready, ended, pending.turn, atomic = pending.atomic, localOnly = pending.localOnly)
+    notifyPlaybackStateChanged()
     shakeDetector.reset()
     try {
       val app = context.applicationContext
@@ -422,7 +583,7 @@ object SpeechPlayback : SensorEventListener {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) app.startForegroundService(intent) else app.startService(intent)
       }
       HerdrBackgroundService.refreshNotification()
-      handler.postDelayed(timeout, INITIALIZATION_TIMEOUT_MS)
+      handler.postDelayed(initializationTimeout, INITIALIZATION_TIMEOUT_MS)
       ensureEngine(app)
       if (engineReady || SpeechPolicy.pcmEnabled(Locale.getDefault().toLanguageTag(), VoiceCallService.active)) readySession()
     } catch (error: Exception) {
@@ -450,9 +611,12 @@ object SpeechPlayback : SensorEventListener {
   private fun readySession() {
     val current = session ?: return
     if (current.readyReported || !SpeechPolicy.isCurrent(current.id)) return
+    clearTimeout()
+    if (playback.defer(current.turn) { if (session === current) readySession() else playback.finished(current.turn) }) return
     current.readyReported = true
-    handler.removeCallbacks(timeout)
     current.ready()
+    if (session === current && current.kind == SpeechPolicy.CHAT && utteranceId == null && queuedChat.isEmpty()) finishTurn(current)
+    notifyPlaybackStateChanged()
     // A reader still initializing must settle its start promise before yielding.
     // Revisit an idle reader after startChat has applied its local-only setting.
     if (current.kind == SpeechPolicy.CHAT) handler.post { if (session === current) drainStatus() }
@@ -503,6 +667,15 @@ object SpeechPlayback : SensorEventListener {
   @Suppress("DEPRECATION")
   private fun play(current: Session, text: String, language: String?, rate: Double, started: () -> Unit, preview: Boolean): Boolean {
     if (!SpeechPolicy.isCurrent(current.id)) return false
+    if (playback.defer(current.turn) {
+        if (session === current && SpeechPolicy.isCurrent(current.id)) speak(current, text, language, rate, preview, started)
+        else playback.finished(current.turn)
+      }) {
+      utteranceId = "waiting-${current.id}"
+      notifyPlaybackStateChanged()
+      return true
+    }
+    playback.started(current.turn)
     val locale = language?.takeIf { it.isNotBlank() }?.let(Locale::forLanguageTag) ?: Locale.getDefault()
     val languageExplicit = !language.isNullOrBlank()
     val local = SpeechPolicy.pcmEnabled(locale.toLanguageTag(), current.localOnly)
@@ -516,6 +689,7 @@ object SpeechPlayback : SensorEventListener {
     val manager = checkNotNull(audioManager) { "Audio is unavailable" }
     val id = "speech-${current.id}-${++sequence}"
     utteranceId = id
+    notifyPlaybackStateChanged()
     caption = current.captionSource?.takeIf { !VoiceCallService.active && !preview }?.let {
       JSONObject(it.toString()).put("id", id)
     }
@@ -542,14 +716,14 @@ object SpeechPlayback : SensorEventListener {
       stop(error = "Audio focus is unavailable")
       return false
     }
-    // Preview retains announcement admission, with Rust's text-sized deadline
-    // so an edited sample can play beyond the short status-announcement limit.
+    // Preview retains announcement admission, with a text-sized budget before
+    // yielding to competing playback.
     val playbackTimeout = SpeechPolicy.timeoutMs(if (preview) SpeechPolicy.CHAT else current.kind, text.length.toLong())
-    handler.postDelayed(timeout, if (local) MODEL_INITIALIZATION_TIMEOUT_MS else playbackTimeout)
+    handler.postDelayed(if (local) initializationTimeout else timeout, if (local) MODEL_INITIALIZATION_TIMEOUT_MS else playbackTimeout)
     if (local) {
       val playbackStarted = {
         if (session?.id == current.id && utteranceId == id) {
-          handler.removeCallbacks(timeout)
+          clearTimeout()
           handler.postDelayed(timeout, playbackTimeout)
           started()
         }
@@ -630,18 +804,27 @@ object SpeechPlayback : SensorEventListener {
   }
 
   fun stopOwner(kind: Int, owner: String): Boolean {
+    val waiting = cancelBeginnings { it.kind == kind && it.owner == owner }
+    if (kind == SpeechPolicy.ANNOUNCEMENT && alertUnits.containsKey(owner)) {
+      finishAlert(owner, STOPPED)
+      return true
+    }
     if (kind == SpeechPolicy.CHAT && suspendedChat?.owner == owner) {
       discardSuspendedChat(STOPPED, null)
       return true
     }
     val stopped = stopLease(SpeechPolicy.stopOwner(kind, owner))
     handler.post { drainStatus() }
-    return stopped
+    return stopped || waiting
   }
   fun cancelDeviceRequest(request: String) {
+    cancelBeginnings { it.kind == SpeechPolicy.DEVICE && it.request == request }
     if (stopLease(SpeechPolicy.cancelRequest(SpeechPolicy.DEVICE, request))) handler.post { drainStatus() }
   }
-  fun stopDevice() { session?.takeIf { it.kind == SpeechPolicy.DEVICE }?.let { stopOwner(it.kind, it.owner) } }
+  fun stopDevice() {
+    cancelBeginnings { it.kind == SpeechPolicy.DEVICE }
+    session?.takeIf { it.kind == SpeechPolicy.DEVICE }?.let { stopOwner(it.kind, it.owner) }
+  }
 
   private fun stopLease(id: Long): Boolean {
     if (id == 0L || session?.id != id) return false
@@ -650,6 +833,13 @@ object SpeechPlayback : SensorEventListener {
   }
 
   fun stop(reason: String = STOPPED, error: String? = null) {
+    if (error != null || reason == INTERRUPTED) {
+      val current = session ?: return
+      if (SpeechPolicy.stop(current.id)) clear(reason, error)
+      return
+    }
+    cancelBeginnings { true }
+    for (unit in alertUnits.values.toList()) finishAlert(unit.token, reason)
     alertCommand("clear")
     discardSuspendedChat(reason, error)
     for ((token, callback) in statusCallbacks.toMap()) if (token != statusOwner) {
@@ -681,13 +871,13 @@ object SpeechPlayback : SensorEventListener {
   private fun clear(reason: String, error: String?) {
     clearCaption()
     val stopped = session
+    stopped?.let { playback.cancel(it.turn) }
     handler.removeCallbacks(resetLevel)
     stopped?.let { reportLevel(it, 0f) }
     session = null
-    handler.removeCallbacks(timeout)
+    clearTimeout()
     utteranceId = null
     PcmSpeechPlayback.stop()
-    if (stopped?.kind == SpeechPolicy.ANNOUNCEMENT) onAnnouncementStateChanged?.invoke(false)
     // Keep the service connection warm between replies in the same voice call.
     engine?.stop()
     if (error != null || !VoiceCallService.active) releaseEngine()
@@ -699,14 +889,22 @@ object SpeechPlayback : SensorEventListener {
     shakeDetector.reset()
     val completed = utterance
     utterance = null
+    if (stopped?.kind == SpeechPolicy.CHAT && suspendedChat?.owner != stopped.owner) {
+      deferredChat?.promise?.resolve(null)
+      deferredChat = null
+    }
     val buffered = queuedChat.toList()
+    for (entry in buffered) playback.cancel(entry)
     queuedChat.clear()
+    notifyPlaybackStateChanged()
     // Notify first, before JS can drain another queued chat chunk.
     stopped?.ended?.invoke(reason, error)
     if (error != null) completed?.reject(ERROR_CODE, error) else completed?.resolve(null)
     for (entry in buffered) if (entry.promise !== completed) {
       if (error != null) entry.promise.reject(ERROR_CODE, error) else entry.promise.resolve(null)
     }
+    stopped?.let { finishTurn(it) }
+    handler.post { resumeChat() }
     HerdrBackgroundService.refreshNotification()
   }
 
@@ -721,19 +919,21 @@ object SpeechPlayback : SensorEventListener {
       handler.post { drainStatus() }
       return
     }
-    handler.removeCallbacks(timeout)
+    clearTimeout()
     utteranceId = null
     val completed = utterance
     utterance = null
     if (queuedChat.firstOrNull()?.promise === completed) queuedChat.removeFirst()
     releaseFocus()
-    if (queuedChat.isEmpty() && !VoiceCallService.active) {
+    if (queuedChat.isEmpty() && !VoiceCallService.active && !current.atomicPlaying) {
       boundaryCompletion = completed
-      if (drainStatus()) return
+      if (drainStatus()) { finishTurn(current); return }
       boundaryCompletion = null
     }
+    if (queuedChat.isEmpty()) finishTurn(current)
     completed?.resolve(null)
     if (queuedChat.isNotEmpty()) playQueuedChat(current)
+    notifyPlaybackStateChanged()
   }
 
   @Suppress("DEPRECATION")
@@ -752,8 +952,25 @@ object SpeechPlayback : SensorEventListener {
     val gravity = sqrt(x * x + y * y + z * z)
     if (shakeDetector.update(gravity, event.timestamp / 1_000_000L)) {
       Log.i(TAG, "Stopping speech after a repeated shake gesture")
-      stop(reason = SHAKE)
+      shake()
     }
   }
   override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+
+  private fun finishTurn(current: Session) {
+    if (session === current && current.atomicPlaying) return
+    if (currentAlert?.let { it === current.turn } == true || VoiceCallService.playbackKey(current.owner) === current.turn) return
+    playback.finished(current.turn)
+  }
+
+  private fun cancelBeginnings(matches: (BeginRequest) -> Boolean): Boolean {
+    val cancelled = pendingBeginnings.filter(matches)
+    for (pending in cancelled) {
+      pendingBeginnings.remove(pending)
+      playback.cancel(pending.turn)
+      playback.finished(pending.turn)
+      pending.ended(STOPPED, null)
+    }
+    return cancelled.isNotEmpty()
+  }
 }

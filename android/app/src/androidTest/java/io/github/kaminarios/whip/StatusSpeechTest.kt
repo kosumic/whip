@@ -32,10 +32,12 @@ class StatusSpeechTest {
     override fun invoke(action: String, token: String, observed: Long): String = when (action) {
       "register" -> waiting.containsKey(token).also { if (it) registered.add(token) }.toString()
       "valid" -> (waiting.containsKey(token) || registered.contains(token)).toString()
+      "alert-valid" -> "true"
+      "dismiss-alert" -> { waiting.remove(token); registered.remove(token); "null" }
       "clear" -> { waiting.clear(); registered.clear(); "null" }
       "finish" -> { registered.remove(token); "null" }
-      "take" -> {
-        val next = waiting.entries.firstOrNull { registered.contains(it.key) }
+      "take", "take-token" -> {
+        val next = waiting.entries.firstOrNull { registered.contains(it.key) && (action == "take" || it.key == token) }
         if (next == null || observed != 0L && !SpeechPolicy.stop(observed)) "null" else {
           val lease = SpeechPolicy.claim(SpeechPolicy.ANNOUNCEMENT, next.key, "")
           if (lease == 0L) "null" else {
@@ -45,6 +47,213 @@ class StatusSpeechTest {
         }
       }
       else -> "null"
+    }
+  }
+
+  @Test fun speechRequestsWaitForEarlierSpeechInsteadOfReplacingIt() {
+    assumeTrue("Run only with no user speech or call active", !SpeechPlayback.busy && !SpeechPlayback.playback.active)
+    val first = Result()
+    val second = Result()
+    try {
+      main {
+        SpeechPlayback.announce(context, "first-speech", "This speech must finish before the next speech request starts playing.", "en-US", first.promise)
+        SpeechPlayback.announce(context, "second-speech", "The second speech waited its turn.", "en-US", second.promise)
+      }
+      assertFalse("Earlier speech was replaced", first.done.await(100, TimeUnit.MILLISECONDS))
+      first.await()
+      assertEquals(SpeechPlayback.COMPLETED, first.value.get())
+      second.await()
+      assertEquals(SpeechPlayback.COMPLETED, second.value.get())
+    } finally { main { SpeechPlayback.stop() } }
+  }
+
+  @Test fun selectedResponseKeepsAllChunksBeforeOtherSpeech() {
+    assumeTrue("Run only with no user speech or call active", !SpeechPlayback.busy && !SpeechPlayback.playback.active)
+    val ready = Result()
+    val first = Result()
+    val second = Result()
+    val other = Result()
+    try {
+      main { SpeechPlayback.startChat(context, "atomic-reader", "Speech test", ready.promise, atomic = true) }
+      ready.await()
+      main {
+        SpeechPlayback.speakChat("atomic-reader", "The first selected response chunk.", first.promise)
+        SpeechPlayback.announce(context, "after-response", "This speech waits for the entire selected response.", "en-US", other.promise)
+      }
+      first.await()
+      assertFalse("Speech started between response chunks", other.done.await(100, TimeUnit.MILLISECONDS))
+      main { SpeechPlayback.speakChat("atomic-reader", "The last selected response chunk.", second.promise) }
+      second.await()
+      assertFalse("Speech started before the response released playback", other.done.await(100, TimeUnit.MILLISECONDS))
+      main { SpeechPlayback.stopOwner(SpeechPolicy.CHAT, "atomic-reader") }
+      other.await()
+      assertEquals(SpeechPlayback.COMPLETED, other.value.get())
+    } finally { main { SpeechPlayback.stop() } }
+  }
+
+  @Test fun alertSpeechAndRingtoneShareOneTurnAndShakeDismissesOnlyThatAlert() {
+    assumeTrue("Run only with no user speech or call active", !SpeechPlayback.busy && !SpeechPlayback.playback.active)
+    val original = SpeechPlayback.statusPolicy
+    val policy = Policy()
+    val events = mutableListOf<String>()
+    val firstSpeech = Result()
+    val secondSpeech = Result()
+    val firstRinging = CountDownLatch(1)
+    val secondDone = CountDownLatch(1)
+    try {
+      main {
+        SpeechPlayback.statusPolicy = policy
+        policy.waiting["atomic-first"] = "The first alert speaks before it starts ringing."
+        policy.waiting["atomic-second"] = "The second alert waits for the entire first alert."
+        SpeechPlayback.prepareAlert(context, "atomic-first", true,
+          { events.add("first starts") },
+          { events.add("first rings"); firstRinging.countDown() },
+          { reason -> events.add("first ends $reason") })
+        SpeechPlayback.announceStatus(context, "atomic-first", firstSpeech.promise)
+        SpeechPlayback.prepareAlert(context, "atomic-second", true,
+          { events.add("second starts") },
+          { events.add("second rings"); SpeechPlayback.finishAlert("atomic-second") },
+          { secondDone.countDown() })
+        SpeechPlayback.announceStatus(context, "atomic-second", secondSpeech.promise)
+      }
+      assertTrue(firstRinging.await(60, TimeUnit.SECONDS))
+      firstSpeech.await()
+      main {
+        assertEquals(listOf("first starts", "first rings"), events)
+        SpeechPlayback.shake()
+        assertTrue("The unrelated alert was removed", policy.waiting.containsKey("atomic-second"))
+      }
+      secondSpeech.await()
+      assertTrue(secondDone.await(10, TimeUnit.SECONDS))
+      main { assertEquals(listOf("first starts", "first rings", "first ends shake", "second starts", "second rings"), events) }
+    } finally { main { SpeechPlayback.stop(); SpeechPlayback.statusPolicy = original } }
+  }
+
+  @Test fun shakingDuringAlertSpeechDiscardsThatAlertsPendingRingtone() {
+    assumeTrue("Run only with no user speech or call active", !SpeechPlayback.busy && !SpeechPlayback.playback.active)
+    val original = SpeechPlayback.statusPolicy
+    val policy = Policy()
+    val speech = Result()
+    var rang = false
+    var dismissed: String? = null
+    try {
+      main {
+        SpeechPlayback.statusPolicy = policy
+        policy.waiting["shake-speaking"] = "This alert will be dismissed before its speech finishes, so its ringtone must never play."
+        SpeechPlayback.prepareAlert(context, "shake-speaking", true, {}, { rang = true }, { dismissed = it })
+        SpeechPlayback.announceStatus(context, "shake-speaking", speech.promise)
+        SpeechPlayback.shake()
+      }
+      speech.await()
+      main {
+        assertEquals(SpeechPlayback.SHAKE, dismissed)
+        assertFalse("Dismissed alert resumed its ringtone", rang)
+        assertFalse(SpeechPlayback.playback.active)
+      }
+    } finally { main { SpeechPlayback.stop(); SpeechPlayback.statusPolicy = original } }
+  }
+
+  @Test fun ringtoneGateCoversChatDeviceAndPreviewButReleasesAnIdleReader() {
+    assumeTrue("Run only with no user speech or call active", !SpeechPlayback.active && !VoiceCallService.active)
+    val originalPolicy = SpeechPlayback.statusPolicy
+    val originalPlayback = SpeechPlayback.onPlaybackStateChanged
+    val changes = mutableListOf<Boolean>()
+    try {
+      main {
+        SpeechPlayback.statusPolicy = { _, _, _ -> "null" }
+        SpeechPlayback.onPlaybackStateChanged = { changes.add(it) }
+      }
+      val ready = Result()
+      main { SpeechPlayback.startChat(context, "ringtone-reader", "Speech test", ready.promise) }
+      ready.await()
+      main {
+        assertTrue("An idle reader should retain its lease", SpeechPlayback.active)
+        assertFalse("An idle reader must allow ringing", SpeechPlayback.busy)
+      }
+      val chunk = Result()
+      main {
+        SpeechPlayback.speakChat("ringtone-reader", "The ringtone must wait until this sentence finishes.", chunk.promise)
+        assertTrue("Chat synthesis must block ringing before the first audio callback", SpeechPlayback.busy)
+        assertEquals(true, changes.last())
+      }
+      chunk.await()
+      main {
+        assertFalse("A drained reader must allow ringing", SpeechPlayback.busy)
+        assertEquals(false, changes.last())
+        SpeechPlayback.stop()
+      }
+
+      val device = Result()
+      main {
+        SpeechPlayback.speakDevice(context, "ringtone-device", "request", "Device speech must also delay the ringtone.", "en-US", 1.0, device.promise)
+        assertTrue("Device speech preparation must block ringing", SpeechPlayback.busy)
+        assertEquals(true, changes.last())
+        SpeechPlayback.cancelDeviceRequest("request")
+        assertFalse("Cancellation must release the ringtone", SpeechPlayback.busy)
+        assertEquals(false, changes.last())
+      }
+
+      val preview = Result()
+      main {
+        SpeechPlayback.announce(context, "ringtone-preview", "A voice preview also delays the ringtone.", "en-US", preview.promise, preview = true)
+        assertTrue("Preview preparation must block ringing", SpeechPlayback.busy)
+        assertEquals(true, changes.last())
+      }
+      preview.await()
+      main {
+        assertFalse("Completed preview must allow ringing", SpeechPlayback.busy)
+        assertEquals(false, changes.last())
+      }
+    } finally {
+      main {
+        SpeechPlayback.stop()
+        SpeechPlayback.statusPolicy = originalPolicy
+        SpeechPlayback.onPlaybackStateChanged = originalPlayback
+      }
+    }
+  }
+
+  @Test fun newSpeechWaitsForRingtoneAndCancellationDiscardsWaitingAudio() {
+    assumeTrue("Run only with no user speech or call active", !SpeechPlayback.busy && !SpeechPlayback.active && !SpeechPlayback.playback.active)
+    val originalPolicy = SpeechPlayback.statusPolicy
+    val originalStarted = SpeechPlayback.onChatStarted
+    val ringtone = Any()
+    val started = CountDownLatch(1)
+    try {
+      main {
+        SpeechPlayback.statusPolicy = { _, _, _ -> "null" }
+        SpeechPlayback.onChatStarted = { started.countDown() }
+      }
+      val ready = Result()
+      main { SpeechPlayback.startChat(context, "waiting-reader", "Speech test", ready.promise) }
+      ready.await()
+      val cancelled = Result()
+      main {
+        SpeechPlayback.playback.started(ringtone)
+        SpeechPlayback.speakChat("waiting-reader", "Cancelled audio must never play after the ringtone.", cancelled.promise)
+        assertTrue("New speech must leave the ringtone running", SpeechPlayback.playback.active)
+      }
+      assertFalse("Speech interrupted the ringtone", started.await(100, TimeUnit.MILLISECONDS))
+      main { SpeechPlayback.stop() }
+      cancelled.await()
+
+      val nextReady = Result()
+      main { SpeechPlayback.startChat(context, "next-reader", "Speech test", nextReady.promise) }
+      assertFalse("New reader activated during the ringtone", nextReady.done.await(100, TimeUnit.MILLISECONDS))
+      main { SpeechPlayback.playback.finished(ringtone) }
+      nextReady.await()
+      assertEquals("Cancelled audio returned after ringing ended", 1L, started.count)
+      val next = Result()
+      main { SpeechPlayback.speakChat("next-reader", "Speech starts after the ringtone has finished.", next.promise) }
+      next.await()
+      assertEquals(0L, started.count)
+    } finally {
+      main {
+        SpeechPlayback.stop()
+        SpeechPlayback.playback.finished(ringtone)
+        SpeechPlayback.statusPolicy = originalPolicy
+        SpeechPlayback.onChatStarted = originalStarted
+      }
     }
   }
 
@@ -139,6 +348,7 @@ class StatusSpeechTest {
       val status = Result()
       main {
         policy.waiting["status-test-alert"] = "Agent needs attention."
+        SpeechPlayback.prepareAlert(context, "status-test-alert", true, {}, { SpeechPlayback.finishAlert("status-test-alert") }, {})
         SpeechPlayback.announceStatus(context, "status-test-alert", status.promise)
       }
       assertFalse("Current chunk was preempted", status.done.await(100, TimeUnit.MILLISECONDS))
@@ -171,6 +381,7 @@ class StatusSpeechTest {
       val status = Result()
       main {
         policy.waiting["unrelated-alert"] = "This unrelated status announcement should finish normally."
+        SpeechPlayback.prepareAlert(context, "unrelated-alert", true, {}, { SpeechPlayback.finishAlert("unrelated-alert") }, {})
         SpeechPlayback.announceStatus(context, "unrelated-alert", status.promise)
         assertTrue(SpeechPlayback.stopOwner(SpeechPolicy.CHAT, "closing-reader"))
       }

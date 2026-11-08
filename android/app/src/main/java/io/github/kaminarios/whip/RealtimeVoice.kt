@@ -16,6 +16,7 @@ import android.os.Process
 import android.util.Log
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
+import com.facebook.react.common.LifecycleState
 import com.whipssh.RealtimeVoiceNative as Core
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicBoolean
@@ -35,6 +36,15 @@ internal object RealtimeVoice {
   private var lastToken: String? = null
   private var lastView = "{\"phase\":\"closed\"}"
   private var closingToken: String? = null
+  private class PendingStart(val token: String, val preview: Boolean, val promise: Promise, val turn: Any)
+  private var pendingStart: PendingStart? = null
+  val active: Boolean get() = current != null || closingToken != null || pendingStart != null
+  val playing: Boolean get() = current != null
+  fun shake(): Boolean {
+    val session = current ?: return false
+    if (session.preview) stop(session.token) else Core.control(session.call, Core.SKIP)
+    return true
+  }
   private val endings = mutableListOf<Promise>()
   private class CredentialFailure(status: Long) : Exception() {
     val code = when (status) {
@@ -48,13 +58,17 @@ internal object RealtimeVoice {
     Core.credentialsUpdating(updating)
     if (updating) invalidate()
   }
-  fun invalidate() { clearPrepared(); current?.let { stop(it.token); VoiceCallService.end(it.token) } }
+  fun invalidate() {
+    clearPrepared()
+    pendingStart?.let { stop(it.token); VoiceCallService.end(it.token) }
+    current?.let { stop(it.token); VoiceCallService.end(it.token) }
+  }
   fun clearPrepared() { Core.prepare(false) }
   fun prepare(context: ReactApplicationContext, enabled: Boolean) {
     Core.prepare(enabled && !context.getSystemService(KeyguardManager::class.java).isDeviceLocked)
   }
   private class CaptureBoundary(val cutoff: Long = System.nanoTime())
-  private class Session(val token: String, val call: Long, var input: AudioRecord?, var output: AudioTrack?, val preview: Boolean, val focus: VoiceMediaFocus?, val mediaStartedAt: Long, val clientElapsedMs: Long) {
+  private class Session(val token: String, val call: Long, var input: AudioRecord?, var output: AudioTrack?, val preview: Boolean, val focus: VoiceMediaFocus?, val mediaStartedAt: Long, val clientElapsedMs: Long, val turn: Any) {
     val running = AtomicBoolean(true)
     var coreStartMs = 0L
     var capture: Thread? = null
@@ -122,15 +136,33 @@ internal object RealtimeVoice {
     startMedia(context, token, config, true, promise)
   }
   @SuppressLint("MissingPermission")
-  private fun startMedia(context: ReactApplicationContext, token: String, config: String, preview: Boolean, promise: Promise) {
-    if (current != null || closingToken != null || (if (preview) VoiceCallService.active else !VoiceCallService.owns(token))) {
+  private fun startMedia(context: ReactApplicationContext, token: String, config: String, preview: Boolean, promise: Promise, turn: Any = VoiceCallService.playbackKey(token) ?: Any()) {
+    if (active || (if (preview) VoiceCallService.active else !VoiceCallService.owns(token))) {
+      if (preview) SpeechPlayback.playback.finished(turn)
       promise.reject("E_REALTIME", "The requested voice audio session is unavailable."); return
+    }
+    val pending = PendingStart(token, preview, promise, turn)
+    if (SpeechPlayback.playback.defer(turn) {
+        if (pendingStart === pending) {
+          pendingStart = null
+          if (context.lifecycleState != LifecycleState.RESUMED || context.getSystemService(KeyguardManager::class.java).isDeviceLocked) {
+            promise.reject("E_REALTIME", "Return to Whip to start voice audio.")
+            SpeechPlayback.playback.finished(turn)
+            SpeechPlayback.notifyPlaybackStateChanged()
+          } else startMedia(context, token, config, preview, promise, turn)
+        } else SpeechPlayback.playback.finished(turn)
+      }) {
+      pendingStart = pending
+      SpeechPlayback.notifyPlaybackStateChanged()
+      return
     }
     val mediaStartedAt = SystemClock.elapsedRealtime()
     val clientElapsedMs = JSONObject(config).optLong("clientElapsedMs", 0).coerceAtLeast(0)
     var call = 0L
     var focus: VoiceMediaFocus? = null
     try {
+      SpeechPlayback.playback.started(turn)
+      SpeechPlayback.yieldIdlePlayback()
       if (preview) {
         focus = VoiceMediaFocus(context) {
           current?.takeIf { it.token == token }?.let { Core.control(it.call, Core.AUDIO_FAILED) }
@@ -154,9 +186,10 @@ internal object RealtimeVoice {
       call = result
       require(call != 0L)
       if (VoiceCallService.muted(token)) Core.control(call, Core.MUTE)
-      val session = Session(token, call, null, null, preview, focus, mediaStartedAt, clientElapsedMs)
+      val session = Session(token, call, null, null, preview, focus, mediaStartedAt, clientElapsedMs, turn)
       session.coreStartMs = SystemClock.elapsedRealtime() - coreStartedAt
       current = session
+      SpeechPlayback.notifyPlaybackStateChanged()
       session.monitor = object : Runnable {
         override fun run() {
           if (current !== session) return
@@ -220,6 +253,8 @@ internal object RealtimeVoice {
       promise.resolve(null)
     } catch (failure: Exception) {
       current = null
+      if (preview) SpeechPlayback.playback.finished(turn)
+      SpeechPlayback.notifyPlaybackStateChanged()
       if (call != 0L) Core.stop(call)
       focus?.close()
       val failedCall = call
@@ -358,7 +393,10 @@ internal object RealtimeVoice {
     finally { VoiceMediaAudio.detach(track); track.release() }
   }
 
-  fun stopPreview() { current?.takeIf { it.preview }?.let { stop(it.token) } }
+  fun stopPreview() {
+    pendingStart?.takeIf { it.preview }?.let { stop(it.token) }
+    current?.takeIf { it.preview }?.let { stop(it.token) }
+  }
 
   fun control(token: String, action: Int) { current?.takeIf { it.token == token }?.let {
     if (action == Core.MUTE || action == Core.UNMUTE) {
@@ -372,6 +410,13 @@ internal object RealtimeVoice {
   fun view(token: String): String = current?.takeIf { it.token == token }?.let { Core.view(it.call) }
     ?: if (lastToken == token) lastView else "{\"phase\":\"closed\"}"
   fun stop(token: String, promise: Promise? = null) {
+    pendingStart?.takeIf { it.token == token }?.let {
+      pendingStart = null
+      SpeechPlayback.playback.cancel(it.turn)
+      if (it.preview) SpeechPlayback.playback.finished(it.turn)
+      it.promise.reject("E_REALTIME", "Voice audio was cancelled before playback started.")
+      SpeechPlayback.notifyPlaybackStateChanged()
+    }
     val session = current?.takeIf { it.token == token }
     if (session == null) {
       if (closingToken == token && promise != null) endings.add(promise) else promise?.resolve(null)
@@ -401,6 +446,8 @@ internal object RealtimeVoice {
       main.post {
         if (closingToken == token) {
           closingToken = null
+          if (session.preview) SpeechPlayback.playback.finished(session.turn)
+          SpeechPlayback.notifyPlaybackStateChanged()
           endings.toList().also { endings.clear() }.forEach { it.resolve(null) }
         }
       }

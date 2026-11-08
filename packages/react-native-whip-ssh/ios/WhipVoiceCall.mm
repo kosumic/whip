@@ -1,5 +1,6 @@
 #import "WhipVoiceCall.h"
 #import "WhipRealtimeVoice.h"
+#import "../../../ios/HerdR/WhipSpeechPlayback.h"
 #import <AVFoundation/AVFoundation.h>
 #import <CallKit/CallKit.h>
 
@@ -26,10 +27,14 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
 @property(nonatomic, copy) RCTPromiseResolveBlock soundDone;
 @property(nonatomic, copy) RCTPromiseRejectBlock soundFailed;
 @property(nonatomic, strong) NSTimer *soundTimeout;
+@property(nonatomic, strong) id playbackTurn;
+@property(nonatomic, strong) id closingTurn;
+@property(nonatomic) BOOL startRequested;
 @end
 
 @implementation WhipVoiceCall
 - (BOOL)owns:(NSString *)token { return self.active && [self.token isEqualToString:token]; }
+- (id)playbackKey:(NSString *)token { return !token ? (self.closingTurn ?: self.playbackTurn) : [self.token isEqualToString:token] ? self.playbackTurn : nil; }
 + (instancetype)shared
 {
   static WhipVoiceCall *call;
@@ -60,7 +65,16 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
   [self stopSound];
   self.token = token; self.label = label; self.uuid = NSUUID.UUID;
   self.ready = resolve; self.failed = reject;
-  CXStartCallAction *action = [[CXStartCallAction alloc] initWithCallUUID:self.uuid handle:[[CXHandle alloc] initWithType:CXHandleTypeGeneric value:label]];
+  self.playbackTurn = [NSObject new];
+  [self activateCall:token turn:self.playbackTurn];
+}
+- (void)activateCall:(NSString *)token turn:(id)turn
+{
+  if (![self.token isEqualToString:token] || self.playbackTurn != turn) { [WhipSpeechPlayback.shared finishPlayback:turn]; return; }
+  if ([WhipSpeechPlayback.shared deferPlayback:turn block:^{ [self activateCall:token turn:turn]; }]) return;
+  [WhipSpeechPlayback.shared startPlayback:turn];
+  self.startRequested = YES;
+  CXStartCallAction *action = [[CXStartCallAction alloc] initWithCallUUID:self.uuid handle:[[CXHandle alloc] initWithType:CXHandleTypeGeneric value:self.label]];
   action.video = NO;
   __weak WhipVoiceCall *weakSelf = self;
   self.timeout = [NSTimer scheduledTimerWithTimeInterval:15 repeats:NO block:^(NSTimer *timer) {
@@ -113,7 +127,9 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
 {
   self.audioActive = NO;
   self.active = NO;
-  if (self.token) [self fail:@"The system interrupted voice chat for another call."];
+  if (self.token && self.startRequested) [self fail:@"The system interrupted voice chat for another call."];
+  id closing = self.closingTurn; self.closingTurn = nil;
+  [WhipSpeechPlayback.shared finishPlayback:closing];
   if (self.pendingSoundURI) [self startSound:self.pendingSoundURI inCall:NO];
 }
 
@@ -175,6 +191,7 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
 {
   if (![self.token isEqualToString:token]) { resolve(nil); return; }
   [self.endings addObject:[resolve copy]];
+  if (!self.startRequested) { [self clear:nil]; return; }
   if (self.ending) return;
   self.ending = YES;
   NSUUID *uuid = self.uuid;
@@ -238,6 +255,8 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
 }
 - (void)clear:(NSString *)error
 {
+  id turn = self.playbackTurn;
+  [WhipSpeechPlayback.shared cancelPlayback:turn];
   [WhipRealtimeVoice.shared stop:self.token];
   self.muted = NO;
   [self emit:error ? @{@"type": @"ended", @"error": error} : @{@"type": @"ended"}];
@@ -245,6 +264,9 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
   self.ready = nil; self.failed = nil;
   [self.timeout invalidate]; self.timeout = nil;
   self.active = NO; self.token = nil; self.uuid = nil; self.label = nil;
+  self.playbackTurn = nil; self.startRequested = NO;
+  if (self.audioActive) self.closingTurn = turn;
+  else [WhipSpeechPlayback.shared finishPlayback:turn];
   self.ending = NO;
   NSArray *endings = [self.endings copy];
   [self.endings removeAllObjects];

@@ -21,6 +21,7 @@ export interface ChatSpeechTarget {
 interface ListeningSession {
   target: ChatSpeechTarget;
   stop: () => void;
+  retire: () => void;
   silence: () => Promise<void>;
 }
 
@@ -81,10 +82,10 @@ function startChatSpeech(
     onStopped();
     return () => {};
   }
-  const automaticStopped = automatic?.pause();
-  active?.stop();
+  active?.retire();
   const token = `${target.bindingToken}:${++generation}`;
   let stopped = false;
+  let retiring = false;
   let ready = false;
   let draining = false;
   let unsubscribe = () => {};
@@ -107,8 +108,9 @@ function startChatSpeech(
   };
   const fail = (error: unknown) => {
     if (stopped) return;
+    const report = !retiring;
     stop();
-    onError(error);
+    if (report) onError(error);
   };
   const emitter: Pick<NativeEventEmitter<ChatSpeechEvents>, 'addListener'> =
     Platform.OS === 'ios' ? new NativeEventEmitter<ChatSpeechEvents>(native) : DeviceEventEmitter;
@@ -120,7 +122,16 @@ function startChatSpeech(
     }
     stop();
   });
-  active = { target, stop, silence: () => { stop(); return stoppedPlayback; } };
+  active = {
+    target, stop,
+    retire: () => {
+      if (stopped || retiring) return;
+      retiring = true;
+      unsubscribe();
+      if (!draining) stop();
+    },
+    silence: () => { stop(); return stoppedPlayback; },
+  };
   setChatSpeechFocus(target);
 
   const drain = async () => {
@@ -138,7 +149,7 @@ function startChatSpeech(
           await native.speakChat(token, text);
         }
       }
-      if (messages) stop();
+      if (messages || retiring) stop();
     } catch (error) {
       fail(error);
     } finally {
@@ -159,11 +170,15 @@ function startChatSpeech(
       void drain();
     });
   }
-  // Rust admission replaces any announcement or device speech atomically.
+  // Native admission waits for the current unit. Pause automatic selection
+  // only after that handoff, so it cannot cut off the previous utterance.
   Promise.resolve()
-    .then(() => automaticStopped)
-    .then(() => stopped ? undefined : native.startChatSpeech(token, target.label))
-    .then(() => {
+    .then(() => stopped ? undefined : messages && native.startResponseSpeech
+      ? native.startResponseSpeech(token, target.label)
+      : native.startChatSpeech(token, target.label))
+    .then(async () => {
+      if (stopped) return;
+      await automatic?.pause();
       if (stopped) return;
       ready = true;
       return drain();

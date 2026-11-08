@@ -13,12 +13,17 @@ headers = File.join(build, 'Headers')
 FileUtils.mkdir_p(headers)
 react = File.join(root, 'node_modules', 'react-native')
 {
-  'React' => File.join(react, 'React', 'Base'),
   'RCTDeprecation' => File.join(react, 'ReactApple', 'Libraries', 'RCTFoundation', 'RCTDeprecation', 'Exported')
 }.each do |name, path|
   link = File.join(headers, name)
   File.unlink(link) if File.symlink?(link)
   FileUtils.ln_s(path, link)
+end
+react_headers = File.join(headers, 'React')
+File.unlink(react_headers) if File.symlink?(react_headers)
+FileUtils.mkdir_p(react_headers)
+(Dir[File.join(react, 'React', 'Base', '*.h')] + [File.join(react, 'React', 'Modules', 'RCTEventEmitter.h')]).each do |path|
+  FileUtils.ln_sf(path, File.join(react_headers, File.basename(path)))
 end
 project = Xcodeproj::Project.new(File.join(build, 'SpeechTests.xcodeproj'))
 host = project.new_target(:application, 'SpeechTestHost', :ios, '16.4')
@@ -34,7 +39,7 @@ host.build_configurations.each do |config|
 end
 target = project.new_target(:unit_test_bundle, 'SpeechTests', :ios, '16.4')
 target.add_dependency(host)
-target.add_system_frameworks(%w[UIKit AVFoundation CoreMotion XCTest])
+target.add_system_frameworks(%w[UIKit AVFoundation CoreMotion UserNotifications XCTest])
 %w[ios/HerdR/WhipSpeechPlayback.m ios/Tests/WhipSpeechPlaybackTests.m].each do |path|
   target.source_build_phase.add_file_reference(project.main_group.new_file(File.join(root, path)))
 end
@@ -56,6 +61,21 @@ target.build_configurations.each do |config|
     'CODE_SIGNING_ALLOWED' => 'NO'
   })
 end
+native = project.new_target(:static_library, 'VoiceAdapterCompile', :ios, '16.4')
+native.add_system_frameworks(%w[UIKit AVFoundation CallKit Security])
+%w[WhipVoiceCall.mm WhipRealtimeVoice.mm].each do |name|
+  native.source_build_phase.add_file_reference(project.main_group.new_file(File.join(root, 'packages', 'react-native-whip-ssh', 'ios', name)))
+end
+native.source_build_phase.add_file_reference(project.main_group.new_file(File.join(root, 'ios', 'HerdR', 'HerdrBackground.m')))
+native.build_configurations.each do |config|
+  config.build_settings.merge!({
+    'ARCHS' => 'arm64', 'ONLY_ACTIVE_ARCH' => 'YES', 'CLANG_ENABLE_OBJC_ARC' => 'YES',
+    'CLANG_CXX_LANGUAGE_STANDARD' => 'c++20', 'CODE_SIGNING_ALLOWED' => 'NO',
+    'GCC_PREPROCESSOR_DEFINITIONS' => ['$(inherited)', 'RCT_REMOVE_LEGACY_ARCH=1'],
+    'HEADER_SEARCH_PATHS' => [File.join(root, 'ios', 'HerdR'), headers]
+  })
+end
+target.add_dependency(native)
 project.save
 scheme = Xcodeproj::XCScheme.new
 scheme.configure_with_targets(host, target)

@@ -124,9 +124,9 @@ Notifications.setNotificationHandler({
     const delivery = notification.request.content.data?.[ALERT_LEVEL_DATA_KEY];
     const regular = delivery === 'regular';
     return Promise.resolve({
-      // Android uses the silent channel so vibration and heads-up presentation
-      // remain available. iOS controls foreground sound through this handler.
-      shouldPlaySound: Platform.OS === 'android' || delivery !== 'silent',
+      // Local agent audio belongs to the native playback unit. Android still
+      // needs channel presentation; iOS must suppress the system's second tone.
+      shouldPlaySound: Platform.OS === 'android' || delivery === undefined,
       shouldSetBadge: false,
       shouldShowBanner: true,
       shouldShowList: true,
@@ -426,7 +426,7 @@ async function runEffects(
 }
 
 async function performEffect({
-  action,
+  action, id,
 }: LocalAlertEffect): Promise<LocalAlertOutcome> {
   switch (action.tag) {
     case LocalAlertAction_Tags.Speak: {
@@ -443,8 +443,7 @@ async function performEffect({
       const regular = request.delivery === LocalAlertDelivery.Regular;
       const persistent = request.delivery === LocalAlertDelivery.Persistent;
       const silent = request.delivery === LocalAlertDelivery.Silent;
-      const managedSound =
-        !silent && Platform.OS === 'android' && request.announcement !== undefined;
+      const managedSound = !silent;
       const channelId = silent
         ? SILENT_CHANNEL_ID
         : regular
@@ -476,8 +475,8 @@ async function performEffect({
         content.sound = false;
         content.vibrate = BRIEF_VIBRATION_PATTERN;
       } else if (managedSound) {
-        // The native player owns spoken alerts' sound and vibration so Android's
-        // independent channel ringtone cannot play over the announcement.
+        // Native audio waits for any ongoing speech, even when this alert has
+        // no announcement of its own.
         content.sound = false;
       } else if (!regular) {
         content.sound = 'default';
@@ -489,19 +488,23 @@ async function performEffect({
         content,
         trigger: { channelId },
       });
-      if (managedSound) {
+      if (Platform.OS === 'android' || Platform.OS === 'ios') {
         await prepareSpokenAgentAlert(
           notificationId,
           channelId,
           persistent,
-          regular ? [] : persistent ? ALERT_VIBRATION_PATTERN : BRIEF_VIBRATION_PATTERN,
+          silent || regular ? [] : persistent ? ALERT_VIBRATION_PATTERN : BRIEF_VIBRATION_PATTERN,
+          id,
         );
       }
       setNotificationDeliveryAvailable(true);
       return new LocalAlertOutcome.Scheduled({ notificationId });
     }
     case LocalAlertAction_Tags.DismissNotification:
-      await Notifications.dismissNotificationAsync(action.inner.notificationId);
+      await Promise.all([
+        dismissPersistentAgentAlert(action.inner.notificationId),
+        Notifications.dismissNotificationAsync(action.inner.notificationId),
+      ]);
       break;
     case LocalAlertAction_Tags.ArmPersistent:
       await armPersistentAgentAlert(

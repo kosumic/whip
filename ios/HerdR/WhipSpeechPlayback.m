@@ -6,6 +6,33 @@
 #import <math.h>
 #import <UIKit/UIKit.h>
 #import <stdatomic.h>
+#import <UserNotifications/UserNotifications.h>
+
+@interface WhipPendingSpeech : NSObject
+@property(nonatomic) enum WhipSpeechKind kind;
+@property(nonatomic, copy) NSString *owner;
+@property(nonatomic, copy) NSString *request;
+@property(nonatomic, strong) id turn;
+@property(nonatomic) BOOL localOnly;
+@property(nonatomic) BOOL atomic;
+@property(nonatomic, copy) dispatch_block_t ready;
+@property(nonatomic, copy) void (^ended)(NSString *, NSString *);
+@end
+@implementation WhipPendingSpeech
+@end
+
+@interface WhipAlertUnit : NSObject
+@property(nonatomic, copy) NSString *token;
+@property(nonatomic, copy) NSString *notification;
+@property(nonatomic) BOOL prepared;
+@property(nonatomic) BOOL speech;
+@property(nonatomic) BOOL silent;
+@property(nonatomic) BOOL persistent;
+@property(nonatomic) BOOL ringing;
+@property(nonatomic) NSTimeInterval timeout;
+@end
+@implementation WhipAlertUnit
+@end
 
 NSString *const WhipChatSpeechStopped = @"WhipChatSpeechStopped";
 NSString *const WhipChatSpeechStarted = @"WhipChatSpeechStarted";
@@ -20,6 +47,37 @@ static NSString *const WhipAutomaticOwner = @"automatic-chat-speech";
 static const double WhipShakeGravityThreshold = 2.7;
 static const NSTimeInterval WhipShakeInterval = 0.02;
 static const NSTimeInterval WhipModelInitializationTimeout = 60;
+
+// A small cancellable app tone. System notification sounds cannot be stopped
+// when the user shakes, so they cannot own an atomic playback unit.
+static NSData *WhipAlertTone(void)
+{
+  static NSData *tone;
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{
+    const uint32_t rate = 24000, frames = rate * 3 / 4, bytes = frames * sizeof(int16_t);
+    NSMutableData *data = [NSMutableData dataWithLength:44 + bytes];
+    uint8_t *header = data.mutableBytes;
+    memcpy(header, "RIFF", 4); memcpy(header + 8, "WAVEfmt ", 8); memcpy(header + 36, "data", 4);
+    uint32_t fields[] = {CFSwapInt32HostToLittle(36 + bytes), CFSwapInt32HostToLittle(16),
+      CFSwapInt32HostToLittle(rate), CFSwapInt32HostToLittle(rate * 2), CFSwapInt32HostToLittle(bytes)};
+    memcpy(header + 4, &fields[0], 4); memcpy(header + 16, &fields[1], 4);
+    memcpy(header + 24, &fields[2], 4); memcpy(header + 28, &fields[3], 4); memcpy(header + 40, &fields[4], 4);
+    uint16_t format[] = {CFSwapInt16HostToLittle(1), CFSwapInt16HostToLittle(1), CFSwapInt16HostToLittle(2), CFSwapInt16HostToLittle(16)};
+    memcpy(header + 20, &format[0], 4); memcpy(header + 32, &format[2], 4);
+    int16_t *samples = (int16_t *)(header + 44);
+    for (uint32_t i = 0; i < frames; i++) {
+      double t = (double)i / rate;
+      double start = t < 0.24 ? 0 : 0.28;
+      double position = t - start;
+      double value = position >= 0 && position < 0.2
+        ? sin(2 * M_PI * (start == 0 ? 880 : 660) * position) * MIN(1, position / 0.005) * exp(-position * 20) : 0;
+      samples[i] = CFSwapInt16HostToLittle((int16_t)(value * 12000));
+    }
+    tone = data;
+  });
+  return tone;
+}
 
 static dispatch_queue_t WhipPcmSpeechWorker(void)
 {
@@ -161,7 +219,7 @@ static bool WhipConsumeSpeechPcm(void *context, const float *samples, uintptr_t 
   @autoreleasepool { return [(__bridge WhipPcmSpeechAudio *)context write:samples count:count]; }
 }
 
-@interface WhipSpeechPlayback () <AVSpeechSynthesizerDelegate>
+@interface WhipSpeechPlayback () <AVSpeechSynthesizerDelegate, AVAudioPlayerDelegate>
 @property(nonatomic, strong) AVSpeechSynthesizer *speech;
 @property(nonatomic, strong) AVSpeechUtterance *utterance;
 @property(nonatomic, copy) NSDictionary *captionSource;
@@ -181,6 +239,8 @@ static bool WhipConsumeSpeechPcm(void *context, const float *samples, uintptr_t 
 @property(nonatomic, strong) WhipPcmSpeechAudio *pcm;
 @property(nonatomic, copy) NSString *systemVoice;
 @property(nonatomic) BOOL localOnly;
+@property(nonatomic) BOOL atomic;
+@property(nonatomic) BOOL atomicPlaying;
 @property(nonatomic) BOOL reportedStart;
 @property(nonatomic, strong) NSTimer *levelTimer;
 @property(nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *statusCallbacks;
@@ -191,6 +251,14 @@ static bool WhipConsumeSpeechPcm(void *context, const float *samples, uintptr_t 
 @property(nonatomic, copy) NSString *statusOwner;
 @property(nonatomic) uint64_t automaticId;
 @property(nonatomic, copy) NSDictionary *automaticFocus;
+@property(nonatomic, strong) NSMapTable<id, NSString *> *playbackIds;
+@property(nonatomic, strong) NSMutableDictionary<NSString *, dispatch_block_t> *playbackCallbacks;
+@property(nonatomic, strong) id turn;
+@property(nonatomic, strong) NSMutableSet<WhipPendingSpeech *> *pendingSpeech;
+@property(nonatomic, strong) NSMutableDictionary<NSString *, WhipAlertUnit *> *alertUnits;
+@property(nonatomic, strong) WhipAlertUnit *currentAlert;
+@property(nonatomic, strong) AVAudioPlayer *ringtone;
+@property(nonatomic, strong) NSTimer *ringtoneTimeout;
 - (void)drainAutomatic;
 @end
 
@@ -228,6 +296,10 @@ static void WhipWakeAutomaticSpeech(void)
 {
   if ((self = [super init])) {
     _statusCallbacks = [NSMutableDictionary new];
+    _playbackIds = [NSMapTable mapTableWithKeyOptions:NSPointerFunctionsStrongMemory | NSPointerFunctionsObjectPointerPersonality valueOptions:NSPointerFunctionsStrongMemory];
+    _playbackCallbacks = [NSMutableDictionary new];
+    _pendingSpeech = [NSMutableSet new];
+    _alertUnits = [NSMutableDictionary new];
     _speech = [AVSpeechSynthesizer new];
     _speech.delegate = self;
     _motion = [CMMotionManager new];
@@ -372,63 +444,289 @@ static void WhipWakeAutomaticSpeech(void)
   whip_alert_speech_free(result);
   return value;
 }
+- (NSString *)playbackId:(id)key
+{
+  NSString *identity = [self.playbackIds objectForKey:key];
+  if (!identity) {
+    identity = [self alertCommand:@"playback-id" token:@"" lease:0];
+    if (identity.longLongValue <= 0) [NSException raise:NSInternalInconsistencyException format:@"Rust playback admission is unavailable"];
+    [self.playbackIds setObject:identity forKey:key];
+  }
+  return identity;
+}
+- (BOOL)deferPlayback:(id)key block:(dispatch_block_t)block
+{
+  NSString *identity = [self playbackId:key];
+  if (![[self alertCommand:@"playback-defer" token:identity lease:0] isEqualToString:@"true"]) return NO;
+  self.playbackCallbacks[identity] = [block copy];
+  return YES;
+}
+- (void)startPlayback:(id)key
+{
+  BOOL admitted = [[self alertCommand:@"playback-start" token:[self playbackId:key] lease:0] isEqualToString:@"true"];
+  if (!admitted) [NSException raise:NSInternalInconsistencyException format:@"Playback units cannot interrupt one another"];
+}
+- (void)cancelPlayback:(id)key
+{
+  if (!key) return;
+  NSString *identity = [self.playbackIds objectForKey:key];
+  if (!identity) return;
+  [self alertCommand:@"playback-cancel" token:identity lease:0];
+  [self.playbackCallbacks removeObjectForKey:identity];
+  if (![[self alertCommand:@"playback-owns" token:identity lease:0] isEqualToString:@"true"]) [self.playbackIds removeObjectForKey:key];
+}
+- (void)finishPlayback:(id)key
+{
+  NSString *identity = key ? [self.playbackIds objectForKey:key] : nil;
+  if (!identity || ![[self alertCommand:@"playback-finish" token:identity lease:0] isEqualToString:@"true"]) return;
+  [self.playbackIds removeObjectForKey:key];
+  [self.playbackCallbacks removeObjectForKey:identity];
+  dispatch_async(dispatch_get_main_queue(), ^{
+    while (YES) {
+      NSString *next = [self alertCommand:@"playback-next" token:@"" lease:0];
+      if ([next isEqualToString:@"null"]) break;
+      dispatch_block_t block = self.playbackCallbacks[next];
+      [self.playbackCallbacks removeObjectForKey:next];
+      if (block) block(); else [self alertCommand:@"playback-finish" token:next lease:0];
+    }
+  });
+}
+- (void)yieldIdlePlayback
+{
+  if (!self.lease || self.kind != WhipSpeechChat || self.utterance || [WhipVoiceCall.shared playbackKey:self.owner] == self.turn) return;
+  whip_speech_stop(self.lease);
+  [self suspendChat];
+}
+- (void)finishTurn:(id)turn
+{
+  if (!turn || self.currentAlert == turn || [WhipVoiceCall.shared playbackKey:nil] == turn) return;
+  if (self.turn == turn && self.atomicPlaying) return;
+  [self finishPlayback:turn];
+}
+- (void)queueSpeech:(enum WhipSpeechKind)kind owner:(NSString *)owner request:(NSString *)request localOnly:(BOOL)localOnly atomic:(BOOL)atomic ready:(dispatch_block_t)ready ended:(void (^)(NSString *, NSString *))ended
+{
+  WhipPendingSpeech *pending = [WhipPendingSpeech new];
+  pending.kind = kind; pending.owner = owner; pending.request = request;
+  pending.localOnly = localOnly; pending.ready = ready; pending.ended = ended;
+  pending.atomic = atomic;
+  pending.turn = [WhipVoiceCall.shared playbackKey:owner] ?: [NSObject new];
+  [self.pendingSpeech addObject:pending];
+  [self admitSpeech:pending];
+}
+- (void)admitSpeech:(WhipPendingSpeech *)pending
+{
+  if (![self.pendingSpeech containsObject:pending]) { [self finishPlayback:pending.turn]; return; }
+  if ([self deferPlayback:pending.turn block:^{ [self admitSpeech:pending]; }]) return;
+  [self.pendingSpeech removeObject:pending];
+  if (self.lease && self.kind == WhipSpeechChat && pending.kind != WhipSpeechChat) {
+    whip_speech_stop(self.lease);
+    [self suspendChat];
+  }
+  if (![self begin:pending.kind owner:pending.owner request:pending.request ended:pending.ended]) {
+    [self finishPlayback:pending.turn];
+    if (pending.ended) pending.ended(WhipSpeechStopped, @"Could not start speech");
+    return;
+  }
+  self.turn = pending.turn;
+  self.localOnly = pending.localOnly;
+  self.atomic = pending.atomic;
+  [self startPlayback:pending.turn];
+  pending.ready();
+  if (self.turn == pending.turn && self.kind == WhipSpeechChat && !self.utterance) [self finishTurn:self.turn];
+}
+- (BOOL)cancelPendingSpeech:(BOOL (^)(WhipPendingSpeech *))matches
+{
+  BOOL cancelled = NO;
+  for (WhipPendingSpeech *pending in self.pendingSpeech.allObjects) if (matches(pending)) {
+    cancelled = YES;
+    [self.pendingSpeech removeObject:pending];
+    [self cancelPlayback:pending.turn];
+    [self finishPlayback:pending.turn];
+    if (pending.ended) pending.ended(WhipSpeechStopped, nil);
+  }
+  return cancelled;
+}
+- (void)suspendChat
+{
+  NSMutableDictionary *chat = [@{@"owner": self.owner, @"localOnly": @(self.localOnly), @"atomic": @(self.atomic), @"reportedStart": @(self.reportedStart)} mutableCopy];
+  if (self.ended) chat[@"ended"] = [self.ended copy];
+  self.suspendedChat = chat;
+  [self cancelPlayback:self.turn];
+  self.owner = nil; self.ended = nil; self.lease = 0; self.turn = nil;
+  [self clear:WhipSpeechCompleted error:nil];
+}
 - (void)announceStatus:(NSString *)owner resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
   if (![[self alertCommand:@"register" token:owner lease:0] isEqualToString:@"true"]) { resolve(@"busy"); return; }
   self.statusCallbacks[owner] = @{@"resolve": [resolve copy], @"reject": [reject copy]};
+  [self alertUnit:owner];
   [self drainStatus];
 }
 - (void)refreshStatus { [self drainStatus]; }
 - (BOOL)drainStatus
 {
+  for (WhipAlertUnit *unit in self.alertUnits.allValues) {
+    if (!unit.prepared && [[self alertCommand:@"speech-only" token:unit.token lease:0] isEqualToString:@"true"]) unit.prepared = YES;
+  }
   for (NSString *token in self.statusCallbacks.allKeys) {
     if (![token isEqualToString:self.statusOwner] && ![[self alertCommand:@"valid" token:token lease:0] isEqualToString:@"true"]) {
       RCTPromiseResolveBlock resolve = self.statusCallbacks[token][@"resolve"];
       [self.statusCallbacks removeObjectForKey:token];
       resolve(@"busy");
+      WhipAlertUnit *unit = self.alertUnits[token];
+      if (unit != self.currentAlert) {
+        if (unit.prepared) unit.speech = NO;
+        else { [self.alertUnits removeObjectForKey:token]; [self cancelPlayback:unit]; }
+      }
     }
   }
-  if (self.utterance || self.pcm || (self.lease && self.kind != WhipSpeechChat) || WhipVoiceCall.shared.active) return NO;
-  NSString *json = [self alertCommand:@"take" token:@"" lease:self.lease];
-  if ([json isEqualToString:@"null"]) {
-    [self resumeChat];
-    dispatch_async(dispatch_get_main_queue(), ^{ [self drainAutomatic]; });
-    return NO;
+  BOOL waiting = self.currentAlert != nil;
+  for (WhipAlertUnit *unit in self.alertUnits.allValues) {
+    if (!unit.prepared || unit == self.currentAlert || (unit.speech && !self.statusCallbacks[unit.token])) continue;
+    waiting = YES;
+    if (![self deferPlayback:unit block:^{ [self startAlert:unit]; }]) [self startAlert:unit];
   }
+  return waiting;
+}
+- (WhipAlertUnit *)alertUnit:(NSString *)token
+{
+  WhipAlertUnit *unit = self.alertUnits[token];
+  if (!unit) { unit = [WhipAlertUnit new]; unit.token = token; unit.speech = YES; self.alertUnits[token] = unit; }
+  return unit;
+}
+- (void)prepareAlertNotification:(NSString *)notification effect:(NSString *)effect
+{
+  NSString *json = [self alertCommand:@"effect-alert" token:effect lease:0];
+  NSDictionary *info = [NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+  if (![info isKindOfClass:NSDictionary.class]) {
+    [UNUserNotificationCenter.currentNotificationCenter removeDeliveredNotificationsWithIdentifiers:@[notification]];
+    return;
+  }
+  WhipAlertUnit *unit = [self alertUnit:info[@"token"]];
+  unit.notification = notification; unit.prepared = YES;
+  unit.speech = [info[@"speech"] boolValue]; unit.silent = [info[@"silent"] boolValue];
+  unit.persistent = [info[@"persistent"] boolValue];
+  unit.timeout = MIN(60, MAX(1, [info[@"timeoutMs"] doubleValue] / 1000));
+  [self drainStatus];
+}
+- (void)dismissAlertNotification:(NSString *)notification
+{
+  for (WhipAlertUnit *unit in self.alertUnits.allValues) {
+    if (!notification || [unit.notification isEqualToString:notification]) [self finishAlert:unit.token reason:WhipSpeechStopped];
+  }
+  if (notification) [UNUserNotificationCenter.currentNotificationCenter removeDeliveredNotificationsWithIdentifiers:@[notification]];
+}
+- (void)startAlert:(WhipAlertUnit *)unit
+{
+  if (self.alertUnits[unit.token] != unit) { [self finishPlayback:unit]; return; }
+  if ([self deferPlayback:unit block:^{ [self startAlert:unit]; }]) return;
+  [self startPlayback:unit];
+  if (![[self alertCommand:@"alert-valid" token:unit.token lease:0] isEqualToString:@"true"]) {
+    [self finishAlert:unit.token reason:WhipSpeechStopped]; return;
+  }
+  self.currentAlert = unit;
+  if (!unit.speech || ![[self alertCommand:@"valid" token:unit.token lease:0] isEqualToString:@"true"]) { [self ringAlert:unit]; return; }
+  NSString *json = [self alertCommand:@"take-token" token:unit.token lease:self.lease];
+  if ([json isEqualToString:@"null"]) { [self ringAlert:unit]; return; }
   NSDictionary *next = [NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
-  if (!next) return NO;
+  if (!next) { [self finishAlert:unit.token reason:WhipSpeechStopped]; return; }
   if (self.lease) {
-    NSMutableDictionary *chat = [@{@"owner": self.owner, @"localOnly": @(self.localOnly), @"reportedStart": @(self.reportedStart)} mutableCopy];
-    if (self.ended) chat[@"ended"] = [self.ended copy];
-    self.suspendedChat = chat;
-    // Detach without publishing a user stop or settling the held chunk.
-    self.owner = nil;
-    self.ended = nil;
-    self.lease = 0;
-    [self clear:WhipSpeechCompleted error:nil];
+    [self suspendChat];
   }
   NSString *token = next[@"token"];
   self.statusOwner = token;
   self.lease = [next[@"lease"] unsignedLongLongValue];
   self.kind = WhipSpeechAnnouncement;
   self.owner = token;
+  self.turn = unit;
   self.localOnly = NO;
   __weak WhipSpeechPlayback *weakSelf = self;
   self.ended = ^(NSString *reason, NSString *error) {
     WhipSpeechPlayback *playback = weakSelf;
     playback.statusOwner = nil;
-    if (![reason isEqualToString:@"shake"]) [playback alertCommand:@"finish" token:token lease:0];
+    [playback alertCommand:@"finish" token:token lease:0];
     NSDictionary *callbacks = playback.statusCallbacks[token];
     [playback.statusCallbacks removeObjectForKey:token];
     RCTPromiseResolveBlock resolve = callbacks[@"resolve"];
     RCTPromiseRejectBlock reject = callbacks[@"reject"];
     if (error) { if (reject) reject(WhipSpeechError, error, nil); }
     else if (resolve) resolve(reason);
-    dispatch_async(dispatch_get_main_queue(), ^{ [weakSelf drainStatus]; });
+    if (playback.alertUnits[token] == unit) {
+      if ([reason isEqualToString:WhipSpeechCompleted] || error) [playback ringAlert:unit];
+      else [playback finishAlert:token reason:reason];
+    }
   };
   [self watchShake];
   [self play:next[@"text"] language:next[@"language"] rate:1];
-  return YES;
+}
+- (void)ringAlert:(WhipAlertUnit *)unit
+{
+  if (self.alertUnits[unit.token] != unit || unit.ringing) return;
+  unit.ringing = YES;
+  if (unit.silent || !unit.notification) { [self finishAlert:unit.token reason:WhipSpeechCompleted]; return; }
+  [self watchShake];
+  [self playAlertRingtone:unit.token];
+}
+- (void)playAlertRingtone:(NSString *)token
+{
+  WhipAlertUnit *unit = self.alertUnits[token];
+  if (!unit) return;
+  [UNUserNotificationCenter.currentNotificationCenter getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings *settings) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+      if (self.currentAlert != unit || self.alertUnits[unit.token] != unit) return;
+      if (settings.soundSetting != UNNotificationSettingEnabled) {
+        [self finishAlert:unit.token reason:WhipSpeechCompleted]; return;
+      }
+      NSError *error = nil;
+      AVAudioSession *audio = AVAudioSession.sharedInstance;
+      NSString *category = unit.persistent ? AVAudioSessionCategoryPlayback : AVAudioSessionCategoryAmbient;
+      if (![audio setCategory:category mode:AVAudioSessionModeDefault options:AVAudioSessionCategoryOptionMixWithOthers error:&error] || ![audio setActive:YES error:&error]) {
+        [self finishAlert:unit.token reason:WhipSpeechStopped]; return;
+      }
+      self.audioActive = YES;
+      self.ringtone = [[AVAudioPlayer alloc] initWithData:[self.class alertRingtoneData] error:&error];
+      self.ringtone.delegate = self;
+      self.ringtone.numberOfLoops = unit.persistent ? -1 : 0;
+      if (!self.ringtone || ![self.ringtone play]) { [self finishAlert:unit.token reason:WhipSpeechStopped]; return; }
+      self.ringtoneTimeout = [NSTimer scheduledTimerWithTimeInterval:unit.timeout repeats:NO block:^(NSTimer *timer) {
+        if (self.currentAlert == unit) [self finishAlert:unit.token reason:WhipSpeechCompleted];
+      }];
+      [NSRunLoop.mainRunLoop addTimer:self.ringtoneTimeout forMode:NSRunLoopCommonModes];
+    });
+  }];
+}
++ (NSData *)alertRingtoneData { return WhipAlertTone(); }
+- (void)audioPlayerDidFinishPlaying:(AVAudioPlayer *)player successfully:(BOOL)flag
+{
+  if (player == self.ringtone && self.currentAlert) [self finishAlert:self.currentAlert.token reason:WhipSpeechCompleted];
+}
+- (void)audioPlayerDecodeErrorDidOccur:(AVAudioPlayer *)player error:(NSError *)error
+{
+  if (player == self.ringtone && self.currentAlert) [self finishAlert:self.currentAlert.token reason:WhipSpeechStopped];
+}
+- (void)finishAlert:(NSString *)token reason:(NSString *)reason
+{
+  WhipAlertUnit *unit = self.alertUnits[token];
+  if (!unit) return;
+  [self.alertUnits removeObjectForKey:token];
+  [self cancelPlayback:unit];
+  if (self.currentAlert == unit) {
+    self.currentAlert = nil;
+    [self.ringtoneTimeout invalidate]; self.ringtoneTimeout = nil;
+    [self.ringtone stop]; self.ringtone = nil;
+    if (self.turn == unit && whip_speech_stop(self.lease)) [self clear:reason error:nil];
+    [self.motion stopAccelerometerUpdates];
+    [self releaseAudio];
+  }
+  RCTPromiseResolveBlock resolve = self.statusCallbacks[token][@"resolve"];
+  [self.statusCallbacks removeObjectForKey:token];
+  if (resolve) resolve(reason);
+  if (![reason isEqualToString:WhipSpeechCompleted]) {
+    [self alertCommand:@"dismiss-alert" token:token lease:0];
+    if (unit.notification) [UNUserNotificationCenter.currentNotificationCenter removeDeliveredNotificationsWithIdentifiers:@[unit.notification]];
+  }
+  [self finishPlayback:unit];
+  dispatch_async(dispatch_get_main_queue(), ^{ [self drainStatus]; [self resumeChat]; [self drainAutomatic]; });
 }
 - (void)resumeChat
 {
@@ -441,16 +739,21 @@ static void WhipWakeAutomaticSpeech(void)
   self.boundaryReject = nil;
   NSDictionary *pending = self.deferredChat;
   self.deferredChat = nil;
-  if (![self begin:WhipSpeechChat owner:previous[@"owner"] request:@"" ended:previous[@"ended"]]) {
-    if (failed) failed(WhipSpeechError, @"Could not resume chat speech", nil);
-    RCTPromiseRejectBlock reject = pending[@"reject"];
-    if (reject) reject(WhipSpeechError, @"Could not resume chat speech", nil);
-    return;
-  }
-  self.localOnly = [previous[@"localOnly"] boolValue];
-  self.reportedStart = [previous[@"reportedStart"] boolValue];
-  if (completed) completed(nil);
-  if (pending) [self speakChat:previous[@"owner"] text:pending[@"text"] source:pending[@"source"] resolve:pending[@"resolve"] reject:pending[@"reject"]];
+  __block BOOL ready = NO;
+  [self queueSpeech:WhipSpeechChat owner:previous[@"owner"] request:@"" localOnly:[previous[@"localOnly"] boolValue] atomic:[previous[@"atomic"] boolValue] ready:^{
+    ready = YES;
+    self.reportedStart = [previous[@"reportedStart"] boolValue];
+    if (completed) completed(nil);
+    if (pending) [self speakChat:previous[@"owner"] text:pending[@"text"] source:pending[@"source"] resolve:pending[@"resolve"] reject:pending[@"reject"]];
+  } ended:^(NSString *reason, NSString *error) {
+    void (^ended)(NSString *, NSString *) = previous[@"ended"];
+    if (ended) ended(reason, error);
+    if (!ready) {
+      if (failed) failed(WhipSpeechError, error ?: @"Speech cancelled before resuming", nil);
+      RCTPromiseRejectBlock reject = pending[@"reject"];
+      if (reject) reject(WhipSpeechError, error ?: @"Speech cancelled before resuming", nil);
+    }
+  }];
 }
 - (void)discardSuspendedChat:(NSString *)reason error:(NSString *)error
 {
@@ -477,7 +780,7 @@ static void WhipWakeAutomaticSpeech(void)
 {
   uint64_t lease = whip_speech_claim(kind, owner.UTF8String, request.UTF8String);
   if (!lease) return NO;
-  [self discardSuspendedChat:@"replaced" error:nil];
+  if (kind == WhipSpeechChat) [self discardSuspendedChat:@"replaced" error:nil];
   [self clear:@"replaced" error:nil];
   self.lease = lease;
   self.localOnly = NO;
@@ -490,16 +793,23 @@ static void WhipWakeAutomaticSpeech(void)
 }
 - (void)startChat:(NSString *)owner label:(NSString *)label resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
-  if (![self begin:WhipSpeechChat owner:owner request:@"" ended:nil]) {
-    reject(WhipSpeechError, @"Could not start chat speech", nil);
-    return;
-  }
-  resolve(nil);
+  [self startChat:owner localOnly:NO atomic:NO resolve:resolve reject:reject];
+}
+- (void)startResponse:(NSString *)owner label:(NSString *)label resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
+{
+  [self startChat:owner localOnly:NO atomic:YES resolve:resolve reject:reject];
 }
 - (void)startLocalChat:(NSString *)owner label:(NSString *)label resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
-  [self startChat:owner label:label resolve:resolve reject:reject];
-  if ([self.owner isEqualToString:owner]) self.localOnly = YES;
+  [self startChat:owner localOnly:YES atomic:NO resolve:resolve reject:reject];
+}
+- (void)startChat:(NSString *)owner localOnly:(BOOL)localOnly atomic:(BOOL)atomic resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
+{
+  __block BOOL ready = NO;
+  [self queueSpeech:WhipSpeechChat owner:owner request:@"" localOnly:localOnly atomic:atomic ready:^{ ready = YES; resolve(nil); }
+    ended:^(NSString *reason, NSString *error) {
+      if (!ready) reject(WhipSpeechError, error ?: @"Speech cancelled before starting", nil);
+    }];
 }
 - (void)speakChat:(NSString *)owner text:(NSString *)text resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
@@ -515,6 +825,18 @@ static void WhipWakeAutomaticSpeech(void)
     reject(WhipSpeechError, @"Chat listening is no longer available for this utterance", nil);
     return;
   }
+  id turn = self.turn;
+  uint64_t lease = self.lease;
+  NSDictionary *pending = @{@"text": text, @"source": source ?: @{}, @"resolve": [resolve copy], @"reject": [reject copy]};
+  if ([self deferPlayback:turn block:^{
+    if (self.lease == lease && self.deferredChat == pending) {
+      self.deferredChat = nil;
+      [self speakChat:owner text:text source:source resolve:resolve reject:reject];
+    } else [self finishPlayback:turn];
+  }]) { self.deferredChat = pending; return; }
+  [self startPlayback:turn];
+  self.atomicPlaying = self.atomic;
+  [self watchShake];
   self.utteranceResolve = resolve;
   self.utteranceReject = reject;
   self.captionSource = source;
@@ -530,26 +852,22 @@ static void WhipWakeAutomaticSpeech(void)
 }
 - (void)announce:(NSString *)owner text:(NSString *)text language:(NSString *)language preview:(BOOL)preview resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
-  if (![self begin:WhipSpeechAnnouncement owner:owner request:@"" ended:^(NSString *reason, NSString *error) {
+  [self queueSpeech:WhipSpeechAnnouncement owner:owner request:@"" localOnly:NO atomic:NO ready:^{
+    [self play:text language:language rate:1 started:nil preview:preview];
+  } ended:^(NSString *reason, NSString *error) {
     if (error) reject(WhipSpeechError, error, nil); else resolve(reason);
-  }]) {
-    resolve(@"busy");
-    return;
-  }
-  [self play:text language:language rate:1 started:nil preview:preview];
+  }];
 }
 - (void)speakDevice:(NSString *)owner request:(NSString *)request text:(NSString *)text language:(NSString *)language rate:(double)rate resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
   __block BOOL acknowledged = NO;
-  if (![self begin:WhipSpeechDevice owner:owner request:request ended:^(NSString *reason, NSString *error) {
+  [self queueSpeech:WhipSpeechDevice owner:owner request:request localOnly:NO atomic:NO ready:^{
+    [self play:text language:language rate:rate started:^{
+      acknowledged = YES;
+      resolve(@{@"started": @YES});
+    }];
+  } ended:^(NSString *reason, NSString *error) {
     if (!acknowledged) reject(error ? @"device_unavailable" : @"cancelled", error ?: @"Speech request cancelled", nil);
-  }]) {
-    reject(@"device_unavailable", @"Another speech session is active", nil);
-    return;
-  }
-  [self play:text language:language rate:rate started:^{
-    acknowledged = YES;
-    resolve(@{@"started": @YES});
   }];
 }
 
@@ -601,13 +919,8 @@ static void WhipWakeAutomaticSpeech(void)
   NSTimeInterval timeout = whip_speech_timeout_ms(preview ? WhipSpeechChat : self.kind, text.length) / 1000.0;
   // Model initialization has its own watchdog. The ordinary Rust speech
   // deadline starts at the first PCM, after device-specific Core ML compilation.
-  NSTimeInterval initializationTimeout = local ? WhipModelInitializationTimeout : timeout;
+  [self armSpeechTimeout:local ? WhipModelInitializationTimeout : timeout initialization:local];
   __weak WhipSpeechPlayback *weakSelf = self;
-  self.timer = [NSTimer scheduledTimerWithTimeInterval:initializationTimeout repeats:NO block:^(NSTimer *timer) {
-    WhipSpeechPlayback *playback = weakSelf;
-    if (playback.lease == lease) [playback stopWithReason:WhipSpeechStopped error:@"Speech playback timed out"];
-  }];
-  [NSRunLoop.mainRunLoop addTimer:self.timer forMode:NSRunLoopCommonModes];
   if (local) {
     WhipPcmSpeechAudio *player = [WhipPcmSpeechAudio new];
     player.lease = lease;
@@ -622,13 +935,7 @@ static void WhipWakeAutomaticSpeech(void)
     void (^playbackStarted)(void) = ^{
       WhipSpeechPlayback *playback = weakSelf;
       if (playback.lease != lease || playback.utterance != utterance) return;
-      [playback.timer invalidate];
-      playback.timer = [NSTimer scheduledTimerWithTimeInterval:timeout repeats:NO block:^(NSTimer *timer) {
-        WhipSpeechPlayback *current = weakSelf;
-        if (current.lease == lease && current.utterance == utterance)
-          [current stopWithReason:WhipSpeechStopped error:@"Speech playback timed out"];
-      }];
-      [NSRunLoop.mainRunLoop addTimer:playback.timer forMode:NSRunLoopCommonModes];
+      [playback armSpeechTimeout:timeout initialization:NO];
       if (started) started();
     };
     player.onStarted = ^{
@@ -670,28 +977,60 @@ static void WhipWakeAutomaticSpeech(void)
 }
 - (BOOL)stopOwner:(NSString *)owner kind:(enum WhipSpeechKind)kind
 {
+  BOOL waiting = [self cancelPendingSpeech:^BOOL(WhipPendingSpeech *pending) { return pending.kind == kind && [pending.owner isEqualToString:owner]; }];
+  if (kind == WhipSpeechAnnouncement && self.alertUnits[owner]) {
+    [self finishAlert:owner reason:WhipSpeechStopped]; return YES;
+  }
   if (kind == WhipSpeechChat && [self.suspendedChat[@"owner"] isEqualToString:owner]) {
     [self discardSuspendedChat:WhipSpeechStopped error:nil];
     return YES;
   }
   uint64_t stopped = whip_speech_stop_owner(kind, owner.UTF8String);
-  if (!stopped || self.lease != stopped) return NO;
+  if (!stopped || self.lease != stopped) return waiting;
   [self clear:WhipSpeechStopped error:nil];
   dispatch_async(dispatch_get_main_queue(), ^{ [self drainStatus]; });
   return YES;
 }
 - (void)cancelDeviceRequest:(NSString *)request
 {
+  [self cancelPendingSpeech:^BOOL(WhipPendingSpeech *pending) { return pending.kind == WhipSpeechDevice && [pending.request isEqualToString:request]; }];
   uint64_t stopped = whip_speech_cancel_request(WhipSpeechDevice, request.UTF8String);
   if (stopped && self.lease == stopped) {
     [self clear:WhipSpeechStopped error:nil];
     dispatch_async(dispatch_get_main_queue(), ^{ [self drainStatus]; });
   }
 }
-- (void)stopDevice { if (self.kind == WhipSpeechDevice) [self stopOwner:self.owner kind:self.kind]; }
+- (void)armSpeechTimeout:(NSTimeInterval)interval initialization:(BOOL)initialization
+{
+  [self.timer invalidate];
+  uint64_t lease = self.lease;
+  AVSpeechUtterance *utterance = self.utterance;
+  __weak WhipSpeechPlayback *weakSelf = self;
+  self.timer = [NSTimer scheduledTimerWithTimeInterval:interval repeats:NO block:^(NSTimer *timer) {
+    WhipSpeechPlayback *playback = weakSelf;
+    if (!playback || playback.lease != lease || playback.utterance != utterance) return;
+    NSTimeInterval delay = initialization ? 0 :
+      [[playback alertCommand:@"playback-timeout-delay-ms" token:@"" lease:0] doubleValue] / 1000.0;
+    if (delay > 0) [playback armSpeechTimeout:delay initialization:NO];
+    else [playback stopWithReason:WhipSpeechStopped error:@"Speech playback timed out"];
+  }];
+  [NSRunLoop.mainRunLoop addTimer:self.timer forMode:NSRunLoopCommonModes];
+}
+- (void)stopDevice {
+  [self cancelPendingSpeech:^BOOL(WhipPendingSpeech *pending) { return pending.kind == WhipSpeechDevice; }];
+  if (self.kind == WhipSpeechDevice) [self stopOwner:self.owner kind:self.kind];
+}
 - (void)stop { [self stopWithReason:WhipSpeechStopped error:nil]; }
 - (void)stopWithReason:(NSString *)reason error:(NSString *)error
 {
+  if ([reason isEqualToString:@"shake"]) { [self shake]; return; }
+  if (error || [reason isEqualToString:WhipSpeechInterrupted]) {
+    if (self.currentAlert.ringing) [self finishAlert:self.currentAlert.token reason:reason];
+    else if (whip_speech_stop(self.lease)) [self clear:reason error:error];
+    return;
+  }
+  [self cancelPendingSpeech:^BOOL(WhipPendingSpeech *pending) { return YES; }];
+  for (WhipAlertUnit *unit in self.alertUnits.allValues) [self finishAlert:unit.token reason:reason];
   [self alertCommand:@"clear" token:@"" lease:0];
   [self discardSuspendedChat:reason error:error];
   for (NSString *token in self.statusCallbacks.allKeys) if (![token isEqualToString:self.statusOwner]) {
@@ -700,6 +1039,12 @@ static void WhipWakeAutomaticSpeech(void)
     resolve(reason);
   }
   if (whip_speech_stop(self.lease)) [self clear:reason error:error];
+}
+- (void)shake
+{
+  if (self.currentAlert) { [self finishAlert:self.currentAlert.token reason:@"shake"]; return; }
+  if ([WhipRealtimeVoice.shared shake]) return;
+  if (whip_speech_stop(self.lease)) [self clear:@"shake" error:nil];
 }
 - (void)releaseAudio
 {
@@ -727,13 +1072,14 @@ static void WhipWakeAutomaticSpeech(void)
   [self releaseAudio];
   if (error) { if (reject) reject(WhipSpeechError, error, nil); }
   else if (resolve) {
-    if (self.lease && self.kind == WhipSpeechChat) {
+    if (self.lease && self.kind == WhipSpeechChat && !self.atomicPlaying) {
       self.boundaryResolve = resolve;
       self.boundaryReject = reject;
-      if ([self drainStatus]) return;
+      if ([self drainStatus]) { [self finishTurn:self.turn]; return; }
       self.boundaryResolve = nil;
       self.boundaryReject = nil;
     }
+    [self finishTurn:self.turn];
     resolve(nil);
   }
 }
@@ -742,11 +1088,14 @@ static void WhipWakeAutomaticSpeech(void)
   [self clearCaption];
   self.captionSource = nil;
   NSString *owner = self.owner;
+  id turn = self.turn;
   enum WhipSpeechKind kind = self.kind;
   void (^ended)(NSString *, NSString *) = self.ended;
   self.ended = nil;
   self.lease = 0;
   self.owner = nil;
+  self.turn = nil;
+  self.atomic = NO; self.atomicPlaying = NO;
   self.utterance = nil;
   [self.motion stopAccelerometerUpdates];
   [self.speech stopSpeakingAtBoundary:AVSpeechBoundaryImmediate];
@@ -759,20 +1108,31 @@ static void WhipWakeAutomaticSpeech(void)
     [NSNotificationCenter.defaultCenter postNotificationName:WhipChatSpeechStopped object:self userInfo:event];
   }
   [self finishUtterance:error];
+  if (kind == WhipSpeechChat && ![self.suspendedChat[@"owner"] isEqualToString:owner]) {
+    RCTPromiseResolveBlock deferred = self.deferredChat[@"resolve"];
+    self.deferredChat = nil;
+    if (deferred) deferred(nil);
+  }
   if (ended) ended(reason, error);
+  [self finishTurn:turn];
+  dispatch_async(dispatch_get_main_queue(), ^{ [self resumeChat]; });
 }
+- (void)watchPlaybackShake { [self watchShake]; }
 - (void)watchShake
 {
   if (!self.motion.accelerometerAvailable) return;
+  WhipAlertUnit *alert = self.currentAlert;
+  id realtime = WhipRealtimeVoice.shared.playbackKey;
+  if (!alert && !self.lease && !realtime) { [self.motion stopAccelerometerUpdates]; return; }
   self.motion.accelerometerUpdateInterval = WhipShakeInterval;
   uint64_t lease = self.lease;
   __weak WhipSpeechPlayback *weakSelf = self;
   [self.motion startAccelerometerUpdatesToQueue:NSOperationQueue.mainQueue withHandler:^(CMAccelerometerData *data, NSError *error) {
     WhipSpeechPlayback *playback = weakSelf;
-    if (!data || playback.lease != lease) return;
+    if (!data || playback.currentAlert != alert || (!alert && playback.lease != lease) || (!alert && WhipRealtimeVoice.shared.playbackKey != realtime)) return;
     CMAcceleration a = data.acceleration;
     double gravity = sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
-    if (isfinite(gravity) && gravity >= WhipShakeGravityThreshold) [playback stopWithReason:@"shake" error:nil];
+    if (isfinite(gravity) && gravity >= WhipShakeGravityThreshold) [playback shake];
   }];
 }
 - (void)audioInterrupted:(NSNotification *)notification

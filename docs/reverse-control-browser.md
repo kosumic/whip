@@ -442,12 +442,15 @@ Android channel and the existing app presentation handler. Cancellation before
 posting prevents delivery; if cancellation races delivery, Whip cancels/dismisses
 that notification. An alert already seen cannot be undone.
 
-Speech has a dedicated native synthesizer and one owner across Phone Use
-launches. Another launch cannot stop or replace the owner's speech. A completed
-utterance releases ownership; explicit stop, session teardown and a 60-second
-limit also stop it. Android waits for engine initialization before acknowledging
-start, and cancellation during initialization prevents late playback. These
-operations do not call the shared Expo speech player's stop function.
+Speech shares the native player with chat read-aloud and alerts, and waits for
+ongoing playback. Another Phone Use launch cannot explicitly stop the owner's
+speech. A completed utterance releases ownership; shake, explicit stop, and
+session teardown also stop it. The text-length-based playback budget ranges from
+sixty seconds to ten minutes, like chat read-aloud with a higher minimum. After
+that budget, speech yields if another playback unit is waiting; with an empty
+queue, it keeps reading until completion. Android waits for engine initialization
+before acknowledging start, and cancellation during initialization prevents late
+playback. See [speech playback](speech-playback.md) for shared queue behavior.
 
 Network results expose no SSID, IP addresses or credentials. Android reports
 internet reachability from the system's validated-network capability; iOS reports

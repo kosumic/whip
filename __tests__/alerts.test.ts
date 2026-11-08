@@ -249,7 +249,7 @@ test('voice chat dismisses existing tab alerts and releases only its own suppres
 });
 
 test.each(['persistent', 'brief', 'regular'] as const)(
-  '%s mode retains channel, text, sound and vibration',
+  'Android %s alerts without announcements delegate sound and vibration to native playback',
   async delivery => {
     await alertAgent(agent, false, target, 'work', delivery, 45_000);
     const request = jest.mocked(Notifications.scheduleNotificationAsync).mock
@@ -265,17 +265,15 @@ test.each(['persistent', 'brief', 'regular'] as const)(
           ? 'agent-state-v3'
           : `agent-state-${delivery}-v1`,
     });
-    if (delivery === 'regular') {
-      expect(request.content).not.toHaveProperty('sound');
-      expect(request.content).not.toHaveProperty('vibrate');
-    } else {
-      expect(request.content.sound).toBe('default');
-      expect(request.content.vibrate).toEqual(
-        delivery === 'brief'
-          ? [0, 200]
-          : expect.arrayContaining([300, 100, 2000]),
-      );
-    }
+    expect(request.content.sound).toBe(false);
+    expect(request.content).not.toHaveProperty('vibrate');
+    expect(prepareSpokenAgentAlert).toHaveBeenCalledWith(
+      'notification-1',
+      delivery === 'persistent' ? 'agent-state-v3' : `agent-state-${delivery}-v1`,
+      delivery === 'persistent',
+      delivery === 'regular' ? [] : delivery === 'brief' ? [0, 200] : expect.arrayContaining([300, 100, 2000]),
+      'schedule',
+    );
     expect(mockNative.alert).toHaveBeenCalledWith(
       expect.objectContaining({ persistentTimeoutMs: 45_000 }),
     );
@@ -300,15 +298,19 @@ test.each(['persistent', 'brief', 'regular'] as const)(
       delivery === 'persistent' ? 'agent-state-v3' : `agent-state-${delivery}-v1`,
       delivery === 'persistent',
       expect.any(Array),
+      'schedule',
     );
   },
 );
 
-test('spoken iOS alerts retain system notification audio', async () => {
+test('spoken iOS alerts use native atomic playback and suppress system notification audio', async () => {
   Platform.OS = 'ios';
   await alertAgent(agent, true, target, 'work', 'brief');
-  expect(jest.mocked(Notifications.scheduleNotificationAsync).mock.calls[0][0].content.sound).toBe('default');
-  expect(prepareSpokenAgentAlert).not.toHaveBeenCalled();
+  const scheduled = jest.mocked(Notifications.scheduleNotificationAsync).mock.calls[0][0];
+  expect(scheduled.content.sound).toBe(false);
+  expect(prepareSpokenAgentAlert).toHaveBeenCalledWith('notification-1', 'agent-state-brief-v1', false, [0, 200], 'schedule');
+  const behavior = await notificationHandler.handleNotification({ request: { content: scheduled.content } } as unknown as Notifications.Notification);
+  expect(behavior?.shouldPlaySound).toBe(false);
 });
 
 test.each(['android', 'ios'] as const)(
@@ -348,7 +350,9 @@ test.each(['android', 'ios'] as const)(
       shouldShowList: true,
     });
     expect(mockPlayback.speakStatusAnnouncement).toHaveBeenCalledWith('native-token');
-    expect(prepareSpokenAgentAlert).not.toHaveBeenCalled();
+    expect(prepareSpokenAgentAlert).toHaveBeenCalledWith(
+      'notification-1', 'agent-state-silent-v1', false, [], 'schedule',
+    );
     expect(armPersistentAgentAlert).not.toHaveBeenCalled();
   },
 );

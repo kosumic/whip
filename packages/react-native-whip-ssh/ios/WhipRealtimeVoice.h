@@ -11,6 +11,8 @@ int32_t WhipReadOpenAiVoiceCredential(void *context, uint8_t *destination, size_
 
 @interface WhipRealtimeVoice : NSObject
 + (instancetype)shared;
+@property(nonatomic, readonly) id playbackKey;
+- (BOOL)shake;
 - (void)invalidate;
 - (void)credentialsUpdating:(BOOL)updating;
 - (void)prepare:(BOOL)enabled;

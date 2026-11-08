@@ -14,11 +14,12 @@ interface HerdrBackgroundNativeModule {
     channelId: string,
     persistent: boolean,
     vibrationPattern: number[],
+    effectId: string,
   ): Promise<void>;
 }
 
-function nativeModule(): HerdrBackgroundNativeModule | null {
-  if (Platform.OS !== 'android') return null;
+function nativeModule(includeIos = false): HerdrBackgroundNativeModule | null {
+  if (Platform.OS !== 'android' && !(includeIos && Platform.OS === 'ios')) return null;
   const module = NativeModules.HerdrBackground as HerdrBackgroundNativeModule | undefined;
   if (!module) {
     throw new Error('HerdrBackground native module is not installed in this build');
@@ -55,7 +56,7 @@ export async function armPersistentAgentAlert(
 }
 
 export async function dismissPersistentAgentAlert(notificationIdentifier?: string): Promise<void> {
-  const module = nativeModule();
+  const module = nativeModule(true);
   if (!module) return;
   await module.dismissPersistentAlert(notificationIdentifier ?? null);
 }
@@ -65,8 +66,9 @@ export async function prepareSpokenAgentAlert(
   channelId: string,
   persistent: boolean,
   vibrationPattern: number[],
+  effectId: string,
 ): Promise<void> {
-  const module = nativeModule();
+  const module = nativeModule(true);
   if (!module) return;
-  await module.prepareSpokenAlert(notificationIdentifier, channelId, persistent, vibrationPattern);
+  await module.prepareSpokenAlert(notificationIdentifier, channelId, persistent, vibrationPattern, effectId);
 }

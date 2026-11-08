@@ -1,11 +1,12 @@
 import { NativeModules, Platform } from 'react-native';
-import { dismissPersistentAgentAlert } from '../src/services/backgroundMonitoring';
+import { dismissPersistentAgentAlert, prepareSpokenAgentAlert } from '../src/services/backgroundMonitoring';
 
 jest.mock('react-native', () => ({
   Platform: { OS: 'android' },
   NativeModules: {
     HerdrBackground: {
       dismissPersistentAlert: jest.fn().mockResolvedValue(undefined),
+      prepareSpokenAlert: jest.fn().mockResolvedValue(undefined),
     },
   },
 }));
@@ -13,6 +14,13 @@ jest.mock('react-native', () => ({
 beforeEach(() => {
   jest.clearAllMocks();
   Platform.OS = 'android';
+});
+
+test('pairs notification audio with the Rust alert effect that owns its speech', async () => {
+  await prepareSpokenAgentAlert('notification', 'channel', true, [0, 200], 'effect');
+  expect(NativeModules.HerdrBackground.prepareSpokenAlert).toHaveBeenCalledWith(
+    'notification', 'channel', true, [0, 200], 'effect',
+  );
 });
 
 test('targets persistent cleanup to the notification supplied by Rust', async () => {
@@ -29,10 +37,10 @@ test('global cleanup explicitly requests dismissal without a notification target
   ).toHaveBeenCalledWith(null);
 });
 
-test('iOS does not call the Android persistent-alert backend', async () => {
+test('iOS dismisses its native atomic playback unit', async () => {
   Platform.OS = 'ios';
   await dismissPersistentAgentAlert('notification');
   expect(
     NativeModules.HerdrBackground.dismissPersistentAlert,
-  ).not.toHaveBeenCalled();
+  ).toHaveBeenCalledWith('notification');
 });

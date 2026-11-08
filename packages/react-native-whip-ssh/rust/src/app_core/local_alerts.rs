@@ -146,6 +146,7 @@ struct Alert {
     notification_id: Option<String>,
     speech_created: Instant,
     speech_ready: bool,
+    playback_prepared: bool,
 }
 
 struct PendingEffect {
@@ -244,6 +245,7 @@ impl CoordinatorState {
                 notification_id: None,
                 speech_created: Instant::now(),
                 speech_ready: false,
+                playback_prepared: false,
             },
         );
         if let Some(text) = request.announcement.clone() {
@@ -286,7 +288,8 @@ impl CoordinatorState {
                 && alert.request.announcement.is_some()
                 && (self.announcement.as_deref() == Some(token)
                     || self.waiting.iter().any(|id| id == token)
-                        && now.duration_since(alert.speech_created) < MAX_WAIT)
+                        && (alert.playback_prepared
+                            || now.duration_since(alert.speech_created) < MAX_WAIT))
                 && !self
                     .suppressions
                     .values()
@@ -300,6 +303,16 @@ impl CoordinatorState {
         now: Instant,
         claim: impl FnOnce(&str, u64) -> u64,
     ) -> Option<NativeAnnouncement> {
+        self.take_speech_for(None, observed_lease, now, claim)
+    }
+
+    fn take_speech_for(
+        &mut self,
+        requested: Option<&str>,
+        observed_lease: u64,
+        now: Instant,
+        claim: impl FnOnce(&str, u64) -> u64,
+    ) -> Option<NativeAnnouncement> {
         self.waiting = self
             .waiting
             .iter()
@@ -309,15 +322,18 @@ impl CoordinatorState {
         if self.announcement.is_some() {
             return None;
         }
-        let index = self
-            .waiting
-            .iter()
-            .position(|token| {
-                self.alerts
-                    .get(token)
-                    .is_some_and(|a| a.request.status == HerdrAgentStatus::Blocked)
-            })
-            .or_else(|| (!self.waiting.is_empty()).then_some(0))?;
+        let index = if let Some(requested) = requested {
+            self.waiting.iter().position(|token| token == requested)
+        } else {
+            self.waiting
+                .iter()
+                .position(|token| {
+                    self.alerts
+                        .get(token)
+                        .is_some_and(|a| a.request.status == HerdrAgentStatus::Blocked)
+                })
+                .or_else(|| (!self.waiting.is_empty()).then_some(0))
+        }?;
         let token = self.waiting.get(index)?.clone();
         if !self.alerts.get(&token)?.speech_ready {
             return None;
@@ -362,13 +378,20 @@ impl CoordinatorState {
     }
 
     fn dismiss(&mut self, scope: &LocalAlertScope) -> Vec<LocalAlertEffect> {
-        let mut output = Vec::new();
         let ids: Vec<_> = self
             .alerts
             .iter()
             .filter(|(_, alert)| scope.matches(&alert.request))
             .map(|(id, _)| id.clone())
             .collect();
+        if matches!(scope, LocalAlertScope::All) {
+            self.reset_persistent = true;
+        }
+        self.dismiss_ids(ids)
+    }
+
+    fn dismiss_ids(&mut self, ids: Vec<String>) -> Vec<LocalAlertEffect> {
+        let mut output = Vec::new();
         for id in ids {
             let Some(alert) = self.alerts.remove(&id) else {
                 continue;
@@ -397,10 +420,6 @@ impl CoordinatorState {
             }
         }
         self.waiting.retain(|id| self.alerts.contains_key(id));
-        if matches!(scope, LocalAlertScope::All) {
-            // Also clean up platform state surviving a detached JS consumer.
-            self.reset_persistent = true;
-        }
         self.reconcile_persistent(&mut output);
         output
     }
@@ -498,7 +517,7 @@ impl CoordinatorState {
                         }
                     )
                 {
-                    return Ok(self.dismiss(&LocalAlertScope::All));
+                    return Ok(self.dismiss_ids(vec![token]));
                 }
             }
             LocalAlertAction::Schedule { .. } => {
@@ -739,6 +758,60 @@ pub(crate) fn native_speech_command(action: &str, token: &str, observed_lease: u
     };
     let mut state = state.lock();
     let result = match action {
+        "speech-only" => state
+            .alerts
+            .get(token)
+            .is_some_and(|alert| {
+                alert.notification_id.is_none()
+                    && !state.effects.values().any(|effect| {
+                        effect.alert_id.as_deref() == Some(token)
+                            && matches!(effect.action, LocalAlertAction::Schedule { .. })
+                    })
+            })
+            .to_string(),
+        "alert-valid" => state
+            .alerts
+            .get(token)
+            .is_some_and(|alert| state.runtime_current(&alert.request))
+            .to_string(),
+        "effect-alert" => {
+            let id = state
+                .effects
+                .get(token)
+                .and_then(|effect| effect.alert_id.clone());
+            if let Some(alert) = id.as_ref().and_then(|id| state.alerts.get_mut(id)) {
+                alert.playback_prepared = true;
+            }
+            state
+                .effects
+                .get(token)
+                .and_then(|effect| effect.alert_id.as_ref())
+                .and_then(|id| state.alerts.get(id).map(|alert| (id, alert)))
+                .map_or_else(
+                    || "null".into(),
+                    |(id, alert)| {
+                        serde_json::json!({
+                            "token": id,
+                            "speech": alert.request.announcement.is_some(),
+                            "silent": alert.request.delivery == LocalAlertDelivery::Silent,
+                            "persistent": alert.request.delivery == LocalAlertDelivery::Persistent,
+                            "timeoutMs": alert.request.persistent_timeout_ms,
+                        })
+                        .to_string()
+                    },
+                )
+        }
+        "dismiss-alert" => {
+            // The native unit has already released its own notification/audio.
+            // Acknowledge only its cleanup effects; other alerts stay queued.
+            let mut effects = state.dismiss_ids(vec![token.into()]);
+            while let Some(effect) = effects.pop() {
+                if let Ok(next) = state.complete(&effect.id, LocalAlertOutcome::Done) {
+                    effects.extend(next);
+                }
+            }
+            "null".into()
+        }
         "register" => {
             let valid = state.speech_valid(token, Instant::now());
             if valid && let Some(alert) = state.alerts.get_mut(token) {
@@ -748,6 +821,13 @@ pub(crate) fn native_speech_command(action: &str, token: &str, observed_lease: u
         }
         "valid" => state.speech_valid(token, Instant::now()).to_string(),
         "take" => serde_json::to_string(&state.take_speech(
+            observed_lease,
+            Instant::now(),
+            crate::speech_playback::claim_status_at_boundary,
+        ))
+        .unwrap_or_else(|_| "null".into()),
+        "take-token" => serde_json::to_string(&state.take_speech_for(
+            Some(token),
             observed_lease,
             Instant::now(),
             crate::speech_playback::claim_status_at_boundary,

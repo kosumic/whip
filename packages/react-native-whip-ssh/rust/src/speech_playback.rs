@@ -14,6 +14,10 @@ use std::{
 
 use parking_lot::Mutex;
 
+mod playback_units;
+static PLAYBACK_UNITS: LazyLock<Mutex<playback_units::PlaybackUnits>> =
+    LazyLock::new(Mutex::default);
+
 // Values form the small C ABI in cpp/WhipSpeechPolicy.h.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -38,11 +42,16 @@ impl TryFrom<u8> for SpeechKind {
 
 impl SpeechKind {
     fn timeout_ms(self, text_units: u64) -> u64 {
-        match self {
-            Self::Chat => text_units.saturating_mul(250).clamp(30_000, 600_000),
+        const MS_PER_TEXT_UNIT: u64 = 250;
+        const MAX_BUDGET_MS: u64 = 600_000;
+        let minimum = match self {
+            Self::Chat => 30_000,
             Self::Announcement => 10_000,
             Self::Device => 60_000,
-        }
+        };
+        text_units
+            .saturating_mul(MS_PER_TEXT_UNIT)
+            .clamp(minimum, MAX_BUDGET_MS)
     }
 }
 
@@ -154,12 +163,12 @@ pub unsafe extern "C" fn whip_alert_speech_command(
     let action = unsafe { CStr::from_ptr(action) }.to_string_lossy();
     // SAFETY: Both platform adapters supply live NUL-terminated strings.
     let token = unsafe { CStr::from_ptr(token) }.to_string_lossy();
-    CString::new(crate::app_core::native_speech_command(
-        &action,
-        &token,
-        observed_lease,
-    ))
-    .map_or(std::ptr::null_mut(), CString::into_raw)
+    let result = if let Some(command) = action.strip_prefix("playback-") {
+        PLAYBACK_UNITS.lock().command(command, &token)
+    } else {
+        crate::app_core::native_speech_command(&action, &token, observed_lease)
+    };
+    CString::new(result).map_or(std::ptr::null_mut(), CString::into_raw)
 }
 
 /// # Safety
@@ -350,11 +359,14 @@ mod tests {
     }
 
     #[test]
-    fn playback_deadlines_preserve_short_alert_and_device_limits() {
-        assert_eq!(Announcement.timeout_ms(2_000), 10_000);
-        assert_eq!(Device.timeout_ms(2_000), 60_000);
+    fn long_readings_get_chat_sized_budgets_with_each_kinds_short_minimum() {
+        assert_eq!(Announcement.timeout_ms(1), 10_000);
+        assert_eq!(Device.timeout_ms(1), 60_000);
         assert_eq!(Chat.timeout_ms(1), 30_000);
-        assert_eq!(Chat.timeout_ms(1_000), 250_000);
-        assert_eq!(Chat.timeout_ms(u64::MAX), 600_000);
+        for kind in [Chat, Announcement, Device] {
+            assert_eq!(kind.timeout_ms(1_000), 250_000);
+            assert_eq!(kind.timeout_ms(2_000), 500_000);
+            assert_eq!(kind.timeout_ms(u64::MAX), 600_000);
+        }
     }
 }
