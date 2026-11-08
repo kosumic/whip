@@ -714,8 +714,8 @@ export function AppShell({
                     <LiveSessionView
                       session={viewportSession}
                       client={activeSession ? liveClient : sessions.getClient(viewportSession.id) ?? null}
-                      visible={terminalVisible && Boolean(activeSession)}
-                      attentionVisible={terminalVisible && !overlaysVisible}
+                      visible={terminalVisible && Boolean(activeSession) && !security.locked}
+                      attentionVisible={terminalVisible && !overlaysVisible && !security.locked}
                       ttsEnabled={ttsEnabled}
                       latencyMs={visibleLiveHostLatency(
                         viewportSession.connectionStatus,

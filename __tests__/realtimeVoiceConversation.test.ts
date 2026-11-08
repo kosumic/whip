@@ -5,9 +5,11 @@ import type { VoiceConversationView } from '../src/services/voiceConversation';
 import type { AgentChatState } from '../src/agentChat';
 import { request } from 'react-native-permissions';
 import { loadVoiceCallSound } from '../src/services/voiceCallSounds';
+import { VoiceSessionManager, type CallScope } from '../src/services/voiceSessionManager';
 
 const mockEvents = new Map<string, (event: unknown) => void>();
 const mockApp = { currentState: 'active' };
+let mockOs = 'android';
 const mockState = { sessionId: 'session-1' } as AgentChatState;
 let mockTranscript: (state: AgentChatState | null) => void;
 const mockRelease = jest.fn();
@@ -25,7 +27,10 @@ const mockNative = {
 };
 
 jest.mock('react-native', () => ({
-  Platform: { OS: 'android' }, get AppState() { return mockApp; },
+  Platform: { get OS() { return mockOs; } }, get AppState() { return mockApp; },
+  NativeEventEmitter: jest.fn().mockImplementation(() => ({
+    addListener: (name: string, listener: (event: unknown) => void) => { mockEvents.set(name, listener); return { remove: () => mockEvents.delete(name) }; },
+  })),
   DeviceEventEmitter: { addListener: (name: string, listener: (event: unknown) => void) => { mockEvents.set(name, listener); return { remove: () => mockEvents.delete(name) }; } },
 }));
 jest.mock('react-native-permissions', () => ({ PERMISSIONS: { IOS: { MICROPHONE: 'mic' }, ANDROID: { RECORD_AUDIO: 'mic' } }, RESULTS: { GRANTED: 'granted' }, request: jest.fn(() => Promise.resolve('granted')) }));
@@ -38,6 +43,7 @@ jest.mock('../src/services/chatSpeech', () => ({ suspendChatSpeechForInput: jest
 jest.mock('../src/services/openAiVoiceCredentials', () => ({ onOpenAiVoiceCredentialChange: jest.fn(() => () => {}), voiceCredentialError: (_error: unknown, fallback: string) => fallback }));
 jest.mock('../src/services/voiceCallBackground', () => ({ retainVoiceCallBackground: () => mockRelease }));
 jest.mock('../src/services/alerts', () => ({ suppressAgentAlertsForTab: () => mockRelease }));
+jest.mock('../src/services/voiceUsage', () => ({ voiceUsageLedger: { record: jest.fn() } }));
 jest.mock('../src/services/NativeTranscriptService', () => ({ agentTranscriptService: {
   realtimeTarget: () => ({ runtimeId: 'runtime-1', terminalId: 'terminal-1', paneId: 'pane-1', bindingToken: 'binding-1' }),
   subscribe: (_binding: string, listener: typeof mockTranscript) => { mockTranscript = listener; listener(mockState); return mockUnsubscribe; },
@@ -100,7 +106,7 @@ test('a status-read failure retains the known voice estimate and marks it incomp
   }));
   await call.close();
 });
-beforeEach(() => { jest.useFakeTimers(); jest.clearAllMocks(); mockEvents.clear(); mockApp.currentState = 'active'; });
+beforeEach(() => { jest.useFakeTimers(); jest.clearAllMocks(); mockEvents.clear(); mockApp.currentState = 'active'; mockOs = 'android'; });
 afterEach(() => jest.useRealTimers());
 
 test('plays the ready piano once when native Realtime becomes ready for input', async () => {
@@ -265,6 +271,50 @@ test('background presentation retains native ownership and system hangup closes 
   expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'closed' }));
   expect(mockRelease).toHaveBeenCalled();
   await call.close();
+});
+
+describe.each(['android', 'ios'])('%s native bridge lifecycle', os => {
+  test.each(['Global', 'Agent', 'Terminal'] as const)('%s lock/unlock retains one native owner and provider with no audio control changes', async kind => {
+    mockOs = os;
+    const scope: CallScope = kind === 'Global' ? { kind } : kind === 'Terminal'
+      ? { kind, target: { hostId: 'host', tabId: 'shell', paneId: 'shell', label: 'Shell', terminal: { runtimeId: 'runtime-1', runtimeIncarnation: 1, connectionGeneration: 1, terminalId: 'shell' } } }
+      : { kind, target: { hostId: 'host', tabId: 'tab', paneId: 'pane-1', bindingToken: 'binding-1', agent: 'codex', label: 'Codex' } };
+    const local = jest.fn();
+    const factory = jest.fn(async (target, settings, changed) => new RealtimeVoiceConversation(target, settings, changed));
+    const manager = new VoiceSessionManager(local, undefined, factory);
+    const session = manager.start(scope, () => false, { ...defaults, provider: 'openai', mode: 'Realtime' });
+    await flush();
+    expect(session.getSnapshot().phase).toBe('listening');
+    const token = (mockNative.startVoiceCall.mock.calls[0] as unknown as [string])[0];
+    for (const state of ['inactive', 'background', 'active', 'background', 'active']) {
+      mockApp.currentState = state;
+      await manager.setLocked(true);
+      await jest.advanceTimersByTimeAsync(200);
+      expect(manager.active).toBe(session);
+      expect(session.ended).toBe(false);
+      expect(session.getSnapshot().text).toBe('hello');
+      expect(mockNative.stopRealtimeVoice).not.toHaveBeenCalled();
+      expect(mockNative.endVoiceCall).not.toHaveBeenCalled();
+      expect(mockRelease).not.toHaveBeenCalled();
+    }
+    await manager.setLocked(false);
+    expect(manager.start(scope, () => false)).toBe(session);
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(mockNative.startVoiceCall).toHaveBeenCalledTimes(1);
+    expect(mockNative.startRealtimeVoice).toHaveBeenCalledTimes(1);
+    expect(mockNative.startRealtimeVoice).toHaveBeenCalledWith(token, expect.any(String));
+    expect(mockNative.setVoiceCallMuted).not.toHaveBeenCalled();
+    expect(mockNative.setVoiceCallSpeaker).not.toHaveBeenCalled();
+    expect(mockNative.realtimeVoiceControl).not.toHaveBeenCalled();
+    expect(local).not.toHaveBeenCalled();
+    await manager.hangup();
+    expect(mockNative.endVoiceCall).toHaveBeenCalledTimes(1);
+    expect(mockNative.endVoiceCall).toHaveBeenCalledWith(token);
+    await manager.setLocked(true);
+    await manager.setLocked(false);
+    expect(manager.active).toBeUndefined();
+    expect(mockNative.startRealtimeVoice).toHaveBeenCalledTimes(1);
+  });
 });
 
 test('backgrounding during microphone authorization cannot start a new call', async () => {

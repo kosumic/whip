@@ -5,7 +5,7 @@ import { GlobalVoiceCall, type GlobalVoiceCallHandle } from '../src/components/G
 import { VoiceChatScreen } from '../src/components/VoiceChatScreen';
 import { VoiceConversationSettingsContext } from '../src/lib/voiceConversationSettingsContext';
 import { DEFAULT_VOICE_CONVERSATION_SETTINGS as defaults } from '../src/lib/voiceConversationSettings';
-import type { GlobalVoiceControlContext } from '../src/services/globalVoiceControl';
+import { GlobalVoiceControl, type GlobalVoiceControlContext } from '../src/services/globalVoiceControl';
 import { Text } from '../src/components/ui/text';
 
 let mockContext: () => GlobalVoiceControlContext;
@@ -23,7 +23,7 @@ jest.mock('../src/components/VoiceChatScreen', () => ({ VoiceChatScreen: 'VoiceC
 jest.mock('../src/services/voiceSessionManager', () => ({ voiceSessionManager: { get active() { return mockActiveCall ? { scope: { kind: 'Global' }, ended: false } : undefined; } } }));
 jest.mock('../src/services/globalVoiceControl', () => ({ GlobalVoiceControl: jest.fn().mockImplementation((context: () => GlobalVoiceControlContext) => {
   mockContext = context;
-  return { dispose: jest.fn() };
+  return { dispose: jest.fn(), suspend: jest.fn() };
 }) }));
 
 beforeEach(() => { jest.clearAllMocks(); mockCredentialReady = true; mockActiveCall = true; });
@@ -118,5 +118,36 @@ test('a revoked native delegation confirmation resolves as denied and removes th
     await act(async () => abort.abort());
     expect(await pending).toBe(false);
     expect(view.root.findAllByType(Text).some(node => node.props.children === 'Exact user request')).toBe(false);
+  } finally { await act(async () => view?.unmount()); }
+});
+
+test('locking hides the existing call and denies its approval without remounting or replaying on unlock', async () => {
+  const ref = createRef<GlobalVoiceCallHandle>();
+  let view!: ReactTestRenderer;
+  const render = (locked: boolean) => <GlobalVoiceCall ref={ref} onConfigureOpenAi={jest.fn()}
+    navigation={{} as never} sessions={{ presentationSessions: [] } as never} locked={locked} visible />;
+  try {
+    await act(async () => { view = create(render(false)); });
+    await act(async () => ref.current!.open());
+    const call = view.root.findByType(VoiceChatScreen);
+    const abort = new AbortController();
+    let pending!: Promise<boolean>;
+    await act(async () => {
+      pending = mockContext().confirm({ hostId: 'host', paneId: 'pane', prompt: 'Do not replay me' }, abort.signal);
+    });
+    await act(async () => view.update(render(true)));
+    expect(await pending).toBe(false);
+    expect(view.root.findByType(VoiceChatScreen)).toBe(call);
+    expect(call.props.visible).toBe(false);
+    const control = jest.mocked(GlobalVoiceControl).mock.results[0].value;
+    expect(control.suspend).toHaveBeenCalledTimes(1);
+    expect(control.dispose).not.toHaveBeenCalled();
+    await act(async () => ref.current!.open());
+    await act(async () => view.update(render(false)));
+    expect(view.root.findByType(VoiceChatScreen)).toBe(call);
+    expect(call.props.visible).toBe(true);
+    expect(view.root.findAllByType(Text).some(node => node.props.children === 'Do not replay me')).toBe(false);
+    expect(GlobalVoiceControl).toHaveBeenCalledTimes(1);
+    expect(control.dispose).not.toHaveBeenCalled();
   } finally { await act(async () => view?.unmount()); }
 });

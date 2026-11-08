@@ -194,7 +194,7 @@ HTTP deadline so a late success can supply the identity needed for hangup.
 Media stops locally immediately; a replacement cannot take ownership until the
 native close operation drains. Every worker uses its immutable native owner and
 attempt, with a separate peer, event queue and server call identity. Old events
-cannot enter the next attempt. Hangup, credential/app lock, interruption,
+cannot enter the next attempt. Hangup, credential replacement, interruption,
 speech-owner replacement or a changed bound agent prevents pending recovery.
 Mute and route intent remain with the native call owner.
 
@@ -313,8 +313,8 @@ does not return Codex's backend handoff receipt.
 `VoiceSessionManager` serializes Local and Realtime adapters. Realtime reserves
 the shared speech-input owner and uses the existing native audio-owner token,
 Android foreground/headless task and host-monitoring lifetime. Navigating or
-backgrounding the presentation does not replace the call. App locking,
-host/session replacement, native interruption, and hangup stop it. Native owners
+backgrounding or locking/unlocking the presentation does not replace the call.
+Host/session replacement, native interruption, and hangup stop it. Native owners
 stop PCM and Rust transport directly even when JS is suspended.
 
 Android uses `AudioRecord(VOICE_RECOGNITION)` with explicit software AEC3 and a

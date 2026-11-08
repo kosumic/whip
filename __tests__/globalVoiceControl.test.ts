@@ -4,7 +4,12 @@ import { closeDeviceSession, deviceAction } from '../src/browser/device';
 
 let mockPlatform: WhipAppControl;
 const mockApp = { currentState: 'active' };
-jest.mock('react-native', () => ({ get AppState() { return mockApp; } }));
+let mockStateChanged: (state: string) => void;
+const mockRemove = jest.fn();
+jest.mock('react-native', () => ({ get AppState() { return { ...mockApp, addEventListener: (_name: string, changed: typeof mockStateChanged) => {
+  mockStateChanged = changed;
+  return { remove: mockRemove };
+} }; } }));
 jest.mock('react-native-whip-ssh', () => ({ setWhipAppControl: (platform: WhipAppControl) => { mockPlatform = platform; } }));
 jest.mock('../src/browser/device', () => ({ closeDeviceSession: jest.fn(), deviceAction: jest.fn(async () => ({ level: 0.8 })) }));
 
@@ -106,4 +111,42 @@ test('hangup cancels pending confirmation and a late approval cannot restore per
   approve(true);
   expect(await pending).toHaveProperty('error');
   control.dispose();
+});
+
+test.each(['locked', 'background', 'inactive'] as const)('%s cancels privileged work; unlocking cannot replay it', async state => {
+  jest.mocked(deviceAction).mockClear();
+  jest.mocked(closeDeviceSession).mockClear();
+  const { context, invoke, selectTab, control } = setup();
+  let approve!: (value: boolean) => void;
+  let approvalSignal!: AbortSignal;
+  context.confirm = jest.fn((_request, signal) => {
+    approvalSignal = signal;
+    return new Promise(resolve => { approve = resolve; });
+  });
+  jest.mocked(deviceAction).mockImplementationOnce((_action, _args, _id, signal) => new Promise(resolve => {
+    signal.addEventListener('abort', () => resolve({}), { once: true });
+  }));
+  const confirmation = invoke('confirm_delegation', { host_id: 'host', pane_id: 'pane', prompt: 'Exact prompt' });
+  const command = invoke('device.shizuku_exec', { argv: ['/system/bin/id'] });
+  if (state === 'locked') { context.locked = true; control.suspend(); }
+  else { mockApp.currentState = state; mockStateChanged(state); }
+  expect(approvalSignal.aborted).toBe(true);
+  expect(jest.mocked(deviceAction).mock.calls[0][3].aborted).toBe(true);
+  expect(closeDeviceSession).toHaveBeenCalledWith('call-1');
+  expect(await invoke('app_navigate', { tab: 'more' })).toHaveProperty('error');
+  expect(await invoke('confirm_delegation')).toHaveProperty('error');
+  expect(await invoke('device.shizuku_exec')).toHaveProperty('error');
+  expect(selectTab).not.toHaveBeenCalled();
+  context.locked = false;
+  mockApp.currentState = 'active';
+  mockStateChanged('active');
+  approve(true);
+  expect(await confirmation).toHaveProperty('error');
+  expect(await command).toHaveProperty('error');
+  expect(deviceAction).toHaveBeenCalledTimes(1);
+  expect(context.confirm).toHaveBeenCalledTimes(1);
+  // Only a fresh foreground request can execute again on the same call.
+  expect(await invoke('app_navigate', { tab: 'more' })).toEqual({ navigated: true });
+  control.dispose();
+  expect(mockRemove).toHaveBeenCalled();
 });

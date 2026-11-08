@@ -41,9 +41,11 @@ Calls pin the runtime incarnation, SSH connection generation, terminal identity,
 and (for Herdr) pane identity and server recovery revision. SSH shell replacement
 also invalidates the pin. Focus changes cannot redirect tools or results. Reads
 and input check the pin before and after work; stale results cannot reach a
-replacement call. Host disconnect, app lock, credential replacement, or hangup
+replacement call. Host disconnect, credential replacement, or hangup
 ends the call through the existing native owner. Tool-call IDs are deduplicated;
 arguments cannot select another host or terminal.
+App lock/unlock and backgrounding preserve the existing call and its pinned
+terminal; unlocking does not start a new provider session.
 
 `terminal_cancel` stops observation and closes the command's SSH channel.
 **Cancellation, timeout, transport loss, and hangup cannot guarantee remote process

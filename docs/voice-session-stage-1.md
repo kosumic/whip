@@ -3,9 +3,12 @@
 `voiceSessionManager` owns call lifetime above React views. A presentation attaches
 by host, tab, pane and agent identity; detaching only removes its listener.
 Replacement invalidates sends and events immediately, drains the previous adapter,
-and starts the replacement only after cleanup. App lock, explicit hangup, system
-hangup and host/terminal removal release the call. Switching tabs and ordinary
-backgrounding keep the existing CallKit/Telecom and background owners alive.
+and starts the replacement only after cleanup. Explicit hangup, system hangup
+and host/terminal removal release the call. Switching tabs, app lock/unlock and
+backgrounding keep the existing native audio and background owners alive.
+Lock state gates new-call admission without blocking the active local send
+callback. Privileged global-call actions retain separate foreground/lock checks
+and cancel pending approvals and device operations when access is lost.
 
 The local adapter remains `VoiceConversation`: on-device STT, local VAD, optional
 Smart Turn, and the existing System/Phonon playback path. The manager loads it on

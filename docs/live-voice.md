@@ -43,8 +43,9 @@ existing ingress/DSP generation checks. Silence maintains the continuous Live
 stream, including while input is muted. Provider mute/unmute acknowledgements
 are correlated by client event ID. Interruption clears local playback immediately,
 requests silence through public instructions and suppresses subsequent playback
-until new user speech; it never cancels coding work. Native route/interruption,
-app lock, credential replacement and target validity checks retain ownership.
+until new user speech; it never cancels coding work. App lock/unlock preserves
+the existing call. Native route/interruption, credential replacement and target
+validity checks continue to govern ownership.
 
 See [startup measurements](voice-startup-latency.md) for the measured Android
 critical path and the remaining differences from ChatGPT's native setup.
