@@ -1,4 +1,11 @@
 export const zhHant: Record<string, string> = {
+  'voiceUsage.terminal': "終端通話",
+  'voiceUsage.resume': "繼續通話",
+  'voiceUsage.resumeContext': "使用已儲存的對話文字開始新通話。僅還原最近48則訊息（共24 KiB，每則最多4 KiB）。較早或未轉錄的語音可能缺失。不會還原過去的工具或授權。",
+  'voiceUsage.resumeLocked': "解鎖 Whip 後才能繼續通話。",
+  'voiceUsage.resumeBusy': "請先結束目前通話，再繼續已儲存的對話。",
+  'voiceUsage.resumeTargetMissing': "未儲存原始終端目標，無法繼續此通話。",
+  'voiceUsage.resumeTruncated': "為符合上下文大小限制，已省略部分較早的對話文字。",
   'voiceChat.reconnecting': '正在重新連線通話… 聆聽將自動恢復。',
   'voiceChat.freshSessions': '已建立 {{count}} 個 API 工作階段。每個工作階段單獨計費。',
   'voiceChat.recoveryLifetime': '正在更新服務商工作階段。',

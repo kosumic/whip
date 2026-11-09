@@ -181,6 +181,7 @@ pub(crate) fn playback_owner_with_commands() -> Result<
             live: false,
             media: Mutex::new(None),
             view: Mutex::new(voice::View {
+                resumed_context_truncated: None,
                 phase: "listening",
                 muted: false,
                 level: 0.0,

@@ -14,6 +14,7 @@ import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from '
 import type { RealtimeVoiceChatTarget, VoiceConversationView } from '../services/voiceConversation';
 import { voiceSessionManager, type VoiceSession } from '../services/voiceSessionManager';
 import { VoiceConversationSettingsContext } from '../lib/voiceConversationSettingsContext';
+import type { VoiceConversationSettings } from '../lib/voiceConversationSettings';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
 import { GlassPortal } from './GlassSurface';
@@ -48,6 +49,8 @@ interface VoiceChatScreenProps {
   children?: ReactNode;
   ref?: Ref<VoiceChatHandle>;
   target: RealtimeVoiceChatTarget;
+  resumeCallId?: string;
+  settingsOverride?: Partial<VoiceConversationSettings>;
   send: (text: string) => boolean;
   visible: boolean;
   expanded: boolean;
@@ -64,7 +67,7 @@ interface VoiceChatScreenProps {
 export interface VoiceChatHandle { submitted: (text: string) => void }
 
 /** Presents the app-wide call without owning its lifetime. */
-export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyle, compactComposer = true, onComposerHeightChange, onMinimize, onExpand, onClose, onCompose, onAttach, children }: VoiceChatScreenProps) {
+export function VoiceChatScreen({ ref, target, resumeCallId, settingsOverride, send, visible, expanded, dockStyle, compactComposer = true, onComposerHeightChange, onMinimize, onExpand, onClose, onCompose, onAttach, children }: VoiceChatScreenProps) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
@@ -118,8 +121,8 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
   const { settings } = useContext(VoiceConversationSettingsContext);
   const conversation = useRef<VoiceSession | null>(null);
   useImperativeHandle(ref, () => ({ submitted: text => conversation.current?.submitted(text) }), []);
-  const callbacks = useRef({ send, onClose, vadSensitivity, settings });
-  callbacks.current = { send, onClose, vadSensitivity, settings };
+  const callbacks = useRef({ send, onClose, vadSensitivity, settings: { ...settings, ...settingsOverride } });
+  callbacks.current = { send, onClose, vadSensitivity, settings: { ...settings, ...settingsOverride } };
   const { agent, bindingToken, hostId, paneId, tabId, terminal } = target;
   const isGlobal = 'global' in target && target.global;
   const latestTarget = useRef(target);
@@ -127,13 +130,13 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
   useEffect(() => {
     const currentTarget = latestTarget.current;
     const scope = 'global' in currentTarget ? { kind: 'Global' as const } : currentTarget.terminal ? { kind: 'Terminal' as const, target: currentTarget } : { kind: 'Agent' as const, target: currentTarget };
-    const session = voiceSessionManager.start(scope, callbacks.current.send, callbacks.current.settings);
+    const session = voiceSessionManager.start(scope, callbacks.current.send, callbacks.current.settings, ...(resumeCallId ? [resumeCallId] : []));
     conversation.current = session;
     setStartedAt(session.startedAt);
     session.setVadSensitivity(callbacks.current.vadSensitivity);
     const unsubscribe = session.subscribe(setView);
     return () => { unsubscribe(); conversation.current = null; };
-  }, [isGlobal, agent, hostId, paneId, tabId, terminal?.runtimeId, terminal?.runtimeIncarnation, terminal?.connectionGeneration, terminal?.terminalId, terminal?.paneId]);
+  }, [isGlobal, agent, hostId, paneId, tabId, terminal?.runtimeId, terminal?.runtimeIncarnation, terminal?.connectionGeneration, terminal?.terminalId, terminal?.paneId, resumeCallId]);
   useEffect(() => { conversation.current?.setTranscriptBinding(bindingToken); }, [bindingToken]);
   useEffect(() => { conversation.current?.setVadSensitivity(vadSensitivity); }, [vadSensitivity]);
   useEffect(() => { if (view.phase === 'closed') callbacks.current.onClose(); }, [view.phase]);
@@ -194,6 +197,7 @@ export function VoiceChatScreen({ ref, target, send, visible, expanded, dockStyl
           {!hasTranscript && view.backendText && <Text selectable numberOfLines={4} className="text-center text-sm" style={styles.statusText}>{view.backendText}</Text>}
           {(view.phase === 'starting' || view.phase === 'preparing') && <ActivityIndicator color={VOICE_COLORS.accent} />}
           {view.error && <Text accessibilityRole="alert" className="text-center text-sm leading-5" style={styles.statusText}>{view.error}</Text>}
+          {view.resumedContextTruncated && <Text className="text-center text-xs" style={styles.statusText}>{t('voiceUsage.resumeTruncated')}</Text>}
         </Animated.View>
         <Animated.View pointerEvents="box-none" style={chromeMotion}>
           {expanded && composer}

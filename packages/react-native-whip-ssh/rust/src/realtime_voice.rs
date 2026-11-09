@@ -93,6 +93,9 @@ pub(super) struct Config {
     webrtc: bool,
     target: Option<AgentTarget>,
     terminal_target: Option<TerminalTarget>,
+    resume_call_id: Option<String>,
+    #[serde(skip)]
+    continuation: Option<crate::voice_history::Continuation>,
     #[serde(default)]
     global: bool,
     #[serde(default)]
@@ -122,6 +125,62 @@ enum Vad {
 }
 
 impl Config {
+    fn history_update(
+        &self,
+        update: Option<ClientEvent>,
+    ) -> Result<Option<ClientEvent>, &'static str> {
+        if self.live || self.continuation.is_none() {
+            return Ok(update);
+        }
+        let mut value = serde_json::to_value(update).map_err(|_| "Invalid voice session.")?;
+        let instructions = value["session"]["instructions"]
+            .as_str()
+            .ok_or("Invalid voice session.")?;
+        value["session"]["instructions"] = json!(self.history_instructions(instructions)?);
+        Ok(Some(typed(value)?))
+    }
+
+    fn history_instructions(&self, instructions: &str) -> Result<String, &'static str> {
+        self.continuation.as_ref().map_or_else(
+            || Ok(instructions.into()),
+            |context| context.instructions(instructions),
+        )
+    }
+
+    async fn restore_history(&mut self) -> Result<(), &'static str> {
+        let Some(id) = &self.resume_call_id else {
+            return Ok(());
+        };
+        let restored = crate::voice_history::restore(id).await?;
+        self.accept_history(restored)
+    }
+
+    fn accept_history(
+        &mut self,
+        restored: crate::voice_history::Restored,
+    ) -> Result<(), &'static str> {
+        if self.preview
+            || self.target.is_some()
+            || self.live != (restored.mode == crate::app_database::VoiceUsageMode::Live)
+            || self.global != (restored.scope == crate::app_database::VoiceUsageScope::Global)
+            || self.terminal_target != restored.continuation.terminal_target
+        {
+            return Err(
+                "The original call scope or terminal identity changed. This call cannot be resumed.",
+            );
+        }
+        self.continuation = Some(restored.continuation);
+        Ok(())
+    }
+
+    fn history_continuation(&self) -> Option<crate::voice_history::Continuation> {
+        (!self.preview && (self.global || self.terminal_target.is_some())).then(|| {
+            crate::voice_history::Continuation {
+                terminal_target: self.terminal_target.clone(),
+                ..self.continuation.clone().unwrap_or_default()
+            }
+        })
+    }
     fn preview_instructions(&self) -> Result<String, &'static str> {
         let text = self.preview_text.as_deref().unwrap_or(DEFAULT_PREVIEW_TEXT);
         if text.trim().is_empty() || text.chars().count() > PREVIEW_TEXT_LIMIT {
@@ -231,6 +290,8 @@ impl Config {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct View {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    resumed_context_truncated: Option<bool>,
     phase: &'static str,
     muted: bool,
     level: f32,
@@ -498,7 +559,7 @@ impl From<&'static str> for StartError {
 }
 impl RealtimeVoiceAdapter {
     fn start(
-        config: Config,
+        mut config: Config,
         credentials: impl FnOnce() -> Result<
             native_credentials::NativeCredential,
             native_credentials::CredentialError,
@@ -527,6 +588,9 @@ impl RealtimeVoiceAdapter {
             .map(PinnedTerminal::pin)
             .transpose()?
             .map(terminal::Session::new);
+        if let Some(terminal) = &terminal {
+            config.terminal_target = Some(terminal.target.history_target());
+        }
         let instructions = if config.live {
             None
         } else if let Some(global) = &global {
@@ -566,6 +630,7 @@ impl RealtimeVoiceAdapter {
             live: config.live,
             media: Mutex::new(None),
             view: Mutex::new(View {
+                resumed_context_truncated: None,
                 phase: "starting",
                 muted: config.preview,
                 level: 0.0,
@@ -818,6 +883,7 @@ impl RealtimeVoiceAdapter {
         let mut costs = cost::CurrentChat::start(&config)?;
         let model = config.model()?.id.clone();
         let voice = config.voice.clone();
+        let continuation = config.history_continuation();
         let mut cancellation = self.cancel.subscribe();
         let webrtc = config.webrtc;
         let result = if self.closed.load(Ordering::Acquire) {
@@ -842,9 +908,14 @@ impl RealtimeVoiceAdapter {
         })
         .await;
         let captions = self.output.lock().transcript.saved_captions();
-        if let Err(error) =
-            crate::voice_history::persist(costs.history_identity(), &model, Some(&voice), captions)
-                .await
+        if let Err(error) = crate::voice_history::persist_call(
+            costs.history_identity(),
+            &model,
+            Some(&voice),
+            captions,
+            continuation,
+        )
+        .await
         {
             self.view.lock().error.get_or_insert(error);
         }

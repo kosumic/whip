@@ -32,6 +32,7 @@ pub enum VoiceUsageMode {
 #[serde(rename_all = "snake_case")]
 pub enum VoiceUsageScope {
     Agent,
+    Terminal,
     Global,
     Speech,
     Preview,

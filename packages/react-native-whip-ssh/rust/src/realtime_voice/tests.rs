@@ -483,3 +483,121 @@ fn typed_input_adds_user_context_without_resubmitting_agent_work()
     assert!(submitted_message(&"x".repeat(MAX_TEXT + 1)).is_err());
     Ok(())
 }
+
+#[test]
+fn resumed_global_calls_restore_text_in_both_protocols_and_keep_new_usage_ids()
+-> Result<(), Box<dyn std::error::Error>> {
+    use crate::app_database::{VoiceUsageMode, VoiceUsageScope};
+    use crate::voice_history::{Continuation, Conversation, Restored};
+    for live in [false, true] {
+        let mut config: Config = serde_json::from_value(json!({
+            "global":true, "live":live, "voice":"marin", "resumeCallId":"old-call",
+            "vad":{"type":"server_vad","threshold":0.5,"prefix_padding_ms":300,"silence_duration_ms":500}
+        }))?;
+        let mut conversation = Conversation::default();
+        conversation.user("My project is Orion");
+        conversation.assistant("I remember Orion");
+        config.accept_history(Restored {
+            mode: if live {
+                VoiceUsageMode::Live
+            } else {
+                VoiceUsageMode::Realtime
+            },
+            scope: VoiceUsageScope::Global,
+            continuation: Continuation {
+                context: conversation.into_captions(),
+                ..Continuation::default()
+            },
+        })?;
+        if live {
+            let session: Value = serde_json::from_str(&voice_call_openai::live::codec().encode(
+                &oai_rt_rs::live::ClientEvent::new(oai_rt_rs::live::Command::Start {
+                    session: live::LiveVoiceAdapter::session(&config)?,
+                }),
+            )?)?;
+            assert!(
+                session["session"]["instructions"]
+                    .as_str()
+                    .ok_or("no voice instructions")?
+                    .contains("Orion")
+            );
+            assert!(
+                session["session"]["delegation"]["responses"]["instructions"]
+                    .as_str()
+                    .ok_or("no backend instructions")?
+                    .contains("Orion")
+            );
+        } else {
+            let update =
+                serde_json::to_value(config.history_update(Some(config.session_update()?))?)?;
+            assert_eq!(update["type"], "session.update");
+            assert!(
+                update["session"]["instructions"]
+                    .as_str()
+                    .ok_or("no instructions")?
+                    .contains("Orion")
+            );
+            assert!(
+                update["session"]["instructions"]
+                    .as_str()
+                    .ok_or("no instructions")?
+                    .contains("Wait for new user input")
+            );
+            let first = cost::CurrentChat::start(&config)?;
+            let second = cost::CurrentChat::start(&config)?;
+            assert_ne!(
+                first.history_identity().ok_or("no first ID")?.session_id,
+                second.history_identity().ok_or("no second ID")?.session_id
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn resumed_terminal_configuration_cannot_redirect_to_a_new_target_or_scope()
+-> Result<(), Box<dyn std::error::Error>> {
+    use crate::app_database::{VoiceUsageMode, VoiceUsageScope};
+    use crate::voice_history::{Continuation, Restored};
+    let target: TerminalTarget = serde_json::from_value(
+        json!({"runtimeId":"host", "runtimeIncarnation":1,
+        "connectionGeneration":1, "terminalId":"original", "operationEpoch":42, "recoveryRevision":0, "processEpoch":"process"}),
+    )?;
+    let mut config: Config = serde_json::from_value(
+        json!({"voice":"marin", "terminalTarget":target,
+        "vad":{"type":"server_vad","threshold":0.5,"prefix_padding_ms":300,"silence_duration_ms":500}}),
+    )?;
+    let restored = || Restored {
+        mode: VoiceUsageMode::Realtime,
+        scope: VoiceUsageScope::Terminal,
+        continuation: Continuation {
+            terminal_target: Some(target.clone()),
+            ..Continuation::default()
+        },
+    };
+    config.accept_history(restored())?;
+    let session = serde_json::to_value(config.history_update(Some(config.session_update()?))?)?;
+    let names: Vec<_> = session["session"]["tools"]
+        .as_array()
+        .ok_or("no tools")?
+        .iter()
+        .filter_map(|tool| tool["name"].as_str())
+        .collect();
+    assert!(names.contains(&"terminal_exec"));
+    assert!(!names.contains(&"agents_prompt"));
+    let costs = cost::CurrentChat::start(&config)?;
+    assert_eq!(
+        costs.history_identity().ok_or("no identity")?.scope,
+        VoiceUsageScope::Terminal
+    );
+    config
+        .terminal_target
+        .as_mut()
+        .ok_or("no terminal")?
+        .terminal_id = "different-terminal".into();
+    assert!(config.accept_history(restored()).is_err());
+    config.terminal_target = None;
+    config.global = true;
+    assert!(config.accept_history(restored()).is_err());
+    Ok(())
+}

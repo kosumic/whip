@@ -3,7 +3,8 @@ import type {
   VoiceTranscriptEntry,
   VoiceTranscriptMessage,
 } from '../lib/voiceTranscript';
-import type { VoiceUsageIdentity } from './voiceUsage';
+import type { VoiceUsageCall, VoiceUsageIdentity } from './voiceUsage';
+import type { TerminalVoiceChatTarget } from './voiceConversation';
 
 type SavedCaption = VoiceTranscriptEntry & { startMs?: number; endMs?: number };
 export type SavedCall = {
@@ -12,7 +13,17 @@ export type SavedCall = {
   endedAtMs: number;
   fragments: SavedCaption[];
   usage?: VoiceUsageIdentity;
+  continuation?: { terminalTarget: TerminalVoiceChatTarget['terminal'] | null; truncated: boolean };
 };
+
+export function canResumeVoiceHistory(call?: VoiceUsageCall, saved?: SavedCall): boolean {
+  const usage = saved?.usage;
+  return Boolean(saved && !call?.active && usage?.session_id === saved.id &&
+    usage.provider === 'openai' &&
+    ((usage.scope === 'global' && (usage.mode === 'realtime' || usage.mode === 'live')) ||
+      (usage.scope === 'terminal' && usage.mode === 'realtime')) &&
+    saved.fragments.some(fragment => !fragment.event && fragment.text.trim()));
+}
 const HISTORY_KEY = 'whip.voice.transcripts';
 const LEGACY_LIVE_KEY = 'whip.voice.live.transcripts';
 const LEGACY_LIVE_MODEL = 'gpt-live-1';
@@ -71,7 +82,7 @@ function isSavedCall(value: unknown): value is SavedCall {
         ['turn_based', 'realtime', 'live', 'tts', 'stt'].includes(
           call.usage.mode,
         ) &&
-        ['agent', 'global', 'speech', 'preview'].includes(call.usage.scope))) &&
+        ['agent', 'terminal', 'global', 'speech', 'preview'].includes(call.usage.scope))) &&
     Array.isArray(call.fragments) &&
     call.fragments.every((item: unknown) => {
       if (!item || typeof item !== 'object') return false;

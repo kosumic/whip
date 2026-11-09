@@ -7,6 +7,7 @@ import { VoiceConversationSettingsContext } from '../src/lib/voiceConversationSe
 import { DEFAULT_VOICE_CONVERSATION_SETTINGS as defaults } from '../src/lib/voiceConversationSettings';
 import { GlobalVoiceControl, type GlobalVoiceControlContext } from '../src/services/globalVoiceControl';
 import { Text } from '../src/components/ui/text';
+import type { SavedCall } from '../src/services/voiceHistory';
 
 let mockContext: () => GlobalVoiceControlContext;
 let mockActiveCall = true;
@@ -27,6 +28,41 @@ jest.mock('../src/services/globalVoiceControl', () => ({ GlobalVoiceControl: jes
 }) }));
 
 beforeEach(() => { jest.clearAllMocks(); mockCredentialReady = true; mockActiveCall = true; });
+
+test.each(['realtime', 'live', 'terminal'] as const)('history opens a new %s call with current credentials and the original scope', async kind => {
+  mockActiveCall = false;
+  const ref = createRef<GlobalVoiceCallHandle>();
+  const terminal = { runtimeId: 'original-host', runtimeIncarnation: 1, connectionGeneration: 2, terminalId: 'original-terminal', processEpoch: 'epoch', operationEpoch: 3, recoveryRevision: 0 };
+  const saved: SavedCall = { id: 'ended-call', model: 'old-model', endedAtMs: 5, fragments: [{ id: 'user', role: 'user', text: 'Remember Orion' }],
+    usage: { session_id: 'ended-call', provider: 'openai', scope: kind === 'terminal' ? 'terminal' : 'global', mode: kind === 'live' ? 'live' : 'realtime', model: 'old-model', voice: 'old-voice', started_at_ms: 1 },
+    continuation: { terminalTarget: kind === 'terminal' ? terminal : null, truncated: false } };
+  let view!: ReactTestRenderer;
+  try {
+    await act(async () => { view = create(<GlobalVoiceCall ref={ref} onConfigureOpenAi={jest.fn()} navigation={{} as never} sessions={{ presentationSessions: [] } as never} locked={false} visible />); });
+    await act(async () => ref.current!.resume(saved));
+    const screen = view.root.findByType(VoiceChatScreen);
+    expect(screen.props.resumeCallId).toBe(saved.id);
+    expect(screen.props.settingsOverride).toEqual({ provider: 'openai', mode: kind === 'live' ? 'Live' : 'Realtime' });
+    expect(screen.props.expanded).toBe(true);
+    if (kind === 'terminal') expect(screen.props.target).toEqual(expect.objectContaining({ hostId: 'original-host', terminal }));
+    else expect(screen.props.target).toEqual({ global: true, label: 'globalCall.title' });
+    expect(Alert.alert).not.toHaveBeenCalled();
+  } finally { await act(async () => view?.unmount()); }
+});
+
+test('missing terminal association shows an error without starting or redirecting a call', async () => {
+  mockActiveCall = false;
+  const ref = createRef<GlobalVoiceCallHandle>();
+  const saved: SavedCall = { id: 'ended', model: 'model', endedAtMs: 5, fragments: [{ id: 'u', role: 'user', text: 'Hi' }],
+    usage: { session_id: 'ended', provider: 'openai', scope: 'terminal', mode: 'realtime', model: 'model', voice: 'marin', started_at_ms: 1 } };
+  let view!: ReactTestRenderer;
+  try {
+    await act(async () => { view = create(<GlobalVoiceCall ref={ref} onConfigureOpenAi={jest.fn()} navigation={{} as never} sessions={{ presentationSessions: [] } as never} locked={false} visible />); });
+    await act(async () => ref.current!.resume(saved));
+    expect(Alert.alert).toHaveBeenCalledWith('voiceUsage.resume', 'voiceUsage.resumeTargetMissing');
+    expect(view.root.findAllByType(VoiceChatScreen)).toHaveLength(0);
+  } finally { await act(async () => view?.unmount()); }
+});
 
 test('an unconfigured global call shows a message and jumps to OpenAI configuration', async () => {
   mockCredentialReady = false;

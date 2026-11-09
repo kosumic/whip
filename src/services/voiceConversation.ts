@@ -18,7 +18,7 @@ export type AgentVoiceChatTarget = Omit<ChatSpeechTarget, 'bindingToken'> & { bi
 export type TerminalVoiceChatTarget = {
   hostId: string; paneId: string; tabId: string; label: string;
   agent?: never; bindingToken?: never;
-  terminal: { runtimeId: string; runtimeIncarnation: number; connectionGeneration: number; terminalId: string; paneId?: string };
+  terminal: { runtimeId: string; runtimeIncarnation: number; connectionGeneration: number; terminalId: string; paneId?: string; operationEpoch?: number; recoveryRevision?: number; processEpoch?: string };
 };
 export type VoiceChatTarget = AgentVoiceChatTarget | TerminalVoiceChatTarget;
 export type GlobalVoiceChatTarget = {
@@ -48,6 +48,7 @@ export interface VoiceConversationView {
   backendText?: string | null;
   liveSeconds?: number | null;
   usageFinalized?: boolean;
+  resumedContextTruncated?: boolean;
   continuity?: {
     status: 'connecting' | 'connected' | 'reconnecting' | 'failed' | 'ended';
     lastReason: 'lifetime' | 'drain_deadline' | 'connection_lost' | null;

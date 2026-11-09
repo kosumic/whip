@@ -4,6 +4,8 @@ use crate::app_database::{
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::VecDeque, sync::LazyLock, time::Duration};
+mod resume;
+pub(crate) use resume::{Continuation, Restored, restore};
 
 pub(crate) const KEY: &str = "whip.voice.transcripts";
 pub(crate) const LEGACY_LIVE_KEY: &str = "whip.voice.live.transcripts";
@@ -214,6 +216,8 @@ struct SavedCall {
     voice: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     usage: Option<VoiceUsageIdentity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    continuation: Option<Continuation>,
     fragments: Vec<Caption>,
     ended_at_ms: u64,
 }
@@ -274,6 +278,7 @@ fn load_calls(
                 model: LEGACY_LIVE_MODEL.into(),
                 voice: None,
                 usage: None,
+                continuation: None,
                 fragments: call.fragments,
                 ended_at_ms: call.ended_at_ms,
             })
@@ -295,7 +300,17 @@ pub(crate) async fn persist(
     identity: Option<&VoiceUsageIdentity>,
     model: &str,
     voice: Option<&str>,
+    fragments: Vec<Caption>,
+) -> Result<(), &'static str> {
+    persist_call(identity, model, voice, fragments, None).await
+}
+
+pub(crate) async fn persist_call(
+    identity: Option<&VoiceUsageIdentity>,
+    model: &str,
+    voice: Option<&str>,
     mut fragments: Vec<Caption>,
+    mut continuation: Option<Continuation>,
 ) -> Result<(), &'static str> {
     if fragments.is_empty() {
         return Ok(());
@@ -307,10 +322,16 @@ pub(crate) async fn persist(
         return Err(SAVE_ERROR);
     }
     for fragment in &mut fragments {
+        if fragment.text.len() >= MAX_TEXT
+            && let Some(continuation) = &mut continuation
+        {
+            continuation.truncated = true;
+        }
         fragment.text.truncate(boundary(&fragment.text, MAX_TEXT));
         fragment.event = fragment.event.take().map(Event::bounded);
     }
     let mut bytes = 0;
+    let original_count = fragments.len();
     fragments.reverse();
     fragments.retain(|fragment| {
         bytes += fragment.text.len() + fragment.event.as_ref().map_or(0, Event::bytes);
@@ -318,6 +339,11 @@ pub(crate) async fn persist(
     });
     fragments.truncate(MAX_MESSAGES);
     fragments.reverse();
+    if (fragments.len() < original_count || original_count >= MAX_MESSAGES)
+        && let Some(continuation) = &mut continuation
+    {
+        continuation.truncated = true;
+    }
     // Snapshot the end time before waiting for another call's database write.
     let ended_at_ms = u64::try_from(
         std::time::SystemTime::now()
@@ -357,6 +383,7 @@ pub(crate) async fn persist(
                 model: model.into(),
                 voice: voice.map(str::to_owned),
                 usage: identity.cloned(),
+                continuation,
                 fragments,
                 ended_at_ms,
             },
@@ -383,6 +410,7 @@ mod tests {
             model: model.into(),
             voice: None,
             usage: None,
+            continuation: None,
             fragments: conversation.into_captions(),
             ended_at_ms: index as u64,
         }

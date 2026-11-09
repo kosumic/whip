@@ -1,10 +1,10 @@
 //! A terminal call has no host selection or coding-agent authority.
 use std::collections::VecDeque;
-use std::sync::{Arc, OnceLock, Weak};
+use std::sync::{Arc, LazyLock, OnceLock, Weak};
 use std::time::Duration;
 
 use parking_lot::Mutex;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::{
@@ -17,8 +17,9 @@ use crate::host_state::{HostFreshness, HostSyncStatus};
 
 pub(crate) const MAX_OUTPUT: usize = 12 * 1024;
 pub(crate) const CHANGED: &str = "The bound terminal disconnected or changed. Please call again.";
+static PROCESS_EPOCH: LazyLock<String> = LazyLock::new(|| uuid::Uuid::new_v4().to_string());
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct TerminalTarget {
     pub runtime_id: String,
@@ -26,6 +27,12 @@ pub(crate) struct TerminalTarget {
     pub connection_generation: u64,
     pub terminal_id: String,
     pub pane_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation_epoch: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recovery_revision: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub process_epoch: Option<String>,
 }
 
 pub(crate) struct PinnedTerminal {
@@ -60,6 +67,13 @@ pub(super) fn observe_output(inner: &Arc<RuntimeInner>, terminal: &str, epoch: u
 
 impl PinnedTerminal {
     pub(crate) fn pin(target: TerminalTarget) -> Result<Arc<Self>, &'static str> {
+        if target
+            .process_epoch
+            .as_ref()
+            .is_some_and(|saved| saved != &*PROCESS_EPOCH)
+        {
+            return Err(CHANGED);
+        }
         let runtime = get_host_runtime(target.runtime_id.clone()).ok_or(CHANGED)?;
         let (operation_epoch, recovery) = {
             let state = runtime.inner.state.lock();
@@ -76,6 +90,15 @@ impl PinnedTerminal {
             };
             (epoch, state.herdr_recovery_revision)
         };
+        if target
+            .operation_epoch
+            .is_some_and(|saved| Some(saved) != operation_epoch)
+            || target
+                .recovery_revision
+                .is_some_and(|saved| saved != recovery)
+        {
+            return Err(CHANGED);
+        }
         let pinned = Arc::new(Self {
             runtime,
             target,
@@ -141,6 +164,15 @@ impl PinnedTerminal {
         }
         drop(state);
         Ok(())
+    }
+
+    pub(crate) fn history_target(&self) -> TerminalTarget {
+        TerminalTarget {
+            operation_epoch: self.operation_epoch,
+            recovery_revision: self.target.pane_id.as_ref().map(|_| self.recovery),
+            process_epoch: Some(PROCESS_EPOCH.clone()),
+            ..self.target.clone()
+        }
     }
 
     fn check_fresh(&self) -> Result<(), &'static str> {

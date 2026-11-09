@@ -19,7 +19,7 @@ export interface VoiceSessionAdapter {
 type Send = (text: string) => boolean;
 type Factory = (target: AgentVoiceChatTarget, send: Send, changed: (view: VoiceConversationView) => void) => Promise<VoiceSessionAdapter>;
 export interface VoiceUsageObserver { started(session: VoiceSession): void; ended(session: VoiceSession): void }
-type RealtimeFactory = (target: RealtimeVoiceChatTarget, settings: Readonly<VoiceConversationSettings>, changed: (view: VoiceConversationView) => void, requestedAt: number) => Promise<VoiceSessionAdapter>;
+type RealtimeFactory = (target: RealtimeVoiceChatTarget, settings: Readonly<VoiceConversationSettings>, changed: (view: VoiceConversationView) => void, requestedAt: number, resumeCallId?: string) => Promise<VoiceSessionAdapter>;
 const initialView = (): VoiceConversationView => ({ phase: 'starting', muted: false, smartTurn: false, speaker: false, text: '', level: 0, progress: 0, error: null, transcript: null });
 
 export function sameVoiceChatTarget(left: VoiceChatTarget, right: VoiceChatTarget): boolean {
@@ -52,7 +52,7 @@ export class VoiceSession {
   private view = initialView();
   private readonly listeners = new Set<(view: VoiceConversationView) => void>();
 
-  constructor(readonly scope: CallScope, settings: VoiceConversationSettings) {
+  constructor(readonly scope: CallScope, settings: VoiceConversationSettings, readonly resumeCallId?: string) {
     this.settings = Object.freeze(parseVoiceConversationSettings(scope.kind === 'Global' ? { ...settings, provider: 'openai' } : settings));
     if (this.settings.realtimeVad) Object.freeze(this.settings.realtimeVad);
     this.mode = this.settings.provider === 'local' ? 'TurnBased' : this.settings.mode;
@@ -96,9 +96,9 @@ export class VoiceSessionManager {
 
   get active(): VoiceSession | undefined { return this.current; }
 
-  start(scope: CallScope, send: Send, settings = DEFAULT_VOICE_CONVERSATION_SETTINGS): VoiceSession {
+  start(scope: CallScope, send: Send, settings = DEFAULT_VOICE_CONVERSATION_SETTINGS, resumeCallId?: string): VoiceSession {
     // Reattaching a remounted view must not apply edited settings or restart I/O.
-    if (this.current && !this.current.ended && sameTarget(this.current.scope, scope)) {
+    if (this.current && !this.current.ended && sameTarget(this.current.scope, scope) && (!resumeCallId || this.current.resumeCallId === resumeCallId)) {
       this.current.send = send;
       return this.current;
     }
@@ -111,7 +111,7 @@ export class VoiceSessionManager {
       return denied;
     }
     const previous = this.current;
-    const session = new VoiceSession(scope, settings);
+    const session = new VoiceSession(scope, settings, resumeCallId);
     session.send = send;
     this.current = session;
     if (previous) previous.ended = true; // Cancel callbacks before awaiting shutdown.
@@ -130,7 +130,7 @@ export class VoiceSessionManager {
         if (view.phase === 'closed' || view.phase === 'error') void this.hangup(session, view.phase === 'error');
       };
       const adapter = scope.kind === 'Global' || scope.kind === 'Terminal' || session.mode !== 'TurnBased'
-        ? await this.createRealtime!(scope.kind === 'Global' ? { global: true, label: 'Global call' } : scope.target, session.settings, publish, session.startedMonotonic)
+        ? await this.createRealtime!(scope.kind === 'Global' ? { global: true, label: 'Global call' } : scope.target, session.settings, publish, session.startedMonotonic, ...(resumeCallId ? [resumeCallId] : []))
         : await this.createLocal(scope.target, text => this.current === session && !session.ended && Boolean(session.send?.(text)), publish);
       session.adapter = adapter;
       if (session.ended || this.current !== session) { await adapter.close(); return; }
@@ -213,7 +213,7 @@ export const localVoiceUsageObserver: VoiceUsageObserver = {
 export const voiceSessionManager = new VoiceSessionManager(async (target, send, changed) => {
   const { VoiceConversation } = await import('./voiceConversation');
   return new VoiceConversation(target, send, changed);
-}, localVoiceUsageObserver, async (target, settings, changed, requestedAt) => {
+}, localVoiceUsageObserver, async (target, settings, changed, requestedAt, resumeCallId) => {
   const { RealtimeVoiceConversation } = await import('./realtimeVoiceConversation');
-  return new RealtimeVoiceConversation(target, settings, changed, requestedAt);
+  return new RealtimeVoiceConversation(target, settings, changed, requestedAt, resumeCallId);
 });

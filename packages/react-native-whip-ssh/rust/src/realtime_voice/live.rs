@@ -313,11 +313,12 @@ impl LiveVoiceAdapter {
                     .map(Into::into)
                     .collect()
             };
-            if let Err(error) = crate::voice_history::persist(
+            if let Err(error) = crate::voice_history::persist_call(
                 adapter.usage.history_identity(),
                 &catalog()?.model,
                 Some(&config.voice),
                 fragments,
+                config.history_continuation(),
             )
             .await
             {

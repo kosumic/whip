@@ -18,7 +18,7 @@ const CONTROL = { skip: 1 } as const;
 const MAX_PENDING_CONTEXT = 8;
 let sequence = 0;
 type CallEvent = { token: string; type: string; muted?: boolean; speaker?: boolean };
-type NativeView = Pick<VoiceConversationView, 'phase' | 'muted' | 'level' | 'playbackLevel' | 'text' | 'userText' | 'error' | 'inputTokens' | 'outputTokens' | 'estimatedUsd' | 'costIncomplete' | 'messages' | 'backendText' | 'liveSeconds' | 'usageFinalized' | 'continuity'>;
+type NativeView = Pick<VoiceConversationView, 'phase' | 'muted' | 'level' | 'playbackLevel' | 'text' | 'userText' | 'error' | 'inputTokens' | 'outputTokens' | 'estimatedUsd' | 'costIncomplete' | 'messages' | 'backendText' | 'liveSeconds' | 'usageFinalized' | 'resumedContextTruncated' | 'continuity'>;
 function requireForeground(): void { if (AppState.currentState !== 'active') throw new Error('Return to Whip to start the call.'); }
 
 /** Only call controls and presentation cross this bridge. PCM and tools stay native. */
@@ -40,7 +40,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
   private cleanups: (() => void)[] = [];
   private view: VoiceConversationView = { phase: 'starting', muted: false, smartTurn: false, speaker: false, text: '', level: 0, progress: 0, error: null, transcript: null, provider: 'openai', inputTokens: 0, outputTokens: 0, estimatedUsd: null };
 
-  constructor(private readonly target: RealtimeVoiceChatTarget, private readonly settings: Readonly<VoiceConversationSettings>, private readonly changed: (view: VoiceConversationView) => void, private readonly requestedAt = performance.now()) {}
+  constructor(private readonly target: RealtimeVoiceChatTarget, private readonly settings: Readonly<VoiceConversationSettings>, private readonly changed: (view: VoiceConversationView) => void, private readonly requestedAt = performance.now(), private readonly resumeCallId?: string) {}
 
   async start(): Promise<void> {
     const elapsed = (at: number) => Math.max(0, Math.round(performance.now() - at));
@@ -106,7 +106,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
       if (this.closed) { await this.playback.endVoiceCall(this.token); return; }
       this.callActivated = true;
       requireForeground();
-      const config = JSON.stringify({ ...(Platform.OS === 'android' ? { clientStartup } : {}), clientElapsedMs: Math.max(0, Math.round(performance.now() - this.requestedAt)), ...(global ? { global: true, globalShizukuAccess: Platform.OS === 'android' && this.settings.globalShizukuAccess } : { target, terminalTarget: this.target.terminal }), ...(this.settings.mode === 'Live' ? { live: true, model: LIVE_MODEL, voice: this.settings.liveVoice } : { model: this.settings.realtimeModel, voice: this.settings.realtimeVoice, vad: parseRealtimeVad(this.settings.realtimeVad ?? DEFAULT_REALTIME_VAD) }) });
+      const config = JSON.stringify({ resumeCallId: this.resumeCallId, ...(Platform.OS === 'android' ? { clientStartup } : {}), clientElapsedMs: Math.max(0, Math.round(performance.now() - this.requestedAt)), ...(global ? { global: true, globalShizukuAccess: Platform.OS === 'android' && this.settings.globalShizukuAccess } : { target, terminalTarget: this.target.terminal }), ...(this.settings.mode === 'Live' ? { live: true, model: LIVE_MODEL, voice: this.settings.liveVoice } : { model: this.settings.realtimeModel, voice: this.settings.realtimeVoice, vad: parseRealtimeVad(this.settings.realtimeVad ?? DEFAULT_REALTIME_VAD) }) });
       this.nativeMediaAttempted = true;
       this.startingMedia = this.playback.startRealtimeVoice(this.token, config);
       await this.startingMedia;
@@ -117,7 +117,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
     } catch (error) {
       // Only application-generated messages are trusted here. Native bridge
       // and provider errors can contain sensitive data.
-      this.fail(voiceCredentialError(error, error instanceof Error && !this.nativeMediaAttempted ? error.message : 'OpenAI voice could not start. Check the saved API key, selected model access, connection, and microphone permissions.'));
+      this.fail(voiceCredentialError(error, error instanceof Error && !this.nativeMediaAttempted ? error.message : this.resumeCallId ? 'The saved call could not be resumed. Check that the original terminal is still connected, and verify OpenAI credentials, model access, connection, and microphone permissions.' : 'OpenAI voice could not start. Check the saved API key, selected model access, connection, and microphone permissions.'));
     }
   }
 

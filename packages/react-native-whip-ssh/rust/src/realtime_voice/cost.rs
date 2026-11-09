@@ -62,7 +62,9 @@ impl CurrentChat {
         let model = config.model()?;
         let scope = if config.preview {
             VoiceUsageScope::Preview
-        } else if config.target.is_some() || config.terminal_target.is_some() {
+        } else if config.terminal_target.is_some() {
+            VoiceUsageScope::Terminal
+        } else if config.target.is_some() {
             VoiceUsageScope::Agent
         } else {
             VoiceUsageScope::Global

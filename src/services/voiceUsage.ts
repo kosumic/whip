@@ -6,7 +6,7 @@ import { recordStorageDiagnostic, storageErrorDetails } from './storageDiagnosti
 
 export type UsageProvider = 'local' | 'openai';
 export type UsageMode = 'turn_based' | 'realtime' | 'live' | 'tts' | 'stt';
-export type UsageScope = 'agent' | 'global' | 'speech' | 'preview';
+export type UsageScope = 'agent' | 'terminal' | 'global' | 'speech' | 'preview';
 export type AccountingStatus = 'live_estimate' | 'provider_usage_finalized' | 'incomplete';
 export type UsageMetric = 'input_text' | 'cached_input_text' | 'output_text' | 'input_audio' | 'cached_input_audio' | 'output_audio' | 'input_image' | 'cached_input_image' | 'other';
 export type UsageUnit = 'tokens' | 'seconds' | 'requests';

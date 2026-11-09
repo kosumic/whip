@@ -1,4 +1,11 @@
 export const zhHans = {
+  'voiceUsage.terminal': "终端通话",
+  'voiceUsage.resume': "继续通话",
+  'voiceUsage.resumeContext': "使用已保存的对话文字开始新通话。仅恢复最近48条消息（共24 KiB，每条最多4 KiB）。较早或未转录的语音可能缺失。不会恢复过去的工具或授权。",
+  'voiceUsage.resumeLocked': "解锁 Whip 后才能继续通话。",
+  'voiceUsage.resumeBusy': "请先结束当前通话，再继续已保存的对话。",
+  'voiceUsage.resumeTargetMissing': "未保存原始终端目标，无法继续此通话。",
+  'voiceUsage.resumeTruncated': "为符合上下文大小限制，已省略部分较早的对话文字。",
   'voiceChat.reconnecting': '正在重新连接通话… 聆听将自动恢复。',
   'voiceChat.freshSessions': '已创建 {{count}} 个 API 会话。每个会话单独计费。',
   'voiceChat.recoveryLifetime': '正在更新服务商会话。',

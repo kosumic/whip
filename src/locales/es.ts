@@ -1,4 +1,11 @@
 export const es = {
+  'voiceUsage.terminal': "Llamada de terminal",
+  'voiceUsage.resume': "Reanudar llamada",
+  'voiceUsage.resumeContext': "Inicia una llamada nueva con el texto guardado. Solo se restauran los 48 mensajes más recientes (24 KiB, hasta 4 KiB por mensaje). Puede faltar voz anterior o sin transcribir. No se restauran herramientas ni permisos anteriores.",
+  'voiceUsage.resumeLocked': "Desbloquea Whip para reanudar una llamada.",
+  'voiceUsage.resumeBusy': "Finaliza la llamada actual antes de reanudar una conversación guardada.",
+  'voiceUsage.resumeTargetMissing': "No se guardó el terminal original. Esta llamada no se puede reanudar.",
+  'voiceUsage.resumeTruncated': "Se omitió parte del texto anterior para respetar el límite de contexto.",
   'voiceChat.reconnecting': 'Reconectando la llamada… La escucha volverá automáticamente.',
   'voiceChat.freshSessions': '{{count}} sesiones de API creadas. Cada sesión tiene cargos de uso separados.',
   'voiceChat.recoveryLifetime': 'Renovando la sesión del proveedor.',

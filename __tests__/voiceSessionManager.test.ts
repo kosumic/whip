@@ -13,6 +13,33 @@ const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve()
 const terminalTarget: TerminalVoiceChatTarget = { hostId: 'host', paneId: 'shell', tabId: 'shell', label: 'SSH shell',
   terminal: { runtimeId: 'runtime', runtimeIncarnation: 1, connectionGeneration: 1, terminalId: 'shell' } };
 
+test.each(['Realtime', 'Live', 'Terminal'] as const)('resuming an ended %s call creates a new owner and forwards only its archive ID', async kind => {
+  const adapters: VoiceSessionAdapter[] = [];
+  const factory = jest.fn(async () => {
+    const adapter = { start: jest.fn(async () => {}), close: jest.fn(async () => {}), setTranscriptBinding: jest.fn(), setVadSensitivity: jest.fn(), submitted: jest.fn(), toggleMuted: jest.fn(), toggleSpeaker: jest.fn(), finish: jest.fn(), skip: jest.fn(async () => {}) };
+    adapters.push(adapter);
+    return adapter;
+  });
+  const manager = new VoiceSessionManager(jest.fn(), undefined, factory);
+  const scope = kind === 'Terminal' ? { kind: 'Terminal' as const, target: terminalTarget } : { kind: 'Global' as const };
+  const settings = { ...defaults, provider: 'openai' as const, mode: kind === 'Live' ? 'Live' as const : 'Realtime' as const };
+  const original = manager.start(scope, () => false, settings);
+  await flush();
+  original.publish({ ...view, messages: [{ id: 'user', role: 'user', text: 'Remember Orion', active: false, spokenUtf16: 0 }] });
+  await manager.hangup(original);
+  const before = original.getSnapshot();
+  const resumed = manager.start(scope, () => false, { ...settings, realtimeVoice: 'cedar' }, 'original-archive');
+  await flush();
+  expect(resumed).not.toBe(original);
+  expect(original.getSnapshot()).toBe(before);
+  expect(factory).toHaveBeenLastCalledWith(kind === 'Terminal' ? terminalTarget : { global: true, label: 'Global call' },
+    expect.objectContaining({ provider: 'openai', realtimeVoice: 'cedar', mode: settings.mode }), expect.any(Function), expect.any(Number), 'original-archive');
+  expect(adapters[0].close).toHaveBeenCalledTimes(1);
+  expect(adapters[1].start).toHaveBeenCalledTimes(1);
+  expect(adapters[1].submitted).not.toHaveBeenCalled();
+  await manager.hangup(resumed);
+});
+
 test.each(['Global', 'Agent', 'Terminal'] as const)('%s recovery retains one logical owner through lock and two provider replacements; Hang Up fences late events', async kind => {
   let publish!: (next: VoiceConversationView) => void;
   const cloud = { start: jest.fn(async () => {}), close: jest.fn(async () => {}), setTranscriptBinding: jest.fn(), setVadSensitivity: jest.fn(), submitted: jest.fn(), toggleMuted: jest.fn(), toggleSpeaker: jest.fn(), finish: jest.fn(), skip: jest.fn(async () => {}) };

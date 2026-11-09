@@ -1,6 +1,13 @@
 import type { en } from './en';
 
 export const fr = {
+  'voiceUsage.terminal': "Appel de terminal",
+  'voiceUsage.resume': "Reprendre l’appel",
+  'voiceUsage.resumeContext': "Démarre un nouvel appel avec le texte enregistré. Seuls les 48 derniers messages (24 Kio, 4 Kio par message) sont restaurés. Des paroles anciennes ou non transcrites peuvent manquer. Les outils et autorisations passés ne sont pas restaurés.",
+  'voiceUsage.resumeLocked': "Déverrouillez Whip pour reprendre un appel.",
+  'voiceUsage.resumeBusy': "Terminez l’appel en cours avant de reprendre une conversation enregistrée.",
+  'voiceUsage.resumeTargetMissing': "La cible du terminal d’origine n’a pas été enregistrée. Cet appel ne peut pas être repris.",
+  'voiceUsage.resumeTruncated': "Une partie du texte antérieur a été omise pour respecter la limite de contexte.",
   'voiceChat.reconnecting': 'Reconnexion de l’appel… L’écoute reprendra automatiquement.',
   'voiceChat.freshSessions': '{{count}} sessions API créées. Chaque session entraîne des frais distincts.',
   'voiceChat.recoveryLifetime': 'Renouvellement de la session du fournisseur.',

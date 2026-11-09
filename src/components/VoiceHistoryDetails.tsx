@@ -1,7 +1,8 @@
-import { Modal, View } from 'react-native';
+import { useState } from 'react';
+import { Modal, Platform, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-import { archivedMessages, type SavedCall } from '../services/voiceHistory';
+import { archivedMessages, canResumeVoiceHistory, type SavedCall } from '../services/voiceHistory';
 import type { VoiceUsageCall } from '../services/voiceUsage';
 import { GlassButton } from './GlassControls';
 import { Text } from './ui/text';
@@ -11,16 +12,20 @@ export function VoiceHistoryDetails({
   call,
   saved,
   onClose,
+  onResume,
 }: {
   call?: VoiceUsageCall;
   saved?: SavedCall;
   onClose: () => void;
+  onResume?: (saved: SavedCall) => void;
 }) {
   const { t, i18n } = useTranslation();
   const insets = useSafeAreaInsets();
   const messages = archivedMessages(saved?.fragments ?? []);
+  const [dismissingForResume, setDismissingForResume] = useState(false);
   return (
-    <Modal animationType="slide" onRequestClose={onClose}>
+    <Modal animationType="slide" visible={!dismissingForResume} onRequestClose={onClose}
+      onDismiss={() => { if (dismissingForResume && saved) onResume?.(saved); }}>
       <View
         style={{ flex: 1, backgroundColor: '#111111', paddingTop: insets.top }}
       >
@@ -36,6 +41,15 @@ export function VoiceHistoryDetails({
               i18n.language,
             )}
           </Text>
+          {onResume && canResumeVoiceHistory(call, saved) && <>
+            <GlassButton accessibilityLabel={t('voiceUsage.resume')} onPress={() => {
+              if (Platform.OS === 'ios') setDismissingForResume(true);
+              else onResume(saved!);
+            }}>
+              <Text style={{ color: '#ffffff' }}>{t('voiceUsage.resume')}</Text>
+            </GlassButton>
+            <Text style={{ color: '#a0a0a0' }}>{t('voiceUsage.resumeContext')}</Text>
+          </>}
         </View>
         {messages.length > 0 ? (
           <VoiceTranscript

@@ -46,6 +46,7 @@ const MODES: (UsageMode | undefined)[] = [
 const SCOPES: (UsageScope | undefined)[] = [
   undefined,
   'agent',
+  'terminal',
   'global',
   'speech',
   'preview',
@@ -55,7 +56,7 @@ const PAGE_SIZE = 20;
 const REFRESH_INTERVAL_MS = 2_000;
 const MIN_COST_AXIS = 0.0001;
 
-export function UsageSection() {
+export function UsageSection({ onResumeCall }: { onResumeCall?: (saved: SavedCall) => void }) {
   const { t, i18n } = useTranslation();
   const visible = useScreenVisible();
   const { expanded, toggleExpanded } = useSectionExpansion('usage');
@@ -582,6 +583,7 @@ export function UsageSection() {
           key={selectedCallId}
           call={selectedCall}
           saved={selectedSaved}
+          onResume={onResumeCall ? saved => { onResumeCall(saved); setSelectedCallId(undefined); } : undefined}
           onClose={() => setSelectedCallId(undefined)}
         />
       )}

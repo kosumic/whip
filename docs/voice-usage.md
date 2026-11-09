@@ -39,9 +39,48 @@ System/Phonon backend or adds work to the audio path. Realtime and GPT-Live
 adapters record provider usage in this ledger. Live uses one cumulative
 seconds item, finalized only after confirmed closure; remote agent spend stays
 unknown and excluded. See [GPT-Live calls](live-voice.md). The scope schema
-supports agent/global, including global GPT-Live. Global Live uses a delegated
+supports agent/terminal/global, including global GPT-Live. Global Live uses a delegated
 Responses backend whose charges are also unknown and excluded from the voice
 duration estimate.
+
+## Resuming ended calls (#405)
+
+History details offer **Resume call** for ended global Realtime/GPT-Live calls
+and terminal Realtime calls with saved conversation text. Agent calls, local
+turn-based calls, speech requests, and previews are excluded. End any active
+call first. Startup uses current credentials, model/voice preferences and access
+controls, while retaining the archived call's conversation mode.
+
+Rust reloads the archive by ID before creating a provider session. It restores
+the most recent 48 user/assistant messages, capped at 24 KiB of UTF-8 text and
+4 KiB per message, as historical context in the new session's instructions.
+Tool/delegation events are excluded. The provider waits for follow-up input;
+startup does not submit a prompt or regenerate the last reply. A visible notice
+explains the limits and missing speech; additional truncation is reported in
+the call UI. Missing/deleted transcripts and startup failures show errors.
+
+Terminal identity is stored with the transcript, outside the billing ledger.
+Resumption checks the original process, runtime incarnation, connection generation
+and terminal. SSH shells also require the same operation epoch; Herdr panes require
+the same pane identity and server recovery revision. A closed,
+replaced, reconnected, or no longer verifiable terminal is rejected. Focus cannot
+redirect a resumed call. App restart invalidates process-local terminal identity;
+it does not permit matching a newly created terminal by name. Older terminal calls
+recorded as agent calls cannot be safely identified and do not expose Resume.
+
+Each resumed call has fresh provider and usage IDs, its own transcript and costs,
+and a bounded copy of inherited conversation context for later resumption. The
+original entry is unchanged. Old capability sessions, approvals, pending work,
+and provider connections are never restored.
+
+Automated coverage checks eligibility, both provider configurations, context
+limits, repeated resumption, target replacement, separate usage IDs and startup
+failures. Device acceptance should also check each supported mode: say “My project
+is Orion,” end the call, resume it from history, then ask “What is my project
+called?” Verify silence until follow-up input, a new history entry, and no repeated
+tools. For terminal calls, change focus before resuming, then repeat after closing
+or reconnecting the original terminal and verify that resumption fails. Physical
+audio and live provider recall require a device check.
 
 ## Storage and lifecycle
 
@@ -55,7 +94,7 @@ in settings; Show more exposes older calls without discarding lifetime history.
 
 The existing database worker serializes read/reduce/commit operations and
 acknowledges durable transactions. The ledger contains call IDs, provider/mode,
-optional model/voice, agent/global scope, timestamps, usage quantities, pricing
+optional model/voice, agent/terminal/global scope, timestamps, usage quantities, pricing
 evidence and estimates. It contains no audio, transcripts, host/agent labels,
 host addresses or credentials. Unknown event fields are rejected.
 

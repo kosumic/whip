@@ -9,11 +9,13 @@ import { usePreparedVoiceConnection } from '../hooks/usePreparedVoiceConnection'
 import { hostDisplayName } from '../lib/hostProfiles';
 import { GlobalVoiceControl, type GlobalVoiceApproval } from '../services/globalVoiceControl';
 import { voiceSessionManager } from '../services/voiceSessionManager';
+import { canResumeVoiceHistory, type SavedCall } from '../services/voiceHistory';
+import type { RealtimeVoiceChatTarget } from '../services/voiceConversation';
 import { VoiceChatScreen, type VoiceChatHandle } from './VoiceChatScreen';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
 
-export interface GlobalVoiceCallHandle { open: () => void }
+export interface GlobalVoiceCallHandle { open: () => void; resume: (saved: SavedCall) => void }
 type Approval = GlobalVoiceApproval & { complete: (approved: boolean) => void };
 const NO_AGENT_SEND = () => false;
 const MAX_MESSAGE_LENGTH = 4096;
@@ -28,6 +30,7 @@ export function GlobalVoiceCall({ ref, navigation, sessions, locked, visible, on
   const credential = useOpenAiVoiceCredentialStatus();
   usePreparedVoiceConnection(!locked && credential.ready);
   const [calling, setCalling] = useState(false);
+  const [resuming, setResuming] = useState<SavedCall>();
   const [callAttempt, setCallAttempt] = useState(0);
   const [expanded, setExpanded] = useState(true);
   const [composing, setComposing] = useState(false);
@@ -40,8 +43,10 @@ export function GlobalVoiceCall({ ref, navigation, sessions, locked, visible, on
   const approvalPane = approvalSession?.snapshot.panes.find(item => item.pane_id === approval?.paneId);
   const approvalAgent = approvalPane?.label || approvalPane?.display_agent || approvalPane?.agent;
   const canStart = credential.ready;
-  const start = useCallback(() => {
+  const start = useCallback((saved?: SavedCall) => {
     if (locked || !canStart) return;
+    setResuming(saved);
+    setDraft(''); setComposing(false); approvalRef.current?.complete(false);
     setCallAttempt(attempt => attempt + 1); setExpanded(true); setCalling(true);
   }, [locked, canStart]);
   useImperativeHandle(ref, () => ({ open() {
@@ -52,7 +57,29 @@ export function GlobalVoiceCall({ ref, navigation, sessions, locked, visible, on
       Alert.alert(t('openai.title'), `${t(credential.reason)}\n\n${t('openai.configure')}`);
       onConfigureOpenAi();
     }
+  }, resume(saved) {
+    if (locked) { Alert.alert(t('voiceUsage.resume'), t('voiceUsage.resumeLocked')); return; }
+    if (!canStart) {
+      Alert.alert(t('openai.title'), `${t(credential.reason)}\n\n${t('openai.configure')}`);
+      onConfigureOpenAi(); return;
+    }
+    if (voiceSessionManager.active && !voiceSessionManager.active.ended) {
+      Alert.alert(t('voiceUsage.resume'), t('voiceUsage.resumeBusy')); return;
+    }
+    if (!canResumeVoiceHistory(undefined, saved)) {
+      Alert.alert(t('voiceUsage.resume'), t('voiceUsage.transcriptUnavailable')); return;
+    }
+    if (saved.usage?.scope === 'terminal' && !saved.continuation?.terminalTarget) {
+      Alert.alert(t('voiceUsage.resume'), t('voiceUsage.resumeTargetMissing')); return;
+    }
+    start(saved);
   } }), [calling, locked, canStart, start, credential.reason, onConfigureOpenAi, t]);
+  const terminal = resuming?.usage?.scope === 'terminal' ? resuming.continuation?.terminalTarget : undefined;
+  const resumePane = terminal?.paneId ? sessions.presentationSessions.find(session => session.id === terminal.runtimeId)?.snapshot.panes.find(pane => pane.pane_id === terminal.paneId && pane.terminal_id === terminal.terminalId) : undefined;
+  const callTarget: RealtimeVoiceChatTarget = terminal ? {
+    hostId: terminal.runtimeId, tabId: resumePane?.tab_id ?? terminal.terminalId, paneId: terminal.paneId ?? terminal.terminalId,
+    label: resumePane?.label || terminal.terminalId, terminal,
+  } : { global: true, label: t('globalCall.title') };
   const context = { navigation, sessions, locked, showNavigation: () => {
     approvalRef.current?.complete(false); setComposing(false); setExpanded(false);
   },
@@ -81,10 +108,11 @@ export function GlobalVoiceCall({ ref, navigation, sessions, locked, visible, on
     if (locked) { controlRef.current?.suspend(); setComposing(false); approvalRef.current?.complete(false); }
   }, [locked]);
   return <>
-    {calling && <VoiceChatScreen key={callAttempt} ref={voice} target={{ global: true, label: t('globalCall.title') }} send={NO_AGENT_SEND}
+    {calling && <VoiceChatScreen key={callAttempt} ref={voice} target={callTarget} send={NO_AGENT_SEND}
+      resumeCallId={resuming?.id} settingsOverride={resuming ? { provider: 'openai', mode: resuming.usage?.mode === 'live' ? 'Live' : 'Realtime' } : undefined}
       visible={visible && !locked} expanded={expanded} dockStyle={{ bottom: bottom + 88 }} compactComposer={false}
       onMinimize={() => { setExpanded(false); setComposing(false); approvalRef.current?.complete(false); }} onExpand={() => setExpanded(true)}
-      onClose={() => { setCalling(false); setComposing(false); setDraft(''); approvalRef.current?.complete(false); }}
+      onClose={() => { setCalling(false); setResuming(undefined); setComposing(false); setDraft(''); approvalRef.current?.complete(false); }}
       onCompose={() => setComposing(true)}>
       {approval && <View className="absolute inset-0 justify-center bg-black/90 px-6">
         <Text className="text-xl font-semibold text-white">{t('globalCall.confirmTitle')}</Text>
@@ -96,7 +124,7 @@ export function GlobalVoiceCall({ ref, navigation, sessions, locked, visible, on
         </View>
       </View>}
       {composing && !approval && <View className="absolute inset-0 gap-4 bg-background px-5" style={{ paddingTop: top + 20, paddingBottom: bottom + 20 }}>
-        <Text className="text-xl font-semibold">{t('globalCall.title')}</Text>
+        <Text className="text-xl font-semibold">{callTarget.label}</Text>
         <TextInput accessibilityLabel={t('globalCall.message')} className="min-h-32 rounded-xl border border-border p-3 text-foreground" multiline maxLength={MAX_MESSAGE_LENGTH} value={draft} onChangeText={setDraft} />
         <Button disabled={!draft.trim()} onPress={() => { voice.current?.submitted(draft.trim()); setDraft(''); setComposing(false); setExpanded(true); }}><Text>{t('globalCall.send')}</Text></Button>
         <Button variant="secondary" onPress={() => setComposing(false)}><Text>{t('common.cancel')}</Text></Button>

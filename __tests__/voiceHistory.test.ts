@@ -1,4 +1,5 @@
-import { archivedMessages, loadVoiceHistory } from '../src/services/voiceHistory';
+import { archivedMessages, canResumeVoiceHistory, loadVoiceHistory, type SavedCall } from '../src/services/voiceHistory';
+import type { UsageMode, UsageScope, VoiceUsageCall } from '../src/services/voiceUsage';
 import { appStorage } from '../src/services/appStorage';
 
 jest.mock('../src/services/appStorage', () => ({ appStorage: { getItem: jest.fn() } }));
@@ -54,4 +55,30 @@ test('tool events stay between Live speech bubbles while nearby fragments join',
     expect.objectContaining({ event }),
     expect.objectContaining({ text: 'Passed.' }),
   ]);
+});
+
+test.each([
+  ['global', 'realtime', true], ['global', 'live', true], ['terminal', 'realtime', true],
+  ['agent', 'realtime', false], ['agent', 'live', false], ['terminal', 'live', false],
+  ['global', 'turn_based', false], ['speech', 'tts', false], ['speech', 'stt', false], ['preview', 'realtime', false],
+] as [UsageScope, UsageMode, boolean][])('resume eligibility for %s %s is %s', (scope, mode, eligible) => {
+  const saved: SavedCall = { ...call('saved', 'model', 1), fragments: [{ id: 'u', role: 'user', text: 'Remember Orion' }],
+    usage: { session_id: 'saved', scope, mode, provider: 'openai', model: 'model', voice: 'marin', started_at_ms: 0 } };
+  expect(canResumeVoiceHistory(undefined, saved)).toBe(eligible);
+  expect(canResumeVoiceHistory({ active: true } as VoiceUsageCall, saved)).toBe(false);
+  expect(canResumeVoiceHistory(undefined, { ...saved, fragments: [] })).toBe(false);
+  expect(canResumeVoiceHistory(undefined, { ...saved, usage: undefined })).toBe(false);
+  expect(canResumeVoiceHistory(undefined, { ...saved, usage: { ...saved.usage!, provider: 'local' } })).toBe(false);
+});
+
+test('terminal history retains its target identity separately from usage', async () => {
+  const target = { runtimeId: 'host', runtimeIncarnation: 3, connectionGeneration: 5, terminalId: 'shell', operationEpoch: 7, recoveryRevision: 1, processEpoch: 'process' };
+  jest.mocked(appStorage.getItem).mockResolvedValueOnce(JSON.stringify([{ ...call('saved', 'model', 1),
+    usage: { session_id: 'saved', scope: 'terminal', mode: 'realtime', provider: 'openai', started_at_ms: 0 },
+    continuation: { terminalTarget: target, context: [], truncated: false },
+  }]));
+  const [saved] = await loadVoiceHistory();
+  expect(saved.usage?.scope).toBe('terminal');
+  expect(saved.continuation?.terminalTarget).toEqual(target);
+  expect(canResumeVoiceHistory(undefined, saved)).toBe(true);
 });

@@ -564,3 +564,15 @@ fn mirroring_already_submitted_text_cannot_delegate_previous_speech() -> Result<
     assert!(!request.contains("Use the current project"));
     Ok(())
 }
+
+#[test]
+fn resumed_live_call_usage_is_separate_from_its_predecessor()
+-> Result<(), Box<dyn std::error::Error>> {
+    let first = usage::Usage::start("marin", false, true)?;
+    let second = usage::Usage::start("marin", false, true)?;
+    let first = first.history_identity().ok_or("no original usage")?;
+    let second = second.history_identity().ok_or("no resumed usage")?;
+    assert_ne!(first.session_id, second.session_id);
+    assert_eq!(second.scope, crate::app_database::VoiceUsageScope::Global);
+    Ok(())
+}

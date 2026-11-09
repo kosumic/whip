@@ -22,6 +22,7 @@ import { getBillingDistribution } from '../billing/distribution';
 import { MembershipSection } from './MembershipSection';
 import { RancherPurchaseSheet } from './RancherPurchaseSheet';
 import { GlobalCallButton } from './GlobalCallButton';
+import type { SavedCall } from '../services/voiceHistory';
 
 type Props = Omit<
   SettingsSectionProps,
@@ -35,6 +36,7 @@ type Props = Omit<
   entitlements: WhipEntitlementsController;
   membershipEnabled: boolean;
   onOpenLicenses: () => void;
+  onResumeCall?: (saved: SavedCall) => void;
 };
 
 export function MoreScreen(props: Props) {
@@ -82,7 +84,7 @@ const MoreScreenContent = memo(function MoreContent(props: Props) {
         {getBillingDistribution().channel === 'github' || props.developerOptionsEnabled ? (
           <TipJarSection />
         ) : null}
-        <UsageSection />
+        <UsageSection onResumeCall={props.onResumeCall} />
         {props.developerOptionsEnabled ? <FeedbackSection /> : null}
         <SettingsSection
           openAiConfigRequest={openAiConfigRequest}

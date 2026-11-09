@@ -6,6 +6,41 @@ use crate::host_runtime::{
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
+#[test]
+fn archived_terminal_can_be_repinned_only_while_its_original_identity_is_current() -> TestResult {
+    let _guard = terminal_delivery_test_guard();
+    let (runtime, pinned) = shell_fixture("history-terminal")?;
+    let target = pinned.history_target();
+    // Opening or focusing some other terminal must never retarget history.
+    let shell = runtime.inner.state.lock().ssh_shells["shell"].clone();
+    runtime
+        .inner
+        .state
+        .lock()
+        .ssh_shells
+        .insert("different-shell".into(), shell);
+    let resumed = PinnedTerminal::pin(target.clone())?;
+    assert_eq!(resumed.history_target().terminal_id, "shell");
+    // Herdr discovery can restart while this separate SSH shell stays intact.
+    runtime.inner.state.lock().herdr_recovery_revision += 1;
+    PinnedTerminal::pin(target.clone())?;
+    let mut restarted_process = target.clone();
+    restarted_process.process_epoch = Some("another-process".into());
+    assert!(PinnedTerminal::pin(restarted_process).is_err());
+    runtime
+        .inner
+        .state
+        .lock()
+        .ssh_shells
+        .get_mut("shell")
+        .ok_or("missing shell")?
+        .operation_epoch += 1;
+    assert!(PinnedTerminal::pin(target.clone()).is_err());
+    runtime.inner.state.lock().ssh_shells.remove("shell");
+    assert!(PinnedTerminal::pin(target).is_err());
+    Ok(())
+}
+
 pub(crate) fn shell_fixture(id: &str) -> TestResult<(Arc<HostRuntime>, Arc<PinnedTerminal>)> {
     let runtime = register_connected_test_runtime(id);
     runtime.inner.state.lock().ssh_shells.insert(
@@ -25,6 +60,9 @@ pub(crate) fn shell_fixture(id: &str) -> TestResult<(Arc<HostRuntime>, Arc<Pinne
         runtime_id: id.into(),
         runtime_incarnation: 1,
         connection_generation: 1,
+        operation_epoch: None,
+        recovery_revision: None,
+        process_epoch: None,
         terminal_id: "shell".into(),
         pane_id: None,
     })?;
@@ -87,6 +125,9 @@ fn herdr_terminal_follows_identity_and_rejects_coding_agent_takeover() -> TestRe
         runtime_id: runtime.inner.id.clone(),
         runtime_incarnation: 1,
         connection_generation: 1,
+        operation_epoch: None,
+        recovery_revision: None,
+        process_epoch: None,
         terminal_id: snapshot.panes[0].terminal_id.clone(),
         pane_id: Some(snapshot.panes[0].pane_id.clone()),
     };

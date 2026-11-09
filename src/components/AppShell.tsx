@@ -524,6 +524,7 @@ export function AppShell({
                     <ScreenUpdates active={navigation.state.tab === 'more'}>
                       {() => (
                         <MoreScreen
+                          onResumeCall={saved => globalCallRef.current?.resume(saved)}
                           openAiConfigRequest={openAiConfigRequest}
                           alertsEnabled={alertsEnabled}
                           agentAlertLevel={agentAlertLevel}

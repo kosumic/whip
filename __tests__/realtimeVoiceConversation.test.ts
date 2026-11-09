@@ -51,6 +51,26 @@ jest.mock('../src/services/NativeTranscriptService', () => ({ agentTranscriptSer
 
 const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 
+test.each(['Realtime', 'Live'] as const)('resuming %s starts a fresh provider call by archive ID without submitting or replaying a prompt', async mode => {
+  const call = new RealtimeVoiceConversation({ global: true, label: 'Global call' }, { ...defaults, provider: 'openai', mode }, jest.fn(), performance.now(), 'archived-call');
+  await call.start();
+  const [, raw] = mockNative.startRealtimeVoice.mock.calls[0] as unknown as [string, string];
+  expect(JSON.parse(raw)).toEqual(expect.objectContaining({ resumeCallId: 'archived-call', global: true, voice: mode === 'Live' ? defaults.liveVoice : defaults.realtimeVoice }));
+  expect(mockNative.realtimeVoiceSubmitted).not.toHaveBeenCalled();
+  await call.close();
+});
+
+test('failed resume startup reports an error and releases the call', async () => {
+  mockNative.startRealtimeVoice.mockRejectedValueOnce(new Error('sensitive native error'));
+  const changed = jest.fn();
+  const call = new RealtimeVoiceConversation({ global: true, label: 'Global call' }, { ...defaults, provider: 'openai' }, changed, performance.now(), 'deleted-call');
+  await call.start();
+  await call.close();
+  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'error', error: expect.stringContaining('could not be resumed') }));
+  expect(mockNative.endVoiceCall).toHaveBeenCalledTimes(1);
+  expect(mockNative.realtimeVoiceSubmitted).not.toHaveBeenCalled();
+});
+
 test.each(['Realtime', 'Live'] as const)('%s native recovery publishes status without opening a second phone call, microphone or replaying input', async mode => {
   const changed = jest.fn();
   const call = new RealtimeVoiceConversation({ global: true, label: 'Global call' }, { ...defaults, provider: 'openai', mode }, changed);

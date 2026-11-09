@@ -17,6 +17,7 @@ pub(super) fn configure(
     session: &mut api::SessionConfig,
     instructions: String,
 ) -> Result<(), &'static str> {
+    let instructions = config.history_instructions(&instructions)?;
     let tools = voice::schemas(config.global_shizuku_access)
         .into_iter()
         .map(serde_json::from_value)

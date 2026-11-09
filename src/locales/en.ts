@@ -1,4 +1,11 @@
 export const en = {
+  'voiceUsage.terminal': 'Terminal call',
+  'voiceUsage.resumeTruncated': 'Some earlier conversation text was omitted to fit the saved-context limit.',
+  'voiceUsage.resume': 'Resume call',
+  'voiceUsage.resumeContext': 'Starts a new call using saved conversation text. Only the most recent 48 messages (24 KiB, up to 4 KiB per message) are restored. Earlier or untranscribed speech may be missing. Past tools and approvals are not restored.',
+  'voiceUsage.resumeLocked': 'Unlock Whip to resume a call.',
+  'voiceUsage.resumeBusy': 'End the current call before resuming a saved conversation.',
+  'voiceUsage.resumeTargetMissing': 'The original terminal target was not saved. This call cannot be resumed.',
   'voiceProvider.prepareCalls': "Keep voice client warm",
   'voiceProvider.prepareCallsHelp': "Keep WebRTC resources and an HTTPS connection ready while Whip is open. Uses extra memory and periodic network requests without your API key. The microphone and API session start only when you call; preparation adds no API usage charges.",
   'voiceUsage.cost': 'Cost',

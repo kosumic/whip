@@ -111,7 +111,7 @@ impl RealtimeVoiceAdapter {
     )]
     pub(super) async fn run_call(
         self: &Arc<Self>,
-        config: Config,
+        mut config: Config,
         key: native_credentials::NativeCredential,
         update: Option<ClientEvent>,
         agent: Option<Arc<PinnedAgent>>,
@@ -119,7 +119,13 @@ impl RealtimeVoiceAdapter {
         mut commands: mpsc::Receiver<Command>,
         tools: &mut JoinSet<ToolCompletion>,
     ) -> Result<(), &'static str> {
-        let update = serde_json::to_value(update).map_err(|_| "Invalid voice session.")?;
+        config.restore_history().await?;
+        self.view.lock().resumed_context_truncated = config
+            .continuation
+            .as_ref()
+            .map(|context| context.truncated);
+        let update = serde_json::to_value(config.history_update(update)?)
+            .map_err(|_| "Invalid voice session.")?;
         let mut retrying = false;
         let mut established = false;
         loop {

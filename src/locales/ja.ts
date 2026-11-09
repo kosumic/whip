@@ -1,4 +1,11 @@
 export const ja = {
+  'voiceUsage.terminal': "ターミナル通話",
+  'voiceUsage.resume': "通話を再開",
+  'voiceUsage.resumeContext': "保存された会話テキストで新しい通話を開始します。直近48件のメッセージ（合計24 KiB、各4 KiBまで）を復元します。古い発話や未文字起こしの発話は含まれない場合があります。過去のツールや承認は復元しません。",
+  'voiceUsage.resumeLocked': "通話を再開するには Whip のロックを解除してください。",
+  'voiceUsage.resumeBusy': "保存した会話を再開する前に、現在の通話を終了してください。",
+  'voiceUsage.resumeTargetMissing': "元のターミナルが保存されていないため、この通話は再開できません。",
+  'voiceUsage.resumeTruncated': "コンテキストの上限に収めるため、以前の会話の一部を省略しました。",
   'voiceChat.reconnecting': '通話に再接続中… 聞き取りは自動で再開します。',
   'voiceChat.freshSessions': 'API セッションを {{count}} 件作成しました。各セッションの利用料金は別々に発生します。',
   'voiceChat.recoveryLifetime': 'プロバイダーのセッションを更新しています。',
