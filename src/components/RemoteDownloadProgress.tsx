@@ -72,6 +72,13 @@ export function RemoteDownloadProgress({ progress, onCancel, onRetry }: {
   const eta = progress.remainingSeconds;
   const rateAvailable = speed !== undefined && Number.isFinite(speed) && speed > 0;
   const etaAvailable = knownTotal && rateAvailable && eta !== undefined && Number.isFinite(eta) && eta >= 0;
+  const roundedEta = etaAvailable ? Math.max(1, Math.ceil(eta / 5) * 5) : null;
+  const etaLabel = progress.rateCalculating ? t('files.etaCalculating')
+    : roundedEta === null ? t('files.etaUnknown')
+      : roundedEta <= 60 ? t('files.etaSeconds', { seconds: roundedEta })
+        : roundedEta % 60 === 0
+          ? t('files.etaMinutes', { minutes: roundedEta / 60 })
+          : t('files.etaMinutesSeconds', { minutes: Math.floor(roundedEta / 60), seconds: roundedEta % 60 });
 
   return (
     <View className="gap-2 border-t border-border p-3">
@@ -87,9 +94,7 @@ export function RemoteDownloadProgress({ progress, onCancel, onRetry }: {
       ) : null}
       {transferring ? (
         <Text className="text-[12px] text-muted-foreground">
-          {t('files.networkRate', { speed: rateAvailable ? formatRate(speed) : '—',
-            eta: progress.rateCalculating ? t('files.etaCalculating')
-              : etaAvailable ? t('files.etaSeconds', { seconds: Math.max(1, Math.ceil(eta / 5) * 5) }) : t('files.etaUnknown') })}
+          {t('files.networkRate', { speed: rateAvailable ? formatRate(speed) : '—', eta: etaLabel })}
         </Text>
       ) : null}
       {determinate ? (

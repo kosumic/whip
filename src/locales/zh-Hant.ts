@@ -1188,6 +1188,8 @@ export const zhHant: Record<string, string> = {
   'files.etaCalculating': '正在計算…',
   'files.etaUnknown': '未知',
   'files.etaSeconds': '約 {{seconds}} 秒',
+  'files.etaMinutes': '約 {{minutes}} 分鐘',
+  'files.etaMinutesSeconds': '約 {{minutes}} 分 {{seconds}} 秒',
   'files.openInFileBrowser': '在檔案管理員中開啟',
   'files.fileBrowserFallback': '開啟儲存的資料夾或系統文件選擇器。某些提供者可能會顯示其他資料夾。',
   'files.fileBrowserFailed': '無法開啟儲存位置。檔案可能已移動、存取權限可能已過期，或沒有可用的檔案管理員。請在所選資料夾中尋找。',

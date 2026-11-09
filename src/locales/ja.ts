@@ -1188,6 +1188,8 @@ export const ja = {
   'files.etaCalculating': '計算中…',
   'files.etaUnknown': '不明',
   'files.etaSeconds': '約{{seconds}}秒',
+  'files.etaMinutes': '約{{minutes}}分',
+  'files.etaMinutesSeconds': '約{{minutes}}分{{seconds}}秒',
   'files.openInFileBrowser': 'ファイルブラウザで開く',
   'files.fileBrowserFallback': '保存先フォルダまたはシステムの書類選択画面を開きます。プロバイダによっては別のフォルダが表示されます。',
   'files.fileBrowserFailed': '保存先を開けませんでした。ファイルの移動、アクセス期限切れ、またはファイルブラウザが利用できない可能性があります。選択したフォルダで確認してください。',

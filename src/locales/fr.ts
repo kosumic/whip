@@ -1208,6 +1208,8 @@ export const fr = {
   'files.etaCalculating': 'Calcul en cours…',
   'files.etaUnknown': 'Inconnu',
   'files.etaSeconds': '~{{seconds}} s',
+  'files.etaMinutes': '~{{minutes}} min',
+  'files.etaMinutesSeconds': '~{{minutes}} min {{seconds}} s',
   'files.openInFileBrowser': 'Ouvrir dans le gestionnaire de fichiers',
   'files.fileBrowserFallback': 'Ouvre le dossier enregistré ou le sélecteur de documents du système. Certains fournisseurs peuvent afficher un autre dossier.',
   'files.fileBrowserFailed': 'Impossible d’ouvrir la destination. Le fichier a peut-être été déplacé, l’accès a expiré ou aucun gestionnaire de fichiers n’est disponible. Retrouvez-le dans le dossier choisi.',
