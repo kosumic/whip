@@ -222,7 +222,7 @@ jobs:
         run: bash tests/test-tailcat-proxyjump.sh
 
       - name: Install prebuilt cargo-audit
-        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-audit@0.22.2
           fallback: none
@@ -606,7 +606,7 @@ jobs:
           key: ${{ steps.ios-rust-cache.outputs.cache-primary-key }}
 
       - name: Set up Ruby and CocoaPods
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94 # v1
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1
         with:
           ruby-version: '3.4'
           bundler-cache: true
