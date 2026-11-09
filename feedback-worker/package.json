@@ -26,7 +26,7 @@
     "@typescript-eslint/eslint-plugin": "^8.70.1",
     "@typescript-eslint/parser": "^8.68.0",
     "babel-jest": "~30.5.2",
-    "eslint": "^8.57.1",
+    "eslint": "^10.14.0",
     "eslint-plugin-sonarjs": "^4.2.2",
     "jest": "~30.5.2",
     "typescript": "~6.0.3",
