@@ -76,9 +76,11 @@ jest.mock('react-native', () => {
   }, native);
 });
 jest.mock('react-i18next', () => ({ useTranslation: () => ({
-  t: (key: string, values?: { name?: string; speed?: string; eta?: string; seconds?: number }) => {
+  t: (key: string, values?: { name?: string; speed?: string; eta?: string; minutes?: number; seconds?: number }) => {
     if (key === 'files.networkRate') return `${key}:${values?.speed}:${values?.eta}`;
     if (key === 'files.etaSeconds') return `~${values?.seconds} s`;
+    if (key === 'files.etaMinutes') return `~${values?.minutes} m`;
+    if (key === 'files.etaMinutesSeconds') return `~${values?.minutes} m ${values?.seconds} s`;
     return values?.name ? `${key}:${values.name}` : key;
   },
 }) }));
@@ -1172,6 +1174,14 @@ it.each(['context', 'preview'] as const)('shows shared progress, saving, complet
     const bar = tree.root.findByProps({ accessibilityRole: 'progressbar' });
     expect(bar.props.accessibilityValue.now).toBe(Math.min(99, bytesTransferred / totalBytes * 100));
     expect(text()).not.toContain('files.downloadedTitle');
+  }
+  for (const { seconds, bytesPerSecond, display } of [
+    { seconds: 60, bytesPerSecond: 900_000, display: '879 KiB/s:~60 s' },
+    { seconds: 61, bytesPerSecond: 1_500_000, display: '1.4 MiB/s:~1 m 5 s' },
+    { seconds: 120, bytesPerSecond: 1_500_000, display: '1.4 MiB/s:~2 m' },
+  ]) {
+    act(() => { report({ phase: 'downloading', bytesTransferred: totalBytes / 2, totalBytes, bytesPerSecond, remainingSeconds: seconds }); });
+    expect(text()).toContain(`files.networkRate:${display}`);
   }
   act(() => { report({ phase: 'downloading', bytesTransferred: totalBytes / 2, totalBytes }); });
   expect(text()).toContain('files.networkRate:—:files.etaUnknown');

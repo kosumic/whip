@@ -1188,6 +1188,8 @@ export const zhHans = {
   'files.etaCalculating': '正在计算…',
   'files.etaUnknown': '未知',
   'files.etaSeconds': '约 {{seconds}} 秒',
+  'files.etaMinutes': '约 {{minutes}} 分钟',
+  'files.etaMinutesSeconds': '约 {{minutes}} 分 {{seconds}} 秒',
   'files.openInFileBrowser': '在文件管理器中打开',
   'files.fileBrowserFallback': '打开保存的文件夹或系统文档选择器。某些提供程序可能会显示其他文件夹。',
   'files.fileBrowserFailed': '无法打开保存位置。文件可能已移动、访问权限可能已过期，或没有可用的文件管理器。请在所选文件夹中查找。',
