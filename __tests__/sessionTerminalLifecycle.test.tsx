@@ -276,7 +276,12 @@ test('detaching during preference restoration does not publish or save a stale r
   expect(update.options.commitAppCore).not.toHaveBeenCalled();
   expect(runtime.agentPreferencesJson).not.toHaveBeenCalled();
   expect(appStorage.setItem).not.toHaveBeenCalled();
-  expect(recordOperationalDiagnostic).not.toHaveBeenCalled();
+  expect(recordOperationalDiagnostic).not.toHaveBeenCalledWith(
+    'error',
+    'Application',
+    'background-operation-failed',
+    expect.objectContaining({ context: 'agent-preferences-restore' }),
+  );
 });
 
 test('Copy forwards the optional name to the native runtime and opens the created pane', async () => {
