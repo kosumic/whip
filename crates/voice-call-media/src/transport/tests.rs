@@ -4,6 +4,7 @@ use super::*;
 mod support;
 use rtc::peer_connection::configuration::setting_engine::SettingEngineBuilder;
 use std::sync::Arc;
+use std::time::Instant;
 use support::{Gathered, TestResult, audio, send_silence};
 use tokio::sync::Notify;
 use webrtc::{
@@ -11,7 +12,7 @@ use webrtc::{
     peer_connection::{PeerConnection, PeerConnectionBuilder, RTCSessionDescription},
 };
 #[tokio::test]
-async fn udp_and_tcp_media_survive_bursts_of_mirrored_data_channel_events() -> TestResult {
+async fn udp_and_tcp_media_preserve_rtp_bursts_amid_mirrored_data_channel_events() -> TestResult {
     let _guard = crate::prepared::TEST_LOCK.lock().await;
     transport_bursts(false).await
 }
@@ -104,6 +105,7 @@ async fn transport_bursts(prepared: bool) -> TestResult {
             let mut decoder = opus::Decoder::new(24_000, opus::Channels::Mono)?;
             assert!(decoder.decode(&packet.payload, &mut [0; 2880], false)? > 0);
             drop(packet);
+            admitted_burst(&audio, &mut local.incoming).await?;
             channel.close().await?;
             tokio::time::timeout(
                 Duration::from_secs(5),
@@ -131,6 +133,58 @@ async fn transport_bursts(prepared: bool) -> TestResult {
         })
         .await??;
     }
+    Ok(())
+}
+
+// Adapted from Codex PR #46880: all admitted packets must reach the real Opus
+// decoder even when one network batch spans more than the reorder window.
+async fn admitted_burst(
+    audio: &webrtc::media_stream::track_local::static_sample::TrackLocalStaticSample,
+    incoming: &mut crate::incoming::Incoming,
+) -> TestResult {
+    use crate::jitter::{Frame, Jitter, MAX_FRAME_SAMPLES};
+
+    const BURST_PACKETS: usize = 12;
+    for _ in 0..BURST_PACKETS {
+        send_silence(audio).await?;
+    }
+    let mut jitter = Jitter::default();
+    let mut expected = Vec::new();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while expected.len() < BURST_PACKETS {
+            if let Some(received) = incoming.take()? {
+                let packet = crate::packet::parse(received.as_ref()).ok_or("Invalid burst RTP")?;
+                expected.push((packet.sequence, packet.timestamp, packet.payload.clone()));
+                let at = received.at;
+                jitter.push(packet.retaining(received), at);
+            } else {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        }
+        Ok::<_, &'static str>(())
+    })
+    .await??;
+
+    let mut decoder = opus::Decoder::new(crate::RATE as u32, opus::Channels::Mono)?;
+    let mut pcm = vec![0; MAX_FRAME_SAMPLES];
+    let mut actual = Vec::new();
+    let mut samples = 0;
+    // Advance the test's playout clock without wall-clock sleeps. The entire
+    // burst is due, and no empty-queue concealment is needed between packets.
+    let due = Instant::now() + Duration::from_secs(1);
+    for _ in 0..BURST_PACKETS {
+        let Some(Frame::Packet(packet)) = jitter.pop(due) else {
+            return Err("Admitted burst speech disappeared before decoding".into());
+        };
+        let count = decoder.decode(&packet.payload, &mut pcm, false)?;
+        samples += count;
+        jitter.advance(count);
+        actual.push((packet.sequence, packet.timestamp, packet.payload));
+    }
+    assert_eq!(actual, expected);
+    assert_eq!(samples, BURST_PACKETS * crate::FRAME);
+    assert!(jitter.is_empty());
+    assert!(jitter.take_statistics() == crate::jitter::Statistics::default());
     Ok(())
 }
 #[tokio::test]

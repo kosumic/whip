@@ -351,6 +351,43 @@ async fn hangup_rejects_late_pcm_before_it_can_reach_native_playback()
 }
 
 #[tokio::test]
+async fn native_audio_failure_retires_full_playback_and_rejects_late_pcm()
+-> Result<(), Box<dyn std::error::Error>> {
+    use voice_call_openai::Host;
+    let _device_audio = DEVICE_AUDIO_TEST.lock().await;
+    let owner = playback_owner()?;
+    let host = super::super::host::AppHost {
+        owner: owner.clone(),
+        attempt: recovery::Attempt::new(owner.clone()),
+    };
+    let tag = voice_call_media::Tag {
+        response: "reply".into(),
+        item: "audio".into(),
+        index: 0,
+    };
+    host.render(&tag, &vec![1000; voice::MAX_OUTPUT])?;
+    let epoch = owner.output.lock().epoch;
+    // Model a native partial write with unread speech still in Rust and
+    // submitted samples awaiting a device completion. No queue space is free.
+    let mut submitted = [0; voice::FRAME];
+    assert_eq!(owner.output.lock().read(&mut submitted), voice::FRAME);
+    owner.fail("Synthetic native audio interruption.");
+    host.render(&tag, &[2000; voice::FRAME])?;
+    {
+        let mut output = owner.output.lock();
+        output.acknowledge(epoch, voice::FRAME);
+        assert!(output.epoch > epoch);
+        assert_eq!(output.read(&mut submitted), 0);
+        assert_eq!(output.played, 0);
+    }
+    assert!(owner.closed.load(Ordering::Acquire));
+    assert_eq!(owner.view.lock().phase, "error");
+    assert!(!host.current());
+    owner.close();
+    Ok(())
+}
+
+#[tokio::test]
 async fn live_listening_requires_session_confirmation_devices_and_fresh_uploaded_audio()
 -> Result<(), Box<dyn std::error::Error>> {
     let _device_audio = DEVICE_AUDIO_TEST.lock().await;

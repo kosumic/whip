@@ -350,6 +350,9 @@ struct OutputItem {
     end: usize,
 }
 
+// One bounded provider PCM queue feeds native device reads. Preserve unread
+// samples across producer pauses; device acknowledgements alone free capacity.
+// Cancellation retires the epoch instead of waiting for a speaker write.
 struct Output {
     live_transcript: Option<live::captions::Transcript>,
     transcript: transcript::Transcript,

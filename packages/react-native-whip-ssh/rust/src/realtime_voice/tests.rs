@@ -1,6 +1,13 @@
 use super::*;
 use crate::host_runtime::realtime_agent::Delegation;
 
+fn pcm_bytes(samples: &[i16]) -> Vec<u8> {
+    samples
+        .iter()
+        .flat_map(|sample| sample.to_le_bytes())
+        .collect()
+}
+
 #[test]
 fn both_providers_receive_agent_updates_as_quiet_context_without_a_user_turn_or_response_request()
 -> Result<(), Box<dyn std::error::Error>> {
@@ -239,22 +246,95 @@ fn audio_overflow_and_invalid_frames_remain_bounded() {
     assert!(output.append("three".into(), 0, vec![0]).is_err());
 }
 
+// Mobile equivalents of the PCM pause and flush regressions in Codex PR #46880.
+// The native sink pulls from Output without blocking a speaker writer.
+#[test]
+fn queued_pcm_survives_a_pause_partial_reads_and_an_underrun() -> Result<(), &'static str> {
+    let mut output = Output::default();
+    let first = vec![1000_i16; FRAME];
+    let second: Vec<_> = [0_i16, -2000, 2000]
+        .into_iter()
+        .cycle()
+        .take(FRAME)
+        .collect();
+    output.append("item".into(), 0, pcm_bytes(&first))?;
+    let epoch = output.epoch;
+    // Nothing consumes or rewrites queued PCM while the producer is paused.
+    // Queue both buffers before the device next asks for a partial buffer.
+    std::thread::sleep(Duration::from_millis(20));
+    output.append("item".into(), 0, pcm_bytes(&second))?;
+    std::thread::sleep(Duration::from_millis(20));
+    let expected: Vec<_> = first.into_iter().chain(second).collect();
+    let mut actual = Vec::new();
+    let mut buffer = [0; FRAME / 3];
+    while actual.len() < expected.len() {
+        let count = output.read(&mut buffer);
+        assert!(count > 0);
+        actual.extend_from_slice(&buffer[..count]);
+        output.acknowledge(epoch, actual.len());
+    }
+    assert_eq!(actual, expected);
+    assert_eq!(output.read(&mut buffer), 0);
+    assert_eq!(output.played, expected.len());
+
+    // Native silence on an underrun must not consume future provider samples.
+    output.append("item".into(), 0, pcm_bytes(&[3000; FRAME]))?;
+    let mut resumed = [0; FRAME];
+    assert_eq!(output.read(&mut resumed), FRAME);
+    assert_eq!(resumed, [3000; FRAME]);
+    output.acknowledge(epoch, actual.len() + FRAME);
+    assert_eq!(output.played, output.generated);
+    Ok(())
+}
+
+#[test]
+fn a_full_pcm_queue_preserves_speech_and_flush_retires_device_acknowledgements()
+-> Result<(), &'static str> {
+    let mut output = Output::default();
+    let pcm = |sample: i16, count: usize| sample.to_le_bytes().repeat(count);
+    output.append("old".into(), 0, pcm(1000, MAX_OUTPUT))?;
+    let epoch = output.epoch;
+    let mut submitted = [0; FRAME];
+    assert_eq!(output.read(&mut submitted), FRAME);
+    assert_eq!(submitted, [1000; FRAME]);
+    // Reading into the device does not free the bound until it is heard.
+    assert!(output.append("old".into(), 0, pcm(2000, 1)).is_err());
+    output.acknowledge(epoch, FRAME);
+    output.append("old".into(), 0, pcm(2000, FRAME))?;
+    assert!(output.append("old".into(), 0, pcm(3000, 1)).is_err());
+    let mut retained = vec![0; MAX_OUTPUT];
+    assert_eq!(output.read(&mut retained), MAX_OUTPUT);
+    assert_eq!(
+        &retained[..MAX_OUTPUT - FRAME],
+        vec![1000; MAX_OUTPUT - FRAME]
+    );
+    assert_eq!(&retained[MAX_OUTPUT - FRAME..], [2000; FRAME]);
+
+    // A full device queue cannot hold up cancellation. Reset it before the
+    // replacement audio arrives; delayed old completions must remain inert.
+    output.clear();
+    assert!(output.epoch > epoch);
+    assert_eq!(output.read(&mut submitted), 0);
+    output.append("new".into(), 0, pcm(3000, FRAME))?;
+    assert_eq!(output.read(&mut submitted), FRAME);
+    output.acknowledge(epoch, MAX_OUTPUT + FRAME);
+    assert_eq!(output.played, 0);
+    assert_eq!(submitted, [3000; FRAME]);
+    output.acknowledge(output.epoch, FRAME);
+    assert_eq!(output.played, FRAME);
+    Ok(())
+}
+
 #[test]
 fn consecutive_replies_preserve_queued_speech_and_the_device_tail() -> Result<(), &'static str> {
     let mut output = Output::default();
-    let pcm = |samples: &[i16]| {
-        samples
-            .iter()
-            .flat_map(|sample| sample.to_le_bytes())
-            .collect()
-    };
-    output.append("one".into(), 0, pcm(&[1, 2, 3, 4]))?;
+    output.append("one".into(), 0, pcm_bytes(&[1, 2, 3, 4]))?;
     let epoch = output.epoch;
     let mut submitted = [0; 2];
     assert_eq!(output.read(&mut submitted), 2);
     output.acknowledge(epoch, 1);
     // Both the device tail and Rust's unread tail precede the next response.
-    output.append("two".into(), 0, pcm(&[5, 6, 7]))?;
+    output.append("two".into(), 0, pcm_bytes(&[5, 6, 7]))?;
     let mut next = [0; 5];
     assert_eq!(output.read(&mut next), 5);
     assert_eq!(submitted, [1, 2]);

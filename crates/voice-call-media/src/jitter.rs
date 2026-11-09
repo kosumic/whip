@@ -7,8 +7,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+// Reordering latency is not a cap on the duration of admitted speech. Keep
+// bursts until playout; ingress permits bound retained RTP through decoding.
 const REORDER: Duration = Duration::from_millis(60);
-pub(super) const MAX_PACKETS: usize = 64;
+pub(super) const MAX_PACKETS: usize = super::incoming::PACKETS;
 const RTP_RATE: usize = 48_000;
 const MIN_FRAME_SAMPLES: usize = RATE / 400;
 pub(super) const MAX_FRAME_SAMPLES: usize = RATE * 120 / 1000;

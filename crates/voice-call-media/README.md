@@ -32,9 +32,16 @@ second recorder, or JavaScript PCM bridge is created.
 
 RTP packet/byte permits remain held through jitter buffering and decoding.
 Ingress is bounded to 64 packets/2 MiB, pending capture to one native batch plus
-a partial 20 ms packet, and sends to 100 ms. Mirrored control events cannot fill
-an application queue or block RTP. Provider identifiers in `Tag` are opaque to
-this engine. Provider session, tool, billing and retirement policy stay outside.
+a partial 20 ms packet, and sends to 100 ms. The 60 ms reorder window is a
+playout deadline, not a limit on queued speech duration: all admitted burst
+packets remain queued for decoding. The host's bounded PCM queue retains unread
+speech across pauses and reports overflow instead of overwriting it with silence.
+Native devices pace consumption; partial reads advance only by samples delivered.
+Flushes retire the playback epoch, so old acknowledgements cannot advance a new
+queue. The synchronous host adapter does not wait for speaker queue space.
+Mirrored control events cannot fill an application queue or block RTP. Provider
+identifiers in `Tag` are opaque to this engine. Provider session, tool, billing
+and retirement policy stay outside.
 
 Run the executable local signaling/PCM example (no API key or audio device):
 
