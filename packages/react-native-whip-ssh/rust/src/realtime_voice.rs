@@ -713,17 +713,14 @@ impl RealtimeVoiceAdapter {
         self.output.lock().clear();
     }
     fn command(&self, command: Command) {
-        if self.retiring.load(Ordering::Acquire) || self.view.lock().phase == "reconnecting" {
-            if let Command::Mute(muted) = command {
-                self.view.lock().muted = muted;
-            }
+        if self.retiring.load(Ordering::Acquire)
+            || !self.ready.load(Ordering::Acquire) && self.view.lock().phase == "reconnecting"
+        {
             // No old prompt or control may enter the next provider session.
+            // Microphone intent was already published under its own lock.
             return;
         }
-        if !self.ready.load(Ordering::Acquire)
-            && let Command::Mute(muted) = &command
-        {
-            self.view.lock().muted = *muted;
+        if !self.ready.load(Ordering::Acquire) && matches!(command, Command::Mute(_)) {
             return;
         }
         if !self.closed.load(Ordering::Acquire) && self.commands.try_send(command).is_err() {

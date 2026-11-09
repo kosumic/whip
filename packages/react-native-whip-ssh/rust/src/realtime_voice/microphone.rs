@@ -151,16 +151,19 @@ impl RealtimeVoiceAdapter {
 
     pub(super) fn microphone_tick(&self, now: Instant) {
         let mut state = self.microphone.lock();
-        if state.deadline.is_none_or(|deadline| now < deadline) {
-            return;
-        }
-        state.deadline = None;
         // A timer cannot reactivate an interrupted/expired/replaced audio owner.
         if self.closed.load(Ordering::Acquire)
-            || self.retiring.load(Ordering::Acquire)
-            || !self.ready.load(Ordering::Acquire)
             || !self.speech.is_current()
             || !voice_call_openai::session::Audio::credentials_current(self)
+        {
+            state.cancel();
+            return;
+        }
+        // Recovery may outlast the deadline. Leave it due until this logical
+        // call has an active provider again; never restart the mute duration.
+        if self.retiring.load(Ordering::Acquire)
+            || !self.ready.load(Ordering::Acquire)
+            || state.deadline.is_none_or(|deadline| now < deadline)
         {
             return;
         }

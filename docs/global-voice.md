@@ -68,9 +68,16 @@ deadline. Tools and manual controls update it; the call screen, Android service
 and iOS call owner observe its published state. Navigation, minimization and JS
 suspension do not own or cancel the timer. Every manual set/toggle cancels the
 deadline, including a redundant set; every later tool command replaces it.
-Expiry is checked by the native call loop. Hangup, replacement, interruption,
-credential revocation and provider-session retirement cancel the deadline;
-an expired timer never reactivates inactive capture. App lock follows the
+Expiry is checked by the native call loop. The absolute deadline and native
+transition announcements survive provider reconnects and scheduled session
+rotation within the same logical call. Recovery does not restart the duration:
+if it expires while reconnecting, capture stays gated and the call unmutes once
+the recovered provider is ready, queuing “Unmuted” once. Otherwise the remaining
+time is honored. Explicit indefinite mute or unmute during recovery cancels the
+old deadline; a new timed mute requires the provider to be ready.
+Hangup, logical-call replacement, final failure, definitive audio-owner loss
+and credential revocation cancel the deadline. Provider-session retirement
+alone does not end the logical call. App lock follows the
 existing policy below: an already authorized call keeps running, but locked
 tool requests cannot obtain fresh capability authority.
 
