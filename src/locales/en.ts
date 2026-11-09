@@ -1205,6 +1205,8 @@ export const en = {
   'files.etaCalculating': 'Calculating…',
   'files.etaUnknown': 'Unknown',
   'files.etaSeconds': '~{{seconds}} s',
+  'files.etaMinutes': '~{{minutes}} m',
+  'files.etaMinutesSeconds': '~{{minutes}} m {{seconds}} s',
   'files.openInFileBrowser': 'Open in file browser',
   'files.fileBrowserFallback': 'Opens the saved folder or the system document picker. Some providers may start in another folder.',
   'files.fileBrowserFailed': 'Could not open the saved destination. The file may have moved, access may have expired, or no file browser is available. Find it in the folder you selected.',
