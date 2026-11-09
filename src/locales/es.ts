@@ -1188,6 +1188,8 @@ export const es = {
   'files.etaCalculating': 'Calculando…',
   'files.etaUnknown': 'Desconocido',
   'files.etaSeconds': '~{{seconds}} s',
+  'files.etaMinutes': '~{{minutes}} min',
+  'files.etaMinutesSeconds': '~{{minutes}} min {{seconds}} s',
   'files.openInFileBrowser': 'Abrir en el explorador de archivos',
   'files.fileBrowserFallback': 'Abre la carpeta guardada o el selector de documentos del sistema. Algunos proveedores pueden iniciar en otra carpeta.',
   'files.fileBrowserFailed': 'No se pudo abrir el destino. El archivo puede haberse movido, el acceso puede haber caducado o no hay un explorador disponible. Búscalo en la carpeta seleccionada.',
