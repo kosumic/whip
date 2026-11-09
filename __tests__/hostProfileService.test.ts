@@ -1,8 +1,8 @@
 jest.mock('react-native-whip-ssh', () => require('./mockWhipSsh').createMockWhipSshModule());
-import { CredentialCommand_Tags, CredentialResult, CredentialTransactionError } from 'react-native-whip-ssh/src/credentialTransactions';
+import { CredentialCommand, CredentialCommand_Tags, CredentialResult, CredentialTransactionError } from 'react-native-whip-ssh/src/credentialTransactions';
 import { credentialRequest, CredentialCoordinator } from '../test-support/mockCredentialTransactions';
 import { HostProfileRepository, HostProfilesUnavailableError, loadConnectionProfile, migrateCredentialBackupsIfNeeded } from '../src/services/hostProfiles';
-import { nativeHost } from '../src/services/credentialTransactions';
+import { CredentialTransactions, credentialTransactions, nativeHost } from '../src/services/credentialTransactions';
 import type { HostProfile } from '../src/types';
 
 const host: HostProfile = { id: 'host-a', name: 'Host', host: 'host.example', port: '22', username: 'user', authMode: 'key',
@@ -32,7 +32,7 @@ test('metadata mutations pass the original native authorization permit', async (
     inner: expect.objectContaining({ id: host.id, source: 'source', patch: expect.objectContaining({ name: 'Renamed', jumpHostChanged: true, jumpHostId: undefined }) }) }), guard, expect.anything());
 });
 test('observers consume native projections and ignore delayed older projections', () => {
-  const repository = new HostProfileRepository();
+  const repository = new HostProfileRepository(new CredentialTransactions());
   const native = CredentialCoordinator.instances.at(-1)!;
   const listener = jest.fn();
   const unsubscribe = repository.subscribe(listener);
@@ -43,6 +43,27 @@ test('observers consume native projections and ignore delayed older projections'
   unsubscribe();
   native.project({ loaded: true, revision: 3n, hosts: [], repairHostIds: [] });
   expect(listener).toHaveBeenCalledTimes(1);
+});
+test('connection saves update host-list observers and reopened editors', async () => {
+  const repository = new HostProfileRepository();
+  const listener = jest.fn();
+  const unsubscribe = repository.subscribe(listener);
+  const updated = nativeHost({ ...host, name: 'Changed while connecting', updatedAt: '2026-11-09T18:27:00.202Z' });
+  credentialRequest.mockImplementationOnce(async (_command, _guard, coordinator) => {
+    coordinator.project({ loaded: true, revision: 1n, hosts: [updated], repairHostIds: [] });
+    return new CredentialResult.Saved({ hosts: [updated], host: updated });
+  });
+
+  await credentialTransactions.run(new CredentialCommand.SaveHost({
+    profile: nativeHost(host), credential: { secret: 'PRIVATE KEY', passphrase: '' },
+  }));
+
+  expect(listener).toHaveBeenLastCalledWith([expect.objectContaining({ name: updated.name, updatedAt: updated.updatedAt })]);
+  const reopened = jest.fn();
+  const unsubscribeReopened = repository.subscribe(reopened);
+  expect(reopened).toHaveBeenLastCalledWith([expect.objectContaining({ updatedAt: updated.updatedAt })]);
+  unsubscribe();
+  unsubscribeReopened();
 });
 test('the public unavailable error remains recognizable after native admission failure', async () => {
   credentialRequest.mockRejectedValueOnce(new CredentialTransactionError.ProfilesUnavailable());

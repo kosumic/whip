@@ -30,22 +30,19 @@ function hosts(result: CredentialResult): HostProfile[] {
 
 /** Presentation subscriptions over the native transaction owner. */
 export class HostProfileRepository {
-  private readonly transactions: CredentialTransactions;
-  private readonly listeners = new Set<(hosts: HostProfile[]) => void>();
-  private revision = 0n;
-  constructor() {
-    this.transactions = new CredentialTransactions(view => {
-      if (view.revision < this.revision) return;
-      this.revision = view.revision;
-      for (const listener of this.listeners) listener(view.hosts.map(hostProfile));
-    });
-  }
+  // Connections and the editor must publish through the same native owner.
+  constructor(private readonly transactions: CredentialTransactions = credentialTransactions) {}
   subscribe(listener: (hosts: HostProfile[]) => void): () => void {
-    this.listeners.add(listener);
+    let revision = 0n;
+    const unsubscribe = this.transactions.subscribe(view => {
+      if (view.revision < revision) return;
+      revision = view.revision;
+      listener(view.hosts.map(hostProfile));
+    });
     const view = this.transactions.native.view();
-    if (view.revision > this.revision) this.revision = view.revision;
+    revision = view.revision;
     if (view.loaded) listener(view.hosts.map(hostProfile));
-    return () => { this.listeners.delete(listener); };
+    return unsubscribe;
   }
   private async run(command: Parameters<CredentialTransactions['run']>[0], guard?: HostActionPermitLike) {
     try { return await this.transactions.run(command, guard); }

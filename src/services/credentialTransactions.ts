@@ -158,7 +158,16 @@ export function material(profile: Pick<ConnectionProfile, 'secret' | 'passphrase
 
 export class CredentialTransactions {
   readonly native: CredentialCoordinator;
-  constructor(changed?: (view: CredentialProfileView) => void) { this.native = new CredentialCoordinator(credentialPlatform(changed)); }
+  private readonly listeners = new Set<(view: CredentialProfileView) => void>();
+  constructor() {
+    this.native = new CredentialCoordinator(credentialPlatform(view => {
+      for (const listener of this.listeners) listener(view);
+    }));
+  }
+  subscribe(listener: (view: CredentialProfileView) => void): () => void {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  }
   async run(command: CredentialRequest, guard?: HostActionPermitLike, signal?: AbortSignal): Promise<CredentialResult> {
     const operation = this.native.begin(command, guard);
     const cancel = () => operation.cancel();
