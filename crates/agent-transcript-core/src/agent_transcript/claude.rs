@@ -22,7 +22,15 @@ use super::projection::{
     timestamp_ms,
 };
 
-const CACHE_VERSION: u32 = 3;
+const CACHE_VERSION: u32 = 4;
+
+// Mid-turn input is persisted as a delivered attachment, rather than a user
+// row. Queue operations alone do not establish delivery.
+fn queued_command_prompt(record: &Value) -> Option<&Value> {
+    (record["type"] == "attachment" && record["attachment"]["type"] == "queued_command")
+        .then_some(&record["attachment"]["prompt"])
+}
+
 fn tool_use_part(block: &Value, at: Option<u64>) -> Option<AgentTranscriptPart> {
     let call_id = string(block, "id")?;
     let tool = string(block, "name")?;
@@ -212,7 +220,8 @@ impl ClaudeTranscriptAdapter {
                 _ => {}
             }
         }
-        let chat = matches!(kind, "user" | "assistant");
+        let queued_prompt = queued_command_prompt(record);
+        let chat = matches!(kind, "user" | "assistant") || queued_prompt.is_some();
         let Some(uuid) =
             string(record, "uuid").or_else(|| chat.then(|| format!("claude-offset-{order}")))
         else {
@@ -229,7 +238,7 @@ impl ClaudeTranscriptAdapter {
         let mut parts = Vec::new();
         let mut results = Vec::new();
         if chat && !sidechain {
-            let content = &record["message"]["content"];
+            let content = queued_prompt.unwrap_or(&record["message"]["content"]);
             let blocks = match content {
                 Value::Array(blocks) => blocks.iter().take(MAX_BLOCKS).collect::<Vec<_>>(),
                 _ => vec![content],
@@ -620,7 +629,7 @@ impl super::file_session::JsonlTranscriptAdapter for ClaudeTranscriptAdapter {
         self.snapshot(revision, status, error)
     }
     fn supports_cache(version: u32) -> bool {
-        matches!(version, 2 | CACHE_VERSION)
+        matches!(version, 2..=CACHE_VERSION)
     }
     fn restore(&mut self, offset: u64) -> Result<(), AgentCacheError> {
         for (index, node) in self.nodes.iter_mut().enumerate() {

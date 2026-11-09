@@ -37,6 +37,10 @@ reached. Source replacement discards the old projection and byte cursor.
 
 - User prose and assistant text become native messages. Assistant `thinking`
   becomes reasoning; signatures and redacted thinking are omitted.
+- Delivered `queued_command` attachments become user messages using their
+  prompt and attachment UUID. This includes steer messages sent mid-turn.
+  Queue operations remain internal so enqueue/removal events do not duplicate
+  the delivered message. Other attachments retain ancestry without bubbles.
 - Whitespace-only text is omitted while its record remains in the ancestry
   graph. Persisted structured interruption markers become warning notices in
   the current turn; `isApiErrorMessage` becomes an error notice and failed turn.

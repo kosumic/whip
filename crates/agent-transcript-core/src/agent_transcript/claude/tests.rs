@@ -90,18 +90,21 @@ fn split_response_usage_is_deduplicated_and_survives_checkpoint_and_branch_chang
 fn old_claude_checkpoint_preserves_offline_history_and_replays_for_new_metadata() {
     let core = parse(FIXTURE);
     let mut cache: Value = serde_json::from_slice(&core.cache_blob().unwrap()).unwrap();
-    cache["schema_version"] = json!(2);
-    let mut restored = ClaudeSessionCore::new(SESSION);
-    assert_eq!(
-        restored
-            .restore_cache(&serde_json::to_vec(&cache).unwrap())
-            .unwrap()
-            .messages,
-        core.state().messages
-    );
-    let binding = restored.bind_source("/transcript".into(), "1:2".into(), FIXTURE.len() as u64);
-    assert!(binding.rebuilt);
-    assert_eq!(binding.start_offset, 0);
+    for version in [2, 3] {
+        cache["schema_version"] = json!(version);
+        let mut restored = ClaudeSessionCore::new(SESSION);
+        assert_eq!(
+            restored
+                .restore_cache(&serde_json::to_vec(&cache).unwrap())
+                .unwrap()
+                .messages,
+            core.state().messages
+        );
+        let binding =
+            restored.bind_source("/transcript".into(), "1:2".into(), FIXTURE.len() as u64);
+        assert!(binding.rebuilt);
+        assert_eq!(binding.start_offset, 0);
+    }
 }
 
 #[test]
@@ -386,6 +389,139 @@ fn unknown_records_and_content_and_meta_prompts_are_not_bubbles() {
     let state = parse(&bytes).state();
     assert_eq!(ids(&state), ["u", "a"]);
     assert_eq!(state.messages[1].parts.len(), 1);
+}
+
+fn queued_command(id: &str, parent: &str, prompt: Value) -> Value {
+    json!({
+        "type":"attachment", "uuid":id, "parentUuid":parent,
+        "sessionId":SESSION, "isSidechain":false,
+        "timestamp":"2026-09-29T12:00:02Z",
+        "attachment":{
+            "type":"queued_command", "prompt":prompt,
+            "source_uuid":"command-1", "delivery_id":"delivery-1",
+            "commandMode":"prompt", "origin":{"kind":"human"}, "humanTurn":true
+        },
+        "rendered":[{"content":"<system-reminder>Internal delivery wrapper</system-reminder>"}],
+        "renderedRole":"system"
+    })
+}
+
+#[test]
+fn delivered_mid_turn_steer_is_shown_once_with_tools_and_survives_resume() {
+    const PROMPT: &str = "local disk is full. Do things on savior";
+    let prefix = [
+        tool_prefix(),
+        line(json!({
+            "type":"queue-operation", "operation":"enqueue",
+            "sessionId":SESSION, "content":PROMPT
+        })),
+        line(result(json!("checks passed"), false)),
+        line(json!({
+            "type":"queue-operation", "operation":"remove",
+            "sessionId":SESSION, "content":PROMPT, "reason":"absorbed_mid_turn",
+            "commandUuid":"command-1", "deliveryId":"delivery-1"
+        })),
+    ]
+    .concat();
+    assert_eq!(ids(&parse(&prefix).state()), ["u", "a"]);
+    let delivery = line(queued_command("steer", "r", json!(PROMPT)));
+    let suffix = [
+        line(json!({
+            "type":"attachment", "uuid":"metadata", "parentUuid":"steer",
+            "attachment":{"type":"edited_text_file", "content":"internal"}
+        })),
+        line(json!({"type":"last-prompt", "sessionId":SESSION, "leafUuid":"metadata"})),
+        line(assistant(
+            "reply",
+            "metadata",
+            json!([{"type":"text","text":"I’ll use savior."}]),
+        )),
+    ]
+    .concat();
+    let bytes = [prefix.clone(), delivery.clone(), suffix].concat();
+    let expected = parse(&bytes).state();
+    assert_eq!(ids(&expected), ["u", "a", "steer", "reply"]);
+    let steer = &expected.messages[2];
+    assert_eq!(steer.role, AgentMessageRole::User);
+    assert_eq!(steer.created_at_ms, Some(1_790_683_202_000));
+    assert!(matches!(&steer.parts[..], [AgentTranscriptPart::Text { text, .. }] if text == PROMPT));
+    assert_eq!(expected.messages[3].parent_id.as_deref(), Some("steer"));
+    assert_eq!(expected.turns.len(), 2);
+    assert_eq!(
+        tools(&expected)[0].1.output.as_deref(),
+        Some("checks passed")
+    );
+    assert_eq!(tools(&expected)[0].1.status, AgentToolStatus::Completed);
+
+    let mut live = parse(&prefix);
+    let update = live
+        .ingest(live.source_generation(), &delivery)
+        .unwrap()
+        .update
+        .unwrap();
+    assert!(update.deltas.iter().any(|delta| matches!(
+        delta, AgentTranscriptDelta::MessageUpserted { index:2, message } if message.id == "steer"
+    )));
+    assert_eq!(
+        live.state().turns.last().unwrap().status,
+        AgentTurnStatus::Working
+    );
+    for chunk_size in [1, 97, bytes.len()] {
+        let mut core = ClaudeSessionCore::new(SESSION);
+        let binding = core.bind_source("/transcript".into(), "1:2".into(), bytes.len() as u64);
+        for chunk in bytes.chunks(chunk_size) {
+            core.ingest(binding.source_generation, chunk).unwrap();
+        }
+        assert_eq!(core.state().messages, expected.messages);
+        assert_eq!(core.state().turns, expected.turns);
+    }
+    // Restore before and after delivery, including a partially received row.
+    for offset in [prefix.len(), prefix.len() + delivery.len()] {
+        let mut core = ClaudeSessionCore::new(SESSION);
+        let binding = core.bind_source("/transcript".into(), "1:2".into(), bytes.len() as u64);
+        core.ingest(binding.source_generation, &bytes[..offset + 7])
+            .unwrap();
+        let mut restored = ClaudeSessionCore::new(SESSION);
+        restored.restore_cache(&core.cache_blob().unwrap()).unwrap();
+        let binding = restored.bind_source("/transcript".into(), "1:2".into(), bytes.len() as u64);
+        assert_eq!(binding.start_offset, offset as u64);
+        restored
+            .ingest(binding.source_generation, &bytes[offset..])
+            .unwrap();
+        assert_eq!(restored.state().messages, expected.messages);
+        assert_eq!(restored.state().turns, expected.turns);
+    }
+}
+
+#[test]
+fn queued_commands_respect_branches_and_do_not_expose_sidechain_or_empty_prompts() {
+    let prefix = [
+        line(user("u", None, json!("Check"))),
+        line(queued_command("steer", "u", json!("Use savior"))),
+        line(assistant("old", "steer", json!("Old branch"))),
+    ]
+    .concat();
+    let state = parse(&[prefix, line(assistant("new", "u", json!("New branch")))].concat()).state();
+    assert_eq!(ids(&state), ["u", "new"]);
+    for prompt in [
+        Value::Null,
+        json!(" \n "),
+        json!({"unknown":"hidden"}),
+        json!("private"),
+    ] {
+        let mut attachment = queued_command("hidden", "u", prompt.clone());
+        attachment["isSidechain"] = json!(prompt == "private");
+        let state = parse(
+            &[
+                line(user("u", None, json!("Check"))),
+                line(attachment),
+                line(assistant("a", "hidden", json!("Answer"))),
+            ]
+            .concat(),
+        )
+        .state();
+        assert_eq!(ids(&state), ["u", "a"]);
+    }
 }
 
 #[test]
