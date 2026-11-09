@@ -1,6 +1,9 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { useComposerSpeechInput } from '../src/hooks/useComposerSpeechInput';
 import type { SpeechInputSnapshot } from '../src/services/composerSpeechInput';
+import { composerSpeechInput } from '../src/services/composerSpeechInput';
+import { VoiceConversationSettingsContext } from '../src/lib/voiceConversationSettingsContext';
+import { DEFAULT_VOICE_CONVERSATION_SETTINGS } from '../src/lib/voiceConversationSettings';
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
 jest.mock('react-native', () => ({ Platform: { OS: 'android' } }));
@@ -38,6 +41,14 @@ beforeEach(() => {
   act(() => { renderer = create(<Composer owner="terminal" />); });
 });
 afterEach(() => act(() => renderer.unmount()));
+
+test('composer routes dictation to the selected STT provider', () => {
+  act(() => renderer.update(<VoiceConversationSettingsContext value={{
+    settings: { ...DEFAULT_VOICE_CONVERSATION_SETTINGS, sttProvider: 'openai' }, onChange: jest.fn(),
+  }}><Composer owner="terminal" /></VoiceConversationSettingsContext>));
+  act(() => result.toggle());
+  expect(composerSpeechInput.start).toHaveBeenCalledWith(expect.objectContaining({ provider: 'openai' }));
+});
 
 test('voice recognition does not redraw an unrelated terminal composer for each partial result', () => {
   publish({ owner: 'voice-call', phase: 'listening', interimText: '' });

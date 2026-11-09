@@ -63,6 +63,66 @@ function setup() {
 
 const cleanups: (() => void)[] = [];
 
+function setupCloud() {
+  const state = setup();
+  const capture = {
+    start: jest.fn(async (_onEnd: (failed: boolean) => void) => true),
+    finish: jest.fn(async () => 'Whip transcription'),
+    cancel: jest.fn(async () => {}),
+  };
+  Object.assign(state.dependencies, { createOpenAiCapture: () => capture });
+  return { ...state, capture, request: { ...state.request, provider: 'openai' as const } };
+}
+
+test('OpenAI dictation uses draft and chat context and appends to the current edited draft', async () => {
+  const { controller, request, recognizer, capture, core } = setupCloud();
+  recognizer.isRecognitionAvailable.mockReturnValue(false);
+  await controller.start(request);
+  expect(controller.getSnapshot().phase).toBe('listening');
+  expect(recognizer.start).not.toHaveBeenCalled();
+  expect(recognizer.requestPermissionsAsync).not.toHaveBeenCalled();
+  core.result.mockReturnValueOnce('Whip transcription');
+  controller.stop(request.owner);
+  await jest.runAllTimersAsync();
+  expect(capture.finish).toHaveBeenCalledWith('Original draft', ['recent terminal text']);
+  expect(request.append).toHaveBeenCalledWith('Edited draft Whip transcription');
+  expect(controller.getSnapshot().phase).toBe('idle');
+  expect(isSpeechInputActive()).toBe(false);
+});
+
+test('cancelling an OpenAI upload discards its late transcript', async () => {
+  const { controller, request, capture, core } = setupCloud();
+  let complete!: (text: string) => void;
+  capture.finish.mockReturnValueOnce(new Promise(resolve => { complete = resolve; }));
+  await controller.start(request);
+  controller.stop(request.owner);
+  controller.cancel(request.owner);
+  await jest.runAllTimersAsync();
+  expect(capture.cancel).toHaveBeenCalled();
+  core.result.mockReturnValueOnce('late words');
+  complete('late words');
+  await jest.runAllTimersAsync();
+  expect(request.append).not.toHaveBeenCalled();
+  expect(controller.getSnapshot().phase).toBe('idle');
+});
+
+test('OpenAI microphone denial cleans up without starting device recognition', async () => {
+  const { controller, request, capture, recognizer } = setupCloud();
+  capture.start.mockResolvedValueOnce(false);
+  await controller.start(request);
+  await jest.runAllTimersAsync();
+  expect(request.onError).toHaveBeenCalledWith('permission');
+  expect(capture.cancel).toHaveBeenCalled();
+  expect(recognizer.start).not.toHaveBeenCalled();
+  expect(controller.getSnapshot().phase).toBe('idle');
+});
+
+test('Local dictation explicitly requests on-device recognition', async () => {
+  const { controller, request, recognizer } = setup();
+  await controller.start({ ...request, provider: 'local' });
+  expect(recognizer.start).toHaveBeenCalledWith(expect.objectContaining({ requiresOnDeviceRecognition: true }));
+});
+
 test('native PCM capture rotates its sink on restart and fences it before final-result draining', async () => {
   const { controller, request, recognizer, core, emit, events } = setup();
   Object.assign(recognizer, {

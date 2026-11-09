@@ -1,6 +1,9 @@
 import type { en } from './en';
 
 export const fr = {
+  'stt.title': 'Fournisseur de transcription vocale',
+  'stt.localHelp': 'La dictée utilise la reconnaissance vocale sur l’appareil. Les réglages des appels et de la synthèse vocale sont indépendants.',
+  'stt.openaiHelp': 'Touchez le microphone pour enregistrer, puis arrêtez pour transcrire avec OpenAI. L’audio, le brouillon et le contexte récent du chat sont envoyés à OpenAI. Des frais API s’appliquent.',
   'voiceUsage.terminal': "Appel de terminal",
   'voiceUsage.resume': "Reprendre l’appel",
   'voiceUsage.resumeContext': "Démarre un nouvel appel avec le texte enregistré. Seuls les 48 derniers messages (24 Kio, 4 Kio par message) sont restaurés. Des paroles anciennes ou non transcrites peuvent manquer. Les outils et autorisations passés ne sont pas restaurés.",
@@ -87,12 +90,12 @@ export const fr = {
   'providers.checking': 'Vérification de la disponibilité…',
   'providers.downloadRequired': 'Téléchargement du modèle requis',
   'openai.configure': 'Configurez ce fournisseur dans Réglages → OpenAI.',
-  'openai.sharedKey': 'Une seule clé API est partagée entre les conversations et la synthèse vocale OpenAI.',
+  'openai.sharedKey': 'Une seule clé API est partagée entre les conversations, la transcription et la synthèse vocale OpenAI.',
   'openai.conversation': 'Conversation',
   "voiceProvider.title": "Fournisseur d’appels vocaux",
   "voiceProvider.local": "Local",
   "voiceProvider.openai": "OpenAI API",
-  "voiceProvider.independent": "Ces réglages sont indépendants de la dictée locale, de la synthèse vocale, de la lecture et des annonces.",
+  "voiceProvider.independent": "Ces réglages sont indépendants de la dictée, de la synthèse vocale, de la lecture et des annonces.",
   "voiceProvider.Realtime": "Realtime API",
   "voiceProvider.Live": "GPT-Live",
   'voiceProvider.savedCaptions': "Conversations vocales enregistrées (20 derniers appels)",

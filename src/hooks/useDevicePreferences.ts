@@ -199,8 +199,8 @@ export function useDevicePreferences(
 
   useEffect(() => {
     if (!credential.missing || state.hydration.status !== 'loaded') return;
-    mutate(current => current.voiceConversation.provider === 'openai'
-      ? { ...current, voiceConversation: { ...current.voiceConversation, provider: 'local' } }
+    mutate(current => current.voiceConversation.provider === 'openai' || current.voiceConversation.sttProvider === 'openai'
+      ? { ...current, voiceConversation: { ...current.voiceConversation, provider: 'local', sttProvider: 'local' } }
       : current);
     reportBackgroundFailure(speechBackendCommand('system-if-openai'), 'missing-openai-key-fallback');
   }, [credential.missing, state.hydration.status, mutate]);

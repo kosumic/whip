@@ -12,6 +12,7 @@ export type RealtimeVad = { type: 'server_vad'; threshold: number; prefix_paddin
 export const DEFAULT_REALTIME_VAD: RealtimeVad = { type: 'server_vad', threshold: 0.5, prefix_padding_ms: 300, silence_duration_ms: 500 };
 export interface VoiceConversationSettings {
   provider: 'local' | 'openai';
+  sttProvider?: 'local' | 'openai';
   mode: CloudVoiceMode;
   realtimeModel: string;
   realtimeVoice: string;
@@ -31,7 +32,7 @@ export const LIVE_MODEL = liveCatalog.model;
 export const LIVE_VOICES = liveCatalog.voices;
 
 export const DEFAULT_VOICE_CONVERSATION_SETTINGS: Readonly<VoiceConversationSettings> = {
-  provider: 'local', mode: 'Realtime', realtimeModel: DEFAULT_REALTIME_MODEL, realtimeVoice: 'marin', liveVoice: 'marin',
+  provider: 'local', sttProvider: 'local', mode: 'Realtime', realtimeModel: DEFAULT_REALTIME_MODEL, realtimeVoice: 'marin', liveVoice: 'marin',
   globalShizukuAccess: false,
   keepVoiceClientWarm: true,
 };
@@ -40,6 +41,7 @@ export function parseVoiceConversationSettings(value: unknown): VoiceConversatio
   const saved = value && typeof value === 'object' ? value as Partial<VoiceConversationSettings> : {};
   return {
     provider: saved.provider === 'openai' ? 'openai' : 'local',
+    sttProvider: saved.sttProvider === 'openai' ? 'openai' : 'local',
     mode: saved.mode === 'Live' ? 'Live' : 'Realtime',
     realtimeModel: REALTIME_MODELS.find(model => model.id === saved.realtimeModel)?.id ?? DEFAULT_REALTIME_MODEL,
     realtimeVoice: REALTIME_VOICES.find(voice => voice === saved.realtimeVoice) ?? 'marin',

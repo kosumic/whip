@@ -30,6 +30,7 @@ mod host_runtime;
 mod host_state;
 mod markdown_images;
 mod notification_crypto;
+mod openai_stt;
 mod openai_tts;
 mod pairing;
 mod phonon;

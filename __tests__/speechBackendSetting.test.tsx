@@ -6,6 +6,8 @@ import { Text } from '../src/components/ui/text';
 import { getSpeechPlayback, onSpeechBackendChange, speechBackendCommand, systemSpeechVoices, type SpeechBackendStatus } from '../src/services/speechPlayback';
 import { hasOpenAiVoiceKey, saveOpenAiVoiceKey, removeOpenAiVoiceKey } from '../src/services/openAiVoiceCredentials';
 import { VoiceConversationSetting } from '../src/components/VoiceConversationSetting';
+import { VoiceConversationSettingsContext } from '../src/lib/voiceConversationSettingsContext';
+import { DEFAULT_VOICE_CONVERSATION_SETTINGS } from '../src/lib/voiceConversationSettings';
 
 jest.mock('@react-native-community/slider', () => 'Slider');
 jest.mock('../src/services/realtimeVoicePreview', () => ({ RealtimeVoicePreview: jest.fn() }));
@@ -68,6 +70,22 @@ beforeEach(async () => {
   await act(async () => { renderer = create(<VoiceSettings />); });
 });
 afterEach(async () => { await act(async () => renderer.unmount()); });
+
+test('STT selection changes dictation independently of the call and speech providers', async () => {
+  const onChange = jest.fn();
+  const settings = { ...DEFAULT_VOICE_CONVERSATION_SETTINGS, provider: 'openai' as const };
+  await act(async () => renderer.update(
+    <VoiceConversationSettingsContext value={{ settings, onChange }}><VoiceSettings /></VoiceConversationSettingsContext>,
+  ));
+  const label = 'stt.title: voiceProvider.openai';
+  const button = renderer.root.findByProps({ accessibilityLabel: label });
+  expect(button.props.disabled).toBe(false);
+  await act(async () => button.props.onPress());
+  expect(onChange).toHaveBeenCalledWith({ ...settings, sttProvider: 'openai' });
+  expect(status.backend).toBe('system');
+  await act(async () => removeOpenAiVoiceKey());
+  expect(renderer.root.findByProps({ accessibilityLabel: label }).props.disabled).toBe(true);
+});
 
 test('OpenAI can be selected without Phonon support and has its own saved network voice', async () => {
   await act(async () => press('speech.openai'));

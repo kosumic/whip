@@ -240,6 +240,9 @@ fn state() -> Result<Arc<Mutex<State>>, String> {
 }
 
 fn command(root: &str, action: &str) -> Result<serde_json::Value, String> {
+    if let Some(result) = crate::openai_stt::command(action) {
+        return result;
+    }
     let state = {
         let mut slot = STATE.lock();
         if slot.is_none() {

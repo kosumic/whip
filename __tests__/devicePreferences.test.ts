@@ -691,6 +691,15 @@ test('Store builds ignore persisted developer settings without erasing them', ()
   expect(applyDeveloperOptionsPolicy(stored, true)).toBe(stored);
 });
 
+test('STT provider is independent of voice calls and survives a preferences restart', async () => {
+  const voiceConversation = { ...defaultDevicePreferences.voiceConversation, provider: 'local' as const, sttProvider: 'openai' as const };
+  await saveDevicePreferences({ ...defaultDevicePreferences, voiceConversation });
+  mockGetItem.mockResolvedValue(mockSetItem.mock.calls.at(-1)![1]);
+  expect((await loadDevicePreferences()).voiceConversation).toEqual(voiceConversation);
+  mockGetItem.mockResolvedValue(JSON.stringify({ voiceConversation: { sttProvider: 'unknown' } }));
+  expect((await loadDevicePreferences()).voiceConversation.sttProvider).toBe('local');
+});
+
 test('OpenAI provider, separate model voices and preview text survive a preferences restart', async () => {
   const voiceConversation = { ...defaultDevicePreferences.voiceConversation, provider: 'openai' as const, mode: 'Live' as const, realtimeModel: 'gpt-realtime-2.1-mini', realtimeVoice: 'cedar', liveVoice: 'quartz', previewText: 'Bonjour !' };
   await saveDevicePreferences({ ...defaultDevicePreferences, voiceConversation });

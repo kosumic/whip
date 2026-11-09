@@ -487,6 +487,13 @@ static void WhipWakeAutomaticSpeech(void)
 
 - (void)backendCommand:(NSString *)action resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
+  if ([action hasPrefix:@"stt-cancel:"]) {
+    char *json = whip_speech_backend_command("", action.UTF8String);
+    NSString *value = json ? [NSString stringWithUTF8String:json] : @"{}";
+    whip_speech_backend_free(json);
+    resolve(value);
+    return;
+  }
   if ([action isEqualToString:@"system-voices"]) {
     NSMutableArray *voices = [NSMutableArray array];
     for (AVSpeechSynthesisVoice *voice in AVSpeechSynthesisVoice.speechVoices) {
@@ -502,6 +509,7 @@ static void WhipWakeAutomaticSpeech(void)
   static dispatch_once_t once;
   dispatch_once(&once, ^{ settings = dispatch_queue_create("whip.speech.settings", DISPATCH_QUEUE_SERIAL); });
   dispatch_async(settings, ^{
+    if ([action hasPrefix:@"stt-start:"]) whip_voice_credentials_prepare(WhipReadOpenAiVoiceCredential, NULL);
     NSURL *support = [NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject;
     NSURL *directory = [support URLByAppendingPathComponent:@"phonon" isDirectory:YES];
     NSError *error = nil;
@@ -516,7 +524,7 @@ static void WhipWakeAutomaticSpeech(void)
     NSDictionary *status = value ? [NSJSONSerialization JSONObjectWithData:[value dataUsingEncoding:NSUTF8StringEncoding] options:0 error:&error] : nil;
     if (!status || status[@"commandError"]) reject(WhipSpeechError, status[@"commandError"] ?: @"Speech backend unavailable", error);
     else dispatch_async(dispatch_get_main_queue(), ^{
-      self.systemVoice = status[@"systemVoice"];
+      if (status[@"systemVoice"]) self.systemVoice = status[@"systemVoice"];
       resolve(value);
     });
   });

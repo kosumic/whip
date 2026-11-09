@@ -47,6 +47,10 @@ object PcmSpeechPlayback {
     private set
 
   fun command(context: Context, action: String, promise: Promise? = null) {
+    if (action.startsWith("stt-cancel:")) {
+      promise?.resolve(SpeechPolicy.backendCommand(File(context.noBackupFilesDir, "phonon").absolutePath, action))
+      return
+    }
     prepareCredentials(context)
     if (action == "system-voices") { listSystemVoices(context, promise); return }
     if (action == "delete" || action == "system" || action == "phonon" || action == "openai" ||
@@ -61,7 +65,7 @@ object PcmSpeechPlayback {
           promise?.reject("E_SPEECH_BACKEND", error)
           if (promise == null) Log.w("SpeechPCM", error)
         } else {
-          systemVoice = status.optString("systemVoice")
+          if (status.has("systemVoice")) systemVoice = status.optString("systemVoice")
           promise?.resolve(value)
         }
       } catch (error: Exception) {

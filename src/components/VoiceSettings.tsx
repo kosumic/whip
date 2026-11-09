@@ -17,6 +17,7 @@ import { OpenAiVoiceKeySetting } from './OpenAiVoiceKeySetting';
 import { OpenAiIcon } from './OpenAiIcon';
 import { VoiceConversationSetting, type VoiceConversationSettingHandle } from './VoiceConversationSetting';
 import { VoiceConversationProviderSetting } from './VoiceConversationProviderSetting';
+import { SpeechInputProviderSetting } from './SpeechInputProviderSetting';
 import { Input } from './ui/input';
 import { Text } from './ui/text';
 import { Icon } from './ui/icon';
@@ -28,8 +29,9 @@ async function stopPreviewPlayback(owner: string) {
 const PREVIEW_TEXT_SAVE_DELAY_MS = 500;
 const SPEECH_BACKENDS = ['system', 'phonon', 'openai'] as const;
 
-export function VoiceSettings({ children, openAiConfigRequest = 0, openAiSectionRef, onOpenAiLayout }: {
+export function VoiceSettings({ children, announcementSettings, openAiConfigRequest = 0, openAiSectionRef, onOpenAiLayout }: {
   children?: ReactNode;
+  announcementSettings?: ReactNode;
   openAiConfigRequest?: number;
   openAiSectionRef?: Ref<ViewInstance>;
   onOpenAiLayout?: () => void;
@@ -221,7 +223,9 @@ export function VoiceSettings({ children, openAiConfigRequest = 0, openAiSection
   return <>
     <CollapsibleSectionCard title={t('settings.voice')} icon={Volume2}
       expanded={voiceExpanded} onToggle={() => { stopPreview(); toggleVoice(); }} contentClassName="pb-3.5">
+      {announcementSettings && <View className="border-b border-border">{announcementSettings}</View>}
       <VoiceConversationProviderSetting />
+      <SpeechInputProviderSetting />
       {children}
       <View className="border-t border-border px-3.5 pt-3">
         <Text className="text-sm font-medium">{t('speech.backend')}</Text>

@@ -122,7 +122,7 @@ impl NativeVoiceUsageSession {
                 mode,
                 scope,
                 model: Some(model.into()),
-                voice: Some(voice.into()),
+                voice: (!voice.is_empty()).then(|| voice.into()),
                 started_at_ms: now_ms(),
             },
             Box::new(enqueue),

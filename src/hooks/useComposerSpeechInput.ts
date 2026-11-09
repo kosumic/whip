@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useContext, useEffect, useRef, useSyncExternalStore } from 'react';
 import { Platform } from 'react-native';
 
 import { composerSpeechInput, type SpeechInputError, type SpeechInputSnapshot } from '../services/composerSpeechInput';
+import { VoiceConversationSettingsContext } from '../lib/voiceConversationSettingsContext';
 
 interface Options {
   owner: string;
@@ -18,6 +19,7 @@ interface ComposerSnapshot extends Pick<SpeechInputSnapshot, 'phase' | 'interimT
 }
 
 export function useComposerSpeechInput(options: Options) {
+  const { settings } = useContext(VoiceConversationSettingsContext);
   const current = useRef(options);
   current.current = options;
   const { owner, enabled } = options;
@@ -56,6 +58,7 @@ export function useComposerSpeechInput(options: Options) {
         return;
       }
       void composerSpeechInput.start({
+        provider: settings.sttProvider ?? 'local',
         owner,
         draft: options.readDraft(),
         readDraft: options.readDraft,

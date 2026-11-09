@@ -208,8 +208,10 @@ impl Ledger {
                 if !valid_id(&call.session_id)
                     || call.model.as_deref().is_some_and(|s| !valid_id(s))
                     || call.voice.as_deref().is_some_and(|s| !valid_id(s))
-                    || (call.provider == VoiceUsageProvider::Local)
-                        != matches!(call.mode, VoiceUsageMode::TurnBased | VoiceUsageMode::Stt)
+                    || (call.provider == VoiceUsageProvider::Local
+                        && !matches!(call.mode, VoiceUsageMode::TurnBased | VoiceUsageMode::Stt))
+                    || (call.provider == VoiceUsageProvider::Openai
+                        && call.mode == VoiceUsageMode::TurnBased)
                 {
                     return Err(invalid());
                 }

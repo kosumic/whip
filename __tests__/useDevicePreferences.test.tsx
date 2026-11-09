@@ -273,7 +273,7 @@ test('never writes defaults when preference hydration fails', async () => {
 
 const openaiPreferences = {
   ...defaultDevicePreferences,
-  voiceConversation: { ...defaultDevicePreferences.voiceConversation, provider: 'openai' as const, realtimeVoice: 'cedar' },
+  voiceConversation: { ...defaultDevicePreferences.voiceConversation, provider: 'openai' as const, sttProvider: 'openai' as const, realtimeVoice: 'cedar' },
 };
 const openaiStartupStorage: LoadState<StartupStorageSnapshot> = {
   ...startupStorage,
@@ -284,7 +284,7 @@ test('clearing the key persists Local selection and resets OpenAI TTS with no Se
   await mount(openaiStartupStorage);
   expect(controller.value.voiceConversation.provider).toBe('openai');
   await act(async () => removeOpenAiVoiceKey());
-  expect(controller.value.voiceConversation).toEqual({ ...openaiPreferences.voiceConversation, provider: 'local' });
+  expect(controller.value.voiceConversation).toEqual({ ...openaiPreferences.voiceConversation, provider: 'local', sttProvider: 'local' });
   expect(speechBackendCommand).toHaveBeenCalledWith('system-if-openai');
   await act(async () => transition('background'));
   expect(savedPreferences().voiceConversation.provider).toBe('local');

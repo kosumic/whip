@@ -64,6 +64,32 @@ fn query() -> Query {
 }
 
 #[test]
+fn stt_supports_local_and_openai_accounting() {
+    for provider in [VoiceUsageProvider::Local, VoiceUsageProvider::Openai] {
+        let mut ledger = Ledger::default();
+        let VoiceUsageEvent::Started { mut call } = started("dictation", 10, false) else {
+            unreachable!()
+        };
+        call.provider = provider;
+        call.mode = VoiceUsageMode::Stt;
+        call.scope = VoiceUsageScope::Speech;
+        ledger.apply(VoiceUsageEvent::Started { call }).unwrap();
+        if provider == VoiceUsageProvider::Openai {
+            ledger
+                .apply(usage("dictation", "transcription", 1, Some(0.0045), true))
+                .unwrap();
+        }
+        ledger
+            .apply(VoiceUsageEvent::Ended {
+                session_id: "dictation".into(),
+                ended_at_ms: 20,
+            })
+            .unwrap();
+        assert_eq!(ledger.calls.len(), 1);
+    }
+}
+
+#[test]
 fn bridge_accepts_recovery_and_local_speech_accounting() {
     let mut ledger = Ledger::default();
     for json in [

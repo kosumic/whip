@@ -123,6 +123,7 @@ bool whip_phonon_enabled(const char *language) { return false; }
 bool whip_speech_pcm_enabled(const char *language, bool local_only) { return false; }
 bool whip_speech_network_selected(void) { return false; }
 int32_t WhipReadOpenAiVoiceCredential(void *context, uint8_t *destination, size_t capacity) { return -1; }
+bool whip_voice_credentials_prepare(WhipReadVoiceCredential reader, void *context) { return false; }
 void whip_phonon_set_supported(bool supported) {}
 void whip_speech_pcm_playback_failed(void) {}
 int32_t whip_phonon_speak(uint64_t lease, const char *text, WhipPcmCallback callback, void *context) { return 0; }

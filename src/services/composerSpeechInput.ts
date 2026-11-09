@@ -3,7 +3,9 @@ import type { NativeComposerDictation, ComposerDictationPhase } from 'react-nati
 
 import { setSpeechInputActive } from './speechInputFocus';
 import { settledPromise } from '../lib/promises';
+import { bestEffortCleanup } from './backgroundOperations';
 import type { VoiceUsageEvent, VoiceHistoryCommand } from './voiceUsage';
+import type { OpenAiSpeechCapture } from './openAiSpeechInput';
 
 type Recognizer = Pick<typeof import('expo-speech-recognition').ExpoSpeechRecognitionModule,
   'addListener' | 'start' | 'stop' | 'abort' | 'isRecognitionAvailable' | 'requestPermissionsAsync' | 'getPermissionsAsync'> &
@@ -19,6 +21,7 @@ export interface SpeechInputSnapshot {
 }
 interface Request {
   owner: string;
+  provider?: 'local' | 'openai';
   draft: string;
   readDraft: () => string;
   context: () => Promise<string[]>;
@@ -37,10 +40,13 @@ interface Dependencies {
   append: (draft: string, text: string) => string;
   locale: string;
   suspendPlayback: () => Promise<void>;
+  createOpenAiCapture?: () => OpenAiSpeechCapture;
 }
 interface Session {
   request: Request;
   core?: NativeComposerDictation;
+  cloud?: OpenAiSpeechCapture;
+  context?: string[];
   dependencies?: Dependencies;
   options?: RecognitionOptions;
   android: boolean;
@@ -105,6 +111,10 @@ async function loadDependencies(): Promise<Dependencies> {
     append: native.appendComposerDictation,
     locale: localization.getLocales()[0]?.languageTag || 'en-US',
     suspendPlayback: playback.suspendChatSpeechForInput,
+    createOpenAiCapture: () => {
+      const { createOpenAiSpeechCapture } = require('./openAiSpeechInput') as typeof import('./openAiSpeechInput');
+      return createOpenAiSpeechCapture();
+    },
   };
 }
 
@@ -188,6 +198,28 @@ export class ComposerSpeechInput {
       const dependencies = await this.load();
       if (this.current !== session) return;
       const { recognizer } = dependencies;
+      session.dependencies = dependencies;
+      session.core = dependencies.createCore();
+      session.core.begin();
+      if (request.provider === 'openai' && !request.localOnly) {
+        if (!dependencies.createOpenAiCapture) throw new Error('OpenAI dictation unavailable');
+        session.cloud = dependencies.createOpenAiCapture();
+        session.context = await context;
+        if (this.current !== session || session.cancelled) return;
+        setSpeechInputActive(true);
+        await dependencies.suspendPlayback();
+        if (this.current !== session || session.cancelled) return;
+        const granted = await session.cloud.start(failed => {
+          if (this.current !== session || session.cancelled || session.stopping) return;
+          if (failed) { request.onError('interrupted'); this.cancel(request.owner); }
+          else this.stop(request.owner);
+        });
+        if (this.current !== session || session.cancelled) return;
+        if (!granted) { request.onError('permission'); this.cancel(request.owner); return; }
+        session.core.listening();
+        this.refresh(session);
+        return;
+      }
       if (request.localOnly && !this.supportsLocal(recognizer)) {
         request.onError('unavailable', LOCAL_UNAVAILABLE);
         this.release(session);
@@ -203,9 +235,6 @@ export class ComposerSpeechInput {
         this.release(session);
         return;
       }
-      session.dependencies = dependencies;
-      session.core = dependencies.createCore();
-      session.core.begin();
       const managedCall = Boolean(request.localOnly && request.managedCall && this.reservation === request.owner);
       // The call was authorized before its foreground service started. Asking
       // again routes through a paused activity and stalls background segments.
@@ -311,6 +340,7 @@ export class ComposerSpeechInput {
         iosTaskHint: 'dictation',
         recordingOptions: { persist: false },
         ...(request.localOnly ? { requiresOnDeviceRecognition: true, audioChunkEvents: true } : {}),
+        ...(request.provider === 'local' ? { requiresOnDeviceRecognition: true } : {}),
         ...(request.managedCall ? { iosAudioSessionManaged: true, iosVoiceProcessingEnabled: true } : {}),
         ...(monitoring ? { androidEchoCancellation: true } : {}),
       };
@@ -318,7 +348,7 @@ export class ComposerSpeechInput {
     } catch {
       if (this.current !== session) return;
       request.onError(session.core ? 'failed' : 'unavailable');
-      if (session.started) this.cancel(request.owner);
+      if (session.started || session.cloud) this.cancel(request.owner);
       else this.release(session);
     }
   }
@@ -330,6 +360,7 @@ export class ComposerSpeechInput {
     this.closeCapture(session);
     session.core!.finish();
     this.refresh(session);
+    if (session.cloud) { void this.finishCloud(session); return; }
     clearTimeout(session.restart);
     if (!session.started) {
       this.release(session);
@@ -352,6 +383,11 @@ export class ComposerSpeechInput {
     this.closeCapture(session);
     session.core?.end();
     clearTimeout(session.restart);
+    if (session.cloud) {
+      this.publish({ owner, phase: 'finishing', interimText: '' });
+      bestEffortCleanup(session.cloud.cancel().finally(() => this.release(session)), 'openai-dictation-cancel');
+      return;
+    }
     if (!session.started) {
       this.release(session);
       return;
@@ -391,6 +427,21 @@ export class ComposerSpeechInput {
     } catch {
       if (!this.fallback(session)) this.fail(session);
     }
+  }
+
+  private async finishCloud(session: Session): Promise<void> {
+    try {
+      const text = await session.cloud!.finish(session.request.draft, session.context ?? []);
+      if (this.current !== session || session.cancelled) return;
+      const final = session.core!.result(text, true);
+      if (final) this.append(session, final);
+      else session.request.onError('noSpeech');
+    } catch (error) {
+      if (this.current === session && !session.cancelled) {
+        const message = error instanceof Error ? error.message : '';
+        session.request.onError(message === 'network' ? 'network' : 'failed');
+      }
+    } finally { this.release(session); }
   }
 
   /** Downgrade the injected-audio path once, then let the service own the mic.

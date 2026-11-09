@@ -11,7 +11,7 @@ export type SpeechEndReason = 'completed' | 'stopped' | 'shake' | 'replaced' | '
 export interface NativeSpeechPlayback {
   automaticSpeechControl(action: 'enable' | 'pause' | 'read-while-locked', value: boolean): Promise<void>;
   automaticSpeechBinding(bindingToken: string, hostId: string, tabName: string): void;
-  speechBackendCommand(action: SpeechBackendAction | 'system-voices'): Promise<string>;
+  speechBackendCommand(action: SpeechBackendAction | SpeechInputAction | 'system-voices'): Promise<string>;
   startChatSpeech(token: string, label: string): Promise<void>;
   /** Keeps a selected response's chunks in one playback turn until stopped. */
   startResponseSpeech?(token: string, label: string): Promise<void>;
@@ -48,6 +48,7 @@ export interface NativeSpeechPlayback {
   removeListeners(count: number): void;
 }
 
+type SpeechInputAction = `stt-start:${string}` | `stt-cancel:${string}` | `stt:${string}`;
 export type SpeechBackendAction = 'status' | 'system' | 'phonon' | 'openai' | 'system-if-openai' | 'download' | 'cancel' | 'delete'
   | `voice:${string}` | `remove-voice:${string}` | `system-voice:${string}` | `openai-voice:${string}` | `preview-text:${string}`;
 export interface SpeechVoice {

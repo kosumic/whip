@@ -302,7 +302,11 @@ export function SettingsSection(props: SettingsSectionProps) {
         />
       </CollapsibleSectionCard>
 
-      <VoiceSettings openAiConfigRequest={props.openAiConfigRequest} openAiSectionRef={props.openAiSectionRef} onOpenAiLayout={props.onOpenAiLayout}>
+      <VoiceSettings openAiConfigRequest={props.openAiConfigRequest} openAiSectionRef={props.openAiSectionRef} onOpenAiLayout={props.onOpenAiLayout}
+        announcementSettings={<>
+          <SettingRow title={t('settings.speakChanges')} copy={t('settings.speakChangesCopy')} value={props.ttsEnabled} onChange={props.onTtsChange} />
+          {props.ttsEnabled ? <SettingRow title={t('settings.readAloudWhileLocked')} copy={t('settings.readAloudWhileLockedCopy')} value={props.readAloudWhileLocked} onChange={props.onReadAloudWhileLockedChange} divided /> : null}
+        </>}>
         <SliderRow
           title={t('voiceChat.vadSensitivity')}
           copy={t('voiceChat.vadSensitivityDescription')}
@@ -314,8 +318,6 @@ export function SettingsSection(props: SettingsSectionProps) {
           onChange={props.onVadSensitivityChange}
           divided
         />
-        <SettingRow title={t('settings.speakChanges')} copy={t('settings.speakChangesCopy')} value={props.ttsEnabled} onChange={props.onTtsChange} divided />
-        {props.ttsEnabled ? <SettingRow title={t('settings.readAloudWhileLocked')} copy={t('settings.readAloudWhileLockedCopy')} value={props.readAloudWhileLocked} onChange={props.onReadAloudWhileLockedChange} divided /> : null}
       </VoiceSettings>
 
       <CollapsibleSectionCard
