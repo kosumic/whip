@@ -90,7 +90,7 @@ fn split_response_usage_is_deduplicated_and_survives_checkpoint_and_branch_chang
 fn old_claude_checkpoint_preserves_offline_history_and_replays_for_new_metadata() {
     let core = parse(FIXTURE);
     let mut cache: Value = serde_json::from_slice(&core.cache_blob().unwrap()).unwrap();
-    for version in [2, 3] {
+    for version in 2..CACHE_VERSION {
         cache["schema_version"] = json!(version);
         let mut restored = ClaudeSessionCore::new(SESSION);
         assert_eq!(
@@ -605,6 +605,107 @@ fn last_prompt_can_select_a_known_branch_but_unknown_leaf_is_ignored() {
         .concat();
         assert_eq!(ids(&parse(&all).state()), ["u", expected]);
     }
+}
+
+fn compact_boundary(id: &str, parent: Option<&str>) -> Value {
+    json!({
+        "type":"system", "subtype":"compact_boundary", "uuid":id,
+        "parentUuid":null, "logicalParentUuid":parent, "sessionId":SESSION,
+    })
+}
+
+fn compact_summary(id: &str, parent: &str) -> Value {
+    let mut record = user(id, Some(parent), json!("Private context summary"));
+    record["isCompactSummary"] = json!(true);
+    record
+}
+
+#[test]
+fn compaction_preserves_the_selected_branch_and_hides_the_summary() {
+    for logical_parent in [None, Some("a"), Some("future-preserved-tail")] {
+        let bytes = [
+            line(user("u", None, json!("Check"))),
+            line(assistant("a", "u", json!("Selected answer"))),
+            line(assistant("abandoned", "u", json!("Abandoned answer"))),
+            line(json!({"type":"last-prompt", "leafUuid":"a"})),
+            line(compact_boundary("boundary", logical_parent)),
+            line(compact_summary("summary", "boundary")),
+            line(assistant("continued", "summary", json!("Continued answer"))),
+        ]
+        .concat();
+        let state = parse(&bytes).state();
+        assert_eq!(ids(&state), ["u", "a", "continued"]);
+        assert_eq!(state.turns.len(), 1);
+    }
+}
+
+#[test]
+fn compacted_preserved_suffix_keeps_history_tools_and_checkpoint_ancestry() {
+    // Preserved messages can be written for the first time after compaction,
+    // or replayed under a summary with their existing UUIDs during a live tail.
+    for replay in [false, true] {
+        let mut preserved = assistant(
+            "a",
+            "old",
+            json!([
+                {"type":"text","text":"Checking now."},
+                {"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"cargo test"}}
+            ]),
+        );
+        let mut records = vec![
+            line(user("u", None, json!("Check"))),
+            line(assistant("old", "u", json!("Before compaction"))),
+        ];
+        if replay {
+            records.push(line(preserved.clone()));
+            records.push(line(result(json!("done"), false)));
+        }
+        preserved["parentUuid"] = json!("summary");
+        records.extend([
+            line(compact_boundary("boundary", Some("r"))),
+            line(compact_summary("summary", "boundary")),
+            line(preserved),
+            line(result(json!("done"), false)),
+            line(assistant("next", "r", json!("Verified"))),
+            line(compact_boundary("boundary-2", Some("next"))),
+            line(compact_summary("summary-2", "boundary-2")),
+            line(assistant("final", "summary-2", json!("Still here"))),
+        ]);
+        let bytes = records.concat();
+        let expected = parse(&bytes).state();
+        assert_eq!(ids(&expected), ["u", "old", "a", "next", "final"]);
+        assert_eq!(tools(&expected)[0].1.status, AgentToolStatus::Completed);
+        for offset in records.iter().scan(0, |offset, record| {
+            *offset += record.len();
+            Some(*offset)
+        }) {
+            let core = parse(&bytes[..offset]);
+            let mut restored = ClaudeSessionCore::new(SESSION);
+            restored.restore_cache(&core.cache_blob().unwrap()).unwrap();
+            let binding =
+                restored.bind_source("/transcript".into(), "1:2".into(), bytes.len() as u64);
+            assert!(!binding.rebuilt);
+            assert_eq!(binding.start_offset, offset as u64);
+            restored
+                .ingest(binding.source_generation, &bytes[offset..])
+                .unwrap();
+            assert_eq!(restored.state().messages, expected.messages);
+            assert_eq!(restored.state().turns, expected.turns);
+        }
+    }
+}
+
+#[test]
+fn ordinary_new_roots_do_not_join_unrelated_history() {
+    let mut replacement = user("replacement", None, json!("New root"));
+    replacement["logicalParentUuid"] = json!("a");
+    let bytes = [
+        line(user("u", None, json!("Original"))),
+        line(assistant("a", "u", json!("Original answer"))),
+        line(replacement),
+    ]
+    .concat();
+    assert_eq!(ids(&parse(&bytes).state()), ["replacement"]);
 }
 
 #[test]

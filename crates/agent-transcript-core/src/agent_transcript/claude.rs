@@ -22,7 +22,7 @@ use super::projection::{
     timestamp_ms,
 };
 
-const CACHE_VERSION: u32 = 4;
+const CACHE_VERSION: u32 = 5;
 
 // Mid-turn input is persisted as a delivered attachment, rather than a user
 // row. Queue operations alone do not establish delivery.
@@ -200,6 +200,11 @@ impl ClaudeTranscriptAdapter {
         }
         let sidechain = record["isSidechain"].as_bool() == Some(true);
         let kind = record["type"].as_str().unwrap_or_default();
+        let compact_boundary =
+            !sidechain && kind == "system" && record["subtype"] == "compact_boundary";
+        let history_parent = compact_boundary
+            .then(|| self.compaction_parent(record))
+            .flatten();
         if !sidechain {
             if let Some(cwd) = string(record, "cwd") {
                 self.directory = Some(cwd);
@@ -216,7 +221,7 @@ impl ClaudeTranscriptAdapter {
                         .and_then(super::title::session_title);
                 }
                 "last-prompt" => self.leaf = string(record, "leafUuid"),
-                "system" if record["subtype"] == "compact_boundary" => self.leaf = None,
+                _ if compact_boundary => self.leaf = None,
                 _ => {}
             }
         }
@@ -227,8 +232,8 @@ impl ClaudeTranscriptAdapter {
         else {
             return;
         };
-        let parent = string(record, "parentUuid");
-        let root = record.get("parentUuid") == Some(&Value::Null);
+        let parent = history_parent.or_else(|| string(record, "parentUuid"));
+        let root = parent.is_none() && record.get("parentUuid") == Some(&Value::Null);
         let at = timestamp_ms(record.get("timestamp"));
         let mut role = if kind == "assistant" {
             AgentMessageRole::Assistant
@@ -384,8 +389,8 @@ impl ClaudeTranscriptAdapter {
             normalize_user_images(&mut message);
             message
         });
-        let node = ClaudeNode {
-            uuid: uuid.clone(),
+        self.insert_node(ClaudeNode {
+            uuid,
             parent,
             root,
             sidechain,
@@ -393,11 +398,39 @@ impl ClaudeTranscriptAdapter {
             order,
             message,
             results,
-        };
-        if let Some(index) = self.indexes.get(&uuid).copied() {
+        });
+    }
+
+    fn compaction_parent(&self, record: &Value) -> Option<String> {
+        // A logical parent may name a preserved tail written after the boundary.
+        // Bridge to the current branch until those records become available.
+        string(record, "logicalParentUuid")
+            .filter(|id| self.indexes.contains_key(id))
+            .or_else(|| {
+                self.main_chain()
+                    .last()
+                    .map(|index| self.nodes[*index].uuid.clone())
+            })
+    }
+
+    fn insert_node(&mut self, mut node: ClaudeNode) {
+        if let Some(index) = self.indexes.get(&node.uuid).copied() {
+            // Claude can replay a preserved suffix under the new summary.
+            // Its historical parent already reaches that suffix, so accepting
+            // the rewritten head's parent would create a cycle and lose the
+            // original ancestry. Keep its link while refreshing the content.
+            if node
+                .parent
+                .as_ref()
+                .and_then(|id| self.indexes.get(id))
+                .is_some_and(|parent| self.ancestry(*parent).0.contains(&index))
+            {
+                node.parent.clone_from(&self.nodes[index].parent);
+                node.root = self.nodes[index].root;
+            }
             self.nodes[index] = node;
         } else {
-            self.indexes.insert(uuid, self.nodes.len());
+            self.indexes.insert(node.uuid.clone(), self.nodes.len());
             self.nodes.push(node);
         }
     }

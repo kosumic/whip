@@ -57,6 +57,12 @@ reached. Source replacement discards the old projection and byte cursor.
   branch; subsequent descendants advance it. Broken links/cycles fall back to
   chronological main records while pruning known sibling alternatives.
   Sidechain bodies never enter the main transcript.
+- Compaction boundaries retain the previous selected history through a known
+  `logicalParentUuid`, or the current branch when that UUID refers to a
+  preserved tail written later. Replayed preserved messages keep their original
+  ancestry if reparenting under the summary would create a cycle. Summaries
+  remain internal, and earlier messages and tool results stay visible once.
+  Older checkpoints replay the source on reconnect to recover these links.
 - Multiple assistant records and tool completions stay in the same user turn.
   Custom titles take precedence over AI titles; `cwd` supplies the directory.
 - Ordinary appends emit message/turn deltas. Branch changes truncate the
@@ -70,9 +76,9 @@ payloads, redacted thinking, tool-reference blocks, queue events, file-history
 snapshots, and subagent bodies are ignored. Rich tool objects are inspected only
 for known useful fields; arbitrary diagnostics and background-task
 lifecycle metadata are not inferred. Explicitly unrelated session records are
-ignored, including copied fork history with another session ID. Compaction
-roots select the new active chain; this does not recreate historical context
-that Claude removed or summarized. Local slash-command markup stored as an
+ignored, including copied fork history with another session ID. Historical
+messages removed from the source by Claude cannot be recreated from summaries.
+Local slash-command markup stored as an
 ordinary user string remains text. In-place overwrites that retain the inode
 and never expose a smaller size cannot reliably be identified by stat alone.
 
