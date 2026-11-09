@@ -301,11 +301,26 @@ following fragment. A bounded standard-library `ArrayBlockingQueue` hands PCM
 from synthesis to a separate output worker, with at most twenty 80 ms packets.
 This is in addition to Phonon's own bounded internal queues. One mono 24 kHz
 `AudioTrack` remains open across fragments and transcript gaps. It uses at least
-400 ms of platform buffer, a 250 ms startup prefill (or the completed short
-utterance), blocking-write backpressure, and platform resampling. Empty drained
+six seconds of platform buffer, blocking-write backpressure, and platform
+resampling on a dedicated audio-priority output thread. Voice chat starts with a
+250 ms reserve; read-aloud starts with 4.5 seconds (or the completed short
+utterance). After starvation, the reserve grows by 1.5 seconds up to six seconds;
+read-aloud retains that larger reserve across subsequent chunks in the process.
+This trades startup time for protection against slower local synthesis on a busy
+or thermally throttled phone. Empty drained
 tracks pause rather than running through silence; a pending fragment that runs
 out of PCM is counted as a starvation in diagnostics. Buffering cannot guarantee
 uninterrupted playback when synthesis remains slower than real time.
+
+On 2026-11-09, the upload-signed GitHub-channel arm64 build passed all seven
+`PcmSpeechPlaybackTest` and `PhononSpeechTest` checks on a Pixel 9 Pro. These cover
+eight seconds of PCM generated over twelve seconds, 2.4-second gaps between
+network-style bursts, cancellation during prefill, short completed utterances,
+Phonon playback, lookahead, and voice-setting restoration. A separate sustained
+Phonon rerun also verified zero starvation events and zero platform underruns
+while audio remained to be heard. The final drain can increment Android's raw
+underrun counter after the last frame; the active-speech check excludes that
+completed tail.
 
 Each speech promise resolves after the playback head consumes that utterance's
 final frame, even when the next fragment is already generating or playing. Stop,

@@ -8,6 +8,7 @@ import android.os.Handler
 import android.os.Build
 import android.os.Looper
 import android.os.SystemClock
+import android.os.Process
 import android.util.Log
 import android.speech.tts.TextToSpeech
 import com.facebook.react.bridge.Promise
@@ -25,8 +26,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 /** PCM never crosses JS. AudioTrack resamples 24 kHz mono to the device output. */
 object PcmSpeechPlayback {
   private const val SAMPLE_RATE = 24_000
-  private const val BUFFER_SAMPLES = SAMPLE_RATE * 2 / 5
-  private const val PREFILL_SAMPLES = SAMPLE_RATE / 4
+  private const val BUFFER_SAMPLES = SAMPLE_RATE * 6
+  private const val STREAM_PREFILL_SAMPLES = SAMPLE_RATE / 4
+  private const val READ_PREFILL_SAMPLES = SAMPLE_RATE * 9 / 2
+  private const val REFILL_INCREMENT_SAMPLES = SAMPLE_RATE * 3 / 2
   private const val PCM_SAMPLES = SAMPLE_RATE * 80 / 1_000
   private const val PCM_PACKETS = 20 // At most 1.6 seconds of JNI PCM.
   private const val LEVEL_SAMPLES = SAMPLE_RATE / 25
@@ -36,6 +39,9 @@ object PcmSpeechPlayback {
   private val synthesisWorker = Executors.newSingleThreadExecutor()
   private val settingsWorker = Executors.newSingleThreadExecutor()
   private var player: Player? = null // Main-thread ownership; Player.stop is thread safe.
+  @Volatile private var readPrefillSamples = READ_PREFILL_SAMPLES
+  @Volatile internal var synthesize: (Long, String, Long, SpeechPolicy.PcmSink, WhipVoiceCredentials?) -> Int = SpeechPolicy::pcmSpeak
+  internal fun statistics(): String? = player?.statistics()
   @Volatile private var credentials: WhipVoiceCredentials? = null
   @Volatile var systemVoice: String = ""
     private set
@@ -126,7 +132,10 @@ object PcmSpeechPlayback {
   private fun begin(lease: Long, rate: Double, attributes: AudioAttributes, retained: Boolean): Player {
     val next = Player(lease, rate, attributes, retained)
     player = next
-    audioWorker.execute { next.consume() }
+    audioWorker.execute {
+      Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
+      next.consume()
+    }
     val poll = object : Runnable {
       override fun run() {
         if (player !== next) return
@@ -167,6 +176,7 @@ object PcmSpeechPlayback {
     private val utterances = ConcurrentLinkedQueue<Utterance>()
     private var levelAt = 0L
     @Volatile private var starvationCount = 0
+    private var prefillSamples = if (retained) STREAM_PREFILL_SAMPLES else readPrefillSamples
 
     fun enqueue(text: String, started: () -> Unit, level: (Float) -> Unit, ended: (Boolean, Boolean, String?) -> Unit,
                 progress: (Long, Long, Boolean) -> Unit = { _, _, _ -> }, captionId: Long = 0L) {
@@ -177,7 +187,7 @@ object PcmSpeechPlayback {
         if (!offer(Packet.Begin(utterance))) return@execute
         var error: String? = null
         try {
-          val result = SpeechPolicy.pcmSpeak(lease, text, captionId, object : SpeechPolicy.PcmSink {
+          val result = synthesize(lease, text, captionId, object : SpeechPolicy.PcmSink {
             override fun write(samples: FloatArray): Boolean {
               // Cap individual packets as well as queue capacity. Phonon owns
               // its generation workers; this handoff only decouples their sink.
@@ -217,7 +227,15 @@ object PcmSpeechPlayback {
             }
             null -> if (playing && playedFrames() >= frames) {
               val waiting = utterances.peek()
-              if (waiting != null && waiting.endFrame == null) starvationCount++
+              if (waiting != null && waiting.endFrame == null && frames > (waiting.firstFrame ?: frames)) {
+                starvationCount++
+                // A warm/throttled model can fall behind even with a fast first
+                // chunk. Rebuild a larger reserve instead of repeating short
+                // bursts, and retain that reserve for the next read-aloud chunk.
+                prefillSamples = minOf(BUFFER_SAMPLES, prefillSamples + REFILL_INCREMENT_SAMPLES)
+                if (!retained) readPrefillSamples = prefillSamples
+                Log.i("SpeechPCM", "rebuffer lease=$lease prefill_ms=${prefillSamples * 1_000 / SAMPLE_RATE} ${statistics()}")
+              }
               synchronized(lifecycle) { track?.pause(); playing = false }
             }
           }
@@ -234,7 +252,7 @@ object PcmSpeechPlayback {
           }
         }
       } finally {
-        Log.i("SpeechPCM", "stream_closed lease=$lease ${statistics()} starvations=$starvationCount")
+        Log.i("SpeechPCM", "stream_closed lease=$lease ${statistics()}")
         close()
       }
     }
@@ -261,7 +279,7 @@ object PcmSpeechPlayback {
         if (position < end) return
         utterances.poll()
         val completed = utterance.error == null && end > first
-        Log.i("SpeechPCM", "playback_finished lease=$lease completed=$completed segment_frames=${end - first} ${statistics()} starvations=$starvationCount")
+        Log.i("SpeechPCM", "playback_finished lease=$lease completed=$completed segment_frames=${end - first} ${statistics()}")
         if (!retained) PcmSpeechPlayback.stop()
         utterance.ended(completed, utterance.acknowledged, utterance.error)
       }
@@ -288,7 +306,7 @@ object PcmSpeechPlayback {
           check(it.state == AudioTrack.STATE_INITIALIZED) { "Could not initialize streaming audio" }
           Log.i("SpeechPCM", "stream_opened lease=$lease session=${it.audioSessionId} retained=$retained")
           if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            it.setStartThresholdInFrames(minOf(SAMPLE_RATE / 50, it.bufferSizeInFrames))
+            it.setStartThresholdInFrames(minOf(prefillSamples, it.bufferSizeInFrames))
           }
           // Native sample-rate conversion also preserves the device.speak rate contract.
           check(it.setPlaybackRate((SAMPLE_RATE * rate).toInt()) == AudioTrack.SUCCESS) { "Requested speech rate is unavailable" }
@@ -314,7 +332,7 @@ object PcmSpeechPlayback {
           check(count >= 0) { "Streaming audio write failed ($count)" }
           frames += count
           offset += count
-          if (!playing && (count == 0 || frames - playedFrames() >= PREFILL_SAMPLES)) playBuffered()
+          if (!playing && (count == 0 || frames - playedFrames() >= prefillSamples)) playBuffered()
         }
       }
       return true
@@ -324,7 +342,7 @@ object PcmSpeechPlayback {
       val output = track ?: return@synchronized
       val buffered = frames - Integer.toUnsignedLong(output.playbackHeadPosition)
       if (!playing && current() && buffered > 0) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) output.setStartThresholdInFrames(minOf(buffered, PREFILL_SAMPLES.toLong()).toInt())
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) output.setStartThresholdInFrames(minOf(buffered, prefillSamples.toLong()).toInt())
         output.play()
         playing = true
       }
@@ -337,7 +355,7 @@ object PcmSpeechPlayback {
     fun statistics(): String = synchronized(lifecycle) {
       val output = track
       "frames=$frames played=${output?.let { Integer.toUnsignedLong(it.playbackHeadPosition) } ?: 0} " +
-        "peak_rms=$peakRms underruns=${output?.underrunCount ?: 0} device=${output?.routedDevice?.type ?: 0}"
+        "peak_rms=$peakRms underruns=${output?.underrunCount ?: 0} starvations=$starvationCount device=${output?.routedDevice?.type ?: 0}"
     }
 
     fun playbackLevel(): Float {
