@@ -245,6 +245,9 @@ impl Transcript {
     pub(super) fn snapshot(&self) -> Vec<Fragment> {
         self.fragments.clone()
     }
+    pub(in crate::realtime_voice) fn saved_captions(&self) -> Vec<crate::voice_history::Caption> {
+        self.snapshot().into_iter().map(Into::into).collect()
+    }
     pub(in crate::realtime_voice) fn event(
         &mut self,
         id: &str,

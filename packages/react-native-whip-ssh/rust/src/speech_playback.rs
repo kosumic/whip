@@ -114,11 +114,14 @@ impl SpeechPlayback {
 static PLAYBACK: LazyLock<Mutex<SpeechPlayback>> = LazyLock::new(Mutex::default);
 
 /// Realtime output shares admission with local previews, chat and device speech.
-pub(crate) struct RealtimeSpeechLease(AtomicU64);
+pub(crate) struct RealtimeSpeechLease {
+    id: AtomicU64,
+    suppress_automatic: std::sync::atomic::AtomicBool,
+}
 
 impl RealtimeSpeechLease {
     pub(crate) fn id(&self) -> u64 {
-        self.0.load(Ordering::Acquire)
+        self.id.load(Ordering::Acquire)
     }
 
     pub(crate) fn claim(preview: bool) -> Option<Self> {
@@ -128,15 +131,32 @@ impl RealtimeSpeechLease {
             SpeechKind::Chat
         };
         let id = PLAYBACK.lock().claim(kind, "openai-realtime", "");
-        (id != 0).then_some(Self(AtomicU64::new(id)))
+        if id == 0 {
+            return None;
+        }
+        if !preview {
+            crate::automatic_speech::voice_call_started();
+        }
+        Some(Self {
+            id: AtomicU64::new(id),
+            suppress_automatic: std::sync::atomic::AtomicBool::new(!preview),
+        })
     }
 
     pub(crate) fn is_current(&self) -> bool {
-        is_current(self.0.load(Ordering::Acquire))
+        is_current(self.id.load(Ordering::Acquire))
     }
 
     pub(crate) fn release(&self) {
-        PLAYBACK.lock().stop(self.0.swap(0, Ordering::AcqRel));
+        let id = self.id.swap(0, Ordering::AcqRel);
+        PLAYBACK.lock().stop(id);
+        self.end_call();
+    }
+
+    pub(crate) fn end_call(&self) {
+        if self.suppress_automatic.swap(false, Ordering::AcqRel) {
+            crate::automatic_speech::voice_call_ended();
+        }
     }
 }
 

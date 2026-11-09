@@ -617,6 +617,20 @@ impl super::file_session::JsonlTranscriptAdapter for ClaudeTranscriptAdapter {
     fn session_id(&self) -> &str {
         &self.session_id
     }
+    fn recent_message_refs(&self, limit: usize) -> Vec<&AgentTranscriptMessage> {
+        let mut messages: Vec<_> = self
+            .main_chain()
+            .into_iter()
+            .rev()
+            .filter_map(|index| {
+                let node = &self.nodes[index];
+                (!node.sidechain).then_some(node.message.as_ref()).flatten()
+            })
+            .take(limit)
+            .collect();
+        messages.reverse();
+        messages
+    }
     fn accept(&mut self, record: &Value, order: u64) {
         self.accept(record, order);
     }

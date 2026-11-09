@@ -65,6 +65,7 @@ impl RealtimeVoiceAdapter {
     }
 
     pub(super) fn retire_session(&self) {
+        self.updates.lock().take();
         self.retiring.store(true, Ordering::Release);
         // Intent, the absolute mute deadline and native transition speech belong
         // to the logical call, which may outlive this provider generation.

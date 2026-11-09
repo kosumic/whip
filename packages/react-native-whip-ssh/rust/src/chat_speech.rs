@@ -5,7 +5,10 @@ use std::{
     sync::Arc,
 };
 
-use crate::{AgentQuestion, AgentTranscriptKind, agent_transcript::is_question_tool};
+use crate::{
+    AgentMessageRole, AgentQuestion, AgentScalarValue, AgentTranscriptKind, AgentTranscriptMessage,
+    AgentTranscriptPart, agent_transcript::is_question_tool,
+};
 use parking_lot::Mutex;
 
 mod chunking;
@@ -60,13 +63,13 @@ struct SpokenPart {
     finished: bool,
 }
 
-struct SpeechContent {
-    id: String,
-    text: String,
-    question: bool,
+pub(crate) struct SpeechContent {
+    pub(crate) id: String,
+    pub(crate) text: String,
+    pub(crate) question: bool,
 }
 
-fn speech_content(part: ChatSpeechPart) -> Option<SpeechContent> {
+pub(crate) fn speech_content(part: ChatSpeechPart) -> Option<SpeechContent> {
     let (id, text, question) = match part {
         ChatSpeechPart::Text { id, text } => (id, text, false),
         ChatSpeechPart::Tool {
@@ -128,7 +131,7 @@ impl ChatSpeechQueue {
     /// Every initial load/reconnect establishes a baseline before accepting new
     /// completions. An unfinished message at the baseline may finish later.
     pub fn update(&self, agent: AgentTranscriptKind, live: bool, messages: Vec<ChatSpeechMessage>) {
-        self.update_stream(agent, live, messages, false);
+        self.update_stream(agent, live, messages, false, false);
     }
 
     pub fn next(&self) -> Option<String> {
@@ -178,8 +181,31 @@ impl ChatSpeechQueue {
 }
 
 impl ChatSpeechQueue {
+    pub(crate) fn retain_messages(&self, messages: &VecDeque<String>) {
+        self.state
+            .lock()
+            .parts
+            .retain(|(message, _), _| messages.contains(message));
+    }
+    pub(crate) fn within_budget(&self, parts: usize, bytes: usize) -> bool {
+        let state = self.state.lock();
+        state.parts.len() <= parts
+            && state
+                .parts
+                .values()
+                .map(|part| part.spoken.len())
+                .sum::<usize>()
+                <= bytes
+    }
     pub(crate) fn next_content(&self) -> Option<ChatSpeechChunk> {
         self.state.lock().pending.pop_front()
+    }
+    pub(crate) fn update_silent(
+        &self,
+        agent: AgentTranscriptKind,
+        messages: Vec<ChatSpeechMessage>,
+    ) {
+        self.update_stream(agent, true, messages, false, true);
     }
     pub(crate) fn reset_voice(&self) {
         *self.state.lock() = SpeechState {
@@ -199,7 +225,7 @@ impl ChatSpeechQueue {
         for message in &mut messages {
             message.completed |= completed;
         }
-        self.update_stream(agent, true, messages, true);
+        self.update_stream(agent, true, messages, true, false);
     }
     fn update_stream(
         &self,
@@ -207,6 +233,7 @@ impl ChatSpeechQueue {
         live: bool,
         messages: Vec<ChatSpeechMessage>,
         voice: bool,
+        silent: bool,
     ) {
         let mut state = self.state.lock();
         if !live {
@@ -225,7 +252,7 @@ impl ChatSpeechQueue {
                 .collect();
             let part_count = parts.len();
             for (index, part) in parts.into_iter().enumerate() {
-                let live = state.live;
+                let live = state.live && !silent;
                 // Baseline complete prose is history. Codex publishes finalized
                 // response items inside a growing turn; keep their existing
                 // immediate playback without freezing a part on its first update.
@@ -243,7 +270,7 @@ impl ChatSpeechQueue {
                 }
                 let prose = spoken_prose(&part.text);
                 if !live {
-                    let end = if finalized {
+                    let end = if finalized || silent {
                         prose.len()
                     } else {
                         stable_prose_end(&prose, part.text.ends_with(char::is_whitespace))
@@ -443,6 +470,173 @@ fn format_prose(markdown: &str, mapping: bool) -> (String, Vec<std::ops::Range<u
         emit(' ', line_start..line_start);
     }
     (prose, spans)
+}
+
+pub(crate) fn transcript_message(message: &AgentTranscriptMessage) -> ChatSpeechMessage {
+    project_transcript_message(message, None)
+}
+
+const TRANSCRIPT_BYTES: usize = 8192;
+const TRANSCRIPT_PARTS: usize = 64;
+const TRANSCRIPT_ID_BYTES: usize = 256;
+const TRANSCRIPT_QUESTIONS: usize = 16;
+
+pub(crate) fn bounded_transcript_message(message: &AgentTranscriptMessage) -> ChatSpeechMessage {
+    project_transcript_message(message, Some(TRANSCRIPT_BYTES))
+}
+
+pub(crate) fn transcript_projection_limited(message: &AgentTranscriptMessage) -> bool {
+    transcript_speech_parts(message, true)
+        .take(TRANSCRIPT_PARTS + 1)
+        .count()
+        > TRANSCRIPT_PARTS
+        || transcript_speech_parts(message, true)
+            .filter_map(|part| match part {
+                AgentTranscriptPart::Text { text, .. } => Some(text.len()),
+                _ => None,
+            })
+            .sum::<usize>()
+            > TRANSCRIPT_BYTES
+}
+
+fn transcript_speech_parts(
+    message: &AgentTranscriptMessage,
+    bounded: bool,
+) -> impl DoubleEndedIterator<Item = &AgentTranscriptPart> {
+    message.parts.iter().filter(move |part| {
+        (!bounded || part.id().len() <= TRANSCRIPT_ID_BYTES)
+            && match part {
+                AgentTranscriptPart::Text { .. } => true,
+                AgentTranscriptPart::Tool { call_id, tool, .. } => {
+                    crate::agent_transcript::is_question_tool(tool)
+                        && (!bounded
+                            || tool.len() <= TRANSCRIPT_ID_BYTES
+                                && call_id.len() <= TRANSCRIPT_ID_BYTES)
+                }
+                AgentTranscriptPart::Notice { questions, .. } => !questions.is_empty(),
+                _ => false,
+            }
+    })
+}
+
+pub(crate) fn text_prefix(text: &str, limit: usize) -> &str {
+    let mut end = text.len().min(limit);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    &text[..end]
+}
+
+fn project_transcript_message(
+    message: &AgentTranscriptMessage,
+    limit: Option<usize>,
+) -> ChatSpeechMessage {
+    let mut remaining = limit.unwrap_or(usize::MAX);
+    let mut copy = |value: &str| {
+        let value = text_prefix(value, remaining);
+        remaining -= value.len();
+        value.to_owned()
+    };
+    let questions = |questions: &[AgentQuestion], copy: &mut dyn FnMut(&str) -> String| {
+        questions
+            .iter()
+            .take(if limit.is_some() {
+                TRANSCRIPT_QUESTIONS
+            } else {
+                usize::MAX
+            })
+            .map(|question| AgentQuestion {
+                header: question.header.as_ref().map(|header| copy(header)),
+                question: copy(&question.question),
+                multiple: question.multiple,
+                options: question
+                    .options
+                    .iter()
+                    .take(if limit.is_some() {
+                        TRANSCRIPT_QUESTIONS
+                    } else {
+                        usize::MAX
+                    })
+                    .map(|option| crate::AgentQuestionOption {
+                        label: copy(&option.label),
+                        description: option
+                            .description
+                            .as_ref()
+                            .map(|description| copy(description)),
+                    })
+                    .collect(),
+            })
+            .collect()
+    };
+    // Allocate a bounded reader's budget from the newest parts, then restore
+    // prose order. A long old progress item must not hide a new final answer.
+    let mut source = transcript_speech_parts(message, limit.is_some());
+    let parts = std::iter::from_fn(|| {
+        if limit.is_some() {
+            source.next_back()
+        } else {
+            source.next()
+        }
+    });
+    let mut prose: Vec<_> = parts
+        .filter_map(|part| match part {
+            AgentTranscriptPart::Text { id, text, .. } => Some(ChatSpeechPart::Text {
+                id: id.clone(),
+                text: copy(text),
+            }),
+            AgentTranscriptPart::Tool {
+                id,
+                call_id,
+                tool,
+                state,
+                ..
+            } => {
+                let summary = state
+                    .input
+                    .iter()
+                    .find(|field| state.questions.is_empty() && field.key == "question_summary")
+                    .and_then(|field| match &field.value {
+                        AgentScalarValue::String { value } => Some(copy(value)),
+                        _ => None,
+                    })
+                    .unwrap_or_default();
+                Some(ChatSpeechPart::Tool {
+                    // Raw activity and the persisted item share a call ID.
+                    id: if call_id.is_empty() { id } else { call_id }.clone(),
+                    tool: tool.clone(),
+                    summary,
+                    questions: questions(&state.questions, &mut copy),
+                })
+            }
+            AgentTranscriptPart::Notice {
+                id,
+                questions: asks,
+                ..
+            } => Some(ChatSpeechPart::Notice {
+                id: id.clone(),
+                questions: questions(asks, &mut copy),
+            }),
+            _ => None,
+        })
+        .take(if limit.is_some() {
+            TRANSCRIPT_PARTS
+        } else {
+            usize::MAX
+        })
+        .collect();
+    if limit.is_some() {
+        prose.reverse();
+    }
+    ChatSpeechMessage {
+        id: if limit.is_some() {
+            text_prefix(&message.id, TRANSCRIPT_ID_BYTES).into()
+        } else {
+            message.id.clone()
+        },
+        assistant: message.role == AgentMessageRole::Assistant,
+        completed: message.completed_at_ms.is_some(),
+        prose,
+    }
 }
 
 #[cfg(test)]

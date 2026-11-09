@@ -156,7 +156,7 @@ object SpeechPlayback : SensorEventListener {
       stopOwner(SpeechPolicy.CHAT, AUTOMATIC_OWNER)
       automaticId = 0L
     }
-    if (VoiceCallService.active || suspendedChat != null ||
+    if (automaticCallActive() || suspendedChat != null ||
       session?.let { it.owner != AUTOMATIC_OWNER || !it.readyReported } == true) return
     val json = automaticCommand("take")
     if (json == "null") {
@@ -199,6 +199,7 @@ object SpeechPlayback : SensorEventListener {
   // Native adapter tests script admission while exercising the OS player.
   internal var statusPolicy: (String, String, Long) -> String = SpeechPolicy::alertSpeech
   internal var automaticPolicy: (String) -> String = SpeechPolicy::automaticSpeech
+  internal var automaticCallActive: () -> Boolean = { VoiceCallService.active }
 
   private fun alertCommand(action: String, token: String = "", lease: Long = 0L) =
     statusPolicy(action, token, lease)

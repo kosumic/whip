@@ -3,9 +3,9 @@ use super::{
     Arc, BACKGROUND_AGENT, BoundTargets, Command, Config, Instant, JoinSet, Ordering,
     PREVIEW_AUDIO_LIMIT, PREVIEW_TIMEOUT, PinnedAgent, REMAIN_SILENT, RealtimeVoiceAdapter,
     ServerEvent, ToolCompletion, ToolLedger, Value, bounded_text, cost, delegation, feedback,
-    feedback_message, forward_feedback, function_output, global_submitted_message, global_tools,
-    handoff_context, json, limit_text, live, mpsc, next_response, preview_response, send,
-    spawn_delegation, submitted_message, terminal, terminal_submitted_message, watch,
+    feedback_message, function_output, global_submitted_message, global_tools, handoff_context,
+    json, limit_text, live, mpsc, next_response, preview_response, send, spawn_delegation,
+    submitted_message, terminal, terminal_submitted_message, watch,
 };
 use voice_call_openai::session::{Delegate, Event, Flow, Session};
 
@@ -33,6 +33,7 @@ pub(super) struct App<'a> {
     deferred: delegation::Deferred,
     context: handoff_context::Context,
     last_audio_response: Option<String>,
+    updates: Option<super::observer::Subscription>,
 }
 impl<'a> App<'a> {
     pub(super) fn new(
@@ -44,6 +45,19 @@ impl<'a> App<'a> {
         costs: &'a mut cost::CurrentChat,
         configuration_started: Instant,
     ) -> Self {
+        let scope = if config.global {
+            Some(super::observer::Scope::Global)
+        } else {
+            targets
+                .agent
+                .as_ref()
+                .map(|agent| super::observer::Scope::Pinned(agent.source_id()))
+        };
+        let updates = owner
+            .updates
+            .lock()
+            .take()
+            .or_else(|| scope.map(super::observer::Subscription::new));
         Self {
             owner,
             config,
@@ -64,7 +78,60 @@ impl<'a> App<'a> {
             deferred: delegation::Deferred::default(),
             context: handoff_context::Context::default(),
             last_audio_response: None,
+            updates,
         }
+    }
+    async fn forward_updates(&mut self, session: &mut Session<'_>) -> Result<(), &'static str> {
+        if let Some(updates) = &self.updates {
+            self.owner.agent_events(&updates.take_events());
+        }
+        if !session.ready() || self.owner.closed.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        if self
+            .agent
+            .as_ref()
+            .is_some_and(|agent| agent.check().is_err())
+        {
+            return Ok(());
+        }
+        if let Some(updates) = &self.updates {
+            let batch = updates.take_for_call(
+                crate::automatic_speech::tracking_enabled(),
+                Instant::now(),
+                |source, turn, epoch, revision| {
+                    self.owner.context_delivery(
+                        self.agent.as_deref(),
+                        source,
+                        turn,
+                        epoch,
+                        revision,
+                    )
+                },
+            );
+            self.owner.agent_events(&batch.events);
+            let delivered = if let Some(text) = batch.context {
+                self.owner.view.lock().backend_text = Some(text.clone());
+                if super::deliver_agent_context(session, &text).await.is_err() {
+                    updates.delivery_failed();
+                    false
+                } else {
+                    true
+                }
+            } else {
+                false
+            };
+            if let (Some(agent), Some(handoff)) = (&self.agent, &mut self.handoff)
+                && delivered
+                && batch.turns.iter().any(|(source, turn, epoch, revision)| {
+                    *source == agent.source_id()
+                        && agent.progress_matches(&handoff.call_id, turn, *epoch, *revision)
+                })
+            {
+                handoff.progress();
+            }
+        }
+        Ok(())
     }
     async fn tool(
         &mut self,
@@ -215,6 +282,13 @@ impl<'a> App<'a> {
         Ok(Flow::Continue)
     }
 }
+impl Drop for App<'_> {
+    fn drop(&mut self) {
+        if let Some(updates) = &self.updates {
+            self.owner.agent_events(&updates.take_events());
+        }
+    }
+}
 impl Delegate for App<'_> {
     type Work = Work;
     async fn next_work(&mut self) -> Option<Work> {
@@ -225,6 +299,7 @@ impl Delegate for App<'_> {
         }
     }
     async fn work(&mut self, session: &mut Session<'_>, work: Work) -> Result<Flow, &'static str> {
+        self.forward_updates(session).await?;
         if let Work::Command(command) = work {
             match command {
                 Command::Submitted(text) => {
@@ -317,12 +392,15 @@ impl Delegate for App<'_> {
         }
         owner.view.lock().tool = None;
         if let Some(handoff) = handoff.as_mut() {
-            forward_feedback(owner, socket, agent, handoff).await?;
             value["handoff_role"] = json!(if handoff.call_id == call_id {
                 "original"
             } else {
                 "followup"
             });
+        }
+        owner.view.lock().backend_text = Some(live::public_result(&value));
+        if let Some(object) = value.as_object_mut() {
+            object.remove("assistant_output");
         }
         if uncertain {
             agent.mark_uncertain();
@@ -351,6 +429,7 @@ impl Delegate for App<'_> {
         Ok(Flow::Continue)
     }
     async fn tick(&mut self, session: &mut Session<'_>) -> Result<Flow, &'static str> {
+        self.forward_updates(session).await?;
         let idle = self.tools.is_empty()
             && self.deferred.len() == 0
             && session.realtime_state()?.responses.is_idle()
@@ -410,15 +489,6 @@ impl Delegate for App<'_> {
                 true,
                 false,
             );
-        }
-        if let Some(handoff) = handoff.as_mut() {
-            forward_feedback(
-                owner,
-                socket,
-                agent.as_ref().ok_or("Missing bound voice agent.")?,
-                handoff,
-            )
-            .await?;
         }
         if owner.playback_drained()
             && let Some(event) = next_response(responses, handoff.as_mut(), Instant::now())?

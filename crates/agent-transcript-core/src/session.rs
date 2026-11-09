@@ -14,6 +14,22 @@ pub enum SessionCore {
 }
 
 impl SessionCore {
+    /// Bounded borrowed public-message ancestry without cloning private tool
+    /// payloads. Consumers must apply their own read-only content projection.
+    /// Full tool-result state and provider receipts use projection_view/state.
+    pub fn recent_message_refs(&self, limit: usize) -> Vec<&crate::AgentTranscriptMessage> {
+        match self {
+            Self::Claude(core) => core.recent_message_refs(limit),
+            Self::Pi(core) => core.recent_message_refs(limit),
+            Self::Codex(core) => core.recent_message_refs(limit),
+            Self::OpenCode(core) => {
+                let view = core.projection_view();
+                view.messages[view.messages.len().saturating_sub(limit)..]
+                    .iter()
+                    .collect()
+            }
+        }
+    }
     pub fn new(agent: AgentTranscriptKind, session_id: impl Into<String>) -> Self {
         let session_id = session_id.into();
         match agent {

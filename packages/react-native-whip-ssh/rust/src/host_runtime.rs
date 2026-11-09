@@ -713,6 +713,9 @@ fn emit_host_state(inner: &RuntimeInner) {
         drop(runtime);
         (state, transitions)
     };
+    let voice_available =
+        state.sync_status == HostSyncStatus::Synced && state.freshness == HostFreshness::Fresh;
+    crate::realtime_voice::observer::host_available(&inner.id, voice_available);
     if state.sync_status == HostSyncStatus::Synced
         && state.freshness == HostFreshness::Fresh
         && let Some(snapshot) = state.snapshot.as_ref()
@@ -764,6 +767,9 @@ fn emit_host_state(inner: &RuntimeInner) {
     } else {
         None
     };
+    if voice_available {
+        realtime_agent::prepare_global_host(&inner.id);
+    }
     emit(HostRuntimeEvent::HostStateChanged {
         runtime_id: inner.id.clone(),
         state,

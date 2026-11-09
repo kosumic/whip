@@ -228,6 +228,7 @@ pub(crate) fn playback_owner_with_commands() -> Result<
             credential_generation: crate::voice_credentials::generation(),
             speech,
             global: Mutex::new(None),
+            updates: Mutex::new(None),
             global_instructions: String::new(),
             continuity: Mutex::default(),
             continuity_enabled: true,

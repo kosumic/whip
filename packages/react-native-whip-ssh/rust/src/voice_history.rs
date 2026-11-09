@@ -39,7 +39,7 @@ pub(crate) struct Caption {
     pub event: Option<Event>,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub(crate) struct Event {
     pub kind: String,
     pub name: String,

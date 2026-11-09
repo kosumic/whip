@@ -206,6 +206,26 @@ fn project_message(record: &Value, id: &str) -> Option<AgentTranscriptMessage> {
 }
 
 impl JsonlTranscriptAdapter for PiTranscriptAdapter {
+    fn recent_message_refs(&self, limit: usize) -> Vec<&AgentTranscriptMessage> {
+        let mut messages = Vec::new();
+        let mut seen = HashSet::new();
+        let mut current = self.nodes.iter().max_by_key(|node| node.order);
+        while let Some(node) = current {
+            if messages.len() >= limit || !seen.insert(&node.id) {
+                break;
+            }
+            if let Some(message) = &node.message {
+                messages.push(message);
+            }
+            current = node
+                .parent
+                .as_ref()
+                .and_then(|id| self.indexes.get(id))
+                .map(|index| &self.nodes[*index]);
+        }
+        messages.reverse();
+        messages
+    }
     const AGENT: AgentTranscriptKind = AgentTranscriptKind::Pi;
     const CACHE_VERSION: u32 = 1;
 

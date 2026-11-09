@@ -26,4 +26,4 @@ pub(crate) use projection::{
 };
 
 pub use file_session::{JsonlSessionCore, JsonlTranscriptAdapter};
-pub use projection::is_question_tool;
+pub use projection::{is_question_tool, normalize_user_images};

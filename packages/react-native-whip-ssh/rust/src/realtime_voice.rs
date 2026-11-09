@@ -17,6 +17,7 @@ pub(crate) mod handoff_context;
 mod live;
 pub(crate) mod microphone;
 mod models;
+pub(crate) mod observer;
 mod processing;
 mod recovery;
 mod response;
@@ -541,6 +542,7 @@ pub(super) struct RealtimeVoiceAdapter {
     credential_generation: u64,
     speech: crate::speech_playback::RealtimeSpeechLease,
     global: Mutex<Option<Arc<WhipToolSession>>>,
+    updates: Mutex<Option<observer::Subscription>>,
     continuity: Mutex<voice_call_openai::continuity::Policy>,
     continuity_enabled: bool,
     retiring: AtomicBool,
@@ -621,6 +623,14 @@ impl RealtimeVoiceAdapter {
         )?;
         input.set_muted(config.preview);
         let (cancel, _) = watch::channel(false);
+        let scope = if config.global {
+            Some(observer::Scope::Global)
+        } else {
+            agent
+                .as_ref()
+                .map(|agent| observer::Scope::Pinned(agent.source_id()))
+        };
+        let updates = scope.map(observer::Subscription::new);
         let adapter = Arc::new(Self {
             cue: Mutex::default(),
             microphone: Mutex::new(microphone::State::new(config.preview)),
@@ -692,6 +702,7 @@ impl RealtimeVoiceAdapter {
                 .transpose()?
                 .unwrap_or_default(),
             global: Mutex::new(global),
+            updates: Mutex::new(updates),
             continuity: Mutex::default(),
             continuity_enabled: !config.preview && config.webrtc,
             retiring: AtomicBool::new(false),
@@ -738,6 +749,8 @@ impl RealtimeVoiceAdapter {
     }
 
     fn fail(&self, error: &'static str) {
+        self.updates.lock().take();
+        self.speech.end_call();
         self.continuity.lock().diagnostics.status = voice_call_openai::continuity::Status::Failed;
         if let Some(global) = self.global.lock().take() {
             global.close();
@@ -757,6 +770,8 @@ impl RealtimeVoiceAdapter {
         self.cancel.send_replace(true);
     }
     fn close(&self) {
+        self.updates.lock().take();
+        self.speech.end_call();
         self.continuity.lock().diagnostics.status = voice_call_openai::continuity::Status::Ended;
         self.cue.lock().clear();
         if let Some(global) = self.global.lock().take() {
@@ -1163,7 +1178,9 @@ fn spawn_delegation(
     followup: bool,
 ) {
     tools.spawn(async move {
-        let value = agent.delegate(pending.request, followup).await;
+        let value = agent
+            .delegate_for(&pending.call_id, pending.request, followup)
+            .await;
         ToolCompletion {
             call_id: pending.call_id,
             deferred,
@@ -1172,31 +1189,61 @@ fn spawn_delegation(
     });
 }
 
-async fn forward_feedback<S>(
-    owner: &RealtimeVoiceAdapter,
-    socket: &mut S,
-    agent: &PinnedAgent,
-    handoff: &mut feedback::Handoff,
-) -> Result<(), &'static str>
-where
-    S: futures::Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
-{
-    if let Some(snapshot) = agent
-        .feedback_snapshot(handoff.revision())
-        .map_err(|_| "The bound voice agent changed.")?
-    {
-        owner.agent_events(&snapshot);
-        for text in handoff.observe(snapshot) {
-            send(socket, feedback_message(&text)?).await?;
+fn agent_context_message(text: &str) -> Result<ClientEvent, &'static str> {
+    typed(
+        json!({"type":"conversation.item.create","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":text}]}}),
+    )
+}
+
+async fn deliver_agent_context(
+    session: &mut voice_call_openai::session::Session<'_>,
+    text: &str,
+) -> Result<(), &'static str> {
+    tokio::time::timeout(voice_call_media::capture_worker::SEND_TIMEOUT, async {
+        match session.protocol {
+            voice_call_openai::session::Protocol::Realtime(_) => {
+                session.send(agent_context_message(text)?).await
+            }
+            voice_call_openai::session::Protocol::Live(_) => {
+                session
+                    .append_context(
+                        None,
+                        &live::public_text(text),
+                        voice_call_openai::session::Context::Thinking,
+                    )
+                    .await
+            }
         }
-    }
-    Ok(())
+    })
+    .await
+    .map_err(|_| "Coding-agent context delivery timed out.")?
 }
 
 impl RealtimeVoiceAdapter {
-    fn agent_events(&self, snapshot: &feedback::Snapshot) {
+    fn context_delivery(
+        &self,
+        agent: Option<&PinnedAgent>,
+        source: &observer::SourceId,
+        turn: Option<&str>,
+        epoch: u64,
+        revision: u64,
+    ) -> observer::DeliveryDecision {
+        if let Some(agent) = agent {
+            return agent.context_delivery(source, turn, epoch, revision);
+        }
+        self.global
+            .lock()
+            .as_ref()
+            .map_or(observer::DeliveryDecision::Ignore, |global| {
+                global.context_delivery(source, turn, epoch, revision)
+            })
+    }
+    pub(crate) fn agent_result_fallback(&self, value: &Value) {
+        self.view.lock().backend_text = Some(live::public_result(value));
+    }
+    fn agent_events(&self, events: &[crate::voice_history::Caption]) {
         let mut output = self.output.lock();
-        for message in &snapshot.events {
+        for message in events {
             if let Some(event) = &message.event {
                 if let Some(transcript) = &mut output.live_transcript {
                     transcript.event(&message.id, event.clone());

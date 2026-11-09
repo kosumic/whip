@@ -1,5 +1,7 @@
 use super::*;
-use crate::{AgentQuestion, AgentQuestionOption, AgentToolState, AgentToolStatus};
+use crate::{
+    AgentQuestion, AgentQuestionOption, AgentToolState, AgentToolStatus, AgentTranscriptPart,
+};
 
 fn message(id: &str, text: &str, completed: bool) -> AgentTranscriptMessage {
     AgentTranscriptMessage {
@@ -96,6 +98,61 @@ fn authoritative_deltas_speak_for_every_provider_without_js_messages_or_drain() 
         );
         update(&mut coordinator, 3, &message("new", "New reply.", true));
         assert!(take(&mut coordinator).is_null());
+    }
+}
+
+#[test]
+fn call_updates_advance_full_prefixes_without_tts_replay_or_changing_stop_and_lock_policy() {
+    for agent in [
+        AgentTranscriptKind::Codex,
+        AgentTranscriptKind::Claude,
+        AgentTranscriptKind::OpenCode,
+        AgentTranscriptKind::Pi,
+    ] {
+        let mut coordinator = coordinator(agent);
+        update(
+            &mut coordinator,
+            2,
+            &message("queued", "Before call.", true),
+        );
+        coordinator.voice_calls = 1;
+        coordinator.queue.clear_pending();
+        update(
+            &mut coordinator,
+            3,
+            &message("running", "During call without punctuation", false),
+        );
+        update(
+            &mut coordinator,
+            4,
+            &message("completed", "Completed during call.", true),
+        );
+        assert!(take(&mut coordinator).is_null());
+        coordinator.voice_calls = 0;
+        update(
+            &mut coordinator,
+            5,
+            &message(
+                "running",
+                "During call without punctuation. New output after hangup.",
+                true,
+            ),
+        );
+        let next = take(&mut coordinator);
+        let text = next["text"].as_str().unwrap_or_default();
+        assert!(text.contains("New output after hangup."));
+        assert!(!text.contains("During call"));
+        coordinator.command(Command::Completed { id: id(&next) }, 10);
+        coordinator.command(Command::Pause { paused: true }, 11);
+        update(
+            &mut coordinator,
+            6,
+            &message("paused", "Still paused.", true),
+        );
+        coordinator.voice_calls = 1;
+        coordinator.voice_calls = 0;
+        assert!(take(&mut coordinator).is_null());
+        assert!(coordinator.paused);
     }
 }
 

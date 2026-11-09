@@ -1,9 +1,8 @@
 //! Process-owned transcript integration. mobile-speech owns the portable queue;
 //! native adapters wake and complete it without a JavaScript playback loop.
 use crate::{
-    AgentMessageRole, AgentScalarValue, AgentTranscriptKind, AgentTranscriptMessage,
-    AgentTranscriptPart, AgentTranscriptState, AgentTranscriptStatus, AutomaticChatSpeechQueue,
-    ChatSpeechMessage, ChatSpeechPart,
+    AgentMessageRole, AgentTranscriptKind, AgentTranscriptMessage, AgentTranscriptState,
+    AgentTranscriptStatus, AutomaticChatSpeechQueue,
 };
 use parking_lot::Mutex;
 use serde::Deserialize;
@@ -49,6 +48,7 @@ struct Binding {
 
 #[derive(Default)]
 struct Coordinator {
+    voice_calls: usize,
     enabled: bool,
     paused: bool,
     locked: bool,
@@ -311,6 +311,7 @@ impl Coordinator {
         let baseline = reset
             || epoch != source.epoch
             || source.status != AgentTranscriptStatus::Live
+            || self.voice_calls > 0
             || !allowed;
         log::info!(target: "automatic_speech", "event=revision epoch={epoch} revision={revision} status={status:?} baseline={baseline} reset={reset} allowed={allowed}");
         if reset || epoch != source.epoch {
@@ -331,18 +332,24 @@ impl Coordinator {
         }
         // Muted/stale updates advance baselines while the enabled reader is
         // paused. Disabled readers retain no prose or spoken-prefix index.
-        self.queue.update(
-            key.into(),
-            source.agent,
-            source.tab_name.clone(),
-            true,
-            baseline || status != AgentTranscriptStatus::Live,
-            messages
-                .filter(|message| message.role == AgentMessageRole::Assistant)
-                .map(speech_message)
-                .collect(),
-            now,
-        );
+        let messages = messages
+            .filter(|message| message.role == AgentMessageRole::Assistant)
+            .map(crate::chat_speech::transcript_message)
+            .collect();
+        if self.voice_calls > 0 {
+            self.queue
+                .baseline_during_call(key.into(), source.agent, messages);
+        } else {
+            self.queue.update(
+                key.into(),
+                source.agent,
+                source.tab_name.clone(),
+                true,
+                baseline || status != AgentTranscriptStatus::Live,
+                messages,
+                now,
+            );
+        }
         if status != AgentTranscriptStatus::Live {
             self.queue.clear_source_pending(key);
         }
@@ -352,55 +359,6 @@ impl Coordinator {
         if self.initializing && self.sources.values().all(|source| !source.pending_baseline) {
             self.initializing = false;
         }
-    }
-}
-
-fn speech_message(message: &AgentTranscriptMessage) -> ChatSpeechMessage {
-    ChatSpeechMessage {
-        id: message.id.clone(),
-        assistant: message.role == AgentMessageRole::Assistant,
-        completed: message.completed_at_ms.is_some(),
-        prose: message
-            .parts
-            .iter()
-            .filter_map(|part| match part {
-                AgentTranscriptPart::Text { id, text, .. } => Some(ChatSpeechPart::Text {
-                    id: id.clone(),
-                    text: text.clone(),
-                }),
-                AgentTranscriptPart::Tool {
-                    id,
-                    call_id,
-                    tool,
-                    state,
-                    ..
-                } if crate::agent_transcript::is_question_tool(tool) => {
-                    let summary = state
-                        .input
-                        .iter()
-                        .find(|field| field.key == "question_summary")
-                        .and_then(|field| match &field.value {
-                            AgentScalarValue::String { value } => Some(value.clone()),
-                            _ => None,
-                        })
-                        .unwrap_or_default();
-                    Some(ChatSpeechPart::Tool {
-                        // Raw activity and the persisted item share a call ID.
-                        id: if call_id.is_empty() { id } else { call_id }.clone(),
-                        tool: tool.clone(),
-                        summary,
-                        questions: state.questions.clone(),
-                    })
-                }
-                AgentTranscriptPart::Notice { id, questions, .. } if !questions.is_empty() => {
-                    Some(ChatSpeechPart::Notice {
-                        id: id.clone(),
-                        questions: questions.clone(),
-                    })
-                }
-                _ => None,
-            })
-            .collect(),
     }
 }
 
@@ -470,7 +428,7 @@ pub(crate) fn bound(
                 .messages
                 .iter()
                 .filter(|message| message.role == AgentMessageRole::Assistant)
-                .map(speech_message)
+                .map(crate::chat_speech::transcript_message)
                 .collect(),
             now_ms(),
         );
@@ -479,6 +437,20 @@ pub(crate) fn bound(
 
 pub(crate) fn tracking_enabled() -> bool {
     AUTOMATIC.lock().enabled
+}
+
+pub(crate) fn voice_call_started() {
+    let mut coordinator = AUTOMATIC.lock();
+    coordinator.voice_calls = coordinator.voice_calls.saturating_add(1);
+    coordinator.queue.clear_pending();
+}
+
+pub(crate) fn voice_call_ended() {
+    let mut coordinator = AUTOMATIC.lock();
+    coordinator.queue.clear_pending();
+    coordinator.voice_calls = coordinator.voice_calls.saturating_sub(1);
+    drop(coordinator);
+    wake();
 }
 
 fn prepare_baselines(

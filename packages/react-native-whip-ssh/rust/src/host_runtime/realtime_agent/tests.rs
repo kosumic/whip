@@ -4,6 +4,70 @@ use crate::herdr_api::HerdrSessionSnapshot;
 use crate::host_runtime::{register_connected_test_runtime, terminal_delivery_test_guard};
 type Fixture = (Arc<HostRuntime>, Arc<PinnedAgent>, HerdrSessionSnapshot);
 
+#[test]
+fn delegated_context_and_progress_require_the_original_source_epoch_and_post_admission_revision()
+-> Result<(), Box<dyn std::error::Error>> {
+    use crate::realtime_voice::observer::DeliveryDecision;
+    let _guard = terminal_delivery_test_guard();
+    let (_runtime, pinned, _) = fixture("voice-receipt-generation")?;
+    let source = pinned.source_id();
+    pinned.receipts.lock().insert(
+        "call".into(),
+        Receipt {
+            accepted: true,
+            turn_id: Some("turn".into()),
+            epoch: Some(7),
+            after_revision: Some(10),
+            ..Receipt::default()
+        },
+    );
+    assert_eq!(
+        pinned.context_delivery(&source, Some("turn"), 7, 11),
+        DeliveryDecision::Allow
+    );
+    assert!(pinned.progress_matches("call", "turn", 7, 11));
+    for (turn, epoch, revision) in [
+        ("other", 7, 11),
+        ("turn", 8, 11),
+        ("turn", 7, 10),
+        ("turn", 7, 9),
+    ] {
+        assert_eq!(
+            pinned.context_delivery(&source, Some(turn), epoch, revision),
+            DeliveryDecision::Ignore
+        );
+        assert!(!pinned.progress_matches("call", turn, epoch, revision));
+    }
+    let mut other = source.clone();
+    other.binding_generation += 1;
+    assert_eq!(
+        pinned.context_delivery(&other, Some("turn"), 7, 11),
+        DeliveryDecision::Ignore
+    );
+    pinned
+        .receipts
+        .lock()
+        .get_mut("call")
+        .ok_or("missing receipt")?
+        .terminal = true;
+    assert!(!pinned.progress_matches("call", "turn", 7, 11));
+    assert_eq!(
+        pinned.context_delivery(&source, Some("turn"), 7, 11),
+        DeliveryDecision::Allow
+    );
+    pinned
+        .receipts
+        .lock()
+        .get_mut("call")
+        .ok_or("missing receipt")?
+        .lost = true;
+    assert_eq!(
+        pinned.context_delivery(&source, Some("turn"), 7, 11),
+        DeliveryDecision::Ignore
+    );
+    Ok(())
+}
+
 fn install(runtime: &HostRuntime, snapshot: HerdrSessionSnapshot) {
     let mut state = runtime.inner.state.lock();
     let generation = state.generation;
@@ -65,7 +129,7 @@ fn realtime_agent_snapshot_refresh_retains_call_but_blocks_tools_until_fresh()
     };
     pinned.check_liveness()?;
     assert!(pinned.check().is_err());
-    assert!(pinned.feedback_snapshot(None)?.is_none());
+    assert!(pinned.read_context(12)?["stale"].as_bool().unwrap_or(false));
     runtime
         .inner
         .state
@@ -93,7 +157,7 @@ fn realtime_agent_failed_refresh_stops_call() -> Result<(), Box<dyn std::error::
         .host_state
         .fail_sync(token, "refresh failed".into());
     assert!(pinned.check_liveness().is_err());
-    assert!(pinned.feedback_snapshot(None).is_err());
+    assert!(pinned.read_context(12).is_err());
     Ok(())
 }
 

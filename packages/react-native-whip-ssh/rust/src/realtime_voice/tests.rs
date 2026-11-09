@@ -2,6 +2,45 @@ use super::*;
 use crate::host_runtime::realtime_agent::Delegation;
 
 #[test]
+fn both_providers_receive_agent_updates_as_quiet_context_without_a_user_turn_or_response_request()
+-> Result<(), Box<dyn std::error::Error>> {
+    use futures::{FutureExt, StreamExt};
+    crate::runtime()?.block_on(async {
+        for live in [false, true] {
+            let (mut socket, mut wire, _events) = socket::Socket::relay();
+            let mut session = if live {
+                voice_call_openai::session::Session::live(&mut socket,
+                    voice_call_openai::session::LiveConfig { model: "gpt-live".into(), voice: "quartz".into(), backend_model: None, session_id: None }, true)
+            } else {
+                let config: Config = serde_json::from_value(json!({"global":true,"voice":"cedar"}))?;
+                voice_call_openai::session::Session::realtime(&mut socket,
+                    voice_call_openai::session::RealtimeConfig { model: config.model()?.id.clone(), audio: config.audio_settings()? }, true)
+            };
+            let text = format!("{}\n{}", observer::GUIDANCE,
+                json!({"source":{"host_id":"explicit-host","pane_id":"pinned-pane"},"message_id":"m","part_id":"p","text":"Public answer."}));
+            deliver_agent_context(&mut session, &text).await?;
+            let mut content = String::new();
+            while let Some(Some(message)) = wire.next().now_or_never() {
+                let value: Value = serde_json::from_str(message.to_text()?)?;
+                if live {
+                    assert_eq!(value["type"], "session.thinking.append");
+                    assert!(value["delegation_id"].is_null());
+                    content.push_str(value["content"].as_str().ok_or("missing thinking content")?);
+                } else {
+                    assert_eq!(value["type"], "conversation.item.create");
+                    assert_eq!(value["item"]["role"], "assistant");
+                    assert_eq!(value["item"]["content"][0]["type"], "output_text");
+                    content.push_str(value["item"]["content"][0]["text"].as_str().ok_or("missing context")?);
+                    assert!(!session.realtime_state()?.responses.can_create());
+                }
+            }
+            assert_eq!(content, text);
+        }
+        Ok::<_, Box<dyn std::error::Error>>(())
+    })
+}
+
+#[test]
 fn global_voice_configuration_has_an_explicit_exclusive_scope_and_no_remote_authority()
 -> Result<(), Box<dyn std::error::Error>> {
     let mut value = json!({"global":true,"voice":"cedar","vad":{"type":"server_vad","threshold":0.5,"prefix_padding_ms":300,"silence_duration_ms":500}});
@@ -16,6 +55,7 @@ fn global_voice_configuration_has_an_explicit_exclusive_scope_and_no_remote_auth
     assert!(names.contains(&"hosts_list"));
     assert!(names.contains(&"app_navigate"));
     assert!(names.contains(&"agents_prompt"));
+    assert!(names.contains(&"agents_read"));
     assert!(!names.contains(&"background_agent"));
     assert!(!names.contains(&"terminal_exec"));
     assert!(!names.contains(&"device_shizuku_exec"));
@@ -55,6 +95,13 @@ fn global_voice_configuration_has_an_explicit_exclusive_scope_and_no_remote_auth
             .iter()
             .any(|tool| tool["name"] == "hosts_list")
     );
+    assert!(
+        !agent["session"]["tools"]
+            .as_array()
+            .ok_or("No agent tools")?
+            .iter()
+            .any(|tool| tool["name"] == "agents_read")
+    );
     value["global"] = json!(true);
     value["target"] = Value::Null;
     value["preview"] = json!(true);
@@ -72,7 +119,7 @@ fn global_voice_configuration_has_an_explicit_exclusive_scope_and_no_remote_auth
 fn acknowledgement_can_speak_during_a_pending_tool_and_results_take_priority()
 -> Result<(), Box<dyn std::error::Error>> {
     let now = Instant::now();
-    let mut handoff = feedback::Handoff::new("call".into(), "original".into(), None, false, now);
+    let mut handoff = feedback::Handoff::new("call".into(), "original".into(), false, now);
     let mut queue = response::ResponseCreateQueue::default();
     queue.mark_started("original".into());
     assert!(next_response(&queue, Some(&mut handoff), now)?.is_none());
@@ -96,7 +143,7 @@ fn acknowledgement_can_speak_during_a_pending_tool_and_results_take_priority()
 
     // A fast tool result wins over a still-unspoken acknowledgement.
     let mut queue = response::ResponseCreateQueue::default();
-    let mut handoff = feedback::Handoff::new("fast".into(), "original".into(), None, false, now);
+    let mut handoff = feedback::Handoff::new("fast".into(), "original".into(), false, now);
     queue.request_create();
     assert!(matches!(
         next_response(&queue, Some(&mut handoff), now)?,
@@ -460,7 +507,7 @@ fn silence_is_an_empty_noop_and_suppresses_pending_notices() -> Result<(), &'sta
     assert!(serde_json::from_str::<SilentArguments>("{}").is_ok());
     assert!(serde_json::from_str::<SilentArguments>(r#"{"prompt":"stop"}"#).is_err());
     let now = Instant::now();
-    let mut handoff = feedback::Handoff::new("call".into(), "response".into(), None, false, now);
+    let mut handoff = feedback::Handoff::new("call".into(), "response".into(), false, now);
     handoff.silence();
     let responses = response::ResponseCreateQueue::default();
     assert!(next_response(&responses, Some(&mut handoff), now)?.is_none());

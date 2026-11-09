@@ -10,7 +10,7 @@ mod session_host;
 mod tests;
 mod usage;
 
-use super::{Config, RealtimeVoiceAdapter, feedback};
+use super::{Config, RealtimeVoiceAdapter};
 use crate::host_runtime::realtime_agent::{Delegation, Delivery, PinnedAgent};
 #[cfg(test)]
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -82,7 +82,6 @@ enum Completion {
 }
 struct Handoff {
     id: String,
-    feedback: feedback::Handoff,
 }
 
 #[derive(Default)]
@@ -218,6 +217,13 @@ impl LiveVoiceAdapter {
         let mut session = Self::session(&config)?;
         if config.global {
             global::configure(&config, &mut session, owner.global_instructions.clone())?;
+        } else if let Some(agent) = &agent
+            && let Some(context) = agent
+                .startup_context()
+                .map_err(|_| "The bound chat context is unavailable.")?
+            && !context.is_empty()
+        {
+            session.instructions = Field::Value(format!("{INSTRUCTIONS}\n\n{context}"));
         }
         let usage = usage::Usage::start(&config.voice, config.preview, config.global)?;
         let mut cancelled = owner.cancel.subscribe();
@@ -307,11 +313,8 @@ impl LiveVoiceAdapter {
                     .lock()
                     .live_transcript
                     .as_ref()
-                    .map(captions::Transcript::snapshot)
+                    .map(captions::Transcript::saved_captions)
                     .unwrap_or_default()
-                    .into_iter()
-                    .map(Into::into)
-                    .collect()
             };
             if let Err(error) = crate::voice_history::persist_call(
                 adapter.usage.history_identity(),
@@ -384,18 +387,8 @@ impl LiveVoiceAdapter {
         }
         let followup = state.handoff.is_some();
         if !followup {
-            agent.clear_feedback();
             state.handoff = Some(Handoff {
                 id: pending.id.clone(),
-                feedback: feedback::Handoff::new(
-                    pending.id.clone(),
-                    String::new(),
-                    agent
-                        .feedback_snapshot(None)
-                        .map_err(|_| "The bound agent changed.")?,
-                    true,
-                    Instant::now(),
-                ),
             });
         }
         append(socket,Some(&pending.id),"The request is admitted for the bound coding agent. This is not acknowledgement of submission or task completion. Approval controls remain in Whip.",Channel::Thinking).await?;
@@ -408,7 +401,8 @@ impl LiveVoiceAdapter {
         }
         tasks.spawn(async move {
             let value = agent
-                .delegate(
+                .delegate_for(
+                    &pending.id,
                     Delegation {
                         prompt,
                         delivery: Delivery::Now,
@@ -516,7 +510,7 @@ fn update_usage(owner: &RealtimeVoiceAdapter, usage: &usage::Usage) {
     view.usage_finalized = usage.provider.finalized;
 }
 
-fn public_text(text: &str) -> String {
+pub(super) fn public_text(text: &str) -> String {
     // Defense in depth for public assistant prose. Tool/reasoning payloads
     // never enter this function. Withhold a whole update containing credentials.
     let lower = text.to_ascii_lowercase();

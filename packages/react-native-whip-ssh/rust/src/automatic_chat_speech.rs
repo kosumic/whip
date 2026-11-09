@@ -129,6 +129,18 @@ impl AutomaticChatSpeechQueue {
     }
 }
 impl AutomaticChatSpeechQueue {
+    pub(crate) fn baseline_during_call(
+        &self,
+        key: String,
+        agent: AgentTranscriptKind,
+        messages: Vec<ChatSpeechMessage>,
+    ) {
+        let mut state = self.state.lock();
+        state.queue.remove(&key);
+        let selector = state.transcripts.entry(key).or_default().clone();
+        drop(state);
+        selector.update_silent(agent, messages);
+    }
     pub(crate) fn has_source(&self, key: &str) -> bool {
         self.state.lock().transcripts.contains_key(key)
     }

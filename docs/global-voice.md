@@ -34,7 +34,7 @@ or connect to a host automatically.
 The shared global catalog contains `hosts_list`, `agents_summary`, `agents_list`,
 `workspaces_list`, `tabs_list`, `panes_list`, `app_snapshot`,
 `app_navigate`, `app_focus_host`, `app_focus_tab`, `app_open_agent`,
-`agents_prompt`, safe device status tools, and `remain_silent`. Function names
+`agents_read`, `agents_prompt`, safe device status tools, and `remain_silent`. Function names
 use underscores on the public voice wire; they map to the corresponding
 Whip namespaces. Shared Phone Use parsers, typed host context, device
 result sanitizers, and remote execution validate the supported operations.
@@ -49,6 +49,53 @@ space before pagination. Omit `workspace_id` for all spaces. Unattached Core
 delegated agents follow their parent's space, matching Herd.
 Empty scope strings are treated as omitted filters, including when GPT Live
 sends `{"host_id":""}` to request all hosts.
+
+## Coding-agent context (#404)
+
+Global Realtime and GPT-Live expose
+`agents_read({host_id, pane_id, limit?})` for one explicitly identified saved
+host and pane. Discover IDs with `agents_list`; UI focus never selects a target.
+The reader uses existing native transcript ownership without connecting to a
+host. It returns ordered recent user prompts and speakable assistant prose and
+questions, source identity, status, freshness, and truncation/unavailability.
+Its default limit is 12 messages, bounded at 32. A question in history does not
+prove that the same question is still pending. This reader is absent from
+agent-bound calls and the ordinary MCP catalog; the existing MCP terminal-output
+operation `agents.read` retains its separate launch-scoped authorization.
+
+When **Voice announcements** is enabled, both provider modes also receive new
+assistant prose and structured questions as quiet background context. Global
+calls observe eligible agents on already-connected hosts, including agents
+whose Chat View has never been opened. Disabling announcements stops unsolicited
+updates; explicitly delegated answers still use the same event path after their
+source and provider turn are correlated. Agent-bound calls observe only their
+original pinned binding, including tasks started before the call or through
+ordinary typed input. User messages are included only in explicit history and
+bounded agent-bound startup context. Normal tool payloads, reasoning, plans,
+and code excluded by automatic read-aloud never enter live model context.
+
+Rust transcript commits drive this observer; provider delivery never blocks
+ingestion. Every source starts with a silent baseline, and reconnects, source
+replacement, and provider rotation establish new baselines. Updates carry
+host/pane/binding, source epoch, revision, turn/message/part IDs and text offsets.
+The queue holds at most 128 events/64 KiB, batches context every 500 ms, expires
+waiting context after 30 seconds, and caps forwarded context at 256 KiB per
+provider session. Dropped or truncated updates are reported honestly.
+Realtime appends assistant context without requesting a response; GPT-Live
+uses session-wide thinking context with no delegation ID. Neither creates a
+user turn or authorizes agent work.
+
+Delegated and independent assistant output share this event path. Separate
+nonce/provider-turn tracking establishes delegation acceptance and completion;
+unrelated messages cannot complete a request. Completion receipts contain
+status rather than a second copy of the answer. Global call history shows tools
+and delegation receipts invoked by that call; it does not mirror coding-agent
+tool activity. Coding-agent tool lifecycle events remain in agent-bound local
+voice history, including at teardown, and never enter forwarded model context.
+Android/iOS retain their native automatic-TTS suppression during calls;
+Rust advances silent TTS prefixes and discards pending speech so call-time
+updates do not replay after hangup. Stop, pause, and lock controls retain their
+existing behavior.
 
 ## Microphone control (#389)
 

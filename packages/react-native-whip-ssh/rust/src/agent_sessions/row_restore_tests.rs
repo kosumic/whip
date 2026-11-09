@@ -19,6 +19,7 @@ fn live_feedback_projection_skips_unchanged_and_stale_history() {
             assert!(!view.messages.is_empty());
             view.revision
         })
+        .map(|(_, revision)| revision)
         .expect("live transcript");
     assert!(
         manager
@@ -298,5 +299,160 @@ fn borrowed_row_recovery_uses_latest_revision_and_cannot_revive_a_disposed_viewp
         restoring.join().unwrap().unwrap();
         assert!(owner.projection.lock().is_disposed());
         assert!(futures::executor::block_on(owner.poll(0, revision, false, vec![])).is_err());
+    }
+}
+
+#[test]
+fn voice_observer_uses_native_commits_recovers_concurrent_producers_and_revokes_old_bindings()
+-> Result<(), Box<dyn std::error::Error>> {
+    use crate::realtime_voice::observer::{Scope, SourceId, Subscription};
+    fn announcements(enabled: bool) {
+        let command = if enabled {
+            c"{\"action\":\"enable\",\"enabled\":true}"
+        } else {
+            c"{\"action\":\"enable\",\"enabled\":false}"
+        };
+        // SAFETY: The C literal lives for the call; the returned allocation is
+        // freed once with the matching native API, as on Android and iOS.
+        let result =
+            unsafe { crate::automatic_speech::whip_automatic_speech_command(command.as_ptr()) };
+        // SAFETY: The native API returned this allocation; free it once.
+        unsafe {
+            crate::speech_playback::whip_alert_speech_free(result);
+        }
+    }
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            announcements(self.0);
+        }
+    }
+    let _restore = Restore(crate::automatic_speech::tracking_enabled());
+    announcements(true);
+    let core = materialized_cores("Historical answer")
+        .into_iter()
+        .next()
+        .ok_or("missing core")?;
+    let (manager, binding) = manager_with_core(core);
+    let id = SourceId {
+        host_id: "row-restore-test".into(),
+        runtime_incarnation: binding.runtime_incarnation,
+        transcript_key: binding.transcript_key.as_str().into(),
+        terminal_id: binding.terminal_id.as_str().into(),
+        pane_id: binding.pane_id.as_str().into(),
+        binding_token: binding.binding_token.clone(),
+        binding_generation: binding.binding_generation,
+    };
+    let call = Subscription::new(Scope::Pinned(id.clone()));
+    assert!(call.take(true, Instant::now()).context.is_none());
+    let append = |item: &str, text: &str| -> Result<_, Box<dyn std::error::Error>> {
+        let line = format!(
+            "{}\n",
+            json!({"type":"event_msg", "payload":{"type":"item_completed", "thread_id":SESSION, "turn_id":"turn", "item":{
+                "type":"AgentMessage", "id":item, "content":[{"type":"Text", "text":text}]
+            }}})
+        );
+        let mut state = manager.inner.state.lock();
+        let session = state
+            .sessions
+            .get_mut(&binding.transcript_key)
+            .ok_or("missing session")?;
+        let AgentSessionCore::Codex(core) = &mut session.core else {
+            return Err("wrong core".into());
+        };
+        let update = core
+            .ingest(core.source_generation(), line.as_bytes())?
+            .update
+            .ok_or("missing commit")?;
+        let epoch = session.operation_epoch;
+        drop(state);
+        Ok((epoch, update))
+    };
+    let (epoch, first) = append("new-one", "First independent update.")?;
+    let (_, second) = append("new-two", "Second independent update.")?;
+    // Both mutations committed before the first producer publishes its event.
+    emit(&manager.inner, binding.transcript_key.clone(), epoch, first);
+    emit(
+        &manager.inner,
+        binding.transcript_key.clone(),
+        epoch,
+        second.clone(),
+    );
+    let text = call
+        .take(true, Instant::now() + Duration::from_secs(1))
+        .context
+        .ok_or("no live updates")?;
+    assert!(text.contains("First independent update."));
+    assert!(text.contains("Second independent update."));
+    assert!(!text.contains("Historical answer"));
+    assert_eq!(text.matches("First independent update.").count(), 1);
+    assert!(
+        call.take(true, Instant::now() + Duration::from_secs(2))
+            .context
+            .is_none()
+    );
+    drop(call);
+    let replacement = Subscription::new(Scope::Pinned(id));
+    assert!(replacement.take(true, Instant::now()).context.is_none());
+    manager.detach_terminal(&binding.terminal_id)?;
+    emit(&manager.inner, binding.transcript_key, epoch, second);
+    assert!(
+        replacement
+            .take(true, Instant::now() + Duration::from_secs(1))
+            .context
+            .is_none()
+    );
+    Ok(())
+}
+
+#[test]
+fn bounded_borrowed_history_matches_public_prose_for_materialized_and_tree_providers() {
+    let mut cores = Vec::from(materialized_cores("Public answer"));
+    for (mut core, fixture) in [
+        (
+            AgentSessionCore::Claude(Box::new(ClaudeSessionCore::new(SESSION))),
+            &include_bytes!(
+                "../../../../../crates/agent-transcript-core/tests/fixtures/claude/main.jsonl"
+            )[..],
+        ),
+        (
+            AgentSessionCore::Pi(Box::new(PiSessionCore::new("pi-session"))),
+            &include_bytes!(
+                "../../../../../crates/agent-transcript-core/tests/fixtures/pi/main.jsonl"
+            )[..],
+        ),
+    ] {
+        let file = core.file().unwrap();
+        let source = file.bind_source("/transcript".into(), "1:2".into(), fixture.len() as u64);
+        file.ingest(source.source_generation, fixture).unwrap();
+        cores.push(core);
+    }
+    for core in cores {
+        let snapshot = core.state();
+        let expected: Vec<_> = snapshot
+            .messages
+            .iter()
+            .rev()
+            .take(2)
+            .rev()
+            .map(|message| {
+                (
+                    &message.id,
+                    crate::realtime_voice::context::message_text(message, 8192),
+                )
+            })
+            .collect();
+        let borrowed = core.recent_message_refs(2);
+        let actual: Vec<_> = borrowed
+            .iter()
+            .map(|message| {
+                (
+                    &message.id,
+                    crate::realtime_voice::context::message_text(message, 8192),
+                )
+            })
+            .collect();
+        assert_eq!(actual, expected, "{:?}", core.kind());
+        assert!(core.recent_message_refs(0).is_empty());
     }
 }

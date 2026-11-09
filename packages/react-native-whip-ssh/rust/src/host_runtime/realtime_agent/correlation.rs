@@ -17,6 +17,9 @@ const MAX_MESSAGES: usize = 128;
 const MAX_ID_BYTES: usize = 512;
 const MAX_OUTPUT_BYTES: usize = 8192;
 
+#[cfg(test)]
+mod tests;
+
 fn fingerprint(message: &AgentTranscriptMessage) -> [u8; 32] {
     let mut hash = Sha256::new();
     for part in &message.parts {
@@ -68,15 +71,6 @@ impl Scope {
                 .get(&message.id)
                 .is_none_or(|old| *old != fingerprint(message))
     }
-
-    pub(super) fn turn<'a>(
-        &self,
-        view: AgentTranscriptView<'a>,
-    ) -> Option<&'a AgentTranscriptTurn> {
-        self.matches(view)
-            .then(|| view.turns.iter().find(|turn| turn.id == self.turn_id))
-            .flatten()
-    }
 }
 
 fn marked(message: &AgentTranscriptMessage, marker: &str) -> bool {
@@ -94,6 +88,7 @@ fn marked(message: &AgentTranscriptMessage, marker: &str) -> bool {
 pub(super) struct Tracker {
     marker: String,
     revision: Option<u64>,
+    admission_revision: Option<u64>,
     anchor: Option<String>,
     turn_anchor: Option<String>,
     active_turn: Option<String>,
@@ -135,6 +130,7 @@ impl Tracker {
         let mut tracker = Self {
             marker,
             revision: view.map(|view| view.revision),
+            admission_revision: view.map(|view| view.revision),
             anchor: None,
             turn_anchor: None,
             active_turn: None,
@@ -185,6 +181,13 @@ impl Tracker {
 
     pub(super) fn text(&self, request: &str) -> String {
         format!("{}{request}", self.marker)
+    }
+
+    pub(super) fn admission_revision(&self) -> Option<u64> {
+        self.admission_revision
+    }
+    pub(super) fn source_changed(&mut self) {
+        self.lost = true;
     }
 
     pub(super) fn observe(&mut self, view: AgentTranscriptView<'_>) -> Observation {
@@ -286,31 +289,15 @@ impl Tracker {
                         | (AgentTurnOutcome::Failed, AgentTurnStatus::Error)
                 )
             });
-        let mut output = String::new();
-        if let Some(message) = view
+        let output = view
             .messages
             .iter()
             .rev()
             .take(MAX_MESSAGES)
-            .find(|message| scope.permits(turn, message)
-                && message.parts.iter().any(|part| matches!(part, AgentTranscriptPart::Text { text, .. } if !text.is_empty())))
-        {
-            for part in &message.parts {
-                if let AgentTranscriptPart::Text { text, .. } = part {
-                    if !output.is_empty() && output.len() < MAX_OUTPUT_BYTES {
-                        output.push('\n');
-                    }
-                    let mut end = text
-                        .len()
-                        .min(MAX_OUTPUT_BYTES.saturating_sub(output.len()));
-                    while !text.is_char_boundary(end) {
-                        end -= 1;
-                    }
-                    output.push_str(&text[..end]);
-                }
-            }
-        }
-        result.assistant_output = (!output.is_empty()).then_some(output);
+            .filter(|message| scope.permits(turn, message))
+            .map(|message| crate::realtime_voice::context::message_text(message, MAX_OUTPUT_BYTES))
+            .find(|text| !text.is_empty());
+        result.assistant_output = output;
         result
     }
 }

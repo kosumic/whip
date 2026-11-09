@@ -21,9 +21,9 @@ pub(super) struct App<'a> {
     cancellation: watch::Receiver<bool>,
     backend: Option<global::Backend>,
     started: Instant,
-    last_feedback: Instant,
     last_input: Instant,
     active: bool,
+    updates: Option<super::super::observer::Subscription>,
 }
 impl<'a> App<'a> {
     pub(super) fn new(
@@ -33,6 +33,16 @@ impl<'a> App<'a> {
         adapter: &'a mut LiveVoiceAdapter,
         commands: &'a mut mpsc::Receiver<super::super::Command>,
     ) -> Self {
+        let scope = if config.global {
+            Some(super::super::observer::Scope::Global)
+        } else {
+            agent.map(|agent| super::super::observer::Scope::Pinned(agent.source_id()))
+        };
+        let updates = owner
+            .updates
+            .lock()
+            .take()
+            .or_else(|| scope.map(super::super::observer::Subscription::new));
         Self {
             owner,
             config,
@@ -42,9 +52,53 @@ impl<'a> App<'a> {
             cancellation: owner.cancel.subscribe(),
             backend: config.global.then(global::Backend::default),
             started: Instant::now(),
-            last_feedback: Instant::now(),
             last_input: Instant::now(),
             active: false,
+            updates,
+        }
+    }
+    async fn forward_updates(&mut self, session: &mut Session<'_>) -> Result<(), &'static str> {
+        if let Some(updates) = &self.updates {
+            self.owner.agent_events(&updates.take_events());
+        }
+        if !session.ready() || self.owner.closed.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        if self.agent.is_some_and(|agent| agent.check().is_err()) {
+            return Ok(());
+        }
+        if let Some(updates) = &self.updates {
+            let batch = updates.take_for_call(
+                crate::automatic_speech::tracking_enabled(),
+                Instant::now(),
+                |source, turn, epoch, revision| {
+                    self.owner.context_delivery(
+                        self.agent.map(AsRef::as_ref),
+                        source,
+                        turn,
+                        epoch,
+                        revision,
+                    )
+                },
+            );
+            self.owner.agent_events(&batch.events);
+            if let Some(text) = batch.context {
+                self.owner.view.lock().backend_text = Some(text.clone());
+                if super::super::deliver_agent_context(session, &text)
+                    .await
+                    .is_err()
+                {
+                    updates.delivery_failed();
+                }
+            }
+        }
+        Ok(())
+    }
+}
+impl Drop for App<'_> {
+    fn drop(&mut self) {
+        if let Some(updates) = &self.updates {
+            self.owner.agent_events(&updates.take_events());
         }
     }
 }
@@ -58,6 +112,7 @@ impl Delegate for App<'_> {
         }
     }
     async fn work(&mut self, session: &mut Session<'_>, work: Work) -> Result<Flow, &'static str> {
+        self.forward_updates(session).await?;
         match work {
             Work::Command(super::super::Command::Mute(muted)) => {
                 let current = self.owner.microphone.lock().muted;
@@ -89,7 +144,6 @@ impl Delegate for App<'_> {
             Work::Completion(completion) => {
                 let Self {
                     owner,
-                    agent,
                     adapter,
                     backend,
                     ..
@@ -98,12 +152,7 @@ impl Delegate for App<'_> {
                 let socket = &mut *session.socket;
                 let completion = completion.map_err(|_| "GPT-Live agent observation failed.")?;
                 match completion {
-                    Completion::Agent { id, value } => {
-                        if let Some(agent) = agent
-                            && let Ok(Some(snapshot)) = agent.feedback_snapshot(None)
-                        {
-                            owner.agent_events(&snapshot);
-                        }
+                    Completion::Agent { id, mut value } => {
                         state.uncertain |= value["error"] == "outcome_unknown";
                         let text = public_result(&value);
                         if let Some(transcript) = owner.output.lock().live_transcript.as_mut() {
@@ -111,7 +160,19 @@ impl Delegate for App<'_> {
                         }
                         // Text fallback survives failed voice/context delivery.
                         owner.view.lock().backend_text = Some(text.clone());
-                        append(socket, Some(&id), &text, Channel::Commentary).await?;
+                        if let Some(object) = value.as_object_mut() {
+                            object.remove("assistant_output");
+                        }
+                        append(
+                            socket,
+                            Some(&id),
+                            &format!(
+                                "Delegation receipt: {value}. {}",
+                                super::super::feedback::FINISHED_GUIDANCE
+                            ),
+                            Channel::Commentary,
+                        )
+                        .await?;
                         if state
                             .handoff
                             .as_ref()
@@ -313,6 +374,7 @@ impl Delegate for App<'_> {
         Ok(Flow::Continue)
     }
     async fn tick(&mut self, session: &mut Session<'_>) -> Result<Flow, &'static str> {
+        self.forward_updates(session).await?;
         let idle = self.adapter.tasks.is_empty()
             && self.adapter.state.pending.is_empty()
             && self.backend.as_ref().is_none_or(|backend| !backend.busy())
@@ -332,7 +394,6 @@ impl Delegate for App<'_> {
             agent,
             adapter,
             backend,
-            last_feedback,
             ..
         } = self;
         let LiveVoiceAdapter { state, tasks, .. } = adapter;
@@ -375,21 +436,6 @@ impl Delegate for App<'_> {
         }
         if let Some(agent) = agent {
             LiveVoiceAdapter::dispatch(owner, agent, socket, state, tasks).await?;
-            if last_feedback.elapsed() >= Duration::from_millis(500) {
-                *last_feedback = Instant::now();
-                if let Some(handoff) = &mut state.handoff {
-                    let snapshot = agent
-                        .feedback_snapshot(handoff.feedback.revision())
-                        .map_err(|_| "The bound agent changed.")?;
-                    if let Some(snapshot) = snapshot {
-                        owner.agent_events(&snapshot);
-                        for text in handoff.feedback.observe(snapshot) {
-                            let text = public_text(&text);
-                            append(socket, Some(&handoff.id), &text, Channel::Thinking).await?;
-                        }
-                    }
-                }
-            }
         }
 
         Ok(Flow::Continue)

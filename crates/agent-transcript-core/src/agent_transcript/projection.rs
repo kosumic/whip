@@ -183,7 +183,9 @@ fn is_prompt_image(source: &str) -> bool {
     })
 }
 
-pub(super) fn normalize_user_images(message: &mut AgentTranscriptMessage) {
+/// Split supported attachment references out of user prose. Read-only public
+/// projections can reuse this without cloning or exposing tool payloads.
+pub fn normalize_user_images(message: &mut AgentTranscriptMessage) {
     if message.role != AgentMessageRole::User {
         return;
     }

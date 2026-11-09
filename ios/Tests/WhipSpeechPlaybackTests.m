@@ -129,9 +129,10 @@ int32_t whip_phonon_speak(uint64_t lease, const char *text, WhipPcmCallback call
 int32_t whip_speech_pcm_speak(uint64_t lease, const char *text, uint64_t caption_id, WhipPcmCallback callback, void *context,
                             WhipReadVoiceCredential reader, void *credential_context) { return 0; }
 
+static BOOL voiceCallActive;
 @implementation WhipVoiceCall
 + (instancetype)shared { static WhipVoiceCall *call; if (!call) call = [WhipVoiceCall new]; return call; }
-- (BOOL)active { return NO; }
+- (BOOL)active { return voiceCallActive; }
 - (BOOL)owns:(NSString *)token { return NO; }
 - (id)playbackKey:(NSString *)token { return nil; }
 - (void)start:(NSString *)token label:(NSString *)label resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {}
@@ -234,6 +235,7 @@ int32_t whip_speech_pcm_speak(uint64_t lease, const char *text, uint64_t caption
   automaticWaiting = [NSMutableArray new]; automaticCompleted = [NSMutableArray new];
   automaticEndings = [NSMutableArray new];
   automaticActive = 0; automaticEnabled = NO; automaticPaused = NO;
+  voiceCallActive = NO;
   self.player = [TestSpeechPlayback new]; fixturePlayer = self.player; self.player.spoken = [NSMutableArray new]; self.stopped = [NSMutableArray new];
   self.player.ringtones = [NSMutableArray new];
   self.player.callAnnouncements = [NSMutableArray new];
@@ -366,6 +368,25 @@ int32_t whip_speech_pcm_speak(uint64_t lease, const char *text, uint64_t caption
   [self.player finishAlert:@"alert" reason:@"completed"];
   [self waitForExpectations:@[started] timeout:2];
   [self finish]; [self waitForExpectations:@[completed] timeout:2];
+}
+
+- (void)testAutomaticReaderDoesNotTakeSpeechDuringGlobalOrAgentCalls {
+  for (NSString *scope in @[@"global", @"agent-bound"]) {
+    voiceCallActive = YES;
+    [self queueAutomatic:1 text:scope];
+    [self.player automaticControl:@"enable" value:YES];
+    XCTAssertEqual(automaticActive, 0u);
+    XCTAssertEqual(self.player.spoken.count, 0u);
+    // Rust's call baseline owns discarding call-time updates. Native never
+    // consumes that queue to provide voice-model context.
+    [automaticWaiting removeAllObjects];
+  }
+  voiceCallActive = NO;
+  [self.player automaticControl:@"pause" value:NO];
+  XCTAssertEqual(self.player.spoken.count, 0u);
+  [self queueAutomatic:2 text:@"Fresh update after hangup"];
+  [self.player automaticControl:@"pause" value:NO];
+  XCTAssertEqualObjects(self.player.spoken, (@[@"Fresh update after hangup"]));
 }
 
 - (void)testAutomaticAudioCompletionAdvancesWithoutJavaScriptAndIgnoresLateCallbacks {

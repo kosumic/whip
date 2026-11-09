@@ -15,6 +15,9 @@ pub trait JsonlTranscriptAdapter: Clone + std::fmt::Debug + Serialize + Deserial
     const CACHE_VERSION: u32;
     fn new(session_id: impl Into<String>) -> Self;
     fn session_id(&self) -> &str;
+    /// Ordered, borrowed ancestry for bounded prose/question readers. Tool
+    /// results and inferred turn materialization remain in snapshot().
+    fn recent_message_refs(&self, limit: usize) -> Vec<&super::model::AgentTranscriptMessage>;
     fn accept(&mut self, record: &Value, order: u64);
     fn snapshot(
         &self,
@@ -64,6 +67,9 @@ impl<A: JsonlTranscriptAdapter> JsonlSessionCore<A> {
             self.status(),
             self.history_gate.error().map(str::to_owned),
         )
+    }
+    pub fn recent_message_refs(&self, limit: usize) -> Vec<&super::model::AgentTranscriptMessage> {
+        self.adapter.recent_message_refs(limit)
     }
     pub fn source_generation(&self) -> u64 {
         self.cursor.generation

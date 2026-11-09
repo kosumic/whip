@@ -68,3 +68,29 @@ fn empty_or_assistant_only_context_does_not_invent_a_user_turn() {
     assert!(build(&[]).is_empty());
     assert!(build(&[message(AgentMessageRole::Assistant, "orphan")]).is_empty());
 }
+
+#[test]
+fn explicit_history_is_ordered_bounded_and_keeps_questions_historical() {
+    let messages = [
+        message(AgentMessageRole::User, "Last user request."),
+        message(
+            AgentMessageRole::Assistant,
+            "**Public** response.\n```sh\nprivate_code\n```",
+        ),
+    ];
+    let view = AgentTranscriptView {
+        revision: 7,
+        messages: &messages,
+        turns: &[],
+        provider_turns: true,
+    };
+    let result = read(view, crate::AgentTranscriptKind::Codex, 12);
+    assert_eq!(result["messages"][0]["role"], "user");
+    assert_eq!(result["messages"][0]["text"], "Last user request.");
+    assert_eq!(result["messages"][1]["text"], "Public response.");
+    assert_eq!(result["question_state"], "historical_only");
+    assert_eq!(result["revision"], 7);
+    let truncated = read(view, crate::AgentTranscriptKind::Codex, 1);
+    assert_eq!(truncated["messages"].as_array().map(Vec::len), Some(1));
+    assert_eq!(truncated["truncated"], true);
+}

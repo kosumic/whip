@@ -109,6 +109,20 @@ pub(crate) struct BoundAgentChat {
     pub state: AgentTranscriptState,
 }
 
+/// Immutable binding authority without a transcript snapshot. Voice validation
+/// must never clone conversation bodies merely to check identity or liveness.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct AgentBindingIdentity {
+    pub runtime_incarnation: u64,
+    pub binding_token: String,
+    pub binding_generation: u64,
+    pub terminal_id: TerminalId,
+    pub pane_id: PaneId,
+    pub agent: AgentTranscriptKind,
+    pub session_id: SessionId,
+    pub transcript_key: TranscriptKey,
+}
+
 impl From<BoundAgentChat> for AgentChatBinding {
     fn from(binding: BoundAgentChat) -> Self {
         Self {
@@ -394,6 +408,7 @@ struct AgentSessionManagerInner {
 
 impl Drop for AgentSessionManagerInner {
     fn drop(&mut self) {
+        crate::realtime_voice::observer::unbound(&self.runtime_id, self.runtime_incarnation, None);
         crate::automatic_speech::runtime_removed(&self.runtime_id, self.runtime_incarnation);
     }
 }
@@ -407,6 +422,31 @@ pub(crate) struct AutomaticSpeechSource {
 }
 
 impl AutomaticSpeechSource {
+    pub(crate) fn voice_baseline(
+        &self,
+        apply: impl FnOnce(u64, AgentTranscriptStatus, crate::realtime_voice::observer::Window<'_>),
+    ) {
+        let Some(manager) = self.manager.upgrade() else {
+            return;
+        };
+        let state = manager.state.lock();
+        let Some(session) = state.sessions.get(&self.key) else {
+            return;
+        };
+        apply(
+            session.operation_epoch,
+            session.core.status(),
+            crate::realtime_voice::observer::Window::from_core(&session.core),
+        );
+        drop(state);
+    }
+    #[cfg(test)]
+    pub(crate) fn unavailable_for_test() -> Self {
+        Self {
+            manager: Weak::new(),
+            key: "test".into(),
+        }
+    }
     pub(crate) fn baseline(
         &self,
         apply: impl FnOnce(u64, AgentTranscriptStatus, crate::AgentTranscriptView<'_>),
@@ -656,6 +696,11 @@ impl AgentSessionManager {
                 None
             };
             if let Some(old) = &old_binding {
+                crate::realtime_voice::observer::unbound(
+                    &self.inner.runtime_id,
+                    self.inner.runtime_incarnation,
+                    Some(identity.terminal_id.as_str()),
+                );
                 crate::automatic_speech::unbound(
                     self.inner.runtime_incarnation,
                     old.key.as_str(),
@@ -751,6 +796,24 @@ impl AgentSessionManager {
                     manager: Arc::downgrade(&self.inner),
                     key: key.clone(),
                 },
+            );
+            crate::realtime_voice::observer::bound(
+                crate::realtime_voice::observer::SourceId {
+                    host_id: self.inner.runtime_id.clone(),
+                    runtime_incarnation: self.inner.runtime_incarnation,
+                    transcript_key: key.as_str().into(),
+                    terminal_id: identity.terminal_id.as_str().into(),
+                    pane_id: identity.pane_id.as_str().into(),
+                    binding_token: binding.token.clone(),
+                    binding_generation: binding.generation,
+                },
+                identity.agent,
+                AutomaticSpeechSource {
+                    manager: Arc::downgrade(&self.inner),
+                    key: key.clone(),
+                },
+                epoch,
+                &state_snapshot,
             );
             drop(state);
             (binding, state_snapshot, orphaned)
@@ -933,14 +996,14 @@ impl AgentSessionManager {
             .map(|session| session.core.state())
     }
 
-    /// Project changed live history under its owner lock without cloning all
-    /// materialized messages. Voice uses this to copy only bounded public text.
+    /// Lifecycle correlation reads the canonical provider view and source epoch
+    /// atomically. Public history and event forwarding use the bounded reader.
     pub(crate) fn project_live_transcript<T>(
         &self,
         key: &TranscriptKey,
         revision: Option<u64>,
         project: impl FnOnce(crate::agent_transcript::AgentTranscriptView<'_>) -> T,
-    ) -> Option<T> {
+    ) -> Option<(u64, T)> {
         let state = self.inner.state.lock();
         let session = state.sessions.get(key)?;
         if session.core.status() != AgentTranscriptStatus::Live
@@ -957,8 +1020,27 @@ impl AgentSessionManager {
             }
         };
         let projected = project(view);
+        let epoch = session.operation_epoch;
         drop(state);
-        Some(projected)
+        Some((epoch, projected))
+    }
+
+    /// Project bounded public history without materializing private payloads.
+    pub(crate) fn project_voice_transcript<T>(
+        &self,
+        key: &TranscriptKey,
+        project: impl FnOnce(&crate::realtime_voice::observer::Window<'_>) -> T,
+    ) -> Option<T> {
+        let state = self.inner.state.lock();
+        let session = state.sessions.get(key)?;
+        if session.core.status() != AgentTranscriptStatus::Live {
+            return None;
+        }
+        let result = project(&crate::realtime_voice::observer::Window::from_core(
+            &session.core,
+        ));
+        drop(state);
+        Some(result)
     }
 
     /// Search only clones history when the native projection has changed.
@@ -1089,6 +1171,40 @@ impl AgentSessionManager {
         })
     }
 
+    pub(crate) fn terminal_binding_metadata(
+        &self,
+        terminal_id: &str,
+    ) -> Option<AgentBindingIdentity> {
+        let state = self.inner.state.lock();
+        let binding = state.terminal_bindings.get(terminal_id)?;
+        let identity = AgentBindingIdentity {
+            runtime_incarnation: self.inner.runtime_incarnation,
+            binding_token: binding.token.clone(),
+            binding_generation: binding.generation,
+            terminal_id: terminal_id.into(),
+            pane_id: binding.pane_id.clone(),
+            agent: binding.agent,
+            session_id: binding.session_id.clone(),
+            transcript_key: binding.key.clone(),
+        };
+        drop(state);
+        Some(identity)
+    }
+
+    pub(crate) fn binding_needs_start(&self, token: &str) -> bool {
+        let state = self.inner.state.lock();
+        let needed = state
+            .terminal_bindings
+            .values()
+            .find(|binding| binding.token == token)
+            .and_then(|binding| state.sessions.get(&binding.key))
+            .is_none_or(|session| {
+                !session.started || session.closed || session.explicit_restart_pending
+            });
+        drop(state);
+        needed
+    }
+
     /// Check the UI's projection without cloning or serializing its history.
     pub(crate) fn terminal_binding_is_current(
         &self,
@@ -1184,6 +1300,11 @@ impl AgentSessionManager {
         let close = {
             let mut state = self.inner.state.lock();
             let binding = state.terminal_bindings.remove(terminal_id)?;
+            crate::realtime_voice::observer::unbound(
+                &self.inner.runtime_id,
+                self.inner.runtime_incarnation,
+                Some(terminal_id.as_str()),
+            );
             crate::automatic_speech::unbound(
                 self.inner.runtime_incarnation,
                 binding.key.as_str(),
@@ -2477,6 +2598,30 @@ fn emit(
         .filter(|session| session.operation_epoch == operation_epoch);
     let current = session.is_some();
     if let Some(session) = session {
+        if crate::realtime_voice::observer::tracking() {
+            let recovery;
+            let view = if session.core.projection_view().is_none()
+                && session.core.revision() != update.revision
+            {
+                // A concurrent producer passed this event. A canonical snapshot
+                // is permitted only here to recover missed tool-result merges.
+                recovery = session.core.state();
+                crate::realtime_voice::observer::Window::from(crate::AgentTranscriptView::from(
+                    &recovery,
+                ))
+            } else {
+                crate::realtime_voice::observer::Window::from_core(&session.core)
+            };
+            crate::realtime_voice::observer::accept(
+                &manager.runtime_id,
+                manager.runtime_incarnation,
+                key.as_str(),
+                operation_epoch,
+                session.core.status(),
+                &view,
+                &update,
+            );
+        }
         let reset = crate::automatic_speech::needs_baseline(
             manager.runtime_incarnation,
             key.as_str(),

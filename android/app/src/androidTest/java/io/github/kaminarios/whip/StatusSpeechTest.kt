@@ -346,6 +346,39 @@ class StatusSpeechTest {
     }
   }
 
+  @Test fun automaticReaderDoesNotTakeSpeechDuringGlobalOrAgentCallsAndResumesAfterHangup() {
+    assumeTrue("Run only with no user speech or call active", !SpeechPlayback.active && !VoiceCallService.active)
+    val originalAutomatic = SpeechPlayback.automaticPolicy
+    val originalCallActive = SpeechPlayback.automaticCallActive
+    var callActive = true
+    var takes = 0
+    try {
+      main {
+        SpeechPlayback.automaticCallActive = { callActive }
+        SpeechPlayback.automaticPolicy = { input ->
+          if (JSONObject(input).getString("action") == "take") takes++
+          "null"
+        }
+        for (scope in listOf("global", "agent-bound")) {
+          callActive = true
+          val before = takes
+          SpeechPlayback.automaticControl(context, "enable", true)
+          SpeechPlayback.notifyPlaybackStateChanged()
+          assertEquals("$scope call consumed automatic speech", before, takes)
+        }
+        callActive = false
+        SpeechPlayback.automaticControl(context, "pause", false)
+        assertTrue("Hangup did not resume native queue polling", takes > 0)
+      }
+    } finally {
+      main {
+        SpeechPlayback.automaticControl(context, "enable", false)
+        SpeechPlayback.automaticPolicy = originalAutomatic
+        SpeechPlayback.automaticCallActive = originalCallActive
+      }
+    }
+  }
+
   @Test fun automaticReaderCompletesNativeAudioAndContinuesWithoutJavaScript() {
     assumeTrue("Run only with no user speech or call active", !SpeechPlayback.active && !VoiceCallService.active)
     assumeTrue("Unlock the device for automatic speech playback", context.getSystemService(android.app.KeyguardManager::class.java)?.isDeviceLocked != true)

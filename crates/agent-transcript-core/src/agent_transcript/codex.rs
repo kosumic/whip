@@ -1629,6 +1629,13 @@ impl CodexSessionCore {
         })
     }
 
+    pub fn recent_message_refs(&self, limit: usize) -> Vec<&AgentTranscriptMessage> {
+        let messages = self.adapter.projected_messages();
+        messages[messages.len().saturating_sub(limit)..]
+            .iter()
+            .collect()
+    }
+
     pub fn state(&self) -> AgentTranscriptState {
         self.adapter.snapshot(
             self.revision,
