@@ -1,1 +1,1 @@
-Fixes microphone permissions and voice-call startup on iOS.
+Improves voice-call continuity when the screen locks and during longer sessions, adds timed microphone controls, and makes spoken alerts more reliable. File transfers now show speed and estimated time remaining, with support for saved download destinations. Also improves terminal tab switching and status animations when returning to the app.
