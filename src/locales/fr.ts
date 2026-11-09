@@ -588,7 +588,7 @@ export const fr = {
 
   'pairing.title': 'Ajouter un hôte',
   'pairing.tailcatGuideTitle': 'Connexion rapide avec Tailcat',
-  'pairing.tailcatGuideSummary': 'Recommandé pour une configuration simple. Aucun serveur SSH existant ni réglage du routeur nécessaire.',
+  'pairing.tailcatGuideSummary': 'Recommandé pour une configuration simple. Aucun serveur SSH existant ni VPN nécessaire.',
   'pairing.sshConnectTitle': 'Utiliser un serveur SSH existant',
   'pairing.sshConnectCopy': 'Nécessite un serveur SSH déjà accessible depuis ce téléphone, directement ou via un hôte de rebond.',
   'pairing.tailcatGuideIntro': 'Copiez ces instructions dans un agent de programmation sur votre Mac ou ordinateur Linux. Il préparera la connexion et affichera un code QR.',

@@ -579,7 +579,7 @@ export const es = {
   'hosts.errorTitle': 'Problema de conexión',
   'pairing.title': 'Añadir host',
   'pairing.tailcatGuideTitle': 'Conexión rápida con Tailcat',
-  'pairing.tailcatGuideSummary': 'Recomendado para una configuración sencilla. No necesitas un servidor SSH ni configurar el router.',
+  'pairing.tailcatGuideSummary': 'Recomendado para una configuración sencilla. No necesitas un servidor SSH ni una VPN.',
   'pairing.sshConnectTitle': 'Usar un servidor SSH existente',
   'pairing.sshConnectCopy': 'Requiere un servidor SSH al que este teléfono ya pueda acceder, directamente o mediante un host de salto.',
   'pairing.tailcatGuideIntro': 'Copia este mensaje en un agente de programación en tu Mac u ordenador con Linux. Preparará todo y mostrará un código QR.',

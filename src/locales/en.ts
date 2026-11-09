@@ -581,7 +581,7 @@ export const en = {
 
   'pairing.title': 'Add host',
   'pairing.tailcatGuideTitle': 'Quick connect with Tailcat',
-  'pairing.tailcatGuideSummary': 'Recommended for easy setup. No existing SSH server or router configuration needed.',
+  'pairing.tailcatGuideSummary': 'Recommended for easy setup. No existing SSH server or VPN needed.',
   'pairing.sshConnectTitle': 'Use an existing SSH server',
   'pairing.sshConnectCopy': 'Requires an SSH server this phone can already reach, directly or through a jump host.',
   'pairing.tailcatGuideIntro': 'Copy this prompt into a coding agent on your Mac or Linux computer. It will set things up and show you a QR code.',

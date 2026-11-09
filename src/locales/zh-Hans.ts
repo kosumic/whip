@@ -579,7 +579,7 @@ export const zhHans = {
   'hosts.errorTitle': '连接问题',
   'pairing.title': '添加主机',
   'pairing.tailcatGuideTitle': '用 Tailcat 快速连接',
-  'pairing.tailcatGuideSummary': '推荐轻松设置，无需已有 SSH 服务器或配置路由器。',
+  'pairing.tailcatGuideSummary': '推荐轻松设置，无需已有 SSH 服务器或 VPN。',
   'pairing.sshConnectTitle': '使用已有的 SSH 服务器',
   'pairing.sshConnectCopy': '需要这台手机已经能够直接或通过跳板机访问的 SSH 服务器。',
   'pairing.tailcatGuideIntro': '将这段提示词粘贴到 Mac 或 Linux 电脑上的编程代理中，它会完成设置并显示二维码。',

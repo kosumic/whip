@@ -579,7 +579,7 @@ export const ja = {
   'hosts.errorTitle': '接続の問題',
   'pairing.title': 'ホストを追加',
   'pairing.tailcatGuideTitle': 'Tailcatですぐに接続',
-  'pairing.tailcatGuideSummary': '簡単に設定したい方におすすめです。既存のSSHサーバーやルーターの設定は不要です。',
+  'pairing.tailcatGuideSummary': '簡単に設定したい方におすすめです。既存のSSHサーバーやVPNは不要です。',
   'pairing.sshConnectTitle': '既存のSSHサーバーを使う',
   'pairing.sshConnectCopy': 'このスマートフォンから直接、または踏み台ホスト経由で接続できるSSHサーバーが必要です。',
   'pairing.tailcatGuideIntro': 'このプロンプトをMacまたはLinuxパソコンのコーディングエージェントに貼り付けてください。接続の準備を行い、QRコードを表示します。',

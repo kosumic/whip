@@ -579,7 +579,7 @@ export const zhHant: Record<string, string> = {
   'hosts.errorTitle': '連線發生問題',
   'pairing.title': '新增主機',
   'pairing.tailcatGuideTitle': '用 Tailcat 快速連線',
-  'pairing.tailcatGuideSummary': '推薦輕鬆設定，無需現有 SSH 伺服器或設定路由器。',
+  'pairing.tailcatGuideSummary': '推薦輕鬆設定，無需現有 SSH 伺服器或 VPN。',
   'pairing.sshConnectTitle': '使用現有的 SSH 伺服器',
   'pairing.sshConnectCopy': '需要這台手機已能直接或透過跳板主機存取的 SSH 伺服器。',
   'pairing.tailcatGuideIntro': '將這段提示詞貼到 Mac 或 Linux 電腦上的程式代理中，它會完成設定並顯示 QR 碼。',
