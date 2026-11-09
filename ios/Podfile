@@ -28,11 +28,11 @@ if linkage != nil
 end
 
 target 'HerdR' do
-  # RevenueCat's 20.1.0 hybrid pods are tagged upstream but absent from CocoaPods
-  # trunk. Use that release for both pods until trunk publishes these specs.
+  # Fetch hybrid pods from upstream, matching the React Native SDK's required
+  # version, until CocoaPods trunk publishes these specs.
   revenuecat_hybrid_source = {
     :git => 'https://github.com/RevenueCat/purchases-hybrid-common.git',
-    :tag => '20.1.0'
+    :tag => '20.4.0'
   }
   pod 'PurchasesHybridCommon', **revenuecat_hybrid_source
   pod 'PurchasesHybridCommonUI', **revenuecat_hybrid_source
