@@ -11,7 +11,7 @@ import { Text } from './ui/text';
 
 export function DownloadsSetting() {
   const { t } = useTranslation();
-  const { expanded, toggleExpanded } = useSectionExpansion('downloads', true);
+  const { expanded, toggleExpanded } = useSectionExpansion('downloads');
   return <CollapsibleSectionCard title={t('downloads.title')} icon={Download} expanded={expanded} onToggle={toggleExpanded}>
     {expanded ? <DownloadsList /> : null}
   </CollapsibleSectionCard>;
