@@ -23,6 +23,7 @@ jobs:
     environment: google-play
     env:
       NODE_ENV: production
+      SCCACHE_GHA_ENABLED: 'true'
       WHIP_DISTRIBUTION_CHANNEL: github
       WHIP_REVENUECAT_ANDROID_PUBLIC_SDK_KEY: ${{ secrets.WHIP_REVENUECAT_ANDROID_PUBLIC_SDK_KEY }}
       WHIP_RANCHER_WEB_PURCHASE_URL: ${{ secrets.WHIP_RANCHER_WEB_PURCHASE_URL }}
@@ -104,15 +105,29 @@ jobs:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: node scripts/prepare-firebase-android.cjs
 
+      - name: Set up native compiler cache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        with:
+          version: v0.16.0
+
       - name: Build signed release APK
         env:
           WHIP_UPLOAD_KEYSTORE_PROPERTIES: ${{ github.workspace }}/.eas-secrets/upload-keystore.properties
-        run: >-
-          nix develop .#default -c
-          android/gradlew -p android app:assembleRelease
-          -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=512m"
-          -PreactNativeArchitectures=arm64-v8a
-          --no-daemon
+        # Use the same Gradle and Ninja memory budget as Android checks.
+        run: |
+          free -h
+          df -h .
+          vmstat -w -t 60 &
+          monitor_pid=$!
+          trap 'kill "$monitor_pid" 2>/dev/null || true' EXIT
+          nix develop .#default -c \
+            android/gradlew -p android app:assembleRelease \
+            --init-script "$GITHUB_WORKSPACE/.github/gradle/android-ci.gradle" \
+            -Dorg.gradle.jvmargs="-Xmx2g -XX:MaxMetaspaceSize=1g" \
+            -PreactNativeArchitectures=arm64-v8a \
+            --max-workers=2 \
+            --no-parallel \
+            --no-daemon
 
       - name: Verify APK version before publication
         run: >-
