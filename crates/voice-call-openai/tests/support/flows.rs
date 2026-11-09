@@ -176,6 +176,48 @@ fn settings(kind: &str) -> Value {
     dead_code,
     reason = "The call example shares fixtures but runs other flows."
 )]
+pub async fn realtime_automatic_continuation(webrtc: bool) -> TestResult {
+    let audio = Arc::new(App::new(true)?);
+    let (mut socket, mut commands, mut events) = Socket::relay();
+    let (controls, receiver) = mpsc::channel(8);
+    let (notices, mut observer) = mpsc::channel(32);
+    let vad = json!({"type":"server_vad","create_response":true,"interrupt_response":true});
+    let mut config = realtime_config();
+    config.audio.turn_detection = Some(serde_json::from_value(vad.clone())?);
+    let runner = tokio::spawn(async move {
+        let mut application = app(audio.clone(), receiver, notices);
+        let mut session = Session::realtime(&mut socket, config, webrtc);
+        session.drive(&*audio, &mut application).await?;
+        Ok::<_, &'static str>(application)
+    });
+    let mut confirmed = settings("session.updated");
+    confirmed["session"]["audio"]["input"]["turn_detection"] = vad;
+    emit(&mut events, confirmed).await?;
+    notice(&mut observer, "ready").await?;
+    emit(&mut events, json!({"type":"response.created","event_id":"tool-created","response":{"id":"tool","object":"realtime.response","status":"in_progress","output":[]}})).await?;
+    emit(&mut events, json!({"type":"response.function_call_arguments.done","event_id":"summary","response_id":"tool","item_id":"tool-item","output_index":0,"call_id":"summary","name":"agents_summary","arguments":"{}"})).await?;
+    command(&mut commands, "conversation.item.create").await?;
+
+    // A new VAD turn keeps the tool continuation queued until its automatic reply.
+    emit(&mut events, json!({"type":"input_audio_buffer.speech_started","event_id":"speech-start","audio_start_ms":0,"item_id":"question"})).await?;
+    emit(&mut events, json!({"type":"response.done","event_id":"tool-done","response":{"id":"tool","object":"realtime.response","status":"cancelled","output":[]}})).await?;
+    emit(&mut events, json!({"type":"input_audio_buffer.speech_stopped","event_id":"speech-stop","audio_end_ms":1000,"item_id":"question"})).await?;
+    emit(&mut events, json!({"type":"response.created","event_id":"answer-created","response":{"id":"answer","object":"realtime.response","status":"in_progress","output":[]}})).await?;
+    emit(&mut events, json!({"type":"response.done","event_id":"answer-done","response":{"id":"answer","object":"realtime.response","status":"completed","output":[]}})).await?;
+    assert!(
+        tokio::time::timeout(Duration::from_millis(600), commands.next())
+            .await
+            .is_err(),
+        "automatic reply must not trigger a second response.create"
+    );
+    controls.send(Action::Stop).await?;
+    assert_eq!(runner.await??.tool_runs, 1);
+    Ok(())
+}
+#[allow(
+    dead_code,
+    reason = "The call example shares fixtures but runs other flows."
+)]
 pub async fn webrtc_continuation(completion: &str) -> TestResult {
     let audio = Arc::new(App::new(true)?);
     let (mut socket, mut commands, mut events) = Socket::relay();

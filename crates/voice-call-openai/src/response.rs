@@ -34,6 +34,16 @@ impl ResponseCreateQueue {
         self.requested = true;
     }
     pub fn mark_started(&mut self, id: String) {
+        if self.active.as_ref() == Some(&id) {
+            return;
+        }
+        // An automatic response can cover a queued continuation before our
+        // next tick sends response.create. Do not ask for the same answer again.
+        // A response we requested already consumed its work in mark_requested;
+        // anything queued since then still needs a later response.
+        if !self.requested {
+            self.pending_create = false;
+        }
         self.active = Some(id);
         self.active_unknown = false;
         self.requested = false;
@@ -145,7 +155,9 @@ mod tests {
         assert!(queue.can_create());
 
         // A stopped/cleared older buffer cannot release a newer response.
+        queue.mark_requested();
         queue.mark_started("new".into());
+        queue.request_create();
         queue.audio_started("new".into());
         queue.mark_finished("new");
         queue.audio_finished("spoken");
@@ -199,9 +211,36 @@ mod tests {
         queue.mark_started("vad".into());
         assert!(!queue.can_create());
         queue.mark_finished("vad");
+        assert!(!queue.can_create());
+        assert!(queue.is_idle());
+    }
+    #[test]
+    fn automatic_response_consumes_queued_work_but_not_later_results() {
+        let mut queue = ResponseCreateQueue::default();
+        queue.request_create();
+        queue.mark_started("automatic".into());
+        queue.mark_finished("automatic");
+        assert!(queue.is_idle());
+
+        queue.mark_started("next".into());
+        queue.request_create(); // A tool result arrived after generation started.
+        queue.mark_started("next".into()); // Repeated lifecycle notification.
+        queue.mark_finished("next");
+        assert!(queue.can_create());
+    }
+    #[test]
+    fn requested_response_does_not_consume_work_queued_after_the_request() {
+        let mut queue = ResponseCreateQueue::default();
+        queue.request_create();
+        queue.mark_requested();
+        queue.request_create(); // New input before response.created arrives.
+        queue.mark_started("requested".into());
+        queue.mark_finished("requested");
         assert!(queue.can_create());
         queue.mark_requested();
-        assert!(!queue.can_create());
+        queue.mark_started("continuation".into());
+        queue.mark_finished("continuation");
+        assert!(queue.is_idle());
     }
     #[test]
     fn delayed_cancellation_cannot_finish_a_newer_response() {

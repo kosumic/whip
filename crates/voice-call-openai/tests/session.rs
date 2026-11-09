@@ -9,6 +9,14 @@ use voice_call_openai::session::{
 };
 mod support;
 
+#[tokio::test(start_paused = true)]
+async fn automatic_replies_consume_pending_tool_continuations() -> flows::TestResult {
+    for webrtc in [false, true] {
+        flows::realtime_automatic_continuation(webrtc).await?;
+    }
+    Ok(())
+}
+
 #[tokio::test]
 async fn webrtc_tools_run_during_speech_but_continuations_wait_for_server_audio()
 -> flows::TestResult {
