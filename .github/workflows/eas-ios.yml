@@ -33,7 +33,7 @@ jobs:
           cache: npm
 
       - name: Set up Expo and EAS
-        uses: expo/expo-github-action@9da89d3617bb88139671bad31b09c65714c2ee06 # v9
+        uses: expo/expo-github-action@5273c2136bd09c2a341fe3340d3e767ce5a13015 # v9
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
@@ -45,7 +45,7 @@ jobs:
         run: npm run check:app-version
 
       - name: Set up App Store submission tools
-        uses: ruby/setup-ruby@de492cf36cbab201753d720ce4f4e336cd688c94 # v1
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1
         with:
           ruby-version: '3.4'
           bundler-cache: true
