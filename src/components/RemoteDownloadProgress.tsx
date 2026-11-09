@@ -24,11 +24,12 @@ function formatRate(bytes: number): string {
   return `${value < 10 && unit > 0 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
 }
 
-export function RemoteDownloadProgress({ progress, onCancel, onRetry, onChooseDestination }: {
+export function RemoteDownloadProgress({ progress, onCancel, onRetry, onChooseDestination, embedded = false }: {
   progress: Progress | null;
   onCancel: () => void;
   onRetry: () => void;
   onChooseDestination?: () => void;
+  embedded?: boolean;
 }) {
   const { t } = useTranslation();
   const { colors } = useTheme();
@@ -36,12 +37,11 @@ export function RemoteDownloadProgress({ progress, onCancel, onRetry, onChooseDe
   const { phase, bytesTransferred, totalBytes } = progress;
   const label = phase === 'failed' && progress.failedPhase === 'saving' ? 'files.downloadSaveFailed' : phaseLabels[phase];
   const knownTotal = totalBytes !== undefined && totalBytes >= 0 && Number.isFinite(totalBytes);
-  // 100% is reserved for the successful destination copy, including empty files.
-  const percent = phase === 'completed' ? 100
-    : knownTotal && totalBytes > 0 ? Math.min(99, Math.floor(bytesTransferred / totalBytes * 100)) : 0;
+  // The SSH bar stays below 100%; destination saving has its own status.
+  const percent = knownTotal && totalBytes > 0 ? Math.min(99, Math.floor(bytesTransferred / totalBytes * 100)) : 0;
   const transferring = phase === 'downloading';
   const active = transferring || phase === 'selecting' || phase === 'saving';
-  const determinate = phase === 'completed' || (transferring && knownTotal);
+  const determinate = transferring && knownTotal;
   const speed = progress.bytesPerSecond;
   const eta = progress.remainingSeconds;
   const rateAvailable = speed !== undefined && Number.isFinite(speed) && speed > 0;
@@ -55,10 +55,10 @@ export function RemoteDownloadProgress({ progress, onCancel, onRetry, onChooseDe
           : t('files.etaMinutesSeconds', { minutes: Math.floor(roundedEta / 60), seconds: roundedEta % 60 });
 
   return (
-    <View className="gap-2 border-t border-border p-3">
-      <Text accessibilityLiveRegion="polite" className="text-[13px] font-semibold">
+    <View className={embedded ? 'gap-2' : 'gap-2 border-t border-border p-3'}>
+      {phase !== 'completed' ? <Text accessibilityLiveRegion="polite" className="text-[13px] font-semibold">
         {t(label)}
-      </Text>
+      </Text> : null}
       {phase !== 'selecting' ? (
         <Text className="text-[12px] text-muted-foreground">
           {knownTotal ? `${formatRemoteFileSize(bytesTransferred)} / ${formatRemoteFileSize(totalBytes)}`

@@ -12,32 +12,32 @@ import { Text } from './ui/text';
 
 export function SwipeableDeleteRow({ children, deleting, disabled, name, onDelete }: { children: (controls: { actionsOpen: boolean; closeActions: () => void }) => ReactNode; deleting: boolean; disabled: boolean; name: string; onDelete: () => void }) {
   const { t } = useTranslation();
-  const translateX = useSharedValue(0);
+  const swipeOffset = useSharedValue(0);
   const openRef = useRef(false);
   const disabledRef = useRef(disabled);
   disabledRef.current = disabled;
   const [actionsOpen, setActionsOpen] = useState(false);
   const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX.value }],
+    marginRight: Math.max(0, -swipeOffset.value),
   }));
   const actionRevealStyle = useAnimatedStyle(() => ({
-    width: Math.max(0, -translateX.value),
+    width: Math.max(0, -swipeOffset.value),
   }));
 
-  useEffect(() => () => cancelAnimation(translateX), [translateX]);
+  useEffect(() => () => cancelAnimation(swipeOffset), [swipeOffset]);
 
   const settle = (open: boolean) => {
     openRef.current = open;
     setActionsOpen(open);
-    translateX.value = withSpring(open ? -REMOTE_FILE_SWIPE_ACTION_WIDTH : 0, DEFAULT_SPRING_CONFIG);
+    swipeOffset.value = withSpring(open ? -REMOTE_FILE_SWIPE_ACTION_WIDTH : 0, DEFAULT_SPRING_CONFIG);
   };
 
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponderCapture: (_event, gesture) => !disabledRef.current && shouldClaimRemoteFileSwipe(gesture.dx, gesture.dy, openRef.current),
-      onPanResponderGrant: () => cancelAnimation(translateX),
+      onPanResponderGrant: () => cancelAnimation(swipeOffset),
       onPanResponderMove: (_event, gesture) => {
-        translateX.value = remoteFileSwipeOffset(gesture.dx, openRef.current);
+        swipeOffset.value = remoteFileSwipeOffset(gesture.dx, openRef.current);
       },
       onPanResponderRelease: (_event, gesture) => {
         settle(shouldOpenRemoteFileSwipe(gesture.dx, gesture.vx, openRef.current));
@@ -54,8 +54,8 @@ export function SwipeableDeleteRow({ children, deleting, disabled, name, onDelet
 
   return (
     <View className="relative min-h-[62px] overflow-hidden border-b border-border">
-      <Animated.View accessibilityElementsHidden={!actionsOpen} className="absolute inset-y-0 right-0 overflow-hidden" importantForAccessibility={actionsOpen ? 'auto' : 'no-hide-descendants'} style={actionRevealStyle}>
-        <Button accessibilityLabel={t('files.deleteEntry', { name })} className="absolute inset-y-0 right-0 h-full w-[84px] flex-col gap-1 rounded-none" disabled={disabled} size="content" variant="destructive" onPress={hapticPress(runDelete)}>
+      <Animated.View accessibilityElementsHidden={!actionsOpen} className="absolute inset-y-0 right-0 overflow-hidden" importantForAccessibility={actionsOpen ? 'auto' : 'no-hide-descendants'} pointerEvents={actionsOpen && !disabled ? 'auto' : 'none'} style={actionRevealStyle}>
+        <Button accessibilityLabel={t('files.deleteEntry', { name })} className="absolute inset-y-0 right-0 h-full flex-col gap-1 rounded-none" style={{ width: REMOTE_FILE_SWIPE_ACTION_WIDTH }} disabled={disabled} size="content" variant="destructive" onPress={hapticPress(runDelete)}>
           {deleting ? <ActivityIndicator color="white" size="small" /> : <Icon as={Trash2} className="text-destructive-foreground" size={19} />}
           <Text className="text-[11px] font-semibold">{t('common.delete')}</Text>
         </Button>

@@ -1,4 +1,3 @@
-import { DownloadsSetting } from './DownloadsSetting';
 import Slider from '@react-native-community/slider';
 import BellRing from 'lucide-react-native/icons/bell-ring';
 import Bot from 'lucide-react-native/icons/bot';
@@ -432,8 +431,6 @@ export function SettingsSection(props: SettingsSectionProps) {
         </View>
         <ChatCacheSetting />
       </CollapsibleSectionCard>
-
-      <DownloadsSetting />
 
       <CollapsibleSectionCard
         title={t('herd.reverseControl')}

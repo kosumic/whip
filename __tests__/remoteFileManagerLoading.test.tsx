@@ -1145,7 +1145,8 @@ it.each(['success', 'failure'] as const)('downloads with progress and handles %s
   });
   await act(async () => { await button('files.download').props.onPress(); });
   expect(downloadRemoteEntry).toHaveBeenCalledWith({ native }, '/repo/main.rs', expect.any(Function), expect.any(AbortSignal), expect.any(Object));
-  expect(text()).toContain(result === 'success' ? 'files.downloadedTitle' : 'Download failed');
+  expect(text()).toContain(result === 'success' ? '456 B / 456 B' : 'Download failed');
+  expect(text()).not.toContain('files.downloadedTitle');
   expect(button('files.download').props.disabled).toBe(false);
 });
 
@@ -1212,8 +1213,8 @@ it.each(['context', 'preview'] as const)('shows shared progress, saving, complet
     report({ phase: 'completed', bytesTransferred: totalBytes, totalBytes, destination });
     pending.resolve(true);
   });
-  expect(text()).toContain('files.downloadedTitle');
-  expect(tree.root.findByProps({ accessibilityRole: 'progressbar' }).props.accessibilityValue.now).toBe(100);
+  expect(text()).toContain('128 MB / 128 MB');
+  expect(tree.root.findAllByProps({ accessibilityRole: 'progressbar' })).toHaveLength(0);
   expect(button('files.download').props.disabled).toBe(false);
   expect(text()).not.toContain('files.networkRate');
   expect(hasButton('files.openInFileBrowser')).toBe(false);
@@ -1251,7 +1252,7 @@ it.each(['context', 'preview'] as const)('keeps destination errors visible and s
     return true;
   });
   await act(async () => { await button('files.retry').props.onPress(); });
-  expect(text()).toContain('files.downloadedTitle');
+  expect(text()).toContain('128 B / 128 B');
   expect(text()).not.toContain('Destination already exists');
 });
 

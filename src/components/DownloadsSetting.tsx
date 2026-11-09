@@ -12,6 +12,13 @@ import { Text } from './ui/text';
 export function DownloadsSetting() {
   const { t } = useTranslation();
   const { expanded, toggleExpanded } = useSectionExpansion('downloads', true);
+  return <CollapsibleSectionCard title={t('downloads.title')} icon={Download} expanded={expanded} onToggle={toggleExpanded}>
+    {expanded ? <DownloadsList /> : null}
+  </CollapsibleSectionCard>;
+}
+
+function DownloadsList() {
+  const { t } = useTranslation();
   const items = useSyncExternalStore(remoteDownloads.subscribe, remoteDownloads.snapshot);
   const [deleting, setDeleting] = useState<string>();
   const [error, setError] = useState<string>();
@@ -36,26 +43,26 @@ export function DownloadsSetting() {
         { text: t('common.delete'), style: 'destructive', onPress: () => run(() => remove(item, Boolean(item.saved))) },
       ]);
   };
-  return <CollapsibleSectionCard title={t('downloads.title')} icon={Download} expanded={expanded} onToggle={toggleExpanded}>
+  return <>
     {error ? <Text accessibilityRole="alert" className="p-3 text-destructive">{error}</Text> : null}
     {items.length === 0 ? <Text className="p-4 text-muted-foreground">{t('downloads.empty')}</Text> : null}
     {items.map(item => <SwipeableDeleteRow key={item.id} name={item.name} deleting={deleting === item.id}
       disabled={deleting !== undefined} onDelete={() => confirmDelete(item)}>
       {({ actionsOpen, closeActions }) => <View className="bg-background">
-        <Pressable accessible={item.phase === 'completed'} accessibilityRole={item.phase === 'completed' ? 'button' : undefined}
+        <Pressable className="gap-2 p-3" accessible={item.phase === 'completed'} accessibilityRole={item.phase === 'completed' ? 'button' : undefined}
           accessibilityLabel={`${item.name}, ${item.hostId}`}
           accessibilityHint={item.phase === 'completed' ? t('files.openInFileBrowser') : undefined}
           onPress={() => { if (actionsOpen) closeActions(); else if (item.phase === 'completed') run(() => remoteDownloads.open(item.id)); }}>
-          <View className="px-3 pt-3">
+          <View className="gap-0.5">
             <Text className="font-semibold" numberOfLines={1}>{item.name}</Text>
             <Text className="text-xs text-muted-foreground" numberOfLines={1}>{item.hostId} · {item.remotePath}</Text>
           </View>
-          <RemoteDownloadProgress progress={item} onCancel={() => run(() => remoteDownloads.cancel(item.id))}
+          <RemoteDownloadProgress embedded progress={item} onCancel={() => run(() => remoteDownloads.cancel(item.id))}
             onRetry={() => run(() => remoteDownloads.retry(item.id))}
             onChooseDestination={() => run(() => remoteDownloads.retry(item.id, true))} />
+          {isActiveDownload(item) ? <Text className="text-xs text-muted-foreground">{t('downloads.backgroundCopy')}</Text> : null}
         </Pressable>
-        {isActiveDownload(item) ? <Text className="px-3 pb-2 text-xs text-muted-foreground">{t('downloads.backgroundCopy')}</Text> : null}
       </View>}
     </SwipeableDeleteRow>)}
-  </CollapsibleSectionCard>;
+  </>;
 }

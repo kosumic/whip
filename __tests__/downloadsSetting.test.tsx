@@ -7,11 +7,14 @@ let mockItems: readonly RemoteDownload[] = [];
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
 jest.mock('react-native-css-interop', () => ({ createInteropElement: jest.requireActual('react').createElement }));
 jest.mock('../src/services/remoteDownloads', () => ({
-  remoteDownloads: { snapshot: () => mockItems, subscribe: () => () => {}, initialize: jest.fn(),
+  remoteDownloads: { snapshot: () => mockItems, subscribe: jest.fn(() => () => {}), initialize: jest.fn(),
     open: jest.fn(), remove: jest.fn(), retry: jest.fn(), cancel: jest.fn() },
   isActiveDownload: (item: RemoteDownload) => ['selecting', 'downloading', 'saving'].includes(item.phase),
 }));
-jest.mock('../src/hooks/useSectionExpansion', () => ({ useSectionExpansion: () => ({ expanded: true, toggleExpanded: jest.fn() }) }));
+jest.mock('../src/hooks/useSectionExpansion', () => ({ useSectionExpansion: () => {
+  const [expanded, setExpanded] = jest.requireActual<typeof import('react')>('react').useState(true);
+  return { expanded, toggleExpanded: () => setExpanded(value => !value) };
+} }));
 jest.mock('../src/components/CollapsibleSectionCard', () => ({ CollapsibleSectionCard: 'Section' }));
 jest.mock('../src/components/GlassControls', () => ({ GlassButton: 'Button' }));
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
@@ -48,6 +51,22 @@ it('opens only a completed row and has no separate Open button', async () => {
   expect(remoteDownloads.open).toHaveBeenCalledWith('complete');
   expect(button('files.openInFileBrowser')).toBeUndefined();
   expect(rows[0].props.accessibilityRole).toBe('button');
+  expect(rows[0].findAllByProps({ accessibilityRole: 'progressbar' })).toHaveLength(0);
+  expect(JSON.stringify(tree.toJSON())).not.toContain('files.downloadedTitle');
+});
+it('unmounts the list and releases its live subscription while collapsed, then restores the latest downloads', async () => {
+  const unsubscribe = jest.fn();
+  jest.mocked(remoteDownloads.subscribe).mockReturnValue(unsubscribe);
+  await act(async () => { tree = create(<DownloadsSetting />); });
+  const section = () => tree.root.find(node => String(node.type) === 'Section');
+  act(() => { section().props.onToggle(); });
+  expect(section().props.expanded).toBe(false);
+  expect(tree.root.findAllByProps({ accessibilityLabel: 'complete, host' })).toHaveLength(0);
+  expect(unsubscribe).toHaveBeenCalledTimes(1);
+  mockItems = [item('finished while collapsed', 'completed')];
+  act(() => { section().props.onToggle(); });
+  expect(section().props.expanded).toBe(true);
+  expect(tree.root.findAllByProps({ accessibilityLabel: 'finished while collapsed, host' })).not.toHaveLength(0);
 });
 it('uses the shared left swipe and confirms local-file or history-only deletion', async () => {
   await act(async () => { tree = create(<DownloadsSetting />); });

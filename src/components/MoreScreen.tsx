@@ -1,12 +1,13 @@
 import { KeyboardAwareScrollView as ScrollView, type KeyboardAwareScrollViewRef } from 'react-native-keyboard-controller';
 import { memo, useCallback, useEffect, useReducer, useRef } from 'react';
 import { useCommittedCallbacks } from '../hooks/useCommittedCallbacks';
-import type { ViewInstance } from 'react-native';
+import { View, type ViewInstance } from 'react-native';
 
 import { useTranslation } from 'react-i18next';
 
 import { AboutSection } from './AboutScreen';
 import { UsageSection } from './UsageSection';
+import { DownloadsSetting } from './DownloadsSetting';
 import { AppLogsSection } from './AppLogsScreen';
 import { FeedbackSection } from './FeedbackSection';
 import { TipJarSection } from './TipJarSection';
@@ -85,6 +86,9 @@ const MoreScreenContent = memo(function MoreContent(props: Props) {
           <TipJarSection />
         ) : null}
         <UsageSection onResumeCall={props.onResumeCall} />
+        <View className="px-4 py-2">
+          <DownloadsSetting />
+        </View>
         {props.developerOptionsEnabled ? <FeedbackSection /> : null}
         <SettingsSection
           openAiConfigRequest={openAiConfigRequest}

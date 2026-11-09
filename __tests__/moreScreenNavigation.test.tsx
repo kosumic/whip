@@ -8,6 +8,10 @@ jest.mock('../src/billing/distribution', () => ({
 }));
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
+jest.mock('react-native-css-interop', () => {
+  const { createElement } = jest.requireActual<typeof import('react')>('react');
+  return { createElement, createInteropElement: createElement };
+});
 jest.mock('react-native-keyboard-controller', () => ({ KeyboardAwareScrollView: 'ScrollView' }));
 jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 jest.mock('../src/components/SettingsScreen', () => ({
@@ -17,6 +21,7 @@ jest.mock('../src/components/SettingsScreen', () => ({
 }));
 jest.mock('../src/components/AboutScreen', () => ({ AboutSection: () => null }));
 jest.mock('../src/components/UsageSection', () => ({ UsageSection: () => null }));
+jest.mock('../src/components/DownloadsSetting', () => ({ DownloadsSetting: 'DownloadsSetting' }));
 jest.mock('../src/components/AppLogsScreen', () => ({ AppLogsSection: () => null }));
 jest.mock('../src/components/FeedbackSection', () => ({ FeedbackSection: () => null }));
 jest.mock('../src/components/TipJarSection', () => ({ TipJarSection: 'TipJarSection' }));
