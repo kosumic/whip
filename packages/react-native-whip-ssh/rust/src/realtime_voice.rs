@@ -277,7 +277,7 @@ impl Config {
             ]
         };
         typed(json!({"type":"session.update","session":{
-            "type":"realtime", "output_modalities":["audio"], "max_output_tokens":512,
+            "type":"realtime", "output_modalities":["audio"],
             "instructions":if self.global { global_tools::base_instructions(self.global_shizuku_access) } else if terminal { terminal::INSTRUCTIONS.into() } else { INSTRUCTIONS.into() },
             "audio":{"input":{"format":{"type":"audio/pcm","rate":RATE},"turn_detection":vad,
                 "noise_reduction":{"type":"near_field"},
