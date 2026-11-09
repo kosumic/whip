@@ -13,6 +13,7 @@ mod tailcat_proxyjump_tests;
 pub use connection::herdr_protocol_label;
 pub(crate) mod diagnostics;
 mod directory_cache;
+mod download_execution;
 
 pub(crate) fn record_transcript_cache_failure(message: &str) {
     diagnostics::log_lifecycle(format_args!("conversation cache: {message}"));

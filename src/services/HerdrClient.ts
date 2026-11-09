@@ -155,6 +155,10 @@ export class HerdrClient {
       }
       this.runtimeAwaitingHostKeyTrust = false;
       if (herdrEnabled) bindNotificationRuntime(profile.id, runtime);
+      reportBackgroundFailure(
+        import('./remoteDownloads').then(({ remoteDownloads }) => remoteDownloads.resumeHost(runtime)),
+        'sftp-download-recovery',
+      );
     } catch (error) {
       if (attachmentEpoch !== this.attachmentEpoch) throw error;
       this.runtimeAwaitingHostKeyTrust = isHostKeyChallenge(error);

@@ -22,4 +22,8 @@
     <string name="global_keychain_unlock_title">Unlock global SSH keychain</string>
     <string name="global_keychain_unlock_subtitle">Use your fingerprint or face to access your private keys</string>
     <string name="biometric_cancel">Cancel</string>
+    <string name="sftp_downloads">SFTP downloads</string>
+    <string name="sftp_download_count">%1$d active downloads</string>
+    <string name="sftp_download_ssh">Downloading over SSH</string>
+    <string name="sftp_download_saving">Saving to selected location</string>
 </resources>

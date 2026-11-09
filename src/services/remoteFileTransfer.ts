@@ -5,7 +5,7 @@ import { recordNetworkDiagnostic } from './networkDiagnostics';
 
 export type RemoteFileClient = Pick<HerdrClient, 'native'> & Partial<Pick<HerdrClient, 'activeNative'>>;
 
-export type RemoteDownloadPhase = 'selecting' | 'downloading' | 'saving' | 'completed' | 'failed' | 'cancelled';
+export type RemoteDownloadPhase = 'selecting' | 'downloading' | 'saving' | 'completed' | 'failed' | 'cancelled' | 'paused';
 
 export interface RemoteDownloadProgress {
   phase: RemoteDownloadPhase;
@@ -19,10 +19,17 @@ export interface RemoteDownloadProgress {
   destination?: SavedRemoteDestination;
 }
 
-/** Kept only by the completed UI, never persisted or converted to a bookmark. */
+/** Live Expo handles; the manager persists URI descriptors and native grants. */
 export interface SavedRemoteDestination {
   entry: File | Directory;
   directory: Directory;
+}
+
+export interface DownloadOptions {
+  destination?: Directory;
+  onDestination?: (destination: Directory) => Promise<void>;
+  beforeTransfer?: () => Promise<void>;
+  onTransfer?: (id: string) => void;
 }
 
 const TRANSFER_POLL_INTERVAL_MS = 250;
@@ -150,6 +157,7 @@ export async function downloadRemoteEntry(
   remotePath: string | (() => Promise<string>),
   onProgress: (progress: RemoteDownloadProgress) => void,
   signal?: AbortSignal,
+  options: DownloadOptions = {},
 ): Promise<boolean> {
   const native = client.native;
   const context: DownloadContext = { runtimeId: native.runtimeId };
@@ -168,6 +176,7 @@ export async function downloadRemoteEntry(
   let transfer: ReturnType<typeof native.startDownload> | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
   let connectionError: Error | undefined;
+  let savedDestination: SavedRemoteDestination | undefined;
   const stopPolling = () => {
     if (timer !== undefined) clearInterval(timer);
     timer = undefined;
@@ -199,7 +208,7 @@ export async function downloadRemoteEntry(
     // Keep the picker scope alive through the destination copy (including SAF).
     let destination: Directory;
     try {
-      destination = await Directory.pickDirectoryAsync();
+      destination = options.destination ?? await Directory.pickDirectoryAsync();
     } catch (error) {
       if (error instanceof Error && /cancel|dismiss/i.test(error.message)) {
         report({ phase: 'cancelled' });
@@ -208,6 +217,9 @@ export async function downloadRemoteEntry(
       throw error;
     }
     check();
+    if (options.onDestination) await options.onDestination(destination);
+    if (options.beforeTransfer) await options.beforeTransfer();
+    check();
     report({ phase: 'downloading', rateCalculating: true });
     const sourcePath = typeof remotePath === 'string' ? remotePath : await remotePath();
     check();
@@ -215,6 +227,7 @@ export async function downloadRemoteEntry(
     transfer = native.startDownload(sourcePath, `${nativePath(directory.uri)}/`);
     admitted = true;
     context.transferId = transfer.id;
+    options.onTransfer?.(transfer.id);
     signal?.addEventListener('abort', cancel);
     const id = transfer.id;
     if (signal?.aborted) cancel();
@@ -254,8 +267,15 @@ export async function downloadRemoteEntry(
     // cannot be joined as ordinary filesystem paths. Its copy operation checks
     // conflicts and recurses only over the safe, native-created staging tree.
     const saved = await saveDownloadedEntry(source, destination, false, context);
+    savedDestination = saved;
     // Expo's asynchronous copy cannot be interrupted. Once it starts, wait for
     // its real outcome, even if the owning UI goes away, before deleting staging.
+    if (signal?.aborted) {
+      try { saved.entry.delete(); }
+      catch { throw new Error('Download cancelled, but the saved local file could not be removed. Check the selected folder.'); }
+      report({ phase: 'cancelled' });
+      return false;
+    }
     report({ phase: 'completed', destination: saved });
     return true;
   } catch (error) {
@@ -269,7 +289,8 @@ export async function downloadRemoteEntry(
     const reason = error instanceof RemoteFileDownloadError && !connectionError
       ? error
       : new RemoteFileDownloadError(progress.phase === 'saving' ? 'save' : 'transfer', context.transferId, cause);
-    report({ phase: 'failed', failedPhase: progress.phase, error: String(reason) });
+    report({ phase: 'failed', failedPhase: progress.phase, error: String(reason),
+      ...(savedDestination ? { destination: savedDestination } : {}) });
     throw reason;
   } finally {
     signal?.removeEventListener('abort', cancel);

@@ -69,7 +69,46 @@ class HerdrBackgroundModule(
 
   override fun getName(): String = "HerdrBackground"
 
+  @ReactMethod fun beginDownloadExecution(id: String, name: String, promise: Promise) {
+    SftpDownloadService.begin(context, id, name, promise)
+  }
+  @ReactMethod fun bindDownloadTransfer(id: String, hostId: String, transferId: String) {
+    SftpDownloadService.bind(id, hostId, transferId)
+  }
+  @ReactMethod fun updateDownloadExecution(id: String, phase: String, transferred: Double, total: Double) {
+    SftpDownloadService.update(id, phase, transferred, total)
+  }
+  @ReactMethod fun endDownloadExecution(id: String, promise: Promise) { SftpDownloadService.end(id, promise) }
+  @ReactMethod fun downloadCancellations(promise: Promise) {
+    mainHandler.post { promise.resolve(Arguments.createArray().apply { SftpDownloadService.cancellations(context).forEach { pushString(it) } }) }
+  }
+  @ReactMethod fun acknowledgeDownloadCancellation(id: String, promise: Promise) {
+    mainHandler.post { SftpDownloadService.acknowledgeCancellation(context, id); promise.resolve(null) }
+  }
+  @ReactMethod fun retainDownloadDestination(uri: String, promise: Promise) {
+    try {
+      context.contentResolver.takePersistableUriPermission(Uri.parse(uri),
+        Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+      promise.resolve("")
+    } catch (error: Exception) { promise.reject("E_DOWNLOAD_PERMISSION", error) }
+  }
+  @ReactMethod fun resolveDownloadDestination(uri: String, permission: String, promise: Promise) {
+    try {
+      val tree = Uri.parse(uri)
+      val grant = context.contentResolver.persistedUriPermissions.any {
+        it.uri == tree && it.isReadPermission && it.isWritePermission
+      }
+      check(grant) { "Folder access expired. Choose the destination again." }
+      promise.resolve(uri)
+    } catch (error: Exception) { promise.reject("E_DOWNLOAD_PERMISSION", error) }
+  }
+  @ReactMethod fun releaseDownloadDestination(uri: String, promise: Promise) { promise.resolve(null) }
+
   init {
+    SftpDownloadService.onExpired = { id, cancelled ->
+      context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+        .emit("WhipDownloadExpired", Arguments.createMap().apply { putString("id", id); putBoolean("cancelled", cancelled) })
+    }
     SpeechPlayback.onPlaybackStateChanged = { updateShakeListener() }
     SpeechPlayback.onCaption = { json ->
       context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)

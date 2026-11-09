@@ -145,10 +145,10 @@ export function RemoteFileContextSheet({ entry, client, onClose, onChanged, onBu
     if (current()) { await onChanged(); onClose(); }
   });
 
-  const startDownload = () => run(async () => {
+  const startDownload = () => {
     Keyboard.dismiss();
-    await download.start(entry.path);
-  });
+    void download.start(entry.path);
+  };
 
   const actions = [
     { label: 'files.moveTo', icon: FolderInput, action: () => changePage('move') },
@@ -342,14 +342,14 @@ export function RemoteFileContextSheet({ entry, client, onClose, onChanged, onBu
         {busy && !download.busy ? <ActivityIndicator className="mt-3" color={colors.primary} /> : null}
         {error ? <Text accessibilityRole="alert" className="mt-3 px-2 text-[13px] text-destructive">{error}</Text> : null}
         {feedback ? <Text accessibilityLiveRegion="polite" className="mt-3 px-2 text-[13px] text-muted-foreground">{feedback}</Text> : null}
-        {!download.busy ? <GlassButton
+        <GlassButton
           accessibilityLabel={t('common.cancel')}
           className="mt-3 h-12 rounded-full"
           variant="secondary"
           disabled={busy}
           onPress={hapticPress(onClose)}>
           <Text>{t('common.cancel')}</Text>
-        </GlassButton> : null}
+        </GlassButton>
       </GlassSurface>
     </KeyboardAvoidingView>
   );

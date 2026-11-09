@@ -338,6 +338,8 @@ fn validate_entry(entry: &AppStorageEntry, importing: bool) -> Result<(), AppSto
                 voice_usage::KEY
                     | crate::voice_history::LEGACY_LIVE_KEY
                     | crate::voice_history::KEY
+                    | "whip.sftp-downloads.v1"
+                    | "whip.downloads.expanded.v1"
             ));
     if !allowed || importing && entry.value.is_none() {
         return Err(AppStorageError::InvalidEntry(entry.key.clone()));

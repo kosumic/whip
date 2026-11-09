@@ -418,7 +418,7 @@ it('does not start SSH if cancelled while the location picker is open', async ()
   expect(native.startDownload).not.toHaveBeenCalled();
 });
 
-it.each([true, false])('waits for the real copy outcome after unmount/abort (success=%s)', async success => {
+it.each([true, false])('waits for the real copy outcome before cleaning an explicitly cancelled download (success=%s)', async success => {
   const copy = deferred<undefined>();
   jest.mocked(source().copy).mockReturnValueOnce(copy.promise);
   const abort = new AbortController();
@@ -431,14 +431,14 @@ it.each([true, false])('waits for the real copy outcome after unmount/abort (suc
   expect(source().delete).not.toHaveBeenCalled();
   if (success) {
     copy.resolve(undefined);
-    await expect(download).resolves.toBe(true);
-    expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'completed' }));
+    await expect(download).resolves.toBe(false);
+    expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'cancelled' }));
   } else {
     copy.reject(new Error('No space left'));
     await expect(download).rejects.toThrow('No space left');
     expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'failed', failedPhase: 'saving' }));
   }
-  expect(source().delete).toHaveBeenCalledTimes(1);
+  expect(source().delete).toHaveBeenCalledTimes(success ? 2 : 1);
 });
 
 it('cancels SSH and refuses to publish when the active host is replaced', async () => {
@@ -507,4 +507,21 @@ it('keeps cancellation errors from escaping an abort callback', async () => {
   await expect(download).resolves.toBe(false);
   expect(source().copy).not.toHaveBeenCalled();
   expect(source().delete).toHaveBeenCalledTimes(1);
+});
+
+it('retains the saved destination for explicit local-file or history-only removal if cancellation cleanup is denied', async () => {
+  const copy = deferred<undefined>();
+  jest.mocked(source().copy).mockReturnValueOnce(copy.promise);
+  jest.mocked(source().delete).mockImplementationOnce(() => { throw new Error('Permission denied'); });
+  const abort = new AbortController();
+  const progress = jest.fn();
+  const download = downloadRemoteEntry(client(), '/repo/source', progress, abort.signal);
+  await Promise.resolve(); await Promise.resolve();
+  abort.abort(); copy.resolve(undefined);
+  await expect(download).rejects.toThrow('saved local file could not be removed');
+  expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({
+    phase: 'failed', failedPhase: 'saving', destination: expect.objectContaining({
+      entry: expect.objectContaining({ uri: 'file:///picked/source' }),
+    }),
+  }));
 });

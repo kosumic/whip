@@ -409,3 +409,30 @@ fn unified_voice_chats_and_legacy_live_captions_survive_reopen() {
         ])
     );
 }
+
+#[test]
+fn sftp_download_history_and_settings_expansion_survive_database_reopen() {
+    const HISTORY: &str = "whip.sftp-downloads.v1";
+    const EXPANSION: &str = "whip.downloads.expanded.v1";
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("downloads.db");
+    let mut database = store(&path);
+    database.write(Vec::new(), true).unwrap();
+    let saved = vec![
+        entry(
+            HISTORY,
+            Some(
+                r#"[{"id":"download-1","hostId":"host","remotePath":"/archive","phase":"completed","bytesTransferred":134217728,"permission":"provider-bookmark"}]"#,
+            ),
+        ),
+        entry(EXPANSION, Some("true")),
+    ];
+    database.write(saved.clone(), false).unwrap();
+    drop(database);
+    assert_eq!(
+        store(&path)
+            .read(vec![HISTORY.into(), EXPANSION.into()])
+            .unwrap(),
+        saved
+    );
+}

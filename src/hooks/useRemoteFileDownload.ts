@@ -1,47 +1,26 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { HerdrClient } from '../services/HerdrClient';
-import { downloadRemoteEntry, type RemoteDownloadProgress } from '../services/remoteFileTransfer';
+import { isActiveDownload, remoteDownloads } from '../services/remoteDownloads';
 
-/** One operation per UI scope; late callbacks never reach a replacement host/file. */
+/** A view of an app-owned task. Scope changes only detach this view. */
 export function useRemoteFileDownload(client: HerdrClient, scope: string, enabled = true) {
-  const [progress, setProgress] = useState<RemoteDownloadProgress | null>(null);
-  const operation = useRef<AbortController | null>(null);
-  const active = useRef(false);
-
-  useEffect(() => {
-    active.current = enabled;
-    setProgress(null);
-    return () => {
-      active.current = false;
-      const previous = operation.current;
-      operation.current = null;
-      previous?.abort();
-    };
-  }, [client, scope, enabled]);
-
+  const [task, setTask] = useState<{ client: HerdrClient; scope: string; id: string }>();
+  const [error, setError] = useState<string>();
+  const items = useSyncExternalStore(remoteDownloads.subscribe, remoteDownloads.snapshot);
+  useEffect(() => { setTask(undefined); setError(undefined); }, [client, scope, enabled]);
+  const current = task?.client === client && task.scope === scope ? items.find(item => item.id === task.id) : undefined;
   const start = async (remotePath: string) => {
-    if (!active.current || operation.current) return;
-    const abort = new AbortController();
-    operation.current = abort;
-    let latest: RemoteDownloadProgress = { phase: 'selecting', bytesTransferred: 0 };
-    const report = (value: RemoteDownloadProgress) => {
-      latest = value;
-      if (active.current && operation.current === abort) setProgress(value);
-    };
+    if (!enabled || (current && isActiveDownload(current))) return;
     try {
-      await downloadRemoteEntry(client, remotePath, report, abort.signal);
-    } catch (reason) {
-      // The service supplies phase and byte context. Also cover failures before
-      // it can report, such as a client which has already detached its runtime.
-      report({
-        ...latest, phase: 'failed', failedPhase: latest.failedPhase ?? latest.phase,
-        error: String(reason),
-      });
-    } finally {
-      if (operation.current === abort) operation.current = null;
-    }
+      const id = current && current.phase !== 'completed' && current.remotePath === remotePath
+        ? (await remoteDownloads.retry(current.id), current.id)
+        : await remoteDownloads.start(client.native, remotePath);
+      setTask({ client, scope, id });
+      setError(undefined);
+    } catch (reason) { setError(String(reason)); }
   };
-
-  const busy = progress?.phase === 'selecting' || progress?.phase === 'downloading' || progress?.phase === 'saving';
-  return { progress, busy, start, cancel: () => operation.current?.abort() };
+  return { progress: current ? { ...current, error: error ?? current.error }
+      : error ? { phase: 'failed' as const, bytesTransferred: 0, error } : null,
+    busy: Boolean(current && isActiveDownload(current)), start,
+    cancel: () => { if (current) void remoteDownloads.cancel(current.id).catch(reason => setError(String(reason))); } };
 }

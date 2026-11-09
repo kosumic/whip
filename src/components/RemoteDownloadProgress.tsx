@@ -1,14 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { formatRemoteFileSize } from '../lib/remoteFiles';
-import type { RemoteDownloadProgress as Progress, SavedRemoteDestination } from '../services/remoteFileTransfer';
-import { revealSavedRemoteDestination } from '../services/savedRemoteDestination';
+import type { RemoteDownloadProgress as Progress } from '../services/remoteFileTransfer';
 import { useTheme } from '../theme';
 import { GlassButton } from './GlassControls';
 import { Text } from './ui/text';
 
 const phaseLabels = {
+  paused: 'downloads.paused',
   selecting: 'files.downloadSelecting',
   downloading: 'files.downloadSsh',
   saving: 'files.downloadSaving',
@@ -25,36 +24,11 @@ function formatRate(bytes: number): string {
   return `${value < 10 && unit > 0 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
 }
 
-function SavedDestinationAction({ destination }: { destination: SavedRemoteDestination }) {
-  const { t } = useTranslation();
-  const [opening, setOpening] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const active = useRef(true);
-  useEffect(() => {
-    active.current = true;
-    return () => { active.current = false; };
-  }, []);
-  const open = async () => {
-    if (opening) return;
-    setOpening(true);
-    setFailed(false);
-    try { await revealSavedRemoteDestination(destination); }
-    catch { if (active.current) setFailed(true); }
-    finally { if (active.current) setOpening(false); }
-  };
-  return <>
-    <GlassButton accessibilityLabel={t('files.openInFileBrowser')} className="h-11 rounded-full" disabled={opening} onPress={open}>
-      <Text>{t('files.openInFileBrowser')}</Text>
-    </GlassButton>
-    <Text className="text-[12px] text-muted-foreground">{t('files.fileBrowserFallback')}</Text>
-    {failed ? <Text accessibilityRole="alert" className="text-[13px] text-destructive">{t('files.fileBrowserFailed')}</Text> : null}
-  </>;
-}
-
-export function RemoteDownloadProgress({ progress, onCancel, onRetry }: {
+export function RemoteDownloadProgress({ progress, onCancel, onRetry, onChooseDestination }: {
   progress: Progress | null;
   onCancel: () => void;
   onRetry: () => void;
+  onChooseDestination?: () => void;
 }) {
   const { t } = useTranslation();
   const { colors } = useTheme();
@@ -85,7 +59,7 @@ export function RemoteDownloadProgress({ progress, onCancel, onRetry }: {
       <Text accessibilityLiveRegion="polite" className="text-[13px] font-semibold">
         {t(label)}
       </Text>
-      {phase !== 'selecting' && phase !== 'saving' && (phase !== 'completed' || knownTotal) ? (
+      {phase !== 'selecting' ? (
         <Text className="text-[12px] text-muted-foreground">
           {knownTotal ? `${formatRemoteFileSize(bytesTransferred)} / ${formatRemoteFileSize(totalBytes)}`
             : formatRemoteFileSize(bytesTransferred)}
@@ -106,9 +80,6 @@ export function RemoteDownloadProgress({ progress, onCancel, onRetry }: {
       ) : active ? (
         <ActivityIndicator accessibilityLabel={t(label)} color={colors.primary} />
       ) : null}
-      {phase === 'completed' && progress.destination ? (
-        <SavedDestinationAction key={progress.destination.entry.uri} destination={progress.destination} />
-      ) : null}
       {phase === 'saving' || progress.failedPhase === 'saving' ? (
         <Text className="text-[12px] text-muted-foreground">{t('files.downloadCopyNotice')}</Text>
       ) : null}
@@ -117,14 +88,19 @@ export function RemoteDownloadProgress({ progress, onCancel, onRetry }: {
       ) : null}
       {active ? (
         <GlassButton accessibilityLabel={t('files.cancelDownload')} variant="secondary" className="h-11 rounded-full"
-          disabled={phase === 'saving'} onPress={onCancel}>
+          onPress={onCancel}>
           <Text>{t('files.cancelDownload')}</Text>
         </GlassButton>
-      ) : phase === 'failed' || phase === 'cancelled' ? (
+      ) : phase === 'failed' || phase === 'cancelled' || phase === 'paused' ? (
         <GlassButton accessibilityLabel={t('files.retry')} variant="secondary" className="h-11 rounded-full" onPress={onRetry}>
           <Text>{t('files.retry')}</Text>
         </GlassButton>
       ) : null}
+      {phase === 'paused' ? <GlassButton variant="secondary" onPress={onCancel}>
+        <Text>{t('files.cancelDownload')}</Text>
+      </GlassButton> : null}
+      {onChooseDestination && (phase === 'failed' || phase === 'paused' || phase === 'cancelled') ?
+        <GlassButton variant="secondary" onPress={onChooseDestination}><Text>{t('downloads.chooseFolder')}</Text></GlassButton> : null}
     </View>
   );
 }

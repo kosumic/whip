@@ -17,7 +17,6 @@ import { recordOperationalDiagnostic } from '../src/services/operationalDiagnost
 import * as remoteGit from '../src/lib/remoteGit';
 import { useRemoteFileViewPreferences } from '../src/hooks/useRemoteFileViewPreferences';
 import { loadGitReviewState } from '../src/services/gitReviewState';
-import { revealSavedRemoteDestination } from '../src/services/savedRemoteDestination';
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
 jest.mock('react-native-css-interop', () => {
@@ -108,6 +107,20 @@ jest.mock('../src/components/PagedRemoteTextPreview', () => ({ PagedRemoteTextPr
 jest.mock('../src/components/RemoteVideoPreview', () => ({ RemoteVideoPreview: 'RemoteVideoPreview' }));
 jest.mock('../src/components/SvgPreview', () => ({ SvgPreview: 'SvgPreview' }));
 jest.mock('../src/components/ZoomableImagePreview', () => ({ ZoomableImagePreview: 'ZoomableImagePreview' }));
+jest.mock('../src/services/appStorage', () => ({ appStorage: { getItem: jest.fn().mockResolvedValue(null), setItem: jest.fn().mockResolvedValue(undefined) } }));
+jest.mock('../src/services/downloadExecution', () => ({ downloadExecution: {
+  downloadCancellations: jest.fn().mockResolvedValue([]), acknowledgeDownloadCancellation: jest.fn().mockResolvedValue(undefined),
+  beginDownloadExecution: jest.fn().mockResolvedValue(undefined), updateDownloadExecution: jest.fn(), bindDownloadTransfer: jest.fn(),
+  endDownloadExecution: jest.fn().mockResolvedValue(undefined), releaseDownloadDestination: jest.fn().mockResolvedValue(undefined),
+} }));
+jest.mock('expo-file-system', () => ({ Directory: class { uri = ""; }, File: class { uri = ""; } }));
+jest.mock('../src/services/remoteDownloads', () => {
+  const actual = jest.requireActual<typeof import('../src/services/remoteDownloads')>('../src/services/remoteDownloads');
+  let current = new actual.RemoteDownloads();
+  return { ...actual, remoteDownloads: new Proxy({}, { get: (_target, key: keyof typeof current) => {
+    const value = current[key]; return typeof value === 'function' ? value.bind(current) : value;
+  } }), resetRemoteDownloads: () => { current = new actual.RemoteDownloads(); } };
+});
 jest.mock('../src/services/remoteFileTransfer', () => ({ cacheRemoteFile: jest.fn(), downloadRemoteEntry: jest.fn() }));
 jest.mock('../src/services/savedRemoteDestination', () => ({ revealSavedRemoteDestination: jest.fn() }));
 jest.mock('../src/services/backgroundOperations', () => ({
@@ -175,6 +188,7 @@ async function navigate(path: string) {
 }
 
 beforeEach(() => {
+  jest.requireMock('../src/services/remoteDownloads').resetRemoteDownloads();
   jest.clearAllMocks();
   mockAppGlassEnabled = false;
   jest.mocked(cacheRemoteFile).mockReset();
@@ -1130,7 +1144,7 @@ it.each(['success', 'failure'] as const)('downloads with progress and handles %s
     return true;
   });
   await act(async () => { await button('files.download').props.onPress(); });
-  expect(downloadRemoteEntry).toHaveBeenCalledWith(client, '/repo/main.rs', expect.any(Function), expect.any(AbortSignal));
+  expect(downloadRemoteEntry).toHaveBeenCalledWith({ native }, '/repo/main.rs', expect.any(Function), expect.any(AbortSignal), expect.any(Object));
   expect(text()).toContain(result === 'success' ? 'files.downloadedTitle' : 'Download failed');
   expect(button('files.download').props.disabled).toBe(false);
 });
@@ -1158,9 +1172,9 @@ it.each(['context', 'preview'] as const)('shows shared progress, saving, complet
     return pending.promise;
   });
   await act(async () => { void button('files.download').props.onPress(); });
-  expect(downloadRemoteEntry).toHaveBeenCalledWith(client, entry.path, expect.any(Function), expect.any(AbortSignal));
+  expect(downloadRemoteEntry).toHaveBeenCalledWith({ native }, entry.path, expect.any(Function), expect.any(AbortSignal), expect.any(Object));
   expect(text()).toContain('files.downloadSelecting');
-  expect(button('files.download').props.disabled).toBe(true);
+  expect(button('files.close').props.disabled).not.toBe(true);
   const totalBytes = entry.size!;
   act(() => { report({ phase: 'downloading', bytesTransferred: 0, totalBytes, rateCalculating: true }); });
   expect(text()).toContain('files.networkRate:—:files.etaCalculating');
@@ -1190,7 +1204,7 @@ it.each(['context', 'preview'] as const)('shows shared progress, saving, complet
   expect(text()).not.toContain('files.networkRate');
   expect(hasButton('files.openInFileBrowser')).toBe(false);
   expect(text()).toContain('files.downloadCopyNotice');
-  expect(button('files.cancelDownload').props.disabled).toBe(true);
+  expect(button('files.cancelDownload').props.disabled).not.toBe(true);
   expect(tree.root.findAllByProps({ accessibilityRole: 'progressbar' })).toHaveLength(0);
   expect(text()).not.toContain('files.downloadedTitle');
   const destination = { entry: { uri: 'content://provider/document/saved' }, directory: { uri: 'content://provider/tree/picked' } } as NonNullable<RemoteDownloadProgress['destination']>;
@@ -1202,12 +1216,8 @@ it.each(['context', 'preview'] as const)('shows shared progress, saving, complet
   expect(tree.root.findByProps({ accessibilityRole: 'progressbar' }).props.accessibilityValue.now).toBe(100);
   expect(button('files.download').props.disabled).toBe(false);
   expect(text()).not.toContain('files.networkRate');
-  await act(async () => { await button('files.openInFileBrowser').props.onPress(); });
-  expect(revealSavedRemoteDestination).toHaveBeenLastCalledWith(destination);
+  expect(hasButton('files.openInFileBrowser')).toBe(false);
   expect(downloadRemoteEntry).toHaveBeenCalledTimes(1);
-  jest.mocked(revealSavedRemoteDestination).mockRejectedValueOnce(new Error('Destination moved'));
-  await act(async () => { await button('files.openInFileBrowser').props.onPress(); });
-  expect(text()).toContain('files.fileBrowserFailed');
 });
 
 it('shows bytes and indeterminate progress for an unknown-size directory download', async () => {
@@ -1269,7 +1279,7 @@ it.each(['context', 'preview'] as const)('cancels an SSH download from %s withou
   expect(button('files.retry')).toBeDefined();
 });
 
-it.each(['context', 'preview'] as const)('aborts and ignores late callbacks when %s unmounts', async entryPoint => {
+it.each(['context', 'preview'] as const)('continues ownership when %s unmounts', async entryPoint => {
   await openDownloadEntry(entryPoint);
   const pending = deferred<boolean>();
   let report!: (value: RemoteDownloadProgress) => void;
@@ -1282,7 +1292,7 @@ it.each(['context', 'preview'] as const)('aborts and ignores late callbacks when
   });
   await act(async () => { void button('files.download').props.onPress(); });
   act(() => { tree.unmount(); });
-  expect(signal.aborted).toBe(true);
+  expect(signal.aborted).toBe(false);
   await act(async () => {
     report({ phase: 'completed', bytesTransferred: 2048 });
     pending.resolve(true);
@@ -1290,7 +1300,7 @@ it.each(['context', 'preview'] as const)('aborts and ignores late callbacks when
   expect(tree.toJSON()).toBeNull();
 });
 
-it('aborts preview downloads on host changes and ignores old-host progress', async () => {
+it('continues preview downloads on host changes while detaching old-host progress', async () => {
   await openDownloadEntry('preview');
   const pending = deferred<boolean>();
   let report!: (value: RemoteDownloadProgress) => void;
@@ -1303,7 +1313,7 @@ it('aborts preview downloads on host changes and ignores old-host progress', asy
   });
   await act(async () => { void button('files.download').props.onPress(); });
   await act(async () => { tree.update(<RemoteFileManager {...props} hostId="replacement" />); });
-  expect(signal.aborted).toBe(true);
+  expect(signal.aborted).toBe(false);
   await act(async () => {
     report({ phase: 'downloading', bytesTransferred: 2048, bytesPerSecond: 1024, remainingSeconds: 1 });
     report({ phase: 'completed', bytesTransferred: 2048 });

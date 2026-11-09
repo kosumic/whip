@@ -10,6 +10,20 @@
 #include <algorithm>
 #include <string>
 
+extern "C" void whip_cancel_background_download(const char *, const char *);
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_whipssh_HostRuntimeMonitoring_cancelDownload(JNIEnv *env, jclass, jstring host, jstring transfer) {
+    const char *runtime = env->GetStringUTFChars(host, nullptr);
+    if (!runtime) return;
+    const char *id = env->GetStringUTFChars(transfer, nullptr);
+    if (id) {
+        whip_cancel_background_download(runtime, id);
+        env->ReleaseStringUTFChars(transfer, id);
+    }
+    env->ReleaseStringUTFChars(host, runtime);
+}
+
 // JNI's modified UTF-8 differs from UTF-8 for NUL and non-BMP characters.
 // Use java.lang.String's explicit UTF-8 encoder for speech text.
 static std::string speechUtf8(JNIEnv *env, jstring text) {

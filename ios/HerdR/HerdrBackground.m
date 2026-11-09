@@ -1,20 +1,27 @@
 #import <React/RCTEventEmitter.h>
+#import <UIKit/UIKit.h>
 #import "WhipSpeechPlayback.h"
 #import "../../packages/react-native-whip-ssh/ios/WhipVoiceCall.h"
 #import "../../packages/react-native-whip-ssh/ios/WhipRealtimeVoice.h"
 
+extern void whip_cancel_background_download(const char *, const char *);
+
 /** React bridge only; all speech paths share WhipSpeechPlayback. */
 @interface HerdrBackground : RCTEventEmitter
+@property(nonatomic, strong) NSMutableDictionary<NSString *, NSMutableDictionary *> *downloadTasks;
+@property(nonatomic, strong) NSCountedSet<NSString *> *downloadScopes;
 @end
 
 @implementation HerdrBackground
 RCT_EXPORT_MODULE(HerdrBackground)
 + (BOOL)requiresMainQueueSetup { return YES; }
 - (dispatch_queue_t)methodQueue { return dispatch_get_main_queue(); }
-- (NSArray<NSString *> *)supportedEvents { return @[WhipChatSpeechStopped, WhipChatSpeechStarted, WhipChatSpeechLevel, WhipSpeechCaption, WhipAutomaticSpeechFocus, WhipVoiceCallEvent]; }
+- (NSArray<NSString *> *)supportedEvents { return @[@"WhipDownloadExpired", WhipChatSpeechStopped, WhipChatSpeechStarted, WhipChatSpeechLevel, WhipSpeechCaption, WhipAutomaticSpeechFocus, WhipVoiceCallEvent]; }
 - (instancetype)init
 {
   if ((self = [super init])) {
+    _downloadTasks = [NSMutableDictionary new];
+    _downloadScopes = [NSCountedSet new];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(chatStopped:) name:WhipChatSpeechStopped object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(chatStarted:) name:WhipChatSpeechStarted object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(chatLevel:) name:WhipChatSpeechLevel object:nil];
@@ -141,10 +148,103 @@ RCT_EXPORT_METHOD(dismissPersistentAlert:(NSString *)notification resolve:(RCTPr
   [WhipSpeechPlayback.shared dismissAlertNotification:notification];
   resolve(nil);
 }
+- (void)stopDownload:(NSString *)identifier notify:(BOOL)notify
+{
+  NSDictionary *task = self.downloadTasks[identifier];
+  if (!task) return;
+  NSString *host = task[@"host"], *transfer = task[@"transfer"];
+  if (host && transfer) whip_cancel_background_download(host.UTF8String, transfer.UTF8String);
+  [self.downloadTasks removeObjectForKey:identifier];
+  [UIApplication.sharedApplication endBackgroundTask:[task[@"task"] unsignedIntegerValue]];
+  if (notify) [self sendEventWithName:@"WhipDownloadExpired" body:@{@"id": identifier}];
+}
+- (void)expireDownload:(NSString *)identifier { [self stopDownload:identifier notify:YES]; }
+RCT_EXPORT_METHOD(beginDownloadExecution:(NSString *)identifier name:(NSString *)name
+                  resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {
+    reject(@"E_DOWNLOAD_EXECUTION", @"Return to Whip to start a download", nil); return;
+  }
+  __weak HerdrBackground *weakSelf = self;
+  UIBackgroundTaskIdentifier task = [UIApplication.sharedApplication beginBackgroundTaskWithName:name expirationHandler:^{
+    [weakSelf expireDownload:identifier];
+  }];
+  if (task == UIBackgroundTaskInvalid) {
+    reject(@"E_DOWNLOAD_EXECUTION", @"iOS could not grant download background time", nil); return;
+  }
+  self.downloadTasks[identifier] = [@{@"task": @(task)} mutableCopy];
+  resolve(nil);
+}
+RCT_EXPORT_METHOD(bindDownloadTransfer:(NSString *)identifier hostId:(NSString *)host transferId:(NSString *)transfer)
+{
+  NSMutableDictionary *task = self.downloadTasks[identifier];
+  if (!task) { whip_cancel_background_download(host.UTF8String, transfer.UTF8String); return; }
+  task[@"host"] = host; task[@"transfer"] = transfer;
+}
+RCT_EXPORT_METHOD(updateDownloadExecution:(NSString *)identifier status:(NSString *)status transferred:(double)transferred total:(double)total) {}
+RCT_EXPORT_METHOD(downloadCancellations:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject) { resolve(@[]); }
+RCT_EXPORT_METHOD(acknowledgeDownloadCancellation:(NSString *)identifier resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject) { resolve(nil); }
+RCT_EXPORT_METHOD(endDownloadExecution:(NSString *)identifier resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  NSDictionary *task = self.downloadTasks[identifier];
+  if (task) {
+    [UIApplication.sharedApplication endBackgroundTask:[task[@"task"] unsignedIntegerValue]];
+    [self.downloadTasks removeObjectForKey:identifier];
+  }
+  resolve(nil);
+}
+- (BOOL)retainDownloadScope:(NSURL *)url
+{
+  if (!url.isFileURL) return NO;
+  if ([self.downloadScopes countForObject:url.absoluteString] == 0 && ![url startAccessingSecurityScopedResource]) return NO;
+  [self.downloadScopes addObject:url.absoluteString];
+  return YES;
+}
+RCT_EXPORT_METHOD(retainDownloadDestination:(NSString *)uri resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  NSURL *url = [NSURL URLWithString:uri];
+  BOOL retained = [self retainDownloadScope:url];
+  NSError *error = nil;
+  NSData *bookmark = [url bookmarkDataWithOptions:0 includingResourceValuesForKeys:nil relativeToURL:nil error:&error];
+  if (!bookmark) {
+    if (retained) [self releaseDownloadScope:uri];
+    reject(@"E_DOWNLOAD_PERMISSION", @"The selected folder permission could not be saved. Choose another folder.", error); return;
+  }
+  resolve([bookmark base64EncodedStringWithOptions:0]);
+}
+RCT_EXPORT_METHOD(resolveDownloadDestination:(NSString *)uri permission:(NSString *)permission
+                  resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  NSData *data = [[NSData alloc] initWithBase64EncodedString:permission options:0];
+  BOOL stale = NO;
+  NSError *error = nil;
+  NSURL *url = data ? [NSURL URLByResolvingBookmarkData:data options:NSURLBookmarkResolutionWithoutUI relativeToURL:nil bookmarkDataIsStale:&stale error:&error] : nil;
+  if (!url || stale) {
+    reject(@"E_DOWNLOAD_PERMISSION", @"Folder access expired. Choose the destination again.", error); return;
+  }
+  [self retainDownloadScope:url];
+  resolve(url.absoluteString);
+}
+- (void)releaseDownloadScope:(NSString *)uri
+{
+  if ([self.downloadScopes countForObject:uri] == 0) return;
+  [self.downloadScopes removeObject:uri];
+  if ([self.downloadScopes countForObject:uri] == 0) [[NSURL URLWithString:uri] stopAccessingSecurityScopedResource];
+}
+RCT_EXPORT_METHOD(releaseDownloadDestination:(NSString *)uri resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  [self releaseDownloadScope:uri]; resolve(nil);
+}
+
 - (void)invalidate
 {
   [NSNotificationCenter.defaultCenter removeObserver:self];
-  dispatch_async(dispatch_get_main_queue(), ^{ [WhipRealtimeVoice.shared invalidate]; [WhipVoiceCall.shared invalidate]; [WhipSpeechPlayback.shared detachPresentation]; });
+  dispatch_async(dispatch_get_main_queue(), ^{
+    for (NSString *identifier in self.downloadTasks.allKeys) [self stopDownload:identifier notify:NO];
+    for (NSString *uri in self.downloadScopes.allObjects) [[NSURL URLWithString:uri] stopAccessingSecurityScopedResource];
+    [self.downloadScopes removeAllObjects];
+    [WhipRealtimeVoice.shared invalidate]; [WhipVoiceCall.shared invalidate]; [WhipSpeechPlayback.shared detachPresentation];
+  });
   [super invalidate];
 }
 - (void)dealloc { [NSNotificationCenter.defaultCenter removeObserver:self]; }

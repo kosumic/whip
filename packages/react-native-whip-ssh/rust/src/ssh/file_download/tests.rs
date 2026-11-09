@@ -201,7 +201,7 @@ async fn assert_payload(path: &std::path::Path, size: u64, modified: u64) {
 #[test]
 fn normal_and_empty_downloads_have_verified_size_and_contents() {
     crate::runtime().unwrap().block_on(async {
-        for size in [0, 100_000] {
+        for size in [0, 100_000, 128 * 1024 * 1024] {
             let directory = tempfile::tempdir().unwrap();
             let path = directory.path().join("download");
             let source = Source::new(size);

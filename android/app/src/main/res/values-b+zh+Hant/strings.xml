@@ -19,4 +19,8 @@
     <string name="app_unlock_title">解鎖 Whip</string>
     <string name="app_unlock_subtitle">使用指紋或臉部辨識驗證以繼續</string>
     <string name="biometric_cancel">取消</string>
+    <string name="sftp_downloads">SFTP 下載</string>
+    <string name="sftp_download_count">%1$d 項進行中的下載</string>
+    <string name="sftp_download_ssh">透過 SSH 下載中</string>
+    <string name="sftp_download_saving">儲存至所選位置</string>
 </resources>
