@@ -30,7 +30,7 @@
     "eslint-plugin-sonarjs": "^4.2.2",
     "jest": "~30.5.2",
     "miniflare": "5.20261023.2-beta",
-    "typescript": "~6.0.3",
+    "typescript": "~7.0.2",
     "wrangler": "^4.156.1"
   },
   "engines": {
