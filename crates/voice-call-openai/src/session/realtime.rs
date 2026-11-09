@@ -94,6 +94,15 @@ impl Realtime {
             | ServerEvent::ResponseCancelled { response, .. } => {
                 self.responses.mark_finished(&response.id);
             }
+            ServerEvent::OutputAudioBufferStarted { response_id, .. } if webrtc => {
+                self.responses.audio_started(response_id.clone());
+            }
+            ServerEvent::OutputAudioBufferStopped { response_id, .. }
+            | ServerEvent::OutputAudioBufferCleared { response_id, .. }
+                if webrtc =>
+            {
+                self.responses.audio_finished(response_id);
+            }
             ServerEvent::InputAudioBufferSpeechStarted { .. } => {
                 self.responses.speech_started();
                 if let Some(id) = self.responses.active().cloned() {

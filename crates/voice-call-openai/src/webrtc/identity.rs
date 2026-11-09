@@ -20,6 +20,10 @@ pub struct Identity {
     pub finish_at: Option<Instant>,
 }
 impl Identity {
+    /// No audio, cancelled audio and a completed RTP tail are all drained.
+    pub fn drained(&self) -> bool {
+        !self.enabled && self.finish_at.is_none()
+    }
     pub fn live() -> Self {
         Self {
             live: true,
@@ -176,9 +180,12 @@ mod tests {
     fn server_stop_finishes_on_its_deadline_despite_idle_rtp_and_cannot_end_a_new_epoch()
     -> Result<(), &'static str> {
         let mut identity = Identity::default();
+        assert!(identity.drained());
         identity.observe(&json!({"type":"response.content_part.added","response_id":"reply","item_id":"item","content_index":0,"part":{"type":"audio"}}));
         identity.observe(&json!({"type":"output_audio_buffer.started","response_id":"reply"}));
+        assert!(!identity.drained());
         identity.observe(&json!({"type":"output_audio_buffer.stopped","response_id":"reply"}));
+        assert!(!identity.drained());
         let epoch = identity.epoch;
         let deadline = identity.finish_at.ok_or("missing drain deadline")?;
         let before_deadline = deadline
@@ -189,6 +196,7 @@ mod tests {
         assert!(identity.finish(epoch, deadline));
         assert!(identity.ended);
         assert!(!identity.enabled);
+        assert!(identity.drained());
         assert!(!identity.finish(epoch, deadline + Duration::from_secs(1)));
         identity.observe(&json!({"type":"output_audio_buffer.started","response_id":"reply"}));
         assert!(!identity.finish(epoch, deadline + Duration::from_secs(2)));
@@ -233,6 +241,7 @@ mod tests {
             if response == "old" {
                 identity.cancel_response(Some("old"));
                 assert!(!identity.enabled);
+                assert!(identity.drained());
             }
         }
         let epoch = identity.epoch;

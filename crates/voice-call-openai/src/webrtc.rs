@@ -34,7 +34,7 @@ impl Handle {
         }
     }
     pub fn drained(&self) -> bool {
-        self.identity.lock().ended
+        self.identity.lock().drained()
     }
     pub async fn close(self) -> Result<(), &'static str> {
         self.stop.send_replace(true);

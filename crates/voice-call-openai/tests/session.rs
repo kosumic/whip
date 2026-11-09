@@ -10,6 +10,19 @@ use voice_call_openai::session::{
 mod support;
 
 #[tokio::test]
+async fn webrtc_tools_run_during_speech_but_continuations_wait_for_server_audio()
+-> flows::TestResult {
+    for completion in ["output_audio_buffer.stopped", "output_audio_buffer.cleared"] {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            flows::webrtc_continuation(completion),
+        )
+        .await??;
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn realtime_call_runs_with_an_independent_app_and_accounts_after_hangup() -> flows::TestResult
 {
     tokio::time::timeout(std::time::Duration::from_secs(10), flows::realtime()).await??;

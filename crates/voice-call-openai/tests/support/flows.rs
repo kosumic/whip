@@ -67,7 +67,7 @@ impl Delegate for Application {
                 ..
             }) => {
                 // This app supplies its own catalog and execution policy.
-                let access = if name == "status" {
+                let access = if matches!(name.as_str(), "status" | "agents_summary") {
                     Access::Read
                 } else {
                     Access::Unknown
@@ -171,6 +171,74 @@ fn settings(kind: &str) -> Value {
         "audio":{"input":{"format":{"type":"audio/pcm","rate":24000},"transcription":{"model":"gpt-4o-mini-transcribe"},"turn_detection":null},
         "output":{"format":{"type":"audio/pcm","rate":24000},"voice":"cedar"}}
     }})
+}
+#[allow(
+    dead_code,
+    reason = "The call example shares fixtures but runs other flows."
+)]
+pub async fn webrtc_continuation(completion: &str) -> TestResult {
+    let audio = Arc::new(App::new(true)?);
+    let (mut socket, mut commands, mut events) = Socket::relay();
+    let (controls, receiver) = mpsc::channel(8);
+    let (notices, mut observer) = mpsc::channel(32);
+    let runner = tokio::spawn(async move {
+        let mut application = app(audio.clone(), receiver, notices);
+        let mut session = Session::realtime(&mut socket, realtime_config(), true);
+        session.drive(&*audio, &mut application).await?;
+        Ok::<_, &'static str>(application)
+    });
+    emit(&mut events, settings("session.updated")).await?;
+    notice(&mut observer, "ready").await?;
+    emit(&mut events, json!({"type":"response.created","event_id":"created","response":{"id":"reply","object":"realtime.response","status":"in_progress","output":[]}})).await?;
+    emit(
+        &mut events,
+        json!({"type":"output_audio_buffer.started","event_id":"started","response_id":"reply"}),
+    )
+    .await?;
+    emit(&mut events, json!({"type":"response.function_call_arguments.done","event_id":"tool","response_id":"reply","item_id":"tool","output_index":0,"call_id":"summary","name":"agents_summary","arguments":"{}"})).await?;
+
+    // Tool execution and its output do not wait for generation or speech.
+    let result = command(&mut commands, "conversation.item.create").await?;
+    assert_eq!(result["item"]["type"], "function_call_output");
+    assert_eq!(result["item"]["call_id"], "summary");
+    emit(&mut events, json!({"type":"response.done","event_id":"done","response":{"id":"reply","object":"realtime.response","status":"completed","output":[]}})).await?;
+    assert!(
+        tokio::time::timeout(Duration::from_millis(300), commands.next())
+            .await
+            .is_err()
+    );
+    emit(
+        &mut events,
+        json!({"type":completion,"event_id":"stale-stop","response_id":"old"}),
+    )
+    .await?;
+    assert!(
+        tokio::time::timeout(Duration::from_millis(300), commands.next())
+            .await
+            .is_err()
+    );
+    emit(
+        &mut events,
+        json!({"type":completion,"event_id":"stop","response_id":"reply"}),
+    )
+    .await?;
+    command(&mut commands, "response.create").await?;
+
+    // A following tool-only response needs no audio-buffer completion event.
+    emit(&mut events, json!({"type":"response.created","event_id":"tool-created","response":{"id":"tool-only","object":"realtime.response","status":"in_progress","output":[]}})).await?;
+    emit(&mut events, json!({"type":"response.function_call_arguments.done","event_id":"tool-only-call","response_id":"tool-only","item_id":"tool-only-item","output_index":0,"call_id":"summary-two","name":"agents_summary","arguments":"{}"})).await?;
+    command(&mut commands, "conversation.item.create").await?;
+    emit(&mut events, json!({"type":"response.done","event_id":"tool-done","response":{"id":"tool-only","object":"realtime.response","status":"completed","output":[]}})).await?;
+    command(&mut commands, "response.create").await?;
+    assert!(
+        tokio::time::timeout(Duration::from_millis(300), commands.next())
+            .await
+            .is_err()
+    );
+    controls.send(Action::Stop).await?;
+    let application = runner.await??;
+    assert_eq!(application.tool_runs, 2);
+    Ok(())
 }
 pub async fn realtime() -> TestResult {
     let audio = Arc::new(App::new(true)?);

@@ -2,6 +2,24 @@
 use super::{ClientEvent, Ordering, RealtimeVoiceAdapter, startup};
 use voice_call_openai::session::Audio;
 
+impl RealtimeVoiceAdapter {
+    pub(super) fn playback_drained(&self) -> bool {
+        // The media worker may still enqueue RTP after the server stops. Read
+        // its gate before device counters, without holding both locks.
+        if self.webrtc
+            && !self
+                .media
+                .lock()
+                .as_ref()
+                .is_some_and(super::webrtc::Handle::drained)
+        {
+            return false;
+        }
+        let output = self.output.lock();
+        output.generated == output.played
+    }
+}
+
 impl Audio for RealtimeVoiceAdapter {
     fn is_muted(&self) -> bool {
         self.microphone.lock().muted

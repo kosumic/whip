@@ -4,6 +4,8 @@
 //! The public API reports request failures asynchronously; client event IDs
 //! correlate those failures instead of the Codex writer's acknowledgement future.
 
+use std::collections::HashSet;
+
 #[derive(Default)]
 pub struct ResponseCreateQueue {
     active: Option<String>,
@@ -12,6 +14,7 @@ pub struct ResponseCreateQueue {
     requested: bool,
     speaking: bool,
     awaiting_vad: bool,
+    output_audio: HashSet<String>,
 }
 impl ResponseCreateQueue {
     pub fn request_create(&mut self) {
@@ -21,7 +24,7 @@ impl ResponseCreateQueue {
         self.pending_create && self.can_respond()
     }
     pub fn can_respond(&self) -> bool {
-        !self.is_active() && !self.speaking && !self.awaiting_vad
+        !self.is_active() && !self.speaking && !self.awaiting_vad && self.output_audio.is_empty()
     }
     pub fn is_idle(&self) -> bool {
         self.can_respond() && !self.pending_create
@@ -44,6 +47,13 @@ impl ResponseCreateQueue {
             self.active_unknown = false;
             self.requested = false;
         }
+    }
+    /// WebRTC generation can finish while the server is still streaming speech.
+    pub fn audio_started(&mut self, id: String) {
+        self.output_audio.insert(id);
+    }
+    pub fn audio_finished(&mut self, id: &str) {
+        self.output_audio.remove(id);
     }
     pub fn defer_active_response(&mut self) {
         self.active_unknown = self.active.is_none();
@@ -119,6 +129,41 @@ pub fn provider_error_message_for(error: &oai_rt_rs::ServerError, prefix: &str) 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn server_audio_drain_is_independent_of_response_generation() {
+        let mut queue = ResponseCreateQueue::default();
+        queue.mark_started("spoken".into());
+        queue.audio_started("spoken".into());
+        queue.request_create();
+        queue.mark_finished("spoken");
+        assert!(!queue.can_respond());
+        assert!(!queue.can_create());
+        assert!(!queue.is_idle());
+        queue.audio_finished("other");
+        assert!(!queue.can_create());
+        queue.audio_finished("spoken");
+        assert!(queue.can_create());
+
+        // A stopped/cleared older buffer cannot release a newer response.
+        queue.mark_started("new".into());
+        queue.audio_started("new".into());
+        queue.mark_finished("new");
+        queue.audio_finished("spoken");
+        assert!(!queue.can_create());
+        queue.audio_finished("new");
+        assert!(queue.can_create());
+    }
+    #[test]
+    fn server_audio_completion_still_waits_for_generation_to_finish() {
+        let mut queue = ResponseCreateQueue::default();
+        queue.mark_started("reply".into());
+        queue.audio_started("reply".into());
+        queue.request_create();
+        queue.audio_finished("reply");
+        assert!(!queue.can_create());
+        queue.mark_finished("reply");
+        assert!(queue.can_create());
+    }
     #[test]
     fn notices_wait_for_response_completion_and_user_speech() {
         let mut queue = ResponseCreateQueue::default();

@@ -5,7 +5,7 @@ use super::{
     ServerEvent, ToolCompletion, ToolLedger, Value, bounded_text, cost, delegation, feedback,
     feedback_message, forward_feedback, function_output, global_submitted_message, global_tools,
     handoff_context, json, limit_text, live, mpsc, next_response, preview_response, send,
-    spawn_delegation, submitted_message, terminal, terminal_submitted_message, watch, webrtc,
+    spawn_delegation, submitted_message, terminal, terminal_submitted_message, watch,
 };
 use voice_call_openai::session::{Delegate, Event, Flow, Session};
 
@@ -351,14 +351,10 @@ impl Delegate for App<'_> {
         Ok(Flow::Continue)
     }
     async fn tick(&mut self, session: &mut Session<'_>) -> Result<Flow, &'static str> {
-        let drained = {
-            let output = self.owner.output.lock();
-            output.generated == output.played
-        };
         let idle = self.tools.is_empty()
             && self.deferred.len() == 0
             && session.realtime_state()?.responses.is_idle()
-            && drained
+            && self.owner.playback_drained()
             && self
                 .terminal
                 .as_ref()
@@ -398,18 +394,7 @@ impl Delegate for App<'_> {
         if config.preview && started.elapsed() > PREVIEW_TIMEOUT {
             return Err("Voice preview timed out. Please try again.");
         }
-        if *preview_done
-            && (!config.webrtc
-                || owner
-                    .media
-                    .lock()
-                    .as_ref()
-                    .is_some_and(webrtc::Handle::drained))
-            && {
-                let output = owner.output.lock();
-                output.generated == output.played
-            }
-        {
+        if *preview_done && owner.playback_drained() {
             if owner.output.lock().generated == 0 {
                 return Err("OpenAI returned no playable voice preview audio.");
             }
@@ -435,10 +420,8 @@ impl Delegate for App<'_> {
             )
             .await?;
         }
-        if {
-            let output = owner.output.lock();
-            output.generated == output.played
-        } && let Some(event) = next_response(responses, handoff.as_mut(), Instant::now())?
+        if owner.playback_drained()
+            && let Some(event) = next_response(responses, handoff.as_mut(), Instant::now())?
         {
             send(socket, event).await?;
             responses.mark_requested();
