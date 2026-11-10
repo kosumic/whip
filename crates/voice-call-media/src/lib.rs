@@ -10,6 +10,7 @@ mod jitter;
 mod media;
 mod network;
 mod packet;
+mod playout;
 pub mod prepared;
 pub mod processing;
 pub mod transport;
@@ -77,7 +78,9 @@ pub struct Playback {
     pub epoch: u64,
     pub enabled: bool,
     pub tag: Option<Tag>,
-    pub finish_at: Option<Instant>,
+    /// A normal server stop requests bounded tail admission followed by drain.
+    /// It is not a deadline for discarding accepted audio.
+    pub stopped_at: Option<Instant>,
     pub failed: bool,
 }
 #[derive(Default)]
@@ -101,7 +104,8 @@ pub trait Host: Capture {
     fn current(&self) -> bool;
     fn playback(&self) -> Playback;
     fn render(&self, epoch: u64, tag: &Tag, pcm: &[i16]) -> Result<bool, &'static str>;
-    fn finish(&self, epoch: u64, now: Instant) -> bool;
+    /// Commit a drained snapshot only if its epoch, tag and stop still match.
+    fn finish(&self, playback: &Playback) -> bool;
     fn statistics(&self, delta: Statistics);
     fn uploaded(&self);
 }

@@ -2,7 +2,7 @@
 use super::identity::Identity;
 use crate::Host;
 use parking_lot::Mutex;
-use std::{sync::Arc, time::Instant};
+use std::sync::Arc;
 use tokio::sync::watch;
 use voice_call_media::Transport;
 use voice_call_media::{Capture, Playback, Statistics, Tag};
@@ -54,7 +54,7 @@ impl<H: Host> voice_call_media::Host for MediaHost<'_, H> {
             epoch: state.epoch,
             enabled: state.enabled,
             tag: state.current.clone(),
-            finish_at: state.finish_at,
+            stopped_at: state.stopped_at,
             failed: state.failed,
         }
     }
@@ -67,9 +67,9 @@ impl<H: Host> voice_call_media::Host for MediaHost<'_, H> {
         drop(identity);
         Ok(true)
     }
-    fn finish(&self, epoch: u64, now: Instant) -> bool {
+    fn finish(&self, playback: &Playback) -> bool {
         let mut identity = self.identity.lock();
-        if !identity.finish(epoch, now) {
+        if !self.owner.current() || !identity.finish(playback) {
             return false;
         }
         if let Some(tag) = &identity.current {

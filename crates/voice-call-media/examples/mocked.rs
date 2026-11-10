@@ -82,7 +82,7 @@ impl Host for Pcm {
         self.rendered.fetch_add(pcm.len() as u64, Ordering::Relaxed);
         Ok(true)
     }
-    fn finish(&self, _: u64, _: Instant) -> bool {
+    fn finish(&self, _: &Playback) -> bool {
         false
     }
     fn statistics(&self, _: Statistics) {}

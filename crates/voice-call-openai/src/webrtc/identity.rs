@@ -1,9 +1,6 @@
 //! Audio identities follow the ordered event channel, independently of sideband startup.
 use serde_json::Value;
-use std::{
-    collections::VecDeque,
-    time::{Duration, Instant},
-};
+use std::{collections::VecDeque, time::Instant};
 
 pub use voice_call_media::Tag;
 #[derive(Default)]
@@ -17,12 +14,12 @@ pub struct Identity {
     pub enabled: bool,
     pub ended: bool,
     pub failed: bool,
-    pub finish_at: Option<Instant>,
+    pub stopped_at: Option<Instant>,
 }
 impl Identity {
     /// No audio, cancelled audio and a completed RTP tail are all drained.
     pub fn drained(&self) -> bool {
-        !self.enabled && self.finish_at.is_none()
+        !self.enabled && self.stopped_at.is_none()
     }
     pub fn live() -> Self {
         Self {
@@ -44,13 +41,20 @@ impl Identity {
             self.ended = false;
         }
     }
-    pub fn finish(&mut self, epoch: u64, now: Instant) -> bool {
-        if self.epoch != epoch || self.finish_at.is_none_or(|deadline| deadline > now) {
+    /// Commit the media loop's completed drain, never a wall-clock deadline.
+    /// Ordinary replies share an Opus epoch, so compare the tag and stop too.
+    pub fn finish(&mut self, playback: &voice_call_media::Playback) -> bool {
+        if !self.enabled
+            || self.epoch != playback.epoch
+            || self.current != playback.tag
+            || self.stopped_at.is_none()
+            || self.stopped_at != playback.stopped_at
+        {
             return false;
         }
         self.enabled = false;
         self.ended = true;
-        self.finish_at = None;
+        self.stopped_at = None;
         true
     }
     pub fn cancel_response(&mut self, response: Option<&str>) {
@@ -68,7 +72,7 @@ impl Identity {
     fn cancel(&mut self) {
         self.enabled = false;
         self.epoch += 1;
-        self.finish_at = None;
+        self.stopped_at = None;
     }
     pub fn observe(&mut self, event: &Value) {
         match self.seen.accept_value(event) {
@@ -127,7 +131,7 @@ impl Identity {
                 self.epoch = self.epoch.max(1);
                 self.enabled = self.current.is_some();
                 self.ended = false;
-                self.finish_at = None;
+                self.stopped_at = None;
             }
             "output_audio_buffer.stopped"
                 if self
@@ -135,7 +139,9 @@ impl Identity {
                     .as_ref()
                     .is_some_and(|tag| tag.response == response) =>
             {
-                self.finish_at = Some(Instant::now() + Duration::from_millis(160));
+                if self.enabled {
+                    self.stopped_at.get_or_insert_with(Instant::now);
+                }
             }
             "output_audio_buffer.cleared"
                 if self
@@ -177,8 +183,7 @@ mod tests {
         assert!(!realtime.enabled);
     }
     #[test]
-    fn server_stop_finishes_on_its_deadline_despite_idle_rtp_and_cannot_end_a_new_epoch()
-    -> Result<(), &'static str> {
+    fn server_stop_requests_a_drain_and_stale_completion_cannot_end_new_playback() {
         let mut identity = Identity::default();
         assert!(identity.drained());
         identity.observe(&json!({"type":"response.content_part.added","response_id":"reply","item_id":"item","content_index":0,"part":{"type":"audio"}}));
@@ -186,23 +191,56 @@ mod tests {
         assert!(!identity.drained());
         identity.observe(&json!({"type":"output_audio_buffer.stopped","response_id":"reply"}));
         assert!(!identity.drained());
-        let epoch = identity.epoch;
-        let deadline = identity.finish_at.ok_or("missing drain deadline")?;
-        let before_deadline = deadline
-            .checked_sub(Duration::from_nanos(1))
-            .ok_or("drain deadline precedes monotonic clock")?;
-        assert!(!identity.finish(epoch, before_deadline));
-        assert!(identity.enabled);
-        assert!(identity.finish(epoch, deadline));
+        let drained = voice_call_media::Playback {
+            epoch: identity.epoch,
+            enabled: identity.enabled,
+            tag: identity.current.clone(),
+            stopped_at: identity.stopped_at,
+            ..Default::default()
+        };
+        assert!(drained.stopped_at.is_some());
+        assert!(identity.finish(&drained));
         assert!(identity.ended);
         assert!(!identity.enabled);
         assert!(identity.drained());
-        assert!(!identity.finish(epoch, deadline + Duration::from_secs(1)));
+        assert!(!identity.finish(&drained));
         identity.observe(&json!({"type":"output_audio_buffer.started","response_id":"reply"}));
-        assert!(!identity.finish(epoch, deadline + Duration::from_secs(2)));
+        assert!(!identity.finish(&drained));
         assert!(identity.enabled);
         assert!(!identity.ended);
-        Ok(())
+        identity.observe(&json!({"type":"response.content_part.added","response_id":"next","item_id":"next","part":{"type":"audio"}}));
+        identity.observe(&json!({"type":"output_audio_buffer.started","response_id":"next"}));
+        identity.observe(&json!({"type":"output_audio_buffer.stopped","response_id":"next"}));
+        assert!(!identity.finish(&drained));
+        assert!(identity.enabled);
+    }
+    #[test]
+    fn every_interruption_invalidates_a_pending_tail_completion() {
+        for control in [
+            "explicit",
+            "output_audio_buffer.cleared",
+            "input_audio_buffer.speech_started",
+        ] {
+            let mut identity = Identity::default();
+            identity.observe(&json!({"type":"response.content_part.added","response_id":"reply","item_id":"item","part":{"type":"audio"}}));
+            identity.observe(&json!({"type":"output_audio_buffer.started","response_id":"reply"}));
+            identity.observe(&json!({"type":"output_audio_buffer.stopped","response_id":"reply"}));
+            let pending = voice_call_media::Playback {
+                epoch: identity.epoch,
+                tag: identity.current.clone(),
+                stopped_at: identity.stopped_at,
+                ..Default::default()
+            };
+            if control == "explicit" {
+                identity.cancel_response(Some("reply"));
+            } else {
+                identity.observe(&json!({"type":control,"response_id":"reply"}));
+            }
+            assert!(identity.drained());
+            assert!(!identity.finish(&pending));
+            identity.observe(&json!({"type":"output_audio_buffer.started","response_id":"reply"}));
+            assert!(!identity.enabled, "an interrupted response must not resume");
+        }
     }
     #[test]
     fn mirrored_sideband_events_do_not_restart_the_audible_epoch() {

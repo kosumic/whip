@@ -43,7 +43,7 @@ fn distance(timestamp: u32, expected: u32) -> i32 {
 }
 
 impl Jitter {
-    pub fn push(&mut self, packet: Packet, now: Instant) {
+    pub fn push(&mut self, packet: Packet, now: Instant) -> bool {
         let sequence = packet::distance(packet.sequence, self.sequence.unwrap_or(packet.sequence));
         if sequence < 0
             || self
@@ -51,7 +51,7 @@ impl Jitter {
                 .iter()
                 .any(|old| old.sequence == packet.sequence)
         {
-            return;
+            return false;
         }
         let clock_jump = self.timestamp.is_some_and(|timestamp| {
             usize::try_from(distance(packet.timestamp, timestamp))
@@ -69,10 +69,30 @@ impl Jitter {
         if self.packets.len() == MAX_PACKETS {
             // Never replace queued words just to admit a newer burst.
             self.statistics.overflows += 1;
-            return;
+            return false;
         }
         self.reliable = packet.reliable;
         self.packets.push_back(packet);
+        true
+    }
+
+    /// A server stop drains actual packets, not an endless empty-queue PLC
+    /// stream. Bound concealment across timestamp discontinuities too: keep
+    /// the next accepted speech packet without waiting through a clock jump.
+    /// The Opus decoder remains continuous across this rebase.
+    pub fn pop_tail(&mut self, now: Instant) -> Option<Frame> {
+        let timestamp = self.timestamp?;
+        let next = self.packets.iter().min_by_key(|packet| {
+            packet::distance(packet.sequence, self.sequence.unwrap_or(packet.sequence))
+        })?;
+        if distance(next.timestamp, timestamp)
+            > i32::try_from(MAX_FRAME_SAMPLES * RTP_RATE / RATE).unwrap_or(i32::MAX)
+        {
+            self.timestamp = Some(next.timestamp);
+            self.deadline = Some(now.max(self.deadline?));
+            self.statistics.resyncs += 1;
+        }
+        self.pop(now)
     }
 
     pub fn pop(&mut self, now: Instant) -> Option<Frame> {
@@ -152,7 +172,6 @@ impl Jitter {
         });
     }
 
-    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.packets.is_empty()
     }

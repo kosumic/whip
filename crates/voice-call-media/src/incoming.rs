@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Adapted from Codex's bounded RTP ingress; crypto and depacketization are owned by str0m.
 //! Packet/byte permits follow retained RTP; response epochs discard stale audio.
+use parking_lot::Mutex;
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, AtomicU64, Ordering},
+    atomic::{AtomicBool, Ordering},
 };
 use std::time::{Duration, Instant};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc};
@@ -13,7 +14,9 @@ pub(super) const PACKETS: usize = 64;
 const BYTES: usize = 2 * 1024 * 1024;
 const PACKET_BYTES: usize = 64 * 1024;
 struct State {
-    epoch: AtomicU64,
+    // Serialize admission with sealing: no producer can enqueue an accepted
+    // packet after the consumer has observed the sealed queue as empty.
+    epoch: Mutex<u64>,
     failed: AtomicBool,
     packets: Arc<Semaphore>,
     bytes: Arc<Semaphore>,
@@ -43,7 +46,7 @@ pub(super) struct Ingress {
 impl Incoming {
     pub(super) fn new() -> (Self, Ingress) {
         let state = Arc::new(State {
-            epoch: AtomicU64::new(1),
+            epoch: Mutex::new(1),
             failed: AtomicBool::new(false),
             packets: Arc::new(Semaphore::new(PACKETS)),
             bytes: Arc::new(Semaphore::new(BYTES)),
@@ -62,20 +65,33 @@ impl Incoming {
         )
     }
     pub fn set_suppressed(&self, suppressed: bool) -> Result<(), &'static str> {
-        let epoch = self.state.epoch.load(Ordering::Acquire);
-        if (epoch % 2 == 1) != suppressed {
-            self.state.epoch.store(
-                epoch.checked_add(1).ok_or("audio epoch exhausted")?,
-                Ordering::Release,
-            );
+        self.suppress(suppressed).map(|_| ())
+    }
+    fn suppress(&self, suppressed: bool) -> Result<u64, &'static str> {
+        let mut epoch = self.state.epoch.lock();
+        let previous = *epoch;
+        if (*epoch % 2 == 1) != suppressed {
+            *epoch = epoch.checked_add(1).ok_or("audio epoch exhausted")?;
         }
-        Ok(())
+        Ok(previous)
     }
     pub fn take(&mut self) -> Result<Option<ReceivedRtp>, &'static str> {
+        let epoch = *self.state.epoch.lock();
+        self.take_epoch(epoch)
+    }
+    /// Stop admission without invalidating packets already accepted by the
+    /// producer. Only a normal tail drain uses this token; cancellation uses
+    /// set_suppressed and never consumes a sealed epoch.
+    pub(super) fn seal(&self) -> Result<u64, &'static str> {
+        self.suppress(true)
+    }
+    pub(super) fn take_sealed(&mut self, epoch: u64) -> Result<Option<ReceivedRtp>, &'static str> {
+        self.take_epoch(epoch)
+    }
+    fn take_epoch(&mut self, epoch: u64) -> Result<Option<ReceivedRtp>, &'static str> {
         if self.state.failed.load(Ordering::Acquire) {
             return Err("incoming audio failed");
         }
-        let epoch = self.state.epoch.load(Ordering::Acquire);
         for _ in 0..PACKETS {
             let Ok(packet) = self.receiver.try_recv() else {
                 return Ok(None);
@@ -92,8 +108,8 @@ impl Incoming {
 }
 impl Ingress {
     pub(super) fn receive(&mut self, packet: str0m::rtp::RtpPacket, reliable: bool) {
-        let epoch = self.state.epoch.load(Ordering::Acquire);
-        if epoch % 2 == 1 || self.state.failed.load(Ordering::Acquire) {
+        let epoch = self.state.epoch.lock();
+        if *epoch % 2 == 1 || self.state.failed.load(Ordering::Acquire) {
             return;
         }
         let size = 12 + packet.payload.len();
@@ -131,9 +147,15 @@ impl Ingress {
             data,
             at: packet.timestamp,
             reliable,
-            epoch,
+            epoch: *epoch,
             _packet: packet_permit,
             _bytes: byte_permit,
         });
     }
 }
+
+// These fixtures enqueue accepted RTP with real ingress permits, then exercise
+// the same playout tick used by the media loop without sockets or wall sleeps.
+#[cfg(test)]
+#[path = "playout/tests.rs"]
+mod playout_tests;
