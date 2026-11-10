@@ -37,8 +37,14 @@ does not imply program exit; a fresh subscription and snapshot restore state.
 Partially completed creates/writes report the acknowledged terminals and do not
 silently repeat side effects.
 
-Core terminal metadata preserves parent relationships, and OSC 7501 reports define agent status. Whip does not infer
-activity or completion from screen text. Transcript chat is available only with
+Core terminal metadata preserves parent relationships. Agent types come from the
+reported app name, then the known foreground executable (including `codex-raw`),
+or the launch executable when foreground metadata is unavailable. OSC 7501 reports
+define activity status. Whip does not infer activity or completion from screen
+text. Ordinary shells and other unidentified programs remain available as
+terminals; they are excluded from the agent list, counts, and attention queue.
+Delegated agents retain their workspace grouping through intermediate shells.
+Transcript chat is available only with
 reliable provider session identity, currently explicit `whip.transcript.agent`,
 `whip.transcript.kind` (`id` or `path`) and `whip.transcript.value` labels. A core
 terminal address is never used as a provider session ID.

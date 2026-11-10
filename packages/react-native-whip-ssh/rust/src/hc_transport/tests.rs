@@ -359,7 +359,7 @@ fn real_core_socket_multiplex_documents_reconnect_and_exec_fallback() {
     clippy::too_many_lines,
     reason = "one isolated scenario verifies labels, delegation, reconnect, and unchanged desktop data"
 )]
-fn real_core_shared_attention_and_delegated_children() {
+fn real_core_shared_labels_and_non_agent_children() {
     use herdr_protocol::hc::{
         attention::{Change, PINNED_LABEL, SEEN_LABEL},
         hierarchy,
@@ -441,31 +441,25 @@ fn real_core_shared_attention_and_delegated_children() {
         else {
             panic!("wrong snapshot")
         };
-        let child_agent = snapshot
-            .agents
+        let child_pane = snapshot
+            .panes
             .iter()
-            .find(|agent| agent.terminal_id == child.address)
+            .find(|pane| pane.terminal_id == child.address)
             .unwrap();
-        assert_eq!(child_agent.agent_status, crate::HerdrAgentStatus::Unknown);
+        assert_eq!(child_pane.agent_status, crate::HerdrAgentStatus::Unknown);
         assert_eq!(
-            child_agent.state_labels.as_ref().unwrap()[PARENT_LABEL],
+            child_pane.state_labels.as_ref().unwrap()[PARENT_LABEL],
             root_pane.terminal_id
         );
         assert_eq!(
-            child_agent.state_labels.as_ref().unwrap()[hierarchy::VIRTUAL_LAYOUT_LABEL],
+            child_pane.state_labels.as_ref().unwrap()[hierarchy::VIRTUAL_LAYOUT_LABEL],
             "1"
         );
-        let groups = hierarchy::project(&snapshot.agents);
-        assert_eq!(
-            groups.nodes[&child.address].parent.as_deref(),
-            Some(root_pane.terminal_id.as_str())
+        assert_eq!(snapshot.panes.len(), 2);
+        assert!(
+            snapshot.agents.is_empty(),
+            "shells and sleep are not agents, even when pinned"
         );
-        assert_eq!(
-            groups.nodes[&child.address].workspace,
-            root_pane.workspace_id
-        );
-        assert_eq!(groups.nodes[&root_pane.terminal_id].descendants, 1);
-        assert!(groups.nodes[&child.address].pinned);
         let Response::DocGet(after) = reconnected
             .rpc(Request::doc_get(api::DocGetParams {
                 name: "herdr-app".into(),

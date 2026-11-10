@@ -5,6 +5,7 @@ use super::{
     documents::{APP_DOCUMENT, Documents},
     events::{DocumentKey, Snapshot, reported_status},
     generated::Terminal,
+    hierarchy::{self, GROUP_PARENT_LABEL, GROUP_WORKSPACE_LABEL},
 };
 use crate::control::{
     HerdrAgentInfo, HerdrAgentSessionInfo, HerdrAgentSessionKind, HerdrAgentStatus, HerdrPaneInfo,
@@ -221,7 +222,38 @@ pub fn project(
         );
     }
     builder.finish();
+    retain_agents(&mut builder.projection.snapshot);
     Ok(builder.projection)
+}
+
+fn retain_agents(snapshot: &mut HerdrSessionSnapshot) {
+    // All terminals supply layout and ancestry context, but only identified
+    // agents belong in Herd and the shared agent list/counts.
+    let groups = hierarchy::project(&snapshot.agents);
+    let members = snapshot
+        .agents
+        .iter()
+        .filter(|agent| agent.agent.as_deref().is_some_and(|kind| !kind.is_empty()))
+        .map(|agent| agent.terminal_id.clone())
+        .collect::<BTreeSet<_>>();
+    snapshot.agents.retain_mut(|agent| {
+        if !members.contains(&agent.terminal_id) {
+            return false;
+        }
+        if let Some(group) = groups.nodes.get(&agent.terminal_id) {
+            let parent = group
+                .ancestors
+                .iter()
+                .rev()
+                .find(|parent| members.contains(*parent))
+                .cloned()
+                .unwrap_or_default();
+            let labels = agent.state_labels.get_or_insert_default();
+            labels.insert(GROUP_PARENT_LABEL.into(), parent);
+            labels.insert(GROUP_WORKSPACE_LABEL.into(), group.workspace.clone());
+        }
+        true
+    });
 }
 
 fn unit_rect() -> HerdrPaneLayoutRect {
@@ -491,6 +523,28 @@ pub fn agent_kind(app: &str) -> Option<&'static str> {
         _ => None,
     }
 }
+fn executable_agent(program: &str) -> Option<&'static str> {
+    let name = program.rsplit(['/', '\\']).next()?;
+    let name = name.strip_suffix(".exe").unwrap_or(name);
+    match name {
+        "codex-raw" => Some("codex"),
+        name => agent_kind(name),
+    }
+}
+fn program_agent(terminal: &Terminal) -> Option<&'static str> {
+    if let Some(foreground) = &terminal.foreground {
+        foreground
+            .argv
+            .first()
+            .and_then(|program| executable_agent(program))
+            .or_else(|| executable_agent(&foreground.name))
+    } else {
+        terminal
+            .argv
+            .first()
+            .and_then(|program| executable_agent(program))
+    }
+}
 fn agent_status(terminal: &Terminal) -> HerdrAgentStatus {
     super::attention::status(terminal)
 }
@@ -522,12 +576,20 @@ fn project_pane(
     seq: u64,
 ) -> HerdrPaneInfo {
     let status = reported_status(terminal);
-    let app = status.and_then(|s| s.app.as_deref());
-    let agent = app.map(|app| agent_kind(app).unwrap_or(app).to_owned());
+    let app = status
+        .and_then(|s| s.app.as_deref())
+        .filter(|app| !app.is_empty());
+    let agent = app
+        .map(|app| agent_kind(app).unwrap_or(app))
+        .or_else(|| program_agent(terminal))
+        .map(str::to_owned);
+    let display_agent = nonempty(app).or_else(|| agent.clone());
     let mut labels: HashMap<_, _> = terminal.labels.clone().into_iter().collect();
     // These are projection metadata, never user-supplied terminal labels.
     labels.remove(PARENT_LABEL);
     labels.remove(super::hierarchy::VIRTUAL_LAYOUT_LABEL);
+    labels.remove(GROUP_PARENT_LABEL);
+    labels.remove(GROUP_WORKSPACE_LABEL);
     labels.insert(
         super::attention::TURN_LABEL.into(),
         terminal.turn.unwrap_or(0).to_string(),
@@ -556,7 +618,7 @@ fn project_pane(
             .and_then(|s| nonempty(s.title.as_deref()).or_else(|| nonempty(s.msg.as_deref()))),
         terminal_title: nonempty(terminal.title.as_deref()),
         terminal_title_stripped: nonempty(terminal.title.as_deref()),
-        display_agent: nonempty(app),
+        display_agent,
         agent_status: agent_status(terminal),
         state_labels: Some(labels),
         tokens: None,

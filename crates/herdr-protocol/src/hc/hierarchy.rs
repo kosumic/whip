@@ -5,6 +5,8 @@ use crate::control::{HerdrAgentInfo, HerdrAgentStatus};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub const VIRTUAL_LAYOUT_LABEL: &str = "hc.virtual-layout";
+pub const GROUP_PARENT_LABEL: &str = "hc.group-parent";
+pub const GROUP_WORKSPACE_LABEL: &str = "hc.group-workspace";
 const MAX_DEPTH: u32 = 64;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -52,7 +54,13 @@ pub fn project(agents: &[HerdrAgentInfo]) -> Forest {
     let mut parents: BTreeMap<_, _> = records
         .iter()
         .map(|(address, agent)| {
-            let parent = label(agent, PARENT_LABEL)
+            let parent = agent
+                .state_labels
+                .as_ref()
+                .and_then(|labels| labels.get(GROUP_PARENT_LABEL))
+                .map(String::as_str)
+                .or_else(|| label(agent, PARENT_LABEL))
+                .filter(|parent| !parent.is_empty())
                 .map(|parent| qualify(parent, address))
                 .filter(|parent| parent != address && records.contains_key(parent));
             (address.clone(), parent)
@@ -99,14 +107,18 @@ pub fn project(agents: &[HerdrAgentInfo]) -> Forest {
             ancestors.push(id.clone());
             ancestors
         });
-        let workspace = if label(agent, VIRTUAL_LAYOUT_LABEL).is_some() {
-            parent.as_ref().map_or_else(
-                || agent.workspace_id.clone(),
-                |(_, node)| node.workspace.clone(),
-            )
-        } else {
-            agent.workspace_id.clone()
-        };
+        let workspace = label(agent, GROUP_WORKSPACE_LABEL)
+            .map(str::to_owned)
+            .unwrap_or_else(|| {
+                if label(agent, VIRTUAL_LAYOUT_LABEL).is_some() {
+                    parent.as_ref().map_or_else(
+                        || agent.workspace_id.clone(),
+                        |(_, node)| node.workspace.clone(),
+                    )
+                } else {
+                    agent.workspace_id.clone()
+                }
+            });
         let node = Node {
             parent: parent.map(|(id, _)| id),
             depth: u32::try_from(ancestors.len()).unwrap_or(MAX_DEPTH),

@@ -462,6 +462,177 @@ fn document_versions_and_unknown_desktop_mod_fields_survive_round_trips() {
 }
 
 #[test]
+fn core_projection_identifies_programs_without_inventing_activity_or_transcript_identity() {
+    use herdr_protocol::{
+        control::HerdrAgentStatus,
+        hc::projection::{self, View},
+    };
+    let cases = [
+        (
+            json!({"name":"opencode","argv":["opencode"]}),
+            Some("opencode"),
+        ),
+        (
+            json!({"name":"codex-raw","argv":["/nix/store/example-codex/bin/codex-raw"]}),
+            Some("codex"),
+        ),
+        (
+            json!({"name":"node","argv":[r"C:\tools\codex.exe"]}),
+            Some("codex"),
+        ),
+        (
+            json!({"name":"claude","argv":["node","/app/cli.js"]}),
+            Some("claude"),
+        ),
+        (json!({"name":"bash","argv":["bash"]}), None),
+        (json!({"name":"cat","argv":["cat","codex"]}), None),
+    ];
+    for (mut foreground, expected) in cases {
+        foreground["pid"] = json!(123);
+        foreground["cwd"] = json!("/tmp");
+        let mut record = terminal("t1");
+        // A current shell or unrelated program overrides an old launch command.
+        record["argv"] = json!(["codex"]);
+        record["foreground"] = foreground.clone();
+        record["reported"] = json!(false);
+        let state = snapshot(1, vec![record]);
+        let projection =
+            projection::project("0.1.17", &state, &Documents::default(), &View::default()).unwrap();
+        let pane = &projection.snapshot.panes[0];
+        assert_eq!(pane.agent.as_deref(), expected, "{foreground}");
+        if expected.is_none() {
+            assert!(projection.snapshot.agents.is_empty());
+            continue;
+        }
+        let agent = &projection.snapshot.agents[0];
+        assert_eq!(agent.agent, pane.agent);
+        assert_eq!(agent.display_agent.as_deref(), expected);
+        assert_eq!(agent.agent_status, HerdrAgentStatus::Unknown);
+        assert!(agent.agent_session.is_none());
+    }
+}
+
+#[test]
+fn core_projection_updates_agent_type_when_foreground_changes_and_prefers_reported_app() {
+    use herdr_protocol::{
+        control::HerdrAgentStatus,
+        hc::projection::{self, View},
+    };
+    let mut record = terminal("t1");
+    record["argv"] = json!(["codex"]);
+    let mut state = snapshot(1, vec![record]);
+    let projected = |state: &Snapshot| {
+        projection::project("0.1.17", state, &Documents::default(), &View::default())
+            .unwrap()
+            .snapshot
+            .agents
+    };
+    // The launch executable is useful before a foreground snapshot arrives.
+    assert_eq!(projected(&state)[0].agent.as_deref(), Some("codex"));
+    for (seq, program, expected) in [
+        (2, "opencode", Some("opencode")),
+        (3, "codex-raw", Some("codex")),
+        (4, "bash", None),
+    ] {
+        state
+            .apply(event(
+                seq,
+                "foreground",
+                "t1",
+                json!({"pid":123,"name":program,"argv":[program],"cwd":"/tmp"}),
+            ))
+            .unwrap();
+        let agents = projected(&state);
+        if expected.is_some() {
+            assert_eq!(agents[0].agent.as_deref(), expected);
+            assert_eq!(agents[0].agent_status, HerdrAgentStatus::Unknown);
+        } else {
+            assert!(agents.is_empty());
+        }
+    }
+    state
+        .apply(event(
+            5,
+            "status",
+            "t1",
+            json!({"reported":true,"records":{},"status":{"state":"working","app":"claude-code"}}),
+        ))
+        .unwrap();
+    let agents = projected(&state);
+    let agent = &agents[0];
+    assert_eq!(agent.agent.as_deref(), Some("claude"));
+    assert_eq!(agent.display_agent.as_deref(), Some("claude-code"));
+    assert_eq!(agent.agent_status, HerdrAgentStatus::Working);
+}
+
+#[test]
+fn core_agent_membership_excludes_shells_and_preserves_delegation_through_them() {
+    use herdr_protocol::hc::{
+        hierarchy,
+        projection::{self, View},
+    };
+    let shell = terminal("shell");
+    let mut parent = terminal("agent");
+    parent["argv"] = json!(["codex"]);
+    parent["parent"] = json!("shell");
+    parent["labels"] = json!({"hc.group-parent":"spoofed", "hc.group-workspace":"spoofed"});
+    let mut helper = terminal("helper-shell");
+    helper["parent"] = json!("agent");
+    let mut child = terminal("child");
+    child["argv"] = json!(["opencode"]);
+    child["parent"] = json!("helper-shell");
+    let state = snapshot(1, vec![shell, parent, helper, child]);
+    let mut documents = Documents::default();
+    documents.apply(DocumentKey { machine: None, name: "herdr-app".into() }, Document {
+        version: 1,
+        value: json!({"spaces":[{"id":"repo","name":"Repo","tabs":[{"id":"shell-tab","name":"Shell","root":{"id":"shell-pane","type":"block","content":{"terminal":"shell"}}}]}]}),
+    }).unwrap();
+    let projection = projection::project("0.1.19", &state, &documents, &View::default()).unwrap();
+    assert_eq!(
+        projection.snapshot.panes.len(),
+        4,
+        "shells remain normal terminals"
+    );
+    assert_eq!(
+        projection
+            .snapshot
+            .agents
+            .iter()
+            .map(|agent| agent.terminal_id.as_str())
+            .collect::<Vec<_>>(),
+        ["agent", "child"]
+    );
+    let workspace = &projection
+        .snapshot
+        .panes
+        .iter()
+        .find(|pane| pane.terminal_id == "shell")
+        .unwrap()
+        .workspace_id;
+    let groups = hierarchy::project(&projection.snapshot.agents);
+    assert_eq!(groups.order, ["agent", "child"]);
+    assert_eq!(groups.nodes["agent"].workspace, *workspace);
+    assert_eq!(groups.nodes["child"].workspace, *workspace);
+    assert_eq!(groups.nodes["agent"].descendants, 1);
+    assert_eq!(groups.nodes["child"].ancestors, ["agent"]);
+    assert!(groups.nodes["agent"].delegated);
+    let child = projection
+        .snapshot
+        .agents
+        .iter()
+        .find(|agent| agent.terminal_id == "child")
+        .unwrap();
+    assert_eq!(
+        child.state_labels.as_ref().unwrap()[projection::PARENT_LABEL],
+        "helper-shell"
+    );
+    assert_ne!(
+        child.workspace_id, *workspace,
+        "navigation keeps the terminal's actual location"
+    );
+}
+
+#[test]
 fn core_projection_uses_shared_layouts_without_inventing_status_or_transcript_binding() {
     use herdr_protocol::{
         control::HerdrAgentStatus,
@@ -472,8 +643,10 @@ fn core_projection_uses_shared_layouts_without_inventing_status_or_transcript_bi
     parent["status"] =
         json!({"state":"working","app":"claude-code","session_id":"not-an-authoritative-binding"});
     let mut child = terminal("t2");
+    child["argv"] = json!(["codex"]);
     child["parent"] = json!("t1");
     let mut grandchild = terminal("t3");
+    grandchild["argv"] = json!(["opencode"]);
     grandchild["parent"] = json!("t2");
     // User labels cannot invent parentage or turn a real desktop pane virtual.
     parent["labels"] = json!({"hc.parent":"t3","hc.virtual-layout":"1"});
@@ -514,7 +687,7 @@ fn core_projection_uses_shared_layouts_without_inventing_status_or_transcript_bi
     assert_eq!(
         projection.snapshot.agents.len(),
         3,
-        "unplaced terminals remain usable"
+        "unplaced agents remain usable"
     );
     let parent = projection
         .snapshot
