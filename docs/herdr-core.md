@@ -49,6 +49,23 @@ reliable provider session identity, currently explicit `whip.transcript.agent`,
 `whip.transcript.kind` (`id` or `path`) and `whip.transcript.value` labels. A core
 terminal address is never used as a provider session ID.
 
+Core's `HC_TERMINAL_ID` identifies a terminal, not a provider conversation. The
+current Core API has no dedicated provider session ID or transcript path field.
+OSC 7501 `id` identifies a status record; it does not establish a conversation
+identity. Core's generic `terminal.label` API can carry an identity supplied by a
+client or agent. Whip reads those labels and maps its existing
+`pane.report_agent_session` request to the same API. For example, with a known
+Codex thread ID:
+
+```sh
+hc label t3 whip.transcript.agent=codex whip.transcript.kind=id \
+  whip.transcript.value=KNOWN_CODEX_THREAD_ID
+```
+
+These labels must describe the conversation actually running in that terminal;
+Core does not discover or maintain them automatically. `whip-notify` does not
+install provider hooks or supply transcript identity.
+
 Core agents share attention with the desktop through `herdr.seen` and
 `herdr.pinned` terminal labels. A valid seen turn distinguishes completed unread
 turns from idle agents; working and blocked/error reports take priority. Missing
