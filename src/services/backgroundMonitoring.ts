@@ -1,8 +1,9 @@
-import { NativeModules, Platform } from 'react-native';
+import { DeviceEventEmitter, NativeModules, Platform } from 'react-native';
 
 interface HerdrBackgroundNativeModule {
   start(hostCount: number): Promise<void>;
   stop(): Promise<void>;
+  setNotificationConsumerPulseInterval(intervalMs: number): void;
   armPersistentAlert(
     notificationIdentifier: string,
     channelId: string,
@@ -29,6 +30,26 @@ function nativeModule(includeIos = false): HerdrBackgroundNativeModule | null {
 
 let monitoringActive = false;
 export function backgroundMonitoringActive(): boolean { return monitoringActive; }
+
+/** Android pauses RN's JS timers in background even with a foreground service.
+ * This clock only wakes JS; permission/delivery/runtime checks still gate leases.
+ */
+export function observeBackgroundNotificationPulses(
+  pulse: () => void,
+  intervalMs: number,
+): () => void {
+  const module = nativeModule();
+  if (!module) return () => {};
+  const subscription = DeviceEventEmitter.addListener('WhipNotificationConsumerPulse', pulse);
+  module.setNotificationConsumerPulseInterval(intervalMs);
+  let attached = true;
+  return () => {
+    if (!attached) return;
+    attached = false;
+    subscription.remove();
+    module.setNotificationConsumerPulseInterval(0);
+  };
+}
 
 export async function startBackgroundMonitoring(hostCount: number): Promise<void> {
   const module = nativeModule();

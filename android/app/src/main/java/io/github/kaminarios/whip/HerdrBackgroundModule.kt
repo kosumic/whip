@@ -38,6 +38,18 @@ class HerdrBackgroundModule(
   private val sensorManager = context.getSystemService(SensorManager::class.java)
   private val notificationManager = context.getSystemService(NotificationManager::class.java)
   private val mainHandler = Handler(Looper.getMainLooper())
+  private var notificationConsumerPulseIntervalMs = 0L
+  private val notificationConsumerPulse = object : Runnable {
+    override fun run() {
+      if (notificationConsumerPulseIntervalMs <= 0) return
+      // Request proof from the JS consumer. Native execution alone must never
+      // renew a lease, because JS may have stopped handling local alerts.
+      val active = context.hasActiveReactInstance()
+      if (Log.isLoggable(TAG, Log.DEBUG)) Log.d(TAG, "Notification consumer wake-up; reactActive=$active")
+      if (active) context.emitDeviceEvent(NOTIFICATION_CONSUMER_PULSE)
+      mainHandler.postDelayed(this, notificationConsumerPulseIntervalMs)
+    }
+  }
   private var activeAlertIdentifier: String? = null
   private var activeAlertChannelId: String? = null
   private var briefAlertIdentifier: String? = null
@@ -68,6 +80,16 @@ class HerdrBackgroundModule(
   }
 
   override fun getName(): String = "HerdrBackground"
+
+  @ReactMethod
+  fun setNotificationConsumerPulseInterval(intervalMs: Double) {
+    mainHandler.post {
+      mainHandler.removeCallbacks(notificationConsumerPulse)
+      notificationConsumerPulseIntervalMs = intervalMs.toLong().coerceAtLeast(0)
+      if (Log.isLoggable(TAG, Log.DEBUG)) Log.d(TAG, "Notification consumer clock interval=$notificationConsumerPulseIntervalMs")
+      if (notificationConsumerPulseIntervalMs > 0) mainHandler.post(notificationConsumerPulse)
+    }
+  }
 
   @ReactMethod fun beginDownloadExecution(id: String, name: String, promise: Promise) {
     SftpDownloadService.begin(context, id, name, promise)
@@ -539,6 +561,8 @@ class HerdrBackgroundModule(
   override fun invalidate() {
     context.removeLifecycleEventListener(this)
     mainHandler.post {
+      notificationConsumerPulseIntervalMs = 0
+      mainHandler.removeCallbacks(notificationConsumerPulse)
       RealtimeVoice.invalidate()
       finishVoiceCallSound()
       VoiceCallService.onEvent = null
@@ -748,6 +772,7 @@ class HerdrBackgroundModule(
   }
 
   companion object {
+    private const val NOTIFICATION_CONSUMER_PULSE = "WhipNotificationConsumerPulse"
     private const val CALL_SOUND_ERROR = "E_VOICE_CALL_SOUND"
     private const val CALL_SOUND_TIMEOUT_MS = 5_000L
     private const val CHAT_SPEECH_STOPPED = "WhipChatSpeechStopped"

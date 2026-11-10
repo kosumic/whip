@@ -9,7 +9,10 @@ import {
   refreshRemotePushTokens,
   notificationConsumerState,
 } from '../src/services/remoteNotifications';
-import { backgroundMonitoringActive } from '../src/services/backgroundMonitoring';
+import {
+  backgroundMonitoringActive,
+  observeBackgroundNotificationPulses,
+} from '../src/services/backgroundMonitoring';
 jest.mock('expo-notifications', () => ({
   getPermissionsAsync: jest.fn().mockResolvedValue({ granted: true }),
   addPushTokenListener: jest.fn(() => ({ remove: jest.fn() })),
@@ -25,6 +28,7 @@ jest.mock('../src/services/remoteNotifications', () => ({
 }));
 jest.mock('../src/services/backgroundMonitoring', () => ({
   backgroundMonitoringActive: jest.fn().mockReturnValue(false),
+  observeBackgroundNotificationPulses: jest.fn(() => jest.fn()),
 }));
 function Harness({ enabled = true }: { enabled?: boolean }) {
   useNotificationLeases(enabled);
@@ -37,6 +41,7 @@ beforeEach(() => {
   setNotificationDeliveryAvailable(true);
   AppState.currentState = 'active';
   Platform.OS = 'ios';
+  jest.mocked(backgroundMonitoringActive).mockReturnValue(false);
   (Notifications.getPermissionsAsync as jest.Mock).mockResolvedValue({
     granted: true,
   });
@@ -94,7 +99,7 @@ test('disabled, unregistered and denied permission pipelines never renew', async
   await mount();
   expect(renewNotificationLeases).not.toHaveBeenCalled();
 });
-test('Android background needs the foreground service and a live JS timer', async () => {
+test('Android background needs the foreground service and an executing JS pulse callback', async () => {
   Platform.OS = 'android';
   AppState.currentState = 'background';
   (backgroundMonitoringActive as jest.Mock).mockReturnValue(false);
@@ -102,7 +107,7 @@ test('Android background needs the foreground service and a live JS timer', asyn
   expect(renewNotificationLeases).not.toHaveBeenCalled();
   (backgroundMonitoringActive as jest.Mock).mockReturnValue(true);
   await act(async () => {
-    jest.advanceTimersByTime(3000);
+    jest.mocked(observeBackgroundNotificationPulses).mock.calls[0][0]();
   });
   expect(renewNotificationLeases).toHaveBeenCalledTimes(1);
   await act(() => root.unmount());
@@ -110,6 +115,32 @@ test('Android background needs the foreground service and a live JS timer', asyn
     jest.advanceTimersByTime(12000);
   });
   expect(renewNotificationLeases).toHaveBeenCalledTimes(1);
+});
+
+test('Android native wake-ups sustain a background consumer when React Native timers are paused', async () => {
+  Platform.OS = 'android';
+  AppState.currentState = 'background';
+  jest.mocked(backgroundMonitoringActive).mockReturnValue(true);
+  await mount();
+  const pulse = jest.mocked(observeBackgroundNotificationPulses).mock.calls[0][0];
+  const stop = jest.mocked(observeBackgroundNotificationPulses).mock.results[0].value;
+  expect(renewNotificationLeases).toHaveBeenCalledTimes(1);
+  await act(async () => { jest.advanceTimersByTime(12_000); });
+  expect(renewNotificationLeases).toHaveBeenCalledTimes(1);
+  await act(async () => { pulse(); });
+  expect(renewNotificationLeases).toHaveBeenCalledTimes(2);
+
+  // A native clock is never evidence of JS delivery or permission by itself.
+  setNotificationDeliveryAvailable(false);
+  await act(async () => { pulse(); });
+  setNotificationDeliveryAvailable(true);
+  jest.mocked(backgroundMonitoringActive).mockReturnValue(false);
+  await act(async () => { pulse(); });
+  expect(renewNotificationLeases).toHaveBeenCalledTimes(2);
+  await act(() => root.unmount());
+  expect(stop).toHaveBeenCalledTimes(1);
+  await act(async () => { pulse(); });
+  expect(renewNotificationLeases).toHaveBeenCalledTimes(2);
 });
 
 test('a failed local notification backend stops lease renewal', async () => {

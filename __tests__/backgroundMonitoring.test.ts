@@ -1,12 +1,18 @@
-import { NativeModules, Platform } from 'react-native';
-import { dismissPersistentAgentAlert, prepareSpokenAgentAlert } from '../src/services/backgroundMonitoring';
+import { DeviceEventEmitter, NativeModules, Platform } from 'react-native';
+import {
+  dismissPersistentAgentAlert,
+  observeBackgroundNotificationPulses,
+  prepareSpokenAgentAlert,
+} from '../src/services/backgroundMonitoring';
 
 jest.mock('react-native', () => ({
   Platform: { OS: 'android' },
+  DeviceEventEmitter: { addListener: jest.fn(() => ({ remove: jest.fn() })) },
   NativeModules: {
     HerdrBackground: {
       dismissPersistentAlert: jest.fn().mockResolvedValue(undefined),
       prepareSpokenAlert: jest.fn().mockResolvedValue(undefined),
+      setNotificationConsumerPulseInterval: jest.fn(),
     },
   },
 }));
@@ -43,4 +49,26 @@ test('iOS dismisses its native atomic playback unit', async () => {
   expect(
     NativeModules.HerdrBackground.dismissPersistentAlert,
   ).toHaveBeenCalledWith('notification');
+});
+
+test('Android wake-ups execute the subscribed JS consumer and stop on detach', () => {
+  const pulse = jest.fn();
+  const detach = observeBackgroundNotificationPulses(pulse, 3_000);
+  expect(NativeModules.HerdrBackground.setNotificationConsumerPulseInterval).toHaveBeenCalledWith(3_000);
+  expect(pulse).not.toHaveBeenCalled();
+  jest.mocked(DeviceEventEmitter.addListener).mock.calls[0][1]();
+  expect(pulse).toHaveBeenCalledTimes(1);
+  detach();
+  detach();
+  expect(jest.mocked(DeviceEventEmitter.addListener).mock.results[0].value.remove).toHaveBeenCalledTimes(1);
+  expect(NativeModules.HerdrBackground.setNotificationConsumerPulseInterval).toHaveBeenCalledTimes(2);
+  expect(NativeModules.HerdrBackground.setNotificationConsumerPulseInterval).toHaveBeenLastCalledWith(0);
+});
+
+test('iOS never starts the Android notification wake-up clock', () => {
+  Platform.OS = 'ios';
+  const detach = observeBackgroundNotificationPulses(jest.fn(), 3_000);
+  expect(DeviceEventEmitter.addListener).not.toHaveBeenCalled();
+  expect(NativeModules.HerdrBackground.setNotificationConsumerPulseInterval).not.toHaveBeenCalled();
+  detach();
 });
