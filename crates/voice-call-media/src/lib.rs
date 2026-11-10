@@ -108,6 +108,17 @@ pub trait Host: Capture {
     fn current(&self) -> bool;
     fn playback(&self) -> Playback;
     fn render(&self, epoch: u64, tag: &Tag, pcm: &[i16]) -> Result<bool, &'static str>;
+    /// Source-clock position of decoded RTP, independent of queued PCM length.
+    /// Concealment continues the preceding clock without a packet timestamp.
+    fn render_timed(
+        &self,
+        epoch: u64,
+        tag: &Tag,
+        pcm: &[i16],
+        _rtp_timestamp: Option<u32>,
+    ) -> Result<bool, &'static str> {
+        self.render(epoch, tag, pcm)
+    }
     /// Commit a drained snapshot only if its epoch, tag and stop still match.
     fn finish(&self, playback: &Playback) -> bool;
     fn statistics(&self, delta: Statistics);

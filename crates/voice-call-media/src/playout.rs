@@ -110,6 +110,10 @@ impl Playout {
             let Some(frame) = frame else {
                 break;
             };
+            let rtp_timestamp = match &frame {
+                Frame::Packet(packet) => Some(packet.timestamp),
+                Frame::Missing(_) => None,
+            };
             let (payload, capacity) = match &frame {
                 Frame::Packet(packet) => (packet.payload.as_slice(), self.decoded.len()),
                 Frame::Missing(samples) => (&[][..], *samples),
@@ -143,7 +147,7 @@ impl Playout {
             // Keep quiet phonemes, caption samples and the continuous Opus
             // clock. The host rechecks cancellation under its control lock.
             if let Some(tag) = &state.tag {
-                if !owner.render(self.epoch, tag, &self.decoded[..count])? {
+                if !owner.render_timed(self.epoch, tag, &self.decoded[..count], rtp_timestamp)? {
                     break;
                 }
                 owner.statistics(Statistics {

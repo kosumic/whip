@@ -1,6 +1,9 @@
 //! Live fragments have timeline intervals, not provider turns or playback marks.
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+mod source_clock;
+#[cfg(test)]
+mod tests;
 
 const MAX_FRAGMENTS: usize = 512;
 const MAX_BYTES: usize = 64 * 1024;
@@ -40,8 +43,11 @@ pub(in crate::realtime_voice) struct Transcript {
     admitted: HashSet<String>,
     discarded_through: f64,
     playback_samples: usize,
+    received_samples: usize,
     playback_origin: Option<usize>,
     caption_origin: Option<f64>,
+    source_clock: Option<source_clock::SourceClock>,
+    source_origin: Option<usize>,
     heard: Vec<(f64, f64)>,
 }
 
@@ -174,14 +180,35 @@ impl Transcript {
     /// Locate provider speech before it enters the device queue. Caption text
     /// may arrive before or after its audio; arrival time is not a playback mark.
     pub(in crate::realtime_voice) fn audio(&mut self, start: usize, pcm: &[u8]) {
+        self.received_samples = start.saturating_add(pcm.len() / 2);
         if self.playback_origin.is_none()
             && let Some(offset) = pcm.as_chunks::<2>().0.iter().position(|sample| {
                 i16::from_le_bytes(*sample).unsigned_abs() >= super::super::AUDIBLE_SAMPLE
             })
         {
-            self.playback_origin = Some(start.saturating_add(offset));
+            let origin = start.saturating_add(offset);
+            self.playback_origin = Some(origin);
+            self.source_origin = self
+                .source_clock
+                .as_ref()
+                .and_then(|clock| clock.sample(origin));
             self.advance();
         }
+    }
+
+    pub(in crate::realtime_voice) fn source_audio(
+        &mut self,
+        start: usize,
+        count: usize,
+        rtp_timestamp: Option<u32>,
+    ) -> Result<(), &'static str> {
+        if rtp_timestamp.is_some() {
+            self.source_clock.get_or_insert_default();
+        }
+        if let Some(clock) = &mut self.source_clock {
+            clock.record(start, count, rtp_timestamp)?;
+        }
+        Ok(())
     }
 
     /// Fragment timestamps are approximate. Pair the first caption timestamp
@@ -197,8 +224,16 @@ impl Transcript {
             && self.caption_origin.is_some()
             && let Some((start, end)) = self.heard.last_mut()
         {
-            let samples =
-                u32::try_from(self.playback_samples.saturating_sub(origin)).unwrap_or(u32::MAX);
+            let elapsed = self
+                .source_clock
+                .as_mut()
+                .and_then(|clock| clock.played(self.playback_samples))
+                .zip(self.source_origin)
+                .map_or_else(
+                    || self.playback_samples.saturating_sub(origin),
+                    |(source, origin)| source.saturating_sub(origin),
+                );
+            let samples = u32::try_from(elapsed).unwrap_or(u32::MAX);
             let rate = u32::try_from(super::super::RATE).unwrap_or(u32::MAX);
             *end = *start + f64::from(samples) * 1000.0 / f64::from(rate);
         }
@@ -208,6 +243,37 @@ impl Transcript {
         self.playback_origin = None;
         self.caption_origin = None;
         self.playback_samples = 0;
+        self.received_samples = 0;
+        self.source_clock = None;
+        self.source_origin = None;
+    }
+
+    /// Fixed timing/count fields only; never export transcript text or IDs.
+    pub(in crate::realtime_voice) fn timing(
+        &self,
+        messages: &serde_json::Value,
+    ) -> serde_json::Value {
+        let latest = messages.as_array().and_then(|messages| {
+            messages
+                .iter()
+                .rev()
+                .find(|message| message["role"] == ASSISTANT && message["event"].is_null())
+        });
+        let fragment = self
+            .fragments
+            .iter()
+            .rev()
+            .find(|fragment| fragment.role == ASSISTANT && fragment.event.is_none());
+        serde_json::json!({
+            "decodedMs": self.received_samples.saturating_mul(1000) / super::super::RATE,
+            "heardPcmMs": self.playback_samples.saturating_mul(1000) / super::super::RATE,
+            "sourceMs": self.heard.last().map(|(_, end)| end),
+            "fragmentStartMs": fragment.map(|fragment| fragment.start_ms),
+            "fragmentEndMs": fragment.map(|fragment| fragment.end_ms),
+            "textUtf16": latest.and_then(|message| message["text"].as_str()).map_or(0, |text| text.encode_utf16().count()),
+            "spokenUtf16": latest.and_then(|message| message["spokenUtf16"].as_u64()).unwrap_or(0),
+            "sourceClock": self.source_clock.is_some(),
+        })
     }
 
     #[allow(

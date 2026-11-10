@@ -59,11 +59,20 @@ impl<H: Host> voice_call_media::Host for MediaHost<'_, H> {
         }
     }
     fn render(&self, epoch: u64, tag: &Tag, pcm: &[i16]) -> Result<bool, &'static str> {
+        self.render_timed(epoch, tag, pcm, None)
+    }
+    fn render_timed(
+        &self,
+        epoch: u64,
+        tag: &Tag,
+        pcm: &[i16],
+        rtp_timestamp: Option<u32>,
+    ) -> Result<bool, &'static str> {
         let identity = self.identity.lock();
         if !self.owner.current() || identity.epoch != epoch || !identity.enabled {
             return Ok(false);
         }
-        self.owner.render(tag, pcm)?;
+        self.owner.render_timed(tag, pcm, rtp_timestamp)?;
         drop(identity);
         Ok(true)
     }

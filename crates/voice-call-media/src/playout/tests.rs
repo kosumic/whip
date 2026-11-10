@@ -9,6 +9,7 @@ const RTP_TICKS: u32 = 960;
 struct Sink {
     playback: Playback,
     samples: Vec<i16>,
+    source_timestamps: Vec<Option<u32>>,
     decoded: u64,
     concealed: u64,
     queued: u64,
@@ -39,6 +40,7 @@ impl App {
             sink: Mutex::new(Sink {
                 playback: playback("reply", 1),
                 samples: Vec::new(),
+                source_timestamps: Vec::new(),
                 decoded: 0,
                 concealed: 0,
                 queued: 0,
@@ -106,6 +108,19 @@ impl Host for App {
         sink.samples.extend_from_slice(pcm);
         Ok(true)
     }
+    fn render_timed(
+        &self,
+        epoch: u64,
+        tag: &Tag,
+        pcm: &[i16],
+        rtp_timestamp: Option<u32>,
+    ) -> Result<bool, &'static str> {
+        let rendered = self.render(epoch, tag, pcm)?;
+        if rendered {
+            self.sink.lock().source_timestamps.push(rtp_timestamp);
+        }
+        Ok(rendered)
+    }
     fn finish(&self, snapshot: &Playback) -> bool {
         let mut sink = self.sink.lock();
         if let Some(next) = sink.replace_on_finish.take() {
@@ -161,6 +176,44 @@ fn speech(frames: usize) -> Result<(Vec<Vec<u8>>, Vec<i16>), opus::Error> {
         packets.push(packet);
     }
     Ok((packets, expected))
+}
+
+#[test]
+fn source_timestamps_survive_sparse_audio_without_inserting_silence() -> TestResult {
+    let now = Instant::now();
+    let app = App::new();
+    let (mut incoming, mut ingress) = Incoming::new();
+    let mut playout = Playout::new()?;
+    playout.tick(&app, &mut incoming, now)?;
+    let (packets, expected) = speech(2)?;
+    assert!(enqueue(&mut ingress, 0, 1000, &packets[0], now, false));
+    advance(
+        &mut playout,
+        &app,
+        &mut incoming,
+        now,
+        now + Duration::from_millis(100),
+    )?;
+    let resumed = now + Duration::from_secs(3);
+    assert!(enqueue(
+        &mut ingress,
+        1,
+        145_000,
+        &packets[1],
+        resumed,
+        false
+    ));
+    advance(
+        &mut playout,
+        &app,
+        &mut incoming,
+        resumed,
+        resumed + Duration::from_millis(100),
+    )?;
+    let sink = app.sink.lock();
+    assert_eq!(sink.samples, expected);
+    assert_eq!(sink.source_timestamps, [Some(1000), Some(145_000)]);
+    Ok(())
 }
 
 #[test]

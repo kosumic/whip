@@ -108,10 +108,22 @@ impl Host for AppHost {
         drop(view);
     }
     fn render(&self, tag: &Tag, pcm: &[i16]) -> Result<(), &'static str> {
+        self.render_timed(tag, pcm, None)
+    }
+    fn render_timed(
+        &self,
+        tag: &Tag,
+        pcm: &[i16],
+        rtp_timestamp: Option<u32>,
+    ) -> Result<(), &'static str> {
         let bytes = pcm.iter().flat_map(|sample| sample.to_le_bytes()).collect();
         let mut output = self.owner.output.lock();
         if !self.attempt.current() {
             return Ok(());
+        }
+        let start = output.generated;
+        if let Some(transcript) = &mut output.live_transcript {
+            transcript.source_audio(start, pcm.len(), rtp_timestamp)?;
         }
         let result = output.append(tag.item.clone(), tag.index, bytes);
         drop(output);

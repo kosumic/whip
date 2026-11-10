@@ -65,6 +65,14 @@ pub trait Host: Capture + Send + 'static {
     fn retiring(&self);
     fn timing(&self, timing: Timing);
     fn render(&self, tag: &Tag, pcm: &[i16]) -> Result<(), &'static str>;
+    fn render_timed(
+        &self,
+        tag: &Tag,
+        pcm: &[i16],
+        _rtp_timestamp: Option<u32>,
+    ) -> Result<(), &'static str> {
+        self.render(tag, pcm)
+    }
     fn finish_audio(&self, tag: &Tag);
     fn statistics(&self, delta: Statistics);
     fn uploaded(&self);

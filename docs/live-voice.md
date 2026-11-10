@@ -89,6 +89,12 @@ never submitted again. Full agent histories are not copied to the voice model.
 Input/output captions retain independent fragment IDs and timeline intervals,
 including overlapping and late fragments. Their timing is not a playback
 receipt; Live has no output-done event, so Whip does not invent word timing.
+Highlighting pairs the first fragment with the first audible sample, then maps
+acknowledged PCM back to the RTP source clock. Sparse RTP can omit silence;
+counting decoded samples alone would accumulate caption lag after those gaps.
+Queued timestamps do not move the cursor before their audio is consumed.
+WebSocket previews retain the PCM clock. Android's `liveCaptions` diagnostics
+contain source/playback times and character counts, without text or event IDs.
 On teardown, bounded captions are saved under `whip.voice.transcripts` in the
 app database. Settings → Saved voice chats is a separate card outside OpenAI
 and exposes the last 20 Realtime and Live conversations in one list,

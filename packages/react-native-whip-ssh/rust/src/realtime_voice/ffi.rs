@@ -395,7 +395,9 @@ pub extern "C" fn whip_realtime_view(id: u64) -> *mut c_char {
             serde_json::to_value(&call.continuity.lock().diagnostics).unwrap_or_default();
     }
     if let (Some(value), Some(transcript)) = (&mut value, &call.output.lock().live_transcript) {
-        value["messages"] = transcript.messages();
+        let messages = transcript.messages();
+        value["liveCaptionTiming"] = transcript.timing(&messages);
+        value["messages"] = messages;
     }
     value
         .and_then(|value| serde_json::to_string(&value).ok())
