@@ -1349,6 +1349,7 @@ export const zhHant: Record<string, string> = {
   'app.hostSessionUnavailable': '無法使用主機工作階段',
   'alerts.channelName': '代理程式狀態',
   'alerts.regularChannelName': '代理程式通知',
+  'alerts.bannerChannelName': '代理程式橫幅',
   'alerts.needsAttention': '{{name}} 需要處理',
   'alerts.finished': '{{name}} 已完成',
   'alerts.agentState': '代理程式狀態為 {{status}}',

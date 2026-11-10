@@ -19,6 +19,10 @@ import type { AgentNotificationTarget } from '../lib/notificationNavigation';
 import { agentNotificationTitle } from '../lib/agentStatusEvents';
 import { transcriptTitleKey } from '../lib/transcriptTabTitles';
 import { notificationRegistrationProof } from '../lib/notificationRegistration';
+import {
+  AGENT_BANNER_CHANNEL_ID,
+  AGENT_PUSH_CHANNEL_ID,
+} from '../lib/notificationChannels';
 import type { AgentAlertLevel } from './devicePreferences';
 import { agentTranscriptService } from './NativeTranscriptService';
 import {
@@ -49,6 +53,7 @@ const ALERT_VIBRATION_PATTERN = [
   2000, 300, 100, 300, 100, 300, 100, 300, 2000,
 ];
 const BRIEF_VIBRATION_PATTERN = [0, 200];
+const NO_VIBRATION_PATTERN = [0];
 const DEFAULT_PERSISTENT_ALERT_TIMEOUT_MS = 30_000;
 const DELIVERY = {
   persistent: LocalAlertDelivery.Persistent,
@@ -122,7 +127,6 @@ Notifications.setNotificationHandler({
       });
     }
     const delivery = notification.request.content.data?.[ALERT_LEVEL_DATA_KEY];
-    const regular = delivery === 'regular';
     return Promise.resolve({
       // Local agent audio belongs to the native playback unit. Android still
       // needs channel presentation; iOS must suppress the system's second tone.
@@ -130,9 +134,7 @@ Notifications.setNotificationHandler({
       shouldSetBadge: false,
       shouldShowBanner: true,
       shouldShowList: true,
-      priority: regular
-        ? Notifications.AndroidNotificationPriority.DEFAULT
-        : Notifications.AndroidNotificationPriority.MAX,
+      priority: Notifications.AndroidNotificationPriority.MAX,
     });
   },
 });
@@ -167,6 +169,22 @@ export async function prepareAlerts(): Promise<void> {
         enableLights: true,
         enableVibrate: true,
         vibrationPattern: BRIEF_VIBRATION_PATTERN,
+      });
+      // The existing channels retain the user's ringtone/vibration settings
+      // for native playback. Presentation must not trigger a second ringtone.
+      await Notifications.setNotificationChannelAsync(AGENT_BANNER_CHANNEL_ID, {
+        name: i18n.t('alerts.bannerChannelName'),
+        importance: Notifications.AndroidImportance.HIGH,
+        sound: null,
+        enableVibrate: false,
+      });
+      const regularChannel = await Notifications.getNotificationChannelAsync(REGULAR_CHANNEL_ID);
+      await Notifications.setNotificationChannelAsync(AGENT_PUSH_CHANNEL_ID, {
+        name: i18n.t('alerts.regularChannelName'),
+        importance: regularChannel?.importance === Notifications.AndroidImportance.NONE
+          ? Notifications.AndroidImportance.NONE
+          : Notifications.AndroidImportance.HIGH,
+        sound: regularChannel?.sound === null ? null : 'default',
       });
     } catch (error) {
       recordNotificationFailure('error', 'notification-setup-failed', error, {
@@ -443,7 +461,6 @@ async function performEffect({
       const regular = request.delivery === LocalAlertDelivery.Regular;
       const persistent = request.delivery === LocalAlertDelivery.Persistent;
       const silent = request.delivery === LocalAlertDelivery.Silent;
-      const managedSound = !silent;
       const channelId = silent
         ? SILENT_CHANNEL_ID
         : regular
@@ -451,6 +468,11 @@ async function performEffect({
           : persistent
             ? PERSISTENT_CHANNEL_ID
             : BRIEF_CHANNEL_ID;
+      if (Platform.OS === 'android') {
+        const channel = await Notifications.getNotificationChannelAsync(channelId);
+        if (channel?.importance === Notifications.AndroidImportance.NONE)
+          return new LocalAlertOutcome.Skipped();
+      }
       if (Platform.OS !== 'android' && !regular) Vibration.vibrate();
       const delivery: AgentAlertDelivery | 'silent' = silent
         ? 'silent'
@@ -462,31 +484,27 @@ async function performEffect({
       const content: Notifications.NotificationContentInput = {
         title: request.title,
         body: request.body,
-        priority: regular
-          ? Notifications.AndroidNotificationPriority.DEFAULT
-          : Notifications.AndroidNotificationPriority.MAX,
+        priority: Notifications.AndroidNotificationPriority.MAX,
         data: {
           hostId: request.hostId,
           paneId: request.paneId,
           [ALERT_LEVEL_DATA_KEY]: delivery,
         },
       };
-      if (silent) {
-        content.sound = false;
-        content.vibrate = BRIEF_VIBRATION_PATTERN;
-      } else if (managedSound) {
-        // Native audio waits for any ongoing speech, even when this alert has
-        // no announcement of its own.
-        content.sound = false;
-      } else if (!regular) {
-        content.sound = 'default';
-        content.vibrate = persistent
-          ? ALERT_VIBRATION_PATTERN
-          : BRIEF_VIBRATION_PATTERN;
+      content.sound = false;
+      if (silent) content.vibrate = BRIEF_VIBRATION_PATTERN;
+      else if (Platform.OS === 'android') {
+        // Expo marks notifications with neither sound nor a vibration pattern
+        // SILENT, which also suppresses heads-up banners. A zero-length pulse
+        // avoids that flag without producing vibration, including before O.
+        // The channel mutes system audio; native playback owns sound/vibration.
+        content.vibrate = NO_VIBRATION_PATTERN;
       }
       const notificationId = await Notifications.scheduleNotificationAsync({
         content,
-        trigger: { channelId },
+        trigger: {
+          channelId: Platform.OS === 'android' && !silent ? AGENT_BANNER_CHANNEL_ID : channelId,
+        },
       });
       if (Platform.OS === 'android' || Platform.OS === 'ios') {
         await prepareSpokenAgentAlert(

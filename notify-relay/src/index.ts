@@ -1,4 +1,5 @@
 /// <reference types="@cloudflare/workers-types" />
+import { AGENT_PUSH_CHANNEL_ID } from '../../src/lib/notificationChannels';
 export type RelayEnv = NotifyEnv & { EXPO_ACCESS_TOKEN?: string };
 declare const crypto: import('@cloudflare/workers-types').Crypto;
 
@@ -403,7 +404,7 @@ async function push(request: Request, env: RelayEnv): Promise<Response> {
       body: preview?.body ?? GENERIC_BODY,
       sound: 'default',
       priority: 'high',
-      channelId: 'agent-state-regular-v1',
+      channelId: AGENT_PUSH_CHANNEL_ID,
       ttl: Math.max(
         1,
         Math.min(DAY, h.issued_at + DAY - Math.floor(Date.now() / 1000)),

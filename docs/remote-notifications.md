@@ -8,6 +8,10 @@ The terminal setting **AFK mode (away from keyboard)** defaults off. With AFK mo
 
 The local alert pipeline also notifies on **working → idle**, including the focused terminal tab. With AFK mode off, completion alerts keep the notification, brief vibration and optional spoken announcement without a ringtone. With AFK mode on, completion alerts use the configured alert level. This rule applies in both foreground and background. Other transitions into idle do not count as completion. Notification permissions and the global alerts switch still apply. Host push hooks continue to handle blocked/done events when the local consumer is unavailable.
 
+On Android, local alerts with native audio use the high-importance `agent-state-banner-v1` channel, with system sound and vibration disabled. The original alert channels retain the user's ringtone/vibration settings for coordinated native playback; a disabled original channel still suppresses its alerts. Their notification content includes a zero-duration vibration pattern so Expo does not mark it fully silent and suppress the heads-up banner. AFK-off completions retain their existing high-importance, soundless channel and brief system vibration. iOS continues to control banner presentation and sound separately.
+
+Remote push uses the high-importance `agent-state-regular-v2` channel, shared between the mobile app and relay in `src/lib/notificationChannels.ts`. The old regular channel was created at default importance, which Android cannot upgrade in place. Release/open the updated Android app before deploying the relay change; older apps without the new channel fall back to Android's default notification channel and may still show only the notification-list entry.
+
 ```mermaid
 flowchart LR
   H[Herdr status hook] --> L{Device lease younger than 10s?}

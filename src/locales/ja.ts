@@ -1349,6 +1349,7 @@ export const ja = {
   'app.hostSessionUnavailable': 'ホストセッションが利用できません',
   'alerts.channelName': 'エージェントの状態',
   'alerts.regularChannelName': 'エージェント通知',
+  'alerts.bannerChannelName': 'エージェントのバナー',
   'alerts.needsAttention': '{{name}} への対応が必要です',
   'alerts.finished': '{{name}} が終了しました',
   'alerts.agentState': 'エージェントは {{status}} です',

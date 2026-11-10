@@ -222,6 +222,11 @@ test('readable previews expose agent details while retaining only authenticated 
   }), env)).status).toBe(202);
   const sent = JSON.parse(provider.mock.calls[0][1].body);
   expect(sent).toMatchObject(preview);
+  expect(sent).toMatchObject({
+    channelId: 'agent-state-regular-v2',
+    priority: 'high',
+    sound: 'default',
+  });
   expect(sent.data).toEqual({ whip_notify: envelope });
 });
 

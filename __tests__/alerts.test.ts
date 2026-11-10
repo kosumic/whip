@@ -1,10 +1,11 @@
 jest.mock('expo-notifications', () => ({
-  AndroidImportance: { DEFAULT: 'default', HIGH: 'high' },
+  AndroidImportance: { NONE: 'none', DEFAULT: 'default', HIGH: 'high' },
   AndroidNotificationPriority: { DEFAULT: 'default', MAX: 'max' },
   dismissNotificationAsync: jest.fn(),
   requestPermissionsAsync: jest.fn(),
   scheduleNotificationAsync: jest.fn(),
   setNotificationChannelAsync: jest.fn(),
+  getNotificationChannelAsync: jest.fn(),
   setNotificationHandler: jest.fn(),
 }));
 // Exercise the real generated enums/records; only the native coordinator is
@@ -181,6 +182,7 @@ beforeEach(() => {
   jest.mocked(armPersistentAgentAlert).mockResolvedValue();
   jest.mocked(prepareSpokenAgentAlert).mockResolvedValue();
   jest.mocked(dismissPersistentAgentAlert).mockResolvedValue();
+  jest.mocked(Notifications.getNotificationChannelAsync).mockResolvedValue(null);
 });
 
 test('registration proofs are silent and local notifications retain foreground presentation', async () => {
@@ -205,7 +207,7 @@ test('registration proofs are silent and local notifications retain foreground p
   ).toMatchObject({
     shouldPlaySound: true,
     shouldShowBanner: true,
-    priority: Notifications.AndroidNotificationPriority.DEFAULT,
+    priority: Notifications.AndroidNotificationPriority.MAX,
   });
 });
 
@@ -259,14 +261,10 @@ test.each(['persistent', 'brief', 'regular'] as const)(
       body: 'Agent is blocked',
       data: { ...target, agentAlertLevel: delivery },
     });
-    expect(request.trigger).toEqual({
-      channelId:
-        delivery === 'persistent'
-          ? 'agent-state-v3'
-          : `agent-state-${delivery}-v1`,
-    });
+    expect(request.trigger).toEqual({ channelId: 'agent-state-banner-v1' });
     expect(request.content.sound).toBe(false);
-    expect(request.content).not.toHaveProperty('vibrate');
+    expect(request.content.vibrate).toEqual([0]);
+    expect(request.content.priority).toBe(Notifications.AndroidNotificationPriority.MAX);
     expect(prepareSpokenAgentAlert).toHaveBeenCalledWith(
       'notification-1',
       delivery === 'persistent' ? 'agent-state-v3' : `agent-state-${delivery}-v1`,
@@ -292,7 +290,8 @@ test.each(['persistent', 'brief', 'regular'] as const)(
     await alertAgent(agent, true, target, 'work', delivery, 45_000);
     const scheduled = jest.mocked(Notifications.scheduleNotificationAsync).mock.calls[0][0];
     expect(scheduled.content.sound).toBe(false);
-    expect(scheduled.content).not.toHaveProperty('vibrate');
+    expect(scheduled.content.vibrate).toEqual([0]);
+    expect(scheduled.trigger).toEqual({ channelId: 'agent-state-banner-v1' });
     expect(prepareSpokenAgentAlert).toHaveBeenCalledWith(
       'notification-1',
       delivery === 'persistent' ? 'agent-state-v3' : `agent-state-${delivery}-v1`,
@@ -302,6 +301,30 @@ test.each(['persistent', 'brief', 'regular'] as const)(
     );
   },
 );
+
+test('a disabled Android alert channel stays disabled after the banner channel migration', async () => {
+  jest.mocked(Notifications.getNotificationChannelAsync).mockResolvedValue({
+    importance: Notifications.AndroidImportance.NONE,
+  } as Notifications.NotificationChannel);
+  await alertAgent(agent, true, target, 'work', 'persistent');
+  expect(Notifications.scheduleNotificationAsync).not.toHaveBeenCalled();
+  expect(prepareSpokenAgentAlert).not.toHaveBeenCalled();
+  expect(mockNative.completeEffect).toHaveBeenCalledWith(
+    'schedule', new LocalAlertOutcome.Skipped(),
+  );
+});
+
+test('migrating the Android push channel preserves an existing block and muted sound', async () => {
+  jest.mocked(Notifications.getNotificationChannelAsync).mockResolvedValue({
+    importance: Notifications.AndroidImportance.NONE,
+    sound: null,
+  } as Notifications.NotificationChannel);
+  await prepareAlerts();
+  expect(Notifications.setNotificationChannelAsync).toHaveBeenCalledWith(
+    'agent-state-regular-v2',
+    { name: 'alerts.regularChannelName', importance: 'none', sound: null },
+  );
+});
 
 test('spoken iOS alerts use native atomic playback and suppress system notification audio', async () => {
   Platform.OS = 'ios';
@@ -823,6 +846,19 @@ test('prepares Android channels and permissions and keeps iOS channel setup plat
     { name: 'alerts.regularChannelName', importance: 'default' },
   );
   expect(Notifications.requestPermissionsAsync).toHaveBeenCalled();
+  expect(Notifications.setNotificationChannelAsync).toHaveBeenCalledWith(
+    'agent-state-banner-v1',
+    {
+      name: 'alerts.bannerChannelName',
+      importance: 'high',
+      sound: null,
+      enableVibrate: false,
+    },
+  );
+  expect(Notifications.setNotificationChannelAsync).toHaveBeenCalledWith(
+    'agent-state-regular-v2',
+    { name: 'alerts.regularChannelName', importance: 'high', sound: 'default' },
+  );
   expect(Notifications.setNotificationChannelAsync).toHaveBeenCalledWith(
     'agent-state-silent-v1',
     expect.objectContaining({
