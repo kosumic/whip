@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 
 import { AppShell } from '../src/components/AppShell';
 import { LiveSessionView } from '../src/components/LiveSessionView';
+import { useAppNavigation, type AppNavigationController } from '../src/hooks/useAppNavigation';
 import type { useAgentChatOpen } from '../src/hooks/useAgentChatOpen';
 import { agentTranscriptService } from '../src/services/NativeTranscriptService';
 import type { TerminalRenderTarget } from '../src/lib/terminalRenderer';
@@ -13,8 +14,10 @@ jest.mock('react-native-css-interop/jsx-runtime', () =>
 );
 jest.mock('react-native', () => ({
   View: 'View',
+  NativeModules: {},
   Platform: { OS: 'android' },
   StyleSheet: { create: (styles: unknown) => styles },
+  BackHandler: { addEventListener: jest.fn(() => ({ remove: jest.fn() })) },
 }));
 jest.mock('react-native-whip-ssh', () =>
   require('./mockWhipSsh').createMockWhipSshModule(),
@@ -71,9 +74,6 @@ jest.mock('../src/components/HostsScreen', () => ({
 }));
 jest.mock('../src/components/MoreScreen', () => ({ MoreScreen: 'MoreScreen' }));
 jest.mock('../src/components/GlobalVoiceCall', () => ({ GlobalVoiceCall: 'GlobalVoiceCall' }));
-jest.mock('../src/components/ScreenUpdates', () => ({
-  ScreenUpdates: 'ScreenUpdates',
-}));
 jest.mock('../src/components/AppPlatformBindings', () => ({
   StableStatusBar: 'StatusBar',
   TerminalKeepAwake: 'KeepAwake',
@@ -110,7 +110,7 @@ function setup() {
     terminal_id: 'terminal-1',
     agent: 'codex',
   };
-  const snapshot = { panes: [pane] };
+  const snapshot = { panes: [pane], agents: [], workspaces: [], tabs: [], layouts: [], server: { running: true } };
   const native = {
     agentIntegrationStatus: jest.fn(async () => 'current'),
     installAgentIntegration: jest.fn(),
@@ -139,6 +139,7 @@ function setup() {
     },
     sessions: {
       state: { revision: 1, sessions: [session] },
+      connectingHostIds: new Set<string>(),
       herdView: () => ({ agents: [] }),
       getClient: () => client,
       activeSession: session,
@@ -253,7 +254,7 @@ test('tab switches reuse Herd presentation until native session data changes', (
       herdHostFilterId: null, herdWorkspaceFilterIds: {} },
   } as unknown as Props;
   let renderer!: ReactTestRenderer;
-  const herd = () => renderer.root.find(node => String(node.type) === 'ScreenUpdates').props.children().props;
+  const herd = () => renderer.root.findByType('HerdScreen' as never).props;
   try {
     act(() => { renderer = create(<AppShell {...props} />); });
     const first = herd();
@@ -265,9 +266,75 @@ test('tab switches reuse Herd presentation until native session data changes', (
     expect(herdView).toHaveBeenCalledTimes(calls);
     props = { ...props, sessions: { ...props.sessions, state: { ...props.sessions.state, revision: props.sessions.state.revision + 1 } } };
     act(() => { renderer.update(<AppShell {...props} />); });
+    expect(herd().agents).toBe(first.agents);
+    props = { ...props, navigation: { ...props.navigation, state: { ...props.navigation.state, tab: 'herd' } } };
+    act(() => { renderer.update(<AppShell {...props} />); });
     expect(herd().agents).not.toBe(first.agents);
     expect(herdView.mock.calls.length).toBeGreaterThan(calls);
   } finally { act(() => { renderer.unmount(); }); }
+});
+
+test('returning to the same Herd workspace reuses presentation and joins each host rail once', () => {
+  const { props: initial } = setup();
+  const session = {
+    ...initial.sessions.activeSession!,
+    host: { name: 'Host', host: 'host', username: 'user' },
+    snapshot: { ...initial.sessions.activeSession!.snapshot, workspaces: [], tabs: [] },
+  };
+  const agents = ['terminal-1', 'terminal-2'].map(terminalId => ({
+    hostId: session.id,
+    agent: { terminal_id: terminalId, agent_status: 'idle' },
+  }));
+  const herdView = jest.fn(() => ({ hosts: [], agents }));
+  const get = jest.fn((_hostId: string, view?: Props['sessions']['state']) => {
+    if (!view) throw new Error('Rendering must use the committed terminal state');
+    return { activeTerminalId: 'terminal-1', sessions: [
+      { terminalId: 'terminal-1', status: 'connected' },
+      { terminalId: 'terminal-2', status: 'error' },
+    ] };
+  });
+  let props = { ...initial,
+    sessions: { ...initial.sessions, activeSession: session, presentationSessions: [session], herdView },
+    terminals: { ...initial.terminals, get },
+  } as unknown as Props;
+  let navigation!: AppNavigationController;
+  function Harness() {
+    navigation = useAppNavigation({ appReady: true, preferencesLoaded: true, preferredTab: 'herd',
+      recordLastTab: jest.fn(), dismissTopOverlay: () => false });
+    return <AppShell {...props} navigation={navigation} />;
+  }
+  let renderer!: ReactTestRenderer;
+  const herd = () => renderer.root.findByType('HerdScreen' as never).props;
+  try {
+    act(() => { renderer = create(<Harness />); });
+    act(() => navigation.showHerd(session.id, 'workspace-1'));
+    expect(herd().agents.map((item: { terminalStatus: string }) => item.terminalStatus))
+      .toEqual(['connected', 'error']);
+    act(() => navigation.showTerminal(session.id));
+    const preparedAgents = herd().agents;
+    herdView.mockClear();
+    get.mockClear();
+    act(() => navigation.showHerd(session.id, 'workspace-1'));
+    expect(herd().agents).toBe(preparedAgents);
+    expect(herdView).not.toHaveBeenCalled();
+    expect(get).not.toHaveBeenCalled();
+
+    act(() => navigation.showHerd(session.id, 'workspace-2'));
+    expect(herdView).toHaveBeenCalledTimes(1);
+    expect(herdView).toHaveBeenLastCalledWith(expect.any(Array), session.id, 'workspace-2');
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(herd().sessions[0].terminalCount).toBe(2);
+
+    act(() => navigation.showTerminal(session.id));
+    props = { ...props, sessions: { ...props.sessions,
+      state: { ...props.sessions.state, revision: props.sessions.state.revision + 1 },
+    } };
+    act(() => { renderer.update(<Harness />); });
+    herdView.mockClear();
+    act(() => navigation.showHerd(session.id, 'workspace-2'));
+    expect(herdView).toHaveBeenCalledTimes(1);
+    expect(herd().agents).not.toBe(preparedAgents);
+  } finally { act(() => renderer?.unmount()); }
 });
 
 test.each([

@@ -198,7 +198,7 @@ export function AppShell({
   const activeTerminalVisible = Boolean(
     immersiveTerminal &&
       activeSession &&
-      terminals.get(activeSession.id, sessions.state).activeTerminalId,
+      viewportTerminalState?.activeTerminalId,
   );
   const fullscreenVisible = immersiveTerminal
     ? activeTerminalVisible && terminalPreferences.fullscreen
@@ -237,6 +237,15 @@ export function AppShell({
         herdProjectionRequest.workspaceId ?? undefined,
       );
       const herdHostsById = new Map(herdProjection.hosts.map(host => [host.id, host]));
+      // Join each host's rail once, rather than rebuilding it for every agent.
+      const terminalStates = new Map(presentationSessions.map(session =>
+        [session.id, terminals.get(session.id, sessionState)] as const,
+      ));
+      const terminalStatuses = new Map([...terminalStates].map(([hostId, terminalState]) =>
+        [hostId, new Map(terminalState.sessions.map(terminal =>
+          [terminal.terminalId, terminal.status] as const,
+        ))] as const,
+      ));
       const railSessions: LiveSessionRailItem[] = presentationSessions.map(session => {
         const herdHost = herdHostsById.get(session.id);
         return {
@@ -251,7 +260,7 @@ export function AppShell({
               session.snapshot.workspaces.map(workspace => workspace.agent_status),
               'unknown',
             ),
-          terminalCount: terminals.get(session.id, sessionState).sessions.length,
+          terminalCount: terminalStates.get(session.id)?.sessions.length ?? 0,
         };
       });
       const herdQueues: HerdHostQueue[] = herdProjection.hosts.map(host => ({
@@ -260,9 +269,7 @@ export function AppShell({
       }));
       const agents = herdProjection.agents.map(item => ({
         ...item,
-        terminalStatus: terminals.get(item.hostId, sessionState).sessions.find(
-          terminal => terminal.terminalId === item.agent.terminal_id,
-        )?.status,
+        terminalStatus: terminalStatuses.get(item.hostId)?.get(item.agent.terminal_id),
       }));
       return { herdProjectionRequest, scopedSession, offline, herdProjection, railSessions, herdQueues, agents };
     };

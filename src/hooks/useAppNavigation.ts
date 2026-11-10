@@ -82,7 +82,8 @@ function navigationReducer(current: NavigationViewState, action: NavigationActio
         ...current,
         state: selectMobileTab(current.state, 'herd'),
         herdHostFilterId: action.sessionId || current.herdHostFilterId,
-        herdWorkspaceFilterIds: action.sessionId && action.workspaceId
+        herdWorkspaceFilterIds: action.sessionId && action.workspaceId &&
+          current.herdWorkspaceFilterIds[action.sessionId] !== action.workspaceId
           ? { ...current.herdWorkspaceFilterIds, [action.sessionId]: action.workspaceId }
           : current.herdWorkspaceFilterIds,
       };
