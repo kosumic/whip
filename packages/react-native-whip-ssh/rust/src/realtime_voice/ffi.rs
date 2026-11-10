@@ -73,8 +73,8 @@ pub extern "C" fn whip_realtime_cue_stop(id: u64, generation: u64) {
 }
 
 /// Mix only local device output; provider reads and playback acknowledgements
-/// retain their original sample counts. Preserve the provider's echo reference
-/// before the native device submits a mix containing local UI sounds.
+/// retain their original sample counts. The native render callback supplies
+/// the complete mix actually accepted by the device as the echo reference.
 /// # Safety
 /// samples points to count writable PCM16 samples until this call returns.
 #[unsafe(no_mangle)]
@@ -85,17 +85,6 @@ pub unsafe extern "C" fn whip_realtime_mix_cue(id: u64, samples: *mut i16, count
     if let Some(call) = call(id).filter(|call| !call.closed.load(Ordering::Acquire)) {
         // SAFETY: The native output adapter owns this bounded writable buffer.
         let samples = unsafe { std::slice::from_raw_parts_mut(samples, count) };
-        if call.allow_input {
-            let queued = call
-                .echo
-                .lock()
-                .as_mut()
-                .map_or(Ok(()), |echo| echo.queue_reference(samples));
-            if let Err(error) = queued {
-                call.fail(error);
-                return;
-            }
-        }
         call.cue.lock().mix(samples);
     }
 }
@@ -337,7 +326,8 @@ pub extern "C" fn whip_realtime_played(id: u64, epoch: u64, samples: u64) {
     }
 }
 
-/// Audio actually submitted to the device, including silence that keeps AEC clocked.
+/// Complete PCM mix accepted by the device, including cues and silence for AEC.
+/// `audio` identifies provider output for assistant playback accounting only.
 /// # Safety
 /// samples must reference count initialized PCM16 samples for this call.
 #[unsafe(no_mangle)]

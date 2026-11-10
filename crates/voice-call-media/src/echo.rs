@@ -89,7 +89,6 @@ pub struct MediaEchoCanceller {
     clock: PlaybackClock,
     rendered: VecDeque<Render>,
     render_samples: usize,
-    provider_reference: VecDeque<i16>,
     signal: Signal,
     raw_power: f64,
     processed_power: f64,
@@ -101,7 +100,6 @@ impl MediaEchoCanceller {
             clock: PlaybackClock::default(),
             rendered: VecDeque::new(),
             render_samples: 0,
-            provider_reference: VecDeque::new(),
             signal: Signal::default(),
             raw_power: 0.0,
             processed_power: 0.0,
@@ -125,15 +123,9 @@ impl MediaEchoCanceller {
         self.submit_render(epoch, at, samples, audio)
     }
 
-    /// Retain unmixed provider PCM until the device submits the corresponding
-    /// samples. Local UI sounds must not trigger speech echo suppression.
-    pub fn queue_reference(&mut self, samples: &[i16]) -> Result<(), &'static str> {
-        if self.provider_reference.len() + samples.len() > MAX_RENDER_SAMPLES {
-            return Err("Realtime speaker reference fell behind.");
-        }
-        self.provider_reference.extend(samples);
-        Ok(())
-    }
+    /// Reference the complete mix accepted by the device at its scheduled time.
+    /// `audio` marks provider speech for playback accounting only; local cues
+    /// and silence still belong in the acoustic echo reference.
     pub fn submit_render(
         &mut self,
         epoch: u64,
@@ -142,15 +134,7 @@ impl MediaEchoCanceller {
         audio: bool,
     ) -> Result<(), &'static str> {
         self.clock.submit(epoch, samples.len(), audio)?;
-        let reference = if self.provider_reference.is_empty() {
-            samples.to_vec()
-        } else {
-            if self.provider_reference.len() < samples.len() {
-                return Err(DSP_ERROR);
-            }
-            self.provider_reference.drain(..samples.len()).collect()
-        };
-        self.enqueue_render(at, reference);
+        self.enqueue_render(at, samples.to_vec());
         Ok(())
     }
     fn enqueue_render(&mut self, at: std::time::Instant, samples: Vec<i16>) {

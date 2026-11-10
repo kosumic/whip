@@ -693,7 +693,6 @@ async fn full_live_playback(
         if count == 0 {
             pcm.fill(0);
         }
-        let provider = pcm[..if count == 0 { voice::FRAME } else { count }].to_vec();
         owner
             .cue
             .lock()
@@ -710,7 +709,6 @@ async fn full_live_playback(
         {
             let mut echo = owner.echo.lock();
             if let Some(echo) = echo.as_mut().or(device_clock.as_deref_mut()) {
-                echo.queue_reference(&provider)?;
                 echo.render(epoch, &pcm[..rendered], count > 0, 40_000_000)?;
                 output.acknowledge(epoch, echo.played(epoch, device_position));
             }
