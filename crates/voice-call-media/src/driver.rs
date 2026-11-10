@@ -289,8 +289,12 @@ impl Driver {
                     self.ready.send_replace(false);
                 }
                 Output::Event(Event::RtpPacket(packet)) => {
-                    self.ingress
-                        .receive(packet, self.input_protocol == Some(Protocol::Tcp));
+                    self.ingress.receive(
+                        &packet.header,
+                        &packet.payload,
+                        packet.timestamp,
+                        self.input_protocol == Some(Protocol::Tcp),
+                    );
                 }
                 Output::Event(Event::ChannelData(data)) if data.id == self.channel => {
                     // Live readiness belongs to its primary WebRTC stream.

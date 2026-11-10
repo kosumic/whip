@@ -1,6 +1,6 @@
 use super::*;
 use crate::{Capture, FRAME, Host, Playback, RATE, Statistics, Tag, playout::Playout};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 const STEP: Duration = Duration::from_millis(5);
@@ -15,6 +15,7 @@ struct Sink {
     finished: Vec<String>,
     replace_on_finish: Option<Playback>,
     cancel_on_render: bool,
+    ingress: super::Statistics,
 }
 struct App {
     sink: Mutex<Sink>,
@@ -44,6 +45,7 @@ impl App {
                 finished: Vec::new(),
                 replace_on_finish: None,
                 cancel_on_render: false,
+                ingress: super::Statistics::default(),
             }),
             current: AtomicBool::new(true),
         }
@@ -129,6 +131,7 @@ impl Host for App {
         sink.decoded += delta.decoded_packets;
         sink.concealed += delta.concealed_samples;
         sink.queued += delta.queued_samples;
+        sink.ingress += delta.ingress;
     }
     fn uploaded(&self) {}
 }
@@ -160,44 +163,28 @@ fn speech(frames: usize) -> Result<(Vec<Vec<u8>>, Vec<i16>), opus::Error> {
     Ok((packets, expected))
 }
 
-// Model already accepted/authenticated RTP. Use the producer's admission lock
-// and actual packet/byte leases so sealing, backlogs and epoch disposal run
-// through production Incoming rather than a second test queue.
+// Feed the exact admission method used for authenticated str0m RTP, including
+// all limits, age policy, channel handling and seal synchronization.
 fn enqueue(
-    ingress: &Ingress,
+    ingress: &mut Ingress,
     sequence: u16,
     timestamp: u32,
     payload: &[u8],
     at: Instant,
     reliable: bool,
 ) -> bool {
-    let epoch = ingress.state.epoch.lock();
-    if *epoch % 2 == 1 {
-        return false;
-    }
-    let mut data = vec![0x80, crate::audio_track::OPUS_PAYLOAD_TYPE];
-    data.extend_from_slice(&sequence.to_be_bytes());
-    data.extend_from_slice(&timestamp.to_be_bytes());
-    data.extend_from_slice(&1_u32.to_be_bytes());
-    data.extend_from_slice(payload);
-    let packet = ingress.state.packets.clone().try_acquire_owned().unwrap();
-    let bytes = ingress
-        .state
-        .bytes
-        .clone()
-        .try_acquire_many_owned(data.len() as u32)
-        .unwrap();
-    ingress
-        .sender
-        .try_send(ReceivedRtp {
-            data,
-            at,
-            reliable,
-            epoch: *epoch,
-            _packet: packet,
-            _bytes: bytes,
-        })
-        .is_ok()
+    ingress.receive(
+        &str0m::rtp::RtpHeader {
+            payload_type: crate::audio_track::OPUS_PAYLOAD_TYPE.into(),
+            sequence_number: sequence,
+            timestamp,
+            ssrc: 1.into(),
+            ..Default::default()
+        },
+        payload,
+        at,
+        reliable,
+    ) == Outcome::Accepted
 }
 fn advance(
     playout: &mut Playout,
@@ -217,16 +204,16 @@ fn advance(
 #[test]
 fn queued_speech_outlives_stop_grace_and_even_the_tail_admission_cap() -> TestResult {
     for reliable in [false, true] {
-        for frames in [20, PACKETS] {
+        for frames in [20, 64] {
             let now = Instant::now();
             let app = App::new();
-            let (mut incoming, ingress) = Incoming::new();
+            let (mut incoming, mut ingress) = Incoming::new();
             let mut playout = Playout::new()?;
             playout.tick(&app, &mut incoming, now)?;
             let (packets, expected) = speech(frames)?;
             for (sequence, packet) in packets.iter().enumerate() {
                 assert!(enqueue(
-                    &ingress,
+                    &mut ingress,
                     sequence as u16,
                     sequence as u32 * RTP_TICKS,
                     packet,
@@ -269,7 +256,7 @@ fn late_bursts_and_a_packet_after_the_backlog_drains_are_still_played() -> TestR
     for reliable in [false, true] {
         let now = Instant::now();
         let app = App::new();
-        let (mut incoming, ingress) = Incoming::new();
+        let (mut incoming, mut ingress) = Incoming::new();
         let mut playout = Playout::new()?;
         playout.tick(&app, &mut incoming, now)?;
         let (packets, expected) = speech(27)?;
@@ -283,7 +270,7 @@ fn late_bursts_and_a_packet_after_the_backlog_drains_are_still_played() -> TestR
             };
             for sequence in burst {
                 assert!(enqueue(
-                    &ingress,
+                    &mut ingress,
                     sequence as u16,
                     sequence as u32 * RTP_TICKS,
                     &packets[sequence],
@@ -311,13 +298,13 @@ fn idle_loss_and_large_timestamp_gaps_complete_within_a_bound() -> TestResult {
     for timestamps in [vec![], vec![0], vec![0, 1920], vec![0, 28_800_000]] {
         let now = Instant::now();
         let app = App::new();
-        let (mut incoming, ingress) = Incoming::new();
+        let (mut incoming, mut ingress) = Incoming::new();
         let mut playout = Playout::new()?;
         playout.tick(&app, &mut incoming, now)?;
         let (packets, _) = speech(timestamps.len())?;
         for (sequence, timestamp) in timestamps.iter().enumerate() {
             assert!(enqueue(
-                &ingress,
+                &mut ingress,
                 sequence as u16,
                 *timestamp,
                 &packets[sequence],
@@ -345,7 +332,7 @@ fn idle_loss_and_large_timestamp_gaps_complete_within_a_bound() -> TestResult {
 fn continuous_tail_rtp_cannot_hold_completion_open() -> TestResult {
     let now = Instant::now();
     let app = App::new();
-    let (mut incoming, ingress) = Incoming::new();
+    let (mut incoming, mut ingress) = Incoming::new();
     let mut playout = Playout::new()?;
     playout.tick(&app, &mut incoming, now)?;
     let (packets, _) = speech(75)?;
@@ -356,7 +343,7 @@ fn continuous_tail_rtp_cannot_hold_completion_open() -> TestResult {
         if ms % 20 == 0 && ms < 1500 {
             let sequence = ms as usize / 20;
             accepted += usize::from(enqueue(
-                &ingress,
+                &mut ingress,
                 sequence as u16,
                 sequence as u32 * RTP_TICKS,
                 &packets[sequence],
@@ -378,14 +365,14 @@ fn continuous_tail_rtp_cannot_hold_completion_open() -> TestResult {
 fn duplicate_tail_packets_cannot_extend_an_idle_response() -> TestResult {
     let now = Instant::now();
     let app = App::new();
-    let (mut incoming, ingress) = Incoming::new();
+    let (mut incoming, mut ingress) = Incoming::new();
     let mut playout = Playout::new()?;
     playout.tick(&app, &mut incoming, now)?;
     let (packets, expected) = speech(1)?;
     app.stop(now);
     for ms in (0..=300).step_by(5) {
         let at = now + Duration::from_millis(ms);
-        enqueue(&ingress, 0, 0, &packets[0], at, false);
+        enqueue(&mut ingress, 0, 0, &packets[0], at, false);
         playout.tick(&app, &mut incoming, at)?;
     }
     let sink = app.sink.lock();
@@ -400,13 +387,13 @@ fn cancellation_epoch_change_and_teardown_discard_stale_tail_promptly() -> TestR
     for control in ["cancel", "epoch", "teardown", "cancel_during_render"] {
         let now = Instant::now();
         let app = App::new();
-        let (mut incoming, ingress) = Incoming::new();
+        let (mut incoming, mut ingress) = Incoming::new();
         let mut playout = Playout::new()?;
         playout.tick(&app, &mut incoming, now)?;
         let (packets, _) = speech(20)?;
         for (sequence, packet) in packets.iter().enumerate() {
             assert!(enqueue(
-                &ingress,
+                &mut ingress,
                 sequence as u16,
                 sequence as u32 * RTP_TICKS,
                 packet,
@@ -425,7 +412,7 @@ fn cancellation_epoch_change_and_teardown_discard_stale_tail_promptly() -> TestR
         let heard = app.sink.lock().samples.len();
         // Leave a packet in raw ingress too, to test invalidation at both queues.
         assert!(enqueue(
-            &ingress,
+            &mut ingress,
             20,
             20 * RTP_TICKS,
             &packets[0],
@@ -462,13 +449,13 @@ fn cancellation_epoch_change_and_teardown_discard_stale_tail_promptly() -> TestR
 fn normal_response_boundary_preserves_decoder_and_rejects_prior_completion() -> TestResult {
     let now = Instant::now();
     let app = App::new();
-    let (mut incoming, ingress) = Incoming::new();
+    let (mut incoming, mut ingress) = Incoming::new();
     let mut playout = Playout::new()?;
     playout.tick(&app, &mut incoming, now)?;
     let (packets, expected) = speech(22)?;
     for (sequence, packet) in packets[..20].iter().enumerate() {
         assert!(enqueue(
-            &ingress,
+            &mut ingress,
             sequence as u16,
             sequence as u32 * RTP_TICKS,
             packet,
@@ -486,7 +473,7 @@ fn normal_response_boundary_preserves_decoder_and_rejects_prior_completion() -> 
     )?;
     app.sink.lock().playback = playback("next", 1);
     assert!(enqueue(
-        &ingress,
+        &mut ingress,
         20,
         20 * RTP_TICKS,
         &packets[20],
@@ -494,7 +481,7 @@ fn normal_response_boundary_preserves_decoder_and_rejects_prior_completion() -> 
         true
     ));
     assert!(enqueue(
-        &ingress,
+        &mut ingress,
         21,
         21 * RTP_TICKS,
         &packets[21],
@@ -535,5 +522,339 @@ fn normal_response_boundary_preserves_decoder_and_rejects_prior_completion() -> 
     let sink = app.sink.lock();
     assert_eq!(sink.samples, expected);
     assert_eq!(sink.finished, ["newest"]);
+    Ok(())
+}
+
+#[test]
+fn reliable_paused_burst_and_slow_resume_preserve_exact_speech_through_seal() -> TestResult {
+    const FRAMES: usize = 300;
+    let now = Instant::now();
+    let app = App::new();
+    let (mut incoming, mut ingress) = Incoming::new();
+    let mut playout = Playout::new()?;
+    playout.tick(&app, &mut incoming, now)?;
+    let (packets, expected) = speech(FRAMES)?;
+    // Simulate an already delayed reliable burst, then a completely paused
+    // consumer. Both old wall-clock age checks used to delete this speech.
+    let arrived = now - Duration::from_secs(2);
+    for (sequence, packet) in packets.iter().enumerate() {
+        assert!(enqueue(
+            &mut ingress,
+            sequence as u16,
+            sequence as u32 * RTP_TICKS,
+            packet,
+            arrived,
+            true
+        ));
+    }
+    app.stop(now);
+    // The first consumer tick occurs beyond the one-second admission cap:
+    // seal the real ingress first, then drain all 300 accepted packets slowly.
+    for ms in (1100..=7500).step_by(100) {
+        playout.tick(&app, &mut incoming, now + Duration::from_millis(ms))?;
+    }
+    let sink = app.sink.lock();
+    assert_eq!(sink.samples, expected);
+    assert_eq!(sink.decoded, FRAMES as u64);
+    assert_eq!(sink.concealed, 0);
+    assert_eq!(sink.finished, ["reply"]);
+    assert_eq!(sink.ingress.accepted_packets, FRAMES as u64);
+    assert_eq!(sink.ingress.reliable_failures, 0);
+    drop(sink);
+    assert!(!enqueue(
+        &mut ingress,
+        FRAMES as u16,
+        FRAMES as u32 * RTP_TICKS,
+        &packets[0],
+        now,
+        true
+    ));
+    assert_eq!(incoming.take_statistics().suppressed_packets, 1);
+    assert_eq!(ingress.state.packets.available_permits(), PACKETS);
+    assert_eq!(ingress.state.bytes.available_permits(), BYTES);
+    assert_eq!(ingress.state.audio.available_permits(), AUDIO_SAMPLES);
+    Ok(())
+}
+
+#[test]
+fn decoded_leases_release_capacity_for_the_next_reliable_burst() -> TestResult {
+    let now = Instant::now();
+    let app = App::new();
+    let (mut incoming, mut ingress) = Incoming::new();
+    let mut playout = Playout::new()?;
+    playout.tick(&app, &mut incoming, now)?;
+    let (packets, expected) = speech(600)?;
+    for (sequence, payload) in packets[..300].iter().enumerate() {
+        assert!(enqueue(
+            &mut ingress,
+            sequence as u16,
+            sequence as u32 * RTP_TICKS,
+            payload,
+            now,
+            true
+        ));
+    }
+    advance(
+        &mut playout,
+        &app,
+        &mut incoming,
+        now,
+        now + Duration::from_secs(5),
+    )?;
+    // Decoding (not transfer to jitter) releases the shared duration budget.
+    for (sequence, payload) in packets.iter().enumerate().skip(300) {
+        assert!(enqueue(
+            &mut ingress,
+            sequence as u16,
+            sequence as u32 * RTP_TICKS,
+            payload,
+            now + Duration::from_secs(5),
+            true
+        ));
+    }
+    app.stop(now + Duration::from_secs(5));
+    advance(
+        &mut playout,
+        &app,
+        &mut incoming,
+        now + Duration::from_millis(5005),
+        now + Duration::from_secs(13),
+    )?;
+    let sink = app.sink.lock();
+    assert_eq!(sink.samples, expected);
+    assert_eq!(sink.decoded, 600);
+    assert_eq!(sink.finished, ["reply"]);
+    Ok(())
+}
+
+#[test]
+fn all_retention_limits_are_bounded_and_observable_for_each_transport() -> TestResult {
+    let mut encoder = opus::Encoder::new(
+        RATE as u32,
+        opus::Channels::Mono,
+        opus::Application::LowDelay,
+    )?;
+    let mut tiny = vec![0; 1275];
+    let count = encoder.encode(&[0; RATE / 400], &mut tiny)?;
+    tiny.truncate(count);
+    assert_eq!(
+        opus::packet::get_nb_samples(&tiny, RATE as u32)?,
+        RATE / 400
+    );
+    let normal = vec![0xf8, 0xff, 0xfe];
+    let mut large = normal.clone();
+    large.resize(PACKET_BYTES - 12, 0);
+    opus::packet::pad(&mut large, normal.len())?;
+    for reliable in [false, true] {
+        for (payload, limit, kind) in [
+            (&tiny, PACKETS, "packet"),
+            (&large, BYTES / (PACKET_BYTES * 2), "byte"),
+            (&normal, AUDIO_SAMPLES / FRAME, "audio"),
+        ] {
+            let now = Instant::now();
+            let (mut incoming, mut ingress) = Incoming::new();
+            incoming.set_suppressed(false)?;
+            for sequence in 0..limit {
+                assert!(
+                    enqueue(
+                        &mut ingress,
+                        sequence as u16,
+                        sequence as u32 * RTP_TICKS,
+                        payload,
+                        now,
+                        reliable
+                    ),
+                    "{kind} {sequence}"
+                );
+            }
+            assert!(!enqueue(
+                &mut ingress,
+                limit as u16,
+                limit as u32 * RTP_TICKS,
+                payload,
+                now,
+                reliable
+            ));
+            let stats = incoming.take_statistics();
+            assert_eq!(stats.accepted_packets, limit as u64);
+            assert_eq!(stats.packet_limit_drops, u64::from(kind == "packet"));
+            assert_eq!(stats.byte_limit_drops, u64::from(kind == "byte"));
+            assert_eq!(stats.audio_limit_drops, u64::from(kind == "audio"));
+            assert_eq!(stats.reliable_failures, u64::from(reliable));
+            if reliable {
+                assert!(matches!(incoming.take(), Err(OVERLOAD)));
+                // A failed reliable stream never silently resumes fragments.
+                assert!(!enqueue(&mut ingress, 0, 0, payload, now, true));
+                assert_eq!(incoming.take_statistics().failed_packets, 1);
+            } else {
+                // UDP drops newest, preserving all accepted raw packets in order.
+                for sequence in 0..limit {
+                    let received = incoming.take()?.ok_or("missing accepted UDP")?;
+                    let parsed = crate::packet::parse(received.as_ref()).ok_or("invalid UDP")?;
+                    assert_eq!(parsed.sequence, sequence as u16);
+                    assert_eq!(&parsed.payload, payload);
+                }
+                assert!(enqueue(
+                    &mut ingress,
+                    limit as u16 + 1,
+                    0,
+                    payload,
+                    now,
+                    false
+                ));
+            }
+            // Cancellation remains immediate even after a sticky failure.
+            incoming.set_suppressed(true)?;
+            incoming.discard(0);
+            assert_eq!(ingress.state.packets.available_permits(), PACKETS);
+            assert_eq!(ingress.state.bytes.available_permits(), BYTES);
+            assert_eq!(ingress.state.audio.available_permits(), AUDIO_SAMPLES);
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn limits_follow_packets_into_jitter_and_failure_reaches_host_diagnostics() -> TestResult {
+    let now = Instant::now();
+    let app = App::new();
+    let (mut incoming, mut ingress) = Incoming::new();
+    let mut playout = Playout::new()?;
+    playout.tick(&app, &mut incoming, now)?;
+    let payload = [0xf8, 0xff, 0xfe];
+    for sequence in 0..AUDIO_SAMPLES / FRAME {
+        assert!(enqueue(
+            &mut ingress,
+            sequence as u16,
+            sequence as u32 * RTP_TICKS,
+            &payload,
+            now,
+            true
+        ));
+    }
+    // Pull packets into real jitter without decoding (reorder deadline isn't due).
+    playout.tick(&app, &mut incoming, now)?;
+    assert_eq!(ingress.state.audio.available_permits(), 0);
+    assert!(!enqueue(
+        &mut ingress,
+        400,
+        400 * RTP_TICKS,
+        &payload,
+        now,
+        true
+    ));
+    assert_eq!(playout.tick(&app, &mut incoming, now), Err(OVERLOAD));
+    assert_eq!(app.sink.lock().ingress.audio_limit_drops, 1);
+    assert_eq!(app.sink.lock().ingress.reliable_failures, 1);
+    app.cancel();
+    playout.tick(&app, &mut incoming, now)?;
+    assert_eq!(ingress.state.audio.available_permits(), AUDIO_SAMPLES);
+    assert_eq!(
+        app.sink.lock().ingress.retired_packets,
+        (AUDIO_SAMPLES / FRAME) as u64
+    );
+    assert!(app.sink.lock().samples.is_empty());
+    Ok(())
+}
+
+#[test]
+fn stale_udp_suppression_and_epoch_retirement_have_separate_counters() -> TestResult {
+    let now = Instant::now();
+    let old = now - Duration::from_secs(2);
+    let (mut incoming, mut ingress) = Incoming::new();
+    let payload = [0xf8, 0xff, 0xfe];
+    assert!(!enqueue(&mut ingress, 0, 0, &payload, now, true));
+    incoming.set_suppressed(false)?;
+    assert!(!enqueue(&mut ingress, 0, 0, &payload, old, false));
+    assert!(enqueue(&mut ingress, 0, 0, &payload, old, true));
+    incoming.set_suppressed(true)?;
+    incoming.set_suppressed(false)?;
+    assert!(incoming.take()?.is_none());
+    assert!(enqueue(&mut ingress, 1, RTP_TICKS, &payload, now, true));
+    assert!(incoming.take()?.is_some());
+    assert_eq!(
+        incoming.take_statistics(),
+        super::Statistics {
+            accepted_packets: 2,
+            suppressed_packets: 1,
+            stale_packets: 1,
+            retired_packets: 1,
+            ..Default::default()
+        }
+    );
+    assert_eq!(incoming.take_statistics(), super::Statistics::default());
+    Ok(())
+}
+
+#[test]
+fn closed_consumer_and_invalid_media_are_explicit_and_release_all_leases() -> TestResult {
+    let now = Instant::now();
+    let (incoming, mut ingress) = Incoming::new();
+    incoming.set_suppressed(false)?;
+    drop(incoming);
+    assert!(!enqueue(&mut ingress, 0, 0, &[0xf8, 0xff, 0xfe], now, true));
+    assert_eq!(ingress.state.admission.lock().statistics.closed_packets, 1);
+    assert_eq!(ingress.state.packets.available_permits(), PACKETS);
+    assert_eq!(ingress.state.bytes.available_permits(), BYTES);
+    assert_eq!(ingress.state.audio.available_permits(), AUDIO_SAMPLES);
+    let (mut incoming, mut ingress) = Incoming::new();
+    incoming.set_suppressed(false)?;
+    assert!(!enqueue(&mut ingress, 0, 0, &[], now, true));
+    assert_eq!(incoming.take_statistics().invalid_packets, 1);
+    assert!(incoming.take().is_err());
+    Ok(())
+}
+
+#[test]
+fn full_backlog_can_be_cancelled_replaced_or_torn_down_without_waiting() -> TestResult {
+    for control in ["cancel", "replace", "teardown"] {
+        let now = Instant::now();
+        let app = App::new();
+        let (mut incoming, mut ingress) = Incoming::new();
+        let mut playout = Playout::new()?;
+        playout.tick(&app, &mut incoming, now)?;
+        let payload = [0xf8, 0xff, 0xfe];
+        for sequence in 0..AUDIO_SAMPLES / FRAME {
+            assert!(enqueue(
+                &mut ingress,
+                sequence as u16,
+                sequence as u32 * RTP_TICKS,
+                &payload,
+                now,
+                true
+            ));
+        }
+        // Keep leases in BOTH raw ingress and production jitter.
+        playout.tick(&app, &mut incoming, now)?;
+        assert_eq!(ingress.state.audio.available_permits(), 0);
+        match control {
+            "cancel" => app.cancel(),
+            "replace" => app.sink.lock().playback = playback("replacement", 2),
+            _ => app.current.store(false, Ordering::Release),
+        }
+        playout.tick(&app, &mut incoming, now)?;
+        if control == "replace" {
+            assert!(enqueue(&mut ingress, 500, 0, &payload, now, true));
+            app.stop(now);
+            advance(
+                &mut playout,
+                &app,
+                &mut incoming,
+                now,
+                now + Duration::from_secs(1),
+            )?;
+            assert_eq!(app.sink.lock().decoded, 1);
+            assert_eq!(app.sink.lock().finished, ["replacement"]);
+        } else {
+            assert!(app.sink.lock().samples.is_empty());
+        }
+        // Matches media-loop/transport teardown: dropping both owners releases
+        // every lease even when no consumer tick can run again.
+        drop(playout);
+        drop(incoming);
+        assert_eq!(ingress.state.packets.available_permits(), PACKETS);
+        assert_eq!(ingress.state.bytes.available_permits(), BYTES);
+        assert_eq!(ingress.state.audio.available_permits(), AUDIO_SAMPLES);
+    }
     Ok(())
 }

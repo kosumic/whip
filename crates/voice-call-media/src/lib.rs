@@ -85,6 +85,7 @@ pub struct Playback {
 }
 #[derive(Default)]
 pub struct Statistics {
+    pub ingress: incoming::Statistics,
     pub rtp_packets: u64,
     pub reliable_rtp_packets: u64,
     pub rtp_samples: u64,

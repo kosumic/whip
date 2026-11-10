@@ -329,6 +329,7 @@ pub(super) struct View {
 #[derive(Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct MediaDiagnostics {
+    ingress: voice_call_media::incoming::Statistics,
     rtp_packets: u64,
     reliable_rtp_packets: u64,
     rtp_samples: u64,

@@ -3,7 +3,7 @@
 use crate::{
     Host, RATE, Statistics, Tag,
     incoming::Incoming,
-    jitter::{Frame, Jitter, MAX_FRAME_SAMPLES, MAX_PACKETS},
+    jitter::{Frame, Jitter, MAX_FRAME_SAMPLES},
     packet,
 };
 use std::time::{Duration, Instant};
@@ -15,6 +15,8 @@ const TAIL_QUIET: Duration = Duration::from_millis(160);
 // and pop_tail's bounded gaps bound the remaining drain by media duration;
 // neither this cap nor the quiet grace is a deadline for dropping queued words.
 const TAIL_WAIT: Duration = Duration::from_secs(1);
+// Bound synchronous work per tick independently of retained backlog capacity.
+const MAX_WORK: usize = 64;
 
 struct Tail {
     tag: Option<Tag>,
@@ -57,7 +59,7 @@ impl Playout {
         }
         if self.epoch != state.epoch {
             incoming.set_suppressed(true)?;
-            self.jitter.stop();
+            incoming.discard(self.jitter.stop());
             self.decoder
                 .reset_state()
                 .map_err(|_| "Voice decoder reset failed.")?;
@@ -82,7 +84,11 @@ impl Playout {
                     .is_some_and(|tail| tail.sealed_epoch.is_some()),
         )?;
         if !state.enabled {
-            self.jitter.stop();
+            incoming.discard(self.jitter.stop());
+            owner.statistics(Statistics {
+                ingress: incoming.take_statistics(),
+                ..Default::default()
+            });
             return Ok(());
         }
         if let Some(tail) = &mut self.tail
@@ -92,7 +98,7 @@ impl Playout {
             tail.sealed_epoch = Some(incoming.seal()?);
         }
         self.receive(owner, incoming)?;
-        for _ in 0..MAX_PACKETS {
+        for _ in 0..MAX_WORK {
             if !owner.current() {
                 return Ok(());
             }
@@ -166,7 +172,7 @@ impl Playout {
                 tail.sealed_epoch = Some(incoming.seal()?);
                 self.receive(owner, incoming)?;
             }
-            if self.jitter.is_empty() && owner.finish(&state) {
+            if self.jitter.is_empty() && incoming.is_empty() && owner.finish(&state) {
                 self.jitter.stop();
             }
         }
@@ -174,7 +180,22 @@ impl Playout {
     }
 
     fn receive(&mut self, owner: &impl Host, incoming: &mut Incoming) -> Result<(), &'static str> {
-        for _ in 0..MAX_PACKETS {
+        let result = self.receive_packets(owner, incoming);
+        // Report overload even when the receive fails, including the final
+        // receive racing a synchronized tail seal.
+        owner.statistics(Statistics {
+            ingress: incoming.take_statistics(),
+            ..Default::default()
+        });
+        result
+    }
+
+    fn receive_packets(
+        &mut self,
+        owner: &impl Host,
+        incoming: &mut Incoming,
+    ) -> Result<(), &'static str> {
+        for _ in 0..MAX_WORK {
             let received = match self.tail.as_ref().and_then(|tail| tail.sealed_epoch) {
                 Some(epoch) => incoming.take_sealed(epoch)?,
                 None => incoming.take()?,

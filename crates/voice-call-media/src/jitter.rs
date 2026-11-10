@@ -11,6 +11,8 @@ use std::{
 // bursts until playout; ingress permits bound retained RTP through decoding.
 const REORDER: Duration = Duration::from_millis(60);
 pub(super) const MAX_PACKETS: usize = super::incoming::PACKETS;
+// Preserve the clock-discontinuity policy independently of retention capacity.
+const CLOCK_GAP_PACKETS: usize = 64;
 const RTP_RATE: usize = 48_000;
 const MIN_FRAME_SAMPLES: usize = RATE / 400;
 pub(super) const MAX_FRAME_SAMPLES: usize = RATE * 120 / 1000;
@@ -55,11 +57,11 @@ impl Jitter {
         }
         let clock_jump = self.timestamp.is_some_and(|timestamp| {
             usize::try_from(distance(packet.timestamp, timestamp))
-                .is_ok_and(|gap| gap > MAX_PACKETS * FRAME * RTP_RATE / RATE)
+                .is_ok_and(|gap| gap > CLOCK_GAP_PACKETS * FRAME * RTP_RATE / RATE)
         });
         if self.sequence.is_none()
             || self.packets.is_empty()
-                && (sequence >= i16::try_from(MAX_PACKETS).unwrap_or(i16::MAX) || clock_jump)
+                && (sequence >= i16::try_from(CLOCK_GAP_PACKETS).unwrap_or(i16::MAX) || clock_jump)
         {
             self.packets.clear();
             self.sequence = Some(packet.sequence);
@@ -176,8 +178,10 @@ impl Jitter {
         self.packets.is_empty()
     }
 
-    pub fn stop(&mut self) {
+    pub fn stop(&mut self) -> usize {
+        let retired = self.packets.len();
         *self = Self::default();
+        retired
     }
     pub fn take_statistics(&mut self) -> Statistics {
         std::mem::take(&mut self.statistics)

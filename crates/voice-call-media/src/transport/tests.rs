@@ -105,13 +105,7 @@ async fn transport_bursts(prepared: bool) -> TestResult {
             let mut decoder = opus::Decoder::new(24_000, opus::Channels::Mono)?;
             assert!(decoder.decode(&packet.payload, &mut [0; 2880], false)? > 0);
             drop(packet);
-            admitted_burst(&audio, &mut local.incoming).await?;
-            channel.close().await?;
-            tokio::time::timeout(
-                Duration::from_secs(5),
-                local.ready.wait_for(|ready| !*ready),
-            )
-            .await??;
+            admitted_burst(&audio, &mut local, &*channel).await?;
             // A closed control channel reports readiness loss, but only the
             // owner may retire the peer after collecting final session events.
             send_silence(&audio).await?;
@@ -140,14 +134,43 @@ async fn transport_bursts(prepared: bool) -> TestResult {
 // decoder even when one network batch spans more than the reorder window.
 async fn admitted_burst(
     audio: &webrtc::media_stream::track_local::static_sample::TrackLocalStaticSample,
-    incoming: &mut crate::incoming::Incoming,
+    local: &mut Transport,
+    channel: &dyn webrtc::data_channel::DataChannel,
 ) -> TestResult {
     use crate::jitter::{Frame, Jitter, MAX_FRAME_SAMPLES};
 
-    const BURST_PACKETS: usize = 12;
+    const BURST_PACKETS: usize = 160;
+    local.incoming.take_statistics();
     for _ in 0..BURST_PACKETS {
         send_silence(audio).await?;
+        // Give UDP socket workers time to run too; the media consumer remains
+        // completely paused throughout this burst, well beyond its former 64.
+        tokio::task::yield_now().await;
     }
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let mut admitted = 0;
+        while admitted < BURST_PACKETS as u64 {
+            let stats = local.incoming.take_statistics();
+            admitted += stats.accepted_packets;
+            assert_eq!(stats.reliable_failures, 0);
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await?;
+    // A send command and SCTP close must progress with a congested ingress
+    // and no playout. An await for media space inside driver::drain deadlocks.
+    tokio::time::timeout(
+        Duration::from_secs(1),
+        local.audio.send_muted_silence(Instant::now()),
+    )
+    .await??;
+    channel.close().await?;
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        local.ready.wait_for(|ready| !*ready),
+    )
+    .await??;
+    let incoming = &mut local.incoming;
     let mut jitter = Jitter::default();
     let mut expected = Vec::new();
     tokio::time::timeout(Duration::from_secs(3), async {
@@ -171,7 +194,7 @@ async fn admitted_burst(
     let mut samples = 0;
     // Advance the test's playout clock without wall-clock sleeps. The entire
     // burst is due, and no empty-queue concealment is needed between packets.
-    let due = Instant::now() + Duration::from_secs(1);
+    let due = Instant::now() + Duration::from_secs(4);
     for _ in 0..BURST_PACKETS {
         let Some(Frame::Packet(packet)) = jitter.pop(due) else {
             return Err("Admitted burst speech disappeared before decoding".into());
