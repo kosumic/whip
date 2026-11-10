@@ -25,10 +25,16 @@ impl Pace {
         true
     }
     pub fn observe(&mut self, units: u32, samples: usize) {
+        let previous = self.0;
+        self.observe_measured(units, samples);
+        self.0 = f64::midpoint(previous, self.0);
+    }
+
+    /// Completed generation describes the voice, without transport padding.
+    pub fn observe_measured(&mut self, units: u32, samples: usize) {
         if units > 0 && samples > 0 {
-            let observed = (f64::from(units) / seconds(samples))
+            self.0 = (f64::from(units) / seconds(samples))
                 .clamp(MIN_UNITS_PER_SECOND, MAX_UNITS_PER_SECOND);
-            self.0 = f64::midpoint(self.0, observed);
         }
     }
 }
@@ -170,9 +176,7 @@ impl Clock {
             if complete && samples > 0 {
                 let fraction = seconds(played) / seconds(samples);
                 let target = text.with_word_lead(f64::from(text.units) * fraction);
-                self.progress = self
-                    .progress
-                    .max(target.min(self.progress + elapsed * MAX_CORRECTION_UNITS_PER_SECOND));
+                self.progress = self.progress.max(target);
             } else {
                 // A better rate estimate also catches earlier drift, but only
                 // over newly acknowledged audio and at a bounded display speed.

@@ -28,7 +28,7 @@ fn final_duration_is_reconciled_only_over_further_played_frames() {
     let before = clock.advance(&text, RATE, RATE * 2, false);
     assert_eq!(clock.advance(&text, RATE, RATE * 2, true), before);
     let after = clock.advance(&text, RATE + RATE / 50, RATE * 2, true);
-    assert!(after >= before && after <= before + 2);
+    assert_eq!(after, "One two three four five six ".len());
     for played in (RATE + RATE / 50..RATE * 2).step_by(RATE / 50) {
         clock.advance(&text, played, RATE * 2, true);
     }

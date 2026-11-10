@@ -1,7 +1,7 @@
 //! A completed generation can precede WebRTC playout by many seconds.
 //! Assistant audio tokens represent 50 ms, with small special-token overhead:
 //! https://developers.openai.com/api/docs/guides/voice-latency-cost?voice-api=realtime
-//! Use that duration only as an estimate until the decoded stream finishes.
+//! Decoded concealment and tail silence must not stretch that speech estimate.
 use oai_rt_rs::{ContentPart, Item, Response, ResponseStatus, Role};
 
 const AUDIO_TOKENS_PER_SECOND: usize = 20;

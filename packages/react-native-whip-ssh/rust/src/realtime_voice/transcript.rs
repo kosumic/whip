@@ -1,5 +1,5 @@
 //! Call-owned captions paced by acknowledged playback, including while the
-//! server is still generating. Final duration refines the estimate gradually.
+//! server is still generating. Generated duration excludes transport padding.
 use crate::speech_pacing as pacing;
 mod duration;
 #[cfg(test)]
@@ -48,11 +48,33 @@ struct Turn {
     stopped: bool,
     timing: pacing::Text,
     clock: pacing::Clock,
-    pace_reported: bool,
+    pace_source: PaceSource,
     stream_pace: streaming::StreamPace,
 }
 
+#[derive(Default, PartialEq, Eq)]
+enum PaceSource {
+    #[default]
+    Pending,
+    Decoded,
+    Generated,
+}
+
 impl Turn {
+    fn observe_pace(&mut self, pace: &mut pacing::Pace) {
+        if self.stopped || !self.text_done {
+            return;
+        }
+        if let Some(samples) = self.expected_samples {
+            if self.pace_source != PaceSource::Generated {
+                pace.observe_measured(self.timing.units, samples);
+                self.pace_source = PaceSource::Generated;
+            }
+        } else if self.audio_done && self.pace_source == PaceSource::Pending {
+            pace.observe(self.timing.units, self.samples);
+            self.pace_source = PaceSource::Decoded;
+        }
+    }
     fn observe_stream_pace(&mut self) {
         if let Some(pace) = self.stream_pace.observe(self.timing.units, self.samples) {
             self.clock.set_pace(pace);
@@ -72,16 +94,18 @@ impl Turn {
         }
         self.played = self.played.max(played.min(self.samples));
         let duration_known = self.audio_done || self.expected_samples.is_some();
+        // Decoded PCM can contain concealment and tail silence. It must not
+        // stretch a known generation's caption timeline. A shorter finished
+        // stream still bounds the duration when audio was truncated.
+        let duration = self.expected_samples.unwrap_or(self.samples);
         let duration = if self.audio_done {
-            self.samples
+            duration.min(self.samples)
         } else {
-            self.expected_samples
-                .unwrap_or(self.samples)
-                .max(self.samples)
+            duration
         };
         self.message.spoken_utf16 = self.clock.advance(
             &self.timing,
-            self.played,
+            self.played.min(duration),
             duration,
             duration_known && self.text_done,
         );
@@ -144,7 +168,7 @@ impl Transcript {
             stopped: false,
             timing: pacing::Text::default(),
             clock: pacing::Clock::new(self.pace),
-            pace_reported: false,
+            pace_source: PaceSource::Pending,
             stream_pace: streaming::StreamPace::new(self.pace),
         });
         self.turns.back_mut()
@@ -278,10 +302,7 @@ impl Transcript {
             _ => {}
         }
         for turn in &mut self.turns {
-            if turn.audio_done && turn.text_done && !turn.stopped && !turn.pace_reported {
-                self.pace.observe(turn.timing.units, turn.samples);
-                turn.pace_reported = true;
-            }
+            turn.observe_pace(&mut self.pace);
         }
         self.trim();
     }
@@ -313,10 +334,7 @@ impl Transcript {
         {
             turn.audio_done = true;
             turn.advance(turn.played);
-            if turn.text_done && !turn.stopped && !turn.pace_reported {
-                self.pace.observe(turn.timing.units, turn.samples);
-                turn.pace_reported = true;
-            }
+            turn.observe_pace(&mut self.pace);
         }
     }
 

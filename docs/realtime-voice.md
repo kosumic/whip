@@ -79,12 +79,14 @@ have no word timestamps, and text/audio packets are not paired timing cues.
 Whip streams text immediately and estimates spoken progress from acknowledged
 device playback, excluding silence used to clock AEC. Highlighting starts while
 audio is still being generated, using an initial speech pace that learns from
-completed turns. CJK characters receive syllable weights instead of English
-letter weights. Once final text/audio markers establish the complete duration,
-the native clock gradually reconciles its estimate and applies the visual word
-lead; the React presentation adds no second lead. Final metadata alone cannot
-jump a still-playing reply forward. Buffering does not advance the clock, and
-interrupting or skipping freezes the bright prefix. Actual audio truncation
+completed turns, preferring the provider's generated audio duration so transport
+padding cannot teach a slower voice pace. CJK characters receive syllable weights
+instead of English letter weights. Once final text/audio markers establish the
+complete duration, the native clock reconciles its estimate on the next playback
+update and applies the visual word lead; the React presentation adds no second
+lead. Decoded padding cannot stretch a known speech duration. Final metadata
+alone cannot jump a still-playing reply forward. Buffering does not advance the
+clock, and interrupting or skipping freezes the bright prefix. Actual audio truncation
 continues to use heard samples. These are approximate word boundaries, not
 forced alignment; text/audio packet arrival cannot provide exact alignment.
 Late input captions update the reserved user turn rather than appearing after

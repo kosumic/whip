@@ -49,7 +49,7 @@ fn early_complete_transcript_uses_generated_duration_before_playback_finishes() 
 }
 
 #[test]
-fn corrected_duration_waits_for_playback_and_does_not_jump_or_move_backwards() -> TestResult {
+fn corrected_duration_catches_up_on_playback_without_moving_backwards() -> TestResult {
     let text = "aaaa ".repeat(100);
     let ignored = HashSet::new();
     let mut transcript = Transcript::default();
@@ -61,9 +61,79 @@ fn corrected_duration_waits_for_playback_and_does_not_jump_or_move_backwards() -
     assert_eq!(transcript.snapshot()[0].spoken_utf16, before);
     transcript.played("reply", 0, RATE * 5 + RATE / 50);
     let after = transcript.snapshot()[0].spoken_utf16;
-    assert!(after >= before && after <= before + 1);
+    assert!(after >= before && after.abs_diff(125) <= 6);
+    transcript.played("reply", 0, RATE * 5 + RATE / 50);
+    assert_eq!(transcript.snapshot()[0].spoken_utf16, after);
     transcript.finish_audio("reply", 0);
     assert!(transcript.snapshot()[0].spoken_utf16 >= after);
+    Ok(())
+}
+
+#[test]
+fn decoded_padding_cannot_stretch_a_known_reply_duration() -> TestResult {
+    let text = "aaaa ".repeat(100);
+    let ignored = HashSet::new();
+    let done: ServerEvent = serde_json::from_value(completion(&text, 400))?;
+    for finish_first in [false, true] {
+        let mut transcript = Transcript::default();
+        transcript.observe(&delta(&text)?, &ignored);
+        transcript.audio("reply", 0, RATE * 25);
+        if finish_first {
+            transcript.finish_audio("reply", 0);
+        }
+        transcript.observe(&done, &ignored);
+        for seconds in [5, 10, 15, 20] {
+            transcript.played("reply", 0, RATE * seconds);
+            let message = &transcript.snapshot()[0];
+            assert!(message.spoken_utf16.abs_diff(seconds * 25) <= 6);
+            assert!(message.active, "The native playback queue has not drained");
+        }
+        transcript.finish_audio("reply", 0);
+        transcript.played("reply", 0, RATE * 25);
+        let message = &transcript.snapshot()[0];
+        assert_eq!(message.spoken_utf16, text.len());
+        assert!(!message.active);
+    }
+    Ok(())
+}
+
+#[test]
+fn transport_padding_cannot_slow_the_next_replys_caption_pace() -> TestResult {
+    for usage_first in [false, true] {
+        let ignored = HashSet::new();
+        let text = "aaaa ".repeat(20);
+        let done: ServerEvent = serde_json::from_value(completion(&text, 100))?;
+        let mut positions = Vec::new();
+        for padding in [0, RATE * 5] {
+            let mut transcript = Transcript::default();
+            transcript.observe(&delta(&text)?, &ignored);
+            if usage_first {
+                transcript.observe(&done, &ignored);
+            }
+            transcript.audio("reply", 0, RATE * 5 + padding);
+            transcript.observe(&serde_json::from_value(json!({
+                "type":"response.output_audio_transcript.done","event_id":"text-done",
+                "response_id":"response","item_id":"reply","output_index":0,"content_index":0,"transcript":text
+            }))?, &ignored);
+            transcript.finish_audio("reply", 0);
+            if !usage_first {
+                transcript.observe(&done, &ignored);
+            }
+            let next = "bbbb ".repeat(30);
+            transcript.observe(&serde_json::from_value(json!({
+                "type":"response.output_audio_transcript.delta","event_id":"next",
+                "response_id":"next-response","item_id":"next-reply","output_index":0,"content_index":0,"delta":next
+            }))?, &ignored);
+            transcript.audio("next-reply", 0, RATE * 2);
+            transcript.played("next-reply", 0, RATE);
+            positions.push(transcript.snapshot()[1].spoken_utf16);
+        }
+        assert_eq!(
+            positions[0], positions[1],
+            "Played silence must not change voice pace"
+        );
+        assert!(positions[0].abs_diff(20) <= 1);
+    }
     Ok(())
 }
 
