@@ -139,7 +139,7 @@ describe.each(['android', 'ios'] as const)('%s chat speech', platform => {
     } finally { Reflect.deleteProperty(mockNative, 'startResponseSpeech'); }
   });
   test('manual read-aloud carries original response identity and chunk offsets to native playback', async () => {
-    const speakChatWithSource = jest.fn(async () => {});
+    const speakChatWithSource = jest.fn<Promise<void>, [string, string, string]>(async () => {});
     Object.assign(mockNative, { speakChatWithSource });
     try {
       const chunk = { messageId: 'selected-reply', partId: 'prose', startUtf16: 301, text: 'Second chunk' };
@@ -147,7 +147,7 @@ describe.each(['android', 'ios'] as const)('%s chat speech', platform => {
       mockQueues[0].nextWithSource.mockReturnValueOnce(chunk);
       await flush();
       expect(speakChatWithSource).toHaveBeenCalledWith(expect.any(String), chunk.text,
-        JSON.stringify({ ...chunk, hostId: target.hostId, paneId: target.paneId, bindingTokens: [target.bindingToken] }));
+        JSON.stringify({ ...chunk, sessionToken: speakChatWithSource.mock.calls[0][0], hostId: target.hostId, paneId: target.paneId, bindingTokens: [target.bindingToken] }));
       expect(mockNative.speakChat).not.toHaveBeenCalled();
     } finally { Reflect.deleteProperty(mockNative, 'speakChatWithSource'); }
   });

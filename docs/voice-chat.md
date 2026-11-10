@@ -78,6 +78,9 @@ The first word highlights at position zero after native
 playback reports it. Queued chunks retain their offsets in the same reply;
 completion, interruption and Skip clear the active word. No JS playback timer
 advances the highlight.
+The original chat retains the last valid word through trailing punctuation and
+chunk handoffs, so upcoming text stays dim instead of briefly lighting up the
+whole reply. Stopping the reply releases that presentation immediately.
 
 Mute discards unfinished microphone input; muting during a reply lets the reply
 finish and leaves the microphone muted afterward. Back, the down arrow, and

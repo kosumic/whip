@@ -6,6 +6,7 @@ import { agentTranscriptService } from './NativeTranscriptService';
 import { suspendChatSpeechForInput, type ChatSpeechTarget, type ChatSpeechStoppedEvent } from './chatSpeech';
 import { composerSpeechInput } from './composerSpeechInput';
 import { getSpeechPlayback, type NativeSpeechPlayback } from './speechPlayback';
+import { retainSpeechCaption } from './speechCaptions';
 import { recordDiagnostic } from './diagnosticFormatting';
 import { voiceChatModelRoot } from './voiceChatModel';
 import { DEFAULT_VAD_SENSITIVITY } from '../lib/voiceVadSensitivity';
@@ -568,6 +569,7 @@ export class VoiceConversation {
 
   private async speak(id: bigint): Promise<void> {
     const token = `${this.session}:speech:${id}`;
+    const releaseCaption = retainSpeechCaption(token);
     this.playing = token;
     this.speechToken = token;
     const current = () => !this.closed && this.speechToken === token;
@@ -633,7 +635,7 @@ export class VoiceConversation {
       this.view = { ...this.view, error: failureMessage(error) };
       recordDiagnostic('warn', 'VoiceChat', 'playback-failed', { error: this.view.error });
       await this.skip();
-    }
+    } finally { releaseCaption(); }
   }
 
   /** Native word callbacks and played PCM own the cursor; JS never advances a timer. */

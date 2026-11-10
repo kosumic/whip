@@ -8,6 +8,7 @@ import { reportBackgroundFailure } from './backgroundOperations';
 import { setChatSpeechFocus } from './chatSpeechFocus';
 import { setSpeechInputActive } from './speechInputFocus';
 import { getSpeechPlayback, type SpeechEndReason } from './speechPlayback';
+import { retainSpeechCaption } from './speechCaptions';
 
 export interface ChatSpeechTarget {
   agent: ChatAgent;
@@ -91,10 +92,12 @@ function startChatSpeech(
   let draining = false;
   let unsubscribe = () => {};
   let stoppedPlayback = Promise.resolve();
+  let releaseCaption: (() => void) | undefined;
 
   const stop = () => {
     if (stopped) return;
     stopped = true;
+    releaseCaption?.();
     unsubscribe();
     subscription.remove();
     queue.dispose();
@@ -138,12 +141,13 @@ function startChatSpeech(
   const drain = async () => {
     if (!ready || stopped || draining) return;
     draining = true;
+    releaseCaption = retainSpeechCaption(token);
     try {
       while (!stopped) {
         if (native.speakChatWithSource) {
           const chunk = queue.nextWithSource();
           if (!chunk) break;
-          await native.speakChatWithSource(token, chunk.text, JSON.stringify({ ...chunk, hostId: target.hostId, paneId: target.paneId, bindingTokens: [target.bindingToken] }));
+          await native.speakChatWithSource(token, chunk.text, JSON.stringify({ ...chunk, sessionToken: token, hostId: target.hostId, paneId: target.paneId, bindingTokens: [target.bindingToken] }));
         } else {
           const text = queue.next();
           if (!text) break;
@@ -154,6 +158,8 @@ function startChatSpeech(
     } catch (error) {
       fail(error);
     } finally {
+      releaseCaption?.();
+      releaseCaption = undefined;
       draining = false;
     }
   };
