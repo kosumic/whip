@@ -1,4 +1,5 @@
 //! Optional host plugin operations use the existing authenticated transport.
+mod core;
 use super::{HostConnectionState, HostRuntime, HostRuntimeError, current_ssh, event_sink};
 use crate::{
     herdr_connection::HerdrRequestReplay, host_state::HostFreshness, remote_ops::shell_quote,
@@ -121,12 +122,17 @@ fn installation_command(herdr_command: &str, session: &str) -> String {
     )
 }
 
-fn installation_preflight_script() -> String {
+fn installation_preflight_script(requires_git: bool) -> String {
+    let git_check = if requires_git {
+        "command -v git >/dev/null 2>&1 || { echo 'Install Git on this host first' >&2; exit 1; }"
+    } else {
+        ""
+    };
     format!(
         r#"set -eu
 {RELEASE_PLATFORM_SCRIPT}
 notify_target=$(notify_release_target)
-command -v git >/dev/null 2>&1 || {{ echo 'Install Git on this host first' >&2; exit 1; }}
+{git_check}
 command -v curl >/dev/null 2>&1 || {{ echo 'Install curl on this host first' >&2; exit 1; }}
 notify_url="https://github.com/kosumic/whip/releases/download/whip-notify-v{version}/whip-notify-$notify_target.sha256"
 if ! curl -q --fail --location --silent --show-error --head --proto '=https' --proto-redir '=https' --connect-timeout 5 --max-time 15 --output /dev/null "$notify_url"; then
@@ -250,7 +256,7 @@ mod tests {
                 .arg("-c")
                 .arg(format!(
                     "{}\n{}",
-                    installation_preflight_script(),
+                    installation_preflight_script(true),
                     installation_script(executable.to_str().unwrap(), "default")
                 ))
                 .env("PATH", &path)
@@ -367,7 +373,7 @@ struct Paths {
     binary: String,
 }
 fn failure() -> HostRuntimeError {
-    HostRuntimeError::InvalidConfiguration("Whip notification plugin unavailable; install and enable whip-notify for this Herdr session (Herdr >= 0.9.5)".into())
+    HostRuntimeError::InvalidConfiguration("Host push notifications unavailable; install and enable whip-notify for this saved host session".into())
 }
 
 fn check_installation_output(output: &crate::ssh::CommandOutput) -> Result<(), HostRuntimeError> {
@@ -376,7 +382,7 @@ fn check_installation_output(output: &crate::ssh::CommandOutput) -> Result<(), H
     }
     let detail = String::from_utf8_lossy(&output.stderr);
     Err(HostRuntimeError::InvalidConfiguration(format!(
-        "Plugin installation failed: {}",
+        "Host notification operation failed: {}",
         detail
             .chars()
             .rev()
@@ -390,6 +396,9 @@ fn check_installation_output(output: &crate::ssh::CommandOutput) -> Result<(), H
 
 impl HostRuntime {
     async fn notify_plugin_status(&self) -> Result<Value, HostRuntimeError> {
+        if self.notify_uses_core().await? {
+            return self.notify_core_status().await;
+        }
         let mut status = plugin_status(
             &self
                 .notify_rpc("plugin.list", json!({"plugin_id":PLUGIN}))
@@ -435,12 +444,15 @@ impl HostRuntime {
     }
 
     async fn notify_install_inner(&self) -> Result<String, HostRuntimeError> {
+        if self.notify_uses_core().await? {
+            return self.notify_core_install().await;
+        }
         let status = self.notify_plugin_status().await?;
         if status["installed"] != true || status["update_available"] == true {
             let ssh = current_ssh(&self.inner)?;
             self.notify_install_stage(InstallationStage::CheckingRelease);
             let preflight =
-                super::herdr_setup::login_shell_command(&installation_preflight_script());
+                super::herdr_setup::login_shell_command(&installation_preflight_script(true));
             let output = ssh.execute(&preflight).await.map_err(|_| failure())?;
             check_installation_output(&output)?;
             self.notify_install_stage(InstallationStage::Downloading);
@@ -465,6 +477,9 @@ impl HostRuntime {
     }
 
     async fn notify_set_plugin_enabled(&self, enabled: bool) -> Result<String, HostRuntimeError> {
+        if self.notify_uses_core().await? {
+            return self.notify_core_set_enabled(enabled).await;
+        }
         if self.notify_plugin_status().await?["installed"] != true {
             return Err(failure());
         }
@@ -561,6 +576,9 @@ impl HostRuntime {
                 return self.notify_set_plugin_enabled(enabled).await;
             }
             "plugin-uninstall" => {
+                if self.notify_uses_core().await? {
+                    return Ok(self.notify_core_run("uninstall").await?.to_string());
+                }
                 // Herdr unregisters globally for this SSH user. Its managed
                 // checkout cleanup protects in-flight hooks; config is retained.
                 self.notify_rpc("plugin.unlink", json!({"plugin_id":PLUGIN}))
@@ -574,6 +592,9 @@ impl HostRuntime {
             _ => {}
         }
         if operation == "discover" {
+            if self.notify_uses_core().await? {
+                return self.notify_core_discover().await;
+            }
             let listed = self
                 .notify_rpc("plugin.list", json!({"plugin_id":PLUGIN}))
                 .await?;

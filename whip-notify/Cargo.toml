@@ -1,16 +1,16 @@
 [package]
 name = "whip-notify"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2024"
 license = "MIT"
-description = "Authenticated HPKE notification envelopes and a short-lived Herdr push plugin"
+description = "Authenticated HPKE notifications for legacy Herdr and Herdr Core"
 repository = "https://github.com/kosumic/whip"
 documentation = "https://docs.rs/whip-notify"
 readme = "README.md"
 
 [features]
 default = ["host"]
-host = ["dep:ureq", "dep:fs2", "dep:libc"]
+host = ["dep:ureq", "dep:fs2", "dep:libc", "dep:herdr-protocol"]
 
 [dependencies]
 base64 = "0.22"
@@ -23,6 +23,7 @@ uuid = { version = "1", features = ["v4"] }
 zeroize = { version = "1", features = ["derive"] }
 ureq = { version = "3", optional = true, features = ["json"] }
 fs2 = { version = "0.4", optional = true }
+herdr-protocol = { version = "0.2.1", path = "../crates/herdr-protocol", optional = true }
 
 [dev-dependencies]
 tempfile = "3"

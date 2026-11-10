@@ -10,6 +10,8 @@ use sha2::{Digest, Sha256};
 pub use zeroize::Zeroizing;
 
 #[cfg(feature = "host")]
+pub mod core;
+#[cfg(feature = "host")]
 pub mod host;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;

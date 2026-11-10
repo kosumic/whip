@@ -75,6 +75,7 @@ fi
 case "$url" in
   "$WHIP_TEST_URL.sha256") cat "$WHIP_TEST_ROOT/checksum" > "$output" ;;
   "$WHIP_TEST_URL") cat "$WHIP_TEST_ROOT/payload" > "$output" ;;
+  https://raw.githubusercontent.com/kosumic/whip/whip-notify-install-v*/whip-notify/*) cat "$WHIP_TEST_ROOT/${url##*/}" > "$output" ;;
   *) echo 'Unexpected release URL' >&2; exit 2 ;;
 esac
 "#,
@@ -84,7 +85,13 @@ esac
             "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$WHIP_TEST_ROOT/herdr-args\"\n",
         );
         let source = Path::new(env!("CARGO_MANIFEST_DIR"));
-        for name in ["build.sh", "install.sh", "herdr-plugin.toml", "platform.sh"] {
+        for name in [
+            "build.sh",
+            "install.sh",
+            "herdr-plugin.toml",
+            "platform.sh",
+            "install-core.sh",
+        ] {
             fs::copy(source.join(name), root.path().join(name)).unwrap();
         }
         let bytes = b"binary fixture; downloaded executables must never run during installation\n";
@@ -288,7 +295,12 @@ fn installer_tag_excludes_the_app_and_is_immutable() {
     let source = Path::new(env!("CARGO_MANIFEST_DIR"));
     let plugin = root.path().join("whip-notify");
     fs::create_dir(&plugin).unwrap();
-    for name in ["build.sh", "platform.sh", "herdr-plugin.toml"] {
+    for name in [
+        "build.sh",
+        "platform.sh",
+        "herdr-plugin.toml",
+        "install-core.sh",
+    ] {
         fs::copy(source.join(name), plugin.join(name)).unwrap();
     }
     fs::write(root.path().join("unrelated-app-asset"), [0; 16_384]).unwrap();
@@ -332,7 +344,7 @@ fn installer_tag_excludes_the_app_and_is_immutable() {
     assert_eq!(git(&["rev-list", "--count", &tag]), "1");
     assert_eq!(
         git(&["ls-tree", "-r", "--name-only", &tag]),
-        "whip-notify/build.sh\nwhip-notify/herdr-plugin.toml\nwhip-notify/platform.sh"
+        "whip-notify/build.sh\nwhip-notify/herdr-plugin.toml\nwhip-notify/install-core.sh\nwhip-notify/platform.sh"
     );
     assert!(prepare().status.success());
     fs::write(plugin.join("build.sh"), "changed installer").unwrap();
@@ -346,4 +358,55 @@ fn installer_tag_excludes_the_app_and_is_immutable() {
     let replaced = prepare();
     assert!(!replaced.status.success());
     assert!(String::from_utf8_lossy(&replaced.stderr).contains("increment the plugin version"));
+}
+
+#[test]
+fn core_installer_downloads_a_verified_binary_and_preserves_the_socket_argument() {
+    let mut installer = Installer::new("Linux", "arm64", Some("sha256sum"));
+    installer.bytes = b"#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$WHIP_TEST_ROOT/core-args\"\nprintf '%s\\n' '{\"installed\":true,\"enabled\":true}'\n";
+    fs::write(installer.root.path().join("payload"), installer.bytes).unwrap();
+    installer.checksum(
+        &format!("{:x}", Sha256::digest(installer.bytes)),
+        &installer.asset(),
+    );
+    let data = installer.root.path().join("data with spaces");
+    let socket = "/tmp/core ' $(touch unexpected).sock";
+    let output = installer
+        .command("install-core.sh")
+        .args(["--socket", socket])
+        .env("XDG_DATA_HOME", &data)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(installer.root.path().join("core-args")).unwrap(),
+        format!("core\n--socket\n{socket}\ninstall\n")
+    );
+    assert!(!installer.root.path().join("unexpected").exists());
+    assert!(!installer.root.path().join("herdr-args").exists());
+    let binary = data.join("whip-notify/core/whip-notify");
+    assert_eq!(fs::read(&binary).unwrap(), installer.bytes);
+    let failed = installer
+        .command("install-core.sh")
+        .args(["--socket", socket])
+        .env("XDG_DATA_HOME", &data)
+        .env("WHIP_TEST_FAIL", "network")
+        .output()
+        .unwrap();
+    assert!(!failed.status.success());
+    assert_eq!(fs::read(binary).unwrap(), installer.bytes);
+    assert!(
+        fs::read_dir(data.join("whip-notify/core"))
+            .unwrap()
+            .all(|entry| !entry
+                .unwrap()
+                .file_name()
+                .to_str()
+                .unwrap()
+                .starts_with(".install."))
+    );
 }

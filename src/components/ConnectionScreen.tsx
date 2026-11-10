@@ -474,7 +474,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
               <Field className="mt-2.5" label={t('connection.socket')} value={profile.herdrSocketPath || ''} placeholder="auto (~/.config/herdr/herdr.sock)" onChangeText={value => update('herdrSocketPath', value)} autoCapitalize="none" />
             </View> : null}
           </View>
-          {savedHost && herdrEnabled && (profile.herdrBackend ?? 'legacy') === 'legacy' && (savedHost.herdrBackend ?? 'legacy') === 'legacy' ? (
+          {savedHost && herdrEnabled && (profile.herdrBackend ?? 'legacy') === (savedHost.herdrBackend ?? 'legacy') ? (
             <View className="border-t border-border">
               <RemoteNotificationsSection key={savedHost.id} host={savedHost} connected={connected} />
             </View>

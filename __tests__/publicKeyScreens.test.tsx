@@ -217,7 +217,7 @@ test.each([true, false])('push settings belong only to the saved host detail (sa
   await act(async () => { view.unmount(); });
 });
 
-test.each([undefined, 'legacy', 'core'] as const)('push settings require a saved Legacy host and Legacy selection (saved backend: %s)', async backend => {
+test.each([undefined, 'legacy', 'core'] as const)('push settings require a saved backend matching the selection (saved backend: %s)', async backend => {
   const savedHost = { ...host, herdrBackend: backend };
   let view!: ReactTestRenderer;
   await act(async () => {
@@ -226,11 +226,11 @@ test.each([undefined, 'legacy', 'core'] as const)('push settings require a saved
   const pushSettings = () => view.root.findAllByType('RemoteNotificationsSection' as never);
   const selectBackend = (name: string) => view.root.findAllByProps({ accessibilityRole: 'radio' })
     .find(node => node.findAllByType('Text' as never).some(text => text.props.children === `connection.herdrBackend.${name}`))!;
-  expect(pushSettings()).toHaveLength(backend === 'core' ? 0 : 1);
+  expect(pushSettings()).toHaveLength(1);
   await act(async () => { selectBackend('core').props.onPress(); });
-  expect(pushSettings()).toHaveLength(0);
+  expect(pushSettings()).toHaveLength(backend === 'core' ? 1 : 0);
   await act(async () => { selectBackend('legacy').props.onPress(); });
-  // Selecting Legacy cannot enable plugin operations on a still-saved Core host.
+  // Backend changes must be saved before managing the other backend's service.
   expect(pushSettings()).toHaveLength(backend === 'core' ? 0 : 1);
   await act(async () => { view.unmount(); });
 });

@@ -1,4 +1,4 @@
-//! Short-lived plugin hooks and atomic private files. No host daemon.
+//! Shared push delivery, leases and atomic private files.
 use crate::{
     Envelope, Header, KeyPair, NotificationEvent, Result, VERSION, encrypt, generate_key, key_id,
     public_key, valid_id,
@@ -16,6 +16,43 @@ use std::{
 pub const LEASE_TTL: Duration = Duration::from_secs(10);
 pub const MAX_DEVICES: usize = 32;
 const LEASE_MARKER: &[u8] = b"whip-notify-lease-v1\n";
+
+pub fn hostname() -> String {
+    let mut name = [0u8; 256];
+    // SAFETY: name is writable for the full length passed to gethostname.
+    if unsafe { libc::gethostname(name.as_mut_ptr().cast(), name.len()) } != 0 {
+        return String::new();
+    }
+    let end = name
+        .iter()
+        .position(|&byte| byte == 0)
+        .unwrap_or(name.len());
+    String::from_utf8_lossy(&name[..end]).into_owned()
+}
+
+/// One bounded delivery attempt; both backends use the same encryption and leases.
+pub fn push(
+    store: &Store,
+    event: &NotificationEvent,
+    preview: &NotificationPreview,
+) -> Result<usize> {
+    let deadline = std::time::Instant::now() + Duration::from_secs(4);
+    deliver(store, event, &|device, envelope| {
+        let remaining = deadline
+            .checked_duration_since(std::time::Instant::now())
+            .ok_or("push deadline")?;
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .timeout_global(Some(remaining))
+            .max_redirects(0)
+            .build()
+            .into();
+        agent
+            .post(format!("{}/v1/push", device.relay_url))
+            .header("Authorization", format!("Bearer {}", device.route_token))
+            .send_json(device.push_request(envelope, preview))?;
+        Ok(())
+    })
+}
 
 pub fn private_dir(path: &Path) -> Result<()> {
     fs::DirBuilder::new()
@@ -176,15 +213,25 @@ pub fn notification_preview(
     let hook: Hook = serde_json::from_str(json)?;
     let context: serde_json::Value = serde_json::from_str(context)?;
     let pane_context = context["focused_pane_id"].as_str() == Some(&event.pane_id);
-    let name = hook
-        .data
-        .agent
-        .as_deref()
-        .or_else(|| {
-            pane_context
-                .then(|| context["focused_pane_agent"].as_str())
-                .flatten()
-        })
+    let agent = hook.data.agent.as_deref().or_else(|| {
+        pane_context
+            .then(|| context["focused_pane_agent"].as_str())
+            .flatten()
+    });
+    let tab = pane_context
+        .then(|| context["tab_label"].as_str())
+        .flatten();
+    Ok(agent_preview(event, agent, tab, hostname))
+}
+
+/// Backend-neutral, bounded display text; routing always remains encrypted.
+pub fn agent_preview(
+    event: &NotificationEvent,
+    agent: Option<&str>,
+    tab: Option<&str>,
+    hostname: &str,
+) -> NotificationPreview {
+    let name = agent
         .map(|name| preview_text(name, PREVIEW_LABEL_BYTES))
         .filter(|name| !name.is_empty())
         .unwrap_or_else(|| "Agent".into());
@@ -193,9 +240,6 @@ pub fn notification_preview(
     } else {
         "finished"
     };
-    let tab = pane_context
-        .then(|| context["tab_label"].as_str())
-        .flatten();
     let tab = tab
         .map(|tab| preview_text(tab, PREVIEW_LABEL_BYTES))
         .filter(|tab| !tab.is_empty());
@@ -216,10 +260,10 @@ pub fn notification_preview(
     } else {
         format!("{hostname} · {body}")
     };
-    Ok(NotificationPreview {
+    NotificationPreview {
         title: preview_text(&title, PREVIEW_TITLE_BYTES),
         body: preview_text(&body, PREVIEW_BODY_BYTES),
-    })
+    }
 }
 impl Registration {
     pub fn validate(&self) -> Result<()> {

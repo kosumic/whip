@@ -37,9 +37,10 @@ jobs:
         run: |
           version=$(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[0].version')
           manifest_version=$(sed -n 's/^version = "\([0-9][0-9.]*\)"$/\1/p' herdr-plugin.toml)
+          core_installer_version=$(sed -n 's/^notify_version=//p' install-core.sh)
           tag="whip-notify-v$version"
-          if [[ "$version" != "$manifest_version" ]]; then
-            echo 'Cargo and plugin manifest versions must match' >&2
+          if [[ "$version" != "$manifest_version" || "$version" != "$core_installer_version" ]]; then
+            echo 'Cargo, plugin manifest and Core installer versions must match' >&2
             exit 1
           fi
           if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF_NAME" != "$tag" ]]; then
@@ -89,8 +90,8 @@ jobs:
         with:
           workspaces: whip-notify
           key: ${{ matrix.target }}
-      - name: Test installer on the release host
-        run: cargo test --locked --manifest-path whip-notify/Cargo.toml --test installation
+      - name: Test installer and Core notifications on the release host
+        run: cargo test --locked --manifest-path whip-notify/Cargo.toml --test installation --test core --test core_service
       - name: Build standalone release binary
         run: cargo build --release --locked --manifest-path whip-notify/Cargo.toml --target "$RUST_TARGET"
       - name: Package, smoke test and checksum binary
