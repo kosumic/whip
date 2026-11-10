@@ -138,6 +138,8 @@ pub enum SshWorkflowResult {
     Cancelled,
 }
 #[derive(Debug, thiserror::Error, uniffi::Error)]
+// Send Display messages across the bridge, including nested pairing failures.
+#[uniffi(flat_error)]
 pub enum SshWorkflowError {
     #[error("SSH operation was cancelled or its host/credential identity changed")]
     Cancelled,

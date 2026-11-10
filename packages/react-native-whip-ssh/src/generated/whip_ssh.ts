@@ -38875,7 +38875,7 @@ const FfiConverterTypeSshError = (() => {
   return new FFIConverter();
 })();
 
-// Error type: SshWorkflowError
+// Flat error type: SshWorkflowError
 export enum SshWorkflowError_Tags {
   Cancelled = 'Cancelled',
   NeverConnected = 'NeverConnected',
@@ -38891,377 +38891,293 @@ export enum SshWorkflowError_Tags {
   ResultConsumed = 'ResultConsumed',
 }
 export const SshWorkflowError = (() => {
-  type Cancelled__interface = {
-    tag: SshWorkflowError_Tags.Cancelled;
-  };
-  class Cancelled_ extends UniffiError implements Cancelled__interface {
+  class Cancelled extends UniffiError {
     /**
      * @private
-     * This field is private and should not be used, use `tag` instead.
+     * This field is private and should not be used.
      */
-    readonly [uniffiTypeNameSymbol] = 'SshWorkflowError';
+    readonly [uniffiTypeNameSymbol]: string = 'SshWorkflowError';
+    /**
+     * @private
+     * This field is private and should not be used.
+     */
+    readonly [variantOrdinalSymbol] = 1;
+
     readonly tag = SshWorkflowError_Tags.Cancelled;
-    constructor() {
-      super('SshWorkflowError', 'Cancelled');
+
+    constructor(message: string) {
+      super('SshWorkflowError', 'Cancelled', message);
     }
 
-    static new(): Cancelled_ {
-      return new Cancelled_();
-    }
-
-    static instanceOf(obj: any): obj is Cancelled_ {
-      return obj.tag === SshWorkflowError_Tags.Cancelled;
-    }
-    static hasInner(obj: any): obj is Cancelled_ {
-      return false;
+    static instanceOf(e: any): e is Cancelled {
+      return instanceOf(e) && (e as any)[variantOrdinalSymbol] === 1;
     }
   }
-
-  type NeverConnected__interface = {
-    tag: SshWorkflowError_Tags.NeverConnected;
-  };
-  class NeverConnected_
-    extends UniffiError
-    implements NeverConnected__interface
-  {
+  class NeverConnected extends UniffiError {
     /**
      * @private
-     * This field is private and should not be used, use `tag` instead.
+     * This field is private and should not be used.
      */
-    readonly [uniffiTypeNameSymbol] = 'SshWorkflowError';
+    readonly [uniffiTypeNameSymbol]: string = 'SshWorkflowError';
+    /**
+     * @private
+     * This field is private and should not be used.
+     */
+    readonly [variantOrdinalSymbol] = 2;
+
     readonly tag = SshWorkflowError_Tags.NeverConnected;
-    constructor() {
-      super('SshWorkflowError', 'NeverConnected');
+
+    constructor(message: string) {
+      super('SshWorkflowError', 'NeverConnected', message);
     }
 
-    static new(): NeverConnected_ {
-      return new NeverConnected_();
-    }
-
-    static instanceOf(obj: any): obj is NeverConnected_ {
-      return obj.tag === SshWorkflowError_Tags.NeverConnected;
-    }
-    static hasInner(obj: any): obj is NeverConnected_ {
-      return false;
+    static instanceOf(e: any): e is NeverConnected {
+      return instanceOf(e) && (e as any)[variantOrdinalSymbol] === 2;
     }
   }
-
-  type InvalidRoute__interface = {
-    tag: SshWorkflowError_Tags.InvalidRoute;
-  };
-  class InvalidRoute_ extends UniffiError implements InvalidRoute__interface {
+  class InvalidRoute extends UniffiError {
     /**
      * @private
-     * This field is private and should not be used, use `tag` instead.
+     * This field is private and should not be used.
      */
-    readonly [uniffiTypeNameSymbol] = 'SshWorkflowError';
+    readonly [uniffiTypeNameSymbol]: string = 'SshWorkflowError';
+    /**
+     * @private
+     * This field is private and should not be used.
+     */
+    readonly [variantOrdinalSymbol] = 3;
+
     readonly tag = SshWorkflowError_Tags.InvalidRoute;
-    constructor() {
-      super('SshWorkflowError', 'InvalidRoute');
+
+    constructor(message: string) {
+      super('SshWorkflowError', 'InvalidRoute', message);
     }
 
-    static new(): InvalidRoute_ {
-      return new InvalidRoute_();
-    }
-
-    static instanceOf(obj: any): obj is InvalidRoute_ {
-      return obj.tag === SshWorkflowError_Tags.InvalidRoute;
-    }
-    static hasInner(obj: any): obj is InvalidRoute_ {
-      return false;
+    static instanceOf(e: any): e is InvalidRoute {
+      return instanceOf(e) && (e as any)[variantOrdinalSymbol] === 3;
     }
   }
-
-  type MissingCredential__interface = {
-    tag: SshWorkflowError_Tags.MissingCredential;
-  };
-  class MissingCredential_
-    extends UniffiError
-    implements MissingCredential__interface
-  {
+  class MissingCredential extends UniffiError {
     /**
      * @private
-     * This field is private and should not be used, use `tag` instead.
+     * This field is private and should not be used.
      */
-    readonly [uniffiTypeNameSymbol] = 'SshWorkflowError';
+    readonly [uniffiTypeNameSymbol]: string = 'SshWorkflowError';
+    /**
+     * @private
+     * This field is private and should not be used.
+     */
+    readonly [variantOrdinalSymbol] = 4;
+
     readonly tag = SshWorkflowError_Tags.MissingCredential;
-    constructor() {
-      super('SshWorkflowError', 'MissingCredential');
+
+    constructor(message: string) {
+      super('SshWorkflowError', 'MissingCredential', message);
     }
 
-    static new(): MissingCredential_ {
-      return new MissingCredential_();
-    }
-
-    static instanceOf(obj: any): obj is MissingCredential_ {
-      return obj.tag === SshWorkflowError_Tags.MissingCredential;
-    }
-    static hasInner(obj: any): obj is MissingCredential_ {
-      return false;
+    static instanceOf(e: any): e is MissingCredential {
+      return instanceOf(e) && (e as any)[variantOrdinalSymbol] === 4;
     }
   }
-
-  type InvalidChallenge__interface = {
-    tag: SshWorkflowError_Tags.InvalidChallenge;
-  };
-  class InvalidChallenge_
-    extends UniffiError
-    implements InvalidChallenge__interface
-  {
+  class InvalidChallenge extends UniffiError {
     /**
      * @private
-     * This field is private and should not be used, use `tag` instead.
+     * This field is private and should not be used.
      */
-    readonly [uniffiTypeNameSymbol] = 'SshWorkflowError';
+    readonly [uniffiTypeNameSymbol]: string = 'SshWorkflowError';
+    /**
+     * @private
+     * This field is private and should not be used.
+     */
+    readonly [variantOrdinalSymbol] = 5;
+
     readonly tag = SshWorkflowError_Tags.InvalidChallenge;
-    constructor() {
-      super('SshWorkflowError', 'InvalidChallenge');
+
+    constructor(message: string) {
+      super('SshWorkflowError', 'InvalidChallenge', message);
     }
 
-    static new(): InvalidChallenge_ {
-      return new InvalidChallenge_();
-    }
-
-    static instanceOf(obj: any): obj is InvalidChallenge_ {
-      return obj.tag === SshWorkflowError_Tags.InvalidChallenge;
-    }
-    static hasInner(obj: any): obj is InvalidChallenge_ {
-      return false;
+    static instanceOf(e: any): e is InvalidChallenge {
+      return instanceOf(e) && (e as any)[variantOrdinalSymbol] === 5;
     }
   }
-
-  type TrustUnavailable__interface = {
-    tag: SshWorkflowError_Tags.TrustUnavailable;
-  };
-  class TrustUnavailable_
-    extends UniffiError
-    implements TrustUnavailable__interface
-  {
+  class TrustUnavailable extends UniffiError {
     /**
      * @private
-     * This field is private and should not be used, use `tag` instead.
+     * This field is private and should not be used.
      */
-    readonly [uniffiTypeNameSymbol] = 'SshWorkflowError';
+    readonly [uniffiTypeNameSymbol]: string = 'SshWorkflowError';
+    /**
+     * @private
+     * This field is private and should not be used.
+     */
+    readonly [variantOrdinalSymbol] = 6;
+
     readonly tag = SshWorkflowError_Tags.TrustUnavailable;
-    constructor() {
-      super('SshWorkflowError', 'TrustUnavailable');
+
+    constructor(message: string) {
+      super('SshWorkflowError', 'TrustUnavailable', message);
     }
 
-    static new(): TrustUnavailable_ {
-      return new TrustUnavailable_();
-    }
-
-    static instanceOf(obj: any): obj is TrustUnavailable_ {
-      return obj.tag === SshWorkflowError_Tags.TrustUnavailable;
-    }
-    static hasInner(obj: any): obj is TrustUnavailable_ {
-      return false;
+    static instanceOf(e: any): e is TrustUnavailable {
+      return instanceOf(e) && (e as any)[variantOrdinalSymbol] === 6;
     }
   }
-
-  type Platform__interface = {
-    tag: SshWorkflowError_Tags.Platform;
-  };
-  class Platform_ extends UniffiError implements Platform__interface {
+  class Platform extends UniffiError {
     /**
      * @private
-     * This field is private and should not be used, use `tag` instead.
+     * This field is private and should not be used.
      */
-    readonly [uniffiTypeNameSymbol] = 'SshWorkflowError';
+    readonly [uniffiTypeNameSymbol]: string = 'SshWorkflowError';
+    /**
+     * @private
+     * This field is private and should not be used.
+     */
+    readonly [variantOrdinalSymbol] = 7;
+
     readonly tag = SshWorkflowError_Tags.Platform;
-    constructor() {
-      super('SshWorkflowError', 'Platform');
+
+    constructor(message: string) {
+      super('SshWorkflowError', 'Platform', message);
     }
 
-    static new(): Platform_ {
-      return new Platform_();
-    }
-
-    static instanceOf(obj: any): obj is Platform_ {
-      return obj.tag === SshWorkflowError_Tags.Platform;
-    }
-    static hasInner(obj: any): obj is Platform_ {
-      return false;
+    static instanceOf(e: any): e is Platform {
+      return instanceOf(e) && (e as any)[variantOrdinalSymbol] === 7;
     }
   }
-
-  type Timeout__interface = {
-    tag: SshWorkflowError_Tags.Timeout;
-  };
-  class Timeout_ extends UniffiError implements Timeout__interface {
+  class Timeout extends UniffiError {
     /**
      * @private
-     * This field is private and should not be used, use `tag` instead.
+     * This field is private and should not be used.
      */
-    readonly [uniffiTypeNameSymbol] = 'SshWorkflowError';
+    readonly [uniffiTypeNameSymbol]: string = 'SshWorkflowError';
+    /**
+     * @private
+     * This field is private and should not be used.
+     */
+    readonly [variantOrdinalSymbol] = 8;
+
     readonly tag = SshWorkflowError_Tags.Timeout;
-    constructor() {
-      super('SshWorkflowError', 'Timeout');
+
+    constructor(message: string) {
+      super('SshWorkflowError', 'Timeout', message);
     }
 
-    static new(): Timeout_ {
-      return new Timeout_();
-    }
-
-    static instanceOf(obj: any): obj is Timeout_ {
-      return obj.tag === SshWorkflowError_Tags.Timeout;
-    }
-    static hasInner(obj: any): obj is Timeout_ {
-      return false;
+    static instanceOf(e: any): e is Timeout {
+      return instanceOf(e) && (e as any)[variantOrdinalSymbol] === 8;
     }
   }
-
-  type OutcomeUnknown__interface = {
-    tag: SshWorkflowError_Tags.OutcomeUnknown;
-    inner: Readonly<{ operationId: string }>;
-  };
-  class OutcomeUnknown_
-    extends UniffiError
-    implements OutcomeUnknown__interface
-  {
+  class OutcomeUnknown extends UniffiError {
     /**
      * @private
-     * This field is private and should not be used, use `tag` instead.
+     * This field is private and should not be used.
      */
-    readonly [uniffiTypeNameSymbol] = 'SshWorkflowError';
+    readonly [uniffiTypeNameSymbol]: string = 'SshWorkflowError';
+    /**
+     * @private
+     * This field is private and should not be used.
+     */
+    readonly [variantOrdinalSymbol] = 9;
+
     readonly tag = SshWorkflowError_Tags.OutcomeUnknown;
-    readonly inner: Readonly<{ operationId: string }>;
-    constructor(inner: { operationId: string }) {
-      super('SshWorkflowError', 'OutcomeUnknown');
 
-      this.inner = Object.freeze(inner);
-    }
-    static new(inner: { operationId: string }): OutcomeUnknown_ {
-      return new OutcomeUnknown_(inner);
+    constructor(message: string) {
+      super('SshWorkflowError', 'OutcomeUnknown', message);
     }
 
-    static instanceOf(obj: any): obj is OutcomeUnknown_ {
-      return obj.tag === SshWorkflowError_Tags.OutcomeUnknown;
-    }
-    static hasInner(obj: any): obj is OutcomeUnknown_ {
-      return OutcomeUnknown_.instanceOf(obj);
-    }
-
-    static getInner(obj: OutcomeUnknown_): Readonly<{ operationId: string }> {
-      return obj.inner;
+    static instanceOf(e: any): e is OutcomeUnknown {
+      return instanceOf(e) && (e as any)[variantOrdinalSymbol] === 9;
     }
   }
-
-  type Pairing__interface = {
-    tag: SshWorkflowError_Tags.Pairing;
-    inner: Readonly<[PairHostError]>;
-  };
-  class Pairing_ extends UniffiError implements Pairing__interface {
+  class Pairing extends UniffiError {
     /**
      * @private
-     * This field is private and should not be used, use `tag` instead.
+     * This field is private and should not be used.
      */
-    readonly [uniffiTypeNameSymbol] = 'SshWorkflowError';
+    readonly [uniffiTypeNameSymbol]: string = 'SshWorkflowError';
+    /**
+     * @private
+     * This field is private and should not be used.
+     */
+    readonly [variantOrdinalSymbol] = 10;
+
     readonly tag = SshWorkflowError_Tags.Pairing;
-    readonly inner: Readonly<[PairHostError]>;
-    constructor(v0: PairHostError) {
-      super('SshWorkflowError', 'Pairing');
 
-      this.inner = Object.freeze([v0]);
-    }
-    static new(v0: PairHostError): Pairing_ {
-      return new Pairing_(v0);
+    constructor(message: string) {
+      super('SshWorkflowError', 'Pairing', message);
     }
 
-    static instanceOf(obj: any): obj is Pairing_ {
-      return obj.tag === SshWorkflowError_Tags.Pairing;
-    }
-    static hasInner(obj: any): obj is Pairing_ {
-      return Pairing_.instanceOf(obj);
-    }
-
-    static getInner(obj: Pairing_): Readonly<[PairHostError]> {
-      return obj.inner;
+    static instanceOf(e: any): e is Pairing {
+      return instanceOf(e) && (e as any)[variantOrdinalSymbol] === 10;
     }
   }
-
-  type Installation__interface = {
-    tag: SshWorkflowError_Tags.Installation;
-    inner: Readonly<[HostRuntimeError]>;
-  };
-  class Installation_ extends UniffiError implements Installation__interface {
+  class Installation extends UniffiError {
     /**
      * @private
-     * This field is private and should not be used, use `tag` instead.
+     * This field is private and should not be used.
      */
-    readonly [uniffiTypeNameSymbol] = 'SshWorkflowError';
+    readonly [uniffiTypeNameSymbol]: string = 'SshWorkflowError';
+    /**
+     * @private
+     * This field is private and should not be used.
+     */
+    readonly [variantOrdinalSymbol] = 11;
+
     readonly tag = SshWorkflowError_Tags.Installation;
-    readonly inner: Readonly<[HostRuntimeError]>;
-    constructor(v0: HostRuntimeError) {
-      super('SshWorkflowError', 'Installation');
 
-      this.inner = Object.freeze([v0]);
-    }
-    static new(v0: HostRuntimeError): Installation_ {
-      return new Installation_(v0);
+    constructor(message: string) {
+      super('SshWorkflowError', 'Installation', message);
     }
 
-    static instanceOf(obj: any): obj is Installation_ {
-      return obj.tag === SshWorkflowError_Tags.Installation;
-    }
-    static hasInner(obj: any): obj is Installation_ {
-      return Installation_.instanceOf(obj);
-    }
-
-    static getInner(obj: Installation_): Readonly<[HostRuntimeError]> {
-      return obj.inner;
+    static instanceOf(e: any): e is Installation {
+      return instanceOf(e) && (e as any)[variantOrdinalSymbol] === 11;
     }
   }
-
-  type ResultConsumed__interface = {
-    tag: SshWorkflowError_Tags.ResultConsumed;
-  };
-  class ResultConsumed_
-    extends UniffiError
-    implements ResultConsumed__interface
-  {
+  class ResultConsumed extends UniffiError {
     /**
      * @private
-     * This field is private and should not be used, use `tag` instead.
+     * This field is private and should not be used.
      */
-    readonly [uniffiTypeNameSymbol] = 'SshWorkflowError';
+    readonly [uniffiTypeNameSymbol]: string = 'SshWorkflowError';
+    /**
+     * @private
+     * This field is private and should not be used.
+     */
+    readonly [variantOrdinalSymbol] = 12;
+
     readonly tag = SshWorkflowError_Tags.ResultConsumed;
-    constructor() {
-      super('SshWorkflowError', 'ResultConsumed');
+
+    constructor(message: string) {
+      super('SshWorkflowError', 'ResultConsumed', message);
     }
 
-    static new(): ResultConsumed_ {
-      return new ResultConsumed_();
-    }
-
-    static instanceOf(obj: any): obj is ResultConsumed_ {
-      return obj.tag === SshWorkflowError_Tags.ResultConsumed;
-    }
-    static hasInner(obj: any): obj is ResultConsumed_ {
-      return false;
+    static instanceOf(e: any): e is ResultConsumed {
+      return instanceOf(e) && (e as any)[variantOrdinalSymbol] === 12;
     }
   }
 
-  function instanceOf(obj: any): obj is SshWorkflowError {
-    return obj[uniffiTypeNameSymbol] === 'SshWorkflowError';
+  // Utility function which does not rely on instanceof.
+  function instanceOf(e: any): e is SshWorkflowError {
+    return (e as any)[uniffiTypeNameSymbol] === 'SshWorkflowError';
   }
-
-  return Object.freeze({
+  return {
+    Cancelled,
+    NeverConnected,
+    InvalidRoute,
+    MissingCredential,
+    InvalidChallenge,
+    TrustUnavailable,
+    Platform,
+    Timeout,
+    OutcomeUnknown,
+    Pairing,
+    Installation,
+    ResultConsumed,
     instanceOf,
-    Cancelled: Cancelled_,
-    NeverConnected: NeverConnected_,
-    InvalidRoute: InvalidRoute_,
-    MissingCredential: MissingCredential_,
-    InvalidChallenge: InvalidChallenge_,
-    TrustUnavailable: TrustUnavailable_,
-    Platform: Platform_,
-    Timeout: Timeout_,
-    OutcomeUnknown: OutcomeUnknown_,
-    Pairing: Pairing_,
-    Installation: Installation_,
-    ResultConsumed: ResultConsumed_,
-  });
+  };
 })();
+
+// Union type for SshWorkflowError error type.
 export type SshWorkflowError = InstanceType<
   (typeof SshWorkflowError)[
     | 'Cancelled'
@@ -39278,161 +39194,78 @@ export type SshWorkflowError = InstanceType<
     | 'ResultConsumed']
 >;
 
-// FfiConverter for enum SshWorkflowError
 const FfiConverterTypeSshWorkflowError = (() => {
-  const ordinalConverter = FfiConverterInt32;
+  const intConverter = FfiConverterInt32;
   type TypeName = SshWorkflowError;
-  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+  class FfiConverter extends AbstractFfiConverterByteArray<TypeName> {
     read(from: RustBuffer): TypeName {
-      switch (ordinalConverter.read(from)) {
+      switch (intConverter.read(from)) {
         case 1:
-          return new SshWorkflowError.Cancelled();
+          return new SshWorkflowError.Cancelled(FfiConverterString.read(from));
+
         case 2:
-          return new SshWorkflowError.NeverConnected();
-        case 3:
-          return new SshWorkflowError.InvalidRoute();
-        case 4:
-          return new SshWorkflowError.MissingCredential();
-        case 5:
-          return new SshWorkflowError.InvalidChallenge();
-        case 6:
-          return new SshWorkflowError.TrustUnavailable();
-        case 7:
-          return new SshWorkflowError.Platform();
-        case 8:
-          return new SshWorkflowError.Timeout();
-        case 9:
-          return new SshWorkflowError.OutcomeUnknown({
-            operationId: FfiConverterString.read(from),
-          });
-        case 10:
-          return new SshWorkflowError.Pairing(
-            FfiConverterTypePairHostError.read(from),
+          return new SshWorkflowError.NeverConnected(
+            FfiConverterString.read(from),
           );
+
+        case 3:
+          return new SshWorkflowError.InvalidRoute(
+            FfiConverterString.read(from),
+          );
+
+        case 4:
+          return new SshWorkflowError.MissingCredential(
+            FfiConverterString.read(from),
+          );
+
+        case 5:
+          return new SshWorkflowError.InvalidChallenge(
+            FfiConverterString.read(from),
+          );
+
+        case 6:
+          return new SshWorkflowError.TrustUnavailable(
+            FfiConverterString.read(from),
+          );
+
+        case 7:
+          return new SshWorkflowError.Platform(FfiConverterString.read(from));
+
+        case 8:
+          return new SshWorkflowError.Timeout(FfiConverterString.read(from));
+
+        case 9:
+          return new SshWorkflowError.OutcomeUnknown(
+            FfiConverterString.read(from),
+          );
+
+        case 10:
+          return new SshWorkflowError.Pairing(FfiConverterString.read(from));
+
         case 11:
           return new SshWorkflowError.Installation(
-            FfiConverterTypeHostRuntimeError.read(from),
+            FfiConverterString.read(from),
           );
+
         case 12:
-          return new SshWorkflowError.ResultConsumed();
+          return new SshWorkflowError.ResultConsumed(
+            FfiConverterString.read(from),
+          );
+
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
       }
     }
     write(value: TypeName, into: RustBuffer): void {
-      switch (value.tag) {
-        case SshWorkflowError_Tags.Cancelled: {
-          ordinalConverter.write(1, into);
-          return;
-        }
-        case SshWorkflowError_Tags.NeverConnected: {
-          ordinalConverter.write(2, into);
-          return;
-        }
-        case SshWorkflowError_Tags.InvalidRoute: {
-          ordinalConverter.write(3, into);
-          return;
-        }
-        case SshWorkflowError_Tags.MissingCredential: {
-          ordinalConverter.write(4, into);
-          return;
-        }
-        case SshWorkflowError_Tags.InvalidChallenge: {
-          ordinalConverter.write(5, into);
-          return;
-        }
-        case SshWorkflowError_Tags.TrustUnavailable: {
-          ordinalConverter.write(6, into);
-          return;
-        }
-        case SshWorkflowError_Tags.Platform: {
-          ordinalConverter.write(7, into);
-          return;
-        }
-        case SshWorkflowError_Tags.Timeout: {
-          ordinalConverter.write(8, into);
-          return;
-        }
-        case SshWorkflowError_Tags.OutcomeUnknown: {
-          ordinalConverter.write(9, into);
-          const inner = value.inner;
-          FfiConverterString.write(inner.operationId, into);
-          return;
-        }
-        case SshWorkflowError_Tags.Pairing: {
-          ordinalConverter.write(10, into);
-          const inner = value.inner;
-          FfiConverterTypePairHostError.write(inner[0], into);
-          return;
-        }
-        case SshWorkflowError_Tags.Installation: {
-          ordinalConverter.write(11, into);
-          const inner = value.inner;
-          FfiConverterTypeHostRuntimeError.write(inner[0], into);
-          return;
-        }
-        case SshWorkflowError_Tags.ResultConsumed: {
-          ordinalConverter.write(12, into);
-          return;
-        }
-        default:
-          // Throwing from here means that SshWorkflowError_Tags hasn't matched an ordinal.
-          throw new UniffiInternalError.UnexpectedEnumCase();
-      }
+      const obj = value as any;
+      const index = obj[variantOrdinalSymbol] as number;
+      intConverter.write(index, into);
     }
     allocationSize(value: TypeName): number {
-      switch (value.tag) {
-        case SshWorkflowError_Tags.Cancelled: {
-          return ordinalConverter.allocationSize(1);
-        }
-        case SshWorkflowError_Tags.NeverConnected: {
-          return ordinalConverter.allocationSize(2);
-        }
-        case SshWorkflowError_Tags.InvalidRoute: {
-          return ordinalConverter.allocationSize(3);
-        }
-        case SshWorkflowError_Tags.MissingCredential: {
-          return ordinalConverter.allocationSize(4);
-        }
-        case SshWorkflowError_Tags.InvalidChallenge: {
-          return ordinalConverter.allocationSize(5);
-        }
-        case SshWorkflowError_Tags.TrustUnavailable: {
-          return ordinalConverter.allocationSize(6);
-        }
-        case SshWorkflowError_Tags.Platform: {
-          return ordinalConverter.allocationSize(7);
-        }
-        case SshWorkflowError_Tags.Timeout: {
-          return ordinalConverter.allocationSize(8);
-        }
-        case SshWorkflowError_Tags.OutcomeUnknown: {
-          const inner = value.inner;
-          let size = ordinalConverter.allocationSize(9);
-          size += FfiConverterString.allocationSize(inner.operationId);
-          return size;
-        }
-        case SshWorkflowError_Tags.Pairing: {
-          const inner = value.inner;
-          let size = ordinalConverter.allocationSize(10);
-          size += FfiConverterTypePairHostError.allocationSize(inner[0]);
-          return size;
-        }
-        case SshWorkflowError_Tags.Installation: {
-          const inner = value.inner;
-          let size = ordinalConverter.allocationSize(11);
-          size += FfiConverterTypeHostRuntimeError.allocationSize(inner[0]);
-          return size;
-        }
-        case SshWorkflowError_Tags.ResultConsumed: {
-          return ordinalConverter.allocationSize(12);
-        }
-        default:
-          throw new UniffiInternalError.UnexpectedEnumCase();
-      }
+      return intConverter.allocationSize(0);
     }
   }
-  return new FFIConverter();
+  return new FfiConverter();
 })();
 
 // Error type: SshWorkflowPlatformError

@@ -1,6 +1,7 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { Alert, Platform } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
+import { SshWorkflowError } from '../packages/react-native-whip-ssh/src/generated/whip_ssh';
 
 import { NewHostScreen } from '../src/components/NewHostScreen';
 import { JumpHostSelect } from '../src/components/JumpHostSelect';
@@ -36,7 +37,9 @@ jest.mock('react-native-whip-ssh', () => ({
   generateKeyPair: () => ({ privateKey: 'PRIVATE', publicKey: 'ssh-ed25519 AAAA' }),
   getKeyDetails: () => ({ publicKey: 'ssh-ed25519 AAAA', fingerprint: 'SHA256:test' }),
 }));
-jest.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+jest.mock('react-i18next', () => ({ useTranslation: () => ({
+  t: (key: string, values?: { error?: string }) => values?.error ? `${key}: ${values.error}` : key,
+}) }));
 jest.mock('../src/theme', () => ({ useTheme: () => ({ colors: {} }) }));
 jest.mock('../src/lib/hostProfiles', () => ({ hostDisplayName: (host: HostProfile) => host.name }));
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
@@ -215,10 +218,13 @@ test('pairing failures return to setup with the route intact and allow a fresh s
   expect(view.root.findAllByType('CameraView' as never)).toHaveLength(0);
   expect(view.root.findByType(JumpHostSelect).props.disabled).toBe(true);
   expect(view.root.findAllByType('Text' as never).some(node => node.props.children === 'pairing.verify')).toBe(true);
-  await act(async () => { rejectPairing(new Error('Host unavailable')); await pending; });
+  const reason = 'SSH pairing connection timed out';
+  await act(async () => { rejectPairing(new SshWorkflowError.Pairing(reason)); await pending; });
   expect(view.root.findByType(JumpHostSelect).props.disabled).toBe(false);
   expect(view.root.findByType(JumpHostSelect).props.selectedHostId).toBe(bastion.id);
-  expect(view.root.findAllByType('Text' as never).some(node => node.props.children === 'pairing.pairError')).toBe(true);
+  expect(view.root.findAllByType('Text' as never).some(node =>
+    typeof node.props.children === 'string' && node.props.children.includes(reason),
+  )).toBe(true);
   await openScanner(view);
   expect(view.root.findAllByType('CameraView' as never)).toHaveLength(1);
   await act(async () => { view.unmount(); });
