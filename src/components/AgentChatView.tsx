@@ -52,8 +52,10 @@ import type {
 import { isQuestionTool, isRunningTool as isRunning } from '../lib/agentChatBlocks';
 import { resolveChatRow, type ChatBlock, type ChatRow, type ChatRowStore } from '../lib/nativeChatRows';
 import { useNativeChatRows } from '../hooks/useNativeChatRows';
+import { useCommittedCallbacks } from '../hooks/useCommittedCallbacks';
 import { TranscriptMarkdownImages } from '../hooks/useTranscriptMarkdownImages';
 import { nativeTranscriptLookup } from '../lib/nativeAgentTranscript';
+import { markdownImageTargets } from '../lib/markdownRemoteLinks';
 import { CHAT_WORKING_LABEL, CHAT_WORKING_SHIMMER_PERIOD_MS, workingShimmerOpacity } from '../lib/chatWorkingAnimation';
 import type { ChatViewportState } from '../lib/chatViewportState';
 import { chatAgentDisplayName, type ChatAgent } from '../lib/agentChatSession';
@@ -684,6 +686,26 @@ function ChangedFiles({ turn, expanded, onToggle }: BlockExpansion & { turn: Tra
   );
 }
 
+// Completed history keeps the same render props when its chat is hidden or
+// revealed. Only rows with live content or images need that transition.
+const blockActivity = new WeakMap<ChatBlock, boolean>();
+function chatBlockNeedsActivity(block: ChatBlock): boolean {
+  const cached = blockActivity.get(block);
+  if (cached !== undefined) return cached;
+  let needed = false;
+  if (block.type === 'user') {
+    needed = block.message.parts.some(part => part.type === 'image');
+  } else if (block.type === 'part') {
+    const part = block.part;
+    needed = block.streaming || (part.type === 'tool' && isRunning(part));
+    const markdown = part.type === 'tool' ? part.state.output
+      : part.type === 'text' || part.type === 'reasoning' || part.type === 'plan' ? part.text : undefined;
+    needed ||= Boolean(markdown?.includes('![') && markdownImageTargets(markdown).length);
+  }
+  blockActivity.set(block, needed);
+  return needed;
+}
+
 const TranscriptBlockView = memo(function TranscriptBlockRow({
   block, active, expanded, searchSelected, searchQuery, onToggle, onLinkPress, imageClient, directory, onAddToComposer, readAloud, visible,
 }: {
@@ -758,6 +780,7 @@ export function AgentChatView({
   readAloud,
 }: Props) {
   const { colors } = useTheme();
+  const { onOpenFile: openFile, onOpenWebLink: openWebLink } = useCommittedCallbacks({ onOpenFile, onOpenWebLink });
   const addToComposer = useContext(ChatComposerSelection);
   const floatingWarningOffset = useContext(FloatingWarningOffsetContext);
   const selectionOwner = useRef({ visible, sessionId: state.sessionId });
@@ -1518,13 +1541,13 @@ export function AgentChatView({
         state.transcript.info?.directory,
       );
       if (file) {
-        onOpenFile(file);
+        openFile(file);
         return;
       }
-      if (/^https?:/i.test(url)) onOpenWebLink(url);
+      if (/^https?:/i.test(url)) openWebLink(url);
       else if (/^(?:mailto:|tel:)/i.test(url)) openExternalUrl(url);
     },
-    [onOpenFile, onOpenWebLink, state.transcript.info?.directory],
+    [openFile, openWebLink, state.transcript.info?.directory],
   );
 
   const viewportVisible = visible && !preparationChanged && projectionCurrent
@@ -1601,12 +1624,15 @@ export function AgentChatView({
           getItemType={block => block.type === 'part' ? block.partKind : block.type}
           renderItem={({ item }) => {
             const block = resolveChatRow(item, state);
+            const speech = block?.type === 'meta' || (block?.type === 'part' && block.part.type === 'text')
+              ? readAloud : undefined;
+            const needsActivity = block && (chatBlockNeedsActivity(block) || Boolean(speech?.target));
             return block ? (
             <TranscriptBlockView
               key={item.id}
               block={block}
-              active={active}
-              visible={viewportVisible}
+              active={Boolean(needsActivity && active)}
+              visible={Boolean(needsActivity && viewportVisible)}
               expanded={expandedBlocks.has(item.id)}
               searchSelected={search.match?.documentId === item.id}
               searchQuery={searchOpen && search.ready ? search.query.trim() : ''}
@@ -1614,8 +1640,8 @@ export function AgentChatView({
               onLinkPress={openTranscriptLink}
               imageClient={imageClient}
               directory={state.transcript.info?.directory}
-              onAddToComposer={visible && addToComposer ? addSelectionToComposer : undefined}
-              readAloud={visible ? readAloud : undefined}
+              onAddToComposer={addToComposer ? addSelectionToComposer : undefined}
+              readAloud={visible ? speech : undefined}
             />
           ) : null;
           }}

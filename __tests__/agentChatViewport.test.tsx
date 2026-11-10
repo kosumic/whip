@@ -7,7 +7,7 @@ import * as toolOutput from '../src/lib/toolOutput';
 import { Fragment, Profiler, useState, type ReactElement } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
 import * as Haptics from 'expo-haptics';
-import { Linking } from 'react-native';
+import { ActivityIndicator, Linking } from 'react-native';
 import { chatSpeechHighlight } from 'react-native-whip-ssh';
 import { COPY_FEEDBACK_MS } from '../src/hooks/useCopyFeedback';
 import type { ChatReadAloudControl } from '../src/hooks/useChatReadAloud';
@@ -254,7 +254,7 @@ test('selection actions belong to the active chat session even when an old nativ
     expect(addToComposer).toHaveBeenCalledWith('selected text');
     addToComposer.mockClear();
     act(() => renderer.update(view(false)));
-    expect(row().props.onAddToComposer).toBeUndefined();
+    expect(row().props.onAddToComposer).toBe(select);
     act(() => { select('late hidden selection'); });
     act(() => renderer.update(view(true, {
       ...state, sessionId: 'new-session', transcript: { ...state.transcript, sessionId: 'new-session' },
@@ -487,6 +487,62 @@ const SHELL_TURN: TranscriptTurn = {
   id: 'turn-shell',
   status: 'idle',
 };
+
+test('switching away and back preserves completed prose and expanded tool content', () => {
+  const prose: TranscriptTurn = {
+    ...TURN, id: 'prose', status: 'idle',
+    assistants: [{ id: 'answer', role: 'assistant', diffs: [], completedAt: 1,
+      parts: [{ id: 'text', type: 'text', text: 'A completed answer.' }] }],
+  };
+  const state = chatState([SHELL_TURN, prose]);
+  const add = jest.fn();
+  const view = (active: boolean) => <ChatComposerSelection.Provider value={add}>
+    {chatView(state, active)}
+  </ChatComposerSelection.Provider>;
+  let renderer!: ReactTestRenderer;
+  let rows!: ReactTestRenderer;
+  try {
+    act(() => { renderer = create(view(true)); });
+    act(() => { rows = create(renderedBlocks(renderer)); });
+    act(() => { rows.root.find(isToolToggle).props.onPress(); });
+    act(() => rows.update(renderedBlocks(renderer)));
+    const command = rows.root.findAllByType(NativeCodeBlock)[0];
+    const commandProps = command.props;
+    const answer = rows.root.findAllByType(MarkdownText).find(node => node.props.content === 'A completed answer.')!;
+    const answerProps = answer.props;
+    for (const active of [false, true, false, true]) {
+      act(() => renderer.update(view(active)));
+      act(() => rows.update(renderedBlocks(renderer)));
+      expect(rows.root.findAllByType(NativeCodeBlock)[0]).toBe(command);
+      expect(command.props).toBe(commandProps);
+      expect(answer.props).toBe(answerProps);
+      expect(rows.root.find(isToolToggle).props.accessibilityState.expanded).toBe(true);
+    }
+  } finally {
+    act(() => { rows?.unmount(); renderer?.unmount(); });
+  }
+});
+
+test('a running tool pauses its spinner offscreen and resumes in the retained row', () => {
+  const tool = SHELL_TURN.assistants[0].parts[0] as TranscriptToolPart;
+  const state = chatState([toolTurn({ ...tool, state: { ...tool.state, status: 'running' } })]);
+  let renderer!: ReactTestRenderer;
+  let rows!: ReactTestRenderer;
+  try {
+    act(() => { renderer = create(chatView(state)); });
+    act(() => { rows = create(renderedBlocks(renderer)); });
+    const spinner = rows.root.findByType(ActivityIndicator);
+    expect(spinner.props.animating).toBe(true);
+    for (const active of [false, true]) {
+      act(() => renderer.update(chatView(state, active)));
+      act(() => rows.update(renderedBlocks(renderer)));
+      expect(rows.root.findByType(ActivityIndicator)).toBe(spinner);
+      expect(spinner.props.animating).toBe(active);
+    }
+  } finally {
+    act(() => { rows?.unmount(); renderer?.unmount(); });
+  }
+});
 
 function toolTurn(part: TranscriptPart): TranscriptTurn {
   return {
