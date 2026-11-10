@@ -17,6 +17,15 @@ pub type Events = mpsc::Sender<Result<Message, Error>>;
 /// Reflected PCM is never admitted to the application queue: RTP owns audio.
 pub async fn next_sideband_event(socket: &mut RawSocket) -> Result<Message, &'static str> {
     loop {
+        let event = next_sideband_frame(socket).await?;
+        if !matches!(event, Message::Pong(_)) {
+            return Ok(event);
+        }
+    }
+}
+
+pub(crate) async fn next_sideband_frame(socket: &mut RawSocket) -> Result<Message, &'static str> {
+    loop {
         match socket.next().await {
             Some(Ok(Message::Ping(payload))) => {
                 tokio::time::timeout(super::IO_TIMEOUT, socket.send(Message::Pong(payload)))
@@ -24,7 +33,8 @@ pub async fn next_sideband_event(socket: &mut RawSocket) -> Result<Message, &'st
                     .map_err(|_| "Voice sideband pong timed out.")?
                     .map_err(|_| "Voice sideband disconnected.")?;
             }
-            Some(Ok(Message::Pong(_) | Message::Frame(_))) => {}
+            Some(Ok(message @ Message::Pong(_))) => return Ok(message),
+            Some(Ok(Message::Frame(_))) => {}
             Some(Ok(Message::Text(text))) => {
                 #[derive(Deserialize)]
                 struct Kind<'a> {
@@ -45,6 +55,49 @@ pub async fn next_sideband_event(socket: &mut RawSocket) -> Result<Message, &'st
             }
             Some(Ok(message)) => return Ok(message),
             Some(Err(_)) | None => return Err("Voice sideband disconnected."),
+        }
+    }
+}
+
+/// Bound a half-open control connection independently of media/ICE. Matching
+/// WebSocket pongs are transport acknowledgements, not speech acknowledgements.
+pub(crate) struct Heartbeat {
+    next: tokio::time::Instant,
+    pending: Option<(u64, tokio::time::Instant)>,
+    sequence: u64,
+}
+impl Heartbeat {
+    const INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
+    pub(crate) const STALLED: &'static str = "Voice event channel stopped responding.";
+    pub fn new(now: tokio::time::Instant) -> Self {
+        Self {
+            next: now + Self::INTERVAL,
+            pending: None,
+            sequence: 0,
+        }
+    }
+    pub fn poll(&mut self, now: tokio::time::Instant) -> Result<Option<[u8; 8]>, &'static str> {
+        if let Some((_, sent)) = self.pending {
+            return if now.duration_since(sent) >= Self::INTERVAL {
+                Err(Self::STALLED)
+            } else {
+                Ok(None)
+            };
+        }
+        if now < self.next {
+            return Ok(None);
+        }
+        self.sequence = self.sequence.wrapping_add(1);
+        self.pending = Some((self.sequence, now));
+        Ok(Some(self.sequence.to_be_bytes()))
+    }
+    pub fn pong(&mut self, payload: &[u8], now: tokio::time::Instant) {
+        if self
+            .pending
+            .is_some_and(|(sequence, _)| payload == sequence.to_be_bytes())
+        {
+            self.pending = None;
+            self.next = now + Self::INTERVAL;
         }
     }
 }
@@ -131,6 +184,27 @@ impl Sink<Message> for Socket {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test(start_paused = true)]
+    async fn a_matching_pong_keeps_an_idle_call_alive_but_unrelated_pongs_do_not()
+    -> Result<(), &'static str> {
+        let mut heartbeat = Heartbeat::new(tokio::time::Instant::now());
+        for _ in 0..5 {
+            tokio::time::advance(Heartbeat::INTERVAL).await;
+            let now = tokio::time::Instant::now();
+            let ping = heartbeat.poll(now)?.ok_or("missing ping")?;
+            heartbeat.pong(&ping, now);
+        }
+        tokio::time::advance(Heartbeat::INTERVAL).await;
+        let _ = heartbeat.poll(tokio::time::Instant::now())?;
+        heartbeat.pong(b"unrelated", tokio::time::Instant::now());
+        tokio::time::advance(Heartbeat::INTERVAL).await;
+        assert_eq!(
+            heartbeat.poll(tokio::time::Instant::now()),
+            Err(Heartbeat::STALLED)
+        );
+        Ok(())
+    }
 
     #[tokio::test]
     async fn control_frames_preserve_ping_replies_and_text_delivery()

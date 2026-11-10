@@ -14,6 +14,7 @@ mod echo_tests;
 pub(crate) mod feedback;
 mod ffi;
 pub(crate) mod handoff_context;
+mod health;
 mod live;
 pub(crate) mod microphone;
 mod models;
@@ -324,11 +325,13 @@ pub(super) struct View {
     uploaded_packets: u64,
     server_events: u64,
     input_speech_events: u64,
+    input_stalled: bool,
 }
 
 #[derive(Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct MediaDiagnostics {
+    network: voice_call_media::health::Statistics,
     ingress: voice_call_media::incoming::Statistics,
     rtp_packets: u64,
     reliable_rtp_packets: u64,
@@ -532,6 +535,7 @@ pub(super) struct RealtimeVoiceAdapter {
     live: bool,
     media: Mutex<Option<webrtc::Handle>>,
     view: Mutex<View>,
+    input_health: Mutex<health::Input>,
     output: Mutex<Output>,
     echo: Mutex<Option<echo::MediaEchoCanceller>>,
     commands: mpsc::Sender<Command>,
@@ -643,6 +647,7 @@ impl RealtimeVoiceAdapter {
             webrtc: config.webrtc && !(config.live && config.preview),
             live: config.live,
             media: Mutex::new(None),
+            input_health: Mutex::new(health::Input::new()?),
             view: Mutex::new(View {
                 resumed_context_truncated: None,
                 phase: "starting",
@@ -671,6 +676,7 @@ impl RealtimeVoiceAdapter {
                 uploaded_packets: 0,
                 server_events: 0,
                 input_speech_events: 0,
+                input_stalled: false,
                 tool: None,
                 backend_text: None,
                 live_seconds: None,
@@ -886,7 +892,17 @@ impl RealtimeVoiceAdapter {
         if !self.input.accepts(packet.ticket.generation) {
             packet.samples.clear();
         }
-        self.view.lock().level = peak(&packet.samples);
+        let monitoring = {
+            let mut view = self.view.lock();
+            view.level = peak(&packet.samples);
+            !self.live && view.phase == "listening" && !view.muted
+        };
+        self.input_health.lock().capture(
+            &packet.samples,
+            packet.at,
+            packet.ticket.generation,
+            monitoring,
+        )?;
         Ok(())
     }
 

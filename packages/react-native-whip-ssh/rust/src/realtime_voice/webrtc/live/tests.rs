@@ -180,6 +180,7 @@ pub(crate) fn playback_owner_with_commands() -> Result<
             webrtc: true,
             live: false,
             media: Mutex::new(None),
+            input_health: Mutex::new(voice::health::Input::new()?),
             view: Mutex::new(voice::View {
                 resumed_context_truncated: None,
                 phase: "listening",
@@ -208,6 +209,7 @@ pub(crate) fn playback_owner_with_commands() -> Result<
                 uploaded_packets: 0,
                 server_events: 0,
                 input_speech_events: 0,
+                input_stalled: false,
                 tool: None,
                 backend_text: None,
                 live_seconds: None,

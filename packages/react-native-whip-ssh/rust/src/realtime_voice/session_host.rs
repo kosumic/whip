@@ -515,6 +515,25 @@ impl Delegate for App<'_> {
             }
         }
 
+        let monitoring = {
+            let view = owner.view.lock();
+            !config.preview && owner.allow_input && view.phase == "listening" && !view.muted
+        };
+        let stalled = owner
+            .input_health
+            .lock()
+            .stalled(Instant::now(), monitoring);
+        let mut view = owner.view.lock();
+        view.input_stalled = stalled;
+        if stalled && view.error.is_none() {
+            // Local VAD is evidence, not proof of a broken server. Warn without
+            // replaying speech, clearing a turn, or creating a paid replacement.
+            view.error = Some(super::health::WARNING);
+        } else if !stalled && view.error == Some(super::health::WARNING) {
+            view.error = None;
+        }
+        drop(view);
+
         Ok(Flow::Continue)
     }
     async fn event(
@@ -552,6 +571,10 @@ impl Delegate for App<'_> {
                 | ServerEvent::InputAudioBufferCommitted { .. }
         ) {
             owner.view.lock().input_speech_events += 1;
+            owner.input_health.lock().server_speech(matches!(
+                event,
+                ServerEvent::InputAudioBufferSpeechStarted { .. }
+            ));
         }
         if matches!(
             event,

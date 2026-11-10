@@ -15,6 +15,8 @@ use std::{
 use tokio::{sync::watch, task::JoinHandle};
 use tokio_tungstenite::tungstenite::Message;
 
+const EVENT_CONSUMER_STALLED: &str = "Realtime event consumer stalled.";
+
 pub struct Handle {
     identity: Arc<Mutex<identity::Identity>>,
     stop: watch::Sender<bool>,
@@ -303,18 +305,32 @@ async fn relay_sideband(
     stop: &mut watch::Receiver<bool>,
     identity: Arc<Mutex<identity::Identity>>,
 ) -> Result<(), recovery::Failure> {
+    let mut heartbeat = socket::Heartbeat::new(tokio::time::Instant::now());
+    let mut health_tick = tokio::time::interval(std::time::Duration::from_secs(1));
+    health_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         tokio::select! {
             biased;
             _ = stop.changed() => return Ok(()),
+            _ = health_tick.tick() => {
+                if let Some(payload) = heartbeat.poll(tokio::time::Instant::now())? {
+                    tokio::time::timeout(super::IO_TIMEOUT, socket.send(Message::Ping(payload.to_vec().into()))).await
+                        .map_err(|_| socket::Heartbeat::STALLED)?
+                        .map_err(|_| "Realtime sideband disconnected.")?;
+                }
+            }
             command = commands.next() => {
                 let Some(command) = command else { return Ok(()); };
                 tokio::time::timeout(super::IO_TIMEOUT, socket.send(command)).await
                     .map_err(|_| recovery::Failure { message: "Realtime sideband write timed out.", retryable: true })?
                     .map_err(|_| recovery::Failure { message: "Realtime sideband disconnected.", retryable: true })?;
             }
-            event = socket::next_sideband_event(socket) => {
+            event = socket::next_sideband_frame(socket) => {
                 let event = event?;
+                if let Message::Pong(payload) = &event {
+                    heartbeat.pong(payload, tokio::time::Instant::now());
+                    continue;
+                }
                 let closed = matches!(event, Message::Close(_));
                 if let Message::Text(text) = &event {
                     let value = serde_json::from_str(text).map_err(|_| "Invalid Realtime event.")?;
@@ -323,7 +339,10 @@ async fn relay_sideband(
                 tokio::select! {
                     biased;
                     _ = stop.changed() => return Ok(()),
-                    result = events.send(Ok(event)) => result.map_err(|_| "Realtime event consumer ended.")?,
+                    result = tokio::time::timeout(super::IO_TIMEOUT, events.send(Ok(event))) => {
+                        result.map_err(|_| EVENT_CONSUMER_STALLED)?
+                            .map_err(|_| "Realtime event consumer ended.")?;
+                    }
                 }
                 if closed { return Ok(()); }
             }
@@ -335,6 +354,60 @@ async fn relay_sideband(
 mod tests {
     use super::confirmation;
     use serde_json::json;
+
+    #[tokio::test(start_paused = true)]
+    async fn half_open_sidebands_and_stalled_event_consumers_cannot_hang_the_relay()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use super::*;
+        for blocked_consumer in [false, true] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+            let address = listener.local_addr()?;
+            let server = tokio::spawn(async move {
+                let (stream, _) = listener.accept().await?;
+                let mut server_socket = tokio_tungstenite::accept_async(stream).await?;
+                if blocked_consumer {
+                    for _ in 0..64 {
+                        server_socket
+                            .send(Message::Text(
+                                r#"{"type":"rate_limits.updated","rate_limits":[]}"#.into(),
+                            ))
+                            .await?;
+                    }
+                }
+                // The TCP connection stays open, but the peer stops reading and
+                // cannot acknowledge pings. No speech or provider API is involved.
+                std::future::pending::<()>().await;
+                Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
+            });
+            let stream = tokio::net::TcpStream::connect(address).await?;
+            let (mut raw, _) = tokio_tungstenite::client_async(
+                format!("ws://{address}"),
+                tokio_tungstenite::MaybeTlsStream::Plain(stream),
+            )
+            .await?;
+            let (_application, commands, events) = socket::Socket::relay();
+            let (_stop, mut stopped) = watch::channel(false);
+            let started = tokio::time::Instant::now();
+            let result = relay_sideband(
+                &mut raw,
+                commands,
+                events,
+                &mut stopped,
+                Arc::new(Mutex::new(identity::Identity::default())),
+            )
+            .await;
+            server.abort();
+            let _ = server.await;
+            let expected = if blocked_consumer {
+                EVENT_CONSUMER_STALLED
+            } else {
+                socket::Heartbeat::STALLED
+            };
+            assert_eq!(result.map_err(|error| error.message), Err(expected));
+            assert!(tokio::time::Instant::now() - started <= std::time::Duration::from_secs(21));
+        }
+        Ok(())
+    }
 
     #[test]
     fn audio_confirmation_preserves_settings_without_resending_prompt_or_tools()

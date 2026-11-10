@@ -39,6 +39,10 @@ pub async fn run(
             _ = stop.changed() => return Ok(()),
             _ = tick.tick() => {
                 if !*peer.ready.borrow() { return Err(peer.failure.borrow().unwrap_or("Realtime media connection ended.")); }
+                if peer.statistics.has_changed().unwrap_or(false) {
+                    let network = peer.statistics.borrow_and_update().clone();
+                    owner.statistics(crate::Statistics { network: Some(network), ..Default::default() });
+                }
                 playout.tick(owner, &mut peer.incoming, Instant::now())?;
                 if last_silence.is_none_or(|last| last.elapsed() >= FRAME_DURATION) && !owner.capture_enabled() {
                     tokio::select! {

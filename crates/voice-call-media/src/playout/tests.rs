@@ -163,6 +163,47 @@ fn speech(frames: usize) -> Result<(Vec<Vec<u8>>, Vec<i16>), opus::Error> {
     Ok((packets, expected))
 }
 
+#[test]
+fn delayed_udp_speech_is_not_replaced_with_repeated_concealment() -> TestResult {
+    let now = Instant::now();
+    let app = App::new();
+    let (mut incoming, mut ingress) = Incoming::new();
+    let mut playout = Playout::new()?;
+    playout.tick(&app, &mut incoming, now)?;
+    let (packets, expected) = speech(40)?;
+    for ms in (0..=2000).step_by(5) {
+        let at = now + Duration::from_millis(ms);
+        for (sequence, packet) in packets.iter().enumerate() {
+            // A transport stall, then an ordered burst. No packet was lost.
+            let arrival = if sequence < 10 {
+                sequence * 20
+            } else {
+                (sequence * 20 + 100).max(380)
+            };
+            if ms as usize == arrival {
+                assert!(enqueue(
+                    &mut ingress,
+                    sequence as u16,
+                    sequence as u32 * RTP_TICKS,
+                    packet,
+                    at,
+                    false,
+                ));
+            }
+        }
+        if ms == 900 {
+            app.stop(at);
+        }
+        playout.tick(&app, &mut incoming, at)?;
+    }
+    let sink = app.sink.lock();
+    assert_eq!(sink.decoded, packets.len() as u64);
+    assert_eq!(sink.concealed, 0, "delay alone is not packet loss");
+    assert_eq!(sink.samples, expected, "every syllable must play once");
+    assert_eq!(sink.finished, ["reply"]);
+    Ok(())
+}
+
 // Feed the exact admission method used for authenticated str0m RTP, including
 // all limits, age policy, channel handling and seal synchronization.
 fn enqueue(

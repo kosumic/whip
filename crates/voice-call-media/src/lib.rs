@@ -1,10 +1,12 @@
 //! Native media on the caller's Tokio runtime. Signaling, credentials and device
 //! ownership belong to the host. Capture generations invalidate pending PCM;
 //! playback epochs invalidate retained RTP without opening another recorder.
+pub mod activity;
 pub mod audio_track;
 pub mod capture_worker;
 mod driver;
 pub mod echo;
+pub mod health;
 pub mod incoming;
 mod jitter;
 mod media;
@@ -85,6 +87,7 @@ pub struct Playback {
 }
 #[derive(Default)]
 pub struct Statistics {
+    pub network: Option<health::Statistics>,
     pub ingress: incoming::Statistics,
     pub rtp_packets: u64,
     pub reliable_rtp_packets: u64,

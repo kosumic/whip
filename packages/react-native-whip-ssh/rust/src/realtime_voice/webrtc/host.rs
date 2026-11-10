@@ -133,6 +133,9 @@ impl Host for AppHost {
         }
         let mut view = self.owner.view.lock();
         let media = &mut view.media;
+        if let Some(network) = delta.network {
+            media.network = network;
+        }
         media.ingress += delta.ingress;
         media.rtp_packets += delta.rtp_packets;
         media.reliable_rtp_packets += delta.reliable_rtp_packets;

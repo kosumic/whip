@@ -18,6 +18,7 @@ const DISCONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1
 #[derive(Default)]
 struct ConnectionHealth {
     disconnected: Option<Instant>,
+    remote: super::health::RemoteProgress,
 }
 impl ConnectionHealth {
     fn observe(&mut self, state: str0m::IceConnectionState, now: Instant) {
@@ -38,7 +39,7 @@ impl ConnectionHealth {
         {
             return Err("Voice network connection did not recover.");
         }
-        Ok(())
+        self.remote.check(now)
     }
 }
 pub(super) enum Command {
@@ -65,6 +66,7 @@ pub(super) struct Driver {
     ready: watch::Sender<bool>,
     primary_started: watch::Sender<Option<String>>,
     failure: watch::Sender<Option<&'static str>>,
+    statistics: watch::Sender<super::health::Statistics>,
     health: ConnectionHealth,
     input_protocol: Option<Protocol>,
     commands: mpsc::Receiver<Command>,
@@ -84,6 +86,7 @@ impl Driver {
         ready: watch::Sender<bool>,
         primary_started: watch::Sender<Option<String>>,
         failure: watch::Sender<Option<&'static str>>,
+        statistics: watch::Sender<super::health::Statistics>,
         commands: mpsc::Receiver<Command>,
         stop: watch::Receiver<bool>,
         protocol: Option<Protocol>,
@@ -110,6 +113,7 @@ impl Driver {
                         .set_dtls_version(DtlsVersion::Auto)
                         .set_snap_enabled(true)
                         .set_rtp_mode(true)
+                        .set_stats_interval(Some(std::time::Duration::from_secs(1)))
                         .set_sctp_max_message_size(
                             u32::try_from(MAX_EVENT_BYTES)
                                 .map_err(|_| "Invalid voice event limit.")?,
@@ -160,6 +164,7 @@ impl Driver {
                 ready,
                 primary_started,
                 failure,
+                statistics,
                 health: ConnectionHealth::default(),
                 input_protocol: None,
                 commands,
@@ -295,6 +300,31 @@ impl Driver {
                         packet.timestamp,
                         self.input_protocol == Some(Protocol::Tcp),
                     );
+                }
+                Output::Event(Event::MediaEgressStats(stats)) if stats.mid == self.mid => {
+                    let sequence = stats
+                        .remote
+                        .as_ref()
+                        .map(|remote| *remote.maximum_sequence_number);
+                    self.health
+                        .remote
+                        .observe(stats.packets, sequence, stats.timestamp);
+                    self.statistics.send_replace(super::health::Statistics {
+                        sent_packets: stats.packets,
+                        remote_sequence: sequence,
+                        remote_lost_packets: stats
+                            .remote
+                            .as_ref()
+                            .map(|remote| remote.packets_lost),
+                        remote_jitter_ms: stats
+                            .remote
+                            .as_ref()
+                            .map(|remote| f64::from(remote.jitter) / 48.0),
+                        round_trip_ms: stats
+                            .rtt
+                            .map(|rtt| rtt.as_millis().try_into().unwrap_or(u64::MAX)),
+                        remote_progress_ms: self.health.remote.age_ms(stats.timestamp),
+                    });
                 }
                 Output::Event(Event::ChannelData(data)) if data.id == self.channel => {
                     // Live readiness belongs to its primary WebRTC stream.

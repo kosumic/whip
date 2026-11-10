@@ -85,6 +85,28 @@ policy. Arbitrarily long consumer pauses have no wall-clock playback guarantee;
 if more speech fills a budget, reliable media fails explicitly and UDP drops are
 observable. Applications requiring fresher audio can cancel the playback epoch.
 
+An empty jitter queue waits for more RTP on both transports. Only a known future
+timestamp establishes a gap for Opus concealment. In particular, a transport
+pause no longer synthesizes repeated voiced frames and then resumes the same
+delayed syllables. Consecutive delayed UDP packets rebuffer with adaptive
+protection between 60 and 500 ms while retaining the Opus decoder. This can add
+a pause during recovery; it cannot reconstruct packets actually lost in transit.
+Cancellation and normal sealed tail drain retain their existing semantics.
+
+The peer publishes one-second `Statistics::network` snapshots with outgoing RTP
+counts, remote receiver sequence/loss/jitter, RTT, and remote-progress age.
+Once receiver reports have demonstrated support, a receiver sequence that stops
+advancing for 15 seconds while local RTP continues fails with
+`health::STALLED`, even if ICE keepalives remain healthy. Peers that never supply
+receiver reports and idle local senders are not treated as failed. Hosts choose
+their established cleanup/recovery policy for that explicit transport failure.
+
+The local Claude APK reference exposes separate remote loss/RTT diagnostics and
+bounded adaptive playout, alongside microphone-delivery and empty-turn checks.
+Whip borrows that separation of responsibilities; it does not reuse private
+Claude protocol messages or claim its native NetEq implementation is identical.
+See the local `docs/claude-android-voice.md` audit and its APK evidence.
+
 Run the executable local signaling/PCM example (no API key or audio device):
 
 ```sh

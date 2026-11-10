@@ -10,6 +10,7 @@ use std::{
 // Reordering latency is not a cap on the duration of admitted speech. Keep
 // bursts until playout; ingress permits bound retained RTP through decoding.
 const REORDER: Duration = Duration::from_millis(60);
+const MAX_REORDER: Duration = Duration::from_millis(500);
 pub(super) const MAX_PACKETS: usize = super::incoming::PACKETS;
 // Preserve the clock-discontinuity policy independently of retention capacity.
 const CLOCK_GAP_PACKETS: usize = 64;
@@ -37,7 +38,8 @@ pub(super) struct Jitter {
     deadline: Option<Instant>,
     frame_samples: Option<usize>,
     statistics: Statistics,
-    reliable: bool,
+    starved: bool,
+    reorder: Option<Duration>,
 }
 
 fn distance(timestamp: u32, expected: u32) -> i32 {
@@ -66,15 +68,34 @@ impl Jitter {
             self.packets.clear();
             self.sequence = Some(packet.sequence);
             self.timestamp = Some(packet.timestamp);
-            self.deadline = Some(now + REORDER);
+            self.deadline = Some(now + self.reorder.unwrap_or(REORDER));
+        } else if self.starved
+            && self.packets.is_empty()
+            && !packet.reliable
+            && sequence == 0
+            && self.timestamp == Some(packet.timestamp)
+        {
+            // The next consecutive packet proves this was transport delay,
+            // not lost audio. Rebuffer once instead of alternating PLC and
+            // replayed syllables on every late packet. Retain the decoder and
+            // bound the extra protection, as native adaptive playout does.
+            let late = now.saturating_duration_since(self.deadline.unwrap_or(now));
+            let reorder = self
+                .reorder
+                .unwrap_or(REORDER)
+                .max(REORDER + late)
+                .min(MAX_REORDER);
+            self.reorder = Some(reorder);
+            self.deadline = Some(now + reorder);
+            self.statistics.resyncs += 1;
         }
         if self.packets.len() == MAX_PACKETS {
             // Never replace queued words just to admit a newer burst.
             self.statistics.overflows += 1;
             return false;
         }
-        self.reliable = packet.reliable;
         self.packets.push_back(packet);
+        self.starved = false;
         true
     }
 
@@ -102,10 +123,12 @@ impl Jitter {
             return None;
         }
         let timestamp = self.timestamp?;
-        // TCP already orders and retransmits the stream. An empty queue means
-        // wait for its next frame, not invent elapsed source samples which make
-        // that frame late when it arrives. Retain its original speech.
-        if self.reliable && self.packets.is_empty() {
+        // An empty queue does not establish packet loss on either transport.
+        // Native output supplies silence while we wait. Conceal only a gap
+        // demonstrated by a future RTP timestamp, never an endless copy of
+        // the last voiced Opus frame while a connection stalls.
+        if self.packets.is_empty() {
+            self.starved = true;
             return None;
         }
         if !self.packets.is_empty()
@@ -231,20 +254,25 @@ mod tests {
     }
 
     #[test]
-    fn empty_queue_advances_silence_without_skipping_the_next_sequence() {
+    fn an_empty_queue_waits_and_a_known_silent_gap_preserves_the_next_sequence() {
         let now = Instant::now();
         let mut jitter = Jitter::default();
         assert!(jitter.pop(now).is_none());
         jitter.push(packet(10, 0), now);
         assert!(matches!(jitter.pop(now + REORDER), Some(Frame::Packet(_))));
         jitter.advance(FRAME);
+        assert!(
+            jitter
+                .pop(now + REORDER + Duration::from_millis(20))
+                .is_none()
+        );
+        // DTX resumes with the next sequence, two source frames later.
+        jitter.push(packet(11, TICKS * 2), now + Duration::from_millis(40));
         assert!(matches!(
-            jitter.pop(now + REORDER + Duration::from_millis(20)),
+            jitter.pop(now + REORDER + Duration::from_millis(40)),
             Some(Frame::Missing(_))
         ));
         jitter.advance(FRAME);
-        // DTX resumes with the next sequence, two source frames later.
-        jitter.push(packet(11, TICKS * 2), now + Duration::from_millis(40));
         assert!(matches!(
             jitter.pop(now + REORDER + Duration::from_millis(40)),
             Some(Frame::Packet(Packet { sequence: 11, .. }))
@@ -258,6 +286,9 @@ mod tests {
         jitter.push(packet(0, 0), now);
         assert!(matches!(jitter.pop(now + REORDER), Some(Frame::Packet(_))));
         jitter.advance(FRAME);
+        // A future packet establishes the missing timestamp. A dry queue by
+        // itself cannot distinguish a delayed packet from one that was lost.
+        jitter.push(packet(2, TICKS * 2), now + Duration::from_millis(20));
         assert!(matches!(
             jitter.pop(now + REORDER + Duration::from_millis(20)),
             Some(Frame::Missing(_))
@@ -274,7 +305,7 @@ mod tests {
     }
 
     #[test]
-    fn sparse_twenty_second_reply_keeps_its_full_playback_duration() {
+    fn sparse_twenty_second_reply_preserves_all_packets_and_known_silence() {
         let now = Instant::now();
         let mut jitter = Jitter::default();
         let mut sequence = 0;
@@ -285,11 +316,14 @@ mod tests {
                 jitter.push(packet(sequence, frame * TICKS), at);
                 sequence += 1;
             }
-            assert!(jitter.pop(at + REORDER).is_some());
-            jitter.advance(FRAME);
-            samples += FRAME;
+            while jitter.pop(at + REORDER).is_some() {
+                jitter.advance(FRAME);
+                samples += FRAME;
+            }
         }
-        assert_eq!(samples, RATE * 20);
+        // The last four frames have no subsequent RTP establishing their
+        // duration. Native device silence does not manufacture extra speech.
+        assert_eq!(samples, RATE * 20 - FRAME * 4);
     }
 
     #[test]
@@ -356,21 +390,20 @@ mod tests {
             assert!(
                 jitter
                     .pop(now + REORDER + Duration::from_millis(frame * 20))
-                    .is_some()
+                    .is_none()
             );
-            jitter.advance(FRAME);
         }
         let arrived = now + Duration::from_millis(160);
         jitter.push(packet(1, TICKS), arrived);
         jitter.push(packet(2, TICKS * 2), arrived);
         let _ = jitter.pop(arrived);
         assert!(matches!(
-            jitter.pop(arrived + REORDER),
+            jitter.pop(arrived + MAX_REORDER),
             Some(Frame::Packet(Packet { sequence: 1, .. }))
         ));
         jitter.advance(FRAME);
         assert!(matches!(
-            jitter.pop(arrived + REORDER + Duration::from_millis(20)),
+            jitter.pop(arrived + MAX_REORDER + Duration::from_millis(20)),
             Some(Frame::Packet(Packet { sequence: 2, .. }))
         ));
     }

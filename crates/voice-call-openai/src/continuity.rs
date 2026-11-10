@@ -148,6 +148,8 @@ pub fn connection_lost(message: &str) -> bool {
     matches!(
         message,
         "Voice network connection did not recover."
+            | voice_call_media::health::STALLED
+            | crate::socket::Heartbeat::STALLED
             | "Voice media connection ended."
             | "Voice media connection closed."
             | "Voice media is not connected."
@@ -239,6 +241,7 @@ mod tests {
     #[test]
     fn only_known_transport_errors_allow_replacement() {
         assert!(connection_lost("Voice network connection did not recover."));
+        assert!(connection_lost(voice_call_media::health::STALLED));
         for message in [
             crate::recovery::CLEANUP_FAILED,
             "Realtime call creation outcome is unknown. Start a new call manually.",

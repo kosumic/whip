@@ -148,6 +148,29 @@ and validates final reports. Pricing and persistence belong to the host.
 
 ## Interruption, recovery and stop
 
+Realtime WebRTC sideband liveness is checked with matching WebSocket ping/pong
+frames every ten seconds, with a ten-second reply deadline. Unrelated events
+and stale pongs cannot satisfy that check. These control frames remain outside
+the application event queue. Media independently monitors remote RTP receiver
+progress, so local send completion and healthy ICE keepalives do not hide a
+one-way audio failure. Both explicit failures are recognized by the existing
+`continuity::connection_lost` allowlist; the host still owns acknowledged
+retirement and any replacement, with no replay of speech or tool work.
+An application event consumer that cannot accept a queued event within the
+existing ten-second I/O budget fails explicitly instead of blocking the relay
+and its health checks indefinitely. This application failure is not classified
+as a retryable network outage.
+
+Transport receipt and speech recognition are separate. The app can correlate
+local speech evidence with the documented
+[`input_audio_buffer.speech_started` event](https://developers.openai.com/api/reference/resources/realtime/server-events#input_audio_buffer-speech_started).
+Whip warns after sustained high-confidence processed local speech receives no
+speech acknowledgement within eight seconds. Local activity alone never causes
+a paid replacement, a forced buffer commit, or response creation. Ordinary
+silence, brief activity, mute, and assistant playback do not arm that warning;
+server speech progress clears it. The embedded diagnostic detector is separate
+from the provider's configured server VAD and never gates microphone samples.
+
 `Handle::cancel_audio` advances the playback epoch; `resume_live_audio` reopens a
 new Live epoch after fresh input. Mute must also close the host's ingress gate
 and send the matching typed provider command. The host owns native device stop.

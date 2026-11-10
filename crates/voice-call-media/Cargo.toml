@@ -8,6 +8,7 @@ description = "Provider-neutral bounded native PCM, WebRTC/Opus transport and ec
 repository = "https://github.com/kosumic/whip"
 
 [dependencies]
+earshot = "=1.2.2"
 audio-ingress = { version = "0.1.0", path = "../audio-ingress" }
 opus = "=0.4.0"
 # Provider-backed DTLS avoids crypto-bigint 0.5 (RUSTSEC-2026-0387).

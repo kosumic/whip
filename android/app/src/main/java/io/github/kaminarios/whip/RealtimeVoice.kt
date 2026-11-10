@@ -240,7 +240,7 @@ internal object RealtimeVoice {
               Log.i(LOG_TAG, diagnostic)
             }
           }
-          val audioDiagnostic = "phase=$phase speechEvents=${state.optLong("inputSpeechEvents")} gaps=${state.optLong("captureGaps")} captionEvents=${state.optLong("captionEvents")} messages=${state.optJSONArray("messages")?.length() ?: 0}"
+          val audioDiagnostic = "phase=$phase speechEvents=${state.optLong("inputSpeechEvents")} inputStalled=${state.optBoolean("inputStalled")} gaps=${state.optLong("captureGaps")} captionEvents=${state.optLong("captionEvents")} messages=${state.optJSONArray("messages")?.length() ?: 0}"
           val diagnosticNow = SystemClock.elapsedRealtime()
           val diagnosticInterval = if (session.capturedSamples < Core.RATE * EARLY_DIAGNOSTIC_SECONDS) EARLY_DIAGNOSTIC_INTERVAL_MS else DIAGNOSTIC_INTERVAL_MS
           if (session.audioDiagnostic != audioDiagnostic || diagnosticNow - session.audioDiagnosticAtMs >= diagnosticInterval) {

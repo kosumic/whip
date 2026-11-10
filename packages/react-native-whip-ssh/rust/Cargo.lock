@@ -7578,6 +7578,7 @@ name = "voice-call-media"
 version = "0.1.0"
 dependencies = [
  "audio-ingress",
+ "earshot",
  "if-addrs",
  "opus",
  "parking_lot",

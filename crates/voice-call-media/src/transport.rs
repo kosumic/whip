@@ -27,6 +27,7 @@ pub struct Transport {
     pub ready: watch::Receiver<bool>,
     pub primary_started: watch::Receiver<Option<String>>,
     pub failure: watch::Receiver<Option<&'static str>>,
+    pub statistics: watch::Receiver<crate::health::Statistics>,
     pub prepared_client: bool,
     runtime: tokio::runtime::Handle,
     offer: String,
@@ -60,6 +61,7 @@ impl Transport {
         let (ready, connected) = watch::channel(false);
         let (primary_started, started) = watch::channel(None);
         let (failed, failure) = watch::channel(None);
+        let (statistics_tx, statistics) = watch::channel(crate::health::Statistics::default());
         let (stop, stopped) = watch::channel(false);
         let (commands, command_rx) = mpsc::channel(8);
         let (driver, offer, prepared_client) = Driver::new(
@@ -67,6 +69,7 @@ impl Transport {
             ready,
             primary_started,
             failed,
+            statistics_tx,
             command_rx,
             stopped,
             protocol,
@@ -87,6 +90,7 @@ impl Transport {
             ready: connected,
             primary_started: started,
             failure,
+            statistics,
             offer,
             runtime: tokio::runtime::Handle::current(),
             commands,

@@ -24,7 +24,7 @@ fn duration(samples: usize, rate: u32) -> Duration {
     Duration::from_secs_f64(f64::from(u32::try_from(samples).unwrap_or(u32::MAX)) / f64::from(rate))
 }
 
-struct Converter {
+pub(super) struct Converter {
     resampler: rubato::Async<f32>,
     input: VecDeque<f32>,
     output: VecDeque<f32>,
@@ -34,7 +34,7 @@ struct Converter {
     end: Option<Instant>,
 }
 impl Converter {
-    fn new(rate: u32, target: u32) -> Result<Self> {
+    pub(super) fn new(rate: u32, target: u32) -> Result<Self> {
         let resampler = rubato::Async::new_sinc(
             f64::from(target) / f64::from(rate),
             1.0,
@@ -55,7 +55,7 @@ impl Converter {
             end: None,
         })
     }
-    fn push(&mut self, at: Instant, samples: &[f32]) -> Result<()> {
+    pub(super) fn push(&mut self, at: Instant, samples: &[f32]) -> Result<()> {
         if self.input.len() + samples.len() > self.rate as usize
             || self.output.len() > self.target as usize
             || samples.iter().any(|v| !v.is_finite())
@@ -80,7 +80,7 @@ impl Converter {
         }
         Ok(())
     }
-    fn next<const N: usize>(&mut self) -> Option<(Instant, [f32; N])> {
+    pub(super) fn next<const N: usize>(&mut self) -> Option<(Instant, [f32; N])> {
         if self.output.len() < N {
             return None;
         }
@@ -97,7 +97,7 @@ impl Converter {
         }
         Some((at, output))
     }
-    fn reset(&mut self) {
+    pub(super) fn reset(&mut self) {
         self.resampler.reset();
         self.input.clear();
         self.output.clear();
