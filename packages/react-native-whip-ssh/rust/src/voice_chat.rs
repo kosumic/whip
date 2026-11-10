@@ -1541,6 +1541,40 @@ mod tests {
     }
 
     #[test]
+    fn long_voice_replies_keep_natural_pauses_and_original_caption_offsets() {
+        let session = conversation();
+        submit(&session, "Read this reply");
+        let response =
+            "Hello 👋. This sentence keeps all its words together at a natural pause. ".repeat(8);
+        session
+            .transcript(
+                AgentTranscriptKind::Codex,
+                true,
+                false,
+                vec![streamed_turn("reply", "Read this reply", &response, true)],
+            )
+            .unwrap();
+        let prose = crate::chat_speech::spoken_prose(&response);
+        let units = prose.encode_utf16().collect::<Vec<_>>();
+        let mut chunks = Vec::new();
+        while let Some(json) = session.next_speech_with_source() {
+            let chunk: serde_json::Value = serde_json::from_str(&json).unwrap();
+            let text = chunk["text"].as_str().unwrap();
+            let start = usize::try_from(chunk["startUtf16"].as_u64().unwrap()).unwrap();
+            let expected = text.encode_utf16().collect::<Vec<_>>();
+            assert_eq!(&units[start..start + expected.len()], expected);
+            assert!(text.ends_with('.'));
+            assert!(
+                text.chars().count() < 200,
+                "Each call chunk should fit a short audio reserve"
+            );
+            chunks.push(text.to_owned());
+        }
+        assert!(chunks.len() > 1);
+        assert_eq!(chunks.join(" "), prose);
+    }
+
+    #[test]
     fn delayed_recognition_confirms_an_interruption_without_another_audio_packet() {
         for speaking in [false, true] {
             let session = awaiting_or_playing_reply(speaking);

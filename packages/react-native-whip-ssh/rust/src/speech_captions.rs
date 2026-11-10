@@ -13,6 +13,7 @@ struct Caption {
     prefix_bytes: usize,
     prefix_utf16: usize,
     response_start: Option<usize>,
+    generated_samples: Option<usize>,
     text: Text,
     clock: Clock,
 }
@@ -25,6 +26,7 @@ impl Default for Caption {
             prefix_bytes: 0,
             prefix_utf16: 0,
             response_start: Some(0),
+            generated_samples: None,
             text: Text::default(),
             clock: Clock::new(Pace::default()),
         }
@@ -81,6 +83,7 @@ impl Caption {
         self.prefix_bytes = prefix_bytes;
         self.prefix_utf16 = spoken[..prefix_bytes].encode_utf16().count();
         self.response_start = (prefix_bytes == 0).then_some(0);
+        self.generated_samples = None;
         self.text.update(&spoken[prefix_bytes..]);
         self.clock = Clock::new(Pace::default());
     }
@@ -93,6 +96,14 @@ impl Caption {
         // completion cannot advance captions until native playback crosses it.
         if self.prefix_utf16 > 0 && played <= start {
             return 0;
+        }
+        if let Some(duration) = self.generated_samples.or(complete.then_some(samples)) {
+            return self.prefix_utf16
+                + self.clock.advance_measured(
+                    &self.text,
+                    played.saturating_sub(start),
+                    duration.saturating_sub(start),
+                );
         }
         self.prefix_utf16
             + self.clock.advance(
@@ -119,21 +130,24 @@ pub(crate) fn synthesize(
             .pending
             .iter()
             .find(|caption| id != 0 && caption.id == id && caption.spoken == text)
-            .map_or(0, |caption| caption.prefix_bytes)
+            .map(|caption| caption.prefix_bytes)
     };
-    if prefix == 0 {
+    let Some(prefix) = prefix else {
         return generate(text, &mut sink);
-    }
+    };
     let mut frames = 0;
-    let result = generate(&text[..prefix], &mut |pcm| {
-        frames += pcm.len();
-        sink(pcm)
-    });
-    if result <= 0 || text[prefix..].is_empty() {
-        return result;
+    if prefix > 0 {
+        let result = generate(&text[..prefix], &mut |pcm| {
+            frames += pcm.len();
+            sink(pcm)
+        });
+        if result <= 0 || text[prefix..].is_empty() {
+            return result;
+        }
     }
-    let mut aligned = false;
-    generate(&text[prefix..], &mut |pcm| {
+    let mut aligned = prefix == 0;
+    let mut cancelled = false;
+    let result = generate(&text[prefix..], &mut |pcm| {
         // Some voices start the response with silence. Keep that silence on the
         // prefix side of the boundary, without trimming or changing playback.
         const AUDIBLE_SAMPLE: f32 = 0.001;
@@ -148,8 +162,19 @@ pub(crate) fn synthesize(
             aligned = true;
         }
         frames += pcm.len();
-        sink(pcm)
-    })
+        let accepted = sink(pcm);
+        cancelled |= !accepted;
+        accepted
+    });
+    if result > 0 && frames > 0 && !cancelled {
+        // Native queues may still be writing this audio for several seconds.
+        // Publish the full duration now, before their final-frame callback.
+        let mut captions = CAPTIONS.lock();
+        if let Some(caption) = captions.pending.iter_mut().find(|caption| caption.id == id) {
+            caption.generated_samples = Some(frames);
+        }
+    }
+    result
 }
 
 #[unsafe(no_mangle)]

@@ -148,6 +148,19 @@ impl Clock {
         self.pace = pace;
     }
 
+    /// Generated PCM has a measured duration. Reconcile on the next consumed
+    /// frame, without the streaming estimate's catch-up speed limit.
+    pub fn advance_measured(&mut self, text: &Text, played: usize, samples: usize) -> usize {
+        let played = played.min(samples);
+        if samples > 0 && played > self.played {
+            self.played = played;
+            self.progress = self
+                .progress
+                .max(f64::from(text.units) * seconds(played) / seconds(samples));
+        }
+        text.position(self.progress)
+    }
+
     pub fn advance(&mut self, text: &Text, played: usize, samples: usize, complete: bool) -> usize {
         let elapsed = seconds(played.saturating_sub(self.played));
         self.played = self.played.max(played);

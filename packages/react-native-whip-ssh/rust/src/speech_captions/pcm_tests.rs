@@ -213,6 +213,72 @@ fn preparing_lookahead_keeps_each_playing_chunk_clock_independent() {
 }
 
 #[test]
+fn fast_speech_uses_generated_duration_before_native_queue_completion() {
+    let _serial = SERIAL.lock();
+    let response = "One two three four five six seven eight nine ten.";
+    let (id, spoken, _) = start("", response);
+    let duration = RATE * 2;
+    assert_eq!(
+        synthesize(
+            id,
+            &spoken,
+            |_, sink| i32::from(sink(&vec![0.2; duration])),
+            |_| true
+        ),
+        1
+    );
+    // Only half of the generated audio has reached AudioTrack. Its queue has
+    // not emitted its completion marker, but the full duration is already known.
+    let progress = whip_speech_caption_progress(id, RATE, RATE, false);
+    let highlighted = chat_speech_highlight(
+        response.into(),
+        u32::try_from(progress).unwrap(),
+        response.into(),
+        0,
+    );
+    assert_eq!(
+        highlighted,
+        "One two three four five ==six== seven eight nine ten."
+    );
+    assert_eq!(
+        whip_speech_caption_progress(id, RATE, duration, true),
+        progress
+    );
+    assert_eq!(
+        whip_speech_caption_progress(id, duration, duration, true),
+        response.len()
+    );
+}
+
+#[test]
+fn measured_duration_corrects_streaming_drift_only_when_more_audio_plays() {
+    let _serial = SERIAL.lock();
+    let response = "One two three four five six seven eight nine ten.";
+    let (id, spoken, _) = start("", response);
+    let duration = RATE;
+    let mut before = 0;
+    synthesize(
+        id,
+        &spoken,
+        |_, sink| i32::from(sink(&vec![0.2; duration])),
+        |_| {
+            before = whip_speech_caption_progress(id, RATE / 2, duration, false);
+            true
+        },
+    );
+    assert_eq!(
+        whip_speech_caption_progress(id, RATE / 2, duration, false),
+        before
+    );
+    let corrected = whip_speech_caption_progress(id, RATE / 2 + RATE / 25, duration, false);
+    assert!(corrected >= response.find("six").unwrap());
+    assert_eq!(
+        whip_speech_caption_progress(id, RATE / 2, duration, false),
+        corrected
+    );
+}
+
+#[test]
 fn continuation_without_prefix_has_a_fresh_clock_and_original_offsets() {
     let _serial = SERIAL.lock();
     let (id, spoken, units) = start("Debug tab: ", RESPONSE);

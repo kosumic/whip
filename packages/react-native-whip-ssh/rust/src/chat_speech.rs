@@ -299,9 +299,17 @@ impl ChatSpeechQueue {
                 prose[..end].clone_into(&mut progress.spoken);
                 progress.finished = message.completed;
                 let mut offset = tail_start;
-                state
-                    .pending
-                    .extend(speech_chunks(&tail).into_iter().map(|text| {
+                state.pending.extend(
+                    speech_chunks_with_limit(
+                        &tail,
+                        if voice {
+                            MAX_VOICE_CHUNK_UNITS
+                        } else {
+                            MAX_CHUNK_UNITS
+                        },
+                    )
+                    .into_iter()
+                    .map(|text| {
                         let start = offset + prose[offset..].find(&text).unwrap_or(0);
                         offset = start + text.len();
                         ChatSpeechChunk {
@@ -310,7 +318,8 @@ impl ChatSpeechQueue {
                             start_utf16: prose[..start].encode_utf16().count(),
                             text,
                         }
-                    }));
+                    }),
+                );
             }
         }
         state.live = true;
@@ -384,6 +393,9 @@ fn stable_prose_end(prose: &str, trailing_whitespace: bool) -> usize {
 
 // Keep each utterance below Android's 4,000 UTF-16-unit limit, including emoji.
 const MAX_CHUNK_UNITS: usize = 3_000;
+// Keep a call's generated duration available near playback start, even when the
+// native player starts with only a small audio reserve. Prefer natural pauses.
+const MAX_VOICE_CHUNK_UNITS: usize = 160;
 
 fn speech_chunks(text: &str) -> Vec<String> {
     speech_chunks_with_limit(text, MAX_CHUNK_UNITS)

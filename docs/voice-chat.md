@@ -70,6 +70,10 @@ PCM cursor for Phonon, including the original chat while the call is minimized.
 Speech chunks retain their original message/part IDs and prose offsets; call
 transcript offsets are mapped separately. Each queued PCM chunk has its own clock,
 so preparing lookahead cannot replace the clock of speech already playing.
+Call chunks stay short and prefer natural pauses. PCM captions use the generated
+audio's measured duration before the native queue finishes writing it, avoiding
+drift from a fixed reading-speed estimate. Word positions within a Phonon chunk
+are estimated from that duration; Phonon does not supply word timestamps.
 The first word highlights at position zero after native
 playback reports it. Queued chunks retain their offsets in the same reply;
 completion, interruption and Skip clear the active word. No JS playback timer
