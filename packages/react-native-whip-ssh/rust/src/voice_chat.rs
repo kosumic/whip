@@ -481,8 +481,9 @@ impl VoiceChat {
         if state.call.view().phase != Phase::Speaking {
             return None;
         }
-        self.next_reply(&mut state)
-            .and_then(|chunk| serde_json::to_string(&chunk).ok())
+        let chunk = self.next_reply(&mut state);
+        drop(state);
+        chunk.and_then(|chunk| serde_json::to_string(&chunk).ok())
     }
 
     pub fn speech_finished(&self) -> bool {
