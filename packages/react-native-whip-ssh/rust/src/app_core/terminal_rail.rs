@@ -475,6 +475,22 @@ impl TerminalRail {
         changed
     }
 
+    pub(super) fn reconcile_attached(&mut self, mut attached: impl FnMut(&str) -> bool) -> bool {
+        let mut changed = false;
+        for terminal in &mut self.terminals {
+            if terminal.kind == TerminalKind::Herdr
+                && terminal.state != TerminalUiState::Connected
+                && attached(&terminal.terminal_id)
+            {
+                terminal.state = TerminalUiState::Connected;
+                terminal.error = None;
+                terminal.reconnect_attempt = 0;
+                changed = true;
+            }
+        }
+        changed
+    }
+
     pub(super) fn update_lifecycle(
         &mut self,
         terminal_id: &str,

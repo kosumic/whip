@@ -1536,7 +1536,7 @@ fn pane_submission_sequence_is_one_semantic_native_operation() {
     ));
 }
 
-fn batch_test_snapshot() -> HerdrSessionSnapshot {
+pub(super) fn batch_test_snapshot() -> HerdrSessionSnapshot {
     let pane = |id: &str| HerdrPaneInfo {
         pane_id: id.to_owned(),
         terminal_id: format!("terminal-{id}"),
@@ -1754,7 +1754,10 @@ pub(super) fn agent_chat_snapshot(
     snapshot
 }
 
-fn install_agent_chat_snapshot(inner: &Arc<RuntimeInner>, snapshot: HerdrSessionSnapshot) {
+pub(super) fn install_agent_chat_snapshot(
+    inner: &Arc<RuntimeInner>,
+    snapshot: HerdrSessionSnapshot,
+) {
     {
         let mut state = inner.state.lock();
         let generation = state.generation;

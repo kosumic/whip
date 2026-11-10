@@ -14,6 +14,67 @@ const PROTOCOL: u32 = 22;
 const TERMINAL_ID: &str = "test-terminal";
 
 #[test]
+fn app_rail_uses_live_terminal_after_missed_or_delayed_lifecycle_events() -> TestResult {
+    let _guard = super::super::tests::EVENT_SINK_TEST_LOCK.lock();
+    clear_host_runtime_event_sink();
+    crate::runtime()?.block_on(async {
+        use crate::app_core::{AppCore, TerminalUiState};
+        let fixture = TerminalFixture::new("terminal-rail-readiness").await?;
+        fixture
+            .runtime
+            .inner
+            .state
+            .lock()
+            .host_state
+            .connection_installed(1);
+        let mut snapshot = super::super::tests::batch_test_snapshot();
+        let pane_id = snapshot.panes[0].pane_id.clone();
+        snapshot.panes[0].terminal_id = TERMINAL_ID.into();
+        super::super::tests::install_agent_chat_snapshot(&fixture.runtime.inner, snapshot);
+        let core = AppCore::new();
+        core.open_session("live".into(), "host".into(), true);
+        core.attach_runtime("live".into(), fixture.runtime.clone());
+        core.open_pane_terminal("live".into(), pane_id);
+        let _stream = fixture.open().await?;
+        let terminal_state = |view: crate::app_core::AppCoreView| {
+            view.sessions[0]
+                .terminal_rail
+                .terminals
+                .iter()
+                .find(|terminal| terminal.terminal_id == TERMINAL_ID)
+                .unwrap()
+                .state
+        };
+
+        // No foreign listener received Attached; the bridge is still live.
+        assert_eq!(terminal_state(core.view()), TerminalUiState::Connected);
+        let delayed_close = core.update_terminal_lifecycle(
+            "live".into(),
+            TERMINAL_ID.into(),
+            HostTerminalState::Closed,
+            false,
+            None,
+            0,
+        );
+        assert_eq!(terminal_state(delayed_close), TerminalUiState::Connected);
+        assert!(fixture.ssh.ssh.latency_ms().await.is_ok());
+
+        fixture.runtime.close_terminal(TERMINAL_ID.into());
+        let closed = core.update_terminal_lifecycle(
+            "live".into(),
+            TERMINAL_ID.into(),
+            HostTerminalState::Closed,
+            false,
+            None,
+            0,
+        );
+        assert_eq!(terminal_state(closed), TerminalUiState::Disconnected);
+        fixture.runtime.disconnect().await?;
+        Ok(())
+    })
+}
+
+#[test]
 fn reopening_a_retained_bridge_republishes_readiness_without_reattaching() -> TestResult {
     let _guard = super::super::tests::EVENT_SINK_TEST_LOCK.lock();
     crate::runtime()?.block_on(async {

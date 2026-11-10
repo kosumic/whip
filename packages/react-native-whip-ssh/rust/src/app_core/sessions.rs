@@ -154,8 +154,13 @@ impl AppSession {
         let Some(runtime) = &self.runtime else {
             return controls_changed;
         };
+        // A renderer can outlive its UI lifecycle subscription. The current
+        // native bridge takes precedence over a missed or delayed rail event.
+        let terminals_changed = self
+            .terminal_rail
+            .reconcile_attached(|id| runtime.has_terminal(id.to_owned()));
         let host_state = runtime.host_state();
-        self.reconcile_host_state(&host_state) || controls_changed
+        self.reconcile_host_state(&host_state) || controls_changed || terminals_changed
     }
 
     fn reconcile_host_state(&mut self, host_state: &HostStateSnapshot) -> bool {
