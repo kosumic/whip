@@ -193,12 +193,17 @@ test.each([false, true])('prepares the first three agents before opening Termina
   const host = setup();
   const panes = Array.from({ length: 5 }, (_, index) => ({
     ...host.snapshot.panes[0], terminal_id: `terminal-${index}`, pane_id: `pane-${index}`,
-    agent_session: { agent: 'codex', kind: 'id', value: `session-${index}` },
+    workspace_id: 'workspace', tab_id: 'tab', focused: false, agent_status: 'idle' as const, revision: 1,
+    agent_session: { agent: 'codex', source: 'herdr:codex', kind: 'id' as const, value: `session-${index}` },
   }));
   const herdView = jest.fn(() => ({ agents: [3, 1, 4, 0, 2].map(index => ({ hostId: 'host-1', agent: panes[index] })) }));
   const native = { ...host.native, hostState: jest.fn(() => { throw new Error('Use the committed presentation snapshot'); }) };
   const client = { ...host.client, native, activeNative: native };
-  const session = { ...host.props.sessions.activeSession!, snapshot: { ...host.snapshot, panes } };
+  const session = { ...host.props.sessions.activeSession!, snapshot: {
+    ...host.snapshot, panes, server: { running: true },
+    focused_workspace_id: null, focused_tab_id: null, focused_pane_id: null,
+    agents: [], workspaces: [], tabs: [], layouts: [],
+  } };
   const props = {
     ...host.props,
     navigation: { ...host.props.navigation, state: { ...host.props.navigation.state, tab: 'hosts' }, mountedTabs: new Set(['hosts']) },
@@ -217,6 +222,18 @@ test.each([false, true])('prepares the first three agents before opening Termina
     expect(renderer.root.findByType(LiveSessionView).props.priorityChatTargets).toBe(preparedTargets);
     expect(renderer.root.findByType(LiveSessionView).props.terminalState).toBe(terminalState);
     expect(herdView).toHaveBeenCalledTimes(1);
+    act(() => { renderer.update(<AppShell {...props} sessions={{ ...props.sessions,
+      state: { ...props.sessions.state, revision: props.sessions.state.revision + 1 },
+      presentationSessions: [{ ...session, selection: { paneId: 'another-pane' } }],
+    }} />); });
+    expect(renderer.root.findByType(LiveSessionView).props.priorityChatTargets).toBe(preparedTargets);
+    expect(herdView).toHaveBeenCalledTimes(1);
+    act(() => { renderer.update(<AppShell {...props} sessions={{ ...props.sessions,
+      presentationSessions: [{ ...session, snapshot: { ...session.snapshot,
+        panes: session.snapshot.panes.map(pane => ({ ...pane, agent_status: 'blocked' as const })),
+      } }],
+    }} />); });
+    expect(herdView).toHaveBeenCalledTimes(2);
   } finally {
     act(() => renderer?.unmount());
   }

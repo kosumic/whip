@@ -152,8 +152,10 @@ export function useSessionTerminalLifecycle({
 
   const exitTerminalToHerd = useCallback(
     (sessionId: string) => {
-      const session = findLiveHostSession(getState(), sessionId);
-      const activeTerminalId = terminals.get(sessionId).activeTerminalId;
+      // Return to the workspace of the terminal the user is viewing. Fetching
+      // native state here decodes every host twice before navigation can start.
+      const session = findLiveHostSession(state, sessionId);
+      const activeTerminalId = terminals.get(sessionId, state).activeTerminalId;
       const pane =
         session &&
         sessionSnapshot(session).panes.find(
@@ -164,7 +166,7 @@ export function useSessionTerminalLifecycle({
         pane?.workspace_id || session?.selection.workspaceId,
       );
     },
-    [navigation, getState, terminals],
+    [navigation, state, terminals],
   );
 
   const activatePaneTerminal = useCallback(

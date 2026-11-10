@@ -1,4 +1,5 @@
 import {
+  startTransition,
   useCallback,
   useContext,
   useEffect,
@@ -1070,7 +1071,9 @@ export function SessionScreen({
         continue;
       }
       projections.set(key, projection);
-      if (confirmedChatExit(hostState(native), session.terminalId)) {
+      // A bound projection is already validated by Rust. Decode host metadata
+      // only when a lost binding needs to be distinguished from an agent exit.
+      if (projection.type === 'no-chat' && confirmedChatExit(hostState(native), session.terminalId)) {
         exitedTerminalKeys.add(key);
       }
       if (
@@ -1202,7 +1205,7 @@ export function SessionScreen({
         return [
           agentTranscriptService.subscribe(view.binding.bindingToken, state => {
             const resetGeneration = nextChatPresentationGeneration();
-            setChatViews(current => {
+            const project = () => setChatViews(current => {
               const active = current.get(key);
               if (
                 active?.binding.bindingToken !== view.binding.bindingToken ||
@@ -1243,6 +1246,10 @@ export function SessionScreen({
               });
               return next;
             });
+            // Hidden priority chats stay warm without competing with a tab tap
+            // for synchronous rendering on the JavaScript thread.
+            if (key === activeChatKey) project();
+            else startTransition(project);
           }),
         ];
       },

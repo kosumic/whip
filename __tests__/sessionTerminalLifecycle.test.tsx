@@ -185,6 +185,30 @@ test('cached terminals can be selected before SSH attaches without creating rend
   expect(client.activeNative).toBeNull();
 });
 
+test('returning to Herd uses the displayed terminal workspace without waiting for native snapshots', async () => {
+  const update = setup(new HerdrClient());
+  const session = update.options.state.sessions[0];
+  session.selection = { workspaceId: 'fallback-workspace' };
+  session.hostState = {
+    revision: 1, connectionGeneration: 1, syncGeneration: 1, syncStatus: 'synced',
+    freshness: 'fresh', needsResync: false, focus: {},
+    snapshot: { version: 'test', protocol: 22, agents: [], workspaces: [], tabs: [], layouts: [],
+      panes: [{ pane_id: 'visible-pane', terminal_id: 'visible-terminal', workspace_id: 'visible-workspace',
+        tab_id: 'visible-tab', focused: true, agent_status: 'idle', revision: 1 }] },
+  };
+  const showHerd = jest.fn();
+  update.options.navigation.showHerd = showHerd;
+  update.options.getState = jest.fn(() => { throw new Error('Native state must not block navigation'); });
+  update.options.terminals.get = jest.fn((_id, view) => {
+    if (view !== update.options.state) throw new Error('Use the displayed terminal rail');
+    return { activeTerminalId: 'visible-terminal', sessions: [] };
+  });
+  await update();
+  act(() => lifecycle.exitTerminalToHerd(profile.id));
+  expect(showHerd).toHaveBeenCalledWith(profile.id, 'visible-workspace');
+  expect(update.options.getState).not.toHaveBeenCalled();
+});
+
 test('renderer targets follow the displayed tab status and fall back to the pane when tab metadata is absent', async () => {
   const client = new HerdrClient();
   nativeRuntime();

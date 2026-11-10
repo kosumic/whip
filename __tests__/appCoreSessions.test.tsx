@@ -110,7 +110,7 @@ test('caches the latest native projection queued before a commit', async () => {
     cache.project(view);
     cache.project(next);
   });
-  expect(cache.state).toBe(next);
+  expect(cache.state).toEqual(next);
   expect(cache.state.sessions[0].connectionStatus).toBe('reconnecting');
   await act(async () => {
     renderer.unmount();
@@ -131,6 +131,36 @@ test('keeps the latest screen selection when unchanged or older native projectio
   await act(async () => { cache.project(selected); });
   await act(async () => { cache.project(view); });
   expect(cache.state.activeSessionId).toBe('second-host');
-  expect(cache.state).toBe(selected);
+  expect(cache.state).toEqual(selected);
   await act(async () => { renderer.unmount(); });
+});
+
+test('local terminal selection retains host data while later native changes still replace it', () => {
+  let cache!: ReturnType<typeof useAppCoreSessions>;
+  function Probe() {
+    cache = useAppCoreSessions(() => view);
+    return null;
+  }
+  let renderer!: ReactTestRenderer;
+  act(() => { renderer = create(<Probe />); });
+  try {
+    const selected: AppCoreProjection = JSON.parse(JSON.stringify(view));
+    selected.revision = 2;
+    selected.sessions[0].selection = { paneId: 'second-pane' };
+    selected.sessions[0].terminalRail.activeTerminalId = 'second-terminal';
+    act(() => { cache.project(selected); });
+    expect(cache.state.sessions[0].hostState).toBe(view.sessions[0].hostState);
+    expect(cache.state.sessions[0].agentControls).toBe(view.sessions[0].agentControls);
+    expect(cache.state.sessions[0].terminalRail.terminals).toBe(view.sessions[0].terminalRail.terminals);
+    expect(cache.state.sessions[0].terminalRail.activeTerminalId).toBe('second-terminal');
+
+    const changed: AppCoreProjection = JSON.parse(JSON.stringify(selected));
+    changed.revision = 3;
+    changed.sessions[0].hostState!.revision = 2;
+    changed.sessions[0].hostState!.freshness = 'stale';
+    act(() => { cache.project(changed); });
+    expect(cache.state.sessions[0].hostState).not.toBe(view.sessions[0].hostState);
+    expect(cache.state.sessions[0].hostState!.freshness).toBe('stale');
+    expect(view.sessions[0].hostState!.freshness).toBe('fresh');
+  } finally { act(() => renderer.unmount()); }
 });

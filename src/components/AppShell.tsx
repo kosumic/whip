@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
+import { replaceEqualDeep } from '@tanstack/react-query';
 import { BlurTargetView } from 'expo-blur';
 import { Platform, StyleSheet, View, type ViewInstance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -125,17 +126,26 @@ export function AppShell({
   } = effectivePreferences;
   const activeSession = sessions.activeSession;
   const { getClient, herdView, state: sessionState, presentationSessions } = sessions;
+  const prioritySources = presentationSessions.map(session => {
+    const client = getClient(session.id);
+    return { id: session.id, client, native: client?.activeNative,
+      snapshot: session.snapshot, hostState: session.hostState,
+      controls: session.agentControls, connectionStatus: session.connectionStatus };
+  });
+  const previousPrioritySources = useRef(prioritySources);
+  const priorityHosts = replaceEqualDeep(previousPrioritySources.current, prioritySources);
+  previousPrioritySources.current = priorityHosts;
   const retainedPriorityTargets = useRef<TerminalRenderTarget[]>([]);
   const priorityChatTargets = useMemo(() => {
     const targets: TerminalRenderTarget[] = [];
-    if (sessionState.sessions.length === 0) return targets;
+    if (priorityHosts.length === 0) return targets;
     // Rust owns the unfiltered, device-wide Herd attention order.
     for (const item of herdView([]).agents) {
-      const client = getClient(item.hostId);
-      const native = client?.activeNative;
+      const host = priorityHosts.find(session => session.id === item.hostId);
+      const client = host?.client;
+      const native = host?.native;
       if (!client || !native) continue;
       // The committed projection already decoded this host's native snapshot.
-      const host = presentationSessions.find(session => session.id === item.hostId);
       const pane = host?.snapshot.panes.find(candidate => candidate.terminal_id === item.agent.terminal_id);
       const agent = chatAgentForPane(pane);
       const identity = pane?.agent_session;
@@ -162,7 +172,7 @@ export function AppShell({
     })) return previous;
     retainedPriorityTargets.current = targets;
     return targets;
-  }, [getClient, herdView, sessionState, presentationSessions]);
+  }, [herdView, priorityHosts]);
   // Mount the shared viewport owner while Herd is open, even before selecting a host.
   const viewportSession = activeSession ?? sessions.presentationSessions.find(
     session => session.id === priorityChatTargets[0]?.hostSessionId,

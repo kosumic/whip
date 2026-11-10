@@ -1758,6 +1758,18 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     expect(host.native.startAgentChat).toHaveBeenCalledTimes(1);
   });
 
+  test('Herd round trips retain a valid chat without decoding its full host snapshot', async () => {
+    const host = setup(agent);
+    await openReadyChat(host, agent);
+    revealChat();
+    host.native.agentChatBindingIsCurrent.mockReturnValue(true);
+    const reads = host.native.hostState.mock.calls.length;
+    act(() => renderer.update(<SessionScreen {...host.props} visible={false} />));
+    act(() => renderer.update(<SessionScreen {...host.props} visible />));
+    expect(host.native.hostState).toHaveBeenCalledTimes(reads);
+    expect(ui('TerminalScreen').props.chatViewEnabled).toBe(true);
+  });
+
   test('foreground reconciles an agent exit without a new React snapshot', async () => {
     const host = setup(agent);
     const binding = await openReadyChat(host, agent);

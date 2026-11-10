@@ -26,11 +26,21 @@ export function createEmptyHerdrSnapshot(): HerdrSnapshot {
   };
 }
 
-/** Format the captured native snapshot without consulting a mutable runtime. */
+type NativeSessionSnapshot = NonNullable<NonNullable<AppSessionProjection['hostState']>['snapshot']>;
+const presentationSnapshots = new WeakMap<NativeSessionSnapshot, {
+  source: NativeSessionSnapshot;
+  snapshot: HerdrSnapshot;
+}>();
+
+/** Reuse unchanged captured metadata without consulting a mutable runtime. */
 export function sessionSnapshot(session: AppSessionProjection): HerdrSnapshot {
   const raw = session.hostState?.snapshot;
   if (!raw) return createEmptyHerdrSnapshot();
-  return {
+  const cached = presentationSnapshots.get(raw);
+  const keys = Object.keys(raw) as (keyof NativeSessionSnapshot)[];
+  if (cached && keys.length === Object.keys(cached.source).length &&
+    keys.every(key => Object.is(raw[key], cached.source[key]))) return cached.snapshot;
+  const snapshot = {
     ...raw,
     server: {
       running: true,
@@ -43,6 +53,8 @@ export function sessionSnapshot(session: AppSessionProjection): HerdrSnapshot {
     focused_pane_id: raw.focused_pane_id ?? null,
     layouts: raw.layouts ?? [],
   };
+  presentationSnapshots.set(raw, { source: { ...raw }, snapshot });
+  return snapshot;
 }
 
 export function sessionPresentation(
