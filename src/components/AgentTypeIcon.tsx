@@ -3,7 +3,12 @@ import { LocalSvg } from 'react-native-svg/css';
 import { bundledAsset } from '@/src/lib/bundledAsset';
 import { useTheme } from '@/src/theme';
 
+const CLAUDE_CODE_ICON = { light: bundledAsset(require('../../assets/agents/claude-code.svg')) };
+
 const AGENT_ICONS = new Map<string, { light: number; dark?: number }>([
+  ['claude', CLAUDE_CODE_ICON],
+  ['claude code', CLAUDE_CODE_ICON],
+  ['claude-code', CLAUDE_CODE_ICON],
   ['codex', { light: bundledAsset(require('../../assets/agents/codex.svg')) }],
   ['opencode', {
     light: bundledAsset(require('../../assets/agents/opencode-light.svg')),
