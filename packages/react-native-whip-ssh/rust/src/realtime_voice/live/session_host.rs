@@ -223,6 +223,18 @@ impl Delegate for App<'_> {
         let socket = &mut *session.socket;
         owner.view.lock().server_events += 1;
         match frame.event {
+            ServerEvent::Error {
+                event_id, error, ..
+            } => {
+                let id = voice_call_openai::live::errors::client_event_id(
+                    &error,
+                    frame.client_event_id.as_deref(),
+                );
+                if let Some(backend) = backend.as_mut() {
+                    backend.rejected(id);
+                }
+                record_rejection(owner, provider, &event_id);
+            }
             ServerEvent::Started { session, .. } => {
                 owner.provider_expiry(&session);
                 let muted = confirm_start(owner, config);
@@ -246,6 +258,9 @@ impl Delegate for App<'_> {
                 if !confirmed {
                     return Err("GPT-Live disconnected before final usage was confirmed.");
                 }
+                if matches!(reason, api::CloseReason::Content) {
+                    return Err(voice_call_openai::live::errors::CONTENT_ENDED);
+                }
                 return Err("GPT-Live ended the call.");
             }
             ServerEvent::UsageUpdated {
@@ -261,7 +276,13 @@ impl Delegate for App<'_> {
                 end_ms,
             } => {
                 self.last_input = Instant::now();
-                owner.view.lock().user_text = super::super::limit_text(delta.clone());
+                {
+                    let mut view = owner.view.lock();
+                    view.user_text = super::super::limit_text(delta.clone());
+                    if view.error == Some(voice_call_openai::live::errors::COMMAND_REJECTED) {
+                        view.error = None;
+                    }
+                }
                 owner.view.lock().caption_events += 1;
                 if let Some(transcript) = owner.output.lock().live_transcript.as_mut() {
                     transcript.append(captions::Fragment {
@@ -432,7 +453,8 @@ impl Delegate for App<'_> {
         if let Some(backend) = backend.as_mut()
             && backend.take_continuation()
         {
-            send(socket, Command::ResponseCreate).await?;
+            let id = send(socket, Command::ResponseCreate).await?;
+            backend.request_sent(id);
         }
         if let Some(agent) = agent {
             LiveVoiceAdapter::dispatch(owner, agent, socket, state, tasks).await?;
@@ -441,6 +463,25 @@ impl Delegate for App<'_> {
         Ok(Flow::Continue)
     }
 }
+fn record_rejection(
+    owner: &RealtimeVoiceAdapter,
+    provider: &voice_call_openai::session::Live,
+    event_id: &str,
+) {
+    {
+        let mut view = owner.view.lock();
+        view.live_command_errors = provider.command_errors;
+        view.live_error.clone_from(&provider.last_error);
+        view.error = Some(voice_call_openai::live::errors::COMMAND_REJECTED);
+    }
+    if let Some(transcript) = owner.output.lock().live_transcript.as_mut() {
+        let mut event =
+            crate::voice_history::Event::new("protocol", "GPT-Live request", "rejected");
+        event.output = serde_json::to_string(&provider.last_error).ok();
+        transcript.event(event_id, event);
+    }
+}
+
 fn confirm_start(owner: &RealtimeVoiceAdapter, config: &Config) -> bool {
     let muted = {
         let mut view = owner.view.lock();

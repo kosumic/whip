@@ -244,6 +244,8 @@ mod tests {
         assert!(connection_lost(voice_call_media::health::STALLED));
         for message in [
             crate::recovery::CLEANUP_FAILED,
+            crate::live::errors::CONTENT_ENDED,
+            crate::live::errors::MICROPHONE_REJECTED,
             "Realtime call creation outcome is unknown. Start a new call manually.",
             "OpenAI Realtime quota or rate limit reached.",
             "Voice credentials were revoked.",

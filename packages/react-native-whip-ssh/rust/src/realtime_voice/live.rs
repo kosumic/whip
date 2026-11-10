@@ -268,6 +268,13 @@ impl LiveVoiceAdapter {
         } else {
             Err("Open a connected coding agent before calling GPT-Live.")
         };
+        // Keep safe error metadata even when startup/auth/microphone rejection
+        // prevents delivery to the application event callback.
+        if let Ok(state) = provider.live_state() {
+            let mut view = owner.view.lock();
+            view.live_command_errors = state.command_errors;
+            view.live_error.clone_from(&state.last_error);
+        }
         // Dropping observation futures never invokes remote cancel. Dispatched
         // agent prompts continue; only this call's unsent pending requests stop.
         if owner.continuity_enabled

@@ -14,6 +14,8 @@ pub struct Live {
     config: LiveConfig,
     pub control: Control,
     pub usage: DurationUsage,
+    pub last_error: Option<crate::live::errors::Diagnostic>,
+    pub command_errors: u64,
     pub(super) started: Instant,
 }
 impl Live {
@@ -22,6 +24,8 @@ impl Live {
             control: Control::new(config.session_id.take()),
             config,
             usage: DurationUsage::default(),
+            last_error: None,
+            command_errors: 0,
             started: Instant::now(),
         }
     }
@@ -54,6 +58,7 @@ impl Live {
         text: &str,
         webrtc: bool,
         audio: &impl Audio,
+        prefix: &str,
     ) -> Result<Option<Event>> {
         let frame = crate::live::codec()
             .decode_server(text)
@@ -83,10 +88,33 @@ impl Live {
                 audio.confirm_live_closed();
             }
             api::ServerEvent::Error { error, .. } => {
-                return Err(crate::live::errors::rejected(
+                let id =
+                    crate::live::errors::client_event_id(error, frame.client_event_id.as_deref());
+                self.last_error = Some(crate::live::errors::Diagnostic::new(
                     error,
-                    self.config.backend_model.is_some(),
+                    frame.client_event_id.as_deref(),
+                    prefix,
                 ));
+                self.command_errors = self.command_errors.saturating_add(1);
+                if !self.control.started || crate::live::errors::terminal(error) {
+                    return Err(crate::live::errors::rejected_for(
+                        error,
+                        self.config.backend_model.is_some(),
+                        prefix,
+                    ));
+                }
+                if self
+                    .control
+                    .muted
+                    .as_ref()
+                    .is_some_and(|(pending, _, _)| Some(pending.as_str()) == id)
+                {
+                    // Mute/unmute already closed local capture. A rejected
+                    // acknowledgement must never silently reopen it.
+                    return Err(crate::live::errors::MICROPHONE_REJECTED);
+                }
+                // Deliver the rejection to the host. Keep input, transcripts,
+                // usage and closure events alive; never resend the command.
             }
             _ if !self.control.started => return Err("GPT-Live session did not start correctly."),
             api::ServerEvent::UsageUpdated { usage, .. } => {

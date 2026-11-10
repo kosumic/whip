@@ -210,6 +210,8 @@ pub(crate) fn playback_owner_with_commands() -> Result<
                 server_events: 0,
                 input_speech_events: 0,
                 input_stalled: false,
+                live_command_errors: 0,
+                live_error: None,
                 tool: None,
                 backend_text: None,
                 live_seconds: None,

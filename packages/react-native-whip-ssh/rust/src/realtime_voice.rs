@@ -326,6 +326,8 @@ pub(super) struct View {
     server_events: u64,
     input_speech_events: u64,
     input_stalled: bool,
+    live_command_errors: u64,
+    live_error: Option<voice_call_openai::live::errors::Diagnostic>,
 }
 
 #[derive(Default, Serialize)]
@@ -677,6 +679,8 @@ impl RealtimeVoiceAdapter {
                 server_events: 0,
                 input_speech_events: 0,
                 input_stalled: false,
+                live_command_errors: 0,
+                live_error: None,
                 tool: None,
                 backend_text: None,
                 live_seconds: None,

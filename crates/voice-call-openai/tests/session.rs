@@ -78,11 +78,14 @@ async fn cancelled_owned_calls_do_not_access_credentials_for_either_transport() 
 }
 
 #[derive(Default)]
-struct Observer {
+struct Observer<'a> {
     final_seconds: Option<f64>,
     events: usize,
+    rejections: usize,
+    transcripts: usize,
+    unmute_on_start: Option<&'a support::App>,
 }
-impl Delegate for Observer {
+impl Delegate for Observer<'_> {
     type Work = ();
     async fn next_work(&mut self) -> Option<()> {
         std::future::pending().await
@@ -94,19 +97,182 @@ impl Delegate for Observer {
     ) -> impl std::future::Future<Output = Result<Flow, &'static str>> + Send {
         std::future::ready(Ok(Flow::Stop))
     }
-    fn event(
+    async fn event(
         &mut self,
-        _: &mut Session<'_>,
-        _: Event,
-    ) -> impl std::future::Future<Output = Result<Flow, &'static str>> + Send {
+        session: &mut Session<'_>,
+        event: Event,
+    ) -> Result<Flow, &'static str> {
         self.events += 1;
-        std::future::ready(Ok(Flow::Continue))
+        if let Event::Live(frame) = event {
+            match frame.event {
+                oai_rt_rs::live::ServerEvent::Error { .. } => self.rejections += 1,
+                oai_rt_rs::live::ServerEvent::OutputTranscriptDelta { .. } => self.transcripts += 1,
+                oai_rt_rs::live::ServerEvent::Started { .. } => {
+                    if let Some(audio) = self.unmute_on_start.take() {
+                        session.mute(audio, false).await?;
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(Flow::Continue)
     }
     fn live_usage(&mut self, seconds: f64, finalized: bool) {
         if finalized {
             self.final_seconds = Some(seconds);
         }
     }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_rejected_live_command_keeps_speech_and_final_usage_alive_without_replay()
+-> flows::TestResult {
+    for code in [Some("unknown_parameter"), None] {
+        let audio = support::App::new(true)?;
+        let (socket, mut commands, mut events) = voice_call_openai::RealtimeSocket::relay();
+        let snapshot =
+            json!({"id":"call","model":"custom-live","status":"active","expires_at":2_000_000_000});
+        for event in [
+            json!({"type":"session.started","event_id":"started","session":snapshot}),
+            json!({"type":"error","event_id":"rejected","error":{"type":"invalid_request_error","code":code,"message":"Rejected an individual command","param":"session.voice","client_event_id":"voice-live:7"}}),
+            json!({"type":"session.output_transcript.delta","event_id":"still-speaking","delta":"We can continue.","start_ms":1000,"end_ms":2000}),
+            json!({"type":"session.usage.updated","event_id":"usage","usage":{"seconds":3.0}}),
+            json!({"type":"session.closed","event_id":"closed","session":snapshot,"reason":"close_requested","usage":{"seconds":4.0}}),
+        ] {
+            events
+                .send(Ok(Message::Text(event.to_string().into())))
+                .await?;
+        }
+        let call = Call::from_live(
+            socket,
+            LiveConfig {
+                model: "custom-live".into(),
+                voice: "custom-voice".into(),
+                backend_model: None,
+                session_id: None,
+            },
+        );
+        let mut observer = Observer::default();
+        call.run(&audio, &mut observer).await?;
+        assert_eq!(observer.rejections, 1);
+        assert_eq!(observer.transcripts, 1);
+        assert_eq!(observer.final_seconds, Some(4.0));
+        use futures::StreamExt;
+        assert!(
+            commands.next().await.is_none(),
+            "a rejected command must not be resent or end the call"
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test(start_paused = true)]
+async fn authentication_and_startup_rejections_still_fail_the_live_call() -> flows::TestResult {
+    for (started, error_type, code, expected) in [
+        (
+            false,
+            "authentication_error",
+            "invalid_api_key",
+            "GPT-Live rejected the API key. Check the saved OpenAI API key.",
+        ),
+        (
+            true,
+            "authentication_error",
+            "invalid_api_key",
+            "GPT-Live rejected the API key. Check the saved OpenAI API key.",
+        ),
+        (
+            false,
+            "invalid_request_error",
+            "unknown_parameter",
+            "GPT-Live rejected a session command. Please use the agent chat; no request will be replayed.",
+        ),
+    ] {
+        let audio = support::App::new(true)?;
+        let (socket, _commands, mut events) = voice_call_openai::RealtimeSocket::relay();
+        let snapshot =
+            json!({"id":"call","model":"custom-live","status":"active","expires_at":2_000_000_000});
+        if started {
+            events
+                .send(Ok(Message::Text(
+                    json!({"type":"session.started","event_id":"started","session":snapshot})
+                        .to_string()
+                        .into(),
+                )))
+                .await?;
+        }
+        events.send(Ok(Message::Text(json!({"type":"error","event_id":"rejected","error":{"type":error_type,"code":code,"message":"private provider details"}}).to_string().into()))).await?;
+        events.send(Ok(Message::Text(json!({"type":"session.closed","event_id":"closed","session":snapshot,"reason":"close_requested","usage":{"seconds":0.0}}).to_string().into()))).await?;
+        let call = Call::from_live(
+            socket,
+            LiveConfig {
+                model: "custom-live".into(),
+                voice: "custom-voice".into(),
+                backend_model: None,
+                session_id: None,
+            },
+        );
+        assert_eq!(
+            call.run(&audio, &mut Observer::default()).await,
+            Err(expected)
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_rejected_unmute_never_reopens_capture_or_replays_the_command() -> flows::TestResult {
+    use futures::StreamExt;
+    use voice_call_openai::session::Audio;
+    let audio = support::App::new(true)?;
+    let (socket, mut commands, mut events) = voice_call_openai::RealtimeSocket::relay();
+    let server = tokio::spawn(async move {
+        let snapshot =
+            json!({"id":"call","model":"custom-live","status":"active","expires_at":2_000_000_000});
+        events
+            .send(Ok(Message::Text(
+                json!({"type":"session.started","event_id":"started","session":snapshot})
+                    .to_string()
+                    .into(),
+            )))
+            .await?;
+        let Message::Text(command) = commands.next().await.ok_or("Missing unmute")? else {
+            return Err("Unexpected command".into());
+        };
+        let command: serde_json::Value = serde_json::from_str(&command)?;
+        assert_eq!(command["type"], "session.input_audio.unmute");
+        events.send(Ok(Message::Text(json!({"type":"error","event_id":"rejected","error":{"type":"invalid_request_error","code":"unknown_parameter","message":"unmute rejected","client_event_id":command["event_id"]}}).to_string().into()))).await?;
+        let Message::Text(close) = commands.next().await.ok_or("Missing close")? else {
+            return Err("Unexpected command".into());
+        };
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&close)?["type"],
+            "session.close"
+        );
+        events.send(Ok(Message::Text(json!({"type":"session.closed","event_id":"closed","session":snapshot,"reason":"close_requested","usage":{"seconds":3.0}}).to_string().into()))).await?;
+        Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
+    });
+    let call = Call::from_live(
+        socket,
+        LiveConfig {
+            model: "custom-live".into(),
+            voice: "custom-voice".into(),
+            backend_model: None,
+            session_id: None,
+        },
+    );
+    let mut observer = Observer {
+        unmute_on_start: Some(&audio),
+        ..Default::default()
+    };
+    assert_eq!(
+        call.run(&audio, &mut observer).await,
+        Err(voice_call_openai::live::errors::MICROPHONE_REJECTED)
+    );
+    assert!(audio.is_muted());
+    assert_eq!(observer.final_seconds, Some(3.0));
+    server.await??;
+    Ok(())
 }
 
 #[tokio::test(start_paused = true)]

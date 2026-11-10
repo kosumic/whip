@@ -1,6 +1,28 @@
 use super::*;
 use serde_json::{Value, json};
 
+#[test]
+fn a_rejected_create_releases_only_its_pending_request_without_automatic_retry() {
+    let mut backend = Backend::default();
+    backend.request();
+    assert!(backend.take_continuation());
+    backend.request_sent("whip-live:1".into());
+    assert!(!backend.rejected(Some("whip-live:0")));
+    assert!(!backend.rejected(None));
+    assert!(backend.busy());
+    assert!(backend.rejected(Some("whip-live:1")));
+    assert!(!backend.busy());
+    assert!(
+        !backend.take_continuation(),
+        "rejection must not replay the create"
+    );
+    backend.request();
+    assert!(
+        backend.take_continuation(),
+        "a new explicit request must remain available"
+    );
+}
+
 fn lifecycle(id: &str, event: &str) -> Result<ResponseEvent, serde_json::Error> {
     ResponseEvent::decode(json!({"type":event,"sequence_number":0,"response":{
         "id":id,"created_at":1,"output":[]

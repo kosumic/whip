@@ -396,7 +396,7 @@ impl<'a> Session<'a> {
                     let was_ready = self.ready();
                     let event = match &mut self.protocol {
                         Protocol::Realtime(state) => state.receive(&text, self.webrtc, audio, &self.prefix)?,
-                        Protocol::Live(state) => state.receive(&text, self.webrtc, audio)?,
+                        Protocol::Live(state) => state.receive(&text, self.webrtc, audio, &self.prefix)?,
                     };
                     if !was_ready && self.ready() {
                         // Discard microphone PCM retained before negotiation.

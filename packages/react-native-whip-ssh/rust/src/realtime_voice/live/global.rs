@@ -49,6 +49,7 @@ pub(super) struct Backend {
     batches: BTreeSet<ResponseKey>,
     continuation: bool,
     requested: bool,
+    requested_id: Option<String>,
     calls: BTreeSet<String>,
 }
 
@@ -113,6 +114,7 @@ impl Backend {
             }
         ) {
             self.requested = false;
+            self.requested_id = None;
         }
         if matches!(
             self.tracker.terminal(&key),
@@ -157,6 +159,23 @@ impl Backend {
 
     pub fn request(&mut self) {
         self.continuation = true;
+    }
+
+    pub fn request_sent(&mut self, id: String) {
+        self.requested_id = Some(id);
+    }
+
+    /// A failed create must not wedge future explicit requests or retry itself.
+    /// Unrelated rejections cannot release a different in-flight response.
+    pub fn rejected(&mut self, id: Option<&str>) -> bool {
+        if id.is_some() && id == self.requested_id.as_deref() {
+            self.requested = false;
+            self.requested_id = None;
+            self.continuation = false;
+            true
+        } else {
+            false
+        }
     }
 
     pub fn finished(&mut self, results: &Results) -> Result<(), &'static str> {

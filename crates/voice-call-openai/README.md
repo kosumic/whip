@@ -148,6 +148,21 @@ and validates final reports. Pricing and persistence belong to the host.
 
 ## Interruption, recovery and stop
 
+An established GPT-Live session delivers ordinary `error` events to the host
+without ending capture, audio, or usage collection. Command rejection and actual
+session closure are separate protocol events. The host can show a warning and
+inspect bounded `Live::last_error` metadata; `Live::command_errors` counts these
+events. No failed command is automatically resent. Startup, authentication,
+access, quota, and a correlated pending microphone-control rejection remain
+terminal. Capture stays closed if a mute/unmute acknowledgement is rejected.
+
+The host must still honor `session.closed`, including content restrictions.
+Whip does not classify a content closure as a recoverable network outage. Its
+global backend releases only the rejected `response.create` request matched by
+client event ID, allowing a new explicit request without replaying the old one.
+The official [Live session lifecycle](https://developers.openai.com/api/docs/guides/live-conversations#handle-errors-and-end-the-session)
+describes command rejection, speech-only interruption, and closure separately.
+
 Realtime WebRTC sideband liveness is checked with matching WebSocket ping/pong
 frames every ten seconds, with a ten-second reply deadline. Unrelated events
 and stale pongs cannot satisfy that check. These control frames remain outside
