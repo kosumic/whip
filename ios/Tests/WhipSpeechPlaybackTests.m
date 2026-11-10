@@ -131,11 +131,13 @@ int32_t whip_speech_pcm_speak(uint64_t lease, const char *text, uint64_t caption
                             WhipReadVoiceCredential reader, void *credential_context) { return 0; }
 
 static BOOL voiceCallActive;
+static id voiceCallTurn;
+static NSString *voiceCallToken;
 @implementation WhipVoiceCall
 + (instancetype)shared { static WhipVoiceCall *call; if (!call) call = [WhipVoiceCall new]; return call; }
 - (BOOL)active { return voiceCallActive; }
 - (BOOL)owns:(NSString *)token { return NO; }
-- (id)playbackKey:(NSString *)token { return nil; }
+- (id)playbackKey:(NSString *)token { return !token || [token isEqualToString:voiceCallToken] ? voiceCallTurn : nil; }
 - (void)start:(NSString *)token label:(NSString *)label resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {}
 - (void)end:(NSString *)token resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {}
 - (void)mute:(NSString *)token muted:(BOOL)muted resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {}
@@ -237,6 +239,7 @@ static BOOL voiceCallActive;
   automaticEndings = [NSMutableArray new];
   automaticActive = 0; automaticEnabled = NO; automaticPaused = NO;
   voiceCallActive = NO;
+  voiceCallTurn = nil; voiceCallToken = nil;
   self.player = [TestSpeechPlayback new]; fixturePlayer = self.player; self.player.spoken = [NSMutableArray new]; self.stopped = [NSMutableArray new];
   self.player.ringtones = [NSMutableArray new];
   self.player.callAnnouncements = [NSMutableArray new];
@@ -257,6 +260,49 @@ static BOOL voiceCallActive;
 - (void)queueAutomatic:(uint64_t)identity text:(NSString *)text {
   [automaticWaiting addObject:@{@"id": @(identity), @"token": @"automatic-chat-speech", @"text": text,
     @"hostId": @"host", @"paneId": @"pane", @"label": @"Native automatic test"}];
+}
+
+- (void)testLocalRepliesAndFillersPlayWithinTheCallAndRetainItsAudioUntilHangup {
+  voiceCallActive = YES; voiceCallToken = @"voice-chat:1"; voiceCallTurn = [NSObject new];
+  [self.player startPlayback:voiceCallTurn];
+  __block NSUInteger ready = 0, completed = 0;
+  [self queue:@"status-after-call"];
+  [self.player announceStatus:@"status-after-call" resolve:^(id value) {} reject:self.unexpectedError];
+  for (NSString *owner in @[@"voice-chat:1:filler:1", @"voice-chat:1:speech:2", @"voice-chat:1:speech:3"]) {
+    XCTestExpectation *chunk = [self expectationWithDescription:owner];
+    [self.player startLocalChat:owner label:@"Codex" callToken:voiceCallToken resolve:^(id value) { ready++; } reject:self.unexpectedError];
+    XCTAssertEqual(ready, self.player.spoken.count + 1);
+    [self.player speakChat:owner text:owner resolve:^(id value) { completed++; [chunk fulfill]; } reject:self.unexpectedError];
+    XCTAssertEqualObjects(self.player.spoken.lastObject, owner);
+    [self finish];
+    [self waitForExpectations:@[chunk] timeout:2];
+    [self.player stopOwner:owner kind:WhipSpeechChat];
+    XCTAssertNotEqual(turnOwner, 0u);
+  }
+  XCTAssertEqual(ready, 3u); XCTAssertEqual(completed, 3u);
+  [self.player finishAlert:@"status-after-call" reason:@"dismissed"];
+  XCTestExpectation *drained = [self expectationWithDescription:@"other audio waits until hangup"];
+  [self.player announce:@"other" text:@"After hangup" language:@"en-US" resolve:^(id value) { [drained fulfill]; } reject:self.unexpectedError];
+  XCTAssertEqual(self.player.spoken.count, 3u);
+  id callTurn = voiceCallTurn;
+  voiceCallActive = NO; voiceCallTurn = nil; voiceCallToken = nil;
+  [self.player finishPlayback:callTurn];
+  dispatch_async(dispatch_get_main_queue(), ^{
+    XCTAssertEqualObjects(self.player.spoken.lastObject, @"After hangup");
+    [self finish];
+  });
+  [self waitForExpectations:@[drained] timeout:2];
+}
+
+- (void)testLocalSpeechFromAnEndedCallCannotJoinItsReplacement {
+  voiceCallActive = YES; voiceCallToken = @"voice-chat:2"; voiceCallTurn = [NSObject new];
+  [self.player startPlayback:voiceCallTurn];
+  __block BOOL rejected = NO;
+  [self.player startLocalChat:@"voice-chat:1:speech:3" label:@"Codex" callToken:@"voice-chat:1"
+    resolve:^(id value) { XCTFail(@"Ended call started speech"); }
+    reject:^(NSString *code, NSString *message, NSError *error) { rejected = YES; }];
+  XCTAssertTrue(rejected); XCTAssertEqual(self.player.spoken.count, 0u); XCTAssertNotEqual(turnOwner, 0u);
+  [self.player finishPlayback:voiceCallTurn]; voiceCallTurn = nil;
 }
 
 - (void)testCallAnnouncementsUseTheCurrentConfiguredVoiceOnEveryRequestAndRetainCallOwnership {

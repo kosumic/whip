@@ -1,7 +1,9 @@
 //! Local voice-call policy, without audio devices, runtimes, providers or networking.
 #![doc = include_str!("../README.md")]
 
+mod echo;
 mod input;
+pub use echo::EchoGuard;
 use input::{Input, MAX_UTTERANCE_SAMPLES, VAD_PAUSE_SAMPLES};
 
 pub const SAMPLE_RATE: usize = 16_000;

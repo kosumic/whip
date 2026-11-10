@@ -127,10 +127,15 @@ object PcmSpeechPlayback {
 
   /** Voice chat may prepare one following utterance while this track is playing. */
   fun enqueue(lease: Long, text: String, attributes: AudioAttributes,
-              started: () -> Unit, level: (Float) -> Unit, ended: (Boolean, Boolean, String?) -> Unit) {
+              started: () -> Unit, level: (Float) -> Unit, ended: (Boolean, Boolean, String?) -> Unit) =
+    enqueue(lease, text, attributes, 0L, started, level, { _, _, _ -> }, ended)
+
+  fun enqueue(lease: Long, text: String, attributes: AudioAttributes, captionId: Long,
+              started: () -> Unit, level: (Float) -> Unit, progress: (Long, Long, Boolean) -> Unit,
+              ended: (Boolean, Boolean, String?) -> Unit) {
     val current = player?.takeIf { it.lease == lease && it.retained && !it.cancelled.get() }
       ?: run { stop(); begin(lease, 1.0, attributes, retained = true) }
-    current.enqueue(text, started, level, ended)
+    current.enqueue(text, started, level, ended, progress, captionId)
   }
 
   private fun begin(lease: Long, rate: Double, attributes: AudioAttributes, retained: Boolean): Player {

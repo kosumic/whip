@@ -180,6 +180,7 @@ class VoiceCallService : Service() {
     val active: Boolean get() = current?.let { it.ready && !it.ending } == true
     internal fun owns(token: String): Boolean = current?.let { it.token == token && it.ready && !it.ending } == true
     internal fun playbackKey(token: String): Any? = current?.takeIf { it.token == token && !it.ending }
+    internal fun ownsPlayback(key: Any): Boolean = current === key
     internal fun muted(token: String): Boolean = current?.takeIf { it.token == token }?.muted == true
     internal fun reconnecting(token: String, reconnecting: Boolean) {
       val session = current?.takeIf { it.token == token && !it.ending } ?: return

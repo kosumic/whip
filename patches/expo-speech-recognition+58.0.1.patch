@@ -45,7 +45,7 @@ index ae17503e..ae9510e9 100644
      private fun createRecorder(): AudioRecord =
          AudioRecord(
 -            MediaRecorder.AudioSource.VOICE_RECOGNITION,
-+            if (context.getSystemService(android.media.AudioManager::class.java).mode == android.media.AudioManager.MODE_IN_COMMUNICATION)
++            if (echoCancellation || context.getSystemService(android.media.AudioManager::class.java).mode == android.media.AudioManager.MODE_IN_COMMUNICATION)
 +                MediaRecorder.AudioSource.VOICE_COMMUNICATION else MediaRecorder.AudioSource.VOICE_RECOGNITION,
              sampleRateInHz,
              channelConfig,

@@ -185,8 +185,31 @@ fn late_pcm_from_interrupted_chat_cannot_align_the_next_chat() {
         |_| true,
     );
     assert_ne!(old_id, new_id);
-    assert_eq!(whip_speech_caption_progress(old_id, 200, 200, true), 0);
+    assert_eq!(
+        whip_speech_caption_progress(old_id, 200, 200, true),
+        "Old tab: ".len() + RESPONSE.len()
+    );
     assert_eq!(whip_speech_caption_progress(new_id, 200, 200, true), 0);
+}
+
+#[test]
+fn preparing_lookahead_keeps_each_playing_chunk_clock_independent() {
+    let _serial = SERIAL.lock();
+    let (first, _, _) = start("", "First sentence with several words.");
+    let (second, _, _) = start("", "Second sentence with several words.");
+    let first_progress = whip_speech_caption_progress(first, RATE / 2, RATE * 2, true);
+    assert!(first_progress > 0);
+    assert_eq!(whip_speech_caption_progress(second, 0, RATE * 2, true), 0);
+    let second_progress = whip_speech_caption_progress(second, RATE / 2, RATE * 2, true);
+    assert!(second_progress > 0);
+    assert_eq!(
+        whip_speech_caption_progress(first, RATE / 2, RATE * 2, true),
+        first_progress
+    );
+    assert_eq!(
+        whip_speech_caption_progress(first, RATE * 2, RATE * 2, true),
+        "First sentence with several words.".len()
+    );
 }
 
 #[test]

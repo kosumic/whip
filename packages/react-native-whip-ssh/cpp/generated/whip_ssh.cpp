@@ -1806,10 +1806,15 @@ void uniffi_whip_ssh_fn_method_voicechat_finish(
     /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
 RustBuffer uniffi_whip_ssh_fn_method_voicechat_next_speech(
     /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
+RustBuffer uniffi_whip_ssh_fn_method_voicechat_next_speech_with_source(
+    /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
 uint64_t uniffi_whip_ssh_fn_method_voicechat_open_audio_capture(
     /*handle*/ uint64_t ptr, uint64_t input_id, RustCallStatus *uniffi_out_err);
 RustBuffer uniffi_whip_ssh_fn_method_voicechat_playback_ended(
     /*handle*/ uint64_t ptr, RustCallStatus *uniffi_out_err);
+void uniffi_whip_ssh_fn_method_voicechat_playback_text(
+    /*handle*/ uint64_t ptr, RustBuffer text, int8_t active,
+    RustCallStatus *uniffi_out_err);
 /*handle*/ uint64_t uniffi_whip_ssh_fn_method_voicechat_prepare(
     /*handle*/ uint64_t ptr, int8_t install);
 void uniffi_whip_ssh_fn_method_voicechat_recognition(
@@ -2744,8 +2749,10 @@ uint16_t uniffi_whip_ssh_checksum_method_voicechat_close();
 uint16_t uniffi_whip_ssh_checksum_method_voicechat_close_audio_capture();
 uint16_t uniffi_whip_ssh_checksum_method_voicechat_finish();
 uint16_t uniffi_whip_ssh_checksum_method_voicechat_next_speech();
+uint16_t uniffi_whip_ssh_checksum_method_voicechat_next_speech_with_source();
 uint16_t uniffi_whip_ssh_checksum_method_voicechat_open_audio_capture();
 uint16_t uniffi_whip_ssh_checksum_method_voicechat_playback_ended();
+uint16_t uniffi_whip_ssh_checksum_method_voicechat_playback_text();
 uint16_t uniffi_whip_ssh_checksum_method_voicechat_prepare();
 uint16_t uniffi_whip_ssh_checksum_method_voicechat_recognition();
 uint16_t uniffi_whip_ssh_checksum_method_voicechat_recognition_ended();
@@ -25185,6 +25192,18 @@ NativeWhipSsh::NativeWhipSsh(
             return this->cpp_uniffi_whip_ssh_fn_method_voicechat_next_speech(
                 rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_fn_method_voicechat_next_speech_with_source"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_fn_method_"
+                                        "voicechat_next_speech_with_source"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_fn_method_voicechat_next_speech_with_source(
+                    rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_fn_method_voicechat_open_audio_capture"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -25207,6 +25226,17 @@ NativeWhipSsh::NativeWhipSsh(
           [this](jsi::Runtime &rt, const jsi::Value &thisVal,
                  const jsi::Value *args, size_t count) -> jsi::Value {
             return this->cpp_uniffi_whip_ssh_fn_method_voicechat_playback_ended(
+                rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_fn_method_voicechat_playback_text"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_method_voicechat_playback_text"),
+          3,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_method_voicechat_playback_text(
                 rt, thisVal, args, count);
           });
   props["ubrn_uniffi_whip_ssh_fn_method_voicechat_prepare"] =
@@ -32907,6 +32937,18 @@ NativeWhipSsh::NativeWhipSsh(
                 ->cpp_uniffi_whip_ssh_checksum_method_voicechat_next_speech(
                     rt, thisVal, args, count);
           });
+  props["ubrn_uniffi_whip_ssh_checksum_method_voicechat_next_speech_with_"
+        "source"] = jsi::Function::createFromHostFunction(
+      rt,
+      jsi::PropNameID::forAscii(rt, "ubrn_uniffi_whip_ssh_checksum_method_"
+                                    "voicechat_next_speech_with_source"),
+      0,
+      [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value *args, size_t count) -> jsi::Value {
+        return this
+            ->cpp_uniffi_whip_ssh_checksum_method_voicechat_next_speech_with_source(
+                rt, thisVal, args, count);
+      });
   props["ubrn_uniffi_whip_ssh_checksum_method_voicechat_open_audio_capture"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -32930,6 +32972,19 @@ NativeWhipSsh::NativeWhipSsh(
                  const jsi::Value *args, size_t count) -> jsi::Value {
             return this
                 ->cpp_uniffi_whip_ssh_checksum_method_voicechat_playback_ended(
+                    rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_method_voicechat_playback_text"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt,
+              "ubrn_uniffi_whip_ssh_checksum_method_voicechat_playback_text"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_method_voicechat_playback_text(
                     rt, thisVal, args, count);
           });
   props["ubrn_uniffi_whip_ssh_checksum_method_voicechat_prepare"] =
@@ -42720,6 +42775,21 @@ jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_voicechat_next_speech(
   return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
 }
 jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_voicechat_next_speech_with_source(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_method_voicechat_next_speech_with_source(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
+jsi::Value
 NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_voicechat_open_audio_capture(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
@@ -42749,6 +42819,21 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_voicechat_playback_ended(
       rt, callInvoker, status, args[count - 1]);
 
   return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_voicechat_playback_text(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  uniffi_whip_ssh_fn_method_voicechat_playback_text(
+      uniffi_jsi::Bridging</*handle*/ uint64_t>::fromJs(rt, callInvoker,
+                                                        args[0]),
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[1]),
+      uniffi_jsi::Bridging<int8_t>::fromJs(rt, callInvoker, args[2]), &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return jsi::Value::undefined();
 }
 jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_method_voicechat_prepare(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
@@ -48820,6 +48905,15 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_voicechat_next_speech(
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }
+jsi::Value NativeWhipSsh::
+    cpp_uniffi_whip_ssh_checksum_method_voicechat_next_speech_with_source(
+        jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+        size_t count) {
+  auto value =
+      uniffi_whip_ssh_checksum_method_voicechat_next_speech_with_source();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
 jsi::Value
 NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_voicechat_open_audio_capture(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
@@ -48833,6 +48927,14 @@ NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_voicechat_playback_ended(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
   auto value = uniffi_whip_ssh_checksum_method_voicechat_playback_ended();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_method_voicechat_playback_text(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_method_voicechat_playback_text();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }

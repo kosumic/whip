@@ -60307,10 +60307,18 @@ export interface VoiceChatLike {
   finish(): void;
   nextSpeech(): string | undefined;
   /**
+   * Preserve original transcript part IDs and prose offsets for inline captions.
+   */
+  nextSpeechWithSource(): string | undefined;
+  /**
    * Opens a fresh native capture ticket for each recognizer cycle.
    */
   openAudioCapture(inputId: bigint) /*throws*/ : bigint;
   playbackEnded(): VoiceChatView;
+  /**
+   * Native word/PCM callbacks report audible chunks, including waiting fillers.
+   */
+  playbackText(text: string, active: boolean): void;
   /**
    * Standard builds use local VAD without loading or downloading a model.
    * The optional smart-turn build feature permits explicit model installation.
@@ -60527,6 +60535,29 @@ export class VoiceChat extends UniffiAbstractObject implements VoiceChatLike {
   }
 
   /**
+   * Preserve original transcript part IDs and prose offsets for inline captions.
+   */
+  nextSpeechWithSource(): string | undefined {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterOptionalString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_next_speech_with_source(
+            uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  /**
    * Opens a fresh native capture ticket for each recognizer cycle.
    */
   openAudioCapture(inputId: bigint): bigint /*throws*/ {
@@ -60564,6 +60595,23 @@ export class VoiceChat extends UniffiAbstractObject implements VoiceChatLike {
         },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
       ),
+    );
+  }
+
+  /**
+   * Native word/PCM callbacks report audible chunks, including waiting fillers.
+   */
+  playbackText(text: string, active: boolean): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_playback_text(
+          uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+          FfiConverterString.lower(text, nativeModule().rustbuffer_alloc),
+          FfiConverterBool.lower(active, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
     );
   }
 
@@ -66176,6 +66224,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_next_speech_with_source() !==
+    54393
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_next_speech_with_source',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_open_audio_capture() !==
     44505
   ) {
@@ -66189,6 +66245,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_voicechat_playback_ended',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_playback_text() !==
+    61446
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_playback_text',
     );
   }
   if (

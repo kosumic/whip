@@ -38,6 +38,10 @@ test('highlights only the visible original part and restores its content when sp
   expect(renderer.root.findByType(MarkdownText).props.content).toBe('Hello ==world==');
   expect(renderer.root.findByType(MarkdownText).props.speechOriginal).toBe('Hello world');
   expect(chatSpeechHighlight).toHaveBeenLastCalledWith('Hello world', 6, 'Hello world', 0);
+  emit({ id: 'local', localToken: 'voice-chat:1:speech:2', text: 'Local call', spokenUtf16: 0 });
+  expect(renderer.root.findByType(MarkdownText).props.content).toBe('Hello ==world==');
+  emit({ id: 'local', localToken: 'voice-chat:1:speech:2', ended: true });
+  expect(renderer.root.findByType(MarkdownText).props.content).toBe('Hello ==world==');
   emit({ id: 'older', ended: true });
   expect(renderer.root.findByType(MarkdownText).props.content).toBe('Hello ==world==');
   emit({ id: 'first', ended: true });
@@ -48,5 +52,18 @@ test('highlights only the visible original part and restores its content when sp
   expect(renderer.root.findByType(MarkdownText).props.content).toBe('Hello world');
   expect(renderer.root.findByType(MarkdownText).props.speechOriginal).toBeUndefined();
   expect(mockEvents.size).toBe(0);
+  act(() => renderer.unmount());
+});
+
+test('local call captions highlight the original chat part with its own offset while minimized', () => {
+  let renderer!: ReactTestRenderer;
+  act(() => { renderer = create(<ChatSpeechText content="Hello world" source={source} streaming={false} onLinkPress={() => {}} />); });
+  emit({ id: 'local-word', localToken: 'voice-chat:1:speech:2', messageId: 'local-caption', text: 'world', startUtf16: 25, spokenUtf16: 25,
+    chat: { ...source, bindingTokens: [source.bindingToken], startUtf16: 6 } });
+  expect(chatSpeechHighlight).toHaveBeenLastCalledWith('Hello world', 6, 'world', 6);
+  expect(renderer.root.findByType(MarkdownText).props.content).toBe('Hello ==world==');
+  emit({ id: 'local-word', localToken: 'voice-chat:1:speech:2', ended: true,
+    chat: { ...source, bindingTokens: [source.bindingToken], startUtf16: 6 } });
+  expect(renderer.root.findByType(MarkdownText).props.content).toBe('Hello world');
   act(() => renderer.unmount());
 });

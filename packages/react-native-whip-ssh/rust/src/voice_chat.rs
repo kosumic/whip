@@ -23,7 +23,7 @@ use std::{
     },
     time::Instant,
 };
-use voice_call_local::{Call, Phase, UserTurn};
+use voice_call_local::{Call, EchoGuard, Phase, UserTurn};
 use waiting_filler::WaitingFiller;
 
 #[cfg(feature = "smart-turn")]
@@ -110,6 +110,7 @@ struct TranscriptTool {
 #[derive(Default)]
 struct State {
     call: Call,
+    echo: EchoGuard,
     ingress: Option<Arc<crate::audio_ingress::NativeIngress>>,
     audio_error: Option<String>,
     expected: String,
@@ -130,6 +131,7 @@ impl State {
             self.close_capture();
         }
         if generation.is_some() && self.call.generation().is_none() {
+            self.echo.finish(Instant::now());
             self.expected.clear();
             self.turn_id = None;
             self.waiting_filler = None;
@@ -310,8 +312,19 @@ impl VoiceChat {
 
     pub fn recognition(&self, input_id: u64, text: String) {
         let mut state = self.state.lock();
+        let text = state.echo.filter(text, Instant::now());
         if state.update_call(|call| call.recognition(input_id, text)) {
             self.speech.reset_voice();
+        }
+    }
+
+    /// Native word/PCM callbacks report audible chunks, including waiting fillers.
+    pub fn playback_text(&self, text: String, active: bool) {
+        let mut state = self.state.lock();
+        if state.call.view().phase != Phase::Closed
+            && text.len() <= voice_call_local::MAX_TEXT_BYTES
+        {
+            state.echo.observe(&text, active, Instant::now());
         }
     }
 
@@ -338,6 +351,7 @@ impl VoiceChat {
     /// submitting it again, using the same conversation and history boundary.
     pub fn submit_text(&self, text: String) -> Result<(), VoiceChatError> {
         let mut state = self.state.lock();
+        state.echo.finish(Instant::now());
         if let Some(turn) = state
             .update_call(|call| call.submit_text(&text))
             .map_err(str::to_owned)?
@@ -456,15 +470,19 @@ impl VoiceChat {
                 .as_mut()
                 .and_then(|filler| filler.next(Instant::now()))
                 .map(str::to_owned),
-            Phase::Speaking => {
-                let text = self.speech.next();
-                if let Some(text) = &text {
-                    state.history.assistant(text);
-                }
-                text
-            }
+            Phase::Speaking => self.next_reply(&mut state).map(|chunk| chunk.text),
             _ => None,
         }
+    }
+
+    /// Preserve original transcript part IDs and prose offsets for inline captions.
+    pub fn next_speech_with_source(&self) -> Option<String> {
+        let mut state = self.state.lock();
+        if state.call.view().phase != Phase::Speaking {
+            return None;
+        }
+        self.next_reply(&mut state)
+            .and_then(|chunk| serde_json::to_string(&chunk).ok())
     }
 
     pub fn speech_finished(&self) -> bool {
@@ -476,6 +494,7 @@ impl VoiceChat {
 
     pub fn skip_response(&self) {
         let mut state = self.state.lock();
+        state.echo.finish(Instant::now());
         if matches!(state.call.view().phase, Phase::Speaking | Phase::Waiting) {
             self.speech.reset_voice();
             state.update_call(Call::skip_response);
@@ -484,6 +503,7 @@ impl VoiceChat {
 
     pub fn playback_ended(&self) -> VoiceChatView {
         let mut state = self.state.lock();
+        state.echo.finish(Instant::now());
         if let Some(generation) = state.call.generation() {
             state.update_call(|call| call.playback_ended(generation, self.speech.has_pending()));
         }
@@ -504,6 +524,12 @@ impl VoiceChat {
 }
 
 impl VoiceChat {
+    fn next_reply(&self, state: &mut State) -> Option<crate::chat_speech::ChatSpeechChunk> {
+        let chunk = self.speech.next_content()?;
+        state.history.assistant(&chunk.text);
+        Some(chunk)
+    }
+
     fn process_audio(&self, state: &mut State, samples: &[f32]) {
         let input_id = state.call.view().input_id;
         if state.update_call(|call| call.audio(input_id, samples)) {
@@ -1476,6 +1502,42 @@ mod tests {
             assert_eq!(session.view().phase, VoiceChatPhase::Speaking);
             assert!(session.next_speech().is_some());
         }
+    }
+
+    #[test]
+    fn audible_reply_echo_cannot_interrupt_or_become_the_next_prompt() {
+        let session = awaiting_or_playing_reply(true);
+        let id = session.view().input_id;
+        session.playback_text("First sentence. Complete reply.".into(), true);
+        session.recognition(id, "First".into());
+        feed_microphone_fixture(&session, id);
+        assert_eq!(session.view().phase, VoiceChatPhase::Speaking);
+        assert!(session.view().text.is_empty());
+        session.playback_text("First sentence. Complete reply.".into(), false);
+        session.recognition(id, "First sentence".into());
+        assert!(session.view().text.is_empty());
+        assert!(session.take_prompt().is_none());
+        session.recognition(id, "First change the plan".into());
+        assert_eq!(session.view().phase, VoiceChatPhase::Listening);
+        assert_eq!(session.view().text, "First change the plan");
+        session.finish();
+        session.recognition_ended(id).unwrap();
+        assert_eq!(
+            session.take_prompt().as_deref(),
+            Some("First change the plan")
+        );
+    }
+
+    #[test]
+    fn voice_chunks_keep_original_transcript_identity_for_inline_highlighting() {
+        let session = awaiting_or_playing_reply(true);
+        let chunk = session.next_speech_with_source().unwrap();
+        let chunk: serde_json::Value = serde_json::from_str(&chunk).unwrap();
+        assert_eq!(chunk["text"], "First sentence.");
+        assert_eq!(chunk["partId"], "prose");
+        assert_eq!(chunk["startUtf16"], 0);
+        assert!(chunk["messageId"].as_str().is_some_and(|id| !id.is_empty()));
+        assert!(session.next_speech().is_none());
     }
 
     #[test]

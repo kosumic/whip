@@ -101,10 +101,10 @@ RCT_EXPORT_METHOD(speakChatWithSource:(NSString *)token text:(NSString *)text so
   NSDictionary *metadata = [NSJSONSerialization JSONObjectWithData:[source dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
   [WhipSpeechPlayback.shared speakChat:token text:text source:metadata resolve:resolve reject:reject];
 }
-RCT_EXPORT_METHOD(startLocalChatSpeech:(NSString *)token label:(NSString *)label resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+RCT_EXPORT_METHOD(startLocalChatSpeech:(NSString *)token label:(NSString *)label callToken:(NSString *)callToken resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 {
   // AVSpeechSynthesizer uses installed device voices. Phonon is local too.
-  [WhipSpeechPlayback.shared startLocalChat:token label:label resolve:resolve reject:reject];
+  [WhipSpeechPlayback.shared startLocalChat:token label:label callToken:callToken resolve:resolve reject:reject];
 }
 RCT_EXPORT_METHOD(stopChatSpeech:(NSString *)token resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 {

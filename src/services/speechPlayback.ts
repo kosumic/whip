@@ -15,7 +15,7 @@ export interface NativeSpeechPlayback {
   startChatSpeech(token: string, label: string): Promise<void>;
   /** Keeps a selected response's chunks in one playback turn until stopped. */
   startResponseSpeech?(token: string, label: string): Promise<void>;
-  startLocalChatSpeech(token: string, label: string): Promise<void>;
+  startLocalChatSpeech(token: string, label: string, callToken: string): Promise<void>;
   startVoiceCall(token: string, label: string): Promise<void>;
   startRealtimeVoiceCall?(token: string, label: string): Promise<void>;
   endVoiceCall(token: string): Promise<void>;
@@ -34,6 +34,7 @@ export interface NativeSpeechPlayback {
   setVoiceCallSpeaker(token: string, speaker: boolean): Promise<void>;
   /** Bounded lookahead; each promise resolves only after its audio is played. */
   enqueueChatSpeech?(token: string, text: string): Promise<void>;
+  enqueueChatSpeechWithSource?(token: string, text: string, source: string): Promise<void>;
   speakChat(token: string, text: string): Promise<void>;
   speakChatWithSource?(token: string, text: string, source: string): Promise<void>;
   stopChatSpeech(token: string): Promise<void>;

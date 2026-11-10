@@ -47,14 +47,33 @@ If a transcript subscription expires, the call keeps its pending reply while
 the same conversation is rebound. If no replacement arrives within 30 seconds, the call
 stops with a reconnect error.
 With device echo cancellation, local capture continues while the agent is
-thinking or speaking. Sustained user speech (about 192 ms) interrupts playback
+thinking or speaking. Sustained user speech (about 256 ms) interrupts playback
 and discards the old response's remaining speech, including later transcript
 updates. The same recognizer retains the first words of the interruption and
 submits the next prompt through the existing send queue. This does not issue an
 agent cancellation command. Android enables an AcousticEchoCanceler on the shared
-AudioRecord; iOS uses the existing voice-processing audio engine. Devices without
+AudioRecord and selects `VOICE_COMMUNICATION` for monitored capture while keeping
+media routing. That source enables the platform's communication preprocessing
+without changing Android's global audio mode. See [Android's capture source documentation](https://developer.android.com/reference/android/media/MediaRecorder.AudioSource#VOICE_COMMUNICATION).
+iOS uses the existing voice-processing audio engine. Devices without
 echo cancellation keep explicit Skip and ordinary local voice chat. Skip
 suppresses the remainder of the selected response.
+
+Native word/played-PCM callbacks also feed a bounded Rust echo guard. A recognized
+first word or phrase matching current speaker output is discarded during playback
+and its two-second echo tail, so it cannot interrupt or submit a self-reply.
+Different speech remains eligible for interruption, including a user's phrase
+that starts with the same word. Fillers use the same guard without transcript rows.
+
+Local reply highlighting follows native system-voice word positions or the played
+PCM cursor for Phonon, including the original chat while the call is minimized.
+Speech chunks retain their original message/part IDs and prose offsets; call
+transcript offsets are mapped separately. Each queued PCM chunk has its own clock,
+so preparing lookahead cannot replace the clock of speech already playing.
+The first word highlights at position zero after native
+playback reports it. Queued chunks retain their offsets in the same reply;
+completion, interruption and Skip clear the active word. No JS playback timer
+advances the highlight.
 
 Mute discards unfinished microphone input; muting during a reply lets the reply
 finish and leaves the microphone muted afterward. Back, the down arrow, and
@@ -103,6 +122,12 @@ by default, otherwise the speaker. Native PCM players support choosing speaker
 or a connected media headset without entering call-audio mode; System TTS uses
 Android's media output controls. Removing an active headset ends the conversation
 instead of unexpectedly playing private audio through the speaker.
+
+Local reply and filler playback explicitly pass the owning call token to the
+native player. Their individual speech tokens still fence cancellation and
+callbacks, while they share the call's audio queue slot. Finishing or skipping
+a speech chunk retains that slot until hang-up; unrelated audio waits for the
+call to end. Speech startup rejects an ended or replaced call token.
 
 iOS uses CallKit for activation, routing, system hang-up and mute. Repeated mute
 notifications preserve capture and pending speech. No phone number is dialed.

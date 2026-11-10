@@ -29,7 +29,10 @@ function subscribe(listener: () => void): () => void {
     const emitter: Pick<NativeEventEmitter<CaptionEvents>, 'addListener'> =
       Platform.OS === 'ios' ? new NativeEventEmitter<CaptionEvents>(native) : DeviceEventEmitter;
     subscription = emitter.addListener(EVENT, (json: string) => {
-      const event = JSON.parse(json) as SpeechCaption & { ended?: boolean };
+      const incoming = JSON.parse(json) as SpeechCaption & { ended?: boolean; localToken?: string; chat?: Omit<SpeechCaption, 'id' | 'text' | 'spokenUtf16'> };
+      if (incoming.localToken && !incoming.chat) return;
+      const event = incoming.localToken && incoming.chat ? { ...incoming, ...incoming.chat,
+        spokenUtf16: incoming.chat.startUtf16 + Math.max(0, incoming.spokenUtf16 - incoming.startUtf16) } : incoming;
       if (event.ended) {
         if (event.id !== current?.id) return;
         current = null;

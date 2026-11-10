@@ -1,7 +1,7 @@
 import { AgentTranscriptKind, VoiceChat, VoiceChatPhase } from './generated-entry';
 import type { AgentChatState } from '../../../src/agentChat';
 import type { RuntimeAgentKind } from './index';
-import { speechMessages } from './chatSpeech';
+import { speechMessages, type ChatSpeechChunk } from './chatSpeech';
 import type { VoiceTranscriptEntry } from '../../../src/lib/voiceTranscript';
 
 const AGENT = {
@@ -42,6 +42,7 @@ export class NativeVoiceChat {
   async analyze(input: bigint) { await this.core.analyze(input); }
   finish() { this.core.finish(); }
   recognition(input: bigint, text: string) { this.core.recognition(input, text); }
+  playbackText(text: string, active: boolean) { this.core.playbackText(text, active); }
   ended(input: bigint) { this.core.recognitionEnded(input); }
   takePrompt() { return this.core.takePrompt(); }
   submitText(text: string) { this.core.submitText(text); }
@@ -69,6 +70,10 @@ export class NativeVoiceChat {
     this.transcriptSession = state.sessionId;
   }
   nextSpeech() { return this.core.nextSpeech(); }
+  nextSpeechWithSource(): ChatSpeechChunk | undefined {
+    const json = this.core.nextSpeechWithSource();
+    return json ? JSON.parse(json) as ChatSpeechChunk : undefined;
+  }
   speechFinished() { return this.core.speechFinished(); }
   skipResponse() { this.core.skipResponse(); }
   playbackEnded() { this.core.playbackEnded(); }

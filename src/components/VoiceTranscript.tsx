@@ -26,7 +26,7 @@ export function spokenTextParts(message: VoiceTranscriptMessage): [string, strin
   let cursor = Math.max(0, Math.min(message.text.length, message.spokenUtf16));
   // Interpolated native offsets can fall between an emoji's UTF-16 surrogates.
   if (cursor > 0 && (message.text.codePointAt(cursor - 1) ?? 0) > 0xffff) cursor--;
-  if (!message.active || cursor === 0) return [message.text.slice(0, cursor), '', message.text.slice(cursor)];
+  if (!message.active) return [message.text.slice(0, cursor), '', message.text.slice(cursor)];
   for (const match of message.text.matchAll(WORDS)) {
     const start = match.index;
     const end = start + match[0].length;

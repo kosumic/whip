@@ -249,7 +249,7 @@ object SpeechPlayback : SensorEventListener {
 
   fun yieldIdlePlayback() {
     val current = session ?: return
-    if (current.kind != SpeechPolicy.CHAT || utteranceId != null || queuedChat.isNotEmpty() || VoiceCallService.playbackKey(current.owner) === current.turn) return
+    if (current.kind != SpeechPolicy.CHAT || utteranceId != null || queuedChat.isNotEmpty() || VoiceCallService.ownsPlayback(current.turn)) return
     SpeechPolicy.stop(current.id)
     suspendedChat = current
     playback.cancel(current.turn)
@@ -405,12 +405,17 @@ object SpeechPlayback : SensorEventListener {
     }
   }
 
-  fun startChat(context: Context, owner: String, name: String, promise: Promise, localOnly: Boolean = false, atomic: Boolean = false) {
+  fun startChat(context: Context, owner: String, name: String, promise: Promise, localOnly: Boolean = false, atomic: Boolean = false, callToken: String? = null) {
+    val callTurn = callToken?.let { VoiceCallService.playbackKey(it) }
+    if (callToken != null && callTurn == null) {
+      promise.reject(ERROR_CODE, "Voice chat is no longer active")
+      return
+    }
     var initialized = false
     val accepted = begin(context, SpeechPolicy.CHAT, owner, "", name, {
       initialized = true
       promise.resolve(null)
-    }, localOnly = localOnly, atomic = atomic) { reason, error ->
+    }, turn = callTurn ?: VoiceCallService.playbackKey(owner) ?: Any(), localOnly = localOnly, atomic = atomic) { reason, error ->
       if (owner == AUTOMATIC_OWNER) automaticEnded(reason, error)
       onChatStopped?.invoke(owner, reason, error)
       if (!initialized) promise.reject(ERROR_CODE, error ?: "Speech stopped before initialization")
@@ -445,7 +450,7 @@ object SpeechPlayback : SensorEventListener {
   }
 
   /** Capability used by voice chat; older builds retain serial speakChat. */
-  fun enqueueChat(owner: String, text: String, promise: Promise) {
+  fun enqueueChat(owner: String, text: String, promise: Promise, source: JSONObject? = null) {
     val current = session
     if (current?.kind != SpeechPolicy.CHAT || current.owner != owner || !current.readyReported ||
         utteranceId != null && queuedChat.isEmpty() || !SpeechPolicy.isCurrent(current.id)) {
@@ -457,7 +462,7 @@ object SpeechPlayback : SensorEventListener {
       return
     }
     val local = VoiceCallService.active && SpeechPolicy.phononEnabled(Locale.getDefault().toLanguageTag())
-    val entry = QueuedChat(text, promise)
+    val entry = QueuedChat(text, promise, source)
     queuedChat.addLast(entry)
     notifyPlaybackStateChanged()
     if (!local) {
@@ -475,19 +480,33 @@ object SpeechPlayback : SensorEventListener {
       clearTimeout()
       handler.postDelayed(initializationTimeout, MODEL_INITIALIZATION_TIMEOUT_MS)
     }
-    PcmSpeechPlayback.enqueue(current.id, entry.text, attributes, {
+    val event = entry.source?.let { JSONObject(it.toString()).put("id", "speech-${current.id}-${++sequence}") }
+    val clock = if (event != null) SpeechPolicy.captionStart(entry.text, 0L) else 0L
+    PcmSpeechPlayback.enqueue(current.id, entry.text, attributes, clock, {
       if (session === current && queuedChat.contains(entry)) {
+        caption = event
+        captionClock = clock
+        captionPrefix = 0
+        captionPosition = -1
+        reportCaption(0)
         reportStarted(current)
         clearTimeout()
         handler.postDelayed(timeout, SpeechPolicy.timeoutMs(SpeechPolicy.CHAT, entry.text.length.toLong()))
       }
-    }, { if (session === current) reportLevel(current, it) }) { completed, spoke, error ->
+    }, { if (session === current) reportLevel(current, it) }, { played, samples, complete ->
+      if (session === current && caption === event && clock != 0L && played > 0L)
+        reportCaption(SpeechPolicy.captionProgress(clock, played, samples, complete).toInt())
+    }) { completed, spoke, error ->
       if (session !== current || !queuedChat.contains(entry)) return@enqueue
       if (!completed || !spoke || error != null || !SpeechPolicy.complete(current.id)) {
         stop(error = error ?: "Local speech did not finish")
         return@enqueue
       }
       queuedChat.remove(entry)
+      if (event != null && caption === event) {
+        reportCaption(entry.text.length)
+        clearCaption()
+      }
       if (queuedChat.isEmpty()) clearTimeout()
       if (queuedChat.isEmpty()) finishTurn(current)
       notifyPlaybackStateChanged()
@@ -498,6 +517,7 @@ object SpeechPlayback : SensorEventListener {
   private fun playQueuedChat(current: Session) {
     val entry = queuedChat.firstOrNull() ?: return
     utterance = entry.promise
+    current.captionSource = entry.source
     speak(current, entry.text, null, 1.0)
   }
 
@@ -692,7 +712,7 @@ object SpeechPlayback : SensorEventListener {
     val id = "speech-${current.id}-${++sequence}"
     utteranceId = id
     notifyPlaybackStateChanged()
-    caption = current.captionSource?.takeIf { !VoiceCallService.active && !preview }?.let {
+    caption = current.captionSource?.takeIf { (!VoiceCallService.active || current.localOnly) && !preview }?.let {
       JSONObject(it.toString()).put("id", id)
     }
     captionPrefix = caption?.optString("text")?.let { text.length - it.length } ?: 0
@@ -783,7 +803,7 @@ object SpeechPlayback : SensorEventListener {
   }
 
   private fun clearCaption() {
-    caption?.let { onCaption?.invoke(JSONObject().put("id", it.getString("id")).put("ended", true).toString()) }
+    caption?.let { onCaption?.invoke(JSONObject(it.toString()).put("ended", true).toString()) }
     caption = null
     captionClock = 0L
     captionPosition = -1
@@ -967,7 +987,7 @@ object SpeechPlayback : SensorEventListener {
 
   private fun finishTurn(current: Session) {
     if (session === current && current.atomicPlaying) return
-    if (currentAlert?.let { it === current.turn } == true || VoiceCallService.playbackKey(current.owner) === current.turn) return
+    if (currentAlert?.let { it === current.turn } == true || VoiceCallService.ownsPlayback(current.turn)) return
     playback.finished(current.turn)
   }
 

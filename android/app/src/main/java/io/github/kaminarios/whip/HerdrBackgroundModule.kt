@@ -342,10 +342,10 @@ class HerdrBackgroundModule(
   }
 
   @ReactMethod
-  fun startLocalChatSpeech(token: String, label: String, promise: Promise) {
+  fun startLocalChatSpeech(token: String, label: String, callToken: String, promise: Promise) {
     mainHandler.post {
       try {
-        SpeechPlayback.startChat(context, token, label, promise, localOnly = true)
+        SpeechPlayback.startChat(context, token, label, promise, localOnly = true, callToken = callToken)
       } catch (error: Throwable) {
         SpeechPlayback.stopOwner(SpeechPolicy.CHAT, token)
         promise.reject("E_LOCAL_CHAT_SPEECH", error)
@@ -382,6 +382,17 @@ class HerdrBackgroundModule(
       try {
         SpeechPlayback.enqueueChat(token, text, promise)
       } catch (error: Throwable) {
+        promise.reject("E_CHAT_SPEECH_PLAYBACK", error)
+        SpeechPlayback.stopOwner(SpeechPolicy.CHAT, token)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun enqueueChatSpeechWithSource(token: String, text: String, source: String, promise: Promise) {
+    mainHandler.post {
+      try { SpeechPlayback.enqueueChat(token, text, promise, org.json.JSONObject(source)) }
+      catch (error: Throwable) {
         promise.reject("E_CHAT_SPEECH_PLAYBACK", error)
         SpeechPlayback.stopOwner(SpeechPolicy.CHAT, token)
       }

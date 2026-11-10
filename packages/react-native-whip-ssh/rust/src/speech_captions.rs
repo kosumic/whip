@@ -2,6 +2,7 @@
 use crate::speech_pacing::{Clock, Pace, Text};
 use parking_lot::Mutex;
 use std::{
+    collections::VecDeque,
     ffi::{CStr, c_char},
     sync::LazyLock,
 };
@@ -29,7 +30,13 @@ impl Default for Caption {
         }
     }
 }
-static CAPTION: LazyLock<Mutex<Caption>> = LazyLock::new(Mutex::default);
+const MAX_CAPTIONS: usize = 16;
+#[derive(Default)]
+struct Captions {
+    sequence: u64,
+    pending: VecDeque<Caption>,
+}
+static CAPTIONS: LazyLock<Mutex<Captions>> = LazyLock::new(Mutex::default);
 
 /// # Safety
 /// `text` must be a live, NUL-terminated UTF-8 string for this call.
@@ -43,10 +50,19 @@ pub unsafe extern "C" fn whip_speech_caption_start(
     }
     // SAFETY: the caller guarantees a live NUL-terminated string for this call.
     let text = unsafe { CStr::from_ptr(text) }.to_string_lossy();
-    let mut caption = CAPTION.lock();
-    caption.id = caption.id.saturating_add(1);
+    let mut captions = CAPTIONS.lock();
+    captions.sequence = captions.sequence.saturating_add(1);
+    let mut caption = Caption {
+        id: captions.sequence,
+        ..Caption::default()
+    };
     caption.start(&text, prefix_utf16);
-    caption.id
+    let id = caption.id;
+    captions.pending.push_back(caption);
+    if captions.pending.len() > MAX_CAPTIONS {
+        captions.pending.pop_front();
+    }
+    id
 }
 
 impl Caption {
@@ -98,12 +114,12 @@ pub(crate) fn synthesize(
     mut sink: impl FnMut(&[f32]) -> bool,
 ) -> i32 {
     let prefix = {
-        let caption = CAPTION.lock();
-        if id != 0 && caption.id == id && caption.spoken == text {
-            caption.prefix_bytes
-        } else {
-            0
-        }
+        CAPTIONS
+            .lock()
+            .pending
+            .iter()
+            .find(|caption| id != 0 && caption.id == id && caption.spoken == text)
+            .map_or(0, |caption| caption.prefix_bytes)
     };
     if prefix == 0 {
         return generate(text, &mut sink);
@@ -124,11 +140,11 @@ pub(crate) fn synthesize(
         if !aligned
             && let Some(offset) = pcm.iter().position(|sample| sample.abs() >= AUDIBLE_SAMPLE)
         {
-            let mut caption = CAPTION.lock();
-            if caption.id == id {
+            let mut captions = CAPTIONS.lock();
+            if let Some(caption) = captions.pending.iter_mut().find(|caption| caption.id == id) {
                 caption.response_start = Some(frames + offset);
             }
-            drop(caption);
+            drop(captions);
             aligned = true;
         }
         frames += pcm.len();
@@ -143,13 +159,12 @@ pub extern "C" fn whip_speech_caption_progress(
     samples: usize,
     complete: bool,
 ) -> usize {
-    let mut caption = CAPTION.lock();
-    if caption.id != id || id == 0 {
-        return 0;
-    }
-    let progress = caption.progress(played, samples, complete);
-    drop(caption);
-    progress
+    CAPTIONS
+        .lock()
+        .pending
+        .iter_mut()
+        .find(|caption| id != 0 && caption.id == id)
+        .map_or(0, |caption| caption.progress(played, samples, complete))
 }
 
 /// Mark only the current word in the original Markdown; speech offsets refer to

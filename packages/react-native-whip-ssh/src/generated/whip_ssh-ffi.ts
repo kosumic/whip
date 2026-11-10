@@ -3010,6 +3010,10 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_voicechat_next_speech_with_source(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_voicechat_open_audio_capture(
     uniffiSelf: bigint,
     inputId: bigint,
@@ -3019,6 +3023,12 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_voicechat_playback_text(
+    uniffiSelf: bigint,
+    text: Uint8Array,
+    active: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_method_voicechat_prepare(
     uniffiSelf: bigint,
     install: number,
@@ -3604,8 +3614,10 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_close_audio_capture(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_finish(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_next_speech(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_voicechat_next_speech_with_source(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_open_audio_capture(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_playback_ended(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_voicechat_playback_text(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_prepare(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_recognition(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_recognition_ended(): number;

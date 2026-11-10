@@ -30,7 +30,7 @@ const reply: VoiceTranscriptMessage = { id: 'reply', role: 'assistant', text: 'H
 
 test('keeps heard words bright, emphasizes the current word and dims upcoming text', () => {
   expect(spokenTextParts(reply)).toEqual(['Hello, ', 'this', ' is a streamed reply.']);
-  expect(spokenTextParts({ ...reply, spokenUtf16: 0 })).toEqual(['', '', reply.text]);
+  expect(spokenTextParts({ ...reply, spokenUtf16: 0 })).toEqual(['', 'Hello', ', this is a streamed reply.']);
   expect(spokenTextParts({ ...reply, spokenUtf16: reply.text.length, active: false })).toEqual([reply.text, '', '']);
   expect(spokenTextParts({ ...reply, active: false })).toEqual(['Hello, t', '', 'his is a streamed reply.']);
 });
@@ -52,7 +52,7 @@ test('renders the native clock position without adding a second word offset', ()
 });
 
 test('does not invent a position while timing is unknown or skip the final word', () => {
-  expect(spokenTextParts({ ...reply, spokenUtf16: 0 })).toEqual(['', '', reply.text]);
+  expect(spokenTextParts({ ...reply, spokenUtf16: 0, active: false })).toEqual(['', '', reply.text]);
   const text = 'One two';
   expect(spokenTextParts({ ...reply, text, spokenUtf16: 5 })).toEqual(['One ', 'two', '']);
   expect(spokenTextParts({ ...reply, text, spokenUtf16: text.length, active: false })).toEqual([text, '', '']);

@@ -586,7 +586,7 @@ static void WhipWakeAutomaticSpeech(void)
 }
 - (void)yieldIdlePlayback
 {
-  if (!self.lease || self.kind != WhipSpeechChat || self.utterance || [WhipVoiceCall.shared playbackKey:self.owner] == self.turn) return;
+  if (!self.lease || self.kind != WhipSpeechChat || self.utterance || [WhipVoiceCall.shared playbackKey:nil] == self.turn) return;
   whip_speech_stop(self.lease);
   [self suspendChat];
 }
@@ -596,13 +596,13 @@ static void WhipWakeAutomaticSpeech(void)
   if (self.turn == turn && self.atomicPlaying) return;
   [self finishPlayback:turn];
 }
-- (void)queueSpeech:(enum WhipSpeechKind)kind owner:(NSString *)owner request:(NSString *)request localOnly:(BOOL)localOnly atomic:(BOOL)atomic ready:(dispatch_block_t)ready ended:(void (^)(NSString *, NSString *))ended
+- (void)queueSpeech:(enum WhipSpeechKind)kind owner:(NSString *)owner request:(NSString *)request localOnly:(BOOL)localOnly atomic:(BOOL)atomic turn:(id)turn ready:(dispatch_block_t)ready ended:(void (^)(NSString *, NSString *))ended
 {
   WhipPendingSpeech *pending = [WhipPendingSpeech new];
   pending.kind = kind; pending.owner = owner; pending.request = request;
   pending.localOnly = localOnly; pending.ready = ready; pending.ended = ended;
   pending.atomic = atomic;
-  pending.turn = [WhipVoiceCall.shared playbackKey:owner] ?: [NSObject new];
+  pending.turn = turn ?: [WhipVoiceCall.shared playbackKey:owner] ?: [NSObject new];
   [self.pendingSpeech addObject:pending];
   [self admitSpeech:pending];
 }
@@ -833,7 +833,7 @@ static void WhipWakeAutomaticSpeech(void)
   NSDictionary *pending = self.deferredChat;
   self.deferredChat = nil;
   __block BOOL ready = NO;
-  [self queueSpeech:WhipSpeechChat owner:previous[@"owner"] request:@"" localOnly:[previous[@"localOnly"] boolValue] atomic:[previous[@"atomic"] boolValue] ready:^{
+  [self queueSpeech:WhipSpeechChat owner:previous[@"owner"] request:@"" localOnly:[previous[@"localOnly"] boolValue] atomic:[previous[@"atomic"] boolValue] turn:nil ready:^{
     ready = YES;
     self.reportedStart = [previous[@"reportedStart"] boolValue];
     if (completed) completed(nil);
@@ -886,21 +886,23 @@ static void WhipWakeAutomaticSpeech(void)
 }
 - (void)startChat:(NSString *)owner label:(NSString *)label resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
-  [self startChat:owner localOnly:NO atomic:NO resolve:resolve reject:reject];
+  [self startChat:owner localOnly:NO atomic:NO turn:nil resolve:resolve reject:reject];
 }
 - (void)startResponse:(NSString *)owner label:(NSString *)label resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
-  [self startChat:owner localOnly:NO atomic:YES resolve:resolve reject:reject];
+  [self startChat:owner localOnly:NO atomic:YES turn:nil resolve:resolve reject:reject];
 }
-- (void)startLocalChat:(NSString *)owner label:(NSString *)label resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
+- (void)startLocalChat:(NSString *)owner label:(NSString *)label callToken:(NSString *)callToken resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
-  [self startChat:owner localOnly:YES atomic:NO resolve:resolve reject:reject];
+  id turn = callToken ? [WhipVoiceCall.shared playbackKey:callToken] : nil;
+  if (!turn) { reject(WhipSpeechError, @"Voice chat is no longer active", nil); return; }
+  [self startChat:owner localOnly:YES atomic:NO turn:turn resolve:resolve reject:reject];
 }
-- (void)startChat:(NSString *)owner localOnly:(BOOL)localOnly atomic:(BOOL)atomic resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
+- (void)startChat:(NSString *)owner localOnly:(BOOL)localOnly atomic:(BOOL)atomic turn:(id)turn resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
   __block BOOL ready = NO;
   uint64_t identity = self.automaticId;
-  [self queueSpeech:WhipSpeechChat owner:owner request:@"" localOnly:localOnly atomic:atomic ready:^{ ready = YES; resolve(nil); }
+  [self queueSpeech:WhipSpeechChat owner:owner request:@"" localOnly:localOnly atomic:atomic turn:turn ready:^{ ready = YES; resolve(nil); }
     ended:^(NSString *reason, NSString *error) {
       if (!ready) {
         // Admission cancellation has no active lease for clear: to finish.
@@ -952,7 +954,7 @@ static void WhipWakeAutomaticSpeech(void)
 }
 - (void)announce:(NSString *)owner text:(NSString *)text language:(NSString *)language preview:(BOOL)preview resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
-  [self queueSpeech:WhipSpeechAnnouncement owner:owner request:@"" localOnly:NO atomic:NO ready:^{
+  [self queueSpeech:WhipSpeechAnnouncement owner:owner request:@"" localOnly:NO atomic:NO turn:nil ready:^{
     [self play:text language:language rate:1 started:nil preview:preview];
   } ended:^(NSString *reason, NSString *error) {
     if (error) reject(WhipSpeechError, error, nil); else resolve(reason);
@@ -961,7 +963,7 @@ static void WhipWakeAutomaticSpeech(void)
 - (void)speakDevice:(NSString *)owner request:(NSString *)request text:(NSString *)text language:(NSString *)language rate:(double)rate resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
   __block BOOL acknowledged = NO;
-  [self queueSpeech:WhipSpeechDevice owner:owner request:request localOnly:NO atomic:NO ready:^{
+  [self queueSpeech:WhipSpeechDevice owner:owner request:request localOnly:NO atomic:NO turn:nil ready:^{
     [self play:text language:language rate:rate started:^{
       acknowledged = YES;
       resolve(@{@"started": @YES});
@@ -1018,7 +1020,7 @@ static void WhipWakeAutomaticSpeech(void)
   utterance.voice = voice;
   utterance.rate = MIN(AVSpeechUtteranceMaximumSpeechRate, MAX(AVSpeechUtteranceMinimumSpeechRate, AVSpeechUtteranceDefaultSpeechRate * rate));
   self.utterance = utterance;
-  self.caption = self.kind == WhipSpeechChat && !WhipVoiceCall.shared.active && self.captionSource.count
+  self.caption = self.kind == WhipSpeechChat && (!WhipVoiceCall.shared.active || self.localOnly) && self.captionSource.count
     ? [self.captionSource mutableCopy] : nil;
   self.captionPrefix = self.caption ? (NSInteger)text.length - (NSInteger)[self.caption[@"text"] length] : 0;
   self.captionClock = self.caption ? whip_speech_caption_start(text.UTF8String, MAX(0, self.captionPrefix)) : 0;
@@ -1183,7 +1185,7 @@ static void WhipWakeAutomaticSpeech(void)
   [self releaseAudio];
   if (error) { if (reject) reject(WhipSpeechError, error, nil); }
   else if (resolve) {
-    if (self.lease && self.kind == WhipSpeechChat && !self.atomicPlaying) {
+    if (self.lease && self.kind == WhipSpeechChat && !self.atomicPlaying && !WhipVoiceCall.shared.active) {
       self.boundaryResolve = resolve;
       self.boundaryReject = reject;
       if ([self drainStatus]) { [self finishTurn:self.turn]; return; }
@@ -1289,8 +1291,10 @@ static void WhipWakeAutomaticSpeech(void)
 }
 - (void)clearCaption
 {
-  if (self.caption) [NSNotificationCenter.defaultCenter postNotificationName:WhipSpeechCaption object:self
-    userInfo:@{@"id": self.caption[@"id"], @"ended": @YES}];
+  if (self.caption) {
+    NSMutableDictionary *ended = [self.caption mutableCopy]; ended[@"ended"] = @YES;
+    [NSNotificationCenter.defaultCenter postNotificationName:WhipSpeechCaption object:self userInfo:ended];
+  }
   self.caption = nil;
   self.captionClock = 0;
 }
