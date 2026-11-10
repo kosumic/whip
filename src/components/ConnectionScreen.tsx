@@ -192,8 +192,13 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
     host: profile.tailcatEnabled ? sshHost.trim() || tailcatHostAlias : sshHost,
     name: profile.tailcatEnabled && !sshHost.trim() && !profile.name.trim() ? DEFAULT_TAILCAT_NAME : profile.name,
   };
-  const canSave = Boolean(hostFieldValue.trim() && profile.username.trim()
-    && (!profile.tailcatEnabled || (profile.tailcatPrivateKey && profile.tailcatPublicKey)));
+  const hostError = hostFieldValue.trim() ? undefined
+    : t(profile.tailcatEnabled ? 'connection.tailcatAddressRequired' : 'connection.hostRequired');
+  const usernameError = profile.username.trim() ? undefined : t('connection.sshUserRequired');
+  const tailcatIdentityStatus = profile.tailcatEnabled && !(profile.tailcatPrivateKey && profile.tailcatPublicKey)
+    ? t(tailcatIdentityError ? 'connection.tailcatIdentityError' : 'connection.tailcatIdentityCreating') : undefined;
+  const saveIssues = [hostError, usernameError, tailcatIdentityStatus].filter(Boolean);
+  const canSave = saveIssues.length === 0;
   const builtinTailcatSsh = Boolean(profile.tailcatEnabled && profile.tailcatSshServer);
   const canConnect = Boolean(canSave && (profile.authMode === 'none'
     ? builtinTailcatSsh : profile.secret && (!builtinTailcatSsh || profile.authMode === 'key')));
@@ -317,6 +322,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
             label={hostFieldLabel}
             accessibilityLabel={hostFieldLabel}
             value={hostFieldValue}
+            error={hostError}
             placeholder={profile.tailcatEnabled ? 'tc…' : 'server.example.com'}
             onChangeText={value => update(profile.tailcatEnabled ? 'tailcatAddress' : 'host', value)}
             className="flex-1"
@@ -327,7 +333,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
           <Field label={t('connection.port')} value={builtinTailcatSsh ? DEFAULT_SSH_PORT : profile.port} editable={!builtinTailcatSsh} onChangeText={value => update('port', value)} keyboardType="number-pad" className="w-[88px]" />
         </View>
         {profile.tailcatEnabled ? <Text className="-mt-1.5 mb-3.5 text-xs leading-[17px] text-muted-foreground">{t('connection.tailcatSetup')}</Text> : null}
-        <Field label={t('connection.sshUser')} value={profile.username} placeholder="kosumi" onChangeText={value => update('username', value)} autoCapitalize="none" />
+        <Field label={t('connection.sshUser')} value={profile.username} error={usernameError} placeholder="kosumi" onChangeText={value => update('username', value)} autoCapitalize="none" />
         {!profile.tailcatEnabled && <JumpHostSelect
           hosts={jumpHosts}
           selectedHostId={profile.jumpHostId}
@@ -513,6 +519,9 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
           ) : null}
         </GlassSurface>
         {error ? <Text className="my-2.5 text-[13px] leading-[18px] text-destructive">{error}</Text> : null}
+        {!canSave ? <Text accessibilityLiveRegion="polite" className="mt-4 text-xs leading-5 text-muted-foreground">
+          {t('connection.saveRequirements', { issues: saveIssues.join(' ') })}
+        </Text> : null}
         <View className="mt-5 flex-row gap-2.5">
           <Button
             className={cn('flex-1 rounded-full', appGlassEnabled && 'border')}
@@ -569,10 +578,23 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
   );
 }
 
-interface FieldProps extends React.ComponentProps<typeof TextInput> { label: string; className?: string }
+interface FieldProps extends React.ComponentProps<typeof TextInput> { label: string; className?: string; error?: string }
 
-function Field({ label, className, multiline, ...props }: FieldProps) {
-  return <View className={cn('mb-3.5', className)}><Text className="mb-1.5 text-xs font-medium text-muted-foreground">{label}</Text><Input {...props} multiline={multiline} className={multiline ? 'min-h-[116px] font-mono text-xs' : undefined} textAlignVertical={multiline ? 'top' : 'center'} /></View>;
+function Field({ label, className, multiline, error, ...props }: FieldProps) {
+  return (
+    <View className={cn('mb-3.5', className)}>
+      <Text className="mb-1.5 text-xs font-medium text-muted-foreground">{label}</Text>
+      <Input
+        accessibilityLabel={label}
+        accessibilityHint={error}
+        {...props}
+        multiline={multiline}
+        className={cn(multiline && 'min-h-[116px] font-mono text-xs', error && 'border-destructive')}
+        textAlignVertical={multiline ? 'top' : 'center'}
+      />
+      {error ? <Text accessibilityLiveRegion="polite" className="mt-1.5 text-xs leading-[17px] text-destructive">{error}</Text> : null}
+    </View>
+  );
 }
 
 function KeyIdentity({ fingerprint, keyType }: { fingerprint: string; keyType: string }) {

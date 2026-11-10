@@ -12,6 +12,7 @@ import { BrowserQrScanner } from '../src/browser/BrowserQrScanner';
 import { installPublicKeyForHost } from '../src/services/publicKeyInstallation';
 import { pickPrivateKeyFile } from '../src/services/privateKeyFilePicker';
 import { saveGlobalSshKey } from '../src/services/globalSshKeychain';
+import { ensureTailcatIdentity } from '../src/services/hostProfiles';
 import type { ConnectionProfile } from '../src/types';
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
@@ -30,7 +31,7 @@ jest.mock('react-native-svg', () => ({ __esModule: true, default: 'Svg', SvgXml:
 jest.mock('react-native-svg/css', () => ({ LocalSvg: 'LocalSvg' }));
 jest.mock('../src/lib/bundledAsset', () => ({ bundledAsset: () => 1 }));
 jest.mock('react-i18next', () => {
-  const t = (key: string) => key;
+  const t = (key: string, options?: { issues?: string }) => options?.issues ? `${key}: ${options.issues}` : key;
   return { useTranslation: () => ({ t }) };
 });
 jest.mock('lucide-react-native/icons/chevron-down', () => (undefined));
@@ -99,6 +100,69 @@ beforeEach(() => {
   jest.mocked(inspectPublicKey).mockReturnValue(share);
   jest.mocked(installPublicKeyForHost).mockResolvedValue('added');
   jest.mocked(Clipboard.getString).mockResolvedValue(PUBLIC_KEY);
+});
+
+test('host validation identifies every missing field and clears as the user fixes them', async () => {
+  const onSave = jest.fn();
+  let view!: ReactTestRenderer;
+  await act(async () => {
+    view = create(<ConnectionScreen {...route} initialProfile={{ ...host, host: '  ', username: '', secret: '' }} connecting={false} error={null} onCancel={jest.fn()} onSave={onSave} onConnect={jest.fn()} />);
+  });
+  const messages = () => view.root.findAllByType('Text' as never).map(node => node.props.children);
+  const input = (label: string) => view.root.findAllByType('Input' as never).find(node => node.props.accessibilityLabel === label)!;
+  expect(messages()).toContain('connection.hostRequired');
+  expect(messages()).toContain('connection.sshUserRequired');
+  expect(messages()).toContain('connection.saveRequirements: connection.hostRequired connection.sshUserRequired');
+  expect(input('connection.hostOrIp').props.accessibilityHint).toBe('connection.hostRequired');
+  expect(button(view, 'connection.saveHost').props.disabled).toBe(true);
+
+  await act(async () => { input('connection.hostOrIp').props.onChangeText('server.example.com'); });
+  expect(messages()).not.toContain('connection.hostRequired');
+  expect(messages()).toContain('connection.saveRequirements: connection.sshUserRequired');
+  expect(button(view, 'connection.saveHost').props.disabled).toBe(true);
+  await act(async () => { input('connection.sshUser').props.onChangeText('  '); });
+  expect(messages()).toContain('connection.sshUserRequired');
+  await act(async () => { input('connection.sshUser').props.onChangeText('alice'); });
+  expect(messages()).not.toContain('connection.sshUserRequired');
+  expect(messages().some(message => typeof message === 'string' && message.startsWith('connection.saveRequirements'))).toBe(false);
+  expect(input('connection.hostOrIp').props.accessibilityHint).toBeUndefined();
+  expect(button(view, 'connection.saveHost').props.disabled).toBe(false);
+  await act(async () => { button(view, 'connection.saveHost').props.onPress(); });
+  expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ host: 'server.example.com', username: 'alice', secret: '' }));
+  await act(async () => { view.unmount(); });
+});
+
+test('Tailcat validation follows the active address field', async () => {
+  let view!: ReactTestRenderer;
+  await act(async () => {
+    view = create(<ConnectionScreen {...route} initialProfile={{ ...host, tailcatEnabled: true, tailcatAddress: '' }} connecting={false} error={null} onCancel={jest.fn()} onSave={jest.fn()} onConnect={jest.fn()} />);
+  });
+  const messages = () => view.root.findAllByType('Text' as never).map(node => node.props.children);
+  expect(messages()).toContain('connection.tailcatAddressRequired');
+  expect(messages()).not.toContain('connection.hostRequired');
+  expect(button(view, 'connection.saveHost').props.disabled).toBe(true);
+  await act(async () => { view.root.findByProps({ accessibilityLabel: 'connection.tailcat' }).props.onCheckedChange(false); });
+  expect(messages()).not.toContain('connection.tailcatAddressRequired');
+  expect(button(view, 'connection.saveHost').props.disabled).toBe(false);
+  await act(async () => { view.unmount(); });
+});
+
+test('Save explains pending and failed Tailcat identity setup and recovers after retry', async () => {
+  let rejectIdentity!: (error: Error) => void;
+  jest.mocked(ensureTailcatIdentity).mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectIdentity = reject; }));
+  let view!: ReactTestRenderer;
+  await act(async () => {
+    view = create(<ConnectionScreen {...route} initialProfile={{ ...host, tailcatEnabled: true, tailcatAddress: 'tc-server' }} connecting={false} error={null} onCancel={jest.fn()} onSave={jest.fn()} onConnect={jest.fn()} />);
+  });
+  const messages = () => view.root.findAllByType('Text' as never).map(node => node.props.children);
+  expect(messages()).toContain('connection.saveRequirements: connection.tailcatIdentityCreating');
+  expect(button(view, 'connection.saveHost').props.disabled).toBe(true);
+  await act(async () => { rejectIdentity(new Error('identity unavailable')); });
+  expect(messages()).toContain('connection.saveRequirements: connection.tailcatIdentityError');
+  await act(async () => { button(view, 'connection.tailcatIdentityRetry').props.onPress(); });
+  expect(messages().some(message => typeof message === 'string' && message.startsWith('connection.saveRequirements'))).toBe(false);
+  expect(button(view, 'connection.saveHost').props.disabled).toBe(false);
+  await act(async () => { view.unmount(); });
 });
 
 test('Tailcat shows default and allowlisted restart commands as code blocks with the current SSH port', async () => {
