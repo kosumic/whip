@@ -332,6 +332,56 @@ fn queued_requests_pin_the_arrival_tab_and_keep_it_leased() -> TestResult {
 }
 
 #[test]
+fn failed_new_tab_navigation_retains_the_address_after_request_cleanup() -> TestResult {
+    crate::runtime()?.block_on(async {
+        let harness = Harness::new().await;
+        let owner = owner();
+        call(&owner, "a", "list_tabs", json!({}))?.await?;
+        let session = harness.platform.state("a")?;
+        let initial = session.selected_tab().ok_or("missing initial tab")?;
+        harness.platform.replies.lock().extend([
+            (
+                Phase::Document,
+                BrowserPlatformResult::Document {
+                    document: BrowserPageDocument {
+                        id: "blank".into(),
+                        url: "about:blank".into(),
+                        public_url: "about:blank".into(),
+                        ready: true,
+                    },
+                },
+            ),
+            (
+                Phase::Document,
+                BrowserPlatformResult::Document {
+                    document: BrowserPageDocument {
+                        id: "error".into(),
+                        url: "chrome-error://chromewebdata/".into(),
+                        public_url: "chrome-error://chromewebdata/".into(),
+                        ready: true,
+                    },
+                },
+            ),
+        ]);
+        let url = "https://unreachable.test/page?q=1#details";
+        let result = call(&owner, "a", "new_tab", json!({"url":url}))?.await?;
+        assert_eq!(result["isError"], true);
+        until(|| harness.coordinator.active.lock().is_empty()).await?;
+        let selected = session.selected_tab().ok_or("missing failed tab")?;
+        assert_ne!(selected, initial);
+        assert_eq!(session.tab(selected)?.url, url);
+        assert_eq!(session.tabs().len(), 2);
+        assert!(session.tab(initial).is_ok());
+        let invalid = call(&owner, "a", "new_tab", json!({"url":"file:///secret"}));
+        assert!(invalid.is_err());
+        assert_eq!(session.tabs().len(), 2);
+        owner.shutdown();
+        drop(harness);
+        Ok(())
+    })
+}
+
+#[test]
 fn cancelling_a_waiter_preserves_arrival_order_for_later_operations() -> TestResult {
     crate::runtime()?.block_on(async {
         let harness = Harness::new().await;

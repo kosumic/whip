@@ -682,7 +682,7 @@ describe('iOS content-process recovery', () => {
     expect(mockMounted).toBe(mounts);
     expect(mockUnmounted).toBe(unmounts);
     await act(async () => {
-      webView().props.onLoadStart();
+      webView().props.onLoadStart({ nativeEvent: { url: tab.url } });
       webView().props.onLoad();
       webView().props.onLoadEnd();
       jest.advanceTimersByTime(BROWSER_ACTION_TIMEOUT_MS);
@@ -722,7 +722,7 @@ describe('iOS content-process recovery', () => {
         0,
       );
       await act(async () => {
-        staleCallbacks.onLoadStart();
+        staleCallbacks.onLoadStart({ nativeEvent: { url: tab.url } });
         staleCallbacks.onContentProcessDidTerminate();
         jest.advanceTimersByTime(BROWSER_ACTION_TIMEOUT_MS);
       });
@@ -1100,6 +1100,150 @@ test('the address bar submits searches to the shared selected tab and respects e
     await browserPreferences.set(DEFAULT_BROWSER_PREFERENCES);
   }
 });
+
+test.each([
+  [
+    'android',
+    -2,
+    'net::ERR_NAME_NOT_RESOLVED',
+    'chrome-error://chromewebdata/',
+  ],
+  [
+    'ios',
+    -1009,
+    'The Internet connection appears to be offline.',
+    'data:text/html,failed',
+  ],
+])(
+  '%s failed links show a recoverable page with their original address',
+  async (platform, code, description, errorUrl) => {
+    Platform.OS = platform as typeof Platform.OS;
+    const session = browserSession(`failed-link-${platform}`);
+    const controller = session.entry.controller;
+    const url = 'https://unreachable.test/page?q=hello%20world#details';
+    let view!: ReactTestRenderer;
+    const control = (accessibilityLabel: string) =>
+      view.root.findByProps({ accessibilityLabel });
+    const webView = () =>
+      view.root.findAllByType('BrowserWebView' as never).at(-1)!;
+    try {
+      await act(async () => {
+        view = create(<BrowserSurface runtimes={[session.runtime]} />);
+      });
+      let pending!: Promise<unknown>;
+      await act(async () => {
+        pending = browserRegistry
+          .openLink(session.identity.sessionId, url)
+          .catch((error: unknown) => error);
+        await new Promise<void>(resolve => setImmediate(resolve));
+      });
+      await layoutBrowserViews(view);
+      const tab = controller.tab();
+      const driver = tab.driver!;
+      await act(async () => {
+        while (!jest.mocked(driver.navigate).mock.calls.length)
+          await new Promise(resolve => setTimeout(resolve, 10));
+      });
+      expect(driver.navigate).toHaveBeenCalledWith(url);
+      const preventDefault = jest.fn();
+      await act(async () => {
+        webView().props.onError({
+          nativeEvent: {
+            code,
+            description,
+            url: platform === 'ios' ? 'about:blank' : url,
+          },
+          preventDefault,
+        });
+        webView().props.onLoadStart({ nativeEvent: { url: errorUrl } });
+        webView().props.onNavigationStateChange({
+          url: errorUrl,
+          title: 'Error',
+          canGoBack: false,
+          canGoForward: false,
+          loading: false,
+        });
+        webView().props.onLoadEnd();
+      });
+      await act(async () => {
+        expect(await pending).toBeInstanceOf(Error);
+      });
+      expect(preventDefault).toHaveBeenCalledTimes(1);
+      expect(controller.tabs).toHaveLength(2);
+      expect(tab).toMatchObject({ url, loading: false });
+      expect(
+        control('Edit browser address').props.accessibilityValue.text,
+      ).toBe(url);
+      expect(
+        view.root.findByProps({ accessibilityRole: 'alert' }).children,
+      ).toEqual([expect.stringContaining(description)]);
+      expect(
+        view.root.findAllByProps({ accessibilityLabel: 'Add shortcut' }),
+      ).toHaveLength(0);
+      const mounts = mockMounted;
+      await act(async () => {
+        control('Edit failed browser address').props.onPress();
+      });
+      expect(control('Browser address or search').props.value).toBe(url);
+      const back = jest
+        .mocked(BackHandler.addEventListener)
+        .mock.calls.at(-1)![1];
+      await act(async () => {
+        back({ type: 'hardwareBackPress', timeStamp: 0 });
+      });
+      await act(async () => {
+        control('Edit browser address').props.onPress();
+      });
+      await act(async () => {
+        control('Copy current browser address').props.onPress();
+      });
+      expect(Clipboard.setString).toHaveBeenLastCalledWith(url);
+      await act(async () => {
+        back({ type: 'hardwareBackPress', timeStamp: 0 });
+      });
+      jest.mocked(driver.navigate).mockImplementationOnce(() => {
+        webView().props.onError({
+          nativeEvent: { code, description, url },
+          preventDefault: jest.fn(),
+        });
+      });
+      await act(async () => {
+        control('Retry browser page').props.onPress();
+      });
+      await act(async () => {
+        await controller.action('list_tabs');
+      });
+      expect(tab.url).toBe(url);
+      expect(
+        view.root.findAllByProps({ accessibilityRole: 'alert' }),
+      ).toHaveLength(1);
+      jest.mocked(driver.navigate).mockImplementationOnce(() => {
+        jest
+          .mocked(driver.documentState)
+          .mockResolvedValue({ id: 'recovered', url, ready: true });
+      });
+      await act(async () => {
+        await control('Retry browser page').props.onPress();
+      });
+      // UI handlers intentionally start navigation without awaiting the page.
+      await act(async () => {
+        await controller.action('list_tabs');
+      });
+      expect(driver.navigate).toHaveBeenLastCalledWith(url);
+      expect(tab.loadError).toBeNull();
+      expect(
+        view.root.findAllByProps({ accessibilityLabel: 'Retry browser page' }),
+      ).toHaveLength(0);
+      expect(mockMounted).toBe(mounts);
+    } finally {
+      await act(async () => {
+        await browserRegistry.close(session.identity.sessionId);
+        view?.unmount();
+      });
+      Platform.OS = 'android';
+    }
+  },
+);
 
 test('a WebView error page keeps its address and resumes the original page after pausing', async () => {
   const session = browserSession('error-page-restore');

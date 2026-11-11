@@ -92,6 +92,37 @@ async fn navigation_waits_for_a_new_ready_document() -> TestResult {
 }
 
 #[tokio::test]
+async fn failed_new_tab_navigation_reports_an_error_without_closing_the_tab() -> TestResult {
+    let bridge = MemoryBridge::new(vec![
+        Ok(json!({"tabs":context().tabs})),
+        Ok(json!({"tab_id":"a-tab-2"})),
+        Ok(document("blank", "about:blank")),
+        Ok(json!({"navigated":true,"target":"https://unreachable.test/page?q=1#details"})),
+        Err(BrowserError::new(
+            ErrorCode::BrowserUnavailable,
+            "Page failed to load",
+        )),
+    ]);
+    let error = execute(
+        bridge.clone(),
+        "new_tab",
+        json!({"url":"https://unreachable.test/page?q=1#details"}),
+    )
+    .await
+    .err()
+    .ok_or("expected page failure")?;
+    assert_eq!(error.code, ErrorCode::BrowserUnavailable);
+    assert!(
+        !bridge
+            .calls
+            .lock()
+            .iter()
+            .any(|call| matches!(call, Primitive::CloseTab { .. }))
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn stale_native_document_is_not_retried_on_the_replacement_page() -> TestResult {
     let bridge = MemoryBridge::new(vec![
         Ok(document("old", "https://example.test/")),

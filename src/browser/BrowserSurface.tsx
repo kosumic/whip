@@ -102,12 +102,14 @@ const TabRenderer = memo(function BrowserTabRenderer({
   viewGeneration,
   profile,
   viewportStyle,
+  loadFailed,
 }: {
   entry: BrowserEntry;
   tab: BrowserTab;
   viewGeneration: number;
   profile: BrowserProfile;
   viewportStyle: ViewStyle;
+  loadFailed: boolean;
 }) {
   const ref = useRef<WebView>(null);
   // Native settings own later profile changes, applying them before reload.
@@ -259,6 +261,9 @@ const TabRenderer = memo(function BrowserTabRenderer({
       ref={containerRef}
       collapsable={false}
       style={viewportStyle}
+      pointerEvents={loadFailed ? 'none' : 'auto'}
+      accessibilityElementsHidden={loadFailed}
+      importantForAccessibility={loadFailed ? 'no-hide-descendants' : 'auto'}
       // React effects can run before Fabric mounts the native descendants.
       onLayout={() => setNativeTag(findNodeHandle(containerRef.current) ?? null)}
     >
@@ -309,8 +314,8 @@ const TabRenderer = memo(function BrowserTabRenderer({
             return false;
           }
         }}
-        onLoadStart={() => {
-          if (current()) entry.controller.loadStart(tab.id);
+        onLoadStart={event => {
+          if (current()) entry.controller.loadStart(tab.id, event.nativeEvent.url);
         }}
         onLoad={() => {
           if (current()) finishRecovery();
@@ -329,12 +334,19 @@ const TabRenderer = memo(function BrowserTabRenderer({
           if (current()) entry.controller.loadEnd(tab.id);
         }}
         onError={event => {
+          // Keep the native view available for retry and back navigation while
+          // the surface presents the themed error view.
+          event.preventDefault?.();
           if (current()) {
             if (recoveryTimeout.current !== null) {
               rendererGone();
               return;
             }
-            entry.controller.loadError(tab.id, event.nativeEvent.code);
+            entry.controller.loadError(
+              tab.id,
+              event.nativeEvent.code,
+              event.nativeEvent.description,
+            );
           }
         }}
         onNavigationStateChange={state => {
@@ -585,9 +597,9 @@ export function BrowserSurface({
       setError(null);
       await entry?.controller.action(kind, args);
     } catch (reason) {
-      setError(
-        reason instanceof Error ? reason.message : 'Browser action failed',
-      );
+      const message =
+        reason instanceof Error ? reason.message : 'Browser action failed';
+      if (message !== tab?.loadError) setError(message);
     }
   };
   const openInSystemBrowser = async () => {
@@ -715,6 +727,7 @@ export function BrowserSurface({
                       viewGeneration={itemTab.viewGeneration}
                       profile={profile}
                       viewportStyle={viewportStyle}
+                      loadFailed={!!itemTab.loadError}
                     />
                   ) : item === entry &&
                     itemTab === tab &&
@@ -742,6 +755,45 @@ export function BrowserSurface({
                       </Button>
                     </View>
                   )}
+                  {itemTab.lifecycle === 'active' && itemTab.loadError && (
+                    <View
+                      style={styles.suggestions}
+                      className="items-center justify-center gap-4 bg-background px-6"
+                    >
+                      <Text className="text-center text-xl font-semibold">
+                        Couldn’t load this page
+                      </Text>
+                      <Text
+                        selectable
+                        className="text-center text-muted-foreground"
+                      >
+                        {itemTab.url}
+                      </Text>
+                      <Text
+                        accessibilityRole="alert"
+                        className="text-center text-muted-foreground"
+                      >
+                        {itemTab.loadError}
+                      </Text>
+                      <View className="flex-row gap-3">
+                        <Button
+                          accessibilityLabel="Retry browser page"
+                          onPress={() => {
+                            void action('reload', { tab_id: itemTab.id });
+                          }}
+                        >
+                          <Text>Retry</Text>
+                        </Button>
+                        <Button
+                          variant="outline"
+                          accessibilityLabel="Edit failed browser address"
+                          onPress={editCurrentAddress}
+                        >
+                          <Text>Edit address</Text>
+                        </Button>
+                      </View>
+                    </View>
+                  )}
                 </View>
               )),
           )}
@@ -753,6 +805,7 @@ export function BrowserSurface({
           )}
           {entry &&
             tab?.url === 'about:blank' &&
+            !tab.loadError &&
             !panel &&
             (!browserRegistry.routing ||
               browserRegistry.routing.allows(entry.identity.runtimeId)) && (
