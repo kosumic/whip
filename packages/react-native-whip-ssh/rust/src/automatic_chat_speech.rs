@@ -129,6 +129,20 @@ impl AutomaticChatSpeechQueue {
     }
 }
 impl AutomaticChatSpeechQueue {
+    /// Advance transcript cursors without admitting history or cancelling audio
+    /// already admitted from live updates. Retain established cursors even when
+    /// a recovery snapshot omits an admitted message.
+    pub(crate) fn baseline(
+        &self,
+        key: String,
+        agent: AgentTranscriptKind,
+        messages: Vec<ChatSpeechMessage>,
+    ) {
+        let mut state = self.state.lock();
+        let selector = state.transcripts.entry(key).or_default().clone();
+        drop(state);
+        selector.update_silent(agent, messages);
+    }
     pub(crate) fn baseline_during_call(
         &self,
         key: String,
@@ -143,9 +157,6 @@ impl AutomaticChatSpeechQueue {
     }
     pub(crate) fn has_source(&self, key: &str) -> bool {
         self.state.lock().transcripts.contains_key(key)
-    }
-    pub(crate) fn clear_source_pending(&self, key: &str) {
-        self.state.lock().queue.remove(key);
     }
     pub(crate) fn clear_pending(&self) {
         self.state.lock().queue.clear();
@@ -447,6 +458,51 @@ mod tests {
         assert_eq!(next.key, "two");
         assert_eq!(next.text, "Debug tab: Recent update");
         assert!(queue.next(MAX_AGE_MS + 2).is_none());
+    }
+
+    #[test]
+    fn recovery_baselines_keep_started_chunks_without_refreshing_waiting_age_or_limits() {
+        let queue = AutomaticChatSpeechQueue::new();
+        for key in ["one", "two"] {
+            update(&queue, key, "history", 0);
+        }
+        let response = "a".repeat(MAX_CONTENT_UNITS * 2);
+        queue.update(
+            "one".into(),
+            AgentTranscriptKind::Codex,
+            "Debug".into(),
+            true,
+            false,
+            messages("long", &response),
+            1,
+        );
+        let first = queue.take_native(1).unwrap();
+        for index in 2..12 {
+            update(&queue, "two", &format!("Waiting update {index}"), index);
+        }
+        queue.baseline(
+            "one".into(),
+            AgentTranscriptKind::Codex,
+            messages("long", &response),
+        );
+        queue.baseline(
+            "two".into(),
+            AgentTranscriptKind::Codex,
+            messages("catch-up", "Silent history"),
+        );
+        assert!(queue.complete_native(first.id));
+        let tail = queue.take_native(12).unwrap();
+        assert_eq!(tail.item.text, "a".repeat(MAX_CONTENT_UNITS));
+        assert!(queue.complete_native(tail.id));
+        // Recovery did not add catch-up or restore the chunks dropped by overload.
+        assert_eq!(take(&queue, 12).text, "Debug tab: Waiting update 8");
+        // Recovery also did not refresh the original enqueue timestamps.
+        update(&queue, "one", "Recent update", MAX_AGE_MS + 12);
+        assert_eq!(
+            take(&queue, MAX_AGE_MS + 12).text,
+            "Debug tab: Recent update"
+        );
+        assert!(queue.next(MAX_AGE_MS + 12).is_none());
     }
 
     #[test]

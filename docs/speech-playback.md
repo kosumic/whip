@@ -56,6 +56,18 @@ preferences, pause/resume controls, and cached binding labels, and receives
 focus/error feedback. It neither re-encodes transcript histories for automatic
 selection nor drives an automatic speech drain loop.
 
+Live-admitted reply prose and questions remain eligible for playback when a
+transcript read, discovery, or rebind temporarily fails. The local queue can
+finish its active utterance, remaining chunks, and waiting updates without a
+remote fetch. Retry operation epochs fence transcript callbacks independently
+of native utterance IDs. Recovery of the same authoritative session advances
+silent cursors without cancelling admitted audio or replaying it. Cached
+history and reconnect catch-up never create a speech backlog. Confirmed source
+replacement/truncation, session or agent changes, explicit close/unbind, and
+the usual Stop, disable, input, lock, and voice-call policies still cancel or
+suppress playback. Queue bounds and competing-update expiry still apply;
+agent status alerts remain independent of transcript availability.
+
 Disabled readers retain only binding metadata, without inspecting message
 payloads or retaining spoken-prefix indexes. Enabling prepares full baselines
 from weak Rust transcript owners on the existing runtime's blocking worker;

@@ -46,7 +46,7 @@ fn live_feedback_projection_skips_unchanged_and_stale_history() {
     );
 }
 
-fn materialized_cores(text: &str) -> [AgentSessionCore; 2] {
+pub(super) fn materialized_cores(text: &str) -> [AgentSessionCore; 2] {
     let records = [
         json!({"type":"session_meta", "payload":{"id":SESSION, "history_mode":"paginated"}}),
         json!({"type":"event_msg", "payload":{"type":"task_started", "turn_id":"turn"}}),
@@ -95,7 +95,7 @@ fn materialized_cores(text: &str) -> [AgentSessionCore; 2] {
     ]
 }
 
-fn manager_with_core(core: AgentSessionCore) -> (AgentSessionManager, BoundAgentChat) {
+pub(super) fn manager_with_core(core: AgentSessionCore) -> (AgentSessionManager, BoundAgentChat) {
     let manager = test_manager("row-restore-test");
     let binding = manager
         .bind_authoritative(AuthoritativeAgentChatIdentity {

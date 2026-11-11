@@ -3,6 +3,13 @@ use crate::{
     AgentQuestion, AgentQuestionOption, AgentToolState, AgentToolStatus, AgentTranscriptPart,
 };
 
+const AGENTS: [AgentTranscriptKind; 4] = [
+    AgentTranscriptKind::Codex,
+    AgentTranscriptKind::Claude,
+    AgentTranscriptKind::OpenCode,
+    AgentTranscriptKind::Pi,
+];
+
 fn message(id: &str, text: &str, completed: bool) -> AgentTranscriptMessage {
     AgentTranscriptMessage {
         id: id.into(),
@@ -78,12 +85,7 @@ fn id(value: &Value) -> u64 {
 
 #[test]
 fn authoritative_deltas_speak_for_every_provider_without_js_messages_or_drain() {
-    for agent in [
-        AgentTranscriptKind::Codex,
-        AgentTranscriptKind::Claude,
-        AgentTranscriptKind::OpenCode,
-        AgentTranscriptKind::Pi,
-    ] {
+    for agent in AGENTS {
         let mut coordinator = coordinator(agent);
         assert!(take(&mut coordinator).is_null());
         update(&mut coordinator, 2, &message("new", "New reply.", true));
@@ -103,12 +105,7 @@ fn authoritative_deltas_speak_for_every_provider_without_js_messages_or_drain() 
 
 #[test]
 fn call_updates_advance_full_prefixes_without_tts_replay_or_changing_stop_and_lock_policy() {
-    for agent in [
-        AgentTranscriptKind::Codex,
-        AgentTranscriptKind::Claude,
-        AgentTranscriptKind::OpenCode,
-        AgentTranscriptKind::Pi,
-    ] {
+    for agent in AGENTS {
         let mut coordinator = coordinator(agent);
         update(
             &mut coordinator,
@@ -385,6 +382,7 @@ fn late_completion_and_old_epoch_cannot_finish_or_replace_new_audio() {
     let mut coordinator = coordinator(AgentTranscriptKind::Codex);
     update(&mut coordinator, 2, &message("first", "Old reply.", true));
     let old = take(&mut coordinator);
+    coordinator.source_replaced("one", 2, 3);
     coordinator.accept(
         "one",
         2,
@@ -406,6 +404,8 @@ fn late_completion_and_old_epoch_cannot_finish_or_replace_new_audio() {
     let current = take(&mut coordinator);
     assert_eq!(current["text"], "Debug tab: Replacement reply.");
     assert_ne!(id(&old), id(&current));
+    coordinator.source_replaced("one", 1, 100);
+    coordinator.source_replaced("one", 2, 3);
     coordinator.accept(
         "one",
         1,
@@ -425,6 +425,291 @@ fn late_completion_and_old_epoch_cannot_finish_or_replace_new_audio() {
         true
     );
     assert!(take(&mut coordinator).is_null());
+}
+
+fn accept_snapshot(
+    coordinator: &mut Coordinator,
+    epoch: u64,
+    revision: u64,
+    status: AgentTranscriptStatus,
+    messages: &[AgentTranscriptMessage],
+) {
+    let reset = coordinator.needs_baseline("one", epoch, status);
+    coordinator.accept(
+        "one",
+        epoch,
+        revision,
+        status,
+        messages.iter(),
+        reset,
+        revision,
+    );
+}
+
+#[test]
+fn transient_failures_preserve_live_admitted_chunks_and_questions_for_every_agent() {
+    for agent in AGENTS {
+        for start_before_failure in [false, true] {
+            let mut coordinator = coordinator(agent);
+            let reply = "A long live response continues here. ".repeat(20);
+            let mut question = message("question", "", true);
+            question.parts = vec![AgentTranscriptPart::Notice {
+                id: "question-part".into(),
+                level: crate::AgentNoticeLevel::Info,
+                text: String::new(),
+                timestamp_ms: None,
+                questions: vec![AgentQuestion {
+                    header: None,
+                    question: "Continue?".into(),
+                    options: vec![],
+                    multiple: false,
+                }],
+            }];
+            let history = [message("reply", &reply, true), question];
+            update(&mut coordinator, 2, &history[0]);
+            update(&mut coordinator, 3, &history[1]);
+            let mut spoken = Vec::new();
+            let active = start_before_failure.then(|| take(&mut coordinator));
+
+            // Failed discovery/read and multiple retry epochs retain authority.
+            for (epoch, revision, status) in [
+                (1, 4, AgentTranscriptStatus::Stale),
+                (2, 5, AgentTranscriptStatus::Stale),
+                (2, 6, AgentTranscriptStatus::Unavailable),
+                (3, 7, AgentTranscriptStatus::Error),
+            ] {
+                accept_snapshot(&mut coordinator, epoch, revision, status, &history);
+                if let Some(active) = &active {
+                    assert_eq!(
+                        coordinator.command(Command::Valid { id: id(active) }, 8),
+                        true
+                    );
+                }
+            }
+            if let Some(active) = active {
+                spoken.push(active["text"].as_str().unwrap().to_owned());
+                assert_eq!(
+                    coordinator.command(Command::Completed { id: id(&active) }, 8),
+                    true
+                );
+            }
+            // The local queue drains while remote reads are still unavailable.
+            loop {
+                let next = take(&mut coordinator);
+                if next.is_null() {
+                    break;
+                }
+                spoken.push(next["text"].as_str().unwrap().to_owned());
+                assert_eq!(
+                    coordinator.command(Command::Completed { id: id(&next) }, 10),
+                    true
+                );
+            }
+            assert_eq!(
+                spoken.join(" "),
+                format!("Debug tab: {} Continue?", reply.trim())
+            );
+            // An incomplete recovery snapshot must not erase established
+            // admission cursors for messages it happens to omit.
+            let recovered = [message("catch-up", "Silent reconnect catch-up.", true)];
+            accept_snapshot(
+                &mut coordinator,
+                3,
+                8,
+                AgentTranscriptStatus::Live,
+                &recovered,
+            );
+            assert!(take(&mut coordinator).is_null());
+            // Late reads cannot re-admit old text after the retry epoch advances.
+            accept_snapshot(
+                &mut coordinator,
+                2,
+                100,
+                AgentTranscriptStatus::Live,
+                &history,
+            );
+            assert!(take(&mut coordinator).is_null());
+            accept_snapshot(
+                &mut coordinator,
+                3,
+                9,
+                AgentTranscriptStatus::Live,
+                &history,
+            );
+            assert!(take(&mut coordinator).is_null());
+            accept_snapshot(
+                &mut coordinator,
+                3,
+                10,
+                AgentTranscriptStatus::Live,
+                &[message("fresh", "Fresh reply.", true)],
+            );
+            assert_eq!(take(&mut coordinator)["text"], "Fresh reply.");
+        }
+    }
+}
+
+#[test]
+fn recovery_baselines_preserve_queued_audio_and_suppress_unadmitted_streaming_tails() {
+    for agent in AGENTS {
+        let mut coordinator = coordinator(agent);
+        update(
+            &mut coordinator,
+            2,
+            &message("queued", "Locally admitted.", true),
+        );
+        let current = take(&mut coordinator);
+        let mut history = vec![
+            message("queued", "Locally admitted.", true),
+            message(
+                "catch-up",
+                "Received during recovery without punctuation",
+                false,
+            ),
+        ];
+        accept_snapshot(
+            &mut coordinator,
+            2,
+            3,
+            AgentTranscriptStatus::Stale,
+            &history,
+        );
+        accept_snapshot(
+            &mut coordinator,
+            2,
+            4,
+            AgentTranscriptStatus::Live,
+            &history,
+        );
+        assert_eq!(
+            coordinator.command(Command::Valid { id: id(&current) }, 5),
+            true
+        );
+        assert_eq!(
+            coordinator.command(Command::Completed { id: id(&current) }, 5),
+            true
+        );
+        history[1] = message(
+            "catch-up",
+            "Received during recovery without punctuation. Fresh continuation.",
+            true,
+        );
+        accept_snapshot(
+            &mut coordinator,
+            2,
+            5,
+            AgentTranscriptStatus::Live,
+            &history,
+        );
+        assert_eq!(take(&mut coordinator)["text"], ". Fresh continuation.");
+    }
+}
+
+#[test]
+fn cached_history_and_failed_initial_binding_never_create_a_speech_backlog() {
+    for agent in AGENTS {
+        let mut coordinator = coordinator(agent);
+        let cached = [message("cache", "Cached final response.", true)];
+        coordinator.accept(
+            "one",
+            1,
+            2,
+            AgentTranscriptStatus::Stale,
+            cached.iter(),
+            true,
+            2,
+        );
+        for (epoch, revision, status) in [
+            (1, 3, AgentTranscriptStatus::Unavailable),
+            (2, 4, AgentTranscriptStatus::Stale),
+            (2, 5, AgentTranscriptStatus::Live),
+        ] {
+            accept_snapshot(&mut coordinator, epoch, revision, status, &cached);
+            assert!(take(&mut coordinator).is_null());
+        }
+        accept_snapshot(&mut coordinator, 2, 6, AgentTranscriptStatus::Live, &cached);
+        assert!(take(&mut coordinator).is_null());
+    }
+}
+
+#[test]
+fn cancellation_policies_still_invalidate_admitted_speech_during_read_failures() {
+    for agent in AGENTS {
+        for control in [
+            "pause", "lock", "disable", "stop", "call", "replace", "close",
+        ] {
+            let mut coordinator = coordinator(agent);
+            update(&mut coordinator, 2, &message("first", "First reply.", true));
+            let current = take(&mut coordinator);
+            update(
+                &mut coordinator,
+                3,
+                &message("waiting", "Waiting reply.", true),
+            );
+            accept_snapshot(&mut coordinator, 2, 4, AgentTranscriptStatus::Stale, &[]);
+            match control {
+                "pause" => {
+                    coordinator.command(Command::Pause { paused: true }, 5);
+                }
+                "lock" => {
+                    coordinator.command(Command::Lock { locked: true }, 5);
+                }
+                "disable" => {
+                    coordinator.command(Command::Enable { enabled: false }, 5);
+                }
+                "stop" => {
+                    coordinator.command(
+                        Command::Ended {
+                            id: id(&current),
+                            reason: EndReason::Stopped,
+                            failed: false,
+                        },
+                        5,
+                    );
+                }
+                "call" => {
+                    coordinator.voice_calls = 1;
+                    coordinator.queue.clear_pending();
+                }
+                "replace" => {
+                    coordinator.source_replaced("one", 3, 5);
+                }
+                "close" => {
+                    accept_snapshot(&mut coordinator, 2, 5, AgentTranscriptStatus::Closed, &[]);
+                }
+                _ => unreachable!(),
+            }
+            assert_eq!(
+                coordinator.command(Command::Valid { id: id(&current) }, 6),
+                false
+            );
+            assert_eq!(
+                coordinator.command(Command::Completed { id: id(&current) }, 6),
+                false
+            );
+            assert!(take(&mut coordinator).is_null());
+        }
+    }
+}
+
+#[test]
+fn opted_in_lock_policy_survives_transcript_read_failures() {
+    let mut coordinator = coordinator(AgentTranscriptKind::Codex);
+    coordinator.command(Command::ReadWhileLocked { enabled: true }, 0);
+    update(&mut coordinator, 2, &message("first", "First reply.", true));
+    let current = take(&mut coordinator);
+    update(
+        &mut coordinator,
+        3,
+        &message("waiting", "Waiting reply.", true),
+    );
+    coordinator.command(Command::Lock { locked: true }, 4);
+    accept_snapshot(&mut coordinator, 2, 4, AgentTranscriptStatus::Stale, &[]);
+    assert_eq!(
+        coordinator.command(Command::Completed { id: id(&current) }, 5),
+        true
+    );
+    assert_eq!(take(&mut coordinator)["text"], "Waiting reply.");
 }
 
 #[test]

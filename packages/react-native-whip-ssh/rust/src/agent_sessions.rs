@@ -8,6 +8,8 @@ pub(crate) mod ids;
 mod pi;
 mod presentation;
 use pi::{pi_transcript_find_command, resolve_pi_path, validate_pi_session};
+#[cfg(test)]
+mod automatic_speech_tests;
 mod opencode_v2;
 #[cfg(test)]
 mod row_restore_tests;
@@ -1931,6 +1933,14 @@ impl AgentSessionManager {
             let reset = binding
                 .rebuilt
                 .then(|| AgentTranscriptUpdate::reset(core.state()));
+            if let Some(reset) = &reset {
+                crate::automatic_speech::source_replaced(
+                    self.inner.runtime_incarnation,
+                    key.as_str(),
+                    operation_epoch,
+                    reset.revision,
+                );
+            }
             let context = NEXT_STREAM_CONTEXT.fetch_add(1, Ordering::Relaxed);
             streams().write().insert(
                 context,
@@ -2598,6 +2608,20 @@ fn emit(
         .filter(|session| session.operation_epoch == operation_epoch);
     let current = session.is_some();
     if let Some(session) = session {
+        if update.deltas.iter().any(|delta| {
+            matches!(
+                delta,
+                AgentTranscriptDelta::MessageRemoved { .. }
+                    | AgentTranscriptDelta::MessagesTruncated { .. }
+            )
+        }) {
+            crate::automatic_speech::source_replaced(
+                manager.runtime_incarnation,
+                key.as_str(),
+                operation_epoch,
+                update.revision,
+            );
+        }
         if crate::realtime_voice::observer::tracking() {
             let recovery;
             let view = if session.core.projection_view().is_none()

@@ -314,9 +314,8 @@ impl Coordinator {
             || self.voice_calls > 0
             || !allowed;
         log::info!(target: "automatic_speech", "event=revision epoch={epoch} revision={revision} status={status:?} baseline={baseline} reset={reset} allowed={allowed}");
-        if reset || epoch != source.epoch {
-            self.queue.remove(key.into());
-        }
+        // An operation epoch fences remote reads, not locally admitted audio.
+        // Identity replacement and explicit cancellation invalidate it separately.
         source.epoch = epoch;
         source.revision = revision;
         source.status = status;
@@ -339,19 +338,18 @@ impl Coordinator {
         if self.voice_calls > 0 {
             self.queue
                 .baseline_during_call(key.into(), source.agent, messages);
+        } else if baseline || status != AgentTranscriptStatus::Live {
+            self.queue.baseline(key.into(), source.agent, messages);
         } else {
             self.queue.update(
                 key.into(),
                 source.agent,
                 source.tab_name.clone(),
                 true,
-                baseline || status != AgentTranscriptStatus::Live,
+                false,
                 messages,
                 now,
             );
-        }
-        if status != AgentTranscriptStatus::Live {
-            self.queue.clear_source_pending(key);
         }
         if reset {
             source.pending_baseline = false;
@@ -359,6 +357,19 @@ impl Coordinator {
         if self.initializing && self.sources.values().all(|source| !source.pending_baseline) {
             self.initializing = false;
         }
+    }
+
+    fn source_replaced(&mut self, key: &str, epoch: u64, revision: u64) {
+        let Some(source) = self.sources.get_mut(key) else {
+            return;
+        };
+        if epoch < source.epoch || (epoch == source.epoch && revision <= source.revision) {
+            return;
+        }
+        source.epoch = epoch;
+        source.revision = revision;
+        source.pending_baseline = true;
+        self.queue.remove(key.into());
     }
 }
 
@@ -531,6 +542,14 @@ pub(crate) fn removed(incarnation: u64, key: &str, epoch: u64) {
     }
     drop(coordinator);
     wake();
+}
+
+/// A confirmed file replacement/truncation invalidates speech even when the
+/// logical session remains bound. Called under the manager's identity lock.
+pub(crate) fn source_replaced(incarnation: u64, key: &str, epoch: u64, revision: u64) {
+    AUTOMATIC
+        .lock()
+        .source_replaced(&source_key(incarnation, key), epoch, revision);
 }
 
 pub(crate) fn runtime_removed(runtime_id: &str, incarnation: u64) {
