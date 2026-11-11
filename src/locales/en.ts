@@ -991,6 +991,8 @@ export const en = {
   'herd.mergedQueue': '{{hosts}} · merged queue',
   'herd.focused': 'Focused',
   'herd.untitledTask': 'Untitled task',
+  'herd.gitClean': 'clean',
+  'herd.gitChanges': '{{count}} changed',
   'herd.openAgentTerminal': 'Open {{agent}} terminal on {{host}}',
 
   'rail.allHosts': 'All hosts',

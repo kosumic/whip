@@ -16,6 +16,8 @@ import { reportBackgroundFailure } from '../src/services/backgroundOperations';
 import { recordOperationalDiagnostic } from '../src/services/operationalDiagnostics';
 import * as remoteGit from '../src/lib/remoteGit';
 import { useRemoteFileViewPreferences } from '../src/hooks/useRemoteFileViewPreferences';
+import { refreshRemoteFilesOnAgentDone } from '../src/services/remoteFilesAgentRefresh';
+import type { HerdrSnapshot } from '../src/types';
 import { loadGitReviewState } from '../src/services/gitReviewState';
 
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
@@ -458,9 +460,105 @@ it('shows invalid UTF-8 errors without displaying replacement text or an editor'
   expect(hasButton('files.edit')).toBe(false);
 });
 
-it('shows a recently visited directory immediately and replaces its cached entries after refresh', async () => {
+it('reuses a recently visited directory without network reads until the user refreshes', async () => {
   await mount();
   await navigate('/repo/child');
+  await act(async () => { await button('files.parentDirectory').props.onPress(); });
+  expect(tree.root.findByType(FlatList).props.data).toEqual(listing('/repo').entries);
+  expect(native.listDirectory).toHaveBeenCalledTimes(2);
+  expect(native.discoverGitRepository).toHaveBeenCalledTimes(2);
+  const fresh = { path: '/repo', entries: [{ name: 'new', path: '/repo/new', kind: 'directory', size: 0 }] };
+  native.listDirectory.mockResolvedValueOnce(fresh);
+  await act(async () => { await button('files.refresh').props.onPress(); });
+  expect(native.listDirectory).toHaveBeenCalledTimes(3);
+  expect(tree.root.findByType(FlatList).props.data).toEqual(fresh.entries);
+});
+
+it.each([false, true])('caches the directory and Git state for one minute across reopening (Git mode %s)', async enabled => {
+  const now = jest.spyOn(Date, 'now').mockReturnValue(1_000);
+  native.discoverGitRepository.mockResolvedValue(enabled ? repository : null);
+  jest.mocked(loadRemoteGitMode).mockResolvedValue(enabled);
+  await mount();
+  await flushGitQueries();
+  act(() => { tree.unmount(); });
+  now.mockReturnValue(60_999);
+  await mount();
+  await flushGitQueries();
+  expect(native.listDirectory).toHaveBeenCalledTimes(1);
+  expect(native.discoverGitRepository).toHaveBeenCalledTimes(1);
+  expect(native.gitStatus).toHaveBeenCalledTimes(enabled ? 1 : 0);
+  expect(native.gitSummary).toHaveBeenCalledTimes(enabled ? 1 : 0);
+  act(() => { tree.unmount(); });
+  now.mockReturnValue(61_000);
+  await mount();
+  await flushGitQueries();
+  expect(native.listDirectory).toHaveBeenCalledTimes(2);
+  expect(native.discoverGitRepository).toHaveBeenCalledTimes(2);
+  expect(native.gitStatus).toHaveBeenCalledTimes(enabled ? 2 : 0);
+  expect(native.gitSummary).toHaveBeenCalledTimes(enabled ? 2 : 0);
+});
+
+it('finishes opening a directory before refreshing it when its agent completes during the first read', async () => {
+  const pending = deferred<RuntimeRemoteDirectoryListing>();
+  native.listDirectory.mockReturnValueOnce(pending.promise);
+  await mount();
+  const fresh = { path: '/repo', entries: [{ name: 'latest.txt', path: '/repo/latest.txt', kind: 'file', size: 10 }] };
+  native.listDirectory.mockResolvedValueOnce(fresh);
+  let refresh!: Promise<void>;
+  await act(async () => {
+    refresh = refreshRemoteFilesOnAgentDone(client,
+      { agents: [{ pane_id: 'pane', cwd: '/repo' }], panes: [] } as unknown as HerdrSnapshot,
+      [{ paneId: 'pane', previous: 'working', current: 'done', revision: 2 }]);
+    pending.resolve(listing('/repo'));
+    await refresh;
+    await new Promise(resolve => setTimeout(resolve, 0));
+  });
+  expect(tree.root.findByType(FlatList).props.data).toEqual(fresh.entries);
+  expect(text()).not.toContain('files.listFailed');
+});
+
+it('updates an open directory view when its agent finishes', async () => {
+  await mount();
+  const fresh = { path: '/repo', entries: [{ name: 'latest.txt', path: '/repo/latest.txt', kind: 'file', size: 10 }] };
+  native.listDirectory.mockResolvedValueOnce(fresh);
+  await act(async () => {
+    await refreshRemoteFilesOnAgentDone(client,
+      { agents: [{ pane_id: 'pane', cwd: '/repo' }], panes: [] } as unknown as HerdrSnapshot,
+      [{ paneId: 'pane', previous: 'working', current: 'done', revision: 2 }]);
+    await new Promise(resolve => setTimeout(resolve, 0));
+  });
+  expect(tree.root.findByType(FlatList).props.data).toEqual(fresh.entries);
+});
+
+it('keeps Git changes visible while completion refreshes them in the background', async () => {
+  native.discoverGitRepository.mockResolvedValue(repository);
+  jest.mocked(loadRemoteGitMode).mockResolvedValue(true);
+  await mount();
+  await flushGitQueries();
+  const pending = deferred<RuntimeGitStatusEntry[]>();
+  native.gitStatus.mockReturnValueOnce(pending.promise);
+  let refresh!: Promise<void>;
+  await act(async () => {
+    refresh = refreshRemoteFilesOnAgentDone(client,
+      { agents: [{ pane_id: 'pane', cwd: '/repo' }], panes: [] } as unknown as HerdrSnapshot,
+      [{ paneId: 'pane', previous: 'blocked', current: 'done', revision: 2 }]);
+    await new Promise(resolve => setTimeout(resolve, 0));
+  });
+  expect(hasButton('files.gitOpenChange')).toBe(true);
+  expect(text()).not.toContain('files.gitLoading');
+  await act(async () => {
+    pending.resolve([{ ...changes[0], path: 'latest.ts', absolutePath: '/repo/latest.ts' }]);
+    await refresh;
+    await new Promise(resolve => setTimeout(resolve, 0));
+  });
+  expect(text()).toContain('latest.ts');
+});
+
+it('shows stale directory entries immediately and replaces them after the cache expires', async () => {
+  const now = jest.spyOn(Date, 'now').mockReturnValue(1_000);
+  await mount();
+  await navigate('/repo/child');
+  now.mockReturnValue(61_000);
   const cached = listing('/repo');
   native.cachedDirectory.mockImplementation(path => path === '/repo' ? cached : null);
   const refresh = deferred<RuntimeRemoteDirectoryListing>();
@@ -538,6 +636,11 @@ it('does not resurrect a deleted entry when an older background listing complete
   expect(hasButton('files.openDirectory:child')).toBe(false);
   await act(async () => { refresh.resolve(cached); });
   expect(hasButton('files.openDirectory:child')).toBe(false);
+  act(() => { tree.unmount(); });
+  native.listDirectory.mockResolvedValueOnce({ path: '/repo', entries: [] });
+  await mount();
+  expect(hasButton('files.openDirectory:child')).toBe(false);
+  expect(native.listDirectory).toHaveBeenCalledTimes(2);
 });
 
 const directoryLink: RuntimeRemoteFileEntry = { name: 'linked', path: '/repo/linked', kind: 'symlink', size: 6 };

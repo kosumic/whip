@@ -994,6 +994,8 @@ export const fr = {
   'herd.mergedQueue': '{{hosts}} · file fusionnée',
   'herd.focused': 'Au premier plan',
   'herd.untitledTask': 'Tâche sans titre',
+  'herd.gitClean': 'propre',
+  'herd.gitChanges': '{{count}} modifiés',
   'herd.openAgentTerminal': 'Ouvrir le terminal de {{agent}} sur {{host}}',
 
   'rail.allHosts': 'Tous les hôtes',

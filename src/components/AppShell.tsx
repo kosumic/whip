@@ -286,6 +286,7 @@ export function AppShell({
 
     return (
       <HerdScreen
+        getClient={getClient}
         queues={herdQueues}
         agents={agents}
         sessions={railSessions}

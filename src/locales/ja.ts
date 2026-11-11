@@ -980,6 +980,8 @@ export const ja = {
   'herd.mergedQueue': '{{hosts}} · マージされたキュー',
   'herd.focused': '集中',
   'herd.untitledTask': '無題のタスク',
+  'herd.gitClean': '変更なし',
+  'herd.gitChanges': '{{count}} 件の変更',
   'herd.openAgentTerminal': '{{host}} で {{agent}} ターミナルを開きます',
   'rail.allHosts': 'すべてのホスト',
   'rail.newHostSession': '新しいホスト セッション',

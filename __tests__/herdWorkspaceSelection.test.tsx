@@ -17,6 +17,9 @@ import { AgentActionsPopup } from '../src/components/AgentActionsPopup';
 import type { AgentInfo, AgentStatus, WorkspaceInfo } from '../src/types';
 import { agentTranscriptService } from '../src/services/NativeTranscriptService';
 import type { AgentChatState } from '../src/agentChat';
+import type { HerdrClient } from '../src/services/HerdrClient';
+import { appQueryClient } from '../src/services/appQueryClient';
+import { discoverRemoteGitRepository, gitStatusQueryOptions, gitSummaryQueryOptions, loadRemoteGitStatus, remoteConnectionRequest } from '../src/services/remoteGitQueries';
 
 jest.mock('react-native-whip-ssh', () =>
   require('./mockWhipSsh').createMockWhipSshModule(),
@@ -112,7 +115,8 @@ jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: jest.fn(() => ({ bottom: 0 })),
 }));
 jest.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({ t: (key: string, values?: { count?: number }) => key === 'herd.gitChanges'
+    ? `${values?.count} changed` : key === 'herd.gitClean' ? 'clean' : key }),
 }));
 jest.mock('@/src/herdQueue', () => jest.requireActual('../src/herdQueue'));
 jest.mock(
@@ -424,6 +428,41 @@ describe('Herd workspace selection intent', () => {
     expect(empty.props.children[1].props.children).toBe('herd.noMatchingAgents');
     act(() => { button('herd.closeSearch').props.onPress(); });
     expect(findHost(renderer.root, 'FlatList').props.data).toEqual(screenProps.agents);
+  });
+
+  test('cards show available Git state after the agent type without fetching it, and follow cache changes', async () => {
+    const native = {
+      runtimeId: 'herd-git',
+      status: () => ({ state: 'connected', generation: 1n }),
+      discoverGitRepository: jest.fn().mockResolvedValue({ root: '/repo', hasHead: true }),
+      gitStatus: jest.fn().mockResolvedValue([{ path: 'file.ts' }]),
+      gitSummary: jest.fn().mockResolvedValue({ branch: 'feature/review', commits: [] }),
+    };
+    const client = { native, activeNative: native } as unknown as HerdrClient;
+    const connection = remoteConnectionRequest(client);
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_000);
+    await Promise.all([
+      discoverRemoteGitRepository(connection, '/repo'), loadRemoteGitStatus(connection, '/repo'),
+      appQueryClient.fetchInfiniteQuery(gitSummaryQueryOptions(connection, '/repo')),
+    ]);
+    now.mockReturnValue(61_000);
+    native.discoverGitRepository.mockClear();
+    native.gitStatus.mockClear();
+    native.gitSummary.mockClear();
+    const screenProps = agentTray({ getClient: () => client });
+    screenProps.agents[0].agent.cwd = '/repo/src';
+    await act(async () => { renderer = create(<HerdScreen {...screenProps} />); });
+    const texts = () => renderer.root.findAll(node => String(node.type) === 'Text').map(node => node.props.children);
+    expect(texts()).toContain('codex · feature/review · 1 changed');
+    await act(async () => {
+      appQueryClient.setQueryData(gitStatusQueryOptions(connection, '/repo').queryKey, []);
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+    expect(texts()).toContain('codex · feature/review · clean');
+    expect(native.discoverGitRepository).not.toHaveBeenCalled();
+    expect(native.gitStatus).not.toHaveBeenCalled();
+    expect(native.gitSummary).not.toHaveBeenCalled();
+    now.mockRestore();
   });
 
   test.each([

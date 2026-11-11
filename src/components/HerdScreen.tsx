@@ -42,6 +42,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type HerdHostQueue, type HerdQueueAgent } from '@/src/herdQueue';
 import { useTranscriptTitle } from '@/src/hooks/useTranscriptTitle';
+import { useCachedRemoteGitState } from '@/src/hooks/useCachedRemoteGitState';
+import type { HerdrClient } from '@/src/services/HerdrClient';
 import { useCommittedCallbacks } from '@/src/hooks/useCommittedCallbacks';
 import { ANIMATION_VIEWABILITY_CONFIG, useViewableKeys } from '@/src/hooks/useViewableKeys';
 import { AnimationVisibilityProvider } from '@/src/lib/animationVisibility';
@@ -96,6 +98,7 @@ const HERD_AGENT_CONTEXT_TEXT_CLASS_NAME =
   'min-w-0 shrink text-[11px] leading-[15px] text-muted-foreground/70';
 
 interface Props {
+  getClient?: (hostId: string) => HerdrClient | undefined;
   onSetAgentPinned?: (hostId: string, terminalId: string, pinned: boolean) => Promise<void>;
   onMarkAgentUnread?: (hostId: string, terminalId: string) => Promise<void>;
   onSetAgentReverseControl?: (
@@ -159,6 +162,7 @@ export function HerdScreen(props: Props) {
 }
 
 const HerdScreenContent = memo(function HerdContent({
+  getClient,
   onSetAgentPinned,
   onMarkAgentUnread,
   onSetAgentReverseControl,
@@ -505,6 +509,7 @@ const HerdScreenContent = memo(function HerdContent({
     ({ item }: ListRenderItemInfo<HerdQueueAgent>) => (
       <AnimationVisibilityProvider enabled={viewableKeys.has(herdAgentKey(item))}>
         <AgentRow
+          client={getClient?.(item.hostId)}
           collapsed={collapsedGroups.has(herdAgentKey(item))}
           onToggleGroup={toggleGroup}
           item={item}
@@ -524,6 +529,7 @@ const HerdScreenContent = memo(function HerdContent({
     ),
     [
       agentActionKey,
+      getClient,
       closeTab,
       closingTabKey,
       collapsedGroups,
@@ -1098,6 +1104,7 @@ function commandSheetStyle(bottomInset: number) {
 
 const AgentRow = memo(
   function AgentRowComponent({
+    client,
     item,
     collapsed,
     onToggleGroup,
@@ -1113,6 +1120,7 @@ const AgentRow = memo(
     busy,
     actionPending,
   }: {
+    client?: HerdrClient;
     item: HerdQueueAgent;
     collapsed: boolean;
     onToggleGroup: (item: HerdQueueAgent) => void;
@@ -1131,6 +1139,12 @@ const AgentRow = memo(
     const { colors } = useTheme();
     const { t } = useTranslation();
     const { agent } = item;
+    const git = useCachedRemoteGitState(client, agent.foreground_cwd || agent.cwd);
+    const gitLabel = [
+      git.branch,
+      git.changedFiles === undefined ? undefined
+        : git.changedFiles ? t('herd.gitChanges', { count: git.changedFiles }) : t('herd.gitClean'),
+    ].filter(Boolean).join(HERD_AGENT_LABEL_SEPARATOR);
     const rowLabel = herdAgentLabel(item);
     const conversationTitle = useTranscriptTitle(item.hostId, agent);
     const translateX = useSharedValue(0);
@@ -1159,6 +1173,7 @@ const AgentRow = memo(
       : reverseControlStateLabel(preference, t);
     const context = [
       agentLabel,
+      gitLabel,
       ...(showHost ? [item.hostLabel] : []),
       ...(preference?.reverseControl && (!preference.connected || readOnly)
         ? [reverseControlLabel]

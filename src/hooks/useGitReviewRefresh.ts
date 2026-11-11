@@ -1,8 +1,8 @@
-import { useEffect, useEffectEvent, useRef } from 'react';
+import { useEffect, useEffectEvent } from 'react';
 import { AppState } from 'react-native';
 
-/** Refresh only on lifecycle transitions, never on every snapshot or render. */
-export function useGitReviewRefresh(enabled: boolean, agentWorking: boolean, onRefresh: () => void) {
+/** Revalidate lazily on resume; agent completion is handled by runtime events. */
+export function useGitReviewRefresh(enabled: boolean, onRefresh: () => void) {
   const refresh = useEffectEvent(() => { if (enabled) onRefresh(); });
   useEffect(() => {
     let previous = AppState.currentState;
@@ -12,9 +12,4 @@ export function useGitReviewRefresh(enabled: boolean, agentWorking: boolean, onR
     });
     return () => subscription.remove();
   }, []);
-  const wasWorking = useRef(agentWorking);
-  useEffect(() => {
-    if (wasWorking.current && !agentWorking) refresh();
-    wasWorking.current = agentWorking;
-  }, [agentWorking]);
 }

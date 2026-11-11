@@ -10,29 +10,29 @@ jest.mock('react-native', () => ({ AppState: {
   addEventListener: jest.fn((_event: string, callback: typeof mockOnState) => { mockOnState = callback; return { remove: mockRemove }; }),
 } }));
 
-it('refreshes on resume and agent completion using current props, and unsubscribes on close', () => {
+it('revalidates on resume using current props without polling, and unsubscribes on close', () => {
   const first = jest.fn();
   const current = jest.fn();
   let tree: ReactTestRenderer;
-  function Harness({ enabled, working, refresh }: { enabled: boolean; working: boolean; refresh: () => void }) {
-    useGitReviewRefresh(enabled, working, refresh);
+  function Harness({ enabled, refresh }: { enabled: boolean; refresh: () => void }) {
+    useGitReviewRefresh(enabled, refresh);
     return null;
   }
-  act(() => { tree = create(<Harness enabled working refresh={first} />); });
+  jest.useFakeTimers();
+  act(() => { tree = create(<Harness enabled refresh={first} />); });
+  act(() => { jest.advanceTimersByTime(300_000); });
   expect(first).not.toHaveBeenCalled();
-  act(() => { tree.update(<Harness enabled working refresh={current} />); });
+  act(() => { tree.update(<Harness enabled refresh={current} />); });
   act(() => { mockOnState('background'); mockOnState('active'); mockOnState('active'); });
   expect(current).toHaveBeenCalledTimes(1);
   expect(first).not.toHaveBeenCalled();
-  act(() => { tree.update(<Harness enabled working={false} refresh={current} />); });
-  expect(current).toHaveBeenCalledTimes(2);
-  act(() => { tree.update(<Harness enabled working={false} refresh={current} />); });
-  expect(current).toHaveBeenCalledTimes(2);
-  act(() => { tree.update(<Harness enabled={false} working refresh={current} />); });
+  act(() => { tree.update(<Harness enabled refresh={current} />); });
+  expect(current).toHaveBeenCalledTimes(1);
+  act(() => { tree.update(<Harness enabled={false} refresh={current} />); });
   act(() => { mockOnState('inactive'); mockOnState('active'); });
-  act(() => { tree.update(<Harness enabled={false} working={false} refresh={current} />); });
-  expect(current).toHaveBeenCalledTimes(2);
+  expect(current).toHaveBeenCalledTimes(1);
   expect(AppState.addEventListener).toHaveBeenCalledTimes(1);
   act(() => { tree.unmount(); });
   expect(mockRemove).toHaveBeenCalledTimes(1);
+  jest.useRealTimers();
 });

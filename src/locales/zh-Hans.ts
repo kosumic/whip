@@ -980,6 +980,8 @@ export const zhHans = {
   'herd.mergedQueue': '{{hosts}} · 合并队列',
   'herd.focused': '专注',
   'herd.untitledTask': '无标题任务',
+  'herd.gitClean': '无更改',
+  'herd.gitChanges': '{{count}} 项更改',
   'herd.openAgentTerminal': '在 {{host}} 上打开 {{agent}} 终端',
   'rail.allHosts': '所有主机',
   'rail.newHostSession': '新主机会话',

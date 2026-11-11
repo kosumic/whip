@@ -1,6 +1,6 @@
 import {
   discoverRemoteGitRepository,
-  GIT_STATUS_STALE_TIME_MS,
+  GIT_STATE_STALE_TIME_MS,
   gitStatusQueryOptions,
   gitSummaryQueryOptions,
   gitCommitFilesQueryOptions,
@@ -53,7 +53,7 @@ test('shares simultaneous status requests and reuses fresh data until invalidate
   await loadRemoteGitStatus(connection, repository.root);
   expect(native.gitStatus).toHaveBeenCalledTimes(2);
 
-  jest.advanceTimersByTime(GIT_STATUS_STALE_TIME_MS);
+  jest.advanceTimersByTime(GIT_STATE_STALE_TIME_MS);
   expect(hasFreshGitStatus(connection, repository.root)).toBe(false);
   await loadRemoteGitStatus(connection, repository.root);
   expect(native.gitStatus).toHaveBeenCalledTimes(3);
@@ -117,6 +117,44 @@ test('shares discovery and diff reads only when their parameters match', async (
     loadRemoteGitDiff(connection, repository, status, 'compact', [{ key: 'gap', before: 20, after: 0 }]),
   ]);
   expect(native.gitDiff).toHaveBeenCalledTimes(3);
+});
+
+test.each([repository, null])('caches discovery per directory for one minute, including %s', async result => {
+  const { connection, native } = setup();
+  native.discoverGitRepository.mockResolvedValue(result);
+  await discoverRemoteGitRepository(connection, '/repo/child');
+  jest.advanceTimersByTime(59_999);
+  await expect(discoverRemoteGitRepository(connection, '/repo/child')).resolves.toEqual(result);
+  expect(native.discoverGitRepository).toHaveBeenCalledTimes(1);
+  await discoverRemoteGitRepository(connection, '/other');
+  expect(native.discoverGitRepository).toHaveBeenCalledTimes(2);
+  jest.advanceTimersByTime(1);
+  await discoverRemoteGitRepository(connection, '/repo/child');
+  expect(native.discoverGitRepository).toHaveBeenCalledTimes(3);
+});
+
+test('refreshing a repository invalidates its cached directory discoveries without invalidating other repositories', async () => {
+  const { connection, native } = setup();
+  await discoverRemoteGitRepository(connection, '/repo/child');
+  native.discoverGitRepository.mockResolvedValueOnce({ root: '/other', hasHead: true });
+  await discoverRemoteGitRepository(connection, '/other');
+  await invalidateRemoteGitQueries(connection, repository.root);
+  await discoverRemoteGitRepository(connection, '/repo/child');
+  await discoverRemoteGitRepository(connection, '/other');
+  expect(native.discoverGitRepository).toHaveBeenCalledTimes(3);
+});
+
+test('refreshing a repository discards pending discovery in its subdirectories', async () => {
+  const { connection, native } = setup();
+  let finish!: (value: typeof repository | null) => void;
+  native.discoverGitRepository.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const obsolete = discoverRemoteGitRepository(connection, '/repo/child').catch((reason: unknown) => reason);
+  await invalidateRemoteGitQueries(connection, repository.root);
+  expect(isCancelledError(await obsolete)).toBe(true);
+  await expect(discoverRemoteGitRepository(connection, '/repo/child')).resolves.toEqual(repository);
+  finish(null);
+  await expect(discoverRemoteGitRepository(connection, '/repo/child')).resolves.toEqual(repository);
+  expect(native.discoverGitRepository).toHaveBeenCalledTimes(2);
 });
 
 test('status invalidation allows an already opening diff viewer to finish', async () => {

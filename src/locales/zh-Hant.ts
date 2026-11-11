@@ -980,6 +980,8 @@ export const zhHant: Record<string, string> = {
   'herd.mergedQueue': '{{hosts}} · 合併佇列',
   'herd.focused': '已聚焦',
   'herd.untitledTask': '未命名工作',
+  'herd.gitClean': '無變更',
+  'herd.gitChanges': '{{count}} 項變更',
   'herd.openAgentTerminal': '在 {{host}} 上開啟 {{agent}} 的終端機',
   'rail.allHosts': '所有主機',
   'rail.newHostSession': '新增主機工作階段',

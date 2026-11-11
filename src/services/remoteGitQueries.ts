@@ -1,10 +1,10 @@
-import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query';
+import { infiniteQueryOptions, queryOptions, type Query } from '@tanstack/react-query';
 import type { RuntimeGitDiffContext, RuntimeGitDiffExpansion, RuntimeGitHistoryCursor, RuntimeGitSummary } from 'react-native-whip-ssh';
 import type { RemoteGitRepository, RemoteGitStatusEntry } from '../lib/remoteGit';
 import type { HerdrClient } from './HerdrClient';
 import { appQueryClient } from './appQueryClient';
 
-export const GIT_STATUS_STALE_TIME_MS = 30_000;
+export const GIT_STATE_STALE_TIME_MS = 60_000;
 const GIT_QUERY_KIND = {
   status: 'status',
   summary: 'summary',
@@ -55,7 +55,7 @@ function assertCurrent(connection: RemoteGitConnection) {
 export function gitStatusQueryOptions(connection: RemoteGitConnection, root: string) {
   return queryOptions({
     queryKey: [...connectionKey(connection), root, GIT_QUERY_KIND.status],
-    staleTime: GIT_STATUS_STALE_TIME_MS,
+    staleTime: GIT_STATE_STALE_TIME_MS,
     queryFn: async () => {
       assertCurrent(connection);
       const changes = await connection.native.gitStatus(root);
@@ -76,7 +76,7 @@ export function gitSummaryQueryOptions(connection: RemoteGitConnection, root: st
     },
     initialPageParam: undefined as RuntimeGitHistoryCursor | undefined,
     getNextPageParam: page => page.next,
-    staleTime: GIT_STATUS_STALE_TIME_MS,
+    staleTime: GIT_STATE_STALE_TIME_MS,
   });
 }
 
@@ -96,7 +96,7 @@ export function gitCommitFilesQueryOptions(connection: RemoteGitConnection, root
 export function hasFreshGitStatus(connection: RemoteGitConnection, root: string): boolean {
   const state = appQueryClient.getQueryState(gitStatusQueryOptions(connection, root).queryKey);
   return state?.status === 'success' && !state.isInvalidated
-    && Date.now() - state.dataUpdatedAt < GIT_STATUS_STALE_TIME_MS;
+    && Date.now() - state.dataUpdatedAt < GIT_STATE_STALE_TIME_MS;
 }
 
 export function loadRemoteGitStatus(connection: RemoteGitConnection, root: string) {
@@ -108,12 +108,47 @@ export function discoverRemoteGitRepository(connection: RemoteGitConnection, pat
   assertCurrent(connection);
   return appQueryClient.fetchQuery({
     queryKey: [...connectionKey(connection), path, GIT_QUERY_KIND.repository],
+    staleTime: GIT_STATE_STALE_TIME_MS,
     queryFn: async () => {
       const repository = await connection.native.discoverGitRepository(path);
       assertCurrent(connection);
       return repository;
     },
   });
+}
+
+/** Read known roots without probing a tab's directory over SSH. */
+export function cachedRemoteGitRepository(connection: RemoteGitConnection, path: string): RemoteGitRepository | null {
+  const prefix = connectionKey(connection);
+  const exact = appQueryClient.getQueryData<RemoteGitRepository | null>([...prefix, path, GIT_QUERY_KIND.repository]);
+  if (exact !== undefined) return exact;
+  let nearest: RemoteGitRepository | null = null;
+  for (const query of appQueryClient.getQueryCache().findAll({ queryKey: prefix })) {
+    if (query.queryKey.at(-1) !== GIT_QUERY_KIND.repository) continue;
+    const repository = query.state.data as RemoteGitRepository | null | undefined;
+    if (repository && (path === repository.root || path.startsWith(repository.root === '/' ? '/' : `${repository.root}/`))
+      && (!nearest || repository.root.length > nearest.root.length)) nearest = repository;
+  }
+  return nearest;
+}
+
+export async function refreshCachedRemoteGitState(connection: RemoteGitConnection, root: string) {
+  const status = gitStatusQueryOptions(connection, root);
+  const summary = gitSummaryQueryOptions(connection, root);
+  await Promise.allSettled([
+    ...(appQueryClient.getQueryState(status.queryKey)?.fetchStatus === 'fetching'
+      ? [appQueryClient.fetchQuery(status)] : []),
+    ...(appQueryClient.getQueryState(summary.queryKey)?.fetchStatus === 'fetching'
+      ? [appQueryClient.fetchInfiniteQuery(summary)] : []),
+  ]);
+  const hasStatus = appQueryClient.getQueryData(status.queryKey) !== undefined;
+  const hasSummary = appQueryClient.getQueryData(summary.queryKey) !== undefined;
+  await invalidateRemoteGitQueries(connection, root);
+  await Promise.all([
+    discoverRemoteGitRepository(connection, root),
+    ...(hasStatus ? [appQueryClient.fetchQuery(status)] : []),
+    ...(hasSummary ? [appQueryClient.fetchInfiniteQuery(summary)] : []),
+  ]);
 }
 
 export function loadRemoteGitDiff(
@@ -139,20 +174,27 @@ export function loadRemoteGitDiff(
 }
 
 export async function invalidateRemoteGitQueries(connection: RemoteGitConnection, root?: string) {
-  const queryKey = root ? [...connectionKey(connection), root] : connectionKey(connection);
+  const queryKey = connectionKey(connection);
+  const matchesRoot = (query: Query) => {
+    const path = query.queryKey[queryKey.length];
+    return !root || path === root || (query.queryKey.at(-1) === GIT_QUERY_KIND.repository
+      && ((typeof path === 'string' && path.startsWith(root === '/' ? root : `${root}/`))
+        || (query.state.data as RemoteGitRepository | null | undefined)?.root === root));
+  };
   // Prevent old metadata reads from repopulating the cache after a mutation.
   // A status refresh can overlap a viewer's initial diff read; let that finish.
   await appQueryClient.cancelQueries({
     queryKey,
     predicate: query => {
       const kind = query.queryKey.at(-1);
-      return kind === GIT_QUERY_KIND.status || kind === GIT_QUERY_KIND.repository || kind === GIT_QUERY_KIND.summary;
+      return matchesRoot(query) && (kind === GIT_QUERY_KIND.status || kind === GIT_QUERY_KIND.repository || kind === GIT_QUERY_KIND.summary);
     },
   });
-  await appQueryClient.invalidateQueries({ queryKey, refetchType: 'none' });
+  await appQueryClient.invalidateQueries({ queryKey, predicate: matchesRoot, refetchType: 'none' });
   await appQueryClient.refetchQueries({
     queryKey,
     type: 'active',
-    predicate: query => query.queryKey.at(-1) === GIT_QUERY_KIND.summary || query.queryKey.at(-2) === GIT_QUERY_KIND.commitFiles,
+    predicate: query => matchesRoot(query)
+      && (query.queryKey.at(-1) === GIT_QUERY_KIND.summary || query.queryKey.at(-2) === GIT_QUERY_KIND.commitFiles),
   });
 }

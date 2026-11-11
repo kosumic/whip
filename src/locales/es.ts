@@ -980,6 +980,8 @@ export const es = {
   'herd.mergedQueue': '{{hosts}} · cola fusionada',
   'herd.focused': 'Enfocado',
   'herd.untitledTask': 'Tarea sin título',
+  'herd.gitClean': 'limpio',
+  'herd.gitChanges': '{{count}} cambios',
   'herd.openAgentTerminal': 'Abra el terminal {{agent}} en {{host}}',
   'rail.allHosts': 'Todos los hosts',
   'rail.newHostSession': 'Nueva sesión de host',

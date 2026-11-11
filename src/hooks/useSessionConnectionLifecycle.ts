@@ -51,6 +51,7 @@ import {
 } from '../services/performanceTrace';
 import { runSessionConnection, sessionConnectionPlatform } from '../services/sessionConnections';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
+import { refreshRemoteFilesOnAgentDone } from '../services/remoteFilesAgentRefresh';
 import type { ConnectionProfile, HerdrSnapshot, HostProfile } from '../types';
 
 export function useSessionConnectionLifecycle({
@@ -194,6 +195,10 @@ export function useSessionConnectionLifecycle({
         const snapshot = runtime.client.snapshotFromHostState(hostState);
         if (hostState.freshness === 'fresh') {
           herdrSnapshotCache.schedule(sessionId, runtime.client.native);
+          reportBackgroundFailure(
+            refreshRemoteFilesOnAgentDone(runtime.client, snapshot, transitions),
+            'remote-files-agent-done',
+          );
         }
         handleAgentStateChange({
           sessionId,
