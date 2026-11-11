@@ -15,8 +15,8 @@ use crate::github::resources::{
     parse_resource, positive_id, resource_endpoint, validate_merge_response,
 };
 use crate::github::{
-    DISCOVERY_INVALID_PATH_EXIT, DISCOVERY_MISSING_GH_EXIT, GithubDiscovery, GithubDiscoveryStatus,
-    GithubEntry, GithubFilesPage, GithubListState, GithubMutation, GithubPage, GithubRepository,
+    DISCOVERY_INVALID_PATH_EXIT, GithubDiscovery, GithubDiscoveryStatus, GithubEntry,
+    GithubFilesPage, GithubListState, GithubMutation, GithubPage, GithubRepository,
     GithubRepositoryCounts, GithubRepositoryDetails, GithubResource, GithubSection, api_script,
     comment_request, comments_endpoint, discovery_script, parse_comment, parse_comments,
     parse_details, parse_discovery, parse_license_url, parse_page,
@@ -118,7 +118,6 @@ impl HostRuntime {
                 let output = execute_github_read(&inner, generation, "discovery", &command).await?;
                 validate_generation(&inner, generation)?;
                 let status = match output.exit_status {
-                    Some(DISCOVERY_MISSING_GH_EXIT) => GithubDiscoveryStatus::MissingGh,
                     Some(DISCOVERY_INVALID_PATH_EXIT) => GithubDiscoveryStatus::InvalidPath,
                     Some(0) if !output.stdout_truncated => GithubDiscoveryStatus::NotGithub,
                     _ => {

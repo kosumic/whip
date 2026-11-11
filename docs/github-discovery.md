@@ -11,12 +11,12 @@ confirmed negative or inaccessible directory permits fallback. An SSH/probe
 failure stops the search so an unknown foreground repository cannot be replaced
 by an unrelated workspace repository. Each search probes at most three paths.
 
-Discovery is local to the SSH host and requires no GitHub login or network
-request. `gh` must be available in the host's **login shell PATH**. A missing
-CLI, inaccessible directory, SSH command-channel failure, and confirmed
-non-GitHub directory have separate outcomes. The GitHub control shows pending
-or unresolved status; tap it for details and Retry discovery. Confirmed
-non-GitHub locations hide the control. Keyboard-open hiding is unchanged.
+Discovery reads the repository's `origin` URL using Git in the host's login
+shell. It requires no `gh`, GitHub login or network request. Only an `origin`
+on `github.com` qualifies; other remotes such as `upstream` do not. HTTPS, SSH
+and Git URLs are supported. The GitHub control appears only after a matching
+repository is found. Pending, unresolved and non-GitHub locations hide the
+control. Keyboard-open hiding is unchanged.
 
 For standalone SSH shells, Whip consumes OSC 7 `file://hostname/absolute/path`
 reports from that shell's output. Parsing is bounded to 4 KiB per sequence,

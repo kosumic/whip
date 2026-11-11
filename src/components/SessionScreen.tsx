@@ -18,7 +18,6 @@ import { PRIORITY_CHAT_VIEWPORT_CAPACITY } from '../lib/chatViewportState';
 import { VoiceConversationSettingsContext } from '../lib/voiceConversationSettingsContext';
 import { useViewedAgent } from '../hooks/useViewedAgent';
 import { useGithubRepository } from '../hooks/useGithubRepository';
-import { GithubDiscoveryPopup } from './GithubDiscoveryPopup';
 import { useSshShellDirectory } from '../hooks/useSshShellDirectory';
 import { useTranscriptTabTitles } from '../hooks/useTranscriptTabTitles';
 import { ScreenUpdates } from './ScreenUpdates';
@@ -354,7 +353,6 @@ export function SessionScreen({
   const [appAlert, setAppAlert] = useState<AppAlertContent | null>(null);
   const [linkScanRequest, setLinkScanRequest] = useState(0);
   const [linksOpen, setLinksOpen] = useState(false);
-  const [githubStatusRequest, setGithubStatusRequest] = useState<string | null>(null);
   const [terminalLinks, setTerminalLinks] = useState<string[]>([]);
   const [linksBusy, setLinksBusy] = useState(false);
   const [linksError, setLinksError] = useState<string | null>(null);
@@ -552,8 +550,6 @@ export function SessionScreen({
     activePane.cwd,
     snapshot.workspaces.find(item => item.workspace_id === activePane.workspace_id)?.worktree?.checkout_path,
   ] : [shellDirectory], visible && activeTerminalSession?.status === 'connected', activeTerminalSession?.terminalId);
-  const githubStatusLabel = t(`github.discovery.${github.status}`);
-  const githubStatusScope = `${hostSessionId}:${activeTerminalSession?.terminalId}`;
   useEffect(() => {
     if (client || !activePaneId) return;
     setWorkspaceId(activePaneWorkspaceId || '');
@@ -1904,15 +1900,11 @@ export function SessionScreen({
             }
             onRequestAttachment={openAttachments}
             onRequestFiles={openFileManager}
-            githubStatusLabel={github.status === 'found' ? undefined : githubStatusLabel}
-            githubDiscovering={github.status !== 'found' && github.retrying}
-            onRequestGithub={github.status !== 'inactive' && github.status !== 'not-github' ? () => {
+            onRequestGithub={github.repository ? () => {
               if (github.repository) {
                 Linking.openURL(github.repository.url).catch(error => {
                   showAppAlert(t('terminal.linkOpenFailed'), error);
                 });
-              } else {
-                setGithubStatusRequest(githubStatusScope);
               }
             } : undefined}
             onRequestLinks={scanTerminalLinks}
@@ -2433,13 +2425,6 @@ export function SessionScreen({
           </GlassSurface>
         </Modal>
       </View>
-      <GithubDiscoveryPopup
-        visible={visible && githubStatusRequest === githubStatusScope}
-        message={githubStatusLabel}
-        busy={github.retrying}
-        onRetry={github.status !== 'unknown-cwd' && github.status !== 'inactive' && github.status !== 'found' ? github.retry : undefined}
-        onClose={() => setGithubStatusRequest(null)}
-      />
       <AppAlertPopup
         message={visibleAppAlert?.message}
         title={visibleAppAlert?.title || ''}

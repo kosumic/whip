@@ -148,7 +148,8 @@ fn discovery_distinguishes_local_negatives_from_probe_and_ssh_failures() -> Test
         for (status, stdout, expected) in [
             (0, "remote.origin.url git@github.com:owner/repo.git\n", GithubDiscoveryStatus::Found),
             (0, "", GithubDiscoveryStatus::NotGithub),
-            (41, "", GithubDiscoveryStatus::MissingGh),
+            (0, "remote.upstream.url https://github.com/owner/repo.git\n", GithubDiscoveryStatus::NotGithub),
+            (0, "remote.origin.url https://gitlab.com/owner/repo.git\nremote.upstream.url https://github.com/owner/repo.git\n", GithubDiscoveryStatus::NotGithub),
             (42, "", GithubDiscoveryStatus::InvalidPath),
         ] {
             fixture.respond_next_exec(stdout.as_bytes(), b"", Some(status));

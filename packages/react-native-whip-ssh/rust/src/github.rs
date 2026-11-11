@@ -14,7 +14,6 @@ pub use resources::*;
 
 pub(crate) const GITHUB_PAGE_SIZE: usize = 10;
 const GITHUB_HOST: &str = "github.com";
-pub(crate) const DISCOVERY_MISSING_GH_EXIT: u32 = 41;
 pub(crate) const DISCOVERY_INVALID_PATH_EXIT: u32 = 42;
 pub(crate) const MAX_GITHUB_COMMENT_CHARS: usize = 65_536;
 
@@ -109,11 +108,10 @@ pub struct GithubPage {
 }
 
 pub(crate) fn discovery_script(directory: &str) -> String {
-    // This local probe deliberately requires neither authentication nor network.
+    // This local probe needs only Git, without a GitHub CLI, login or network.
     // Run through the host's login shell so Homebrew/Nix installations are found.
     format!(
-        r#"command -v gh >/dev/null 2>&1 || exit {DISCOVERY_MISSING_GH_EXIT}
-cd {} 2>/dev/null || exit {DISCOVERY_INVALID_PATH_EXIT}
+        r#"cd {} 2>/dev/null || exit {DISCOVERY_INVALID_PATH_EXIT}
 if ! probe=$(LC_ALL=C git rev-parse --is-inside-work-tree 2>&1); then
     case "$probe" in
         *"not a git repository (or any"*) exit 0;;
@@ -121,7 +119,7 @@ if ! probe=$(LC_ALL=C git rev-parse --is-inside-work-tree 2>&1); then
     esac
 fi
 [ "$probe" = true ] || exit 0
-git config --get-regexp '^remote\..*\.url$' || [ "$?" -eq 1 ]"#,
+git config --get-regexp '^remote\.origin\.url$' || [ "$?" -eq 1 ]"#,
         shell_quote(directory),
     )
 }
@@ -158,20 +156,12 @@ fn valid_slug(path: &str) -> Option<String> {
 }
 
 pub(crate) fn parse_discovery(directory: String, output: &str) -> Option<GithubRepository> {
-    let mut remotes: Vec<_> = output
-        .lines()
-        .filter_map(|line| {
-            let (key, remote) = line.split_once(char::is_whitespace)?;
-            let priority = match key {
-                "remote.origin.url" => 0,
-                "remote.upstream.url" => 1,
-                _ => 2,
-            };
-            Some((priority, github_slug(remote.trim())?))
-        })
-        .collect();
-    remotes.sort_by_key(|(priority, _)| *priority);
-    let (_, name_with_owner) = remotes.into_iter().next()?;
+    let name_with_owner = output.lines().find_map(|line| {
+        let (key, remote) = line.split_once(char::is_whitespace)?;
+        (key == "remote.origin.url")
+            .then(|| github_slug(remote.trim()))
+            .flatten()
+    })?;
     Some(GithubRepository {
         directory,
         url: format!("https://{GITHUB_HOST}/{name_with_owner}"),
@@ -545,7 +535,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn recognizes_github_remotes_and_prefers_origin() {
+    fn recognizes_github_origin_urls() {
         for remote in [
             "git@github.com:owner/repo.git",
             "https://github.com/owner/repo.git",
@@ -560,7 +550,7 @@ mod tests {
     }
 
     #[test]
-    fn hides_non_github_repositories_and_missing_cli() {
+    fn hides_repositories_without_a_github_origin() {
         for remote in [
             "https://gitlab.com/owner/repo",
             "https://github.com.evil.test/owner/repo",
@@ -578,6 +568,13 @@ mod tests {
             )
             .is_none()
         );
+        for remotes in [
+            "remote.upstream.url https://github.com/owner/repo.git",
+            "remote.origin.url https://gitlab.com/owner/repo\nremote.upstream.url https://github.com/owner/repo.git",
+            "remote.other.url git@github.com:owner/repo.git",
+        ] {
+            assert!(parse_discovery("/repo".to_owned(), remotes).is_none());
+        }
     }
 
     #[test]
@@ -717,7 +714,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn local_probe_requires_both_a_github_remote_and_an_installed_cli() {
+    fn local_probe_requires_a_github_origin_without_gh() {
         use std::process::Command;
 
         let temp = tempfile::tempdir().unwrap();
@@ -728,6 +725,12 @@ mod tests {
         for args in [
             vec!["init", "--quiet"],
             vec!["remote", "add", "origin", "git@github.com:owner/repo.git"],
+            vec![
+                "remote",
+                "add",
+                "upstream",
+                "https://github.com/upstream/repo.git",
+            ],
         ] {
             let output = Command::new("git")
                 .args(args)
@@ -755,9 +758,7 @@ mod tests {
                 parse_discovery(path.to_owned(), &String::from_utf8(output.stdout).unwrap()),
             )
         };
-        assert_eq!(probe(directory), (Some(41), None));
-        // The probe only needs command discovery; it must never invoke gh.
-        std::os::unix::fs::symlink(git.trim(), bin.join("gh")).unwrap();
+        // PATH contains Git alone: discovery must succeed without gh installed.
         assert_eq!(probe(directory).1.unwrap().name_with_owner, "owner/repo");
         assert_eq!(probe("/nonexistent/whip-302"), (Some(42), None));
         assert_eq!(probe(temp.path().to_str().unwrap()), (Some(0), None));
@@ -768,6 +769,13 @@ mod tests {
                 "origin",
                 "https://gitlab.com/owner/repo",
             ])
+            .current_dir(directory)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert_eq!(probe(directory), (Some(0), None));
+        let output = Command::new("git")
+            .args(["remote", "remove", "origin"])
             .current_dir(directory)
             .output()
             .unwrap();
