@@ -44,6 +44,7 @@ jest.mock('lucide-react-native/icons/folder', () => ('Folder'));
 jest.mock('lucide-react-native/icons/folder-input', () => ('FolderInput'));
 jest.mock('lucide-react-native/icons/folder-open', () => ('FolderOpen'));
 jest.mock('lucide-react-native/icons/git-compare-arrows', () => ('GitCompareArrows'));
+jest.mock('lucide-react-native/icons/git-branch', () => ('GitBranch'));
 jest.mock('lucide-react-native/icons/image', () => ('Image'));
 jest.mock('lucide-react-native/icons/info', () => ('Info'));
 jest.mock('lucide-react-native/icons/pencil', () => ('Pencil'));
@@ -75,6 +76,7 @@ jest.mock('react-native', () => {
   }, native);
 });
 jest.mock('react-i18next', () => ({ useTranslation: () => ({
+  i18n: { resolvedLanguage: 'en-US' },
   t: (key: string, values?: { name?: string; speed?: string; eta?: string; minutes?: number; seconds?: number }) => {
     if (key === 'files.networkRate') return `${key}:${values?.speed}:${values?.eta}`;
     if (key === 'files.etaSeconds') return `~${values?.seconds} s`;
@@ -155,6 +157,7 @@ function listing(path: string): RuntimeRemoteDirectoryListing {
 }
 
 const repository: RuntimeGitRepository = { root: '/repo', hasHead: true };
+const COMMIT_TIME = '2026-11-10T12:34:00Z';
 const changes: RuntimeGitStatusEntry[] = [{
   path: 'src/file.ts', absolutePath: '/repo/src/file.ts', originalPath: null,
   indexStatus: ' ', worktreeStatus: 'M',
@@ -172,6 +175,8 @@ let native: {
   renameRemotePath: jest.Mock;
   discoverGitRepository: jest.Mock;
   gitStatus: jest.Mock;
+  gitSummary: jest.Mock;
+  gitCommitFiles: jest.Mock;
   gitDiff: jest.Mock;
 };
 let client: HerdrClient;
@@ -212,12 +217,138 @@ beforeEach(() => {
     renameRemotePath: jest.fn().mockResolvedValue(undefined),
     discoverGitRepository: jest.fn().mockResolvedValue(null),
     gitStatus: jest.fn().mockResolvedValue(changes),
+    gitSummary: jest.fn().mockResolvedValue({ branch: 'main', commits: [] }),
+    gitCommitFiles: jest.fn().mockResolvedValue([]),
     gitDiff: jest.fn().mockResolvedValue({ kind: 'empty', rows: [], additions: 0, deletions: 0, hunkRows: [], truncated: false, revision: 'test' }),
   };
   client = { native, activeNative: native } as unknown as HerdrClient;
   props = { visible: true, client, hostId: 'host', initialPath: '/repo', onPathChange: jest.fn(), onClose: jest.fn() };
 });
 afterEach(() => { act(() => tree?.unmount()); jest.restoreAllMocks(); });
+
+async function flushGitQueries() {
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+}
+
+it('shows the branch and recent commits even for a clean working tree and refreshes them', async () => {
+  native.discoverGitRepository.mockResolvedValue(repository);
+  jest.mocked(loadRemoteGitMode).mockResolvedValue(true);
+  native.gitStatus.mockResolvedValue([]);
+  native.gitSummary.mockResolvedValue({ branch: 'feature/review', commits: [{ id: 'a'.repeat(40), shortId: 'aaaaaaa', subject: 'Review history', author: 'Whip', committedAt: COMMIT_TIME }] });
+  await mount();
+  await flushGitQueries();
+  expect(text()).toContain('feature/review');
+  expect(text()).toContain('Review history');
+  const timestamp = tree.root.findAllByType(Text).find(node => typeof node.props.children === 'string' && node.props.children.includes('2026'));
+  expect(timestamp?.props.children).toMatch(/\d{1,2}:\d{2}/);
+  expect(text()).toContain('files.gitClean');
+  native.gitSummary.mockResolvedValue({ branch: 'main', commits: [] });
+  await act(async () => { await button('files.refresh').props.onPress(); });
+  await flushGitQueries();
+  expect(text()).not.toContain('feature/review');
+  expect(text()).toContain('main');
+  expect(text()).toContain('files.gitNoCommits');
+});
+
+it('loads three recent commits at a time and hides Load more at the end of history', async () => {
+  const commits = Array.from({ length: 8 }, (_, index) => ({
+    id: index.toString(16).padStart(40, '0'), shortId: `commit${index}`, subject: `Change ${index}`, author: 'Whip', committedAt: COMMIT_TIME,
+  }));
+  const firstCursor = { head: commits[0].id, skip: 3 };
+  const secondCursor = { head: commits[0].id, skip: 6 };
+  native.discoverGitRepository.mockResolvedValue(repository);
+  jest.mocked(loadRemoteGitMode).mockResolvedValue(true);
+  native.gitSummary
+    .mockResolvedValueOnce({ branch: 'main', commits: commits.slice(0, 3), next: firstCursor })
+    .mockResolvedValueOnce({ branch: 'main', commits: commits.slice(3, 6), next: secondCursor })
+    .mockResolvedValueOnce({ branch: 'main', commits: commits.slice(6) });
+  const commitButtons = () => tree.root.findAllByType(Button).filter(node => node.props.accessibilityLabel === 'files.gitOpenCommit');
+  await mount();
+  await flushGitQueries();
+  expect(commitButtons()).toHaveLength(3);
+  expect(native.gitSummary).toHaveBeenLastCalledWith(repository.root, undefined);
+  await act(async () => { button('files.gitLoadMore').props.onPress(); });
+  await flushGitQueries();
+  expect(commitButtons()).toHaveLength(6);
+  expect(native.gitSummary).toHaveBeenLastCalledWith(repository.root, firstCursor);
+  await act(async () => { button('files.gitLoadMore').props.onPress(); });
+  await flushGitQueries();
+  expect(commitButtons()).toHaveLength(8);
+  expect(native.gitSummary).toHaveBeenLastCalledWith(repository.root, secondCursor);
+  expect(hasButton('files.gitLoadMore')).toBe(false);
+});
+
+it('preserves loaded commits when loading more fails and retries the same page', async () => {
+  const commit = (id: number) => ({ id: id.toString(16).padStart(40, '0'), shortId: `commit${id}`, subject: `Change ${id}`, author: 'Whip', committedAt: COMMIT_TIME });
+  const cursor = { head: commit(1).id, skip: 3 };
+  native.discoverGitRepository.mockResolvedValue(repository);
+  jest.mocked(loadRemoteGitMode).mockResolvedValue(true);
+  native.gitSummary
+    .mockResolvedValueOnce({ branch: 'main', commits: [commit(1), commit(2), commit(3)], next: cursor })
+    .mockRejectedValueOnce(new Error('history unavailable'))
+    .mockResolvedValueOnce({ branch: 'main', commits: [commit(4), commit(5), commit(6)] });
+  await mount();
+  await flushGitQueries();
+  await act(async () => { button('files.gitLoadMore').props.onPress(); });
+  await flushGitQueries();
+  expect(text()).toContain('Change 1');
+  expect(text()).toContain('files.gitHistoryFailed');
+  await act(async () => { button('files.retry').props.onPress(); });
+  await flushGitQueries();
+  expect(text()).toContain('Change 6');
+  expect(native.gitSummary).toHaveBeenLastCalledWith(repository.root, cursor);
+  expect(hasButton('files.gitLoadMore')).toBe(false);
+});
+
+it('opens commit files in the diff viewer with context controls and preserves the commit during refresh', async () => {
+  const commit = { id: 'a'.repeat(40), shortId: 'aaaaaaa', subject: 'Remove old file', author: 'Whip', committedAt: COMMIT_TIME };
+  const deleted = { ...changes[0], path: 'gone.ts', absolutePath: '/repo/gone.ts', indexStatus: 'D', worktreeStatus: ' ' };
+  const added = { ...deleted, path: 'other.ts', absolutePath: '/repo/other.ts', indexStatus: 'A' };
+  native.discoverGitRepository.mockResolvedValue(repository);
+  jest.mocked(loadRemoteGitMode).mockResolvedValue(true);
+  jest.mocked(loadGitReviewState).mockResolvedValue({ context: 'compact', expansions: [], anchor: null });
+  native.gitSummary.mockResolvedValue({ branch: 'main', commits: [commit] });
+  native.gitCommitFiles.mockResolvedValue([deleted, added]);
+  await mount();
+  await flushGitQueries();
+  await act(async () => { button('files.gitOpenCommit').props.onPress(); });
+  await flushGitQueries();
+  expect(native.gitCommitFiles).toHaveBeenCalledWith(repository.root, commit.id);
+  expect(text()).toContain('gone.ts');
+  expect(native.gitDiff).toHaveBeenLastCalledWith(repository, deleted, 'compact', [], commit.id);
+  const viewer = () => tree.root.find(node => String(node.type) === 'RemoteGitDiffPreview');
+  expect(viewer().props.onOpenFile).toBeNull();
+  await act(async () => { await viewer().props.onLoadContext('full', []); });
+  expect(native.gitDiff).toHaveBeenLastCalledWith(repository, deleted, 'full', [], commit.id);
+  await act(async () => { await button('files.gitNextFile').props.onPress(); });
+  expect(native.gitDiff).toHaveBeenLastCalledWith(repository, added, 'compact', [], commit.id);
+  await act(async () => { await button('files.gitPreviousFile').props.onPress(); });
+  expect(native.gitDiff).toHaveBeenLastCalledWith(repository, deleted, 'compact', [], commit.id);
+  const diff = viewer().props.diff;
+  await act(async () => { viewer().props.onRefresh(); });
+  await flushGitQueries();
+  expect(viewer().props.diff).toBe(diff);
+  expect(text()).toContain(commit.subject);
+  await act(async () => { button('files.backToDirectory').props.onPress(); });
+  expect(text()).toContain('gone.ts');
+  await act(async () => { button('files.gitWorkingTree').props.onPress(); });
+  expect(text()).toContain('file.ts');
+  expect(text()).not.toContain('gone.ts');
+});
+
+it('keeps file diffs usable when history fails and supports retrying history', async () => {
+  native.discoverGitRepository.mockResolvedValue(repository);
+  jest.mocked(loadRemoteGitMode).mockResolvedValue(true);
+  native.gitSummary.mockRejectedValue(new Error('history unavailable'));
+  await mount();
+  await flushGitQueries();
+  expect(text()).toContain('files.gitHistoryFailed');
+  expect(hasButton('files.gitOpenChange')).toBe(true);
+  native.gitSummary.mockResolvedValue({ branch: 'recovered', commits: [] });
+  await act(async () => { button('files.retry').props.onPress(); });
+  await flushGitQueries();
+  expect(text()).toContain('recovered');
+});
 
 it('opens a 10 MiB text file without starting a full-file download or enabling editing', async () => {
   const entry: RuntimeRemoteFileEntry = { name: 'notes', path: '/repo/notes', kind: 'file', size: 10 * 1024 * 1024 };

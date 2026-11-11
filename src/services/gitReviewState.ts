@@ -17,8 +17,8 @@ const MAX_FILES = 100;
 const files = new Map<string, GitReviewState>();
 let preferredContext: RuntimeGitDiffContext | undefined;
 
-export function gitReviewKey(host: string, root: string, path: string): string {
-  return JSON.stringify([host, root, path]);
+export function gitReviewKey(host: string, root: string, path: string, commit?: string): string {
+  return JSON.stringify(commit ? [host, root, path, commit] : [host, root, path]);
 }
 
 export async function loadGitReviewState(key: string): Promise<GitReviewState> {

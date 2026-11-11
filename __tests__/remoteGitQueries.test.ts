@@ -2,6 +2,8 @@ import {
   discoverRemoteGitRepository,
   GIT_STATUS_STALE_TIME_MS,
   gitStatusQueryOptions,
+  gitSummaryQueryOptions,
+  gitCommitFilesQueryOptions,
   hasFreshGitStatus,
   invalidateRemoteGitQueries,
   loadRemoteGitDiff,
@@ -24,6 +26,8 @@ function setup() {
     gitStatus: jest.fn().mockResolvedValue([status]),
     discoverGitRepository: jest.fn().mockResolvedValue(repository),
     gitDiff: jest.fn().mockResolvedValue(diff),
+    gitSummary: jest.fn().mockResolvedValue({ branch: 'main', commits: [] }),
+    gitCommitFiles: jest.fn().mockResolvedValue([status]),
   };
   const connection: RemoteGitConnection = {
     native: native as unknown as RemoteGitConnection['native'],
@@ -123,4 +127,33 @@ test('status invalidation allows an already opening diff viewer to finish', asyn
   await invalidateRemoteGitQueries(connection, repository.root);
   finish(diff);
   await expect(pending).resolves.toBe(diff);
+});
+
+test('keeps working tree and different commit diffs separate while sharing identical reads', async () => {
+  const { connection, native } = setup();
+  await Promise.all([
+    loadRemoteGitDiff(connection, repository, status, 'compact'),
+    loadRemoteGitDiff(connection, repository, status, 'compact', [], 'first'),
+    loadRemoteGitDiff(connection, repository, status, 'compact', [], 'first'),
+    loadRemoteGitDiff(connection, repository, status, 'compact', [], 'second'),
+  ]);
+  expect(native.gitDiff).toHaveBeenCalledTimes(3);
+  await Promise.all([
+    appQueryClient.fetchQuery(gitCommitFilesQueryOptions(connection, repository.root, 'first')),
+    appQueryClient.fetchQuery(gitCommitFilesQueryOptions(connection, repository.root, 'second')),
+    appQueryClient.fetchQuery(gitCommitFilesQueryOptions(connection, repository.root, 'first')),
+  ]);
+  expect(native.gitCommitFiles).toHaveBeenCalledTimes(2);
+});
+
+test('rejects history from an obsolete connection instead of caching it', async () => {
+  const { connection, native } = setup();
+  let finish!: (value: { branch: string; commits: [] }) => void;
+  native.gitSummary.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const options = gitSummaryQueryOptions(connection, repository.root);
+  const pending = appQueryClient.fetchInfiniteQuery(options);
+  jest.mocked(connection.isCurrent).mockReturnValue(false);
+  finish({ branch: 'old', commits: [] });
+  await expect(pending).rejects.toThrow('Host connection changed');
+  expect(appQueryClient.getQueryData(options.queryKey)).toBeUndefined();
 });

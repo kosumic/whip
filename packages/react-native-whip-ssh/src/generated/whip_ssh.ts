@@ -10843,6 +10843,61 @@ const FfiConverterTypeDictationView = (() => {
   return new FFIConverter();
 })();
 
+export type GitCommit = {
+  id: string;
+  shortId: string;
+  subject: string;
+  author: string;
+  committedAt: string;
+};
+
+/**
+ * Generated factory for {@link GitCommit} record objects.
+ */
+export const GitCommit = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<GitCommit, ReturnType<typeof defaults>>(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<GitCommit>,
+  });
+})();
+
+const FfiConverterTypeGitCommit = (() => {
+  type TypeName = GitCommit;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        id: FfiConverterString.read(from),
+        shortId: FfiConverterString.read(from),
+        subject: FfiConverterString.read(from),
+        author: FfiConverterString.read(from),
+        committedAt: FfiConverterString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.id, into);
+      FfiConverterString.write(value.shortId, into);
+      FfiConverterString.write(value.subject, into);
+      FfiConverterString.write(value.author, into);
+      FfiConverterString.write(value.committedAt, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.id) +
+        FfiConverterString.allocationSize(value.shortId) +
+        FfiConverterString.allocationSize(value.subject) +
+        FfiConverterString.allocationSize(value.author) +
+        FfiConverterString.allocationSize(value.committedAt)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export enum GitDiffKind {
   Text,
   Binary,
@@ -11399,6 +11454,51 @@ const FfiConverterTypeGitDiffReview = (() => {
   return new FFIConverter();
 })();
 
+export type GitHistoryCursor = {
+  head: string;
+  skip: number;
+};
+
+/**
+ * Generated factory for {@link GitHistoryCursor} record objects.
+ */
+export const GitHistoryCursor = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<GitHistoryCursor, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<GitHistoryCursor>,
+  });
+})();
+
+const FfiConverterTypeGitHistoryCursor = (() => {
+  type TypeName = GitHistoryCursor;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        head: FfiConverterString.read(from),
+        skip: FfiConverterUInt32.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.head, into);
+      FfiConverterUInt32.write(value.skip, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.head) +
+        FfiConverterUInt32.allocationSize(value.skip)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type GitRepository = {
   root: string;
   hasHead: boolean;
@@ -11495,6 +11595,55 @@ const FfiConverterTypeGitStatusEntry = (() => {
         FfiConverterString.allocationSize(value.path) +
         FfiConverterOptionalString.allocationSize(value.originalPath) +
         FfiConverterString.allocationSize(value.absolutePath)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type GitSummary = {
+  branch?: string;
+  commits: Array<GitCommit>;
+  next?: GitHistoryCursor;
+};
+
+/**
+ * Generated factory for {@link GitSummary} record objects.
+ */
+export const GitSummary = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<GitSummary, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<GitSummary>,
+  });
+})();
+
+const FfiConverterTypeGitSummary = (() => {
+  type TypeName = GitSummary;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        branch: FfiConverterOptionalString.read(from),
+        commits: FfiConverterSequenceTypeGitCommit.read(from),
+        next: FfiConverterOptionalTypeGitHistoryCursor.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterOptionalString.write(value.branch, into);
+      FfiConverterSequenceTypeGitCommit.write(value.commits, into);
+      FfiConverterOptionalTypeGitHistoryCursor.write(value.next, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterOptionalString.allocationSize(value.branch) +
+        FfiConverterSequenceTypeGitCommit.allocationSize(value.commits) +
+        FfiConverterOptionalTypeGitHistoryCursor.allocationSize(value.next)
       );
     }
   }
@@ -41276,6 +41425,11 @@ export interface HostRuntimeLike {
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<string>;
   focusTerminal(terminalId: string, focused: boolean) /*throws*/ : void;
+  gitCommitFiles(
+    root: string,
+    commit: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<Array<GitStatusEntry>>;
   gitDiff(
     repository: GitRepository,
     status: GitStatusEntry,
@@ -41287,12 +41441,18 @@ export interface HostRuntimeLike {
     status: GitStatusEntry,
     context: GitDiffContext,
     expansions: Array<GitDiffExpansion>,
+    commit: string | undefined,
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<GitDiffReview>;
   gitStatus(
     root: string,
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<Array<GitStatusEntry>>;
+  gitSummary(
+    root: string,
+    cursor: GitHistoryCursor | undefined,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<GitSummary>;
   githubComments(
     repository: GithubRepository,
     number: number,
@@ -42608,6 +42768,56 @@ export class HostRuntime
     );
   }
 
+  async gitCommitFiles(
+    root: string,
+    commit: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<Array<GitStatusEntry>> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_git_commit_files(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(root, nativeModule().rustbuffer_alloc),
+            FfiConverterString.lower(commit, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterSequenceTypeGitStatusEntry.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
   async gitDiff(
     repository: GitRepository,
     status: GitStatusEntry,
@@ -42674,6 +42884,7 @@ export class HostRuntime
     status: GitStatusEntry,
     context: GitDiffContext,
     expansions: Array<GitDiffExpansion>,
+    commit: string | undefined,
     asyncOpts_?: { signal: AbortSignal },
   ): Promise<GitDiffReview> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
@@ -42697,6 +42908,10 @@ export class HostRuntime
             ),
             FfiConverterSequenceTypeGitDiffExpansion.lower(
               expansions,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterOptionalString.lower(
+              commit,
               nativeModule().rustbuffer_alloc,
             ),
           );
@@ -42765,6 +42980,59 @@ export class HostRuntime
         /*liftFunc:*/ (__rb: Uint8Array) => {
           try {
             return FfiConverterSequenceTypeGitStatusEntry.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  async gitSummary(
+    root: string,
+    cursor: GitHistoryCursor | undefined,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<GitSummary> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_git_summary(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(root, nativeModule().rustbuffer_alloc),
+            FfiConverterOptionalTypeGitHistoryCursor.lower(
+              cursor,
+              nativeModule().rustbuffer_alloc,
+            ),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterTypeGitSummary.lift(__rb);
           } finally {
             nativeModule().rustbuffer_free(__rb);
           }
@@ -61934,6 +62202,16 @@ const FfiConverterSequenceTypeGitDiffSyntaxLine = new FfiConverterArray(
   FfiConverterTypeGitDiffSyntaxLine,
 );
 
+// FfiConverter for Array<GitCommit>
+const FfiConverterSequenceTypeGitCommit = new FfiConverterArray(
+  FfiConverterTypeGitCommit,
+);
+
+// FfiConverter for GitHistoryCursor | undefined
+const FfiConverterOptionalTypeGitHistoryCursor = new FfiConverterOptional(
+  FfiConverterTypeGitHistoryCursor,
+);
+
 // FfiConverter for GithubRepository | undefined
 const FfiConverterOptionalTypeGithubRepository = new FfiConverterOptional(
   FfiConverterTypeGithubRepository,
@@ -62148,14 +62426,14 @@ const FfiConverterOptionalTypeGitRepository = new FfiConverterOptional(
   FfiConverterTypeGitRepository,
 );
 
-// FfiConverter for Array<GitDiffExpansion>
-const FfiConverterSequenceTypeGitDiffExpansion = new FfiConverterArray(
-  FfiConverterTypeGitDiffExpansion,
-);
-
 // FfiConverter for Array<GitStatusEntry>
 const FfiConverterSequenceTypeGitStatusEntry = new FfiConverterArray(
   FfiConverterTypeGitStatusEntry,
+);
+
+// FfiConverter for Array<GitDiffExpansion>
+const FfiConverterSequenceTypeGitDiffExpansion = new FfiConverterArray(
+  FfiConverterTypeGitDiffExpansion,
 );
 
 // FfiConverter for GithubEntry | undefined
@@ -64640,6 +64918,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_commit_files() !==
+    19111
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_git_commit_files',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_diff() !==
     55745
   ) {
@@ -64649,7 +64935,7 @@ function uniffiEnsureInitialized() {
   }
   if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_diff_review() !==
-    41119
+    14713
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_git_diff_review',
@@ -64661,6 +64947,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_git_status',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_summary() !==
+    4585
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_git_summary',
     );
   }
   if (
@@ -66542,6 +66836,7 @@ export default Object.freeze({
     FfiConverterTypeCredentialTransactionError,
     FfiConverterTypeDictationPhase,
     FfiConverterTypeDictationView,
+    FfiConverterTypeGitCommit,
     FfiConverterTypeGitDiff,
     FfiConverterTypeGitDiffContext,
     FfiConverterTypeGitDiffExpansion,
@@ -66554,8 +66849,10 @@ export default Object.freeze({
     FfiConverterTypeGitDiffSpan,
     FfiConverterTypeGitDiffSyntax,
     FfiConverterTypeGitDiffSyntaxLine,
+    FfiConverterTypeGitHistoryCursor,
     FfiConverterTypeGitRepository,
     FfiConverterTypeGitStatusEntry,
+    FfiConverterTypeGitSummary,
     FfiConverterTypeGithubAuthor,
     FfiConverterTypeGithubCommentEdit,
     FfiConverterTypeGithubCommentFormat,

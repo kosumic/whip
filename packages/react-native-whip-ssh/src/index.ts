@@ -62,6 +62,9 @@ import {
   HostTerminalResizeOutcome,
   HostTerminalState,
   GitDiffContext,
+  type GitCommit,
+  type GitSummary,
+  type GitHistoryCursor,
   gitDiffSelection,
   generateSshKeyPair as generateSshKeyPairRust,
   getSshKeyDetails as getSshKeyDetailsRust,
@@ -700,6 +703,9 @@ export type RuntimeRemoteDirectoryListing = {
 };
 
 export type RuntimeGitRepository = { root: string; hasHead: boolean };
+export type RuntimeGitCommit = GitCommit;
+export type RuntimeGitSummary = GitSummary;
+export type RuntimeGitHistoryCursor = GitHistoryCursor;
 export type RuntimeGithubRepository = GithubRepository;
 export type RuntimeGithubDiscovery = {
   status: 'found' | 'not-github' | 'missing-gh' | 'invalid-path';
@@ -3826,14 +3832,23 @@ export class NativeHostRuntime {
     return (await this.runtime.gitStatus(root)).map(runtimeGitStatus);
   }
 
+  gitSummary(root: string, cursor?: RuntimeGitHistoryCursor): Promise<RuntimeGitSummary> {
+    return this.runtime.gitSummary(root, cursor);
+  }
+
+  async gitCommitFiles(root: string, commit: string): Promise<RuntimeGitStatusEntry[]> {
+    return (await this.runtime.gitCommitFiles(root, commit)).map(runtimeGitStatus);
+  }
+
   async gitDiff(
     repository: RuntimeGitRepository,
     status: RuntimeGitStatusEntry,
     context: RuntimeGitDiffContext = 'compact',
     expansions: RuntimeGitDiffExpansion[] = [],
+    commit?: string,
   ): Promise<RuntimeGitDiff> {
     try {
-      const review = await this.runtime.gitDiffReview(repository, nativeGitStatus(status), NATIVE_GIT_DIFF_CONTEXT[context], expansions);
+      const review = await this.runtime.gitDiffReview(repository, nativeGitStatus(status), NATIVE_GIT_DIFF_CONTEXT[context], expansions, commit);
       return runtimeGitReview(review);
     } catch (error) {
       throw hostRuntimeError(error);

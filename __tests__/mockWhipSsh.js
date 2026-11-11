@@ -524,6 +524,8 @@ function createMockWhipSshModule() {
       },
       discoverGitRepository: jest.fn(async () => null),
       gitStatus: jest.fn(async () => []),
+      gitSummary: jest.fn(async () => ({ branch: 'main', commits: [] })),
+      gitCommitFiles: jest.fn(async () => []),
       gitDiff: jest.fn(),
       async startWebPreview(url) {
         const parsed = new URL(url);

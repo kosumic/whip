@@ -2040,6 +2040,11 @@ interface NativeModuleInterface {
     focused: number,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_git_commit_files(
+    uniffiSelf: bigint,
+    root: Uint8Array,
+    commit: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_git_diff(
     uniffiSelf: bigint,
     repository: Uint8Array,
@@ -2052,10 +2057,16 @@ interface NativeModuleInterface {
     status: Uint8Array,
     context: Uint8Array,
     expansions: Uint8Array,
+    commit: Uint8Array,
   ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_git_status(
     uniffiSelf: bigint,
     root: Uint8Array,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_git_summary(
+    uniffiSelf: bigint,
+    root: Uint8Array,
+    cursor: Uint8Array,
   ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_github_comments(
     uniffiSelf: bigint,
@@ -3416,9 +3427,11 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_discover_github_repository(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_execute(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_focus_terminal(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_commit_files(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_diff(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_diff_review(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_status(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_git_summary(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_comments(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_entry(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_github_files(): number;

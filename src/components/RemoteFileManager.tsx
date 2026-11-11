@@ -1,6 +1,6 @@
 import { SwipeableDeleteRow } from './SwipeableDeleteRow';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import type { RuntimePreviewInfo, RuntimeRemoteDirectoryListing, RuntimeRemoteFileEntry } from 'react-native-whip-ssh';
+import type { RuntimeGitCommit, RuntimePreviewInfo, RuntimeRemoteDirectoryListing, RuntimeRemoteFileEntry } from 'react-native-whip-ssh';
 import { formatGitDiffSelection } from 'react-native-whip-ssh';
 import * as WebBrowser from 'expo-web-browser';
 import ArrowDown from 'lucide-react-native/icons/arrow-down';
@@ -44,7 +44,7 @@ import { bestEffortCleanup, reportBackgroundFailure } from '../services/backgrou
 import { operationalErrorDetails, recordOperationalDiagnostic } from '../services/operationalDiagnostics';
 import { useRemoteFileViewPreferences } from '@/src/hooks/useRemoteFileViewPreferences';
 import { useGitReviewRefresh } from '@/src/hooks/useGitReviewRefresh';
-import { discoverRemoteGitRepository, gitStatusQueryOptions, hasFreshGitStatus, invalidateRemoteGitQueries, loadRemoteGitDiff, loadRemoteGitStatus, remoteConnectionRequest } from '@/src/services/remoteGitQueries';
+import { discoverRemoteGitRepository, gitCommitFilesQueryOptions, gitStatusQueryOptions, hasFreshGitStatus, invalidateRemoteGitQueries, loadRemoteGitDiff, loadRemoteGitStatus, remoteConnectionRequest } from '@/src/services/remoteGitQueries';
 import { appQueryClient } from '@/src/services/appQueryClient';
 import { loadRemoteGitCollapsedPaths, loadRemoteGitMode, saveRemoteGitCollapsedPaths, saveRemoteGitMode } from '@/src/services/remoteGitPreferences';
 import { gitReviewKey, loadGitReviewState, rememberGitReviewState, type GitReviewState } from '@/src/services/gitReviewState';
@@ -57,6 +57,7 @@ import { HtmlPreview } from './HtmlPreview';
 import { MarkdownPreview } from './MarkdownPreview';
 import { MermaidPreview } from './MermaidPreview';
 import { RemoteGitDiffPreview } from './RemoteGitDiffPreview';
+import { RemoteGitRepositorySummary } from './RemoteGitRepositorySummary';
 import { RemoteAudioPreview } from './RemoteAudioPreview';
 import { RemoteFileContextSheet } from './RemoteFileContextSheet';
 import { RemoteTextPreview } from './RemoteTextPreview';
@@ -114,6 +115,7 @@ interface Props {
 }
 
 interface FilePreview {
+  gitCommit?: RuntimeGitCommit | null;
   reviewState?: GitReviewState;
   entry: RuntimeRemoteFileEntry;
   path: string;
@@ -180,6 +182,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   const [gitDiscovery, setGitDiscovery] = useState<GitDiscoveryState>({ status: 'idle', repository: null });
   const gitRepository = gitDiscovery.repository;
   const [gitMode, setGitMode] = useState(false);
+  const [selectedCommit, setSelectedCommit] = useState<RuntimeGitCommit | null>(null);
   const [gitCollapsedPaths, setGitCollapsedPaths] = useState<Set<string>>(new Set());
   const gitCollapsedPathsRef = useRef(gitCollapsedPaths);
   const [gitOperationBusy, setGitBusy] = useState(false);
@@ -190,10 +193,17 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       : { queryKey: ['remote-git', 'inactive'], queryFn: skipToken }),
     enabled: false,
   }, appQueryClient);
-  const gitStatus = gitMode ? gitStatusQuery.data ?? EMPTY_GIT_STATUS : EMPTY_GIT_STATUS;
-  const gitBusy = gitOperationBusy || gitStatusQuery.isFetching;
+  const gitCommitFilesQuery = useQuery({
+    ...(gitConnection && gitRepository && selectedCommit
+      ? gitCommitFilesQueryOptions(gitConnection, gitRepository.root, selectedCommit.id)
+      : { queryKey: ['remote-git', 'inactive-commit'], queryFn: skipToken }),
+    enabled: Boolean(visible && gitMode && selectedCommit),
+  }, appQueryClient);
+  const gitStatus = gitMode ? (selectedCommit ? gitCommitFilesQuery.data : gitStatusQuery.data) ?? EMPTY_GIT_STATUS : EMPTY_GIT_STATUS;
+  const gitBusy = gitOperationBusy || gitStatusQuery.isFetching || gitCommitFilesQuery.isFetching;
+  const gitQueryError = selectedCommit ? gitCommitFilesQuery.error : gitStatusQuery.error;
   const gitError = gitOperationError || (gitDiscovery.status === 'failed' ? gitDiscovery.error : null)
-    || (gitMode && gitStatusQuery.error ? String(gitStatusQuery.error) : null);
+    || (gitMode && gitQueryError ? String(gitQueryError) : null);
   const [reviewRefreshVersion, setReviewRefreshVersion] = useState(0);
   const previewRef = useRef<FilePreview | null>(null);
   const codeEditorRef = useRef<CodeEditorHandle>(null);
@@ -238,6 +248,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   }, []);
 
   const clearGitContext = useCallback(() => {
+    setSelectedCommit(null);
     gitContextRef.current = null;
     setGitDiscovery({ status: 'idle', repository: null });
     setGitMode(false);
@@ -278,6 +289,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       setGitError(null);
       onFileChangeRef.current?.(null);
       replacePreview(null);
+      setSelectedCommit(null);
       let connectionIsCurrent = () => true;
       let cachedPath: string | null = null;
       const showListing = (listing: RuntimeRemoteDirectoryListing) => {
@@ -484,7 +496,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       if (isCurrent()) {
         setGitDiscovery({ status: 'found', repository: currentRepository });
         const current = previewRef.current;
-        if (current?.gitStatus) {
+        if (current?.gitStatus && !current.gitCommit) {
           const status = changes.find(item => item.path === current.gitStatus!.path);
           replacePreview({ ...current, gitStatus: status ?? current.gitStatus,
             gitDiff: status ? current.gitDiff : { kind: 'empty', rows: [], additions: 0, deletions: 0, hunkRows: [], truncated: false, revision: 'clean' } });
@@ -534,6 +546,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       }
       if (!isCurrent()) return;
       setGitMode(next);
+      if (!next) setSelectedCommit(null);
       if (next) {
         await Promise.all([
           loadRemoteGitStatus(connection, repository.root),
@@ -566,7 +579,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     setShowHiddenFiles(show);
   };
 
-  const openGitChange = async (status: RemoteGitStatusEntry) => {
+  const openGitChange = async (status: RemoteGitStatusEntry, commit = selectedCommit) => {
     if (!gitRepository) return;
     const connection = remoteConnectionRequest(client);
     onFileChangeRef.current?.(null);
@@ -587,12 +600,13 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       htmlRevision: 0,
       gitDiff: null,
       gitStatus: status,
+      gitCommit: commit,
     };
     replacePreview(loadingPreview);
     try {
-      const reviewState = await loadGitReviewState(gitReviewKey(hostId, gitRepository.root, status.path));
+      const reviewState = await loadGitReviewState(gitReviewKey(hostId, gitRepository.root, status.path, commit?.id));
       if (request !== requestRef.current || !connection.isCurrent()) return;
-      const gitDiff = await loadRemoteGitDiff(connection, gitRepository, status, reviewState.context, reviewState.expansions);
+      const gitDiff = await loadRemoteGitDiff(connection, gitRepository, status, reviewState.context, reviewState.expansions, commit?.id);
       if (request === requestRef.current && connection.isCurrent()) replacePreview({ ...loadingPreview, gitDiff, reviewState });
     } catch (reason) {
       if (request === requestRef.current) {
@@ -744,6 +758,25 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     requestRef.current += 1;
     onFileChangeRef.current?.(null);
     replacePreview(null);
+  };
+
+  const selectGitCommit = async (commit: RuntimeGitCommit | null) => {
+    const request = ++requestRef.current;
+    onFileChangeRef.current?.(null);
+    replacePreview(null);
+    setGitError(null);
+    setSelectedCommit(commit);
+    if (!commit || !gitRepository || !client.activeNative) return;
+    const connection = remoteConnectionRequest(client);
+    try {
+      const files = await appQueryClient.fetchQuery(gitCommitFilesQueryOptions(connection, gitRepository.root, commit.id));
+      if (request !== requestRef.current || !connection.isCurrent()) return;
+      const visibleFiles = showHiddenFiles ? files : files.filter(status => !isRemoteHiddenPath(status.path));
+      const first = collectRemoteGitFiles(buildRemoteGitTree(visibleFiles))[0];
+      if (first) await openGitChange(first, commit);
+    } catch {
+      // The observed commit-files query presents the error and refresh action.
+    }
   };
 
   const confirmDiscard = (action: () => void) => {
@@ -1000,6 +1033,15 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                 </Button>
               </View>
               <RemoteDownloadProgress progress={download.progress} onCancel={download.cancel} onRetry={downloadPreview} />
+              {visible && preview.gitStatus && gitConnection && gitRepository ? (
+                <RemoteGitRepositorySummary key="preview-summary" connection={gitConnection} root={gitRepository.root} compact onSelectCommit={commit => { void selectGitCommit(commit); }} />
+              ) : null}
+              {preview.gitCommit ? (
+                <View className="flex-row items-center gap-2 border-b border-border px-3 py-2">
+                  <Text className="font-mono text-[11px] text-muted-foreground">{preview.gitCommit.shortId}</Text>
+                  <Text numberOfLines={1} className="min-w-0 flex-1 text-[12px] font-semibold">{preview.gitCommit.subject}</Text>
+                </View>
+              ) : null}
               {preview.gitStatus && gitReviewIndex >= 0 ? (
                 <View className="h-12 flex-row items-center border-b border-border px-2">
                   <Button accessibilityLabel={t('files.gitPreviousFile')} className="size-11 rounded-full px-0" disabled={gitReviewIndex === 0} variant="ghost" onPress={hapticPress(() => openGitChange(gitReviewFiles[gitReviewIndex - 1]))}>
@@ -1019,34 +1061,35 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                 <FileErrorState
                   error={preview.error}
                   title={t('files.openFailed')}
-                  onRetry={() => (preview.gitStatus ? openGitChange(preview.gitStatus) : openEntry(preview.entry, preview.initialLine))}
+                  onRetry={() => (preview.gitStatus ? openGitChange(preview.gitStatus, preview.gitCommit) : openEntry(preview.entry, preview.initialLine))}
                 />
               ) : previewLoading ? (
                 <FileLoadingState label={t('files.opening')} />
               ) : preview.gitStatus && preview.gitDiff ? (
                 <RemoteGitDiffPreview
-                  key={preview.path}
+                  key={`${preview.gitCommit?.id ?? 'worktree'}:${preview.path}`}
                   diff={preview.gitDiff}
                   filename={preview.gitStatus.path}
                   reviewState={preview.reviewState}
-                  onReviewStateChange={state => rememberGitReviewState(gitReviewKey(hostId, gitRepository!.root, preview.gitStatus!.path), state)}
+                  onReviewStateChange={state => rememberGitReviewState(gitReviewKey(hostId, gitRepository!.root, preview.gitStatus!.path, preview.gitCommit?.id), state)}
                   refreshVersion={reviewRefreshVersion}
                   refreshError={gitError}
                   refreshing={gitBusy}
                   onRefresh={() => { void refreshGitChanges(); }}
-                  onLoadContext={(context, expansions) => loadRemoteGitDiff(remoteConnectionRequest(client), gitRepository!, preview.gitStatus!, context, expansions)}
+                  onLoadContext={(context, expansions) => loadRemoteGitDiff(remoteConnectionRequest(client), gitRepository!, preview.gitStatus!, context, expansions, preview.gitCommit?.id)}
                   onAskAgent={onAskAgent ? rows => {
                     const selection = formatGitDiffSelection(preview.path, rows);
                     if (!selection) {
                       Alert.alert(t('files.gitSelectionTooLarge'), t('files.gitSelectionTooLargeCopy'));
                       return;
                     }
-                    if (!onAskAgent(`${t('files.gitAskPrompt')}\n\n${selection}`)) {
+                    const revision = preview.gitCommit ? `\n${preview.gitCommit.id} ${preview.gitCommit.subject}` : '';
+                    if (!onAskAgent(`${t('files.gitAskPrompt')}${revision}\n\n${selection}`)) {
                       Alert.alert(t('files.gitAgentUnavailable'));
                     }
                   } : undefined}
                   onOpenFile={
-                    isRemoteGitEntryDeleted(preview.gitStatus)
+                    preview.gitCommit || isRemoteGitEntryDeleted(preview.gitStatus)
                       ? null
                       : () => {
                           openRemotePath(preview.path).catch(reason => {
@@ -1149,6 +1192,18 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                   <RefreshCw size={18} color={colors.text} />
                 </Button>
               </View>
+              {visible && gitMode && gitConnection && gitRepository ? (
+                <RemoteGitRepositorySummary key="overview-summary" connection={gitConnection} root={gitRepository.root} compact={Boolean(selectedCommit)} onSelectCommit={commit => { void selectGitCommit(commit); }} />
+              ) : null}
+              {gitMode && selectedCommit ? (
+                <View className="flex-row items-center gap-2 border-b border-border px-3 py-1">
+                  <View className="min-w-0 flex-1">
+                    <Text className="font-mono text-[10px] text-muted-foreground">{selectedCommit.shortId}</Text>
+                    <Text numberOfLines={1} className="text-[12px] font-semibold">{selectedCommit.subject}</Text>
+                  </View>
+                  <Button accessibilityLabel={t('files.gitWorkingTree')} variant="secondary" onPress={() => { void selectGitCommit(null); }}><Text>{t('files.gitWorkingTree')}</Text></Button>
+                </View>
+              ) : null}
               {!gitMode && gitError && (
                 <View className="flex-row items-center gap-3 border-b border-border px-3 py-2">
                   <View className="min-w-0 flex-1">
@@ -1254,8 +1309,8 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
               ) : gitMode ? (
                 <View className="flex-1 items-center justify-center p-8">
                   <GitCompareArrows size={30} color={colors.working} />
-                  <Text className="mt-4 text-[15px] font-semibold text-foreground">{t('files.gitClean')}</Text>
-                  <Text className="mt-2 text-center text-[12px] leading-[18px] text-muted-foreground">{t('files.gitCleanCopy')}</Text>
+                  <Text className="mt-4 text-[15px] font-semibold text-foreground">{t(selectedCommit ? 'files.gitEmptyCommit' : 'files.gitClean')}</Text>
+                  {!selectedCommit ? <Text className="mt-2 text-center text-[12px] leading-[18px] text-muted-foreground">{t('files.gitCleanCopy')}</Text> : null}
                 </View>
               ) : sortedEntries.length ? (
                 <FlatList

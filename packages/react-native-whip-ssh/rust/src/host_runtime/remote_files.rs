@@ -10,6 +10,10 @@ use super::{
     HostConnectionState, HostRuntime, HostRuntimeError, HostRuntimeEvent, RuntimeInner,
     current_generation, current_ssh, emit, validate_generation,
 };
+use crate::git_summary::{
+    GitHistoryCursor, GitSummary, git_commit_diff_command, git_commit_files_command,
+    git_summary_command, parse_git_commit_files, parse_git_summary,
+};
 use crate::remote_ops::{
     GitDiff, GitRepository, GitStatusEntry, MAX_ACTIVE_PREVIEWS, PreviewInfo, PreviewState,
     REMOTE_TEXT_MAX_BYTES, RemoteDirectoryListing, RemoteFileEntry, RemoteFileKind,
@@ -904,6 +908,74 @@ impl HostRuntime {
             })?
     }
 
+    pub async fn git_summary(
+        &self,
+        root: String,
+        cursor: Option<GitHistoryCursor>,
+    ) -> Result<GitSummary, HostRuntimeError> {
+        let inner = self.inner.clone();
+        crate::runtime()
+            .map_err(HostRuntimeError::SshTransportFailure)?
+            .spawn(async move {
+                let root = resolved_remote_path(&inner, Some(&root)).await?;
+                let command = git_summary_command(&root, cursor.as_ref())
+                    .map_err(HostRuntimeError::GitFailure)?;
+                let output = execute_generation_checked(&inner, &command).await?;
+                if output.exit_status != Some(0) {
+                    return Err(HostRuntimeError::GitFailure(command_failure(
+                        "Git summary",
+                        &output,
+                    )));
+                }
+                if output.stdout_truncated {
+                    return Err(HostRuntimeError::GitFailure(
+                        "Git summary exceeded the command limit".to_owned(),
+                    ));
+                }
+                parse_git_summary(
+                    &output.stdout,
+                    cursor.as_ref().map_or(0, |cursor| cursor.skip),
+                )
+                .map_err(HostRuntimeError::GitFailure)
+            })
+            .await
+            .map_err(|error| {
+                HostRuntimeError::GitFailure(format!("Git summary task failed: {error}"))
+            })?
+    }
+
+    pub async fn git_commit_files(
+        &self,
+        root: String,
+        commit: String,
+    ) -> Result<Vec<GitStatusEntry>, HostRuntimeError> {
+        let inner = self.inner.clone();
+        crate::runtime()
+            .map_err(HostRuntimeError::SshTransportFailure)?
+            .spawn(async move {
+                let root = resolved_remote_path(&inner, Some(&root)).await?;
+                let command = git_commit_files_command(&root, &commit)
+                    .map_err(HostRuntimeError::GitFailure)?;
+                let output = execute_generation_checked(&inner, &command).await?;
+                if output.exit_status != Some(0) {
+                    return Err(HostRuntimeError::GitFailure(command_failure(
+                        "Git commit files",
+                        &output,
+                    )));
+                }
+                if output.stdout_truncated {
+                    return Err(HostRuntimeError::GitFailure(
+                        "Git commit files exceeded the command limit".to_owned(),
+                    ));
+                }
+                parse_git_commit_files(&output.stdout, &root).map_err(HostRuntimeError::GitFailure)
+            })
+            .await
+            .map_err(|error| {
+                HostRuntimeError::GitFailure(format!("Git commit files task failed: {error}"))
+            })?
+    }
+
     pub async fn git_status(&self, root: String) -> Result<Vec<GitStatusEntry>, HostRuntimeError> {
         let inner = self.inner.clone();
         crate::runtime()
@@ -962,6 +1034,7 @@ impl HostRuntime {
         status: GitStatusEntry,
         context: crate::remote_ops::GitDiffContext,
         expansions: Vec<crate::git_review::GitDiffExpansion>,
+        commit: Option<String>,
     ) -> Result<crate::git_review::GitDiffReview, HostRuntimeError> {
         let inner = self.inner.clone();
         crate::runtime()
@@ -970,7 +1043,10 @@ impl HostRuntime {
                 let generation = current_generation(&inner)?;
                 let lines = crate::git_review::fetch_context(context, &expansions)
                     .map_err(HostRuntimeError::GitFailure)?;
-                let command = crate::remote_ops::git_diff_command_lines(&repository, &status, lines)
+                let command = match commit {
+                    Some(commit) => git_commit_diff_command(&repository.root, &commit, &status, lines),
+                    None => crate::remote_ops::git_diff_command_lines(&repository, &status, lines),
+                }
                     .map_err(HostRuntimeError::GitFailure)?;
                 let output = execute_generation_checked(&inner, &command).await?;
                 if output.exit_status.is_some_and(|status| status != 0) {

@@ -15,6 +15,9 @@ it('restores context and per-file anchors without sharing anchors across hosts o
   expect(await loadGitReviewState(key)).toEqual(saved);
   expect(await loadGitReviewState(gitReviewKey('host-b', '/repo', 'file.ts'))).toEqual({ context: 'full', expansions: [], anchor: null });
   expect((await loadGitReviewState(gitReviewKey('host-a', '/other', 'file.ts'))).anchor).toBeNull();
+  expect((await loadGitReviewState(gitReviewKey('host-a', '/repo', 'file.ts', 'first'))).anchor).toBeNull();
+  rememberGitReviewState(gitReviewKey('host-a', '/repo', 'file.ts', 'first'), saved);
+  expect((await loadGitReviewState(gitReviewKey('host-a', '/repo', 'file.ts', 'second'))).anchor).toBeNull();
   expect(appStorage.setItem).toHaveBeenCalledWith('whip.git-review-context.v1', 'full');
   (appStorage.setItem as jest.Mock).mockClear();
   rememberGitReviewState(key, { ...saved, anchor: { oldLine: 20, newLine: 22 } });
