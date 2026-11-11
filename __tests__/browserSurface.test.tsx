@@ -786,6 +786,58 @@ test('a tab becomes controllable when native layout arrives after the React comm
   }
 });
 
+test('restored page source is committed before consumers acquire its driver', async () => {
+  const { identity, runtime, entry } = browserSession('source-before-driver');
+  const url = 'https://example.test/restored';
+  entry.controller.restoreTabs([{ url, title: 'Restored page' }], 0);
+  let observed: Promise<unknown> | undefined;
+  const unsubscribe = entry.controller.subscribe(() => {
+    const driver = entry.controller.tab().driver;
+    if (driver && !observed) observed = driver.documentState();
+  });
+  let view!: ReactTestRenderer;
+  try {
+    await act(async () => {
+      view = create(<BrowserSurface runtimes={[runtime]} />);
+      browserRegistry.open(identity.sessionId);
+    });
+    await layoutBrowserViews(view);
+    await act(async () => { await entry.controller.action('list_tabs'); });
+    expect(observed).toBeDefined();
+    await expect(observed).resolves.toMatchObject({ url });
+  } finally {
+    unsubscribe();
+    await act(async () => {
+      await browserRegistry.close(identity.sessionId);
+      view?.unmount();
+    });
+  }
+});
+
+test('retiring a renderer during native preparation does not report a browser failure', async () => {
+  const { identity, runtime } = browserSession('retired-preparation');
+  let rejectPreparation!: (error: Error) => void;
+  jest.mocked(prepareBrowserView).mockImplementationOnce(() => new Promise((_, reject) => {
+    rejectPreparation = reject;
+  }));
+  const diagnostic = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  let view!: ReactTestRenderer;
+  try {
+    await act(async () => { view = create(<BrowserSurface runtimes={[runtime]} />); });
+    await layoutBrowserViews(view);
+    await act(async () => { await browserRegistry.close(identity.sessionId); });
+    await act(async () => { rejectPreparation(new Error('Browser tab is no longer mounted')); });
+    expect(diagnostic).not.toHaveBeenCalled();
+  } finally {
+    jest.mocked(prepareBrowserView).mockResolvedValue(undefined);
+    await act(async () => {
+      await browserRegistry.close(identity.sessionId);
+      view?.unmount();
+    });
+    diagnostic.mockRestore();
+  }
+});
+
 test('native preparation failure releases a waiting action and reload retries the same tab', async () => {
   const { identity, runtime, entry } = browserSession('prepare-failure');
   let failPreparation!: (error: Error) => void;

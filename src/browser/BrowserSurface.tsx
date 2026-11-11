@@ -66,6 +66,7 @@ import {
 import {
   BROWSER_ACTION_TIMEOUT_MS,
   BROWSER_DATA_CLEARED_MESSAGE,
+  type BrowserDriver,
   type BrowserTab,
 } from './controller';
 import { browserAddress, browserOmniboxAddress } from './address';
@@ -130,7 +131,15 @@ const TabRenderer = memo(function BrowserTabRenderer({
   const initialSource = useRef<{ uri: string } | undefined>({
     uri: tab.source,
   });
-  const [prepared, setPrepared] = useState(false);
+  const [prepared, setPrepared] = useState<BrowserDriver | null>(null);
+  const current = useCallback(
+    () =>
+      !entry.controller.disposed &&
+      entry.controller.tabs.includes(tab) &&
+      tab.viewGeneration === viewGeneration &&
+      tab.lifecycle === 'active',
+    [entry.controller, tab, viewGeneration],
+  );
   useEffect(() => {
     if (nativeTag === null) return;
     let mounted = true;
@@ -147,10 +156,10 @@ const TabRenderer = memo(function BrowserTabRenderer({
             : null,
         )
           .then(async () => {
-            if (!mounted) return;
+            if (!mounted || !current()) return;
             const requestedProfile = latestProfile.current;
             await configureBrowserProfile(nativeTag, requestedProfile);
-            if (!mounted) return;
+            if (!mounted || !current()) return;
             appliedProfile.current = requestedProfile;
             const driver = nativeBrowserDriver(nativeTag, handle);
             const restored = await entry.controller.restoreState(
@@ -158,21 +167,20 @@ const TabRenderer = memo(function BrowserTabRenderer({
               driver,
               viewGeneration,
             );
-            if (mounted) {
+            if (mounted && current()) {
               initialSource.current = restored
                 ? undefined
                 : { uri: tab.source };
-              setPrepared(true);
-              entry.controller.attach(tab.id, driver, viewGeneration);
+              setPrepared(driver);
             }
           })
           .catch(error => {
-            if (mounted)
-              entry.controller.rendererGone(
-                tab.id,
-                viewGeneration,
-                'Browser renderer could not be prepared. Reload this tab to retry.',
-              );
+            if (!mounted || !current()) return;
+            entry.controller.rendererGone(
+              tab.id,
+              viewGeneration,
+              'Browser renderer could not be prepared. Reload this tab to retry.',
+            );
             throw error;
           }),
         'browser-prepare',
@@ -188,15 +196,15 @@ const TabRenderer = memo(function BrowserTabRenderer({
     tab.source,
     viewGeneration,
     nativeTag,
+    current,
   ]);
-  const current = useCallback(
-    () =>
-      !entry.controller.disposed &&
-      entry.controller.tabs.includes(tab) &&
-      tab.viewGeneration === viewGeneration &&
-      tab.lifecycle === 'active',
-    [entry.controller, tab, viewGeneration],
-  );
+  useEffect(() => {
+    if (!prepared || !current()) return;
+    // Publish only after React commits the initial source. A waiting native
+    // action must not navigate a view whose next commit will load the old URL.
+    entry.controller.attach(tab.id, prepared, viewGeneration);
+    return () => entry.controller.attach(tab.id, null, viewGeneration);
+  }, [current, entry.controller, prepared, tab.id, viewGeneration]);
   useEffect(() => {
     if (!prepared || nativeTag === null || appliedProfile.current === profile)
       return;
@@ -210,12 +218,12 @@ const TabRenderer = memo(function BrowserTabRenderer({
             entry.controller.reloadRenderer(tab.id, viewGeneration);
         },
         error => {
-          if (!cancelled && current())
-            entry.controller.rendererGone(
-              tab.id,
-              viewGeneration,
-              'Browser mode could not be applied. Reload this tab to retry.',
-            );
+          if (cancelled || !current()) return;
+          entry.controller.rendererGone(
+            tab.id,
+            viewGeneration,
+            'Browser mode could not be applied. Reload this tab to retry.',
+          );
           throw error;
         },
       ),
