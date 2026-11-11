@@ -1,5 +1,6 @@
 import {
   BROWSER_LIVE_VIEW_BUDGET,
+  BROWSER_ACTION_TIMEOUT_MS,
   type BrowserDriver,
 } from '../src/browser/controller';
 import { browserAddress } from '../src/browser/address';
@@ -235,6 +236,188 @@ test('failed loads report a WebView error and a later navigation can recover', a
   await expect(
     controller.action('navigate', { url: 'google.com' }),
   ).resolves.toBeDefined();
+});
+
+test.each([
+  [-2, 'chrome-error://chromewebdata/'],
+  [-1009, 'data:text/html,failed'],
+])(
+  'opening a failed link (%s) retains its selected tab and retries its complete address',
+  async (code, errorUrl) => {
+    const { registry, controller, driver, tab: original } = fixture();
+    const url = 'https://unreachable.test/page?q=hello%20world#details';
+    let document = { id: 'blank', url: 'about:blank', ready: true };
+    const failedDriver = {
+      ...driver,
+      documentState: jest.fn(async () => document),
+      navigate: jest.fn(() => {
+        document = { id: 'failed', url: errorUrl, ready: true };
+        controller.loadError(
+          controller.selectedTabId,
+          code,
+          'Connection failed',
+        );
+        controller.navigation(controller.selectedTabId, {
+          url: errorUrl,
+          title: 'Error',
+          canGoBack: false,
+          canGoForward: false,
+        });
+      }),
+    };
+    const unsubscribe = controller.subscribe(() => {
+      const current = controller.tab();
+      if (current !== original && !current.driver)
+        controller.attach(current.id, failedDriver);
+    });
+    try {
+      await expect(registry.openLink('a', url)).rejects.toThrow(
+        `WebView error ${code}`,
+      );
+      const failed = controller.tab();
+      expect(controller.tabs).toEqual([original, failed]);
+      expect(failed).toMatchObject({
+        url,
+        loading: false,
+        loadError: expect.stringContaining('Connection failed'),
+      });
+      expect(registry.visibleId).toBe('a');
+      await registry.openLink('a', url);
+      expect(controller.tabs).toHaveLength(2);
+      failedDriver.navigate.mockImplementationOnce(() => {
+        document = { id: 'recovered', url, ready: true };
+        controller.loadEnd(failed.id);
+      });
+      await expect(controller.action('reload')).resolves.toHaveProperty(
+        'tab_id',
+        failed.id,
+      );
+      expect(failedDriver.navigate).toHaveBeenLastCalledWith(url);
+      expect(failed.loadError).toBeNull();
+      controller.select(original.id);
+      await expect(
+        controller.action('navigate', { url: 'https://example.test/working' }),
+      ).resolves.toBeDefined();
+      expect(failed.url).toBe(url);
+    } finally {
+      unsubscribe();
+      await controller.dispose();
+    }
+  },
+);
+
+test('invalid new-tab input and preview setup failures discard their blank tabs', async () => {
+  const { controller, transport, tab } = fixture();
+  await expect(
+    controller.action('new_tab', { url: 'file:///secret' }),
+  ).rejects.toThrow();
+  transport.startWebPreview.mockRejectedValueOnce(
+    new Error('Preview unavailable'),
+  );
+  await expect(
+    controller.action('new_tab', { url: 'http://localhost:3000/' }),
+  ).rejects.toThrow('Preview unavailable');
+  expect(controller.tabs).toEqual([tab]);
+  await controller.dispose();
+});
+
+test('a new-tab navigation timeout preserves the address before WebView reports its error', async () => {
+  jest.useFakeTimers();
+  const { controller, driver, tab } = fixture();
+  const unsubscribe = controller.subscribe(() => {
+    const current = controller.tab();
+    if (current !== tab && !current.driver)
+      controller.attach(current.id, driver);
+  });
+  jest.mocked(driver.navigate).mockImplementation(() => undefined);
+  jest
+    .mocked(driver.documentState)
+    .mockResolvedValue({ id: 'blank', url: 'about:blank', ready: true });
+  try {
+    const url = 'https://unreachable.test/page?q=1#details';
+    const pending = controller
+      .action('new_tab', { url })
+      .catch((error: unknown) => error);
+    await jest.advanceTimersByTimeAsync(BROWSER_ACTION_TIMEOUT_MS + 100);
+    expect(await pending).toBeInstanceOf(Error);
+    expect(controller.tabs).toHaveLength(2);
+    expect(controller.tab()).toMatchObject({
+      url,
+      loading: false,
+      loadError: expect.stringContaining('timed out'),
+    });
+  } finally {
+    unsubscribe();
+    await controller.dispose();
+    jest.useRealTimers();
+  }
+});
+
+test('back navigation remains usable after a page fails', async () => {
+  const { controller, driver, tab } = fixture();
+  const previous = 'https://example.test/previous';
+  await controller.action('navigate', { url: previous });
+  jest
+    .mocked(driver.navigate)
+    .mockImplementationOnce(() => controller.loadError(tab.id, -6));
+  await expect(
+    controller.action('navigate', { url: 'https://unreachable.test/' }),
+  ).rejects.toThrow();
+  controller.navigation(tab.id, {
+    url: 'chrome-error://chromewebdata/',
+    title: 'Error',
+    canGoBack: false,
+    canGoForward: false,
+  });
+  expect(tab.canGoBack).toBe(true);
+  jest.mocked(driver.back).mockImplementationOnce(() => {
+    controller.navigation(tab.id, {
+      url: previous,
+      title: 'Previous page',
+      canGoBack: false,
+      canGoForward: true,
+    });
+    controller.loadEnd(tab.id);
+  });
+  await expect(controller.action('back')).resolves.toMatchObject({
+    url: previous,
+  });
+  expect(tab.loadError).toBeNull();
+  expect(driver.back).toHaveBeenCalledTimes(1);
+  await controller.dispose();
+});
+
+test('an error document discovered before the new-tab error event preserves the attempted address', async () => {
+  const { controller, driver, tab } = fixture();
+  const unsubscribe = controller.subscribe(() => {
+    const current = controller.tab();
+    if (current !== tab && !current.driver)
+      controller.attach(current.id, driver);
+  });
+  jest.mocked(driver.navigate).mockImplementation(() => undefined);
+  jest
+    .mocked(driver.documentState)
+    .mockResolvedValueOnce({ id: 'old', url: 'about:blank', ready: true })
+    .mockResolvedValueOnce({
+      id: 'error',
+      url: 'chrome-error://chromewebdata/',
+      ready: true,
+    });
+  try {
+    const url = 'https://unreachable.test/page?query=1#fragment';
+    await expect(controller.action('new_tab', { url })).rejects.toThrow(
+      'Browser page failed to load',
+    );
+    expect(controller.tabs).toHaveLength(2);
+    expect(controller.tab()).toMatchObject({
+      url,
+      loading: false,
+      loadError: expect.any(String),
+    });
+  } finally {
+    unsubscribe();
+    await controller.dispose();
+  }
 });
 
 test('back and forward can finish within the same SPA document', async () => {

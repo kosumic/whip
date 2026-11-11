@@ -62,6 +62,31 @@ test('native permit revocation rejects late evaluations and bounds platform erro
   adapter.dispose();
 });
 
+test('native navigation and retry can recover a failed page while document reads still fail', async () => {
+  const { controller, tab, driver, adapter } = fixture();
+  const url = 'https://unreachable.test/page?q=1#details';
+  controller.navigation(tab.id, { url, title: '', canGoBack: false, canGoForward: false });
+  try {
+    for (const action of [
+      new BrowserPlatformAction.Navigate({ tabId: tab.id, url }),
+      new BrowserPlatformAction.Reload({ tabId: tab.id }),
+    ]) {
+      controller.loadError(tab.id, -2, 'Connection failed');
+      await expect(adapter.platform.perform(permit().value, 'session', new BrowserPlatformAction.Document({ tabId: tab.id })))
+        .rejects.toBeInstanceOf(BrowserPlatformError.Unavailable);
+      await expect(adapter.platform.perform(permit().value, 'session', action))
+        .resolves.toMatchObject({ tag: BrowserPlatformResult_Tags.Navigation, inner: { target: url, navigated: true } });
+      expect(tab.loadError).toBeNull();
+    }
+    expect(driver.navigate).toHaveBeenCalledTimes(2);
+    expect(driver.navigate).toHaveBeenLastCalledWith(url);
+    expect(driver.reload).not.toHaveBeenCalled();
+  } finally {
+    adapter.dispose();
+    await controller.dispose();
+  }
+});
+
 test('native modal errors preserve the popup code across typed document and evaluation effects', async () => {
   const { tab, driver, adapter } = fixture();
   const blocked = Object.assign(new Error('private dialog content'), {

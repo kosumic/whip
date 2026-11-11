@@ -185,7 +185,15 @@ impl Request {
         self.session.release_lease(self.parent.clone());
         if !self.committed.load(Ordering::Acquire) {
             for id in self.created.lock().iter() {
-                let _ = self.session.close_tab(id.clone());
+                // Once navigation has published a page address, keep the tab
+                // recoverable even if the operation reports a load failure.
+                if self
+                    .session
+                    .tab(id.clone())
+                    .is_ok_and(|tab| tab.url == "about:blank")
+                {
+                    let _ = self.session.close_tab(id.clone());
+                }
             }
         }
         self.session.wake();

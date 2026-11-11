@@ -425,8 +425,13 @@ export class BrowserController {
     if (this.selectedTabId) this.operations.select(this.selectedTabId);
     this.changed();
   }
-  loadStart(id: string) {
+  loadStart(id: string, url?: string) {
     const tab = this.tab(id);
+    if (
+      url &&
+      (!isBrowserPageUrl(url) || (url === 'about:blank' && tab.url !== url))
+    )
+      return;
     const notify = !tab.loading || !!tab.loadError;
     this.change(tab, BrowserTabChange.Document);
     tab.loading = true;
@@ -439,11 +444,13 @@ export class BrowserController {
     tab.loading = false;
     this.changed();
   }
-  loadError(id: string, code: number) {
+  loadError(id: string, code: number, description?: string) {
     const tab = this.tab(id);
     this.change(tab, BrowserTabChange.Document);
     tab.loading = false;
-    tab.loadError = `Browser page failed to load (WebView error ${code})`;
+    tab.loadError = description
+      ? `${description} (WebView error ${code})`
+      : `Browser page failed to load (WebView error ${code})`;
     this.changed();
   }
   navigation(
@@ -786,7 +793,14 @@ export class BrowserController {
     }
     const tab = this.tab(id);
     const driver = tab.driver;
-    if (!driver || tab.loadError) throw new Error('Browser renderer is unavailable');
+    const navigation = [
+      BrowserPlatformAction_Tags.Navigate,
+      BrowserPlatformAction_Tags.Reload,
+      BrowserPlatformAction_Tags.Back,
+      BrowserPlatformAction_Tags.Forward,
+    ].includes(action.tag);
+    if (!driver || (tab.loadError && !navigation))
+      throw new Error('Browser renderer is unavailable');
     switch (action.tag) {
       case BrowserPlatformAction_Tags.Document: {
         const state = await driver.documentState();
@@ -831,12 +845,21 @@ export class BrowserController {
         const method = action.tag === BrowserPlatformAction_Tags.Back ? 'back' : action.tag === BrowserPlatformAction_Tags.Forward ? 'forward' : 'reload';
         if ((method === 'back' && !tab.canGoBack) || (method === 'forward' && !tab.canGoForward))
           return new BrowserPlatformResult.Navigation({ target: undefined, navigated: false });
+        const retry =
+          method === 'reload' && tab.loadError
+            ? await this.resolveUrl(tab, tab.url, signal)
+            : undefined;
+        permit.checkActive();
         this.change(tab, BrowserTabChange.Document);
         tab.loading = true;
         tab.loadError = null;
-        driver[method]();
+        if (retry) await driver.navigate(retry.local);
+        else driver[method]();
         this.changed();
-        return new BrowserPlatformResult.Navigation({ target: undefined, navigated: true });
+        return new BrowserPlatformResult.Navigation({
+          target: retry?.local,
+          navigated: true,
+        });
       }
     }
   }
@@ -987,7 +1010,17 @@ export class BrowserController {
                   signal,
                 );
               } catch (error) {
-                await this.closeTab(created.id);
+                // Publishing a page address means navigation began. Keep it
+                // even if our deadline expires before the WebView error event.
+                if (created.url === 'about:blank')
+                  await this.closeTab(created.id);
+                else if (!created.loadError && created.lifecycle === 'active') {
+                  created.loading = false;
+                  created.loadError = error instanceof Error
+                    ? error.message
+                    : BROWSER_PAGE_LOAD_FAILED_MESSAGE;
+                  this.changed();
+                }
                 throw error;
               }
             }
@@ -1025,6 +1058,8 @@ export class BrowserController {
           case 'back':
           case 'forward':
           case 'reload': {
+            if (action === 'reload' && tab!.loadError && tab!.lifecycle === 'active')
+              return this.navigate(tab!, tab!.url, signal);
             if (action === 'reload' && tab!.lifecycle !== 'active') {
               await this.resume(tab!, signal);
               return { tab_id: tab!.id, url: publicUrl(tab!.url) };

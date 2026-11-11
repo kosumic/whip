@@ -589,16 +589,12 @@ pub(crate) async fn run_inner(
                     key: runner.key,
                     strict,
                 };
-                if let Err(error) = new_runner
+                new_runner
                     .navigation(Primitive::Navigate {
                         tab_id: tab.clone(),
                         url,
                     })
-                    .await
-                {
-                    let _ = bridge.call(Primitive::CloseTab { tab_id: tab }).await;
-                    return Err(error);
-                }
+                    .await?;
             }
             Ok(BrowserResult::NewTab { tab_id: tab })
         }
