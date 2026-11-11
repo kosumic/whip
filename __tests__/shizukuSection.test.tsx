@@ -37,37 +37,20 @@ jest.mock('react-i18next', () => {
     }),
   };
 });
-jest.mock('lucide-react-native/icons/chevron-down', () => ('ChevronDown'));
-jest.mock('lucide-react-native/icons/chevron-up', () => ('ChevronUp'));
-jest.mock('lucide-react-native/icons/link', () => ('Link'));
-jest.mock('lucide-react-native/icons/shield-question-mark', () => ('ShieldQuestion'));
-jest.mock('lucide-react-native/icons/unlink', () => ('Unlink'));
-jest.mock('../src/components/GlassSurface', () => ({
-  GlassSurface: 'GlassSurface',
-}));
 jest.mock('../src/components/GlassControls', () => ({
   GlassButton: 'Button',
-  GlassIconBadge: 'View',
 }));
 jest.mock('../src/components/app-ui', () => ({
   hapticPress: (callback: () => void) => callback,
 }));
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
-jest.mock('../src/components/ui/icon', () => ({ Icon: 'Icon' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
 
 const native = NativeModules.WhipShizuku;
 const removeStatus = jest.fn();
 const removeAppState = jest.fn();
 let view: ReactTestRenderer;
-const header = () =>
-  view.root.findByProps({ accessibilityLabel: en['shizuku.title'] });
-const pairingIcon = () =>
-  header().findAllByType('Icon' as never)[0].props.as;
-const button = () =>
-  view.root
-    .findAllByType('Button' as never)
-    .find(node => node.props.accessibilityState === undefined)!;
+const button = () => view.root.findAllByType('Button' as never)[0];
 const content = () =>
   view.root
     .findAllByType('Text' as never)
@@ -75,15 +58,10 @@ const content = () =>
       node.children.filter(child => typeof child === 'string').join(''),
     )
     .join('\n');
-const mount = async (expand = true) => {
+const mount = async () => {
   await act(async () => {
     view = create(<ShizukuSection />);
   });
-  if (expand && Platform.OS === 'android') {
-    await act(async () => {
-      header().props.onPress();
-    });
-  }
 };
 const press = async () => {
   await act(async () => {
@@ -112,24 +90,12 @@ afterEach(() => {
   Platform.OS = 'android';
 });
 
-test('starts collapsed and toggles details without requesting authorization', async () => {
-  await mount(false);
-  expect(header().props.accessibilityState).toEqual({ expanded: false });
-  expect(pairingIcon()).toBe('Unlink');
-  expect(content()).toBe(en['shizuku.title']);
-  expect(button()).toBeUndefined();
-  await act(async () => {
-    header().props.onPress();
-  });
-  expect(header().props.accessibilityState).toEqual({ expanded: true });
+test('shows setup details and actions directly without requesting authorization', async () => {
+  await mount();
+  expect(content()).toContain(en['shizuku.title']);
   expect(content()).toContain(en['shizuku.copy']);
   expect(content()).toContain(en['shizuku.status.permission_required']);
   expect(button().props.accessibilityLabel).toBe(en['shizuku.pair']);
-  await act(async () => {
-    header().props.onPress();
-  });
-  expect(header().props.accessibilityState).toEqual({ expanded: false });
-  expect(button()).toBeUndefined();
   expect(native.requestPermission).not.toHaveBeenCalled();
 });
 
@@ -137,12 +103,10 @@ test('requests authorization only after pressing Pair and shows the granted stat
   await mount();
   expect(native.requestPermission).not.toHaveBeenCalled();
   expect(button().props.accessibilityLabel).toBe(en['shizuku.pair']);
-  expect(pairingIcon()).toBe('Unlink');
   await press();
   expect(native.requestPermission).toHaveBeenCalledTimes(1);
   expect(content()).toContain(en['shizuku.status.ready']);
   expect(button().props.accessibilityLabel).toBe(en['shizuku.open']);
-  expect(pairingIcon()).toBe('Link');
 });
 
 test('denial never shows paired and offers the manager for changing authorization', async () => {
@@ -196,7 +160,6 @@ test('updates from native events and foreground refresh, and removes subscriptio
   act(() => {
     listener('stopped');
   });
-  expect(pairingIcon()).toBe('Unlink');
   expect(content()).toContain(en['shizuku.status.stopped']);
   native.getStatus.mockResolvedValue('permission_required');
   await act(async () => {
@@ -228,7 +191,6 @@ test('disables the button while authorization is pending and recovers from a fai
   });
   expect(button().props.disabled).toBe(false);
   expect(content()).toContain(en['shizuku.error']);
-  expect(pairingIcon()).toBe('ShieldQuestion');
   expect(content()).not.toContain(en['shizuku.status.ready']);
 });
 

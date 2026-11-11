@@ -1,11 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, Linking, Platform, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import Link from 'lucide-react-native/icons/link';
-import ShieldQuestion from 'lucide-react-native/icons/shield-question-mark';
-import Unlink from 'lucide-react-native/icons/unlink';
 
-import { CollapsibleSectionCard } from './CollapsibleSectionCard';
 import { hapticPress } from './app-ui';
 import { GlassButton } from './GlassControls';
 import { Button } from './ui/button';
@@ -23,7 +19,6 @@ const SHIZUKU_PROJECT_URL = 'https://github.com/RikkaApps/Shizuku';
 
 function AndroidShizukuSection() {
   const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(false);
   const [status, setStatus] = useState<ShizukuStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
@@ -100,54 +95,47 @@ function AndroidShizukuSection() {
         : 'shizuku.pair';
 
   return (
-    <View className="px-4 py-2">
-      <CollapsibleSectionCard
-        title={t('shizuku.title')}
-        icon={!status || error ? ShieldQuestion : status === 'ready' ? Link : Unlink}
-        expanded={expanded}
-        onToggle={() => setExpanded(value => !value)}
-        contentClassName="p-4"
+    <View className="border-t border-border px-4 py-4">
+      <Text className="text-[15px] font-semibold">{t('shizuku.title')}</Text>
+      <Text className="mt-1 text-xs leading-[17px] text-muted-foreground">
+        {t('shizuku.copy')}
+      </Text>
+      <Text
+        accessibilityLiveRegion="polite"
+        className="mt-3 text-sm leading-5 text-muted-foreground"
       >
-        <Text className="text-sm leading-5 text-muted-foreground">
-          {t('shizuku.copy')}
-        </Text>
+        {t(status ? `shizuku.status.${status}` : 'shizuku.checking')}
+      </Text>
+      {error ? (
         <Text
           accessibilityLiveRegion="polite"
-          className="mt-3 text-sm leading-5 text-muted-foreground"
+          className="mt-3 text-sm text-destructive"
         >
-          {t(status ? `shizuku.status.${status}` : 'shizuku.checking')}
+          {t('shizuku.error')}
         </Text>
-        {error ? (
-          <Text
-            accessibilityLiveRegion="polite"
-            className="mt-3 text-sm text-destructive"
-          >
-            {t('shizuku.error')}
-          </Text>
-        ) : null}
-        <GlassButton
-          className="mt-4"
-          disabled={busy || (!status && !error) || status === 'unavailable'}
-          accessibilityLabel={t(actionKey)}
-          onPress={hapticPress(connect)}
-        >
-          {busy ? <ActivityIndicator size="small" /> : null}
-          <Text>{t(busy ? 'shizuku.pairing' : actionKey)}</Text>
-        </GlassButton>
-        <Button
-          variant="link"
-          className="mt-2"
-          role="link"
-          accessibilityLabel={t('shizuku.github')}
-          onPress={hapticPress(() =>
-            Linking.openURL(SHIZUKU_PROJECT_URL).catch(linkError => {
-              Alert.alert(t('about.githubError'), String(linkError));
-            }),
-          )}
-        >
-          <Text>{t('shizuku.github')}</Text>
-        </Button>
-      </CollapsibleSectionCard>
+      ) : null}
+      <GlassButton
+        className="mt-4"
+        disabled={busy || (!status && !error) || status === 'unavailable'}
+        accessibilityLabel={t(actionKey)}
+        onPress={hapticPress(connect)}
+      >
+        {busy ? <ActivityIndicator size="small" /> : null}
+        <Text>{t(busy ? 'shizuku.pairing' : actionKey)}</Text>
+      </GlassButton>
+      <Button
+        variant="link"
+        className="mt-2"
+        role="link"
+        accessibilityLabel={t('shizuku.github')}
+        onPress={hapticPress(() =>
+          Linking.openURL(SHIZUKU_PROJECT_URL).catch(linkError => {
+            Alert.alert(t('about.githubError'), String(linkError));
+          }),
+        )}
+      >
+        <Text>{t('shizuku.github')}</Text>
+      </Button>
     </View>
   );
 }
