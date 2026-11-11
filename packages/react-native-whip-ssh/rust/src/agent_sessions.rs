@@ -3004,7 +3004,16 @@ pub(crate) fn parse_opencode_protocol(
 fn opencode_v2_api_command(path: &str) -> String {
     // The CLI resolves the local service and its authentication itself. No
     // service passwords, HTTP ports, or additional remote runtimes are needed.
-    format!("opencode api GET {}", shell_quote(path))
+    // OpenCode can exit before draining large stdout writes to a pipe/socket.
+    // A regular file makes the CLI write synchronously; cat then drains the
+    // complete response over SSH. mktemp creates a private file, and the trap
+    // removes transcript data on both success and CLI failure.
+    let script = r#"whip_output=$(mktemp) || exit $?; trap 'rm -f "$whip_output"' EXIT; opencode api GET "$1" > "$whip_output" || exit $?; cat "$whip_output""#;
+    format!(
+        "/bin/sh -c {} whip-opencode-api {}",
+        shell_quote(script),
+        shell_quote(path)
+    )
 }
 
 fn opencode_v2_messages_command(session_id: &str, cursor: Option<&str>) -> String {
@@ -4011,9 +4020,7 @@ mod tests {
         assert_eq!(commands.len(), 4);
         let request = |command: &str| {
             let argv = shlex::split(command).unwrap();
-            assert_eq!(&argv[..3], ["opencode", "api", "GET"]);
-            assert_eq!(argv.len(), 4);
-            url::Url::parse(&format!("http://localhost{}", argv[3])).unwrap()
+            url::Url::parse(&format!("http://localhost{}", argv.last().unwrap())).unwrap()
         };
         let first = request(&commands[1]);
         assert_eq!(first.path(), "/api/session/ses_v2/message");

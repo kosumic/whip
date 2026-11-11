@@ -9,6 +9,12 @@ the Herdr integration, as with the existing OpenCode chat support.
   `/api/session/{id}/message` endpoint. The CLI handles local service discovery
   and authentication. No HTTP port forwarding or credentials in Whip are needed.
 
+V2 API commands write their response to a private host temporary file before
+streaming it over SSH, then remove the file on success or failure. OpenCode
+v2.1.4 can exit before flushing large stdout writes to a pipe or SSH channel,
+returning a successful exit status with truncated JSON. Regular-file output
+avoids that truncation; failed CLI commands still fail the read.
+
 The v2 adapter is based on upstream v2.0.19, commit
 `7ef4a1a56e7d23ec6a52d0d7572cea60061b3715`. Its schema-shaped regression fixture is
 `crates/agent-transcript-core/tests/fixtures/opencode/v2-session.json`.

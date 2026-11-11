@@ -295,6 +295,46 @@ mod tests {
     use crate::agent_transcript::{AgentMessageRole, AgentTranscriptPart};
     use crate::{AgentTranscriptDelta, OpenCodeSessionCore, OpenCodeV2Snapshot};
     use std::fmt::Write;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn run_cli(command: &str, output: &str, exit_status: u8) -> std::process::Output {
+        let fixture = tempfile::tempdir().unwrap();
+        let temporary = tempfile::tempdir().unwrap();
+        let response = fixture.path().join("response");
+        std::fs::write(&response, output).unwrap();
+        let cli = fixture.path().join("opencode");
+        // Model the CLI's premature exit with buffered pipe output. Regular
+        // file output is complete, while a pipe receives only a partial body.
+        std::fs::write(
+            &cli,
+            format!(
+                "#!/bin/sh\nif [ -f /dev/stdout ]; then cat {response}; else head -c 4096 {response}; fi\nexit {exit_status}\n",
+                response = shell_quote(response.to_str().unwrap()),
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let result = std::process::Command::new("sh")
+            .args(["-c", command])
+            .env(
+                "PATH",
+                format!(
+                    "{}:{}",
+                    fixture.path().display(),
+                    std::env::var("PATH").unwrap()
+                ),
+            )
+            .env("TMPDIR", temporary.path())
+            .output()
+            .unwrap();
+        assert!(
+            std::fs::read_dir(temporary.path())
+                .unwrap()
+                .next()
+                .is_none()
+        );
+        result
+    }
 
     fn info() -> Value {
         serde_json::json!({ "id": "ses_v2" })
@@ -354,8 +394,7 @@ mod tests {
                 log.to_owned()
             } else {
                 let argv = shlex::split(&command).unwrap();
-                assert_eq!(&argv[..3], ["opencode", "api", "GET"]);
-                let path = &argv[3];
+                let path = argv.last().unwrap();
                 if path == "/api/session/ses_v2" {
                     serde_json::json!({"data":info()}).to_string()
                 } else {
@@ -684,6 +723,29 @@ mod tests {
     }
 
     #[test]
+    fn large_api_response_survives_piped_stdout_and_cli_failures_remain_failures() {
+        let response = serde_json::json!({
+            "data": [user("msg_large", &"large response ".repeat(100_000))],
+            "cursor": {}
+        })
+        .to_string();
+        let path = "/api/session/ses_v2/message?limit=200&order=asc";
+        let unbuffered = run_cli(
+            &format!("opencode api GET {}", shell_quote(path)),
+            &response,
+            0,
+        );
+        assert!(serde_json::from_slice::<Value>(&unbuffered.stdout).is_err());
+        let command = opencode_v2_api_command(path);
+        let buffered = run_cli(&command, &response, 0);
+        assert!(buffered.status.success());
+        assert_eq!(buffered.stdout, response.as_bytes());
+        let failure = run_cli(&command, &response, 7);
+        assert_eq!(failure.status.code(), Some(7));
+        assert!(failure.stdout.is_empty());
+    }
+
+    #[test]
     fn cold_log_command_sends_only_watermark_and_preserves_cli_failure() {
         let output = log(
             vec![event(
@@ -694,26 +756,14 @@ mod tests {
             0,
         );
         let command = log_command("ses_v2", None);
-        let shell = std::process::Command::new("sh")
-            .args([
-                "-c",
-                &format!(
-                    "opencode() {{ printf '%s' {}; }}; {command}",
-                    shell_quote(&output)
-                ),
-            ])
-            .output()
-            .unwrap();
+        let shell = run_cli(&command, &output, 0);
         assert!(shell.status.success());
         let transferred = String::from_utf8(shell.stdout).unwrap();
         let parsed = parse_log("ses_v2", &transferred).unwrap();
         assert_eq!(parsed.sequence, Some(0));
         assert!(parsed.events.is_empty());
         assert!(transferred.len() < output.len() / 100);
-        let failure = std::process::Command::new("sh")
-            .args(["-c", &format!("opencode() {{ return 7; }}; {command}")])
-            .output()
-            .unwrap();
+        let failure = run_cli(&command, &output, 7);
         assert_eq!(failure.status.code(), Some(7));
         assert!(failure.stdout.is_empty());
     }
