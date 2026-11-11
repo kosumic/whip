@@ -109,19 +109,13 @@ class HerdrBackgroundModule(
   }
   @ReactMethod fun retainDownloadDestination(uri: String, promise: Promise) {
     try {
-      context.contentResolver.takePersistableUriPermission(Uri.parse(uri),
-        Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+      DownloadDestinationPermission.retain(context.contentResolver, uri)
       promise.resolve("")
     } catch (error: Exception) { promise.reject("E_DOWNLOAD_PERMISSION", error) }
   }
   @ReactMethod fun resolveDownloadDestination(uri: String, permission: String, promise: Promise) {
     try {
-      val tree = Uri.parse(uri)
-      val grant = context.contentResolver.persistedUriPermissions.any {
-        it.uri == tree && it.isReadPermission && it.isWritePermission
-      }
-      check(grant) { "Folder access expired. Choose the destination again." }
-      promise.resolve(uri)
+      promise.resolve(DownloadDestinationPermission.resolve(context.contentResolver, uri))
     } catch (error: Exception) { promise.reject("E_DOWNLOAD_PERMISSION", error) }
   }
   @ReactMethod fun releaseDownloadDestination(uri: String, promise: Promise) { promise.resolve(null) }
