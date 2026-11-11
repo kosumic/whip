@@ -1037,9 +1037,9 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                 <RemoteGitRepositorySummary key="preview-summary" connection={gitConnection} root={gitRepository.root} compact onSelectCommit={commit => { void selectGitCommit(commit); }} />
               ) : null}
               {preview.gitCommit ? (
-                <View className="flex-row items-center gap-2 border-b border-border px-3 py-2">
-                  <Text className="font-mono text-[11px] text-muted-foreground">{preview.gitCommit.shortId}</Text>
-                  <Text numberOfLines={1} className="min-w-0 flex-1 text-[12px] font-semibold">{preview.gitCommit.subject}</Text>
+                <View className="flex-row items-start gap-2 border-b border-border px-3 py-2">
+                  <Text className="shrink-0 font-mono text-[11px] text-muted-foreground">{preview.gitCommit.shortId}</Text>
+                  <Text selectable className="min-w-0 flex-1 text-[12px] font-semibold">{preview.gitCommit.subject}</Text>
                 </View>
               ) : null}
               {preview.gitStatus && gitReviewIndex >= 0 ? (
@@ -1199,7 +1199,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                 <View className="flex-row items-center gap-2 border-b border-border px-3 py-1">
                   <View className="min-w-0 flex-1">
                     <Text className="font-mono text-[10px] text-muted-foreground">{selectedCommit.shortId}</Text>
-                    <Text numberOfLines={1} className="text-[12px] font-semibold">{selectedCommit.subject}</Text>
+                    <Text selectable className="text-[12px] font-semibold">{selectedCommit.subject}</Text>
                   </View>
                   <Button accessibilityLabel={t('files.gitWorkingTree')} variant="secondary" onPress={() => { void selectGitCommit(null); }}><Text>{t('files.gitWorkingTree')}</Text></Button>
                 </View>
