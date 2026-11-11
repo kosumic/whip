@@ -26,10 +26,11 @@ events carry host, pane, message, part, and normalized UTF-16 chunk offsets, so
 repeated words and tab-name prefixes cannot highlight a different response.
 System voices supply word ranges; Phonon uses acknowledged PCM and the same
 Rust pacing clock as voice chat. Phonon word timing is an estimate, refined by
-the final audio duration. Completion, cancellation and replacement clear the
-highlight. Markdown links, formatting and code blocks retain their original
-content; a rewritten response is left unhighlighted rather than using stale
-positions.
+the final audio duration. Between audio chunks the last word stays highlighted
+and upcoming prose stays dim until the next chunk advances. Session completion,
+cancellation and replacement clear the highlight. Markdown links, formatting
+and code blocks retain their original content; a rewritten response is left
+unhighlighted rather than using stale positions.
 
 The in-chat presentation matches voice captions: spoken text stays bright, the
 current word uses semibold, and upcoming text is dim. Native Markdown rendering

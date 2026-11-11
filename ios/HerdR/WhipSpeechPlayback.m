@@ -1170,7 +1170,9 @@ static void WhipWakeAutomaticSpeech(void)
 }
 - (void)finishUtterance:(NSString *)error
 {
-  [self clearCaption];
+  // Chunk completion can precede the next chunk's audio. The session's clear:
+  // path ends the caption; until then keep the last word and upcoming dimming.
+  if (error) [self clearCaption];
   [self.levelTimer invalidate]; self.levelTimer = nil;
   [self reportLevel:0];
   [self.pcm stop];

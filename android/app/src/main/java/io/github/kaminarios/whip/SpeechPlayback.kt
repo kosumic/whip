@@ -505,7 +505,6 @@ object SpeechPlayback : SensorEventListener {
       queuedChat.remove(entry)
       if (event != null && caption === event) {
         reportCaption(entry.text.length)
-        clearCaption()
       }
       if (queuedChat.isEmpty()) clearTimeout()
       if (queuedChat.isEmpty()) finishTurn(current)
@@ -939,7 +938,8 @@ object SpeechPlayback : SensorEventListener {
   private fun finish(id: String?) {
     val current = session ?: return
     if (id == null || id != utteranceId || !SpeechPolicy.complete(current.id)) return
-    clearCaption()
+    // A chat chunk can finish before the next chunk has audio. Keep its caption
+    // until the next chunk reports progress or clear() ends the session.
     handler.removeCallbacks(resetLevel)
     reportLevel(current, 0f)
     if (current.kind != SpeechPolicy.CHAT) {

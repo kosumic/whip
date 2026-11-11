@@ -577,6 +577,15 @@ static NSString *voiceCallToken;
     [words fulfill];
   });
   [self waitForExpectations:@[words] timeout:2];
+  [self.player speechSynthesizer:engine didFinishSpeechUtterance:utterance];
+  XCTestExpectation *held = [self expectationWithDescription:@"chunk completion retains the caption while waiting for audio"];
+  dispatch_async(dispatch_get_main_queue(), ^{
+    XCTAssertEqual(events.count, 2u);
+    XCTAssertEqualObjects(events.lastObject[@"spokenUtf16"], @46);
+    XCTAssertNotEqualObjects(events.lastObject[@"ended"], @YES);
+    [held fulfill];
+  });
+  [self waitForExpectations:@[held] timeout:2];
   [self.player stop];
   XCTAssertEqualObjects(events.lastObject[@"ended"], @YES);
   NSUInteger endedCount = events.count;

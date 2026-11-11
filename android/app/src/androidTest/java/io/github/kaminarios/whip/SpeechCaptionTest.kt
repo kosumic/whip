@@ -147,10 +147,12 @@ class SpeechCaptionTest {
     } finally { main { window.dismiss(); root.cleanup() } }
   }
 
-  @Test fun manualPlaybackReportsOriginalResponseProgressAndCompletion() {
+  @Test fun readAloudKeepsCaptionBetweenChunksAndClearsItWhenStopped() {
     val ready = CountDownLatch(1)
     val complete = CountDownLatch(1)
     val progress = CountDownLatch(1)
+    val nextComplete = CountDownLatch(1)
+    val nextProgress = CountDownLatch(1)
     val ended = CountDownLatch(1)
     val error = AtomicReference<String?>()
     val source = JSONObject().put("bindingTokens", org.json.JSONArray().put("caption-test"))
@@ -169,6 +171,7 @@ class SpeechCaptionTest {
             assertEquals("test-message", event.getString("messageId"))
             assertEquals("test-part", event.getString("partId"))
             assertTrue(event.getInt("spokenUtf16") >= 0)
+            if (event.getInt("startUtf16") > 0) nextProgress.countDown()
             progress.countDown()
           }
         }
@@ -178,7 +181,17 @@ class SpeechCaptionTest {
       main { SpeechPlayback.speakChat("caption-test", ORIGINAL, promise(complete), source) }
       assertTrue("Playback emitted no caption progress", progress.await(30, TimeUnit.SECONDS)); assertNull(error.get())
       assertTrue("Playback did not complete", complete.await(30, TimeUnit.SECONDS)); assertNull(error.get())
-      assertTrue("Completion did not clear the caption", ended.await(5, TimeUnit.SECONDS))
+      assertFalse("A chunk ending must keep upcoming prose dim while waiting for audio", ended.await(200, TimeUnit.MILLISECONDS))
+      main {
+        val text = "Four five six."
+        val nextSource = JSONObject(source.toString()).put("startUtf16", ORIGINAL.length + 1).put("text", text)
+        SpeechPlayback.speakChat("caption-test", text, promise(nextComplete), nextSource)
+      }
+      assertTrue("The next chunk did not advance its caption", nextProgress.await(30, TimeUnit.SECONDS)); assertNull(error.get())
+      assertTrue("The next chunk did not complete", nextComplete.await(30, TimeUnit.SECONDS)); assertNull(error.get())
+      assertEquals("Chunk handoff must not clear speech styling", 1L, ended.count)
+      main { SpeechPlayback.stop() }
+      assertTrue("Stopping did not clear the caption", ended.await(5, TimeUnit.SECONDS))
     } finally {
       main { SpeechPlayback.stop(); SpeechPlayback.onCaption = previous }
     }
