@@ -342,6 +342,7 @@ export const ja = {
   'nav.more': '詳細',
   'shizuku.title': 'Shizuku',
   'shizuku.access': 'Shizuku へのアクセスを許可',
+  'shizuku.accessSetupHint': '設定 → スマートフォンの使用 → Shizuku で Shizuku を起動し、Whip を承認してください。',
   'shizuku.accessCopy': 'このセッションによる Android の特権ツールの使用を許可します。初期設定はオフです。オフにするとこのセッションの実行中のコマンドを停止します。',
   'shizuku.github': 'GitHub で Shizuku を見る',
   'shizuku.copy': 'Shizuku 経由で Whip に Android の特権 API の使用を許可します。',

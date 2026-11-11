@@ -345,6 +345,7 @@ export const fr = {
   'nav.more': 'Plus',
   'shizuku.title': 'Shizuku',
   'shizuku.access': 'Autoriser l’accès à Shizuku',
+  'shizuku.accessSetupHint': 'Démarrez Shizuku et autorisez Whip dans Paramètres → Utilisation du téléphone → Shizuku.',
   'shizuku.accessCopy': 'Autorise cette session à utiliser les outils Android privilégiés. Désactivé par défaut. La désactivation arrête ses commandes en cours.',
   'shizuku.github': 'Shizuku sur GitHub',
   'shizuku.copy': 'Autorisez Whip à utiliser les API Android privilégiées via Shizuku.',

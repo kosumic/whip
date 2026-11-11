@@ -342,6 +342,7 @@ export const zhHans = {
   'nav.more': '更多',
   'shizuku.title': 'Shizuku',
   'shizuku.access': '允许 Shizuku 访问',
+  'shizuku.accessSetupHint': '请启动 Shizuku，并在设置 → 手机使用 → Shizuku 中授权 Whip。',
   'shizuku.accessCopy': '允许此会话使用 Android 特权工具。默认关闭，关闭时会停止此会话正在运行的命令。',
   'shizuku.github': '在 GitHub 上查看 Shizuku',
   'shizuku.copy': '授权 Whip 通过 Shizuku 使用 Android 特权 API。',

@@ -27,6 +27,10 @@ jest.mock('../src/lib/bundledAsset', () => ({
   bundledAsset: (asset: unknown) => asset,
 }));
 jest.mock('../src/components/ui/switch', () => ({ Switch: 'Switch' }));
+jest.mock('../src/services/shizuku', () => ({
+  getShizukuStatus: jest.fn(async () => 'ready'),
+  subscribeToShizukuStatus: jest.fn(() => jest.fn()),
+}));
 jest.mock('../src/browser/native', () => ({
   supportsBrowserControl: () => true,
 }));
@@ -53,6 +57,7 @@ jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );
 jest.mock('react-native', () => ({
+  AppState: { addEventListener: jest.fn(() => ({ remove: jest.fn() })) },
   FlatList: (listProps: {
     data: unknown[];
     renderItem: (item: { item: unknown }) => unknown;
