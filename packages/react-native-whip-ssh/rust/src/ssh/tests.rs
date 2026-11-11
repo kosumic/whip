@@ -1,6 +1,64 @@
 use super::*;
 
 #[test]
+fn cancelled_commands_and_stream_opens_release_server_sessions()
+-> Result<(), Box<dyn std::error::Error>> {
+    runtime()?.block_on(async {
+        let fixture = ReverseForwardFixture::with_commands(
+            true,
+            Duration::ZERO,
+            Some(std::collections::BTreeMap::new()),
+        )
+        .await?;
+        fixture.limit_sessions(1);
+        // Repeat beyond OpenSSH's default session limit. Cancel while the
+        // server is still confirming the open or the command is running.
+        for index in 0..12 {
+            let attempts = fixture.session_attempts();
+            let execs = fixture.exec_requests();
+            let closed = fixture.closed_commands();
+            let running = index % 3 == 2;
+            if running {
+                fixture.hang_next_exec();
+            } else {
+                fixture.delay_next_session(Duration::from_millis(50));
+            }
+            let ssh = fixture.shared_ssh();
+            let opening = tokio::spawn(async move {
+                if index % 3 != 1 {
+                    ssh.execute("printf cancelled").await.map(|_| ())
+                } else {
+                    ssh.open_exec(
+                        "cancelled-stream",
+                        "printf cancelled",
+                        Arc::new(|_| {}),
+                        Arc::new(|_| {}),
+                    )
+                    .await
+                }
+            });
+            fixture.wait_for_session_attempts(attempts + 1).await;
+            if running {
+                fixture.wait_for_exec_requests(execs + 1).await;
+            }
+            opening.abort();
+            assert!(opening.await.unwrap_err().is_cancelled());
+            tokio::time::timeout(Duration::from_secs(2), async {
+                while fixture.closed_commands() == closed {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await?;
+            assert_eq!(
+                fixture.ssh.execute("printf recovered").await?.stdout,
+                b"recovered"
+            );
+        }
+        Ok(())
+    })
+}
+
+#[test]
 fn concurrent_commands_fit_a_small_servers_session_limit() -> Result<(), Box<dyn std::error::Error>>
 {
     runtime()?.block_on(async {

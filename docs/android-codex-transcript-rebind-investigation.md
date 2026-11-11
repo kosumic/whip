@@ -230,3 +230,37 @@ concurrent SSH commands under a two-session limit.
 Validation: Rust library suite **1,010 passed, 11 ignored**; all six file-source
 tests also passed under Fish; strict all-target Clippy and Rust formatting passed.
 No new mobile build was installed during this fix.
+
+## November 10: cancellation-safe session ownership
+
+The Pixel 9 Pro connection to thinker again exhausted SSH session slots. The
+server logged `error: no more sessions` repeatedly from 20:21:27 until the
+connection closed at 20:41:33 EST. A fresh connection at 20:41:36 had no further
+session-limit errors through the subsequent checks. Whip MCP reported Android
+app version 2.2.0. Shizuku was stopped and unauthorized, so phone logs were not
+available to identify which operation occupied each slot.
+
+The pinned russh implementation does not close a raw `Channel` when it is
+dropped. Cancelling a channel-open future also abandons its confirmation without
+closing a channel accepted later by the server. Timed commands already retained
+their pending opens, but ordinary commands, shell/exec setup and SFTP opens did
+not all retain ownership across cancellation and setup errors. This is a concrete
+leak mechanism; the server logs alone do not establish which path triggered this
+particular incident.
+
+Session opens now retain an owner until confirmation and share one opening gate
+per connection. Cancellation before dispatch removes a queued request; a late
+confirmation is closed if its caller has gone away. Opened channels also close
+on command cancellation or setup failure, transferring cleanup only to an
+established stream or its spawned channel loop. Existing command and transcript
+stream budgets remain in place.
+
+A real SSH regression repeats cancelled command opens, cancelled persistent
+stream opens and cancelled running commands beyond the default ten-session
+limit. Its server permits only one session, and a subsequent command must
+succeed after every cancellation without reconnecting.
+
+Validation through `nix develop`: SSH suite **63 passed, 4 ignored**; file-source
+transcript suite **8 passed**; strict all-target Clippy and Rust formatting
+passed. The ignored checks require live SSH/Tailcat fixtures. No Android build
+was installed during this investigation.

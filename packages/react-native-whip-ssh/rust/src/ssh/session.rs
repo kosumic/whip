@@ -47,12 +47,12 @@ impl super::Session {
         &self,
         destination: &str,
     ) -> Result<russh::Channel<client::Msg>, russh::Error> {
-        let channel = self.handle.channel_open_session().await?;
+        let channel = self.open_session().await?;
         // -N closes the socket's write half at stdin EOF while preserving reads.
         channel
             .exec(true, format!("exec nc -N {destination}"))
             .await?;
-        Ok(channel)
+        Ok(channel.into_channel())
     }
 }
 
@@ -223,7 +223,7 @@ impl SshSession {
 
     pub(crate) async fn download_sftp(&self) -> Result<Arc<SftpSession>, TransportError> {
         self.inner.ensure_alive()?;
-        let channel = self.inner.handle.channel_open_session().await?;
+        let channel = self.inner.open_session().await?;
         channel.request_subsystem(true, "sftp").await?;
         Ok(Arc::new(SftpSession::new(channel.into_stream()).await?))
     }

@@ -40,6 +40,8 @@ struct ServerState {
     session_channels: RwLock<std::collections::HashSet<russh::ChannelId>>,
     session_started: tokio::sync::Notify,
     exec_faults: parking_lot::Mutex<std::collections::VecDeque<ExecFault>>,
+    exec_requests: AtomicUsize,
+    exec_started: tokio::sync::Notify,
     command_cancellations: RwLock<HashMap<russh::ChannelId, watch::Sender<bool>>>,
     tail_channels: RwLock<Vec<russh::ChannelId>>,
     closed_commands: AtomicUsize,
@@ -130,6 +132,16 @@ impl Fixture {
         }
     }
 
+    pub(crate) fn exec_requests(&self) -> usize {
+        self.state.exec_requests.load(Ordering::Relaxed)
+    }
+
+    pub(crate) async fn wait_for_exec_requests(&self, count: usize) {
+        while self.exec_requests() < count {
+            self.state.exec_started.notified().await;
+        }
+    }
+
     pub(crate) async fn new(allow: bool, delay: Duration) -> Result<Self, Box<dyn Error>> {
         Self::with_commands(allow, delay, None).await
     }
@@ -186,7 +198,7 @@ impl Fixture {
         let ssh = Arc::new(SshSession {
             inner: Arc::new(Session {
                 builtin_tailcat_ssh: false,
-                handle,
+                handle: Arc::new(handle),
                 agent,
                 lifecycle,
                 reverse_forwards,
@@ -334,6 +346,8 @@ impl server::Handler for ForwardServer {
         command: &[u8],
         session: &mut server::Session,
     ) -> Result<(), Self::Error> {
+        self.state.exec_requests.fetch_add(1, Ordering::Relaxed);
+        self.state.exec_started.notify_one();
         let fault = self.state.exec_faults.lock().pop_front();
         if let Some(fault) = fault {
             match fault {

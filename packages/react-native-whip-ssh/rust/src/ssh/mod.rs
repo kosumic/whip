@@ -6,6 +6,7 @@
 //! between the SSH and Herdr implementations.
 
 mod browser_proxy;
+mod channel;
 pub(crate) mod known_hosts;
 mod reverse_forward;
 mod session;
@@ -29,6 +30,7 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 
+use self::channel::SessionChannel;
 use futures::{channel::mpsc as futures_mpsc, future::try_join_all};
 use parking_lot::RwLock;
 use russh::client;
@@ -426,7 +428,7 @@ pub trait WhipSshEventSink: Send + Sync {
 }
 
 struct Session {
-    handle: client::Handle<RusshHandler>,
+    handle: Arc<client::Handle<RusshHandler>>,
     builtin_tailcat_ssh: bool,
     agent: Arc<AgentState>,
     lifecycle: Arc<ConnectionLifecycle>,
@@ -443,7 +445,7 @@ struct ConnectionLifecycle {
     alive: AtomicBool,
     disconnected: watch::Sender<Option<Arc<ConnectionDisconnect>>>,
     sftp_init: tokio::sync::Mutex<()>,
-    timed_exec_open: tokio::sync::Mutex<()>,
+    session_open: tokio::sync::Mutex<()>,
     commands: Semaphore,
     sftp: RwLock<Option<Arc<SftpSession>>>,
 }
@@ -455,7 +457,7 @@ impl Default for ConnectionLifecycle {
             alive: AtomicBool::new(true),
             disconnected,
             sftp_init: tokio::sync::Mutex::new(()),
-            timed_exec_open: tokio::sync::Mutex::new(()),
+            session_open: tokio::sync::Mutex::new(()),
             commands: Semaphore::new(MAX_CONCURRENT_COMMANDS),
             sftp: RwLock::new(None),
         }
@@ -1165,7 +1167,7 @@ async fn connect_inner_guarded(
         initialize_agent(private_key, agent.clone()).await?;
     }
     let session = Arc::new(Session {
-        handle,
+        handle: Arc::new(handle),
         builtin_tailcat_ssh: connection.tailcat_ssh_server,
         agent,
         lifecycle,
@@ -1290,7 +1292,7 @@ async fn execute_with_input_on(
 ) -> Result<CommandOutput, TransportError> {
     session.ensure_alive()?;
     let _slot = command_slot(session).await?;
-    let mut channel = session.handle.channel_open_session().await?;
+    let mut channel = session.open_session().await?;
     let result = execute_channel(session, &mut channel, command, input, None).await;
     let _ = channel.close().await;
     result
@@ -1346,7 +1348,7 @@ async fn execute_timed_command(
     // russh does not close a channel whose open-confirmation receiver was
     // dropped. Keep that request alive for cleanup, but allow at most one late
     // open per SSH connection. Later callers time out waiting for this gate.
-    let opening = tokio::time::timeout_at(deadline, session.lifecycle.timed_exec_open.lock())
+    let opening = tokio::time::timeout_at(deadline, session.lifecycle.session_open.lock())
         .await
         .map_err(|_| exec_timeout("channel-open", timeout))?;
     let open_gate = gate_started.elapsed();
@@ -1354,7 +1356,11 @@ async fn execute_timed_command(
         return Err(exec_timeout("cancelled", timeout));
     }
     let open_started = Instant::now();
-    let channel = session.handle.channel_open_session().await;
+    let channel = session
+        .handle
+        .channel_open_session()
+        .await
+        .map(SessionChannel::new);
     let channel_open = open_started.elapsed();
     drop(opening);
     let mut channel = channel?;
@@ -1593,7 +1599,7 @@ async fn start_shell_on(
             "shell '{shell_id}' is already open"
         )));
     }
-    let channel = session.handle.channel_open_session().await?;
+    let channel = session.open_session().await?;
     channel
         .request_pty(false, &pty_type, columns, rows, 0, 0, &[])
         .await?;
@@ -1745,7 +1751,7 @@ async fn connect_sftp_on(session: &Session) -> Result<Arc<SftpSession>, Transpor
             return Err(TransportError::SessionClosed(disconnect.reason.clone()));
         }
         result = async {
-            let channel = session.handle.channel_open_session().await?;
+            let channel = session.open_session().await?;
             channel.request_subsystem(true, "sftp").await?;
             SftpSession::new(channel.into_stream()).await.map_err(TransportError::from)
         } => Arc::new(result?),
@@ -2960,7 +2966,7 @@ async fn start_sftp_file_server_on(
     remote_path: String,
 ) -> Result<SftpFileServer, TransportError> {
     session.ensure_alive()?;
-    let channel = session.handle.channel_open_session().await?;
+    let channel = session.open_session().await?;
     channel.request_subsystem(true, "sftp").await?;
     let sftp = Arc::new(SftpSession::new(channel.into_stream()).await?);
     let metadata = sftp.metadata(remote_path.clone()).await?;
@@ -3061,7 +3067,7 @@ async fn open_exec_channel_with_delivery(
             "exec channel '{channel_id}' is already open"
         )));
     }
-    let channel = session.handle.channel_open_session().await?;
+    let channel = session.open_session().await?;
     request_agent_forwarding(&session, &channel).await?;
     channel.exec(true, command).await?;
     let (sender, mut receiver) = mpsc::channel(CONTROL_QUEUE_CAPACITY);
