@@ -1169,6 +1169,62 @@ impl AgentSessionManager {
             .contains_key(terminal_id)
     }
 
+    /// Residency inspection borrows the core; it never copies transcript bodies.
+    pub(crate) fn cache_bindings(&self) -> Vec<(AgentBindingIdentity, bool)> {
+        let state = self.inner.state.lock();
+        state
+            .terminal_bindings
+            .iter()
+            .filter_map(|(terminal, binding)| {
+                let session = state.sessions.get(&binding.key)?;
+                let failed = matches!(
+                    session.core.status(),
+                    AgentTranscriptStatus::Unavailable | AgentTranscriptStatus::Error
+                ) && session.core.recent_message_refs(1).is_empty();
+                Some((
+                    AgentBindingIdentity {
+                        runtime_incarnation: self.inner.runtime_incarnation,
+                        binding_token: binding.token.clone(),
+                        binding_generation: binding.generation,
+                        terminal_id: terminal.clone(),
+                        pane_id: binding.pane_id.clone(),
+                        agent: binding.agent,
+                        session_id: binding.session_id.clone(),
+                        transcript_key: binding.key.clone(),
+                    },
+                    failed,
+                ))
+            })
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_cached_test_transcript(
+        &self,
+        terminal: &str,
+        text: Option<&str>,
+        failed: bool,
+    ) {
+        let mut state = self.inner.state.lock();
+        let key = state.terminal_bindings[&TerminalId::from(terminal)]
+            .key
+            .clone();
+        let session = state.sessions.get_mut(&key).unwrap();
+        let mut core = OpenCodeSessionCore::new(session.session_id.clone());
+        let messages = text.map_or_else(Vec::new, |text| {
+            vec![serde_json::json!({
+                "info": { "id": "answer", "role": "assistant" },
+                "parts": [{ "id": "text", "type": "text", "text": text }]
+            })]
+        });
+        core.bootstrap(1, &serde_json::json!({ "info": { "id": session.session_id.as_str() }, "messages": messages }).to_string()).unwrap();
+        if failed {
+            let _ = core.mark_unavailable_update("transient discovery failure");
+        }
+        session.core = AgentSessionCore::OpenCode(Box::new(core));
+        session.started = true;
+    }
+
     pub(crate) fn terminal_binding(&self, terminal_id: &str) -> Option<BoundAgentChat> {
         let state = self.inner.state.lock();
         let binding = state.terminal_bindings.get(terminal_id)?.clone();
@@ -1467,6 +1523,13 @@ impl AgentSessionManager {
         }
         .key()
         .into()
+    }
+
+    pub(crate) fn cache_identity(
+        &self,
+        identity: &AuthoritativeAgentChatIdentity,
+    ) -> TranscriptKey {
+        self.transcript_key(identity)
     }
 
     pub(crate) fn confirm_cache(&self, token: &str) -> bool {
@@ -2754,6 +2817,13 @@ fn emit(
         }
     }
     if current {
+        if update
+            .deltas
+            .iter()
+            .any(|delta| matches!(delta, AgentTranscriptDelta::StatusChanged { .. }))
+        {
+            crate::app_core::transcript_cache_changed();
+        }
         presentation::enqueue(manager, key, operation_epoch, update);
     }
 }

@@ -4,6 +4,8 @@ mod herd;
 pub(crate) mod offline;
 mod sessions;
 mod terminal_rail;
+mod transcript_cache;
+pub use transcript_cache::*;
 
 pub use herd::*;
 pub use sessions::*;

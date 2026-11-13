@@ -48,7 +48,7 @@ pub struct AppCoreView {
 pub(super) struct AppSession {
     pub(super) id: String,
     pub(super) host_id: String,
-    runtime: Option<Arc<HostRuntime>>,
+    pub(super) runtime: Option<Arc<HostRuntime>>,
     cached_host_state: Option<HostStateSnapshot>,
     placeholder_status: AppConnectionStatus,
     placeholder_error: Option<String>,
@@ -490,7 +490,10 @@ impl AppCore {
             session.observed_host_revision = 0;
             state.bump_revision();
         }
-        state.view()
+        let view = state.view();
+        drop(state);
+        super::transcript_cache_changed();
+        view
     }
 
     /// Cache metadata is only a stale fallback; a runtime snapshot always wins.
@@ -536,7 +539,10 @@ impl AppCore {
             session.observed_host_revision = 0;
             state.bump_revision();
         }
-        state.view()
+        let view = state.view();
+        drop(state);
+        super::transcript_cache_changed();
+        view
     }
 
     pub fn set_placeholder_connection(
@@ -585,7 +591,10 @@ impl AppCore {
         let mut state = self.state.lock();
         self.cancel_connection(session_id.clone());
         state.close_session(&session_id);
-        state.view()
+        let view = state.view();
+        drop(state);
+        super::transcript_cache_changed();
+        view
     }
 
     pub fn select_workspace_view(&self, session_id: String, workspace_id: String) -> AppCoreView {

@@ -24,6 +24,50 @@ use crate::host_state::{HostFreshness, HostSyncStatus};
 const AGENT_SHELL_READINESS_TIMEOUT: Duration = Duration::from_secs(2);
 const AGENT_SHELL_READINESS_INTERVAL: Duration = Duration::from_millis(100);
 
+impl HostRuntime {
+    pub(crate) fn bind_transcript_candidate(
+        &self,
+        terminal_id: String,
+    ) -> Result<AgentChatOpenResult, AgentSessionError> {
+        let identity = {
+            let host = self.inner.state.lock().host_state.projection();
+            if host.sync_status != HostSyncStatus::Synced || host.freshness != HostFreshness::Fresh
+            {
+                return Ok(AgentChatOpenResult::NoChat {
+                    terminal_id,
+                    reason: AgentChatUnavailableReason::HostStateUnavailable,
+                });
+            }
+            let Some(pane) = host.snapshot.as_ref().and_then(|snapshot| {
+                snapshot
+                    .panes
+                    .iter()
+                    .find(|pane| pane.terminal_id == terminal_id)
+            }) else {
+                return Ok(AgentChatOpenResult::NoChat {
+                    terminal_id,
+                    reason: AgentChatUnavailableReason::TerminalNotFound,
+                });
+            };
+            let Some(identity) = authoritative_agent_chat_identity(pane) else {
+                return Ok(AgentChatOpenResult::NoChat {
+                    terminal_id,
+                    reason: AgentChatUnavailableReason::UnsupportedPane,
+                });
+            };
+            identity
+        };
+        let binding = self.inner.agents.bind_authoritative(identity)?;
+        Ok(AgentChatOpenResult::Bound {
+            binding: binding.into(),
+        })
+    }
+
+    pub(crate) fn transcript_manager(&self) -> crate::agent_sessions::AgentSessionManager {
+        self.inner.agents.clone()
+    }
+}
+
 pub(super) fn managed_agent_name(label: &str, kind: HerdrAgentKind, tab_number: f64) -> String {
     let mut normalized = String::new();
     let mut previous_was_dash = false;
@@ -419,42 +463,37 @@ pub(super) async fn submit_pastes_inner(
 }
 #[uniffi::export]
 impl HostRuntime {
+    pub fn preload_agent_chat(
+        &self,
+        terminal_id: String,
+    ) -> Result<Option<AgentChatBinding>, AgentSessionError> {
+        if let Some(binding) = self.current_agent_chat(terminal_id.clone()) {
+            return Ok(Some(binding));
+        }
+        if !crate::app_core::transcript_preload_allowed(self, &terminal_id) {
+            return Ok(None);
+        }
+        match self.bind_transcript_candidate(terminal_id)? {
+            AgentChatOpenResult::Bound { binding } => {
+                crate::app_core::start_transcript_preload(
+                    self.inner.agents.clone(),
+                    binding.binding_token.clone(),
+                );
+                Ok(Some(binding))
+            }
+            AgentChatOpenResult::NoChat { .. } => Ok(None),
+        }
+    }
+
     pub fn open_agent_chat(
         &self,
         terminal_id: String,
     ) -> Result<AgentChatOpenResult, AgentSessionError> {
-        let identity = {
-            let host = self.inner.state.lock().host_state.projection();
-            if host.sync_status != HostSyncStatus::Synced || host.freshness != HostFreshness::Fresh
-            {
-                return Ok(AgentChatOpenResult::NoChat {
-                    terminal_id,
-                    reason: AgentChatUnavailableReason::HostStateUnavailable,
-                });
-            }
-            let Some(pane) = host.snapshot.as_ref().and_then(|snapshot| {
-                snapshot
-                    .panes
-                    .iter()
-                    .find(|pane| pane.terminal_id == terminal_id)
-            }) else {
-                return Ok(AgentChatOpenResult::NoChat {
-                    terminal_id,
-                    reason: AgentChatUnavailableReason::TerminalNotFound,
-                });
-            };
-            let Some(identity) = authoritative_agent_chat_identity(pane) else {
-                return Ok(AgentChatOpenResult::NoChat {
-                    terminal_id,
-                    reason: AgentChatUnavailableReason::UnsupportedPane,
-                });
-            };
-            identity
-        };
-        let binding = self.inner.agents.bind_authoritative(identity)?;
-        Ok(AgentChatOpenResult::Bound {
-            binding: binding.into(),
-        })
+        let result = self.bind_transcript_candidate(terminal_id.clone())?;
+        if matches!(result, AgentChatOpenResult::Bound { .. }) {
+            crate::app_core::transcript_chat_opened(self, &terminal_id);
+        }
+        Ok(result)
     }
 
     pub async fn start_agent_chat(

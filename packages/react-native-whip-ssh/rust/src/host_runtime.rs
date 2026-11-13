@@ -679,7 +679,7 @@ fn publish_lifecycle_status(inner: &RuntimeInner) {
     });
 }
 
-fn authoritative_agent_chat_identity(
+pub(crate) fn authoritative_agent_chat_identity(
     pane: &HerdrPaneInfo,
 ) -> Option<AuthoritativeAgentChatIdentity> {
     let session = pane.agent_session.as_ref()?;
@@ -779,6 +779,7 @@ fn emit_host_state(inner: &RuntimeInner) {
         agent_status_transitions,
         transcript_retention,
     });
+    crate::app_core::transcript_cache_changed();
 }
 
 #[uniffi::export]
@@ -794,6 +795,7 @@ pub fn clear_host_runtime_event_sink() {
 // React bridge invalidation detaches foreign callbacks, never SSH transports.
 #[unsafe(no_mangle)]
 pub extern "C" fn whip_detach_runtime_ui() {
+    crate::app_core::clear_transcript_cache_ui();
     crate::app_database::detach_known_host_repository();
     crate::terminal_delivery::clear();
     crate::reverse_control::detach_ui();
@@ -1106,6 +1108,31 @@ pub(crate) fn register_connected_test_runtime(id: &str) -> Arc<HostRuntime> {
     let inner = tests::connected_runtime_inner(id);
     runtimes().write().insert(id.to_owned(), inner.clone());
     Arc::new(HostRuntime { inner })
+}
+
+#[cfg(test)]
+pub(crate) fn register_transcript_test_runtime(id: &str) -> Arc<HostRuntime> {
+    let mut inner = tests::connected_runtime_inner(id);
+    let incarnation = NEXT_RUNTIME_INCARNATION.fetch_add(1, Ordering::Relaxed);
+    let owned = Arc::get_mut(&mut inner).unwrap();
+    owned.incarnation = incarnation;
+    owned.agents = AgentSessionManager::new(id.to_owned(), incarnation, owned.herdr.clone());
+    runtimes().write().insert(id.to_owned(), inner.clone());
+    Arc::new(HostRuntime { inner })
+}
+
+#[cfg(test)]
+impl HostRuntime {
+    pub(crate) fn install_transcript_test_snapshot(&self, snapshot: crate::HerdrSessionSnapshot) {
+        tests::install_agent_chat_snapshot(&self.inner, snapshot);
+    }
+
+    pub(crate) fn begin_transcript_test_sync(&self, generation: u64) {
+        let mut state = self.inner.state.lock();
+        state.generation = generation;
+        state.host_state.connection_installed(generation);
+        state.host_state.begin_sync(generation);
+    }
 }
 
 pub(crate) fn workflow_host_connected(host: &crate::HostProfileRecord) -> bool {
