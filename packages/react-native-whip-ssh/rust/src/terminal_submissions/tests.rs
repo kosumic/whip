@@ -424,3 +424,82 @@ fn repeated_unsent_failures_stop_at_the_native_retry_limit() -> Result<(), Box<d
         Ok(())
     })
 }
+
+#[test]
+fn voice_admission_pins_destination_and_receipts_survive_ui_consumption()
+-> Result<(), Box<dyn Error>> {
+    let queue = TerminalSubmissionQueue::new();
+    let expected = target("voice", true);
+    let voice_binding = VoiceSubmissionBinding {
+        agent: crate::AgentTranscriptKind::Codex,
+        session_id: "session".into(),
+        admission: None,
+    };
+    queue.clone().update_targets(vec![expected.clone()]);
+    let message = queue
+        .clone()
+        .enqueue_voice(
+            "voice".into(),
+            "Hello".into(),
+            &expected,
+            voice_binding.clone(),
+        )
+        .ok_or("missing voice submission")?;
+    let receipt = queue
+        .observe("voice", &message.id)
+        .ok_or("missing receipt")?;
+    assert_eq!(*receipt.lock(), TerminalSubmissionStatus::Queued);
+    {
+        let mut state = queue.state.lock();
+        let target = state.targets.get_mut("voice").ok_or("target")?;
+        let mut accepted = target.queue.pop_front().ok_or("message")?;
+        accepted.status = TerminalSubmissionStatus::Accepted;
+        target.completed.push(accepted);
+        drop(state);
+    }
+    queue.changed("voice");
+    queue.take_completed("voice".into());
+    assert_eq!(*receipt.lock(), TerminalSubmissionStatus::Accepted);
+    let mut replacement = expected.clone();
+    replacement.runtime_incarnation += 1;
+    queue.clone().update_targets(vec![replacement]);
+    assert!(
+        queue
+            .enqueue_voice(
+                "voice".into(),
+                "Do not send".into(),
+                &expected,
+                voice_binding
+            )
+            .is_none()
+    );
+    Ok(())
+}
+
+#[test]
+fn closing_voice_revokes_a_stalled_platform_preparation_and_allows_the_next_message()
+-> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let wire = Arc::new(Wire::default());
+        let queue = queue(&wire);
+        let platform = Arc::new(Platform::default());
+        platform.hold.store(true, Ordering::Release);
+        queue.clone().attach(platform.clone());
+        queue.clone().update_targets(vec![target("a", true)]);
+        let first = enqueue(&queue, "a", "cancelled voice")?;
+        queue.clone().start();
+        until(|| !platform.permits.lock().is_empty()).await?;
+        let permit = platform.permits.lock()[0].clone();
+        queue.cancel_voice("a", &first.id);
+        assert!(permit.check_active().is_err());
+        platform.hold.store(false, Ordering::Release);
+        enqueue(&queue, "a", "next message")?;
+        queue.clone().start();
+        until(|| !queue.take_completed("a".into()).is_empty()).await?;
+        assert_eq!(
+            wire.writes.lock().as_slice(),
+            &[("a".into(), vec!["next message".into()])]
+        );
+        Ok(())
+    })
+}

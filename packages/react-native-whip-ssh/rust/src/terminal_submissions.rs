@@ -117,6 +117,13 @@ pub(crate) trait SubmissionTransport: Send + Sync {
 type TransportFactory =
     dyn Fn(&TerminalSubmissionTarget) -> Option<Arc<dyn SubmissionTransport>> + Send + Sync;
 
+#[derive(Clone)]
+pub(crate) struct VoiceSubmissionBinding {
+    pub agent: crate::AgentTranscriptKind,
+    pub session_id: String,
+    pub admission: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
+}
+
 #[derive(Default)]
 struct Target {
     binding: Option<TerminalSubmissionTarget>,
@@ -125,6 +132,7 @@ struct Target {
     completed: Vec<TerminalSubmissionMessage>,
     active: Option<Weak<TerminalSubmissionPermit>>,
     runner: Option<u64>,
+    voice_bindings: HashMap<String, VoiceSubmissionBinding>,
 }
 
 #[derive(Default)]
@@ -133,6 +141,8 @@ struct State {
     platform: Option<Arc<dyn TerminalSubmissionPlatform>>,
     platform_epoch: u64,
     next_runner: u64,
+    observers: HashMap<String, Weak<Mutex<TerminalSubmissionStatus>>>,
+    recent: VecDeque<(String, String, String, TerminalSubmissionStatus)>,
 }
 
 #[derive(uniffi::Object)]
@@ -150,6 +160,7 @@ pub struct TerminalSubmissionPermit {
     platform_epoch: u64,
     transport: Arc<dyn SubmissionTransport>,
     destination: TerminalSubmissionTarget,
+    voice_binding: Option<VoiceSubmissionBinding>,
     cancelled: Notify,
     dispatched: AtomicBool,
     finished: AtomicBool,
@@ -165,7 +176,7 @@ impl TerminalSubmissionPermit {
             return false;
         };
         let state = queue.state.lock();
-        state.platform_epoch == self.platform_epoch
+        let current = state.platform_epoch == self.platform_epoch
             && state.targets.get(&self.key).is_some_and(|target| {
                 target.epoch == self.epoch
                     && target
@@ -176,6 +187,12 @@ impl TerminalSubmissionPermit {
                         .queue
                         .front()
                         .is_some_and(|message| message.id == self.id)
+            });
+        drop(state);
+        current
+            && self.voice_binding.as_ref().is_none_or(|binding| {
+                binding.admission.as_ref().is_none_or(|valid| valid())
+                    && crate::host_runtime::voice_submission_current(&self.destination, binding)
             })
     }
 }
@@ -241,6 +258,100 @@ impl Default for TerminalSubmissionQueue {
             state: Mutex::default(),
             transport: Arc::new(crate::host_runtime::submission_transport),
         }
+    }
+}
+
+impl TerminalSubmissionQueue {
+    pub(crate) fn enqueue_voice(
+        self: Arc<Self>,
+        key: String,
+        text: String,
+        expected: &TerminalSubmissionTarget,
+        binding: VoiceSubmissionBinding,
+    ) -> Option<TerminalSubmissionMessage> {
+        self.enqueue_checked(key, text, Vec::new(), Some(expected), Some(binding))
+    }
+
+    fn enqueue_checked(
+        &self,
+        key: String,
+        text: String,
+        attachments: Vec<TerminalSubmissionAttachment>,
+        expected: Option<&TerminalSubmissionTarget>,
+        voice_binding: Option<VoiceSubmissionBinding>,
+    ) -> Option<TerminalSubmissionMessage> {
+        let paste_events: Vec<_> = std::iter::once(text.trim_end().to_owned())
+            .chain(
+                attachments
+                    .iter()
+                    .map(|attachment| attachment.remote_path.clone()),
+            )
+            .filter(|part| !part.is_empty())
+            .collect();
+        if paste_events.is_empty() {
+            return None;
+        }
+        let message = TerminalSubmissionMessage {
+            id: uuid::Uuid::new_v4().to_string(),
+            text,
+            attachments,
+            history_entry: paste_events.join(" "),
+            paste_events,
+            status: TerminalSubmissionStatus::Queued,
+            attempts: 0,
+            failure: None,
+            accepted_parts: 0,
+        };
+        let mut state = self.state.lock();
+        let target = state.targets.entry(key).or_default();
+        if expected.is_some_and(|expected| {
+            target
+                .binding
+                .as_ref()
+                .is_none_or(|binding| !binding.same_destination(expected))
+        }) {
+            return None;
+        }
+        if let Some(binding) = voice_binding {
+            target.voice_bindings.insert(message.id.clone(), binding);
+        }
+        target.queue.push_back(message.clone());
+        drop(state);
+        // The caller atomically transfers UI attachment resources before start().
+        Some(message)
+    }
+}
+
+impl TerminalSubmissionQueue {
+    /// Revoke a call's unsent work, including a platform preparation that never
+    /// resolves. Writes already admitted retain their ambiguous/accepted outcome.
+    pub(crate) fn cancel_voice(&self, key: &str, id: &str) {
+        let mut state = self.state.lock();
+        let Some(target) = state.targets.get_mut(key) else {
+            return;
+        };
+        let Some(index) = target.queue.iter().position(|message| message.id == id) else {
+            return;
+        };
+        target.voice_bindings.remove(id);
+        let admitted = index == 0
+            && target
+                .active
+                .as_ref()
+                .and_then(Weak::upgrade)
+                .is_some_and(|permit| {
+                    permit.finished.store(true, Ordering::Release);
+                    permit.cancelled.notify_one();
+                    permit.dispatched.load(Ordering::Acquire)
+                });
+        if admitted {
+            target.queue[index].status = TerminalSubmissionStatus::Ambiguous;
+            target.queue[index].failure = Some(TerminalSubmissionFailure::WriteInterrupted);
+        } else {
+            target.queue.remove(index);
+        }
+        drop(state);
+        self.changed(key);
     }
 }
 
@@ -320,37 +431,7 @@ impl TerminalSubmissionQueue {
         text: String,
         attachments: Vec<TerminalSubmissionAttachment>,
     ) -> Option<TerminalSubmissionMessage> {
-        let paste_events: Vec<_> = std::iter::once(text.trim_end().to_owned())
-            .chain(
-                attachments
-                    .iter()
-                    .map(|attachment| attachment.remote_path.clone()),
-            )
-            .filter(|part| !part.is_empty())
-            .collect();
-        if paste_events.is_empty() {
-            return None;
-        }
-        let message = TerminalSubmissionMessage {
-            id: uuid::Uuid::new_v4().to_string(),
-            text,
-            attachments,
-            history_entry: paste_events.join(" "),
-            paste_events,
-            status: TerminalSubmissionStatus::Queued,
-            attempts: 0,
-            failure: None,
-            accepted_parts: 0,
-        };
-        self.state
-            .lock()
-            .targets
-            .entry(key)
-            .or_default()
-            .queue
-            .push_back(message.clone());
-        // The caller atomically transfers UI attachment resources before start().
-        Some(message)
+        self.enqueue_checked(key, text, attachments, None, None)
     }
 
     pub fn start(self: Arc<Self>) {
@@ -387,6 +468,7 @@ impl TerminalSubmissionQueue {
             if index == 0 {
                 invalidate(target);
             }
+            target.voice_bindings.remove(&id);
             let message = target.queue.remove(index);
             drop(state);
             message
@@ -409,8 +491,96 @@ fn invalidate(target: &Target) {
 }
 
 impl TerminalSubmissionQueue {
+    /// Call-owned receipt survives UI consumption of accepted messages.
+    pub(crate) fn observe(
+        &self,
+        key: &str,
+        id: &str,
+    ) -> Option<Arc<Mutex<TerminalSubmissionStatus>>> {
+        let mut state = self.state.lock();
+        let status = state
+            .targets
+            .get(key)
+            .and_then(|target| {
+                target
+                    .queue
+                    .iter()
+                    .chain(&target.completed)
+                    .find(|m| m.id == id)
+            })
+            .map(|m| m.status)
+            .or_else(|| {
+                state
+                    .recent
+                    .iter()
+                    .find(|(k, i, _, _)| k == key && i == id)
+                    .map(|(_, _, _, s)| *s)
+            })?;
+        let receipt = Arc::new(Mutex::new(status));
+        state
+            .observers
+            .retain(|_, observer| observer.strong_count() > 0);
+        state.observers.insert(id.into(), Arc::downgrade(&receipt));
+        drop(state);
+        Some(receipt)
+    }
+
+    pub(crate) fn observe_text(
+        &self,
+        key: &str,
+        text: &str,
+    ) -> Option<Arc<Mutex<TerminalSubmissionStatus>>> {
+        let id = {
+            let state = self.state.lock();
+            state
+                .targets
+                .get(key)
+                .and_then(|t| {
+                    t.queue
+                        .iter()
+                        .chain(&t.completed)
+                        .rev()
+                        .find(|m| m.text.trim() == text.trim())
+                })
+                .map(|m| m.id.clone())
+                .or_else(|| {
+                    state
+                        .recent
+                        .iter()
+                        .rev()
+                        .find(|(k, _, t, _)| k == key && t.trim() == text.trim())
+                        .map(|(_, id, _, _)| id.clone())
+                })?
+        };
+        self.observe(key, &id)
+    }
+
     fn changed(&self, key: &str) {
-        let platform = self.state.lock().platform.clone();
+        let platform = {
+            let mut state = self.state.lock();
+            if let Some(target) = state.targets.get(key) {
+                let statuses: Vec<_> = target
+                    .queue
+                    .iter()
+                    .chain(&target.completed)
+                    .map(|m| (m.id.clone(), m.text.clone(), m.status))
+                    .collect();
+                for (id, text, status) in statuses {
+                    if let Some(observer) = state.observers.get(&id).and_then(Weak::upgrade) {
+                        *observer.lock() = status;
+                    }
+                    if status == TerminalSubmissionStatus::Accepted
+                        && !state.recent.iter().any(|(_, i, _, _)| i == &id)
+                    {
+                        state.recent.push_back((key.into(), id, text, status));
+                        if state.recent.len() > 64 {
+                            state.recent.pop_front();
+                        }
+                    }
+                }
+            }
+            state.platform.clone()
+        };
         if let Some(platform) = platform {
             platform.changed(key.to_owned());
         }
@@ -461,6 +631,7 @@ impl TerminalSubmissionQueue {
     }
 
     async fn drive(self: Arc<Self>, key: String, runner: u64) {
+        let mut advanced = false;
         loop {
             let attempt = {
                 let mut state = self.state.lock();
@@ -489,6 +660,7 @@ impl TerminalSubmissionQueue {
                             platform_epoch,
                             transport,
                             destination: binding.clone(),
+                            voice_binding: target.voice_bindings.get(&message.id).cloned(),
                             cancelled: Notify::new(),
                             dispatched: AtomicBool::new(false),
                             finished: AtomicBool::new(false),
@@ -547,11 +719,13 @@ impl TerminalSubmissionQueue {
                     .front_mut()
                     .filter(|message| message.id == permit.id)
                 else {
+                    advanced = true;
                     break;
                 };
                 let delay = match outcome {
                     WriteOutcome::Accepted => {
                         if let Some(mut message) = target.queue.pop_front() {
+                            target.voice_bindings.remove(&message.id);
                             message.status = TerminalSubmissionStatus::Accepted;
                             message.accepted_parts =
                                 u32::try_from(message.paste_events.len()).unwrap_or(u32::MAX);
@@ -608,6 +782,9 @@ impl TerminalSubmissionQueue {
             .filter(|target| target.runner == Some(runner))
         {
             target.runner = None;
+        }
+        if advanced {
+            self.clone().kick();
         }
     }
 }

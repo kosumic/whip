@@ -493,6 +493,20 @@ enum SessionFailureKind {
 }
 
 impl AgentSessionManager {
+    pub(crate) fn observe_local_voice(
+        &self,
+        key: &TranscriptKey,
+        apply: impl FnOnce(u64, AgentTranscriptStatus, crate::realtime_voice::observer::Window<'_>),
+    ) {
+        let state = self.inner.state.lock();
+        if let Some(session) = state.sessions.get(key) {
+            apply(
+                session.operation_epoch,
+                session.core.status(),
+                crate::realtime_voice::observer::Window::from_core(&session.core),
+            );
+        }
+    }
     pub(crate) fn register_rows(&self, key: &TranscriptKey, owner: &Arc<crate::AgentChatRows>) {
         let mut registry = self.inner.rows.lock();
         let owners = registry.entry(key.to_owned()).or_default();
@@ -2608,6 +2622,17 @@ fn emit(
         .filter(|session| session.operation_epoch == operation_epoch);
     let current = session.is_some();
     if let Some(session) = session {
+        if crate::voice_chat::transcript::tracking() {
+            crate::voice_chat::transcript::accept(
+                &manager.runtime_id,
+                manager.runtime_incarnation,
+                key.as_str(),
+                operation_epoch,
+                session.core.status(),
+                &crate::realtime_voice::observer::Window::from_core(&session.core),
+            );
+        }
+
         if update.deltas.iter().any(|delta| {
             matches!(
                 delta,

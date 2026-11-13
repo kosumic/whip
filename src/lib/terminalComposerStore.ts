@@ -1,4 +1,5 @@
 import { terminalRendererKey } from './terminalRenderer';
+import { localVoicePromptText } from './localVoicePrompt';
 import type { TerminalRenderTarget } from './terminalRenderer';
 import {
   TerminalSubmissionQueue,
@@ -80,7 +81,7 @@ export class TerminalComposerStore {
         this.queuedAttachments.delete(message.id);
       }
       this.refreshQueue(key);
-      for (const message of completed) onHistoryEntry(message.historyEntry);
+      for (const message of completed) onHistoryEntry(localVoicePromptText(message.historyEntry));
     };
     this.submissions.attach({
       changed,
@@ -117,12 +118,15 @@ export class TerminalComposerStore {
 
   startSubmissions(): void { this.submissions.start(); }
 
+  /** Share the existing native queue with a call; the call owns its receipts. */
+  get voiceSubmissions(): TerminalSubmissionQueue { return this.submissions; }
+
   private projectMessage(message: TerminalSubmissionMessage): QueuedComposerMessage {
     return {
       id: message.id,
-      text: message.text,
+      text: localVoicePromptText(message.text),
       pasteEvents: message.pasteEvents,
-      historyEntry: message.historyEntry,
+      historyEntry: localVoicePromptText(message.historyEntry),
       attachments: this.queuedAttachments.get(message.id) ?? [],
       sending: message.status === TerminalSubmissionStatus.Preparing || message.status === TerminalSubmissionStatus.Writing,
       attempts: message.attempts,

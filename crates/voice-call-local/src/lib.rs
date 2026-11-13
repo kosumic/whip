@@ -1,6 +1,7 @@
 //! Local voice-call policy, without audio devices, runtimes, providers or networking.
 #![doc = include_str!("../README.md")]
 
+pub mod coordinator;
 mod echo;
 mod input;
 pub use echo::EchoGuard;

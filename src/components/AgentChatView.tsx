@@ -1,4 +1,5 @@
 import { ChatSearchQuery, SearchText } from './SearchText';
+import { localVoicePromptText } from '../lib/localVoicePrompt';
 import { memo, startTransition, useCallback, useContext, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import {
   FlashList,
@@ -196,7 +197,7 @@ function promptContextPreview(message: TranscriptMessage): string {
   if (cached !== undefined) return cached;
   let text = '';
   for (const part of message.parts) {
-    const value = part.type === 'text' ? part.text : part.type === 'image' ? '[Image]' : '';
+    const value = part.type === 'text' ? localVoicePromptText(part.text) : part.type === 'image' ? '[Image]' : '';
     if (value) text += `${text ? ' ' : ''}${value.slice(0, CHAT_CONTEXT_PREVIEW_LENGTH + 1 - text.length)}`;
     if (text.length > CHAT_CONTEXT_PREVIEW_LENGTH) break;
   }
@@ -557,7 +558,8 @@ function UserPrompt({ message, imageClient, directory, active, visible }: {
 }) {
   const { colors } = useTheme();
   const { copied, copyText } = useCopyFeedback();
-  const parts = message.parts.filter(part => part.type === 'text' || part.type === 'image');
+  const parts = message.parts.filter(part => part.type === 'text' || part.type === 'image')
+    .map(part => part.type === 'text' ? { ...part, text: localVoicePromptText(part.text) } : part);
   const text = parts.map(part => part.type === 'image' ? part.source : part.type === 'text' ? part.text : '').join('\n');
   const copyPrompt = () => copyText(text);
   if (!text) return null;

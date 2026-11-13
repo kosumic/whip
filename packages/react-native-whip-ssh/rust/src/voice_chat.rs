@@ -2,14 +2,16 @@
 //! Platform adapters own speech recognition and audio devices; no speech API is used.
 
 mod capture;
+pub(crate) mod coordinator;
+pub use coordinator::VoiceChatObserver;
 #[cfg(feature = "smart-turn")]
 mod smart_turn;
+pub(crate) mod transcript;
 mod waiting_filler;
 
 use crate::{AgentTranscriptKind, ChatSpeechMessage, ChatSpeechQueue};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use parking_lot::Mutex;
-#[cfg(feature = "smart-turn")]
 use sha2::{Digest, Sha256};
 #[cfg(feature = "smart-turn")]
 use smart_turn::SmartTurn;
@@ -88,6 +90,7 @@ pub struct VoiceChatView {
     pub downloaded_bytes: u64,
     pub total_bytes: u64,
     pub events_json: String,
+    pub coordination_json: String,
 }
 
 #[derive(uniffi::Record)]
@@ -108,7 +111,7 @@ struct TranscriptTool {
 }
 
 #[derive(Default)]
-struct State {
+pub(crate) struct State {
     call: Call,
     echo: EchoGuard,
     ingress: Option<Arc<crate::audio_ingress::NativeIngress>>,
@@ -116,10 +119,22 @@ struct State {
     expected: String,
     baseline: HashSet<String>,
     observed_turns: HashSet<String>,
+    observed_tail: Option<String>,
+    baseline_anchor: Option<String>,
     turn_id: Option<String>,
     waiting_filler: Option<WaitingFiller>,
     history: crate::voice_history::Conversation,
     delegation_id: String,
+    pub(crate) coordinator: voice_call_local::coordinator::Coordinator,
+    connection: Option<coordinator::Connection>,
+    pub(crate) source: Option<transcript::Source>,
+    receipt: Option<coordinator::Receipt>,
+    submission_marker: Option<String>,
+    retired_submissions: Vec<(Arc<crate::TerminalSubmissionQueue>, String, String)>,
+    diagnostic_stage: Option<voice_call_local::coordinator::Stage>,
+    diagnostic_at: u64,
+    effects: Vec<serde_json::Value>,
+    refresh_transcript: bool,
 }
 impl State {
     // Core transitions and native capture invalidation share the coordinator lock.
@@ -135,6 +150,8 @@ impl State {
             self.expected.clear();
             self.turn_id = None;
             self.waiting_filler = None;
+            self.coordinator.cancel();
+            self.retire_receipt();
         }
         if self.call.view().phase == Phase::Speaking {
             self.waiting_filler = None;
@@ -147,16 +164,34 @@ impl State {
         }
     }
 
-    fn record_turn(&mut self, turn: UserTurn) {
+    fn record_turn(&mut self, turn: UserTurn, now: u64) {
+        self.retire_receipt();
+        self.coordinator.submit(now);
+        self.receipt = None;
+        self.submission_marker = None;
         self.history.user(&turn.text);
         self.delegation_id = format!("delegation:{}", turn.input_id);
         let mut event = crate::voice_history::Event::new("delegation", "Coding agent", "requested");
         event.input = Some(turn.text.clone());
         self.history.event(&self.delegation_id, event);
         self.baseline = self.observed_turns.clone();
+        self.baseline_anchor.clone_from(&self.observed_tail);
         self.expected = turn.text;
         self.turn_id = None;
         self.waiting_filler = Some(WaitingFiller::new(Instant::now()));
+    }
+
+    fn retire_receipt(&mut self) {
+        if let Some(receipt) = self.receipt.take()
+            && let Some(connection) = &self.connection
+            && !receipt.id.is_empty()
+        {
+            self.retired_submissions.push((
+                connection.queue.clone(),
+                connection.target_key.clone(),
+                receipt.id,
+            ));
+        }
     }
 
     #[cfg(any(test, feature = "smart-turn"))]
@@ -172,12 +207,17 @@ impl State {
 pub struct VoiceChat {
     #[cfg(feature = "smart-turn")]
     root: PathBuf,
-    state: Mutex<State>,
+    pub(crate) state: Mutex<State>,
     #[cfg(feature = "smart-turn")]
     model: Mutex<Option<SmartTurn>>,
     downloaded: AtomicU64,
     speech: Arc<ChatSpeechQueue>,
+    started: Instant,
+    observer: Mutex<Option<Arc<dyn VoiceChatObserver>>>,
+    id: u64,
 }
+
+static NEXT_CALL: AtomicU64 = AtomicU64::new(1);
 
 #[uniffi::export]
 impl VoiceChat {
@@ -194,6 +234,9 @@ impl VoiceChat {
             model: Mutex::new(None),
             downloaded: AtomicU64::new(0),
             speech: ChatSpeechQueue::new(),
+            started: Instant::now(),
+            observer: Mutex::new(None),
+            id: NEXT_CALL.fetch_add(1, Ordering::Relaxed),
         })
     }
 
@@ -336,7 +379,7 @@ impl VoiceChat {
             .update_call(|call| call.recognition_ended(input_id))
             .map_err(str::to_owned)?
         {
-            state.record_turn(turn);
+            state.record_turn(turn, self.now());
             self.speech.reset_voice();
         }
         drop(state);
@@ -350,13 +393,22 @@ impl VoiceChat {
     /// A composer message is already queued by the app. Follow its reply without
     /// submitting it again, using the same conversation and history boundary.
     pub fn submit_text(&self, text: String) -> Result<(), VoiceChatError> {
+        let connection = self.state.lock().connection.clone();
+        let receipt = connection
+            .as_ref()
+            .and_then(|c| c.queue.observe_text(&c.target_key, &text));
         let mut state = self.state.lock();
         state.echo.finish(Instant::now());
         if let Some(turn) = state
             .update_call(|call| call.submit_text(&text))
             .map_err(str::to_owned)?
         {
-            state.record_turn(turn);
+            state.record_turn(turn, self.now());
+            state.receipt = receipt.map(|status| coordinator::Receipt {
+                generation: state.coordinator.generation(),
+                status,
+                id: String::new(),
+            });
             self.speech.reset_voice();
         }
         drop(state);
@@ -372,16 +424,6 @@ impl VoiceChat {
         turns: Vec<VoiceChatTranscriptTurn>,
     ) -> Result<VoiceChatView, VoiceChatError> {
         let mut state = self.state.lock();
-        if state.call.view().phase == Phase::Closed {
-            return Ok(self.view_unlocked(&state));
-        }
-        if !live {
-            return Err(
-                "The agent transcript disconnected. Reopen voice chat when it reconnects."
-                    .to_owned()
-                    .into(),
-            );
-        }
         if baseline && matches!(state.call.view().phase, Phase::Waiting | Phase::Speaking) {
             return Err(
                 "The agent transcript changed during this conversation. Reopen voice chat."
@@ -389,75 +431,7 @@ impl VoiceChat {
                     .into(),
             );
         }
-        state.observed_turns = turns.iter().map(|turn| turn.id.clone()).collect();
-        if !matches!(state.call.view().phase, Phase::Waiting | Phase::Speaking) {
-            let State {
-                baseline,
-                observed_turns,
-                ..
-            } = &mut *state;
-            baseline.clone_from(observed_turns);
-            return Ok(self.view_unlocked(&state));
-        }
-        if state.turn_id.is_none() {
-            state.turn_id = turns
-                .iter()
-                .find(|t| !state.baseline.contains(&t.id) && t.user_text.trim() == state.expected)
-                .map(|t| t.id.clone());
-        }
-        // Keep the submission's history fixed while matching the reply. A
-        // turn-upsert may precede its user message; observing that placeholder
-        // must not turn the pending response into historical speech.
-        if let Some(turn) = turns
-            .into_iter()
-            .find(|t| state.turn_id.as_ref() == Some(&t.id))
-        {
-            let event = crate::voice_history::Event::new(
-                "delegation",
-                match agent {
-                    AgentTranscriptKind::Claude => "Claude",
-                    AgentTranscriptKind::Codex => "Codex",
-                    AgentTranscriptKind::OpenCode => "OpenCode",
-                    AgentTranscriptKind::Pi => "Pi",
-                },
-                if turn.failed {
-                    "failed"
-                } else if turn.completed && turn.messages.iter().any(|message| message.assistant) {
-                    "completed"
-                } else {
-                    "running"
-                },
-            );
-            let id = state.delegation_id.clone();
-            state.history.event(&id, event);
-            if turn.tools_json.len() > 1024 * 1024 {
-                return Err("Voice transcript tool details are too large"
-                    .to_owned()
-                    .into());
-            }
-            let tools: Vec<TranscriptTool> = serde_json::from_str(&turn.tools_json)
-                .map_err(|_| "Invalid voice transcript tool details".to_owned())?;
-            for tool in tools.into_iter().take(64) {
-                state
-                    .history
-                    .event(&format!("tool:{}:{}", turn.id, tool.id), tool.event);
-            }
-            if turn.failed {
-                return Err("The agent turn was interrupted or failed. Check the transcript before continuing.".to_owned().into());
-            }
-            // OpenCode can publish an idle user-only turn before the assistant
-            // exists. That acknowledges our prompt, not a completed response.
-            let completed = state.call.view().response_completed
-                || (turn.completed && turn.messages.iter().any(|message| message.assistant));
-            if !state.call.view().response_skipped {
-                self.speech.update_voice(agent, turn.messages, completed);
-            }
-            if let Some(generation) = state.call.generation() {
-                state.update_call(|call| {
-                    call.assistant_progress(generation, completed, self.speech.has_pending());
-                });
-            }
-        }
+        self.accept_turns(&mut state, agent, !live, turns)?;
         drop(state);
         Ok(self.view())
     }
@@ -498,6 +472,8 @@ impl VoiceChat {
         state.echo.finish(Instant::now());
         if matches!(state.call.view().phase, Phase::Speaking | Phase::Waiting) {
             self.speech.reset_voice();
+            state.coordinator.cancel();
+            state.retire_receipt();
             state.update_call(Call::skip_response);
         }
     }
@@ -520,11 +496,172 @@ impl VoiceChat {
     }
 
     pub fn close(&self) {
-        self.state.lock().update_call(Call::close);
+        let mut state = self.state.lock();
+        let pending = state.connection.clone().zip(state.receipt.take());
+        state.update_call(Call::close);
+        state.coordinator.close();
+        drop(state);
+        if let Some((connection, receipt)) = pending
+            && !receipt.id.is_empty()
+        {
+            connection
+                .queue
+                .cancel_voice(&connection.target_key, &receipt.id);
+        }
+        self.flush_effects();
+        self.observer.lock().take();
+        transcript::unregister(self);
     }
 }
 
 impl VoiceChat {
+    fn accept_turns(
+        &self,
+        state: &mut State,
+        agent: AgentTranscriptKind,
+        disconnected: bool,
+        turns: Vec<VoiceChatTranscriptTurn>,
+    ) -> Result<(), VoiceChatError> {
+        if state.call.view().phase == Phase::Closed {
+            return Ok(());
+        }
+        if disconnected {
+            return Err(
+                "The agent transcript disconnected. Reopen voice chat when it reconnects."
+                    .to_owned()
+                    .into(),
+            );
+        }
+        state.observed_turns = turns.iter().map(|turn| turn.id.clone()).collect();
+        state.observed_tail = turns.last().map(|turn| turn.id.clone());
+        if !matches!(state.call.view().phase, Phase::Waiting | Phase::Speaking) {
+            let State {
+                baseline,
+                observed_turns,
+                ..
+            } = state;
+            baseline.clone_from(observed_turns);
+            return Ok(());
+        }
+        // Typed enqueues require a native dispatch receipt before correlation.
+        if state.connection.is_some()
+            && state.submission_marker.is_none()
+            && state.coordinator.delivery == Some(voice_call_local::coordinator::Delivery::Queued)
+        {
+            return Ok(());
+        }
+        if state
+            .turn_id
+            .as_ref()
+            .is_some_and(|id| !turns.iter().any(|turn| &turn.id == id))
+        {
+            state.turn_id = None;
+            state.coordinator.awaiting_turn(self.now());
+        }
+        if state.turn_id.is_none() {
+            let expected = normalize_prompt(&state.expected);
+            let anchor = state
+                .baseline_anchor
+                .as_ref()
+                .map(|id| turns.iter().position(|t| &t.id == id));
+            let candidates: Vec<_> = turns
+                .iter()
+                .enumerate()
+                .filter(|(index, t)| {
+                    state.submission_marker.as_ref().map_or_else(
+                        || {
+                            anchor.is_none_or(|anchor| anchor.is_some_and(|anchor| *index > anchor))
+                                && !state.baseline.contains(&t.id)
+                                && normalize_prompt(&t.user_text) == expected
+                        },
+                        |marker| t.user_text.contains(marker),
+                    )
+                })
+                .map(|(_, t)| t)
+                .collect();
+            if candidates.len() == 1 {
+                state.turn_id = Some(candidates[0].id.clone());
+            }
+            log::info!(
+                "LocalVoice correlation generation={} revision={:?} candidates={} matched={}",
+                state.coordinator.generation(),
+                state.source.as_ref().and_then(|s| s.revision),
+                candidates.len(),
+                state.turn_id.is_some()
+            );
+        }
+        // Keep the submission's history fixed while matching the reply. A
+        // turn-upsert may precede its user message; observing that placeholder
+        // must not turn the pending response into historical speech.
+        if let Some(turn) = turns
+            .into_iter()
+            .find(|t| state.turn_id.as_ref() == Some(&t.id))
+        {
+            if !turn.user_text.trim().is_empty()
+                && state
+                    .submission_marker
+                    .as_ref()
+                    .is_some_and(|marker| !turn.user_text.contains(marker))
+            {
+                return Err("Another input replaced the matched agent turn. Check the transcript before continuing.".to_owned().into());
+            }
+            state.coordinator.observed(self.now());
+            let event = crate::voice_history::Event::new(
+                "delegation",
+                match agent {
+                    AgentTranscriptKind::Claude => "Claude",
+                    AgentTranscriptKind::Codex => "Codex",
+                    AgentTranscriptKind::OpenCode => "OpenCode",
+                    AgentTranscriptKind::Pi => "Pi",
+                },
+                if turn.failed {
+                    "failed"
+                } else if turn.completed && turn.messages.iter().any(|message| message.assistant) {
+                    "completed"
+                } else {
+                    "running"
+                },
+            );
+            let id = state.delegation_id.clone();
+            state.history.event(&id, event);
+            if turn.tools_json.len() > 1024 * 1024 {
+                return Err("Voice transcript tool details are too large"
+                    .to_owned()
+                    .into());
+            }
+            let tools: Vec<TranscriptTool> = serde_json::from_str(&turn.tools_json)
+                .map_err(|_| "Invalid voice transcript tool details".to_owned())?;
+            for tool in tools.into_iter().take(64) {
+                state
+                    .history
+                    .event(&format!("tool:{}:{}", turn.id, tool.id), tool.event);
+            }
+            if turn.failed {
+                return Err("The agent turn was interrupted or failed. Check the transcript before continuing.".to_owned().into());
+            }
+            // OpenCode can publish an idle user-only turn before the assistant
+            // exists. That acknowledges our prompt, not a completed response.
+            let completed = state.call.view().response_completed
+                || (turn.completed && turn.messages.iter().any(|message| message.assistant));
+            if !state.call.view().response_skipped {
+                self.speech.update_voice(agent, turn.messages, completed);
+            }
+            if state.connection.is_some() {
+                self.collect_reply(state);
+                if completed {
+                    state.coordinator.completed(self.now());
+                }
+            }
+            let pending = self.speech.has_pending() || state.coordinator.queue_depth() > 0;
+            if let Some(generation) = state.call.generation() {
+                state.update_call(|call| {
+                    call.assistant_progress(generation, completed, pending);
+                });
+            }
+        }
+        Ok(())
+    }
+
     fn next_reply(&self, state: &mut State) -> Option<crate::chat_speech::ChatSpeechChunk> {
         let chunk = self.speech.next_content()?;
         state.history.assistant(&chunk.text);
@@ -548,11 +685,25 @@ impl VoiceChat {
             text: view.text.clone(),
             level: view.level,
             silence_ms: s.call.silence_ms(),
-            audio_error: s.audio_error.clone(),
+            audio_error: s
+                .audio_error
+                .clone()
+                .or_else(|| s.coordinator.error.map(str::to_owned)),
             analyze: s.call.should_probe(),
             downloaded_bytes: self.downloaded.load(Ordering::Relaxed),
             total_bytes: MODEL_BYTES,
             events_json: s.history.events_json(),
+            coordination_json: serde_json::json!({
+                "call": self.id.to_string(),
+                "generation": s.coordinator.generation().to_string(),
+                "stage": format!("{:?}", s.coordinator.stage),
+                "delivery": s.coordinator.delivery.map(|delivery| format!("{delivery:?}")),
+                "queueDepth": s.coordinator.queue_depth(),
+                "source": s.source.as_ref().map(|source| format!("{:x}", Sha256::digest(source.binding.as_bytes()))),
+                "epoch": s.source.as_ref().map(|source| source.epoch.to_string()),
+                "revision": s.source.as_ref().and_then(|source| source.revision).map(|revision| revision.to_string()),
+                "live": s.source.as_ref().is_some_and(|source| source.live),
+            }).to_string(),
         }
     }
 
@@ -704,6 +855,10 @@ fn verify_model(path: &std::path::Path) -> bool {
         }
     }
     format!("{:x}", hash.finalize()) == MODEL_SHA256
+}
+
+fn normalize_prompt(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(test)]

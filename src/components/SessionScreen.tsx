@@ -1937,6 +1937,15 @@ export function SessionScreen({
               ? {
                   agent: liveVoiceChatAgent,
                   bindingToken: activeChatView?.binding.bindingToken,
+                  localSource: {
+                    runtimeId: activeTarget.client.native.runtimeId,
+                    incarnation: BigInt(activeTarget.client.native.runtimeIncarnation),
+                    terminalId: activeTarget.session.terminalId,
+                    paneId: activePane.pane_id,
+                    agent: liveVoiceChatAgent,
+                    queue: composerStore.voiceSubmissions,
+                    targetKey: activeTarget.key,
+                  },
                   hostId: hostSessionId,
                   paneId: activePane.pane_id,
                   tabId: activePane.tab_id,

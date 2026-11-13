@@ -1,15 +1,16 @@
 import { AgentTranscriptKind, VoiceChat, VoiceChatPhase } from './generated-entry';
-import type { AgentChatState } from '../../../src/agentChat';
 import type { RuntimeAgentKind } from './index';
-import { speechMessages, type ChatSpeechChunk } from './chatSpeech';
+import type { TerminalSubmissionQueue } from './generated-entry';
 import type { VoiceTranscriptEntry } from '../../../src/lib/voiceTranscript';
 
-const AGENT = {
-  claude: AgentTranscriptKind.Claude,
-  codex: AgentTranscriptKind.Codex,
-  opencode: AgentTranscriptKind.OpenCode,
-  pi: AgentTranscriptKind.Pi,
-} as const;
+export type LocalVoiceSource = { runtimeId: string; incarnation: bigint; terminalId: string; paneId: string; agent: RuntimeAgentKind; queue: TerminalSubmissionQueue; targetKey: string };
+const AGENT = { claude: AgentTranscriptKind.Claude, codex: AgentTranscriptKind.Codex, opencode: AgentTranscriptKind.OpenCode, pi: AgentTranscriptKind.Pi } as const;
+const EFFECT_VERSION = 1;
+export type VoiceSpeechEffect =
+  | { type: 'start'; token: string; filler: boolean }
+  | { type: 'stop'; token: string }
+  | { type: 'speak'; token: string; chunk: string; filler: boolean; text: string; messageId: string; partId: string; startUtf16: number };
+
 const PHASE = {
   [VoiceChatPhase.Setup]: 'setup',
   [VoiceChatPhase.Preparing]: 'preparing',
@@ -24,7 +25,6 @@ const PHASE = {
 /** Marshals the stable native API. voice-call-local owns turn policy; Whip's Rust adapter correlates transcripts. */
 export class NativeVoiceChat {
   private readonly core: VoiceChat;
-  private transcriptSession?: string;
   constructor(root: string) { this.core = new VoiceChat(root); }
   view() {
     const view = this.core.view();
@@ -42,41 +42,22 @@ export class NativeVoiceChat {
   async analyze(input: bigint) { await this.core.analyze(input); }
   finish() { this.core.finish(); }
   recognition(input: bigint, text: string) { this.core.recognition(input, text); }
-  playbackText(text: string, active: boolean) { this.core.playbackText(text, active); }
+  playbackText(token: string, text: string, active: boolean) { this.core.playbackEvent(token, text, active); }
   ended(input: bigint) { this.core.recognitionEnded(input); }
-  takePrompt() { return this.core.takePrompt(); }
   submitText(text: string) { this.core.submitText(text); }
-  transcript(agent: RuntimeAgentKind, state: AgentChatState, baseline: boolean) {
-    // A resync snapshot and a brief "Agent activity resumed" stale status
-    // still describe the same conversation. Only a session replacement resets
-    // voice history; treating every snapshot as new history hangs up each turn.
-    const replaced = this.transcriptSession !== undefined && this.transcriptSession !== state.sessionId;
-    const initial = this.transcriptSession === undefined;
-    const available = state.status === 'live' || state.status === 'stale' || state.status === 'loading';
-    this.core.transcript(AGENT[agent], available, replaced || (initial && baseline), state.transcript.turns.map(turn => ({
-      id: turn.id,
-      userText: turn.user?.parts.flatMap(part => part.type === 'text' ? [part.text] : []).join('\n') ?? '',
-      // Idle can cover prompt acknowledgements and gaps between assistant
-      // segments. Only the provider's final outcome completes the whole reply.
-      completed: turn.status === 'idle' && turn.details?.outcome === 'completed',
-      failed: turn.status === 'error' || turn.status === 'interrupted',
-      messages: speechMessages(turn.assistants),
-      toolsJson: JSON.stringify(turn.assistants.flatMap(message => message.parts.flatMap(part => part.type === 'tool' ? [{
-        id: part.callId || part.id, kind: 'tool', name: part.tool, status: part.state.status === 'error' ? 'failed' : part.state.status,
-        input: Array.from(part.state.inputJson ?? JSON.stringify(part.state.input ?? {})).slice(0, 1024).join(''),
-        output: (part.state.error ?? part.state.output) === undefined ? undefined : Array.from((part.state.error ?? part.state.output)!).slice(0, 1024).join(''),
-      }] : [])).slice(-64)),
-    })));
-    this.transcriptSession = state.sessionId;
+  connect(source: LocalVoiceSource, changed: () => void, playbackCapacity: number) {
+    this.core.connect(source.runtimeId, source.incarnation, source.terminalId, source.paneId, source.queue, source.targetKey, { changed }, playbackCapacity, AGENT[source.agent]);
   }
-  nextSpeech() { return this.core.nextSpeech(); }
-  nextSpeechWithSource(): ChatSpeechChunk | undefined {
-    const json = this.core.nextSpeechWithSource();
-    return json ? JSON.parse(json) as ChatSpeechChunk : undefined;
+  takeEffects(): VoiceSpeechEffect[] {
+    const effects = JSON.parse(this.core.takeEffects()) as (VoiceSpeechEffect & { version: number })[];
+    if (effects.some(effect => effect.version !== EFFECT_VERSION)) throw new Error('Unsupported Local voice effect version. Install a matching Whip build.');
+    return effects;
   }
-  speechFinished() { return this.core.speechFinished(); }
+  playbackCurrent(token: string) { return this.core.playbackCurrent(token); }
+  acknowledgeSpeech(token: string, chunk: string, event: 'started' | 'played' | 'failed' | 'stopped') {
+    this.core.acknowledgeSpeech(token, BigInt(chunk), event);
+  }
   skipResponse() { this.core.skipResponse(); }
-  playbackEnded() { this.core.playbackEnded(); }
   setMuted(muted: boolean) { this.core.setMuted(muted); }
   close() { this.core.close(); }
   dispose() { this.core.uniffiDestroy(); }

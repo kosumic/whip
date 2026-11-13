@@ -564,6 +564,14 @@ interface NativeModuleInterface {
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_voicechatobserver(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_voicechatobserver(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_clone_whipappcontrol(
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -632,6 +640,9 @@ interface NativeModuleInterface {
   ): void;
   ubrn_uniffi_whip_ssh_fn_init_callback_vtable_terminalsubmissionplatform(
     vtable: UniffiVTableCallbackInterfaceWhipSshTerminalSubmissionPlatform,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_init_callback_vtable_voicechatobserver(
+    vtable: UniffiVTableCallbackInterfaceWhipSshVoiceChatObserver,
   ): void;
   ubrn_uniffi_whip_ssh_fn_init_callback_vtable_whipappcontrol(
     vtable: UniffiVTableCallbackInterfaceWhipSshWhipAppControl,
@@ -2990,6 +3001,13 @@ interface NativeModuleInterface {
     root: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_voicechat_acknowledge_speech(
+    uniffiSelf: bigint,
+    token: Uint8Array,
+    chunk: bigint,
+    event: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_method_voicechat_analyze(
     uniffiSelf: bigint,
     inputId: bigint,
@@ -3013,6 +3031,19 @@ interface NativeModuleInterface {
     handle: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_method_voicechat_connect(
+    uniffiSelf: bigint,
+    runtimeId: Uint8Array,
+    incarnation: bigint,
+    terminalId: Uint8Array,
+    paneId: Uint8Array,
+    queue: bigint,
+    targetKey: Uint8Array,
+    observer: bigint,
+    playbackCapacity: number,
+    agent: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_method_voicechat_finish(
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -3030,10 +3061,22 @@ interface NativeModuleInterface {
     inputId: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_voicechat_playback_current(
+    uniffiSelf: bigint,
+    token: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): number;
   ubrn_uniffi_whip_ssh_fn_method_voicechat_playback_ended(
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_voicechat_playback_event(
+    uniffiSelf: bigint,
+    token: Uint8Array,
+    text: Uint8Array,
+    active: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_method_voicechat_playback_text(
     uniffiSelf: bigint,
     text: Uint8Array,
@@ -3078,6 +3121,10 @@ interface NativeModuleInterface {
     text: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_method_voicechat_take_effects(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_voicechat_take_prompt(
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -3098,6 +3145,10 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_voicechatobserver_changed(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_method_whipappcontrol_execute(
     uniffiSelf: bigint,
     permit: bigint,
@@ -3620,16 +3671,20 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_update_targets(): number;
   ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_view(): number;
   ubrn_uniffi_whip_ssh_checksum_constructor_voicechat_new(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_voicechat_acknowledge_speech(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_analyze(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_audio(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_begin_preparation(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_close(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_close_audio_capture(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_voicechat_connect(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_finish(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_next_speech(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_next_speech_with_source(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_open_audio_capture(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_voicechat_playback_current(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_playback_ended(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_voicechat_playback_event(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_playback_text(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_prepare(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_recognition(): number;
@@ -3639,10 +3694,12 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_skip_response(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_speech_finished(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_submit_text(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_voicechat_take_effects(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_take_prompt(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_transcript(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_use_vad(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_view(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_voicechatobserver_changed(): number;
   ubrn_uniffi_whip_ssh_checksum_method_whipappcontrol_execute(): number;
   ubrn_uniffi_whip_ssh_checksum_method_whipappcontrol_cancel(): number;
   ubrn_uniffi_whip_ssh_checksum_method_whipssheventsink_emit(): number;
@@ -3843,6 +3900,10 @@ interface NativeModuleInterface {
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
   ubrn_uniffi_internal_fn_method_terminalsubmissionqueue_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_voicechatobserver_ffi__bless_pointer(
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
@@ -4504,6 +4565,20 @@ export type UniffiVTableCallbackInterfaceWhipSshTerminalSubmissionPlatform = {
   uniffi_clone: UniffiCallbackInterfaceCloneWhipSshTerminalSubmissionPlatform;
   submit: UniffiCallbackInterfaceWhipSshTerminalSubmissionPlatformMethod0;
   changed: UniffiCallbackInterfaceWhipSshTerminalSubmissionPlatformMethod1;
+};
+type UniffiCallbackInterfaceWhipSshVoiceChatObserverMethod0 = (
+  uniffiHandle: bigint,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceCloneWhipSshVoiceChatObserver = (
+  handle: bigint,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceFreeWhipSshVoiceChatObserver = (
+  handle: bigint,
+) => void;
+export type UniffiVTableCallbackInterfaceWhipSshVoiceChatObserver = {
+  uniffi_free: UniffiCallbackInterfaceFreeWhipSshVoiceChatObserver;
+  uniffi_clone: UniffiCallbackInterfaceCloneWhipSshVoiceChatObserver;
+  changed: UniffiCallbackInterfaceWhipSshVoiceChatObserverMethod0;
 };
 type UniffiCallbackInterfaceWhipSshWhipAppControlMethod0 = (
   uniffiHandle: bigint,

@@ -1,8 +1,7 @@
 import { VoiceConversation, type VoiceConversationView } from '../src/services/voiceConversation';
-import { recordDiagnostic } from '../src/services/diagnosticFormatting';
 import type { AgentChatState } from '../src/agentChat';
 import type { NativeVoiceChat } from 'react-native-whip-ssh/src/voiceChat';
-import type { ChatSpeechChunk } from 'react-native-whip-ssh/src/chatSpeech';
+import type { LocalVoiceSource, VoiceSpeechEffect } from 'react-native-whip-ssh/src/voiceChat';
 import { suppressAgentAlertsForTab } from '../src/services/alerts';
 import { runVoiceCallBackground } from '../src/services/voiceCallBackground';
 import { loadVoiceCallSound } from '../src/services/voiceCallSounds';
@@ -26,7 +25,14 @@ let mockRequest: {
   owner: string; localOnly: boolean; duringPlayback?: boolean; append: (text: string) => void;
   audioCapture: { open: () => string; close: (handle: string) => void }; onError: (error: string, message: string) => void;
 } | undefined;
+let mockNotify: () => void = () => {};
+let mockEffects: VoiceSpeechEffect[] = [];
+const mockActiveTokens = new Set<string>();
 const mockCore = {
+  connect: jest.fn((_source: LocalVoiceSource, notify: () => void) => { mockNotify = notify; }),
+  takeEffects: jest.fn(() => { const batch = mockEffects; mockEffects = []; return batch; }),
+  playbackCurrent: jest.fn((token: string) => mockActiveTokens.has(token)),
+  acknowledgeSpeech: jest.fn(),
   submitText: jest.fn(),
   view: jest.fn(() => mockView),
   speechFinished: jest.fn(() => true),
@@ -38,7 +44,6 @@ const mockCore = {
   audio: jest.fn(), analyze: jest.fn(() => Promise.resolve()), recognition: jest.fn(),
   ended: jest.fn(), takePrompt: jest.fn(), transcript: jest.fn(), nextSpeech: jest.fn(),
   playbackText: jest.fn(),
-  nextSpeechWithSource: jest.fn<ChatSpeechChunk | undefined, []>(),
   playbackEnded: jest.fn(() => { mockView.phase = 'listening'; }),
   setMuted: jest.fn(), finish: jest.fn(), close: jest.fn(),
   setVadSensitivity: jest.fn(),
@@ -92,8 +97,7 @@ jest.mock('../src/services/NativeTranscriptService', () => ({ agentTranscriptSer
     mockTranscriptListeners.add(listener); return () => mockTranscriptListeners.delete(listener);
   },
 } }));
-const target = { agent: 'codex' as const, bindingToken: 'chat', hostId: 'host', paneId: 'pane', tabId: 'tab', label: 'Codex' };
-const state: AgentChatState = { sessionId: 'session', status: 'live', transcript: { sessionId: 'session', turns: [], messages: [] } };
+const target = { agent: 'codex' as const, bindingToken: 'chat', hostId: 'host', paneId: 'pane', tabId: 'tab', label: 'Codex', localSource: { runtimeId: 'runtime', incarnation: 7n, terminalId: 'terminal', paneId: 'pane', agent: 'codex' as const, queue: {} as LocalVoiceSource['queue'], targetKey: 'destination' } };
 const flush = async () => { for (let i = 0; i < 16; i++) await Promise.resolve(); };
 let session: VoiceConversation;
 let changed: jest.Mock<void, [VoiceConversationView]>;
@@ -104,10 +108,8 @@ beforeEach(() => {
   mockSpeech.enqueueChatSpeech = undefined;
   mockSpeech.enqueueChatSpeechWithSource = undefined;
   mockSpeech.speakChatWithSource = undefined;
-  mockCore.nextSpeechWithSource.mockReset().mockImplementation(() => {
-    const text = mockCore.nextSpeech() as string | undefined;
-    return text ? { messageId: 'reply', partId: 'text', text, startUtf16: 0 } : undefined;
-  });
+  mockEffects = [];
+  mockActiveTokens.clear();
   mockInputSnapshot = { owner: null, phase: 'idle', interimText: '' };
   mockView = { phase: 'preparing', inputId: 1n, muted: false, smartTurn: false, text: '', level: 0, silenceMs: 800, progress: 0, analyze: false, audioError: null as string | null };
   mockRequest = undefined;
@@ -119,24 +121,16 @@ beforeEach(() => {
 });
 afterEach(async () => { await session.close(); mockInputListeners.clear(); mockAppListeners.clear(); mockTranscriptListeners.clear(); mockCallEvents.clear(); jest.clearAllTimers(); jest.useRealTimers(); });
 
-test('local call captions acknowledge audible chunks and retain earlier replies', async () => {
-  let finishSpeech!: () => void;
-  mockSpeech.speakChat.mockImplementationOnce(() => new Promise<void>(resolve => { finishSpeech = resolve; }));
-  await session.start(); await flush();
-  mockView.phase = 'speaking';
-  mockCore.nextSpeech.mockReturnValueOnce('First reply.');
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  expect(mockSpeech.startLocalChatSpeech).toHaveBeenCalledWith(expect.any(String), target.label, mockSpeech.startVoiceCall.mock.calls[0][0]);
-  expect(changed.mock.calls.at(-1)?.[0].messages).toEqual([expect.objectContaining({ role: 'assistant', text: 'First reply.', spokenUtf16: 0, active: false })]);
-  finishSpeech(); await flush();
-  expect(changed.mock.calls.at(-1)?.[0].messages).toEqual([expect.objectContaining({ text: 'First reply.', spokenUtf16: 12 })]);
-  mockView.inputId = 2n; mockView.phase = 'speaking';
-  mockCore.nextSpeech.mockReturnValueOnce('Second reply.');
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  expect(changed.mock.calls.at(-1)?.[0].messages?.map(message => message.text)).toEqual(['First reply.', 'Second reply.']);
-});
+function emitEffects(...batch: VoiceSpeechEffect[]) {
+  for (const effect of batch) {
+    if (effect.type === 'start') mockActiveTokens.add(effect.token);
+    if (effect.type === 'stop') mockActiveTokens.delete(effect.token);
+  }
+  mockEffects.push(...batch);
+  mockNotify();
+}
+const start = (token: string, filler = false): VoiceSpeechEffect => ({ type: 'start', token, filler });
+const speak = (token: string, text: string, chunk = '1', filler = false): VoiceSpeechEffect => ({ type: 'speak', token, text, chunk, filler, messageId: 'original-reply', partId: 'original-part', startUtf16: 42 });
 
 test('starts without downloading and uses the shared strictly local recognizer', async () => {
   await session.start(); await flush();
@@ -144,78 +138,13 @@ test('starts without downloading and uses the shared strictly local recognizer',
   expect(mockCore.prepare).toHaveBeenCalledWith(false);
   expect(mockInput.start).toHaveBeenCalledWith(expect.objectContaining({ localOnly: true, audioCapture: expect.objectContaining({ open: expect.any(Function), close: expect.any(Function) }) }));
   expect(mockSpeech.startVoiceCall.mock.invocationCallOrder[0]).toBeLessThan(mockInput.start.mock.invocationCallOrder[0]);
-  jest.advanceTimersByTime(50);
+  mockNotify();
   expect(mockRequest!.audioCapture.open()).toBe('101');
   expect(mockCore.openAudioCapture).toHaveBeenCalledWith(1n);
   expect(mockCore.audio).not.toHaveBeenCalled();
   mockRequest!.append('Recognized words');
   expect(mockCore.recognition).toHaveBeenCalledWith(1n, 'Recognized words');
   expect(send).not.toHaveBeenCalled();
-});
-
-test('native word positions highlight the current local word and fence late caption events', async () => {
-  let finishSpeech!: () => void;
-  mockSpeech.enqueueChatSpeechWithSource = jest.fn<Promise<void>, [string, string, string]>(() => new Promise<void>(resolve => { finishSpeech = resolve; }));
-  await session.start(); await flush();
-  mockView.phase = 'speaking';
-  mockCore.nextSpeech.mockReturnValueOnce('Hello local voice.');
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  const [token, text, json] = mockSpeech.enqueueChatSpeechWithSource.mock.calls[0];
-  const source = JSON.parse(json) as { messageId: string; localToken: string; startUtf16: number };
-  expect(source).toEqual(expect.objectContaining({ localToken: token, startUtf16: 0 }));
-  const emit = mockCallEvents.get('WhipSpeechCaption') as unknown as (json: string) => void;
-  emit(JSON.stringify({ ...source, id: 'word-clock', text, spokenUtf16: 0 }));
-  expect(changed.mock.calls.at(-1)?.[0].messages).toEqual([expect.objectContaining({ active: true, spokenUtf16: 0 })]);
-  expect(mockCore.playbackText).toHaveBeenLastCalledWith(text, true);
-  emit(JSON.stringify({ ...source, id: 'word-clock', text, spokenUtf16: 6 }));
-  expect(changed.mock.calls.at(-1)?.[0].messages).toEqual([expect.objectContaining({ active: true, spokenUtf16: 6 })]);
-  emit(JSON.stringify({ ...source, id: 'old-clock', text, spokenUtf16: 0, ended: true }));
-  expect(changed.mock.calls.at(-1)?.[0].messages?.[0].active).toBe(true);
-  await session.skip();
-  emit(JSON.stringify({ ...source, id: 'word-clock', text, spokenUtf16: 12 }));
-  expect(changed.mock.calls.at(-1)?.[0].messages).toEqual([expect.objectContaining({ active: false, spokenUtf16: 6 })]);
-  finishSpeech(); await flush();
-});
-
-test('local lookahead offsets native word positions into one retained reply', async () => {
-  const finish: (() => void)[] = [];
-  mockSpeech.enqueueChatSpeechWithSource = jest.fn<Promise<void>, [string, string, string]>(() => new Promise<void>(resolve => { finish.push(resolve); }));
-  await session.start(); await flush();
-  mockView.phase = 'speaking';
-  mockCore.nextSpeech.mockReturnValueOnce('First chunk.').mockReturnValueOnce('Second chunk.');
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  expect(mockSpeech.enqueueChatSpeechWithSource).toHaveBeenCalledTimes(2);
-  const source = JSON.parse(mockSpeech.enqueueChatSpeechWithSource.mock.calls[1][2]) as { startUtf16: number };
-  expect(source.startUtf16).toBe('First chunk. '.length);
-  finish.forEach(resolve => resolve()); await flush();
-});
-
-test('local playback preserves original part provenance for highlighting the minimized chat', async () => {
-  mockSpeech.enqueueChatSpeechWithSource = jest.fn<Promise<void>, [string, string, string]>(() => Promise.resolve());
-  mockCore.nextSpeechWithSource = jest.fn<ChatSpeechChunk | undefined, []>().mockReturnValueOnce({ messageId: 'original-reply', partId: 'original-part', text: 'Second clause.', startUtf16: 42 });
-  await session.start(); await flush();
-  mockView.phase = 'speaking';
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  const source = JSON.parse(mockSpeech.enqueueChatSpeechWithSource.mock.calls[0][2]) as { chat: unknown };
-  expect(source.chat).toEqual({ messageId: 'original-reply', partId: 'original-part', startUtf16: 42,
-    bindingTokens: [target.bindingToken], hostId: target.hostId, paneId: target.paneId });
-  expect(mockCore.nextSpeech).not.toHaveBeenCalled();
-});
-
-test('coarse native state updates surface capture failure without forwarding PCM through JS', async () => {
-  await session.start(); await flush();
-  mockView.level = 0.5;
-  jest.advanceTimersByTime(50);
-  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ level: 0.5 }));
-  expect(mockCore.audio).not.toHaveBeenCalled();
-  mockView.audioError = 'Microphone delivery fell behind.';
-  jest.advanceTimersByTime(50);
-  await flush();
-  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'error', error: mockView.audioError }));
-  expect(mockSpeech.endVoiceCall).toHaveBeenCalledTimes(1);
 });
 
 test('plays the ready piano once after the recognizer is listening', async () => {
@@ -316,85 +245,6 @@ test('releases status alerts when starting the call fails', async () => {
   expect(mockSpeech.playVoiceCallSound).not.toHaveBeenCalled();
 });
 
-test('a new agent can receive its first spoken prompt before its transcript exists', async () => {
-  session = new VoiceConversation({ ...target, bindingToken: undefined }, send, changed, () => Promise.resolve(mockCore as unknown as NativeVoiceChat));
-  await session.start(); await flush();
-  expect(mockTranscriptListeners.size).toBe(0);
-  expect(mockInput.start).toHaveBeenCalled();
-  mockView.phase = 'waiting';
-  mockCore.takePrompt.mockReturnValueOnce('First spoken prompt');
-  jest.advanceTimersByTime(50);
-  expect(send).toHaveBeenCalledWith('First spoken prompt');
-
-  session.setTranscriptBinding('first-transcript');
-  for (const listener of mockTranscriptListeners) listener(state, true);
-  expect(mockCore.transcript).toHaveBeenLastCalledWith('codex', state, false);
-  expect(mockSpeech.startVoiceCall).toHaveBeenCalledTimes(1);
-  expect(mockSpeech.endVoiceCall).not.toHaveBeenCalled();
-  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'waiting', transcript: state, error: null }));
-  await session.close();
-  expect(mockTranscriptListeners.size).toBe(0);
-});
-
-test('a binding invalidation preserves the pending reply until the replacement transcript arrives', async () => {
-  await session.start(); await flush();
-  mockView.phase = 'waiting';
-  mockCore.takePrompt.mockReturnValueOnce('First spoken prompt');
-  jest.advanceTimersByTime(50);
-  for (const listener of mockTranscriptListeners) listener(null);
-  session.setTranscriptBinding();
-  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'waiting', error: null }));
-  expect(mockSpeech.endVoiceCall).not.toHaveBeenCalled();
-  expect(mockCore.close).not.toHaveBeenCalled();
-
-  session.setTranscriptBinding('replacement-transcript');
-  mockView.phase = 'speaking';
-  mockView.inputId += 1n;
-  mockCore.nextSpeech.mockReturnValueOnce('The first reply.');
-  for (const listener of mockTranscriptListeners) listener(state, true);
-  await flush();
-  expect(send).toHaveBeenCalledTimes(1);
-  expect(mockSpeech.speakChat).toHaveBeenCalledTimes(1);
-  expect(mockSpeech.speakChat).toHaveBeenCalledWith(expect.any(String), 'The first reply.');
-  expect(mockSpeech.startVoiceCall).toHaveBeenCalledTimes(1);
-  expect(mockSpeech.endVoiceCall).not.toHaveBeenCalled();
-});
-
-test('a binding that never returns ends the call after the recovery deadline', async () => {
-  jest.useFakeTimers();
-  try {
-    await session.start(); await flush();
-    mockView.phase = 'waiting';
-    jest.advanceTimersByTime(50);
-    for (const listener of mockTranscriptListeners) listener(null);
-    await jest.advanceTimersByTimeAsync(29_000);
-    expect(mockSpeech.endVoiceCall).not.toHaveBeenCalled();
-    await jest.advanceTimersByTimeAsync(1_000);
-    await flush();
-    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'error', error: expect.stringContaining('transcript did not reconnect') }));
-    expect(mockSpeech.endVoiceCall).toHaveBeenCalledTimes(1);
-  } finally {
-    await session.close();
-    jest.useRealTimers();
-  }
-});
-
-test('a replacement transcript clears the recovery deadline', async () => {
-  jest.useFakeTimers();
-  try {
-    await session.start(); await flush();
-    for (const listener of mockTranscriptListeners) listener(null);
-    session.setTranscriptBinding('replacement-transcript');
-    for (const listener of mockTranscriptListeners) listener(state, true);
-    await jest.advanceTimersByTimeAsync(30_000);
-    expect(mockSpeech.endVoiceCall).not.toHaveBeenCalled();
-    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'listening', error: null }));
-  } finally {
-    await session.close();
-    jest.useRealTimers();
-  }
-});
-
 test('applies the selected VAD sensitivity before capture and updates it during a call', async () => {
   session.setVadSensitivity(75);
   await session.start(); await flush();
@@ -405,29 +255,6 @@ test('applies the selected VAD sensitivity before capture and updates it during 
   await session.close();
   session.setVadSensitivity(50);
   expect(mockCore.setVadSensitivity).toHaveBeenCalledTimes(2);
-});
-
-test('submits the finalized transcript once through the existing send callback', async () => {
-  await session.start(); await flush();
-  mockCore.ended.mockImplementationOnce(() => { mockView.phase = 'waiting'; });
-  mockCore.takePrompt.mockReturnValueOnce('Hello agent');
-  mockInputSnapshot = { owner: null, phase: 'idle', interimText: '' };
-  for (const listener of mockInputListeners) listener();
-  for (const listener of mockTranscriptListeners) listener(state);
-  expect(send).toHaveBeenCalledTimes(1);
-  expect(send).toHaveBeenCalledWith('Hello agent');
-});
-
-test('playback uses the existing selected-voice player and releases capture first', async () => {
-  await session.start(); await flush();
-  mockView.phase = 'speaking';
-  mockCore.nextSpeech.mockReturnValueOnce('Reply text');
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  expect(mockInput.cancel.mock.invocationCallOrder[0]).toBeLessThan(mockSpeech.startLocalChatSpeech.mock.invocationCallOrder[0]);
-  expect(mockSpeech.speakChat).toHaveBeenCalledWith(expect.any(String), 'Reply text');
-  expect(mockSpeech.stopChatSpeech).toHaveBeenCalled();
-  expect(mockInput.start).toHaveBeenCalledTimes(2);
 });
 
 test('starting a call only checks the optional model and never downloads it', async () => {
@@ -443,7 +270,7 @@ test('closing during turn inference rejects its late result and releases speech 
   mockCore.analyze.mockImplementationOnce(() => new Promise<void>(done => { resolve = done; }));
   await session.start(); await flush();
   mockView.analyze = true;
-  jest.advanceTimersByTime(50);
+  mockNotify();
   await session.close();
   const calls = changed.mock.calls.length;
   resolve(); await flush();
@@ -517,446 +344,106 @@ test('the system mute control drives Rust capture state', async () => {
   expect(mockSpeech.setVoiceCallMuted).toHaveBeenCalledWith(token, true);
 });
 
-test('skipping playback cannot restart speech when a transcript update arrives during stop', async () => {
-  let finishSpeech!: () => void;
-  let finishStop!: () => void;
-  mockSpeech.speakChat.mockImplementationOnce(() => new Promise<void>(resolve => { finishSpeech = resolve; }));
+test('connects the native source before Chat View exists and binding updates only affect presentation', async () => {
+  session = new VoiceConversation({ ...target, bindingToken: undefined }, send, changed, () => Promise.resolve(mockCore as unknown as NativeVoiceChat));
   await session.start(); await flush();
-  mockView.phase = 'speaking';
-  mockCore.nextSpeech.mockReturnValueOnce('Reply text');
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  mockSpeech.stopChatSpeech.mockImplementationOnce(() => new Promise<void>(resolve => { finishStop = resolve; }));
-  const skipped = session.skip();
-  for (const listener of mockTranscriptListeners) listener(state);
-  expect(mockSpeech.startLocalChatSpeech).toHaveBeenCalledTimes(1);
-  finishStop(); await skipped;
-  finishSpeech(); await flush();
-  expect(mockSpeech.startLocalChatSpeech).toHaveBeenCalledTimes(1);
-  expect(mockInput.start).toHaveBeenCalledTimes(3);
-});
-
-test('closing a call before activation prevents late activation from opening the microphone', async () => {
-  let activate!: () => void;
-  mockSpeech.startVoiceCall.mockImplementationOnce(() => new Promise<void>(resolve => { activate = resolve; }));
-  const starting = session.start(); await flush();
-  for (const listener of mockTranscriptListeners) listener(state);
-  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'starting' }));
-  await session.close();
-  expect(mockSpeech.endVoiceCall).toHaveBeenCalled();
-  activate(); await starting; await flush();
-  expect(mockInput.start).not.toHaveBeenCalled();
-  expect(mockSpeech.playVoiceCallSound).not.toHaveBeenCalled();
+  expect(mockCore.connect).toHaveBeenCalledWith(target.localSource, expect.any(Function), expect.any(Number));
+  expect(mockTranscriptListeners.size).toBe(0);
+  session.setTranscriptBinding();
+  session.setTranscriptBinding('replacement');
+  mockView.phase = 'waiting'; mockNotify();
+  expect(mockCore.connect).toHaveBeenCalledTimes(1);
+  expect(mockSpeech.endVoiceCall).not.toHaveBeenCalled();
   expect(send).not.toHaveBeenCalled();
 });
 
-test('speaks streamed prose before completion and keeps one player across generation gaps', async () => {
-  mockCore.speechFinished.mockReturnValue(false);
+test('native source timeout surfaces an actionable error and releases the call', async () => {
   await session.start(); await flush();
-  mockView.phase = 'speaking'; mockView.inputId += 1n;
-  mockCore.nextSpeech.mockReturnValueOnce('First sentence.');
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  expect(mockSpeech.speakChat).toHaveBeenCalledWith(expect.any(String), 'First sentence.');
-  expect(mockSpeech.stopChatSpeech).not.toHaveBeenCalled();
-  expect(mockInput.start).toHaveBeenLastCalledWith(expect.objectContaining({ duringPlayback: true, localOnly: true }));
-  mockCore.nextSpeech.mockReturnValueOnce('Second sentence.');
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  expect(mockSpeech.speakChat).toHaveBeenLastCalledWith(expect.any(String), 'Second sentence.');
-  expect(mockSpeech.startLocalChatSpeech).toHaveBeenCalledTimes(1);
+  mockView.audioError = 'The agent transcript did not connect. Reopen voice chat to retry.';
+  mockNotify(); await flush();
+  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'error', error: mockView.audioError }));
+  expect(mockSpeech.endVoiceCall).toHaveBeenCalledTimes(1);
+});
+
+test('Rust effects retain original source offsets and acknowledge actual audio drain', async () => {
+  let finish!: () => void;
+  mockSpeech.enqueueChatSpeechWithSource = jest.fn<Promise<void>, [string, string, string]>(() => new Promise<void>(resolve => { finish = resolve; }));
+  await session.start(); await flush();
+  mockView.phase = 'speaking';
+  emitEffects(start('reply')); await flush();
+  expect(mockCore.acknowledgeSpeech).toHaveBeenCalledWith('reply', '0', 'started');
+  emitEffects(speak('reply', 'First reply.', '9')); await flush();
+  const source = JSON.parse(mockSpeech.enqueueChatSpeechWithSource.mock.calls[0][2]) as { chat: unknown };
+  expect(source.chat).toEqual({ messageId: 'original-reply', partId: 'original-part', startUtf16: 42, bindingTokens: ['chat'], hostId: 'host', paneId: 'pane' });
+  expect(mockCore.acknowledgeSpeech).not.toHaveBeenCalledWith('reply', '9', 'played');
+  finish(); await flush();
+  expect(mockCore.acknowledgeSpeech).toHaveBeenCalledWith('reply', '9', 'played');
   expect(mockCore.playbackEnded).not.toHaveBeenCalled();
-  mockCore.speechFinished.mockReturnValue(true);
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  expect(mockCore.playbackEnded).toHaveBeenCalledTimes(1);
-});
-
-test('voice interruption stops output and preserves the running recognizer and its first words', async () => {
-  let finishSpeech!: () => void;
-  mockSpeech.speakChat.mockImplementationOnce(() => new Promise<void>(resolve => { finishSpeech = resolve; }));
-  await session.start(); await flush();
-  mockView.phase = 'speaking'; mockView.inputId += 1n;
-  mockCore.nextSpeech.mockReturnValueOnce('Assistant speaking.');
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  const capture = mockRequest!;
-  const starts = mockInput.start.mock.calls.length;
-  mockView.phase = 'listening';
-  jest.advanceTimersByTime(50);
-  await flush();
-  expect(mockSpeech.stopChatSpeech).toHaveBeenCalledTimes(1);
-  expect(mockInput.start).toHaveBeenCalledTimes(starts);
-  capture.append('Actually, stop and do this instead');
-  expect(mockCore.recognition).toHaveBeenLastCalledWith(mockView.inputId, 'Actually, stop and do this instead');
-  finishSpeech(); await flush();
-  expect(mockCore.playbackEnded).not.toHaveBeenCalled();
-  expect(mockSpeech.startLocalChatSpeech).toHaveBeenCalledTimes(1);
-});
-
-test('skip suppresses the rest of an unfinished reply and waits for the agent before normal capture', async () => {
-  mockCore.speechFinished.mockReturnValue(false);
-  mockCore.skipResponse.mockImplementationOnce(() => { mockView.phase = 'waiting'; });
-  await session.start(); await flush();
-  mockView.phase = 'speaking'; mockView.inputId += 1n;
-  mockCore.nextSpeech.mockReturnValueOnce('First sentence.');
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  await session.skip(); await flush();
-  const starts = mockInput.start.mock.calls.length;
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  expect(mockInput.start).toHaveBeenCalledTimes(starts);
-  expect(mockSpeech.startLocalChatSpeech).toHaveBeenCalledTimes(1);
-  mockView.phase = 'listening'; mockView.inputId += 1n;
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  expect(mockInput.start).toHaveBeenLastCalledWith(expect.objectContaining({ duringPlayback: false }));
-});
-
-test('devices without echo cancellation retain explicit skip and normal local voice chat', async () => {
-  mockInput.supportsPlaybackMonitoring.mockResolvedValueOnce(false);
-  await session.start(); await flush();
-  mockView.phase = 'speaking'; mockView.inputId += 1n;
-  mockCore.nextSpeech.mockReturnValueOnce('Reply.');
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  expect(mockInput.start.mock.calls.some(([request]) => 'duringPlayback' in request && request.duringPlayback)).toBe(false);
-  expect(mockSpeech.speakChat).toHaveBeenCalledWith(expect.any(String), 'Reply.');
-});
-
-test('latency uses a native playback-start event rather than TTS submission', async () => {
-  let now = 1_000;
-  const clock = jest.spyOn(performance, 'now').mockImplementation(() => now);
-  let finishSpeech!: () => void;
-  try {
-    await session.start(); await flush();
-    mockView.phase = 'finishing'; jest.advanceTimersByTime(50);
-    now = 1_050;
-    mockCore.ended.mockImplementationOnce(() => { mockView.phase = 'waiting'; });
-    mockCore.takePrompt.mockReturnValueOnce('Hello');
-    mockInputSnapshot = { owner: null, phase: 'idle', interimText: '' };
-    for (const listener of mockInputListeners) listener();
-    now = 1_250;
-    mockSpeech.speakChat.mockImplementationOnce(() => new Promise<void>(resolve => { finishSpeech = resolve; }));
-    mockView.phase = 'speaking'; mockView.inputId += 1n;
-    mockCore.nextSpeech.mockReturnValueOnce('Reply.');
-    for (const listener of mockTranscriptListeners) listener(state);
-    await flush();
-    expect(recordDiagnostic).not.toHaveBeenCalledWith('info', 'VoiceChat', 'response-latency', expect.anything());
-    now = 1_350;
-    const token = (mockSpeech.startLocalChatSpeech.mock.calls[0] as unknown as [string])[0];
-    mockCallEvents.get('WhipChatSpeechStarted')!({ token, type: '' });
-    expect(recordDiagnostic).toHaveBeenCalledWith('info', 'VoiceChat', 'response-latency', {
-      endpointMs: 800, recognitionMs: 50, agentMs: 200, proseToPlaybackMs: 100, ttsMs: 100, speechEndToPlaybackMs: 1_150,
-    });
-    finishSpeech(); await flush();
-  } finally { clock.mockRestore(); }
-});
-
-test('a rejected echo-cancelled monitor keeps the reply and manual skip available', async () => {
-  let finishSpeech!: () => void;
-  mockSpeech.speakChat.mockImplementationOnce(() => new Promise<void>(resolve => { finishSpeech = resolve; }));
-  await session.start(); await flush();
-  mockView.phase = 'speaking'; mockView.inputId += 1n;
-  mockCore.nextSpeech.mockReturnValueOnce('Reply.');
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  mockRequest!.onError('failed', 'Audio effect unavailable');
-  await flush();
   expect(mockSpeech.stopChatSpeech).not.toHaveBeenCalled();
-  expect(mockSpeech.endVoiceCall).not.toHaveBeenCalled();
-  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'speaking', error: expect.stringContaining('Use Skip') }));
-  await session.skip();
-  finishSpeech(); await flush();
-  expect(mockInput.start).toHaveBeenLastCalledWith(expect.objectContaining({ duringPlayback: false, localOnly: true }));
+  emitEffects({ type: 'stop', token: 'reply' }); await flush();
+  expect(mockSpeech.stopChatSpeech).toHaveBeenCalledWith('reply');
 });
 
-test.each([
-  { reason: 'shake' },
-  { reason: 'interrupted' },
-  { reason: 'stopped', error: 'Speech engine failed' },
-])('a speech-player stop ($reason) keeps the call connected for the next turn', async event => {
-  let finishSpeech!: () => void;
-  mockSpeech.speakChat.mockImplementationOnce(() => new Promise<void>(resolve => { finishSpeech = resolve; }));
+test('a cancelled filler with stalled startup and stop cannot hold a real reply', async () => {
+  let finishStartup!: () => void;
+  mockSpeech.startLocalChatSpeech.mockImplementationOnce(() => new Promise<void>(resolve => { finishStartup = resolve; }));
+  mockSpeech.stopChatSpeech.mockImplementationOnce(() => new Promise<void>(() => {}));
   await session.start(); await flush();
-  mockView.phase = 'speaking'; mockView.inputId += 1n;
-  mockCore.nextSpeech.mockReturnValueOnce('Hello.');
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  mockCore.skipResponse.mockImplementationOnce(() => { mockView.phase = 'waiting'; mockView.inputId += 1n; });
-  const token = (mockSpeech.startLocalChatSpeech.mock.calls[0] as unknown as [string])[0];
-  mockCallEvents.get('WhipChatSpeechStopped')!({ token, type: '', ...event });
-  finishSpeech(); await flush();
-  expect(mockSpeech.endVoiceCall).not.toHaveBeenCalled();
-  expect(mockCore.close).not.toHaveBeenCalled();
-  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'waiting', error: event.error ?? null }));
-  mockView.phase = 'listening'; mockView.inputId += 1n;
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  expect(mockInput.start).toHaveBeenLastCalledWith(expect.objectContaining({ localOnly: true, duringPlayback: false }));
-  expect(mockSpeech.startVoiceCall).toHaveBeenCalledTimes(1);
+  mockView.phase = 'waiting';
+  emitEffects(start('filler', true)); await flush();
+  mockView.phase = 'speaking';
+  emitEffects({ type: 'stop', token: 'filler' }, start('reply')); await flush();
+  emitEffects(speak('reply', 'Actual answer.')); await flush();
+  expect(mockSpeech.speakChat).toHaveBeenCalledWith('reply', 'Actual answer.');
+  finishStartup(); await flush();
+  expect(mockCore.acknowledgeSpeech).not.toHaveBeenCalledWith('filler', '0', 'started');
+  expect(mockSpeech.stopChatSpeech).toHaveBeenLastCalledWith('filler');
 });
 
-test('a player initialization failure keeps the call available for another turn', async () => {
-  mockSpeech.startLocalChatSpeech.mockRejectedValueOnce(new Error('Local voice unavailable'));
+test('late filler audio completion and level callbacks are fenced after preemption', async () => {
+  let finishFiller!: () => void;
+  mockSpeech.speakChat.mockImplementationOnce(() => new Promise<void>(resolve => { finishFiller = resolve; }));
   await session.start(); await flush();
-  mockCore.skipResponse.mockImplementationOnce(() => { mockView.phase = 'waiting'; });
-  mockView.phase = 'speaking'; mockView.inputId += 1n;
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  expect(mockSpeech.endVoiceCall).not.toHaveBeenCalled();
-  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'waiting', error: 'Local voice unavailable' }));
+  mockView.phase = 'waiting';
+  emitEffects(start('filler', true)); await flush();
+  emitEffects(speak('filler', 'Hmm.', '1', true)); await flush();
+  mockView.phase = 'speaking';
+  emitEffects({ type: 'stop', token: 'filler' }, start('reply')); await flush();
+  finishFiller(); await flush();
+  expect(mockCore.acknowledgeSpeech).not.toHaveBeenCalledWith('filler', '1', 'played');
+  const count = changed.mock.calls.length;
+  mockCallEvents.get('WhipChatSpeechLevel')!({ token: 'filler', type: '', level: 1 });
+  expect(changed).toHaveBeenCalledTimes(count);
+  expect(changed.mock.calls.at(-1)?.[0].messages).toBeUndefined();
 });
 
-test('typed composer input follows its reply in the same call without sending twice', async () => {
+test('word highlighting uses native positions and rejects events for a revoked lease', async () => {
+  mockSpeech.enqueueChatSpeechWithSource = jest.fn<Promise<void>, [string, string, string]>(() => new Promise<void>(() => {}));
   await session.start(); await flush();
-  mockCore.submitText.mockImplementationOnce(() => { mockView.phase = 'waiting'; mockView.inputId += 1n; });
+  mockView.phase = 'speaking';
+  emitEffects(start('reply')); await flush();
+  emitEffects(speak('reply', 'Hello local voice.')); await flush();
+  const source = JSON.parse(mockSpeech.enqueueChatSpeechWithSource.mock.calls[0][2]) as Record<string, unknown>;
+  const emit = mockCallEvents.get('WhipSpeechCaption') as unknown as (json: string) => void;
+  emit(JSON.stringify({ ...source, id: 'clock', text: 'Hello local voice.', spokenUtf16: 6 }));
+  expect(changed.mock.calls.at(-1)?.[0].messages?.[0]).toEqual(expect.objectContaining({ active: true, spokenUtf16: 6 }));
+  emitEffects({ type: 'stop', token: 'reply' });
+  const count = changed.mock.calls.length;
+  emit(JSON.stringify({ ...source, id: 'clock', text: 'Hello local voice.', spokenUtf16: 12 }));
+  expect(changed).toHaveBeenCalledTimes(count);
+});
+
+test('typed composer input is followed through Rust without dispatching twice', async () => {
+  await session.start(); await flush();
   session.submitted('Typed follow-up'); await flush();
   expect(mockCore.submitText).toHaveBeenCalledWith('Typed follow-up');
   expect(send).not.toHaveBeenCalled();
-  mockView.phase = 'speaking';
-  mockCore.nextSpeech.mockReturnValueOnce('Answer to the typed message.');
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  expect(mockSpeech.speakChat).toHaveBeenCalledWith(expect.any(String), 'Answer to the typed message.');
-  expect(mockSpeech.startVoiceCall).toHaveBeenCalledTimes(1);
-  expect(mockSpeech.endVoiceCall).not.toHaveBeenCalled();
 });
 
-test('only the current player drives the speaking orb level', async () => {
-  let finishSpeech!: () => void;
-  mockSpeech.speakChat.mockImplementationOnce(() => new Promise<void>(resolve => { finishSpeech = resolve; }));
+test('an incompatible effect version cannot prevent hanging up and releasing the microphone', async () => {
   await session.start(); await flush();
-  mockView.phase = 'speaking'; mockView.inputId += 1n;
-  mockCore.nextSpeech.mockReturnValueOnce('Hello.');
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  const token = (mockSpeech.startLocalChatSpeech.mock.calls[0] as unknown as [string])[0];
-  mockCallEvents.get('WhipChatSpeechLevel')!({ token, type: '', level: 0.12 });
-  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ playbackLevel: 0.12 }));
-  const updates = changed.mock.calls.length;
-  mockCallEvents.get('WhipChatSpeechLevel')!({ token: 'stale', type: '', level: 1 });
-  expect(changed).toHaveBeenCalledTimes(updates);
-  finishSpeech(); await flush();
-  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ playbackLevel: 0 }));
-});
-
-test('a typed follow-up cancels pending playback and speaks only the new reply', async () => {
-  let finishOldSpeech!: () => void;
-  mockSpeech.speakChat.mockImplementationOnce(() => new Promise<void>(resolve => { finishOldSpeech = resolve; }));
-  await session.start(); await flush();
-  mockView.phase = 'speaking'; mockView.inputId += 1n;
-  mockCore.nextSpeech.mockReturnValueOnce('Old reply.');
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  mockCore.submitText.mockImplementationOnce(() => { mockView.phase = 'waiting'; mockView.inputId += 1n; });
-  session.submitted('Typed follow-up'); await flush();
-  finishOldSpeech(); await flush();
-  mockView.phase = 'speaking';
-  mockCore.nextSpeech.mockReturnValueOnce('New reply.');
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  expect(mockSpeech.speakChat.mock.calls.map(call => call[1])).toEqual(['Old reply.', 'New reply.']);
-  expect(send).not.toHaveBeenCalled();
-  expect(mockSpeech.endVoiceCall).not.toHaveBeenCalled();
-});
-
-test('prepares one following utterance while audio plays and waits for every played fragment', async () => {
-  const played: (() => void)[] = [];
-  mockSpeech.enqueueChatSpeech = jest.fn<Promise<void>, [string, string]>(() => new Promise<void>(resolve => { played.push(resolve); }));
-  await session.start(); await flush();
-  mockView.phase = 'speaking'; mockView.inputId += 1n;
-  mockCore.nextSpeech.mockReturnValueOnce('First.').mockReturnValueOnce('Second.').mockReturnValueOnce('Third.');
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  expect(mockSpeech.enqueueChatSpeech.mock.calls.map(([, text]) => text)).toEqual(['First.', 'Second.']);
-  expect(mockSpeech.speakChat).not.toHaveBeenCalled();
-  expect(mockCore.playbackEnded).not.toHaveBeenCalled();
-  played[0](); await flush();
-  expect(mockSpeech.enqueueChatSpeech.mock.calls.map(([, text]) => text)).toEqual(['First.', 'Second.', 'Third.']);
-  played[1](); await flush();
-  expect(mockCore.playbackEnded).not.toHaveBeenCalled();
-  played[2](); await flush();
-  expect(mockCore.playbackEnded).toHaveBeenCalledTimes(1);
-  expect(mockSpeech.startLocalChatSpeech).toHaveBeenCalledTimes(1);
-});
-
-test('new streamed prose is prepared before the current utterance finishes playing', async () => {
-  const played: (() => void)[] = [];
-  mockSpeech.enqueueChatSpeech = jest.fn<Promise<void>, [string, string]>(() => new Promise<void>(resolve => { played.push(resolve); }));
-  mockCore.speechFinished.mockReturnValue(false);
-  await session.start(); await flush();
-  mockView.phase = 'speaking'; mockView.inputId += 1n;
-  mockCore.nextSpeech.mockReturnValueOnce('First.');
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  expect(played).toHaveLength(1);
-  mockCore.nextSpeech.mockReturnValueOnce('Arrived later.');
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  expect(mockSpeech.enqueueChatSpeech.mock.calls.map(([, text]) => text)).toEqual(['First.', 'Arrived later.']);
-  mockCore.speechFinished.mockReturnValue(true);
-  played.forEach(resolve => resolve());
-  await flush();
-  expect(mockCore.playbackEnded).toHaveBeenCalledTimes(1);
-});
-
-test('skip cancels prepared speech and late playback completions cannot restart the reply', async () => {
-  const played: (() => void)[] = [];
-  mockSpeech.enqueueChatSpeech = jest.fn<Promise<void>, [string, string]>(() => new Promise<void>(resolve => { played.push(resolve); }));
-  await session.start(); await flush();
-  mockView.phase = 'speaking'; mockView.inputId += 1n;
-  mockCore.nextSpeech.mockReturnValueOnce('First.').mockReturnValueOnce('Prepared.').mockReturnValueOnce('Never submit.');
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  await session.skip();
-  played.forEach(resolve => resolve());
-  await flush();
-  expect(mockSpeech.enqueueChatSpeech).toHaveBeenCalledTimes(2);
-  expect(mockSpeech.stopChatSpeech).toHaveBeenCalledTimes(1);
-  expect(mockCore.playbackEnded).not.toHaveBeenCalled();
-});
-
-test('a failed prepared utterance stops the reply without leaving unhandled playback promises', async () => {
-  const played: (() => void)[] = [];
-  let fail!: (error: Error) => void;
-  mockSpeech.enqueueChatSpeech = jest.fn<Promise<void>, [string, string]>()
-    .mockImplementationOnce(() => new Promise<void>(resolve => { played.push(resolve); }))
-    .mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { fail = reject; }));
-  await session.start(); await flush();
-  mockView.phase = 'speaking'; mockView.inputId += 1n;
-  mockCore.nextSpeech.mockReturnValueOnce('First.').mockReturnValueOnce('Failed preparation.');
-  for (const listener of mockTranscriptListeners) listener(state);
-  await flush();
-  fail(new Error('Synthesis failed')); await flush();
-  played[0](); await flush();
-  expect(mockSpeech.stopChatSpeech).toHaveBeenCalledTimes(1);
-  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ error: 'Synthesis failed' }));
-});
-
-describe('spoken waiting filler', () => {
-  beforeEach(() => jest.useFakeTimers());
-  afterEach(async () => { await session.close(); jest.useRealTimers(); });
-
-  const waitForReply = async () => {
-    await session.start(); await flush();
-    mockView.phase = 'waiting'; mockView.inputId += 1n;
-    for (const listener of mockTranscriptListeners) listener(state);
-    await jest.advanceTimersByTimeAsync(1_000);
-    expect(mockSpeech.speakChat).not.toHaveBeenCalled();
-  };
-
-  const offerFiller = async () => {
-    mockCore.nextSpeech.mockReturnValueOnce('One moment.');
-    await jest.advanceTimersByTimeAsync(1_000);
-    await flush();
-  };
-
-  test('plays a native-selected filler locally without completing or submitting a turn', async () => {
-    await waitForReply();
-    await offerFiller();
-    expect(mockSpeech.startLocalChatSpeech).toHaveBeenCalledWith(expect.stringContaining(':filler:'), target.label, mockSpeech.startVoiceCall.mock.calls[0][0]);
-    expect(mockSpeech.speakChat).toHaveBeenCalledWith(expect.stringContaining(':filler:'), 'One moment.');
-    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'waiting' }));
-    expect(mockCore.playbackEnded).not.toHaveBeenCalled();
-    expect(mockCore.skipResponse).not.toHaveBeenCalled();
-    expect(send).not.toHaveBeenCalled();
-    expect(recordDiagnostic).not.toHaveBeenCalledWith('info', 'VoiceChat', 'response-latency', expect.anything());
-  });
-
-  test('audible fillers feed echo rejection without adding or highlighting transcript text', async () => {
-    let finishFiller!: () => void;
-    mockSpeech.speakChatWithSource = jest.fn<Promise<void>, [string, string, string]>(() => new Promise<void>(resolve => { finishFiller = resolve; }));
-    await waitForReply(); await offerFiller();
-    const [, text, json] = mockSpeech.speakChatWithSource.mock.calls[0];
-    const source = JSON.parse(json) as object;
-    const emit = mockCallEvents.get('WhipSpeechCaption') as unknown as (json: string) => void;
-    emit(JSON.stringify({ ...source, id: 'filler-clock', text, spokenUtf16: 0 }));
-    expect(mockCore.playbackText).toHaveBeenLastCalledWith(text, true);
-    expect(changed.mock.calls.at(-1)?.[0].messages).toBeUndefined();
-    await session.skip();
-    expect(mockCore.playbackText).toHaveBeenLastCalledWith('', false);
-    emit(JSON.stringify({ ...source, id: 'filler-clock', text, spokenUtf16: 0 }));
-    expect(mockCore.playbackText).toHaveBeenLastCalledWith('', false);
-    finishFiller(); await flush();
-  });
-
-  test('the real reply cuts off audible filler and then uses the shared player', async () => {
-    await waitForReply();
-    let finishFiller!: () => void;
-    mockSpeech.speakChat.mockImplementationOnce(() => new Promise<void>(resolve => { finishFiller = resolve; }));
-    await offerFiller();
-    const fillerToken = mockSpeech.speakChat.mock.calls[0][0];
-    mockSpeech.stopChatSpeech.mockImplementationOnce(() => { finishFiller(); return Promise.resolve(); });
-    mockCore.nextSpeech.mockReturnValueOnce('The real reply.');
-    mockView.phase = 'speaking';
-    for (const listener of mockTranscriptListeners) listener(state);
-    await flush();
-    expect(mockSpeech.stopChatSpeech).toHaveBeenCalledWith(fillerToken);
-    expect(mockSpeech.speakChat.mock.calls.map(([, text]) => text)).toEqual(['One moment.', 'The real reply.']);
-    expect(mockCore.skipResponse).not.toHaveBeenCalled();
-    expect(mockCore.playbackEnded).toHaveBeenCalledTimes(1);
-  });
-
-  test('a cancelled slow filler startup cannot replace or speak over the real reply', async () => {
-    await waitForReply();
-    let started!: () => void;
-    mockSpeech.startLocalChatSpeech.mockImplementationOnce(() => new Promise<void>(resolve => { started = resolve; }));
-    await offerFiller();
-    mockView.phase = 'speaking';
-    mockCore.nextSpeech.mockReturnValueOnce('The real reply.');
-    for (const listener of mockTranscriptListeners) listener(state);
-    await flush();
-    expect(mockSpeech.speakChat).not.toHaveBeenCalled();
-    started(); await flush();
-    expect(mockSpeech.speakChat.mock.calls.map(([, text]) => text)).toEqual(['The real reply.']);
-    expect(mockCore.skipResponse).not.toHaveBeenCalled();
-  });
-
-  test.each(['interrupt', 'hangup', 'skip'] as const)('%s cancels filler without late turn completion', async action => {
-    await waitForReply();
-    let finishFiller!: () => void;
-    mockSpeech.speakChat.mockImplementationOnce(() => new Promise<void>(resolve => { finishFiller = resolve; }));
-    await offerFiller();
-    mockSpeech.stopChatSpeech.mockImplementationOnce(() => { finishFiller(); return Promise.resolve(); });
-    if (action === 'hangup') await session.close();
-    else if (action === 'skip') await session.skip();
-    else {
-      mockView.phase = 'listening';
-      jest.advanceTimersByTime(50);
-    }
-    await flush();
-    expect(mockSpeech.stopChatSpeech).toHaveBeenCalled();
-    expect(mockCore.playbackEnded).not.toHaveBeenCalled();
-    expect(mockCore.skipResponse).toHaveBeenCalledTimes(action === 'skip' ? 1 : 0);
-    const polls = mockCore.nextSpeech.mock.calls.length;
-    await jest.advanceTimersByTimeAsync(60_000);
-    expect(mockCore.nextSpeech).toHaveBeenCalledTimes(polls);
-  });
-
-  test('a filler failure leaves the pending agent response available', async () => {
-    await waitForReply();
-    mockSpeech.speakChat.mockRejectedValueOnce(new Error('Filler unavailable'));
-    await offerFiller();
-    expect(mockCore.skipResponse).not.toHaveBeenCalled();
-    expect(mockSpeech.endVoiceCall).not.toHaveBeenCalled();
-    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'waiting', error: null }));
-  });
-
-  test('native filler stop events cannot skip the agent reply or report reply latency', async () => {
-    await waitForReply();
-    let finishFiller!: () => void;
-    mockSpeech.speakChat.mockImplementationOnce(() => new Promise<void>(resolve => { finishFiller = resolve; }));
-    await offerFiller();
-    const token = mockSpeech.speakChat.mock.calls[0][0];
-    mockCallEvents.get('WhipChatSpeechStarted')!({ token, type: '' });
-    mockSpeech.stopChatSpeech.mockImplementationOnce(() => { finishFiller(); return Promise.resolve(); });
-    mockCallEvents.get('WhipChatSpeechStopped')!({ token, type: '', reason: 'shake' });
-    await flush();
-    expect(mockCore.skipResponse).not.toHaveBeenCalled();
-    expect(mockCore.playbackEnded).not.toHaveBeenCalled();
-    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'waiting', error: null }));
-    expect(recordDiagnostic).not.toHaveBeenCalledWith('info', 'VoiceChat', 'response-latency', expect.anything());
-  });
+  mockCore.takeEffects.mockImplementationOnce(() => { throw new Error('Unsupported Local voice effect version'); });
+  await session.close();
+  expect(mockSpeech.endVoiceCall).toHaveBeenCalledTimes(1);
+  expect(mockInput.releaseReservation).toHaveBeenCalledTimes(1);
 });

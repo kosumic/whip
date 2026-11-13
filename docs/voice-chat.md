@@ -43,9 +43,11 @@ does not count toward response-latency diagnostics.
 Idle prompt acknowledgements and gaps between assistant segments do not finish
 a voice turn. The agent's final outcome completes generation, and the last
 queued speech fragment must finish playing before listening resumes.
-If a transcript subscription expires, the call keeps its pending reply while
-the same conversation is rebound. If no replacement arrives within 30 seconds, the call
-stops with a reconnect error.
+Local calls acquire their transcript directly from the Rust agent-session owner,
+including when Chat View has never been opened. Initial acquisition and same-session
+recovery each have a 30-second deadline. Loading/stale sources keep the pending reply
+and suppress fillers; unavailable/error sources show a reconnect error. Session or
+runtime replacement ends the call before another conversation can supply speech.
 With device echo cancellation, local capture continues while the agent is
 thinking or speaking. Sustained user speech (about 256 ms) interrupts playback
 and discards the old response's remaining speech, including later transcript
@@ -86,7 +88,7 @@ Mute discards unfinished microphone input; muting during a reply lets the reply
 finish and leaves the microphone muted afterward. Back, the down arrow, and
 the transcript button minimize the voice screen while the call continues.
 A floating orb above the composer follows the keyboard and reopens the same call.
-The hang-up button or changing pane/binding ends the voice conversation.
+The hang-up button or replacement of the pinned remote conversation ends the voice conversation. Presentation binding refreshes preserve it.
 Ending voice chat does not cancel work already submitted to the agent.
 
 Routine transcript refreshes (`loading` / `stale`, including “Agent activity
@@ -177,8 +179,8 @@ See [Android's audio-source session contract](https://developer.android.com/refe
 
 The patch to `expo-speech-recognition` sends local voice PCM directly from its
 existing microphone stream to the shared Rust ingress, using a fresh sink handle
-for every recognizer cycle. PCM does not pass through JavaScript. UI and turn
-transitions poll Rust at 20 Hz. See [native microphone ingress](audio-ingress.md)
+for every recognizer cycle. PCM does not pass through JavaScript. The Rust executor samples call state at 20 Hz and notifies the UI/platform adapter;
+JavaScript does not poll transcript or playback policy. See [native microphone ingress](audio-ingress.md)
 for buffering, lifecycle fencing and validation status. Android needs Android
 13 or later and an installed on-device recognition service/language. iOS requires
 on-device recognition for the actual selected locale. The patch explicitly
@@ -218,10 +220,38 @@ off the JavaScript thread while capture continues. Native startup/finalization
 watchdogs do not impose a listening-silence timeout.
 
 The Rust controller owns turn boundaries, mute, generation invalidation,
-single prompt submission, response correlation, and speech ordering. The React
-Native adapter orchestrates the existing STT/TTS I/O and observes the active
-transcript binding. A disconnected or replaced transcript ends the conversation
-instead of speaking catch-up output.
+single prompt submission, response correlation, and speech ordering. The portable `voice-call-local::coordinator::Coordinator` owns binding and
+submission deadlines, filler scheduling, the bounded playback lookahead, lease
+revocation, and generation/playback drain. The Whip Rust adapter subscribes to
+canonical transcript commits, opens the pinned source, correlates replies, and
+submits through the existing native terminal queue. React Native executes
+`start`/`speak`/`stop` effects and returns token-scoped startup/drain/failure
+acknowledgments. Presentation binding tokens are used only for word highlighting.
+Speech effects use protocol version 1. Lease tokens carry the protocol, call,
+generation and playback identity; incompatible effect versions are rejected.
+Native word/PCM callbacks validate that lease under the coordinator lock before
+updating echo state, including when cancellation races a JS callback.
+
+A cancelled filler loses ownership synchronously. Neither its startup nor its
+stop promise can delay a reply; native speech arbitration cancels queued starts,
+and late acknowledgments are ignored. Startup/playback are bounded to 60 seconds
+per utterance. Android supports two queued utterances; iOS reports capacity one.
+Native generation completion and actual playback drain remain separate gates.
+
+Spoken prompts carry an opaque `Whip local voice` submission marker in the remote
+user message. This permits correlation through whitespace normalization, wrappers,
+repeated prompts and provider turn-ID reconciliation. It can be visible in the
+remote agent history. Typed composer submissions are followed without resending;
+matching requires a unique new normalized user turn after the baseline anchor.
+Restored history and ambiguous candidates cannot supply speech. Missing dispatch
+or correlation fails visibly after 30 seconds, with distinct messages. Accepted
+terminal writes are separate from observing a user turn and a provider final
+outcome. There is no automatic replay after an uncertain write.
+
+The native snapshot includes opaque call/source identities, generation,
+source epoch/revision/readiness, dispatch state, stage and speech queue depth.
+Transition diagnostics report elapsed time and correlation candidate counts;
+raw speech and transcript content are excluded from these diagnostics.
 
 The Smart Turn feature extraction follows GymAmi at
 `41f1ccffd480571eb81212f4a289cb2a7e07b39c`. Its synthetic counting fixture matches
@@ -279,3 +309,29 @@ Callback delivery and device output buffering still affect these measurements;
 verify perceived speech-end-to-audio latency with real device playback. The sample's cloud timings are
 illustrations and do not predict Whip's agent transport or local speech latency.
 These lessons require no speech APIs or new voice settings.
+
+## Coordinator regression and device verification (#427)
+
+Deterministic Rust coverage exercises initial acquisition/dispatch deadlines,
+stalled filler startup/stop, stale leases, playback drain, same-session recovery,
+source/epoch/revision fencing, restored history, normalized prompts, and native
+submission receipts/cancellation. TS tests cover platform effect execution,
+strictly local recognition, word offsets, controls, background lifetime, and late
+native completions without a JS transcript subscription.
+
+Physical Android/iOS verification for this refactor is **pending**. Before release:
+
+- Start Local voice before opening Chat View; speak immediately and confirm the
+  first reply. Repeat with transcript acquisition unavailable and confirm a
+  bounded, actionable error.
+- Hold SSH input/transcript delivery, reconnect the same session, and verify one
+  submission and one spoken reply. Replace the remote session and verify failure.
+- Answer immediately before/during a filler; inject stalled TTS startup/stop and
+  verify reply priority. Exercise both system voices and Phonon.
+- Exercise Skip, typed follow-up, mute, barge-in, background/lock, route changes,
+  hang-up and a replacement call on physical Android and iOS devices. Confirm
+  source word highlights, microphone release and no late audio.
+
+The UniFFI API and platform adapter must ship together in a native rebuild.
+Metro-only updates against an older native library are unsupported. Realtime and
+GPT-Live do not use this coordinator or the new Local submission marker.

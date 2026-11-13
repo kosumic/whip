@@ -37,7 +37,17 @@ on a true return from `audio` or `recognition`, cancel host playback.
 Whenever `input_id` changes, close/replace the native capture under the same
 coordinator lock. Preserve capture when the ID stays the same.
 
-Provider/session correlation, assistant text segmentation, filler selection,
+`coordinator::Coordinator` runs alongside `Call` under that same lock. Feed it
+binding availability, submission/dispatch/observed-turn events, segmented reply
+chunks, provider completion and a monotonic millisecond clock. It emits explicit
+`Start`, `Speak`, `Stop` and `Drained` effects. Each playback lease carries a
+call-local generation and serial; each chunk carries a separate acknowledgment ID.
+Report startup and actual audio drain separately. Revocation immediately releases
+ownership without waiting for a platform stop acknowledgment. Filler scheduling,
+initial/recovery/dispatch/correlation deadlines and playback timeouts are portable
+policy. Hosts select filler phrases and report playback capacity (one or two).
+
+Provider/session correlation, assistant text segmentation, filler phrase selection,
 history, remote dispatch, platform lifecycle and error presentation stay in
 adapters. A skipped response still waits for assistant generation completion.
 The optional `smart-turn` feature only buffers an eight-second inference window
