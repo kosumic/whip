@@ -1,3 +1,5 @@
+let mockCaptionSnapshot = 'null';
+jest.mock('react-native-whip-ssh', () => ({ speechCaptionSnapshot: () => mockCaptionSnapshot }));
 import { VoiceConversation, type VoiceConversationView } from '../src/services/voiceConversation';
 import type { AgentChatState } from '../src/agentChat';
 import type { NativeVoiceChat } from 'react-native-whip-ssh/src/voiceChat';
@@ -425,11 +427,14 @@ test('word highlighting uses native positions and rejects events for a revoked l
   emitEffects(speak('reply', 'Hello local voice.')); await flush();
   const source = JSON.parse(mockSpeech.enqueueChatSpeechWithSource.mock.calls[0][2]) as Record<string, unknown>;
   const emit = mockCallEvents.get('WhipSpeechCaption') as unknown as (json: string) => void;
-  emit(JSON.stringify({ ...source, id: 'clock', text: 'Hello local voice.', spokenUtf16: 6 }));
+  mockCaptionSnapshot = JSON.stringify({ id: 1, sessionId: 'reply', local: { token: 'reply', messageId: source.messageId, startUtf16: 0 },
+    text: 'Hello local voice.', spokenEndUtf16: 6, startUtf16: 0, phase: 'speaking' });
+  emit('null');
   expect(changed.mock.calls.at(-1)?.[0].messages?.[0]).toEqual(expect.objectContaining({ active: true, spokenUtf16: 6 }));
   emitEffects({ type: 'stop', token: 'reply' });
   const count = changed.mock.calls.length;
-  emit(JSON.stringify({ ...source, id: 'clock', text: 'Hello local voice.', spokenUtf16: 12 }));
+  mockCaptionSnapshot = JSON.stringify({ ...JSON.parse(mockCaptionSnapshot), spokenEndUtf16: 12 });
+  emit('null');
   expect(changed).toHaveBeenCalledTimes(count);
 });
 

@@ -81,3 +81,18 @@ export function normalizeRichTextMarkdown(value: string): string {
   if (!containsSupportedHtmlTag(protectedCode.content)) return normalizeOpenCodeMath(value);
   return protectedCode.restore(convertHtml(protectedCode.content));
 }
+
+/** Project a source position through the complete normalization, including math
+ * delimiters and HTML that cannot be normalized correctly as a truncated prefix. */
+export function richTextMarkdownOffset(source: string, position: number, rewrite: (text: string) => string): number {
+  const rendered = rewrite(normalizeRichTextMarkdown(source));
+  if (position <= 0) return 0;
+  if (position >= source.length) return rendered.length;
+  let marker = '\uE000WHIP_SPEECH_OFFSET\uE001';
+  while (source.includes(marker)) marker += '_';
+  const mapped = rewrite(normalizeRichTextMarkdown(source.slice(0, position) + marker + source.slice(position)));
+  const index = mapped.indexOf(marker);
+  // A structural rewrite that removes the anchor cannot establish playback
+  // evidence. Keep the range conservative while retaining upcoming styling.
+  return index >= 0 && mapped.replace(marker, '') === rendered ? index : 0;
+}

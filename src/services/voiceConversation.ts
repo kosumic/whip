@@ -1,3 +1,5 @@
+import { speechCaptionSnapshot } from 'react-native-whip-ssh';
+import type { SpeechCaption } from './speechCaptions';
 import { AppState, DeviceEventEmitter, NativeEventEmitter, Platform } from 'react-native';
 import { retainVoiceCallBackground } from './voiceCallBackground';
 import type { NativeVoiceChat, VoiceChatView, LocalVoiceSource, VoiceSpeechEffect } from 'react-native-whip-ssh/src/voiceChat';
@@ -5,7 +7,6 @@ import type { AgentChatState } from '../agentChat';
 import { suspendChatSpeechForInput, type ChatSpeechTarget, type ChatSpeechStoppedEvent } from './chatSpeech';
 import { composerSpeechInput } from './composerSpeechInput';
 import { getSpeechPlayback, type NativeSpeechPlayback } from './speechPlayback';
-import { retainSpeechCaption } from './speechCaptions';
 import { recordDiagnostic } from './diagnosticFormatting';
 import { voiceChatModelRoot } from './voiceChatModel';
 import { DEFAULT_VAD_SENSITIVITY } from '../lib/voiceVadSensitivity';
@@ -68,7 +69,7 @@ const CAPTION_LIMIT = { messages: 64, text: 16 * 1024, total: 128 * 1024 } as co
 let nextSession = 0;
 const voiceCalls: { active: VoiceConversation | null } = { active: null };
 type CallEvent = { token: string; type: 'ended' | 'muted' | 'route' | 'audioInactive'; muted?: boolean; speaker?: boolean; error?: string };
-type LocalSpeechCaption = { id: string; localToken?: string; messageId: string; text: string; spokenUtf16: number; ended?: boolean };
+
 type VoiceSpeechEvents = { [STOPPED]: [event: ChatSpeechStoppedEvent]; [STARTED]: [event: { token: string }]; [LEVEL]: [event: { token: string; level: number }]; [CALL_EVENT]: [event: CallEvent]; [CAPTION]: [json: string] };
 async function loadCore(root: string): Promise<NativeVoiceChat> {
   const { NativeVoiceChat } = await import('react-native-whip-ssh/src/voiceChat');
@@ -85,7 +86,7 @@ function failureMessage(error: unknown): string {
 /** I/O adapter over Whip's shared STT owner, shared TTS player, and Rust turn controller. */
 export class VoiceConversation {
   private core?: NativeVoiceChat;
-  private readonly speechResources = new Map<string, { filler: boolean; release: () => void }>();
+  private readonly speechResources = new Map<string, { filler: boolean }>();
   private vadSensitivity = DEFAULT_VAD_SENSITIVITY;
   private playback?: NativeSpeechPlayback;
   private readonly session = `voice-chat:${++nextSession}`;
@@ -93,7 +94,6 @@ export class VoiceConversation {
   private draft = '';
   private speechToken?: string;
   private readySpeech?: string;
-  private activeCaption?: string;
   private canInterrupt = false;
   private timing?: { boundary: number; speechEnd: number; submitted?: number; prose?: number; synthesis?: number; played?: number };
   private callToken?: string;
@@ -167,14 +167,15 @@ export class VoiceConversation {
       });
       const call = speechEmitter.addListener(CALL_EVENT, event => this.callChanged(event));
       const started = speechEmitter.addListener(STARTED, event => this.playbackStarted(event.token));
-      const caption = speechEmitter.addListener(CAPTION, json => {
-        const event = JSON.parse(json) as LocalSpeechCaption;
-        if (this.closed || !event.localToken || !this.core?.playbackCurrent(event.localToken)) return;
-        if (event.localToken === this.speechToken && event.ended && event.id !== this.activeCaption) return;
-        this.core?.playbackText(event.localToken, event.text, !event.ended);
-        if (event.localToken !== this.speechToken) return;
-        this.activeCaption = event.ended ? undefined : event.id;
-        this.caption(event.messageId, 'assistant', undefined, event.spokenUtf16, !event.ended);
+      const caption = speechEmitter.addListener(CAPTION, () => {
+        const event = JSON.parse(speechCaptionSnapshot()) as SpeechCaption | null;
+        const local = event?.local;
+        if (this.closed || !event || !local || !this.core?.playbackCurrent(local.token)) return;
+        const active = event.phase !== 'finished' && event.phase !== 'cancelled';
+        this.core.playbackText(local.token, event.text, active);
+        if (local.token !== this.speechToken) return;
+        this.caption(local.messageId, 'assistant', undefined,
+          local.startUtf16 + Math.max(0, event.spokenEndUtf16 - event.startUtf16), active);
       });
       const level = speechEmitter.addListener(LEVEL, event => {
         if (this.closed || !this.core?.playbackCurrent(event.token)) return;
@@ -301,9 +302,8 @@ export class VoiceConversation {
     if (view.phase === 'waiting' && this.timing && this.timing.submitted === undefined) this.timing.submitted = performance.now();
     if (view.phase === 'speaking' && this.timing && this.timing.prose === undefined) this.timing.prose = performance.now();
     this.view = { ...this.view, phase: this.callActivated ? view.phase : 'starting', muted: view.muted, smartTurn: view.smartTurn, text: view.text, level: view.level, progress: view.progress, playbackLevel: view.phase === 'speaking' ? this.view.playbackLevel : 0 };
-    if (view.phase !== 'speaking') {
-      this.activeCaption = undefined;
-      if (this.view.messages?.some(message => message.active)) this.view = { ...this.view, messages: this.view.messages.map(message => message.active ? { ...message, active: false } : message) };
+    if (view.phase !== 'speaking' && this.view.messages?.some(message => message.active)) {
+      this.view = { ...this.view, messages: this.view.messages.map(message => message.active ? { ...message, active: false } : message) };
     }
     if (view.events?.length) {
       const messages = [...(this.view.messages ?? [])];
@@ -417,7 +417,6 @@ export class VoiceConversation {
   private runSpeechEffect(effect: VoiceSpeechEffect): void {
     const { token } = effect;
     if (effect.type === 'stop') {
-      this.speechResources.get(token)?.release();
       this.speechResources.delete(token);
       if (this.speechToken === token) this.speechToken = undefined;
       if (this.readySpeech === token) this.readySpeech = undefined;
@@ -427,7 +426,7 @@ export class VoiceConversation {
     const current = () => !this.closed && Boolean(this.core?.playbackCurrent(token));
     if (effect.type === 'start') {
       if (!current()) return;
-      this.speechResources.set(token, { filler: effect.filler, release: effect.filler ? () => {} : retainSpeechCaption(token) });
+      this.speechResources.set(token, { filler: effect.filler });
       if (!effect.filler) this.speechToken = token;
       void (async () => {
         await this.captureQueue;

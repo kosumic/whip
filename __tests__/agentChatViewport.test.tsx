@@ -8,7 +8,6 @@ import { Fragment, Profiler, useState, type ReactElement } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
 import * as Haptics from 'expo-haptics';
 import { ActivityIndicator, Linking } from 'react-native';
-import { chatSpeechHighlight } from 'react-native-whip-ssh';
 import { COPY_FEEDBACK_MS } from '../src/hooks/useCopyFeedback';
 import type { ChatReadAloudControl } from '../src/hooks/useChatReadAloud';
 import { ChatSpeechText } from '../src/components/ChatSpeechText';
@@ -41,7 +40,8 @@ import { FLOATING_WARNING_BANNER_HEIGHT } from '../src/components/FloatingWarnin
 
 const mockSearch = jest.fn<ChatSearchResults, [string]>();
 const mockCaptionListeners = new Set<(json: string) => void>();
-jest.mock('react-native-whip-ssh', () => ({ chatSpeechHighlight: jest.fn((content: string) => content) }));
+let mockCaptionSnapshot = 'null';
+jest.mock('react-native-whip-ssh', () => ({ speechCaptionSnapshot: () => mockCaptionSnapshot }));
 const mockSearchNavigate = jest.fn<ChatSearchResults, [boolean]>();
 const mockSearchSelect = jest.fn<ChatSearchResults, [number]>();
 const mockSearchDispose = jest.fn();
@@ -55,6 +55,7 @@ jest.mock('react-native-whip-ssh/src/chatSearch', () => ({
 }));
 
 beforeEach(() => {
+  mockCaptionSnapshot = 'null';
   jest.mocked(useNativeChatRows).mockImplementation(useMockChatRows);
   jest.mocked(Haptics.selectionAsync).mockClear();
   jest.mocked(Haptics.notificationAsync).mockClear();
@@ -381,15 +382,16 @@ test.each(['manual', 'automatic'])('mounted prose receives %s captions without a
     expect(rows.root.findByType(ChatSpeechText).props.source).toEqual({
       bindingToken: target.bindingToken, hostId: target.hostId, paneId: target.paneId, messageId: 'reply', partId: 'text',
     });
-    jest.mocked(chatSpeechHighlight).mockReturnValueOnce('A ==visible== response.');
     act(() => {
-      const caption = JSON.stringify({
+      mockCaptionSnapshot = JSON.stringify({
         bindingTokens: [target.bindingToken], hostId: target.hostId, paneId: target.paneId,
-        messageId: 'reply', partId: 'text', id: 'speech', text: 'A visible response.', startUtf16: 0, spokenUtf16: 3,
+        messageId: 'reply', partId: 'text', id: 1, lease: 1, local: null, sessionId: playback, text: 'A visible response.',
+        startUtf16: 0, spokenEndUtf16: 2, currentWordRangeUtf16: { start: 2, end: 9 }, phase: 'speaking', playedFrames: 100, endReason: null,
       });
-      for (const listener of mockCaptionListeners) listener(caption);
+      for (const listener of mockCaptionListeners) listener('null');
     });
-    expect(rows.root.findByType(MarkdownText).props.content).toBe('A ==visible== response.');
+    expect(rows.root.findByType(MarkdownText).props.content).toBe('A visible response.');
+    expect(rows.root.findByType(MarkdownText).props.speechCaption).toMatchObject({ spokenEndUtf16: 2, currentWordRangeUtf16: { start: 2, end: 9 } });
     act(() => renderer.update(chatView(state, false, undefined, readAloud)));
     act(() => rows.update(renderedBlocks(renderer)));
     expect(rows.root.findByType(ChatSpeechText).props.source).toBeUndefined();

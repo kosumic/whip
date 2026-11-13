@@ -694,6 +694,11 @@ interface NativeModuleInterface {
     startUtf16: number,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_func_chat_speech_presentation(
+    markdown: Uint8Array,
+    snapshot: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_chat_speech_response_available(
     agent: Uint8Array,
     messages: Uint8Array,
@@ -1061,6 +1066,9 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_fn_func_shutdown(
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_func_speech_caption_snapshot(
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_start_herdr_event_subscription(
     clientKey: Uint8Array,
     socketPath: Uint8Array,
@@ -3198,6 +3206,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_cancel_ssh_sftp_upload(): number;
   ubrn_uniffi_whip_ssh_checksum_func_chat_speech_announcement(): number;
   ubrn_uniffi_whip_ssh_checksum_func_chat_speech_highlight(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_chat_speech_presentation(): number;
   ubrn_uniffi_whip_ssh_checksum_func_chat_speech_response_available(): number;
   ubrn_uniffi_whip_ssh_checksum_func_chmod_ssh_sftp_path(): number;
   ubrn_uniffi_whip_ssh_checksum_func_clear_agent_transcript_cache(): number;
@@ -3285,6 +3294,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_set_usage_foreground(): number;
   ubrn_uniffi_whip_ssh_checksum_func_set_whip_app_control(): number;
   ubrn_uniffi_whip_ssh_checksum_func_shutdown(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_speech_caption_snapshot(): number;
   ubrn_uniffi_whip_ssh_checksum_func_start_herdr_event_subscription(): number;
   ubrn_uniffi_whip_ssh_checksum_func_start_herdr_terminal_bridge(): number;
   ubrn_uniffi_whip_ssh_checksum_func_start_ssh_sftp_file_server(): number;

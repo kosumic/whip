@@ -6,6 +6,7 @@
 
 // Script the Rust policy boundary; Rust's queue and lease races have their own
 // tests. This fixture drives real adapter callbacks without audible OS output.
+static NSMutableArray<NSDictionary *> *captionCommands;
 static uint64_t sequence, activeLease;
 static uint8_t activeKind;
 static NSString *activeOwner;
@@ -29,6 +30,11 @@ bool whip_speech_complete(uint64_t lease) {
 bool whip_speech_stop(uint64_t lease) { if (!whip_speech_is_current(lease)) return false; activeLease = 0; return true; }
 uint64_t whip_speech_timeout_ms(uint8_t kind, uint64_t units) { return 30000; }
 uint64_t whip_speech_caption_start(const char *text, uintptr_t prefix_utf16) { return 1; }
+char *whip_speech_caption_command(const char *json) {
+  NSDictionary *command = [NSJSONSerialization JSONObjectWithData:[@(json) dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+  [captionCommands addObject:command];
+  return strdup("null");
+}
 uintptr_t whip_speech_caption_progress(uint64_t id, uintptr_t played, uintptr_t samples, bool complete) { return 0; }
 uint64_t whip_speech_stop_owner(uint8_t kind, const char *owner) {
   if (activeKind != kind || ![activeOwner isEqualToString:@(owner)]) return 0;
@@ -171,7 +177,7 @@ static NSString *voiceCallToken;
 @property(nonatomic, strong) NSTimer *timer;
 @property(nonatomic, strong) NSMutableDictionary *caption;
 @property(nonatomic) NSInteger captionPrefix;
-@property(nonatomic) NSInteger captionPosition;
+@property(nonatomic) uint64_t captionClock;
 @property(nonatomic, copy) NSString *systemVoice;
 - (id)newCallAnnouncement;
 - (BOOL)play:(NSString *)text language:(NSString *)language rate:(double)rate started:(void (^)(void))started preview:(BOOL)preview;
@@ -232,7 +238,7 @@ static NSString *voiceCallToken;
 @end
 @implementation WhipSpeechPlaybackTests
 - (void)setUp {
-  [super setUp]; activeLease = 0; activeOwner = nil;
+  [super setUp]; captionCommands = [NSMutableArray new]; activeLease = 0; activeOwner = nil;
   waiting = [NSMutableArray new]; valid = [NSMutableSet new];
   turnSequence = 0; turnOwner = 0; turnWaiting = [NSMutableArray new];
   automaticWaiting = [NSMutableArray new]; automaticCompleted = [NSMutableArray new];
@@ -545,55 +551,40 @@ static NSString *voiceCallToken;
   [self waitForExpectations:@[recovered] timeout:2];
 }
 
-- (void)testSystemWordRangesSkipTabPrefixAndIgnoreInterruptedUtterance {
+- (void)testSystemRangesForwardBothEndsToRustAndRetainCaptionAcrossChunkCompletion {
   [self.player startChat:@"reader" label:@"Chat" resolve:^(id value) {} reject:self.unexpectedError];
   NSString *prefix = @"Long, paused 👋 debug tab: ";
-  NSString *response = @"One two three.";
-  [self.player speakChat:@"reader" text:[prefix stringByAppendingString:response]
-                resolve:^(id value) {} reject:self.unexpectedError];
+  [self.player speakChat:@"reader" text:[prefix stringByAppendingString:@"One two three."] resolve:^(id value) {} reject:self.unexpectedError];
   AVSpeechUtterance *utterance = self.player.utterance;
-  self.player.caption = [@{@"id": @"range-test", @"messageId": @"response", @"partId": @"part",
-    @"text": response, @"startUtf16": @42} mutableCopy];
-  self.player.captionPrefix = prefix.length;
-  self.player.captionPosition = -1;
-  NSMutableArray *events = [NSMutableArray new];
-  id observer = [NSNotificationCenter.defaultCenter addObserverForName:WhipSpeechCaption object:self.player queue:nil
-    usingBlock:^(NSNotification *event) { [events addObject:[event.userInfo copy]]; }];
+  self.player.captionClock = 42;
+  [captionCommands removeAllObjects];
   AVSpeechSynthesizer *engine = [AVSpeechSynthesizer new];
-  [self.player speechSynthesizer:engine willSpeakRangeOfSpeechString:NSMakeRange(0, 4) utterance:utterance];
-  [self.player speechSynthesizer:engine willSpeakRangeOfSpeechString:NSMakeRange(prefix.length - 5, 4) utterance:utterance];
-  XCTestExpectation *prefixSkipped = [self expectationWithDescription:@"prefix ranges emit no response caption"];
-  dispatch_async(dispatch_get_main_queue(), ^{ XCTAssertEqual(events.count, 0u); [prefixSkipped fulfill]; });
-  [self waitForExpectations:@[prefixSkipped] timeout:2];
-
-  [self.player speechSynthesizer:engine willSpeakRangeOfSpeechString:NSMakeRange(prefix.length, 3) utterance:utterance];
+  // Rust receives original utterance coordinates, including the prefix. Native
+  // code must not independently estimate or rewrite the cumulative boundary.
   [self.player speechSynthesizer:engine willSpeakRangeOfSpeechString:NSMakeRange(prefix.length + 4, 3) utterance:utterance];
-  XCTestExpectation *words = [self expectationWithDescription:@"native word ranges preserve source offsets"];
+  XCTestExpectation *range = [self expectationWithDescription:@"both UTF-16 range ends reach Rust"];
   dispatch_async(dispatch_get_main_queue(), ^{
-    XCTAssertEqual(events.count, 2u);
-    XCTAssertEqualObjects(events[0][@"spokenUtf16"], @42);
-    XCTAssertEqualObjects(events[1][@"spokenUtf16"], @46);
-    XCTAssertEqualObjects(events[1][@"messageId"], @"response");
-    [words fulfill];
+    XCTAssertEqualObjects(captionCommands.lastObject, (@{@"action":@"range", @"id":@42,
+      @"start":@(prefix.length + 4), @"end":@(prefix.length + 7)}));
+    [range fulfill];
   });
-  [self waitForExpectations:@[words] timeout:2];
+  [self waitForExpectations:@[range] timeout:2];
   [self.player speechSynthesizer:engine didFinishSpeechUtterance:utterance];
-  XCTestExpectation *held = [self expectationWithDescription:@"chunk completion retains the caption while waiting for audio"];
+  XCTestExpectation *buffer = [self expectationWithDescription:@"drained chunk enters buffering rather than clearing"];
   dispatch_async(dispatch_get_main_queue(), ^{
-    XCTAssertEqual(events.count, 2u);
-    XCTAssertEqualObjects(events.lastObject[@"spokenUtf16"], @46);
-    XCTAssertNotEqualObjects(events.lastObject[@"ended"], @YES);
-    [held fulfill];
+    XCTAssertEqualObjects(captionCommands.lastObject[@"action"], @"buffer");
+    XCTAssertEqualObjects(captionCommands.lastObject[@"id"], @42);
+    [buffer fulfill];
   });
-  [self waitForExpectations:@[held] timeout:2];
+  [self waitForExpectations:@[buffer] timeout:2];
   [self.player stop];
-  XCTAssertEqualObjects(events.lastObject[@"ended"], @YES);
-  NSUInteger endedCount = events.count;
+  XCTAssertEqualObjects(captionCommands.lastObject[@"action"], @"clear");
+  XCTAssertEqualObjects(captionCommands.lastObject[@"reason"], @"stopped");
+  NSUInteger count = captionCommands.count;
   [self.player speechSynthesizer:engine willSpeakRangeOfSpeechString:NSMakeRange(prefix.length + 8, 5) utterance:utterance];
-  XCTestExpectation *stopped = [self expectationWithDescription:@"late word callback cannot restore a stopped caption"];
-  dispatch_async(dispatch_get_main_queue(), ^{ XCTAssertEqual(events.count, endedCount); [stopped fulfill]; });
+  XCTestExpectation *stopped = [self expectationWithDescription:@"late word cannot restore stopped caption"];
+  dispatch_async(dispatch_get_main_queue(), ^{ XCTAssertEqual(captionCommands.count, count); [stopped fulfill]; });
   [self waitForExpectations:@[stopped] timeout:2];
-  [NSNotificationCenter.defaultCenter removeObserver:observer];
 }
 
 - (void)testChatChunkFinishesBeforeStatusAndContinuesAfterward {

@@ -341,6 +341,34 @@ export function chatSpeechHighlight(
   );
 }
 
+/**
+ * Ranges returned here refer to the original Markdown's UTF-16 coordinates.
+ * Native Markdown parsing projects them into attributed text without == edits.
+ */
+export function chatSpeechPresentation(
+  markdown: string,
+  snapshot: string,
+): string {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterString.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_chat_speech_presentation(
+          FfiConverterString.lower(markdown, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(snapshot, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
 export function chatSpeechResponseAvailable(
   agent: AgentTranscriptKind,
   messages: Array<ChatSpeechMessage>,
@@ -2842,6 +2870,29 @@ export function shutdown(): void {
       nativeModule().ubrn_uniffi_whip_ssh_fn_func_shutdown(callStatus);
     },
     /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
+/**
+ * Immutable process snapshot; subscriptions are only wake-ups, so remounts and
+ * delayed bridge events always read the authoritative current generation.
+ */
+export function speechCaptionSnapshot(): string {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterString.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_speech_caption_snapshot(
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
   );
 }
 
@@ -63013,6 +63064,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_chat_speech_presentation() !==
+    62865
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_chat_speech_presentation',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_chat_speech_response_available() !==
     17606
   ) {
@@ -63694,6 +63753,14 @@ function uniffiEnsureInitialized() {
   if (nativeModule().ubrn_uniffi_whip_ssh_checksum_func_shutdown() !== 45428) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_shutdown',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_speech_caption_snapshot() !==
+    8795
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_speech_caption_snapshot',
     );
   }
   if (

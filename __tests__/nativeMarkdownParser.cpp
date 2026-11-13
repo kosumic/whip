@@ -55,7 +55,32 @@ static void expectSpeech(const std::string &original, const std::string &marked,
   }
 }
 
+// The same parser feeds Kotlin and Objective-C. Preserve source coordinates
+// through Markdown decorations, entities, inline code and surrogate pairs.
+static void expectSourceRange(const std::string &markdown, const std::string &text, size_t start, size_t end) {
+  Markdown::MD4CParser parser;
+  const auto ast = parser.parse(markdown);
+  bool found = false;
+  const auto visit = [&](const auto &self, const std::shared_ptr<MarkdownASTNode> &node) -> void {
+    if (node->type == NodeType::Text && node->content == text) {
+      if (node->attributes.at("whipSourceStart") != std::to_string(start)
+          || node->attributes.at("whipSourceEnd") != std::to_string(end)) {
+        std::cerr << "Incorrect original UTF-16 range for " << text << '\n';
+        std::exit(EXIT_FAILURE);
+      }
+      found = true;
+    }
+    for (const auto &child : node->children) self(self, child);
+  };
+  visit(visit, ast);
+  if (!found) { std::cerr << "Missing source text: " << text << " in " << plainText(ast) << '\n'; std::exit(EXIT_FAILURE); }
+}
+
 int main() {
+  expectSourceRange("👋 **你好** [world](https://example.com)", "你好", 5, 7);
+  expectSourceRange("👋 **你好** [world](https://example.com)", "world", 11, 16);
+  expectSourceRange("Read `two words` safely", "two words", 6, 15);
+  expectSourceRange("A &amp; B", "&amp;", 2, 7);
   expectSpeech("One two One", "One two ==One==", "One");
   expectSpeech("One two One", "One ==two== One", "two");
   expectSpeech("**Read [the guide](https://example.com)**", "**Read [the ==guide==](https://example.com)**", "guide");

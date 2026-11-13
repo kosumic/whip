@@ -1,3 +1,5 @@
+import { chatSpeechPresentation } from 'react-native-whip-ssh';
+import type { SpeechCaption } from '../services/speechCaptions';
 import { ChatSearchQuery } from './SearchText';
 import { Fragment, useContext, useEffect, useMemo, useState } from 'react';
 import {
@@ -10,7 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { guiFontFamilies } from '../lib/guiFonts';
 import { useAppFontScale } from '../hooks/useAppFontScale';
 import { useTranscriptMarkdownImages } from '../hooks/useTranscriptMarkdownImages';
-import { normalizeRichTextMarkdown } from '../lib/richTextMarkdown';
+import { normalizeRichTextMarkdown, richTextMarkdownOffset } from '../lib/richTextMarkdown';
 import { splitDiagramMarkdown } from '../lib/diagramMarkdown';
 import { hapticCopySuccess } from '../services/interactionFeedback';
 import { colorWithAlpha, useTheme } from '../theme';
@@ -38,7 +40,7 @@ const INLINE_CODE_BACKGROUND_ALPHA = '14';
 
 interface Props {
   content: string;
-  speechOriginal?: string;
+  speechCaption?: SpeechCaption;
   containerStyle?: ViewStyle | TextStyle;
   onLinkPress?: (link: { url: string }) => void;
   selectable?: boolean;
@@ -245,7 +247,7 @@ export function useWhipMarkdownStyle(variant: Props['variant'] = 'default'): Mar
 
 export function MarkdownText({
   content,
-  speechOriginal,
+  speechCaption,
   containerStyle,
   onLinkPress,
   selectable = true,
@@ -272,20 +274,27 @@ export function MarkdownText({
     if (!images.visible) setExpandedImage(undefined);
   }, [images.visible]);
   const speechParts = useMemo(() => {
-    if (speechOriginal === undefined) return undefined;
-    const originals = variant === 'transcript' ? splitDiagramMarkdown(speechOriginal)
-      : [{ type: 'markdown' as const, content: speechOriginal, start: 0 }];
-    const current = parts.findIndex((part, index) => part.type === 'markdown'
-      && part.content !== normalizeRichTextMarkdown(originals[index]?.content ?? ''));
-    if (current < 0) return undefined;
-    return parts.map((part, index) => part.type !== 'markdown' ? undefined : JSON.stringify({
-      phase: index < current ? 'heard' : index === current ? 'current' : 'upcoming',
-      original: images.rewrite(normalizeRichTextMarkdown(originals[index]?.content ?? '')),
-      heard: colors.text,
-      upcoming: SPEECH_CAPTION_COLORS.upcoming,
-      weight: SPEECH_CAPTION_WEIGHT,
-    }));
-  }, [speechOriginal, parts, variant, colors.text, images]);
+    if (!speechCaption) return undefined;
+    const projection = JSON.parse(chatSpeechPresentation(content, JSON.stringify(speechCaption))) as {
+      phase: SpeechCaption['phase']; spokenEnd: number; currentWord: { start: number; end: number } | null;
+    } | null;
+    if (!projection) return undefined;
+    const originals = variant === 'transcript' ? splitDiagramMarkdown(content)
+      : [{ type: 'markdown' as const, content, start: 0 }];
+    return parts.map((part, index) => {
+      if (part.type !== 'markdown') return undefined;
+      const original = originals[index]?.content ?? '';
+      const offset = (position: number) => richTextMarkdownOffset(original, position - part.start, images.rewrite);
+      return JSON.stringify({
+        phase: projection.phase, spokenEnd: offset(projection.spokenEnd),
+        currentWord: projection.currentWord && projection.currentWord.start < part.start + original.length
+          && projection.currentWord.end > part.start ? {
+            start: offset(projection.currentWord.start), end: offset(projection.currentWord.end),
+          } : null,
+        heard: colors.text, upcoming: SPEECH_CAPTION_COLORS.upcoming, weight: SPEECH_CAPTION_WEIGHT,
+      });
+    });
+  }, [speechCaption, content, parts, variant, colors.text, images]);
   const accessibilityLabels = useMemo(() => ({
     list: {
       bulletPoint: t('markdown.a11y.bulletPoint'),

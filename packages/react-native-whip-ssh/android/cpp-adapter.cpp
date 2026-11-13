@@ -329,6 +329,15 @@ Java_com_whipssh_SpeechPolicy_isCurrent(JNIEnv *, jclass, jlong lease) {
     return whip_speech_is_current(static_cast<uint64_t>(lease));
 }
 
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_whipssh_SpeechPolicy_captionCommand(JNIEnv *env, jclass, jstring command) {
+    const auto json = speechUtf8(env, command);
+    char *value = whip_speech_caption_command(json.c_str());
+    const std::string result(value ? value : "null");
+    whip_speech_backend_free(value);
+    return speechString(env, result);
+}
+
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_whipssh_SpeechPolicy_captionStart(JNIEnv *env, jclass, jstring text, jlong prefix) {
     const auto value = speechUtf8(env, text);

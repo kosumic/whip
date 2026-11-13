@@ -4104,7 +4104,7 @@ export class NativeAppCore {
   }
 }
 
-export { NativeChatSpeechQueue, NativeAutomaticChatSpeechQueue, canReadChatResponse, formatChatSpeech, chatSpeechHighlight } from './chatSpeech';
+export { NativeChatSpeechQueue, NativeAutomaticChatSpeechQueue, canReadChatResponse, formatChatSpeech, chatSpeechHighlight, chatSpeechPresentation, speechCaptionSnapshot } from './chatSpeech';
 
 /** Canonical Rust host metadata and jump-host graph; secrets never enter it. */
 export class NativeHostProfileStore {

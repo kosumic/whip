@@ -10,7 +10,15 @@ import { SPEECH_CAPTION_COLORS, SPEECH_CAPTION_WEIGHT } from '../src/lib/speechC
 import { TranscriptMarkdownImages } from '../src/hooks/useTranscriptMarkdownImages';
 import { cacheRemoteFile, type CachedRemoteFile, type RemoteFileClient } from '../src/services/remoteFileTransfer';
 
-jest.mock('react-native-whip-ssh', () => require('../__mocks__/richTextHtml'));
+jest.mock('react-native-whip-ssh', () => ({
+  ...require('../__mocks__/richTextHtml'),
+  chatSpeechPresentation: jest.fn(),
+}));
+import { chatSpeechPresentation } from 'react-native-whip-ssh';
+import type { SpeechCaption } from '../src/services/speechCaptions';
+const speechCaption: SpeechCaption = { id: 1, lease: 1, local: null, sessionId: 'reader', hostId: 'host', paneId: 'pane', bindingTokens: ['binding'],
+  messageId: 'reply', partId: 'text', text: 'words', startUtf16: 0, spokenEndUtf16: 5, currentWordRangeUtf16: null,
+  phase: 'speaking', playedFrames: 100, endReason: null };
 
 import {
   MarkdownText,
@@ -79,16 +87,39 @@ describe('MarkdownText', () => {
 
   test('uses voice-caption colors and weight while preserving the original Markdown for native styling', () => {
     const original = 'Heard **words** and [current](https://example.com) then upcoming.';
-    const marked = 'Heard **words** and [==current==](https://example.com) then upcoming.';
-    act(() => { renderer = create(<MarkdownText content={marked} speechOriginal={original} variant="transcript" />); });
+    jest.mocked(chatSpeechPresentation).mockReturnValue(JSON.stringify({ phase: 'speaking', spokenEnd: 20, currentWord: { start: 21, end: 28 } }));
+    act(() => { renderer = create(<MarkdownText content={original} speechCaption={speechCaption} variant="transcript" />); });
     const native = () => renderer.root.find(node => String(node.type) === 'EnrichedMarkdownText');
     expect(JSON.parse(native().props.readAloud)).toMatchObject({
-      phase: 'current', original, upcoming: SPEECH_CAPTION_COLORS.upcoming, weight: SPEECH_CAPTION_WEIGHT,
+      phase: 'speaking', spokenEnd: 20, currentWord: { start: 21, end: 28 }, upcoming: SPEECH_CAPTION_COLORS.upcoming, weight: SPEECH_CAPTION_WEIGHT,
     });
-    expect(native().props.markdown).toBe(marked);
+    expect(native().props.markdown).toBe(original);
     act(() => { renderer.update(<MarkdownText content={original} variant="transcript" />); });
     expect(native().props.readAloud).toBeUndefined();
     expect(native().props.markdown).toBe(original);
+  });
+
+  test('missing current word keeps explicit upcoming styling through preparing and buffering', () => {
+    for (const phase of ['preparing', 'buffering']) {
+      jest.mocked(chatSpeechPresentation).mockReturnValue(JSON.stringify({ phase, spokenEnd: 5, currentWord: null }));
+      act(() => { renderer = create(<MarkdownText content="Hello unspoken suffix" speechCaption={speechCaption} variant="transcript" />); });
+      const native = renderer.root.find(node => String(node.type) === 'EnrichedMarkdownText');
+      expect(native.props.markdown).toBe('Hello unspoken suffix');
+      expect(JSON.parse(native.props.readAloud)).toMatchObject({ phase, spokenEnd: 5, currentWord: null, upcoming: SPEECH_CAPTION_COLORS.upcoming });
+      act(() => renderer.unmount());
+    }
+  });
+
+  test('projects speech offsets through complete math normalization without changing math or links', () => {
+    const original = String.raw`Read \(two words\) then [next](https://example.com).`;
+    const start = original.indexOf('words');
+    jest.mocked(chatSpeechPresentation).mockReturnValue(JSON.stringify({ phase: 'speaking', spokenEnd: start, currentWord: { start, end: start + 5 } }));
+    act(() => { renderer = create(<MarkdownText content={original} speechCaption={speechCaption} variant="transcript" />); });
+    const native = renderer.root.find(node => String(node.type) === 'EnrichedMarkdownText');
+    const normalized = 'Read $two words$ then [next](https://example.com).';
+    expect(native.props.markdown).toBe(normalized);
+    expect(JSON.parse(native.props.readAloud)).toMatchObject({ spokenEnd: normalized.indexOf('words'),
+      currentWord: { start: normalized.indexOf('words'), end: normalized.indexOf('words') + 5 } });
   });
 
   test('displays the Settings transcript image in the shared chat preview without downloading again', async () => {
@@ -185,10 +216,14 @@ describe('MarkdownText', () => {
   test.each([0, 1])('keeps speech progress continuous across a diagram when text part %s is current', index => {
     const diagram = '\n\n```mermaid\ngraph TD;\nA-->B\n```\n\n';
     const original = `Earlier words.${diagram}Current words.`;
-    const marked = index === 0 ? `Earlier ==words==.${diagram}Current words.` : `Earlier words.${diagram}Current ==words==.`;
-    act(() => { renderer = create(<MarkdownText content={marked} speechOriginal={original} variant="transcript" />); });
+    const wordStart = index === 0 ? 8 : original.lastIndexOf('words');
+    jest.mocked(chatSpeechPresentation).mockReturnValue(JSON.stringify({ phase: 'speaking', spokenEnd: wordStart, currentWord: { start: wordStart, end: wordStart + 5 } }));
+    act(() => { renderer = create(<MarkdownText content={original} speechCaption={speechCaption} variant="transcript" />); });
     const parts = renderer.root.findAll(node => String(node.type) === 'EnrichedMarkdownText');
-    expect(parts.map(part => JSON.parse(part.props.readAloud).phase)).toEqual(index === 0 ? ['current', 'upcoming'] : ['heard', 'current']);
+    const plans = parts.map(part => JSON.parse(part.props.readAloud));
+    expect(plans.map(plan => plan.spokenEnd)).toEqual(index === 0 ? [8, 0] : [16, 9]);
+    expect(plans[index].currentWord).toEqual(index === 0 ? { start: 8, end: 13 } : { start: 9, end: 14 });
+    expect(plans[1 - index].currentWord).toBeNull();
   });
 
   test('app font size scales native chat metrics and retains code block spacing', () => {

@@ -8,7 +8,6 @@ import { reportBackgroundFailure } from './backgroundOperations';
 import { setChatSpeechFocus } from './chatSpeechFocus';
 import { setSpeechInputActive } from './speechInputFocus';
 import { getSpeechPlayback, type SpeechEndReason } from './speechPlayback';
-import { retainSpeechCaption } from './speechCaptions';
 
 export interface ChatSpeechTarget {
   agent: ChatAgent;
@@ -92,12 +91,10 @@ function startChatSpeech(
   let draining = false;
   let unsubscribe = () => {};
   let stoppedPlayback = Promise.resolve();
-  let releaseCaption: (() => void) | undefined;
 
   const stop = () => {
     if (stopped) return;
     stopped = true;
-    releaseCaption?.();
     unsubscribe();
     subscription.remove();
     queue.dispose();
@@ -141,7 +138,6 @@ function startChatSpeech(
   const drain = async () => {
     if (!ready || stopped || draining) return;
     draining = true;
-    releaseCaption = retainSpeechCaption(token);
     try {
       while (!stopped) {
         if (native.speakChatWithSource) {
@@ -158,8 +154,6 @@ function startChatSpeech(
     } catch (error) {
       fail(error);
     } finally {
-      releaseCaption?.();
-      releaseCaption = undefined;
       draining = false;
     }
   };

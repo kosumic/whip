@@ -40,7 +40,7 @@ end
 target = project.new_target(:unit_test_bundle, 'SpeechTests', :ios, '16.4')
 target.add_dependency(host)
 target.add_system_frameworks(%w[UIKit AVFoundation CoreMotion UserNotifications XCTest])
-%w[ios/HerdR/WhipSpeechPlayback.m ios/Tests/WhipSpeechPlaybackTests.m].each do |path|
+%w[ios/HerdR/WhipSpeechPlayback.m ios/Tests/WhipSpeechPlaybackTests.m ios/Tests/WhipSpeechPresentationTests.m].each do |path|
   target.source_build_phase.add_file_reference(project.main_group.new_file(File.join(root, path)))
 end
 target.build_configurations.each do |config|
@@ -56,6 +56,8 @@ target.build_configurations.each do |config|
     'HEADER_SEARCH_PATHS' => [
       File.join(root, 'ios', 'HerdR'),
       File.join(root, 'packages', 'react-native-whip-ssh', 'ios'),
+      File.join(root, 'node_modules', 'react-native-enriched-markdown', 'ios'),
+      File.join(root, 'node_modules', 'react-native-enriched-markdown', 'ios', 'utils'),
       headers
     ],
     'CODE_SIGNING_ALLOWED' => 'NO'
