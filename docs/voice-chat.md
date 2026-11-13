@@ -335,3 +335,84 @@ Physical Android/iOS verification for this refactor is **pending**. Before relea
 The UniFFI API and platform adapter must ship together in a native rebuild.
 Metro-only updates against an older native library are unsupported. Realtime and
 GPT-Live do not use this coordinator or the new Local submission marker.
+
+## App-wide native session ownership (#434)
+
+`voice_session` in the Whip Rust boundary owns admission, immutable target/mode,
+call ID/generation, replacement ordering, startup cancellation and terminal
+transitions across TurnBased, Realtime and Live. `voice-call-local` retains Local
+turn/speech policy; the existing Realtime/Live cores retain transport, tools,
+provider rotation and continuity. No additional local speech state machine is
+introduced.
+
+The TypeScript session manager caches presenters and executes Rust
+Prepare/Start/Close/End effects. A remounted screen reattaches to the admitted
+identity and original settings. App lock blocks new admission while retaining
+existing and pending calls. Replacing or ending a call immediately revokes its
+native resource generation. A replacement cannot prepare its backend until the
+old platform adapter acknowledges shutdown, including adapter factories and
+media startup completing after cancellation. Failed shutdown keeps the native
+barrier, reports an error to the waiting replacement and requires another user
+attempt to retry cleanup. Call IDs in diagnostics contain no host or transcript
+content.
+
+Native agent/session or terminal/process pins are captured before permission
+startup can suspend. Realtime and Live can open their native transcript owner
+without a mounted Chat View. Local retains its existing bounded initial-binding
+acquisition when the agent has no binding yet. Presentation binding tokens only
+control highlights; losing or replacing a React subscription cannot redirect a
+call. Native session/process changes still fail the original call.
+Call-owned pins also retain the native transcript cache entry independently of
+foreground tabs and React subscriptions. Ending the call makes that entry
+eligible for normal cache eviction again.
+
+Realtime presentation uses one outstanding native revision observation per call.
+Rust compares only presentation fields at up to 10 Hz, coalesces intervening
+updates and bounds each wait to 30 seconds. Diagnostic counters do not wake JS;
+there is no JavaScript status timer. Typed context has an eight-message native
+startup buffer and bounded provider command channel. Cancellation drops that
+buffer; provider recovery does not replay retired commands. After native
+transport/audio shutdown, the adapter reads the final snapshot (including usage)
+before acknowledging cleanup and ending local accounting.
+
+Permissions, CallKit/Android call service, native recognizers/TTS and audio-route
+changes remain platform effects. React backgrounding or tab changes do not own
+call lifetime. Android's foreground call service and iOS's active CallKit/audio
+session can sustain the supported native media paths while JS is suspended;
+Local recognition still depends on OS recognizer support. Neither platform can
+promise survival after OS process termination. Native interruption handlers stop
+PCM/audio immediately; resuming or unlocking does not restart an ended call.
+
+Physical Android/iOS verification for #434 is **pending**. On each platform:
+
+- Exercise all three modes through rapid Start → Hang Up → Start and competing
+  Global/Agent/Terminal starts. Confirm one microphone owner, no late audio and
+  call-ID-matched shutdown before replacement acquisition.
+- Delay permission, model preparation and native media initialization, then hang
+  up or replace the call. Resolve each old operation and confirm it stays closed.
+- Switch tabs, minimize, remount and edit settings. Confirm the same native call
+  and original voice/settings remain attached.
+- Lock/unlock while starting and while active. New admission must fail while
+  locked; admitted calls continue. Exercise backgrounding, route changes, an
+  incoming phone call and OS termination; confirm platform audio teardown and no
+  automatic resurrection.
+- Deliver a notification action retained from an earlier Android call after
+  starting its replacement. It must not mute or hang up the replacement.
+- Start agent-bound Realtime/Live before opening Chat View. Detach/reopen the
+  presentation and confirm continuity. Replace the actual remote agent session
+  or terminal process during permission startup and while speaking; only that
+  pinned call must fail.
+- Submit typed context during startup and recovery, then hang up during a reply.
+  Confirm ordered initial context, no retired-provider replay, and finalized
+  transcript/cost accounting without a continuing JS status loop.
+
+The native library, regenerated UniFFI bindings and adapters must ship together.
+This refactor does not implement early microphone speech buffering (#381).
+
+Automated validation: 257 native voice tests passed (11 opt-in tests skipped),
+including all 16 app-wide coordinator tests and native transcript residency
+without Chat View. The five affected JS suites passed all 128 tests. Full app
+TypeScript, affected-file ESLint, strict Rust Clippy, Android release Kotlin and
+the arm64 Rust library build passed. Generated callback ownership checks reported
+zero outstanding buffers. These checks do not establish physical-device behavior
+or validate an iOS build.
