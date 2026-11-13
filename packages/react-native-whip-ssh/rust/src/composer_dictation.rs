@@ -83,6 +83,9 @@ impl ComposerDictation {
             state.interim_text.clear();
             return Some(text.to_owned());
         }
+        if state.phase == DictationPhase::Finishing && text.trim().is_empty() {
+            return None;
+        }
         state.interim_text = text;
         None
     }
@@ -295,6 +298,7 @@ mod tests {
         session.finish();
         // An empty final (or no final at all) must preserve the last hypothesis.
         assert_eq!(session.result(String::new(), true), None);
+        assert_eq!(session.result(String::new(), false), None);
         assert_eq!(session.end().as_deref(), Some("unfinished thought"));
         assert_eq!(session.end(), None);
         assert_eq!(session.result("late".into(), true), None);

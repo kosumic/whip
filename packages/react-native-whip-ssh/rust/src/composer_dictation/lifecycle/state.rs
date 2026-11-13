@@ -544,10 +544,10 @@ impl State {
         }
         self.emit(Action::CloseCapture);
         self.emit(Action::Release);
-        if let Some(s) = self.session.take() {
-            if !s.reserved {
-                self.arbiter.stop(s.lease);
-            }
+        if let Some(s) = self.session.take()
+            && !s.reserved
+        {
+            self.arbiter.stop(s.lease);
         }
         self.pending.clear();
     }
@@ -594,11 +594,12 @@ impl State {
         }
     }
     fn disable_continuous(&mut self) {
-        if let Some(s) = &mut self.session {
-            if !s.config.local_only && s.continuous {
-                s.continuous = false;
-                self.continuous_failed = true;
-            }
+        if let Some(s) = &mut self.session
+            && !s.config.local_only
+            && s.continuous
+        {
+            s.continuous = false;
+            self.continuous_failed = true;
         }
     }
     fn fallback(&mut self, now: u64) -> bool {
@@ -644,7 +645,7 @@ impl State {
         s.restart = false;
         match s.stage {
             Stage::Loading | Stage::Permission | Stage::Context | Stage::Playback | Stage::Gap => {
-                self.release()
+                self.release();
             }
             Stage::CloudStarting | Stage::CloudListening | Stage::CloudFinishing => {
                 s.stage = Stage::CloudClosing;
