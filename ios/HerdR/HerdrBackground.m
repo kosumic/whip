@@ -5,11 +5,13 @@
 #import "../../packages/react-native-whip-ssh/ios/WhipRealtimeVoice.h"
 
 extern void whip_cancel_background_download(const char *, const char *);
+extern void whip_download_execution_expired(const char *, bool);
 
 /** React bridge only; all speech paths share WhipSpeechPlayback. */
 @interface HerdrBackground : RCTEventEmitter
 @property(nonatomic, strong) NSMutableDictionary<NSString *, NSMutableDictionary *> *downloadTasks;
 @property(nonatomic, strong) NSCountedSet<NSString *> *downloadScopes;
+@property(nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *downloadDestinationLeases;
 @end
 
 @implementation HerdrBackground
@@ -22,6 +24,7 @@ RCT_EXPORT_MODULE(HerdrBackground)
   if ((self = [super init])) {
     _downloadTasks = [NSMutableDictionary new];
     _downloadScopes = [NSCountedSet new];
+    _downloadDestinationLeases = [NSMutableDictionary new];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(chatStopped:) name:WhipChatSpeechStopped object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(chatStarted:) name:WhipChatSpeechStarted object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(chatLevel:) name:WhipChatSpeechLevel object:nil];
@@ -152,8 +155,7 @@ RCT_EXPORT_METHOD(dismissPersistentAlert:(NSString *)notification resolve:(RCTPr
 {
   NSDictionary *task = self.downloadTasks[identifier];
   if (!task) return;
-  NSString *host = task[@"host"], *transfer = task[@"transfer"];
-  if (host && transfer) whip_cancel_background_download(host.UTF8String, transfer.UTF8String);
+  whip_download_execution_expired(identifier.UTF8String, false);
   [self.downloadTasks removeObjectForKey:identifier];
   [UIApplication.sharedApplication endBackgroundTask:[task[@"task"] unsignedIntegerValue]];
   if (notify) [self sendEventWithName:@"WhipDownloadExpired" body:@{@"id": identifier}];
@@ -230,6 +232,34 @@ RCT_EXPORT_METHOD(resolveDownloadDestination:(NSString *)uri permission:(NSStrin
   if ([self.downloadScopes countForObject:uri] == 0) return;
   [self.downloadScopes removeObject:uri];
   if ([self.downloadScopes countForObject:uri] == 0) [[NSURL URLWithString:uri] stopAccessingSecurityScopedResource];
+}
+RCT_EXPORT_METHOD(retainDownloadJobDestination:(NSString *)identifier uri:(NSString *)uri
+                  resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  NSDictionary *lease = self.downloadDestinationLeases[identifier];
+  if (lease) { resolve(lease[@"permission"]); return; }
+  [self retainDownloadDestination:uri resolve:^(id permission) {
+    self.downloadDestinationLeases[identifier] = @{@"uri": uri, @"permission": permission};
+    resolve(permission);
+  } reject:reject];
+}
+RCT_EXPORT_METHOD(resolveDownloadJobDestination:(NSString *)identifier uri:(NSString *)uri permission:(NSString *)permission
+                  resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  NSDictionary *lease = self.downloadDestinationLeases[identifier];
+  if (lease) { resolve(lease[@"uri"]); return; }
+  [self resolveDownloadDestination:uri permission:permission resolve:^(id resolvedUri) {
+    self.downloadDestinationLeases[identifier] = @{@"uri": resolvedUri, @"permission": permission};
+    resolve(resolvedUri);
+  } reject:reject];
+}
+RCT_EXPORT_METHOD(releaseDownloadJobDestination:(NSString *)identifier
+                  resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  NSDictionary *lease = self.downloadDestinationLeases[identifier];
+  [self.downloadDestinationLeases removeObjectForKey:identifier];
+  if (lease) [self releaseDownloadScope:lease[@"uri"]];
+  resolve(nil);
 }
 RCT_EXPORT_METHOD(releaseDownloadDestination:(NSString *)uri resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 {

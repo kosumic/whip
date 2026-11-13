@@ -12,6 +12,9 @@ interface DownloadExecution {
   retainDownloadDestination(uri: string): Promise<string>;
   resolveDownloadDestination(uri: string, permission: string): Promise<string>;
   releaseDownloadDestination(id: string): Promise<void>;
+  retainDownloadJobDestination(id: string, uri: string): Promise<string>;
+  resolveDownloadJobDestination(id: string, uri: string, permission: string): Promise<string>;
+  releaseDownloadJobDestination(id: string): Promise<void>;
 }
 
 export const downloadExecution = NativeModules.HerdrBackground as DownloadExecution;

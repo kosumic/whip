@@ -119,6 +119,13 @@ class HerdrBackgroundModule(
     } catch (error: Exception) { promise.reject("E_DOWNLOAD_PERMISSION", error) }
   }
   @ReactMethod fun releaseDownloadDestination(uri: String, promise: Promise) { promise.resolve(null) }
+  @ReactMethod fun retainDownloadJobDestination(id: String, uri: String, promise: Promise) {
+    retainDownloadDestination(uri, promise)
+  }
+  @ReactMethod fun resolveDownloadJobDestination(id: String, uri: String, permission: String, promise: Promise) {
+    resolveDownloadDestination(uri, permission, promise)
+  }
+  @ReactMethod fun releaseDownloadJobDestination(id: String, promise: Promise) { promise.resolve(null) }
 
   init {
     SftpDownloadService.onExpired = { id, cancelled ->

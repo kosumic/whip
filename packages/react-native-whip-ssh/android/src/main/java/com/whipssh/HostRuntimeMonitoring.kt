@@ -9,6 +9,7 @@ object HostRuntimeMonitoring {
 
   @JvmStatic external fun setBackgroundActive(active: Boolean)
   @JvmStatic external fun cancelDownload(runtimeId: String, transferId: String)
+  @JvmStatic external fun expireDownload(executionId: String, cancelled: Boolean)
 
   @Synchronized fun setOwnerActive(owner: Any, active: Boolean) {
     if (active) owners.add(owner) else owners.remove(owner)

@@ -11,6 +11,15 @@
 #include <string>
 
 extern "C" void whip_cancel_background_download(const char *, const char *);
+extern "C" void whip_download_execution_expired(const char *, bool);
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_whipssh_HostRuntimeMonitoring_expireDownload(JNIEnv *env, jclass, jstring execution, jboolean cancelled) {
+    const char *id = env->GetStringUTFChars(execution, nullptr);
+    if (!id) return;
+    whip_download_execution_expired(id, cancelled == JNI_TRUE);
+    env->ReleaseStringUTFChars(execution, id);
+}
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_whipssh_HostRuntimeMonitoring_cancelDownload(JNIEnv *env, jclass, jstring host, jstring transfer) {

@@ -32,7 +32,7 @@ jest.mock('react-native-reanimated', () => ({ __esModule: true, default: { View:
 let tree: ReactTestRenderer;
 const button = (label: string) => tree.root.findAll(node => String(node.type) === 'Button').find(node => node.props.accessibilityLabel === label)!;
 const item = (id: string, phase: RemoteDownload['phase']): RemoteDownload => ({ id, name: id, phase,
-  hostId: 'host', remotePath: `/${id}`, createdAt: 1, bytesTransferred: 42, totalBytes: 42,
+  hostId: 'host', remotePath: `/${id}`, createdAt: 1, bytesTransferred: 42, totalBytes: 42, operation: { executionId: id },
   ...(phase === 'completed' ? { saved: { uri: 'file:///saved', directoryUri: 'file:///folder', isDirectory: false } } : {}) });
 beforeEach(() => {
   jest.clearAllMocks(); mockItems = [item('complete', 'completed'), item('active', 'downloading'), item('failed', 'failed')];

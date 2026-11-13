@@ -101,7 +101,7 @@ class SftpDownloadService : Service() {
   }
   private fun expire(id: String, cancelled: Boolean = false) {
     val session = sessions.remove(id) ?: return
-    session.host?.let { host -> session.transfer?.let { HostRuntimeMonitoring.cancelDownload(host, it) } }
+    HostRuntimeMonitoring.expireDownload(id, cancelled)
     session.start?.reject("E_DOWNLOAD_EXECUTION", "Download background execution ended")
     session.task?.let { task -> session.taskId?.let { task.finishTask(it) } }
     onExpired?.invoke(id, cancelled)

@@ -155,6 +155,20 @@ impl Job {
         self.remaining_seconds = None;
         self.rate_calculating = None;
     }
+    fn observe(
+        &mut self,
+        bytes: u64,
+        total: Option<u64>,
+        speed: Option<u64>,
+        remaining: Option<u64>,
+        calculating: bool,
+    ) {
+        self.bytes_transferred = bytes;
+        self.total_bytes = total;
+        self.bytes_per_second = speed;
+        self.remaining_seconds = remaining;
+        self.rate_calculating = Some(calculating);
+    }
     fn stop(&mut self, cancelled: bool) {
         if self.phase == Phase::Completed {
             return;
@@ -277,7 +291,8 @@ pub(super) enum Command {
 #[serde(rename_all = "camelCase")]
 struct Effect {
     id: String,
-    effect_id: String,
+    #[serde(rename = "effectId")]
+    token: String,
     kind: Step,
     job: Job,
 }
@@ -440,10 +455,10 @@ impl Manager {
         if !parent.is_absolute() {
             return Err(invalid("Invalid cache directory"));
         }
-        if !job.operation.uncertain_save {
-            if let Some(staging) = job.operation.staging.take() {
-                actions.push(Action::Cleanup(staging));
-            }
+        if !job.operation.uncertain_save
+            && let Some(staging) = job.operation.staging.take()
+        {
+            actions.push(Action::Cleanup(staging));
         }
         job.operation = Operation {
             generation: next_generation,
@@ -479,7 +494,7 @@ impl Manager {
 
         Ok(actions)
     }
-    fn resume_ready(&mut self) -> Vec<Action> {
+    fn resume_ready(&mut self) -> (Vec<Action>, bool) {
         let candidates: Vec<_> = self
             .ledger
             .jobs
@@ -493,6 +508,7 @@ impl Manager {
             })
             .collect();
         let mut actions = Vec::new();
+        let mut changed = false;
         for (id, host, cache) in candidates {
             let Some(runtime) = crate::get_host_runtime(host) else {
                 continue;
@@ -506,10 +522,185 @@ impl Manager {
                 candidate.retry_job(&id, cache, false, runtime.runtime_incarnation())
             {
                 *self = candidate;
+                changed = true;
                 actions.extend(next_actions);
             }
         }
-        actions
+        (actions, changed)
+    }
+    fn start_job(
+        &mut self,
+        host_id: String,
+        remote_path: String,
+        cache_directory: String,
+        incarnation: u64,
+    ) -> Result<String> {
+        self.admit(true)?;
+        if remote_path.is_empty() || !PathBuf::from(&cache_directory).is_absolute() {
+            return Err(invalid("Invalid download path"));
+        }
+        let id = token();
+        let host_identity =
+            crate::get_host_runtime(host_id.clone()).map(|runtime| runtime.download_identity());
+        let mut job = Job {
+            id: id.clone(),
+            host_id,
+            name: remote_path
+                .trim_end_matches('/')
+                .rsplit('/')
+                .next()
+                .unwrap_or("download")
+                .into(),
+            remote_path,
+            created_at: now_ms(),
+            phase: Phase::Selecting,
+            bytes_transferred: 0,
+            total_bytes: None,
+            destination_directory: None,
+            permission: None,
+            transfer_id: None,
+            cancel_requested: false,
+            saved: None,
+            error: None,
+            failed_phase: None,
+            bytes_per_second: None,
+            remaining_seconds: None,
+            rate_calculating: None,
+            operation: Operation {
+                generation: 1,
+                incarnation,
+                host_identity,
+                execution_id: token(),
+                staging: Some(
+                    PathBuf::from(cache_directory)
+                        .join(format!("whip-job-{id}-1"))
+                        .to_string_lossy()
+                        .into(),
+                ),
+                ..Operation::default()
+            },
+        };
+        job.schedule(Step::Select);
+        self.ledger.jobs.insert(0, job);
+        Ok(id)
+    }
+    fn acknowledge(&mut self, command: Command) -> Result<(bool, Vec<Action>)> {
+        let Command::Ack {
+            id,
+            effect_id,
+            owner,
+            directory,
+            permission,
+            saved,
+            error,
+            cancelled,
+        } = command
+        else {
+            return Err(invalid("Expected destination effect acknowledgement"));
+        };
+        let mut actions = Vec::new();
+        let Some(index) = self.ledger.jobs.iter().position(|job| {
+            job.id == id
+                && job.operation.effect_id == effect_id
+                && job.operation.owner.as_ref() == Some(&owner)
+        }) else {
+            return Ok((false, actions));
+        };
+        let job = &mut self.ledger.jobs[index];
+        let step = job.operation.step;
+        job.operation.owner = None;
+        if let Some(directory) = directory.as_ref() {
+            job.destination_directory = Some(directory.clone());
+        }
+        if let Some(permission) = permission.as_ref() {
+            job.permission = Some(permission.clone());
+        }
+        if let Some(saved) = saved {
+            job.saved = Some(saved);
+        }
+        if let Some(error) = error {
+            job.error = Some(error);
+            job.failed_phase = Some(if step == Step::Save || step == Step::Delete {
+                Phase::Saving
+            } else {
+                job.phase
+            });
+            if !(job.cancel_requested
+                || matches!(step, Step::End | Step::Delete) && job.phase == Phase::Completed)
+            {
+                job.phase = Phase::Failed;
+            }
+            if matches!(step, Step::End | Step::Delete) {
+                job.operation.remove = false;
+                job.schedule(Step::Idle);
+            } else {
+                job.schedule(Step::End);
+            }
+        } else if cancelled {
+            job.stop(true);
+            job.schedule(Step::End);
+        } else {
+            match step {
+                Step::Select if job.phase == Phase::Selecting => {
+                    job.destination_directory =
+                        Some(directory.ok_or_else(|| invalid("Missing selected destination"))?);
+                    job.permission = Some(permission.unwrap_or_default());
+                    job.phase = Phase::Queued;
+                    job.schedule(Step::Begin);
+                }
+                Step::Begin if job.phase == Phase::Queued => {
+                    job.phase = Phase::Downloading;
+                    job.rate_calculating = Some(true);
+                    job.schedule(Step::Transfer);
+                    actions.push(Action::Start(Box::new(job.clone())));
+                }
+                Step::Save if job.phase == Phase::Saving && !job.cancel_requested => {
+                    if job.saved.is_none() {
+                        return Err(invalid("Save completion requires the verified destination"));
+                    }
+                    job.phase = Phase::Completed;
+                    job.schedule(Step::End);
+                }
+                Step::End => {
+                    if !job.operation.uncertain_save
+                        && let Some(staging) = &job.operation.staging
+                    {
+                        actions.push(Action::Cleanup(staging.clone()));
+                    }
+                    if job.saved.is_some()
+                        && (matches!(job.phase, Phase::Paused | Phase::Cancelled)
+                            || job.operation.remove && job.operation.delete_local)
+                    {
+                        job.schedule(Step::Delete);
+                    } else if job.operation.remove {
+                        self.ledger.jobs.remove(index);
+                    } else {
+                        job.schedule(Step::Idle);
+                    }
+                }
+                Step::Delete => {
+                    job.saved = None;
+                    if job.operation.remove {
+                        self.ledger.jobs.remove(index);
+                    } else {
+                        job.schedule(Step::Idle);
+                    }
+                }
+                _ => {
+                    job.schedule(Step::End);
+                }
+            }
+        }
+        if let Some(job) = self
+            .ledger
+            .jobs
+            .get_mut(index)
+            .filter(|job| job.id == id && job.phase != Phase::Downloading)
+        {
+            job.clear_rate();
+        }
+
+        Ok((true, actions))
     }
     fn apply(&mut self, command: Command) -> Result<(Response, Vec<Action>, bool)> {
         let mut actions = Vec::new();
@@ -547,7 +738,7 @@ impl Manager {
                         job.operation.owner = Some(owner.clone());
                         claimed.push(Effect {
                             id: job.id.clone(),
-                            effect_id: job.operation.effect_id.clone(),
+                            token: job.operation.effect_id.clone(),
                             kind: job.operation.step,
                             job: job.clone(),
                         });
@@ -561,54 +752,8 @@ impl Manager {
                 cache_directory,
                 incarnation,
             } => {
-                self.admit(true)?;
-                if remote_path.is_empty() || !PathBuf::from(&cache_directory).is_absolute() {
-                    return Err(invalid("Invalid download path"));
-                }
-                let id = token();
-                let host_identity = crate::get_host_runtime(host_id.clone())
-                    .map(|runtime| runtime.download_identity());
-                let mut job = Job {
-                    id: id.clone(),
-                    host_id,
-                    name: remote_path
-                        .trim_end_matches('/')
-                        .rsplit('/')
-                        .next()
-                        .unwrap_or("download")
-                        .into(),
-                    remote_path,
-                    created_at: now_ms(),
-                    phase: Phase::Selecting,
-                    bytes_transferred: 0,
-                    total_bytes: None,
-                    destination_directory: None,
-                    permission: None,
-                    transfer_id: None,
-                    cancel_requested: false,
-                    saved: None,
-                    error: None,
-                    failed_phase: None,
-                    bytes_per_second: None,
-                    remaining_seconds: None,
-                    rate_calculating: None,
-                    operation: Operation {
-                        generation: 1,
-                        incarnation,
-                        host_identity,
-                        execution_id: token(),
-                        staging: Some(
-                            PathBuf::from(cache_directory)
-                                .join(format!("whip-job-{id}-1"))
-                                .to_string_lossy()
-                                .into(),
-                        ),
-                        ..Operation::default()
-                    },
-                };
-                job.schedule(Step::Select);
-                self.ledger.jobs.insert(0, job);
-                created_id = Some(id);
+                created_id =
+                    Some(self.start_job(host_id, remote_path, cache_directory, incarnation)?);
             }
             Command::Retry {
                 id,
@@ -674,119 +819,11 @@ impl Manager {
                     }
                 }
             }
-            Command::Ack {
-                id,
-                effect_id,
-                owner,
-                directory,
-                permission,
-                saved,
-                error,
-                cancelled,
-            } => {
-                let Some(index) = self.ledger.jobs.iter().position(|job| {
-                    job.id == id
-                        && job.operation.effect_id == effect_id
-                        && job.operation.owner.as_ref() == Some(&owner)
-                }) else {
-                    return Ok((self.response(false, None)?, actions, false));
-                };
-                let job = &mut self.ledger.jobs[index];
-                let step = job.operation.step;
-                job.operation.owner = None;
-                if let Some(directory) = directory.as_ref() {
-                    job.destination_directory = Some(directory.clone());
-                }
-                if let Some(permission) = permission.as_ref() {
-                    job.permission = Some(permission.clone());
-                }
-                if let Some(saved) = saved {
-                    job.saved = Some(saved);
-                }
-                if let Some(error) = error {
-                    job.error = Some(error);
-                    job.failed_phase = Some(if step == Step::Save || step == Step::Delete {
-                        Phase::Saving
-                    } else {
-                        job.phase
-                    });
-                    if !job.cancel_requested
-                        && !(step == Step::Delete && job.phase == Phase::Completed)
-                    {
-                        job.phase = Phase::Failed;
-                    }
-                    if matches!(step, Step::End | Step::Delete) {
-                        job.operation.remove = false;
-                        job.schedule(Step::Idle);
-                    } else {
-                        job.schedule(Step::End);
-                    }
-                } else if cancelled {
-                    job.stop(true);
-                    job.schedule(Step::End);
-                } else {
-                    match step {
-                        Step::Select if job.phase == Phase::Selecting => {
-                            job.destination_directory = Some(
-                                directory.ok_or_else(|| invalid("Missing selected destination"))?,
-                            );
-                            job.permission = Some(permission.unwrap_or_default());
-                            job.phase = Phase::Queued;
-                            job.schedule(Step::Begin);
-                        }
-                        Step::Begin if job.phase == Phase::Queued => {
-                            job.phase = Phase::Downloading;
-                            job.rate_calculating = Some(true);
-                            job.schedule(Step::Transfer);
-                            actions.push(Action::Start(Box::new(job.clone())));
-                        }
-                        Step::Save if job.phase == Phase::Saving && !job.cancel_requested => {
-                            if job.saved.is_none() {
-                                return Err(invalid(
-                                    "Save completion requires the verified destination",
-                                ));
-                            }
-                            job.phase = Phase::Completed;
-                            job.schedule(Step::End);
-                        }
-                        Step::End => {
-                            if !job.operation.uncertain_save {
-                                if let Some(staging) = &job.operation.staging {
-                                    actions.push(Action::Cleanup(staging.clone()));
-                                }
-                            }
-                            if job.saved.is_some()
-                                && (matches!(job.phase, Phase::Paused | Phase::Cancelled)
-                                    || job.operation.remove && job.operation.delete_local)
-                            {
-                                job.schedule(Step::Delete);
-                            } else if job.operation.remove {
-                                self.ledger.jobs.remove(index);
-                            } else {
-                                job.schedule(Step::Idle);
-                            }
-                        }
-                        Step::Delete => {
-                            job.saved = None;
-                            if job.operation.remove {
-                                self.ledger.jobs.remove(index);
-                            } else {
-                                job.schedule(Step::Idle);
-                            }
-                        }
-                        _ => {
-                            job.schedule(Step::End);
-                        }
-                    }
-                }
-                if let Some(job) = self
-                    .ledger
-                    .jobs
-                    .get_mut(index)
-                    .filter(|job| job.id == id && job.phase != Phase::Downloading)
-                {
-                    job.clear_rate();
-                }
+            command @ Command::Ack { .. } => {
+                let (acknowledged, next_actions) = self.acknowledge(command)?;
+                accepted = acknowledged;
+                durable = acknowledged;
+                actions.extend(next_actions);
             }
             Command::Bound {
                 id,
@@ -818,11 +855,7 @@ impl Manager {
                         && job.operation.generation == generation
                         && job.phase == Phase::Downloading
                 }) {
-                    job.bytes_transferred = bytes;
-                    job.total_bytes = total;
-                    job.bytes_per_second = speed;
-                    job.remaining_seconds = remaining;
-                    job.rate_calculating = Some(calculating);
+                    job.observe(bytes, total, speed, remaining, calculating);
                 } else {
                     accepted = false;
                 }
@@ -848,11 +881,11 @@ impl Manager {
                         job.error = Some(error);
                         job.schedule(Step::End);
                     } else if let Some(source) = source {
-                        if let Ok(metadata) = std::fs::metadata(&source) {
-                            if metadata.is_file() {
-                                job.bytes_transferred = metadata.len();
-                                job.total_bytes = Some(metadata.len());
-                            }
+                        if let Ok(metadata) = std::fs::metadata(&source)
+                            && metadata.is_file()
+                        {
+                            job.bytes_transferred = metadata.len();
+                            job.total_bytes = Some(metadata.len());
                         }
                         job.operation.source = Some(source);
                         job.phase = Phase::Saving;
@@ -865,8 +898,8 @@ impl Manager {
                 }
             }
         }
-        let resumed = self.resume_ready();
-        durable |= !resumed.is_empty();
+        let (resumed, changed) = self.resume_ready();
+        durable |= changed;
         actions.extend(resumed);
         self.revision = self.revision.saturating_add(1);
         let mut response = self.response(accepted, created_id)?;

@@ -1,34 +1,103 @@
-# SFTP Downloads (#413)
+# SFTP Downloads (#413, #436)
 
-The app-wide `remoteDownloads` manager owns tasks independently of mounted file-manager screens. React hooks subscribe to history; dismissing a sheet, preview, tab, or host only detaches its view. Each task captures its original Rust host runtime. Explicit host disconnection can still fail a transfer.
+Rust's application database worker owns the durable download coordinator in
+`app_database/downloads.rs`. Its serialized transitions commit before admitting
+SFTP work or acknowledging completion. A failed commit leaves the previous
+snapshot authoritative. React subscribes to projected native snapshots; closing
+a sheet, tab, host view, or Downloads screen does not cancel a transfer.
 
-Task IDs, host IDs, remote paths, destination grants, native transfer IDs, progress, cancellation intent and terminal states are stored through `appStorage` in the Rust application database. Writes are serialized; progress checkpoints are coalesced to one per second. At most three transfers can run, and only one destination picker can be open. Native progress is sampled at 250 ms only while downloading.
+Every job has a UUID, original logical host ID, endpoint identity, monotonically
+increasing attempt generation, and a unique OS execution ID. Endpoint identity
+includes the server, account, Tailcat peer, and jump route; credential rotation
+and transient reconnects do not change it. Replacing a runtime cannot redirect
+cancellation to another incarnation. A retained notification cancellation receipt
+identifies its exact execution, so an old receipt cannot cancel a later retry.
+Legacy rows first bind endpoint identity when retried because v1 did not store it.
 
-States are Selecting → Downloading over SSH → Saving to selected location → Complete, Failed, Cancelled or Paused. A successful SSH result is never completion by itself: the destination copy and metadata checks must succeed. Explicit cancellation during an asynchronous destination copy waits for that copy to settle and removes its newly saved result. Staging cleanup runs before deleting active history. A provider that refuses deletion produces an error instead of reporting successful deletion.
+The coordinator admits at most three unsettled jobs globally and one folder
+picker. Selecting → Queued → Downloading → Saving → Completed distinguishes SSH
+completion from publishing to the chosen destination. Failed, Cancelled, and
+Paused remain explicit states. Cancellation during a picker or asynchronous
+copy retains admission until its acknowledgement arrives. A cancelled or expired
+copy cannot complete a job: its acknowledged output is deleted through the
+platform adapter. A failed deletion keeps the exact saved URI and an error for
+explicit recovery. Retry uses a new generation and private staging directory.
 
-More → Downloads, directly after Usage & costs, shows newest tasks first and retains completed history across restarts. Tap a completed row to open its system document navigator. Incomplete rows never open a file. Rows share `SwipeableDeleteRow` with the remote file manager. Delete confirms removal of a saved **local** file and history, or offers history removal alone. If external deletion fails, the history stays until the user explicitly chooses history-only removal. No download deletion calls the remote SSH delete API.
+`remoteDownloads.ts` is a snapshot subscription and platform-effect adapter. Rust
+leases each picker, destination resolution, OS execution grant, save, release,
+or deletion effect once. A save acknowledgement requires a verified destination
+URI. Expo handles file/directory copying without buffering the payload in JS;
+the existing SAF child enumeration and file-size checks are reused. There are no
+JS history writes, checkpoint timers, transfer-result promises, concurrency maps,
+or authoritative job-state transitions. Snapshot sampling is bounded at 250 ms,
+identical projections retain their references, and the clock stops when settled.
+Native progress checkpoints are coalesced to one second; transitions commit
+immediately. Android notifications receive projected progress while JS runs.
 
-Android retains the picked SAF tree grant. iOS stores a document-picker bookmark and balances native security-scoped access across concurrent operations. Missing files, moved folders, stale bookmarks and expired grants produce an error; failed/interrupted tasks offer choosing the destination again.
+The versioned `whip.sftp-downloads.v2` document is committed through the existing
+transactional application database. On first access, Rust validates and migrates
+`whip.sftp-downloads.v1`, preserving completed rows, source identities, saved
+paths, folder grants, and iOS bookmarks. The retained v1 document is a recovery
+source; the existence of v2, including an empty history, prevents stale re-import.
+Malformed or incompatible data is preserved and reported, never replaced with
+an empty history. Legacy AsyncStorage discovery includes the v1 Downloads keys.
 
-## Platform execution
+A native process restart pauses interrupted transfers and preserves cancellation
+intent. An interrupted external copy becomes a failed save with a warning that
+an incomplete copy may remain. Committed save acknowledgements stay completed
+even if the process died before releasing OS resources. A bridge restart adopts
+in-flight native transfers. Claimed picker/start/save effects whose JS owner was
+lost are invalidated rather than replayed; a copy with an unknown outcome cannot
+be repeated automatically. Late acknowledgements are fenced by effect ID. Old
+staging from an uncertain copy is retained while it could still be in use.
+Retries refuse to overwrite existing destination files; inspect the folder or
+choose a new destination after an interrupted save.
 
-Android uses a dedicated, user-started `SftpDownloadService`, a `dataSync` foreground-service declaration and permission, a progress notification, a partial wake lock and a headless JS task. It does not borrow the SSH monitoring service's `specialUse` allowance. Starts require a resumed activity; the service is not sticky and is never started at boot. Native timeout/destruction cancels each bound Rust transfer directly, even if JS cannot run; Downloads then shows a paused task. The notification's Cancel explicitly cancels active tasks. The service and wake lock end when all tasks settle.
+More → Downloads retains the #413 UI: newest rows first, speed/ETA, tap a completed
+row to reveal it, swipe to delete, and explicit local-file versus history-only
+removal. No removal calls the remote SSH delete API. Missing files, moved folders,
+revoked SAF grants, and stale iOS bookmarks are surfaced without silently dropping
+history. SAF tree grants and iOS security-scoped access remain platform concerns.
 
-Android 15+ applies its shared six-hour/24-hour `dataSync` budget. `onTimeout` cancels work and stops the service. This is bounded background execution, not a guarantee against process termination. Before a Google Play release, the Play Console foreground-service declaration must include the new user-initiated SFTP download use case and its demonstration. See [Android service types](https://developer.android.com/develop/background-work/services/fgs/service-types), [timeouts](https://developer.android.com/develop/background-work/services/fgs/timeout), and [Play declaration requirements](https://support.google.com/googleplay/android-developer/answer/13392821).
+## Platform execution limits
 
-On iOS, every task requests `beginBackgroundTask` time. Expiration cancels the bound Rust SFTP transfer directly and records Paused through the app manager when JS is available. If the process is suspended or killed before that record is written, persisted active states recover as Paused. There is no background URLSession transport for these SSH transfers, and uninterrupted locked/background SFTP is not guaranteed. See [Apple's background execution guidance](https://developer.apple.com/documentation/uikit/extending-your-app-s-background-execution-time).
+Android uses the existing user-started `SftpDownloadService`, `dataSync` foreground
+service permission/type, notification, partial wake lock, and headless JS task.
+It starts only from a resumed activity, is not sticky, and never starts at boot.
+Timeout/destruction and notification cancellation call the Rust coordinator by
+execution ID before notifying JS. Rust synchronously cancels the pinned transfer
+and records an expiry intent before asynchronously committing its state. A
+picker/start/save acknowledgement queued at that time observes the same intent.
+The foreground service ends when its platform effects settle.
 
-Rust already resumes transient reconnects only when the source identity is unchanged (#285). Suspension or process death ends that recovery attempt. Foreground/reconnect recovery restarts from zero into a new private staging directory using the saved destination permission; it does not trust or publish old partial bytes. Explicit cancellation is persisted before cleanup settles and excludes the task from automatic recovery. If a process dies while publishing to an external folder, a retry refuses to overwrite a file already there; inspect that folder or choose a new destination. Abandoned private staging expires through the existing cache cleanup.
+Android 15+ imposes a shared six-hour/24-hour `dataSync` budget. Timeout stops the
+service and pauses its work. Process termination can still interrupt execution.
+Google Play distributions must declare the user-initiated SFTP use case. See
+[service types](https://developer.android.com/develop/background-work/services/fgs/service-types),
+[timeouts](https://developer.android.com/develop/background-work/services/fgs/timeout),
+and [Play declarations](https://support.google.com/googleplay/android-developer/answer/13392821).
+
+On iOS, each attempt requests finite `beginBackgroundTask` time. Expiration
+updates Rust directly, including before a transfer ID is available, and ends the
+OS grant. Ordinary SSH/SFTP cannot run indefinitely while iOS suspends Whip.
+There is no background URLSession transport for these downloads. A native
+transfer may finish while JS is suspended, but the job stays Saving until the
+platform copy can execute and acknowledge its real outcome. See
+[Apple's background execution guidance](https://developer.apple.com/documentation/uikit/extending-your-app-s-background-execution-time).
 
 ## Validation
 
-Automated coverage includes screen unmount and host replacement, shared download row gestures and confirmations, tap-to-open gating, destination permission failure, cancellation while saving, task isolation, persistence failure, process-death recovery and explicit cancellation intent. Rust's in-process SFTP server streams a 128 MiB fixture and verifies its saved size and SHA-256, in addition to reconnect/source-change, no-space, premature EOF and cancellation cleanup cases. A separate Rust test checks that OS expiry cancels only the bound host/transfer.
+Rust tests cover admission across hosts, picker/transfer/save cancellation,
+removal during active effects, retry generations, old OS receipts, bridge and
+process recovery, committed-save recovery, migration, retained permissions,
+malformed history, and failed persistence. JS tests cover effect acknowledgements,
+copy failure, stale save cleanup, permission loss, immutable projections,
+out-of-order snapshots, hook unmount, and retrying an acknowledgement without
+copying again. Existing file-transfer, Downloads UI, Android destination, and iOS
+destination/browser integration suites remain relevant. Native SFTP fixtures
+cover large transfers, integrity, reconnects, cancellation, and cleanup.
 
-Device checks still required before closing #413:
-
-1. Download a 128 MiB+ file from both long-press and preview. Dismiss each UI, switch hosts/tabs and open Downloads below Usage & costs. Check live bytes/rate/ETA and both simultaneous host identities.
-2. Android: background and lock the phone; check notification progress and completion. Cancel from both Downloads and notification. Exercise `data_sync_fgs_timeout_duration` on a test Android 15+ device, then restore that test setting.
-3. iOS: background/lock until execution expires; confirm Paused and safe restart on foreground/reconnect. Terminate/relaunch during SSH and destination saving; verify neither is falsely complete.
-4. Relaunch after completion, tap the row, revoke folder access/move the file, then check useful errors. Swipe/delete active and completed entries, test a provider denying local deletion, and verify the remote source remains intact.
-
-Android arm64 Rust/JNI/Kotlin compilation and lint, and the iOS arm64 Rust framework and native adapter compilation, are validated. The iOS checks used mini's persistent worktree. Physical lock/suspension behavior remains unverified because no Android or physical iOS device was available.
+Physical-device checks remain useful for provider-specific copy failures,
+Android foreground-service timeout and notification interaction, and real iOS
+lock/expiry/process termination during transfer and destination saving. Simulator
+and unit checks cannot prove behavior under every OS or document provider.

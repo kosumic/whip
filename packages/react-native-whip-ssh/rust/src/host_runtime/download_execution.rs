@@ -72,7 +72,8 @@ mod tests {
         let mut changed = config.clone();
         changed.ssh.username = "different-account".into();
         assert_ne!(super::endpoint_identity(&changed), original);
-        config.jump_hosts.push(config.ssh.clone());
+        let jump = config.ssh.clone();
+        config.jump_hosts.push(jump);
         assert_ne!(super::endpoint_identity(&config), original);
     }
 

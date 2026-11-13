@@ -9,6 +9,7 @@ import { Text } from './ui/text';
 const phaseLabels = {
   paused: 'downloads.paused',
   selecting: 'files.downloadSelecting',
+  queued: 'files.downloadSelecting',
   downloading: 'files.downloadSsh',
   saving: 'files.downloadSaving',
   completed: 'files.downloadedTitle',
@@ -40,7 +41,7 @@ export function RemoteDownloadProgress({ progress, onCancel, onRetry, onChooseDe
   // The SSH bar stays below 100%; destination saving has its own status.
   const percent = knownTotal && totalBytes > 0 ? Math.min(99, Math.floor(bytesTransferred / totalBytes * 100)) : 0;
   const transferring = phase === 'downloading';
-  const active = transferring || phase === 'selecting' || phase === 'saving';
+  const active = transferring || phase === 'selecting' || phase === 'queued' || phase === 'saving';
   const determinate = transferring && knownTotal;
   const speed = progress.bytesPerSecond;
   const eta = progress.remainingSeconds;

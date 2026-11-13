@@ -1,254 +1,177 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import type { HostRuntimeConnection } from 'react-native-whip-ssh';
-import { Directory, File } from 'expo-file-system';
-import { RemoteDownloads, remoteDownloads } from '../src/services/remoteDownloads';
+import { Directory, File, Paths } from 'expo-file-system';
+import { downloadManagerCommand, type HostRuntimeConnection } from 'react-native-whip-ssh';
+import { RemoteDownloads, remoteDownloads, type RemoteDownload } from '../src/services/remoteDownloads';
 import { appStorage } from '../src/services/appStorage';
 import { downloadExecution } from '../src/services/downloadExecution';
-import { downloadRemoteEntry, type RemoteDownloadProgress } from '../src/services/remoteFileTransfer';
+import { saveDownloadedEntry } from '../src/services/remoteFileTransfer';
 import { revealSavedRemoteDestination } from '../src/services/savedRemoteDestination';
 import { useRemoteFileDownload } from '../src/hooks/useRemoteFileDownload';
 import type { HerdrClient } from '../src/services/HerdrClient';
 
-jest.mock('../src/services/appStorage', () => ({ appStorage: { getItem: jest.fn(), setItem: jest.fn() } }));
+jest.mock('react-native-whip-ssh', () => ({ downloadManagerCommand: jest.fn() }));
+jest.mock('../src/services/appStorage', () => ({ appStorage: { initialize: jest.fn() } }));
 jest.mock('../src/services/downloadExecution', () => ({ downloadExecution: {
-  downloadCancellations: jest.fn(), acknowledgeDownloadCancellation: jest.fn(),
-  beginDownloadExecution: jest.fn(), updateDownloadExecution: jest.fn(), endDownloadExecution: jest.fn(),
-  bindDownloadTransfer: jest.fn(), retainDownloadDestination: jest.fn(), resolveDownloadDestination: jest.fn(), releaseDownloadDestination: jest.fn(),
+  downloadCancellations: jest.fn(), acknowledgeDownloadCancellation: jest.fn(), beginDownloadExecution: jest.fn(),
+  updateDownloadExecution: jest.fn(), endDownloadExecution: jest.fn(), retainDownloadDestination: jest.fn(),
+  resolveDownloadDestination: jest.fn(), releaseDownloadDestination: jest.fn(),
+  retainDownloadJobDestination: jest.fn(), resolveDownloadJobDestination: jest.fn(), releaseDownloadJobDestination: jest.fn(),
 } }));
-jest.mock('../src/services/remoteFileTransfer', () => ({ downloadRemoteEntry: jest.fn() }));
+jest.mock('../src/services/remoteFileTransfer', () => ({ saveDownloadedEntry: jest.fn() }));
 jest.mock('../src/services/savedRemoteDestination', () => ({ revealSavedRemoteDestination: jest.fn() }));
 jest.mock('expo-file-system', () => {
   class Entry {
-    uri: string;
-    get exists() { return this.uri.length > 0; }
+    readonly uri: string;
     constructor(uri: string) { this.uri = uri; }
-    delete() { return undefined; }
+    readonly exists = true;
+    delete = jest.fn();
   }
-  return { Directory: class extends Entry { readonly isDirectory = true; }, File: class extends Entry { readonly isDirectory = false; } };
+  class MockDirectory extends Entry { static readonly pickDirectoryAsync = jest.fn(); }
+  return { Directory: MockDirectory, File: Entry, Paths: { cache: { uri: 'file:///cache' }, info: jest.fn() } };
 });
-const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
+const flush = async () => { for (let i = 0; i < 50; i++) await Promise.resolve(); };
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  let reject!: (error: Error) => void;
-  return { promise: new Promise<T>((yes, no) => { resolve = yes; reject = no; }),
-    resolve: (value: T) => resolve(value), reject: (error: Error) => reject(error) };
+  return { promise: new Promise<T>(yes => { resolve = yes; }), resolve: (value: T) => resolve(value) };
 }
-const runtime = (id: string) => ({ runtimeId: id, status: () => ({ state: 'connected' }) } as HostRuntimeConnection);
-let stored: string | null;
+const row = (phase: RemoteDownload['phase'] = 'selecting'): RemoteDownload => ({ id: 'job', hostId: 'a', remotePath: '/archive', name: 'archive', createdAt: 1,
+  bytesTransferred: 42, phase, busy: false, operation: { executionId: 'attempt-unique', source: '/cache/archive' },
+  destinationDirectory: 'file:///picked', permission: 'bookmark' });
+interface TestEffect { id: string; effectId: string; kind: string; job: RemoteDownload }
+let items: RemoteDownload[];
+let effects: TestEffect[];
+let commands: Array<Record<string, unknown>>;
 let manager: RemoteDownloads;
-let transfers: Map<string, { report: (value: RemoteDownloadProgress) => void; signal: AbortSignal; done: ReturnType<typeof deferred<boolean>> }>;
+let revision: number;
+let accepted: boolean;
+let handle: (command: Record<string, unknown>) => void;
+const emit = (kind: string, job = row()) => { effects.push({ id: job.id, effectId: 'effect-unique', kind, job }); };
 beforeEach(() => {
-  jest.resetAllMocks();
-  stored = null;
+  jest.resetAllMocks(); jest.useFakeTimers();
+  items = []; effects = []; commands = []; revision = 0; accepted = true; handle = () => {};
   manager = new RemoteDownloads();
-  transfers = new Map();
-  jest.mocked(appStorage.getItem).mockImplementation(async () => stored);
-  jest.mocked(appStorage.setItem).mockImplementation(async (_key, value) => { stored = value; });
-  jest.mocked(downloadExecution.downloadCancellations).mockResolvedValue([]);
-  jest.mocked(downloadExecution.acknowledgeDownloadCancellation).mockResolvedValue(undefined);
-  jest.mocked(downloadExecution.beginDownloadExecution).mockResolvedValue(undefined);
-  jest.mocked(downloadExecution.endDownloadExecution).mockResolvedValue(undefined);
-  jest.mocked(downloadExecution.retainDownloadDestination).mockResolvedValue('grant');
-  jest.mocked(downloadExecution.resolveDownloadDestination).mockImplementation(async uri => uri);
-  jest.mocked(downloadExecution.releaseDownloadDestination).mockResolvedValue(undefined);
-  jest.mocked(downloadRemoteEntry).mockImplementation(async (client, path, report, signal, options) => {
-    if (typeof path !== 'string') throw new Error('Expected a remote path');
-    const key = `${client.native.runtimeId}:${path}`;
-    const done = deferred<boolean>();
-    transfers.set(key, { report, signal: signal!, done });
-    await options?.onDestination?.(options.destination ?? new Directory(`file:///picked/${client.native.runtimeId}`));
-    await options?.beforeTransfer?.();
-    options?.onTransfer?.(`native-${key}`);
-    report({ phase: 'downloading', bytesTransferred: 0, totalBytes: 128 * 1024 * 1024 });
-    return done.promise;
+  jest.mocked(appStorage.initialize).mockResolvedValue(undefined);
+  jest.mocked(downloadManagerCommand).mockImplementation(async json => {
+    const command = JSON.parse(json) as Record<string, unknown>;
+    commands.push(command); handle(command);
+    const claimed = command.type === 'claim' ? effects.splice(0) : [];
+    return JSON.stringify({ revision: ++revision, items, effects: claimed, accepted, ...(command.type === 'start' ? { createdId: 'job' } : {}) });
   });
+  jest.mocked(downloadExecution.downloadCancellations).mockResolvedValue([]);
+  jest.mocked(downloadExecution.resolveDownloadDestination).mockImplementation(async uri => uri);
+  jest.mocked(downloadExecution.retainDownloadJobDestination).mockResolvedValue('grant');
+  jest.mocked(downloadExecution.resolveDownloadJobDestination).mockImplementation(async (_id, uri) => uri);
+  jest.mocked(Directory.pickDirectoryAsync).mockResolvedValue(new Directory('file:///picked'));
+  jest.mocked(Paths.info).mockReturnValue({ exists: true, isDirectory: false });
+  jest.mocked(saveDownloadedEntry).mockResolvedValue({ entry: new File('file:///picked/archive'), directory: new Directory('file:///picked') });
 });
-function complete(key: string) {
-  const transfer = transfers.get(key)!;
-  transfer.report({ phase: 'completed', bytesTransferred: 128 * 1024 * 1024, totalBytes: 128 * 1024 * 1024,
-    destination: { entry: new File(`file:///picked/${key.split(':')[0]}/archive`), directory: new Directory(`file:///picked/${key.split(':')[0]}`) } });
-  transfer.done.resolve(true);
-}
-it('isolates simultaneous 128 MB downloads by task, source and host and persists only real completion', async () => {
-  const a = await manager.start(runtime('a'), '/archive');
-  await flush();
-  const b = await manager.start(runtime('b'), '/archive');
-  await flush();
-  expect(a).not.toBe(b);
-  transfers.get('a:/archive')!.report({ phase: 'saving', bytesTransferred: 128 * 1024 * 1024,
-    bytesPerSecond: 800, remainingSeconds: 9 });
-  expect(manager.snapshot().find(item => item.id === a)).toMatchObject({ phase: 'saving', bytesPerSecond: undefined, remainingSeconds: undefined });
-  await manager.open(a);
-  expect(revealSavedRemoteDestination).not.toHaveBeenCalled();
-  expect(manager.snapshot()[0]).toMatchObject({ id: b, hostId: 'b', phase: 'downloading', bytesTransferred: 0 });
-  complete('b:/archive'); complete('a:/archive');
-  await Promise.all([manager.wait(a), manager.wait(b)]);
-  const restored = new RemoteDownloads();
-  await restored.initialize();
-  expect(restored.snapshot().map(item => item.id)).toEqual([b, a]);
-  expect(restored.snapshot().every(item => item.phase === 'completed')).toBe(true);
-  await restored.open(a);
-  expect(revealSavedRemoteDestination).toHaveBeenCalledWith(expect.objectContaining({ entry: expect.objectContaining({ uri: 'file:///picked/a/archive' }) }));
+afterEach(() => { jest.clearAllTimers(); jest.useRealTimers(); });
+it('initializes native persistence before attachment and leaves admission and identities to Rust', async () => {
+  let initialized = false;
+  jest.mocked(appStorage.initialize).mockImplementation(async () => { initialized = true; });
+  handle = command => { expect(initialized).toBe(true); if (command.type === 'start') items = [row('downloading')]; };
+  const runtime = { runtimeId: 'a' } as HostRuntimeConnection;
+  expect(await manager.start(runtime, '/archive')).toBe('job');
+  expect(commands).toContainEqual({ type: 'start', hostId: 'a', remotePath: '/archive', cacheDirectory: '/cache' });
+  expect(manager.snapshot()[0].phase).toBe('downloading');
 });
-it('waits for active cancellation and staging cleanup before removing history', async () => {
-  const id = await manager.start(runtime('a'), '/archive'); await flush();
-  const task = transfers.get('a:/archive')!;
-  let removed = false;
-  const deletion = manager.remove(id, false).then(() => { removed = true; });
-  expect(task.signal.aborted).toBe(true);
-  await flush(); expect(removed).toBe(false);
-  task.report({ phase: 'cancelled', bytesTransferred: 400 }); task.done.resolve(false);
-  await deletion;
-  expect(manager.snapshot()).toEqual([]);
-  expect(JSON.parse(stored!)).toEqual([]);
+it('executes only claimed picker effects and acknowledges the retained destination permission', async () => {
+  const job = { ...row(), destinationDirectory: undefined, permission: undefined };
+  emit('select', job);
+  await manager.initialize(); await flush();
+  expect(Directory.pickDirectoryAsync).toHaveBeenCalledTimes(1);
+  expect(downloadExecution.retainDownloadJobDestination).toHaveBeenCalledWith('attempt-unique', 'file:///picked');
+  expect(commands).toContainEqual(expect.objectContaining({ type: 'ack', effectId: 'effect-unique', directory: 'file:///picked', permission: 'grant' }));
+  expect(manager.snapshot()).toEqual([]); // callbacks cannot create or mutate rows
 });
-it('records OS expiry as paused, retries using its persisted destination, and preserves explicit cancellation', async () => {
-  const id = await manager.start(runtime('a'), '/archive'); await flush();
-  const transfer = transfers.get('a:/archive')!;
-  const paused = manager.pause(id);
-  expect(transfer.signal.aborted).toBe(true);
-  transfer.done.resolve(false); await paused;
-  expect(manager.snapshot()[0]).toMatchObject({ phase: 'paused', destinationDirectory: 'file:///picked/a', permission: 'grant' });
-  await manager.retry(id); await flush();
-  expect(downloadExecution.resolveDownloadDestination).toHaveBeenCalledWith('file:///picked/a', 'grant');
-  expect(downloadRemoteEntry).toHaveBeenLastCalledWith(expect.anything(), '/archive', expect.any(Function), expect.anything(), expect.objectContaining({ destination: expect.objectContaining({ uri: 'file:///picked/a' }) }));
-  const cancelling = manager.cancel(id);
-  transfers.get('a:/archive')!.report({ phase: 'cancelled', bytesTransferred: 0 }); transfers.get('a:/archive')!.done.resolve(false);
-  await cancelling;
-  const restored = new RemoteDownloads(); await restored.initialize();
-  expect(restored.snapshot()[0].phase).toBe('cancelled');
+it('restores persisted destination access and reports expired permission to Rust for recovery', async () => {
+  emit('select');
+  jest.mocked(downloadExecution.resolveDownloadJobDestination).mockRejectedValue(new Error('Folder access expired'));
+  await manager.initialize(); await flush();
+  expect(Directory.pickDirectoryAsync).not.toHaveBeenCalled();
+  expect(commands).toContainEqual(expect.objectContaining({ type: 'ack', error: expect.stringContaining('Folder access expired') }));
+  expect(saveDownloadedEntry).not.toHaveBeenCalled();
 });
-it('recovers process death as paused and never exposes a saving task as complete', async () => {
-  stored = JSON.stringify([{ id: 'old', hostId: 'a', remotePath: '/archive', name: 'archive', createdAt: 1,
-    phase: 'saving', bytesTransferred: 128 * 1024 * 1024, bytesPerSecond: 999, remainingSeconds: 3 }]);
+it('waits for real copy verification before acknowledging a save', async () => {
+  const copy = deferred<Awaited<ReturnType<typeof saveDownloadedEntry>>>();
+  jest.mocked(saveDownloadedEntry).mockReturnValue(copy.promise);
+  items = [row('saving')]; emit('save', items[0]);
+  await manager.initialize(); await flush();
+  expect(commands.some(command => command.type === 'ack')).toBe(false);
+  expect(manager.snapshot()[0].phase).toBe('saving');
+  copy.resolve({ entry: new File('file:///picked/archive'), directory: new Directory('file:///picked') }); await flush();
+  expect(commands).toContainEqual(expect.objectContaining({ type: 'ack', saved: { uri: 'file:///picked/archive', directoryUri: 'file:///picked', isDirectory: false } }));
+  expect(manager.snapshot()[0].phase).toBe('saving'); // only the native snapshot may complete it
+});
+it('forwards provider copy failures without claiming completion', async () => {
+  items = [row('saving')]; emit('save', items[0]);
+  jest.mocked(saveDownloadedEntry).mockRejectedValue(new Error('Provider copy failed'));
+  await manager.initialize(); await flush();
+  expect(commands).toContainEqual(expect.objectContaining({ type: 'ack', error: expect.stringContaining('Provider copy failed') }));
+  expect(manager.snapshot()[0].phase).toBe('saving');
+});
+it('cleans a verified copy when a replaced bridge has lost its save lease', async () => {
+  const saved = { entry: new File('file:///picked/archive'), directory: new Directory('file:///picked') };
+  jest.mocked(saveDownloadedEntry).mockResolvedValue(saved);
+  handle = command => { if (command.type === 'ack') accepted = false; };
+  emit('save'); await manager.initialize(); await flush();
+  expect(saved.entry.delete).toHaveBeenCalledTimes(1);
+});
+it('uses generation-specific OS execution IDs for foreground begin and end', async () => {
+  emit('begin'); await manager.initialize(); await flush();
+  expect(downloadExecution.beginDownloadExecution).toHaveBeenCalledWith('attempt-unique', 'archive');
+  emit('end'); await manager.reconcileCancellations(); await flush();
+  expect(downloadExecution.endDownloadExecution).toHaveBeenCalledWith('attempt-unique');
+  expect(downloadExecution.releaseDownloadJobDestination).toHaveBeenCalledWith('attempt-unique');
+});
+it('forwards durable notification receipts to native reconciliation before acknowledging them', async () => {
+  jest.mocked(downloadExecution.downloadCancellations).mockResolvedValue(['old-execution']);
   await manager.initialize();
-  expect(manager.snapshot()[0]).toMatchObject({ phase: 'paused', bytesPerSecond: undefined, remainingSeconds: undefined });
-  await manager.open('old'); expect(revealSavedRemoteDestination).not.toHaveBeenCalled();
-  await manager.cancel('old');
-  expect(manager.snapshot()[0].phase).toBe('cancelled');
+  expect(commands).toContainEqual({ type: 'expire', executionId: 'old-execution', cancelled: true });
+  expect(downloadExecution.acknowledgeDownloadCancellation).toHaveBeenCalledWith('old-execution');
 });
-it('preserves history if permissions expire and offers a new destination on retry', async () => {
-  const id = await manager.start(runtime('a'), '/archive'); await flush(); complete('a:/archive'); await manager.wait(id);
-  jest.mocked(downloadExecution.resolveDownloadDestination).mockRejectedValue(new Error('Folder access expired'));
-  await expect(manager.remove(id, true)).rejects.toThrow('Folder access expired');
-  expect(manager.snapshot()).toHaveLength(1);
-  await expect(manager.open(id)).rejects.toThrow('Folder access expired');
-  await manager.remove(id, false);
-  expect(manager.snapshot()).toEqual([]);
+it('projects identical native snapshots without extra React notifications', async () => {
+  items = [row('downloading')]; const listener = jest.fn(); manager.subscribe(listener);
+  await manager.initialize(); const snapshot = manager.snapshot();
+  await manager.reconcileCancellations();
+  expect(manager.snapshot()).toBe(snapshot);
+  expect(listener).toHaveBeenCalledTimes(1);
+});
+it('does not regress projection when a slow bridge response arrives after a newer command', async () => {
+  await manager.initialize();
+  const older = deferred<string>();
+  jest.mocked(downloadManagerCommand).mockImplementationOnce(() => older.promise);
+  const first = manager.reconcileCancellations(); await flush();
+  items = [row('completed')]; await manager.reconcileCancellations();
+  older.resolve(JSON.stringify({ revision: 0, items: [row('saving')], effects: [], accepted: true })); await first;
+  expect(manager.snapshot()[0].phase).toBe('completed');
 });
 it('keeps transfer ownership through hook unmount and host replacement', async () => {
   let controls!: ReturnType<typeof useRemoteFileDownload>;
   function Scope({ client }: { client: HerdrClient }) { controls = useRemoteFileDownload(client, 'file'); return null; }
-  const a = { native: runtime('hook-a') } as HerdrClient;
-  const b = { native: runtime('hook-b') } as HerdrClient;
+  const a = { native: { runtimeId: 'a' } } as HerdrClient;
+  const b = { native: { runtimeId: 'b' } } as HerdrClient;
+  handle = command => { if (command.type === 'start') items = [row('downloading')]; };
   let tree!: ReactTestRenderer;
   await act(async () => { tree = create(<Scope client={a} />); });
-  await act(async () => { await controls.start('/archive'); await flush(); });
-  const id = remoteDownloads.snapshot()[0].id;
-  const task = transfers.get('hook-a:/archive')!;
-  await act(async () => { tree.update(<Scope client={b} />); });
-  expect(controls.progress).toBeNull();
+  await act(async () => { await controls.start('/archive'); });
+  expect(remoteDownloads.snapshot()[0].phase).toBe('downloading');
+  await act(async () => { tree.update(<Scope client={b} />); }); expect(controls.progress).toBeNull();
   await act(async () => { tree.unmount(); });
-  expect(task.signal.aborted).toBe(false);
-  complete('hook-a:/archive'); await remoteDownloads.wait(id);
-  expect(remoteDownloads.snapshot()[0].phase).toBe('completed');
+  expect(commands.some(command => command.type === 'cancel')).toBe(false);
 });
-it('does not start SSH when the durable history write fails', async () => {
+it('preserves completed history when reveal access is expired or the file has moved', async () => {
+  items = [{ ...row('completed'), saved: { uri: 'file:///picked/archive', directoryUri: 'file:///picked', isDirectory: false } }];
   await manager.initialize();
-  jest.mocked(appStorage.setItem).mockRejectedValue(new Error('Database full'));
-  await expect(manager.start(runtime('a'), '/archive')).rejects.toThrow('Database full');
-  expect(downloadRemoteEntry).not.toHaveBeenCalled();
-  expect(manager.snapshot()).toEqual([]);
+  jest.mocked(downloadExecution.resolveDownloadDestination).mockResolvedValue('file:///moved');
+  await expect(manager.open('job')).rejects.toThrow('moved');
+  expect(revealSavedRemoteDestination).not.toHaveBeenCalled(); expect(manager.snapshot()).toHaveLength(1);
 });
-it('deletes only the saved local file, then commits history removal', async () => {
-  const id = await manager.start(runtime('a'), '/archive'); await flush(); complete('a:/archive'); await manager.wait(id);
-  const deleted: string[] = [];
-  const remove = jest.spyOn(File.prototype, 'delete').mockImplementation(function (this: File) { deleted.push(this.uri); });
-  await manager.remove(id, true);
-  expect(remove).toHaveBeenCalledTimes(1);
-  expect(deleted).toEqual(['file:///picked/a/archive']);
-  expect(manager.snapshot()).toEqual([]);
-  remove.mockRestore();
-});
-it('reports moved or missing completed files without opening or silently removing their history', async () => {
-  const id = await manager.start(runtime('a'), '/archive'); await flush(); complete('a:/archive'); await manager.wait(id);
-  const exists = jest.spyOn(File.prototype, 'exists', 'get').mockReturnValue(false);
-  await expect(manager.open(id)).rejects.toThrow('missing or folder access has expired');
-  expect(revealSavedRemoteDestination).not.toHaveBeenCalled();
-  expect(manager.snapshot()).toHaveLength(1);
-  exists.mockRestore();
-});
-it('allows selecting a new folder after a retry loses its destination permission', async () => {
-  const id = await manager.start(runtime('a'), '/archive'); await flush();
-  transfers.get('a:/archive')!.report({ phase: 'failed', failedPhase: 'downloading', bytesTransferred: 500 });
-  transfers.get('a:/archive')!.done.resolve(false); await manager.wait(id);
-  jest.mocked(downloadExecution.resolveDownloadDestination).mockRejectedValueOnce(new Error('Folder access expired'));
-  await manager.retry(id); await flush();
-  expect(manager.snapshot()[0]).toMatchObject({ phase: 'failed', error: expect.stringContaining('Folder access expired') });
-  await manager.retry(id, true); await flush();
-  expect(downloadRemoteEntry).toHaveBeenLastCalledWith(expect.anything(), '/archive', expect.any(Function), expect.anything(), expect.objectContaining({ destination: undefined }));
-  complete('a:/archive'); await manager.wait(id);
-  expect(manager.snapshot()[0].phase).toBe('completed');
-});
-it('persists cancellation intent before transfer cleanup settles, so relaunch cannot restart it', async () => {
-  const id = await manager.start(runtime('a'), '/archive'); await flush();
-  const task = transfers.get('a:/archive')!;
-  const cancelled = manager.cancel(id); await flush();
-  const restored = new RemoteDownloads(); await restored.initialize();
-  expect(restored.snapshot()[0]).toMatchObject({ phase: 'cancelled', cancelRequested: true });
-  task.report({ phase: 'cancelled', bytesTransferred: 0 }); task.done.resolve(false); await cancelled;
-});
-it('honors a notification cancellation persisted natively before JS or the process stopped', async () => {
-  stored = JSON.stringify([{ id: 'notification-cancelled', hostId: 'a', remotePath: '/archive', name: 'archive',
-    createdAt: 1, phase: 'downloading', bytesTransferred: 500 }]);
-  jest.mocked(downloadExecution.downloadCancellations).mockResolvedValue(['notification-cancelled']);
-  await manager.initialize();
-  expect(manager.snapshot()[0]).toMatchObject({ phase: 'cancelled', cancelRequested: true });
-  expect(JSON.parse(stored)[0].phase).toBe('cancelled');
-  expect(downloadExecution.acknowledgeDownloadCancellation).toHaveBeenCalledWith('notification-cancelled');
-  expect(downloadRemoteEntry).not.toHaveBeenCalled();
-});
-it('waits for an expired attempt to clean up before foreground recovery starts another one', async () => {
-  const id = await manager.start(runtime('a'), '/archive'); await flush();
-  const task = transfers.get('a:/archive')!;
-  const paused = manager.pause(id);
-  const resumed = manager.resumeHost(runtime('a')); await flush();
-  expect(downloadRemoteEntry).toHaveBeenCalledTimes(1);
-  task.done.resolve(false); await paused; await resumed; await flush();
-  expect(downloadRemoteEntry).toHaveBeenCalledTimes(2);
-  complete('a:/archive'); await manager.wait(id);
-});
-it('does not restart a paused attempt cancelled while foreground recovery waits for cleanup', async () => {
-  const id = await manager.start(runtime('a'), '/archive'); await flush();
-  const task = transfers.get('a:/archive')!;
-  const paused = manager.pause(id);
-  const resumed = manager.resumeHost(runtime('a')); await flush();
-  task.report({ phase: 'cancelled', bytesTransferred: 0 });
-  const cancelled = manager.cancel(id);
-  task.done.resolve(false);
-  await Promise.all([paused, resumed, cancelled]);
-  expect(downloadRemoteEntry).toHaveBeenCalledTimes(1);
-  expect(manager.snapshot()[0].phase).toBe('cancelled');
-});
-it('keeps a failed retry accurate and does not start native work if its checkpoint cannot commit', async () => {
-  const id = await manager.start(runtime('a'), '/archive'); await flush();
-  const transfer = transfers.get('a:/archive')!;
-  transfer.report({ phase: 'failed', bytesTransferred: 500 }); transfer.done.resolve(false); await manager.wait(id);
-  jest.mocked(appStorage.setItem).mockRejectedValueOnce(new Error('Database full'));
-  await expect(manager.retry(id)).rejects.toThrow('Database full');
-  expect(manager.snapshot()[0]).toMatchObject({ phase: 'failed', error: expect.stringContaining('Database full') });
-  expect(downloadRemoteEntry).toHaveBeenCalledTimes(1);
-});
-it('keeps an actively deleted entry when cancellation reveals a saved file that the provider refuses to remove', async () => {
-  const id = await manager.start(runtime('a'), '/archive'); await flush();
-  const transfer = transfers.get('a:/archive')!;
-  const remove = jest.spyOn(File.prototype, 'delete').mockImplementation(() => { throw new Error('Provider denied deletion'); });
-  const deletion = manager.remove(id, false);
-  transfer.report({ phase: 'failed', failedPhase: 'saving', bytesTransferred: 42, error: 'Cleanup denied',
-    destination: { entry: new File('file:///picked/a/archive'), directory: new Directory('file:///picked/a') } });
-  transfer.done.resolve(false);
-  await expect(deletion).rejects.toThrow('Provider denied deletion');
-  expect(manager.snapshot()).toHaveLength(1);
-  expect(manager.snapshot()[0].saved?.uri).toBe('file:///picked/a/archive');
-  remove.mockRestore();
+it('retries a failed save acknowledgement without copying the file a second time', async () => {
+  let failures = 1;
+  handle = command => { if (command.type === 'ack' && failures-- > 0) throw new Error('Database full'); };
+  emit('save'); await manager.initialize(); await flush();
+  await jest.advanceTimersByTimeAsync(1000); await flush();
+  expect(saveDownloadedEntry).toHaveBeenCalledTimes(1);
+  expect(commands.filter(command => command.type === 'ack')).toHaveLength(2);
 });

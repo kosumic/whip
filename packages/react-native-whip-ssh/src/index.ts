@@ -164,6 +164,7 @@ export {
   importLegacyAppData,
   selectLegacyAppDataKeys,
   readAppData,
+  downloadManagerCommand,
   writeAppData,
   recordVoiceUsage,
   voiceUsageSummary,

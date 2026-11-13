@@ -40,7 +40,7 @@ fn claim(manager: &mut Manager, id: &str) -> Effect {
 fn ack(effect: &Effect) -> Command {
     Command::Ack {
         id: effect.id.clone(),
-        effect_id: effect.effect_id.clone(),
+        effect_id: effect.token.clone(),
         owner: "bridge".into(),
         directory: None,
         permission: None,
@@ -415,6 +415,7 @@ fn native_process_restart_preserves_cancellation_and_never_completes_an_incomple
     drop(store);
     let reopened = Store::open(&path, crate::runtime().unwrap()).unwrap();
     let recovered = Manager::load(&reopened).unwrap();
+    drop(reopened);
     assert_eq!(row(&recovered, &save).phase, Phase::Failed);
     assert_eq!(row(&recovered, &save).failed_phase, Some(Phase::Saving));
     assert_eq!(row(&recovered, &transfer).phase, Phase::Cancelled);
@@ -470,6 +471,7 @@ fn a_failed_checkpoint_does_not_publish_state_or_start_native_work() {
         .is_err()
     );
     assert!(store.downloads.as_ref().unwrap().ledger.jobs.is_empty());
+    drop(store);
 }
 
 #[test]
@@ -483,6 +485,7 @@ fn committed_save_stays_completed_if_process_dies_before_os_execution_cleanup() 
     assert_eq!(row(&manager, &id).operation.step, Step::End);
     manager.save(&mut store).unwrap();
     let recovered = Manager::load(&store).unwrap();
+    drop(store);
     assert_eq!(row(&recovered, &id).phase, Phase::Completed);
     assert_eq!(row(&recovered, &id).saved, Some(saved()));
     assert!(!row(&recovered, &id).busy());
@@ -524,6 +527,7 @@ fn legacy_interrupted_rows_can_retry_without_a_native_staging_path() {
         )
         .unwrap();
     let mut manager = Manager::load(&store).unwrap();
+    drop(store);
     retry(&mut manager, "old").unwrap();
     assert_eq!(row(&manager, "old").phase, Phase::Selecting);
     assert_eq!(
@@ -604,4 +608,27 @@ fn foreground_recovery_remembers_busy_paused_jobs_and_explicit_cancel_revokes_re
     finish_effect(&mut manager, &id);
     assert_eq!(row(&manager, &id).phase, Phase::Cancelled);
     assert!(row(&manager, &id).operation.resume_cache.is_none());
+}
+
+#[test]
+fn an_os_release_error_cannot_undo_a_committed_verified_save() {
+    let mut manager = manager();
+    let id = saving(&mut manager, "a");
+    let save = claim(&mut manager, &id);
+    complete(&mut manager, &save);
+    let end = claim(&mut manager, &id);
+    let mut command = ack(&end);
+    if let Command::Ack { error, .. } = &mut command {
+        *error = Some("OS release failed".into());
+    }
+    manager.apply(command).unwrap();
+    assert_eq!(row(&manager, &id).phase, Phase::Completed);
+    assert_eq!(row(&manager, &id).saved, Some(saved()));
+    assert!(
+        row(&manager, &id)
+            .error
+            .as_deref()
+            .unwrap()
+            .contains("release")
+    );
 }
