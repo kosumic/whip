@@ -31,6 +31,7 @@ import {
   type UniffiVTableCallbackInterfaceWhipSshSshWorkflowPlatform,
   type UniffiVTableCallbackInterfaceWhipSshTerminalDeliveryEventSink,
   type UniffiVTableCallbackInterfaceWhipSshTerminalSubmissionPlatform,
+  type UniffiVTableCallbackInterfaceWhipSshTranscriptCacheListener,
   type UniffiVTableCallbackInterfaceWhipSshVoiceChatObserver,
   type UniffiVTableCallbackInterfaceWhipSshWhipAppControl,
   type UniffiVTableCallbackInterfaceWhipSshWhipSshEventSink,
@@ -980,6 +981,60 @@ export async function disconnectSshSftp(
       /*asyncOpts:*/ asyncOpts_,
       /*errorHandler:*/ FfiConverterTypeSshError.lift.bind(
         FfiConverterTypeSshError,
+      ),
+    );
+  } catch (__error: any) {
+    if (uniffiIsDebug && __error instanceof Error) {
+      __error.stack = __stack;
+    }
+    throw __error;
+  }
+}
+
+/**
+ * JSON command protocol shared by the mobile destination adapters. Internal
+ * transfer events cannot be submitted by a foreign caller.
+ */
+export async function downloadManagerCommand(
+  commandJson: string,
+  asyncOpts_?: { signal: AbortSignal },
+): Promise<string> /*throws*/ {
+  const __stack = uniffiIsDebug ? new Error().stack : undefined;
+  try {
+    return await uniffiRustCallAsync(
+      /*rustCaller:*/ uniffiCaller,
+      /*rustFutureFunc:*/ () => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_download_manager_command(
+          FfiConverterString.lower(
+            commandJson,
+            nativeModule().rustbuffer_alloc,
+          ),
+        );
+      },
+      /*pollFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+      /*cancelFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+      /*completeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+      /*freeFunc:*/ nativeModule()
+        .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+      // Async returns always go through the JS-side converter: the
+      // FFI symbol returns the future handle (u64), and the user-level
+      // RustBuffer comes back via the shared `rust_future_complete_*`
+      // export. The bytes the runtime hands back must be deserialized
+      // here using the per-callable return-type converter.
+      /*liftFunc:*/ (__rb: Uint8Array) => {
+        try {
+          return FfiConverterString.lift(__rb);
+        } finally {
+          nativeModule().rustbuffer_free(__rb);
+        }
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      /*asyncOpts:*/ asyncOpts_,
+      /*errorHandler:*/ FfiConverterTypeAppStorageError.lift.bind(
+        FfiConverterTypeAppStorageError,
       ),
     );
   } catch (__error: any) {
@@ -18186,6 +18241,113 @@ const FfiConverterTypeTerminalSubmissionTarget = (() => {
         FfiConverterString.allocationSize(value.paneId) +
         FfiConverterBool.allocationSize(value.ssh) +
         FfiConverterBool.allocationSize(value.online)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type TranscriptCacheBinding = {
+  hostSessionId: string;
+  terminalId: string;
+  bindingToken: string;
+  runtimeIncarnation: bigint;
+};
+
+/**
+ * Generated factory for {@link TranscriptCacheBinding} record objects.
+ */
+export const TranscriptCacheBinding = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      TranscriptCacheBinding,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<TranscriptCacheBinding>,
+  });
+})();
+
+const FfiConverterTypeTranscriptCacheBinding = (() => {
+  type TypeName = TranscriptCacheBinding;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        hostSessionId: FfiConverterString.read(from),
+        terminalId: FfiConverterString.read(from),
+        bindingToken: FfiConverterString.read(from),
+        runtimeIncarnation: FfiConverterUInt64.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.hostSessionId, into);
+      FfiConverterString.write(value.terminalId, into);
+      FfiConverterString.write(value.bindingToken, into);
+      FfiConverterUInt64.write(value.runtimeIncarnation, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.hostSessionId) +
+        FfiConverterString.allocationSize(value.terminalId) +
+        FfiConverterString.allocationSize(value.bindingToken) +
+        FfiConverterUInt64.allocationSize(value.runtimeIncarnation)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
+export type TranscriptCacheSnapshot = {
+  revision: bigint;
+  bindings: Array<TranscriptCacheBinding>;
+};
+
+/**
+ * Generated factory for {@link TranscriptCacheSnapshot} record objects.
+ */
+export const TranscriptCacheSnapshot = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<
+      TranscriptCacheSnapshot,
+      ReturnType<typeof defaults>
+    >(defaults);
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () =>
+      Object.freeze(defaults()) as Partial<TranscriptCacheSnapshot>,
+  });
+})();
+
+const FfiConverterTypeTranscriptCacheSnapshot = (() => {
+  type TypeName = TranscriptCacheSnapshot;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        revision: FfiConverterUInt64.read(from),
+        bindings: FfiConverterSequenceTypeTranscriptCacheBinding.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterUInt64.write(value.revision, into);
+      FfiConverterSequenceTypeTranscriptCacheBinding.write(
+        value.bindings,
+        into,
+      );
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterUInt64.allocationSize(value.revision) +
+        FfiConverterSequenceTypeTranscriptCacheBinding.allocationSize(
+          value.bindings,
+        )
       );
     }
   }
@@ -41635,6 +41797,9 @@ export interface HostRuntimeLike {
     workspaceId: string,
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<HerdrPaneInfo | undefined>;
+  preloadAgentChat(
+    terminalId: string,
+  ) /*throws*/ : AgentChatBinding | undefined;
   /**
    * Queue the command before publishing its new terminal tab to React.
    */
@@ -44346,6 +44511,35 @@ export class HostRuntime
       }
       throw __error;
     }
+  }
+
+  preloadAgentChat(
+    terminalId: string,
+  ): AgentChatBinding | undefined /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterOptionalTypeAgentChatBinding.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeAgentSessionError.lift.bind(
+          FfiConverterTypeAgentSessionError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_preload_agent_chat(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              terminalId,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
   }
 
   /**
@@ -60610,6 +60804,435 @@ const FfiConverterTypeTerminalSubmissionQueue = new FfiConverterObject(
   uniffiTypeTerminalSubmissionQueueObjectFactory,
 );
 
+export interface TranscriptCacheListener {
+  changed(): void;
+}
+
+export class TranscriptCacheListenerImpl
+  extends UniffiAbstractObject
+  implements TranscriptCacheListener
+{
+  readonly [uniffiTypeNameSymbol] = 'TranscriptCacheListenerImpl';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeTranscriptCacheListenerImplObjectFactory.bless(pointer);
+  }
+
+  changed(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_transcriptcachelistener_changed(
+          uniffiTypeTranscriptCacheListenerImplObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeTranscriptCacheListenerImplObjectFactory.pointer(this);
+      uniffiTypeTranscriptCacheListenerImplObjectFactory.freePointer(pointer);
+      uniffiTypeTranscriptCacheListenerImplObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is TranscriptCacheListenerImpl {
+    return uniffiTypeTranscriptCacheListenerImplObjectFactory.isConcreteType(
+      obj_,
+    );
+  }
+}
+
+const uniffiTypeTranscriptCacheListenerImplObjectFactory: UniffiObjectFactory<TranscriptCacheListener> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): TranscriptCacheListener {
+        const instance = Object.create(TranscriptCacheListenerImpl.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'TranscriptCacheListenerImpl';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_transcriptcachelistener_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: TranscriptCacheListener): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: TranscriptCacheListener): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_transcriptcachelistener(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_transcriptcachelistener(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is TranscriptCacheListener {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'TranscriptCacheListenerImpl'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeTranscriptCacheListener =
+  new FfiConverterObjectWithCallbacks(
+    uniffiTypeTranscriptCacheListenerImplObjectFactory,
+  );
+
+// Add a vtable for the callbacks that go in TranscriptCacheListener.
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+const uniffiCallbackInterfaceTranscriptCacheListener: {
+  vtable: any;
+  register: () => void;
+} = {
+  // Create the VTable using a series of closures.
+  // ts automatically converts these into C callback functions.
+  vtable: {
+    changed: (uniffiHandle: bigint) => {
+      const uniffiMakeCall = (): void => {
+        try {
+          const jsCallback =
+            FfiConverterTypeTranscriptCacheListener.lift(uniffiHandle);
+          return jsCallback.changed();
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+        }
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    uniffi_free: (uniffiHandle: UniffiHandle): void => {
+      // this will throw a stale handle error if the handle isn't found.
+      FfiConverterTypeTranscriptCacheListener.drop(uniffiHandle);
+    },
+    uniffi_clone: (uniffiHandle: UniffiHandle): UniffiHandle => {
+      return FfiConverterTypeTranscriptCacheListener.clone(uniffiHandle);
+    },
+  },
+  register: () => {
+    nativeModule().ubrn_uniffi_whip_ssh_fn_init_callback_vtable_transcriptcachelistener(
+      uniffiCallbackInterfaceTranscriptCacheListener.vtable,
+    );
+  },
+};
+
+/**
+ * One bridge's leases over a process-owned cache. Dropping the bridge removes
+ * its foreign callbacks and pins without destroying native conversation state.
+ */
+export interface TranscriptCacheLike {
+  claimOwner(): bigint;
+  ownerIsCurrent(token: bigint): boolean;
+  /**
+   * Reconcile native snapshots and the unfiltered, cross-host Herd ranking.
+   * Superseded React surfaces cannot overwrite the current owner's hosts.
+   */
+  reconcile(
+    core: AppCoreLike,
+    owner: bigint,
+    capacity: number,
+  ): TranscriptCacheSnapshot | undefined;
+  release(token: bigint): void;
+  retainForegroundTerminal(host: string, terminal: string): bigint;
+  retainSubscription(bindingToken: string): bigint;
+  setListener(listener: TranscriptCacheListener): void;
+}
+/**
+ * @deprecated Use `TranscriptCacheLike` instead.
+ */
+export type TranscriptCacheInterface = TranscriptCacheLike;
+
+/**
+ * One bridge's leases over a process-owned cache. Dropping the bridge removes
+ * its foreign callbacks and pins without destroying native conversation state.
+ */
+export class TranscriptCache
+  extends UniffiAbstractObject
+  implements TranscriptCacheLike
+{
+  readonly [uniffiTypeNameSymbol] = 'TranscriptCache';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  constructor() {
+    super();
+    const pointer = uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_constructor_transcriptcache_new(
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeTranscriptCacheObjectFactory.bless(pointer);
+  }
+
+  claimOwner(): bigint {
+    return FfiConverterUInt64.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_transcriptcache_claim_owner(
+            uniffiTypeTranscriptCacheObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  ownerIsCurrent(token: bigint): boolean {
+    return FfiConverterBool.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_transcriptcache_owner_is_current(
+            uniffiTypeTranscriptCacheObjectFactory.clonePointer(this),
+            FfiConverterUInt64.lower(token, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  /**
+   * Reconcile native snapshots and the unfiltered, cross-host Herd ranking.
+   * Superseded React surfaces cannot overwrite the current owner's hosts.
+   */
+  reconcile(
+    core: AppCoreLike,
+    owner: bigint,
+    capacity: number,
+  ): TranscriptCacheSnapshot | undefined {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterOptionalTypeTranscriptCacheSnapshot.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_transcriptcache_reconcile(
+            uniffiTypeTranscriptCacheObjectFactory.clonePointer(this),
+            FfiConverterTypeAppCore.lower(
+              core,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterUInt64.lower(owner, nativeModule().rustbuffer_alloc),
+            FfiConverterUInt32.lower(capacity, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  release(token: bigint): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_transcriptcache_release(
+          uniffiTypeTranscriptCacheObjectFactory.clonePointer(this),
+          FfiConverterUInt64.lower(token, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  retainForegroundTerminal(host: string, terminal: string): bigint {
+    return FfiConverterUInt64.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_transcriptcache_retain_foreground_terminal(
+            uniffiTypeTranscriptCacheObjectFactory.clonePointer(this),
+            FfiConverterString.lower(host, nativeModule().rustbuffer_alloc),
+            FfiConverterString.lower(terminal, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  retainSubscription(bindingToken: string): bigint {
+    return FfiConverterUInt64.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_transcriptcache_retain_subscription(
+            uniffiTypeTranscriptCacheObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              bindingToken,
+              nativeModule().rustbuffer_alloc,
+            ),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  setListener(listener: TranscriptCacheListener): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_transcriptcache_set_listener(
+          uniffiTypeTranscriptCacheObjectFactory.clonePointer(this),
+          FfiConverterTypeTranscriptCacheListener.lower(
+            listener,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeTranscriptCacheObjectFactory.pointer(this);
+      uniffiTypeTranscriptCacheObjectFactory.freePointer(pointer);
+      uniffiTypeTranscriptCacheObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is TranscriptCache {
+    return uniffiTypeTranscriptCacheObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeTranscriptCacheObjectFactory: UniffiObjectFactory<TranscriptCacheLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): TranscriptCacheLike {
+        const instance = Object.create(TranscriptCache.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'TranscriptCache';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_transcriptcache_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: TranscriptCacheLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: TranscriptCacheLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_transcriptcache(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_transcriptcache(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is TranscriptCacheLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'TranscriptCache'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeTranscriptCache = new FfiConverterObject(
+  uniffiTypeTranscriptCacheObjectFactory,
+);
+
 export interface VoiceChatObserver {
   changed(): void;
 }
@@ -62719,6 +63342,11 @@ const FfiConverterSequenceTypeTerminalSubmissionAttachment =
 const FfiConverterOptionalTypeTerminalSubmissionFailure =
   new FfiConverterOptional(FfiConverterTypeTerminalSubmissionFailure);
 
+// FfiConverter for Array<TranscriptCacheBinding>
+const FfiConverterSequenceTypeTranscriptCacheBinding = new FfiConverterArray(
+  FfiConverterTypeTranscriptCacheBinding,
+);
+
 // FfiConverter for Array<bigint>
 const FfiConverterSequenceUInt64 = new FfiConverterArray(FfiConverterUInt64);
 
@@ -62925,6 +63553,10 @@ const FfiConverterSequenceTypeTerminalSubmissionMessage = new FfiConverterArray(
 const FfiConverterSequenceTypeTerminalSubmissionTarget = new FfiConverterArray(
   FfiConverterTypeTerminalSubmissionTarget,
 );
+
+// FfiConverter for TranscriptCacheSnapshot | undefined
+const FfiConverterOptionalTypeTranscriptCacheSnapshot =
+  new FfiConverterOptional(FfiConverterTypeTranscriptCacheSnapshot);
 
 // FfiConverter for Array<VoiceChatTranscriptTurn>
 const FfiConverterSequenceTypeVoiceChatTranscriptTurn = new FfiConverterArray(
@@ -63291,6 +63923,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_disconnect_ssh_sftp',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_download_manager_command() !==
+    38313
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_download_manager_command',
     );
   }
   if (
@@ -65576,6 +66216,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_preload_agent_chat() !==
+    14381
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_preload_agent_chat',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_prepare_herdr_installation() !==
     62040
   ) {
@@ -66840,6 +67488,78 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_transcriptcache_new() !==
+    37400
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_constructor_transcriptcache_new',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_transcriptcache_claim_owner() !==
+    50235
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_transcriptcache_claim_owner',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_transcriptcache_owner_is_current() !==
+    63385
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_transcriptcache_owner_is_current',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_transcriptcache_reconcile() !==
+    46180
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_transcriptcache_reconcile',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_transcriptcache_release() !==
+    38082
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_transcriptcache_release',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_transcriptcache_retain_foreground_terminal() !==
+    35809
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_transcriptcache_retain_foreground_terminal',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_transcriptcache_retain_subscription() !==
+    1712
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_transcriptcache_retain_subscription',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_transcriptcache_set_listener() !==
+    18263
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_transcriptcache_set_listener',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_transcriptcachelistener_changed() !==
+    48782
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_transcriptcachelistener_changed',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_constructor_voicechat_new() !==
     8571
   ) {
@@ -67151,6 +67871,7 @@ function uniffiEnsureInitialized() {
   uniffiCallbackInterfaceSshWorkflowPlatform.register();
   uniffiCallbackInterfaceTerminalDeliveryEventSink.register();
   uniffiCallbackInterfaceTerminalSubmissionPlatform.register();
+  uniffiCallbackInterfaceTranscriptCacheListener.register();
   uniffiCallbackInterfaceVoiceChatObserver.register();
   uniffiCallbackInterfaceWhipAppControl.register();
   uniffiCallbackInterfaceWhipSshEventSink.register();
@@ -67507,6 +68228,10 @@ export default Object.freeze({
     FfiConverterTypeTerminalSubmissionStatus,
     FfiConverterTypeTerminalSubmissionTarget,
     FfiConverterTypeTerminalUiState,
+    FfiConverterTypeTranscriptCache,
+    FfiConverterTypeTranscriptCacheBinding,
+    FfiConverterTypeTranscriptCacheListener,
+    FfiConverterTypeTranscriptCacheSnapshot,
     FfiConverterTypeTransferProgress,
     FfiConverterTypeTransferResult,
     FfiConverterTypeTransferState,

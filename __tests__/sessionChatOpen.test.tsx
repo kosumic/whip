@@ -11,7 +11,6 @@ import { listenToChat, readChatResponse } from '../src/services/chatSpeech';
 import type { ChatAgent } from '../src/lib/agentChatSession';
 import { AgentChatPresentationPhase } from '../src/lib/agentChatPresentation';
 import { TerminalResidencyEndReason } from '../src/lib/terminalResidency';
-import { MIN_XTERM_CACHE_CAPACITY } from '../src/lib/terminalRendererLru';
 import { terminalControlBarInset } from '../src/lib/floatingChrome';
 import { browserRegistry, connectedBrowserRuntimes } from '../src/browser/registry';
 import { supportsBrowserControl } from '../src/browser/native';
@@ -182,6 +181,7 @@ const mockVolumeKeyListeners = new Set<(key: 'up' | 'down') => void>();
 const mockAppStateListeners = new Set<(state: string) => void>();
 function setup(agent: ChatAgent) {
   const bindings = new Map<string, NativeAgentChatBinding>();
+  const failedPreloads = new Set<string>();
   const availableBindings = new Map<string, NativeAgentChatBinding>();
   const handlers = new Map<string, (event: NativeAgentTranscriptUpdate) => void>();
   const pane: PaneInfo = {
@@ -236,11 +236,30 @@ function setup(agent: ChatAgent) {
       (terminalId: string, handler?: (event: NativeAgentTranscriptUpdate) => void): NativeAgentChatOpenResult => {
         const binding = availableBindings.get(terminalId);
         if (!binding) return { type: 'no-chat', terminalId, reason: 'unsupported-pane' };
+        failedPreloads.delete(binding.bindingToken);
         bindings.set(terminalId, binding);
         if (handler) handlers.set(terminalId, handler);
         return { type: 'bound', binding };
       },
     ),
+    preloadAgentChat: jest.fn((terminalId: string, handler?: (event: NativeAgentTranscriptUpdate) => void): NativeAgentChatBinding | undefined => {
+      const available = availableBindings.get(terminalId);
+      if (available && failedPreloads.has(available.bindingToken)) return undefined;
+      const result = native.openAgentChat(terminalId, handler);
+      if (result.type !== 'bound') return undefined;
+      void Promise.resolve(native.startAgentChat(result.binding.bindingToken)).then(started => {
+        if (started.type === 'started') handler?.({ key: result.binding.transcriptKey, runtimeIncarnation: result.binding.runtimeIncarnation,
+          revision: started.state.revision, deltas: [{ type: 'reset', state: started.state }] });
+        else {
+          failedPreloads.add(result.binding.bindingToken);
+          if (bindings.get(terminalId)?.bindingToken === result.binding.bindingToken) bindings.delete(terminalId);
+          agentTranscriptService.applyResidency({ revision: ++mockResidencyRevision, bindings: [...bindings.values()].map(binding => ({
+            hostSessionId: 'host-1', terminalId: binding.terminalId, bindingToken: binding.bindingToken, runtimeIncarnation: binding.runtimeIncarnation,
+          })) }, []);
+        }
+      });
+      return result.binding;
+    }),
     agentChatBindingIsCurrent: jest.fn(() => false),
     currentAgentChat: jest.fn(
       (terminalId: string, handler?: (event: NativeAgentTranscriptUpdate) => void): NativeAgentChatBinding | undefined => {
@@ -330,6 +349,7 @@ function setup(agent: ChatAgent) {
 }
 
 let renderer: ReactTestRenderer;
+let mockResidencyRevision = 0n;
 const ui = (name: string) =>
   renderer.root.find(node => String(node.type) === name);
 const control = () => ui('TerminalScreen').props.chatControl;
@@ -339,6 +359,7 @@ const navigationPhases = [
 ];
 
 beforeEach(() => {
+  mockResidencyRevision = 0n;
   Platform.OS = 'android';
   mockGithubDiscovery.status = 'inactive';
   mockGithubDiscovery.repository = null;
@@ -703,11 +724,9 @@ test('prepares three priority chats before visiting and retains two other recent
   expect(viewports()).toHaveLength(5);
   expect(viewports().filter(view => view.props.prewarm)).toHaveLength(3);
   act(() => {
-    agentTranscriptService.reconcileCache(3, targets.map(target => ({
-      hostSessionId: target.hostSessionId, terminalId: target.session.terminalId,
-      agent: 'codex', sessionId: host.availableBindings.get(target.session.terminalId)!.sessionId,
-      transport: target.client.native,
-    })), []);
+    agentTranscriptService.applyResidency({ revision: 1n, bindings: [...host.availableBindings.values()].map(binding => ({
+      hostSessionId: 'host-1', terminalId: binding.terminalId, bindingToken: binding.bindingToken, runtimeIncarnation: binding.runtimeIncarnation,
+    })) }, []);
   });
   expect(viewports()).toHaveLength(5);
   for (const binding of host.availableBindings.values()) {
@@ -859,7 +878,7 @@ test('a title survives eviction without reloading and is fresh when a switched s
   const openCount = host.native.openAgentChat.mock.calls.length;
   const startCount = host.native.startAgentChat.mock.calls.length;
   await act(async () => { renderer.update(<SessionScreen {...host.props} visible={false} />); });
-  act(() => agentTranscriptService.reconcileCache(3, [], []));
+  act(nativeCacheOutcome(host, true));
   expect(tabLabels()).toContain('Retained conversation');
   const snapshot = { ...host.props.snapshot, panes: [{
     ...host.pane, agent_session: { ...host.pane.agent_session!, value: 'resumed-session' },
@@ -1169,18 +1188,13 @@ function addCachePressure(host: ReturnType<typeof setup>) {
   ));
 }
 
-function createTranscriptCachePressure(agent: ChatAgent) {
-  const targets = Array.from({ length: MIN_XTERM_CACHE_CAPACITY }, (_, index) => {
-    const host = setup(agent);
-    const id = `cache-pressure-${index}`;
-    const binding = bindChat(host, agent, {
-      terminalId: id, paneId: id, bindingToken: id, transcriptKey: id, sessionId: id,
-      state: { agent, sessionId: id, status: 'live', revision: 1, messages: [], turns: [] },
-    });
-    host.native.startAgentChat.mockReturnValue({ type: 'started', state: binding.state });
-    return { hostSessionId: id, terminalId: id, agent, sessionId: id, transport: host.client.native };
-  });
-  return () => agentTranscriptService.reconcileCache(MIN_XTERM_CACHE_CAPACITY, targets, []);
+function nativeCacheOutcome(host: ReturnType<typeof setup>, retained = false) {
+  return () => {
+    if (!retained) host.bindings.clear();
+    agentTranscriptService.applyResidency({ revision: ++mockResidencyRevision, bindings: [...host.bindings.values()].map(binding => ({
+      hostSessionId: 'host-1', terminalId: binding.terminalId, bindingToken: binding.bindingToken, runtimeIncarnation: binding.runtimeIncarnation,
+    })) }, []);
+  };
 }
 
 test.each(['claude', 'codex', 'opencode', 'pi'] as const)('a brand new %s agent offers voice chat before it has a session ID', async agent => {
@@ -1276,27 +1290,16 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     }
   });
 
-  test('an unranked selected transcript stays cached after backgrounding until capacity is needed', async () => {
+  test('a native eviction after backgrounding removes the projected conversation', async () => {
     const host = setup(agent);
     const binding = bindChat(host, agent);
     host.native.startAgentChat.mockImplementation(() => ({ type: 'started', state: binding.state }));
-    agentTranscriptService.reconcileCache(3, [], []);
     await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
-    expect(ui('TerminalScreen').props.chatViewEnabled).toBe(false);
-    for (let update = 0; update < 5; update++) {
-      await act(async () => { agentTranscriptService.reconcileCache(3, [], []); });
-    }
-    expect(agentTranscriptService.getState(binding.bindingToken)?.status).toBe('loading');
-    expect(host.native.startAgentChat).toHaveBeenCalledTimes(1);
-    expect(host.native.detachAgentChat).not.toHaveBeenCalled();
-
+    expect(agentTranscriptService.getState(binding.bindingToken)).not.toBeNull();
     act(() => { for (const listener of mockAppStateListeners) listener('background'); });
-    act(() => { agentTranscriptService.reconcileCache(3, [], []); });
-    expect(agentTranscriptService.getState(binding.bindingToken)?.status).toBe('loading');
-    expect(host.native.detachAgentChat).not.toHaveBeenCalled();
-    act(createTranscriptCachePressure(agent));
+    act(nativeCacheOutcome(host));
     expect(agentTranscriptService.getState(binding.bindingToken)).toBeNull();
-    expect(host.native.detachAgentChat).toHaveBeenCalledWith(binding.terminalId);
+    expect(host.native.detachAgentChat).not.toHaveBeenCalled();
   });
 
   test('Chat can request a preloaded binding while remote synchronization is still loading', async () => {
@@ -1602,6 +1605,7 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
       ...host.pane, revision: 2,
       agent_session: { ...host.pane.agent_session!, value: replacement.sessionId },
     }] };
+    await host.native.startAgentChat(replacement.bindingToken);
     host.setSnapshot(snapshot);
     await act(async () => renderer.update(<SessionScreen {...host.props} snapshot={snapshot} />));
     await act(async () => { restoreOld(); });
@@ -1688,7 +1692,7 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     await openReadyChat(host, agent);
     revealChat();
     act(() => renderer.update(<SessionScreen {...host.props} visible={false} />));
-    act(createTranscriptCachePressure(agent));
+    act(nativeCacheOutcome(host));
     host.native.openAgentChat.mockImplementationOnce(() => {
       if (reason === 'replaced') throw new Error('runtime replaced during reconnect');
       return { type: 'no-chat', terminalId: 'terminal-1', reason: 'host-state-unavailable' };
@@ -1865,11 +1869,11 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     act(() => renderer.update(<SessionScreen {...host.props} visible={false} />));
     act(() => { ui('TerminalScreen').props.onResidencyEnd(host.props.terminalTargets[0], TerminalResidencyEndReason.Evicted); });
     expect(host.native.detachAgentChat).not.toHaveBeenCalled();
-    act(() => agentTranscriptService.reconcileCache(3, [], []));
+    act(nativeCacheOutcome(host, true));
     expect(agentTranscriptService.getState(binding.bindingToken)).not.toBeNull();
     expect(host.native.detachAgentChat).not.toHaveBeenCalled();
-    act(createTranscriptCachePressure(agent));
-    expect(host.native.detachAgentChat).toHaveBeenCalledWith(binding.terminalId);
+    act(nativeCacheOutcome(host));
+    expect(host.native.detachAgentChat).not.toHaveBeenCalled();
     expect(agentTranscriptService.getState(binding.bindingToken)).toBeNull();
     expect(renderer.root.findAll(node => String(node.type) === 'AgentChatView')).toHaveLength(0);
     await act(async () => renderer.update(<SessionScreen {...host.props} visible />));
@@ -1883,7 +1887,7 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     const binding = await openReadyChat(host, agent);
     revealChat();
     act(() => renderer.update(<SessionScreen {...host.props} visible={false} />));
-    act(createTranscriptCachePressure(agent));
+    act(nativeCacheOutcome(host));
     expect(agentTranscriptService.getState(binding.bindingToken)).toBeNull();
 
     host.props.priorityChatTargets = host.props.terminalTargets;
@@ -1906,7 +1910,7 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     revealChat();
     const viewport = ui('AgentChatView');
     act(() => { for (const listener of mockAppStateListeners) listener(appState); });
-    const applyPressure = createTranscriptCachePressure(agent);
+    const applyPressure = nativeCacheOutcome(host, true);
     for (let update = 0; update < 5; update++) {
       await act(async () => { applyPressure(); });
       await act(async () => { renderer.update(<SessionScreen {...host.props} />); });
@@ -1931,7 +1935,7 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     const binding = await openReadyChat(host, agent);
     revealChat();
     const onTranscript = jest.fn();
-    const applyPressure = createTranscriptCachePressure(agent);
+    const applyPressure = nativeCacheOutcome(host, true);
     let stopVoice!: () => void;
     act(() => { stopVoice = agentTranscriptService.subscribe(binding.bindingToken, onTranscript); });
     try {
@@ -1952,7 +1956,7 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
     } finally {
       act(stopVoice);
     }
-    await act(async () => { applyPressure(); });
+    await act(async () => { nativeCacheOutcome(host)(); });
     expect(agentTranscriptService.getState(binding.bindingToken)).toBeNull();
     expect(host.native.openAgentChat).toHaveBeenCalledTimes(1);
     expect(host.native.startAgentChat).toHaveBeenCalledTimes(1);
@@ -2112,11 +2116,11 @@ describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent =>
       });
     });
     expect(agentTranscriptService.getState(binding.bindingToken)?.revision).toBe(2);
-    act(() => agentTranscriptService.reconcileCache(3, [], []));
+    act(nativeCacheOutcome(host, true));
     expect(agentTranscriptService.getState(binding.bindingToken)?.revision).toBe(2);
     expect(host.native.detachAgentChat).not.toHaveBeenCalled();
-    act(createTranscriptCachePressure(agent));
-    expect(host.native.detachAgentChat).toHaveBeenCalledWith(binding.terminalId);
+    act(nativeCacheOutcome(host));
+    expect(host.native.detachAgentChat).not.toHaveBeenCalled();
     expect(agentTranscriptService.getState(binding.bindingToken)).toBeNull();
   });
 

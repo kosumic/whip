@@ -1,4 +1,5 @@
 import {type HerdrBackend,toNativeHerdrBackend,fromNativeHerdrBackend} from './herdrBackend';
+export { NativeTranscriptCache, type NativeTranscriptCacheBinding, type NativeTranscriptCacheSnapshot } from './transcriptCache';
 import { type AuthMode, fromNativeHostAuthMode, toNativeHostAuthMode } from './hostAuthMode';
 export { setWhipAppControl } from './generated-entry';
 export type { WhipToolPermit, WhipAppControl } from './generated-entry';
@@ -3270,6 +3271,17 @@ export class NativeHostRuntime {
       this.forgetAgentChatRoute(terminalId);
       return undefined;
     }
+    const binding = nativeAgentChatBinding(current);
+    this.routeAgentChat(terminalId, binding, handler);
+    return binding;
+  }
+
+  preloadAgentChat(
+    terminalId: string,
+    handler?: (event: NativeAgentTranscriptUpdate) => void,
+  ): NativeAgentChatBinding | undefined {
+    const current = this.runtime.preloadAgentChat(terminalId);
+    if (!current) return undefined;
     const binding = nativeAgentChatBinding(current);
     this.routeAgentChat(terminalId, binding, handler);
     return binding;

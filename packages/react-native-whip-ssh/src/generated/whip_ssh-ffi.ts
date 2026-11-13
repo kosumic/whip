@@ -556,6 +556,22 @@ interface NativeModuleInterface {
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_transcriptcache(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_transcriptcache(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_transcriptcachelistener(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_transcriptcachelistener(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_clone_voicechat(
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -640,6 +656,9 @@ interface NativeModuleInterface {
   ): void;
   ubrn_uniffi_whip_ssh_fn_init_callback_vtable_terminalsubmissionplatform(
     vtable: UniffiVTableCallbackInterfaceWhipSshTerminalSubmissionPlatform,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_init_callback_vtable_transcriptcachelistener(
+    vtable: UniffiVTableCallbackInterfaceWhipSshTranscriptCacheListener,
   ): void;
   ubrn_uniffi_whip_ssh_fn_init_callback_vtable_voicechatobserver(
     vtable: UniffiVTableCallbackInterfaceWhipSshVoiceChatObserver,
@@ -807,6 +826,9 @@ interface NativeModuleInterface {
   ): void;
   ubrn_uniffi_whip_ssh_fn_func_disconnect_ssh(key: Uint8Array): bigint;
   ubrn_uniffi_whip_ssh_fn_func_disconnect_ssh_sftp(key: Uint8Array): bigint;
+  ubrn_uniffi_whip_ssh_fn_func_download_manager_command(
+    commandJson: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_func_download_ssh_sftp(
     key: Uint8Array,
     remotePath: Uint8Array,
@@ -2241,6 +2263,11 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     workspaceId: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_preload_agent_chat(
+    uniffiSelf: bigint,
+    terminalId: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_prepare_herdr_installation(
     uniffiSelf: bigint,
     terminalId: Uint8Array,
@@ -3005,6 +3032,50 @@ interface NativeModuleInterface {
     key: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
   ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_constructor_transcriptcache_new(
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_transcriptcache_claim_owner(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_transcriptcache_owner_is_current(
+    uniffiSelf: bigint,
+    token: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): number;
+  ubrn_uniffi_whip_ssh_fn_method_transcriptcache_reconcile(
+    uniffiSelf: bigint,
+    core: bigint,
+    owner: bigint,
+    capacity: number,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_transcriptcache_release(
+    uniffiSelf: bigint,
+    token: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_transcriptcache_retain_foreground_terminal(
+    uniffiSelf: bigint,
+    host: Uint8Array,
+    terminal: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_transcriptcache_retain_subscription(
+    uniffiSelf: bigint,
+    bindingToken: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_transcriptcache_set_listener(
+    uniffiSelf: bigint,
+    listener: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_transcriptcachelistener_changed(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_constructor_voicechat_new(
     root: Uint8Array,
     uniffi_out_err: UniffiRustCallStatus,
@@ -3235,6 +3306,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_detach_terminal_delivery(): number;
   ubrn_uniffi_whip_ssh_checksum_func_disconnect_ssh(): number;
   ubrn_uniffi_whip_ssh_checksum_func_disconnect_ssh_sftp(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_download_manager_command(): number;
   ubrn_uniffi_whip_ssh_checksum_func_download_ssh_sftp(): number;
   ubrn_uniffi_whip_ssh_checksum_func_evaluate_app_update(): number;
   ubrn_uniffi_whip_ssh_checksum_func_evaluate_billing_policy(): number;
@@ -3522,6 +3594,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_ssh_shell(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_terminal(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_open_workspace(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_preload_agent_chat(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_prepare_herdr_installation(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_read_remote_text(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_read_terminal_selection(): number;
@@ -3680,6 +3753,15 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_unqueue(): number;
   ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_update_targets(): number;
   ubrn_uniffi_whip_ssh_checksum_method_terminalsubmissionqueue_view(): number;
+  ubrn_uniffi_whip_ssh_checksum_constructor_transcriptcache_new(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_transcriptcache_claim_owner(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_transcriptcache_owner_is_current(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_transcriptcache_reconcile(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_transcriptcache_release(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_transcriptcache_retain_foreground_terminal(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_transcriptcache_retain_subscription(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_transcriptcache_set_listener(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_transcriptcachelistener_changed(): number;
   ubrn_uniffi_whip_ssh_checksum_constructor_voicechat_new(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_acknowledge_speech(): number;
   ubrn_uniffi_whip_ssh_checksum_method_voicechat_analyze(): number;
@@ -3910,6 +3992,14 @@ interface NativeModuleInterface {
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
   ubrn_uniffi_internal_fn_method_terminalsubmissionqueue_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_transcriptcachelistener_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_transcriptcache_ffi__bless_pointer(
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
@@ -4575,6 +4665,20 @@ export type UniffiVTableCallbackInterfaceWhipSshTerminalSubmissionPlatform = {
   uniffi_clone: UniffiCallbackInterfaceCloneWhipSshTerminalSubmissionPlatform;
   submit: UniffiCallbackInterfaceWhipSshTerminalSubmissionPlatformMethod0;
   changed: UniffiCallbackInterfaceWhipSshTerminalSubmissionPlatformMethod1;
+};
+type UniffiCallbackInterfaceWhipSshTranscriptCacheListenerMethod0 = (
+  uniffiHandle: bigint,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceCloneWhipSshTranscriptCacheListener = (
+  handle: bigint,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceFreeWhipSshTranscriptCacheListener = (
+  handle: bigint,
+) => void;
+export type UniffiVTableCallbackInterfaceWhipSshTranscriptCacheListener = {
+  uniffi_free: UniffiCallbackInterfaceFreeWhipSshTranscriptCacheListener;
+  uniffi_clone: UniffiCallbackInterfaceCloneWhipSshTranscriptCacheListener;
+  changed: UniffiCallbackInterfaceWhipSshTranscriptCacheListenerMethod0;
 };
 type UniffiCallbackInterfaceWhipSshVoiceChatObserverMethod0 = (
   uniffiHandle: bigint,
