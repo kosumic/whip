@@ -11,6 +11,8 @@ object SpeechPolicy {
 
   @JvmStatic external fun claim(kind: Int, owner: String, request: String): Long
   @JvmStatic external fun isCurrent(lease: Long): Boolean
+  @JvmStatic external fun voiceSessionCurrent(token: String): Boolean
+  @JvmStatic external fun endVoiceSession(token: String, interrupted: Boolean)
   @JvmStatic external fun alertSpeech(action: String, token: String, observedLease: Long): String
   @Volatile var automaticWake: (() -> Unit)? = null
   @JvmStatic fun automaticSpeechWake() { automaticWake?.invoke() }

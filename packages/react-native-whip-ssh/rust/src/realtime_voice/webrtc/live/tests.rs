@@ -173,6 +173,7 @@ pub(crate) fn playback_owner_with_commands() -> Result<
     let (cancel, _) = watch::channel(false);
     Ok((
         Arc::new(RealtimeVoiceAdapter {
+            session_id: None,
             cue: Mutex::default(),
             microphone: Mutex::default(),
             started_at: Instant::now(),

@@ -4,7 +4,7 @@ mod delivery;
 pub(crate) use delivery::{BACKGROUND_AGENT, Delegation, Delivery, REMAIN_SILENT};
 
 use std::sync::{
-    Arc,
+    Arc, LazyLock, Weak,
     atomic::{AtomicBool, Ordering},
 };
 use std::time::Duration;
@@ -25,6 +25,21 @@ use crate::reverse_control::herdr::Request;
 const MAX_RESULT_BYTES: usize = 24 * 1024;
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
 const START_TIMEOUT: Duration = Duration::from_secs(5);
+static PINS: LazyLock<parking_lot::Mutex<Vec<Weak<PinnedAgent>>>> =
+    LazyLock::new(parking_lot::Mutex::default);
+
+/// Call-owned native capabilities pin residency; presentation lifetime does not.
+pub(crate) fn retains_transcript(host: &str, binding: &AgentBindingIdentity) -> bool {
+    PINS.lock().iter().filter_map(Weak::upgrade).any(|pin| {
+        pin.runtime.inner.id == host
+            && pin.binding.runtime_incarnation == binding.runtime_incarnation
+            && pin.binding.terminal_id == binding.terminal_id
+            && pin.binding.pane_id == binding.pane_id
+            && pin.binding.agent == binding.agent
+            && pin.binding.session_id == binding.session_id
+            && pin.binding.transcript_key == binding.transcript_key
+    })
+}
 
 #[cfg(test)]
 mod tests;
@@ -64,6 +79,29 @@ fn changed() -> HerdrControlError {
 }
 
 impl PinnedAgent {
+    pub(crate) fn binding_identity(&self) -> AgentBindingIdentity {
+        self.binding.clone()
+    }
+    /// Resolve a destination selected by the call, independently of React views.
+    pub(crate) fn pin_voice_source(
+        source: &crate::voice_session::Source,
+    ) -> Result<Arc<Self>, HerdrControlError> {
+        let runtime = get_host_runtime(source.runtime_id.clone()).ok_or_else(changed)?;
+        if source.incarnation.parse::<u64>().ok() != Some(runtime.runtime_incarnation()) {
+            return Err(changed());
+        }
+        let pinned = Self::select(source.runtime_id.clone(), &source.pane_id)?;
+        let agent = match pinned.binding.agent {
+            crate::AgentTranscriptKind::Claude => "claude",
+            crate::AgentTranscriptKind::Codex => "codex",
+            crate::AgentTranscriptKind::OpenCode => "opencode",
+            crate::AgentTranscriptKind::Pi => "pi",
+        };
+        if pinned.binding.terminal_id.as_str() != source.terminal_id || agent != source.agent {
+            return Err(changed());
+        }
+        Ok(pinned)
+    }
     /// Explicit history lookup never creates a binding or opens a transport.
     pub(crate) fn select_existing(
         runtime_id: String,
@@ -171,6 +209,10 @@ impl PinnedAgent {
             receipts: parking_lot::Mutex::default(),
         });
         pinned.check()?;
+        let mut pins = PINS.lock();
+        pins.retain(|pin| pin.strong_count() > 0);
+        pins.push(Arc::downgrade(&pinned));
+        drop(pins);
         Ok(pinned)
     }
 

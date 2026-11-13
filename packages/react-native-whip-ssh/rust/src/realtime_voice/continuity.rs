@@ -120,6 +120,35 @@ impl RealtimeVoiceAdapter {
         mut commands: mpsc::Receiver<Command>,
         tools: &mut JoinSet<ToolCompletion>,
     ) -> Result<(), &'static str> {
+        if config.agent_source.is_some()
+            && let Some(agent) = &agent
+        {
+            let mut cancel = self.cancel.subscribe();
+            if *cancel.borrow() {
+                return Ok(());
+            }
+            tokio::select! { biased;
+                _ = cancel.changed() => return Ok(()),
+                prepared = tokio::time::timeout(std::time::Duration::from_secs(5), agent.prepare_selected()) => {
+                    prepared.map_err(|_| "The bound agent transcript did not become available. Please call again.")?
+                        .map_err(|_| "The bound agent disconnected or changed. Please call again.")?;
+                }
+            }
+        }
+        let update = if config.agent_source.is_some() && !config.live {
+            let mut value = serde_json::to_value(update).map_err(|_| "Invalid voice session.")?;
+            if let Some(agent) = &agent
+                && let Some(context) = agent
+                    .startup_context()
+                    .map_err(|_| "The bound agent context is unavailable.")?
+            {
+                value["session"]["instructions"] =
+                    serde_json::json!(format!("{}\n\n{context}", super::INSTRUCTIONS));
+            }
+            Some(super::typed(value)?)
+        } else {
+            update
+        };
         config.restore_history().await?;
         self.view.lock().resumed_context_truncated = config
             .continuation
@@ -174,7 +203,9 @@ impl RealtimeVoiceAdapter {
             {
                 return Err(crate::host_runtime::realtime_terminal::CHANGED);
             }
-            while commands.try_recv().is_ok() {} // Never replay queued work.
+            if retrying {
+                while commands.try_recv().is_ok() {}
+            } // Never replay retired provider work.
             self.retiring.store(false, Ordering::Release);
             *self.failure.lock() = None;
             *self.replacement.lock() = None;

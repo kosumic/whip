@@ -342,3 +342,37 @@ fn deferred_wait_pauses_for_refresh_and_ends_when_the_bound_agent_disconnects()
     })?;
     Ok(())
 }
+
+#[test]
+fn app_call_pins_native_agent_before_permission_without_a_mounted_chat()
+-> Result<(), Box<dyn std::error::Error>> {
+    let _guard = terminal_delivery_test_guard();
+    let (runtime, pinned, mut snapshot) = fixture("voice-app-admission")?;
+    let identity = pinned.source_id();
+    let core = crate::VoiceSessionCoordinator::default();
+    let request = serde_json::json!({"scope":{"kind":"Agent","hostId":"host","tabId":"tab","paneId":"pane-1","agent":"codex","source":{
+        "runtimeId":identity.host_id,"incarnation":identity.runtime_incarnation.to_string(),"terminalId":identity.terminal_id,"paneId":identity.pane_id,"agent":"codex","targetKey":"target"
+    }},"mode":"Realtime","available":true}).to_string();
+    let admitted: serde_json::Value = serde_json::from_str(&core.request(request.clone())?)?;
+    assert!(admitted["error"].is_null());
+    let id = admitted["id"].as_str().ok_or("missing call ID")?;
+    let pin = core
+        .pinned_agent(id)
+        .ok_or("missing native admission pin")?;
+    assert_eq!(
+        pin.binding_identity().session_id,
+        pinned.binding_identity().session_id
+    );
+    snapshot.panes[0]
+        .agent_session
+        .as_mut()
+        .ok_or("missing session")?
+        .value = "22222222-2222-4222-8222-222222222222".into();
+    install(&runtime, snapshot);
+    assert!(pin.check_liveness().is_err());
+    // Reattachment never silently adopts a new native session or preferences.
+    let attached: serde_json::Value = serde_json::from_str(&core.request(request)?)?;
+    assert_eq!(attached["id"], id);
+    assert_eq!(attached["attached"], true);
+    Ok(())
+}

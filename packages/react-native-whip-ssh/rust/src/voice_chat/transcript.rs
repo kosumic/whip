@@ -27,6 +27,29 @@ pub(crate) fn tracking() -> bool {
     CALLS.lock().iter().any(|call| call.strong_count() > 0)
 }
 
+/// Initial acquisition and same-session recovery retain their native owner even
+/// when a call has no mounted Chat View or presentation subscription.
+pub(crate) fn retains_transcript(
+    host: &str,
+    binding: &crate::agent_sessions::AgentBindingIdentity,
+) -> bool {
+    CALLS.lock().iter().filter_map(Weak::upgrade).any(|call| {
+        let state = call.state.lock();
+        state.call.view().phase != voice_call_local::Phase::Closed
+            && state.connection.as_ref().is_some_and(|connection| {
+                connection.runtime_id == host
+                    && connection.incarnation == binding.runtime_incarnation
+                    && connection.terminal_id == binding.terminal_id.as_str()
+                    && connection.pane_id == binding.pane_id.as_str()
+                    && connection.agent == binding.agent
+            })
+            && state.source.as_ref().is_none_or(|source| {
+                source.session == binding.session_id.as_str()
+                    && source.key == binding.transcript_key.as_str()
+            })
+    })
+}
+
 pub(crate) fn accept(
     host: &str,
     incarnation: u64,

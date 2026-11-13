@@ -129,6 +129,19 @@ pub unsafe extern "C" fn whip_realtime_start(
     let Ok(config) = serde_json::from_slice::<Config>(config.to_bytes()) else {
         return 0;
     };
+    if config.session_id.as_ref().is_some_and(|id| {
+        config.preview
+            || !crate::voice_session_coordinator().accepts_realtime(
+                id,
+                config.live,
+                config.global,
+                config.agent_source.as_ref(),
+                config.target.as_ref(),
+                config.terminal_target.as_ref(),
+            )
+    }) {
+        return 0;
+    }
     let mut calls = calls().lock();
     calls.retain(|_, call| !call.stopped.load(Ordering::Acquire));
     if !calls.is_empty() {
@@ -370,6 +383,13 @@ pub extern "C" fn whip_realtime_view(id: u64) -> *mut c_char {
     let Some(call) = call(id) else {
         return std::ptr::null_mut();
     };
+    snapshot(&call)
+        .and_then(|value| serde_json::to_string(&value).ok())
+        .and_then(|value| CString::new(value).ok())
+        .map_or(std::ptr::null_mut(), CString::into_raw)
+}
+
+pub(crate) fn snapshot(call: &RealtimeVoiceAdapter) -> Option<serde_json::Value> {
     let (messages, playback) = {
         let output = call.output.lock();
         (output.transcript.snapshot(), output.transcript.timing())
@@ -400,9 +420,6 @@ pub extern "C" fn whip_realtime_view(id: u64) -> *mut c_char {
         value["messages"] = messages;
     }
     value
-        .and_then(|value| serde_json::to_string(&value).ok())
-        .and_then(|value| CString::new(value).ok())
-        .map_or(std::ptr::null_mut(), CString::into_raw)
 }
 
 /// # Safety

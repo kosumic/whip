@@ -251,7 +251,7 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
         if (self->_call.load() == call) [WhipVoiceCall.shared syncMuted:token muted:muted];
       });
     }
-    if ([view[@"phase"] isEqualToString:@"error"] || (self.preview && [view[@"phase"] isEqualToString:@"closed"])) {
+    if ([view[@"phase"] isEqualToString:@"error"] || [view[@"phase"] isEqualToString:@"closed"]) {
       dispatch_async(dispatch_get_main_queue(), ^{
         if (self->_call.load() != call) return;
         BOOL preview = self.preview;

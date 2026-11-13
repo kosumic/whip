@@ -1,5 +1,6 @@
 let mockCaptionSnapshot = 'null';
 jest.mock('react-native-whip-ssh', () => ({ speechCaptionSnapshot: () => mockCaptionSnapshot }));
+import { VoiceSessionManager } from '../src/services/voiceSessionManager';
 import { VoiceConversation, type VoiceConversationView } from '../src/services/voiceConversation';
 import type { AgentChatState } from '../src/agentChat';
 import type { NativeVoiceChat } from 'react-native-whip-ssh/src/voiceChat';
@@ -312,29 +313,26 @@ test('hangs up the system call while recognition shutdown is still draining', as
   expect(mockInput.releaseReservation).toHaveBeenCalledTimes(1);
 });
 
-test('a replacement call waits for the previous call to release its microphone', async () => {
-  await session.start(); await flush();
-  mockInput.cancel.mockImplementationOnce(() => {});
-  const replaced = session;
-  session = new VoiceConversation({ ...target, bindingToken: 'other-chat', paneId: 'other-pane', tabId: 'other-tab' }, send, jest.fn(), () => Promise.resolve(mockCore as unknown as NativeVoiceChat));
-  const starting = session.start();
+test('the native session effect waits for Local microphone release before preparing a replacement', async () => {
+  const manager = new VoiceSessionManager(async (destination, dispatch, publish) => {
+    session = new VoiceConversation(destination, dispatch, publish, () => Promise.resolve(mockCore as unknown as NativeVoiceChat));
+    return session;
+  });
+  const first = manager.start({ kind: 'Agent', target }, send);
   await flush();
-  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'closed' }));
+  mockInput.cancel.mockImplementationOnce(() => {});
+  manager.start({ kind: 'Agent', target: { ...target, paneId: 'other-pane', tabId: 'other-tab' } }, send);
+  await flush();
   expect(mockSpeech.endVoiceCall).toHaveBeenCalledTimes(1);
   expect(mockSpeech.startVoiceCall).toHaveBeenCalledTimes(1);
   expect(mockInput.reserve).toHaveBeenCalledTimes(1);
-
-  let released = false;
-  const closing = replaced.close().then(() => { released = true; });
-  await flush();
-  expect(released).toBe(false);
+  const closing = manager.hangup(first);
   mockInputSnapshot = { owner: null, phase: 'idle', interimText: '' };
   for (const listener of mockInputListeners) listener();
-  await closing; await starting; await flush();
-  expect(mockInput.releaseReservation).toHaveBeenCalledTimes(1);
+  await closing; await flush();
   expect(mockSpeech.startVoiceCall).toHaveBeenCalledTimes(2);
-  expect(mockInput.reserve).toHaveBeenCalledTimes(2);
   expect(mockInput.releaseReservation.mock.invocationCallOrder[0]).toBeLessThan(mockInput.reserve.mock.invocationCallOrder[1]);
+  await manager.hangup();
 });
 
 test('the system mute control drives Rust capture state', async () => {
@@ -451,4 +449,19 @@ test('an incompatible effect version cannot prevent hanging up and releasing the
   await session.close();
   expect(mockSpeech.endVoiceCall).toHaveBeenCalledTimes(1);
   expect(mockInput.releaseReservation).toHaveBeenCalledTimes(1);
+});
+
+test('a Local core loaded after cancellation is closed and released without connecting or starting audio', async () => {
+  let loaded!: (core: NativeVoiceChat) => void;
+  session = new VoiceConversation(target, send, changed, () => new Promise(resolve => { loaded = resolve; }));
+  const starting = session.start();
+  await flush();
+  await session.close();
+  const dispose = jest.fn();
+  loaded({ ...mockCore, dispose } as unknown as NativeVoiceChat);
+  await starting;
+  expect(mockCore.close).toHaveBeenCalledTimes(1);
+  expect(dispose).toHaveBeenCalledTimes(1);
+  expect(mockCore.connect).not.toHaveBeenCalled();
+  expect(mockSpeech.startVoiceCall).not.toHaveBeenCalled();
 });

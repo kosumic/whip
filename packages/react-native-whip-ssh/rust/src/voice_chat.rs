@@ -215,6 +215,7 @@ pub struct VoiceChat {
     started: Instant,
     observer: Mutex<Option<Arc<dyn VoiceChatObserver>>>,
     id: u64,
+    app_session: Mutex<Option<String>>,
 }
 
 static NEXT_CALL: AtomicU64 = AtomicU64::new(1);
@@ -237,6 +238,7 @@ impl VoiceChat {
             started: Instant::now(),
             observer: Mutex::new(None),
             id: NEXT_CALL.fetch_add(1, Ordering::Relaxed),
+            app_session: Mutex::new(None),
         })
     }
 
@@ -515,6 +517,27 @@ impl VoiceChat {
 }
 
 impl VoiceChat {
+    pub(crate) fn pin_agent_source(
+        &self,
+        runtime_id: String,
+        binding: &crate::agent_sessions::AgentBindingIdentity,
+    ) {
+        self.state.lock().source = Some(transcript::Source {
+            runtime_id,
+            incarnation: binding.runtime_incarnation,
+            key: binding.transcript_key.as_str().into(),
+            session: binding.session_id.as_str().into(),
+            binding: String::new(),
+            agent: binding.agent,
+            epoch: 0,
+            revision: None,
+            seen_revision: None,
+            live: false,
+        });
+    }
+    pub(crate) fn attach_app_session(&self, id: String) {
+        *self.app_session.lock() = Some(id);
+    }
     fn accept_turns(
         &self,
         state: &mut State,

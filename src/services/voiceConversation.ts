@@ -67,7 +67,6 @@ const CALL_EVENT = 'WhipVoiceCall';
 const WATCHDOG_MS = 10_000;
 const CAPTION_LIMIT = { messages: 64, text: 16 * 1024, total: 128 * 1024 } as const;
 let nextSession = 0;
-const voiceCalls: { active: VoiceConversation | null } = { active: null };
 type CallEvent = { token: string; type: 'ended' | 'muted' | 'route' | 'audioInactive'; muted?: boolean; speaker?: boolean; error?: string };
 
 type VoiceSpeechEvents = { [STOPPED]: [event: ChatSpeechStoppedEvent]; [STARTED]: [event: { token: string }]; [LEVEL]: [event: { token: string; level: number }]; [CALL_EVENT]: [event: CallEvent]; [CAPTION]: [json: string] };
@@ -89,7 +88,7 @@ export class VoiceConversation {
   private readonly speechResources = new Map<string, { filler: boolean }>();
   private vadSensitivity = DEFAULT_VAD_SENSITIVITY;
   private playback?: NativeSpeechPlayback;
-  private readonly session = `voice-chat:${++nextSession}`;
+  private readonly session: string;
   private input?: { id: bigint; finishing: boolean; started: boolean; monitor: boolean };
   private draft = '';
   private speechToken?: string;
@@ -120,23 +119,16 @@ export class VoiceConversation {
     _send: (text: string) => boolean,
     private readonly changed: (view: VoiceConversationView) => void,
     private readonly load = loadCore,
+    private readonly sessionId?: string,
   ) {
+    this.session = sessionId ?? `voice-chat:${++nextSession}`;
     this.transcriptBinding = target.bindingToken;
   }
 
   async start(): Promise<void> {
     try {
-      while (!this.closed && voiceCalls.active && voiceCalls.active !== this) {
-        const previous = voiceCalls.active;
-        if (!previous.closed) {
-          previous.view = { ...previous.view, phase: 'closed', level: 0 };
-          previous.changed(previous.view);
-        }
-        await previous.close();
-      }
       if (this.closed) return;
-      if (voiceCalls.active || !composerSpeechInput.reserve(this.session)) throw new Error('Finish the current speech session before starting voice chat.');
-      voiceCalls.active = this;
+      if (!composerSpeechInput.reserve(this.session)) throw new Error('Finish the current speech session before starting voice chat.');
       if (Platform.OS === 'android') this.releaseBackground = retainVoiceCallBackground(this.session);
       this.cleanup.push(suppressAgentAlertsForTab(this.session, this.target.hostId, this.target.tabId));
       this.playback = getSpeechPlayback();
@@ -144,6 +136,7 @@ export class VoiceConversation {
       this.sounds.preload();
       if (!this.playback.startLocalChatSpeech || !this.playback.startVoiceCall) throw new Error('Install an updated Whip build for system voice calls.');
       await composerSpeechInput.authorizeLocal();
+      if (this.closed) return;
       this.canInterrupt = await composerSpeechInput.supportsPlaybackMonitoring();
       if (this.closed) return;
       if (AppState.currentState === 'background') throw new Error('Return to Whip to start voice chat.');
@@ -151,8 +144,9 @@ export class VoiceConversation {
       if (this.closed) return;
       const root = voiceChatModelRoot();
       const core = await this.load(root);
-      if (this.closed) return;
+      if (this.closed) { core.close(); core.dispose(); return; }
       this.core = core;
+      if (this.sessionId && this.target.localSource) core.bindSession(this.sessionId, this.target.localSource);
       core.setVadSensitivity(this.vadSensitivity);
       const speechEmitter: Pick<NativeEventEmitter<VoiceSpeechEvents>, 'addListener'> =
         Platform.OS === 'ios' ? new NativeEventEmitter<VoiceSpeechEvents>(this.playback) : DeviceEventEmitter;
@@ -496,7 +490,7 @@ export class VoiceConversation {
   }
 
   close(): Promise<void> {
-    if (!this.closing) this.closing = this.closeSession();
+    if (!this.closing) this.closing = this.closeSession().catch(error => { this.closing = undefined; throw error; });
     return this.closing;
   }
 
@@ -533,11 +527,13 @@ export class VoiceConversation {
       await this.waitForInputRelease();
     } catch { /* Cleanup must still release the shared input reservation. */ }
     finally {
-      await closingSound;
-      this.releaseBackground?.();
-      this.releaseBackground = undefined;
-      // UniFFI retains the Rust object until in-flight model futures finish.
-      if (voiceCalls.active === this) { voiceCalls.active = null; composerSpeechInput.releaseReservation(this.session); }
+      try { await closingSound; }
+      finally {
+        this.releaseBackground?.();
+        this.releaseBackground = undefined;
+        // UniFFI retains the Rust object until in-flight model futures finish.
+        composerSpeechInput.releaseReservation(this.session);
+      }
     }
   }
 }

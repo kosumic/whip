@@ -1,3 +1,4 @@
+import { nativeVoiceSessions, voiceSourceIdentity } from './voiceSession';
 import { AgentTranscriptKind, VoiceChat, VoiceChatPhase } from './generated-entry';
 import type { RuntimeAgentKind } from './index';
 import type { TerminalSubmissionQueue } from './generated-entry';
@@ -26,6 +27,7 @@ const PHASE = {
 export class NativeVoiceChat {
   private readonly core: VoiceChat;
   constructor(root: string) { this.core = new VoiceChat(root); }
+  bindSession(id: string, source: LocalVoiceSource) { nativeVoiceSessions().bindLocal(id, this.core, JSON.stringify(voiceSourceIdentity(source))); }
   view() {
     const view = this.core.view();
     const totalBytes = Number(view.totalBytes);

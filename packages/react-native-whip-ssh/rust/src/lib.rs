@@ -58,6 +58,7 @@ mod usage;
 mod voice_chat;
 mod voice_credentials;
 mod voice_history;
+mod voice_session;
 
 pub use agent_sessions::*;
 pub use agent_transcript::*;
@@ -104,6 +105,7 @@ pub use transcript_database::{
 };
 pub use usage::*;
 pub use voice_chat::*;
+pub use voice_session::*;
 
 use std::sync::OnceLock;
 

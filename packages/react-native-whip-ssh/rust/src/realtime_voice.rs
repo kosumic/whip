@@ -12,7 +12,7 @@ mod echo;
 #[cfg(test)]
 mod echo_tests;
 pub(crate) mod feedback;
-mod ffi;
+pub(crate) mod ffi;
 pub(crate) mod handoff_context;
 mod health;
 mod live;
@@ -67,7 +67,8 @@ const MAX_OUTPUT_ITEMS: usize = 64;
 #[cfg(test)]
 use voice_call_openai::MAX_WIRE;
 use voice_call_openai::typed;
-const MAX_TEXT: usize = 16 * 1024;
+pub(crate) const MAX_TEXT: usize = 16 * 1024;
+const DESTINATION_CHANGED: &str = "The voice destination changed during startup.";
 const TYPED_PREFIX: &str = "[TYPED — already submitted to the bound coding agent]\n";
 use voice_call_openai::tools::{MAX_ARGUMENT_BYTES, MAX_CALLS};
 const EVENT_PREFIX: &str = "whip";
@@ -87,6 +88,8 @@ const VOICES: &[&str] = &[
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct Config {
+    session_id: Option<String>,
+    agent_source: Option<crate::voice_session::Source>,
     #[serde(default)]
     live: bool,
     #[serde(default)]
@@ -162,7 +165,7 @@ impl Config {
         restored: crate::voice_history::Restored,
     ) -> Result<(), &'static str> {
         if self.preview
-            || self.target.is_some()
+            || (self.target.is_some() || self.agent_source.is_some())
             || self.live != (restored.mode == crate::app_database::VoiceUsageMode::Live)
             || self.global != (restored.scope == crate::app_database::VoiceUsageScope::Global)
             || self.terminal_target != restored.continuation.terminal_target
@@ -195,7 +198,7 @@ impl Config {
     }
 
     fn validate_preview(&self) -> Result<(), &'static str> {
-        if self.target.is_some()
+        if (self.target.is_some() || self.agent_source.is_some())
             || self.terminal_target.is_some()
             || self.global
             || self.global_shizuku_access
@@ -243,6 +246,7 @@ impl Config {
             }}));
         }
         if usize::from(self.target.is_some())
+            + usize::from(self.agent_source.is_some())
             + usize::from(self.terminal_target.is_some())
             + usize::from(self.global)
             != 1
@@ -523,12 +527,60 @@ struct BoundTargets {
     terminal: Option<Arc<terminal::Session>>,
 }
 
+impl Config {
+    fn pin_targets(&mut self) -> Result<BoundTargets, &'static str> {
+        let agent = if let Some(id) = &self.session_id
+            && self.agent_source.is_some()
+        {
+            Ok(Some(
+                crate::voice_session_coordinator()
+                    .pinned_agent(id)
+                    .ok_or(DESTINATION_CHANGED)?,
+            ))
+        } else if let Some(source) = &self.agent_source {
+            PinnedAgent::pin_voice_source(source).map(Some)
+        } else {
+            self.target.clone().map(PinnedAgent::pin).transpose()
+        }
+        .map_err(|_| "Open the connected agent chat before starting Realtime.")?;
+        if let Some(agent) = &agent {
+            agent.check_liveness().map_err(|_| DESTINATION_CHANGED)?;
+        }
+        let terminal = if let Some(id) = &self.session_id
+            && self.terminal_target.is_some()
+        {
+            if let Some(target) = &self.terminal_target {
+                PinnedTerminal::pin(target.clone())?;
+            }
+            Some(
+                crate::voice_session_coordinator()
+                    .pinned_terminal(id)
+                    .ok_or(DESTINATION_CHANGED)?,
+            )
+        } else {
+            self.terminal_target
+                .clone()
+                .map(PinnedTerminal::pin)
+                .transpose()?
+        }
+        .map(terminal::Session::new);
+        if let Some(terminal) = &terminal {
+            terminal.target.check()?;
+        }
+        if let Some(terminal) = &terminal {
+            self.terminal_target = Some(terminal.target.history_target());
+        }
+        Ok(BoundTargets { agent, terminal })
+    }
+}
+
 pub(super) enum Command {
     Skip,
     Mute(bool),
     Submitted(String),
 }
-pub(super) struct RealtimeVoiceAdapter {
+pub(crate) struct RealtimeVoiceAdapter {
+    session_id: Option<String>,
     cue: Mutex<cue::Cue>,
     microphone: Mutex<microphone::State>,
     started_at: Instant,
@@ -570,6 +622,49 @@ impl From<&'static str> for StartError {
     }
 }
 impl RealtimeVoiceAdapter {
+    pub(crate) fn submit_context(&self, text: String) -> bool {
+        if self.view.lock().phase == "reconnecting" {
+            return true;
+        }
+        !self.closed.load(Ordering::Acquire)
+            && !self.retiring.load(Ordering::Acquire)
+            && submitted_message(&text).is_ok()
+            && self.commands.try_send(Command::Submitted(text)).is_ok()
+    }
+    fn read_credentials(
+        &self,
+        credentials: impl FnOnce() -> Result<
+            native_credentials::NativeCredential,
+            native_credentials::CredentialError,
+        >,
+    ) -> Result<native_credentials::NativeCredential, StartError> {
+        let key = match credentials() {
+            Ok(key) => key,
+            Err(error) => {
+                if let Some(id) = &self.session_id
+                    && crate::voice_session_coordinator().is_current(id.clone())
+                {
+                    use native_credentials::CredentialError;
+                    let message = match error {
+                        CredentialError::Missing => "Save an OpenAI API key in Settings → OpenAI.",
+                        CredentialError::Locked => {
+                            "Unlock the device and Whip to use the OpenAI API credential."
+                        }
+                        CredentialError::Unavailable => {
+                            "OpenAI API credential storage is unavailable. Return to Whip and try again."
+                        }
+                        CredentialError::Failed => "Could not access the OpenAI API credential.",
+                    };
+                    crate::voice_session_coordinator().backend_ended(id, Some(message.into()));
+                }
+                return Err(StartError::Credential(error));
+            }
+        };
+        if self.closed.load(Ordering::Acquire) {
+            return Err(StartError::Session);
+        }
+        Ok(key)
+    }
     fn start(
         mut config: Config,
         credentials: impl FnOnce() -> Result<
@@ -588,21 +683,7 @@ impl RealtimeVoiceAdapter {
             .global
             .then(|| WhipToolSession::new(config.global_shizuku_access))
             .transpose()?;
-        let agent = config
-            .target
-            .clone()
-            .map(PinnedAgent::pin)
-            .transpose()
-            .map_err(|_| "Open the connected agent chat before starting Realtime.")?;
-        let terminal = config
-            .terminal_target
-            .clone()
-            .map(PinnedTerminal::pin)
-            .transpose()?
-            .map(terminal::Session::new);
-        if let Some(terminal) = &terminal {
-            config.terminal_target = Some(terminal.target.history_target());
-        }
+        let BoundTargets { agent, terminal } = config.pin_targets()?;
         let instructions = if config.live {
             None
         } else if let Some(global) = &global {
@@ -642,6 +723,7 @@ impl RealtimeVoiceAdapter {
         };
         let updates = scope.map(observer::Subscription::new);
         let adapter = Arc::new(Self {
+            session_id: config.session_id.clone(),
             cue: Mutex::default(),
             microphone: Mutex::new(microphone::State::new(config.preview)),
             started_at,
@@ -728,9 +810,21 @@ impl RealtimeVoiceAdapter {
         }
         let owner = adapter.clone();
         let runtime = crate::runtime().map_err(|_| "Realtime runtime could not start.")?;
+        if let Some(id) = &adapter.session_id
+            && crate::voice_session_coordinator()
+                .bind_realtime(id, &adapter, adapter.live)
+                .is_err()
+        {
+            adapter.close();
+            if crate::voice_session_coordinator().is_current(id.clone()) {
+                crate::voice_session_coordinator()
+                    .backend_ended(id, Some("The voice call could not be prepared.".into()));
+            }
+            return Err(StartError::Session);
+        }
         adapter.view.lock().startup.preparation = Some(startup::elapsed(started_at));
         let credential_start = Instant::now();
-        let key = credentials().map_err(StartError::Credential)?;
+        let key = adapter.read_credentials(credentials)?;
         adapter.view.lock().startup.credentials = Some(startup::elapsed(credential_start));
         runtime.spawn(async move {
             let mut tools: JoinSet<ToolCompletion> = JoinSet::new();
@@ -757,6 +851,14 @@ impl RealtimeVoiceAdapter {
                 view.recovery = recovery::State::Ended;
                 view.media_ready = false;
             }
+            if let Some(id) = &owner.session_id {
+                crate::voice_session_coordinator().backend_ended(id, None);
+                if let Some(view) = ffi::snapshot(&owner) {
+                    crate::voice_session_coordinator().save_realtime(id, view);
+                }
+            }
+            // Platform stop promises may resolve as soon as this flag is set.
+            // Publish finalized usage before allowing their final snapshot read.
             owner.stopped.store(true, Ordering::Release);
         });
         Ok(adapter)
@@ -782,8 +884,11 @@ impl RealtimeVoiceAdapter {
         self.microphone.lock().cancel();
         self.output.lock().clear();
         self.cancel.send_replace(true);
+        if let Some(id) = &self.session_id {
+            crate::voice_session_coordinator().backend_ended(id, Some(error.into()));
+        }
     }
-    fn close(&self) {
+    pub(crate) fn close(&self) {
         self.updates.lock().take();
         self.speech.end_call();
         self.continuity.lock().diagnostics.status = voice_call_openai::continuity::Status::Ended;

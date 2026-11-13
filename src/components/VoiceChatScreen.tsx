@@ -139,7 +139,9 @@ export function VoiceChatScreen({ ref, target, resumeCallId, settingsOverride, s
   }, [isGlobal, agent, hostId, paneId, tabId, terminal?.runtimeId, terminal?.runtimeIncarnation, terminal?.connectionGeneration, terminal?.terminalId, terminal?.paneId, resumeCallId]);
   useEffect(() => { conversation.current?.setTranscriptBinding(bindingToken); }, [bindingToken]);
   useEffect(() => { conversation.current?.setVadSensitivity(vadSensitivity); }, [vadSensitivity]);
-  useEffect(() => { if (view.phase === 'closed') callbacks.current.onClose(); }, [view.phase]);
+  useEffect(() => {
+    if (view.phase === 'closed' && conversation.current?.getSnapshot() === view) callbacks.current.onClose();
+  }, [view]);
   const close = () => {
     if (conversation.current) { void voiceSessionManager.hangup(conversation.current); }
     callbacks.current.onClose();

@@ -14,6 +14,7 @@ import android.graphics.drawable.Icon
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -25,6 +26,7 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.jstasks.HeadlessJsTaskConfig
 import com.facebook.react.jstasks.HeadlessJsTaskContext
 import com.whipssh.HostRuntimeMonitoring
+import com.whipssh.SpeechPolicy
 
 /** Background microphone/media owner. Android media volume also applies between turns. */
 @android.annotation.SuppressLint("NewApi") // start() admits only Android 13+ with microphone permission.
@@ -72,6 +74,7 @@ class VoiceCallService : Service() {
   @android.annotation.SuppressLint("WakelockTimeout")
   private fun connect(session: Session) {
     if (current !== session || session.ready || session.ending) return
+    if (!SpeechPolicy.voiceSessionCurrent(session.token)) { finish(session, null); return }
     if (SpeechPlayback.playback.defer(session) { connect(session) }) {
       main.removeCallbacks(session.timeout)
       return
@@ -112,13 +115,17 @@ class VoiceCallService : Service() {
     startForeground(NOTIFICATION, builder.build(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
   }
   private fun action(action: String, token: String, request: Int): PendingIntent = PendingIntent.getService(this, request,
-    Intent(this, VoiceCallService::class.java).setAction(action).putExtra(TOKEN, token), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    Intent(this, VoiceCallService::class.java).setAction(action)
+      .setData(Uri.Builder().scheme("whip").authority("voice-call").appendPath(token).build())
+      .putExtra(TOKEN, token), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
   private fun finish(session: Session, error: String?) {
     if (current !== session || session.ending) return
     session.ending = true
+    SpeechPolicy.endVoiceSession(session.token, error != null)
     SpeechPlayback.playback.cancel(session)
     session.ready = false
     main.removeCallbacks(session.timeout)
+    main.removeCallbacks(session.authority)
     RealtimeVoice.stop(session.token)
     SpeechPlayback.shutdown()
     session.start?.reject("E_VOICE_CALL", error ?: "Voice chat ended before activation.")
@@ -135,6 +142,8 @@ class VoiceCallService : Service() {
       SpeechPlayback.shutdown()
       session.finishBackgroundTask()
       main.removeCallbacks(session.timeout)
+      main.removeCallbacks(session.authority)
+      SpeechPolicy.endVoiceSession(session.token, !session.ending)
       session.start?.reject("E_VOICE_CALL", "Android stopped voice chat.")
       if (!session.ending) emit(session, "ended")
       calls.release(session)
@@ -161,6 +170,13 @@ class VoiceCallService : Service() {
     var output: AudioDeviceInfo? = null
     val endings = mutableListOf<Promise>()
     val timeout = Runnable { if (current === this) instance?.finish(this, "Voice chat did not start.") ?: end(token) }
+    val authority = object : Runnable {
+      override fun run() {
+        if (current !== this@Session || ending) return
+        if (!SpeechPolicy.voiceSessionCurrent(token)) { end(token); return }
+        main.postDelayed(this, AUTHORITY_INTERVAL_MS)
+      }
+    }
   }
   companion object {
     const val EVENT = "WhipVoiceCall"
@@ -170,6 +186,7 @@ class VoiceCallService : Service() {
     private const val END = "io.github.kaminarios.whip.VOICE_CALL_END"
     private const val MUTE = "io.github.kaminarios.whip.VOICE_CALL_MUTE"
     private const val TOKEN = "voice_call_token"
+    private const val AUTHORITY_INTERVAL_MS = 250L
     private val HEADSETS = setOf(AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, AudioDeviceInfo.TYPE_BLE_HEADSET, AudioDeviceInfo.TYPE_BLE_SPEAKER,
       AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_USB_DEVICE)
     private val main = Handler(Looper.getMainLooper())
@@ -190,6 +207,7 @@ class VoiceCallService : Service() {
     }
     val audioAttributes get() = VoiceMediaAudio.attributes
     fun start(context: ReactApplicationContext, token: String, label: String, promise: Promise, mode: Mode = Mode.LOCAL) {
+      if (!SpeechPolicy.voiceSessionCurrent(token)) { promise.reject("E_VOICE_CALL", "The voice call was cancelled."); return }
       if (current != null) { promise.reject("E_VOICE_CALL", "Voice chat is already active."); return }
       if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
         promise.reject("E_VOICE_CALL", "Microphone permission and Android 13 or later are required."); return
@@ -201,6 +219,7 @@ class VoiceCallService : Service() {
         session.taskId = session.taskContext!!.startTask(HeadlessJsTaskConfig(EVENT, Arguments.createMap().apply { putString("token", token) }, 0, true))
         context.startForegroundService(Intent(context, VoiceCallService::class.java).setAction(START).putExtra(TOKEN, token))
         main.postDelayed(session.timeout, 15_000)
+        main.post(session.authority)
       } catch (_: Exception) { session.finishBackgroundTask(); calls.release(session); promise.reject("E_VOICE_CALL", "Voice chat could not start.") }
     }
     fun end(token: String, promise: Promise? = null) {
@@ -212,6 +231,8 @@ class VoiceCallService : Service() {
       else {
         SpeechPlayback.playback.cancel(session)
         session.finishBackgroundTask(); main.removeCallbacks(session.timeout); calls.release(session)
+        main.removeCallbacks(session.authority)
+        SpeechPolicy.endVoiceSession(session.token, false)
         SpeechPlayback.playback.finished(session)
         session.start?.reject("E_VOICE_CALL", "Voice chat was cancelled.")
         session.endings.forEach { it.resolve(null) }

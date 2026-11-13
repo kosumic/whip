@@ -338,6 +338,17 @@ Java_com_whipssh_SpeechPolicy_isCurrent(JNIEnv *, jclass, jlong lease) {
     return whip_speech_is_current(static_cast<uint64_t>(lease));
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_whipssh_SpeechPolicy_voiceSessionCurrent(JNIEnv *env, jclass, jstring token) {
+    const auto value = speechUtf8(env, token);
+    return whip_voice_session_current(value.c_str());
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_whipssh_SpeechPolicy_endVoiceSession(JNIEnv *env, jclass, jstring token, jboolean interrupted) {
+    const auto value = speechUtf8(env, token);
+    whip_voice_session_end(value.c_str(), interrupted == JNI_TRUE);
+}
+
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_whipssh_SpeechPolicy_captionCommand(JNIEnv *env, jclass, jstring command) {
     const auto json = speechUtf8(env, command);

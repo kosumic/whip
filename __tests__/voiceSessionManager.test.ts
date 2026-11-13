@@ -33,7 +33,7 @@ test.each(['Realtime', 'Live', 'Terminal'] as const)('resuming an ended %s call 
   expect(resumed).not.toBe(original);
   expect(original.getSnapshot()).toBe(before);
   expect(factory).toHaveBeenLastCalledWith(kind === 'Terminal' ? terminalTarget : { global: true, label: 'Global call' },
-    expect.objectContaining({ provider: 'openai', realtimeVoice: 'cedar', mode: settings.mode }), expect.any(Function), expect.any(Number), 'original-archive');
+    expect.objectContaining({ provider: 'openai', realtimeVoice: 'cedar', mode: settings.mode }), expect.any(Function), expect.any(Number), 'original-archive', resumed.id);
   expect(adapters[0].close).toHaveBeenCalledTimes(1);
   expect(adapters[1].start).toHaveBeenCalledTimes(1);
   expect(adapters[1].submitted).not.toHaveBeenCalled();
@@ -79,7 +79,7 @@ test.each(['Realtime', 'Live'] as const)('global %s uses OpenAI independently of
   const manager = new VoiceSessionManager(local, undefined, realtime);
   const call = manager.start({ kind: 'Global' }, () => false, { ...defaults, provider: 'local', mode, realtimeVoice: 'cedar', liveVoice: 'quartz' });
   await flush();
-  expect(realtime).toHaveBeenCalledWith({ global: true, label: 'Global call' }, call.settings, expect.any(Function), call.startedMonotonic);
+  expect(realtime).toHaveBeenCalledWith({ global: true, label: 'Global call' }, call.settings, expect.any(Function), call.startedMonotonic, undefined, call.id);
   await manager.retainAgentHosts([]);
   await manager.retainAgentHosts(['different']);
   expect(manager.start({ kind: 'Global' }, () => false, defaults)).toBe(call);
@@ -148,7 +148,7 @@ test('Realtime selects its own adapter and keeps its initial voice and server VA
   const session = manager.start({ kind: 'Agent', target }, () => true, settings);
   await flush();
   expect(local).not.toHaveBeenCalled();
-  expect(realtime).toHaveBeenCalledWith(target, session.settings, expect.any(Function), session.startedMonotonic);
+  expect(realtime).toHaveBeenCalledWith(target, session.settings, expect.any(Function), session.startedMonotonic, undefined, session.id);
   expect(cloud.start).toHaveBeenCalledTimes(1);
   expect(manager.start({ kind: 'Agent', target }, () => true, { ...defaults, realtimeVoice: 'marin' })).toBe(session);
   expect(session.settings.realtimeVoice).toBe('cedar');
@@ -225,7 +225,7 @@ test('rapid target replacements cancel intermediate calls before they acquire na
   expect(first.ended).toBe(true); expect(second.ended).toBe(true);
   expect(manager.active).toBe(third);
   expect(create).toHaveBeenCalledTimes(1);
-  expect(create).toHaveBeenCalledWith(expect.objectContaining({ tabId: 'third' }), expect.any(Function), expect.any(Function));
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({ tabId: 'third' }), expect.any(Function), expect.any(Function), third.id);
   await manager.hangup();
 });
 
@@ -360,14 +360,15 @@ test('usage observes one session across remounts and one end across repeated han
   expect(usage.ended).toHaveBeenCalledTimes(1);
 });
 
-test('unavailable cloud calls and cancelled intermediate sessions never create usage records', async () => {
+test('an unavailable replacement preserves the admitted call and its usage record', async () => {
   const { create } = setup();
   const usage = { started: jest.fn(), ended: jest.fn() };
   const manager = new VoiceSessionManager(create, usage);
   manager.start({ kind: 'Agent', target }, () => true);
   manager.start({ kind: 'Agent', target: { ...target, tabId: 'cloud' } }, () => true, { ...defaults, provider: 'openai' });
   await flush();
-  expect(usage.started).not.toHaveBeenCalled();
+  expect(usage.started).toHaveBeenCalledTimes(1);
+  await manager.hangup();
 });
 
 test('failed accounting never blocks local audio startup or cleanup', async () => {
@@ -406,7 +407,7 @@ test('agent-bound Live calls use the cloud adapter, preserve the Live voice and 
   const manager = new VoiceSessionManager(local, undefined, cloud);
   const call = manager.start({ kind: 'Agent', target }, () => true, { ...defaults, provider: 'openai', mode: 'Live', liveVoice: 'quartz' });
   await flush();
-  expect(cloud).toHaveBeenCalledWith(target, call.settings, expect.any(Function), call.startedMonotonic);
+  expect(cloud).toHaveBeenCalledWith(target, call.settings, expect.any(Function), call.startedMonotonic, undefined, call.id);
   expect(call.mode).toBe('Live');
   expect(call.settings.liveVoice).toBe('quartz');
   expect(adapter.start).toHaveBeenCalledTimes(1);

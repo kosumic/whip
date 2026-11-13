@@ -34,6 +34,7 @@ import {
   type UniffiVTableCallbackInterfaceWhipSshTerminalSubmissionPlatform,
   type UniffiVTableCallbackInterfaceWhipSshTranscriptCacheListener,
   type UniffiVTableCallbackInterfaceWhipSshVoiceChatObserver,
+  type UniffiVTableCallbackInterfaceWhipSshVoiceSessionObserver,
   type UniffiVTableCallbackInterfaceWhipSshWhipAppControl,
   type UniffiVTableCallbackInterfaceWhipSshWhipSshEventSink,
 } from './whip_ssh-ffi';
@@ -3372,6 +3373,19 @@ export function useJavascriptTerminalDelivery(generation: bigint): void {
       );
     },
     /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
+export function voiceSessionCoordinator(): VoiceSessionCoordinatorLike {
+  return FfiConverterTypeVoiceSessionCoordinator.lift(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_voice_session_coordinator(
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
   );
 }
 
@@ -40744,6 +40758,127 @@ const FfiConverterTypeVoiceChatError = (() => {
   return new FFIConverter();
 })();
 
+// Error type: VoiceSessionError
+export enum VoiceSessionError_Tags {
+  InvalidCommand = 'InvalidCommand',
+  Cancelled = 'Cancelled',
+}
+export const VoiceSessionError = (() => {
+  type InvalidCommand__interface = {
+    tag: VoiceSessionError_Tags.InvalidCommand;
+  };
+  class InvalidCommand_
+    extends UniffiError
+    implements InvalidCommand__interface
+  {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'VoiceSessionError';
+    readonly tag = VoiceSessionError_Tags.InvalidCommand;
+    constructor() {
+      super('VoiceSessionError', 'InvalidCommand');
+    }
+
+    static new(): InvalidCommand_ {
+      return new InvalidCommand_();
+    }
+
+    static instanceOf(obj: any): obj is InvalidCommand_ {
+      return obj.tag === VoiceSessionError_Tags.InvalidCommand;
+    }
+    static hasInner(obj: any): obj is InvalidCommand_ {
+      return false;
+    }
+  }
+
+  type Cancelled__interface = {
+    tag: VoiceSessionError_Tags.Cancelled;
+  };
+  class Cancelled_ extends UniffiError implements Cancelled__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'VoiceSessionError';
+    readonly tag = VoiceSessionError_Tags.Cancelled;
+    constructor() {
+      super('VoiceSessionError', 'Cancelled');
+    }
+
+    static new(): Cancelled_ {
+      return new Cancelled_();
+    }
+
+    static instanceOf(obj: any): obj is Cancelled_ {
+      return obj.tag === VoiceSessionError_Tags.Cancelled;
+    }
+    static hasInner(obj: any): obj is Cancelled_ {
+      return false;
+    }
+  }
+
+  function instanceOf(obj: any): obj is VoiceSessionError {
+    return obj[uniffiTypeNameSymbol] === 'VoiceSessionError';
+  }
+
+  return Object.freeze({
+    instanceOf,
+    InvalidCommand: InvalidCommand_,
+    Cancelled: Cancelled_,
+  });
+})();
+export type VoiceSessionError = InstanceType<
+  (typeof VoiceSessionError)['InvalidCommand' | 'Cancelled']
+>;
+
+// FfiConverter for enum VoiceSessionError
+const FfiConverterTypeVoiceSessionError = (() => {
+  const ordinalConverter = FfiConverterInt32;
+  type TypeName = VoiceSessionError;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      switch (ordinalConverter.read(from)) {
+        case 1:
+          return new VoiceSessionError.InvalidCommand();
+        case 2:
+          return new VoiceSessionError.Cancelled();
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      switch (value.tag) {
+        case VoiceSessionError_Tags.InvalidCommand: {
+          ordinalConverter.write(1, into);
+          return;
+        }
+        case VoiceSessionError_Tags.Cancelled: {
+          ordinalConverter.write(2, into);
+          return;
+        }
+        default:
+          // Throwing from here means that VoiceSessionError_Tags hasn't matched an ordinal.
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+    allocationSize(value: TypeName): number {
+      switch (value.tag) {
+        case VoiceSessionError_Tags.InvalidCommand: {
+          return ordinalConverter.allocationSize(1);
+        }
+        case VoiceSessionError_Tags.Cancelled: {
+          return ordinalConverter.allocationSize(2);
+        }
+        default:
+          throw new UniffiInternalError.UnexpectedEnumCase();
+      }
+    }
+  }
+  return new FFIConverter();
+})();
+
 export interface AgentChatRowsLike {
   dispose(): void;
   /**
@@ -62590,6 +62725,657 @@ const FfiConverterTypeVoiceChat = new FfiConverterObject(
   uniffiTypeVoiceChatObjectFactory,
 );
 
+export interface VoiceSessionObserver {
+  changed(): void;
+}
+
+export class VoiceSessionObserverImpl
+  extends UniffiAbstractObject
+  implements VoiceSessionObserver
+{
+  readonly [uniffiTypeNameSymbol] = 'VoiceSessionObserverImpl';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeVoiceSessionObserverImplObjectFactory.bless(pointer);
+  }
+
+  changed(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicesessionobserver_changed(
+          uniffiTypeVoiceSessionObserverImplObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeVoiceSessionObserverImplObjectFactory.pointer(this);
+      uniffiTypeVoiceSessionObserverImplObjectFactory.freePointer(pointer);
+      uniffiTypeVoiceSessionObserverImplObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is VoiceSessionObserverImpl {
+    return uniffiTypeVoiceSessionObserverImplObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeVoiceSessionObserverImplObjectFactory: UniffiObjectFactory<VoiceSessionObserver> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): VoiceSessionObserver {
+        const instance = Object.create(VoiceSessionObserverImpl.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'VoiceSessionObserverImpl';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_voicesessionobserver_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: VoiceSessionObserver): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: VoiceSessionObserver): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_voicesessionobserver(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_voicesessionobserver(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is VoiceSessionObserver {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'VoiceSessionObserverImpl'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeVoiceSessionObserver =
+  new FfiConverterObjectWithCallbacks(
+    uniffiTypeVoiceSessionObserverImplObjectFactory,
+  );
+
+// Add a vtable for the callbacks that go in VoiceSessionObserver.
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+const uniffiCallbackInterfaceVoiceSessionObserver: {
+  vtable: any;
+  register: () => void;
+} = {
+  // Create the VTable using a series of closures.
+  // ts automatically converts these into C callback functions.
+  vtable: {
+    changed: (uniffiHandle: bigint) => {
+      const uniffiMakeCall = (): void => {
+        try {
+          const jsCallback =
+            FfiConverterTypeVoiceSessionObserver.lift(uniffiHandle);
+          return jsCallback.changed();
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+        }
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    uniffi_free: (uniffiHandle: UniffiHandle): void => {
+      // this will throw a stale handle error if the handle isn't found.
+      FfiConverterTypeVoiceSessionObserver.drop(uniffiHandle);
+    },
+    uniffi_clone: (uniffiHandle: UniffiHandle): UniffiHandle => {
+      return FfiConverterTypeVoiceSessionObserver.clone(uniffiHandle);
+    },
+  },
+  register: () => {
+    nativeModule().ubrn_uniffi_whip_ssh_fn_init_callback_vtable_voicesessionobserver(
+      uniffiCallbackInterfaceVoiceSessionObserver.vtable,
+    );
+  },
+};
+
+export interface VoiceSessionCoordinatorLike {
+  acknowledge(id: string, event: string) /*throws*/ : void;
+  activeId(): string | undefined;
+  /**
+   * A Local backend can only attach while its generation holds startup admission.
+   */
+  bindLocal(id: string, call: VoiceChatLike, source: string) /*throws*/ : void;
+  end(id: string, error: string | undefined): void;
+  isCurrent(id: string): boolean;
+  /**
+   * One outstanding observation per call; coalesce backend changes at 10 Hz.
+   * Timeout is a liveness bound, not a JS status-poll interval. No PCM crosses.
+   */
+  nextRealtimeView(
+    id: string,
+    revision: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<string>;
+  phase(id: string): string;
+  realtimeSnapshot(
+    id: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<string>;
+  request(request: string) /*throws*/ : string;
+  retainHosts(hosts: Array<string>): void;
+  sameTarget(left: string, right: string) /*throws*/ : boolean;
+  setLocked(locked: boolean): void;
+  setObserver(observer: VoiceSessionObserver): void;
+  /**
+   * Typed context is admitted and bounded even before permission or media startup.
+   */
+  submitContext(id: string, text: string) /*throws*/ : void;
+  takeEffects() /*throws*/ : string;
+}
+/**
+ * @deprecated Use `VoiceSessionCoordinatorLike` instead.
+ */
+export type VoiceSessionCoordinatorInterface = VoiceSessionCoordinatorLike;
+
+export class VoiceSessionCoordinator
+  extends UniffiAbstractObject
+  implements VoiceSessionCoordinatorLike
+{
+  readonly [uniffiTypeNameSymbol] = 'VoiceSessionCoordinator';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeVoiceSessionCoordinatorObjectFactory.bless(pointer);
+  }
+
+  acknowledge(id: string, event: string): void /*throws*/ {
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeVoiceSessionError.lift.bind(
+        FfiConverterTypeVoiceSessionError,
+      ),
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicesessioncoordinator_acknowledge(
+          uniffiTypeVoiceSessionCoordinatorObjectFactory.clonePointer(this),
+          FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(event, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  activeId(): string | undefined {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterOptionalString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicesessioncoordinator_active_id(
+            uniffiTypeVoiceSessionCoordinatorObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  /**
+   * A Local backend can only attach while its generation holds startup admission.
+   */
+  bindLocal(id: string, call: VoiceChatLike, source: string): void /*throws*/ {
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeVoiceSessionError.lift.bind(
+        FfiConverterTypeVoiceSessionError,
+      ),
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicesessioncoordinator_bind_local(
+          uniffiTypeVoiceSessionCoordinatorObjectFactory.clonePointer(this),
+          FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
+          FfiConverterTypeVoiceChat.lower(
+            call,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterString.lower(source, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  end(id: string, error: string | undefined): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicesessioncoordinator_end(
+          uniffiTypeVoiceSessionCoordinatorObjectFactory.clonePointer(this),
+          FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
+          FfiConverterOptionalString.lower(
+            error,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  isCurrent(id: string): boolean {
+    return FfiConverterBool.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicesessioncoordinator_is_current(
+            uniffiTypeVoiceSessionCoordinatorObjectFactory.clonePointer(this),
+            FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  /**
+   * One outstanding observation per call; coalesce backend changes at 10 Hz.
+   * Timeout is a liveness bound, not a JS status-poll interval. No PCM crosses.
+   */
+  async nextRealtimeView(
+    id: string,
+    revision: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<string> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicesessioncoordinator_next_realtime_view(
+            uniffiTypeVoiceSessionCoordinatorObjectFactory.clonePointer(this),
+            FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
+            FfiConverterString.lower(revision, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterString.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeVoiceSessionError.lift.bind(
+          FfiConverterTypeVoiceSessionError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  phase(id: string): string {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicesessioncoordinator_phase(
+            uniffiTypeVoiceSessionCoordinatorObjectFactory.clonePointer(this),
+            FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  async realtimeSnapshot(
+    id: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<string> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicesessioncoordinator_realtime_snapshot(
+            uniffiTypeVoiceSessionCoordinatorObjectFactory.clonePointer(this),
+            FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ (__rb: Uint8Array) => {
+          try {
+            return FfiConverterString.lift(__rb);
+          } finally {
+            nativeModule().rustbuffer_free(__rb);
+          }
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeVoiceSessionError.lift.bind(
+          FfiConverterTypeVoiceSessionError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  request(request: string): string /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeVoiceSessionError.lift.bind(
+          FfiConverterTypeVoiceSessionError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicesessioncoordinator_request(
+            uniffiTypeVoiceSessionCoordinatorObjectFactory.clonePointer(this),
+            FfiConverterString.lower(request, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  retainHosts(hosts: Array<string>): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicesessioncoordinator_retain_hosts(
+          uniffiTypeVoiceSessionCoordinatorObjectFactory.clonePointer(this),
+          FfiConverterSequenceString.lower(
+            hosts,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  sameTarget(left: string, right: string): boolean /*throws*/ {
+    return FfiConverterBool.lift(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeVoiceSessionError.lift.bind(
+          FfiConverterTypeVoiceSessionError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicesessioncoordinator_same_target(
+            uniffiTypeVoiceSessionCoordinatorObjectFactory.clonePointer(this),
+            FfiConverterString.lower(left, nativeModule().rustbuffer_alloc),
+            FfiConverterString.lower(right, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  setLocked(locked: boolean): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicesessioncoordinator_set_locked(
+          uniffiTypeVoiceSessionCoordinatorObjectFactory.clonePointer(this),
+          FfiConverterBool.lower(locked, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  setObserver(observer: VoiceSessionObserver): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicesessioncoordinator_set_observer(
+          uniffiTypeVoiceSessionCoordinatorObjectFactory.clonePointer(this),
+          FfiConverterTypeVoiceSessionObserver.lower(
+            observer,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  /**
+   * Typed context is admitted and bounded even before permission or media startup.
+   */
+  submitContext(id: string, text: string): void /*throws*/ {
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeVoiceSessionError.lift.bind(
+        FfiConverterTypeVoiceSessionError,
+      ),
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicesessioncoordinator_submit_context(
+          uniffiTypeVoiceSessionCoordinatorObjectFactory.clonePointer(this),
+          FfiConverterString.lower(id, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(text, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  takeEffects(): string /*throws*/ {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCallWithError(
+        /*liftError:*/ FfiConverterTypeVoiceSessionError.lift.bind(
+          FfiConverterTypeVoiceSessionError,
+        ),
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicesessioncoordinator_take_effects(
+            uniffiTypeVoiceSessionCoordinatorObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeVoiceSessionCoordinatorObjectFactory.pointer(this);
+      uniffiTypeVoiceSessionCoordinatorObjectFactory.freePointer(pointer);
+      uniffiTypeVoiceSessionCoordinatorObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is VoiceSessionCoordinator {
+    return uniffiTypeVoiceSessionCoordinatorObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeVoiceSessionCoordinatorObjectFactory: UniffiObjectFactory<VoiceSessionCoordinatorLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): VoiceSessionCoordinatorLike {
+        const instance = Object.create(VoiceSessionCoordinator.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'VoiceSessionCoordinator';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_voicesessioncoordinator_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: VoiceSessionCoordinatorLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: VoiceSessionCoordinatorLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_voicesessioncoordinator(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_voicesessioncoordinator(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is VoiceSessionCoordinatorLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'VoiceSessionCoordinator'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeVoiceSessionCoordinator = new FfiConverterObject(
+  uniffiTypeVoiceSessionCoordinatorObjectFactory,
+);
+
 export interface WhipToolPermitLike {
   callId(): string;
   checkActive(): boolean;
@@ -64848,6 +65634,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_use_javascript_terminal_delivery',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_voice_session_coordinator() !==
+    8865
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_voice_session_coordinator',
     );
   }
   if (
@@ -68201,6 +68995,134 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicesessioncoordinator_acknowledge() !==
+    61471
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicesessioncoordinator_acknowledge',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicesessioncoordinator_active_id() !==
+    16595
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicesessioncoordinator_active_id',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicesessioncoordinator_bind_local() !==
+    50647
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicesessioncoordinator_bind_local',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicesessioncoordinator_end() !==
+    44144
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicesessioncoordinator_end',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicesessioncoordinator_is_current() !==
+    62574
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicesessioncoordinator_is_current',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicesessioncoordinator_next_realtime_view() !==
+    14961
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicesessioncoordinator_next_realtime_view',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicesessioncoordinator_phase() !==
+    47153
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicesessioncoordinator_phase',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicesessioncoordinator_realtime_snapshot() !==
+    59608
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicesessioncoordinator_realtime_snapshot',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicesessioncoordinator_request() !==
+    42879
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicesessioncoordinator_request',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicesessioncoordinator_retain_hosts() !==
+    59968
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicesessioncoordinator_retain_hosts',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicesessioncoordinator_same_target() !==
+    59858
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicesessioncoordinator_same_target',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicesessioncoordinator_set_locked() !==
+    6738
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicesessioncoordinator_set_locked',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicesessioncoordinator_set_observer() !==
+    5645
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicesessioncoordinator_set_observer',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicesessioncoordinator_submit_context() !==
+    56153
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicesessioncoordinator_submit_context',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicesessioncoordinator_take_effects() !==
+    40841
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicesessioncoordinator_take_effects',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicesessionobserver_changed() !==
+    7484
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicesessionobserver_changed',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_whipappcontrol_execute() !==
     50875
   ) {
@@ -68275,6 +69197,7 @@ function uniffiEnsureInitialized() {
   uniffiCallbackInterfaceTerminalSubmissionPlatform.register();
   uniffiCallbackInterfaceTranscriptCacheListener.register();
   uniffiCallbackInterfaceVoiceChatObserver.register();
+  uniffiCallbackInterfaceVoiceSessionObserver.register();
   uniffiCallbackInterfaceWhipAppControl.register();
   uniffiCallbackInterfaceWhipSshEventSink.register();
 }
@@ -68649,6 +69572,9 @@ export default Object.freeze({
     FfiConverterTypeVoiceChatPhase,
     FfiConverterTypeVoiceChatTranscriptTurn,
     FfiConverterTypeVoiceChatView,
+    FfiConverterTypeVoiceSessionCoordinator,
+    FfiConverterTypeVoiceSessionError,
+    FfiConverterTypeVoiceSessionObserver,
     FfiConverterTypeWhipAppControl,
     FfiConverterTypeWhipSshEventSink,
     FfiConverterTypeWhipToolPermit,

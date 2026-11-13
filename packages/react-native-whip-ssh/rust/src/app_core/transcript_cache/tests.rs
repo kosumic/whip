@@ -599,3 +599,56 @@ fn a_new_bridge_adopts_residents_before_its_app_core_finishes_restoring() {
             .is_empty()
     );
 }
+
+#[test]
+fn voice_owned_transcript_survives_ui_eviction_and_is_released_when_the_call_ends()
+-> Result<(), Box<dyn std::error::Error>> {
+    let _guard = crate::host_runtime::terminal_delivery_test_guard();
+    for mode in ["TurnBased", "Realtime", "Live"] {
+        let cache = cache();
+        let owner = cache.claim_owner();
+        let (host, _) = host(&format!("cache-native-voice-{mode}"), 6);
+        let call = crate::VoiceSessionCoordinator::default();
+        let admitted: serde_json::Value = serde_json::from_str(&call.request(serde_json::json!({
+            "scope":{"kind":"Agent","hostId":host.id,"tabId":"tab","paneId":"pane-5","agent":"opencode","source":{
+                "runtimeId":host.id,"incarnation":host.runtime.runtime_incarnation().to_string(),
+                "terminalId":"terminal-5","paneId":"pane-5","agent":"opencode","targetKey":"voice-target"
+            }},"mode":mode,"available":true
+        }).to_string())?)?;
+        let id = admitted["id"].as_str().ok_or("missing call ID")?.to_owned();
+        assert!(admitted["error"].is_null());
+        // No Chat View/foreground/subscription pin exists for terminal-5.
+        let retained = reconcile(
+            &cache,
+            owner,
+            std::slice::from_ref(&host),
+            &[(&host.id, 0), (&host.id, 1), (&host.id, 2)],
+            3,
+        );
+        assert_eq!(
+            terminals(&retained),
+            vec![
+                (host.id.as_str(), "terminal-0"),
+                (host.id.as_str(), "terminal-1"),
+                (host.id.as_str(), "terminal-5")
+            ]
+        );
+        call.end(id, None);
+        let released = reconcile(
+            &cache,
+            owner,
+            std::slice::from_ref(&host),
+            &[(&host.id, 0), (&host.id, 1), (&host.id, 2)],
+            3,
+        );
+        assert_eq!(
+            terminals(&released),
+            vec![
+                (host.id.as_str(), "terminal-0"),
+                (host.id.as_str(), "terminal-1"),
+                (host.id.as_str(), "terminal-2")
+            ]
+        );
+    }
+    Ok(())
+}

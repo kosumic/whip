@@ -1,3 +1,4 @@
+import { MockVoiceSessions } from '../test-support/mockVoiceSessions';
 import { onOpenAiVoiceCredentialChange } from '../src/services/openAiVoiceCredentials';
 import { RealtimeVoiceConversation } from '../src/services/realtimeVoiceConversation';
 import { DEFAULT_VOICE_CONVERSATION_SETTINGS as defaults } from '../src/lib/voiceConversationSettings';
@@ -15,6 +16,22 @@ let mockTranscript: (state: AgentChatState | null) => void;
 const mockRelease = jest.fn();
 const mockUnsubscribe = jest.fn();
 const mockInput = { reserve: jest.fn(() => true), releaseReservation: jest.fn() };
+let mockRevision = 0;
+const mockWaiting = new Map<string, { resolve(value: string): void; reject(error: unknown): void }>();
+const observation = (view: unknown, ended = false) => JSON.stringify({ revision: String(++mockRevision), view, ended });
+let mockAuthority: MockVoiceSessions & { realtimeSnapshot: jest.Mock; nextRealtimeView: jest.Mock };
+jest.mock('react-native-whip-ssh/src/voiceSession', () => ({
+  nativeVoiceSessions: () => mockAuthority,
+  voiceSourceIdentity: (source: { incarnation: bigint }) => ({ ...source, incarnation: source.incarnation.toString(), queue: undefined }),
+}));
+async function notify() {
+  for (const [token, pending] of [...mockWaiting]) {
+    mockWaiting.delete(token);
+    try { pending.resolve(observation(JSON.parse(await mockNative.realtimeVoiceView()))); }
+    catch (error) { pending.reject(error); }
+  }
+  await flush();
+}
 const mockNative = {
   playVoiceCallSound: jest.fn((_uri: string, _inCall: boolean) => Promise.resolve()),
   stopVoiceCallSound: jest.fn(() => Promise.resolve()),
@@ -56,7 +73,7 @@ test.each(['Realtime', 'Live'] as const)('resuming %s starts a fresh provider ca
   await call.start();
   const [, raw] = mockNative.startRealtimeVoice.mock.calls[0] as unknown as [string, string];
   expect(JSON.parse(raw)).toEqual(expect.objectContaining({ resumeCallId: 'archived-call', global: true, voice: mode === 'Live' ? defaults.liveVoice : defaults.realtimeVoice }));
-  expect(mockNative.realtimeVoiceSubmitted).not.toHaveBeenCalled();
+  expect(mockAuthority.submitContext).not.toHaveBeenCalled();
   await call.close();
 });
 
@@ -66,9 +83,9 @@ test('failed resume startup reports an error and releases the call', async () =>
   const call = new RealtimeVoiceConversation({ global: true, label: 'Global call' }, { ...defaults, provider: 'openai' }, changed, performance.now(), 'deleted-call');
   await call.start();
   await call.close();
-  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'error', error: expect.stringContaining('could not be resumed') }));
+  expect(changed.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({ phase: 'error', error: expect.stringContaining('could not be resumed') }));
   expect(mockNative.endVoiceCall).toHaveBeenCalledTimes(1);
-  expect(mockNative.realtimeVoiceSubmitted).not.toHaveBeenCalled();
+  expect(mockAuthority.submitContext).not.toHaveBeenCalled();
 });
 
 test.each(['Realtime', 'Live'] as const)('%s native recovery publishes status without opening a second phone call, microphone or replaying input', async mode => {
@@ -79,14 +96,14 @@ test.each(['Realtime', 'Live'] as const)('%s native recovery publishes status wi
   for (let sessions = 1; sessions <= 2; sessions++) {
     const continuity = { status: 'reconnecting', lastReason: 'connection_lost', sessions, retryCount: 1, replacements: sessions, attempts: [] };
     mockNative.realtimeVoiceView.mockResolvedValueOnce(JSON.stringify({ phase: 'reconnecting', continuity }));
-    await jest.advanceTimersByTimeAsync(100);
+    await notify();
     expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'reconnecting', continuity }));
     call.submitted('Do not queue this unfinished prompt');
-    await jest.advanceTimersByTimeAsync(100);
+    await notify();
   }
   expect(mockNative.startVoiceCall).toHaveBeenCalledTimes(1);
   expect(mockNative.startRealtimeVoice).toHaveBeenCalledTimes(1);
-  expect(mockNative.realtimeVoiceSubmitted).not.toHaveBeenCalled();
+  expect(mockAuthority.submitContext).toHaveBeenCalledTimes(2);
   expect(mockNative.stopRealtimeVoice).not.toHaveBeenCalled();
   await call.close();
   const count = changed.mock.calls.length;
@@ -106,7 +123,7 @@ test.each(['Realtime', 'Live'] as const)('global %s starts without a transcript 
   expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'listening', transcript: null }));
   call.submitted('List my saved hosts');
   await flush();
-  expect(mockNative.realtimeVoiceSubmitted).toHaveBeenCalledWith(token, 'List my saved hosts');
+  expect(mockAuthority.submitContext).toHaveBeenCalledWith(token, 'List my saved hosts');
   await call.close();
 });
 
@@ -130,7 +147,7 @@ test('starts a terminal call without an agent binding and shares typed input as 
   expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'listening', transcript: null }));
   call.submitted('Already typed into the selected terminal');
   await flush();
-  expect(mockNative.realtimeVoiceSubmitted).toHaveBeenCalledWith(token, 'Already typed into the selected terminal');
+  expect(mockAuthority.submitContext).toHaveBeenCalledWith(token, 'Already typed into the selected terminal');
   await call.close();
 });
 function setup() {
@@ -143,14 +160,23 @@ test('a status-read failure retains the known voice estimate and marks it incomp
   const { call, changed } = setup();
   await call.start();
   mockNative.realtimeVoiceView.mockRejectedValueOnce(new Error('status read failed'));
-  jest.advanceTimersByTime(100);
-  await flush();
+  await notify();
   expect(changed).toHaveBeenCalledWith(expect.objectContaining({
     phase: 'error', estimatedUsd: 0.0123, costIncomplete: true,
   }));
   await call.close();
 });
-beforeEach(() => { jest.useFakeTimers(); jest.clearAllMocks(); mockEvents.clear(); mockApp.currentState = 'active'; mockOs = 'android'; });
+beforeEach(() => {
+  jest.useFakeTimers(); jest.clearAllMocks(); mockEvents.clear(); mockWaiting.clear(); mockApp.currentState = 'active'; mockOs = 'android';
+  mockAuthority = Object.assign(new MockVoiceSessions(), {
+    realtimeSnapshot: jest.fn(async () => observation(JSON.parse(await mockNative.realtimeVoiceView()))),
+    nextRealtimeView: jest.fn((token: string) => new Promise<string>((resolve, reject) => { mockWaiting.set(token, { resolve, reject }); })),
+  });
+  mockNative.stopRealtimeVoice.mockImplementation(async () => {
+    for (const pending of mockWaiting.values()) pending.resolve(observation(null, true));
+    mockWaiting.clear();
+  });
+});
 afterEach(() => jest.useRealTimers());
 
 test('plays the ready piano once when native Realtime becomes ready for input', async () => {
@@ -158,7 +184,7 @@ test('plays the ready piano once when native Realtime becomes ready for input', 
   const { call } = setup();
   await call.start();
   expect(mockNative.playVoiceCallSound).not.toHaveBeenCalled();
-  await jest.advanceTimersByTimeAsync(300);
+  await notify();
   expect(mockNative.playVoiceCallSound.mock.calls).toEqual([['file:///ready.mp3', true]]);
   await call.close();
 });
@@ -200,7 +226,7 @@ test('stops the ready piano when Realtime starts replying and does not replay it
   const { call } = setup();
   await call.start();
   mockNative.realtimeVoiceView.mockResolvedValueOnce(JSON.stringify({ phase: 'speaking' }));
-  await jest.advanceTimersByTimeAsync(100);
+  await notify();
   expect(mockNative.stopVoiceCallSound).toHaveBeenCalledTimes(1);
   finished();
   await jest.advanceTimersByTimeAsync(200);
@@ -237,26 +263,26 @@ test('shares typed composer submissions with the active voice session and stops 
   const token = (mockNative.startRealtimeVoice.mock.calls[0] as unknown as [string])[0];
   call.submitted('Please also check 日本語 captions 👋');
   await flush();
-  expect(mockNative.realtimeVoiceSubmitted).toHaveBeenCalledWith(token, 'Please also check 日本語 captions 👋');
-  expect(mockNative.realtimeVoiceSubmitted).toHaveBeenCalledTimes(1);
+  expect(mockAuthority.submitContext).toHaveBeenCalledWith(token, 'Please also check 日本語 captions 👋');
+  expect(mockAuthority.submitContext).toHaveBeenCalledTimes(1);
   call.submitted('   ');
   await call.close();
   call.submitted('After hangup');
-  expect(mockNative.realtimeVoiceSubmitted).toHaveBeenCalledTimes(1);
+  expect(mockAuthority.submitContext).toHaveBeenCalledTimes(1);
 });
 
 test('reports context sharing failure without retrying a composer submission', async () => {
-  mockNative.realtimeVoiceSubmitted.mockRejectedValueOnce(new Error('native error'));
+  mockAuthority.submitContext.mockImplementationOnce(() => { throw new Error('native error'); });
   const { call, changed } = setup();
   await call.start();
   call.submitted('Already sent to the coding agent');
   await flush();
-  expect(mockNative.realtimeVoiceSubmitted).toHaveBeenCalledTimes(1);
-  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'error', error: 'The typed message could not be shared with voice. Start a new call.' }));
+  expect(mockAuthority.submitContext).toHaveBeenCalledTimes(1);
+  expect(changed.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({ phase: 'error', error: 'The typed message could not be shared with voice. Start a new call.' }));
   await call.close();
 });
 
-test('holds typed context during native startup and flushes it in order', async () => {
+test('hands early typed context to Rust in order while native startup is pending', async () => {
   let ready!: () => void;
   mockNative.startRealtimeVoice.mockImplementationOnce(() => new Promise<void>(resolve => { ready = resolve; }));
   const { call } = setup();
@@ -264,10 +290,10 @@ test('holds typed context during native startup and flushes it in order', async 
   call.submitted('First typed message');
   await flush();
   call.submitted('Second typed message');
-  expect(mockNative.realtimeVoiceSubmitted).not.toHaveBeenCalled();
+  expect(mockAuthority.submitContext.mock.calls.map(([, text]) => text)).toEqual(['First typed message', 'Second typed message']);
   ready();
   await starting;
-  expect(mockNative.realtimeVoiceSubmitted.mock.calls.map(([, text]) => text)).toEqual(['First typed message', 'Second typed message']);
+  expect(mockAuthority.submitContext.mock.calls.map(([, text]) => text)).toEqual(['First typed message', 'Second typed message']);
   await call.close();
 });
 
@@ -312,7 +338,7 @@ test('background presentation retains native ownership and system hangup closes 
   const token = (mockNative.startVoiceCall.mock.calls[0] as unknown as [string])[0];
   mockEvents.get('WhipVoiceCall')?.({ token, type: 'ended' });
   await flush();
-  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'closed' }));
+  expect(changed.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({ phase: 'closed' }));
   expect(mockRelease).toHaveBeenCalled();
   await call.close();
 });
@@ -333,7 +359,7 @@ describe.each(['android', 'ios'])('%s native bridge lifecycle', os => {
     unsubscribe();
     mockApp.currentState = 'background';
     mockNative.realtimeVoiceView.mockResolvedValueOnce(JSON.stringify({ phase: 'muted', muted: true }));
-    await jest.advanceTimersByTimeAsync(100);
+    await notify();
     expect(manager.start(scope, () => false)).toBe(session);
     const nextScreen = jest.fn();
     session.subscribe(nextScreen);
@@ -405,19 +431,19 @@ test('backgrounding during microphone authorization cannot start a new call', as
   expect(mockNative.startVoiceCall).not.toHaveBeenCalled();
   expect(mockNative.startRealtimeVoice).not.toHaveBeenCalled();
   expect(mockNative.playVoiceCallSound).not.toHaveBeenCalled();
-  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'error' }));
+  expect(changed.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({ phase: 'error' }));
   expect(mockInput.releaseReservation).toHaveBeenCalled();
 });
 
-test('disconnect and binding replacement stop media and reject late status callbacks', async () => {
-  const { call, changed } = setup();
+test('presentation loss and binding reattachment defer validity to the native pin', async () => {
+  const { call } = setup();
   await call.start();
   mockTranscript(null);
+  call.setTranscriptBinding('replacement-presentation');
   await flush();
-  const count = changed.mock.calls.length;
-  call.setTranscriptBinding('replacement');
-  await jest.advanceTimersByTimeAsync(200);
-  expect(changed).toHaveBeenCalledTimes(count);
+  expect(mockNative.stopRealtimeVoice).not.toHaveBeenCalled();
+  mockNative.realtimeVoiceView.mockResolvedValueOnce(JSON.stringify({ phase: 'error', error: 'The bound agent disconnected or changed. Please call again.' }));
+  await notify();
   expect(mockNative.stopRealtimeVoice).toHaveBeenCalled();
   await call.close();
 });
@@ -443,7 +469,7 @@ test('hangup drains a pending native startup and stops its late completion', asy
   expect(mockNative.stopRealtimeVoice).toHaveBeenCalled();
   ready();
   await starting; await closing;
-  expect(mockNative.realtimeVoiceView).not.toHaveBeenCalled();
+  expect(mockAuthority.nextRealtimeView).not.toHaveBeenCalled();
   expect(JSON.stringify(changed.mock.calls)).not.toContain('sk-private-test');
   expect(mockNative.endVoiceCall).toHaveBeenCalledTimes(1);
 });
@@ -452,7 +478,7 @@ test('native errors never surface method arguments or credentials', async () => 
   mockNative.startRealtimeVoice.mockRejectedValueOnce(new Error('startRealtimeVoice sk-private-test raw response'));
   const { call, changed } = setup();
   await call.start(); await call.close();
-  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'error' }));
+  expect(changed.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({ phase: 'error' }));
   expect(JSON.stringify(changed.mock.calls)).not.toContain('sk-private-test');
 });
 
@@ -499,6 +525,28 @@ test('Live starts the independent native protocol with its selected voice and ag
   expect(config.vad).toBeUndefined();
   call.submitted('Already submitted through the composer');
   await flush();
-  expect(mockNative.realtimeVoiceSubmitted).toHaveBeenCalledWith(expect.any(String), 'Already submitted through the composer');
+  expect(mockAuthority.submitContext).toHaveBeenCalledWith(expect.any(String), 'Already submitted through the composer');
   await call.close();
+});
+
+test('keeps one outstanding native observation without a JavaScript status timer', async () => {
+  const { call } = setup();
+  await call.start();
+  await jest.advanceTimersByTimeAsync(10_000);
+  expect(mockAuthority.nextRealtimeView).toHaveBeenCalledTimes(1);
+  expect(mockAuthority.realtimeSnapshot).toHaveBeenCalledTimes(1);
+  await notify();
+  expect(mockAuthority.nextRealtimeView).toHaveBeenCalledTimes(2);
+  await call.close();
+  const count = mockAuthority.nextRealtimeView.mock.calls.length;
+  await jest.advanceTimersByTimeAsync(10_000);
+  expect(mockAuthority.nextRealtimeView).toHaveBeenCalledTimes(count);
+});
+
+test('publishes the finalized native usage snapshot before closing completes', async () => {
+  const { call, changed } = setup();
+  await call.start();
+  mockAuthority.realtimeSnapshot.mockResolvedValueOnce(observation({ phase: 'closed', inputTokens: 9, outputTokens: 12, estimatedUsd: 0.5, usageFinalized: true }, true));
+  await call.close();
+  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'closed', inputTokens: 9, outputTokens: 12, estimatedUsd: 0.5, usageFinalized: true }), true);
 });

@@ -1,5 +1,5 @@
 diff --git a/node_modules/expo-speech-recognition/android/src/main/java/expo/modules/speechrecognition/ExpoAudioRecorder.kt b/node_modules/expo-speech-recognition/android/src/main/java/expo/modules/speechrecognition/ExpoAudioRecorder.kt
-index ae17503e..ae9510e9 100644
+index ae17503e..096cfc53 100644
 --- a/node_modules/expo-speech-recognition/android/src/main/java/expo/modules/speechrecognition/ExpoAudioRecorder.kt
 +++ b/node_modules/expo-speech-recognition/android/src/main/java/expo/modules/speechrecognition/ExpoAudioRecorder.kt
 @@ -33,8 +33,12 @@ class ExpoAudioRecorder(
@@ -23,7 +23,7 @@ index ae17503e..ae9510e9 100644
          tempPcmFile = createTempPcmFile()
          try {
              val pipe = ParcelFileDescriptor.createPipe()
-@@ -63,13 +68,15 @@ class ExpoAudioRecorder(
+@@ -63,13 +68,17 @@ class ExpoAudioRecorder(
      private val bufferSizeInBytes = AudioRecord.getMinBufferSize(sampleRateInHz, channelConfig, audioFormat)
 
      private var recordingThread: Thread? = null
@@ -36,11 +36,13 @@ index ae17503e..ae9510e9 100644
 
      companion object {
 +        private const val MAX_INGRESS_BYTES = 16_384
++        private const val INGRESS_STALE = 1
++        private const val INGRESS_CLOSED = 3
 +        @JvmStatic private external fun whipCapturePcm(handle: Long, data: ByteArray, count: Int, sampleRate: Int, sequence: Long): Int
          private const val TAG = "ExpoAudioRecorder"
 
          private fun shortReverseBytes(s: Short): Int =
-@@ -138,7 +145,8 @@ class ExpoAudioRecorder(
+@@ -138,7 +147,8 @@ class ExpoAudioRecorder(
      @SuppressLint("MissingPermission")
      private fun createRecorder(): AudioRecord =
          AudioRecord(
@@ -50,7 +52,7 @@ index ae17503e..ae9510e9 100644
              sampleRateInHz,
              channelConfig,
              AudioFormat.ENCODING_PCM_16BIT,
-@@ -154,7 +162,20 @@ class ExpoAudioRecorder(
+@@ -154,7 +164,20 @@ class ExpoAudioRecorder(
                  return
              }
 
@@ -72,7 +74,7 @@ index ae17503e..ae9510e9 100644
              isRecordingAudio = true
 
              // Start thread
-@@ -167,8 +188,10 @@ class ExpoAudioRecorder(
+@@ -167,8 +190,10 @@ class ExpoAudioRecorder(
 
      override fun stop() {
          isRecordingAudio = false
@@ -84,7 +86,7 @@ index ae17503e..ae9510e9 100644
          audioRecorder?.release()
          audioRecorder = null
          recordingThread = null
-@@ -202,7 +225,9 @@ class ExpoAudioRecorder(
+@@ -202,7 +227,9 @@ class ExpoAudioRecorder(
 
      private fun streamAudioToPipe() {
          val tempFileOutputStream = FileOutputStream(tempPcmFile)
@@ -95,12 +97,17 @@ index ae17503e..ae9510e9 100644
 
          while (isRecordingAudio) {
              val recorder = audioRecorder ?: break
-@@ -218,6 +243,15 @@ class ExpoAudioRecorder(
+@@ -218,6 +245,20 @@ class ExpoAudioRecorder(
              when {
                  read > 0 -> {
                      try {
 +                        if (audioIngressHandle != 0L && isRecordingAudio) {
-+                            whipCapturePcm(audioIngressHandle, data, read, sampleRateInHz, captureSequence++)
++                            val ingress = whipCapturePcm(audioIngressHandle, data, read, sampleRateInHz, captureSequence++)
++                            // The Rust owner can revoke capture while JS is suspended.
++                            if (ingress == INGRESS_STALE || ingress == INGRESS_CLOSED) {
++                                stop()
++                                break
++                            }
 +                        } else if (onAudioChunk != null && isRecordingAudio) {
 +                            pending.write(data, 0, read)
 +                            if (pending.size() >= 4096) {
@@ -280,7 +287,7 @@ index 9dc90826..3d8f3266 100644
        return true
      }
 diff --git a/node_modules/expo-speech-recognition/ios/ExpoSpeechRecognizer.swift b/node_modules/expo-speech-recognition/ios/ExpoSpeechRecognizer.swift
-index b2784250..49f542b2 100644
+index b2784250..09cc4e86 100644
 --- a/node_modules/expo-speech-recognition/ios/ExpoSpeechRecognizer.swift
 +++ b/node_modules/expo-speech-recognition/ios/ExpoSpeechRecognizer.swift
 @@ -50,6 +50,7 @@ actor ExpoSpeechRecognizer: ObservableObject {
@@ -344,7 +351,7 @@ index b2784250..49f542b2 100644
      volumeChangeHandler: ((Float) -> Void)?
    ) throws {
      guard let audioBufferRequest = request as? SFSpeechAudioBufferRecognitionRequest else {
-@@ -669,6 +681,13 @@ actor ExpoSpeechRecognizer: ObservableObject {
+@@ -669,13 +681,62 @@ actor ExpoSpeechRecognizer: ObservableObject {
        // converter?.channelMap = [0]
      }
 
@@ -352,15 +359,18 @@ index b2784250..49f542b2 100644
 +    let ingress = UInt64(options.audioIngressHandle) ?? 0
 +    let needsPcm = options.audioChunkEvents || ingress != 0
 +    var captureSequence: UInt64 = 0
++    var ingressEnded = false
++    let ingressStale: UInt8 = 1, ingressClosed: UInt8 = 3
 +    let chunkConverter = needsPcm ? AVAudioConverter(from: audioFormat, to: chunkFormat) : nil
 +    let pendingChunks = NSMutableData()
 +    if needsPcm && chunkConverter == nil { throw RecognizerError.invalidAudioSource }
      mixerNode.installTap(
        onBus: 0,
        bufferSize: 1024,
-@@ -676,6 +695,36 @@ actor ExpoSpeechRecognizer: ObservableObject {
+       format: audioFormat
      ) {
        (buffer: AVAudioPCMBuffer, when: AVAudioTime) in
++      if ingressEnded { return }
        audioBufferRequest.append(buffer)
 +      if let chunkConverter = chunkConverter {
 +        let capacity = AVAudioFrameCount(ceil(Double(buffer.frameLength) * 16000 / audioFormat.sampleRate)) + 32
@@ -375,7 +385,16 @@ index b2784250..49f542b2 100644
 +            if ingress != 0 {
 +              if converted.frameLength > 0 {
 +                let bytes = UnsafeRawPointer(samples[0]).assumingMemoryBound(to: UInt8.self)
-+                _ = whip_audio_ingress_push_v1(ingress, bytes, Int(converted.frameLength) * 2, 16000, 1, captureSequence, 0)
++                let ingressStatus = whip_audio_ingress_push_v1(ingress, bytes, Int(converted.frameLength) * 2, 16000, 1, captureSequence, 0)
++                if ingressStatus == ingressStale || ingressStatus == ingressClosed {
++                  ingressEnded = true
++                  // Stop this captured engine only; a replacement owns a new one.
++                  DispatchQueue.main.async { [weak audioEngine] in
++                    audioBufferRequest.endAudio()
++                    audioEngine?.stop()
++                  }
++                  return
++                }
 +                captureSequence += 1
 +              }
 +            } else {
@@ -395,7 +414,7 @@ index b2784250..49f542b2 100644
 
        // Feature: Record to a file
        guard let audioFileRef = audioFileRef else {
-@@ -772,7 +821,7 @@ actor ExpoSpeechRecognizer: ObservableObject {
+@@ -772,7 +833,7 @@ actor ExpoSpeechRecognizer: ObservableObject {
        // App deactivation can emit a route change while the audio session is
        // being torn down. In that case we should stop recognition instead of
        // trying to reconnect the engine again.
@@ -404,7 +423,7 @@ index b2784250..49f542b2 100644
          emitError(.audioSessionInterrupted)
          stopListening()
          reset(andEmitEnd: true)
-@@ -819,6 +868,9 @@ actor ExpoSpeechRecognizer: ObservableObject {
+@@ -819,6 +880,9 @@ actor ExpoSpeechRecognizer: ObservableObject {
          options: options,
          request: request,
          audioFileRef: self.audioFileRef,
@@ -437,6 +456,26 @@ index d38a0507..fab5596b 100644
    @Field
    var addsPunctuation: Bool = false
 
+diff --git a/node_modules/expo-speech-recognition/ios/WhipAudioIngress.h b/node_modules/expo-speech-recognition/ios/WhipAudioIngress.h
+new file mode 100644
+index 00000000..fa1a0bb3
+--- /dev/null
++++ b/node_modules/expo-speech-recognition/ios/WhipAudioIngress.h
+@@ -0,0 +1,14 @@
++#pragma once
++#include <stdint.h>
++#include <stddef.h>
++#ifdef __cplusplus
++extern "C" {
++#endif
++// Versioned PCM16LE ingress. Buffer ownership remains with the caller.
++// Handles are process-local, monotonic, and never reused.
++enum WhipAudioIngressStatus { WhipAudioAccepted = 0, WhipAudioStale = 1, WhipAudioClosed = 3, WhipAudioOverflow = 4, WhipAudioInvalid = 5 };
++enum { WhipAudioMaxSamples = 8192, WhipAudioMaxBytes = WhipAudioMaxSamples * 2 };
++uint8_t whip_audio_ingress_push_v1(uint64_t handle, const uint8_t *bytes, size_t byte_count, uint32_t sample_rate, uint16_t channels, uint64_t sequence, uint64_t age_ns);
++#ifdef __cplusplus
++}
++#endif
 diff --git a/node_modules/expo-speech-recognition/src/ExpoSpeechRecognitionModule.types.ts b/node_modules/expo-speech-recognition/src/ExpoSpeechRecognitionModule.types.ts
 index 4a55ac7a..479d3a0d 100644
 --- a/node_modules/expo-speech-recognition/src/ExpoSpeechRecognitionModule.types.ts
@@ -474,23 +513,3 @@ index 4a55ac7a..479d3a0d 100644
    /**
     * Whether the recording feature is available on the device.
     *
-diff --git a/node_modules/expo-speech-recognition/ios/WhipAudioIngress.h b/node_modules/expo-speech-recognition/ios/WhipAudioIngress.h
-new file mode 100644
-index 00000000..fa1a0bb3
---- /dev/null
-+++ b/node_modules/expo-speech-recognition/ios/WhipAudioIngress.h
-@@ -0,0 +1,14 @@
-+#pragma once
-+#include <stdint.h>
-+#include <stddef.h>
-+#ifdef __cplusplus
-+extern "C" {
-+#endif
-+// Versioned PCM16LE ingress. Buffer ownership remains with the caller.
-+// Handles are process-local, monotonic, and never reused.
-+enum WhipAudioIngressStatus { WhipAudioAccepted = 0, WhipAudioStale = 1, WhipAudioClosed = 3, WhipAudioOverflow = 4, WhipAudioInvalid = 5 };
-+enum { WhipAudioMaxSamples = 8192, WhipAudioMaxBytes = WhipAudioMaxSamples * 2 };
-+uint8_t whip_audio_ingress_push_v1(uint64_t handle, const uint8_t *bytes, size_t byte_count, uint32_t sample_rate, uint16_t channels, uint64_t sequence, uint64_t age_ns);
-+#ifdef __cplusplus
-+}
-+#endif

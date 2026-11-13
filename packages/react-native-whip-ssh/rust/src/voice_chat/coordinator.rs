@@ -318,7 +318,8 @@ impl VoiceChat {
         if state.diagnostic_stage != Some(state.coordinator.stage) {
             let now = self.now();
             log::info!(
-                "LocalVoice call={} generation={} from={:?} to={:?} delivery={:?} depth={} state_ms={}",
+                "LocalVoice app_call={:?} call={} generation={} from={:?} to={:?} delivery={:?} depth={} state_ms={}",
+                self.app_session.lock().as_deref(),
                 self.id,
                 state.coordinator.generation(),
                 state.diagnostic_stage,
@@ -346,9 +347,19 @@ impl VoiceChat {
             }
         }
         let retired = std::mem::take(&mut state.retired_submissions);
+        let error = state
+            .audio_error
+            .clone()
+            .or_else(|| state.coordinator.error.map(str::to_owned));
         drop(state);
         for (queue, key, id) in retired {
             queue.cancel_voice(&key, &id);
+        }
+        if let Some(error) = error {
+            let session = self.app_session.lock().take();
+            if let Some(session) = session {
+                crate::voice_session_coordinator().backend_ended(&session, Some(error));
+            }
         }
     }
 

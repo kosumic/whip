@@ -257,7 +257,7 @@ internal object RealtimeVoice {
             val counters = "rawRms=${signal?.optDouble("rawRms")} processedRms=${signal?.optDouble("processedRms")} processingDrops=${signal?.optLong("droppedFrames")} receivedMs=${playback?.optLong("receivedMs")} heardMs=${playback?.optLong("heardMs")} durationMs=${playback?.optLong("expectedMs")} captionUtf16=${playback?.optLong("textUtf16")} spokenUtf16=${playback?.optLong("spokenUtf16")} media=${media?.toString()} nativeAudioSamples=${session.playedAudioSamples} nativeAudioPeak=${session.playedAudioPeak} playbackUnderruns=$underruns playbackQueuedMs=${session.playbackQueuedMs} playbackBufferFrames=$bufferFrames playbackStartFrames=$startFrames liveCaptions=${state.optJSONObject("liveCaptionTiming")}"
             Log.w(LOG_TAG, "Audio deviceSamples=${session.capturedSamples} rejected=${session.rejectedCapture} ageMs=${session.captureAgeNs / 1_000_000} devicePosition=${session.deviceFramePosition} capturePackets=${state.optLong("capturePackets")} uploadedPackets=${state.optLong("uploadedPackets")} rawLevel=${state.optDouble("captureLevel")} processedLevel=${state.optDouble("level")} events=${state.optLong("serverEvents")} $audioDiagnostic liveError=${state.optJSONObject("liveError")} $counters")
           }
-          if (phase == "error" || preview && phase == "closed") {
+          if (phase == "error" || phase == "closed") {
             stop(token)
             if (!preview) VoiceCallService.end(token)
           } else main.postDelayed(this, 100)

@@ -92,7 +92,8 @@ impl State {
         self.pins.values().any(|(_, pin)| match pin {
             Pin::Foreground(id, terminal) => id == host && terminal == binding.terminal_id.as_str(),
             Pin::Subscription(token) => token == &binding.binding_token,
-        })
+        }) || crate::host_runtime::realtime_agent::retains_transcript(host, binding)
+            || crate::voice_chat::transcript::retains_transcript(host, binding)
     }
 
     fn snapshot(&self) -> TranscriptCacheSnapshot {

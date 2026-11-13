@@ -1,5 +1,6 @@
 #import "WhipVoiceCall.h"
 #import "WhipRealtimeVoice.h"
+#import "../cpp/WhipSpeechPolicy.h"
 #import "../../../ios/HerdR/WhipSpeechPlayback.h"
 #import <AVFoundation/AVFoundation.h>
 #import <CallKit/CallKit.h>
@@ -18,6 +19,7 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
 @property(nonatomic, copy) RCTPromiseResolveBlock ready;
 @property(nonatomic, copy) RCTPromiseRejectBlock failed;
 @property(nonatomic, strong) NSTimer *timeout;
+@property(nonatomic, strong) NSTimer *authority;
 @property(nonatomic, strong) NSMutableArray *endings;
 @property(nonatomic, strong) NSMutableSet<NSUUID *> *mirroredMuteActions;
 @property(nonatomic) BOOL ending;
@@ -63,16 +65,26 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
 }
 - (void)start:(NSString *)token label:(NSString *)label resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
+  if (!whip_voice_session_current(token.UTF8String)) { reject(WhipCallError, @"The voice call was cancelled.", nil); return; }
   if (self.token) { reject(WhipCallError, @"A voice call is already active.", nil); return; }
   [self stopSound];
   self.token = token; self.label = label; self.uuid = NSUUID.UUID;
   self.ready = resolve; self.failed = reject;
+  __weak WhipVoiceCall *weakSelf = self;
+  self.authority = [NSTimer timerWithTimeInterval:0.25 repeats:YES block:^(NSTimer *timer) {
+    WhipVoiceCall *call = weakSelf;
+    if ([call.token isEqualToString:token] && !whip_voice_session_current(token.UTF8String)) {
+      [call end:token resolve:^(id value) {} reject:^(NSString *code, NSString *message, NSError *error) {}];
+    }
+  }];
+  [NSRunLoop.mainRunLoop addTimer:self.authority forMode:NSRunLoopCommonModes];
   self.playbackTurn = [NSObject new];
   [self activateCall:token turn:self.playbackTurn];
 }
 - (void)activateCall:(NSString *)token turn:(id)turn
 {
   if (![self.token isEqualToString:token] || self.playbackTurn != turn) { [WhipSpeechPlayback.shared finishPlayback:turn]; return; }
+  if (!whip_voice_session_current(token.UTF8String)) { [self clear:nil]; return; }
   if ([WhipSpeechPlayback.shared deferPlayback:turn block:^{ [self activateCall:token turn:turn]; }]) return;
   [WhipSpeechPlayback.shared startPlayback:turn];
   self.startRequested = YES;
@@ -89,6 +101,7 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
 - (void)provider:(CXProvider *)provider performStartCallAction:(CXStartCallAction *)action
 {
   if (![action.callUUID isEqual:self.uuid]) { [action fail]; return; }
+  if (!whip_voice_session_current(self.token.UTF8String)) { [action fail]; [self clear:nil]; return; }
   NSError *error = nil;
   if (![AVAudioSession.sharedInstance setCategory:AVAudioSessionCategoryPlayAndRecord mode:AVAudioSessionModeVoiceChat
        options:AVAudioSessionCategoryOptionAllowBluetooth error:&error]) {
@@ -109,6 +122,10 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
 {
   self.audioActive = YES;
   if (!self.token) return;
+  if (!whip_voice_session_current(self.token.UTF8String)) {
+    [self end:self.token resolve:^(id value) {} reject:^(NSString *code, NSString *message, NSError *error) {}];
+    return;
+  }
   self.active = YES;
   // Start hands-free unless the user already has a headset connected. Leaving
   // defaultToSpeaker unset allows the speaker control to return to the receiver.
@@ -275,6 +292,8 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
 }
 - (void)clear:(NSString *)error
 {
+  whip_voice_session_end(self.token.UTF8String, error != nil);
+  [self.authority invalidate]; self.authority = nil;
   id turn = self.playbackTurn;
   [WhipSpeechPlayback.shared cancelPlayback:turn];
   [WhipRealtimeVoice.shared stop:self.token];
