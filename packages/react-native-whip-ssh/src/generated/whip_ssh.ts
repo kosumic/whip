@@ -31,6 +31,7 @@ import {
   type UniffiVTableCallbackInterfaceWhipSshSshWorkflowPlatform,
   type UniffiVTableCallbackInterfaceWhipSshTerminalDeliveryEventSink,
   type UniffiVTableCallbackInterfaceWhipSshTerminalSubmissionPlatform,
+  type UniffiVTableCallbackInterfaceWhipSshVoiceChatObserver,
   type UniffiVTableCallbackInterfaceWhipSshWhipAppControl,
   type UniffiVTableCallbackInterfaceWhipSshWhipSshEventSink,
 } from './whip_ssh-ffi';
@@ -332,6 +333,34 @@ export function chatSpeechHighlight(
           ),
           FfiConverterString.lower(expected, nativeModule().rustbuffer_alloc),
           FfiConverterUInt32.lower(startUtf16, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
+/**
+ * Ranges returned here refer to the original Markdown's UTF-16 coordinates.
+ * Native Markdown parsing projects them into attributed text without == edits.
+ */
+export function chatSpeechPresentation(
+  markdown: string,
+  snapshot: string,
+): string {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterString.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_chat_speech_presentation(
+          FfiConverterString.lower(markdown, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(snapshot, nativeModule().rustbuffer_alloc),
           callStatus,
         );
       },
@@ -2841,6 +2870,29 @@ export function shutdown(): void {
       nativeModule().ubrn_uniffi_whip_ssh_fn_func_shutdown(callStatus);
     },
     /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
+/**
+ * Immutable process snapshot; subscriptions are only wake-ups, so remounts and
+ * delayed bridge events always read the authoritative current generation.
+ */
+export function speechCaptionSnapshot(): string {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterString.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_speech_caption_snapshot(
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
   );
 }
 
@@ -18600,6 +18652,7 @@ export type VoiceChatView = {
   downloadedBytes: bigint;
   totalBytes: bigint;
   eventsJson: string;
+  coordinationJson: string;
 };
 
 /**
@@ -18636,6 +18689,7 @@ const FfiConverterTypeVoiceChatView = (() => {
         downloadedBytes: FfiConverterUInt64.read(from),
         totalBytes: FfiConverterUInt64.read(from),
         eventsJson: FfiConverterString.read(from),
+        coordinationJson: FfiConverterString.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
@@ -18651,6 +18705,7 @@ const FfiConverterTypeVoiceChatView = (() => {
       FfiConverterUInt64.write(value.downloadedBytes, into);
       FfiConverterUInt64.write(value.totalBytes, into);
       FfiConverterString.write(value.eventsJson, into);
+      FfiConverterString.write(value.coordinationJson, into);
     }
     allocationSize(value: TypeName): number {
       return (
@@ -18665,7 +18720,8 @@ const FfiConverterTypeVoiceChatView = (() => {
         FfiConverterOptionalString.allocationSize(value.audioError) +
         FfiConverterUInt64.allocationSize(value.downloadedBytes) +
         FfiConverterUInt64.allocationSize(value.totalBytes) +
-        FfiConverterString.allocationSize(value.eventsJson)
+        FfiConverterString.allocationSize(value.eventsJson) +
+        FfiConverterString.allocationSize(value.coordinationJson)
       );
     }
   }
@@ -60554,7 +60610,176 @@ const FfiConverterTypeTerminalSubmissionQueue = new FfiConverterObject(
   uniffiTypeTerminalSubmissionQueueObjectFactory,
 );
 
+export interface VoiceChatObserver {
+  changed(): void;
+}
+
+export class VoiceChatObserverImpl
+  extends UniffiAbstractObject
+  implements VoiceChatObserver
+{
+  readonly [uniffiTypeNameSymbol] = 'VoiceChatObserverImpl';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeVoiceChatObserverImplObjectFactory.bless(pointer);
+  }
+
+  changed(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechatobserver_changed(
+          uniffiTypeVoiceChatObserverImplObjectFactory.clonePointer(this),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeVoiceChatObserverImplObjectFactory.pointer(this);
+      uniffiTypeVoiceChatObserverImplObjectFactory.freePointer(pointer);
+      uniffiTypeVoiceChatObserverImplObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is VoiceChatObserverImpl {
+    return uniffiTypeVoiceChatObserverImplObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeVoiceChatObserverImplObjectFactory: UniffiObjectFactory<VoiceChatObserver> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): VoiceChatObserver {
+        const instance = Object.create(VoiceChatObserverImpl.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'VoiceChatObserverImpl';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_voicechatobserver_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: VoiceChatObserver): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: VoiceChatObserver): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_voicechatobserver(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_voicechatobserver(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is VoiceChatObserver {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'VoiceChatObserverImpl'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeVoiceChatObserver = new FfiConverterObjectWithCallbacks(
+  uniffiTypeVoiceChatObserverImplObjectFactory,
+);
+
+// Add a vtable for the callbacks that go in VoiceChatObserver.
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+const uniffiCallbackInterfaceVoiceChatObserver: {
+  vtable: any;
+  register: () => void;
+} = {
+  // Create the VTable using a series of closures.
+  // ts automatically converts these into C callback functions.
+  vtable: {
+    changed: (uniffiHandle: bigint) => {
+      const uniffiMakeCall = (): void => {
+        try {
+          const jsCallback =
+            FfiConverterTypeVoiceChatObserver.lift(uniffiHandle);
+          return jsCallback.changed();
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+        }
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    uniffi_free: (uniffiHandle: UniffiHandle): void => {
+      // this will throw a stale handle error if the handle isn't found.
+      FfiConverterTypeVoiceChatObserver.drop(uniffiHandle);
+    },
+    uniffi_clone: (uniffiHandle: UniffiHandle): UniffiHandle => {
+      return FfiConverterTypeVoiceChatObserver.clone(uniffiHandle);
+    },
+  },
+  register: () => {
+    nativeModule().ubrn_uniffi_whip_ssh_fn_init_callback_vtable_voicechatobserver(
+      uniffiCallbackInterfaceVoiceChatObserver.vtable,
+    );
+  },
+};
+
 export interface VoiceChatLike {
+  /**
+   * Startup and actual PCM/TTS drain are separate token-scoped acknowledgments.
+   */
+  acknowledgeSpeech(token: string, chunk: bigint, event: string): void;
   /**
    * Inference runs only when the optional smart-turn build feature is enabled.
    */
@@ -60572,6 +60797,21 @@ export interface VoiceChatLike {
   beginPreparation(): void;
   close(): void;
   closeAudioCapture(handle: bigint): void;
+  /**
+   * Pin native source and submission owner once. Presentation binding tokens
+   * are intentionally absent from this API.
+   */
+  connect(
+    runtimeId: string,
+    incarnation: bigint,
+    terminalId: string,
+    paneId: string,
+    queue: TerminalSubmissionQueueLike,
+    targetKey: string,
+    observer: VoiceChatObserver,
+    playbackCapacity: number,
+    agent: AgentTranscriptKind,
+  ) /*throws*/ : void;
   finish(): void;
   nextSpeech(): string | undefined;
   /**
@@ -60582,7 +60822,12 @@ export interface VoiceChatLike {
    * Opens a fresh native capture ticket for each recognizer cycle.
    */
   openAudioCapture(inputId: bigint) /*throws*/ : bigint;
+  playbackCurrent(token: string): boolean;
   playbackEnded(): VoiceChatView;
+  /**
+   * Word/PCM callbacks are checked under the same lock as lease revocation.
+   */
+  playbackEvent(token: string, text: string, active: boolean): void;
   /**
    * Native word/PCM callbacks report audible chunks, including waiting fillers.
    */
@@ -60613,6 +60858,7 @@ export interface VoiceChatLike {
    * submitting it again, using the same conversation and history boundary.
    */
   submitText(text: string) /*throws*/ : void;
+  takeEffects(): string;
   takePrompt(): string | undefined;
   /**
    * Existing turns establish history. Only a new, matching user turn may be read.
@@ -60649,6 +60895,24 @@ export class VoiceChat extends UniffiAbstractObject implements VoiceChatLike {
     this[pointerLiteralSymbol] = pointer;
     this[destructorGuardSymbol] =
       uniffiTypeVoiceChatObjectFactory.bless(pointer);
+  }
+
+  /**
+   * Startup and actual PCM/TTS drain are separate token-scoped acknowledgments.
+   */
+  acknowledgeSpeech(token: string, chunk: bigint, event: string): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_acknowledge_speech(
+          uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+          FfiConverterString.lower(token, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt64.lower(chunk, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(event, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
   }
 
   /**
@@ -60770,6 +61034,59 @@ export class VoiceChat extends UniffiAbstractObject implements VoiceChatLike {
     );
   }
 
+  /**
+   * Pin native source and submission owner once. Presentation binding tokens
+   * are intentionally absent from this API.
+   */
+  connect(
+    runtimeId: string,
+    incarnation: bigint,
+    terminalId: string,
+    paneId: string,
+    queue: TerminalSubmissionQueueLike,
+    targetKey: string,
+    observer: VoiceChatObserver,
+    playbackCapacity: number,
+    agent: AgentTranscriptKind,
+  ): void /*throws*/ {
+    uniffiCaller.rustCallWithError(
+      /*liftError:*/ FfiConverterTypeVoiceChatError.lift.bind(
+        FfiConverterTypeVoiceChatError,
+      ),
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_connect(
+          uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+          FfiConverterString.lower(runtimeId, nativeModule().rustbuffer_alloc),
+          FfiConverterUInt64.lower(
+            incarnation,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterString.lower(terminalId, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(paneId, nativeModule().rustbuffer_alloc),
+          FfiConverterTypeTerminalSubmissionQueue.lower(
+            queue,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterString.lower(targetKey, nativeModule().rustbuffer_alloc),
+          FfiConverterTypeVoiceChatObserver.lower(
+            observer,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterUInt8.lower(
+            playbackCapacity,
+            nativeModule().rustbuffer_alloc,
+          ),
+          FfiConverterTypeAgentTranscriptKind.lower(
+            agent,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
   finish(): void {
     uniffiCaller.rustCall(
       /*caller:*/ callStatus => {
@@ -60846,6 +61163,21 @@ export class VoiceChat extends UniffiAbstractObject implements VoiceChatLike {
     );
   }
 
+  playbackCurrent(token: string): boolean {
+    return FfiConverterBool.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_playback_current(
+            uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+            FfiConverterString.lower(token, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
   playbackEnded(): VoiceChatView {
     return ((__rb: Uint8Array) => {
       try {
@@ -60863,6 +61195,24 @@ export class VoiceChat extends UniffiAbstractObject implements VoiceChatLike {
         },
         /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
       ),
+    );
+  }
+
+  /**
+   * Word/PCM callbacks are checked under the same lock as lease revocation.
+   */
+  playbackEvent(token: string, text: string, active: boolean): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_playback_event(
+          uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+          FfiConverterString.lower(token, nativeModule().rustbuffer_alloc),
+          FfiConverterString.lower(text, nativeModule().rustbuffer_alloc),
+          FfiConverterBool.lower(active, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
     );
   }
 
@@ -61057,6 +61407,26 @@ export class VoiceChat extends UniffiAbstractObject implements VoiceChatLike {
         );
       },
       /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  takeEffects(): string {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_voicechat_take_effects(
+            uniffiTypeVoiceChatObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
     );
   }
 
@@ -62694,6 +63064,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_chat_speech_presentation() !==
+    62865
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_chat_speech_presentation',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_chat_speech_response_available() !==
     17606
   ) {
@@ -63375,6 +63753,14 @@ function uniffiEnsureInitialized() {
   if (nativeModule().ubrn_uniffi_whip_ssh_checksum_func_shutdown() !== 45428) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_shutdown',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_speech_caption_snapshot() !==
+    8795
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_speech_caption_snapshot',
     );
   }
   if (
@@ -66462,6 +66848,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_acknowledge_speech() !==
+    32191
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_acknowledge_speech',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_analyze() !==
     60916
   ) {
@@ -66502,6 +66896,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_connect() !==
+    16861
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_connect',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_finish() !==
     58245
   ) {
@@ -66534,11 +66936,27 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_playback_current() !==
+    12951
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_playback_current',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_playback_ended() !==
     28728
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_voicechat_playback_ended',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_playback_event() !==
+    416
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_playback_event',
     );
   }
   if (
@@ -66614,6 +67032,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_take_effects() !==
+    46262
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechat_take_effects',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechat_take_prompt() !==
     2988
   ) {
@@ -66643,6 +67069,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_voicechat_view',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_voicechatobserver_changed() !==
+    5
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_voicechatobserver_changed',
     );
   }
   if (
@@ -66717,6 +67151,7 @@ function uniffiEnsureInitialized() {
   uniffiCallbackInterfaceSshWorkflowPlatform.register();
   uniffiCallbackInterfaceTerminalDeliveryEventSink.register();
   uniffiCallbackInterfaceTerminalSubmissionPlatform.register();
+  uniffiCallbackInterfaceVoiceChatObserver.register();
   uniffiCallbackInterfaceWhipAppControl.register();
   uniffiCallbackInterfaceWhipSshEventSink.register();
 }
@@ -67081,6 +67516,7 @@ export default Object.freeze({
     FfiConverterTypeUsageSummary,
     FfiConverterTypeVoiceChat,
     FfiConverterTypeVoiceChatError,
+    FfiConverterTypeVoiceChatObserver,
     FfiConverterTypeVoiceChatPhase,
     FfiConverterTypeVoiceChatTranscriptTurn,
     FfiConverterTypeVoiceChatView,

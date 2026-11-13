@@ -7,6 +7,9 @@ use std::{
     sync::LazyLock,
 };
 
+mod presentation;
+pub use presentation::{chat_speech_presentation, speech_caption_snapshot};
+
 struct Caption {
     id: u64,
     spoken: String,
@@ -36,6 +39,7 @@ const MAX_CAPTIONS: usize = 16;
 #[derive(Default)]
 struct Captions {
     sequence: u64,
+    presentation: Option<presentation::Snapshot>,
     pending: VecDeque<Caption>,
 }
 static CAPTIONS: LazyLock<Mutex<Captions>> = LazyLock::new(Mutex::default);
@@ -184,12 +188,26 @@ pub extern "C" fn whip_speech_caption_progress(
     samples: usize,
     complete: bool,
 ) -> usize {
-    CAPTIONS
-        .lock()
-        .pending
-        .iter_mut()
-        .find(|caption| id != 0 && caption.id == id)
-        .map_or(0, |caption| caption.progress(played, samples, complete))
+    let mut state = CAPTIONS.lock();
+    let Captions {
+        pending,
+        presentation,
+        ..
+    } = &mut *state;
+    let Some(caption) = pending.iter_mut().find(|c| id != 0 && c.id == id) else {
+        return 0;
+    };
+    if played > samples {
+        return 0;
+    }
+    let position = caption.progress(played, samples, complete);
+    if let Some(snapshot) = presentation
+        && crate::speech_playback::is_current(snapshot.lease)
+    {
+        presentation::pcm(snapshot, caption, position, played, samples);
+    }
+    drop(state);
+    position
 }
 
 /// Mark only the current word in the original Markdown; speech offsets refer to

@@ -69,10 +69,10 @@ index 06fa054e..90332c7d 100644
    EnrichedMarkdownMarkdownStyleStruct markdownStyle{};
    bool enableImagePress{false};
 diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdown.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdown.kt
-index b6b38b4c..108bbce3 100644
+index b6b38b4c..d5fb2300 100644
 --- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdown.kt
 +++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/EnrichedMarkdown.kt
-@@ -50,6 +50,61 @@ class EnrichedMarkdown(
+@@ -50,6 +50,60 @@ class EnrichedMarkdown(
      FORCE_HEIGHT,
    }
 
@@ -83,7 +83,6 @@ index b6b38b4c..108bbce3 100644
 +      if (field == value) return
 +      field = value
 +      readAloudConfig = ReadAloudConfig.parse(value)
-+      scheduleRenderIfNeeded()
 +      invalidate()
 +    }
 +
@@ -134,15 +133,15 @@ index b6b38b4c..108bbce3 100644
    private val parser = Parser.shared
    private val mainHandler = Handler(Looper.getMainLooper())
    private val executor: ExecutorService = Executors.newSingleThreadExecutor()
-@@ -372,6 +427,7 @@ class EnrichedMarkdown(
+@@ -372,6 +426,7 @@ class EnrichedMarkdown(
      val tableMode = tableStreamingMode
      val codeBlockMode = codeBlockStreamingMode
 
-+    val speechOriginal = readAloudConfig?.takeIf { it.phase == SpeechPhase.CURRENT }?.original
++    val speechOriginal: String? = null
      val renderId = ++currentRenderId
 
      executor.execute {
-@@ -391,7 +447,7 @@ class EnrichedMarkdown(
+@@ -391,7 +446,7 @@ class EnrichedMarkdown(
          }
 
          val ast =
@@ -151,7 +150,7 @@ index b6b38b4c..108bbce3 100644
              postToMain(renderId) { applyRenderedSegments(emptyList(), false) }
              return@execute
            }
-@@ -431,6 +487,11 @@ class EnrichedMarkdown(
+@@ -431,6 +486,11 @@ class EnrichedMarkdown(
 
      val topologyChanged = applySegments(renderedSegments, reset)
 
@@ -209,7 +208,7 @@ index 0000000..2edc3e5
 +  return text;
 +}
 diff --git a/node_modules/react-native-enriched-markdown/ios/EnrichedMarkdown.mm b/node_modules/react-native-enriched-markdown/ios/EnrichedMarkdown.mm
-index b7edde7a..5dc1cb62 100644
+index b7edde7a..fb3d4c53 100644
 --- a/node_modules/react-native-enriched-markdown/ios/EnrichedMarkdown.mm
 +++ b/node_modules/react-native-enriched-markdown/ios/EnrichedMarkdown.mm
 @@ -1,4 +1,6 @@
@@ -307,7 +306,7 @@ index b7edde7a..5dc1cb62 100644
 +      NSRange marker = ENRMSpeechMarkerRange(runs[index][@"source"]);
 +      if (marker.location != NSNotFound) { currentIndex = index; currentWord = marker; break; }
 +    }
-+    if (currentIndex == NSNotFound) speech = nil;
++    // Missing markers do not cancel an explicit speech presentation.
 +  }
 +  for (NSUInteger index = 0; index < runs.count; index++) {
 +    NSDictionary *run = runs[index];
@@ -351,13 +350,12 @@ index b7edde7a..5dc1cb62 100644
  }
 
  - (void)updateProps:(Props::Shared const &)props oldProps:(Props::Shared const &)oldProps
-@@ -1064,6 +1145,15 @@ static char kENRMSegmentFadeAnimatorKey;
+@@ -1064,6 +1145,14 @@ static char kENRMSegmentFadeAnimatorKey;
    const auto &oldViewProps = *std::static_pointer_cast<EnrichedMarkdownProps const>(_props);
    const auto &newViewProps = *std::static_pointer_cast<EnrichedMarkdownProps const>(props);
 
 +  if (oldViewProps.readAloud != newViewProps.readAloud) {
 +    _readAloud = [NSString stringWithUTF8String:newViewProps.readAloud.c_str()];
-+    _dirtyFlags |= ENRMDirtyRender;
 +    [self applySearchHighlights];
 +  }
 +  if (oldViewProps.searchQuery != newViewProps.searchQuery) {
@@ -367,7 +365,7 @@ index b7edde7a..5dc1cb62 100644
    BOOL markdownChanged = oldViewProps.markdown != newViewProps.markdown;
    if (markdownChanged) {
      _dirtyFlags |= ENRMDirtyRender;
-@@ -1304,6 +1394,8 @@ static char kENRMSegmentFadeAnimatorKey;
+@@ -1304,6 +1393,8 @@ static char kENRMSegmentFadeAnimatorKey;
    [_segmentSignatures removeAllObjects];
 
    _cachedMarkdown = nil;
@@ -442,12 +440,12 @@ index 0c022cf..a566e10 100644
  static const CGFloat kENRMHeaderSecondaryAlpha = 0.6;
  static const CGFloat kENRMHeaderDividerAlpha = 0.2;
 +static const NSTimeInterval kENRMCopyFeedbackInterval = 1.5;
- 
+
  // Height geometry and code-run construction shared by the instance layout path
  // and the view-free measureHeightForCodeBlockNode:, so the two cannot drift.
 @@ -209,6 +211,8 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
  #endif
- 
+
  @implementation ENRMCodeBlockContainerView {
 +  NSOperation *_highlightOperation;
 +  NSUInteger _highlightGeneration;
@@ -474,7 +472,7 @@ index 0c022cf..a566e10 100644
    [self rebuildAttributedCode];
 @@ -273,11 +281,6 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
      [self addInteraction:contextMenu];
- 
+
      _copyButton = [UIButton buttonWithType:UIButtonTypeSystem];
 -    UIImageSymbolConfiguration *symbolConfig =
 -        [UIImageSymbolConfiguration configurationWithPointSize:[config codeBlockFont].pointSize * kENRMHeaderIconScale
@@ -505,7 +503,7 @@ index 0c022cf..a566e10 100644
    }
    return self;
  }
- 
+
 +- (void)dealloc
 +{
 +  [_copyFeedbackTimer invalidate];
@@ -604,7 +602,7 @@ index 0c022cf..a566e10 100644
 +#endif
 +  });
  }
- 
+
 -- (void)applyCodeBlockNode:(MarkdownASTNode *)node
 +- (void)setSearchQuery:(NSString *)query
  {
@@ -619,7 +617,7 @@ index 0c022cf..a566e10 100644
 +  [_codeContentView setNeedsDisplay:YES];
 +#endif
 +}
- 
+
 +- (void)applyCodeBlockNode:(MarkdownASTNode *)node
 +{
 +  NSString *newCode = ENRMCodeBlockExtractCode(node);
@@ -635,7 +633,7 @@ index 0c022cf..a566e10 100644
      _cachedLanguage = newLanguage;
      _displayLanguage = ENRMCodeBlockDisplayLanguageName(newLanguage);
 @@ -540,7 +635,11 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
- 
+
  - (void)copyCodeToPasteboard
  {
 +  if (_pending || _cachedCode.length == 0) {
@@ -647,7 +645,7 @@ index 0c022cf..a566e10 100644
      self.onCopyPress(_cachedCode ?: @"", _cachedLanguage ?: @"");
    }
 @@ -548,7 +647,11 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
- 
+
  - (void)copyMarkdownToPasteboard
  {
 +  if (_pending || _cachedCode.length == 0) {
@@ -656,7 +654,7 @@ index 0c022cf..a566e10 100644
    copyStringToPasteboard([self fencedMarkdown]);
 +  [self showCopyFeedback];
  }
- 
+
  #if !TARGET_OS_OSX
 diff --git a/node_modules/react-native-enriched-markdown/ios/segments/TableContainerView.h b/node_modules/react-native-enriched-markdown/ios/segments/TableContainerView.h
 index 1b2846dd..232e7f48 100644
@@ -833,7 +831,7 @@ index f3c451c..fd6ca74 100644
 @@ -68,6 +70,8 @@ class CodeBlockContainerView(
    // created later see the same current values. See DynamicBlockProps.
    var dynamicProps: DynamicBlockProps = DynamicBlockProps()
- 
+
 +  private var highlightGeneration = 0L
 +  private var highlightTask: java.util.concurrent.Future<*>? = null
    private var code: String = ""
@@ -850,7 +848,7 @@ index f3c451c..fd6ca74 100644
 @@ -124,6 +129,12 @@ class CodeBlockContainerView(
        setTextColor(secondaryColor(codeBlockStyle.color))
      }
- 
+
 +  private val copyIcon =
 +    CopyIconDrawable(
 +      secondaryColor(codeBlockStyle.color),
@@ -873,7 +871,7 @@ index f3c451c..fd6ca74 100644
 +      setImageDrawable(copyIcon)
        setOnClickListener { copyCode() }
      }
- 
+
 +  private val resetCopyIcon = Runnable { copyIcon.copied = false }
 +
    private val dividerPaint =
@@ -881,7 +879,7 @@ index f3c451c..fd6ca74 100644
        color = dividerColor(codeBlockStyle.color)
 @@ -179,10 +187,12 @@ class CodeBlockContainerView(
    }
- 
+
    fun applyCodeBlockNode(node: MarkdownASTNode) {
 -    code = CodeBlockNode.extractCode(node)
 +    val newCode = CodeBlockNode.extractCode(node)
@@ -889,13 +887,13 @@ index f3c451c..fd6ca74 100644
 +    if (newCode != code || newLanguage != language) resetCopyFeedback()
 +    code = newCode
      fenceChar = CodeBlockNode.fenceChar(node)
- 
+
 -    val newLanguage = CodeBlockNode.language(node)
      if (newLanguage != language) {
        language = newLanguage
        languageView.text = CodeBlockNode.displayLanguageName(newLanguage)
 @@ -193,11 +203,15 @@ class CodeBlockContainerView(
- 
+
    // Highlighting is deferred while pending, applied once the block closes.
    private fun rebuildCodeText() {
 -    val plainCode = buildCodeText(code, codeBlockStyle)
@@ -911,17 +909,17 @@ index f3c451c..fd6ca74 100644
      }
 -    textView.text = plainCode
    }
- 
+
    override fun onMeasure(
 @@ -293,13 +307,33 @@ class CodeBlockContainerView(
    ): Boolean = x >= copyButton.left && x < copyButton.right && y >= copyButton.top && y < copyButton.bottom
- 
+
    private fun copyFencedMarkdown() {
 -    if (code.isEmpty()) return
 +    if (pending || code.isEmpty()) return
      copyToClipboard(CodeBlockNode.fencedMarkdown(code, language, fenceChar))
    }
- 
+
    private fun copyToClipboard(text: String) {
      val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
      clipboard.setPrimaryClip(ClipData.newPlainText("Code", text))
@@ -946,11 +944,11 @@ index f3c451c..fd6ca74 100644
 +    resetCopyFeedback()
 +    super.onDetachedFromWindow()
    }
- 
+
    private class CopyIconDrawable(
 @@ -316,9 +350,25 @@ class CodeBlockContainerView(
        }
- 
+
      private val glyph = CopyGlyph()
 +    private val check = Path()
 +
@@ -959,7 +957,7 @@ index f3c451c..fd6ca74 100644
 +        field = value
 +        invalidateSelf()
 +      }
- 
+
      override fun draw(canvas: Canvas) {
 -      glyph.draw(canvas, bounds.width().toFloat(), paint)
 +      if (copied) {
@@ -973,15 +971,15 @@ index f3c451c..fd6ca74 100644
 +        glyph.draw(canvas, bounds.width().toFloat(), paint)
 +      }
      }
- 
+
      override fun getIntrinsicWidth() = size
 @@ -338,6 +388,7 @@ class CodeBlockContainerView(
    }
- 
+
    companion object {
 +    private const val COPY_FEEDBACK_MS = 1_500L
      private const val HEADER_LABEL_SCALE = 0.85f
- 
+
      // Drawable box for the copy glyph, as a multiple of the code font size.
 @@ -379,11 +430,13 @@ class CodeBlockContainerView(
      private fun buildCodeText(
@@ -995,7 +993,7 @@ index f3c451c..fd6ca74 100644
          }
 +        ChatCjkFont.apply(this, context.assets)
        }
- 
+
      // Lines never wrap (the code pane scrolls horizontally), so the layout is
 @@ -398,7 +451,7 @@ class CodeBlockContainerView(
        val style = config.codeBlockStyle
@@ -1219,6 +1217,7 @@ index 0000000..65d428b
 +  }
 +}
 diff --git a/node_modules/react-native-enriched-markdown/cpp/parser/MD4CParser.cpp b/node_modules/react-native-enriched-markdown/cpp/parser/MD4CParser.cpp
+index c99a52d9..3f67401b 100644
 --- a/node_modules/react-native-enriched-markdown/cpp/parser/MD4CParser.cpp
 +++ b/node_modules/react-native-enriched-markdown/cpp/parser/MD4CParser.cpp
 @@ -1,12 +1,57 @@
@@ -1279,18 +1278,70 @@ diff --git a/node_modules/react-native-enriched-markdown/cpp/parser/MD4CParser.c
  struct HtmlTag {
    std::string name;
    std::unordered_map<std::string, std::string> attributes;
-@@ -426,6 +471,11 @@
+@@ -21,6 +66,7 @@ public:
+   std::vector<std::shared_ptr<MarkdownASTNode>> nodeStack;
+   std::string currentText;
+   const char *inputText = nullptr;
++  std::vector<size_t> sourceUtf16;
+   bool inHtmlBlock = false;
+   std::string htmlBlockContent;
+
+@@ -404,6 +450,20 @@ public:
+     return 0;
+   }
+
++  void appendSourceText(const std::string &value, const char *source, size_t size) {
++    flushText();
++    auto node = std::make_shared<MarkdownASTNode>(NodeType::Text);
++    node->content = value;
++    const auto address = reinterpret_cast<uintptr_t>(source);
++    const auto base = reinterpret_cast<uintptr_t>(inputText);
++    const auto offset = address >= base ? address - base : sourceUtf16.size();
++    if (offset < sourceUtf16.size() && size < sourceUtf16.size() - offset) {
++      node->attributes["whipSourceStart"] = std::to_string(sourceUtf16[offset]);
++      node->attributes["whipSourceEnd"] = std::to_string(sourceUtf16[offset + size]);
++    }
++    nodeStack.back()->addChild(node);
++  }
++
+   static int text(MD_TEXTTYPE type, const MD_CHAR *text, MD_SIZE size, void *userdata) {
+     if (!userdata || !text || size == 0)
+       return 0;
+@@ -426,9 +486,16 @@ public:
        return 0;
      }
 
 +    if (type == MD_TEXT_ENTITY) {
-+      appendEntityText(impl->currentText, text, size);
++      std::string decoded;
++      appendEntityText(decoded, text, size);
++      impl->appendSourceText(decoded, text, size);
 +      return 0;
 +    }
 +
      // Handle text content (normal text, code text, LaTeX math, etc.)
      if (type == MD_TEXT_NORMAL || type == MD_TEXT_CODE || type == MD_TEXT_LATEXMATH) {
-       impl->currentText.append(text, size);
+-      impl->currentText.append(text, size);
++      impl->appendSourceText(std::string(text, size), text, size);
+     }
+
+     return 0;
+@@ -816,6 +883,16 @@ std::shared_ptr<MarkdownASTNode> MD4CParser::parse(const std::string &markdown,
+
+   impl_->reset(estimatedDepth);
+   impl_->inputText = markdown.c_str();
++  impl_->sourceUtf16.assign(markdown.size() + 1, 0);
++  size_t units = 0;
++  for (size_t byte = 0; byte < markdown.size();) {
++    const auto lead = static_cast<unsigned char>(markdown[byte]);
++    const size_t length = lead < 0x80 ? 1 : lead < 0xe0 ? 2 : lead < 0xf0 ? 3 : 4;
++    for (size_t n = 0; n < length && byte + n < markdown.size(); ++n) impl_->sourceUtf16[byte + n] = units;
++    units += length == 4 ? 2 : 1;
++    byte += length;
++    if (byte <= markdown.size()) impl_->sourceUtf16[byte] = units;
++  }
+
+   unsigned flags = MD_FLAG_NOHTMLSPANS | MD_FLAG_SPOILERS;
+   if (isGFM) {
 diff --git a/node_modules/react-native-enriched-markdown/android/build.gradle b/node_modules/react-native-enriched-markdown/android/build.gradle
 index 4ad8312..57fd6e0 100644
 --- a/node_modules/react-native-enriched-markdown/android/build.gradle
@@ -1321,7 +1372,7 @@ index 4ad8312..57fd6e0 100644
    highlightConfigFile.text = """\
 @@ -284,6 +284,7 @@ repositories {
  def kotlin_version = getExtOrDefault("kotlinVersion")
- 
+
  dependencies {
 +  implementation project(":react-native-whip-ssh")
    // JVM unit tests (Robolectric) for the library's Kotlin spans/renderers. Run with
@@ -1525,7 +1576,7 @@ index aa87830..a8ba07c 100644
 +++ b/node_modules/react-native-enriched-markdown/ReactNativeEnrichedMarkdown.podspec
 @@ -11,6 +11,7 @@ require File.join(__dir__, "cpp/highlight/code_highlight_podspec.rb")
  code_highlight = monorepo ? EnrichedMarkdownCodeHighlight.disabled : EnrichedMarkdownCodeHighlight.config(__dir__)
- 
+
  Pod::Spec.new do |s|
 +  s.dependency "WhipSsh"
    s.name         = "ReactNativeEnrichedMarkdown"
@@ -1537,14 +1588,14 @@ index 6ef15f6..e849657 100644
 +++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/utils/common/CodeBlockHighlighter.kt
 @@ -1,5 +1,6 @@
  package com.swmansion.enriched.markdown.utils.common
- 
+
 +import com.whipssh.WhipSyntaxHighlighter
  import android.text.Spannable
  import android.text.style.ForegroundColorSpan
  import android.util.Log
 @@ -29,8 +30,7 @@ enum class HighlightTokenType {
  }
- 
+
  /**
 - * Platform adapter over the shared C++ syntax highlighting seam
 - * (core/cpp/highlight/CodeBlockHighlighter.hpp).
@@ -1555,12 +1606,12 @@ index 6ef15f6..e849657 100644
 @@ -49,10 +49,6 @@ object CodeBlockHighlighter {
      }
    }
- 
+
 -  private external fun nativeHighlightCode(
 -    code: String,
 -    language: String,
 -  ): IntArray?
- 
+
    /**
     * Applies token colors onto [target]. Token offsets are relative to [code];
 @@ -70,11 +66,26 @@ object CodeBlockHighlighter {
@@ -1572,7 +1623,7 @@ index 6ef15f6..e849657 100644
        } catch (e: UnsatisfiedLinkError) {
          null
        } ?: return
- 
+
 +    applyTokens(target, tokens, style, offset)
 +  }
 +
@@ -1597,7 +1648,7 @@ index c3a97f6..b0de724 100644
 +++ b/node_modules/react-native-enriched-markdown/cpp/highlight/CodeBlockHighlighter.cpp
 @@ -1,284 +1,31 @@
  #include "CodeBlockHighlighter.hpp"
- 
+
 -// Stub compiled when the syntax highlighting module is disabled. The real
 -// implementation defines the same symbol under ENRICHED_MARKDOWN_CODE_HIGHLIGHT,
 -// so exactly one definition exists in any build configuration.
@@ -1627,9 +1678,9 @@ index c3a97f6..b0de724 100644
 +#if defined(__APPLE__)
 +#include <WhipSsh/WhipSyntaxHighlight.h>
 +#endif
- 
+
  namespace Markdown {
- 
+
 -namespace {
 -
 -// Bounds the synchronous main-thread parse against pathological inputs. Typical
@@ -1898,7 +1949,7 @@ index c3a97f6..b0de724 100644
 +  return {};
 +#endif
  }
- 
+
  } // namespace Markdown
 -
 -#endif
@@ -1909,7 +1960,7 @@ index 23770b3..6060a4c 100644
 @@ -4,14 +4,8 @@
  #include <string>
  #include <vector>
- 
+
 -// Shared seam for optional syntax highlighting of fenced code blocks.
 -//
 -// The real implementation is compiled only when ENRICHED_MARKDOWN_CODE_HIGHLIGHT
@@ -1939,7 +1990,7 @@ index 1ba308c..61279f5 100644
 @@ -22,6 +22,12 @@ extern "C" {
  NSAttributedString *_Nullable ENRMHighlightedAttributedCode(NSAttributedString *plainCode, NSString *code,
                                                              NSString *_Nullable language, StyleConfig *config);
- 
+
 +/// Parses on the shared background queue; completes on the main queue.
 +/// Cancelling the returned operation suppresses both queued work and completion.
 +NSOperation *ENRMHighlightedAttributedCodeAsync(NSAttributedString *plainCode, NSString *code,
@@ -1956,7 +2007,7 @@ index e1964cf..3a62600 100644
 @@ -3,6 +3,9 @@
  #import "ENRMUIKit.h"
  #import "StyleConfig.h"
- 
+
 +static BOOL ENRMApplyTokens(NSMutableAttributedString *output, NSRange range,
 +                            const std::vector<Markdown::HighlightToken> &tokens, StyleConfig *config);
 +
@@ -1966,7 +2017,7 @@ index e1964cf..3a62600 100644
 @@ -20,6 +23,12 @@ BOOL ENRMApplyHighlightTokens(NSMutableAttributedString *output, NSRange range,
      return NO;
    }
- 
+
 +  return ENRMApplyTokens(output, range, tokens, config);
 +}
 +
@@ -2049,10 +2100,10 @@ index 6faeed95..bba579e5 100644
 
 diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/SpeechPresentation.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/SpeechPresentation.kt
 new file mode 100644
-index 00000000..9feee933
+index 00000000..4d3d6ecf
 --- /dev/null
 +++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/SpeechPresentation.kt
-@@ -0,0 +1,105 @@
+@@ -0,0 +1,118 @@
 +package com.swmansion.enriched.markdown
 +
 +import android.graphics.Color
@@ -2070,19 +2121,28 @@ index 00000000..9feee933
 +import com.swmansion.enriched.markdown.segments.CodeBlockContainerView
 +import org.json.JSONObject
 +import java.util.WeakHashMap
-+import java.util.Locale
 +
 +internal const val SPEECH_CURRENT_ATTRIBUTE = "whipSpeechCurrent"
 +internal class SpeechMarkerSpan
 +
 +internal enum class SpeechPhase { HEARD, CURRENT, UPCOMING }
 +
-+internal class ReadAloudConfig(val phase: SpeechPhase, val original: String, val heard: Int, val upcoming: Int, val weight: Int) {
++internal class SpeechSourceSpan(val start: Int, val end: Int) {
++  companion object {
++    fun from(node: com.swmansion.enriched.markdown.parser.MarkdownASTNode): SpeechSourceSpan? {
++      val start = node.getAttribute("whipSourceStart")?.toIntOrNull() ?: return null
++      val end = node.getAttribute("whipSourceEnd")?.toIntOrNull() ?: return null
++      return SpeechSourceSpan(start, end)
++    }
++  }
++}
++internal class ReadAloudConfig(val spokenEnd: Int, val wordStart: Int, val wordEnd: Int, val heard: Int, val upcoming: Int, val weight: Int) {
 +  companion object {
 +    fun parse(value: String): ReadAloudConfig? = try {
 +      if (value.isEmpty()) null else JSONObject(value).let {
-+        ReadAloudConfig(SpeechPhase.valueOf(it.getString("phase").uppercase(Locale.ROOT)), it.getString("original"), Color.parseColor(it.getString("heard")),
-+          Color.parseColor(it.getString("upcoming")), it.getString("weight").toInt())
++        val word = it.optJSONObject("currentWord")
++        ReadAloudConfig(it.getInt("spokenEnd"), word?.getInt("start") ?: -1, word?.getInt("end") ?: -1,
++          Color.parseColor(it.getString("heard")), Color.parseColor(it.getString("upcoming")), it.getString("weight").toInt())
 +      }
 +    } catch (_: Exception) { null }
 +  }
@@ -2101,7 +2161,7 @@ index 00000000..9feee933
 +
 +/** Paint the renderer's existing text; URLs, selection and Markdown stay intact. */
 +internal class SpeechPresentation {
-+  private data class Painted(val text: CharSequence, val config: ReadAloudConfig, val role: SpeechPhase, val start: Int, val end: Int)
++  private data class Painted(val text: CharSequence, val config: ReadAloudConfig)
 +  private val painted = WeakHashMap<TextView, Painted>()
 +
 +  private fun clear(text: Spannable) {
@@ -2120,41 +2180,45 @@ index 00000000..9feee933
 +      }
 +    }
 +    roots.forEach { collect(it) }
-+    var currentView = -1
-+    var start = 0
-+    var end = 0
-+    if (config?.phase == SpeechPhase.CURRENT) for ((index, view) in views.withIndex()) {
-+      val text = view.text as? Spanned ?: continue
-+      val marker = text.getSpans(0, text.length, SpeechMarkerSpan::class.java).firstOrNull() ?: continue
-+      currentView = index; start = text.getSpanStart(marker); end = text.getSpanEnd(marker)
-+      break
-+    }
-+    val active = config?.takeIf { it.phase != SpeechPhase.CURRENT || currentView >= 0 }
++    val active = config
 +    if (active == null) {
 +      for (view in painted.keys.toList()) (view.text as? Spannable)?.let { clear(it) }
 +      painted.clear()
 +      return
 +    }
-+    for ((index, view) in views.withIndex()) {
-+      val role = if (active.phase != SpeechPhase.CURRENT) active.phase else if (index < currentView) SpeechPhase.HEARD else if (index > currentView) SpeechPhase.UPCOMING else SpeechPhase.CURRENT
++    for (view in views) {
 +      val old = painted[view]
-+      if (old != null && old.text === view.text && old.config === active && old.role == role && old.start == start && old.end == end) continue
++      if (old != null && old.text === view.text && old.config === active) continue
 +      val text = view.text as? Spannable ?: SpannableString(view.text)
 +      clear(text)
 +      fun color(from: Int, to: Int, color: Int) {
 +        if (from < to) text.setSpan(SpeechColorSpan(color), from, to, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
 +      }
-+      when (role) {
-+        SpeechPhase.HEARD -> color(0, text.length, active.heard)
-+        SpeechPhase.UPCOMING -> color(0, text.length, active.upcoming)
-+        SpeechPhase.CURRENT -> {
-+          color(0, end, active.heard)
-+          color(end, text.length, active.upcoming)
-+          text.setSpan(SpeechWeightSpan(active.weight), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
++      // Unmapped punctuation, attachments and gaps remain upcoming. Source
++      // ranges are parser metadata; a missing current word never disables paint.
++      color(0, text.length, active.upcoming)
++      for (span in text.getSpans(0, text.length, SpeechSourceSpan::class.java)) {
++        val start = text.getSpanStart(span)
++        val end = text.getSpanEnd(span)
++        fun position(source: Int): Int = when {
++          source <= span.start -> start
++          source >= span.end -> end
++          span.end - span.start == end - start -> start + source - span.start
++          else -> start
++        }
++        color(start, position(active.spokenEnd), active.heard)
++        if (active.wordStart >= 0 && active.wordEnd > span.start && active.wordStart < span.end) {
++          val from = position(active.wordStart)
++          val to = position(active.wordEnd)
++          if (from < to) {
++            // Current word has independent emphasis, without moving spokenEnd.
++            color(from, to, active.heard)
++            text.setSpan(SpeechWeightSpan(active.weight), from, to, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
++          }
 +        }
 +      }
 +      if (text !== view.text) view.text = text
-+      painted[view] = Painted(view.text, active, role, start, end)
++      painted[view] = Painted(view.text, active)
 +    }
 +  }
 +}
@@ -2285,12 +2349,13 @@ index 00000000..eb9788cd
 +} // namespace Markdown
 diff --git a/node_modules/react-native-enriched-markdown/ios/ENRMSpeechPresentation.h b/node_modules/react-native-enriched-markdown/ios/ENRMSpeechPresentation.h
 new file mode 100644
-index 00000000..308f3d6c
+index 00000000..832392ac
 --- /dev/null
 +++ b/node_modules/react-native-enriched-markdown/ios/ENRMSpeechPresentation.h
-@@ -0,0 +1,42 @@
+@@ -0,0 +1,26 @@
 +#pragma once
 +#import "ENRMUIKit.h"
++#import "ENRMSpeechRanges.h"
 +#import <React/RCTConvert.h>
 +#import <React/RCTFont.h>
 +
@@ -2309,27 +2374,10 @@ index 00000000..308f3d6c
 +static inline NSAttributedString *ENRMSpeechPaint(NSAttributedString *source, NSDictionary *config,
 +                                                 NSString *role, NSRange current)
 +{
-+  if (!config || source.length == 0) return source;
-+  RCTUIColor *heard = [RCTConvert UIColor:config[@"heard"]];
-+  RCTUIColor *upcoming = [RCTConvert UIColor:config[@"upcoming"]];
-+  if (!heard || !upcoming) return source;
-+  NSMutableAttributedString *text = [source mutableCopy];
-+  NSRange all = NSMakeRange(0, source.length);
-+  if ([role isEqualToString:@"heard"]) [text addAttribute:NSForegroundColorAttributeName value:heard range:all];
-+  else if ([role isEqualToString:@"upcoming"]) [text addAttribute:NSForegroundColorAttributeName value:upcoming range:all];
-+  else if (current.location != NSNotFound && NSMaxRange(current) <= source.length) {
-+    [text addAttribute:NSForegroundColorAttributeName value:heard range:NSMakeRange(0, NSMaxRange(current))];
-+    [text addAttribute:NSForegroundColorAttributeName value:upcoming
-+                 range:NSMakeRange(NSMaxRange(current), source.length - NSMaxRange(current))];
-+    [source enumerateAttribute:NSFontAttributeName inRange:current options:0
-+                    usingBlock:^(UIFont *font, NSRange range, BOOL *stop) {
-+                      if (!font || (font.fontDescriptor.symbolicTraits & UIFontDescriptorTraitBold)) return;
-+                      UIFont *bold = [RCTFont updateFont:font withFamily:nil size:nil weight:config[@"weight"]
-+                                                   style:nil variant:nil scaleMultiplier:1];
-+                      if (bold) [text addAttribute:NSFontAttributeName value:bold range:range];
-+                    }];
-+  }
-+  return text;
++  return ENRMSpeechPaintRanges(source, config, [RCTConvert UIColor:config[@"heard"]], [RCTConvert UIColor:config[@"upcoming"]],
++    ^UIFont *(UIFont *font) {
++      return [RCTFont updateFont:font withFamily:nil size:nil weight:config[@"weight"] style:nil variant:nil scaleMultiplier:1];
++    });
 +}
 diff --git a/node_modules/react-native-enriched-markdown/ios/parser/ENRMMarkdownParser.h b/node_modules/react-native-enriched-markdown/ios/parser/ENRMMarkdownParser.h
 index 7bcba9f8..cb1dcfbb 100644
@@ -2419,3 +2467,196 @@ index 398d7ddd..cf391bbc 100644
    BlockStyle *blockStyle = [context getBlockStyle];
    RCTUIColor *foregroundColor = [RenderContext calculateHighlightColor:[_config highlightColor]
                                                          paragraphColor:[_config paragraphColor]
+diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/renderer/CodeRenderer.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/renderer/CodeRenderer.kt
+index 0008d9bf..6a06e4db 100644
+--- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/renderer/CodeRenderer.kt
++++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/renderer/CodeRenderer.kt
+@@ -1,5 +1,6 @@
+ package com.swmansion.enriched.markdown.renderer
+
++import com.swmansion.enriched.markdown.SpeechSourceSpan
+ import android.text.SpannableStringBuilder
+ import com.swmansion.enriched.markdown.parser.MarkdownASTNode
+ import com.swmansion.enriched.markdown.spans.CodeBackgroundSpan
+@@ -18,7 +19,11 @@ class CodeRenderer(
+   ) {
+     if (node.children.isEmpty() || node.children.all { it.content.isEmpty() }) return
+
+-    factory.renderWithSpan(builder, { node.children.forEach { builder.append(it.content) } }) { start, end, blockStyle ->
++    factory.renderWithSpan(builder, { node.children.forEach {
++      val from = builder.length
++      builder.append(it.content)
++      SpeechSourceSpan.from(it)?.let { span -> builder.setSpan(span, from, builder.length, SPAN_FLAGS_EXCLUSIVE_EXCLUSIVE) }
++    } }) { start, end, blockStyle ->
+       builder.setSpan(
+         CodeSpan(factory.styleCache, blockStyle),
+         start,
+diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/renderer/TextRenderer.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/renderer/TextRenderer.kt
+index 54e324ea..9ff52e5c 100644
+--- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/renderer/TextRenderer.kt
++++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/renderer/TextRenderer.kt
+@@ -1,5 +1,6 @@
+ package com.swmansion.enriched.markdown.renderer
+
++import com.swmansion.enriched.markdown.SpeechSourceSpan
+ import android.text.SpannableStringBuilder
+ import com.swmansion.enriched.markdown.parser.MarkdownASTNode
+ import com.swmansion.enriched.markdown.spans.TextSpan
+@@ -19,6 +20,7 @@ class TextRenderer : NodeRenderer {
+     val blockType = factory.blockStyleContext.currentBlockType
+
+     factory.renderWithSpan(builder, { builder.append(content) }) { start, end, blockStyle ->
++      SpeechSourceSpan.from(node)?.let { builder.setSpan(it, start, end, SPAN_FLAGS_EXCLUSIVE_EXCLUSIVE) }
+       builder.setSpan(
+         TextSpan(blockStyle, factory.context),
+         start,
+diff --git a/node_modules/react-native-enriched-markdown/android/src/test/java/com/swmansion/enriched/markdown/SpeechPresentationTest.kt b/node_modules/react-native-enriched-markdown/android/src/test/java/com/swmansion/enriched/markdown/SpeechPresentationTest.kt
+new file mode 100644
+index 00000000..ea37ad5e
+--- /dev/null
++++ b/node_modules/react-native-enriched-markdown/android/src/test/java/com/swmansion/enriched/markdown/SpeechPresentationTest.kt
+@@ -0,0 +1,54 @@
++package com.swmansion.enriched.markdown
++
++import android.graphics.Color
++import android.text.SpannableString
++import android.text.TextPaint
++import android.text.style.ForegroundColorSpan
++import android.widget.TextView
++import org.junit.Assert.*
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.RuntimeEnvironment
++import org.robolectric.annotation.Config
++
++@RunWith(RobolectricTestRunner::class)
++@Config(manifest = Config.NONE, sdk = [35])
++class SpeechPresentationTest {
++  @Test fun missingWordDuringHandoffKeepsEntireUnspokenSuffixDim() {
++    val text = SpannableString("Hello unspoken suffix")
++    text.setSpan(SpeechSourceSpan(0, text.length), 0, text.length, 0)
++    val view = TextView(RuntimeEnvironment.getApplication()).apply { setText(text, TextView.BufferType.SPANNABLE) }
++    val painter = SpeechPresentation()
++    fun config(word: String = "null") = ReadAloudConfig.parse("""{"spokenEnd":5,"currentWord":$word,"heard":"#ffffff","upcoming":"#777777","weight":"600"}""")!!
++    fun colorAt(position: Int): Int {
++      val paint = TextPaint()
++      val content = view.text as android.text.Spanned
++      for (span in content.getSpans(position, position + 1, ForegroundColorSpan::class.java)) span.updateDrawState(paint)
++      return paint.color
++    }
++    painter.apply(listOf(view), config("""{"start":0,"end":5}"""))
++    assertEquals(Color.WHITE, colorAt(2))
++    assertEquals(Color.rgb(119,119,119), colorAt(10))
++    // A new caption arrives without a marker. The previous implementation
++    // cleared all speech spans here, exposing the normal bright text color.
++    painter.apply(listOf(view), config())
++    assertEquals(Color.WHITE, colorAt(2))
++    assertEquals(Color.rgb(119,119,119), colorAt(10))
++    painter.apply(listOf(view), null)
++    assertEquals(0, (view.text as android.text.Spanned).getSpans(0, view.text.length, ForegroundColorSpan::class.java).size)
++  }
++
++  @Test fun wordEmphasisDoesNotMoveHeardBoundaryAndRecyclingClearsOldPaint() {
++    val view = TextView(RuntimeEnvironment.getApplication())
++    fun source(value: String): SpannableString = SpannableString(value).apply { setSpan(SpeechSourceSpan(0, length),0,length,0) }
++    view.setText(source("One two three"),TextView.BufferType.SPANNABLE)
++    val painter = SpeechPresentation()
++    val config = ReadAloudConfig.parse("""{"spokenEnd":3,"currentWord":{"start":4,"end":7},"heard":"#ffffff","upcoming":"#777777","weight":"600"}""")!!
++    painter.apply(listOf(view),config)
++    assertEquals(3,config.spokenEnd)
++    view.setText(source("A different response"),TextView.BufferType.SPANNABLE)
++    painter.apply(listOf(view),null)
++    assertEquals(0,(view.text as android.text.Spanned).getSpans(0,view.text.length,ForegroundColorSpan::class.java).size)
++  }
++}
+diff --git a/node_modules/react-native-enriched-markdown/ios/ENRMSpeechRanges.h b/node_modules/react-native-enriched-markdown/ios/ENRMSpeechRanges.h
+new file mode 100644
+index 00000000..7cfccf88
+--- /dev/null
++++ b/node_modules/react-native-enriched-markdown/ios/ENRMSpeechRanges.h
+@@ -0,0 +1,40 @@
++#pragma once
++#import "ENRMUIKit.h"
++
++static NSString *const ENRMSpeechSourceAttribute = @"WhipSpeechSource";
++
++static inline NSAttributedString *ENRMSpeechPaintRanges(NSAttributedString *source, NSDictionary *config,
++    RCTUIColor *heard, RCTUIColor *upcoming, UIFont *(^emphasize)(UIFont *))
++{
++  if (!config || source.length == 0) return source;
++  if (!heard || !upcoming) return source;
++  NSMutableAttributedString *text = [source mutableCopy];
++  NSRange all = NSMakeRange(0, source.length);
++  [text addAttribute:NSForegroundColorAttributeName value:upcoming range:all];
++  NSUInteger spokenEnd = [config[@"spokenEnd"] unsignedIntegerValue];
++  NSDictionary *word = [config[@"currentWord"] isKindOfClass:NSDictionary.class] ? config[@"currentWord"] : nil;
++  [source enumerateAttribute:ENRMSpeechSourceAttribute inRange:all options:0
++    usingBlock:^(NSDictionary *span, NSRange range, BOOL *stop) {
++      if (!span) return;
++      NSUInteger begin = [span[@"start"] unsignedIntegerValue];
++      NSUInteger end = [span[@"end"] unsignedIntegerValue];
++      NSUInteger (^position)(NSUInteger) = ^NSUInteger(NSUInteger cursor) {
++        if (cursor <= begin) return range.location;
++        if (cursor >= end) return NSMaxRange(range);
++        return end - begin == range.length ? range.location + cursor - begin : range.location;
++      };
++      [text addAttribute:NSForegroundColorAttributeName value:heard
++                   range:NSMakeRange(range.location, position(spokenEnd) - range.location)];
++      if (!word || [word[@"start"] unsignedIntegerValue] >= end || [word[@"end"] unsignedIntegerValue] <= begin) return;
++      NSRange currentRange = NSMakeRange(position([word[@"start"] unsignedIntegerValue]), 0);
++      currentRange.length = position([word[@"end"] unsignedIntegerValue]) - currentRange.location;
++      [text addAttribute:NSForegroundColorAttributeName value:heard range:currentRange];
++      [source enumerateAttribute:NSFontAttributeName inRange:currentRange options:0
++        usingBlock:^(UIFont *font, NSRange fontRange, BOOL *stopFont) {
++          if (!font || (font.fontDescriptor.symbolicTraits & UIFontDescriptorTraitBold)) return;
++          UIFont *bold = emphasize ? emphasize(font) : font;
++          if (bold) [text addAttribute:NSFontAttributeName value:bold range:fontRange];
++        }];
++    }];
++  return text;
++}
+diff --git a/node_modules/react-native-enriched-markdown/ios/renderer/CodeRenderer.m b/node_modules/react-native-enriched-markdown/ios/renderer/CodeRenderer.m
+index d0a9b3af..011e074b 100644
+--- a/node_modules/react-native-enriched-markdown/ios/renderer/CodeRenderer.m
++++ b/node_modules/react-native-enriched-markdown/ios/renderer/CodeRenderer.m
+@@ -1,4 +1,5 @@
+ #import "CodeRenderer.h"
++#import "ENRMSpeechPresentation.h"
+ #import "CodeBackground.h"
+ #import "ENRMUIKit.h"
+ #import "FontUtils.h"
+@@ -62,7 +63,8 @@
+     // Store block line height directly for CodeBackground to use
+     codeAttributes[@"BlockLineHeight"] = @(UIFontLineHeight(blockFont));
+
+-    [output setAttributes:codeAttributes range:range];
++    [codeAttributes removeObjectForKey:ENRMSpeechSourceAttribute];
++    [output addAttributes:codeAttributes range:range];
+   }
+ }
+
+diff --git a/node_modules/react-native-enriched-markdown/ios/renderer/TextRenderer.m b/node_modules/react-native-enriched-markdown/ios/renderer/TextRenderer.m
+index cbd3cc72..60785c3d 100644
+--- a/node_modules/react-native-enriched-markdown/ios/renderer/TextRenderer.m
++++ b/node_modules/react-native-enriched-markdown/ios/renderer/TextRenderer.m
+@@ -1,4 +1,5 @@
+ #import "TextRenderer.h"
++#import "ENRMSpeechPresentation.h"
+ #import "RenderContext.h"
+
+ @implementation TextRenderer
+@@ -12,7 +13,13 @@
+
+   NSAttributedString *text = [[NSAttributedString alloc] initWithString:node.content
+                                                              attributes:[context getTextAttributes]];
++  NSUInteger start = output.length;
+   [output appendAttributedString:text];
++  if (node.attributes[@"whipSourceStart"] && node.attributes[@"whipSourceEnd"])
++    [output addAttribute:ENRMSpeechSourceAttribute value:@{
++      @"start": @([node.attributes[@"whipSourceStart"] integerValue]),
++      @"end": @([node.attributes[@"whipSourceEnd"] integerValue])
++    } range:NSMakeRange(start, output.length - start)];
+ }
+
+ @end

@@ -19,6 +19,7 @@ object SpeechPolicy {
   @JvmStatic external fun complete(lease: Long): Boolean
   @JvmStatic external fun stop(lease: Long): Boolean
   @JvmStatic external fun timeoutMs(kind: Int, textUnits: Long): Long
+  @JvmStatic external fun captionCommand(json: String): String
   @JvmStatic external fun captionStart(text: String, prefixUtf16: Long): Long
   @JvmStatic external fun captionProgress(id: Long, played: Long, samples: Long, complete: Boolean): Long
   @JvmStatic external fun stopOwner(kind: Int, owner: String): Long

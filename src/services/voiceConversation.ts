@@ -1,12 +1,12 @@
+import { speechCaptionSnapshot } from 'react-native-whip-ssh';
+import type { SpeechCaption } from './speechCaptions';
 import { AppState, DeviceEventEmitter, NativeEventEmitter, Platform } from 'react-native';
 import { retainVoiceCallBackground } from './voiceCallBackground';
-import type { NativeVoiceChat, VoiceChatView } from 'react-native-whip-ssh/src/voiceChat';
+import type { NativeVoiceChat, VoiceChatView, LocalVoiceSource, VoiceSpeechEffect } from 'react-native-whip-ssh/src/voiceChat';
 import type { AgentChatState } from '../agentChat';
-import { agentTranscriptService } from './NativeTranscriptService';
 import { suspendChatSpeechForInput, type ChatSpeechTarget, type ChatSpeechStoppedEvent } from './chatSpeech';
 import { composerSpeechInput } from './composerSpeechInput';
 import { getSpeechPlayback, type NativeSpeechPlayback } from './speechPlayback';
-import { retainSpeechCaption } from './speechCaptions';
 import { recordDiagnostic } from './diagnosticFormatting';
 import { voiceChatModelRoot } from './voiceChatModel';
 import { DEFAULT_VAD_SENSITIVITY } from '../lib/voiceVadSensitivity';
@@ -15,7 +15,7 @@ import { VoiceCallSoundPlayer } from './voiceCallSoundPlayer';
 import type { VoiceTranscriptMessage } from '../lib/voiceTranscript';
 export type { VoiceTranscriptMessage } from '../lib/voiceTranscript';
 
-export type AgentVoiceChatTarget = Omit<ChatSpeechTarget, 'bindingToken'> & { bindingToken?: string; tabId: string; terminal?: never };
+export type AgentVoiceChatTarget = Omit<ChatSpeechTarget, 'bindingToken'> & { bindingToken?: string; tabId: string; localSource?: LocalVoiceSource; terminal?: never };
 export type TerminalVoiceChatTarget = {
   hostId: string; paneId: string; tabId: string; label: string;
   agent?: never; bindingToken?: never;
@@ -64,18 +64,13 @@ const STARTED = 'WhipChatSpeechStarted';
 const LEVEL = 'WhipChatSpeechLevel';
 const CAPTION = 'WhipSpeechCaption';
 const CALL_EVENT = 'WhipVoiceCall';
-const CAPTURE_POLL_MS = 50;
 const WATCHDOG_MS = 10_000;
-const SPEECH_LOOKAHEAD = 2;
-const FILLER_POLL_MS = 1_000;
-const TRANSCRIPT_RECOVERY_MS = 30_000;
 const CAPTION_LIMIT = { messages: 64, text: 16 * 1024, total: 128 * 1024 } as const;
 let nextSession = 0;
 const voiceCalls: { active: VoiceConversation | null } = { active: null };
 type CallEvent = { token: string; type: 'ended' | 'muted' | 'route' | 'audioInactive'; muted?: boolean; speaker?: boolean; error?: string };
-type LocalSpeechCaption = { id: string; localToken?: string; messageId: string; text: string; spokenUtf16: number; ended?: boolean };
+
 type VoiceSpeechEvents = { [STOPPED]: [event: ChatSpeechStoppedEvent]; [STARTED]: [event: { token: string }]; [LEVEL]: [event: { token: string; level: number }]; [CALL_EVENT]: [event: CallEvent]; [CAPTION]: [json: string] };
-type FillerPlayback = { token: string; cancelled: boolean; done?: Promise<void> };
 async function loadCore(root: string): Promise<NativeVoiceChat> {
   const { NativeVoiceChat } = await import('react-native-whip-ssh/src/voiceChat');
   return new NativeVoiceChat(root);
@@ -91,19 +86,14 @@ function failureMessage(error: unknown): string {
 /** I/O adapter over Whip's shared STT owner, shared TTS player, and Rust turn controller. */
 export class VoiceConversation {
   private core?: NativeVoiceChat;
+  private readonly speechResources = new Map<string, { filler: boolean }>();
   private vadSensitivity = DEFAULT_VAD_SENSITIVITY;
   private playback?: NativeSpeechPlayback;
   private readonly session = `voice-chat:${++nextSession}`;
   private input?: { id: bigint; finishing: boolean; started: boolean; monitor: boolean };
   private draft = '';
   private speechToken?: string;
-  private playing?: string;
   private readySpeech?: string;
-  private activeCaption?: string;
-  private filler?: FillerPlayback;
-  private fillerTimer?: ReturnType<typeof setInterval>;
-  private fillerSequence = 0;
-  private wakeSpeech?: () => void;
   private canInterrupt = false;
   private timing?: { boundary: number; speechEnd: number; submitted?: number; prose?: number; synthesis?: number; played?: number };
   private callToken?: string;
@@ -120,23 +110,18 @@ export class VoiceConversation {
   private progressTimer?: ReturnType<typeof setInterval>;
   private preparing = false;
   private transcriptBinding?: string;
-  private unsubscribeTranscript?: () => void;
-  private transcriptRecovery?: ReturnType<typeof setTimeout>;
   private releaseBackground?: () => void;
-  private captureTimer?: ReturnType<typeof setInterval>;
-  private readonly startedWithoutTranscript: boolean;
   private view: VoiceConversationView = {
     phase: 'starting', muted: false, smartTurn: false, speaker: false, text: '', level: 0, progress: 0, error: null, transcript: null,
   };
 
   constructor(
     private readonly target: AgentVoiceChatTarget,
-    private readonly send: (text: string) => boolean,
+    _send: (text: string) => boolean,
     private readonly changed: (view: VoiceConversationView) => void,
     private readonly load = loadCore,
   ) {
     this.transcriptBinding = target.bindingToken;
-    this.startedWithoutTranscript = !target.bindingToken;
   }
 
   async start(): Promise<void> {
@@ -168,40 +153,39 @@ export class VoiceConversation {
       const core = await this.load(root);
       if (this.closed) return;
       this.core = core;
-      this.captureTimer = setInterval(() => {
-        try { this.apply(); } catch (error) { this.fail(error); }
-      }, CAPTURE_POLL_MS);
       core.setVadSensitivity(this.vadSensitivity);
       const speechEmitter: Pick<NativeEventEmitter<VoiceSpeechEvents>, 'addListener'> =
         Platform.OS === 'ios' ? new NativeEventEmitter<VoiceSpeechEvents>(this.playback) : DeviceEventEmitter;
       const speech = speechEmitter.addListener(STOPPED, event => {
-        if (event.token === this.filler?.token) { this.cancelFiller(); return; }
-        if (event.token !== this.speechToken) return;
+        if (!this.core?.playbackCurrent(event.token)) return;
         recordDiagnostic('warn', 'VoiceChat', 'playback-stopped', { reason: event.reason, error: event.error });
         this.view = { ...this.view, error: event.error ?? null };
         // A shake, route change, or speech-player failure stops this reply.
         // The system call and the next conversational turn stay available.
-        void this.skip();
+        this.core.acknowledgeSpeech(event.token, '0', 'stopped');
+        this.apply();
       });
       const call = speechEmitter.addListener(CALL_EVENT, event => this.callChanged(event));
       const started = speechEmitter.addListener(STARTED, event => this.playbackStarted(event.token));
-      const caption = speechEmitter.addListener(CAPTION, json => {
-        const event = JSON.parse(json) as LocalSpeechCaption;
-        if (this.closed || !event.localToken || (event.localToken !== this.speechToken && event.localToken !== this.filler?.token)) return;
-        if (event.localToken === this.filler?.token && this.filler.cancelled) return;
-        if (event.localToken === this.speechToken && event.ended && event.id !== this.activeCaption) return;
-        this.core?.playbackText(event.text, !event.ended);
-        if (event.localToken !== this.speechToken) return;
-        this.activeCaption = event.ended ? undefined : event.id;
-        this.caption(event.messageId, 'assistant', undefined, event.spokenUtf16, !event.ended);
+      const caption = speechEmitter.addListener(CAPTION, () => {
+        const event = JSON.parse(speechCaptionSnapshot()) as SpeechCaption | null;
+        const local = event?.local;
+        if (this.closed || !event || !local || !this.core?.playbackCurrent(local.token)) return;
+        const active = event.phase !== 'finished' && event.phase !== 'cancelled';
+        this.core.playbackText(local.token, event.text, active);
+        if (local.token !== this.speechToken) return;
+        this.caption(local.messageId, 'assistant', undefined,
+          local.startUtf16 + Math.max(0, event.spokenEndUtf16 - event.startUtf16), active);
       });
       const level = speechEmitter.addListener(LEVEL, event => {
-        if (this.closed || (event.token !== this.speechToken && event.token !== this.filler?.token)) return;
+        if (this.closed || !this.core?.playbackCurrent(event.token)) return;
         this.view = { ...this.view, playbackLevel: Number.isFinite(event.level) ? Math.max(0, Math.min(1, event.level)) : 0 };
         this.changed(this.view);
       });
       this.cleanup.push(() => speech.remove(), () => started.remove(), () => caption.remove(), () => level.remove(), () => call.remove(), composerSpeechInput.subscribe(() => this.recognitionChanged()));
-      this.subscribeTranscript();
+      if (!this.target.localSource) throw new Error('The native voice destination is unavailable. Reopen the agent tab.');
+      core.connect(this.target.localSource, () => { try { this.apply(); } catch (error) { this.fail(error); } },
+        this.playback.enqueueChatSpeechWithSource || this.playback.enqueueChatSpeech ? 2 : 1);
       if (this.closed) return;
       this.callToken = this.session;
       await this.playback.startVoiceCall(this.session, this.target.label);
@@ -211,45 +195,8 @@ export class VoiceConversation {
     } catch (error) { this.fail(error); }
   }
 
-  setTranscriptBinding(bindingToken?: string): void {
-    if (this.closed || this.transcriptBinding === bindingToken) return;
-    this.unsubscribeTranscript?.();
-    this.unsubscribeTranscript = undefined;
-    this.transcriptBinding = bindingToken;
-    if (this.core) {
-      if (bindingToken) this.subscribeTranscript();
-      else this.waitForTranscript();
-    }
-  }
-
-  private waitForTranscript(): void {
-    // Null invalidates a subscription token, not the remote conversation.
-    // Keep the pending prompt and speech queue while presentation rebinds.
-    if (this.transcriptRecovery === undefined) {
-      this.transcriptRecovery = setTimeout(() => this.fail(new Error('The agent transcript did not reconnect. Reopen voice chat to try again.')), TRANSCRIPT_RECOVERY_MS);
-    }
-    this.view = { ...this.view, transcript: null };
-    this.changed(this.view);
-  }
-
-  private subscribeTranscript(): void {
-    if (!this.transcriptBinding) return;
-    const unsubscribe = agentTranscriptService.subscribe(this.transcriptBinding, (state, baseline) => {
-      if (this.closed) return;
-      try {
-        if (!state) { this.waitForTranscript(); return; }
-        clearTimeout(this.transcriptRecovery);
-        this.transcriptRecovery = undefined;
-        this.view = { ...this.view, transcript: state };
-        // A new agent creates its transcript after our first prompt. Its first
-        // snapshot can already contain that reply, so it is not prior history.
-        this.core!.transcript(this.target.agent, state, Boolean(baseline) && !this.startedWithoutTranscript);
-        this.apply();
-      } catch (error) { this.fail(error); }
-    });
-    if (this.closed) unsubscribe();
-    else this.unsubscribeTranscript = unsubscribe;
-  }
+  // Presentation token is used only for word highlighting in a mounted chat.
+  setTranscriptBinding(bindingToken?: string): void { this.transcriptBinding = bindingToken; }
 
   setVadSensitivity(value: number): void {
     this.vadSensitivity = value;
@@ -271,33 +218,16 @@ export class VoiceConversation {
     try { this.core.submitText(text); this.caption(`user:${this.core.view().inputId}`, 'user', text); }
     catch (error) { this.view = { ...this.view, error: failureMessage(error) }; this.changed(this.view); return; }
     this.timing = undefined;
-    this.cancelFiller();
     this.cancelInput();
-    const token = this.playing;
-    this.speechToken = undefined;
-    this.readySpeech = undefined;
-    this.signalSpeech();
     this.view = { ...this.view, playbackLevel: 0, error: null };
-    if (token) void this.playback!.stopChatSpeech(token).then(() => {
-      if (this.playing === token) this.playing = undefined;
-      this.apply();
-    }, error => this.fail(error));
     this.apply();
   }
-  skip = async (): Promise<void> => {
-    this.cancelFiller();
-    const token = this.playing;
-    this.speechToken = undefined;
-    this.readySpeech = undefined;
-    this.signalSpeech();
+  skip = (): Promise<void> => {
+    if (this.closed) return Promise.resolve();
     this.cancelInput();
-    try {
-      if (token) await this.playback?.stopChatSpeech(token);
-      if (this.closed) return;
-      if (this.playing === token) this.playing = undefined;
-      this.core?.skipResponse();
-      this.apply();
-    } catch (error) { this.fail(error); }
+    this.core?.skipResponse();
+    this.apply();
+    return Promise.resolve();
   };
 
   private async prepare(): Promise<void> {
@@ -362,26 +292,18 @@ export class VoiceConversation {
     const view = this.core.view();
     if (view.audioError) { this.fail(new Error(view.audioError)); return; }
     if (view.phase !== 'listening' && this.sounds?.readyPlaying) void this.sounds.stop();
-    if (view.phase === 'waiting') {
-      this.fillerTimer ??= setInterval(() => this.fillSilence(), FILLER_POLL_MS);
-    } else {
-      clearInterval(this.fillerTimer);
-      this.fillerTimer = undefined;
-      this.cancelFiller();
-    }
     if (this.callActivated && view.phase !== this.view.phase) recordDiagnostic('info', 'VoiceChat', 'phase-changed', {
       from: this.view.phase, to: view.phase, inputId: view.inputId.toString(), appState: AppState.currentState,
     });
-    this.signalSpeech();
     if (view.phase === 'finishing' && this.view.phase !== 'finishing') {
       const now = performance.now();
       this.timing = { boundary: now, speechEnd: now - view.silenceMs };
     }
+    if (view.phase === 'waiting' && this.timing && this.timing.submitted === undefined) this.timing.submitted = performance.now();
     if (view.phase === 'speaking' && this.timing && this.timing.prose === undefined) this.timing.prose = performance.now();
     this.view = { ...this.view, phase: this.callActivated ? view.phase : 'starting', muted: view.muted, smartTurn: view.smartTurn, text: view.text, level: view.level, progress: view.progress, playbackLevel: view.phase === 'speaking' ? this.view.playbackLevel : 0 };
-    if (view.phase !== 'speaking') {
-      this.activeCaption = undefined;
-      if (this.view.messages?.some(message => message.active)) this.view = { ...this.view, messages: this.view.messages.map(message => message.active ? { ...message, active: false } : message) };
+    if (view.phase !== 'speaking' && this.view.messages?.some(message => message.active)) {
+      this.view = { ...this.view, messages: this.view.messages.map(message => message.active ? { ...message, active: false } : message) };
     }
     if (view.events?.length) {
       const messages = [...(this.view.messages ?? [])];
@@ -394,9 +316,6 @@ export class VoiceConversation {
     }
     if ((view.phase === 'listening' || view.phase === 'finishing') && view.text.trim()) this.caption(`user:${view.inputId}`, 'user', view.text);
     this.changed(this.view);
-    if ((view.phase === 'listening' || view.phase === 'finishing') && this.playing && this.input?.monitor) {
-      this.stopInterruptedPlayback();
-    }
     if (view.phase === 'listening') {
       if (this.input?.id !== view.inputId) this.listen(view.inputId);
       if (view.analyze && !this.analyzing) {
@@ -413,19 +332,11 @@ export class VoiceConversation {
     } else if (view.phase === 'speaking') {
       if (view.muted || (this.input && !this.input.monitor)) this.cancelInput();
       else if (this.canInterrupt && this.readySpeech && this.readySpeech === this.speechToken && this.input?.id !== view.inputId) this.listen(view.inputId, true);
-      if (!this.playing && !this.filler) void this.speak(view.inputId);
     } else {
       if (view.phase !== 'waiting' || view.muted) this.cancelInput();
-      if (view.phase === 'waiting') {
-        const prompt = this.core.takePrompt();
-        if (prompt) {
-          recordDiagnostic('info', 'VoiceChat', 'prompt-queued', { inputId: view.inputId.toString(), characters: prompt.length, appState: AppState.currentState });
-          if (this.timing) this.timing.submitted = performance.now();
-          if (!this.send(prompt)) this.fail(new Error('The voice message could not be queued for this agent.'));
-        }
-        if (this.canInterrupt && !view.muted && this.input?.id !== view.inputId) this.listen(view.inputId, true);
-      }
+      if (view.phase === 'waiting' && this.canInterrupt && !view.muted && this.input?.id !== view.inputId) this.listen(view.inputId, true);
     }
+    for (const effect of this.core.takeEffects()) this.runSpeechEffect(effect);
   }
 
   private listen(id: bigint, monitor = false): void {
@@ -487,71 +398,6 @@ export class VoiceConversation {
     this.watchdog = setTimeout(() => this.fail(new Error(message)), WATCHDOG_MS);
   }
 
-  private signalSpeech(): void {
-    const wake = this.wakeSpeech;
-    this.wakeSpeech = undefined;
-    wake?.();
-  }
-
-  private fillSilence(): void {
-    if (this.closed || this.filler || this.playing || this.core?.view().phase !== 'waiting') return;
-    try {
-      // Rust owns the delay, spacing, random phrase, and skipped-reply policy.
-      const text = this.core.nextSpeech();
-      if (!text) return;
-      const filler: FillerPlayback = { token: `${this.session}:filler:${++this.fillerSequence}`, cancelled: false };
-      this.filler = filler;
-      filler.done = this.speakFiller(filler, text);
-    } catch (error) { this.fail(error); }
-  }
-
-  private cancelFiller(): void {
-    const filler = this.filler;
-    if (!filler || filler.cancelled) return;
-    filler.cancelled = true;
-    this.core?.playbackText('', false);
-    // Stop audible output immediately. The owner remains until startup and
-    // cleanup settle, so a late TTS start cannot replace the real reply.
-    void this.playback!.stopChatSpeech(filler.token).catch(error => {
-      recordDiagnostic('warn', 'VoiceChat', 'filler-stop-failed', { error: failureMessage(error) });
-    });
-  }
-
-  private async speakFiller(filler: FillerPlayback, text: string): Promise<void> {
-    const current = () => !this.closed && !filler.cancelled && this.core?.view().phase === 'waiting';
-    try {
-      await this.captureQueue;
-      if (!this.input?.monitor) await this.waitForInputRelease();
-      if (!current()) return;
-      await this.playback!.startLocalChatSpeech(filler.token, this.target.label, this.session);
-      if (!current()) return;
-      if (this.playback!.speakChatWithSource) {
-        await this.playback!.speakChatWithSource(filler.token, text, JSON.stringify({ localToken: filler.token, messageId: '', bindingTokens: [], text, startUtf16: 0 }));
-      } else await this.playback!.speakChat(filler.token, text);
-    } catch (error) {
-      if (current()) recordDiagnostic('warn', 'VoiceChat', 'filler-playback-failed', { error: failureMessage(error) });
-    } finally {
-      // Also stop after a cancelled asynchronous startup has settled.
-      try { await this.playback!.stopChatSpeech(filler.token); }
-      catch (error) { recordDiagnostic('warn', 'VoiceChat', 'filler-stop-failed', { error: failureMessage(error) }); }
-      if (this.filler === filler) this.filler = undefined;
-      if (!this.closed) this.apply();
-    }
-  }
-
-  private stopInterruptedPlayback(): void {
-    const token = this.playing;
-    if (!token || this.speechToken !== token) return;
-    recordDiagnostic('info', 'VoiceChat', 'reply-interrupted', { inputId: this.input?.id.toString() });
-    this.speechToken = undefined;
-    this.readySpeech = undefined;
-    this.signalSpeech();
-    void this.playback!.stopChatSpeech(token).then(() => {
-      if (this.playing === token) this.playing = undefined;
-      this.apply();
-    }, error => this.fail(error));
-  }
-
   private playbackStarted(token: string): void {
     const timing = this.timing;
     if (this.closed || token !== this.speechToken || !timing || timing.played !== undefined) return;
@@ -567,75 +413,62 @@ export class VoiceConversation {
     });
   }
 
-  private async speak(id: bigint): Promise<void> {
-    const token = `${this.session}:speech:${id}`;
-    const releaseCaption = retainSpeechCaption(token);
-    this.playing = token;
-    this.speechToken = token;
-    const current = () => !this.closed && this.speechToken === token;
-    try {
-      await this.captureQueue;
-      if (!this.input?.monitor) await this.waitForInputRelease();
+  /** Executes Rust effects. Promise resolution acknowledges I/O only. */
+  private runSpeechEffect(effect: VoiceSpeechEffect): void {
+    const { token } = effect;
+    if (effect.type === 'stop') {
+      this.speechResources.delete(token);
+      if (this.speechToken === token) this.speechToken = undefined;
+      if (this.readySpeech === token) this.readySpeech = undefined;
+      void this.playback?.stopChatSpeech(token).catch(error => recordDiagnostic('warn', 'VoiceChat', 'speech-stop-failed', { error: failureMessage(error) }));
+      return;
+    }
+    const current = () => !this.closed && Boolean(this.core?.playbackCurrent(token));
+    if (effect.type === 'start') {
       if (!current()) return;
-      await this.playback!.startLocalChatSpeech(token, this.target.label, this.session);
-      if (!current()) { await this.playback!.stopChatSpeech(token); return; }
-      this.readySpeech = token;
+      this.speechResources.set(token, { filler: effect.filler });
+      if (!effect.filler) this.speechToken = token;
+      void (async () => {
+        await this.captureQueue;
+        if (!this.input?.monitor) await this.waitForInputRelease();
+        if (!current()) return;
+        await this.playback!.startLocalChatSpeech(token, this.target.label, this.session);
+        if (!current()) { void this.playback?.stopChatSpeech(token); return; }
+        if (!effect.filler) this.readySpeech = token;
+        this.core!.acknowledgeSpeech(token, '0', 'started');
+        this.apply();
+      })().catch(error => {
+        if (!current()) return;
+        recordDiagnostic('warn', 'VoiceChat', 'speech-start-failed', { error: failureMessage(error) });
+        if (!effect.filler) this.view = { ...this.view, error: failureMessage(error) };
+        this.core?.acknowledgeSpeech(token, '0', 'failed');
+        this.apply();
+      });
+      return;
+    }
+    if (!current()) return;
+    const captionId = `assistant:${token}`;
+    const previous = effect.filler ? '' : this.view.messages?.find(message => message.id === captionId)?.text ?? '';
+    const text = previous ? `${previous} ${effect.text}` : effect.text;
+    if (!effect.filler) this.caption(captionId, 'assistant', text);
+    const chat = !effect.filler && this.transcriptBinding ? { bindingTokens: [this.transcriptBinding], hostId: this.target.hostId, paneId: this.target.paneId,
+      messageId: effect.messageId, partId: effect.partId, startUtf16: effect.startUtf16 } : undefined;
+    const source = JSON.stringify({ localToken: token, messageId: effect.filler ? '' : captionId, bindingTokens: [], text: effect.text, startUtf16: previous ? previous.length + 1 : 0, chat });
+    if (this.timing && !effect.filler && this.timing.synthesis === undefined) this.timing.synthesis = performance.now();
+    const enqueue = this.playback!.enqueueChatSpeechWithSource?.bind(this.playback) ?? this.playback!.speakChatWithSource?.bind(this.playback);
+    const played = enqueue ? enqueue(token, effect.text, source) : (this.playback!.enqueueChatSpeech ?? this.playback!.speakChat).call(this.playback, token, effect.text);
+    void played.then(() => {
+      if (!current()) return;
+      if (!effect.filler) this.caption(captionId, 'assistant', undefined, text.length);
+      this.core!.acknowledgeSpeech(token, effect.chunk, 'played');
       this.apply();
-      const enqueueWithSource = this.playback!.enqueueChatSpeechWithSource?.bind(this.playback)
-        ?? this.playback!.speakChatWithSource?.bind(this.playback);
-      const enqueue = this.playback!.enqueueChatSpeech?.bind(this.playback)
-        ?? this.playback!.speakChat.bind(this.playback);
-      const capacity = this.playback!.enqueueChatSpeechWithSource || (!enqueueWithSource && this.playback!.enqueueChatSpeech) ? SPEECH_LOOKAHEAD : 1;
-      const pending = new Set<Promise<void>>();
-      const status: { failure?: { error: unknown } } = {};
-      const checkFailure = () => { if (status.failure) throw status.failure.error; };
-      while (current()) {
-        checkFailure();
-        if (pending.size >= capacity) { await Promise.race(pending); continue; }
-        const chunk = this.core!.nextSpeechWithSource();
-        const text = chunk?.text;
-        if (!text) {
-          if (this.core!.speechFinished()) {
-            await Promise.all(pending);
-            checkFailure();
-            break;
-          }
-          await new Promise<void>(resolve => { this.wakeSpeech = resolve; });
-          continue;
-        }
-        if (this.timing && this.timing.synthesis === undefined) this.timing.synthesis = performance.now();
-        const captionId = `assistant:${token}`;
-        const previous = this.view.messages?.find(message => message.id === captionId)?.text ?? '';
-        const captionText = previous ? `${previous} ${text}` : text;
-        this.caption(captionId, 'assistant', captionText);
-        const spokenEnd = captionText.length;
-        const done = () => {
-          pending.delete(queued);
-          if (current()) this.signalSpeech();
-        };
-        const chat = chunk && this.transcriptBinding ? { bindingTokens: [this.transcriptBinding], hostId: this.target.hostId, paneId: this.target.paneId,
-          messageId: chunk.messageId, partId: chunk.partId, startUtf16: chunk.startUtf16 } : undefined;
-        const source = JSON.stringify({ localToken: token, messageId: captionId, bindingTokens: [], text, startUtf16: previous ? previous.length + 1 : 0, chat });
-        const queued = (enqueueWithSource ? enqueueWithSource(token, text, source) : enqueue(token, text)).then(() => {
-          if (current()) this.caption(captionId, 'assistant', undefined, spokenEnd);
-          done();
-        }, error => { status.failure = { error }; done(); });
-        pending.add(queued);
-      }
+    }, error => {
       if (!current()) return;
-      this.speechToken = undefined;
-      this.readySpeech = undefined;
-      await this.playback!.stopChatSpeech(token);
-      if (this.closed) return;
-      if (this.playing === token) this.playing = undefined;
-      this.core!.playbackEnded();
-      this.apply();
-    } catch (error) {
-      if (!current()) return;
+      recordDiagnostic('warn', 'VoiceChat', 'speech-failed', { error: failureMessage(error) });
       this.view = { ...this.view, error: failureMessage(error) };
-      recordDiagnostic('warn', 'VoiceChat', 'playback-failed', { error: this.view.error });
-      await this.skip();
-    } finally { releaseCaption(); }
+      this.core!.acknowledgeSpeech(token, effect.chunk, 'failed');
+      this.apply();
+    });
   }
 
   /** Native word callbacks and played PCM own the cursor; JS never advances a timer. */
@@ -671,21 +504,19 @@ export class VoiceConversation {
     if (this.closed) return;
     this.closed = true;
     const stoppedSound = this.sounds?.stop();
-    this.cancelFiller();
-    this.signalSpeech();
-    this.core?.close();
+    try {
+      this.core?.close();
+      if (this.core) for (const effect of this.core.takeEffects()) this.runSpeechEffect(effect);
+    } catch (error) {
+      recordDiagnostic('warn', 'VoiceChat', 'native-cleanup-failed', { error: failureMessage(error) });
+    }
+    for (const token of this.speechResources.keys()) this.runSpeechEffect({ type: 'stop', token });
     clearTimeout(this.watchdog);
     clearInterval(this.progressTimer);
-    clearInterval(this.captureTimer);
-    clearInterval(this.fillerTimer);
-    clearTimeout(this.transcriptRecovery);
     for (const cleanup of this.cleanup.splice(0)) cleanup();
-    this.unsubscribeTranscript?.();
-    this.unsubscribeTranscript = undefined;
     this.cancelInput();
     const speech = this.speechToken;
     this.speechToken = undefined;
-    this.playing = undefined;
     this.readySpeech = undefined;
     const call = this.callToken;
     this.callToken = undefined;
@@ -698,7 +529,6 @@ export class VoiceConversation {
     });
     try {
       if (speech) await this.playback?.stopChatSpeech(speech);
-      await this.filler?.done;
       await this.captureQueue;
       await this.waitForInputRelease();
     } catch { /* Cleanup must still release the shared input reservation. */ }

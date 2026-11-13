@@ -1,90 +1,41 @@
-import { NativeVoiceChat } from '../packages/react-native-whip-ssh/src/voiceChat';
-import type { AgentChatState } from '../src/agentChat';
+import { NativeVoiceChat, type LocalVoiceSource } from '../packages/react-native-whip-ssh/src/voiceChat';
 
-let mockWaiting = false;
 const mockView = jest.fn(() => ({ phase: 2, downloadedBytes: 0n, totalBytes: 0n }));
-const mockTranscript = jest.fn((_agent: number, live: boolean, baseline: boolean) => {
-  // The native controller rejects disconnections and replacing an in-flight
-  // conversation. A routine fetch must not masquerade as either operation.
-  if (!live) throw new Error('Disconnected');
-  if (baseline && mockWaiting) throw new Error('Conversation replaced');
-});
+const mockConnect = jest.fn();
+const mockEffects = jest.fn(() => '[]');
+const mockAck = jest.fn();
 jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
-  VoiceChat: jest.fn(() => ({ transcript: mockTranscript, view: mockView })),
+  VoiceChat: jest.fn(() => ({ view: mockView, connect: mockConnect, takeEffects: mockEffects, acknowledgeSpeech: mockAck })),
   AgentTranscriptKind: { Claude: 0, Codex: 1, OpenCode: 2, Pi: 3 },
   VoiceChatPhase: { Setup: 0, Preparing: 1, Listening: 2, Finishing: 3, Waiting: 4, Speaking: 5, Muted: 6, Closed: 7 },
 }));
-jest.mock('../packages/react-native-whip-ssh/src/chatSpeech', () => ({ speechMessages: () => [] }));
-
-const state: AgentChatState = { sessionId: 'conversation', status: 'live', transcript: { sessionId: 'conversation', turns: [], messages: [] } };
-beforeEach(() => { jest.clearAllMocks(); mockWaiting = false; });
+beforeEach(() => jest.clearAllMocks());
 
 test('voice chat without a model reports zero download progress', () => {
-  const call = new NativeVoiceChat('/model-cache');
-  expect(call.view()).toEqual(expect.objectContaining({ phase: 'listening', progress: 0 }));
+  expect(new NativeVoiceChat('/model-cache').view()).toEqual(expect.objectContaining({ phase: 'listening', progress: 0 }));
 });
 
 test('optional model downloads retain their progress', () => {
   mockView.mockReturnValueOnce({ phase: 1, downloadedBytes: 50n, totalBytes: 100n });
-  const call = new NativeVoiceChat('/model-cache');
-  expect(call.view()).toEqual(expect.objectContaining({ phase: 'preparing', progress: 0.5 }));
+  expect(new NativeVoiceChat('/model-cache').view()).toEqual(expect.objectContaining({ phase: 'preparing', progress: 0.5 }));
 });
 
-test('agent activity refreshes and repeated snapshots keep the same conversation connected', () => {
-  const call = new NativeVoiceChat('/model-cache');
-  call.transcript('codex', state, true);
-  mockWaiting = true;
-  for (const status of ['stale', 'loading', 'live'] as const) {
-    expect(() => call.transcript('codex', { ...state, status }, true)).not.toThrow();
-  }
+test('connects native owners and returns token-scoped playback acknowledgements', () => {
+  const call = new NativeVoiceChat('/cache');
+  const changed = jest.fn();
+  const source: LocalVoiceSource = { runtimeId: 'runtime', incarnation: 7n, terminalId: 'terminal', paneId: 'pane', agent: 'codex' as const, queue: {} as LocalVoiceSource['queue'], targetKey: 'target' };
+  call.connect(source, changed, 2);
+  expect(mockConnect).toHaveBeenCalledWith('runtime', 7n, 'terminal', 'pane', source.queue, 'target', { changed }, 2, 1);
+  const effect = { version: 1, type: 'speak', token: 'call-lease', chunk: '12', text: 'Hello.' };
+  mockEffects.mockReturnValueOnce(JSON.stringify([effect]));
+  expect(call.takeEffects()).toEqual([effect]);
+  call.acknowledgeSpeech('call-lease', '12', 'played');
+  expect(mockAck).toHaveBeenCalledWith('call-lease', 12n, 'played');
 });
 
-test('the first transcript can arrive after submitting a new agent’s first prompt', () => {
-  const call = new NativeVoiceChat('/model-cache');
-  mockWaiting = true;
-  expect(() => call.transcript('codex', state, false)).not.toThrow();
-});
 
-test.each(['claude', 'codex', 'opencode', 'pi'] as const)('%s waits for the whole turn outcome through idle gaps between assistant segments', agent => {
-  const call = new NativeVoiceChat('/model-cache');
-  const turn = {
-    id: 'current-turn', status: 'idle' as const, diffs: [],
-    assistants: [{ id: 'reply', role: 'assistant' as const, parts: [], diffs: [], completedAt: 1 }],
-  };
-  const update = (outcome?: 'completed') => ({
-    ...state,
-    transcript: { ...state.transcript, turns: [{ ...turn, details: { outcome } }] },
-  });
-  call.transcript(agent, update(), true);
-  expect(mockTranscript).toHaveBeenLastCalledWith(expect.any(Number), true, true, [expect.objectContaining({ completed: false })]);
-  mockWaiting = true;
-  call.transcript(agent, update(), false);
-  expect(mockTranscript).toHaveBeenLastCalledWith(expect.any(Number), true, false, [expect.objectContaining({ completed: false })]);
-  call.transcript(agent, update('completed'), false);
-  expect(mockTranscript).toHaveBeenLastCalledWith(expect.any(Number), true, false, [expect.objectContaining({ completed: true })]);
-});
-
-test('an actual conversation replacement still prevents speaking another conversation’s reply', () => {
-  const call = new NativeVoiceChat('/model-cache');
-  call.transcript('codex', state, true);
-  mockWaiting = true;
-  expect(() => call.transcript('codex', { ...state, sessionId: 'another-conversation' }, false)).toThrow('Conversation replaced');
-});
-
-test('a removed transcript is distinct from a routine activity refresh', () => {
-  const call = new NativeVoiceChat('/model-cache');
-  call.transcript('codex', state, true);
-  expect(() => call.transcript('codex', { ...state, status: 'unavailable' }, false)).toThrow('Disconnected');
-});
-
-test('tool details cross the native boundary with the owning turn rather than the speech queue', () => {
-  const call = new NativeVoiceChat('/model-cache');
-  const updated: AgentChatState = { ...state, transcript: { ...state.transcript, turns: [{
-    id: 'turn', status: 'idle', diffs: [], assistants: [{ id: 'assistant', role: 'assistant', diffs: [], parts: [{
-      type: 'tool', id: 'tool', callId: 'call', tool: 'shell', state: { status: 'completed', input: { command: 'cargo check' }, output: 'passed', files: [], diagnostics: [], loaded: [] },
-    }] }],
-  }] } };
-  call.transcript('codex', updated, false);
-  const turns = (mockTranscript.mock.calls.at(-1) as unknown as [number, boolean, boolean, { toolsJson: string }[]])[3];
-  expect(JSON.parse(turns[0].toolsJson)).toEqual([{ id: 'call', kind: 'tool', name: 'shell', status: 'completed', input: '{"command":"cargo check"}', output: 'passed' }]);
+test('rejects an incompatible effect protocol before executing platform speech', () => {
+  const call = new NativeVoiceChat('/cache');
+  mockEffects.mockReturnValueOnce(JSON.stringify([{ version: 2, type: 'start', token: 'unknown' }]));
+  expect(() => call.takeEffects()).toThrow('Unsupported Local voice effect version');
 });

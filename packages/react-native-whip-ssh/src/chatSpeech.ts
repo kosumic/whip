@@ -7,8 +7,10 @@ import {
   AutomaticChatSpeechQueue,
   chatSpeechAnnouncement,
   chatSpeechHighlight,
+  chatSpeechPresentation,
+  speechCaptionSnapshot,
 } from './generated-entry';
-export { chatSpeechHighlight };
+export { chatSpeechHighlight, chatSpeechPresentation, speechCaptionSnapshot };
 
 export interface ChatSpeechChunk {
   messageId: string;

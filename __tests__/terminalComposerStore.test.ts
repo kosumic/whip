@@ -228,3 +228,16 @@ test('permanently removed panes and hosts lose toggles while surviving panes kee
   expect(store.snapshot(sibling)).toBe(defaults);
   expect(store.snapshot(second)).toBe(otherHost);
 });
+
+test('local voice correlation metadata stays in transport while prompt UI and history show the spoken words', () => {
+  const store = new TerminalComposerStore();
+  const history = jest.fn();
+  store.attachSubmissions(async () => {}, history);
+  const native = TerminalSubmissionQueue.instances.at(-1)!;
+  const wireText = '[Whip local voice 11111111-1111-4111-8111-111111111111; tracking metadata]\nHello agent';
+  const message = store.enqueue(first, wireText, [])!;
+  expect(message.text).toBe('Hello agent');
+  expect(message.pasteEvents).toEqual([wireText]);
+  native.project(first, message.id, 'accepted');
+  expect(history).toHaveBeenCalledWith('Hello agent');
+});

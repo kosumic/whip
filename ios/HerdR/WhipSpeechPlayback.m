@@ -310,7 +310,6 @@ static AVSpeechSynthesisVoice *WhipConfiguredSystemVoice(NSString *identifier, N
 @property(nonatomic, strong) NSMutableDictionary *caption;
 @property(nonatomic) uint64_t captionClock;
 @property(nonatomic) NSInteger captionPrefix;
-@property(nonatomic) NSInteger captionPosition;
 @property(nonatomic, strong) NSTimer *timer;
 @property(nonatomic, strong) CMMotionManager *motion;
 @property(nonatomic) uint64_t lease;
@@ -1025,7 +1024,7 @@ static void WhipWakeAutomaticSpeech(void)
   self.captionPrefix = self.caption ? (NSInteger)text.length - (NSInteger)[self.caption[@"text"] length] : 0;
   self.captionClock = self.caption ? whip_speech_caption_start(text.UTF8String, MAX(0, self.captionPrefix)) : 0;
   self.caption[@"id"] = [NSString stringWithFormat:@"%llu", (unsigned long long)self.captionClock];
-  self.captionPosition = -1;
+  [self captionCommand:@"bind" fields:@{@"owner": self.owner ?: @"", @"lease": @(self.lease), @"source": self.caption ?: @{}}];
   uint64_t lease = self.lease;
   NSTimeInterval timeout = whip_speech_timeout_ms(preview ? WhipSpeechChat : self.kind, text.length) / 1000.0;
   // Model initialization has its own watchdog. The ordinary Rust speech
@@ -1041,7 +1040,10 @@ static void WhipWakeAutomaticSpeech(void)
     player.onProgress = ^(NSUInteger played, NSUInteger samples, BOOL complete) {
       WhipSpeechPlayback *playback = weakSelf;
       if (playback.lease == lease && playback.utterance == utterance && playback.captionClock && played > 0)
-        [playback reportCaption:whip_speech_caption_progress(playback.captionClock, played, samples, complete)];
+      {
+        whip_speech_caption_progress(playback.captionClock, played, samples, complete);
+        [NSNotificationCenter.defaultCenter postNotificationName:WhipSpeechCaption object:playback userInfo:@{}];
+      }
     };
     void (^playbackStarted)(void) = ^{
       WhipSpeechPlayback *playback = weakSelf;
@@ -1172,7 +1174,8 @@ static void WhipWakeAutomaticSpeech(void)
 {
   // Chunk completion can precede the next chunk's audio. The session's clear:
   // path ends the caption; until then keep the last word and upcoming dimming.
-  if (error) [self clearCaption];
+  if (error) [self clearCaption:@"interrupted"];
+  else if (self.utterance) [self captionCommand:@"buffer" fields:@{}];
   [self.levelTimer invalidate]; self.levelTimer = nil;
   [self reportLevel:0];
   [self.pcm stop];
@@ -1200,7 +1203,7 @@ static void WhipWakeAutomaticSpeech(void)
 }
 - (void)clear:(NSString *)reason error:(NSString *)error
 {
-  [self clearCaption];
+  [self clearCaption:reason];
   self.captionSource = nil;
   NSString *owner = self.owner;
   if ([owner isEqualToString:WhipAutomaticOwner])
@@ -1283,20 +1286,24 @@ static void WhipWakeAutomaticSpeech(void)
   if (self.kind == WhipSpeechChat && self.owner)
     [NSNotificationCenter.defaultCenter postNotificationName:WhipChatSpeechLevel object:self userInfo:@{@"token": self.owner, @"level": @(level)}];
 }
-- (void)reportCaption:(NSUInteger)position
+- (void)captionCommand:(NSString *)action fields:(NSDictionary *)fields
 {
-  NSInteger contentPosition = (NSInteger)position - self.captionPrefix;
-  if (!self.caption || contentPosition < 0 || contentPosition == self.captionPosition) return;
-  self.captionPosition = contentPosition;
-  self.caption[@"spokenUtf16"] = @([self.caption[@"startUtf16"] unsignedIntegerValue] + contentPosition);
-  [NSNotificationCenter.defaultCenter postNotificationName:WhipSpeechCaption object:self userInfo:self.caption];
-}
-- (void)clearCaption
-{
-  if (self.caption) {
-    NSMutableDictionary *ended = [self.caption mutableCopy]; ended[@"ended"] = @YES;
-    [NSNotificationCenter.defaultCenter postNotificationName:WhipSpeechCaption object:self userInfo:ended];
+  if (!self.captionClock) return;
+  NSMutableDictionary *command = [fields mutableCopy];
+  command[@"action"] = action; command[@"id"] = @(self.captionClock);
+  NSData *data = [NSJSONSerialization dataWithJSONObject:command options:0 error:nil];
+  NSString *json = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+  char *result = whip_speech_caption_command(json.UTF8String);
+  if (result) {
+    NSDictionary *snapshot = [NSJSONSerialization JSONObjectWithData:[[NSString stringWithUTF8String:result] dataUsingEncoding:NSUTF8StringEncoding] options:NSJSONReadingFragmentsAllowed error:nil];
+    if ([snapshot isKindOfClass:NSDictionary.class])
+      [NSNotificationCenter.defaultCenter postNotificationName:WhipSpeechCaption object:self userInfo:snapshot];
+    whip_speech_backend_free(result);
   }
+}
+- (void)clearCaption:(NSString *)reason
+{
+  [self captionCommand:@"clear" fields:@{@"reason": reason ?: @"stopped"}];
   self.caption = nil;
   self.captionClock = 0;
 }
@@ -1304,7 +1311,7 @@ static void WhipWakeAutomaticSpeech(void)
 {
   dispatch_async(dispatch_get_main_queue(), ^{
     if (self.utterance != utterance) return;
-    [self reportCaption:range.location];
+    [self captionCommand:@"range" fields:@{@"start": @(range.location), @"end": @(NSMaxRange(range))}];
     [self reportLevel:0.1 + MIN(range.length, 12) * 0.006];
     [self.levelTimer invalidate];
     __weak WhipSpeechPlayback *weakSelf = self;

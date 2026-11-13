@@ -361,7 +361,6 @@ object SpeechPlayback : SensorEventListener {
   private var caption: JSONObject? = null
   private var captionClock = 0L
   private var captionPrefix = 0
-  private var captionPosition = -1
   private var audioManager: AudioManager? = null
   private var sensorManager: SensorManager? = null
   private val shakeDetector = SpeechShakeDetector()
@@ -487,15 +486,14 @@ object SpeechPlayback : SensorEventListener {
         caption = event
         captionClock = clock
         captionPrefix = 0
-        captionPosition = -1
-        reportCaption(0)
+        event?.let { bindCaption(current, it) }
         reportStarted(current)
         clearTimeout()
         handler.postDelayed(timeout, SpeechPolicy.timeoutMs(SpeechPolicy.CHAT, entry.text.length.toLong()))
       }
     }, { if (session === current) reportLevel(current, it) }, { played, samples, complete ->
       if (session === current && caption === event && clock != 0L && played > 0L)
-        reportCaption(SpeechPolicy.captionProgress(clock, played, samples, complete).toInt())
+        reportPcmCaption(clock, played, samples, complete)
     }) { completed, spoke, error ->
       if (session !== current || !queuedChat.contains(entry)) return@enqueue
       if (!completed || !spoke || error != null || !SpeechPolicy.complete(current.id)) {
@@ -504,7 +502,7 @@ object SpeechPlayback : SensorEventListener {
       }
       queuedChat.remove(entry)
       if (event != null && caption === event) {
-        reportCaption(entry.text.length)
+        captionCommand("buffer")
       }
       if (queuedChat.isEmpty()) clearTimeout()
       if (queuedChat.isEmpty()) finishTurn(current)
@@ -658,7 +656,7 @@ object SpeechPlayback : SensorEventListener {
         override fun onRangeStart(utteranceId: String?, start: Int, end: Int, frame: Int) { handler.post {
           if (utteranceId != null && utteranceId == SpeechPlayback.utteranceId) session?.let {
             reportLevel(it, 0.1f + minOf(end - start, 12) * 0.006f)
-            reportCaption(start)
+            captionCommand("range", JSONObject().put("start", start).put("end", end))
             handler.removeCallbacks(resetLevel)
             handler.postDelayed(resetLevel, 180)
           }
@@ -715,8 +713,8 @@ object SpeechPlayback : SensorEventListener {
       JSONObject(it.toString()).put("id", id)
     }
     captionPrefix = caption?.optString("text")?.let { text.length - it.length } ?: 0
-    captionPosition = -1
     captionClock = if (caption != null) SpeechPolicy.captionStart(text, captionPrefix.toLong()) else 0L
+    caption?.let { bindCaption(current, it) }
     val listener = AudioManager.OnAudioFocusChangeListener { change ->
       // Immediate agent notifications may duck audio; their sound must not
       // turn deferred status delivery into an interruption of the current chunk.
@@ -751,7 +749,7 @@ object SpeechPlayback : SensorEventListener {
       }
       PcmSpeechPlayback.start(current.id, text, rate, attributes, captionClock, { reportStarted(current); playbackStarted() }, { reportLevel(current, it) }, { played, samples, complete ->
         if (session === current && utteranceId == id && captionClock != 0L && played > 0L)
-          reportCaption(SpeechPolicy.captionProgress(captionClock, played, samples, complete).toInt())
+          reportPcmCaption(captionClock, played, samples, complete)
       }) { completed, spoke, error ->
         if (session?.id == current.id && utteranceId == id) {
           when {
@@ -792,20 +790,29 @@ object SpeechPlayback : SensorEventListener {
       onChatLevel?.invoke(current.owner, if (level.isFinite()) level.coerceIn(0f, 1f) else 0f)
   }
 
-  private fun reportCaption(position: Int) {
-    val event = caption ?: return
-    val contentPosition = position - captionPrefix
-    if (contentPosition < 0 || contentPosition == captionPosition) return
-    captionPosition = contentPosition
-    event.put("spokenUtf16", event.optInt("startUtf16") + contentPosition)
-    onCaption?.invoke(event.toString())
+  private fun publishCaption(json: String) {
+    if (json != "null") onCaption?.invoke(json)
   }
 
-  private fun clearCaption() {
-    caption?.let { onCaption?.invoke(JSONObject(it.toString()).put("ended", true).toString()) }
+  private fun bindCaption(current: Session, source: JSONObject) {
+    publishCaption(SpeechPolicy.captionCommand(JSONObject().put("action", "bind").put("id", captionClock)
+      .put("owner", current.owner).put("lease", current.id).put("source", source).toString()))
+  }
+
+  private fun captionCommand(action: String, fields: JSONObject = JSONObject()) {
+    if (captionClock != 0L) publishCaption(SpeechPolicy.captionCommand(fields.put("action", action).put("id", captionClock).toString()))
+  }
+
+  private fun reportPcmCaption(clock: Long, played: Long, samples: Long, complete: Boolean) {
+    SpeechPolicy.captionProgress(clock, played, samples, complete)
+    // Events are wake-ups. React reads the immutable Rust snapshot.
+    onCaption?.invoke("null")
+  }
+
+  private fun clearCaption(reason: String = STOPPED) {
+    captionCommand("clear", JSONObject().put("reason", reason))
     caption = null
     captionClock = 0L
-    captionPosition = -1
   }
 
   internal fun configureSystemVoice(tts: TextToSpeech, locale: Locale, languageExplicit: Boolean, rate: Double, localOnly: Boolean = false): Boolean {
@@ -894,7 +901,7 @@ object SpeechPlayback : SensorEventListener {
   }
 
   private fun clear(reason: String, error: String?) {
-    clearCaption()
+    clearCaption(reason)
     val stopped = session
     if (stopped?.owner == AUTOMATIC_OWNER)
       Log.i(TAG, "automatic-clear id=$automaticId lease=${stopped.id} reason=$reason failed=${error != null}")
@@ -938,6 +945,7 @@ object SpeechPlayback : SensorEventListener {
   private fun finish(id: String?) {
     val current = session ?: return
     if (id == null || id != utteranceId || !SpeechPolicy.complete(current.id)) return
+    captionCommand("buffer")
     // A chat chunk can finish before the next chunk has audio. Keep its caption
     // until the next chunk reports progress or clear() ends the session.
     handler.removeCallbacks(resetLevel)

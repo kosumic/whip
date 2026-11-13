@@ -88,7 +88,9 @@ pub use remote_ops::*;
 pub use reverse_control::*;
 pub use rich_text_html::*;
 pub use secure_id::*;
-pub use speech_captions::chat_speech_highlight;
+pub use speech_captions::{
+    chat_speech_highlight, chat_speech_presentation, speech_caption_snapshot,
+};
 pub use ssh::tailcat::{
     TailcatIdentity, TailcatIdentityError, generate_tailcat_identity, tailcat_server_command,
 };

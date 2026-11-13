@@ -1932,11 +1932,20 @@ export function SessionScreen({
                 : undefined
             }
             chatViewEnabled={chatVisible}
-            voiceChatTarget={!savedChatOpen && liveVoiceChatAgent && activePane && activeTarget && activeTarget.session.kind !== 'ssh' &&
+            voiceChatTarget={!savedChatOpen && liveVoiceChatAgent && activePane && activeTarget && viewedNative && activeTarget.session.kind !== 'ssh' &&
               (!activeChatView || agentTranscriptReadiness(activeChatView.state) !== 'failed')
               ? {
                   agent: liveVoiceChatAgent,
                   bindingToken: activeChatView?.binding.bindingToken,
+                  localSource: {
+                    runtimeId: viewedNative.runtimeId,
+                    incarnation: BigInt(viewedNative.runtimeIncarnation),
+                    terminalId: activeTarget.session.terminalId,
+                    paneId: activePane.pane_id,
+                    agent: liveVoiceChatAgent,
+                    queue: composerStore.voiceSubmissions,
+                    targetKey: activeTarget.key,
+                  },
                   hostId: hostSessionId,
                   paneId: activePane.pane_id,
                   tabId: activePane.tab_id,

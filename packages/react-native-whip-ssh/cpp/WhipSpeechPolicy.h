@@ -28,6 +28,7 @@ char *whip_automatic_speech_command(const char *command);
 uint64_t whip_speech_timeout_ms(uint8_t kind, uint64_t text_units);
 // PCM progress includes the UTF-16 prefix offset only after its audio has played.
 // System TTS continues to use the platform's original utterance range callbacks.
+char *whip_speech_caption_command(const char *json);
 uint64_t whip_speech_caption_start(const char *text, uintptr_t prefix_utf16);
 uintptr_t whip_speech_caption_progress(uint64_t id, uintptr_t played, uintptr_t samples, bool complete);
 uint64_t whip_speech_stop_owner(uint8_t kind, const char *owner);

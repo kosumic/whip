@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { DeviceEventEmitter, NativeEventEmitter, NativeModules, Platform } from 'react-native';
+import { speechCaptionSnapshot } from 'react-native-whip-ssh';
 import type { NativeSpeechPlayback } from './speechPlayback';
 
 export interface SpeechCaptionSource {
@@ -9,70 +10,50 @@ export interface SpeechCaptionSource {
   messageId: string;
   partId: string;
 }
-export interface SpeechCaption extends Omit<SpeechCaptionSource, 'bindingToken'> {
-  bindingTokens: string[];
-  id: string;
-  text: string;
-  startUtf16: number;
-  spokenUtf16: number;
-  sessionToken?: string;
+export interface SpeechCaption extends Readonly<Omit<SpeechCaptionSource, 'bindingToken'>> {
+  readonly bindingTokens: readonly string[];
+  readonly lease: number;
+  readonly local: { readonly token: string; readonly messageId: string; readonly startUtf16: number } | null;
+  readonly id: number;
+  readonly sessionId: string;
+  readonly text: string;
+  readonly startUtf16: number;
+  readonly spokenEndUtf16: number;
+  readonly currentWordRangeUtf16: { start: number; end: number } | null;
+  readonly phase: 'preparing' | 'speaking' | 'buffering' | 'finished' | 'cancelled';
+  readonly playedFrames: number;
+  readonly endReason: string | null;
 }
 const EVENT = 'WhipSpeechCaption';
 type CaptionEvents = { [EVENT]: [json: string] };
-let current: SpeechCaption | null = null;
-const listeners = new Set<() => void>();
-let subscription: { remove(): void } | undefined;
-const sessions = new Set<string>();
-
-/** Chunk boundaries keep their last word painted until playback ends or hands off. */
-export function retainSpeechCaption(token: string): () => void {
-  sessions.add(token);
-  let released = false;
-  return () => {
-    if (released) return;
-    released = true;
-    sessions.delete(token);
-    if (current?.sessionToken !== token) return;
-    current = null;
-    for (const notify of listeners) notify();
-  };
-}
-
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
-  const native = NativeModules?.HerdrBackground as NativeSpeechPlayback | undefined;
-  if (!subscription && native) {
-    const emitter: Pick<NativeEventEmitter<CaptionEvents>, 'addListener'> =
-      Platform.OS === 'ios' ? new NativeEventEmitter<CaptionEvents>(native) : DeviceEventEmitter;
-    subscription = emitter.addListener(EVENT, (json: string) => {
-      const incoming = JSON.parse(json) as SpeechCaption & { ended?: boolean; localToken?: string; chat?: Omit<SpeechCaption, 'id' | 'text' | 'spokenUtf16'> };
-      if (incoming.localToken && !incoming.chat) return;
-      const event = { ...incoming, ...(incoming.localToken && incoming.chat ? { ...incoming.chat,
-        spokenUtf16: incoming.chat.startUtf16 + Math.max(0, incoming.spokenUtf16 - incoming.startUtf16) } : {}),
-        sessionToken: incoming.localToken ?? incoming.sessionToken };
-      if (event.ended) {
-        if (event.id !== current?.id) return;
-        if (current.sessionToken && sessions.has(current.sessionToken)) return;
-        current = null;
-      } else current = event;
-      for (const notify of listeners) notify();
-    });
+// Referential caching only. Rust owns lifetime, identity, retention and offsets.
+let previousJson: string | undefined;
+let previous: SpeechCaption | null = null;
+function snapshot(): SpeechCaption | null {
+  const json = speechCaptionSnapshot();
+  if (json !== previousJson) {
+    previousJson = json;
+    const value = JSON.parse(json) as SpeechCaption | null;
+    previous = value && value.phase !== 'finished' && value.phase !== 'cancelled' ? value : null;
   }
-  return () => {
-    listeners.delete(listener);
-    if (!listeners.size) {
-      subscription?.remove();
-      subscription = undefined;
-      current = null;
-    }
-  };
+  return previous;
+}
+function subscribe(listener: () => void): () => void {
+  const native = NativeModules?.HerdrBackground as NativeSpeechPlayback | undefined;
+  if (!native) return () => {};
+  const emitter: Pick<NativeEventEmitter<CaptionEvents>, 'addListener'> =
+    Platform.OS === 'ios' ? new NativeEventEmitter<CaptionEvents>(native) : DeviceEventEmitter;
+  const subscription = emitter.addListener(EVENT, listener);
+  return () => subscription.remove();
 }
 const noSubscription = () => () => {};
 const empty = () => null;
 
-/** Mounted prose in the visible chat subscribes; reading never moves the viewport. */
+/** Mounted prose subscribes to Rust snapshots; reading never moves the viewport. */
 export function useSpeechCaption(source?: SpeechCaptionSource): SpeechCaption | null {
-  return useSyncExternalStore(source ? subscribe : noSubscription, () =>
-    source && current?.bindingTokens.includes(source.bindingToken) && source.hostId === current.hostId && source.paneId === current.paneId
-      && source.messageId === current.messageId && source.partId === current.partId ? current : null, empty);
+  return useSyncExternalStore(source ? subscribe : noSubscription, () => {
+    const current = source ? snapshot() : null;
+    return source && current?.bindingTokens.includes(source.bindingToken) && source.hostId === current.hostId
+      && source.paneId === current.paneId && source.messageId === current.messageId && source.partId === current.partId ? current : null;
+  }, empty);
 }

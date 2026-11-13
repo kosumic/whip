@@ -216,6 +216,7 @@ function setup(agent: ChatAgent) {
   } as unknown as HerdrSnapshot;
   const native = {
     runtimeId: 'runtime-1',
+    runtimeIncarnation: 1,
     setViewedAgent: jest.fn(),
     sshShellDirectory: jest.fn(() => undefined),
     subscribeSshShellDirectory: jest.fn(() => () => {}),
@@ -1190,6 +1191,15 @@ test.each(['claude', 'codex', 'opencode', 'pi'] as const)('a brand new %s agent 
     agent, hostId: 'host-1', paneId: host.pane.pane_id,
     tabId: host.pane.tab_id,
     label: expect.any(String), bindingToken: undefined,
+    localSource: {
+      runtimeId: host.native.runtimeId,
+      incarnation: BigInt(host.native.runtimeIncarnation),
+      terminalId: host.pane.terminal_id,
+      paneId: host.pane.pane_id,
+      agent,
+      queue: host.props.composerStore.voiceSubmissions,
+      targetKey: host.props.terminalTargets[0].key,
+    },
   });
   expect(ui('TerminalScreen').props.chatViewEnabled).toBe(false);
 
@@ -2285,9 +2295,13 @@ test('session renders before attachment and after its host runtime disconnects',
   });
   await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
   expect(ui('TerminalScreen')).toBeDefined();
+  expect(ui('TerminalScreen').props.voiceChatTarget).toBeUndefined();
 
   runtime = host.native;
   await act(async () => { renderer.update(<SessionScreen {...host.props} />); });
+  expect(ui('TerminalScreen').props.voiceChatTarget.localSource).toMatchObject({
+    runtimeId: host.native.runtimeId, incarnation: BigInt(host.native.runtimeIncarnation),
+  });
   runtime = null;
   await act(async () => { renderer.update(<SessionScreen {...host.props} />); });
   expect(ui('TerminalScreen')).toBeDefined();
