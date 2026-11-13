@@ -1,17 +1,21 @@
 import { AppState, Platform } from 'react-native';
-import type { NativeComposerDictation, ComposerDictationPhase } from 'react-native-whip-ssh/src/composerDictation';
+import type {
+  ComposerDictationPhase, DictationAuthority, DictationCommand, DictationEffect,
+  DictationEvent, DictationLifecycleView, DictationOutcome, DictationScope, DictationUpdate,
+} from 'react-native-whip-ssh/src/composerDictation';
 
 import { setSpeechInputActive } from './speechInputFocus';
 import { settledPromise } from '../lib/promises';
-import { bestEffortCleanup } from './backgroundOperations';
 import type { VoiceUsageEvent, VoiceHistoryCommand } from './voiceUsage';
 import type { OpenAiSpeechCapture } from './openAiSpeechInput';
 
 type Recognizer = Pick<typeof import('expo-speech-recognition').ExpoSpeechRecognitionModule,
-  'addListener' | 'start' | 'stop' | 'abort' | 'isRecognitionAvailable' | 'requestPermissionsAsync' | 'getPermissionsAsync'> &
+  'addListener' | 'start' | 'stop' | 'abort' | 'isRecognitionAvailable' | 'getStateAsync'> & {
+    requestPermissionsAsync: () => Promise<{ granted: boolean }>;
+    getPermissionsAsync: () => Promise<{ granted: boolean }>;
+  } &
   Partial<Pick<typeof import('expo-speech-recognition').ExpoSpeechRecognitionModule,
     'supportsOnDeviceRecognition' | 'supportsAudioChunkEvents' | 'supportsNativeAudioIngress' | 'supportsEchoCancellation'>>;
-type RecognitionOptions = Parameters<Recognizer['start']>[0];
 type Subscription = { remove: () => void };
 export type SpeechInputError = 'permission' | 'unavailable' | 'noSpeech' | 'network' | 'interrupted' | 'failed';
 export interface SpeechInputSnapshot {
@@ -35,39 +39,27 @@ interface Request {
 }
 interface Dependencies {
   recognizer: Recognizer;
-  createCore: () => NativeComposerDictation;
-  context: (draft: string, recent: string[]) => string[];
   append: (draft: string, text: string) => string;
   locale: string;
   suspendPlayback: () => Promise<void>;
   createOpenAiCapture?: () => OpenAiSpeechCapture;
 }
+/** Adapter resources only. Admission, phases, result draining and deadlines live in Rust. */
 interface Session {
   request: Request;
-  core?: NativeComposerDictation;
-  cloud?: OpenAiSpeechCapture;
-  context?: string[];
   dependencies?: Dependencies;
-  options?: RecognitionOptions;
-  android: boolean;
+  cloud?: OpenAiSpeechCapture;
   subscriptions: Subscription[];
-  /** A native cycle is in flight, including its terminal event drain. */
-  started: boolean;
-  cancelled: boolean;
-  stopping: boolean;
-  ending: boolean;
-  receivedFinal?: boolean;
-  timeout?: ReturnType<typeof setTimeout>;
-  restart?: ReturnType<typeof setTimeout>;
-  restartDelay: number;
-  audioToken?: string;
   audioHandle?: string;
+  epoch: string;
+  ready: () => void;
   history?: { id: string; startedAt: number; fragments: string[] };
 }
-
 const IDLE: SpeechInputSnapshot = { owner: null, phase: 'idle', interimText: '' };
 const MAX_HISTORY_FRAGMENTS = 64;
 const MAX_HISTORY_TEXT = 16 * 1024;
+const ANDROID_CONTINUOUS_API = 33;
+const LOCAL_UNAVAILABLE = 'This build or device does not support on-device voice chat. Install an updated Whip build and an offline speech language.';
 
 function recordSpeechHistory(event: VoiceUsageEvent | VoiceHistoryCommand): void {
   try {
@@ -75,39 +67,13 @@ function recordSpeechHistory(event: VoiceUsageEvent | VoiceHistoryCommand): void
     void settledPromise(voiceUsageLedger.record(event));
   } catch { /* History must not interrupt microphone ownership. */ }
 }
-const CONTEXT_TIMEOUT_MS = 1_500;
-const FINAL_RESULT_TIMEOUT_MS = 10_000;
-const ANDROID_CONTINUOUS_API = 33;
-// Yield after end so Expo can finish tearing down the previous recognizer.
-// Back off empty cycles without imposing a limit on how long users can pause.
-const RESTART_DELAY_MS = 250;
-const MAX_RESTART_DELAY_MS = 2_000;
-const EMPTY_ERRORS = new Set(['no-speech', 'speech-timeout']);
-const LOCAL_UNAVAILABLE = 'This build or device does not support on-device voice chat. Install an updated Whip build and an offline speech language.';
-const CONTINUOUS_ERRORS = new Set(['client', 'audio-capture']);
-const ERROR_REASONS: Record<string, SpeechInputError> = {
-  'not-allowed': 'permission',
-  'service-not-allowed': 'unavailable',
-  'language-not-supported': 'unavailable',
-  'no-speech': 'noSpeech',
-  'speech-timeout': 'noSpeech',
-  network: 'network',
-  interrupted: 'interrupted',
-};
-
 async function loadDependencies(): Promise<Dependencies> {
-  // Loading on demand also lets older development builds report an unavailable
-  // recognizer instead of failing while opening the terminal.
   const [speech, native, localization, playback] = await Promise.all([
-    import('expo-speech-recognition'),
-    import('react-native-whip-ssh/src/composerDictation'),
-    import('expo-localization'),
-    import('./chatSpeech'),
+    import('expo-speech-recognition'), import('react-native-whip-ssh/src/composerDictation'),
+    import('expo-localization'), import('./chatSpeech'),
   ]);
   return {
     recognizer: speech.ExpoSpeechRecognitionModule,
-    createCore: () => new native.NativeComposerDictation(),
-    context: native.composerDictationContext,
     append: native.appendComposerDictation,
     locale: localization.getLocales()[0]?.languageTag || 'en-US',
     suspendPlayback: playback.suspendChatSpeechForInput,
@@ -117,30 +83,21 @@ async function loadDependencies(): Promise<Dependencies> {
     },
   };
 }
-
-async function boundedContext(read: () => Promise<string[]>): Promise<string[]> {
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      Promise.resolve().then(read).catch(() => []),
-      new Promise<string[]>(resolve => { timeout = setTimeout(() => resolve([]), CONTEXT_TIMEOUT_MS); }),
-    ]);
-  } finally {
-    clearTimeout(timeout);
-  }
+function loadAuthority(): DictationAuthority {
+  const { getDictationAuthority } = require('react-native-whip-ssh/src/composerDictation') as typeof import('react-native-whip-ssh/src/composerDictation');
+  return getDictationAuthority();
 }
 
-/** One microphone owner. A cancelled native session drains its end event before
- * another owner can start, since Expo's recognition events have no session ID. */
 export class ComposerSpeechInput {
-  private current: Session | null = null;
+  private authority?: DictationAuthority;
+  private readonly sessions = new Map<string, Session>();
   private snapshot: SpeechInputSnapshot = IDLE;
+  private view?: DictationLifecycleView;
   private readonly listeners = new Set<() => void>();
-  private androidContinuousFailed = false;
-  private reservation: string | null = null;
-  private nextAudioToken = 0;
+  private readonly effects: DictationEffect[] = [];
+  private draining = false;
 
-  constructor(private readonly load = loadDependencies) {}
+  constructor(private readonly load = loadDependencies, private readonly createAuthority = loadAuthority) {}
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -148,371 +105,226 @@ export class ComposerSpeechInput {
   };
   getSnapshot = (): SpeechInputSnapshot => this.snapshot;
 
-  /** Reuse the same capability and permission path before opening a system call. */
   async authorizeLocal(): Promise<void> {
     const { recognizer } = await this.load();
     if (!this.supportsLocal(recognizer)) throw new Error(LOCAL_UNAVAILABLE);
-    const permission = await recognizer.requestPermissionsAsync();
-    if (!permission.granted) throw new Error('Allow microphone access in Settings to use voice chat.');
+    if (!(await recognizer.requestPermissionsAsync()).granted) throw new Error('Allow microphone access in Settings to use voice chat.');
   }
-
   async supportsPlaybackMonitoring(): Promise<boolean> {
     const { recognizer } = await this.load();
     return Platform.OS === 'ios' || recognizer.supportsEchoCancellation?.() === true;
   }
-
   private supportsLocal(recognizer: Recognizer): boolean {
     return Boolean(recognizer.supportsOnDeviceRecognition?.() && recognizer.supportsAudioChunkEvents?.() &&
       (Platform.OS === 'ios' || (Platform.OS === 'android' && Platform.Version >= ANDROID_CONTINUOUS_API)));
   }
-
-  /** Voice conversations reserve the existing microphone across listen/reply turns. */
+  private policy(): DictationAuthority {
+    if (!this.authority) {
+      this.authority = this.createAuthority();
+      this.authority.setObserver({ changed: () => this.pump() });
+    }
+    return this.authority;
+  }
   reserve(owner: string): boolean {
-    if (this.current || this.reservation) return false;
-    this.reservation = owner;
-    return true;
+    if (Platform.OS !== 'android' && Platform.OS !== 'ios') return false;
+    return this.send({ kind: 'reserve', owner });
   }
-
-  releaseReservation(owner: string): void {
-    if (this.reservation !== owner) return;
-    this.reservation = null;
-    if (!this.current) setSpeechInputActive(false);
-  }
+  releaseReservation(owner: string): void { if (this.authority) this.send({ kind: 'releaseReservation', owner }); }
 
   async start(request: Request): Promise<void> {
-    if (this.current || (this.reservation && this.reservation !== request.owner) ||
-        (Platform.OS !== 'android' && Platform.OS !== 'ios')) return;
-    const session: Session = {
-      request, subscriptions: [], android: Platform.OS === 'android',
-      started: false, cancelled: false, stopping: false, ending: false,
-      restartDelay: RESTART_DELAY_MS,
-    };
-    this.current = session;
-    this.publish({ owner: request.owner, phase: 'preparing', interimText: '' });
-    session.subscriptions.push(AppState.addEventListener('change', state => {
-      if (state === 'background' && !request.managedCall) this.cancel(request.owner);
-    }));
-    // Freeze view context at the tap, alongside the existing draft.
-    const context = boundedContext(request.context);
+    if (Platform.OS !== 'android' && Platform.OS !== 'ios') return;
     try {
-      const dependencies = await this.load();
-      if (this.current !== session) return;
-      const { recognizer } = dependencies;
-      session.dependencies = dependencies;
-      session.core = dependencies.createCore();
-      session.core.begin();
-      if (request.provider === 'openai' && !request.localOnly) {
-        if (!dependencies.createOpenAiCapture) throw new Error('OpenAI dictation unavailable');
-        session.cloud = dependencies.createOpenAiCapture();
-        session.context = await context;
-        if (this.current !== session || session.cancelled) return;
-        setSpeechInputActive(true);
-        await dependencies.suspendPlayback();
-        if (this.current !== session || session.cancelled) return;
-        const granted = await session.cloud.start(failed => {
-          if (this.current !== session || session.cancelled || session.stopping) return;
-          if (failed) { request.onError('interrupted'); this.cancel(request.owner); }
-          else this.stop(request.owner);
-        });
-        if (this.current !== session || session.cancelled) return;
-        if (!granted) { request.onError('permission'); this.cancel(request.owner); return; }
-        session.core.listening();
-        this.refresh(session);
-        return;
-      }
-      if (request.localOnly && !this.supportsLocal(recognizer)) {
-        request.onError('unavailable', LOCAL_UNAVAILABLE);
-        this.release(session);
-        return;
-      }
-      if (request.audioCapture && recognizer.supportsNativeAudioIngress?.() !== true) {
-        request.onError('unavailable', LOCAL_UNAVAILABLE);
-        this.release(session);
-        return;
-      }
-      if (!recognizer.isRecognitionAvailable()) {
-        request.onError('unavailable');
-        this.release(session);
-        return;
-      }
-      const managedCall = Boolean(request.localOnly && request.managedCall && this.reservation === request.owner);
-      // The call was authorized before its foreground service started. Asking
-      // again routes through a paused activity and stalls background segments.
-      const permission = await (managedCall ? recognizer.getPermissionsAsync() : recognizer.requestPermissionsAsync());
-      if (this.current !== session) return;
-      if (!permission.granted) {
-        request.onError('permission');
-        this.release(session);
-        return;
-      }
-      const recent = await context;
-      if (this.current !== session) return;
-      // Only a reserved, local system call can capture alongside its own reply.
-      const monitoring = request.duringPlayback && managedCall;
-      const stoppedPlayback = monitoring ? Promise.resolve() : dependencies.suspendPlayback();
-      setSpeechInputActive(true);
-      await stoppedPlayback;
-      if (this.current !== session) return;
-      session.subscriptions.push(
-        recognizer.addListener('start', () => {
-          if (this.current !== session || session.cancelled) return;
-          if (session.ending || session.stopping) return;
-          clearTimeout(session.timeout);
-          session.core!.listening();
-          this.refresh(session);
-        }),
-        recognizer.addListener('result', event => {
-          if (this.current !== session || session.cancelled || session.ending) return;
-          const text = event.results[0]?.transcript || '';
-          if (text.trim()) session.restartDelay = RESTART_DELAY_MS;
-          else if (event.isFinal && this.fallback(session)) return;
-          const final = session.core!.result(text, event.isFinal);
-          if (final) {
-            session.receivedFinal = true;
-            this.append(session, final);
-          }
-          this.refresh(session);
-        }),
-        recognizer.addListener('nomatch', () => {
-          if (this.current !== session || session.cancelled || session.ending) return;
-          this.fallback(session);
-        }),
-        recognizer.addListener('error', event => {
-          if (this.current !== session || session.cancelled || session.ending) return;
-          session.ending = true;
-          if (!session.stopping) clearTimeout(session.timeout);
-          if (session.android && !session.stopping &&
-              (EMPTY_ERRORS.has(event.error) ||
-                (!request.localOnly && session.options!.continuous && CONTINUOUS_ERRORS.has(event.error)))) {
-            this.disableContinuous(session);
-            return;
-          }
-          // An injected-audio provider may report cancellation while draining a
-          // deliberate stop. Keep its finalized segment (or pending hypothesis).
-          const stoppedLocalClient = session.android && request.localOnly && session.stopping && event.error === 'client';
-          if (!stoppedLocalClient && (!session.stopping || !EMPTY_ERRORS.has(event.error))) {
-            const reason = ERROR_REASONS[event.error] || 'failed';
-            if (request.localOnly) request.onError(reason, event.message);
-            else request.onError(reason);
-          }
-          // Keep ownership until end, which the native API emits after errors.
-          // A manual stop still drains its pending hypothesis on error.
-          if (!session.stopping) {
-            session.cancelled = true;
-            this.closeCapture(session);
-            session.core!.end();
-            this.publish({ owner: request.owner, phase: 'finishing', interimText: '' });
-          }
-        }),
-        recognizer.addListener('end', () => {
-          if (this.current !== session || !session.started) return;
-          session.started = false;
-          session.ending = true;
+      const core = this.policy();
+      const accepted = core.dispatch(JSON.stringify({ kind: 'begin', config: {
+        owner: request.owner, draft: request.draft, android: Platform.OS === 'android', api: (Platform.OS === 'android' ? Platform.Version : 0),
+        provider: request.provider ?? 'default', localOnly: Boolean(request.localOnly), managedCall: Boolean(request.managedCall),
+        duringPlayback: Boolean(request.duringPlayback), nativeIngress: Boolean(request.audioCapture),
+      } } satisfies DictationCommand));
+      const update = JSON.parse(core.takeUpdate()) as DictationUpdate;
+      if (!accepted || !update.view.generation) { this.consume(update); return; }
+      let ready!: () => void;
+      const prepared = new Promise<void>(resolve => { ready = resolve; });
+      this.sessions.set(update.view.generation, { request, subscriptions: [], epoch: update.view.epoch, ready });
+      this.consume(update);
+      await prepared;
+    } catch {
+      request.onError('unavailable');
+    }
+  }
+  stop(owner: string): void { if (this.authority) this.send({ kind: 'stop', owner }); }
+  cancel(owner: string): void { if (this.authority) this.send({ kind: 'cancel', owner }); }
+
+  private send(command: DictationCommand): boolean {
+    const accepted = this.policy().dispatch(JSON.stringify(command));
+    this.pump();
+    return accepted;
+  }
+  private pump(): void {
+    if (this.authority) this.consume(JSON.parse(this.authority.takeUpdate()) as DictationUpdate);
+  }
+  private consume(update: DictationUpdate): void {
+    this.view = update.view;
+    const { owner, phase, interimText, active } = update.view;
+    this.effects.push(...update.effects);
+    setSpeechInputActive(active);
+    const changed = owner !== this.snapshot.owner || phase !== this.snapshot.phase || interimText !== this.snapshot.interimText;
+    this.snapshot = { owner, phase, interimText };
+    if (changed) for (const listener of this.listeners) listener();
+    if (this.draining) return;
+    this.draining = true;
+    try {
+      let effect: DictationEffect | undefined;
+      while ((effect = this.effects.shift())) this.execute(effect);
+    } finally { this.draining = false; }
+  }
+  private acknowledge(scope: DictationScope, outcome: DictationOutcome): void {
+    const { id, generation, epoch } = scope;
+    this.send({ id, generation, epoch, kind: 'ack', outcome });
+  }
+  private event(generation: string, session: Session, event: DictationEvent): void {
+    // These are adapter cycle labels, not native event IDs. Rust also requires
+    // start admission and an observed idle/quiet boundary between native cycles.
+    this.send({ kind: 'event', generation, epoch: session.epoch, event });
+  }
+  private execute(effect: DictationEffect): void {
+    const session = this.sessions.get(effect.generation);
+    if (!session) return;
+    const { request } = session;
+    const notify = ['closeCapture', 'publishDraftAppend', 'reportError', 'release'].includes(effect.action);
+    const { id, generation, epoch } = effect;
+    if (!notify && !this.policy().dispatch(JSON.stringify({ id, generation, epoch, kind: 'execute' } satisfies DictationCommand))) { this.pump(); return; }
+    try {
+      switch (effect.action) {
+        case 'load': {
+          session.subscriptions.push(AppState.addEventListener('change', state => {
+            if (state === 'background') this.send({ kind: 'background' });
+          }));
+          this.complete(effect, async () => {
+            const dependencies = await this.load();
+            // Dependency loading may finish after cancellation. Don't attach
+            // listeners or allocate capture resources for the retired generation.
+            if (!this.sessions.has(effect.generation)) return { kind: 'done' };
+            session.dependencies = dependencies;
+            this.listen(effect.generation, session);
+            const r = dependencies.recognizer;
+            return { kind: 'loaded', available: r.isRecognitionAvailable(), localSupported: this.supportsLocal(r), ingressSupported: r.supportsNativeAudioIngress?.() === true };
+          });
+          break;
+        }
+        case 'readContext':
+          this.complete(effect, async () => ({ kind: 'context', recent: await request.context().catch(() => []) }));
+          break;
+        case 'requestPermission':
+          this.complete(effect, async () => ({ kind: 'permission', granted: (await (effect.existing
+            ? session.dependencies!.recognizer.getPermissionsAsync() : session.dependencies!.recognizer.requestPermissionsAsync())).granted }));
+          break;
+        case 'suspendPlayback':
+          this.complete(effect, async () => { await session.dependencies!.suspendPlayback(); return { kind: 'done' }; });
+          break;
+        case 'startRecognition': {
+          session.epoch = effect.epoch;
+          this.startHistory(session);
           this.closeCapture(session);
-          clearTimeout(session.timeout);
-          if (session.android && !session.cancelled && !session.stopping) {
-            // Includes providers which ignore segmented mode and end after one
-            // utterance, and empty sessions from unsupported injected audio.
-            this.disableContinuous(session);
-            session.restart = setTimeout(() => {
-              if (this.current !== session || session.cancelled || session.stopping) return;
-              session.core!.result('', false);
-              this.startRecognition(session);
-            }, session.restartDelay);
-            session.restartDelay = Math.min(session.restartDelay * 2, MAX_RESTART_DELAY_MS);
-            return;
+          // Opening a sink can fail before any native recognizer was started.
+          try { session.audioHandle = request.audioCapture?.open(); }
+          catch {
+            this.acknowledge(effect, { kind: 'captureFailed' });
+            break;
           }
-          if (!session.cancelled && !session.stopping && !session.receivedFinal) request.onError('noSpeech');
-          this.release(session);
-        }),
-      );
-      if (request.onAudio) session.subscriptions.push(recognizer.addListener('audiochunk', event => {
-        if (this.current === session && event.token === session.audioToken &&
-            !session.cancelled && !session.stopping && !session.ending) request.onAudio?.(event.pcm);
-      }));
-      session.options = {
-        lang: dependencies.locale,
-        interimResults: true,
-        maxAlternatives: 1,
-        continuous: request.localOnly || !session.android ||
-          (Number(Platform.Version) >= ANDROID_CONTINUOUS_API && !this.androidContinuousFailed),
-        contextualStrings: dependencies.context(request.draft, recent),
-        iosTaskHint: 'dictation',
-        recordingOptions: { persist: false },
-        ...(request.localOnly ? { requiresOnDeviceRecognition: true, audioChunkEvents: true } : {}),
-        ...(request.provider === 'local' ? { requiresOnDeviceRecognition: true } : {}),
-        ...(request.managedCall ? { iosAudioSessionManaged: true, iosVoiceProcessingEnabled: true } : {}),
-        ...(monitoring ? { androidEchoCancellation: true } : {}),
-      };
-      this.startRecognition(session);
-    } catch {
-      if (this.current !== session) return;
-      request.onError(session.core ? 'failed' : 'unavailable');
-      if (session.started || session.cloud) this.cancel(request.owner);
-      else this.release(session);
-    }
-  }
-
-  stop(owner: string): void {
-    const session = this.current;
-    if (session?.request.owner !== owner || this.snapshot.phase !== 'listening') return;
-    session.stopping = true;
-    this.closeCapture(session);
-    session.core!.finish();
-    this.refresh(session);
-    if (session.cloud) { void this.finishCloud(session); return; }
-    clearTimeout(session.restart);
-    if (!session.started) {
-      this.release(session);
-      return;
-    }
-    clearTimeout(session.timeout);
-    session.timeout = setTimeout(() => {
-      if (this.current !== session) return;
-      this.fail(session);
-    }, FINAL_RESULT_TIMEOUT_MS);
-    if (!session.ending) {
-      try { session.dependencies!.recognizer.stop(); } catch { this.fail(session); }
-    }
-  }
-
-  cancel(owner: string): void {
-    const session = this.current;
-    if (session?.request.owner !== owner || session.cancelled) return;
-    session.cancelled = true;
-    this.closeCapture(session);
-    session.core?.end();
-    clearTimeout(session.restart);
-    if (session.cloud) {
-      this.publish({ owner, phase: 'finishing', interimText: '' });
-      bestEffortCleanup(session.cloud.cancel().finally(() => this.release(session)), 'openai-dictation-cancel');
-      return;
-    }
-    if (!session.started) {
-      this.release(session);
-      return;
-    }
-    clearTimeout(session.timeout);
-    this.publish({ owner, phase: 'finishing', interimText: '' });
-    try { session.dependencies!.recognizer.abort(); } catch { this.release(session); }
-  }
-
-  private startRecognition(session: Session): void {
-    if (!session.request.managedCall && !session.history) {
-      try {
-        const { createSecureId } = require('../lib/secureId') as typeof import('../lib/secureId');
-        session.history = { id: createSecureId('speech'), startedAt: Date.now(), fragments: [] };
-        recordSpeechHistory({ kind: 'started', call: {
-          session_id: session.history.id, provider: 'local', mode: 'stt', scope: 'speech',
-          model: null, voice: null, started_at_ms: session.history.startedAt,
-        } });
-      } catch { /* Recognition remains available if history cannot start. */ }
-    }
-    session.started = false;
-    session.ending = false;
-    // This guards missing native startup/final events, never listening silence.
-    session.timeout = setTimeout(() => {
-      if (this.current !== session || session.cancelled || session.ending) return;
-      if (!this.fallback(session)) this.fail(session);
-    }, FINAL_RESULT_TIMEOUT_MS);
-    session.audioToken = `${session.request.owner}:${++this.nextAudioToken}`;
-    try {
-      this.closeCapture(session);
-      session.audioHandle = session.request.audioCapture?.open();
-      session.started = true;
-      session.dependencies!.recognizer.start({ ...session.options!,
-        ...(session.audioHandle ? { audioIngressHandle: session.audioHandle, audioChunkEvents: false } : {}),
-        ...(session.request.onAudio ? { audioChunkToken: session.audioToken } : {}),
-      });
-    } catch {
-      if (!this.fallback(session)) this.fail(session);
-    }
-  }
-
-  private async finishCloud(session: Session): Promise<void> {
-    try {
-      const text = await session.cloud!.finish(session.request.draft, session.context ?? []);
-      if (this.current !== session || session.cancelled) return;
-      const final = session.core!.result(text, true);
-      if (final) this.append(session, final);
-      else session.request.onError('noSpeech');
+          session.dependencies!.recognizer.start({
+            lang: session.dependencies!.locale, interimResults: true, maxAlternatives: 1,
+            continuous: effect.continuous, contextualStrings: effect.context, iosTaskHint: 'dictation', recordingOptions: { persist: false },
+            ...(effect.onDevice ? { requiresOnDeviceRecognition: true } : {}),
+            ...(request.localOnly ? { audioChunkEvents: true } : {}),
+            ...(request.managedCall ? { iosAudioSessionManaged: true, iosVoiceProcessingEnabled: true } : {}),
+            ...(effect.monitoring ? { androidEchoCancellation: true } : {}),
+            ...(session.audioHandle ? { audioIngressHandle: session.audioHandle, audioChunkEvents: false } : {}),
+            ...(request.onAudio ? { audioChunkToken: `${effect.generation}:${effect.epoch}` } : {}),
+          });
+          this.acknowledge(effect, { kind: 'done' });
+          session.ready();
+          break;
+        }
+        case 'startCloud':
+          session.epoch = effect.epoch;
+          session.cloud = session.dependencies!.createOpenAiCapture!();
+          this.complete(effect, async () => {
+            const granted = await session.cloud!.start(failed => this.event(effect.generation, session, { kind: 'cloudEnd', failed }));
+            return { kind: 'cloudStarted', granted };
+          }, session.ready);
+          break;
+        case 'finishCloud':
+          this.complete(effect, async () => ({ kind: 'transcript', text: await session.cloud!.finish(request.draft, effect.recent) }));
+          break;
+        case 'cancelCloud':
+          this.complete(effect, async () => { await session.cloud!.cancel(); return { kind: 'done' }; });
+          break;
+        case 'stop': session.dependencies!.recognizer.stop(); this.acknowledge(effect, { kind: 'done' }); break;
+        case 'abort': session.dependencies!.recognizer.abort(); this.acknowledge(effect, { kind: 'done' }); break;
+        case 'checkIdle':
+          this.complete(effect, async () => ({ kind: 'idle', inactive: (await session.dependencies!.recognizer.getStateAsync()) === 'inactive' }));
+          break;
+        case 'closeCapture': this.closeCapture(session); break;
+        case 'publishDraftAppend': this.append(session, effect.text); break;
+        case 'reportError':
+          request.onError(effect.error as SpeechInputError, ...(effect.message ? [effect.message] : []));
+          session.ready();
+          break;
+        case 'release': this.release(effect.generation, session); break;
+      }
     } catch (error) {
-      if (this.current === session && !session.cancelled) {
-        const message = error instanceof Error ? error.message : '';
-        session.request.onError(message === 'network' ? 'network' : 'failed');
-      }
-    } finally { this.release(session); }
-  }
-
-  /** Downgrade the injected-audio path once, then let the service own the mic.
-   * Restart only after end: Expo's events do not carry native session IDs. */
-  private fallback(session: Session): boolean {
-    if (session.request.localOnly || !session.android || !session.options!.continuous || session.stopping) return false;
-    this.disableContinuous(session);
-    session.ending = true;
-    clearTimeout(session.timeout);
-    try { session.dependencies!.recognizer.abort(); } catch { this.fail(session); }
-    return true;
-  }
-
-  private disableContinuous(session: Session): void {
-    if (session.request.localOnly) return;
-    if (!session.options!.continuous) return;
-    session.options!.continuous = false;
-    this.androidContinuousFailed = true;
-  }
-
-  private fail(session: Session): void {
-    session.request.onError('failed');
-    if (session.stopping) this.append(session, session.core!.end());
-    this.cancel(session.request.owner);
-  }
-
-  private append(session: Session, text: string | undefined): void {
-    if (text) {
-      if (session.history) {
-        session.history.fragments.push(Array.from(text).slice(0, MAX_HISTORY_TEXT).join(''));
-        session.history.fragments = session.history.fragments.slice(-MAX_HISTORY_FRAGMENTS);
-      }
-      session.request.append(session.dependencies!.append(session.request.readDraft(), text));
+      this.acknowledge(effect, { kind: 'failed', error: error instanceof Error && error.message === 'network' ? 'network' : 'failed' });
+      session.ready();
     }
   }
-
-  private refresh(session: Session): void {
-    if (this.current !== session || session.cancelled) return;
-    this.publish({ owner: session.request.owner, ...session.core!.view() });
+  private complete(scope: DictationScope, work: () => Promise<DictationOutcome>, finallyDo?: () => void): void {
+    void work().then(outcome => this.acknowledge(scope, outcome), error => this.acknowledge(scope, {
+      kind: 'failed', error: error instanceof Error && error.message === 'network' ? 'network' : 'failed',
+    })).finally(finallyDo);
   }
-
+  private listen(generation: string, session: Session): void {
+    const r = session.dependencies!.recognizer;
+    session.subscriptions.push(
+      r.addListener('start', () => this.event(generation, session, { kind: 'start' })),
+      r.addListener('result', e => this.event(generation, session, { kind: 'result', text: e.results[0]?.transcript || '', isFinal: e.isFinal })),
+      r.addListener('nomatch', () => this.event(generation, session, { kind: 'noMatch' })),
+      r.addListener('error', e => this.event(generation, session, { kind: 'error', error: e.error, message: e.message })),
+      r.addListener('end', () => this.event(generation, session, { kind: 'end' })),
+    );
+    if (session.request.onAudio) session.subscriptions.push(r.addListener('audiochunk', e => {
+      if (this.view?.generation === generation && this.view.acceptsAudio && e.token === `${generation}:${session.epoch}`) session.request.onAudio?.(e.pcm);
+    }));
+  }
+  private startHistory(session: Session): void {
+    if (session.request.managedCall || session.history) return;
+    try {
+      const { createSecureId } = require('../lib/secureId') as typeof import('../lib/secureId');
+      session.history = { id: createSecureId('speech'), startedAt: Date.now(), fragments: [] };
+      recordSpeechHistory({ kind: 'started', call: { session_id: session.history.id, provider: 'local', mode: 'stt', scope: 'speech', model: null, voice: null, started_at_ms: session.history.startedAt } });
+    } catch { /* Recognition remains available if history cannot start. */ }
+  }
+  private append(session: Session, text: string): void {
+    if (session.history) {
+      session.history.fragments.push(Array.from(text).slice(0, MAX_HISTORY_TEXT).join(''));
+      session.history.fragments = session.history.fragments.slice(-MAX_HISTORY_FRAGMENTS);
+    }
+    session.request.append(session.dependencies!.append(session.request.readDraft(), text));
+  }
   private closeCapture(session: Session): void {
     const handle = session.audioHandle;
     session.audioHandle = undefined;
     if (handle) session.request.audioCapture?.close(handle);
   }
-
-  private release(session: Session): void {
-    if (this.current !== session) return;
+  private release(generation: string, session: Session): void {
     this.closeCapture(session);
-    if (!session.cancelled) this.append(session, session.core?.end());
+    for (const subscription of session.subscriptions) subscription.remove();
+    this.sessions.delete(generation);
+    session.ready();
     if (session.history) {
       const { id, startedAt, fragments } = session.history;
-      if (fragments.length) recordSpeechHistory({ kind: 'transcript', session_id: id,
-        fragments: fragments.map((text, index) => ({ id: `${id}:${index}`, role: 'user', text })),
-      });
+      if (fragments.length) recordSpeechHistory({ kind: 'transcript', session_id: id, fragments: fragments.map((text, index) => ({ id: `${id}:${index}`, role: 'user', text })) });
       recordSpeechHistory({ kind: 'ended', session_id: id, ended_at_ms: Math.max(startedAt, Date.now()) });
     }
-    this.current = null;
-    clearTimeout(session.timeout);
-    clearTimeout(session.restart);
-    for (const subscription of session.subscriptions) subscription.remove();
-    session.core?.dispose();
-    if (!this.reservation) setSpeechInputActive(false);
-    this.publish(IDLE);
-  }
-
-  private publish(snapshot: SpeechInputSnapshot): void {
-    this.snapshot = snapshot;
-    for (const listener of this.listeners) listener();
   }
 }
-
 export const composerSpeechInput = new ComposerSpeechInput();

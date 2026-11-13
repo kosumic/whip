@@ -15,6 +15,7 @@ import {
   type UniffiForeignFutureCompleterustBuffer,
   type UniffiVTableCallbackInterfaceWhipSshBrowserOperationPlatform,
   type UniffiVTableCallbackInterfaceWhipSshCredentialPlatform,
+  type UniffiVTableCallbackInterfaceWhipSshDictationLifecycleObserver,
   type UniffiVTableCallbackInterfaceWhipSshHerdrEventSink,
   type UniffiVTableCallbackInterfaceWhipSshHerdrTerminalEventSink,
   type UniffiForeignFutureResultI8,
@@ -922,6 +923,19 @@ export function detachTerminalDelivery(
       );
     },
     /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+  );
+}
+
+export function dictationLifecycle(): DictationLifecycleLike {
+  return FfiConverterTypeDictationLifecycle.lift(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_dictation_lifecycle(
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
   );
 }
 
@@ -53655,6 +53669,353 @@ const uniffiCallbackInterfaceCredentialPlatform: {
   },
 };
 
+export interface DictationLifecycleObserver {
+  changed(): void;
+}
+
+export class DictationLifecycleObserverImpl
+  extends UniffiAbstractObject
+  implements DictationLifecycleObserver
+{
+  readonly [uniffiTypeNameSymbol] = 'DictationLifecycleObserverImpl';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeDictationLifecycleObserverImplObjectFactory.bless(pointer);
+  }
+
+  changed(): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_dictationlifecycleobserver_changed(
+          uniffiTypeDictationLifecycleObserverImplObjectFactory.clonePointer(
+            this,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer =
+        uniffiTypeDictationLifecycleObserverImplObjectFactory.pointer(this);
+      uniffiTypeDictationLifecycleObserverImplObjectFactory.freePointer(
+        pointer,
+      );
+      uniffiTypeDictationLifecycleObserverImplObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is DictationLifecycleObserverImpl {
+    return uniffiTypeDictationLifecycleObserverImplObjectFactory.isConcreteType(
+      obj_,
+    );
+  }
+}
+
+const uniffiTypeDictationLifecycleObserverImplObjectFactory: UniffiObjectFactory<DictationLifecycleObserver> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): DictationLifecycleObserver {
+        const instance = Object.create(
+          DictationLifecycleObserverImpl.prototype,
+        );
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'DictationLifecycleObserverImpl';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_dictationlifecycleobserver_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: DictationLifecycleObserver): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: DictationLifecycleObserver): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_dictationlifecycleobserver(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_dictationlifecycleobserver(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is DictationLifecycleObserver {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'DictationLifecycleObserverImpl'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeDictationLifecycleObserver =
+  new FfiConverterObjectWithCallbacks(
+    uniffiTypeDictationLifecycleObserverImplObjectFactory,
+  );
+
+// Add a vtable for the callbacks that go in DictationLifecycleObserver.
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+const uniffiCallbackInterfaceDictationLifecycleObserver: {
+  vtable: any;
+  register: () => void;
+} = {
+  // Create the VTable using a series of closures.
+  // ts automatically converts these into C callback functions.
+  vtable: {
+    changed: (uniffiHandle: bigint) => {
+      const uniffiMakeCall = (): void => {
+        try {
+          const jsCallback =
+            FfiConverterTypeDictationLifecycleObserver.lift(uniffiHandle);
+          return jsCallback.changed();
+        } finally {
+          // Callback arguments alias Rust allocations. Decoding copies
+          // their contents; neither the converter nor JSI owns them.
+        }
+      };
+      const uniffiResult = UniffiResult.ready<void>();
+      const uniffiHandleSuccess = (obj: any) => {};
+      const uniffiHandleError = (code: number, errBuf: UniffiByteArray) => {
+        UniffiResult.writeError(uniffiResult, code, errBuf);
+      };
+      uniffiTraitInterfaceCall(
+        /*makeCall:*/ uniffiMakeCall,
+        /*handleSuccess:*/ uniffiHandleSuccess,
+        /*handleError:*/ uniffiHandleError,
+        /*lowerString:*/ FfiConverterString.lower.bind(FfiConverterString),
+        /*alloc:*/ nativeModule().rustbuffer_alloc,
+      );
+      return uniffiResult;
+    },
+    uniffi_free: (uniffiHandle: UniffiHandle): void => {
+      // this will throw a stale handle error if the handle isn't found.
+      FfiConverterTypeDictationLifecycleObserver.drop(uniffiHandle);
+    },
+    uniffi_clone: (uniffiHandle: UniffiHandle): UniffiHandle => {
+      return FfiConverterTypeDictationLifecycleObserver.clone(uniffiHandle);
+    },
+  },
+  register: () => {
+    nativeModule().ubrn_uniffi_whip_ssh_fn_init_callback_vtable_dictationlifecycleobserver(
+      uniffiCallbackInterfaceDictationLifecycleObserver.vtable,
+    );
+  },
+};
+
+export interface DictationLifecycleLike {
+  /**
+   * Malformed input fails closed. IDs are strings across JS/FFI to avoid
+   * losing integer precision. Acknowledgements include session and cycle.
+   */
+  dispatch(command: string): boolean;
+  setObserver(observer: DictationLifecycleObserver): void;
+  /**
+   * Drains effects exactly once, together with their authoritative view.
+   */
+  takeUpdate(): string;
+}
+/**
+ * @deprecated Use `DictationLifecycleLike` instead.
+ */
+export type DictationLifecycleInterface = DictationLifecycleLike;
+
+export class DictationLifecycle
+  extends UniffiAbstractObject
+  implements DictationLifecycleLike
+{
+  readonly [uniffiTypeNameSymbol] = 'DictationLifecycle';
+  readonly [destructorGuardSymbol]: UniffiGcObject;
+  readonly [pointerLiteralSymbol]: UniffiHandle;
+  // No primary constructor declared for this class.
+  private constructor(pointer: UniffiHandle) {
+    super();
+    this[pointerLiteralSymbol] = pointer;
+    this[destructorGuardSymbol] =
+      uniffiTypeDictationLifecycleObjectFactory.bless(pointer);
+  }
+
+  /**
+   * Malformed input fails closed. IDs are strings across JS/FFI to avoid
+   * losing integer precision. Acknowledgements include session and cycle.
+   */
+  dispatch(command: string): boolean {
+    return FfiConverterBool.lift(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_dictationlifecycle_dispatch(
+            uniffiTypeDictationLifecycleObjectFactory.clonePointer(this),
+            FfiConverterString.lower(command, nativeModule().rustbuffer_alloc),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  setObserver(observer: DictationLifecycleObserver): void {
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        nativeModule().ubrn_uniffi_whip_ssh_fn_method_dictationlifecycle_set_observer(
+          uniffiTypeDictationLifecycleObjectFactory.clonePointer(this),
+          FfiConverterTypeDictationLifecycleObserver.lower(
+            observer,
+            nativeModule().rustbuffer_alloc,
+          ),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    );
+  }
+
+  /**
+   * Drains effects exactly once, together with their authoritative view.
+   */
+  takeUpdate(): string {
+    return ((__rb: Uint8Array) => {
+      try {
+        return FfiConverterString.lift(__rb);
+      } finally {
+        nativeModule().rustbuffer_free(__rb);
+      }
+    })(
+      uniffiCaller.rustCall(
+        /*caller:*/ callStatus => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_dictationlifecycle_take_update(
+            uniffiTypeDictationLifecycleObjectFactory.clonePointer(this),
+            callStatus,
+          );
+        },
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+      ),
+    );
+  }
+
+  uniffiDestroy(): void {
+    const ptr = (this as any)[destructorGuardSymbol];
+    if (ptr !== undefined) {
+      const pointer = uniffiTypeDictationLifecycleObjectFactory.pointer(this);
+      uniffiTypeDictationLifecycleObjectFactory.freePointer(pointer);
+      uniffiTypeDictationLifecycleObjectFactory.unbless(ptr);
+      delete (this as any)[destructorGuardSymbol];
+    }
+  }
+
+  static instanceOf(obj_: any): obj_ is DictationLifecycle {
+    return uniffiTypeDictationLifecycleObjectFactory.isConcreteType(obj_);
+  }
+}
+
+const uniffiTypeDictationLifecycleObjectFactory: UniffiObjectFactory<DictationLifecycleLike> =
+  (() => {
+    return {
+      create(pointer: UniffiHandle): DictationLifecycleLike {
+        const instance = Object.create(DictationLifecycle.prototype);
+        instance[pointerLiteralSymbol] = pointer;
+        instance[destructorGuardSymbol] = this.bless(pointer);
+        instance[uniffiTypeNameSymbol] = 'DictationLifecycle';
+        return instance;
+      },
+
+      bless(p: UniffiHandle): UniffiGcObject {
+        return uniffiCaller.rustCall(
+          /*caller:*/ status =>
+            nativeModule().ubrn_uniffi_internal_fn_method_dictationlifecycle_ffi__bless_pointer(
+              p,
+              status,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      unbless(ptr_: UniffiGcObject) {
+        ptr_.markDestroyed();
+      },
+
+      pointer(obj_: DictationLifecycleLike): UniffiHandle {
+        if ((obj_ as any)[destructorGuardSymbol] === undefined) {
+          throw new UniffiInternalError.UnexpectedNullPointer();
+        }
+        return (obj_ as any)[pointerLiteralSymbol];
+      },
+
+      clonePointer(obj_: DictationLifecycleLike): UniffiHandle {
+        const pointer = this.pointer(obj_);
+        return uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_clone_dictationlifecycle(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      freePointer(pointer: UniffiHandle): void {
+        uniffiCaller.rustCall(
+          /*caller:*/ callStatus =>
+            nativeModule().ubrn_uniffi_whip_ssh_fn_free_dictationlifecycle(
+              pointer,
+              callStatus,
+            ),
+          /*liftString:*/ FfiConverterString.lift,
+        );
+      },
+
+      isConcreteType(obj_: any): obj_ is DictationLifecycleLike {
+        return (
+          obj_[destructorGuardSymbol] &&
+          obj_[uniffiTypeNameSymbol] === 'DictationLifecycle'
+        );
+      },
+    };
+  })();
+const FfiConverterTypeDictationLifecycle = new FfiConverterObject(
+  uniffiTypeDictationLifecycleObjectFactory,
+);
+
 export interface HerdrEventSink {
   event(clientKey: string, event: HerdrEvent): void;
   closed(clientKey: string, reason: string): void;
@@ -63911,6 +64272,14 @@ function uniffiEnsureInitialized() {
     );
   }
   if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_dictation_lifecycle() !==
+    37686
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_dictation_lifecycle',
+    );
+  }
+  if (
     nativeModule().ubrn_uniffi_whip_ssh_checksum_func_disconnect_ssh() !== 1310
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
@@ -65461,6 +65830,38 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_credentialplatform_diagnostic',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_dictationlifecycle_dispatch() !==
+    54764
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_dictationlifecycle_dispatch',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_dictationlifecycle_set_observer() !==
+    18937
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_dictationlifecycle_set_observer',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_dictationlifecycle_take_update() !==
+    16829
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_dictationlifecycle_take_update',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_dictationlifecycleobserver_changed() !==
+    45261
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_dictationlifecycleobserver_changed',
     );
   }
   if (
@@ -67861,6 +68262,7 @@ function uniffiEnsureInitialized() {
   uniffiCallbackInterfaceSessionRestorePlatform.register();
   uniffiCallbackInterfaceBrowserOperationPlatform.register();
   uniffiCallbackInterfaceCredentialPlatform.register();
+  uniffiCallbackInterfaceDictationLifecycleObserver.register();
   uniffiCallbackInterfaceHerdrEventSink.register();
   uniffiCallbackInterfaceHerdrTerminalEventSink.register();
   uniffiCallbackInterfaceHostActionPlatform.register();
@@ -67990,6 +68392,8 @@ export default Object.freeze({
     FfiConverterTypeCredentialStorageEntry,
     FfiConverterTypeCredentialStorageKey,
     FfiConverterTypeCredentialTransactionError,
+    FfiConverterTypeDictationLifecycle,
+    FfiConverterTypeDictationLifecycleObserver,
     FfiConverterTypeDictationPhase,
     FfiConverterTypeDictationView,
     FfiConverterTypeGitCommit,

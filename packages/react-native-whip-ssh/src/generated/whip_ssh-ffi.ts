@@ -300,6 +300,22 @@ interface NativeModuleInterface {
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_dictationlifecycle(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_dictationlifecycle(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_clone_dictationlifecycleobserver(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
+  ubrn_uniffi_whip_ssh_fn_free_dictationlifecycleobserver(
+    ptr: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_clone_herdreventsink(
     ptr: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -621,6 +637,9 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_fn_init_callback_vtable_credentialplatform(
     vtable: UniffiVTableCallbackInterfaceWhipSshCredentialPlatform,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_init_callback_vtable_dictationlifecycleobserver(
+    vtable: UniffiVTableCallbackInterfaceWhipSshDictationLifecycleObserver,
+  ): void;
   ubrn_uniffi_whip_ssh_fn_init_callback_vtable_herdreventsink(
     vtable: UniffiVTableCallbackInterfaceWhipSshHerdrEventSink,
   ): void;
@@ -824,6 +843,9 @@ interface NativeModuleInterface {
     generation: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_func_dictation_lifecycle(
+    uniffi_out_err: UniffiRustCallStatus,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_func_disconnect_ssh(key: Uint8Array): bigint;
   ubrn_uniffi_whip_ssh_fn_func_disconnect_ssh_sftp(key: Uint8Array): bigint;
   ubrn_uniffi_whip_ssh_fn_func_download_manager_command(
@@ -1773,6 +1795,24 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     event: Uint8Array,
     hostId: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_dictationlifecycle_dispatch(
+    uniffiSelf: bigint,
+    command: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): number;
+  ubrn_uniffi_whip_ssh_fn_method_dictationlifecycle_set_observer(
+    uniffiSelf: bigint,
+    observer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): void;
+  ubrn_uniffi_whip_ssh_fn_method_dictationlifecycle_take_update(
+    uniffiSelf: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
+  ubrn_uniffi_whip_ssh_fn_method_dictationlifecycleobserver_changed(
+    uniffiSelf: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
   ubrn_uniffi_whip_ssh_fn_method_herdreventsink_event(
@@ -3304,6 +3344,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_create_ssh_sftp_directory_all(): number;
   ubrn_uniffi_whip_ssh_checksum_func_delete_agent_transcripts_for_host(): number;
   ubrn_uniffi_whip_ssh_checksum_func_detach_terminal_delivery(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_dictation_lifecycle(): number;
   ubrn_uniffi_whip_ssh_checksum_func_disconnect_ssh(): number;
   ubrn_uniffi_whip_ssh_checksum_func_disconnect_ssh_sftp(): number;
   ubrn_uniffi_whip_ssh_checksum_func_download_manager_command(): number;
@@ -3500,6 +3541,10 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_credentialplatform_effect(): number;
   ubrn_uniffi_whip_ssh_checksum_method_credentialplatform_profiles_changed(): number;
   ubrn_uniffi_whip_ssh_checksum_method_credentialplatform_diagnostic(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_dictationlifecycle_dispatch(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_dictationlifecycle_set_observer(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_dictationlifecycle_take_update(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_dictationlifecycleobserver_changed(): number;
   ubrn_uniffi_whip_ssh_checksum_method_herdreventsink_event(): number;
   ubrn_uniffi_whip_ssh_checksum_method_herdreventsink_closed(): number;
   ubrn_uniffi_whip_ssh_checksum_method_herdrterminaleventsink_terminal_frame(): number;
@@ -3911,6 +3956,14 @@ interface NativeModuleInterface {
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_dictationlifecycleobserver_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
+  ubrn_uniffi_internal_fn_method_dictationlifecycle_ffi__bless_pointer(
+    pointer: bigint,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): UniffiGcObject;
   ubrn_uniffi_internal_fn_method_herdreventsink_ffi__bless_pointer(
     pointer: bigint,
     uniffi_out_err: UniffiRustCallStatus,
@@ -4152,6 +4205,20 @@ export type UniffiVTableCallbackInterfaceWhipSshCredentialPlatform = {
   effect: UniffiCallbackInterfaceWhipSshCredentialPlatformMethod0;
   profiles_changed: UniffiCallbackInterfaceWhipSshCredentialPlatformMethod1;
   diagnostic: UniffiCallbackInterfaceWhipSshCredentialPlatformMethod2;
+};
+type UniffiCallbackInterfaceWhipSshDictationLifecycleObserverMethod0 = (
+  uniffiHandle: bigint,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceCloneWhipSshDictationLifecycleObserver = (
+  handle: bigint,
+) => UniffiResult<void>;
+type UniffiCallbackInterfaceFreeWhipSshDictationLifecycleObserver = (
+  handle: bigint,
+) => void;
+export type UniffiVTableCallbackInterfaceWhipSshDictationLifecycleObserver = {
+  uniffi_free: UniffiCallbackInterfaceFreeWhipSshDictationLifecycleObserver;
+  uniffi_clone: UniffiCallbackInterfaceCloneWhipSshDictationLifecycleObserver;
+  changed: UniffiCallbackInterfaceWhipSshDictationLifecycleObserverMethod0;
 };
 type UniffiCallbackInterfaceWhipSshHerdrEventSinkMethod0 = (
   uniffiHandle: bigint,

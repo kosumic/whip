@@ -1,23 +1,25 @@
 import { ComposerSpeechInput } from '../src/services/composerSpeechInput';
 import { isSpeechInputActive } from '../src/services/speechInputFocus';
-import { Platform } from 'react-native';
-import type { ComposerDictationPhase } from 'react-native-whip-ssh/src/composerDictation';
+import type {
+  DictationCommand, DictationEffect, DictationLifecycleView, DictationUpdate,
+} from 'react-native-whip-ssh/src/composerDictation';
 import { voiceUsageLedger } from '../src/services/voiceUsage';
 
 jest.mock('../src/services/voiceUsage', () => ({ voiceUsageLedger: { record: jest.fn(async () => {}) } }));
 jest.mock('../src/lib/secureId', () => ({ createSecureId: () => 'speech-history-id' }));
-
 const mockAppListeners = new Set<(state: string) => void>();
 jest.mock('react-native', () => ({
   Platform: { OS: 'android', Version: 36 },
-  AppState: {
-    addEventListener: (_name: string, listener: (state: string) => void) => {
-      mockAppListeners.add(listener);
-      return { remove: () => mockAppListeners.delete(listener) };
-    },
-  },
+  AppState: { addEventListener: (_name: string, listener: (state: string) => void) => {
+    mockAppListeners.add(listener);
+    return { remove: () => mockAppListeners.delete(listener) };
+  } },
 }));
 
+// Script the native boundary; lifecycle policy is exercised against the real
+// Rust reducer. These tests exercise OS operations, acknowledgements and cleanup.
+async function flush() { for (let i = 0; i < 12; i++) await Promise.resolve(); }
+function scope(e: DictationEffect) { return { id: e.id, generation: e.generation, epoch: e.epoch }; }
 function setup() {
   const events = new Map<string, (event?: unknown) => void>();
   const recognizer = {
@@ -26,765 +28,240 @@ function setup() {
       return { remove: () => events.delete(name) };
     }),
     isRecognitionAvailable: jest.fn(() => true),
-    requestPermissionsAsync: jest.fn(async () => ({ granted: true })),
-    getPermissionsAsync: jest.fn(async () => ({ granted: true })),
+    supportsOnDeviceRecognition: jest.fn(() => true),
+    supportsAudioChunkEvents: jest.fn(() => true),
+    supportsNativeAudioIngress: jest.fn(() => true),
+    supportsEchoCancellation: jest.fn(() => true),
+    requestPermissionsAsync: jest.fn(async () => ({ granted: true, status: 'granted' as const, expires: 'never' as const, canAskAgain: true })),
+    getPermissionsAsync: jest.fn(async () => ({ granted: true, status: 'granted' as const, expires: 'never' as const, canAskAgain: true })),
+    getStateAsync: jest.fn(async () => 'inactive' as const),
     start: jest.fn(), stop: jest.fn(), abort: jest.fn(),
   };
-  let phase: ComposerDictationPhase = 'idle';
-  const core = {
-    begin: jest.fn(() => { phase = 'preparing'; }),
-    listening: jest.fn(() => { if (phase === 'preparing') phase = 'listening'; }),
-    finish: jest.fn(() => { phase = 'finishing'; }),
-    end: jest.fn<string | undefined, []>(() => { phase = 'idle'; return undefined; }),
-    dispose: jest.fn(),
-    view: jest.fn(() => ({ phase, interimText: '' })),
-    result: jest.fn<string | undefined, [string, boolean]>(),
-  };
-  const dependencies = {
-    recognizer,
-    createCore: () => core,
-    context: jest.fn(() => ['draft hints', 'terminal hints']),
-    append: jest.fn((draft: string, text: string) => `${draft} ${text}`),
-    locale: 'zh-TW',
-    suspendPlayback: jest.fn(async () => {}),
-  };
-  const load = jest.fn().mockResolvedValue(dependencies);
-  const controller = new ComposerSpeechInput(load);
-  const request = {
-    owner: 'host:pane:chat', draft: 'Original draft',
-    readDraft: jest.fn(() => 'Edited draft'),
-    context: jest.fn(async () => ['recent terminal text']),
-    append: jest.fn(), onError: jest.fn(),
-  };
-  const emit = (name: string, event?: unknown) => events.get(name)?.(event);
-  cleanups.push(() => { controller.cancel(controller.getSnapshot().owner || request.owner); emit('end'); });
-  return { controller, request, recognizer, core, dependencies, load, emit, events };
-}
-
-const cleanups: (() => void)[] = [];
-
-function setupCloud() {
-  const state = setup();
   const capture = {
     start: jest.fn(async (_onEnd: (failed: boolean) => void) => true),
-    finish: jest.fn(async () => 'Whip transcription'),
+    finish: jest.fn(async () => 'Cloud words'),
     cancel: jest.fn(async () => {}),
   };
-  Object.assign(state.dependencies, { createOpenAiCapture: () => capture });
-  return { ...state, capture, request: { ...state.request, provider: 'openai' as const } };
+  const dependencies = {
+    recognizer, locale: 'zh-TW', append: (draft: string, text: string) => `${draft} ${text}`,
+    suspendPlayback: jest.fn(async () => {}), createOpenAiCapture: jest.fn(() => capture),
+  };
+  const load = jest.fn(async () => dependencies);
+  let changed = () => {};
+  let nextId = 0;
+  let update: DictationUpdate = { view: { owner: null, generation: null, epoch: '0', phase: 'idle', interimText: '', active: false, acceptsAudio: false }, effects: [] };
+  const commands: DictationCommand[] = [];
+  let admit = true;
+  const authority = {
+    dispatch: jest.fn((serialized: string) => {
+      const command = JSON.parse(serialized) as DictationCommand;
+      commands.push(command);
+      if (command.kind === 'execute') return admit;
+      if (command.kind === 'begin') {
+        update.view = { ...update.view, owner: command.config.owner, generation: '1', epoch: '0', phase: 'preparing' };
+        queue({ action: 'load' }); queue({ action: 'readContext' });
+      }
+      return true;
+    }),
+    takeUpdate: () => {
+      const value = JSON.stringify(update);
+      update = { ...update, effects: [] };
+      return value;
+    },
+    setObserver: (observer: { changed: () => void }) => { changed = observer.changed; },
+  };
+  type Action = DictationEffect extends infer E ? E extends DictationEffect ? Omit<E, 'id' | 'generation' | 'epoch'> : never : never;
+  function queue(action: Action): DictationEffect {
+    const effect = { id: String(++nextId), generation: '1', epoch: update.view.epoch, ...action };
+    update.effects.push(effect);
+    return effect;
+  }
+  function deliver(action: Action, view: Partial<DictationLifecycleView> = {}) {
+    update.view = { ...update.view, ...view };
+    const effect = queue(action);
+    changed();
+    return effect;
+  }
+  function observe(view: Partial<DictationLifecycleView>) { update.view = { ...update.view, ...view }; changed(); }
+  const controller = new ComposerSpeechInput(load, () => authority);
+  const request = {
+    owner: 'host:pane:chat', draft: 'Original draft', readDraft: jest.fn(() => 'Edited draft'),
+    context: jest.fn(async () => ['terminal context']), append: jest.fn(), onError: jest.fn(),
+  };
+  const emit = (name: string, event?: unknown) => events.get(name)?.(event);
+  async function prepare(overrides: Partial<Parameters<typeof controller.start>[0]> = {}) {
+    const started = controller.start({ ...request, ...overrides });
+    await flush();
+    deliver({ action: 'requestPermission', existing: false }); await flush();
+    deliver({ action: 'suspendPlayback' }, { active: true }); await flush();
+    return { started };
+  }
+  async function start(overrides: Partial<Parameters<typeof controller.start>[0]> = {}) {
+    const { started } = await prepare(overrides);
+    deliver({ action: 'startRecognition', continuous: true, onDevice: false, monitoring: false, context: ['native hints'] }, { epoch: '1' });
+    await started;
+    observe({ phase: 'listening', acceptsAudio: true });
+    return started;
+  }
+  return { controller, recognizer, capture, dependencies, load, commands, request, emit, deliver, observe, prepare, start, authority,
+    refuseEffects: () => { admit = false; } };
 }
+afterEach(() => { mockAppListeners.clear(); jest.clearAllMocks(); });
 
-test('OpenAI dictation uses draft and chat context and appends to the current edited draft', async () => {
-  const { controller, request, recognizer, capture, core } = setupCloud();
-  recognizer.isRecognitionAvailable.mockReturnValue(false);
-  await controller.start(request);
-  expect(controller.getSnapshot().phase).toBe('listening');
-  expect(recognizer.start).not.toHaveBeenCalled();
-  expect(recognizer.requestPermissionsAsync).not.toHaveBeenCalled();
-  core.result.mockReturnValueOnce('Whip transcription');
-  controller.stop(request.owner);
-  await jest.runAllTimersAsync();
-  expect(capture.finish).toHaveBeenCalledWith('Original draft', ['recent terminal text']);
-  expect(request.append).toHaveBeenCalledWith('Edited draft Whip transcription');
-  expect(controller.getSnapshot().phase).toBe('idle');
-  expect(isSpeechInputActive()).toBe(false);
-});
-
-test('cancelling an OpenAI upload discards its late transcript', async () => {
-  const { controller, request, capture, core } = setupCloud();
-  let complete!: (text: string) => void;
-  capture.finish.mockReturnValueOnce(new Promise(resolve => { complete = resolve; }));
-  await controller.start(request);
-  controller.stop(request.owner);
-  controller.cancel(request.owner);
-  await jest.runAllTimersAsync();
-  expect(capture.cancel).toHaveBeenCalled();
-  core.result.mockReturnValueOnce('late words');
-  complete('late words');
-  await jest.runAllTimersAsync();
-  expect(request.append).not.toHaveBeenCalled();
-  expect(controller.getSnapshot().phase).toBe('idle');
-});
-
-test('OpenAI microphone denial cleans up without starting device recognition', async () => {
-  const { controller, request, capture, recognizer } = setupCloud();
-  capture.start.mockResolvedValueOnce(false);
-  await controller.start(request);
-  await jest.runAllTimersAsync();
-  expect(request.onError).toHaveBeenCalledWith('permission');
-  expect(capture.cancel).toHaveBeenCalled();
-  expect(recognizer.start).not.toHaveBeenCalled();
-  expect(controller.getSnapshot().phase).toBe('idle');
-});
-
-test('Local dictation explicitly requests on-device recognition', async () => {
-  const { controller, request, recognizer } = setup();
-  await controller.start({ ...request, provider: 'local' });
-  expect(recognizer.start).toHaveBeenCalledWith(expect.objectContaining({ requiresOnDeviceRecognition: true }));
-});
-
-test('native PCM capture rotates its sink on restart and fences it before final-result draining', async () => {
-  const { controller, request, recognizer, core, emit, events } = setup();
-  Object.assign(recognizer, {
-    supportsOnDeviceRecognition: () => true,
-    supportsAudioChunkEvents: () => true,
-    supportsNativeAudioIngress: () => true,
-  });
-  const open = jest.fn().mockReturnValueOnce('101').mockReturnValueOnce('102');
-  const close = jest.fn();
-  await controller.start({ ...request, localOnly: true, audioCapture: { open, close } });
-  expect(recognizer.start).toHaveBeenLastCalledWith(expect.objectContaining({
-    audioIngressHandle: '101', audioChunkEvents: false, requiresOnDeviceRecognition: true,
-  }));
-  expect(events.has('audiochunk')).toBe(false);
-  emit('start');
-  emit('end');
-  expect(close).toHaveBeenCalledWith('101');
-  jest.advanceTimersByTime(250);
-  expect(recognizer.start).toHaveBeenLastCalledWith(expect.objectContaining({ audioIngressHandle: '102' }));
-  emit('start');
-  controller.stop(request.owner);
-  expect(close).toHaveBeenLastCalledWith('102');
-  expect(close.mock.invocationCallOrder.at(-1)).toBeLessThan(recognizer.stop.mock.invocationCallOrder[0]);
-  core.result.mockReturnValueOnce('final words');
-  emit('result', { isFinal: true, results: [{ transcript: 'final words' }] });
-  expect(request.append).toHaveBeenCalledWith('Edited draft final words');
-  emit('end');
-  expect(close).toHaveBeenCalledTimes(2);
-});
-
-test('cancelling native capture fences its sink before aborting recognition', async () => {
-  const { controller, request, recognizer, emit } = setup();
-  Object.assign(recognizer, { supportsOnDeviceRecognition: () => true, supportsAudioChunkEvents: () => true, supportsNativeAudioIngress: () => true });
-  const close = jest.fn();
-  await controller.start({ ...request, localOnly: true, audioCapture: { open: () => '103', close } });
-  emit('start');
-  controller.cancel(request.owner);
-  expect(close).toHaveBeenCalledWith('103');
-  expect(close.mock.invocationCallOrder[0]).toBeLessThan(recognizer.abort.mock.invocationCallOrder[0]);
-  emit('end');
-  expect(close).toHaveBeenCalledTimes(1);
-});
-
-test('an older native build cannot silently start voice chat without PCM ingress', async () => {
-  const { controller, request, recognizer } = setup();
-  Object.assign(recognizer, { supportsOnDeviceRecognition: () => true, supportsAudioChunkEvents: () => true });
-  const open = jest.fn();
-  await controller.start({ ...request, localOnly: true, audioCapture: { open, close: jest.fn() } });
-  expect(recognizer.start).not.toHaveBeenCalled();
-  expect(open).not.toHaveBeenCalled();
-  expect(request.onError).toHaveBeenCalledWith('unavailable', expect.any(String));
-});
-
-test('sink startup failure releases microphone ownership without waiting for native end', async () => {
-  const { controller, request, recognizer } = setup();
-  Object.assign(recognizer, { supportsOnDeviceRecognition: () => true, supportsAudioChunkEvents: () => true, supportsNativeAudioIngress: () => true });
-  await controller.start({ ...request, localOnly: true, audioCapture: {
-    open: () => { throw new Error('The Rust audio sink could not start.'); }, close: jest.fn(),
+test('sends request policy to Rust and executes native hints and platform options', async () => {
+  const s = setup();
+  await s.start({ provider: 'local' });
+  expect(s.commands[0]).toEqual({ kind: 'begin', config: {
+    owner: s.request.owner, draft: 'Original draft', android: true, api: 36, provider: 'local', localOnly: false,
+    managedCall: false, duringPlayback: false, nativeIngress: false,
   } });
-  expect(request.onError).toHaveBeenCalledWith('failed');
-  expect(recognizer.start).not.toHaveBeenCalled();
-  expect(recognizer.abort).not.toHaveBeenCalled();
-  expect(controller.getSnapshot()).toEqual({ owner: null, phase: 'idle', interimText: '' });
-  await controller.start(request);
-  expect(recognizer.start).toHaveBeenCalledTimes(1);
-});
-beforeEach(() => { jest.useFakeTimers(); });
-afterEach(() => {
-  for (const cleanup of cleanups.splice(0)) cleanup();
-  mockAppListeners.clear();
-  jest.useRealTimers();
+  expect(s.commands).toContainEqual(expect.objectContaining({ kind: 'ack', outcome: { kind: 'context', recent: ['terminal context'] } }));
+  expect(s.recognizer.start).toHaveBeenCalledWith(expect.objectContaining({
+    lang: 'zh-TW', contextualStrings: ['native hints'], continuous: true, recordingOptions: { persist: false },
+  }));
+  expect(s.dependencies.suspendPlayback).toHaveBeenCalledTimes(1);
+  expect(s.request.context).toHaveBeenCalledTimes(1);
 });
 
-test('freezes draft and context hints, previews partials, and appends finals to the latest draft', async () => {
-  const { controller, request, recognizer, core, dependencies, emit } = setup();
-  await controller.start(request);
-  expect(request.context).toHaveBeenCalledTimes(1);
-  expect(dependencies.context).toHaveBeenCalledWith('Original draft', ['recent terminal text']);
-  expect(recognizer.start).toHaveBeenCalledWith(expect.objectContaining({
-    lang: 'zh-TW', contextualStrings: ['draft hints', 'terminal hints'],
-    continuous: true, recordingOptions: { persist: false },
-  }));
-  emit('start');
-  emit('result', { isFinal: false, results: [{ transcript: 'part' }] });
-  expect(request.append).not.toHaveBeenCalled();
-  core.result.mockReturnValueOnce('final words');
-  emit('result', { isFinal: true, results: [{ transcript: 'final words' }] });
-  expect(request.append).toHaveBeenCalledWith('Edited draft final words');
-  controller.stop(request.owner);
-  emit('end');
-  expect(core.dispose).toHaveBeenCalledTimes(1);
-  expect(controller.getSnapshot().phase).toBe('idle');
+test('native partials drive presentation and only native append effects touch the latest draft', async () => {
+  const s = setup(); await s.start();
+  s.emit('result', { isFinal: false, results: [{ transcript: 'partial' }] });
+  expect(s.commands).toContainEqual({ kind: 'event', generation: '1', epoch: '1', event: { kind: 'result', text: 'partial', isFinal: false } });
+  expect(s.request.append).not.toHaveBeenCalled();
+  s.observe({ interimText: 'native preview' });
+  expect(s.controller.getSnapshot().interimText).toBe('native preview');
+  s.deliver({ action: 'publishDraftAppend', text: 'Final words' });
+  expect(s.request.append).toHaveBeenCalledWith('Edited draft Final words');
+  s.controller.stop(s.request.owner);
+  expect(s.commands).toContainEqual({ kind: 'stop', owner: s.request.owner });
+  expect(s.recognizer.stop).not.toHaveBeenCalled();
+  s.deliver({ action: 'stop' });
+  expect(s.recognizer.stop).toHaveBeenCalledTimes(1);
+});
+
+test('permissions and managed-call permission checks are scoped acknowledgements', async () => {
+  const s = setup(); const started = s.controller.start({ ...s.request, localOnly: true, managedCall: true });
+  await flush();
+  const check = s.deliver({ action: 'requestPermission', existing: true }); await flush();
+  expect(s.recognizer.getPermissionsAsync).toHaveBeenCalledTimes(1);
+  expect(s.recognizer.requestPermissionsAsync).not.toHaveBeenCalled();
+  expect(s.commands).toContainEqual({ ...scope(check), kind: 'ack', outcome: { kind: 'permission', granted: true } });
+  s.deliver({ action: 'release' }, { owner: null, generation: null, phase: 'idle' }); await started;
+});
+
+test('late dependency loading after release cannot install recognition listeners', async () => {
+  const s = setup(); let loaded!: (value: typeof s.dependencies) => void;
+  s.load.mockReturnValueOnce(new Promise(resolve => { loaded = resolve; }));
+  const started = s.controller.start(s.request);
+  s.deliver({ action: 'release' }, { owner: null, generation: null, phase: 'idle' }); await started;
+  loaded(s.dependencies); await flush();
+  expect(s.recognizer.addListener).not.toHaveBeenCalled();
+  expect(s.recognizer.start).not.toHaveBeenCalled();
+});
+
+test('Rust can revoke a queued operation before any OS side effect', async () => {
+  const s = setup(); const { started } = await s.prepare();
+  s.refuseEffects();
+  s.deliver({ action: 'startRecognition', continuous: true, onDevice: true, monitoring: false, context: [] }, { epoch: '1' });
+  expect(s.recognizer.start).not.toHaveBeenCalled();
+  s.deliver({ action: 'release' }, { owner: null, generation: null, phase: 'idle', active: false }); await started;
+});
+
+test('audio sinks rotate on native restart effects and close before stop/abort', async () => {
+  const s = setup(); const open = jest.fn().mockReturnValueOnce('101').mockReturnValueOnce('102'); const close = jest.fn();
+  await s.start({ localOnly: true, audioCapture: { open, close } });
+  expect(s.recognizer.start).toHaveBeenLastCalledWith(expect.objectContaining({ audioIngressHandle: '101', audioChunkEvents: false }));
+  s.deliver({ action: 'closeCapture' });
+  s.deliver({ action: 'startRecognition', continuous: true, onDevice: true, monitoring: true, context: [] }, { epoch: '2' });
+  expect(s.recognizer.start).toHaveBeenLastCalledWith(expect.objectContaining({ audioIngressHandle: '102', requiresOnDeviceRecognition: true, androidEchoCancellation: true }));
+  s.deliver({ action: 'closeCapture' }); s.deliver({ action: 'abort' });
+  expect(close.mock.calls).toEqual([['101'], ['102']]);
+  expect(close.mock.invocationCallOrder.at(-1)).toBeLessThan(s.recognizer.abort.mock.invocationCallOrder[0]);
+});
+
+test('sink startup failure reports that no recognizer operation occurred', async () => {
+  const s = setup(); const { started } = await s.prepare({ audioCapture: { open: () => { throw new Error('sink'); }, close: jest.fn() } });
+  const effect = s.deliver({ action: 'startRecognition', continuous: true, onDevice: true, monitoring: false, context: [] }, { epoch: '1' });
+  expect(s.recognizer.start).not.toHaveBeenCalled();
+  expect(s.commands).toContainEqual({ ...scope(effect), kind: 'ack', outcome: { kind: 'captureFailed' } });
+  s.deliver({ action: 'release' }); await started;
+});
+
+test('PCM requires native audio admission and an exact generation/cycle token', async () => {
+  const s = setup(); const onAudio = jest.fn(); await s.start({ onAudio, localOnly: true });
+  s.emit('audiochunk', { token: '1:0', pcm: 'old' });
+  s.emit('audiochunk', { token: '1:1', pcm: 'live' });
+  s.observe({ acceptsAudio: false, phase: 'finishing' });
+  s.emit('audiochunk', { token: '1:1', pcm: 'late' });
+  expect(onAudio.mock.calls).toEqual([['live']]);
+});
+
+test('idle certification is an asynchronous native query and never inferred from Expo end', async () => {
+  const s = setup(); await s.start();
+  s.emit('end');
+  expect(s.recognizer.getStateAsync).not.toHaveBeenCalled();
+  const effect = s.deliver({ action: 'checkIdle' }); await flush();
+  expect(s.commands).toContainEqual({ ...scope(effect), kind: 'ack', outcome: { kind: 'idle', inactive: true } });
+  expect(isSpeechInputActive()).toBe(true);
+  s.deliver({ action: 'release' }, { owner: null, generation: null, phase: 'idle', active: false });
   expect(isSpeechInputActive()).toBe(false);
-  expect(request.onError).not.toHaveBeenCalled();
+  s.emit('result', { isFinal: true, results: [{ transcript: 'late' }] });
+  expect(s.request.append).not.toHaveBeenCalled();
 });
 
-test('empty continuous segments fall back after end and keep the same microphone owner', async () => {
-  const { controller, request, recognizer, emit } = setup();
-  await controller.start(request);
-  emit('start');
-  emit('nomatch');
-  expect(recognizer.abort).toHaveBeenCalledTimes(1);
-  expect(recognizer.start).toHaveBeenCalledTimes(1);
-  emit('error', { error: 'no-speech' });
-  emit('end');
-  expect(controller.getSnapshot()).toMatchObject({ owner: request.owner, phase: 'listening' });
-  expect(isSpeechInputActive()).toBe(true);
-  expect(request.append).not.toHaveBeenCalled();
-  await controller.start({ ...request, owner: 'another pane' });
-  expect(recognizer.start).toHaveBeenCalledTimes(1);
-  jest.advanceTimersByTime(250);
-  expect(recognizer.start).toHaveBeenCalledTimes(2);
-  expect(recognizer.start).toHaveBeenLastCalledWith(expect.objectContaining({ continuous: false }));
-  expect(request.onError).not.toHaveBeenCalled();
+test('native exceptions are acknowledged and do not make JS retry or release the microphone', async () => {
+  const s = setup(); await s.start();
+  s.recognizer.stop.mockImplementationOnce(() => { throw new Error('native'); });
+  const effect = s.deliver({ action: 'stop' });
+  expect(s.commands).toContainEqual({ ...scope(effect), kind: 'ack', outcome: { kind: 'failed', error: 'failed' } });
+  expect(s.recognizer.abort).not.toHaveBeenCalled();
+  expect(s.controller.getSnapshot().owner).toBe(s.request.owner);
 });
 
-test('iOS retains continuous dictation until the user stops', async () => {
-  const platform = jest.replaceProperty(Platform, 'OS', 'ios');
-  try {
-    const { controller, request, recognizer, emit } = setup();
-    await controller.start(request);
-    expect(recognizer.start).toHaveBeenCalledWith(expect.objectContaining({ continuous: true }));
-    controller.cancel(request.owner);
-    emit('end');
-    expect(request.onError).not.toHaveBeenCalled();
-  } finally {
-    platform.restore();
-  }
+test('OpenAI capture, completion and cancellation all acknowledge their original scopes', async () => {
+  const s = setup(); const { started } = await s.prepare({ provider: 'openai' });
+  const start = s.deliver({ action: 'startCloud' }, { epoch: '1' }); await started; await flush();
+  expect(s.commands).toContainEqual({ ...scope(start), kind: 'ack', outcome: { kind: 'cloudStarted', granted: true } });
+  const finish = s.deliver({ action: 'finishCloud', recent: ['native context'] }); await flush();
+  expect(s.capture.finish).toHaveBeenCalledWith('Original draft', ['native context']);
+  expect(s.commands).toContainEqual({ ...scope(finish), kind: 'ack', outcome: { kind: 'transcript', text: 'Cloud words' } });
+  expect(s.request.append).not.toHaveBeenCalled();
+  s.deliver({ action: 'cancelCloud' }); await flush();
+  expect(s.capture.cancel).toHaveBeenCalledTimes(1);
+  expect(s.recognizer.start).not.toHaveBeenCalled();
 });
 
-test('cancelling during the permission prompt prevents recording after a late grant', async () => {
-  const { controller, request, recognizer } = setup();
-  let grant!: (permission: { granted: boolean }) => void;
-  recognizer.requestPermissionsAsync.mockImplementationOnce(() => new Promise(resolve => { grant = resolve; }));
-  const start = controller.start(request);
-  await Promise.resolve();
-  controller.cancel(request.owner);
-  grant({ granted: true });
-  await start;
-  expect(recognizer.start).not.toHaveBeenCalled();
-  expect(controller.getSnapshot().phase).toBe('idle');
-});
-
-test('drains cancelled native events before accepting a new owner', async () => {
-  const { controller, request, recognizer, core, emit } = setup();
-  await controller.start(request);
-  emit('start');
-  controller.cancel(request.owner);
-  core.result.mockReturnValue('late words');
-  emit('result', { isFinal: true, results: [{ transcript: 'late words' }] });
-  await controller.start({ ...request, owner: 'other pane' });
-  expect(recognizer.start).toHaveBeenCalledTimes(1);
-  expect(recognizer.abort).toHaveBeenCalledTimes(1);
-  expect(request.append).not.toHaveBeenCalled();
-  emit('end');
-  await controller.start({ ...request, owner: 'other pane' });
-  expect(recognizer.start).toHaveBeenCalledTimes(2);
-  emit('end');
-});
-
-test('stop accepts the final result and context failure falls back to the draft', async () => {
-  const { controller, request, recognizer, core, dependencies, emit } = setup();
-  request.context.mockRejectedValueOnce(new Error('Terminal unavailable'));
-  await controller.start(request);
-  expect(dependencies.context).toHaveBeenCalledWith('Original draft', []);
-  emit('start');
-  controller.stop(request.owner);
-  expect(recognizer.stop).toHaveBeenCalledTimes(1);
-  core.result.mockReturnValueOnce('last words');
-  emit('result', { isFinal: true, results: [{ transcript: 'last words' }] });
-  expect(request.append).toHaveBeenCalledWith('Edited draft last words');
-  emit('end');
-});
-
-test('denied permission leaves the draft and microphone untouched', async () => {
-  const { controller, request, recognizer, dependencies } = setup();
-  recognizer.requestPermissionsAsync.mockResolvedValueOnce({ granted: false });
-  await controller.start(request);
-  expect(request.onError).toHaveBeenCalledWith('permission');
-  expect(request.append).not.toHaveBeenCalled();
-  expect(recognizer.start).not.toHaveBeenCalled();
-  expect(dependencies.suspendPlayback).not.toHaveBeenCalled();
-  expect(controller.getSnapshot().phase).toBe('idle');
-});
-
-test('an inactive permission dialog can grant access without cancelling dictation', async () => {
-  const { controller, request, recognizer, emit } = setup();
-  let grant!: (permission: { granted: boolean }) => void;
-  recognizer.requestPermissionsAsync.mockImplementationOnce(() => new Promise(resolve => { grant = resolve; }));
-  const start = controller.start(request);
-  await Promise.resolve();
-  for (const listener of mockAppListeners) listener('inactive');
-  grant({ granted: true });
-  await start;
-  expect(recognizer.start).toHaveBeenCalledTimes(1);
-  expect(recognizer.abort).not.toHaveBeenCalled();
-  emit('end');
-});
-
-test('recognition failure preserves the draft and releases ownership on end', async () => {
-  const { controller, request, core, emit } = setup();
-  await controller.start(request);
-  emit('start');
-  emit('error', { error: 'network', message: 'Unavailable' });
-  expect(request.onError).toHaveBeenCalledWith('network');
-  expect(request.append).not.toHaveBeenCalled();
-  expect(controller.getSnapshot().phase).toBe('finishing');
-  emit('end');
-  expect(core.dispose).toHaveBeenCalledTimes(1);
-  expect(controller.getSnapshot().phase).toBe('idle');
-});
-
-test('backgrounding aborts recognition and discards late text', async () => {
-  const { controller, request, recognizer, emit } = setup();
-  await controller.start(request);
-  emit('start');
+test('background, stop, cancellation and reservation requests are delegated to Rust', async () => {
+  const s = setup(); await s.start({ managedCall: true });
+  expect(s.controller.reserve('call')).toBe(true);
+  s.controller.releaseReservation('call'); s.controller.cancel(s.request.owner);
   for (const listener of mockAppListeners) listener('background');
-  expect(recognizer.abort).toHaveBeenCalledTimes(1);
-  emit('result', { isFinal: true, results: [{ transcript: 'late text' }] });
-  expect(request.append).not.toHaveBeenCalled();
-  emit('end');
-  expect(mockAppListeners.size).toBe(0);
+  expect(s.commands).toEqual(expect.arrayContaining([
+    { kind: 'reserve', owner: 'call' }, { kind: 'releaseReservation', owner: 'call' },
+    { kind: 'cancel', owner: s.request.owner }, { kind: 'background' },
+  ]));
+  expect(s.recognizer.abort).not.toHaveBeenCalled();
 });
 
-test.each([33, 36])('Android API %i uses continuous recognition across long pauses', async version => {
-  const platform = jest.replaceProperty(Platform, 'Version', version);
-  try {
-    const { controller, request, recognizer, emit } = setup();
-    await controller.start(request);
-    expect(recognizer.start).toHaveBeenCalledWith(expect.objectContaining({ continuous: true }));
-    emit('start');
-    emit('speechend');
-    jest.advanceTimersByTime(5 * 60_000);
-    expect(controller.getSnapshot().phase).toBe('listening');
-    expect(recognizer.start).toHaveBeenCalledTimes(1);
-    expect(recognizer.stop).not.toHaveBeenCalled();
-    expect(recognizer.abort).not.toHaveBeenCalled();
-    expect(request.onError).not.toHaveBeenCalled();
-    controller.stop(request.owner);
-    emit('end');
-    expect(controller.getSnapshot().phase).toBe('idle');
-  } finally {
-    platform.restore();
-  }
+test('history contains only accepted speech and closes once on the release effect', async () => {
+  const s = setup(); await s.start();
+  s.deliver({ action: 'publishDraftAppend', text: 'Recognized words' });
+  s.deliver({ action: 'release' }, { owner: null, generation: null, phase: 'idle', active: false });
+  expect(voiceUsageLedger.record).toHaveBeenCalledWith({ kind: 'transcript', session_id: 'speech-history-id', fragments: [{ id: 'speech-history-id:0', role: 'user', text: 'Recognized words' }] });
+  s.deliver({ action: 'release' });
+  expect(jest.mocked(voiceUsageLedger.record).mock.calls.filter(([event]) => event.kind === 'ended')).toHaveLength(1);
 });
 
-test('multiple finalized segments append to the edited draft and leave dictation running', async () => {
-  const { controller, request, core, recognizer, emit } = setup();
-  let draft = request.draft;
-  request.readDraft.mockImplementation(() => draft);
-  request.append.mockImplementation((text: string) => { draft = text; });
-  await controller.start(request);
-  emit('start');
-  for (const text of ['First utterance.', 'Second utterance.', 'Second utterance.']) {
-    core.result.mockReturnValueOnce(text);
-    emit('result', { isFinal: true, results: [{ transcript: text }] });
-    draft += '\nEdited while listening';
-    jest.advanceTimersByTime(60_000);
-  }
-  expect(draft).toBe('Original draft First utterance.\nEdited while listening Second utterance.\nEdited while listening Second utterance.\nEdited while listening');
-  expect(controller.getSnapshot().phase).toBe('listening');
-  expect(recognizer.stop).not.toHaveBeenCalled();
-  controller.stop(request.owner);
-  emit('end');
-  expect(request.append).toHaveBeenCalledTimes(3);
-});
-
-test('providers ending after an utterance restart without clearing finalized text or the preview owner', async () => {
-  const { controller, request, core, recognizer, dependencies, emit } = setup();
-  await controller.start(request);
-  emit('start');
-  core.result.mockReturnValueOnce('First segment');
-  emit('result', { isFinal: true, results: [{ transcript: 'First segment' }] });
-  emit('end');
-  expect(core.end).not.toHaveBeenCalled();
-  expect(core.dispose).not.toHaveBeenCalled();
-  expect(isSpeechInputActive()).toBe(true);
-  jest.advanceTimersByTime(250);
-  expect(recognizer.start).toHaveBeenLastCalledWith(expect.objectContaining({
-    continuous: false, lang: 'zh-TW', contextualStrings: ['draft hints', 'terminal hints'],
-    recordingOptions: { persist: false },
-  }));
-  expect(dependencies.suspendPlayback).toHaveBeenCalledTimes(1);
-  expect(request.context).toHaveBeenCalledTimes(1);
-  expect(request.append).toHaveBeenCalledTimes(1);
-  expect(request.onError).not.toHaveBeenCalled();
-  emit('start');
-  core.result.mockReturnValueOnce('Second segment');
-  emit('result', { isFinal: true, results: [{ transcript: 'Second segment' }] });
-  expect(request.append).toHaveBeenCalledTimes(2);
-  controller.stop(request.owner);
-  emit('end');
-});
-
-test('Android 12 restarts ordinary recognition through repeated no-speech timeouts and long pauses', async () => {
-  const platform = jest.replaceProperty(Platform, 'Version', 32);
-  try {
-    const { controller, request, recognizer, emit } = setup();
-    await controller.start(request);
-    expect(recognizer.start).toHaveBeenCalledWith(expect.objectContaining({ continuous: false }));
-    for (let cycle = 0; cycle < 8; cycle++) {
-      emit('start');
-      jest.advanceTimersByTime(60_000);
-      emit('error', { error: 'speech-timeout' });
-      expect(recognizer.start).toHaveBeenCalledTimes(cycle + 1);
-      emit('end');
-      jest.advanceTimersByTime(2_000);
-    }
-    expect(recognizer.start).toHaveBeenCalledTimes(9);
-    expect(controller.getSnapshot().phase).toBe('listening');
-    expect(request.onError).not.toHaveBeenCalled();
-    expect(request.append).not.toHaveBeenCalled();
-    expect(isSpeechInputActive()).toBe(true);
-  } finally {
-    platform.restore();
-  }
-});
-
-test.each(['client', 'audio-capture', 'no-speech', 'speech-timeout'])(
-  'continuous-mode %s errors fall back only after native end', async error => {
-    const { controller, request, recognizer, emit } = setup();
-    await controller.start(request);
-    emit('start');
-    emit('error', { error });
-    jest.advanceTimersByTime(30_000);
-    expect(recognizer.start).toHaveBeenCalledTimes(1);
-    expect(request.onError).not.toHaveBeenCalled();
-    emit('end');
-    jest.advanceTimersByTime(250);
-    expect(recognizer.start).toHaveBeenLastCalledWith(expect.objectContaining({ continuous: false }));
-    emit('start');
-    // Ordinary recognition failures are surfaced, with no retry loop.
-    emit('error', { error: 'audio-capture' });
-    emit('end');
-    jest.advanceTimersByTime(30_000);
-    expect(request.onError).toHaveBeenCalledTimes(1);
-    expect(request.onError).toHaveBeenCalledWith('failed');
-    expect(recognizer.start).toHaveBeenCalledTimes(2);
-    expect(controller.getSnapshot().phase).toBe('idle');
-  },
-);
-
-test('an empty final triggers fallback and remembers it for later microphone taps', async () => {
-  const { controller, request, recognizer, emit } = setup();
-  await controller.start(request);
-  emit('start');
-  emit('result', { isFinal: true, results: [{ transcript: '' }] });
-  expect(recognizer.abort).toHaveBeenCalledTimes(1);
-  emit('end');
-  jest.advanceTimersByTime(250);
-  emit('start');
-  controller.stop(request.owner);
-  emit('end');
-  await controller.start(request);
-  expect(recognizer.start).toHaveBeenLastCalledWith(expect.objectContaining({ continuous: false }));
-  expect(request.onError).not.toHaveBeenCalled();
-});
-
-test('missing continuous startup falls back, but missing fallback startup reports failure', async () => {
-  const { controller, request, recognizer, emit } = setup();
-  await controller.start(request);
-  jest.advanceTimersByTime(10_000);
-  expect(recognizer.abort).toHaveBeenCalledTimes(1);
-  expect(request.onError).not.toHaveBeenCalled();
-  emit('end');
-  jest.advanceTimersByTime(250);
-  expect(recognizer.start).toHaveBeenLastCalledWith(expect.objectContaining({ continuous: false }));
-  jest.advanceTimersByTime(10_000);
-  expect(request.onError).toHaveBeenCalledWith('failed');
-  emit('end');
-  expect(controller.getSnapshot().phase).toBe('idle');
-});
-
-test('a synchronous continuous start failure also drains before trying the fallback', async () => {
-  const { controller, request, recognizer, emit } = setup();
-  recognizer.start.mockImplementationOnce(() => { throw new Error('Unsupported audio source'); });
-  await controller.start(request);
-  expect(recognizer.abort).toHaveBeenCalledTimes(1);
-  expect(request.onError).not.toHaveBeenCalled();
-  emit('end');
-  jest.advanceTimersByTime(250);
-  expect(recognizer.start).toHaveBeenLastCalledWith(expect.objectContaining({ continuous: false }));
-});
-
-test('duplicate end and late result events during a restart gap cannot spawn overlapping cycles', async () => {
-  const { controller, request, recognizer, core, emit } = setup();
-  await controller.start(request);
-  emit('start');
-  emit('nomatch');
-  emit('end');
-  emit('end');
-  core.result.mockReturnValueOnce('stale result');
-  emit('result', { isFinal: true, results: [{ transcript: 'stale result' }] });
-  expect(request.append).not.toHaveBeenCalled();
-  core.result.mockReset();
-  jest.advanceTimersByTime(2_000);
-  expect(recognizer.start).toHaveBeenCalledTimes(2);
-});
-
-test.each(['end', 'no-speech', 'network'])(
-  'manual stop commits the core pending hypothesis once on %s', async terminalEvent => {
-    const { controller, request, core, emit } = setup();
-    await controller.start(request);
-    emit('start');
-    emit('result', { isFinal: false, results: [{ transcript: 'last partial' }] });
-    controller.stop(request.owner);
-    expect(request.append).not.toHaveBeenCalled();
-    // Rust returns the unconsumed partial when ending a manual stop.
-    core.end.mockReturnValueOnce('last partial');
-    if (terminalEvent !== 'end') emit('error', { error: terminalEvent });
-    emit('end');
-    emit('end');
-    expect(request.append).toHaveBeenCalledTimes(1);
-    expect(request.append).toHaveBeenCalledWith('Edited draft last partial');
-    expect(controller.getSnapshot().phase).toBe('idle');
-    if (terminalEvent === 'network') expect(request.onError).toHaveBeenCalledWith('network');
-    else expect(request.onError).not.toHaveBeenCalled();
-  },
-);
-
-test('manual stop timeout preserves pending text and drains abort before another owner starts', async () => {
-  const { controller, request, core, recognizer, emit } = setup();
-  await controller.start(request);
-  emit('start');
-  controller.stop(request.owner);
-  // A late start event must not clear the final-result timeout.
-  emit('start');
-  core.end.mockReturnValueOnce('pending text');
-  jest.advanceTimersByTime(10_000);
-  expect(request.append).toHaveBeenCalledWith('Edited draft pending text');
-  expect(recognizer.abort).toHaveBeenCalledTimes(1);
-  core.result.mockReturnValueOnce('late final');
-  emit('result', { isFinal: true, results: [{ transcript: 'late final' }] });
-  await controller.start({ ...request, owner: 'another pane' });
-  expect(recognizer.start).toHaveBeenCalledTimes(1);
-  emit('end');
-  expect(request.append).toHaveBeenCalledTimes(1);
-  expect(controller.getSnapshot().phase).toBe('idle');
-});
-
-test('a thrown native stop preserves pending text', async () => {
-  const { controller, request, core, recognizer, emit } = setup();
-  await controller.start(request);
-  emit('start');
-  core.end.mockReturnValueOnce('pending text');
-  recognizer.stop.mockImplementationOnce(() => { throw new Error('Native stop failed'); });
-  controller.stop(request.owner);
-  expect(request.append).toHaveBeenCalledWith('Edited draft pending text');
-  emit('end');
-  expect(request.append).toHaveBeenCalledTimes(1);
-});
-
-test.each(['stop', 'cancel', 'background'])(
-  '%s during a restart gap prevents any later recording', async action => {
-    const { controller, request, core, recognizer, emit } = setup();
-    await controller.start(request);
-    emit('start');
-    emit('end');
-    if (action === 'stop') controller.stop(request.owner);
-    else if (action === 'cancel') controller.cancel(request.owner);
-    else for (const listener of mockAppListeners) listener('background');
-    jest.advanceTimersByTime(60_000);
-    expect(recognizer.start).toHaveBeenCalledTimes(1);
-    expect(recognizer.stop).not.toHaveBeenCalled();
-    expect(recognizer.abort).not.toHaveBeenCalled();
-    expect(core.dispose).toHaveBeenCalledTimes(1);
-    expect(controller.getSnapshot().phase).toBe('idle');
-    expect(isSpeechInputActive()).toBe(false);
-    expect(request.onError).not.toHaveBeenCalled();
-  },
-);
-
-test.each(['network', 'not-allowed', 'language-not-supported', 'busy', 'aborted'])(
-  '%s is terminal and preserves previously finalized text', async error => {
-    const { controller, request, core, recognizer, emit } = setup();
-    await controller.start(request);
-    emit('start');
-    core.result.mockReturnValueOnce('Finalized segment');
-    emit('result', { isFinal: true, results: [{ transcript: 'Finalized segment' }] });
-    emit('result', { isFinal: false, results: [{ transcript: 'discard this partial' }] });
-    emit('error', { error });
-    emit('result', { isFinal: true, results: [{ transcript: 'late result' }] });
-    emit('end');
-    jest.advanceTimersByTime(60_000);
-    expect(request.onError).toHaveBeenCalledTimes(1);
-    expect(request.append).toHaveBeenCalledTimes(1);
-    expect(request.append).toHaveBeenCalledWith('Edited draft Finalized segment');
-    expect(recognizer.start).toHaveBeenCalledTimes(1);
-    expect(controller.getSnapshot().phase).toBe('idle');
-  },
-);
-
-test('cancellation while finishing discards the pending hypothesis', async () => {
-  const { controller, request, core, emit } = setup();
-  await controller.start(request);
-  emit('start');
-  controller.stop(request.owner);
-  core.end.mockReturnValueOnce('unconfirmed partial');
-  controller.cancel(request.owner);
-  emit('end');
-  expect(request.append).not.toHaveBeenCalled();
-});
-
-describe('voice chat reuses the shared recognizer', () => {
-  test('a client cancellation after finishing a local turn preserves its transcript without ending the call', async () => {
-    const { controller, request, recognizer, core, emit } = setup();
-    Object.assign(recognizer, { supportsOnDeviceRecognition: () => true, supportsAudioChunkEvents: () => true });
-    await controller.start({ ...request, localOnly: true });
-    emit('start');
-    controller.stop(request.owner);
-    core.result.mockReturnValueOnce('Are you there');
-    emit('result', { isFinal: true, results: [{ transcript: 'Are you there' }] });
-    emit('error', { error: 'client', message: 'Other client side errors.' });
-    emit('end');
-    expect(request.append).toHaveBeenCalledTimes(1);
-    expect(request.append).toHaveBeenCalledWith('Edited draft Are you there');
-    expect(request.onError).not.toHaveBeenCalled();
-    expect(controller.getSnapshot().phase).toBe('idle');
-  });
-
-  test('requires local recognition and forwards PCM only while capture is active', async () => {
-    const { controller, request, recognizer, emit } = setup();
-    Object.assign(recognizer, { supportsOnDeviceRecognition: () => true, supportsAudioChunkEvents: () => true });
-    const onAudio = jest.fn();
-    await controller.start({ ...request, localOnly: true, onAudio });
-    expect(recognizer.start).toHaveBeenCalledWith(expect.objectContaining({
-      requiresOnDeviceRecognition: true, continuous: true, audioChunkEvents: true,
-      recordingOptions: { persist: false },
-    }));
-    emit('start');
-    const token = (recognizer.start.mock.calls[0] as unknown as [{ audioChunkToken: string }])[0].audioChunkToken;
-    emit('audiochunk', { pcm: 'AAAA', token });
-    expect(onAudio).toHaveBeenCalledWith('AAAA');
-    controller.cancel(request.owner);
-    emit('audiochunk', { pcm: 'late', token });
-    expect(onAudio).toHaveBeenCalledTimes(1);
-    emit('end');
-  });
-  test('a missing on-device recognizer fails before starting capture', async () => {
-    const { controller, request, recognizer } = setup();
-    Object.assign(recognizer, { supportsOnDeviceRecognition: () => false, supportsAudioChunkEvents: () => true });
-    await controller.start({ ...request, localOnly: true });
-    expect(recognizer.start).not.toHaveBeenCalled();
-    expect(request.onError).toHaveBeenCalledWith('unavailable', expect.any(String));
-    expect(controller.getSnapshot().phase).toBe('idle');
-  });
-  test('local input never downgrades to a recognizer without the shared audio feed', async () => {
-    const { controller, request, recognizer, emit } = setup();
-    Object.assign(recognizer, { supportsOnDeviceRecognition: () => true, supportsAudioChunkEvents: () => true });
-    await controller.start({ ...request, localOnly: true });
-    emit('start');
-    emit('error', { error: 'audio-capture', message: 'Local service rejected shared audio' });
-    emit('end');
-    jest.advanceTimersByTime(10_000);
-    expect(recognizer.start).toHaveBeenCalledTimes(1);
-    expect(request.onError).toHaveBeenCalledWith('failed', 'Local service rejected shared audio');
-  });
-  test('the conversation owns the microphone and playback focus between turns', async () => {
-    const { controller, request, recognizer, emit } = setup();
-    expect(controller.reserve(request.owner)).toBe(true);
-    expect(controller.reserve('another conversation')).toBe(false);
-    await controller.start({ ...request, owner: 'another composer' });
-    expect(recognizer.start).not.toHaveBeenCalled();
-    await controller.start(request);
-    emit('start');
-    controller.stop(request.owner);
-    emit('end');
-    expect(isSpeechInputActive()).toBe(true);
-    await controller.start({ ...request, owner: 'another composer' });
-    expect(recognizer.start).toHaveBeenCalledTimes(1);
-    controller.releaseReservation(request.owner);
-    expect(isSpeechInputActive()).toBe(false);
-  });
-});
-
-test('a system-managed call retains shared local capture when the app backgrounds', async () => {
-  const { controller, request, recognizer, emit } = setup();
-  Object.assign(recognizer, { supportsOnDeviceRecognition: () => true, supportsAudioChunkEvents: () => true });
-  await controller.start({ ...request, localOnly: true, managedCall: true });
-  emit('start');
-  for (const listener of mockAppListeners) listener('background');
-  expect(recognizer.abort).not.toHaveBeenCalled();
-  expect(controller.getSnapshot().phase).toBe('listening');
-  expect(recognizer.start).toHaveBeenCalledWith(expect.objectContaining({ iosAudioSessionManaged: true }));
-  controller.cancel(request.owner); emit('end');
-});
-
-test('an authorized call starts background segments without another activity permission request', async () => {
-  const { controller, request, recognizer, emit } = setup();
-  Object.assign(recognizer, { supportsOnDeviceRecognition: () => true, supportsAudioChunkEvents: () => true });
-  controller.reserve(request.owner);
-  await controller.authorizeLocal();
-  // Android cannot deliver an activity permission result until Whip resumes.
-  recognizer.requestPermissionsAsync.mockImplementation(() => new Promise(() => {}));
-  for (let turn = 0; turn < 2; turn++) {
-    await controller.start({ ...request, localOnly: true, managedCall: true });
-    emit('start');
-    for (const listener of mockAppListeners) listener('background');
-    expect(controller.getSnapshot().phase).toBe('listening');
-    controller.stop(request.owner);
-    emit('end');
-  }
-  expect(recognizer.requestPermissionsAsync).toHaveBeenCalledTimes(1);
-  expect(recognizer.getPermissionsAsync).toHaveBeenCalledTimes(2);
-  expect(recognizer.start).toHaveBeenCalledTimes(2);
-  controller.releaseReservation(request.owner);
-});
-
-test('a call stops recording when its previously granted microphone permission is revoked', async () => {
-  const { controller, request, recognizer } = setup();
-  Object.assign(recognizer, { supportsOnDeviceRecognition: () => true, supportsAudioChunkEvents: () => true });
-  controller.reserve(request.owner);
-  await controller.authorizeLocal();
-  recognizer.getPermissionsAsync.mockResolvedValueOnce({ granted: false });
-  await controller.start({ ...request, localOnly: true, managedCall: true });
-  expect(recognizer.start).not.toHaveBeenCalled();
-  expect(request.onError).toHaveBeenCalledWith('permission');
-  expect(controller.getSnapshot().phase).toBe('idle');
-  controller.releaseReservation(request.owner);
-});
-
-test('only a reserved local system call can monitor speech without suspending playback', async () => {
-  const { controller, request, recognizer, dependencies, emit } = setup();
-  Object.assign(recognizer, { supportsOnDeviceRecognition: () => true, supportsAudioChunkEvents: () => true, supportsEchoCancellation: () => true });
-  expect(await controller.supportsPlaybackMonitoring()).toBe(true);
-  controller.reserve(request.owner);
-  await controller.start({ ...request, localOnly: true, managedCall: true, duringPlayback: true });
-  emit('start');
-  expect(dependencies.suspendPlayback).not.toHaveBeenCalled();
-  expect(recognizer.start).toHaveBeenCalledWith(expect.objectContaining({ requiresOnDeviceRecognition: true, androidEchoCancellation: true, iosVoiceProcessingEnabled: true }));
-  controller.cancel(request.owner); emit('end'); controller.releaseReservation(request.owner);
-});
-
-test('dictation history stores recognized words without copying the preexisting draft', async () => {
-  jest.mocked(voiceUsageLedger.record).mockClear();
-  const { controller, request, core, emit } = setup();
-  await controller.start(request);
-  emit('start');
-  core.result.mockReturnValueOnce('Recognized words');
-  emit('result', { isFinal: true, results: [{ transcript: 'Recognized words' }] });
-  controller.stop(request.owner);
-  emit('end');
-  expect(voiceUsageLedger.record).toHaveBeenCalledWith({ kind: 'started', call: expect.objectContaining({
-    session_id: 'speech-history-id', mode: 'stt', scope: 'speech',
-  }) });
-  expect(voiceUsageLedger.record).toHaveBeenCalledWith({ kind: 'transcript', session_id: 'speech-history-id',
-    fragments: [{ id: 'speech-history-id:0', role: 'user', text: 'Recognized words' }],
-  });
-  expect(voiceUsageLedger.record).toHaveBeenLastCalledWith({ kind: 'ended', session_id: 'speech-history-id', ended_at_ms: expect.any(Number) });
-});
-
-test('dictation inside a managed call belongs to the call transcript rather than a second history entry', async () => {
-  jest.mocked(voiceUsageLedger.record).mockClear();
-  const { controller, request, recognizer, core, emit } = setup();
-  Object.assign(recognizer, { supportsOnDeviceRecognition: () => true, supportsAudioChunkEvents: () => true });
-  controller.reserve(request.owner);
-  await controller.start({ ...request, localOnly: true, managedCall: true });
-  emit('start');
-  core.result.mockReturnValueOnce('Call words');
-  emit('result', { isFinal: true, results: [{ transcript: 'Call words' }] });
-  controller.stop(request.owner);
-  emit('end');
-  controller.releaseReservation(request.owner);
+test('managed calls do not create separate dictation history', async () => {
+  const s = setup(); await s.start({ managedCall: true, localOnly: true });
+  s.deliver({ action: 'publishDraftAppend', text: 'Call turn' });
+  s.deliver({ action: 'release' });
   expect(voiceUsageLedger.record).not.toHaveBeenCalled();
+});
+
+test('idle composer cleanup does not load native speech or require a matching development build', () => {
+  const createAuthority = jest.fn(() => { throw new Error('old native build'); });
+  const controller = new ComposerSpeechInput(undefined, createAuthority);
+  controller.cancel('composer'); controller.stop('composer'); controller.releaseReservation('composer');
+  expect(createAuthority).not.toHaveBeenCalled();
 });
