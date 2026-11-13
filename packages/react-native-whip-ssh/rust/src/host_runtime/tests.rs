@@ -27,7 +27,7 @@ use crate::host_runtime::connection::{
 use crate::host_runtime::events::apply_herdr_event_batch;
 use crate::host_runtime::monitoring::set_monitoring_state;
 use crate::host_runtime::remote_files::{
-    finish_transfer, transfer_setup_step, update_transfer_progress,
+    TransferDelivery, finish_transfer, transfer_setup_step, update_transfer_progress,
 };
 use crate::host_runtime::terminal::{
     SshShellCloseDisposition, apply_ssh_shell_close, claim_terminal_bridge,
@@ -496,6 +496,7 @@ fn transfer_completion_rejects_replaced_or_disconnected_connections() {
                     local_path: None,
                     remote_path: None,
                 }),
+                TransferDelivery::Bridge,
             );
             tokio::time::timeout(Duration::from_secs(1), notify.notified())
                 .await
@@ -521,12 +522,12 @@ fn transfer_cancellation_wins_over_late_progress_and_success_after_reconnect() {
     crate::runtime().unwrap().block_on(async {
         let inner = connected_runtime_inner("cancelled-transfer-test");
         let (id, cancel, _) = inner.operations.begin_transfer(1).unwrap();
-        update_transfer_progress(&inner, &id, 3, Some(10));
+        update_transfer_progress(&inner, &id, 3, Some(10), TransferDelivery::Bridge);
         let runtime = HostRuntime { inner };
         assert!(runtime.cancel_transfer(id.clone()));
         assert!(*cancel.borrow());
         runtime.inner.state.lock().generation = 2;
-        update_transfer_progress(&runtime.inner, &id, 10, Some(10));
+        update_transfer_progress(&runtime.inner, &id, 10, Some(10), TransferDelivery::Bridge);
         finish_transfer(
             &runtime.inner,
             &id,
@@ -536,6 +537,7 @@ fn transfer_cancellation_wins_over_late_progress_and_success_after_reconnect() {
                 local_path: None,
                 remote_path: None,
             }),
+            TransferDelivery::Bridge,
         );
         let progress = runtime.transfer_progress(id.clone()).unwrap();
         assert_eq!(progress.state, TransferState::Cancelled);
@@ -603,8 +605,8 @@ fn verified_download_can_complete_after_reconnect_and_progress_can_restart_for_a
     crate::runtime().unwrap().block_on(async {
         let inner = connected_runtime_inner("verified-download");
         let (id, _cancel, _) = inner.operations.begin_resumable_download(1).unwrap();
-        update_transfer_progress(&inner, &id, 100, Some(500));
-        update_transfer_progress(&inner, &id, 0, Some(600));
+        update_transfer_progress(&inner, &id, 100, Some(500), TransferDelivery::Bridge);
+        update_transfer_progress(&inner, &id, 0, Some(600), TransferDelivery::Bridge);
         assert_eq!(
             inner
                 .operations
@@ -626,6 +628,7 @@ fn verified_download_can_complete_after_reconnect_and_progress_can_restart_for_a
                 local_path: Some("/verified".into()),
                 remote_path: None,
             }),
+            TransferDelivery::Bridge,
         );
         let runtime = HostRuntime { inner };
         assert_eq!(
@@ -660,10 +663,17 @@ fn file_manager_download_recovers_across_an_actual_ssh_generation_change()
         let runtime = HostRuntime {
             inner: inner.clone(),
         };
-        let id = runtime.start_download(
+        let admitted = Arc::new(Mutex::new(None));
+        let admission = admitted.clone();
+        let id = runtime.start_native_download(
             source.to_str().unwrap().into(),
             destination.to_str().unwrap().into(),
+            Box::new(move |transfer| {
+                *admission.lock() = Some(transfer.to_owned());
+            }),
         )?;
+        assert_eq!(admitted.lock().as_deref(), Some(id.as_str()));
+        drop(admitted);
         tokio::time::timeout(Duration::from_secs(10), async {
             loop {
                 let progress = runtime.transfer_progress(id.clone()).unwrap();

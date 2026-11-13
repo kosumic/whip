@@ -6,7 +6,12 @@ use std::{
     sync::{Arc, LazyLock},
 };
 type Binding = (Arc<crate::HostRuntime>, String);
-static ACTIVE: LazyLock<parking_lot::Mutex<HashMap<String, Binding>>> =
+#[derive(Default)]
+struct Execution {
+    stopped: bool,
+    binding: Option<Binding>,
+}
+static ACTIVE: LazyLock<parking_lot::Mutex<HashMap<String, Execution>>> =
     LazyLock::new(|| parking_lot::Mutex::new(HashMap::new()));
 static EXPIRATIONS: parking_lot::Mutex<Vec<(String, bool)>> = parking_lot::Mutex::new(Vec::new());
 pub(super) fn pending_expirations() -> Vec<(String, bool)> {
@@ -16,9 +21,31 @@ pub(super) fn acknowledge_expirations(count: usize) {
     EXPIRATIONS.lock().drain(..count);
 }
 fn cancel_execution(execution_id: &str) {
-    let binding = ACTIVE.lock().get(execution_id).cloned();
+    let binding = {
+        let mut executions = ACTIVE.lock();
+        let execution = executions.entry(execution_id.into()).or_default();
+        execution.stopped = true;
+        let binding = execution.binding.clone();
+        drop(executions);
+        binding
+    };
     if let Some((host, transfer)) = binding {
-        host.cancel_transfer(transfer);
+        host.cancel_download_execution(&transfer);
+    }
+}
+fn bind_execution(execution_id: String, host: Arc<crate::HostRuntime>, transfer: &str) {
+    let stopped = {
+        let mut executions = ACTIVE.lock();
+        let execution = executions.entry(execution_id).or_default();
+        execution.binding = Some((host.clone(), transfer.into()));
+        let stopped = execution.stopped;
+        drop(executions);
+        stopped
+    };
+    // An expiry can precede registration and its database flush. Preserve the
+    // stop fence until teardown so admission cannot start unbounded native I/O.
+    if stopped {
+        host.cancel_download_execution(transfer);
     }
 }
 
@@ -83,6 +110,10 @@ pub(super) fn execute(action: Action) {
                 let _ = tokio::fs::remove_dir_all(path).await;
             });
         }
+        Action::ReleaseExecution(id) => {
+            let released = ACTIVE.lock().remove(&id);
+            drop(released);
+        }
     }
 }
 async fn deliver(command: Command) -> super::Response {
@@ -108,10 +139,13 @@ async fn transfer(job: Job) {
         if host.runtime_incarnation() != job.operation.incarnation { return Err("Host connection was replaced; retry from the original host".into()); }
         let staging = job.operation.staging.as_ref().ok_or("Download staging path is missing".to_string())?;
         tokio::fs::create_dir_all(staging).await.map_err(|error| error.to_string())?;
-        let transfer_id = host.start_download(job.remote_path.clone(), staging.clone()).map_err(|error| error.to_string())?;
-        ACTIVE.lock().insert(job.operation.execution_id.clone(), (host.clone(), transfer_id.clone()));
+        let execution = job.operation.execution_id.clone();
+        let admitted_host = host.clone();
+        let transfer_id = host.start_native_download(job.remote_path.clone(), staging.clone(), Box::new(move |transfer| {
+            bind_execution(execution, admitted_host, transfer);
+        })).map_err(|error| error.to_string())?;
         let bound = deliver(Command::Bound { id: id.clone(), generation, transfer_id: transfer_id.clone() }).await;
-        if !bound.accepted { host.cancel_transfer(transfer_id.clone()); }
+        if !bound.accepted { host.cancel_download_execution(&transfer_id); }
         let result = host.await_transfer(transfer_id.clone());
         tokio::pin!(result);
         let mut clock = tokio::time::interval(std::time::Duration::from_millis(250));
@@ -127,7 +161,11 @@ async fn transfer(job: Job) {
             }
         }
     }.await;
-    ACTIVE.lock().remove(&job.operation.execution_id);
+    let released = ACTIVE
+        .lock()
+        .get_mut(&job.operation.execution_id)
+        .and_then(|execution| execution.binding.take());
+    drop(released);
     let (source, error) = match result {
         Ok(Some(source)) => (Some(source), None),
         Ok(None) => (

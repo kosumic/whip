@@ -203,6 +203,12 @@ pub(super) struct Manager {
     revision: u64,
     checkpoint: Instant,
     owner: Option<String>,
+    receipts: std::collections::HashMap<String, Receipt>,
+}
+#[derive(Clone)]
+struct Receipt {
+    id: String,
+    owner: String,
 }
 #[derive(Clone, Debug, Deserialize)]
 #[serde(
@@ -271,6 +277,11 @@ pub(super) enum Command {
         generation: u64,
         transfer_id: String,
     },
+    Receipt {
+        id: String,
+        effect_id: String,
+        owner: String,
+    },
     Progress {
         id: String,
         generation: u64,
@@ -310,6 +321,7 @@ pub(super) enum Action {
     Start(Box<Job>),
     Cancel(String),
     Cleanup(String),
+    ReleaseExecution(String),
 }
 impl Manager {
     fn load(store: &Store) -> Result<Self> {
@@ -366,6 +378,7 @@ impl Manager {
             revision: 0,
             checkpoint: Instant::now(),
             owner: None,
+            receipts: std::collections::HashMap::new(),
         })
     }
     fn save(&self, store: &mut Store) -> Result<()> {
@@ -599,6 +612,17 @@ impl Manager {
             return Err(invalid("Expected destination effect acknowledgement"));
         };
         let mut actions = Vec::new();
+        // A database commit may outlive its foreign future or lose its reply.
+        // Retain accepted receipts until JS confirms delivery, including after
+        // history removal. These are process-local: no JS caller survives a
+        // native process restart. Bridge restarts retain this manager.
+        if self
+            .receipts
+            .get(&effect_id)
+            .is_some_and(|receipt| receipt.id == id && receipt.owner == owner)
+        {
+            return Ok((true, actions));
+        }
         let Some(index) = self.ledger.jobs.iter().position(|job| {
             job.id == id
                 && job.operation.effect_id == effect_id
@@ -608,6 +632,9 @@ impl Manager {
         };
         let job = &mut self.ledger.jobs[index];
         let step = job.operation.step;
+        if step == Step::End {
+            actions.push(Action::ReleaseExecution(job.operation.execution_id.clone()));
+        }
         job.operation.owner = None;
         if let Some(directory) = directory.as_ref() {
             job.destination_directory = Some(directory.clone());
@@ -700,7 +727,25 @@ impl Manager {
             job.clear_rate();
         }
 
+        self.receipts.insert(effect_id, Receipt { id, owner });
         Ok((true, actions))
+    }
+    fn attach(&mut self, owner: String) {
+        if self
+            .owner
+            .as_ref()
+            .is_some_and(|previous| previous != &owner)
+        {
+            for job in self
+                .ledger
+                .jobs
+                .iter_mut()
+                .filter(|job| job.operation.owner.is_some())
+            {
+                job.detach_adapter();
+            }
+        }
+        self.owner = Some(owner);
     }
     fn apply(&mut self, command: Command) -> Result<(Response, Vec<Action>, bool)> {
         let mut actions = Vec::new();
@@ -710,23 +755,7 @@ impl Manager {
         let mut claimed = Vec::new();
         match command {
             Command::Snapshot => durable = false,
-            Command::Attach { owner } => {
-                if self
-                    .owner
-                    .as_ref()
-                    .is_some_and(|previous| previous != &owner)
-                {
-                    for job in self
-                        .ledger
-                        .jobs
-                        .iter_mut()
-                        .filter(|job| job.operation.owner.is_some())
-                    {
-                        job.detach_adapter();
-                    }
-                }
-                self.owner = Some(owner);
-            }
+            Command::Attach { owner } => self.attach(owner),
             Command::Claim { owner } => {
                 if self.owner.as_ref() != Some(&owner) {
                     return Err(invalid("Download adapter was replaced"));
@@ -807,8 +836,9 @@ impl Manager {
             Command::Remove { id, delete_local } => {
                 if let Some(job) = self.ledger.jobs.iter_mut().find(|job| job.id == id) {
                     job.operation.remove = true;
-                    job.operation.delete_local =
-                        delete_local || job.busy() || job.phase == Phase::Paused;
+                    job.operation.delete_local = delete_local
+                        || job.busy() && job.phase != Phase::Completed
+                        || job.phase == Phase::Paused;
                     if job.busy() {
                         job.stop(true);
                         actions.push(Action::Cancel(job.operation.execution_id.clone()));
@@ -824,6 +854,20 @@ impl Manager {
                 accepted = acknowledged;
                 durable = acknowledged;
                 actions.extend(next_actions);
+            }
+            Command::Receipt {
+                id,
+                effect_id,
+                owner,
+            } => {
+                if self
+                    .receipts
+                    .get(&effect_id)
+                    .is_some_and(|receipt| receipt.id == id && receipt.owner == owner)
+                {
+                    self.receipts.remove(&effect_id);
+                }
+                durable = false;
             }
             Command::Bound {
                 id,
@@ -945,11 +989,21 @@ fn transact(store: &mut Store, command: Command) -> Result<(Response, Vec<Action
 }
 
 async fn dispatch(command: Command) -> Result<Response> {
-    let (response, actions) = database()?
-        .request(move |store| transact(store, command))
-        .await?;
+    database()?
+        .request(move |store| execute_transaction(store, command, native::execute))
+        .await
+}
+
+fn execute_transaction(
+    store: &mut Store,
+    command: Command,
+    mut execute: impl FnMut(Action),
+) -> Result<Response> {
+    let (response, actions) = transact(store, command)?;
+    // Run committed actions on the database worker before replying. Dropping
+    // a foreign future cannot discard an admitted start/cancel/cleanup action.
     for action in actions {
-        native::execute(action);
+        execute(action);
     }
     Ok(response)
 }

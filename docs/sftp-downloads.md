@@ -25,12 +25,19 @@ explicit recovery. Retry uses a new generation and private staging directory.
 
 `remoteDownloads.ts` is a snapshot subscription and platform-effect adapter. Rust
 leases each picker, destination resolution, OS execution grant, save, release,
-or deletion effect once. A save acknowledgement requires a verified destination
-URI. Expo handles file/directory copying without buffering the payload in JS;
+or deletion effect once. Accepted acknowledgements retain a native receipt until
+JS confirms delivery, so a lost reply cannot rerun a start or delete a committed
+save. Committed native actions dispatch on the database worker before replying;
+dropping a foreign future cannot discard an admitted transfer. A save
+acknowledgement requires a verified destination URI. Expo handles file/directory
+copying without buffering the payload in JS;
 the existing SAF child enumeration and file-size checks are reused. There are no
 JS history writes, checkpoint timers, transfer-result promises, concurrency maps,
 or authoritative job-state transitions. Snapshot sampling is bounded at 250 ms,
 identical projections retain their references, and the clock stops when settled.
+Managed transfers register their cancellation binding before native execution.
+Their byte progress and completion bypass synchronous JavaScript callbacks;
+OS cancellation also bypasses the foreign event sink.
 Native progress checkpoints are coalesced to one second; transitions commit
 immediately. Android notifications receive projected progress while JS runs.
 
@@ -76,6 +83,7 @@ Google Play distributions must declare the user-initiated SFTP use case. See
 [service types](https://developer.android.com/develop/background-work/services/fgs/service-types),
 [timeouts](https://developer.android.com/develop/background-work/services/fgs/timeout),
 and [Play declarations](https://support.google.com/googleplay/android-developer/answer/13392821).
+Returning to the foreground resets Android's background service time budget.
 
 On iOS, each attempt requests finite `beginBackgroundTask` time. Expiration
 updates Rust directly, including before a transfer ID is available, and ends the

@@ -75,11 +75,19 @@ async fn resolved_ssh_path(
     normalize_remote_path(path, &home).map_err(HostRuntimeError::RemoteFileFailure)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum TransferDelivery {
+    Bridge,
+    Native,
+}
+pub(super) type TransferAdmission = Box<dyn FnOnce(&str) + Send>;
+
 pub(super) fn update_transfer_progress(
     inner: &Arc<RuntimeInner>,
     transfer_id: &str,
     bytes_transferred: u64,
     total_bytes: Option<u64>,
+    delivery: TransferDelivery,
 ) {
     let progress = {
         let mut transfers = inner.operations.transfers.lock();
@@ -102,10 +110,14 @@ pub(super) fn update_transfer_progress(
         drop(transfers);
         progress
     };
-    emit(HostRuntimeEvent::TransferProgressChanged {
-        runtime_id: inner.id.clone(),
-        progress,
-    });
+    // Managed jobs project native snapshots. Never block their SFTP execution
+    // on the synchronous UniFFI JavaScript callback.
+    if delivery == TransferDelivery::Bridge {
+        emit(HostRuntimeEvent::TransferProgressChanged {
+            runtime_id: inner.id.clone(),
+            progress,
+        });
+    }
 }
 
 pub(super) fn finish_transfer(
@@ -113,6 +125,7 @@ pub(super) fn finish_transfer(
     transfer_id: &str,
     generation: u64,
     result: Result<TransferResult, String>,
+    delivery: TransferDelivery,
 ) {
     let current_generation = inner.state.lock().generation;
     let connected = inner.state.lock().connection == HostConnectionState::Connected;
@@ -147,10 +160,14 @@ pub(super) fn finish_transfer(
         drop(transfers);
         result
     };
-    emit(HostRuntimeEvent::TransferProgressChanged {
-        runtime_id: inner.id.clone(),
-        progress,
-    });
+    // Managed jobs project native snapshots. Never block their SFTP execution
+    // on the synchronous UniFFI JavaScript callback.
+    if delivery == TransferDelivery::Bridge {
+        emit(HostRuntimeEvent::TransferProgressChanged {
+            runtime_id: inner.id.clone(),
+            progress,
+        });
+    }
     notify.notify_one();
 }
 
@@ -383,6 +400,7 @@ async fn download_connection(
 fn start_transfer<F, Fut>(
     inner: &Arc<RuntimeInner>,
     resumable_download: bool,
+    on_admitted: Option<TransferAdmission>,
     operation: F,
 ) -> Result<String, HostRuntimeError>
 where
@@ -404,6 +422,14 @@ where
         inner.operations.begin_transfer(generation)
     }
     .map_err(HostRuntimeError::TransferFailure)?;
+    let delivery = if on_admitted.is_some() {
+        TransferDelivery::Native
+    } else {
+        TransferDelivery::Bridge
+    };
+    if let Some(admit) = on_admitted {
+        admit(&transfer_id);
+    }
     let id = transfer_id.clone();
     let inner = inner.clone();
     crate::runtime()
@@ -412,7 +438,7 @@ where
             let progress_inner = inner.clone();
             let progress_id = id.clone();
             let progress = Arc::new(move |bytes, total| {
-                update_transfer_progress(&progress_inner, &progress_id, bytes, total);
+                update_transfer_progress(&progress_inner, &progress_id, bytes, total, delivery);
             });
             let result = operation(ssh, cancel, progress, id.clone())
                 .await
@@ -421,7 +447,7 @@ where
                     local_path: Some(paths.local_path),
                     remote_path: Some(paths.remote_path),
                 });
-            finish_transfer(&inner, &id, generation, result);
+            finish_transfer(&inner, &id, generation, result, delivery);
         });
     Ok(transfer_id)
 }
@@ -658,6 +684,7 @@ impl HostRuntime {
         start_transfer(
             &self.inner,
             false,
+            None,
             move |ssh, mut cancel, progress, _id| async move {
                 let filename = std::path::Path::new(&local_path)
                     .file_name()
@@ -688,6 +715,7 @@ impl HostRuntime {
         start_transfer(
             &self.inner,
             false,
+            None,
             move |ssh, mut cancel, progress, _id| async move {
                 let home = crate::remote_ops::normalize_absolute(
                     transfer_setup_step(&mut cancel, ssh.remote_home())
@@ -717,54 +745,7 @@ impl HostRuntime {
         remote_path: String,
         local_directory: String,
     ) -> Result<String, HostRuntimeError> {
-        let inner = self.inner.clone();
-        start_transfer(
-            &self.inner,
-            true,
-            move |ssh, mut cancel, progress, id| async move {
-                let remote_path =
-                    transfer_setup_step(&mut cancel, resolved_ssh_path(&ssh, Some(&remote_path)))
-                        .await?;
-                let filename = remote_filename(&remote_path)?;
-                let local_path = std::path::Path::new(&local_directory)
-                    .join(filename)
-                    .to_str()
-                    .ok_or_else(|| "local download path is not UTF-8".to_owned())?
-                    .to_owned();
-                let metadata =
-                    transfer_setup_step(&mut cancel, ssh.sftp_stat(&remote_path)).await?;
-                if metadata.is_directory {
-                    // Recursive traversal retains its all-or-nothing behavior.
-                    let generation = {
-                        let mut transfers = inner.operations.transfers.lock();
-                        let slot = transfers.get_mut(&id).ok_or("transfer cancelled")?;
-                        slot.resumable_download = false;
-                        let generation = slot.generation;
-                        drop(transfers);
-                        generation
-                    };
-                    validate_generation(&inner, generation).map_err(|error| error.to_string())?;
-                    ssh.transfer_download(&remote_path, &local_path, cancel, progress)
-                        .await
-                        .map_err(|error| error.to_string())?;
-                } else {
-                    crate::ssh::file_download::download(
-                        local_path.clone(),
-                        remote_path.clone(),
-                        &id,
-                        cancel,
-                        move |bytes, total| progress(bytes, total),
-                        || download_connection(&inner, &id),
-                    )
-                    .await
-                    .map_err(|error| error.to_string())?;
-                }
-                Ok(TransferPaths {
-                    local_path,
-                    remote_path,
-                })
-            },
-        )
+        start_runtime_download(&self.inner, remote_path, local_directory, None)
     }
 
     pub fn transfer_progress(&self, transfer_id: String) -> Option<TransferProgress> {
@@ -1179,5 +1160,124 @@ impl HostRuntime {
             .map_err(|error| {
                 HostRuntimeError::PreviewFailure(format!("preview stop task failed: {error}"))
             })?
+    }
+}
+
+pub(super) fn start_runtime_download(
+    runtime: &Arc<RuntimeInner>,
+    remote_path: String,
+    local_directory: String,
+    on_admitted: Option<TransferAdmission>,
+) -> Result<String, HostRuntimeError> {
+    let inner = runtime.clone();
+    start_transfer(
+        runtime,
+        true,
+        on_admitted,
+        move |ssh, mut cancel, progress, id| async move {
+            let remote_path =
+                transfer_setup_step(&mut cancel, resolved_ssh_path(&ssh, Some(&remote_path)))
+                    .await?;
+            let filename = remote_filename(&remote_path)?;
+            let local_path = std::path::Path::new(&local_directory)
+                .join(filename)
+                .to_str()
+                .ok_or_else(|| "local download path is not UTF-8".to_owned())?
+                .to_owned();
+            let metadata = transfer_setup_step(&mut cancel, ssh.sftp_stat(&remote_path)).await?;
+            if metadata.is_directory {
+                // Recursive traversal retains its all-or-nothing behavior.
+                let generation = {
+                    let mut transfers = inner.operations.transfers.lock();
+                    let slot = transfers.get_mut(&id).ok_or("transfer cancelled")?;
+                    slot.resumable_download = false;
+                    let generation = slot.generation;
+                    drop(transfers);
+                    generation
+                };
+                validate_generation(&inner, generation).map_err(|error| error.to_string())?;
+                ssh.transfer_download(&remote_path, &local_path, cancel, progress)
+                    .await
+                    .map_err(|error| error.to_string())?;
+            } else {
+                crate::ssh::file_download::download(
+                    local_path.clone(),
+                    remote_path.clone(),
+                    &id,
+                    cancel,
+                    move |bytes, total| progress(bytes, total),
+                    || download_connection(&inner, &id),
+                )
+                .await
+                .map_err(|error| error.to_string())?;
+            }
+            Ok(TransferPaths {
+                local_path,
+                remote_path,
+            })
+        },
+    )
+}
+
+#[cfg(test)]
+mod download_delivery_tests {
+    #![allow(clippy::unwrap_used, reason = "test assertions")]
+    use super::*;
+    use crate::host_runtime::{
+        clear_host_runtime_event_sink, set_host_runtime_event_sink,
+        tests::{EVENT_SINK_TEST_LOCK, RecordingRuntimeSink, connected_runtime_inner},
+    };
+
+    #[test]
+    fn managed_download_completion_and_os_cancel_do_not_call_javascript() {
+        let _guard = EVENT_SINK_TEST_LOCK.lock();
+        let sink = Arc::new(RecordingRuntimeSink::default());
+        set_host_runtime_event_sink(sink.clone());
+        crate::runtime().unwrap().block_on(async {
+            for cancelled in [false, true] {
+                let inner = connected_runtime_inner("native-download-delivery");
+                let (id, cancel, notify) = inner.operations.begin_resumable_download(1).unwrap();
+                update_transfer_progress(&inner, &id, 42, Some(42), TransferDelivery::Native);
+                let runtime = HostRuntime { inner };
+                assert_eq!(
+                    runtime
+                        .transfer_progress(id.clone())
+                        .unwrap()
+                        .bytes_transferred,
+                    42
+                );
+                if cancelled {
+                    runtime.cancel_download_execution(&id);
+                    assert!(*cancel.borrow());
+                }
+                let wake = notify.notified();
+                finish_transfer(
+                    &runtime.inner,
+                    &id,
+                    1,
+                    Ok(TransferResult {
+                        transfer_id: id.clone(),
+                        local_path: Some("/verified".into()),
+                        remote_path: None,
+                    }),
+                    TransferDelivery::Native,
+                );
+                tokio::time::timeout(Duration::from_secs(1), wake)
+                    .await
+                    .unwrap();
+                let result = runtime.await_transfer(id).await;
+                if cancelled {
+                    assert!(matches!(
+                        result,
+                        Err(HostRuntimeError::TransferCancelled(_))
+                    ));
+                } else {
+                    assert_eq!(result.unwrap().local_path.as_deref(), Some("/verified"));
+                }
+            }
+        });
+        clear_host_runtime_event_sink();
+        assert!(!sink.events.lock().iter().any(|event| matches!(event,
+            HostRuntimeEvent::TransferProgressChanged { runtime_id, .. } if runtime_id == "native-download-delivery")));
     }
 }

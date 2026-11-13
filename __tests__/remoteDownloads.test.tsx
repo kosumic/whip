@@ -174,4 +174,5 @@ it('retries a failed save acknowledgement without copying the file a second time
   await jest.advanceTimersByTimeAsync(1000); await flush();
   expect(saveDownloadedEntry).toHaveBeenCalledTimes(1);
   expect(commands.filter(command => command.type === 'ack')).toHaveLength(2);
+  expect(commands).toContainEqual(expect.objectContaining({ type: 'receipt', effectId: 'effect-unique' }));
 });

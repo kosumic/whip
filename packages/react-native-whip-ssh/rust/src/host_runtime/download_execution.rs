@@ -2,6 +2,23 @@
 use std::ffi::{CStr, c_char};
 
 impl super::HostRuntime {
+    pub(crate) fn start_native_download(
+        &self,
+        remote_path: String,
+        local_directory: String,
+        admit: super::remote_files::TransferAdmission,
+    ) -> Result<String, super::HostRuntimeError> {
+        super::remote_files::start_runtime_download(
+            &self.inner,
+            remote_path,
+            local_directory,
+            Some(admit),
+        )
+    }
+    pub(crate) fn cancel_download_execution(&self, transfer_id: &str) {
+        // OS callbacks must never wait for a synchronous JS event sink.
+        self.inner.operations.cancel_transfer(transfer_id);
+    }
     /// Stable endpoint identity survives reconnects and credential rotation,
     /// but rejects reuse of a logical host ID for a different server/account.
     pub(crate) fn download_identity(&self) -> String {

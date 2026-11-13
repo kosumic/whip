@@ -10,6 +10,7 @@ fn manager() -> Manager {
         revision: 0,
         checkpoint: Instant::now(),
         owner: Some("bridge".into()),
+        receipts: std::collections::HashMap::new(),
     }
 }
 fn start(manager: &mut Manager, host: &str) -> String {
@@ -341,7 +342,7 @@ fn bridge_restart_adopts_native_transfer_but_never_replays_an_uncertain_copy() {
     assert!(effects.iter().all(|effect| effect.kind != Step::Save));
 }
 #[test]
-fn each_effect_is_claimed_once_and_stale_acknowledgements_are_idempotently_rejected() {
+fn each_effect_is_claimed_once_and_acknowledgement_retries_are_idempotent() {
     let mut manager = manager();
     let id = start(&mut manager, "a");
     let effect = claim(&mut manager, &id);
@@ -360,7 +361,7 @@ fn each_effect_is_claimed_once_and_stale_acknowledgements_are_idempotently_rejec
         *cancelled = true;
     }
     manager.apply(command.clone()).unwrap();
-    assert!(!manager.apply(command).unwrap().0.accepted);
+    assert!(manager.apply(command).unwrap().0.accepted);
     assert_eq!(row(&manager, &id).phase, Phase::Cancelled);
 }
 fn store(path: &std::path::Path) -> Store {
@@ -631,4 +632,122 @@ fn an_os_release_error_cannot_undo_a_committed_verified_save() {
             .unwrap()
             .contains("release")
     );
+}
+
+#[test]
+fn history_only_removal_keeps_a_completed_copy_even_before_os_cleanup_finishes() {
+    for delete_local in [false, true] {
+        let mut manager = manager();
+        let id = saving(&mut manager, "a");
+        let save = claim(&mut manager, &id);
+        complete(&mut manager, &save);
+        assert!(row(&manager, &id).busy());
+        manager
+            .apply(Command::Remove {
+                id: id.clone(),
+                delete_local,
+            })
+            .unwrap();
+        finish_effect(&mut manager, &id);
+        if delete_local {
+            assert_eq!(row(&manager, &id).operation.step, Step::Delete);
+            finish_effect(&mut manager, &id);
+        }
+        assert!(manager.ledger.jobs.is_empty());
+    }
+}
+
+#[test]
+fn a_lost_begin_reply_does_not_start_twice_or_release_a_running_attempt() {
+    let mut manager = manager();
+    let id = start(&mut manager, "a");
+    destination(&mut manager, &id);
+    let begin = claim(&mut manager, &id);
+    let command = ack(&begin);
+    assert!(matches!(
+        manager.apply(command.clone()).unwrap().1.as_slice(),
+        [Action::Start(_)]
+    ));
+    let (response, actions, _) = manager.apply(command).unwrap();
+    assert!(response.accepted);
+    assert!(actions.is_empty());
+    assert_eq!(row(&manager, &id).phase, Phase::Downloading);
+}
+
+#[test]
+fn a_lost_save_reply_stays_accepted_after_bridge_restart_and_history_only_removal() {
+    let mut manager = manager();
+    let id = saving(&mut manager, "a");
+    let save = claim(&mut manager, &id);
+    let mut command = ack(&save);
+    if let Command::Ack { saved: value, .. } = &mut command {
+        *value = Some(saved());
+    }
+    manager.apply(command.clone()).unwrap();
+    finish_effect(&mut manager, &id);
+    manager
+        .apply(Command::Attach {
+            owner: "replacement".into(),
+        })
+        .unwrap();
+    manager
+        .apply(Command::Remove {
+            id: id.clone(),
+            delete_local: false,
+        })
+        .unwrap();
+    let (response, actions, _) = manager.apply(command).unwrap();
+    assert!(response.accepted); // the adapter must keep the committed local file
+    assert!(response.items.is_empty());
+    assert!(actions.is_empty());
+}
+
+#[test]
+fn a_dropped_bridge_request_cannot_discard_a_committed_native_start() {
+    let directory = tempfile::tempdir().unwrap();
+    let database = super::super::AppDatabase::open(directory.path().join("db")).unwrap();
+    let runtime = crate::runtime().unwrap();
+    let mut manager = manager();
+    let id = start(&mut manager, "a");
+    destination(&mut manager, &id);
+    let begin = claim(&mut manager, &id);
+    let command = ack(&begin);
+    runtime
+        .block_on(database.request(move |store| {
+            store.write(vec![], true)?;
+            manager.save(store)?;
+            store.downloads = Some(manager);
+            Ok(())
+        }))
+        .unwrap();
+    let (admitted, admission) = std::sync::mpsc::channel();
+    let (release, gate) = std::sync::mpsc::channel();
+    let (executed, actions) = std::sync::mpsc::channel();
+    let pending_database = database.clone();
+    let request = runtime.spawn(async move {
+        pending_database
+            .request(move |store| {
+                admitted.send(()).unwrap();
+                gate.recv().unwrap();
+                execute_transaction(store, command, |action| {
+                    executed.send(action).unwrap();
+                })
+            })
+            .await
+    });
+    admission.recv_timeout(Duration::from_secs(5)).unwrap();
+    request.abort();
+    assert!(matches!(runtime.block_on(request), Err(error) if error.is_cancelled()));
+    release.send(()).unwrap();
+    assert!(matches!(
+        actions.recv_timeout(Duration::from_secs(5)).unwrap(),
+        Action::Start(_)
+    ));
+    let phase = runtime
+        .block_on(
+            database.request(move |store| Ok(row(store.downloads.as_ref().unwrap(), &id).phase)),
+        )
+        .unwrap();
+    drop(database);
+    assert_eq!(phase, Phase::Downloading);
 }

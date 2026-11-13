@@ -131,7 +131,8 @@ export class RemoteDownloads {
           const info = Paths.info(uri);
           if (!info.exists) throw new Error('The downloaded staging file is missing; retry the download');
           const source = info.isDirectory ? new Directory(uri) : new File(uri);
-          saved = await saveDownloadedEntry(source, new Directory(job.destinationDirectory), false,
+          const directoryUri = await downloadExecution.resolveDownloadJobDestination(job.operation.executionId, job.destinationDirectory, job.permission ?? '');
+          saved = await saveDownloadedEntry(source, new Directory(directoryUri), false,
             { runtimeId: job.hostId, transferId: job.transferId });
           result = { saved: { uri: saved.entry.uri, directoryUri: saved.directory.uri, isDirectory: saved.entry instanceof Directory } };
           break;
@@ -163,6 +164,9 @@ export class RemoteDownloads {
         await new Promise<void>(resolve => setTimeout(resolve, 1000));
       }
     }
+    if (acknowledgement.accepted) {
+      reportBackgroundFailure(this.command({ type: 'receipt', id: effect.id, effectId: effect.effectId, owner: this.owner }), 'sftp-effect-receipt');
+    }
     await this.finishEffect(effect, acknowledgement, saved, selectedUri);
   }
   private async finishEffect(effect: Effect, acknowledgement: Snapshot, saved?: SavedRemoteDestination, selectedUri?: string): Promise<void> {
@@ -177,7 +181,7 @@ export class RemoteDownloads {
         }
       }
       finally {
-        if (selectedUri) await downloadExecution.releaseDownloadJobDestination(effect.job.operation.executionId);
+        if (selectedUri || effect.kind === 'save') await downloadExecution.releaseDownloadJobDestination(effect.job.operation.executionId);
         if (effect.kind === 'begin') await downloadExecution.endDownloadExecution(effect.job.operation.executionId);
       }
       return;

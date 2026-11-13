@@ -273,6 +273,7 @@ RCT_EXPORT_METHOD(releaseDownloadDestination:(NSString *)uri resolve:(RCTPromise
     for (NSString *identifier in self.downloadTasks.allKeys) [self stopDownload:identifier notify:NO];
     for (NSString *uri in self.downloadScopes.allObjects) [[NSURL URLWithString:uri] stopAccessingSecurityScopedResource];
     [self.downloadScopes removeAllObjects];
+    [self.downloadDestinationLeases removeAllObjects];
     [WhipRealtimeVoice.shared invalidate]; [WhipVoiceCall.shared invalidate]; [WhipSpeechPlayback.shared detachPresentation];
   });
   [super invalidate];

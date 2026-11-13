@@ -111,4 +111,20 @@ void whip_cancel_background_download(const char *host, const char *transfer) {
   XCTAssertTrue(rejected);
   XCTAssertEqual(adapter.holds.count, 0u);
 }
+- (void)testBridgeInvalidationRequiresFreshDestinationPermission {
+  HerdrBackground *adapter = [HerdrBackground new];
+  NSString *uri = [NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES].absoluteString;
+  [self resultOf:^(RCTPromiseResolveBlock yes, RCTPromiseRejectBlock no) {
+    [adapter retainDownloadJobDestination:@"attempt" uri:uri resolve:yes reject:no];
+  }];
+  [adapter invalidate];
+  XCTestExpectation *drained = [self expectationWithDescription:@"OS grants released"];
+  dispatch_async(dispatch_get_main_queue(), ^{ [drained fulfill]; });
+  [self waitForExpectations:@[drained] timeout:2];
+  __block BOOL rejected = NO;
+  [adapter resolveDownloadJobDestination:@"attempt" uri:uri permission:@"invalid"
+    resolve:^(id result) { XCTFail(@"Invalidated permission was reused"); }
+    reject:^(NSString *code, NSString *message, NSError *error) { rejected = YES; }];
+  XCTAssertTrue(rejected);
+}
 @end
