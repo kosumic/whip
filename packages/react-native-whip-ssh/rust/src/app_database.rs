@@ -8,8 +8,8 @@ use std::sync::{OnceLock, mpsc};
 use parking_lot::Mutex;
 use tokio::sync::oneshot;
 
-mod known_hosts;
 mod downloads;
+mod known_hosts;
 pub use downloads::download_manager_command;
 pub(crate) use known_hosts::detach as detach_known_host_repository;
 pub use known_hosts::*;
