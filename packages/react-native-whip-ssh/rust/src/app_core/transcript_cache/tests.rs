@@ -590,7 +590,7 @@ fn a_new_bridge_adopts_residents_before_its_app_core_finishes_restoring() {
         cache.reconcile(replacement.clone(), new_owner, 3).unwrap(),
         initial
     );
-    replacement.close_session(host.id.clone());
+    replacement.close_session(host.id);
     assert!(
         cache
             .reconcile(replacement, new_owner, 3)

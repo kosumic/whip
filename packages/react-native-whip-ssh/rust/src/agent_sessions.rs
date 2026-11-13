@@ -1205,24 +1205,31 @@ impl AgentSessionManager {
         text: Option<&str>,
         failed: bool,
     ) {
-        let mut state = self.inner.state.lock();
-        let key = state.terminal_bindings[&TerminalId::from(terminal)]
-            .key
-            .clone();
-        let session = state.sessions.get_mut(&key).unwrap();
-        let mut core = OpenCodeSessionCore::new(session.session_id.clone());
+        let session_id = self.terminal_binding_metadata(terminal).unwrap().session_id;
+        let mut core = OpenCodeSessionCore::new(session_id.clone());
         let messages = text.map_or_else(Vec::new, |text| {
             vec![serde_json::json!({
                 "info": { "id": "answer", "role": "assistant" },
                 "parts": [{ "id": "text", "type": "text", "text": text }]
             })]
         });
-        core.bootstrap(1, &serde_json::json!({ "info": { "id": session.session_id.as_str() }, "messages": messages }).to_string()).unwrap();
+        core.bootstrap(
+            1,
+            &serde_json::json!({ "info": { "id": session_id.as_str() }, "messages": messages })
+                .to_string(),
+        )
+        .unwrap();
         if failed {
             let _ = core.mark_unavailable_update("transient discovery failure");
         }
+        let mut state = self.inner.state.lock();
+        let key = state.terminal_bindings[&TerminalId::from(terminal)]
+            .key
+            .clone();
+        let session = state.sessions.get_mut(&key).unwrap();
         session.core = AgentSessionCore::OpenCode(Box::new(core));
         session.started = true;
+        drop(state);
     }
 
     pub(crate) fn terminal_binding(&self, terminal_id: &str) -> Option<BoundAgentChat> {
