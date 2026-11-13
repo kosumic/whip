@@ -1,6 +1,32 @@
 //! OS execution expiry must cancel SFTP even when the React executor is suspended.
 use std::ffi::{CStr, c_char};
 
+impl super::HostRuntime {
+    /// Stable endpoint identity survives reconnects and credential rotation,
+    /// but rejects reuse of a logical host ID for a different server/account.
+    pub(crate) fn download_identity(&self) -> String {
+        endpoint_identity(&self.inner.config)
+    }
+}
+
+fn endpoint_identity(config: &super::HostRuntimeConfig) -> String {
+    use sha2::{Digest, Sha256};
+    let mut digest = Sha256::new();
+    for ssh in config.jump_hosts.iter().chain(std::iter::once(&config.ssh)) {
+        for value in [
+            ssh.host.trim(),
+            ssh.username.trim(),
+            ssh.tailcat_address.as_deref().unwrap_or_default(),
+        ] {
+            digest.update(value.len().to_le_bytes());
+            digest.update(value.as_bytes());
+        }
+        digest.update(ssh.port.to_le_bytes());
+        digest.update([u8::from(ssh.tailcat_ssh_server)]);
+    }
+    crate::lower_hex(&digest.finalize())
+}
+
 /// # Safety
 /// The native callers supply NUL-terminated UTF-8 strings for the duration of this call.
 #[unsafe(no_mangle)]
@@ -31,6 +57,24 @@ mod tests {
 
     use super::whip_cancel_background_download;
     use crate::host_runtime::{runtimes, tests::connected_runtime_inner};
+
+    #[test]
+    fn endpoint_identity_survives_credentials_but_changes_with_server_account_and_route() {
+        let mut config = connected_runtime_inner("download-identity").config.clone();
+        let original = super::endpoint_identity(&config);
+        config.ssh.credential = super::super::HostSshCredential::Password {
+            password: "rotated".into(),
+        };
+        assert_eq!(super::endpoint_identity(&config), original);
+        let mut changed = config.clone();
+        changed.ssh.host = "different-server".into();
+        assert_ne!(super::endpoint_identity(&changed), original);
+        let mut changed = config.clone();
+        changed.ssh.username = "different-account".into();
+        assert_ne!(super::endpoint_identity(&changed), original);
+        config.jump_hosts.push(config.ssh.clone());
+        assert_ne!(super::endpoint_identity(&config), original);
+    }
 
     #[test]
     fn os_expiration_cancels_only_the_bound_host_and_transfer() {

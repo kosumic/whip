@@ -9,6 +9,8 @@ use parking_lot::Mutex;
 use tokio::sync::oneshot;
 
 mod known_hosts;
+mod downloads;
+pub use downloads::download_manager_command;
 pub(crate) use known_hosts::detach as detach_known_host_repository;
 pub use known_hosts::*;
 mod voice_usage;
@@ -125,6 +127,7 @@ impl Worker {
 }
 
 struct Store {
+    downloads: Option<downloads::Manager>,
     connection: turso::Connection,
     _database: turso::Database,
     runtime: &'static tokio::runtime::Runtime,
@@ -203,6 +206,7 @@ impl Store {
                 .await?;
             tx.commit().await?;
             Ok(Self {
+                downloads: None,
                 connection,
                 _database: database,
                 runtime,
@@ -316,6 +320,8 @@ fn legacy_app_key(key: &str) -> bool {
         "whip.reverse-control.expanded.v1",
         "whip.terminal.expanded.v1",
         "whip.developer.expanded.v1",
+        "whip.sftp-downloads.v1",
+        "whip.downloads.expanded.v1",
     ];
     const PREFIXES: &[&str] = &[
         "herdr.terminal.sessions.v1.",
@@ -336,6 +342,7 @@ fn validate_entry(entry: &AppStorageEntry, importing: bool) -> Result<(), AppSto
             && matches!(
                 entry.key.as_str(),
                 voice_usage::KEY
+                    | downloads::KEY
                     | crate::voice_history::LEGACY_LIVE_KEY
                     | crate::voice_history::KEY
                     | "whip.sftp-downloads.v1"
