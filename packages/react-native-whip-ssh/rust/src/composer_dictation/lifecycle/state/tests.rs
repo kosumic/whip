@@ -862,3 +862,41 @@ fn alternating_native_states_cannot_extend_idle_recovery_indefinitely() {
     assert!(state.session.as_ref().unwrap().cancelled);
     assert!(state.deadline().is_none());
 }
+
+#[test]
+fn cloud_permission_prompt_has_no_startup_timeout_and_late_grant_is_fenced() {
+    let mut state = State::default();
+    begin(
+        &mut state,
+        Config {
+            provider: Provider::Openai,
+            ..config()
+        },
+    );
+    let start = state
+        .pending
+        .values()
+        .find(|e| matches!(e.action, Action::StartCloud))
+        .unwrap()
+        .clone();
+    state.advance(60_000);
+    assert_eq!(state.session.as_ref().unwrap().stage, Stage::CloudStarting);
+    assert!(state.deadline().is_none());
+    state.apply(
+        Command::Cancel {
+            owner: "composer".into(),
+        },
+        60_000,
+    );
+    assert!(!state.apply(
+        Command::Ack {
+            id: start.id,
+            generation: start.generation,
+            epoch: start.epoch,
+            outcome: Outcome::CloudStarted { granted: true }
+        },
+        60_000
+    ));
+    ack(&mut state, "cancelCloud", Outcome::Done, 60_000);
+    assert!(state.session.is_none());
+}

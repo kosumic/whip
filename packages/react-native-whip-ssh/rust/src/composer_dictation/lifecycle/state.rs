@@ -578,6 +578,9 @@ impl State {
         s.idle_confirmed = false;
         if s.config.cloud() {
             s.stage = Stage::CloudStarting;
+            // Capture.start includes the system permission dialog. Like local
+            // permission requests, it must remain pending until a reply/cancel.
+            s.operation_deadline = None;
             self.emit(Action::StartCloud);
         } else {
             s.stage = Stage::Starting;
