@@ -81,10 +81,10 @@ impl server::Handler for PairingServer {
     fn auth_publickey(
         &mut self,
         user: &str,
-        key: &ssh_key::PublicKey,
+        key: server::VerifiedPublicKey<'_>,
     ) -> impl Future<Output = Result<server::Auth, Self::Error>> {
         assert_eq!(user, "alice");
-        assert_eq!(key, &self.expected_key);
+        assert_eq!(key.public_key, &self.expected_key);
         ready(Ok(server::Auth::Accept))
     }
 
