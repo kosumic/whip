@@ -1,5 +1,8 @@
 //! Recognition hints and draft-safe speech input. The platform owns the microphone.
 
+mod lifecycle;
+pub use lifecycle::{DictationLifecycle, DictationLifecycleObserver, dictation_lifecycle};
+
 use std::{collections::HashMap, sync::Arc};
 
 use parking_lot::Mutex;
