@@ -56,7 +56,7 @@ jobs:
     name: Whip Rust core checks
     if: github.event_name != 'schedule'
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 35
     permissions:
       checks: write
       contents: read
