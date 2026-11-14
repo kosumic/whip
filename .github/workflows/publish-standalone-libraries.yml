@@ -1,6 +1,16 @@
 name: Publish standalone libraries
 
 on:
+  push:
+    tags:
+      - 'agent-transcript-view-v*'
+      - 'audio-ingress-v*'
+      - 'mobile-speech-v*'
+      - 'native-credentials-v*'
+      - 'voice-call-local-v*'
+      - 'voice-call-media-v*'
+      - 'voice-call-openai-v*'
+      - 'whip-notify-v*'
   workflow_dispatch:
     inputs:
       crate:
@@ -56,9 +66,16 @@ jobs:
         env:
           MANUAL_CRATE: ${{ inputs.crate }}
           MANUAL_VERSION: ${{ inputs.version }}
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          crate="$MANUAL_CRATE"
-          version="$MANUAL_VERSION"
+          if [[ "$EVENT_NAME" == push ]]; then
+            crate="${RELEASE_TAG%-v*}"
+            version="${RELEASE_TAG##*-v}"
+          else
+            crate="$MANUAL_CRATE"
+            version="$MANUAL_VERSION"
+          fi
           case "$crate" in
             agent-transcript-view|audio-ingress|mobile-speech|native-credentials|voice-call-local|voice-call-media|voice-call-openai)
               directory="crates/$crate" ;;
@@ -98,11 +115,11 @@ jobs:
             *) echo "Registry lookup failed: HTTP $status" >&2; exit 1 ;;
           esac
       - name: Authenticate with crates.io trusted publishing
-        if: steps.registry.outputs.published != 'true' && inputs.bootstrap_with_token == false
+        if: github.event_name == 'push' || inputs.bootstrap_with_token == false
         id: auth
         uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
       - name: Publish with trusted publishing
-        if: steps.registry.outputs.published != 'true' && inputs.bootstrap_with_token == false
+        if: steps.registry.outputs.published != 'true' && (github.event_name == 'push' || inputs.bootstrap_with_token == false)
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         run: cargo publish --locked --manifest-path "$CRATE_MANIFEST"
