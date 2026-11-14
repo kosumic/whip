@@ -113,7 +113,7 @@ jobs:
       - name: Build signed release APK
         env:
           WHIP_UPLOAD_KEYSTORE_PROPERTIES: ${{ github.workspace }}/.eas-secrets/upload-keystore.properties
-        # Use the same Gradle and Ninja memory budget as Android checks.
+        # Keep Gradle and Ninja concurrency bounded, with more heap for R8 and lint.
         run: |
           free -h
           df -h .
@@ -123,7 +123,7 @@ jobs:
           nix develop .#default -c \
             android/gradlew -p android app:assembleRelease \
             --init-script "$GITHUB_WORKSPACE/.github/gradle/android-ci.gradle" \
-            -Dorg.gradle.jvmargs="-Xmx2g -XX:MaxMetaspaceSize=1g" \
+            -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g" \
             -PreactNativeArchitectures=arm64-v8a \
             --max-workers=2 \
             --no-parallel \
