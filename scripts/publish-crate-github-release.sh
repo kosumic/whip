@@ -12,6 +12,10 @@ version="$2"
 tag="$crate-v$version"
 manifest="${3:-crates/$crate/Cargo.toml}"
 source_directory="${manifest%/Cargo.toml}"
+# Manual dispatch checks out main with no tags in its shallow clone.
+if ! git rev-parse --verify --quiet "refs/tags/$tag" >/dev/null; then
+  git fetch --no-tags --depth 1 origin "refs/tags/$tag:refs/tags/$tag"
+fi
 license="$(git show "$tag:$manifest" | sed -n 's/^license = "\([^"]*\)"$/\1/p')"
 [[ -n "$license" ]]
 registry="https://crates.io/api/v1/crates/$crate/$version"
