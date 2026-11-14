@@ -159,7 +159,10 @@ impl LiveVoiceAdapter {
             config.validate_preview()?;
         }
         if (!config.preview
-            && (usize::from(config.target.is_some()) + usize::from(config.agent_source.is_some()) + usize::from(config.global) != 1))
+            && (usize::from(config.target.is_some())
+                + usize::from(config.agent_source.is_some())
+                + usize::from(config.global)
+                != 1))
             || (config.global_shizuku_access && !config.global)
             || config.terminal_target.is_some()
             || !catalog.voices.contains(&config.voice)
