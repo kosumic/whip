@@ -343,6 +343,23 @@ promises; callbacks from the old lease cannot complete a replacement. The native
 serial `speakChat` compatibility, and Android system voices retain their selected
 backend.
 
+On Android, draining a chat chunk settles its promise before yielding to a queued
+alert. The next chunk still waits for the alert's complete playback turn. Silent
+or cancelled alerts do not suspend the chat session, so they must never be made
+responsible for resolving the drained chunk through chat resumption. Holding that
+promise stranded the automatic reader on its old active chunk and suppressed new
+replies while the notification continued to say it was listening.
+
+Android PCM read-aloud also has a 60-second inactivity deadline, owned by Rust's
+playback policy. Only advancing consumed frames refresh it; generated audio,
+repeated progress callbacks and callbacks for another turn do not. A stalled
+reader fails through normal native teardown, clears captions and settles pending
+speech promises even when no competing audio is queued. Advancing speech can
+continue beyond its ordinary duration budget. The PCM deadline is removed if an
+unstarted local utterance falls back to system speech. `PcmSpeechPlaybackTest`
+includes a producer that emits initial audio and then stalls without an end event;
+run this acceptance test on an idle Android device with Phonon installed.
+
 On iOS 18+, the official 0.6.0 Core ML engine is pinned through `ptts-ffi` in
 Cargo.lock and linked into Whip's existing Rust archive. Only the platform's
 137,300,815-byte Core ML archive downloads; the Android GGUF is not fetched.

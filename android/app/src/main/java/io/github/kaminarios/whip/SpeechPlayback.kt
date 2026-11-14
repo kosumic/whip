@@ -87,7 +87,6 @@ object SpeechPlayback : SensorEventListener {
   // Callback bookkeeping only. Rust owns queue contents, expiry and priority.
   private val statusCallbacks = mutableMapOf<String, Promise>()
   private var suspendedChat: Session? = null
-  private var boundaryCompletion: Promise? = null
   private var deferredChat: QueuedChat? = null
   private var statusOwner: String? = null
   private var automaticId = 0L
@@ -325,18 +324,14 @@ object SpeechPlayback : SensorEventListener {
     val previous = suspendedChat ?: return
     if (session != null) return
     suspendedChat = null
-    val completed = boundaryCompletion
-    boundaryCompletion = null
     val pending = deferredChat
     deferredChat = null
     val context = appContext ?: return
     val accepted = begin(context, SpeechPolicy.CHAT, previous.owner, "", previous.label, {
-      completed?.resolve(null)
       if (pending != null) speakChat(previous.owner, pending.text, pending.promise, pending.source)
     }, localOnly = previous.localOnly, atomic = previous.atomic, ended = previous.ended)
     if (!accepted) {
       previous.ended(INTERRUPTED, "Could not resume chat speech")
-      completed?.reject(ERROR_CODE, "Could not resume chat speech")
       pending?.promise?.reject(ERROR_CODE, "Could not resume chat speech")
     }
   }
@@ -345,12 +340,10 @@ object SpeechPlayback : SensorEventListener {
     val previous = suspendedChat ?: return
     suspendedChat = null
     previous.ended(reason, error)
-    val completed = boundaryCompletion
-    boundaryCompletion = null
     val pending = deferredChat
     deferredChat = null
-    if (error != null) { completed?.reject(ERROR_CODE, error); pending?.promise?.reject(ERROR_CODE, error) }
-    else { completed?.resolve(null); pending?.promise?.resolve(null) }
+    if (error != null) pending?.promise?.reject(ERROR_CODE, error)
+    else pending?.promise?.resolve(null)
   }
   private var engine: TextToSpeech? = null
   private var engineReady = false
@@ -476,6 +469,7 @@ object SpeechPlayback : SensorEventListener {
     if (playback.defer(current.turn) { enqueuePcm(current, entry) }) return
     playback.started(current.turn)
     if (queuedChat.firstOrNull() === entry) {
+      playback.watchProgress(current.turn)
       clearTimeout()
       handler.postDelayed(initializationTimeout, MODEL_INITIALIZATION_TIMEOUT_MS)
     }
@@ -483,6 +477,7 @@ object SpeechPlayback : SensorEventListener {
     val clock = if (event != null) SpeechPolicy.captionStart(entry.text, 0L) else 0L
     PcmSpeechPlayback.enqueue(current.id, entry.text, attributes, clock, {
       if (session === current && queuedChat.contains(entry)) {
+        playback.watchProgress(current.turn)
         caption = event
         captionClock = clock
         captionPrefix = 0
@@ -492,8 +487,9 @@ object SpeechPlayback : SensorEventListener {
         handler.postDelayed(timeout, SpeechPolicy.timeoutMs(SpeechPolicy.CHAT, entry.text.length.toLong()))
       }
     }, { if (session === current) reportLevel(current, it) }, { played, samples, complete ->
-      if (session === current && caption === event && clock != 0L && played > 0L)
-        reportPcmCaption(clock, played, samples, complete)
+      if (session === current && queuedChat.firstOrNull() === entry && !pcmStalled(current, played)) {
+        if (caption === event && clock != 0L && played > 0L) reportPcmCaption(clock, played, samples, complete)
+      }
     }) { completed, spoke, error ->
       if (session !== current || !queuedChat.contains(entry)) return@enqueue
       if (!completed || !spoke || error != null || !SpeechPolicy.complete(current.id)) {
@@ -740,6 +736,7 @@ object SpeechPlayback : SensorEventListener {
     val playbackTimeout = SpeechPolicy.timeoutMs(if (preview) SpeechPolicy.CHAT else current.kind, text.length.toLong())
     handler.postDelayed(if (local) initializationTimeout else timeout, if (local) MODEL_INITIALIZATION_TIMEOUT_MS else playbackTimeout)
     if (local) {
+      playback.watchProgress(current.turn)
       val playbackStarted = {
         if (session?.id == current.id && utteranceId == id) {
           clearTimeout()
@@ -748,8 +745,9 @@ object SpeechPlayback : SensorEventListener {
         }
       }
       PcmSpeechPlayback.start(current.id, text, rate, attributes, captionClock, { reportStarted(current); playbackStarted() }, { reportLevel(current, it) }, { played, samples, complete ->
-        if (session === current && utteranceId == id && captionClock != 0L && played > 0L)
-          reportPcmCaption(captionClock, played, samples, complete)
+        if (session === current && utteranceId == id && !pcmStalled(current, played)) {
+          if (captionClock != 0L && played > 0L) reportPcmCaption(captionClock, played, samples, complete)
+        }
       }) { completed, spoke, error ->
         if (session?.id == current.id && utteranceId == id) {
           when {
@@ -758,6 +756,7 @@ object SpeechPlayback : SensorEventListener {
             error != null && !spoke -> {
               // A failed load can still use the initialized OS engine. Never
               // repeat a partially audible utterance after a synthesis failure.
+              playback.unwatchProgress(current.turn)
               val fallback = engine?.takeIf { engineReady }
               fallback?.setAudioAttributes(attributes)
               if (fallback == null || !configureSystemVoice(fallback, locale, languageExplicit, rate, current.localOnly) ||
@@ -807,6 +806,13 @@ object SpeechPlayback : SensorEventListener {
     SpeechPolicy.captionProgress(clock, played, samples, complete)
     // Events are wake-ups. React reads the immutable Rust snapshot.
     onCaption?.invoke("null")
+  }
+
+  private fun pcmStalled(current: Session, played: Long): Boolean {
+    if (!playback.stalled(current.turn, played)) return false
+    Log.e(TAG, "PCM playback stalled lease=${current.id} ${PcmSpeechPlayback.statistics()}")
+    stop(error = "Speech playback stalled. Try reading the response again.")
+    return true
   }
 
   private fun clearCaption(reason: String = STOPPED) {
@@ -962,11 +968,12 @@ object SpeechPlayback : SensorEventListener {
     if (queuedChat.firstOrNull()?.promise === completed) queuedChat.removeFirst()
     releaseFocus()
     if (queuedChat.isEmpty() && !VoiceCallService.active && !current.atomicPlaying) {
-      boundaryCompletion = completed
-      if (drainStatus()) { finishTurn(current); return }
-      boundaryCompletion = null
+      drainStatus()
     }
     if (queuedChat.isEmpty()) finishTurn(current)
+    // Audio completion belongs to this chunk. The next chunk still waits for
+    // alert admission in speakChat; a silent or cancelled alert never suspends
+    // the reader and therefore cannot resolve a promise held by resumeChat.
     completed?.resolve(null)
     if (queuedChat.isNotEmpty()) playQueuedChat(current)
     notifyPlaybackStateChanged()

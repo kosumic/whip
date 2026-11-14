@@ -13,6 +13,18 @@ internal class PlaybackQueue(private val schedule: (() -> Unit) -> Unit) {
   val active: Boolean get() = command("active") == "true"
   val timeoutDelayMs: Long get() = command("timeout-delay-ms").toLong()
 
+  fun watchProgress(key: Any) {
+    check(command("watch-progress", id(key)) == "true") { "PCM progress requires the current playback turn" }
+  }
+
+  fun stalled(key: Any, playedFrames: Long): Boolean = ids[key]?.let {
+    SpeechPolicy.alertSpeech("playback-progress", it, playedFrames) == "true"
+  } == true
+
+  fun unwatchProgress(key: Any) {
+    ids[key]?.let { command("unwatch-progress", it) }
+  }
+
   fun owns(key: Any): Boolean = ids[key]?.let { command("owns", it) == "true" } == true
 
   fun started(owner: Any) {

@@ -4,11 +4,14 @@ import android.media.AudioAttributes
 import android.os.SystemClock
 import androidx.test.platform.app.InstrumentationRegistry
 import com.whipssh.SpeechPolicy
+import com.facebook.react.bridge.Callback
+import com.facebook.react.bridge.PromiseImpl
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.json.JSONObject
 import java.io.File
+import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -21,6 +24,76 @@ class PcmSpeechPlaybackTest {
     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
   private val samples = FloatArray(1_920) { 0.01f }
   private fun main(work: () -> Unit) = instrumentation.runOnMainSync { work() }
+
+  @Test fun stalledReadAloudFailsAndClearsCaptionsWithoutAnotherAudioRequest() {
+    val context = instrumentation.targetContext
+    val root = File(context.noBackupFilesDir, "phonon").absolutePath
+    val initial = JSONObject(SpeechPolicy.backendCommand(root, "status"))
+    assumeTrue("Requires the installed local backend", initial.optBoolean("supported") && initial.optBoolean("installed"))
+    var idle = false
+    main { idle = !SpeechPlayback.active && !SpeechPlayback.playback.active }
+    assumeTrue("Run on an idle device", idle)
+    val original = PcmSpeechPlayback.synthesize
+    val originalCaption = SpeechPlayback.onCaption
+    val originalStarted = SpeechPlayback.onChatStarted
+    val releaseProducer = CountDownLatch(1)
+    val ready = CountDownLatch(1)
+    val done = CountDownLatch(1)
+    val failure = AtomicReference<String?>(null)
+    val captionPhase = AtomicReference<String?>(null)
+    val spoke = AtomicBoolean(false)
+    val reject = Callback { args -> failure.set(args.joinToString()); ready.countDown(); done.countDown() }
+    try {
+      check(!JSONObject(SpeechPolicy.backendCommand(root, "phonon")).has("commandError"))
+      assumeTrue("Requires a language handled by Phonon", SpeechPolicy.phononEnabled(Locale.getDefault().toLanguageTag()))
+      PcmSpeechPlayback.synthesize = { _, _, _, sink, _ ->
+        // Enough audio to start and then drain. The generator remains alive
+        // without supplying more PCM or an end event, as in a stalled model.
+        if (sink.write(FloatArray(120_000) { 0.01f })) {
+          check(releaseProducer.await(90, TimeUnit.SECONDS))
+        }
+        0
+      }
+      main {
+        SpeechPlayback.onCaption = { json ->
+          if (json != "null") {
+            captionPhase.set(JSONObject(json).optString("phase"))
+          }
+        }
+        SpeechPlayback.onChatStarted = { token -> if (token == "pcm-stall-regression") spoke.set(true) }
+        SpeechPlayback.startChat(context, "pcm-stall-regression", "Read aloud",
+          PromiseImpl(Callback { ready.countDown() }, reject))
+      }
+      assertTrue("Reader initializes", ready.await(15, TimeUnit.SECONDS))
+      assertNull(failure.get())
+      main {
+        SpeechPlayback.speakChat("pcm-stall-regression", "A reply that must not hang.",
+          PromiseImpl(Callback { done.countDown() }, reject),
+          JSONObject().put("hostId", "host").put("paneId", "pane")
+            .put("bindingTokens", org.json.JSONArray().put("binding"))
+            .put("messageId", "reply").put("partId", "text")
+            .put("text", "A reply that must not hang.").put("startUtf16", 0))
+      }
+      assertTrue("A lone stalled read must settle without a competing request", done.await(80, TimeUnit.SECONDS))
+      assertTrue("The initial audio must have been consumed", spoke.get())
+      assertTrue("Report the stalled playback: ${failure.get()}",
+        failure.get()?.let { it.contains("stalled") || it.contains("timed out") } == true)
+      assertEquals("cancelled", captionPhase.get())
+      main {
+        assertFalse(SpeechPlayback.active)
+        assertFalse(SpeechPlayback.playback.active)
+      }
+    } finally {
+      releaseProducer.countDown()
+      main {
+        SpeechPlayback.stop()
+        SpeechPlayback.onCaption = originalCaption
+        SpeechPlayback.onChatStarted = originalStarted
+      }
+      PcmSpeechPlayback.synthesize = original
+      SpeechPolicy.backendCommand(root, initial.getString("backend"))
+    }
+  }
 
   @Test fun installedPhononReadsASustainedPassageWithoutStarvation() {
     val root = File(instrumentation.targetContext.noBackupFilesDir, "phonon").absolutePath

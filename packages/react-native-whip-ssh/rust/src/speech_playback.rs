@@ -188,7 +188,11 @@ pub unsafe extern "C" fn whip_alert_speech_command(
     // SAFETY: Both platform adapters supply live NUL-terminated strings.
     let token = unsafe { CStr::from_ptr(token) }.to_string_lossy();
     let result = if let Some(command) = action.strip_prefix("playback-") {
-        PLAYBACK_UNITS.lock().command(command, &token)
+        // Playback progress uses the numeric slot for consumed frames; status
+        // commands below use it for their observed speech lease.
+        PLAYBACK_UNITS
+            .lock()
+            .command(command, &token, observed_lease)
     } else {
         crate::app_core::native_speech_command(&action, &token, observed_lease)
     };

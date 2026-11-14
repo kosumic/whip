@@ -50,6 +50,51 @@ class StatusSpeechTest {
     }
   }
 
+  @Test fun silentAndCancelledAlertsDoNotStrandCompletedChatChunksOrFutureReplies() {
+    assumeTrue("Run only with no user speech or call active", !SpeechPlayback.active && !SpeechPlayback.playback.active)
+    val original = SpeechPlayback.statusPolicy
+    try {
+      for (cancelled in listOf(false, true)) {
+        var valid = true
+        val ringing = CountDownLatch(1)
+        val ended = CountDownLatch(1)
+        val ready = Result()
+        val first = Result()
+        val next = Result()
+        main {
+          SpeechPlayback.statusPolicy = { action, _, _ ->
+            when (action) {
+              "alert-valid" -> valid.toString()
+              else -> "null"
+            }
+          }
+          SpeechPlayback.startChat(context, "alert-boundary-reader", "Debug", ready.promise)
+        }
+        ready.await()
+        main {
+          SpeechPlayback.speakChat("alert-boundary-reader", "This reply finishes before the queued alert.", first.promise)
+          SpeechPlayback.prepareAlert(context, "boundary-alert", false, {}, { ringing.countDown() }, { ended.countDown() })
+          if (cancelled) valid = false
+        }
+        assertTrue("Alert reaches the completed chunk boundary",
+          (if (cancelled) ended else ringing).await(60, TimeUnit.SECONDS))
+        assertTrue("Drained chat audio must settle even when an alert never suspends the reader",
+          first.done.await(1, TimeUnit.SECONDS))
+        assertNull(first.error.get())
+        main {
+          SpeechPlayback.speakChat("alert-boundary-reader", "A new debug reply must still be read aloud.", next.promise)
+          if (!cancelled) {
+            assertEquals("The next reply must wait for the entire alert", 1L, next.done.count)
+            SpeechPlayback.finishAlert("boundary-alert")
+          }
+        }
+        next.await()
+        main { SpeechPlayback.stop() }
+        instrumentation.waitForIdleSync()
+      }
+    } finally { main { SpeechPlayback.stop(); SpeechPlayback.statusPolicy = original } }
+  }
+
   @Test fun speechRequestsWaitForEarlierSpeechInsteadOfReplacingIt() {
     assumeTrue("Run only with no user speech or call active", !SpeechPlayback.busy && !SpeechPlayback.playback.active)
     val first = Result()
