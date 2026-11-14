@@ -2,7 +2,7 @@
 name = "tailcat-client"
 version = "0.1.1"
 edition = "2024"
-rust-version = "1.99"
+rust-version = "1.100"
 license = "MIT"
 description = "Client-only Tailcat transport with WireGuard, DERP, and userspace TCP"
 repository = "https://github.com/kosumic/whip"

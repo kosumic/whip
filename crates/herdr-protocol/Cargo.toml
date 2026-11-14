@@ -2,7 +2,7 @@
 name = "herdr-protocol"
 version = "0.2.1"
 edition = "2024"
-rust-version = "1.99"
+rust-version = "1.100"
 license = "MIT"
 description = "Transport-neutral legacy Herdr and herdr-core framing, typed APIs, events, and desktop documents"
 repository = "https://github.com/kosumic/whip"

@@ -2,7 +2,7 @@
 name = "agent-browser-control"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.99"
+rust-version = "1.100"
 license = "MIT"
 description = "Validated browser agent actions, bounded results, and a platform-neutral execution engine"
 repository = "https://github.com/kosumic/whip"

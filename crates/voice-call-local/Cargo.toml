@@ -2,7 +2,7 @@
 name = "voice-call-local"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.99"
+rust-version = "1.100"
 license = "AGPL-3.0-or-later"
 description = "Platform-independent local voice-call turn detection and lifecycle policy"
 repository = "https://github.com/kosumic/whip"

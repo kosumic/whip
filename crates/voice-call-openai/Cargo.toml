@@ -2,7 +2,7 @@
 name = "voice-call-openai"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.99"
+rust-version = "1.100"
 license = "AGPL-3.0-or-later"
 description = "Reusable OpenAI Realtime and GPT-Live native voice provider"
 repository = "https://github.com/kosumic/whip"

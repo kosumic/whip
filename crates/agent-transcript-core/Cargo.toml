@@ -2,7 +2,7 @@
 name = "agent-transcript-core"
 version = "0.2.0"
 edition = "2024"
-rust-version = "1.99"
+rust-version = "1.100"
 license = "MIT"
 description = "Provider-neutral coding-agent transcript parsing, normalization, incremental updates, and checkpoints"
 repository = "https://github.com/kosumic/whip"

@@ -59,7 +59,7 @@ on Linux or `shasum -a 256 --check ARCHIVE.tar.gz.sha256` on macOS, replacing
 
 ### Cargo
 
-Install the [published crate](https://crates.io/crates/whipair) with Rust 1.99
+Install the [published crate](https://crates.io/crates/whipair) with Rust 1.100
 or newer:
 
 ```bash

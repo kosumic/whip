@@ -2,7 +2,7 @@
 name = "whipair-protocol"
 version = "0.2.0"
 edition = "2024"
-rust-version = "1.99"
+rust-version = "1.100"
 license = "MIT"
 description = "WP4 QR pairing codec, enrollment messages, and offline validation for Whip"
 repository = "https://github.com/kosumic/whip"

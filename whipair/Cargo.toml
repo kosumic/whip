@@ -2,7 +2,7 @@
 name = "whipair"
 version = "0.1.6"
 edition = "2024"
-rust-version = "1.99"
+rust-version = "1.100"
 license = "MIT"
 description = "Direct, QR-based SSH public-key enrollment prototype for Whip"
 repository = "https://github.com/kosumic/whip"
