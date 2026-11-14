@@ -5,6 +5,12 @@ on:
     tags:
       - 'whip-notify-v*'
   workflow_dispatch:
+    inputs:
+      version:
+        description: Existing whip-notify release tag version (without a leading v)
+        required: true
+        default: 0.1.6
+        type: string
 
 permissions:
   contents: read
@@ -25,8 +31,11 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
       install_tag: ${{ steps.version.outputs.install_tag }}
+      revision: ${{ steps.version.outputs.revision }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/whip-notify-v{0}', inputs.version) || github.ref }}
       - name: Install pinned Rust toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
@@ -48,6 +57,7 @@ jobs:
             exit 1
           fi
           printf 'version=%s\ntag=%s\ninstall_tag=whip-notify-install-v%s\n' "$version" "$tag" "$version" >> "$GITHUB_OUTPUT"
+          printf 'revision=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Check and test plugin and installer
         run: |
           cargo fmt --check
@@ -75,6 +85,8 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: '11.0'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.verify.outputs.revision }}
       - name: Install pinned Rust toolchain and target
         run: |
           rustup toolchain install
@@ -137,8 +149,11 @@ jobs:
       RELEASE_TAG: ${{ needs.verify.outputs.tag }}
       RELEASE_VERSION: ${{ needs.verify.outputs.version }}
       INSTALL_TAG: ${{ needs.verify.outputs.install_tag }}
+      RELEASE_REVISION: ${{ needs.verify.outputs.revision }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.verify.outputs.revision }}
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: whip-notify-*
@@ -157,7 +172,7 @@ jobs:
           if git ls-remote --exit-code --refs origin "refs/tags/$INSTALL_TAG"; then
             git fetch --depth 1 origin "refs/tags/$INSTALL_TAG:refs/tags/$INSTALL_TAG"
           fi
-          test "$(sh scripts/prepare-notify-install-tag.sh "$GITHUB_SHA")" = "$INSTALL_TAG"
+          test "$(sh scripts/prepare-notify-install-tag.sh "$RELEASE_REVISION")" = "$INSTALL_TAG"
           git push origin "refs/tags/$INSTALL_TAG"
       - name: Publish complete release without changing the app's latest release
         shell: bash
@@ -165,7 +180,7 @@ jobs:
           remote_tag=$(git ls-remote origin "refs/tags/$RELEASE_TAG" "refs/tags/$RELEASE_TAG^{}")
           if [[ -n "$remote_tag" ]]; then
             tag_commit=$(printf '%s\n' "$remote_tag" | awk '{ commit=$1 } /\^\{\}$/ { peeled=$1 } END { print peeled ? peeled : commit }')
-            if [[ "$tag_commit" != "$GITHUB_SHA" ]]; then
+            if [[ "$tag_commit" != "$RELEASE_REVISION" ]]; then
               echo 'Release tag already points at another commit' >&2
               exit 1
             fi
@@ -177,7 +192,7 @@ jobs:
             fi
           else
             printf 'Prebuilt notification plugin for Linux arm64/x86_64 (static musl) and Apple Silicon macOS. No Rust compiler is required on the host.\n\nInstall with Herdr 0.9.5 or newer:\n\n    herdr plugin install --yes --ref %s kosumic/whip/whip-notify\n\nThe installer tag contains only the plugin manifest and download scripts, so Herdr does not fetch the Whip app repository. Each executable has a SHA-256 checksum. Whip uses its existing authenticated SSH connection for per-host installation. Enable push for each device in the saved host details.\n' "$INSTALL_TAG" > "$RUNNER_TEMP/notify-release-notes.md"
-            gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --draft --latest=false \
+            gh release create "$RELEASE_TAG" --verify-tag --draft --latest=false \
               --title "Whip notification plugin $RELEASE_VERSION" \
               --notes-file "$RUNNER_TEMP/notify-release-notes.md"
           fi
