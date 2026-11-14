@@ -54,10 +54,8 @@ import { VoiceConversationSettingsContext } from '../lib/voiceConversationSettin
 import { voiceSessionManager } from '../services/voiceSessionManager';
 import { GlobalCallContext } from '../lib/globalCallContext';
 import { GlobalVoiceCall, type GlobalVoiceCallHandle } from './GlobalVoiceCall';
-import { HerdScreen } from './HerdScreen';
 import { HostsScreen } from './HostsScreen';
-import { LiveSessionView } from './LiveSessionView';
-import { MoreScreen } from './MoreScreen';
+import { HerdScreen, LiveSessionView, MoreScreen } from './deferredScreens';
 import { ScreenUpdates } from './ScreenUpdates';
 
 interface AppShellProps {

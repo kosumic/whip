@@ -40,6 +40,7 @@ import { useWhipEntitlements } from './src/billing/useWhipEntitlements';
 import { LAUNCH_BACKGROUND_COLOR } from './src/lib/launchScreen.cjs';
 import { appQueryClient } from './src/services/appQueryClient';
 import { useAppQueryLifecycle } from './src/hooks/useAppQueryLifecycle';
+import { beginAppPerformanceTrace, endAppPerformanceTrace } from './src/services/performanceTrace';
 
 const appLoadingStyle = { backgroundColor: LAUNCH_BACKGROUND_COLOR };
 
@@ -60,14 +61,21 @@ function hideLaunchScreen() {
 
 function App() {
   const [guiFontsLoaded, guiFontError] = useFonts(guiFontAssets);
+  const fontsReady = guiFontsLoaded || !!guiFontError;
   useAppQueryLifecycle();
+
+  useEffect(() => {
+    if (fontsReady) return;
+    const trace = beginAppPerformanceTrace('Whip startup fonts');
+    return () => endAppPerformanceTrace(trace);
+  }, [fontsReady]);
 
   return (
     <SafeAreaProvider>
       <KeyboardProvider statusBarTranslucent navigationBarTranslucent preserveEdgeToEdge preload={false}>
         <QueryClientProvider client={appQueryClient}>
           <ReducedMotionProvider>
-            {guiFontsLoaded || guiFontError ? <AppContent /> : <AppLoadingScreen />}
+            <AppContent fontsReady={fontsReady} />
           </ReducedMotionProvider>
         </QueryClientProvider>
       </KeyboardProvider>
@@ -89,7 +97,7 @@ function AppLoadingScreen() {
   );
 }
 
-function AppContent() {
+function AppContent({ fontsReady }: { fontsReady: boolean }) {
   useUsageTracking();
   const { t } = useTranslation();
   const startupStorage = useStartupStorage();
@@ -129,7 +137,7 @@ function AppContent() {
       if (operation) reportBackgroundFailure(operation, 'delete-connected-host');
     },
   });
-  const appReady = hosts.profilesLoaded && preferencesLoaded;
+  const appReady = fontsReady && hosts.profilesLoaded && preferencesLoaded;
 
   const navigation = useAppNavigation({
     appReady,

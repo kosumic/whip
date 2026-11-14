@@ -13,17 +13,19 @@ import {
 } from '../services/backgroundOperations';
 import { AppAccessLock } from './AppAccessLock';
 import { AppBackground } from './AppBackground';
-import { ConnectionScreen } from './ConnectionScreen';
 import { DeleteHostConfirmationPopup } from './DeleteHostConfirmationPopup';
 import { FullScreenOverlay } from './FullScreenOverlay';
-import { GlobalKeychainScreen } from './GlobalKeychainScreen';
 import { GlassBlurTarget } from './GlassSurface';
-import { KnownHostsScreen } from './KnownHostsScreen';
-import { LicensesScreen } from './LicensesScreen';
-import { NewHostScreen } from './NewHostScreen';
 import { PairingSuccessPopup } from './PairingSuccessPopup';
 import { PaneDetail } from './PaneDetail';
-import { RemoteFileManager } from './RemoteFileManager';
+import {
+  ConnectionScreen,
+  GlobalKeychainScreen,
+  KnownHostsScreen,
+  LicensesScreen,
+  NewHostScreen,
+  RemoteFileManager,
+} from './deferredScreens';
 import { TrustHostSheet } from './TrustHostSheet';
 
 interface AppOverlaysProps {

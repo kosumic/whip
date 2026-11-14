@@ -5,6 +5,7 @@ import {
   type AppNavigationController,
 } from '../src/hooks/useAppNavigation';
 import { beginAppPerformanceTrace } from '../src/services/performanceTrace';
+import type { AppTab } from '../src/types';
 
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
@@ -23,13 +24,17 @@ let navigation: AppNavigationController | null = null;
 
 function NavigationHarness({
   onFirstTabMounted,
+  appReady = true,
+  preferredTab = 'hosts',
 }: {
   onFirstTabMounted: () => void;
+  appReady?: boolean;
+  preferredTab?: AppTab;
 }) {
   navigation = useAppNavigation({
-    appReady: true,
+    appReady,
     preferencesLoaded: true,
-    preferredTab: 'hosts',
+    preferredTab,
     recordLastTab: jest.fn(),
     dismissTopOverlay: () => false,
     onFirstTabMounted,
@@ -44,6 +49,21 @@ describe('useAppNavigation', () => {
     act(() => renderer?.unmount());
     navigation = null;
     jest.clearAllMocks();
+  });
+
+  test('hydrates the preferred tab while startup is pending and mounts it only when ready', () => {
+    const onFirstTabMounted = jest.fn();
+    act(() => {
+      renderer = create(<NavigationHarness appReady={false} preferredTab="more" onFirstTabMounted={onFirstTabMounted} />);
+    });
+    expect(navigation?.state.tab).toBe('more');
+    expect(navigation?.mountedTabs.size).toBe(0);
+    expect(onFirstTabMounted).not.toHaveBeenCalled();
+    act(() => {
+      renderer.update(<NavigationHarness appReady preferredTab="more" onFirstTabMounted={onFirstTabMounted} />);
+    });
+    expect([...navigation!.mountedTabs]).toEqual(['more']);
+    expect(onFirstTabMounted).toHaveBeenCalledTimes(1);
   });
 
   test('notifies once after the first tab mounts when performance tracing is disabled', () => {

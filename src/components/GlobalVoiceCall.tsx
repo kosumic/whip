@@ -11,7 +11,8 @@ import { GlobalVoiceControl, type GlobalVoiceApproval } from '../services/global
 import { voiceSessionManager } from '../services/voiceSessionManager';
 import { canResumeVoiceHistory, type SavedCall } from '../services/voiceHistory';
 import type { RealtimeVoiceChatTarget } from '../services/voiceConversation';
-import { VoiceChatScreen, type VoiceChatHandle } from './VoiceChatScreen';
+import type { VoiceChatHandle } from './VoiceChatScreen';
+import { VoiceChatScreen } from './deferredScreens';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
 
