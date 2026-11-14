@@ -5,6 +5,7 @@ version in sync. Public Rust struct changes can require a breaking version bump,
 including before 1.0. Publish registry dependencies before their consumers:
 
 - `agent-transcript-core` before `agent-transcript-view`.
+- `herdr-protocol` before `whip-notify`.
 - `audio-ingress` before `voice-call-media`.
 - `native-credentials`, `audio-ingress`, and `voice-call-media` before
   `voice-call-openai`.
@@ -17,6 +18,9 @@ dry run before publishing on an ARM64 runner. Push `<crate>-v<version>` to
 publish automatically. The `crates-io` environment must allow each crate's
 `<crate>-v*` deployment tag pattern. Manual dispatch from `main` with the matching
 crate and manifest version remains available for recovery and initial releases.
+Push release tags separately and wait for dependencies to finish publishing.
+GitHub does not emit tag workflow events when more than three tags are pushed
+at once; see [GitHub's push event documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#push).
 
 `agent-transcript-core` and `herdr-protocol` retain their dedicated publish
 workflows. The shared GitHub release helper verifies the registry artifact's
