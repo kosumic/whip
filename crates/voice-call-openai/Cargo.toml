@@ -1,6 +1,6 @@
 [package]
 name = "voice-call-openai"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.100"
 license = "AGPL-3.0-or-later"
@@ -9,9 +9,9 @@ repository = "https://github.com/kosumic/whip"
 
 [dependencies]
 base64 = "0.22"
-voice-call-media = { version = "0.1.0", path = "../voice-call-media" }
+voice-call-media = { version = "0.2.0", path = "../voice-call-media" }
 audio-ingress = { version = "0.1.0", path = "../audio-ingress" }
-native-credentials = { version = "0.1.0", path = "../native-credentials" }
+native-credentials = { version = "0.1.1", path = "../native-credentials" }
 zeroize = "1"
 oai-rt-rs = "=0.5.1"
 futures = "0.3"

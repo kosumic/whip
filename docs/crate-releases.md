@@ -29,14 +29,17 @@ crate does not rename existing registry releases. These crates can also be
 consumed as path or Git dependencies.
 
 For an initial crates.io release, create a short-lived API token with permission
-to publish the new crate, publish it, and configure its Trusted Publisher:
+to publish the new crate, store it as the `CRATES_IO_TOKEN` secret in the
+`crates-io` environment, and dispatch the publish workflow with
+`bootstrap_with_token=true`. After publishing, configure its Trusted Publisher:
 
 - GitHub owner: `kosumic`; repository: `whip`.
 - Workflow: `publish-standalone-libraries.yml` for the eight crates above, or the
   existing dedicated workflow for other crates.
 - Environment: `crates-io`.
 
-Revoke the bootstrap token after configuring and verifying trusted publishing.
+Revoke the bootstrap token and remove the temporary GitHub secret after
+configuring and verifying trusted publishing.
 Subsequent releases use short-lived GitHub OIDC credentials. The shared workflow
 does not require any additional allowed deployment tag patterns.
 

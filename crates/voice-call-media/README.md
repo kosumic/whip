@@ -7,7 +7,7 @@ dependency. `audio-ingress` supplies generation-fenced native PCM storage.
 
 ```toml
 [dependencies]
-voice-call-media = "0.1.0"
+voice-call-media = "0.2.0"
 ```
 
 The caller supplies its Tokio runtime and implements `Capture`/`Host` around its

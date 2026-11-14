@@ -6,7 +6,7 @@ Code, Codex legacy and paginated rollouts, OpenCode v1/v2, and Pi.
 
 ```toml
 [dependencies]
-agent-transcript-core = "0.2.0"
+agent-transcript-core = "0.3.0"
 ```
 
 Version 0.2.0 adds `AgentTranscriptView::provider_turns` to distinguish

@@ -27,7 +27,7 @@ concurrency:
 jobs:
   publish:
     name: Verify and publish crate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 20
     environment: crates-io
     permissions:

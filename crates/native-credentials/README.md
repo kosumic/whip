@@ -6,7 +6,7 @@ on `zeroize`, without React Native, UniFFI, persistence or platform dependencies
 Add it to your Cargo dependencies:
 
 ```toml
-native-credentials = "0.1.0"
+native-credentials = "0.1.1"
 ```
 
 The host app supplies a synchronous native reader, which fills a bounded buffer

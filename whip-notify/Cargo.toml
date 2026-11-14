@@ -23,7 +23,7 @@ uuid = { version = "1", features = ["v4"] }
 zeroize = { version = "1", features = ["derive"] }
 ureq = { version = "3", optional = true, features = ["json"] }
 fs2 = { version = "0.4", optional = true }
-herdr-protocol = { version = "0.2.1", path = "../crates/herdr-protocol", optional = true }
+herdr-protocol = { version = "0.2.2", path = "../crates/herdr-protocol", optional = true }
 
 [dev-dependencies]
 tempfile = "3"

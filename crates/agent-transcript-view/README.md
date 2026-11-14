@@ -6,8 +6,8 @@ state dependency. See `NOTICE` for the retained OpenCode attribution.
 
 ```toml
 [dependencies]
-agent-transcript-view = "0.1.0"
-agent-transcript-core = "0.2.0"
+agent-transcript-view = "0.2.0"
+agent-transcript-core = "0.3.0"
 ```
 
 ## Ownership and API

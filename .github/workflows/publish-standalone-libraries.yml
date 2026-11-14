@@ -21,6 +21,11 @@ on:
         required: true
         default: 0.1.0
         type: string
+      bootstrap_with_token:
+        description: Bootstrap an initial release with the temporary CRATES_IO_TOKEN secret
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -93,13 +98,24 @@ jobs:
             *) echo "Registry lookup failed: HTTP $status" >&2; exit 1 ;;
           esac
       - name: Authenticate with crates.io trusted publishing
+        if: steps.registry.outputs.published != 'true' && inputs.bootstrap_with_token == false
         id: auth
         uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
       - name: Publish with trusted publishing
-        if: steps.registry.outputs.published != 'true'
+        if: steps.registry.outputs.published != 'true' && inputs.bootstrap_with_token == false
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         run: cargo publish --locked --manifest-path "$CRATE_MANIFEST"
+      - name: Bootstrap initial release with API token
+        if: steps.registry.outputs.published != 'true' && inputs.bootstrap_with_token == true
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        run: |
+          if [[ -z "$CARGO_REGISTRY_TOKEN" ]]; then
+            echo 'Missing crates-io environment secret CRATES_IO_TOKEN' >&2
+            exit 1
+          fi
+          cargo publish --locked --manifest-path "$CRATE_MANIFEST"
 
   github-release:
     name: Publish GitHub Release

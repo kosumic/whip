@@ -13,7 +13,7 @@ Whip's original code and additions use MIT.
 
 ```toml
 [dependencies]
-agent-browser-control = "0.1.0"
+agent-browser-control = "0.2.0"
 ```
 
 Implement `engine::Bridge` for an existing browser, parse an action with

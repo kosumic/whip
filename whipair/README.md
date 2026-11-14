@@ -388,8 +388,8 @@ Commit those changes, then push a tag whose version matches `Cargo.toml`
 exactly:
 
 ```bash
-git tag whipair-v0.1.6
-git push origin whipair-v0.1.6
+git tag whipair-v0.1.7
+git push origin whipair-v0.1.7
 ```
 
 ## License

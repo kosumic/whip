@@ -226,11 +226,11 @@ stock WebRTC peer over real local transport.
 Add the provider and media crates to your Cargo dependencies:
 
 ```toml
-voice-call-openai = "0.1.0"
-voice-call-media = "0.1.0"
+voice-call-openai = "0.2.0"
+voice-call-media = "0.2.0"
 ```
 
-Add `native-credentials = "0.1.0"` to use its portable `NativeCredential`
+Add `native-credentials = "0.1.1"` to use its portable `NativeCredential`
 adapter, or implement `voice_call_openai::Credential` for your own credential
 type. For development inside this repository, keep using path dependencies
 from `crates/`.
