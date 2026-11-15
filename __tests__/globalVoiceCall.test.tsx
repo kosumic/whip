@@ -5,11 +5,9 @@ import { GlobalVoiceCall, type GlobalVoiceCallHandle } from '../src/components/G
 import { VoiceChatScreen } from '../src/components/VoiceChatScreen';
 import { VoiceConversationSettingsContext } from '../src/lib/voiceConversationSettingsContext';
 import { DEFAULT_VOICE_CONVERSATION_SETTINGS as defaults } from '../src/lib/voiceConversationSettings';
-import { GlobalVoiceControl, type GlobalVoiceControlContext } from '../src/services/globalVoiceControl';
-import { Text } from '../src/components/ui/text';
+import { GlobalVoiceControl } from '../src/services/globalVoiceControl';
 import type { SavedCall } from '../src/services/voiceHistory';
 
-let mockContext: () => GlobalVoiceControlContext;
 let mockActiveCall = true;
 let mockCredentialReady = true;
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
@@ -22,8 +20,7 @@ jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
 jest.mock('../src/hooks/useOpenAiVoiceCredentialStatus', () => ({ useOpenAiVoiceCredentialStatus: () => ({ ready: mockCredentialReady, reason: 'providers.apiKeyRequired' }) }));
 jest.mock('../src/components/VoiceChatScreen', () => ({ VoiceChatScreen: 'VoiceChatScreen' }));
 jest.mock('../src/services/voiceSessionManager', () => ({ voiceSessionManager: { get active() { return mockActiveCall ? { scope: { kind: 'Global' }, ended: false } : undefined; } } }));
-jest.mock('../src/services/globalVoiceControl', () => ({ GlobalVoiceControl: jest.fn().mockImplementation((context: () => GlobalVoiceControlContext) => {
-  mockContext = context;
+jest.mock('../src/services/globalVoiceControl', () => ({ GlobalVoiceControl: jest.fn().mockImplementation(() => {
   return { dispose: jest.fn(), suspend: jest.fn() };
 }) }));
 
@@ -139,43 +136,7 @@ test('saved configuration starts directly, navigation preserves the call, and an
   } finally { await act(async () => view?.unmount()); }
 });
 
-test('a revoked native delegation confirmation resolves as denied and removes the prompt', async () => {
-  const ref = createRef<GlobalVoiceCallHandle>();
-  let view!: ReactTestRenderer;
-  try {
-    await act(async () => { view = create(<VoiceConversationSettingsContext value={{ settings: { ...defaults, provider: 'openai' }, onChange: jest.fn() }}>
-      <GlobalVoiceCall ref={ref} onConfigureOpenAi={jest.fn()} navigation={{} as never} sessions={{ presentationSessions: [] } as never} locked={false} visible />
-    </VoiceConversationSettingsContext>); });
-    await act(async () => ref.current!.open());
-    const abort = new AbortController();
-    let pending!: Promise<boolean>;
-    await act(async () => { pending = mockContext().confirm({ hostId: 'host', paneId: 'pane', prompt: 'Exact user request' }, abort.signal); });
-    expect(view.root.findAllByType(Text).some(node => node.props.children === 'Exact user request')).toBe(true);
-    await act(async () => abort.abort());
-    expect(await pending).toBe(false);
-    expect(view.root.findAllByType(Text).some(node => node.props.children === 'Exact user request')).toBe(false);
-  } finally { await act(async () => view?.unmount()); }
-});
-
-test('a disconnected host operation displays its name and exact arguments and requires approval', async () => {
-  const ref = createRef<GlobalVoiceCallHandle>();
-  let view!: ReactTestRenderer;
-  try {
-    await act(async () => { view = create(<GlobalVoiceCall ref={ref} onConfigureOpenAi={jest.fn()} navigation={{} as never} sessions={{ presentationSessions: [] } as never} locked={false} visible />); });
-    await act(async () => ref.current!.open());
-    const prompt = JSON.stringify({ host_id: 'build-host', command: 'git status', cwd: '/repo' }, null, 2);
-    let pending!: Promise<boolean>;
-    await act(async () => { pending = mockContext().confirm({ hostId: 'build-host', operation: 'terminal_exec', prompt }, new AbortController().signal); });
-    for (const text of ['globalCall.confirmOperation', 'terminal_exec', 'build-host', prompt, 'globalCall.approveOperation']) {
-      expect(view.root.findAllByType(Text).some(node => node.props.children === text)).toBe(true);
-    }
-    const approve = view.root.findAllByType('Button' as never).find(node => node.findAllByType(Text).some(text => text.props.children === 'globalCall.approveOperation'));
-    await act(async () => approve!.props.onPress());
-    expect(await pending).toBe(true);
-  } finally { await act(async () => view?.unmount()); }
-});
-
-test('locking hides the existing call and denies its approval without remounting or replaying on unlock', async () => {
+test('locking hides the existing call and suspends its controls without remounting on unlock', async () => {
   const ref = createRef<GlobalVoiceCallHandle>();
   let view!: ReactTestRenderer;
   const render = (locked: boolean) => <GlobalVoiceCall ref={ref} onConfigureOpenAi={jest.fn()}
@@ -184,13 +145,7 @@ test('locking hides the existing call and denies its approval without remounting
     await act(async () => { view = create(render(false)); });
     await act(async () => ref.current!.open());
     const call = view.root.findByType(VoiceChatScreen);
-    const abort = new AbortController();
-    let pending!: Promise<boolean>;
-    await act(async () => {
-      pending = mockContext().confirm({ hostId: 'host', paneId: 'pane', prompt: 'Do not replay me' }, abort.signal);
-    });
     await act(async () => view.update(render(true)));
-    expect(await pending).toBe(false);
     expect(view.root.findByType(VoiceChatScreen)).toBe(call);
     expect(call.props.visible).toBe(false);
     const control = jest.mocked(GlobalVoiceControl).mock.results[0].value;
@@ -200,7 +155,6 @@ test('locking hides the existing call and denies its approval without remounting
     await act(async () => view.update(render(false)));
     expect(view.root.findByType(VoiceChatScreen)).toBe(call);
     expect(call.props.visible).toBe(true);
-    expect(view.root.findAllByType(Text).some(node => node.props.children === 'Do not replay me')).toBe(false);
     expect(GlobalVoiceControl).toHaveBeenCalledTimes(1);
     expect(control.dispose).not.toHaveBeenCalled();
   } finally { await act(async () => view?.unmount()); }

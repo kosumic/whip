@@ -1,6 +1,4 @@
 export const en = {
-  'globalCall.confirmOperation': "Allow this operation?",
-  'globalCall.approveOperation': "Allow operation",
   'voiceUsage.terminal': 'Terminal call',
   'voiceUsage.resumeTruncated': 'Some earlier conversation text was omitted to fit the saved-context limit.',
   'voiceUsage.resume': 'Resume call',
@@ -147,10 +145,6 @@ export const en = {
   'globalCall.title': 'Global call',
   'globalCall.open': 'Start or return to global call',
   'globalCall.start': 'Start global call',
-  'globalCall.permissions': 'Talk to Whip across hosts and tabs. This call can read saved host and agent status, navigate Whip, and read basic device status. Sending a request to an explicitly chosen agent requires your confirmation each time. Android commands require Shizuku access enabled in Phone Use settings. Host edits, browser control, clipboard and location are unavailable.',
-  'globalCall.confirmTitle': 'Send this request to the agent?',
-  'globalCall.confirmTarget': 'Host: {{host}} · Agent pane: {{pane}}',
-  'globalCall.confirmSend': 'Send to agent',
   'globalCall.message': 'Message for the global call',
   'globalCall.send': 'Send to call',
   'voiceUsage.scope': 'Call scope',

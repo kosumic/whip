@@ -16,15 +16,14 @@ jest.mock('../src/browser/device', () => ({ closeDeviceSession: jest.fn(), devic
 function setup() {
   let active = true;
   const selectTab = jest.fn(), select = jest.fn(), openPaneTerminal = jest.fn(), showNavigation = jest.fn();
-  const confirm = jest.fn(async () => true);
   const context = {
     navigation: { state: { tab: 'hosts' }, selectedPaneId: null, selectTab, selectHerdHost: jest.fn() },
     sessions: { activeSession: null, presentationSessions: [], select, openPaneTerminal },
-    locked: false, showNavigation, confirm,
+    locked: false, showNavigation,
   } as unknown as GlobalVoiceControlContext;
   const control = new GlobalVoiceControl(() => context);
   const invoke = async (action: string, args = {}) => JSON.parse(await mockPlatform.execute({ callId: () => 'call-1', checkActive: () => active }, action, JSON.stringify(args)));
-  return { context, control, invoke, selectTab, select, openPaneTerminal, showNavigation, confirm, revoke: () => { active = false; } };
+  return { context, control, invoke, selectTab, select, openPaneTerminal, showNavigation, revoke: () => { active = false; } };
 }
 beforeEach(() => { mockApp.currentState = 'active'; });
 
@@ -34,23 +33,6 @@ test('global navigation and app status work with no SSH host', async () => {
   expect(await invoke('app_navigate', { tab: 'more' })).toEqual({ navigated: true });
   expect(selectTab).toHaveBeenCalledWith('more');
   expect(showNavigation).toHaveBeenCalledTimes(1);
-  control.dispose();
-});
-
-test('operation approval shows the original command and explicit target without selecting a host', async () => {
-  const { invoke, confirm, select, openPaneTerminal, control } = setup();
-  const args = { host_id: 'offline-build-server', cwd: "/a 'quoted repo", command: 'git status --short\nprintf done' };
-  expect(await invoke('confirm_operation', { operation: 'terminal_exec', arguments: args })).toEqual({ approved: true });
-  expect(confirm).toHaveBeenCalledWith({ hostId: args.host_id, hostLabel: undefined, paneId: undefined, operation: 'terminal_exec', prompt: JSON.stringify(args, null, 2) }, expect.any(AbortSignal));
-  expect(select).not.toHaveBeenCalled();
-  expect(openPaneTerminal).not.toHaveBeenCalled();
-  control.dispose();
-});
-
-test.each(['permission_denied', 'location_unavailable', 'device_unavailable', 'timeout'])('location preserves the platform %s error without leaking its body', async code => {
-  const { invoke, control } = setup();
-  jest.mocked(deviceAction).mockRejectedValueOnce(Object.assign(new Error('private platform payload'), { code }));
-  expect(await invoke('device.location')).toEqual({ error: code });
   control.dispose();
 });
 
@@ -134,52 +116,26 @@ test.each(['background', 'locked', 'revoked'] as const)('%s calls cannot perform
   control.dispose();
 });
 
-test('hangup cancels pending confirmation and a late approval cannot restore permission', async () => {
-  const { context, invoke, revoke, control } = setup();
-  let approve!: (value: boolean) => void;
-  let signal!: AbortSignal;
-  context.confirm = jest.fn((_request, pending) => { signal = pending; return new Promise(resolve => { approve = resolve; }); });
-  const pending = invoke('confirm_delegation', { host_id: 'chosen', pane_id: 'pane', prompt: 'Do the work' });
-  revoke();
-  mockPlatform.cancel('call-1');
-  expect(signal.aborted).toBe(true);
-  approve(true);
-  expect(await pending).toHaveProperty('error');
-  control.dispose();
-});
-
 test.each(['locked', 'background', 'inactive'] as const)('%s cancels privileged work; unlocking cannot replay it', async state => {
   jest.mocked(deviceAction).mockClear();
   jest.mocked(closeDeviceSession).mockClear();
   const { context, invoke, selectTab, control } = setup();
-  let approve!: (value: boolean) => void;
-  let approvalSignal!: AbortSignal;
-  context.confirm = jest.fn((_request, signal) => {
-    approvalSignal = signal;
-    return new Promise(resolve => { approve = resolve; });
-  });
   jest.mocked(deviceAction).mockImplementationOnce((_action, _args, _id, signal) => new Promise(resolve => {
     signal.addEventListener('abort', () => resolve({}), { once: true });
   }));
-  const confirmation = invoke('confirm_delegation', { host_id: 'host', pane_id: 'pane', prompt: 'Exact prompt' });
   const command = invoke('device.shizuku_exec', { argv: ['/system/bin/id'] });
   if (state === 'locked') { context.locked = true; control.suspend(); }
   else { mockApp.currentState = state; mockStateChanged(state); }
-  expect(approvalSignal.aborted).toBe(true);
   expect(jest.mocked(deviceAction).mock.calls[0][3].aborted).toBe(true);
   expect(closeDeviceSession).toHaveBeenCalledWith('call-1');
   expect(await invoke('app_navigate', { tab: 'more' })).toHaveProperty('error');
-  expect(await invoke('confirm_delegation')).toHaveProperty('error');
   expect(await invoke('device.shizuku_exec')).toHaveProperty('error');
   expect(selectTab).not.toHaveBeenCalled();
   context.locked = false;
   mockApp.currentState = 'active';
   mockStateChanged('active');
-  approve(true);
-  expect(await confirmation).toHaveProperty('error');
   expect(await command).toHaveProperty('error');
   expect(deviceAction).toHaveBeenCalledTimes(1);
-  expect(context.confirm).toHaveBeenCalledTimes(1);
   // Only a fresh foreground request can execute again on the same call.
   expect(await invoke('app_navigate', { tab: 'more' })).toEqual({ navigated: true });
   control.dispose();

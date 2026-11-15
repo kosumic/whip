@@ -17,7 +17,7 @@ These exercise the real security hook and session manager, and the Realtime
 adapter against mocked Android and iOS bridges. They check one native owner and
 one provider start across repeated transitions, stable session/view identity,
 local sends while locked, rejected replacements, failed/cancelled biometrics,
-hidden call UI, cancellation of pending privileged operations, stale approvals,
+hidden call UI, cancellation of pending privileged operations,
 explicit/system hangup and no restart on unlock. They do not establish physical
 microphone, speaker, CallKit, foreground-service or OS screen-lock behavior.
 
@@ -38,11 +38,11 @@ Record OS/device, app revision, mode/scope, result and any genuine OS interrupti
 | --- | --- | --- |
 | 1 | Start a call; say a unique phrase and wait for a spoken reply. Note call owner token and provider startup from diagnostics. | One native owner and one provider session; both microphone and playback work. |
 | 2 | Minimize, navigate away, press Home, turn the screen off and leave it locked for at least a minute. Speak another unique phrase while locked. | Speech is captured and the reply is audible; no closing/ready cue, mute flip, media stop or second startup. Android retains its ongoing call notification/service; iOS retains the active call/audio session. |
-| 3 | Wake/unlock the device, return to Whip and cancel biometric app unlock. Repeat with a failed biometric attempt. Keep speaking/listening between attempts. | The app stays locked and its call UI/approval dialogs remain inaccessible; the same call continues. |
+| 3 | Wake/unlock the device, return to Whip and cancel biometric app unlock. Repeat with a failed biometric attempt. Keep speaking/listening between attempts. | The app stays locked and its call UI remains inaccessible; the same call continues. |
 | 4 | Authenticate successfully and return to the call. Repeat steps 2–4 twice, including while the assistant is speaking. | Same conversation, target, mute/speaker settings, native token and provider session; no overlapping playback or second microphone owner. |
 | 5 | Toggle mute and speaker deliberately, then repeat a lock/unlock cycle. | The chosen mute/route intent persists; an intentionally muted call stays muted. Unmute explicitly before testing speech again. |
-| 6 | While unlocked, ask the global call to delegate a harmless prompt. Lock or background Whip with the exact-prompt confirmation pending. Unlock afterward. | The request is denied/cancelled, the dialog disappears and the agent receives no prompt. A late approval cannot send it; unlocking does not replay it. |
-| 7 | While locked, request navigation, a new delegation, or an enabled privileged device action through the continuing call. | The action is unavailable/denied, the UI remains protected and audio continues. A fresh foreground request after unlock requires normal checks and confirmation. |
+| 6 | While unlocked, ask the global call to delegate a harmless prompt. Lock or background Whip while it is being observed. Unlock afterward. | The prompt is sent directly without an approval dialog. Locking/backgrounding cancels observation; a prompt already sent may continue remotely. Unlocking does not replay it. |
+| 7 | While locked, request navigation, a new delegation, or an enabled privileged device action through the continuing call. | The action is unavailable/denied, the UI remains protected and audio continues. A fresh foreground request after unlock runs with normal permission and target checks, without an approval dialog. |
 | 8 | Hang up using Android notification/system controls or iOS call controls while locked, then unlock Whip. | Audio and call ownership end once. No automatic restart. Starting a fresh call afterward obtains one fresh owner. |
 | 9 | Start another call and trigger a genuine system audio interruption. | Existing interruption handling applies; no duplicate owner/session or unlock-driven restart. |
 | 10 | Disable biometric-on-resume, start a call and repeat background/screen-off/foreground transitions. | Audio continues without an authentication prompt or replacement session. |

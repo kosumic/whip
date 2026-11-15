@@ -71,5 +71,6 @@ to the coding agent's own history retention/compaction. Ending a call without a
 delegation does not inject its remaining transcript. A future history-only
 protocol capability would be required to change that guarantee.
 
-Global-call confirmation, targeting, pinned binding, UI approvals, submission
-IDs, steering/deferred admission and uncertain-outcome behavior are unchanged.
+Global calls dispatch explicitly requested prompts and operations without approval
+dialogs. Targeting, pinned binding, submission IDs, steering/deferred admission and
+uncertain-outcome behavior remain independent of handoff presentation.

@@ -1,6 +1,4 @@
 export const es = {
-  'globalCall.confirmOperation': "¿Permitir esta operación?",
-  'globalCall.approveOperation': "Permitir operación",
   'stt.title': 'Proveedor de voz a texto',
   'stt.localHelp': 'El dictado usa el reconocimiento de voz del dispositivo. Los ajustes de llamadas y síntesis de voz son independientes.',
   'stt.openaiHelp': 'Toca el micrófono para grabar y detén la grabación para transcribir con OpenAI. El audio, el borrador y el contexto reciente del chat se envían a OpenAI. Se aplican cargos de la API.',
@@ -35,10 +33,6 @@ export const es = {
   "globalCall.title": "Llamada global",
   "globalCall.open": "Iniciar o volver a la llamada global",
   "globalCall.start": "Iniciar llamada global",
-  "globalCall.permissions": "Habla con Whip entre hosts y pestañas. Esta llamada puede leer el estado de hosts guardados y agentes, navegar por Whip y consultar información básica del dispositivo. Cada solicitud a un agente elegido explícitamente requiere tu confirmación. Los comandos de Android requieren activar Shizuku en los ajustes de Uso del teléfono. No permite editar hosts, controlar el navegador, acceder al portapapeles ni a la ubicación.",
-  "globalCall.confirmTitle": "¿Enviar esta solicitud al agente?",
-  "globalCall.confirmTarget": "Host: {{host}} · Panel del agente: {{pane}}",
-  "globalCall.confirmSend": "Enviar al agente",
   "globalCall.message": "Mensaje para la llamada global",
   "globalCall.send": "Enviar a la llamada",
   "voiceUsage.scope": "Ámbito de la llamada",

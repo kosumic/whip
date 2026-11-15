@@ -3,7 +3,6 @@ use super::*;
 use crate::host_runtime::realtime_terminal::{ControlTarget, PinnedTerminal};
 use crate::realtime_voice::terminal;
 
-const CONFIRM: &str = "confirm_operation";
 const WATCH: &str = "watch_operation";
 const MAX_JOBS: usize = 8;
 const MAX_STREAM_RESULT: usize = 4096;
@@ -81,7 +80,7 @@ struct Job {
     job_id: String,
 }
 
-/// Parse before presenting any confirmation; unknown arguments never reach UI/effects.
+/// Parse before dispatch; unknown arguments never reach UI/effects.
 fn parse(name: &str, args: &Value) -> Result<application::Action, BrowserError> {
     let host = args["host_id"]
         .as_str()
@@ -134,7 +133,7 @@ impl WhipToolSession {
 
     /// The pending foreign watch checks foreground before yielding, then ends on
     /// background/lock/hangup. Native authority is independently checked throughout.
-    async fn guarded<T>(
+    pub(super) async fn guarded<T>(
         self: &Arc<Self>,
         work: impl Future<Output = Result<T, BrowserError>>,
     ) -> Result<T, BrowserError> {
@@ -169,25 +168,14 @@ impl WhipToolSession {
         })
     }
 
-    async fn approve(self: &Arc<Self>, name: &str, args: &Value) -> Result<bool, BrowserError> {
+    fn check_mutation(&self, name: &str) -> Result<(), BrowserError> {
         if name != "hosts_disconnect" && self.mutation_uncertain() {
             return Err(BrowserError::new(
                 ErrorCode::Cancelled,
                 "Inspect the earlier unknown outcome before further mutations",
             ));
         }
-        let profiles = hosts::voice_context()?.hosts;
-        let host = profiles
-            .iter()
-            .find(|profile| args["host_id"] == profile.id);
-        let target = host.map(|host| json!({"host_id":host.id,"name":host.name,"host":host.host,"port":host.port,"username":host.username}));
-        Ok(self
-            .platform(
-                CONFIRM,
-                json!({"operation":name,"arguments":args,"host":target}),
-            )
-            .await?["approved"]
-            == true)
+        Ok(())
     }
 
     async fn operation_inner(
@@ -259,18 +247,16 @@ impl WhipToolSession {
                 PinnedTerminal::pin_host(request.host_id.clone(), request.cwd).map_err(|_| {
                     BrowserError::new(ErrorCode::HostDisconnected, "Selected host unavailable")
                 })?;
-            if !self.approve(name, &args).await? {
-                return Ok(json!({"error":"permission_denied","submitted":false}));
-            }
+            self.check_mutation(name)?;
             self.check()?;
             if hosts::voice_context()?.hosts != profiles {
                 return Err(BrowserError::new(
                     ErrorCode::Cancelled,
-                    "Saved host configuration changed during approval",
+                    "Saved host configuration changed before dispatch",
                 ));
             }
             target.check().map_err(|_| {
-                BrowserError::new(ErrorCode::Cancelled, "Connection changed during approval")
+                BrowserError::new(ErrorCode::Cancelled, "Connection changed before dispatch")
             })?;
             let session = terminal::Session::new(target);
             let id = uuid::Uuid::new_v4().to_string();
@@ -351,30 +337,25 @@ impl WhipToolSession {
             let Ok(serial) = self.delegation.try_lock() else {
                 return Ok(json!({"error":"operation_busy","submitted":false}));
             };
-            if !self.approve(name, &args).await? {
-                return Ok(json!({"error":"permission_denied","submitted":false}));
-            }
+            self.check_mutation(name)?;
             Some(serial)
         };
         self.check()?;
         if hosts::voice_context()?.hosts != profiles {
             return Err(BrowserError::new(
                 ErrorCode::Cancelled,
-                "Saved host configuration changed during approval",
+                "Saved host configuration changed before dispatch",
             ));
         }
         if operation == application::DISCONNECT {
             if let Some(target) = &disconnect_target {
                 target.check().map_err(|_| {
-                    BrowserError::new(
-                        ErrorCode::Cancelled,
-                        "Connection changed during disconnect approval",
-                    )
+                    BrowserError::new(ErrorCode::Cancelled, "Connection changed before disconnect")
                 })?;
             } else if crate::host_runtime::get_host_runtime(host.to_owned()).is_some() {
                 return Err(BrowserError::new(
                     ErrorCode::Cancelled,
-                    "A new connection appeared during disconnect approval",
+                    "A new connection appeared before disconnect",
                 ));
             }
         }
@@ -382,7 +363,7 @@ impl WhipToolSession {
             target.check_targets().map_err(|_| {
                 BrowserError::new(
                     ErrorCode::Cancelled,
-                    "Explicit target changed during approval",
+                    "Explicit target changed before dispatch",
                 )
             })?;
         }
@@ -495,7 +476,7 @@ pub(super) fn schemas() -> Vec<Value> {
             if read_only(name) {
                 "Read only."
             } else {
-                "Whip shows the exact operation and original arguments for approval every time."
+                "Executes directly without an approval dialog."
             }
         );
         tools.push(schema(
@@ -505,7 +486,7 @@ pub(super) fn schemas() -> Vec<Value> {
             &required.iter().map(String::as_str).collect::<Vec<_>>(),
         ));
     }
-    tools.push(schema(terminal::EXEC, "Run an explicitly requested command on one saved connected host in a separate SSH exec channel, after confirmation of the original command/host/cwd. No interactive exports are inherited. Returns a job ID; poll terminal_read for progress and actual completion. No keystrokes or agent input.",
+    tools.push(schema(terminal::EXEC, "Run an explicitly requested command on one saved connected host in a separate SSH exec channel, without an approval dialog. No interactive exports are inherited. Returns a job ID; poll terminal_read for progress and actual completion. No keystrokes or agent input.",
         json!({"host_id":string(),"command":{"type":"string","minLength":1,"maxLength":terminal::MAX_COMMAND},"cwd":{"type":"string","minLength":1,"maxLength":4096},"timeout_seconds":{"type":"integer","minimum":1,"maximum":terminal::MAX_TIMEOUT_SECONDS}}), &["host_id","command"]));
     for name in [terminal::READ, terminal::CANCEL] {
         tools.push(schema(name, if name == terminal::READ { "Read this call's job on the explicit original host, including bounded stdout/stderr and exit status. Poll while running; unknown is never success." } else { "Stop observing this call's job and close its SSH exec channel. Remote termination is not guaranteed; never repeat the command." }, json!({"host_id":string(),"job_id":string()}), &["host_id","job_id"]));

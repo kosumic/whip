@@ -1,8 +1,6 @@
 import type { en } from './en';
 
 export const fr = {
-  'globalCall.confirmOperation': "Autoriser cette opération ?",
-  'globalCall.approveOperation': "Autoriser l’opération",
   'stt.title': 'Fournisseur de transcription vocale',
   'stt.localHelp': 'La dictée utilise la reconnaissance vocale sur l’appareil. Les réglages des appels et de la synthèse vocale sont indépendants.',
   'stt.openaiHelp': 'Touchez le microphone pour enregistrer, puis arrêtez pour transcrire avec OpenAI. L’audio, le brouillon et le contexte récent du chat sont envoyés à OpenAI. Des frais API s’appliquent.',
@@ -37,10 +35,6 @@ export const fr = {
   "globalCall.title": "Appel global",
   "globalCall.open": "Démarrer ou reprendre l’appel global",
   "globalCall.start": "Démarrer un appel global",
-  "globalCall.permissions": "Parlez à Whip en passant d’un hôte ou onglet à l’autre. Cet appel peut lire l’état des hôtes enregistrés et des agents, naviguer dans Whip et lire les informations de base de l’appareil. Chaque requête à un agent explicitement choisi nécessite votre confirmation. Les commandes Android nécessitent l’accès Shizuku dans les réglages d’utilisation du téléphone. La modification des hôtes, le contrôle du navigateur, le presse-papiers et la localisation sont indisponibles.",
-  "globalCall.confirmTitle": "Envoyer cette requête à l’agent ?",
-  "globalCall.confirmTarget": "Hôte : {{host}} · Volet de l’agent : {{pane}}",
-  "globalCall.confirmSend": "Envoyer à l’agent",
   "globalCall.message": "Message pour l’appel global",
   "globalCall.send": "Envoyer à l’appel",
   "voiceUsage.scope": "Portée de l’appel",

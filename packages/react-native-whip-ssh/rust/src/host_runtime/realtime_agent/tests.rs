@@ -97,7 +97,7 @@ fn fixture(id: &str) -> Result<Fixture, Box<dyn std::error::Error>> {
 }
 
 #[test]
-fn global_voice_selection_pins_agent_identity_before_confirmation()
+fn global_voice_selection_pins_agent_identity_before_dispatch()
 -> Result<(), Box<dyn std::error::Error>> {
     let _guard = terminal_delivery_test_guard();
     let (runtime, _, mut snapshot) = fixture("voice-global-selection")?;

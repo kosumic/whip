@@ -6,19 +6,11 @@ import type { SessionRuntimeController } from '../hooks/useSessionRuntimeManager
 import { isLiveHostSshConnected } from '../lib/liveHostLatency';
 import type { AppTab } from '../types';
 
-export interface GlobalVoiceApproval {
-  hostId: string;
-  paneId?: string;
-  prompt: string;
-  operation?: string;
-  hostLabel?: string;
-}
 export interface GlobalVoiceControlContext {
   navigation: AppNavigationController;
   sessions: SessionRuntimeController;
   locked: boolean;
   showNavigation: () => void;
-  confirm: (request: GlobalVoiceApproval, signal: AbortSignal) => Promise<boolean>;
 }
 
 /** Presentation/OS adapter. Rust validates names, arguments and call rights. */
@@ -67,22 +59,6 @@ export class GlobalVoiceControl {
         await new Promise<void>(resolve => abort.signal.addEventListener('abort', () => resolve(), { once: true }));
         check();
         value = {};
-      } else if (action === 'confirm_operation') {
-        const original = args.arguments as unknown as Record<string, unknown>;
-        const host = args.host as unknown as { name: string; username: string; host: string; port: string } | null;
-        const approved = await context.confirm({
-          hostId: String(original.host_id),
-          hostLabel: host ? `${host.name} · ${host.username}@${host.host}:${host.port} (${String(original.host_id)})` : undefined,
-          paneId: typeof original.pane_id === 'string' ? original.pane_id : undefined,
-          operation: args.operation,
-          prompt: JSON.stringify(original, null, 2),
-        }, abort.signal);
-        check();
-        value = { approved };
-      } else if (action === 'confirm_delegation') {
-        const approved = await context.confirm({ hostId: args.host_id, paneId: args.pane_id, prompt: args.prompt }, abort.signal);
-        check();
-        value = { approved };
       } else if (action.startsWith('device.')) {
         if (action === 'device.location') this.systemPromptOperations.add(abort);
         this.deviceSessions.add(id);

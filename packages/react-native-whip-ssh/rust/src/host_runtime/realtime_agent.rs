@@ -127,7 +127,7 @@ impl PinnedAgent {
             binding_token: binding.binding_token,
         })
     }
-    /// Explicit global-call selection, pinned before the user confirms a prompt.
+    /// Explicit global-call selection, pinned before dispatching a prompt.
     pub(crate) fn select(
         runtime_id: String,
         pane_id: &str,

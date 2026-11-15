@@ -1,6 +1,4 @@
 export const zhHant: Record<string, string> = {
-  'globalCall.confirmOperation': "允許此操作？",
-  'globalCall.approveOperation': "允許操作",
   'stt.title': '語音轉文字供應商',
   'stt.localHelp': '聽寫使用裝置端語音辨識。語音通話和語音合成設定相互獨立。',
   'stt.openaiHelp': '點擊麥克風錄音，停止後使用 OpenAI 轉錄。音訊、草稿和最近的聊天上下文會傳送給 OpenAI，並產生 API 費用。',
@@ -35,10 +33,6 @@ export const zhHant: Record<string, string> = {
   "globalCall.title": "全域通話",
   "globalCall.open": "開始或返回全域通話",
   "globalCall.start": "開始全域通話",
-  "globalCall.permissions": "跨主機和分頁與 Whip 對話。此通話可以讀取已儲存主機和代理的狀態、在 Whip 內導覽以及讀取裝置基本狀態。每次向明確選擇的代理傳送請求都需要你確認。執行 Android 指令需在手機使用設定中啟用 Shizuku 存取。不提供主機編輯、瀏覽器控制、剪貼簿或位置資訊存取。",
-  "globalCall.confirmTitle": "將此請求傳送給代理？",
-  "globalCall.confirmTarget": "主機：{{host}} · 代理窗格：{{pane}}",
-  "globalCall.confirmSend": "傳送給代理",
   "globalCall.message": "全域通話訊息",
   "globalCall.send": "傳送至通話",
   "voiceUsage.scope": "通話範圍",

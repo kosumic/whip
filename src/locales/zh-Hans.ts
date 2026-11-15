@@ -1,6 +1,4 @@
 export const zhHans = {
-  'globalCall.confirmOperation': "允许此操作？",
-  'globalCall.approveOperation': "允许操作",
   'stt.title': '语音转文字提供商',
   'stt.localHelp': '听写使用设备端语音识别。语音通话和语音合成设置相互独立。',
   'stt.openaiHelp': '点击麦克风录音，停止后使用 OpenAI 转录。音频、草稿和最近的聊天上下文会发送给 OpenAI，并产生 API 费用。',
@@ -35,10 +33,6 @@ export const zhHans = {
   "globalCall.title": "全局通话",
   "globalCall.open": "开始或返回全局通话",
   "globalCall.start": "开始全局通话",
-  "globalCall.permissions": "跨主机和标签页与 Whip 对话。此通话可以读取已保存主机和代理的状态、在 Whip 内导航以及读取设备基本状态。每次向明确选择的代理发送请求都需要你确认。执行 Android 命令需在手机使用设置中启用 Shizuku 访问。不提供主机编辑、浏览器控制、剪贴板或位置信息访问。",
-  "globalCall.confirmTitle": "将此请求发送给代理？",
-  "globalCall.confirmTarget": "主机：{{host}} · 代理窗格：{{pane}}",
-  "globalCall.confirmSend": "发送给代理",
   "globalCall.message": "全局通话消息",
   "globalCall.send": "发送到通话",
   "voiceUsage.scope": "通话范围",

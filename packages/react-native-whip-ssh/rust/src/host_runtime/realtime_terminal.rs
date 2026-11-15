@@ -19,7 +19,7 @@ pub(crate) const MAX_OUTPUT: usize = 12 * 1024;
 pub(crate) const CHANGED: &str = "The bound terminal disconnected or changed. Please call again.";
 static PROCESS_EPOCH: LazyLock<String> = LazyLock::new(|| uuid::Uuid::new_v4().to_string());
 
-/// Fence explicit global-call control targets across approval and reconnects.
+/// Fence explicit global-call control targets across dispatch and reconnects.
 pub(crate) struct ControlTarget {
     connection: Arc<PinnedTerminal>,
     recovery: u64,

@@ -4,28 +4,25 @@ use tokio::sync::Notify;
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 struct Platform {
-    approvals: Mutex<Vec<Value>>,
-    approved: AtomicBool,
+    calls: Mutex<Vec<String>>,
     suspended: AtomicBool,
     changed: Notify,
-    on_approval: Mutex<Option<Box<dyn FnOnce() + Send>>>,
     location: Mutex<Value>,
 }
 impl Default for Platform {
     fn default() -> Self {
         Self {
-            approvals: Mutex::default(),
-            approved: AtomicBool::new(true),
+            calls: Mutex::default(),
             suspended: AtomicBool::new(false),
             changed: Notify::new(),
-            on_approval: Mutex::default(),
             location: Mutex::new(json!({"error":"permission_denied"})),
         }
     }
 }
 #[async_trait::async_trait]
 impl WhipAppControl for Platform {
-    async fn execute(&self, _: Arc<WhipToolPermit>, action: String, args: String) -> String {
+    async fn execute(&self, _: Arc<WhipToolPermit>, action: String, _: String) -> String {
+        self.calls.lock().push(action.clone());
         match action.as_str() {
             WATCH => {
                 let changed = self.changed.notified();
@@ -33,15 +30,6 @@ impl WhipAppControl for Platform {
                     changed.await;
                 }
                 json!({"error":"cancelled"})
-            }
-            CONFIRM => {
-                self.approvals
-                    .lock()
-                    .push(serde_json::from_str(&args).unwrap_or(Value::Null));
-                if let Some(changed) = self.on_approval.lock().take() {
-                    changed();
-                }
-                json!({"approved":self.approved.load(Ordering::Acquire)})
             }
             "device.location" => self.location.lock().clone(),
             _ => json!({"foreground":true}),
@@ -250,7 +238,7 @@ fn global_creation_passes_original_cwd_and_preserves_focus_by_default() -> TestR
 }
 
 #[test]
-fn saved_host_connect_disconnect_uses_independent_rights_and_never_ends_the_call() -> TestResult {
+fn saved_host_connect_disconnect_runs_without_approval_and_never_ends_the_call() -> TestResult {
     crate::runtime()?.block_on(async {
         let (session, coordinator, host, platform) = setup()?;
         let args = r#"{"host_id":"host"}"#;
@@ -285,12 +273,7 @@ fn saved_host_connect_disconnect_uses_independent_rights_and_never_ends_the_call
             session.execute(HOSTS_LIST, "{}").await["connections"],
             json!([])
         );
-        assert_eq!(platform.approvals.lock()[0]["operation"], "hosts_connect");
-        assert_eq!(
-            platform.approvals.lock()[0]["arguments"],
-            json!({"host_id":"host"})
-        );
-        assert_eq!(platform.approvals.lock()[0]["host"]["host"], "host.test");
+        assert!(platform.calls.lock().iter().all(|action| action == WATCH));
         session.close();
         coordinator.close();
         Ok(())
@@ -298,13 +281,12 @@ fn saved_host_connect_disconnect_uses_independent_rights_and_never_ends_the_call
 }
 
 #[test]
-fn refusal_biometric_cancel_missing_credentials_and_trust_failure_stop_at_the_correct_boundary()
+fn biometric_cancel_missing_credentials_and_trust_failure_stop_at_the_correct_boundary()
 -> TestResult {
     crate::runtime()?.block_on(async {
-        for scenario in ["refused", "biometric", "missing", "trust"] {
-            let (session, coordinator, host, platform) = setup()?;
+        for scenario in ["biometric", "missing", "trust"] {
+            let (session, coordinator, host, _) = setup()?;
             match scenario {
-                "refused" => platform.approved.store(false, Ordering::Release),
                 "biometric" => host.authenticated.store(false, Ordering::Release),
                 "missing" => host.missing_credential.store(true, Ordering::Release),
                 _ => *host.fail.lock() = Some("connect"),
@@ -315,7 +297,6 @@ fn refusal_biometric_cancel_missing_credentials_and_trust_failure_stop_at_the_co
             assert!(value.get("error").is_some(), "{scenario}: {value}");
             let calls = host.calls.lock().clone();
             match scenario {
-                "refused" => assert!(calls.is_empty()),
                 "biometric" => assert_eq!(calls, ["authenticate"]),
                 "missing" => assert_eq!(calls, ["authenticate", "read_credential"]),
                 _ => assert_eq!(calls, ["authenticate", "read_credential", "connect"]),
@@ -328,70 +309,48 @@ fn refusal_biometric_cancel_missing_credentials_and_trust_failure_stop_at_the_co
 }
 
 #[test]
-fn changed_profiles_revoked_rights_background_and_concurrent_actions_cannot_submit() -> TestResult {
+fn revoked_rights_background_and_concurrent_actions_cannot_submit() -> TestResult {
     crate::runtime()?.block_on(async {
-        for reason in ["profile", "lock", "hangup", "background", "busy"] {
+        for reason in ["lock", "hangup", "background", "busy"] {
             let (session, coordinator, host, platform) = setup()?;
             let serial = if reason == "busy" {
                 Some(session.delegation.lock().await)
             } else {
                 None
             };
-            if reason == "background" {
-                platform.cancel(session.id.clone());
-            }
-            let changed_coordinator = coordinator.clone();
-            let changed_session = Arc::downgrade(&session);
-            let reason_owned = reason.to_owned();
-            *platform.on_approval.lock() = Some(Box::new(move || match reason_owned.as_str() {
-                "profile" => {
-                    let mut context = hosts::tests::context();
-                    context.hosts[0].host = "changed.test".into();
-                    changed_coordinator.update_context(context);
-                }
+            match reason {
                 "lock" => {
                     let mut context = hosts::tests::context();
                     context.locked = true;
-                    changed_coordinator.update_context(context);
+                    coordinator.update_context(context);
                 }
-                "hangup" => {
-                    if let Some(session) = changed_session.upgrade() {
-                        session.close();
-                    }
-                }
+                "hangup" => session.close(),
+                "background" => platform.cancel(session.id.clone()),
                 _ => {}
-            }));
-            let value = session
-                .execute("hosts_connect", r#"{"host_id":"host"}"#)
-                .await;
-            assert!(value.get("error").is_some(), "{reason}: {value}");
+            }
+            for (name, args) in [
+                ("hosts_connect", r#"{"host_id":"host"}"#),
+                (
+                    AGENTS_PROMPT,
+                    r#"{"host_id":"host","pane_id":"pane","prompt":"Check status"}"#,
+                ),
+            ] {
+                let value = session.execute(name, args).await;
+                assert!(value.get("error").is_some(), "{reason}: {name}: {value}");
+                if reason != "busy" {
+                    let expected = if reason == "lock" {
+                        "permission_denied"
+                    } else {
+                        "cancelled"
+                    };
+                    assert_eq!(value["error"], expected, "{reason}: {name}: {value}");
+                }
+            }
             assert!(host.calls.lock().is_empty(), "{reason}");
             drop(serial);
             session.close();
             coordinator.close();
         }
-        Ok(())
-    })
-}
-
-#[test]
-fn disconnect_approval_cannot_follow_a_replaced_host_connection() -> TestResult {
-    let _guard = crate::host_runtime::terminal_delivery_test_guard();
-    crate::runtime()?.block_on(async {
-        let _runtime = crate::host_runtime::register_connected_test_runtime("host");
-        let (session, coordinator, host, platform) = setup()?;
-        *platform.on_approval.lock() = Some(Box::new(|| {
-            crate::host_runtime::register_connected_test_runtime("host");
-        }));
-        let result = session
-            .execute("hosts_disconnect", r#"{"host_id":"host"}"#)
-            .await;
-        assert_eq!(result["error"], "cancelled");
-        assert_eq!(result["outcome_unknown"], false);
-        assert!(host.calls.lock().is_empty());
-        session.check()?;
-        session.close();
-        coordinator.close();
         Ok(())
     })
 }
@@ -414,7 +373,7 @@ async fn read_until(
 }
 
 #[test]
-fn global_jobs_use_dedicated_ssh_with_real_output_cwd_exit_status_and_host_owned_cancellation()
+fn global_jobs_run_without_approval_with_real_output_cwd_exit_status_and_host_owned_cancellation()
 -> TestResult {
     let _guard = crate::host_runtime::terminal_delivery_test_guard();
     crate::runtime()?.block_on(async {
@@ -450,7 +409,7 @@ fn global_jobs_use_dedicated_ssh_with_real_output_cwd_exit_status_and_host_owned
         assert_eq!(observed["stdout"], format!("{}\n", cwd.display()));
         assert_eq!(observed["stderr"], "warning");
         assert_eq!(observed["result"]["exit_status"], 7);
-        assert_eq!(platform.approvals.lock()[0]["arguments"], request);
+        assert!(platform.calls.lock().iter().all(|action| action == WATCH));
         assert!(
             session
                 .execute(
@@ -484,7 +443,6 @@ fn global_jobs_use_dedicated_ssh_with_real_output_cwd_exit_status_and_host_owned
         read_until(&session, &job, "started").await?;
         let cancelled = session.execute(terminal::CANCEL, &job.to_string()).await;
         assert_eq!(cancelled["result"]["error"], "outcome_unknown");
-        let count = platform.approvals.lock().len();
         assert!(
             session
                 .execute(
@@ -495,7 +453,7 @@ fn global_jobs_use_dedicated_ssh_with_real_output_cwd_exit_status_and_host_owned
                 .get("error")
                 .is_some()
         );
-        assert_eq!(platform.approvals.lock().len(), count);
+        assert!(platform.calls.lock().iter().all(|action| action == WATCH));
         assert!(fixture.shared_ssh().is_alive());
         session.close();
         coordinator.close();
@@ -586,7 +544,7 @@ fn location_denial_and_invalid_exec_requests_remain_errors_without_confirmation(
                 "invalid_argument"
             );
         }
-        assert!(platform.approvals.lock().is_empty());
+        assert!(platform.calls.lock().iter().all(|action| action == WATCH || action == "device.location"));
         session.close();
         coordinator.close();
         Ok(())
