@@ -25,6 +25,44 @@ class PcmSpeechPlaybackTest {
   private val samples = FloatArray(1_920) { 0.01f }
   private fun main(work: () -> Unit) = instrumentation.runOnMainSync { work() }
 
+  @Test fun callCueGatesCaptureAtDeviceStartAndRejectsSupersededSynthesis() {
+    val original = PcmSpeechPlayback.synthesize
+    val producing = CountDownLatch(1)
+    val release = CountDownLatch(1)
+    val done = CountDownLatch(1)
+    val guarded = AtomicBoolean(false)
+    val failure = AtomicReference<String?>(null)
+    val lease = SpeechPolicy.claim(SpeechPolicy.CHAT, "call-cue-prefill", "")
+    try {
+      PcmSpeechPlayback.synthesize = { _, _, _, sink, _ ->
+        producing.countDown()
+        check(release.await(10, TimeUnit.SECONDS))
+        if (sink.write(samples)) 1 else 0
+      }
+      main {
+        PcmSpeechPlayback.startGuarded(lease, "Unmuted", attributes, {
+          guarded.set(true)
+          false // A newer mute intent cancelled the prepared cue.
+        }) { completed, spoke, error ->
+          assertFalse(completed)
+          assertFalse(spoke)
+          failure.set(error)
+          done.countDown()
+        }
+      }
+      assertTrue(producing.await(10, TimeUnit.SECONDS))
+      assertFalse("Model preparation cannot gate capture", guarded.get())
+      release.countDown()
+      assertTrue("Rejected audio settles without reaching the speaker", done.await(10, TimeUnit.SECONDS))
+      assertTrue(guarded.get())
+      assertEquals("Call announcement cancelled", failure.get())
+    } finally {
+      release.countDown()
+      main { SpeechPolicy.stop(lease); PcmSpeechPlayback.stop() }
+      PcmSpeechPlayback.synthesize = original
+    }
+  }
+
   @Test fun stalledReadAloudFailsAndClearsCaptionsWithoutAnotherAudioRequest() {
     val context = instrumentation.targetContext
     val root = File(context.noBackupFilesDir, "phonon").absolutePath

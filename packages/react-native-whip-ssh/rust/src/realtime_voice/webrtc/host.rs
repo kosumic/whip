@@ -133,11 +133,7 @@ impl Host for AppHost {
         if !self.attempt.current() {
             return;
         }
-        self.owner
-            .output
-            .lock()
-            .transcript
-            .finish_audio(&tag.item, tag.index);
+        self.owner.output.lock().finish_audio(&tag.item, tag.index);
     }
     fn statistics(&self, delta: Statistics) {
         if !self.attempt.current() {

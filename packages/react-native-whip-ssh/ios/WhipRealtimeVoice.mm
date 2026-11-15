@@ -1,4 +1,5 @@
 #import "WhipRealtimeVoice.h"
+#import "WhipCallPlaybackBoundary.h"
 #import "../../../ios/HerdR/WhipSpeechPlayback.h"
 #import "WhipVoiceCall.h"
 #import "../cpp/WhipRealtimeVoice.h"
@@ -44,6 +45,7 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
 
 @interface WhipRealtimeVoice () {
   std::atomic<uint64_t> _call;
+  WhipCallPlaybackBoundary _announcementBoundary;
 }
 @property(nonatomic, copy) NSString *token;
 @property(nonatomic, copy) NSString *lastToken;
@@ -57,7 +59,6 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
 @property(atomic, strong) NSNumber *announcementId;
 @property(nonatomic, strong) dispatch_queue_t media;
 @property(nonatomic) uint64_t epoch;
-@property(nonatomic) uint64_t scheduled;
 @property(nonatomic) NSUInteger queued;
 @property(nonatomic) NSUInteger ticks;
 @property(nonatomic) uint64_t closingCall;
@@ -209,7 +210,7 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
   }
   [self.player play];
   whip_realtime_control(call, WhipRealtimeMediaReady);
-  self.epoch = 0; self.scheduled = 0; self.queued = 0;
+  self.epoch = 0; _announcementBoundary.reset(0); self.queued = 0;
   self.timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, self.media);
   dispatch_source_set_timer(self.timer, DISPATCH_TIME_NOW, 10 * NSEC_PER_MSEC, NSEC_PER_MSEC);
   dispatch_source_set_event_handler(self.timer, ^{ [weakSelf pump:call token:token]; });
@@ -221,7 +222,7 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
   uint64_t currentEpoch = whip_realtime_epoch(call);
   if (currentEpoch != self.epoch) {
     [self.player stop];
-    self.epoch = currentEpoch; self.scheduled = 0; self.queued = 0;
+    self.epoch = currentEpoch; _announcementBoundary.reset(currentEpoch); self.queued = 0;
     [self.player play];
   }
   char *json = (++self.ticks % 10 == 0) ? whip_realtime_view(call) : nullptr;
@@ -230,12 +231,27 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
     NSDictionary *view = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
     whip_realtime_free(json);
     NSDictionary *announcement = [view[@"microphoneAnnouncement"] isKindOfClass:NSDictionary.class] ? view[@"microphoneAnnouncement"] : nil;
-    if (!self.preview && announcement && ![self.announcementId isEqual:announcement[@"id"]]) {
+    if (!self.preview && [announcement[@"cancelled"] boolValue]) {
+      NSNumber *identity = announcement[@"id"];
+      dispatch_async(dispatch_get_main_queue(), ^{
+        if (self->_call.load() != call || ![self.announcementId isEqual:identity]) return;
+        self.announcementId = nil;
+        [WhipSpeechPlayback.shared cancelCallAnnouncement];
+        whip_realtime_announcement_finished(call, identity.unsignedLongLongValue);
+      });
+    } else if (!self.preview && announcement && ![self.announcementId isEqual:announcement[@"id"]] &&
+               _announcementBoundary.drained() &&
+               whip_realtime_announcement_start(call, [announcement[@"id"] unsignedLongLongValue])) {
       NSNumber *identity = announcement[@"id"];
       self.announcementId = identity;
       dispatch_async(dispatch_get_main_queue(), ^{
-        if (self->_call.load() != call || ![self.announcementId isEqual:identity]) return;
-        [WhipSpeechPlayback.shared speakCallAnnouncement:[announcement[@"lease"] unsignedLongLongValue] text:announcement[@"text"] completed:^{
+        if (self->_call.load() != call || ![self.announcementId isEqual:identity]) {
+          whip_realtime_announcement_finished(call, identity.unsignedLongLongValue);
+          return;
+        }
+        [WhipSpeechPlayback.shared speakCallAnnouncement:[announcement[@"lease"] unsignedLongLongValue] text:announcement[@"text"] beforePlayback:^BOOL {
+          return whip_realtime_announcement_playing(call, identity.unsignedLongLongValue);
+        } completed:^{
           whip_realtime_announcement_finished(call, identity.unsignedLongLongValue);
         }];
       });
@@ -267,7 +283,7 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
   NSUInteger count = whip_realtime_read(call, buffer.int16ChannelData[0], WhipRealtimeFrame, &epoch);
   if (epoch != self.epoch) {
     [self.player stop];
-    self.epoch = epoch; self.scheduled = 0; self.queued = 0;
+    self.epoch = epoch; _announcementBoundary.reset(epoch); self.queued = 0;
     [self.player play];
   }
   NSUInteger providerCount = count;
@@ -278,15 +294,14 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
   }
   whip_realtime_mix_cue(call, buffer.int16ChannelData[0], count);
   buffer.frameLength = (AVAudioFrameCount)count;
-  self.scheduled += providerCount;
   self.queued++;
-  uint64_t played = self.scheduled;
+  uint64_t played = _announcementBoundary.schedule(providerCount);
   __weak WhipRealtimeVoice *weakSelf = self;
   [self.player scheduleBuffer:buffer completionCallbackType:AVAudioPlayerNodeCompletionDataPlayedBack completionHandler:^(AVAudioPlayerNodeCompletionCallbackType type) {
     WhipRealtimeVoice *owner = weakSelf;
     if (!owner) return;
     dispatch_async(owner.media, ^{
-      if (owner->_call.load() != call || owner.epoch != epoch) return;
+      if (owner->_call.load() != call || !owner->_announcementBoundary.complete(epoch, played)) return;
       if (owner.queued) owner.queued--;
       whip_realtime_played(call, epoch, played);
     });

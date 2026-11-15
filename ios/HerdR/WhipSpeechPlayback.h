@@ -12,6 +12,7 @@ FOUNDATION_EXPORT NSString *const WhipSpeechCaption;
 @interface WhipSpeechPlayback : NSObject
 + (instancetype)shared;
 - (void)speakCallAnnouncement:(uint64_t)lease text:(NSString *)text completed:(dispatch_block_t)completed;
+- (void)speakCallAnnouncement:(uint64_t)lease text:(NSString *)text beforePlayback:(BOOL (^)(void))beforePlayback completed:(dispatch_block_t)completed;
 - (void)cancelCallAnnouncement;
 - (void)backendCommand:(NSString *)action resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
 - (void)startChat:(NSString *)owner label:(NSString *)label resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;

@@ -115,9 +115,11 @@ deadline. Tools and manual controls update it; the call screen, Android service
 and iOS call owner observe its published state. Navigation, minimization and JS
 suspension do not own or cancel the timer. Every manual set/toggle cancels the
 deadline, including a redundant set; every later tool command replaces it.
-Expiry is checked by the native call loop. The absolute deadline and native
-transition announcements survive provider reconnects and scheduled session
-rotation within the same logical call. Recovery does not restart the duration:
+Expiry is checked by the native call loop. The absolute deadline survives
+provider reconnects and scheduled session rotation within the same logical call.
+Retiring a provider discards its unheard cues and cancels an admitted cue;
+native cancellation must settle before replacement assistant audio is admitted.
+Recovery does not restart the duration:
 if it expires while reconnecting, capture stays gated and the call unmutes once
 the recovered provider is ready, queuing “Unmuted” once. Otherwise the remaining
 time is honored. Explicit indefinite mute or unmute during recovery cancels the
@@ -128,18 +130,53 @@ alone does not end the logical call. App lock follows the
 existing policy below: an already authorized call keeps running, but locked
 tool requests cannot obtain fresh capability authority.
 
-Each actual state change queues the matching spoken “Muted” or “Unmuted”
+Each actual state change queues a spoken “Muted” or “Unmuted”
 announcement using the speech backend and voice selected in Settings. Speech
 is synthesized on each transition, without bundled recordings or an audio
 cache. System TTS and Phonon run locally; selecting OpenAI TTS makes the normal
 speech request for each announcement, using existing credential protections.
 Mute state changes do not wait for synthesis. Native playback borrows the call's
 speech lease without replacing or completing it. Repeating the same state
-changes only the deadline. Microphone delivery is suppressed until announcement
-playback and its device-output tail finish, including backend initialization.
-Failure or timeout releases that suppression without ending or changing the
-call. Live unmute additionally waits for the matching server acknowledgement,
-and a stale acknowledgement cannot override a newer mute.
+changes only the deadline. Unheard rapid flips coalesce to the latest intent.
+An already audible cue finishes intact, followed by the latest state if it
+differs; a superseded cue still being synthesized is cancelled before playback.
+
+Cues wait at completed assistant audio-item boundaries, or at 160 ms of quiet
+PCM in GPT-Live's continuous stream. An empty stream must remain drained at the
+device for 160 ms unless an item completion already supplies the boundary.
+Rust stops handing out the next segment and admits the cue only after native
+playback has acknowledged every previously delivered assistant sample. Android
+also checks the AudioTrack tail across provider epochs; iOS uses DataPlayedBack
+callbacks fenced by call and playback epoch. The next assistant segment stays
+queued until the cue completes or native acknowledges its cancellation. PCM
+packets and model text events alone do not establish device completion.
+
+Capture policy: microphone intent takes effect immediately. A waiting cue and
+slow backend initialization do **not** suppress an otherwise unmuted microphone.
+Immediately before submitting cue audio, the backend revalidates its call/cue
+identity and Rust gates capture through actual playback plus a 500 ms output
+tail. A backend failure or timeout releases the reservation; failure before
+capture admission needs no tail. Live unmute still waits for the matching provider
+acknowledgement, and a stale acknowledgement cannot override a newer mute.
+Skips discard unheard cues and cancel admitted cues without changing mute intent
+or its deadline. Hangup, audio failure and ownership loss fence late callbacks.
+
+Device acceptance for #446 (speaker and headphones, both providers):
+
+- During a long assistant utterance, mute and unmute; verify immediate intent,
+  continued input while an unmute cue waits, then cue and next segment without overlap.
+- Repeat across silence between segments and while idle, using System, Phonon
+  and OpenAI TTS; verify both sides retain every word and the selected voice.
+- Exercise mute → unmute → mute, duplicate commands and timed expiry during speech.
+  Only the latest unheard state should play; cue audio must never appear in input transcripts.
+- While a cue waits, prepares and plays, separately skip, reconnect/rotate,
+  lock/background, interrupt audio and hang up. Verify no old cue returns,
+  replacement output waits for cancellation, and a fresh call captures normally.
+
+Automated coverage includes Rust scheduling/provider-ack tests, Android device-tail
+unit tests and guarded AudioTrack instrumentation, and iOS playback-clock and
+speech-adapter XCTest checks. Physical listening acceptance remains a separate
+check; simulator clocks cannot establish acoustic behavior.
 
 ## Delegation and capability lifetime
 

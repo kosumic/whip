@@ -27,7 +27,7 @@ mod session_host;
 mod shutdown;
 mod socket;
 mod startup;
-mod terminal;
+pub(crate) mod terminal;
 #[cfg(test)]
 mod tests;
 mod transcript;
@@ -358,6 +358,7 @@ struct OutputItem {
     index: u32,
     start: usize,
     end: usize,
+    finished: bool,
 }
 
 // One bounded provider PCM queue feeds native device reads. Preserve unread
@@ -373,6 +374,9 @@ struct Output {
     delivered: usize,
     generated: usize,
     last_audible: Option<Instant>,
+    announcement_boundary: bool,
+    quiet_samples: usize,
+    drained_since: Option<Instant>,
 }
 impl Default for Output {
     fn default() -> Self {
@@ -386,6 +390,9 @@ impl Default for Output {
             delivered: 0,
             generated: 0,
             last_audible: None,
+            announcement_boundary: false,
+            quiet_samples: 0,
+            drained_since: None,
         }
     }
 }
@@ -409,6 +416,9 @@ impl Output {
         self.delivered = 0;
         self.generated = 0;
         self.last_audible = None;
+        self.announcement_boundary = false;
+        self.quiet_samples = 0;
+        self.drained_since = None;
     }
     fn append(&mut self, item: String, index: u32, pcm: Vec<u8>) -> Result<(), &'static str> {
         if !pcm.len().is_multiple_of(2) {
@@ -429,7 +439,8 @@ impl Output {
             if self.items.len() >= MAX_OUTPUT_ITEMS {
                 return Err("Realtime playback has too many pending audio items.");
             }
-            if let Some(previous) = self.items.back() {
+            if let Some(previous) = self.items.back_mut() {
+                previous.finished = true;
                 self.transcript.finish_audio(&previous.id, previous.index);
             }
             self.items.push_back(OutputItem {
@@ -437,13 +448,16 @@ impl Output {
                 index,
                 start: self.generated,
                 end: self.generated,
+                finished: false,
             });
         }
         self.generated += count;
+        self.drained_since = None;
         if let Some(transcript) = &mut self.live_transcript {
             transcript.audio(self.generated - count, &pcm);
         }
         if let Some(item) = self.items.back_mut() {
+            item.finished = false;
             item.end = self.generated;
             self.transcript
                 .audio(&item.id, item.index, item.end - item.start);
@@ -458,11 +472,63 @@ impl Output {
         Ok(())
     }
     fn read(&mut self, out: &mut [i16]) -> usize {
-        let count = out.len().min(self.samples.len());
-        for sample in &mut out[..count] {
+        self.read_until_boundary(out, false)
+    }
+    fn at_speech_boundary(&mut self, now: Instant) -> bool {
+        if self.announcement_boundary
+            || self.generated == 0
+            || self.quiet_samples >= microphone::QUIET_SAMPLES
+        {
+            return true;
+        }
+        if self
+            .items
+            .iter()
+            .any(|item| item.finished && item.end == self.delivered)
+        {
+            return true;
+        }
+        if self.generated != self.played {
+            self.drained_since = None;
+            return false;
+        }
+        now.duration_since(*self.drained_since.get_or_insert(now)) >= microphone::BOUNDARY_QUIET
+    }
+    fn finish_audio(&mut self, id: &str, index: u32) {
+        if let Some(item) = self
+            .items
+            .iter_mut()
+            .find(|item| item.id == id && item.index == index)
+        {
+            item.finished = true;
+        }
+        self.transcript.finish_audio(id, index);
+    }
+    fn read_until_boundary(&mut self, out: &mut [i16], pending: bool) -> usize {
+        let limit = out.len().min(self.samples.len());
+        let mut count = 0;
+        for sample in &mut out[..limit] {
             *sample = self.samples.pop_front().unwrap_or_default();
+            count += 1;
+            self.quiet_samples = if sample.unsigned_abs() < AUDIBLE_SAMPLE {
+                self.quiet_samples.saturating_add(1)
+            } else {
+                0
+            };
+            if pending && self.quiet_samples >= microphone::QUIET_SAMPLES {
+                self.announcement_boundary = true;
+                break;
+            }
         }
         self.delivered += count;
+        if pending
+            && self
+                .items
+                .iter()
+                .any(|item| item.finished && item.end == self.delivered)
+        {
+            self.announcement_boundary = true;
+        }
         if self.live_transcript.is_some()
             && out[..count]
                 .iter()
@@ -912,6 +978,9 @@ impl RealtimeVoiceAdapter {
         self.output.lock().clear();
     }
     fn command(&self, command: Command) {
+        if matches!(command, Command::Skip) {
+            self.microphone.lock().cancel_speech();
+        }
         if self.retiring.load(Ordering::Acquire)
             || !self.ready.load(Ordering::Acquire) && self.view.lock().phase == "reconnecting"
         {

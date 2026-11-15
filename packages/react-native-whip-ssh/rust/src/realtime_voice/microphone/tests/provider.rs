@@ -128,7 +128,7 @@ async fn recovered_realtime_unmute_clears_provider_input_at_the_original_deadlin
         "input_audio_buffer.clear"
     );
     assert!(owner.input.accepts(owner.input.generation()));
-    assert_eq!(owner.microphone.lock().announcements, [true, false]);
+    assert_eq!(owner.microphone.lock().announcements, [false]);
     owner.close();
     Ok(())
 }

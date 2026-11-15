@@ -192,14 +192,36 @@ static NSString *voiceCallToken;
 @property(nonatomic, copy) NSString *text;
 @property(nonatomic, copy) NSString *voice;
 @property(nonatomic, copy) dispatch_block_t completed;
+@property(nonatomic, copy) BOOL (^beforePlayback)(void);
 @property(nonatomic) BOOL cancelled;
-- (void)start:(uint64_t)lease text:(NSString *)text voice:(NSString *)voice completed:(dispatch_block_t)completed;
+- (void)start:(uint64_t)lease text:(NSString *)text voice:(NSString *)voice beforePlayback:(BOOL (^)(void))beforePlayback completed:(dispatch_block_t)completed;
 - (void)cancel;
 @end
 @implementation TestCallAnnouncement
-- (void)start:(uint64_t)lease text:(NSString *)text voice:(NSString *)voice completed:(dispatch_block_t)completed
-{ self.lease = lease; self.text = text; self.voice = voice; self.completed = completed; }
-- (void)cancel { self.cancelled = YES; self.completed = nil; }
+- (void)start:(uint64_t)lease text:(NSString *)text voice:(NSString *)voice beforePlayback:(BOOL (^)(void))beforePlayback completed:(dispatch_block_t)completed
+{ self.lease = lease; self.text = text; self.voice = voice; self.beforePlayback = beforePlayback; self.completed = completed; }
+- (void)cancel { self.cancelled = YES; self.beforePlayback = nil; self.completed = nil; }
+@end
+
+// Exercise the real PCM adapter's admission immediately before scheduling,
+// without connecting the scripted node to a hardware engine.
+@interface WhipPcmSpeechAudio : NSObject
+@property(nonatomic) uint64_t lease;
+@property(nonatomic, strong) AVAudioFormat *format;
+@property(nonatomic, strong) AVAudioPlayerNode *node;
+@property(nonatomic, copy) BOOL (^beforePlayback)(void);
+- (BOOL)write:(const float *)samples count:(NSUInteger)count;
+@end
+@interface TestCueAudioNode : AVAudioPlayerNode
+@property(nonatomic, copy) dispatch_block_t onSchedule;
+@end
+@implementation TestCueAudioNode
+- (void)scheduleBuffer:(AVAudioPCMBuffer *)buffer completionCallbackType:(AVAudioPlayerNodeCompletionCallbackType)type completionHandler:(void (^)(AVAudioPlayerNodeCompletionCallbackType))completion {
+  XCTAssertEqual(type, AVAudioPlayerNodeCompletionDataPlayedBack);
+  if (self.onSchedule) self.onSchedule();
+  if (completion) completion(type);
+}
+- (void)stop {}
 @end
 @interface TestSpeechPlayback : WhipSpeechPlayback
 @property(nonatomic, strong) NSMutableArray<NSString *> *spoken;
@@ -336,6 +358,61 @@ static NSString *voiceCallToken;
   XCTAssertNil(second.completed);
   XCTAssertEqual(completions, 1u);
   XCTAssertEqual(activeLease, lease);
+}
+
+- (void)testCallCuePreparationRetainsItsPlaybackGuardAndCancellationDiscardsIt {
+  uint64_t lease = whip_speech_claim(WhipSpeechChat, "openai-realtime", "");
+  __block NSUInteger gates = 0;
+  [self.player speakCallAnnouncement:lease text:@"Unmuted" beforePlayback:^BOOL {
+    gates++; return NO;
+  } completed:^{ XCTFail(@"Cancelled preparation must not complete later"); }];
+  TestCallAnnouncement *cue = self.player.callAnnouncements.lastObject;
+  XCTAssertEqual(gates, 0u); // Preparation alone leaves capture available.
+  XCTAssertFalse(cue.beforePlayback()); // Playback must revalidate current intent.
+  XCTAssertEqual(gates, 1u);
+  [self.player cancelCallAnnouncement];
+  XCTAssertNil(cue.beforePlayback);
+  XCTAssertNil(cue.completed);
+  XCTAssertEqual(activeLease, lease);
+}
+
+- (void)testPcmCueGatesCaptureBeforeItsFirstScheduledBuffer {
+  uint64_t lease = whip_speech_claim(WhipSpeechChat, "openai-realtime", "");
+  WhipPcmSpeechAudio *audio = [WhipPcmSpeechAudio new];
+  audio.lease = lease;
+  audio.format = [[AVAudioFormat alloc] initStandardFormatWithSampleRate:24000 channels:1];
+  TestCueAudioNode *node = [TestCueAudioNode new]; audio.node = node;
+  __block NSUInteger gates = 0, scheduled = 0;
+  audio.beforePlayback = ^BOOL { gates++; return YES; };
+  node.onSchedule = ^{ XCTAssertEqual(gates, 1u); scheduled++; };
+  XCTAssertEqual(gates, 0u);
+  XCTestExpectation *written = [self expectationWithDescription:@"PCM submits after capture admission"];
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    float samples[480] = {0};
+    XCTAssertTrue([audio write:samples count:480]);
+    XCTAssertTrue([audio write:samples count:480]);
+    [written fulfill];
+  });
+  [self waitForExpectations:@[written] timeout:2];
+  XCTAssertEqual(gates, 1u);
+  XCTAssertEqual(scheduled, 2u);
+}
+
+- (void)testSupersededPcmCueCannotScheduleEvenItsFirstBuffer {
+  uint64_t lease = whip_speech_claim(WhipSpeechChat, "openai-realtime", "");
+  WhipPcmSpeechAudio *audio = [WhipPcmSpeechAudio new];
+  audio.lease = lease;
+  audio.format = [[AVAudioFormat alloc] initStandardFormatWithSampleRate:24000 channels:1];
+  TestCueAudioNode *node = [TestCueAudioNode new]; audio.node = node;
+  audio.beforePlayback = ^BOOL { return NO; };
+  node.onSchedule = ^{ XCTFail(@"Cancelled cue reached the speaker"); };
+  XCTestExpectation *written = [self expectationWithDescription:@"Superseded PCM is rejected"];
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    float samples[480] = {0};
+    XCTAssertFalse([audio write:samples count:480]);
+    [written fulfill];
+  });
+  [self waitForExpectations:@[written] timeout:2];
 }
 
 - (void)testLongAnnouncementContinuesBeyondBudgetWhenNothingElseIsWaiting {

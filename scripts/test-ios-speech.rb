@@ -40,7 +40,7 @@ end
 target = project.new_target(:unit_test_bundle, 'SpeechTests', :ios, '16.4')
 target.add_dependency(host)
 target.add_system_frameworks(%w[UIKit AVFoundation CoreMotion UserNotifications XCTest])
-%w[ios/HerdR/WhipSpeechPlayback.m ios/HerdR/HerdrBackground.m ios/Tests/WhipSpeechPlaybackTests.m ios/Tests/WhipSpeechPresentationTests.m ios/Tests/WhipDownloadExecutionTests.m].each do |path|
+%w[ios/HerdR/WhipSpeechPlayback.m ios/HerdR/HerdrBackground.m ios/Tests/WhipSpeechPlaybackTests.m ios/Tests/WhipSpeechPresentationTests.m ios/Tests/WhipDownloadExecutionTests.m ios/Tests/WhipCallPlaybackBoundaryTests.mm].each do |path|
   target.source_build_phase.add_file_reference(project.main_group.new_file(File.join(root, path)))
 end
 target.build_configurations.each do |config|
@@ -48,6 +48,7 @@ target.build_configurations.each do |config|
     'ARCHS' => 'arm64',
     'ONLY_ACTIVE_ARCH' => 'YES',
     'CLANG_ENABLE_OBJC_ARC' => 'YES',
+    'CLANG_CXX_LANGUAGE_STANDARD' => 'c++20',
     'GENERATE_INFOPLIST_FILE' => 'YES',
     'PRODUCT_BUNDLE_IDENTIFIER' => 'io.github.kaminarios.whip.speech-tests',
     'TEST_HOST' => '$(BUILT_PRODUCTS_DIR)/SpeechTestHost.app/SpeechTestHost',

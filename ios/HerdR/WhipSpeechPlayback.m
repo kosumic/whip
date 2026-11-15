@@ -99,6 +99,7 @@ static dispatch_queue_t WhipPcmSpeechWorker(void)
 @property(nonatomic) BOOL cancelled;
 @property(nonatomic) BOOL started;
 @property(nonatomic, copy) void (^onStarted)(void);
+@property(nonatomic, copy) BOOL (^beforePlayback)(void);
 @property(nonatomic, copy) void (^onLevel)(float);
 @property(nonatomic, copy) void (^onProgress)(NSUInteger, NSUInteger, BOOL);
 @property(nonatomic) NSUInteger scheduledSamples;
@@ -173,6 +174,7 @@ static dispatch_queue_t WhipPcmSpeechWorker(void)
     BOOL current = !self.cancelled && whip_speech_is_current(self.lease);
     [self.condition unlock];
     if (!current) return;
+    if (!self.started && self.beforePlayback && !self.beforePlayback()) { [self stop]; return; }
     [self.node scheduleBuffer:buffer completionCallbackType:AVAudioPlayerNodeCompletionDataPlayedBack completionHandler:^(AVAudioPlayerNodeCompletionCallbackType type) {
       [self.condition lock];
       if (self.queued) self.queued -= 1;
@@ -237,7 +239,7 @@ static AVSpeechSynthesisVoice *WhipConfiguredSystemVoice(NSString *identifier, N
 @property(nonatomic, strong) NSTimer *timer;
 @property(nonatomic, copy) dispatch_block_t completed;
 @property(nonatomic) BOOL active;
-- (void)start:(uint64_t)lease text:(NSString *)text voice:(NSString *)voice completed:(dispatch_block_t)completed;
+- (void)start:(uint64_t)lease text:(NSString *)text voice:(NSString *)voice beforePlayback:(BOOL (^)(void))beforePlayback completed:(dispatch_block_t)completed;
 - (void)cancel;
 @end
 
@@ -249,7 +251,7 @@ static AVSpeechSynthesisVoice *WhipConfiguredSystemVoice(NSString *identifier, N
   [self cancel];
   if (completed) completed();
 }
-- (void)start:(uint64_t)lease text:(NSString *)text voice:(NSString *)voice completed:(dispatch_block_t)completed
+- (void)start:(uint64_t)lease text:(NSString *)text voice:(NSString *)voice beforePlayback:(BOOL (^)(void))beforePlayback completed:(dispatch_block_t)completed
 {
   [self cancel];
   self.active = YES;
@@ -264,6 +266,7 @@ static AVSpeechSynthesisVoice *WhipConfiguredSystemVoice(NSString *identifier, N
   if (whip_speech_pcm_enabled(language.UTF8String, false)) {
     WhipPcmSpeechAudio *player = [WhipPcmSpeechAudio new];
     player.lease = lease;
+    player.beforePlayback = beforePlayback;
     self.pcm = player;
     NSError *error = nil;
     if (![player open:1 error:&error]) { [self finish]; return; }
@@ -284,6 +287,7 @@ static AVSpeechSynthesisVoice *WhipConfiguredSystemVoice(NSString *identifier, N
     self.utterance = [AVSpeechUtterance speechUtteranceWithString:text];
     self.utterance.voice = WhipConfiguredSystemVoice(voice, language, NO);
     if (!self.utterance.voice) { [self finish]; return; }
+    if (beforePlayback && !beforePlayback()) { [self finish]; return; }
     [self.speech speakUtterance:self.utterance];
   }
 }
@@ -978,9 +982,13 @@ static void WhipWakeAutomaticSpeech(void)
 }
 - (void)speakCallAnnouncement:(uint64_t)lease text:(NSString *)text completed:(dispatch_block_t)completed
 {
+  [self speakCallAnnouncement:lease text:text beforePlayback:nil completed:completed];
+}
+- (void)speakCallAnnouncement:(uint64_t)lease text:(NSString *)text beforePlayback:(BOOL (^)(void))beforePlayback completed:(dispatch_block_t)completed
+{
   [self cancelCallAnnouncement];
   self.callAnnouncement = [self newCallAnnouncement];
-  [self.callAnnouncement start:lease text:text voice:self.systemVoice completed:completed];
+  [self.callAnnouncement start:lease text:text voice:self.systemVoice beforePlayback:beforePlayback completed:completed];
 }
 - (WhipCallAnnouncement *)newCallAnnouncement { return [WhipCallAnnouncement new]; }
 - (void)cancelCallAnnouncement

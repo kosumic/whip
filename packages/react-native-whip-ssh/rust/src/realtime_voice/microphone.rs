@@ -6,7 +6,10 @@ use std::collections::VecDeque;
 pub(crate) const TOOL: &str = "voice_set_microphone";
 pub(crate) const MAX_MINUTES: u32 = 60;
 const OUTPUT_TAIL: Duration = Duration::from_millis(500);
-const MAX_ANNOUNCEMENTS: usize = 128;
+// A real pause in the continuous GPT-Live PCM stream is a speech boundary.
+const BOUNDARY_QUIET_MS: usize = 160;
+pub(super) const BOUNDARY_QUIET: Duration = Duration::from_millis(BOUNDARY_QUIET_MS as u64);
+pub(super) const QUIET_SAMPLES: usize = super::RATE * BOUNDARY_QUIET_MS / 1000;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -43,6 +46,9 @@ pub(super) struct State {
     deadline: Option<Instant>,
     announcements: VecDeque<bool>,
     announcement_id: u64,
+    pub(super) active: bool,
+    speaking: bool,
+    cancelled: bool,
     capture_after: Option<Instant>,
 }
 
@@ -56,15 +62,23 @@ impl State {
 
     pub fn cancel(&mut self) {
         self.deadline = None;
+        self.cancel_speech();
+    }
+
+    pub(super) fn cancel_speech(&mut self) {
+        // Keep an admitted cue reserved until native acknowledges stopping it.
+        // Otherwise a replacement response could start over its device tail.
+        if self.active {
+            self.announcements.truncate(1);
+            self.cancelled = true;
+            return;
+        }
         self.announcements.clear();
         self.announcement_id = self.announcement_id.saturating_add(1);
-        self.capture_after = None;
     }
 
     pub fn blocks_capture(&self, now: Instant) -> bool {
-        self.muted
-            || !self.announcements.is_empty()
-            || self.capture_after.is_some_and(|after| now < after)
+        self.muted || self.speaking || self.capture_after.is_some_and(|after| now < after)
     }
 
     pub fn announcement(&self, lease: u64) -> Option<serde_json::Value> {
@@ -73,6 +87,7 @@ impl State {
                 "id": self.announcement_id,
                 "lease": lease,
                 "text": if *muted { "Muted" } else { "Unmuted" },
+                "cancelled": self.cancelled,
             })
         })
     }
@@ -81,12 +96,105 @@ impl State {
         if self.announcement_id == id && !self.announcements.is_empty() {
             self.announcements.pop_front();
             self.announcement_id = self.announcement_id.saturating_add(1);
-            self.capture_after = Some(now + OUTPUT_TAIL);
+            if self.speaking {
+                self.capture_after = Some(now + OUTPUT_TAIL);
+            }
+            self.active = false;
+            self.speaking = false;
+            self.cancelled = false;
+        }
+    }
+
+    fn queue(&mut self, muted: bool) {
+        if self.active {
+            if !self.speaking {
+                self.cancelled = true;
+            }
+            self.announcements.truncate(1);
+            if self.announcements.front() != Some(&muted) || self.cancelled {
+                self.announcements.push_back(muted);
+            }
+        } else {
+            self.announcements.clear();
+            self.announcement_id = self.announcement_id.saturating_add(1);
+            self.announcements.push_back(muted);
         }
     }
 }
 
 impl RealtimeVoiceAdapter {
+    /// The output lock serializes reservation with native PCM reads. A stale
+    /// snapshot cannot admit speech or release another cue's reservation.
+    pub(super) fn announcement_start(&self, id: u64) -> bool {
+        let mut state = self.microphone.lock();
+        if self.closed.load(Ordering::Acquire)
+            || !self.speech.is_current()
+            || state.announcement_id != id
+            || state.active
+            || state.announcements.is_empty()
+        {
+            return false;
+        }
+        let output = self.output.lock();
+        if !output.announcement_boundary || output.played != output.delivered {
+            return false;
+        }
+        state.active = true;
+        true
+    }
+
+    /// Called synchronously before native playback. Model initialization must
+    /// not keep an unmuted microphone closed while the cue is being prepared.
+    pub(super) fn announcement_playing(&self, id: u64) -> bool {
+        let mut state = self.microphone.lock();
+        if self.closed.load(Ordering::Acquire)
+            || !self.speech.is_current()
+            || state.announcement_id != id
+            || !state.active
+            || state.cancelled
+        {
+            return false;
+        }
+        state.speaking = true;
+        true
+    }
+
+    pub(super) fn read_output(&self, samples: &mut [i16]) -> (u64, usize) {
+        let state = self.microphone.lock();
+        let mut output = self.output.lock();
+        let epoch = output.epoch;
+        if state.active {
+            return (epoch, 0);
+        }
+        let pending = !state.announcements.is_empty();
+        if !pending {
+            output.announcement_boundary = false;
+        }
+        if pending && output.at_speech_boundary(Instant::now()) {
+            output.announcement_boundary = true;
+        }
+        if output.announcement_boundary {
+            return (epoch, 0);
+        }
+        let limit = if pending {
+            output
+                .items
+                .iter()
+                .find(|item| item.end > output.delivered)
+                .filter(|item| item.finished)
+                .map_or(samples.len(), |item| item.end - output.delivered)
+                .min(samples.len())
+        } else {
+            samples.len()
+        };
+        let count = if pending {
+            output.read_until_boundary(&mut samples[..limit], true)
+        } else {
+            output.read(samples)
+        };
+        (epoch, count)
+    }
+
     /// All callers, including repeated manual commands, replace the deadline.
     pub(crate) fn set_microphone(
         &self,
@@ -102,7 +210,7 @@ impl RealtimeVoiceAdapter {
         {
             return Err("Wait for the voice call to reconnect before setting a timed mute.");
         }
-        self.update_microphone(&mut state, muted, duration, Instant::now())?;
+        self.update_microphone(&mut state, muted, duration, Instant::now());
         drop(state);
         self.command(Command::Mute(muted));
         if self.closed.load(Ordering::Acquire) {
@@ -118,10 +226,7 @@ impl RealtimeVoiceAdapter {
         muted: bool,
         duration: Option<Duration>,
         now: Instant,
-    ) -> Result<(), &'static str> {
-        if state.muted != muted && state.announcements.len() >= MAX_ANNOUNCEMENTS {
-            return Err("Microphone announcements are still playing. Try again shortly.");
-        }
+    ) {
         state.deadline = if muted {
             duration.map(|duration| now + duration)
         } else {
@@ -129,7 +234,7 @@ impl RealtimeVoiceAdapter {
         };
         if state.muted != muted {
             state.muted = muted;
-            state.announcements.push_back(muted);
+            state.queue(muted);
             // Invalidate queued and in-flight PCM on both edges. Live unmute
             // still waits for its matching provider acknowledgement.
             self.input.set_muted(true);
@@ -146,7 +251,6 @@ impl RealtimeVoiceAdapter {
         if matches!(view.phase, "listening" | "muted") {
             view.phase = if muted { "muted" } else { "listening" };
         }
-        Ok(())
     }
 
     pub(super) fn microphone_tick(&self, now: Instant) {
@@ -167,12 +271,7 @@ impl RealtimeVoiceAdapter {
         {
             return;
         }
-        if self
-            .update_microphone(&mut state, false, None, now)
-            .is_err()
-        {
-            return;
-        }
+        self.update_microphone(&mut state, false, None, now);
         drop(state);
         self.command(Command::Mute(false));
     }

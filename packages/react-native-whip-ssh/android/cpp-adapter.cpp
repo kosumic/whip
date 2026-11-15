@@ -136,6 +136,14 @@ Java_com_whipssh_RealtimeVoiceNative_announcementFinished(JNIEnv *, jclass, jlon
     whip_realtime_announcement_finished(call, announcement);
 }
 extern "C" JNIEXPORT jboolean JNICALL
+Java_com_whipssh_RealtimeVoiceNative_announcementStart(JNIEnv *, jclass, jlong call, jlong announcement) {
+    return whip_realtime_announcement_start(call, announcement);
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_whipssh_RealtimeVoiceNative_announcementPlaying(JNIEnv *, jclass, jlong call, jlong announcement) {
+    return whip_realtime_announcement_playing(call, announcement);
+}
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_whipssh_RealtimeVoiceNative_submitted(JNIEnv *env, jclass, jlong call, jstring text) {
     if (!text) return false;
     const auto value = speechUtf8(env, text);

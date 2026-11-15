@@ -71,6 +71,7 @@ impl RealtimeVoiceAdapter {
         // to the logical call, which may outlive this provider generation.
         self.ready.store(false, Ordering::Release);
         self.input.set_muted(true);
+        self.microphone.lock().cancel_speech();
         if let Some(global) = self.global.lock().take() {
             global.close();
         }

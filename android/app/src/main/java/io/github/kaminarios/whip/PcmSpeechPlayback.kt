@@ -125,6 +125,13 @@ object PcmSpeechPlayback {
     begin(lease, rate, attributes, retained = false).enqueue(text, started, level, ended, progress, captionId)
   }
 
+  fun startGuarded(lease: Long, text: String, attributes: AudioAttributes,
+                   beforePlayback: () -> Boolean, ended: (Boolean, Boolean, String?) -> Unit) {
+    stop()
+    begin(lease, 1.0, attributes, retained = false, beforePlayback = beforePlayback)
+      .enqueue(text, {}, {}, ended, { _, _, _ -> }, 0L)
+  }
+
   /** Voice chat may prepare one following utterance while this track is playing. */
   fun enqueue(lease: Long, text: String, attributes: AudioAttributes,
               started: () -> Unit, level: (Float) -> Unit, ended: (Boolean, Boolean, String?) -> Unit) =
@@ -138,8 +145,9 @@ object PcmSpeechPlayback {
     current.enqueue(text, started, level, ended, progress, captionId)
   }
 
-  private fun begin(lease: Long, rate: Double, attributes: AudioAttributes, retained: Boolean): Player {
-    val next = Player(lease, rate, attributes, retained)
+  private fun begin(lease: Long, rate: Double, attributes: AudioAttributes, retained: Boolean,
+                    beforePlayback: () -> Boolean = { true }): Player {
+    val next = Player(lease, rate, attributes, retained, beforePlayback)
     player = next
     audioWorker.execute {
       Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
@@ -163,7 +171,8 @@ object PcmSpeechPlayback {
     stopped?.stop()
   }
 
-  private class Player(val lease: Long, val rate: Double, val attributes: AudioAttributes, val retained: Boolean) {
+  private class Player(val lease: Long, val rate: Double, val attributes: AudioAttributes, val retained: Boolean,
+                       val beforePlayback: () -> Boolean) {
     private class Utterance(
       val started: () -> Unit,
       val level: (Float) -> Unit,
@@ -351,6 +360,16 @@ object PcmSpeechPlayback {
       val output = track ?: return@synchronized
       val buffered = frames - Integer.toUnsignedLong(output.playbackHeadPosition)
       if (!playing && current() && buffered > 0) {
+        if (!beforePlayback()) {
+          val pending = utterances.peek()
+          main.post {
+            if (player === this) {
+              PcmSpeechPlayback.stop()
+              pending?.ended?.invoke(false, false, "Call announcement cancelled")
+            }
+          }
+          return@synchronized
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) output.setStartThresholdInFrames(minOf(buffered, prefillSamples.toLong()).toInt())
         output.play()
         playing = true

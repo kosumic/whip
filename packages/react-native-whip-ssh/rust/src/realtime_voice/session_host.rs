@@ -597,6 +597,17 @@ impl Delegate for App<'_> {
         if !config.webrtc || !matches!(event, ServerEvent::ResponseOutputAudioDone { .. }) {
             owner.output.lock().transcript.observe(&event, ignored);
         }
+        if !config.webrtc
+            && let ServerEvent::ResponseOutputAudioDone {
+                ref item_id,
+                content_index,
+                ref response_id,
+                ..
+            } = event
+            && !ignored.contains(response_id)
+        {
+            owner.output.lock().finish_audio(item_id, content_index);
+        }
         if let ServerEvent::ResponseFunctionCallArgumentsDone {
             call_id,
             name,

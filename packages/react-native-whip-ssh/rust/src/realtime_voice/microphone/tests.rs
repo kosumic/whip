@@ -3,6 +3,7 @@ use crate::realtime_voice::playback_owner_with_commands;
 use voice_call_openai::session::Audio;
 
 mod provider;
+mod scheduling;
 
 fn owner(
     live: bool,
@@ -54,7 +55,7 @@ fn minutes_are_optional_positive_bounded_numbers_and_only_apply_to_mute() {
 }
 
 #[test]
-fn expiry_changes_shared_view_without_ending_the_call_and_announces_each_edge()
+fn expiry_changes_shared_view_and_coalesces_unheard_state_without_ending_the_call()
 -> Result<(), &'static str> {
     let (owner, _commands) = playback_owner_with_commands()?;
     owner.set_microphone(true, Some(Duration::from_secs(600)))?;
@@ -70,9 +71,9 @@ fn expiry_changes_shared_view_without_ending_the_call_and_announces_each_edge()
     assert!(!owner.view.lock().muted);
     assert_eq!(owner.view.lock().phase, "listening");
     assert!(!owner.closed.load(Ordering::Acquire));
-    assert_eq!(owner.microphone.lock().announcements, [true, false]);
+    assert_eq!(owner.microphone.lock().announcements, [false]);
     owner.microphone_tick(deadline + Duration::from_secs(600));
-    assert_eq!(owner.microphone.lock().announcements.len(), 2);
+    assert_eq!(owner.microphone.lock().announcements.len(), 1);
     owner.close();
     Ok(())
 }
@@ -98,7 +99,7 @@ fn manual_and_overlapping_agent_commands_replace_the_deadline_without_duplicate_
     owner.microphone_tick(new);
     assert!(owner.view.lock().muted);
     assert!(owner.microphone.lock().deadline.is_none());
-    assert_eq!(owner.microphone.lock().announcements, [true, false, true]);
+    assert_eq!(owner.microphone.lock().announcements, [true]);
     owner.set_microphone(false, None)?;
     owner.microphone_tick(new + Duration::from_secs(600));
     assert!(!owner.view.lock().muted);
@@ -170,7 +171,7 @@ fn concurrent_commands_and_a_replacement_owner_cannot_be_reversed_by_old_deadlin
 }
 
 #[test]
-fn reconnect_and_rotation_preserve_the_absolute_deadline_and_transition_speech()
+fn reconnect_and_rotation_preserve_the_deadline_and_retire_old_transition_speech()
 -> Result<(), &'static str> {
     use crate::realtime_voice::recovery;
     use voice_call_openai::continuity::Reason;
@@ -208,12 +209,12 @@ fn reconnect_and_rotation_preserve_the_absolute_deadline_and_transition_speech()
         }
         owner.microphone_tick(deadline);
         assert!(!owner.view.lock().muted);
-        assert_eq!(owner.microphone.lock().announcements, [true, false]);
+        assert_eq!(owner.microphone.lock().announcements, [false]);
         assert!(owner.microphone.lock().deadline.is_none());
         // Realtime resumes immediately; GPT-Live still needs its provider ack.
         assert_eq!(owner.input.accepts(owner.input.generation()), !live);
         owner.microphone_tick(deadline + Duration::from_secs(600));
-        assert_eq!(owner.microphone.lock().announcements, [true, false]);
+        assert_eq!(owner.microphone.lock().announcements, [false]);
         owner.close();
     }
     Ok(())
@@ -309,34 +310,32 @@ fn revoked_credentials_cancel_the_deadline_even_during_recovery() -> Result<(), 
 }
 
 #[test]
-fn backend_announcements_keep_capture_suppressed_until_playback_and_the_device_tail_finish()
--> Result<(), &'static str> {
+fn waiting_unmute_captures_but_admitted_speech_and_its_tail_do_not() -> Result<(), &'static str> {
     let (owner, _commands) = playback_owner_with_commands()?;
     owner.set_microphone(true, None)?;
     owner.set_microphone(false, None)?;
     let now = Instant::now();
-    let generation = owner.input.generation();
-    assert!(owner.capture(&[1000; 480], generation, now));
-    assert_eq!(owner.input.diagnostics().0, 0);
+    assert!(!owner.microphone.lock().blocks_capture(now));
+    assert!(owner.capture(&[1000; 480], owner.input.generation(), now));
+    assert_eq!(owner.input.diagnostics().0, 1);
+    let announcement = owner
+        .microphone
+        .lock()
+        .announcement(owner.speech.id())
+        .ok_or("Missing cue")?;
+    let id = announcement["id"].as_u64().ok_or("Missing identity")?;
+    assert_eq!(announcement["text"], "Unmuted");
+    assert_eq!(announcement["lease"], owner.speech.id());
+    owner.read_output(&mut [0; 480]); // Reserve idle output.
+    assert!(owner.announcement_start(id));
+    assert!(!owner.announcement_start(id));
+    assert!(!owner.microphone.lock().blocks_capture(now)); // Backend may be loading.
+    assert!(owner.announcement_playing(id));
+    assert!(owner.capture(&[1000; 480], owner.input.generation(), now));
+    assert_eq!(owner.input.diagnostics().0, 1); // Cue PCM cannot enter capture.
     let mut state = owner.microphone.lock();
-    let muted = state
-        .announcement(owner.speech.id())
-        .ok_or("Missing announcement")?;
-    assert_eq!(muted["text"], "Muted");
-    assert_eq!(muted["lease"], owner.speech.id());
-    assert_eq!(state.announcement(owner.speech.id()), Some(muted.clone()));
-    let id = muted["id"]
-        .as_u64()
-        .ok_or("Missing announcement identity")?;
+    assert!(state.blocks_capture(now + OUTPUT_TAIL));
     state.announcement_finished(id, now);
-    let unmuted = state
-        .announcement(owner.speech.id())
-        .ok_or("Missing unmute announcement")?;
-    assert_eq!(unmuted["text"], "Unmuted");
-    state.announcement_finished(id, now); // Old completion cannot consume its successor.
-    assert_eq!(state.announcement(owner.speech.id()), Some(unmuted.clone()));
-    assert!(state.blocks_capture(now + OUTPUT_TAIL)); // Synthesis may still be running.
-    state.announcement_finished(unmuted["id"].as_u64().ok_or("Missing identity")?, now);
     assert!(state.blocks_capture(now));
     assert!(!state.blocks_capture(now + OUTPUT_TAIL));
     drop(state);

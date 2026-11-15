@@ -76,6 +76,7 @@ internal object RealtimeVoice {
     var monitor: Runnable? = null
     var announcement: CallAnnouncementSpeaker? = null
     var announcementId = -1L
+    val announcementBoundary = CallPlaybackBoundary()
     @Volatile var boundary = CaptureBoundary()
     @Volatile var playedAudioSamples = 0L
     @Volatile var playedAudioPeak = 0
@@ -200,11 +201,18 @@ internal object RealtimeVoice {
           val state = JSONObject(view)
           val phase = state.optString("phase")
           val announcement = state.optJSONObject("microphoneAnnouncement")
-          if (!preview && announcement != null && announcement.getLong("id") != session.announcementId) {
+          if (!preview && announcement?.optBoolean("cancelled") == true) {
+            session.announcement?.cancel()
+            Core.announcementFinished(session.call, announcement.getLong("id"))
+          } else if (!preview && announcement != null && announcement.getLong("id") != session.announcementId &&
+            session.announcementBoundary.admit(session.output?.playbackHeadPosition?.toLong()?.and(0xffffffffL) ?: 0L) {
+              Core.announcementStart(session.call, announcement.getLong("id"))
+            }) {
             val id = announcement.getLong("id")
             session.announcementId = id
             val speaker = session.announcement ?: CallAnnouncementSpeaker(context).also { session.announcement = it }
-            speaker.speak(announcement.getLong("lease"), announcement.getString("text")) {
+            speaker.speak(announcement.getLong("lease"), announcement.getString("text"),
+              { Core.announcementPlaying(session.call, id) }) {
               Core.announcementFinished(session.call, id)
             }
           } else if (announcement == null) session.announcement?.cancel()
@@ -369,7 +377,7 @@ internal object RealtimeVoice {
         // AudioTrack's bounded buffer and WRITE_BLOCKING below pace output.
         // A separate queue cap can prevent reaching its start threshold,
         // especially after Bluetooth increases the platform buffer size.
-        val audioCount = Core.read(session.call, pcm, epoch)
+        val audioCount = session.announcementBoundary.read(submitted) { Core.read(session.call, pcm, epoch) }
         if (audioCount > 0) {
           var peak = 0
           for (index in 0 until audioCount) peak = maxOf(peak, kotlin.math.abs(pcm[index].toInt()))

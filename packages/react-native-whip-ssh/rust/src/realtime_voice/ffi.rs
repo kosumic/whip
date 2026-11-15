@@ -213,6 +213,16 @@ pub extern "C" fn whip_realtime_announcement_finished(id: u64, announcement: u64
     }
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn whip_realtime_announcement_start(id: u64, announcement: u64) -> bool {
+    call(id).is_some_and(|call| call.announcement_start(announcement))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn whip_realtime_announcement_playing(id: u64, announcement: u64) -> bool {
+    call(id).is_some_and(|call| call.announcement_playing(announcement))
+}
+
 /// # Safety
 /// `text` points to `length` live UTF-8 bytes for this synchronous call.
 #[unsafe(no_mangle)]
@@ -311,13 +321,11 @@ pub unsafe extern "C" fn whip_realtime_read(
     }
     // SAFETY: Native output worker owns these buffers throughout the call.
     let samples = unsafe { std::slice::from_raw_parts_mut(samples, capacity) };
-    let mut output = call.output.lock();
+    let (generation, count) = call.read_output(samples);
     // SAFETY: epoch is a non-null writable pointer supplied by native code.
     unsafe {
-        *epoch = output.epoch;
+        *epoch = generation;
     }
-    let count = output.read(samples);
-    drop(output);
     if count > 0 {
         let mut view = call.view.lock();
         view.playback_level = peak(&samples[..count]);
