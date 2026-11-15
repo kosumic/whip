@@ -218,7 +218,8 @@ pub struct HostActionPermit {
     operation_id: String,
     coordinator: Weak<HostActionCoordinator>,
     owner: Weak<ReverseControl>,
-    session: super::ReverseControlSession,
+    session: Option<super::ReverseControlSession>,
+    voice: Option<Weak<super::voice::WhipToolSession>>,
     parent: String,
     coordinator_epoch: u64,
     runtime_epoch: u64,
@@ -256,6 +257,17 @@ impl HostActionPermit {
                 return Err(HostActionPermitError::Cancelled);
             }
         }
+        if let Some(voice) = &self.voice {
+            return voice
+                .upgrade()
+                .ok_or(HostActionPermitError::Cancelled)?
+                .check()
+                .map_err(|_| HostActionPermitError::Cancelled);
+        }
+        let session = self
+            .session
+            .as_ref()
+            .ok_or(HostActionPermitError::Unauthorized)?;
         let owner = self
             .owner
             .upgrade()
@@ -268,11 +280,11 @@ impl HostActionPermit {
         }
         let sessions = owner.sessions.lock();
         let current = sessions
-            .get(&self.session.session_id)
+            .get(&session.session_id)
             .ok_or(HostActionPermitError::Unauthorized)?;
-        if current.info.runtime_id != self.session.runtime_id
-            || current.info.pane_id != self.session.pane_id
-            || current.info.terminal_id != self.session.terminal_id
+        if current.info.runtime_id != session.runtime_id
+            || current.info.pane_id != session.pane_id
+            || current.info.terminal_id != session.terminal_id
         {
             return Err(HostActionPermitError::Unauthorized);
         }
@@ -280,7 +292,7 @@ impl HostActionPermit {
             .pending
             .lock()
             .get(&self.parent)
-            .is_none_or(|call| call.session != self.session.session_id)
+            .is_none_or(|call| call.session != session.session_id)
         {
             return Err(HostActionPermitError::Cancelled);
         }
@@ -407,6 +419,40 @@ impl Drop for Operation {
 }
 
 impl Operation {
+    fn begin_voice(voice: &Arc<super::voice::WhipToolSession>) -> Result<Self, BrowserError> {
+        voice.check()?;
+        let coordinator = registry()
+            .lock()
+            .upgrade()
+            .ok_or_else(|| BrowserError::new(ErrorCode::Cancelled, "App controls detached"))?;
+        let permit = {
+            let mut state = coordinator.state.lock();
+            let permit = Arc::new(HostActionPermit {
+                operation_id: uuid::Uuid::new_v4().to_string(),
+                coordinator: Arc::downgrade(&coordinator),
+                owner: Weak::new(),
+                session: None,
+                voice: Some(Arc::downgrade(voice)),
+                parent: String::new(),
+                coordinator_epoch: state.epoch,
+                runtime_epoch: 0,
+                stopped: AtomicBool::new(false),
+                progress: Mutex::default(),
+                profiles: Mutex::default(),
+            });
+            state
+                .active
+                .insert(permit.operation_id.clone(), Arc::downgrade(&permit));
+            permit
+        };
+        let operation = Self {
+            coordinator,
+            permit,
+        };
+        operation.permit.check()?;
+        Ok(operation)
+    }
+
     fn begin(
         owner: &Arc<ReverseControl>,
         session: &str,
@@ -435,7 +481,8 @@ impl Operation {
                 operation_id: uuid::Uuid::new_v4().to_string(),
                 coordinator: Arc::downgrade(&coordinator),
                 owner: Arc::downgrade(owner),
-                session,
+                session: Some(session),
+                voice: None,
                 parent: parent.to_owned(),
                 coordinator_epoch: state.epoch,
                 runtime_epoch: owner.epoch.load(Ordering::Acquire),
@@ -576,7 +623,9 @@ impl Operation {
         let bridge = owner.bridge.lock();
         let sessions = owner.sessions.lock();
         let mut pending = owner.pending.lock();
-        let identity = &self.permit.session;
+        let Some(identity) = &self.permit.session else {
+            return;
+        };
         let valid_session = sessions.get(&identity.session_id).is_some_and(|session| {
             session.info.runtime_id == identity.runtime_id
                 && session.info.pane_id == identity.pane_id

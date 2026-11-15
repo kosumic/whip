@@ -8,8 +8,10 @@ import type { AppTab } from '../types';
 
 export interface GlobalVoiceApproval {
   hostId: string;
-  paneId: string;
+  paneId?: string;
   prompt: string;
+  operation?: string;
+  hostLabel?: string;
 }
 export interface GlobalVoiceControlContext {
   navigation: AppNavigationController;
@@ -22,6 +24,7 @@ export interface GlobalVoiceControlContext {
 /** Presentation/OS adapter. Rust validates names, arguments and call rights. */
 export class GlobalVoiceControl {
   private readonly operations = new Map<string, Set<AbortController>>();
+  private readonly systemPromptOperations = new Set<AbortController>();
   private disposed = false;
   private operationSequence = 0;
   private readonly deviceSessions = new Set<string>();
@@ -33,7 +36,7 @@ export class GlobalVoiceControl {
       cancel: id => this.cancel(id),
     });
     this.appStateSubscription = AppState.addEventListener('change', state => {
-      if (state !== 'active') this.suspend();
+      if (state !== 'active') this.suspend(state === 'inactive');
     });
   }
 
@@ -57,11 +60,31 @@ export class GlobalVoiceControl {
       const args = JSON.parse(argumentsJson) as Record<string, string>;
       const context = this.context();
       let value: unknown;
-      if (action === 'confirm_delegation') {
+      if (action === 'watch_operation') {
+        // Native host authentication and OS permission sheets can temporarily
+        // make iOS inactive. Background/lock still cancels the operation.
+        this.systemPromptOperations.add(abort);
+        await new Promise<void>(resolve => abort.signal.addEventListener('abort', () => resolve(), { once: true }));
+        check();
+        value = {};
+      } else if (action === 'confirm_operation') {
+        const original = args.arguments as unknown as Record<string, unknown>;
+        const host = args.host as unknown as { name: string; username: string; host: string; port: string } | null;
+        const approved = await context.confirm({
+          hostId: String(original.host_id),
+          hostLabel: host ? `${host.name} · ${host.username}@${host.host}:${host.port} (${String(original.host_id)})` : undefined,
+          paneId: typeof original.pane_id === 'string' ? original.pane_id : undefined,
+          operation: args.operation,
+          prompt: JSON.stringify(original, null, 2),
+        }, abort.signal);
+        check();
+        value = { approved };
+      } else if (action === 'confirm_delegation') {
         const approved = await context.confirm({ hostId: args.host_id, paneId: args.pane_id, prompt: args.prompt }, abort.signal);
         check();
         value = { approved };
       } else if (action.startsWith('device.')) {
+        if (action === 'device.location') this.systemPromptOperations.add(abort);
         this.deviceSessions.add(id);
         value = await deviceAction(action, args, `${id}:${++this.operationSequence}`, abort.signal, { sessionId: id });
         check();
@@ -87,10 +110,13 @@ export class GlobalVoiceControl {
       }
       check();
       return JSON.stringify(value);
-    } catch {
+    } catch (error) {
       // Native/OS error bodies can include credentials or private platform data.
-      return JSON.stringify({ error: 'unavailable_or_denied' });
+      const code = (error as { code?: string } | null)?.code;
+      const safeCode = ['permission_denied', 'device_unavailable', 'location_unavailable', 'timeout', 'cancelled'].includes(code ?? '') ? code : 'unavailable_or_denied';
+      return JSON.stringify({ error: safeCode });
     } finally {
+      this.systemPromptOperations.delete(abort);
       operations.delete(abort);
       if (operations.size === 0 && this.operations.get(id) === operations) this.operations.delete(id);
     }
@@ -103,7 +129,16 @@ export class GlobalVoiceControl {
   }
 
   /** Cancel privileged work without revoking the call's audio owner. */
-  suspend(): void {
-    for (const id of new Set([...this.operations.keys(), ...this.deviceSessions])) this.cancel(id);
+  suspend(systemPrompt = false): void {
+    for (const id of new Set([...this.operations.keys(), ...this.deviceSessions])) {
+      if (!systemPrompt) this.cancel(id);
+      else {
+        const operations = this.operations.get(id) ?? new Set<AbortController>();
+        for (const operation of operations) {
+          if (!this.systemPromptOperations.has(operation)) operation.abort();
+        }
+        if (![...operations].some(operation => this.systemPromptOperations.has(operation)) && this.deviceSessions.delete(id)) closeDeviceSession(id);
+      }
+    }
   }
 }

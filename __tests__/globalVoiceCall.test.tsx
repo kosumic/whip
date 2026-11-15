@@ -157,6 +157,24 @@ test('a revoked native delegation confirmation resolves as denied and removes th
   } finally { await act(async () => view?.unmount()); }
 });
 
+test('a disconnected host operation displays its name and exact arguments and requires approval', async () => {
+  const ref = createRef<GlobalVoiceCallHandle>();
+  let view!: ReactTestRenderer;
+  try {
+    await act(async () => { view = create(<GlobalVoiceCall ref={ref} onConfigureOpenAi={jest.fn()} navigation={{} as never} sessions={{ presentationSessions: [] } as never} locked={false} visible />); });
+    await act(async () => ref.current!.open());
+    const prompt = JSON.stringify({ host_id: 'build-host', command: 'git status', cwd: '/repo' }, null, 2);
+    let pending!: Promise<boolean>;
+    await act(async () => { pending = mockContext().confirm({ hostId: 'build-host', operation: 'terminal_exec', prompt }, new AbortController().signal); });
+    for (const text of ['globalCall.confirmOperation', 'terminal_exec', 'build-host', prompt, 'globalCall.approveOperation']) {
+      expect(view.root.findAllByType(Text).some(node => node.props.children === text)).toBe(true);
+    }
+    const approve = view.root.findAllByType('Button' as never).find(node => node.findAllByType(Text).some(text => text.props.children === 'globalCall.approveOperation'));
+    await act(async () => approve!.props.onPress());
+    expect(await pending).toBe(true);
+  } finally { await act(async () => view?.unmount()); }
+});
+
 test('locking hides the existing call and denies its approval without remounting or replaying on unlock', async () => {
   const ref = createRef<GlobalVoiceCallHandle>();
   let view!: ReactTestRenderer;

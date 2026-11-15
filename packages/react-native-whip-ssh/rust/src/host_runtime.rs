@@ -832,10 +832,21 @@ impl HostRuntime {
         &self,
         request: crate::reverse_control::herdr::Request,
     ) -> Result<serde_json::Value, crate::herdr_api::HerdrControlError> {
+        self.request_from_reverse_agent_in_generation(request, None)
+            .await
+    }
+
+    pub(crate) async fn request_from_reverse_agent_in_generation(
+        &self,
+        request: crate::reverse_control::herdr::Request,
+        expected_generation: Option<u64>,
+    ) -> Result<serde_json::Value, crate::herdr_api::HerdrControlError> {
         use crate::herdr_api::{HerdrControlError, HerdrControlRequest};
         let (generation, protocol, closing_terminal) = {
             let state = self.inner.state.lock();
-            if state.connection != HostConnectionState::Connected {
+            if state.connection != HostConnectionState::Connected
+                || expected_generation.is_some_and(|expected| expected != state.generation)
+            {
                 return Err(HerdrControlError::TransportDisconnected(
                     "Host is disconnected".into(),
                 ));

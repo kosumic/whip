@@ -1,4 +1,6 @@
 export const zhHant: Record<string, string> = {
+  'globalCall.confirmOperation': "允許此操作？",
+  'globalCall.approveOperation': "允許操作",
   'stt.title': '語音轉文字供應商',
   'stt.localHelp': '聽寫使用裝置端語音辨識。語音通話和語音合成設定相互獨立。',
   'stt.openaiHelp': '點擊麥克風錄音，停止後使用 OpenAI 轉錄。音訊、草稿和最近的聊天上下文會傳送給 OpenAI，並產生 API 費用。',

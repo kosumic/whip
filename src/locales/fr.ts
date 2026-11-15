@@ -1,6 +1,8 @@
 import type { en } from './en';
 
 export const fr = {
+  'globalCall.confirmOperation': "Autoriser cette opération ?",
+  'globalCall.approveOperation': "Autoriser l’opération",
   'stt.title': 'Fournisseur de transcription vocale',
   'stt.localHelp': 'La dictée utilise la reconnaissance vocale sur l’appareil. Les réglages des appels et de la synthèse vocale sont indépendants.',
   'stt.openaiHelp': 'Touchez le microphone pour enregistrer, puis arrêtez pour transcrire avec OpenAI. L’audio, le brouillon et le contexte récent du chat sont envoyés à OpenAI. Des frais API s’appliquent.',

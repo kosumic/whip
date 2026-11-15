@@ -1,4 +1,6 @@
 export const en = {
+  'globalCall.confirmOperation': "Allow this operation?",
+  'globalCall.approveOperation': "Allow operation",
   'voiceUsage.terminal': 'Terminal call',
   'voiceUsage.resumeTruncated': 'Some earlier conversation text was omitted to fit the saved-context limit.',
   'voiceUsage.resume': 'Resume call',

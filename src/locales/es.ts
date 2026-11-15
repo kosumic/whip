@@ -1,4 +1,6 @@
 export const es = {
+  'globalCall.confirmOperation': "¿Permitir esta operación?",
+  'globalCall.approveOperation': "Permitir operación",
   'stt.title': 'Proveedor de voz a texto',
   'stt.localHelp': 'El dictado usa el reconocimiento de voz del dispositivo. Los ajustes de llamadas y síntesis de voz son independientes.',
   'stt.openaiHelp': 'Toca el micrófono para grabar y detén la grabación para transcribir con OpenAI. El audio, el borrador y el contexto reciente del chat se envían a OpenAI. Se aplican cargos de la API.',

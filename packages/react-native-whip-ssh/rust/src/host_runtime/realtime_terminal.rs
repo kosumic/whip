@@ -19,6 +19,137 @@ pub(crate) const MAX_OUTPUT: usize = 12 * 1024;
 pub(crate) const CHANGED: &str = "The bound terminal disconnected or changed. Please call again.";
 static PROCESS_EPOCH: LazyLock<String> = LazyLock::new(|| uuid::Uuid::new_v4().to_string());
 
+/// Fence explicit global-call control targets across approval and reconnects.
+pub(crate) struct ControlTarget {
+    connection: Arc<PinnedTerminal>,
+    recovery: u64,
+    arguments: Value,
+    identities: Value,
+}
+impl ControlTarget {
+    pub(crate) fn runtime(&self) -> Arc<HostRuntime> {
+        self.connection.runtime.clone()
+    }
+    pub(crate) fn generation(&self) -> u64 {
+        self.connection.target.connection_generation
+    }
+
+    pub(crate) fn pin(host: String, arguments: Value) -> Result<Self, &'static str> {
+        let connection = PinnedTerminal::pin_host(host, None)?;
+        let recovery = connection
+            .runtime
+            .inner
+            .state
+            .lock()
+            .herdr_recovery_revision;
+        let mut target = Self {
+            connection,
+            recovery,
+            arguments,
+            identities: Value::Null,
+        };
+        target.identities = target.identities()?;
+        Ok(target)
+    }
+
+    fn identities(&self) -> Result<Value, &'static str> {
+        self.connection.check()?;
+        let state = self.connection.runtime.inner.state.lock();
+        let host = state.host_state.projection();
+        if state.herdr_recovery_revision != self.recovery
+            || host.sync_status != HostSyncStatus::Synced
+            || host.freshness != HostFreshness::Fresh
+        {
+            return Err(CHANGED);
+        }
+        let snapshot = host.snapshot.ok_or(CHANGED)?;
+        self.snapshot_identities(&snapshot)
+    }
+
+    fn snapshot_identities(
+        &self,
+        snapshot: &crate::HerdrSessionSnapshot,
+    ) -> Result<Value, &'static str> {
+        let mut identities = Vec::new();
+        for field in ["workspace_id", "tab_id", "pane_id", "terminal_id"] {
+            let Some(id) = self.arguments[field].as_str() else {
+                continue;
+            };
+            let identity = match field {
+                "workspace_id"
+                    if snapshot
+                        .workspaces
+                        .iter()
+                        .any(|item| item.workspace_id == id) =>
+                {
+                    json!([field, id])
+                }
+                "tab_id" => snapshot
+                    .tabs
+                    .iter()
+                    .find(|item| item.tab_id == id)
+                    .map(|item| json!([field, id, item.workspace_id]))
+                    .ok_or(CHANGED)?,
+                "pane_id" | "terminal_id" => {
+                    let pane = snapshot
+                        .panes
+                        .iter()
+                        .find(|item| {
+                            if field == "pane_id" {
+                                item.pane_id == id
+                            } else {
+                                item.terminal_id == id
+                            }
+                        })
+                        .ok_or(CHANGED)?;
+                    if self.arguments["pane_id"]
+                        .as_str()
+                        .is_some_and(|id| id != pane.pane_id)
+                        || self.arguments["terminal_id"]
+                            .as_str()
+                            .is_some_and(|id| id != pane.terminal_id)
+                    {
+                        return Err(CHANGED);
+                    }
+                    json!([
+                        field,
+                        pane.pane_id,
+                        pane.terminal_id,
+                        pane.tab_id,
+                        pane.workspace_id,
+                        pane.agent,
+                        pane.agent_session
+                    ])
+                }
+                _ => return Err(CHANGED),
+            };
+            identities.push(identity);
+        }
+        Ok(json!(identities))
+    }
+
+    pub(crate) fn check_snapshot(
+        &self,
+        snapshot: &crate::HerdrSessionSnapshot,
+    ) -> Result<(), &'static str> {
+        self.check_targets()?;
+        if self.snapshot_identities(snapshot)? != self.identities {
+            return Err(CHANGED);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn check_targets(&self) -> Result<(), &'static str> {
+        if self.identities()? != self.identities {
+            return Err(CHANGED);
+        }
+        Ok(())
+    }
+    pub(crate) fn check_connection(&self) -> Result<(), &'static str> {
+        self.connection.check()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct TerminalTarget {
@@ -41,6 +172,7 @@ pub(crate) struct PinnedTerminal {
     operation_epoch: Option<u64>,
     recovery: u64,
     output: Mutex<TextTail>,
+    host_cwd: Option<Option<String>>,
 }
 
 static OBSERVERS: OnceLock<Mutex<Vec<Weak<PinnedTerminal>>>> = OnceLock::new();
@@ -66,6 +198,38 @@ pub(super) fn observe_output(inner: &Arc<RuntimeInner>, terminal: &str, epoch: u
 }
 
 impl PinnedTerminal {
+    pub(crate) fn host_scoped(&self) -> bool {
+        self.host_cwd.is_some()
+    }
+
+    /// A global call pins a connection, never an interactive terminal or UI focus.
+    pub(crate) fn pin_host(id: String, cwd: Option<String>) -> Result<Arc<Self>, &'static str> {
+        let runtime = get_host_runtime(id.clone()).ok_or(CHANGED)?;
+        let (generation, recovery) = {
+            let state = runtime.inner.state.lock();
+            (state.generation, state.herdr_recovery_revision)
+        };
+        let pinned = Arc::new(Self {
+            target: TerminalTarget {
+                runtime_id: id,
+                runtime_incarnation: runtime.inner.incarnation,
+                connection_generation: generation,
+                terminal_id: String::new(),
+                pane_id: None,
+                operation_epoch: None,
+                recovery_revision: None,
+                process_epoch: None,
+            },
+            runtime,
+            recovery,
+            operation_epoch: None,
+            output: Mutex::default(),
+            host_cwd: Some(cwd),
+        });
+        pinned.check()?;
+        Ok(pinned)
+    }
+
     pub(crate) fn pin(target: TerminalTarget) -> Result<Arc<Self>, &'static str> {
         if target
             .process_epoch
@@ -105,6 +269,7 @@ impl PinnedTerminal {
             operation_epoch,
             recovery,
             output: Mutex::default(),
+            host_cwd: None,
         });
         pinned.check_fresh()?;
         let mut observers = observers().lock();
@@ -129,6 +294,9 @@ impl PinnedTerminal {
             || self.runtime.inner.incarnation != self.target.runtime_incarnation
         {
             return Err(CHANGED);
+        }
+        if self.host_cwd.is_some() {
+            return Ok(());
         }
         if let Some(pane_id) = &self.target.pane_id {
             if state.herdr_recovery_revision != self.recovery {
@@ -189,7 +357,9 @@ impl PinnedTerminal {
 
     pub(crate) fn context(&self) -> Result<Value, &'static str> {
         self.check_fresh()?;
-        let cwd = if let Some(pane_id) = &self.target.pane_id {
+        let cwd = if let Some(cwd) = &self.host_cwd {
+            cwd.clone()
+        } else if let Some(pane_id) = &self.target.pane_id {
             self.runtime
                 .inner
                 .state

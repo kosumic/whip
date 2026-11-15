@@ -25,6 +25,43 @@ pub(crate) enum HostAction {
 }
 
 impl HostAction {
+    pub(in crate::reverse_control) async fn run_voice(
+        self,
+        voice: &Arc<crate::reverse_control::voice::WhipToolSession>,
+    ) -> Result<Value, BrowserError> {
+        if !matches!(self, Self::Connect(_) | Self::Disconnect(_)) {
+            return Err(BrowserError::new(
+                ErrorCode::PermissionDenied,
+                "Outside voice host authority",
+            ));
+        }
+        let operation = Operation::begin_voice(voice)?;
+        let Ok(_serial) = operation.coordinator.mutation.try_lock() else {
+            return Err(BrowserError::new(
+                ErrorCode::DeviceUnavailable,
+                "A host mutation is already running",
+            ));
+        };
+        let name = self.name();
+        let value = self.execute(&operation, "").await.map_err(|error| {
+            let mut error = operation.permit.with_progress(error);
+            // Authentication/credential failures cannot have changed a connection.
+            error.details["outcome_unknown"] = json!(
+                matches!(
+                    error.details["stage"].as_str(),
+                    Some("connect" | "disconnect")
+                ) || error.details["completed_stages"]
+                    .as_array()
+                    .is_some_and(|stages| stages
+                        .iter()
+                        .any(|stage| matches!(stage.as_str(), Some("connect" | "disconnect"))))
+            );
+            error
+        })?;
+        operation.permit.check()?;
+        host_result(name, value)
+    }
+
     pub(crate) fn from_validated(name: &str, arguments: &Value) -> Result<Self, BrowserError> {
         let host_id = arguments["host_id"].as_str().map(str::to_owned);
         Ok(match name {

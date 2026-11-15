@@ -64,7 +64,24 @@ fn global_voice_configuration_has_an_explicit_exclusive_scope_and_no_remote_auth
     assert!(names.contains(&"agents_prompt"));
     assert!(names.contains(&"agents_read"));
     assert!(!names.contains(&"background_agent"));
-    assert!(!names.contains(&"terminal_exec"));
+    for name in [
+        "hosts_connect",
+        "hosts_disconnect",
+        "terminal_exec",
+        "terminal_read",
+        "terminal_cancel",
+        "agents_start",
+        "agents_stop",
+        "agents_restart",
+        "agents_inspect",
+        "agents_wait",
+        "workspaces_create",
+        "tabs_create",
+        "panes_split",
+        "device_location",
+    ] {
+        assert!(names.contains(&name), "Missing {name}");
+    }
     assert!(!names.contains(&"device_shizuku_exec"));
     assert!(!names.contains(&"browser_eval"));
     assert!(!names.contains(&"device_shizuku_status"));

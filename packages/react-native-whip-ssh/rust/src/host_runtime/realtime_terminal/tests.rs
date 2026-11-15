@@ -7,6 +7,67 @@ use crate::host_runtime::{
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
 #[test]
+fn global_exec_pins_only_the_connection_and_explicit_cwd_without_an_interactive_terminal()
+-> TestResult {
+    let _guard = terminal_delivery_test_guard();
+    let runtime = register_connected_test_runtime("global-host-only");
+    let target = PinnedTerminal::pin_host("global-host-only".into(), Some("/repo 'one".into()))?;
+    assert!(runtime.inner.state.lock().ssh_shells.is_empty());
+    assert_eq!(target.context()?["cwd"], "/repo 'one");
+    runtime.inner.state.lock().herdr_recovery_revision += 1;
+    target.check()?;
+    runtime.inner.state.lock().generation += 1;
+    assert!(target.check().is_err());
+    Ok(())
+}
+
+#[test]
+fn global_control_rejects_stale_panes_mismatched_terminals_and_recovery_but_ignores_ui_focus()
+-> TestResult {
+    let _guard = terminal_delivery_test_guard();
+    let runtime = register_connected_test_runtime("global-control-target");
+    let mut snapshot = super::super::tests::agent_chat_snapshot(None, None);
+    let install = |snapshot| {
+        let mut state = runtime.inner.state.lock();
+        let token = state.host_state.begin_sync(1);
+        state.host_state.complete_sync(token, snapshot, 1);
+    };
+    install(snapshot.clone());
+    let args =
+        json!({"pane_id":snapshot.panes[0].pane_id,"terminal_id":snapshot.panes[0].terminal_id});
+    let target = ControlTarget::pin("global-control-target".into(), args.clone())?;
+    snapshot.panes[0].focused = false;
+    snapshot.panes[1].focused = true;
+    install(snapshot.clone());
+    target.check_targets()?;
+    assert!(
+        ControlTarget::pin(
+            "global-control-target".into(),
+            json!({"pane_id":snapshot.panes[0].pane_id,"terminal_id":snapshot.panes[1].terminal_id})
+        )
+        .is_err()
+    );
+    assert!(
+        ControlTarget::pin(
+            "global-control-target".into(),
+            json!({"workspace_id":"missing"})
+        )
+        .is_err()
+    );
+    snapshot.panes[0].terminal_id = "replaced-terminal".into();
+    install(snapshot.clone());
+    assert!(target.check_targets().is_err());
+    let target = ControlTarget::pin(
+        "global-control-target".into(),
+        json!({"pane_id":snapshot.panes[0].pane_id}),
+    )?;
+    runtime.inner.state.lock().herdr_recovery_revision += 1;
+    assert!(target.check_targets().is_err());
+    target.check_connection()?;
+    Ok(())
+}
+
+#[test]
 fn archived_terminal_can_be_repinned_only_while_its_original_identity_is_current() -> TestResult {
     let _guard = terminal_delivery_test_guard();
     let (runtime, pinned) = shell_fixture("history-terminal")?;

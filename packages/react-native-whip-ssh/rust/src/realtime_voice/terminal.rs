@@ -13,16 +13,23 @@ use tokio::task::JoinHandle;
 
 use crate::host_runtime::realtime_terminal::{Key, PinnedTerminal, TextTail};
 
-pub(super) const EXEC: &str = "terminal_exec";
-pub(super) const READ: &str = "terminal_read";
+pub(crate) const EXEC: &str = "terminal_exec";
+pub(crate) const READ: &str = "terminal_read";
 pub(super) const INPUT: &str = "terminal_input";
-pub(super) const CANCEL: &str = "terminal_cancel";
+pub(crate) const CANCEL: &str = "terminal_cancel";
 const MAX_JOBS: usize = 8;
-const MAX_COMMAND: usize = 8192;
-const MAX_TIMEOUT_SECONDS: u64 = 300;
+pub(crate) const MAX_COMMAND: usize = 8192;
+pub(crate) const MAX_TIMEOUT_SECONDS: u64 = 300;
 const PROGRESS_INTERVAL: Duration = Duration::from_secs(15);
 const MAX_FEEDBACK: usize = 64 * 1024;
 pub(super) const INSTRUCTIONS: &str = include_str!("terminal_instructions.md");
+
+pub(crate) fn valid_exec(command: &str, timeout_seconds: Option<u64>) -> bool {
+    !command.trim().is_empty()
+        && command.len() <= MAX_COMMAND
+        && !command.contains('\0')
+        && (1..=MAX_TIMEOUT_SECONDS).contains(&timeout_seconds.unwrap_or(MAX_TIMEOUT_SECONDS))
+}
 
 pub(super) fn schemas() -> Vec<Value> {
     vec![
@@ -99,8 +106,8 @@ impl Job {
     }
 }
 
-pub(super) struct Session {
-    pub(super) target: Arc<PinnedTerminal>,
+pub(crate) struct Session {
+    pub(crate) target: Arc<PinnedTerminal>,
     seen: Mutex<HashSet<String>>,
     jobs: Mutex<HashMap<String, Job>>,
     uncertain: Arc<AtomicBool>,
@@ -108,13 +115,16 @@ pub(super) struct Session {
     remaining_feedback: Mutex<usize>,
 }
 impl Session {
-    pub(super) fn busy(&self) -> bool {
+    pub(crate) fn busy(&self) -> bool {
         self.jobs
             .lock()
             .values()
             .any(|job| job.state.lock().result.is_none())
     }
-    pub(super) fn new(target: Arc<PinnedTerminal>) -> Arc<Self> {
+    pub(crate) fn outcome_unknown(&self) -> bool {
+        self.uncertain.load(Ordering::Acquire)
+    }
+    pub(crate) fn new(target: Arc<PinnedTerminal>) -> Arc<Self> {
         Arc::new(Self {
             target,
             seen: Mutex::default(),
@@ -211,7 +221,20 @@ impl Session {
         Ok(())
     }
 
-    pub(super) async fn execute(&self, id: &str, name: &str, arguments: &str) -> Value {
+    pub(crate) fn cancel_all(&self) {
+        for job in self.jobs.lock().values_mut() {
+            let mut state = job.state.lock();
+            if state.result.is_none() {
+                job.task.abort();
+                self.uncertain.store(true, Ordering::Release);
+                state.result = Some(
+                    json!({"error":"outcome_unknown","observation":"cancelled","remote_process":"unknown"}),
+                );
+            }
+        }
+    }
+
+    pub(crate) async fn execute(&self, id: &str, name: &str, arguments: &str) -> Value {
         let _mutation = if matches!(name, EXEC | INPUT | CANCEL) {
             Some(self.mutation.lock().await)
         } else {
@@ -220,7 +243,9 @@ impl Session {
         if arguments.len() > super::MAX_ARGUMENT_BYTES {
             return json!({"error":"invalid_arguments"});
         }
-        if let Err(error) = self.target.check() {
+        if let Err(error) = self.target.check()
+            && !(self.target.host_scoped() && matches!(name, READ | CANCEL))
+        {
             return json!({"error":error});
         }
         if matches!(name, EXEC | INPUT) && self.uncertain.load(Ordering::Acquire) {
@@ -231,12 +256,7 @@ impl Session {
                 let Ok(request) = serde_json::from_str::<Exec>(arguments) else {
                     return json!({"error":"invalid_arguments"});
                 };
-                if request.command.trim().is_empty()
-                    || request.command.len() > MAX_COMMAND
-                    || request.command.contains('\0')
-                    || !(1..=MAX_TIMEOUT_SECONDS)
-                        .contains(&request.timeout_seconds.unwrap_or(MAX_TIMEOUT_SECONDS))
-                {
+                if !valid_exec(&request.command, request.timeout_seconds) {
                     return json!({"error":"invalid_arguments"});
                 }
                 let context = match self.target.context() {

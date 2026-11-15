@@ -672,7 +672,7 @@ impl HostRuntime {
         let runtime = Self {
             inner: self.inner.clone(),
         };
-        run_control_task(async move { runtime.restart_agent_inner(terminal_id).await }).await
+        run_control_task(async move { runtime.restart_agent_inner(terminal_id, None).await }).await
     }
 
     pub async fn copy_agent(
@@ -789,8 +789,9 @@ impl HostRuntime {
     pub(crate) async fn restart_from_reverse_agent(
         &self,
         terminal_id: String,
+        target: Option<&super::realtime_terminal::ControlTarget>,
     ) -> Result<(), HerdrControlError> {
-        self.restart_agent_inner(terminal_id).await
+        self.restart_agent_inner(terminal_id, target).await
     }
 
     pub(crate) async fn copy_from_reverse_agent(
@@ -805,10 +806,17 @@ impl HostRuntime {
     pub(crate) async fn stop_from_reverse_agent(
         &self,
         terminal_id: String,
+        target: Option<&super::realtime_terminal::ControlTarget>,
     ) -> Result<(), HerdrControlError> {
         let _operation = self.inner.agent_control_operation.lock().await;
+        if let Some(target) = target {
+            target.check_targets().map_err(invalid)?;
+        }
         let generation = self.inner.state.lock().generation;
         let initial = snapshot(&self.inner, generation).await?;
+        if let Some(target) = target {
+            target.check_snapshot(&initial).map_err(invalid)?;
+        }
         let pane = selected_pane(&initial, &terminal_id)?;
         let preference = self.inner.agent_preferences.lock().for_pane(&pane)?;
         stop_agent_using(&pane, &preference, |request| {
@@ -819,10 +827,20 @@ impl HostRuntime {
         Ok(())
     }
 
-    async fn restart_agent_inner(&self, terminal_id: String) -> Result<(), HerdrControlError> {
+    async fn restart_agent_inner(
+        &self,
+        terminal_id: String,
+        target: Option<&super::realtime_terminal::ControlTarget>,
+    ) -> Result<(), HerdrControlError> {
         let _operation = self.inner.agent_control_operation.lock().await;
+        if let Some(target) = target {
+            target.check_targets().map_err(invalid)?;
+        }
         let generation = self.inner.state.lock().generation;
         let initial = snapshot(&self.inner, generation).await?;
+        if let Some(target) = target {
+            target.check_snapshot(&initial).map_err(invalid)?;
+        }
         let pane = selected_pane(&initial, &terminal_id)?;
         let preference = self.inner.agent_preferences.lock().for_pane(&pane)?;
         let launch = resume_launch(&preference)?;

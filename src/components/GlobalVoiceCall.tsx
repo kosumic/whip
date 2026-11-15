@@ -116,12 +116,13 @@ export function GlobalVoiceCall({ ref, navigation, sessions, locked, visible, on
       onClose={() => { setCalling(false); setResuming(undefined); setComposing(false); setDraft(''); approvalRef.current?.complete(false); }}
       onCompose={() => setComposing(true)}>
       {approval && <View className="absolute inset-0 justify-center bg-black/90 px-6">
-        <Text className="text-xl font-semibold text-white">{t('globalCall.confirmTitle')}</Text>
-        <Text className="my-3 text-sm text-white">{t('globalCall.confirmTarget', { host: approvalSession ? hostDisplayName(approvalSession.host) : approval.hostId, pane: approvalAgent ? `${approvalAgent} (${approval.paneId})` : approval.paneId })}</Text>
+        <Text className="text-xl font-semibold text-white">{t(approval.operation ? 'globalCall.confirmOperation' : 'globalCall.confirmTitle')}</Text>
+        {approval.operation && <Text className="mt-2 text-base text-white">{approval.operation}</Text>}
+        <Text className="my-3 text-sm text-white">{approval.operation ? (approval.hostLabel ?? (approvalSession ? hostDisplayName(approvalSession.host) : approval.hostId)) : t('globalCall.confirmTarget', { host: approvalSession ? hostDisplayName(approvalSession.host) : approval.hostId, pane: approvalAgent ? `${approvalAgent} (${approval.paneId})` : approval.paneId })}</Text>
         <ScrollView className="max-h-64"><Text selectable className="text-base text-white">{approval.prompt}</Text></ScrollView>
         <View className="mt-5 flex-row gap-3">
           <Button variant="secondary" onPress={() => approval.complete(false)}><Text>{t('common.cancel')}</Text></Button>
-          <Button onPress={() => approval.complete(true)}><Text>{t('globalCall.confirmSend')}</Text></Button>
+          <Button onPress={() => approval.complete(true)}><Text>{t(approval.operation ? 'globalCall.approveOperation' : 'globalCall.confirmSend')}</Text></Button>
         </View>
       </View>}
       {composing && !approval && <View className="absolute inset-0 gap-4 bg-background px-5" style={{ paddingTop: top + 20, paddingBottom: bottom + 20 }}>

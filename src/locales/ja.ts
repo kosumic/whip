@@ -1,4 +1,6 @@
 export const ja = {
+  'globalCall.confirmOperation': "この操作を許可しますか？",
+  'globalCall.approveOperation': "操作を許可",
   'stt.title': '音声認識プロバイダー',
   'stt.localHelp': '音声入力には端末内の音声認識を使用します。通話と音声合成の設定は独立しています。',
   'stt.openaiHelp': 'マイクをタップして録音し、停止すると OpenAI で文字起こしします。音声、下書き、最近のチャットの文脈を OpenAI に送信します。API 料金が発生します。',

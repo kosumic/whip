@@ -52,13 +52,13 @@ pub(crate) fn context() -> HostActionContext {
 }
 
 pub(crate) struct Platform {
-    calls: Mutex<Vec<String>>,
+    pub(in crate::reverse_control) calls: Mutex<Vec<String>>,
     permits: Mutex<Vec<Arc<HostActionPermit>>>,
     pause: Mutex<Option<&'static str>>,
     resume: Notify,
-    fail: Mutex<Option<&'static str>>,
-    authenticated: AtomicBool,
-    missing_credential: AtomicBool,
+    pub(in crate::reverse_control) fail: Mutex<Option<&'static str>>,
+    pub(in crate::reverse_control) authenticated: AtomicBool,
+    pub(in crate::reverse_control) missing_credential: AtomicBool,
     cancellations: Mutex<Vec<String>>,
 }
 

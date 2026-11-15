@@ -1,4 +1,6 @@
 export const zhHans = {
+  'globalCall.confirmOperation': "允许此操作？",
+  'globalCall.approveOperation': "允许操作",
   'stt.title': '语音转文字提供商',
   'stt.localHelp': '听写使用设备端语音识别。语音通话和语音合成设置相互独立。',
   'stt.openaiHelp': '点击麦克风录音，停止后使用 OpenAI 转录。音频、草稿和最近的聊天上下文会发送给 OpenAI，并产生 API 费用。',

@@ -31,7 +31,73 @@ safe app navigation, and basic device info/battery/network status. The Rust
 an MCP server, read a launch's bearer token, borrow a remote agent's authority,
 or connect to a host automatically.
 
-The shared global catalog contains `hosts_list`, `agents_summary`, `agents_list`,
+## Host, shell and workspace operations (#447)
+
+Both global Realtime and GPT-Live use the same typed catalog and independent
+call authorization. Discover saved IDs with `hosts_list`; every operation below
+requires an explicit `host_id`. UI focus never selects or redirects its target.
+
+- `hosts_connect` and `hosts_disconnect` reuse Phone Use's native coordinator,
+  saved credentials, jump-host validation, biometric approval and SSH trust UI.
+  Connecting an already connected host is idempotent. Disconnecting one host
+  cancels that host's command observations while the global call continues.
+  Host profile creation, editing and deletion remain unavailable.
+- `terminal_exec({host_id, command, cwd?, timeout_seconds?})` opens a separate
+  SSH exec channel. It never types into a pane and does not inherit interactive
+  exports, aliases or jobs. An omitted cwd uses the SSH exec default directory.
+  The original command, cwd and saved host identity appear in the approval UI.
+  Admission returns a call-owned `job_id`; poll
+  `terminal_read({host_id, job_id})` for bounded stdout/stderr, progress,
+  completion and `result.exit_status`. A nonzero status is a command failure;
+  missing status or `completion:unknown` is never success.
+  `terminal_cancel({host_id, job_id})` closes observation and the exec channel,
+  without promising remote process termination. Job reads and cancellation keep
+  their original ownership after a disconnect. A call admits at most eight
+  commands, one running command at a time, with deadlines of 1–300 seconds
+  (default 300) and command text bounded at 8192 bytes. An unknown command
+  outcome blocks new work and delegation; read/cancel and an explicitly approved
+  host disconnect remain available. Inspect the outcome before a new call.
+- `agents_start` shares the validated Phone Use launch/readiness workflow.
+  `agents_inspect` and `agents_wait` require explicit `pane_id` rather than an
+  ambiguous name; start requires `pane_id`, `name`, `kind` and `args`.
+  `agents_stop` and `agents_restart` require both `pane_id` and `terminal_id`.
+  Native fences reject replaced panes, changed terminal/agent identity, runtime
+  replacement, reconnects and Herdr recovery during approval. Herdr's feature
+  negotiation, including protocol 22 lifecycle requirements, remains authoritative.
+  Submission, readiness and task completion remain separate outcomes.
+- Named `workspaces_create/focus/rename/close`, `tabs_create/focus/rename/close`
+  and `panes_split/focus/rename/zoom/close/inspect/read/read_visible` share the
+  Phone Use validators. Creation requires explicit cwd and preserves focus by
+  default. Existing local list tools discover workspace/tab/pane IDs. Close only
+  work the user explicitly requested to close; raw Herdr calls and pane input
+  are outside this catalog.
+- `device_location({})` uses the existing platform permission and single-fix
+  adapter independently of Shizuku. Permission denial, unavailable services and
+  timeout remain errors; approximate permission remains valid. Whip must be
+  foregrounded and unlocked. It never infers or tracks a location.
+
+Every host connection change, command, agent lifecycle change, workspace/tab/pane
+mutation and explicit focus change requires a separate UI approval showing the
+exact operation and original arguments. Refusing or dismissing approval sends
+nothing. Biometric and trust prompts remain additional requirements. Read-only
+inspection and job cancellation do not require this mutation approval.
+Concurrent mutations are rejected rather than queued behind stale approvals.
+New privileged operations are denied outside unlocked foreground Whip. Native
+authentication and OS location sheets may briefly make iOS inactive; an admitted
+operation survives that transient state, while backgrounding, lock and hangup
+cancel it. Revocation/timeout after dispatch reports a possibly committed outcome;
+Whip never retries it automatically. Command observation and approvals are
+call-owned and end at hangup, replacement or capability expiry without stopping
+the independent call audio during app lock/background.
+
+Regression coverage exercises disconnected host workflows, refused/changed
+approvals, credential failures, reconnect and pane fences, concurrent actions,
+real SSH stdout/stderr/cwd/nonzero exit status, command cancellation and provider
+catalog parity. Physical Android/iOS acceptance still needs the issue's spoken
+connect → create/split → start → exec/read/cancel → restart/stop → disconnect
+sequence, plus location denial/unavailability and actual biometric/host-key UI.
+
+Alongside those operations, the shared global catalog contains `hosts_list`, `agents_summary`, `agents_list`,
 `workspaces_list`, `tabs_list`, `panes_list`, `app_snapshot`,
 `app_navigate`, `app_focus_host`, `app_focus_tab`, `app_open_agent`,
 `agents_read`, `agents_prompt`, safe device status tools, and `remain_silent`. Function names
@@ -247,12 +313,12 @@ independent.
 
 ## Remaining Stage 4 work
 
-This implements global Realtime and GPT-Live with the status/navigation/
-confirmed-delegation permission set. #326 remains open for browser capability
-sessions and document fences, opt-in consequential host or
-device actions, persisted selected-agent billing associations, and Android/iOS
-device acceptance checks. Browser control, host edits/connections/deletion,
-remote shell execution, clipboard, location, downloads/exports, and device speech
+Global Realtime and GPT-Live include status/navigation, confirmed delegation and
+the explicitly approved operations described above. #326 remains open for browser
+capability sessions and document fences, additional device actions, persisted
+selected-agent billing associations, and Android/iOS device acceptance checks.
+Browser control, host profile editing/deletion,
+clipboard, downloads/exports, and device speech
 are not granted by this global call catalog. Android commands require the
 separate Shizuku opt-in described above.
 

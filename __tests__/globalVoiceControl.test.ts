@@ -37,6 +37,41 @@ test('global navigation and app status work with no SSH host', async () => {
   control.dispose();
 });
 
+test('operation approval shows the original command and explicit target without selecting a host', async () => {
+  const { invoke, confirm, select, openPaneTerminal, control } = setup();
+  const args = { host_id: 'offline-build-server', cwd: "/a 'quoted repo", command: 'git status --short\nprintf done' };
+  expect(await invoke('confirm_operation', { operation: 'terminal_exec', arguments: args })).toEqual({ approved: true });
+  expect(confirm).toHaveBeenCalledWith({ hostId: args.host_id, hostLabel: undefined, paneId: undefined, operation: 'terminal_exec', prompt: JSON.stringify(args, null, 2) }, expect.any(AbortSignal));
+  expect(select).not.toHaveBeenCalled();
+  expect(openPaneTerminal).not.toHaveBeenCalled();
+  control.dispose();
+});
+
+test.each(['permission_denied', 'location_unavailable', 'device_unavailable', 'timeout'])('location preserves the platform %s error without leaking its body', async code => {
+  const { invoke, control } = setup();
+  jest.mocked(deviceAction).mockRejectedValueOnce(Object.assign(new Error('private platform payload'), { code }));
+  expect(await invoke('device.location')).toEqual({ error: code });
+  control.dispose();
+});
+
+test('system permission sheets preserve an admitted watch and location; background cancels both', async () => {
+  const { invoke, control } = setup();
+  jest.mocked(deviceAction).mockImplementationOnce((_action, _args, _id, signal) => new Promise(resolve => {
+    signal.addEventListener('abort', () => resolve({}), { once: true });
+  }));
+  const watch = invoke('watch_operation');
+  const location = invoke('device.location');
+  const signal = jest.mocked(deviceAction).mock.calls.at(-1)![3];
+  mockApp.currentState = 'inactive'; mockStateChanged('inactive');
+  expect(signal.aborted).toBe(false);
+  expect(await invoke('watch_operation')).toHaveProperty('error');
+  mockApp.currentState = 'background'; mockStateChanged('background');
+  expect(signal.aborted).toBe(true);
+  expect(await watch).toHaveProperty('error');
+  expect(await location).toHaveProperty('error');
+  control.dispose();
+});
+
 test('overlapping device reads have distinct native cancellation identities', async () => {
   jest.mocked(deviceAction).mockClear();
   const { invoke, control } = setup();
