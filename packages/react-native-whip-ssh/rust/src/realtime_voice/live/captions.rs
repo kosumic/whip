@@ -94,6 +94,17 @@ impl Transcript {
     }
 
     pub(super) fn request(&self, after: f64, offset: f64) -> Result<String, &'static str> {
+        let spoken = self.spoken_request(after, offset)?;
+        let prefix = crate::voice_handoff::LIVE_PREFIX;
+        let suffix = crate::voice_handoff::LIVE_SUFFIX;
+        let prompt = format!("{prefix}{spoken}{suffix}");
+        if prompt.len() > MAX_REQUEST {
+            return Err("The spoken request is too long. Please use the agent chat.");
+        }
+        Ok(prompt)
+    }
+
+    pub(super) fn spoken_request(&self, after: f64, offset: f64) -> Result<String, &'static str> {
         if !offset.is_finite() || offset < after || after < self.discarded_through {
             return Err("Voice context is incomplete. Please use the agent chat.");
         }
@@ -114,17 +125,52 @@ impl Transcript {
         {
             return Err("The spoken request is not available yet. Please use the agent chat.");
         }
-        let mut prompt = String::from(
-            "New spoken request from this agent-bound voice call (transcription can contain mistakes):\n",
-        );
+        let mut prompt = String::new();
         for fragment in selected {
             prompt.push_str(&fragment.text);
         }
-        prompt.push_str("\n\nUse the existing agent conversation/workspace. Keep approvals in Whip. The call may end while you work. Return a concise public answer; do not include private reasoning or secrets.");
         if prompt.len() > MAX_REQUEST {
             return Err("The spoken request is too long. Please use the agent chat.");
         }
         Ok(prompt)
+    }
+
+    /// Freeze public speech at the delegation's timeline boundary. Request
+    /// selection and offset admission remain independent of the shared context
+    /// acknowledgment cursor. Tool events never enter the quoted context.
+    pub(super) fn delegation_snapshot(
+        &self,
+        offset: f64,
+    ) -> Vec<super::super::handoff_context::Caption> {
+        self.fragments
+            .iter()
+            .filter(|fragment| {
+                fragment.event.is_none()
+                    && fragment.end_ms <= offset
+                    && matches!(fragment.role.as_str(), USER | ASSISTANT)
+            })
+            .rev()
+            .take(super::super::handoff_context::MAX_RECORDS)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .map(|fragment| {
+                let role = if fragment.role == USER {
+                    USER
+                } else {
+                    ASSISTANT
+                };
+                super::super::handoff_context::Caption::new(
+                    &fragment.id,
+                    role,
+                    &fragment.text,
+                    false,
+                    false,
+                    false,
+                    (role == ASSISTANT).then(|| self.progress(fragment).0),
+                )
+            })
+            .collect()
     }
 
     pub(super) fn admit(&mut self, offset: f64) {

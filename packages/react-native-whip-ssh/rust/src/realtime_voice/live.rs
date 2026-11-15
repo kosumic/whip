@@ -86,6 +86,7 @@ struct Handoff {
 
 #[derive(Default)]
 struct State {
+    context: super::handoff_context::Context,
     #[cfg(test)]
     protocol: voice_call_openai::live::Control,
     delegations: HashSet<String>,
@@ -377,15 +378,30 @@ impl LiveVoiceAdapter {
             append(socket,Some(&pending.id),"No new request was sent. The previous result or transcript ordering is uncertain; inspect the agent chat. Never replay it.",Channel::Commentary).await?;
             return Ok(());
         }
-        let request = owner
-            .output
-            .lock()
-            .live_transcript
-            .as_ref()
-            .ok_or("Voice captions are unavailable.")?
-            .request(state.through, pending.offset);
-        let prompt = match request {
-            Ok(prompt) => prompt,
+        let request = {
+            let output = owner.output.lock();
+            let transcript = output
+                .live_transcript
+                .as_ref()
+                .ok_or("Voice captions are unavailable.")?;
+            let prepared = transcript
+                .request(state.through, pending.offset)
+                .and_then(|prompt| {
+                    let spoken = transcript.spoken_request(state.through, pending.offset)?;
+                    Ok((
+                        prompt,
+                        spoken,
+                        transcript.delegation_snapshot(pending.offset),
+                    ))
+                });
+            drop(output);
+            prepared
+        }
+        .and_then(|(prompt, spoken, captions)| {
+            Ok((prompt, spoken, state.context.capture(captions)?))
+        });
+        let (prompt, spoken, context) = match request {
+            Ok(request) => request,
             Err(message) => {
                 append(socket, Some(&pending.id), message, Channel::Commentary).await?;
                 return Ok(());
@@ -416,7 +432,8 @@ impl LiveVoiceAdapter {
                     Delegation {
                         prompt,
                         delivery: Delivery::Now,
-                        context: None,
+                        context: Some(context),
+                        presentation_prompt: Some(spoken),
                     },
                     followup,
                 )

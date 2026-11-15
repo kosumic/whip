@@ -19,6 +19,9 @@ pub(crate) struct Delegation {
     // Constructed only from native speech captions, never provider tool arguments.
     #[serde(skip)]
     pub context: Option<crate::realtime_voice::handoff_context::Snapshot>,
+    /// Native GPT-Live speech before its existing generated instructions.
+    #[serde(skip)]
+    pub presentation_prompt: Option<String>,
     #[serde(default)]
     pub delivery: Delivery,
 }

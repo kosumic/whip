@@ -4,6 +4,7 @@ import { type AuthMode, fromNativeHostAuthMode, toNativeHostAuthMode } from './h
 export { setWhipAppControl } from './generated-entry';
 export type { WhipToolPermit, WhipAppControl } from './generated-entry';
 import {
+  voiceHandoffRequest,
   setReverseControlEventSink,
   type ReverseControlEvent,
   type ReverseControlSession,
@@ -370,7 +371,7 @@ export type NativeAgentToolState = {
 export { NativeAgentInteractionKind, type NativeAgentInteractionPrompt } from './agentInteraction';
 
 export type NativeAgentTranscriptPart =
-  | { type: 'text'; id: string; text: string; timestamp?: number }
+  | { type: 'text'; id: string; text: string; timestamp?: number; voiceRequest?: string }
   | { type: 'image'; id: string; source: string; timestamp?: number }
   | { type: 'reasoning'; id: string; text: string; timestamp?: number }
   | { type: 'plan'; id: string; text: string; timestamp?: number }
@@ -1747,7 +1748,14 @@ function nativeAgentMessage(
     createdAt: nativeNumber(message.createdAtMs),
     completedAt: nativeNumber(message.completedAtMs),
     error: message.error,
-    parts: message.parts.map(nativeAgentPart),
+    parts: message.parts.map(part => {
+      const value = nativeAgentPart(part);
+      if (message.role === AgentMessageRole.User && value.type === 'text') {
+        const voiceRequest = voiceHandoffRequest(value.text);
+        if (voiceRequest !== undefined) return { ...value, voiceRequest };
+      }
+      return value;
+    }),
     diffs: message.diffs.map(file => ({ ...file })),
     details: nativeAgentDetails(message.details),
   };

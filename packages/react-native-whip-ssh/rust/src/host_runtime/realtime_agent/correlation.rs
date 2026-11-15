@@ -123,10 +123,7 @@ impl Observation {
 
 impl Tracker {
     pub(super) fn new(view: Option<AgentTranscriptView<'_>>, working: bool) -> Self {
-        let marker = format!(
-            "[Whip voice handoff {}; tracking metadata]\n",
-            uuid::Uuid::new_v4()
-        );
+        let marker = crate::voice_handoff::marker();
         let mut tracker = Self {
             marker,
             revision: view.map(|view| view.revision),

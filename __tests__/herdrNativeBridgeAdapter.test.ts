@@ -11,6 +11,7 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   createHostRuntime: jest.fn(),
   listSavedAgentTranscripts: jest.fn(),
   readSavedAgentTranscript: jest.fn(),
+  voiceHandoffRequest: jest.fn(),
   deleteAgentTranscriptsForHost: jest.fn(),
   clearAgentTranscriptCache: jest.fn(),
   agentTranscriptCacheSize: jest.fn(),
@@ -35,7 +36,7 @@ jest.mock('../packages/react-native-whip-ssh/src/generated-entry', () => ({
   },
   HerdrInstallationStatus: { Installed: 0, Missing: 1, CustomCommandMissing: 2 },
   HerdrInstallOutcome: { Succeeded: 0, Cancelled: 1 },
-  AgentTranscriptKind: { Claude: 0, Codex: 1, OpenCode: 2 },
+  AgentTranscriptKind: { Claude: 0, Codex: 1, OpenCode: 2, Pi: 3 },
   AgentChatOpenResult_Tags: { Bound: 'Bound', NoChat: 'NoChat' },
   AgentChatStartResult_Tags: {
     Started: 'Started',
@@ -290,6 +291,30 @@ const mockRuntimeEventSink =
   mockGenerated.setHostRuntimeEventSink.mock.calls[0][0];
 const mockAgentEventSink =
   mockGenerated.setAgentTranscriptEventSink.mock.calls[0][0];
+
+test.each([[0, 'claude'], [1, 'codex'], [2, 'opencode'], [3, 'pi']] as const)(
+  'saved %s (%s) handoffs retain source text and attach native presentation only to user messages', async (nativeAgent, agent) => {
+    const source = '[Whip voice handoff 27862c16-5d20-4564-97b8-56cdc592125c; tracking metadata]\nFit3D context and presentation metadata';
+    const request = 'like how many exercises does it have';
+    mockGenerated.voiceHandoffRequest.mockImplementation((text: string) => text === source ? request : undefined);
+    const message = (id: string, role: number, text: string) => ({
+      id, role, parts: [{ tag: 'Text', inner: { id: `${id}:text`, text } }], diffs: [],
+    });
+    const nativeState = {
+      sessionId: 'voice-session', agent: nativeAgent, revision: 2n, status: 2, turns: [],
+      messages: [message('voice', 0, source), message('ordinary', 0, 'ordinary prompt'), message('assistant', 1, source)],
+    };
+    mockGenerated.readSavedAgentTranscript.mockResolvedValueOnce(nativeState);
+    const state = await readSavedAgentTranscript('host', agent, 'voice-session');
+    expect(state?.messages[0].parts[0]).toMatchObject({ type: 'text', text: source, voiceRequest: request });
+    expect(state?.messages[1].parts[0]).toMatchObject({ type: 'text', text: 'ordinary prompt' });
+    expect(state?.messages[1].parts[0]).not.toHaveProperty('voiceRequest');
+    expect(state?.messages[2].parts[0]).toMatchObject({ type: 'text', text: source });
+    expect(state?.messages[2].parts[0]).not.toHaveProperty('voiceRequest');
+    expect(nativeState.messages[0].parts[0].inner.text).toBe(source);
+    mockGenerated.voiceHandoffRequest.mockReset();
+  },
+);
 
 describe('native HostRuntime adapter', () => {
   it.each([

@@ -123,7 +123,14 @@ impl ChatSearchIndex {
                     SearchSource::Loaded => None,
                 };
                 if let Some(snapshot) = snapshot {
-                    state.index.restore(&snapshot);
+                    state.index.set_documents(
+                        agent_transcript_view::search::transcript::documents_with_user_text(
+                            &snapshot,
+                            |text| {
+                                crate::voice_handoff::request(text).unwrap_or_else(|| text.into())
+                            },
+                        ),
+                    );
                     state.revision = Some(snapshot.revision);
                 }
                 let result = state.index.search(query);

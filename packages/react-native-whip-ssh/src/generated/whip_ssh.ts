@@ -3376,6 +3376,30 @@ export function useJavascriptTerminalDelivery(generation: bigint): void {
   );
 }
 
+/**
+ * Extract only a complete versioned wrapper whose nonce and task input agree.
+ * Marker-like text and malformed or truncated wrappers retain their full source.
+ */
+export function voiceHandoffRequest(text: string): string | undefined {
+  return ((__rb: Uint8Array) => {
+    try {
+      return FfiConverterOptionalString.lift(__rb);
+    } finally {
+      nativeModule().rustbuffer_free(__rb);
+    }
+  })(
+    uniffiCaller.rustCall(
+      /*caller:*/ callStatus => {
+        return nativeModule().ubrn_uniffi_whip_ssh_fn_func_voice_handoff_request(
+          FfiConverterString.lower(text, nativeModule().rustbuffer_alloc),
+          callStatus,
+        );
+      },
+      /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+    ),
+  );
+}
+
 export function voiceSessionCoordinator(): VoiceSessionCoordinatorLike {
   return FfiConverterTypeVoiceSessionCoordinator.lift(
     uniffiCaller.rustCall(
@@ -65634,6 +65658,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_func_use_javascript_terminal_delivery',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_func_voice_handoff_request() !==
+    54298
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_func_voice_handoff_request',
     );
   }
   if (

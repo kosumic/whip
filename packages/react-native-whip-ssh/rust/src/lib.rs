@@ -57,6 +57,7 @@ mod transcript_database;
 mod usage;
 mod voice_chat;
 mod voice_credentials;
+mod voice_handoff;
 mod voice_history;
 mod voice_session;
 

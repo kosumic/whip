@@ -197,7 +197,7 @@ function promptContextPreview(message: TranscriptMessage): string {
   if (cached !== undefined) return cached;
   let text = '';
   for (const part of message.parts) {
-    const value = part.type === 'text' ? localVoicePromptText(part.text) : part.type === 'image' ? '[Image]' : '';
+    const value = part.type === 'text' ? part.voiceRequest ?? localVoicePromptText(part.text) : part.type === 'image' ? '[Image]' : '';
     if (value) text += `${text ? ' ' : ''}${value.slice(0, CHAT_CONTEXT_PREVIEW_LENGTH + 1 - text.length)}`;
     if (text.length > CHAT_CONTEXT_PREVIEW_LENGTH) break;
   }
@@ -558,8 +558,12 @@ function UserPrompt({ message, imageClient, directory, active, visible }: {
 }) {
   const { colors } = useTheme();
   const { copied, copyText } = useCopyFeedback();
+  const [showHandoff, setShowHandoff] = useState(false);
+  const rawHandoff = message.parts.filter(part => part.type === 'text' && part.voiceRequest !== undefined)
+    .map(part => part.type === 'text' ? part.text : '').join('\n');
+  const hasHandoff = rawHandoff.length > 0;
   const parts = message.parts.filter(part => part.type === 'text' || part.type === 'image')
-    .map(part => part.type === 'text' ? { ...part, text: localVoicePromptText(part.text) } : part);
+    .map(part => part.type === 'text' ? { ...part, text: part.voiceRequest ?? localVoicePromptText(part.text) } : part);
   const text = parts.map(part => part.type === 'image' ? part.source : part.type === 'text' ? part.text : '').join('\n');
   const copyPrompt = () => copyText(text);
   if (!text) return null;
@@ -577,6 +581,10 @@ function UserPrompt({ message, imageClient, directory, active, visible }: {
         {meta && <Text numberOfLines={1} className="min-w-0 flex-1 text-right text-[9px] text-muted-foreground">{meta}</Text>}
         <Button accessibilityLabel="Copy prompt" className="ml-auto size-6 shrink-0 rounded-full px-0" variant="ghost" onPress={copyPrompt}>{copied ? <Check size={11} color={colors.done} /> : <Copy size={11} color={colors.textTertiary} />}</Button>
       </View>
+      {hasHandoff && <Button accessibilityLabel="Voice handoff details" variant="ghost" onPress={() => setShowHandoff(value => !value)}>
+        <Text className="text-[10px] text-muted-foreground">{showHandoff ? 'Hide' : 'Show'} voice handoff details</Text>
+      </Button>}
+      {showHandoff && hasHandoff && <Text selectable className="max-w-full font-mono text-[10px] text-muted-foreground">{rawHandoff}</Text>}
     </View>
   );
 }

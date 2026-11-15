@@ -2281,6 +2281,9 @@ RustBuffer uniffi_whip_ssh_fn_func_usage_chart(RustBuffer boundaries_ms,
 RustBuffer uniffi_whip_ssh_fn_func_usage_summary(
     uint64_t today_start_ms, uint64_t week_start_ms, uint64_t month_start_ms,
     RustCallStatus *uniffi_out_err);
+RustBuffer
+uniffi_whip_ssh_fn_func_voice_handoff_request(RustBuffer text,
+                                              RustCallStatus *uniffi_out_err);
 /*handle*/ uint64_t uniffi_whip_ssh_fn_func_voice_session_coordinator(
     RustCallStatus *uniffi_out_err);
 RustBuffer ffi_whip_ssh_rustbuffer_alloc(uint64_t size,
@@ -2518,6 +2521,7 @@ uint16_t uniffi_whip_ssh_checksum_func_initialize_usage_tracking();
 uint16_t uniffi_whip_ssh_checksum_func_set_usage_foreground();
 uint16_t uniffi_whip_ssh_checksum_func_usage_chart();
 uint16_t uniffi_whip_ssh_checksum_func_usage_summary();
+uint16_t uniffi_whip_ssh_checksum_func_voice_handoff_request();
 uint16_t uniffi_whip_ssh_checksum_func_voice_session_coordinator();
 uint16_t uniffi_whip_ssh_checksum_method_agenttranscripteventsink_event();
 uint16_t uniffi_whip_ssh_checksum_method_sessionconnectionoperation_cancel();
@@ -29236,6 +29240,17 @@ NativeWhipSsh::NativeWhipSsh(
             return this->cpp_uniffi_whip_ssh_fn_func_usage_summary(rt, thisVal,
                                                                    args, count);
           });
+  props["ubrn_uniffi_whip_ssh_fn_func_voice_handoff_request"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_fn_func_voice_handoff_request"),
+          1,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this->cpp_uniffi_whip_ssh_fn_func_voice_handoff_request(
+                rt, thisVal, args, count);
+          });
   props["ubrn_uniffi_whip_ssh_fn_func_voice_session_coordinator"] =
       jsi::Function::createFromHostFunction(
           rt,
@@ -31158,6 +31173,18 @@ NativeWhipSsh::NativeWhipSsh(
                  const jsi::Value *args, size_t count) -> jsi::Value {
             return this->cpp_uniffi_whip_ssh_checksum_func_usage_summary(
                 rt, thisVal, args, count);
+          });
+  props["ubrn_uniffi_whip_ssh_checksum_func_voice_handoff_request"] =
+      jsi::Function::createFromHostFunction(
+          rt,
+          jsi::PropNameID::forAscii(
+              rt, "ubrn_uniffi_whip_ssh_checksum_func_voice_handoff_request"),
+          0,
+          [this](jsi::Runtime &rt, const jsi::Value &thisVal,
+                 const jsi::Value *args, size_t count) -> jsi::Value {
+            return this
+                ->cpp_uniffi_whip_ssh_checksum_func_voice_handoff_request(
+                    rt, thisVal, args, count);
           });
   props["ubrn_uniffi_whip_ssh_checksum_func_voice_session_coordinator"] =
       jsi::Function::createFromHostFunction(
@@ -48698,6 +48725,19 @@ jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_usage_summary(
 
   return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
 }
+jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_voice_handoff_request(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  RustCallStatus status =
+      uniffi::whip_ssh::Bridging<RustCallStatus>::rustSuccess(rt);
+  auto value = uniffi_whip_ssh_fn_func_voice_handoff_request(
+      uniffi::whip_ssh::Bridging<RustBuffer>::fromJs(rt, callInvoker, args[0]),
+      &status);
+  uniffi::whip_ssh::Bridging<RustCallStatus>::copyIntoJs(
+      rt, callInvoker, status, args[count - 1]);
+
+  return uniffi::whip_ssh::Bridging<RustBuffer>::toJs(rt, callInvoker, value);
+}
 jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_fn_func_voice_session_coordinator(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
@@ -50152,6 +50192,14 @@ jsi::Value NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_usage_summary(
     jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
     size_t count) {
   auto value = uniffi_whip_ssh_checksum_func_usage_summary();
+
+  return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
+}
+jsi::Value
+NativeWhipSsh::cpp_uniffi_whip_ssh_checksum_func_voice_handoff_request(
+    jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+    size_t count) {
+  auto value = uniffi_whip_ssh_checksum_func_voice_handoff_request();
 
   return uniffi_jsi::Bridging<uint16_t>::toJs(rt, callInvoker, value);
 }

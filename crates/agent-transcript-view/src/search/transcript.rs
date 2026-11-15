@@ -120,6 +120,15 @@ fn part_text(part: &AgentTranscriptPart) -> Option<(&str, String)> {
 }
 
 pub fn documents(state: &AgentTranscriptState) -> Vec<ChatSearchDocument> {
+    documents_with_user_text(state, str::to_owned)
+}
+
+/// Let the embedding application authenticate its own machine handoffs while
+/// retaining canonical messages and ordinary provider text unchanged.
+pub fn documents_with_user_text(
+    state: &AgentTranscriptState,
+    user_text: impl Fn(&str) -> String,
+) -> Vec<ChatSearchDocument> {
     let messages: HashMap<_, _> = state
         .messages
         .iter()
@@ -147,7 +156,9 @@ pub fn documents(state: &AgentTranscriptState) -> Vec<ChatSearchDocument> {
                 let mut text = Text::default();
                 for part in &message.parts {
                     match part {
-                        AgentTranscriptPart::Text { text: value, .. } => text.push(value),
+                        AgentTranscriptPart::Text { text: value, .. } => {
+                            text.push(&user_text(value))
+                        }
                         AgentTranscriptPart::Image { source, .. }
                             if !source.starts_with("data:") =>
                         {

@@ -652,6 +652,13 @@ impl PinnedAgent {
                 request.prompt.clone()
             };
             let text = tracker.text(&text);
+            let text = crate::voice_handoff::format(
+                text,
+                request
+                    .presentation_prompt
+                    .as_deref()
+                    .unwrap_or(&request.prompt),
+            );
             self.request(json!({"action":"agent_prompt","target":target,"text":text}))
                 .await?;
             if let Some(context) = &request.context {

@@ -1189,6 +1189,10 @@ interface NativeModuleInterface {
     generation: bigint,
     uniffi_out_err: UniffiRustCallStatus,
   ): void;
+  ubrn_uniffi_whip_ssh_fn_func_voice_handoff_request(
+    text: Uint8Array,
+    uniffi_out_err: UniffiRustCallStatus,
+  ): Uint8Array;
   ubrn_uniffi_whip_ssh_fn_func_voice_session_coordinator(
     uniffi_out_err: UniffiRustCallStatus,
   ): bigint;
@@ -3522,6 +3526,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_func_usage_chart(): number;
   ubrn_uniffi_whip_ssh_checksum_func_usage_summary(): number;
   ubrn_uniffi_whip_ssh_checksum_func_use_javascript_terminal_delivery(): number;
+  ubrn_uniffi_whip_ssh_checksum_func_voice_handoff_request(): number;
   ubrn_uniffi_whip_ssh_checksum_func_voice_session_coordinator(): number;
   ubrn_uniffi_whip_ssh_checksum_func_voice_usage_summary(): number;
   ubrn_uniffi_whip_ssh_checksum_func_write_app_data(): number;

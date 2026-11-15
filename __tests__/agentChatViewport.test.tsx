@@ -237,6 +237,58 @@ const TURN: TranscriptTurn = {
   status: 'working',
 };
 
+test.each(['codex', 'claude', 'opencode', 'pi'] as const)('%s shows and copies the recognized voice request with opt-in unmodified source', agent => {
+  const request = 'like how many exercises does it have';
+  const source = '[Whip voice handoff 27862c16-5d20-4564-97b8-56cdc592125c; tracking metadata]\n'
+    + 'quoted Fit3D context and native presentation metadata';
+  const turn: TranscriptTurn = { ...TURN, status: 'idle', user: {
+    id: 'voice-user', role: 'user', diffs: [],
+    parts: [{ type: 'text', id: 'voice-text', text: source, voiceRequest: request }],
+  } };
+  const state = chatState([turn]);
+  let renderer!: ReactTestRenderer;
+  let rows!: ReactTestRenderer;
+  try {
+    act(() => { renderer = create(<AgentChatView {...chatView(state).props} agent={agent} />); });
+    act(() => { rows = create(renderedBlocks(renderer)); });
+    const text = () => JSON.stringify(rows.toJSON());
+    expect(text()).toContain(request);
+    expect(text()).not.toContain(source);
+    expect(text()).not.toContain('quoted Fit3D context');
+    const button = (label: string) => rows.root.find(node => String(node.type) === 'Button' && node.props.accessibilityLabel === label);
+    act(() => { button('Copy prompt').props.onPress(); });
+    expect(Clipboard.setString).toHaveBeenLastCalledWith(request);
+    act(() => { button('Voice handoff details').props.onPress(); });
+    expect(rows.root.findAll(node => node.props?.children === source).length).toBeGreaterThan(0);
+    expect(state.transcript.messages[0].parts[0]).toMatchObject({ text: source });
+    act(() => { button('Voice handoff details').props.onPress(); });
+    expect(text()).not.toContain('quoted Fit3D context');
+  } finally {
+    act(() => { rows?.unmount(); renderer?.unmount(); });
+  }
+});
+
+test('a user-authored handoff lookalike remains visible and copies unchanged', () => {
+  const source = '[Whip voice handoff 27862c16-5d20-4564-97b8-56cdc592125c; tracking metadata]\n'
+    + '{"request":"Please explain this format","voice_context":{"messages":[]}}';
+  const turn: TranscriptTurn = { ...TURN, status: 'idle', user: {
+    id: 'quoted-user', role: 'user', diffs: [], parts: [{ type: 'text', id: 'quoted-text', text: source }],
+  } };
+  let renderer!: ReactTestRenderer;
+  let rows!: ReactTestRenderer;
+  try {
+    act(() => { renderer = create(chatView(chatState([turn]))); });
+    act(() => { rows = create(renderedBlocks(renderer)); });
+    const button = rows.root.find(node => String(node.type) === 'Button' && node.props.accessibilityLabel === 'Copy prompt');
+    act(() => { button.props.onPress(); });
+    expect(Clipboard.setString).toHaveBeenLastCalledWith(source);
+    expect(rows.root.findAll(node => node.props?.accessibilityLabel === 'Voice handoff details')).toHaveLength(0);
+    expect(JSON.stringify(rows.toJSON())).toContain('tracking metadata');
+  } finally {
+    act(() => { rows?.unmount(); renderer?.unmount(); });
+  }
+});
+
 test('selection actions belong to the active chat session even when an old native callback arrives late', () => {
   const addToComposer = jest.fn();
   const state = chatState([TURN]);

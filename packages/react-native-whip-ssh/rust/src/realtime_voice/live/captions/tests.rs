@@ -1,6 +1,57 @@
 use super::{Fragment, Transcript};
 use crate::realtime_voice::RATE;
 
+#[test]
+fn fit3d_followup_has_ordered_public_context_without_replaying_admitted_speech()
+-> Result<(), &'static str> {
+    let context = crate::realtime_voice::handoff_context::Context::default();
+    let mut transcript = Transcript::default();
+    let mut user = fragment("question", 0.0, 100.0);
+    user.role = "user".into();
+    user.text = "Tell me about Fit3D".into();
+    transcript.append(user)?;
+    let mut answer = fragment("answer", 100.0, 200.0);
+    answer.text = "Fit3D is a dataset of exercise recordings".into();
+    transcript.append(answer)?;
+    transcript.admit(200.0);
+    let mut followup = fragment("followup", 300.0, 400.0);
+    followup.role = "user".into();
+    followup.text = "like how many exercises does it have".into();
+    transcript.append(followup)?;
+    transcript.event(
+        "tool",
+        crate::voice_history::Event::new("delegation", "Private tool arguments", "admitted"),
+    );
+    let mut future = fragment("future", 500.0, 600.0);
+    future.text = "future speech must not leak backwards".into();
+    transcript.append(future)?;
+    let prompt = transcript.request(200.0, 400.0)?;
+    assert_eq!(
+        transcript.spoken_request(200.0, 400.0)?,
+        "like how many exercises does it have"
+    );
+    let frozen = context.capture(transcript.delegation_snapshot(400.0))?;
+    let request = frozen.request(&prompt)?;
+    assert!(request.contains("Fit3D"));
+    let question = request
+        .find("Tell me about Fit3D")
+        .ok_or("missing voice-only question")?;
+    let answer = request
+        .find("Fit3D is a dataset")
+        .ok_or("missing voice-only answer")?;
+    assert!(question < answer);
+    assert!(!request.contains("Private tool arguments"));
+    assert!(!request.contains("future speech"));
+    // An unacknowledged capture does not consume context.
+    assert_eq!(frozen.request(&prompt)?, request);
+    frozen.acknowledge();
+    let next = context.capture(transcript.delegation_snapshot(400.0))?;
+    assert_eq!(next.request("next task")?, "next task");
+    transcript.admit(400.0);
+    assert!(transcript.request(200.0, 400.0).is_err());
+    Ok(())
+}
+
 fn fragment(id: &str, start_ms: f64, end_ms: f64) -> Fragment {
     Fragment {
         id: id.into(),
