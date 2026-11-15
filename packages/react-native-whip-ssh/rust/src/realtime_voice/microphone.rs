@@ -140,6 +140,8 @@ impl RealtimeVoiceAdapter {
             return false;
         }
         state.active = true;
+        drop(output);
+        drop(state);
         true
     }
 
@@ -192,6 +194,8 @@ impl RealtimeVoiceAdapter {
         } else {
             output.read(samples)
         };
+        drop(output);
+        drop(state);
         (epoch, count)
     }
 

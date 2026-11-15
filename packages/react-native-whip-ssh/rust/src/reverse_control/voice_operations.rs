@@ -1,5 +1,8 @@
 //! Explicit global-call operations, sharing the Phone Use parsers and executors.
-use super::*;
+use super::{
+    Arc, AtomicBool, BrowserError, Deserialize, Duration, ErrorCode, Ordering, Value,
+    WhipToolSession, application, decode, hosts, identifier, json, schema,
+};
 use crate::host_runtime::realtime_terminal::{ControlTarget, PinnedTerminal};
 use crate::realtime_voice::terminal;
 
@@ -178,6 +181,43 @@ impl WhipToolSession {
         Ok(())
     }
 
+    async fn command_job(&self, name: &str, args: Value) -> Result<Value, BrowserError> {
+        let job: Job = decode(args)?;
+        identifier(&job.host_id)?;
+        identifier(&job.job_id)?;
+        let session = self
+            .commands
+            .lock()
+            .iter()
+            .find(|command| command.host == job.host_id && command.id == job.job_id)
+            .map(|command| command.session.clone())
+            .ok_or_else(|| {
+                BrowserError::new(ErrorCode::NotFound, "No job on this call and host")
+            })?;
+        let mut value = session
+            .execute("", name, &json!({"job_id":job.job_id}).to_string())
+            .await;
+        // Streaming tails are authoritative; do not duplicate them in the final result.
+        if let Some(result) = value["result"].as_object_mut() {
+            result.remove("stdout");
+            result.remove("stderr");
+        }
+        for stream in ["stdout", "stderr"] {
+            if let Some(text) = value[stream].as_str()
+                && text.len() > MAX_STREAM_RESULT
+            {
+                let mut start = text.len() - MAX_STREAM_RESULT;
+                while !text.is_char_boundary(start) {
+                    start += 1;
+                }
+                value[stream] = json!(&text[start..]);
+                value["truncated"] = json!(true);
+            }
+        }
+        value["host_id"] = json!(job.host_id);
+        Ok(value)
+    }
+
     async fn operation_inner(
         self: &Arc<Self>,
         name: &str,
@@ -185,40 +225,7 @@ impl WhipToolSession {
         dispatched: &AtomicBool,
     ) -> Result<Value, BrowserError> {
         if matches!(name, terminal::READ | terminal::CANCEL) {
-            let job: Job = decode(args)?;
-            identifier(&job.host_id)?;
-            identifier(&job.job_id)?;
-            let session = self
-                .commands
-                .lock()
-                .iter()
-                .find(|command| command.host == job.host_id && command.id == job.job_id)
-                .map(|command| command.session.clone())
-                .ok_or_else(|| {
-                    BrowserError::new(ErrorCode::NotFound, "No job on this call and host")
-                })?;
-            let mut value = session
-                .execute("", name, &json!({"job_id":job.job_id}).to_string())
-                .await;
-            // Streaming tails are authoritative; do not duplicate them in the final result.
-            if let Some(result) = value["result"].as_object_mut() {
-                result.remove("stdout");
-                result.remove("stderr");
-            }
-            for stream in ["stdout", "stderr"] {
-                if let Some(text) = value[stream].as_str()
-                    && text.len() > MAX_STREAM_RESULT
-                {
-                    let mut start = text.len() - MAX_STREAM_RESULT;
-                    while !text.is_char_boundary(start) {
-                        start += 1;
-                    }
-                    value[stream] = json!(&text[start..]);
-                    value["truncated"] = json!(true);
-                }
-            }
-            value["host_id"] = json!(job.host_id);
-            return Ok(value);
+            return self.command_job(name, args).await;
         }
         if name == terminal::EXEC {
             let request: Exec = decode(args.clone())?;
@@ -279,10 +286,7 @@ impl WhipToolSession {
                 if let Some(owner) = owner.upgrade() {
                     let _ = owner
                         .guarded(async {
-                            while observed.busy() {
-                                if observed.target.check().is_err() {
-                                    break;
-                                }
+                            while observed.busy() && observed.target.check().is_ok() {
                                 tokio::time::sleep(Duration::from_millis(100)).await;
                             }
                             Ok(())

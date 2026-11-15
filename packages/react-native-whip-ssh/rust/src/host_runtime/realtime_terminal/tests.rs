@@ -35,7 +35,7 @@ fn global_control_rejects_stale_panes_mismatched_terminals_and_recovery_but_igno
     install(snapshot.clone());
     let args =
         json!({"pane_id":snapshot.panes[0].pane_id,"terminal_id":snapshot.panes[0].terminal_id});
-    let target = ControlTarget::pin("global-control-target".into(), args.clone())?;
+    let target = ControlTarget::pin("global-control-target".into(), args)?;
     snapshot.panes[0].focused = false;
     snapshot.panes[1].focused = true;
     install(snapshot.clone());

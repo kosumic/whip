@@ -63,6 +63,7 @@ impl ControlTarget {
             return Err(CHANGED);
         }
         let snapshot = host.snapshot.ok_or(CHANGED)?;
+        drop(state);
         self.snapshot_identities(&snapshot)
     }
 
@@ -166,13 +167,18 @@ pub(crate) struct TerminalTarget {
     pub process_epoch: Option<String>,
 }
 
+enum TerminalScope {
+    Interactive,
+    Host(Option<String>),
+}
+
 pub(crate) struct PinnedTerminal {
     runtime: Arc<HostRuntime>,
     target: TerminalTarget,
     operation_epoch: Option<u64>,
     recovery: u64,
     output: Mutex<TextTail>,
-    host_cwd: Option<Option<String>>,
+    scope: TerminalScope,
 }
 
 static OBSERVERS: OnceLock<Mutex<Vec<Weak<PinnedTerminal>>>> = OnceLock::new();
@@ -199,7 +205,7 @@ pub(super) fn observe_output(inner: &Arc<RuntimeInner>, terminal: &str, epoch: u
 
 impl PinnedTerminal {
     pub(crate) fn host_scoped(&self) -> bool {
-        self.host_cwd.is_some()
+        matches!(self.scope, TerminalScope::Host(_))
     }
 
     /// A global call pins a connection, never an interactive terminal or UI focus.
@@ -224,7 +230,7 @@ impl PinnedTerminal {
             recovery,
             operation_epoch: None,
             output: Mutex::default(),
-            host_cwd: Some(cwd),
+            scope: TerminalScope::Host(cwd),
         });
         pinned.check()?;
         Ok(pinned)
@@ -269,7 +275,7 @@ impl PinnedTerminal {
             operation_epoch,
             recovery,
             output: Mutex::default(),
-            host_cwd: None,
+            scope: TerminalScope::Interactive,
         });
         pinned.check_fresh()?;
         let mut observers = observers().lock();
@@ -295,7 +301,7 @@ impl PinnedTerminal {
         {
             return Err(CHANGED);
         }
-        if self.host_cwd.is_some() {
+        if self.host_scoped() {
             return Ok(());
         }
         if let Some(pane_id) = &self.target.pane_id {
@@ -357,7 +363,7 @@ impl PinnedTerminal {
 
     pub(crate) fn context(&self) -> Result<Value, &'static str> {
         self.check_fresh()?;
-        let cwd = if let Some(cwd) = &self.host_cwd {
+        let cwd = if let TerminalScope::Host(cwd) = &self.scope {
             cwd.clone()
         } else if let Some(pane_id) = &self.target.pane_id {
             self.runtime

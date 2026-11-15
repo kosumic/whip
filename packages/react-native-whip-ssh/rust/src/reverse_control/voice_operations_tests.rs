@@ -1,3 +1,7 @@
+use super::super::{
+    AGENTS_PROMPT, DEVICE_LOCATION, HOSTS_LIST, HashSet, MAX_RESULT, Mutex, WhipAppControl,
+    WhipToolPermit, set_whip_app_control,
+};
 use super::*;
 use tokio::sync::Notify;
 
@@ -42,15 +46,14 @@ impl WhipAppControl for Platform {
     }
 }
 
-fn setup() -> Result<
-    (
-        Arc<WhipToolSession>,
-        Arc<hosts::HostActionCoordinator>,
-        Arc<hosts::tests::Platform>,
-        Arc<Platform>,
-    ),
-    Box<dyn std::error::Error>,
-> {
+type Fixture = (
+    Arc<WhipToolSession>,
+    Arc<hosts::HostActionCoordinator>,
+    Arc<hosts::tests::Platform>,
+    Arc<Platform>,
+);
+
+fn setup() -> Result<Fixture, Box<dyn std::error::Error>> {
     let host = Arc::new(hosts::tests::Platform::default());
     let coordinator = hosts::HostActionCoordinator::new(host.clone());
     coordinator.update_context(hosts::tests::context());
@@ -140,7 +143,7 @@ fn operation_catalog_requires_explicit_targets_and_keeps_privileges_allowlisted(
         ("agents.inspect", json!({"host_id":"host","pane_id":"p"})),
         (
             "agents.wait",
-            json!({"host_id":"host","pane_id":"p","timeout_ms":300000}),
+            json!({"host_id":"host","pane_id":"p","timeout_ms":300_000}),
         ),
         (
             "tabs.create",
