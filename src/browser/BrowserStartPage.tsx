@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState, useSyncExternalStore } from 'react';
 import { ScrollView, View } from 'react-native';
 import Plus from 'lucide-react-native/icons/plus';
@@ -17,6 +18,7 @@ export function BrowserStartPage({
   onOpen: (url: string) => void;
   runtimeId: string;
 }) {
+  const { t } = useTranslation();
   useSyncExternalStore(browserLibrary.subscribe, browserLibrary.getSnapshot);
   const { colors } = useTheme();
   const [editing, setEditing] = useState(false);
@@ -31,17 +33,19 @@ export function BrowserStartPage({
     >
       <Text className="text-3xl font-semibold">Whip</Text>
       <Text className="mb-8 mt-2 text-muted-foreground">
-        Where would you like to go?
+        {t('browser.startPrompt')}
       </Text>
-      <Text className="mb-4 text-sm font-semibold">Shortcuts</Text>
+      <Text className="mb-4 text-sm font-semibold">
+        {t('browser.shortcuts')}
+      </Text>
       <View className="flex-row flex-wrap gap-y-5">
         {browserLibrary.shortcuts().map(site => (
           <View key={site.url} className="w-1/4 items-center">
             <Button
               variant="ghost"
               className="h-auto w-full flex-col gap-2 px-1"
-              accessibilityLabel={`Visit ${site.title}`}
-              accessibilityHint="Long press to remove shortcut"
+              accessibilityLabel={t('browser.visitSite', { site: site.title })}
+              accessibilityHint={t('browser.removeShortcutHint')}
               onPress={() => onOpen(site.url)}
               onLongPress={() =>
                 bestEffortCleanup(
@@ -63,36 +67,38 @@ export function BrowserStartPage({
           <Button
             variant="ghost"
             className="h-auto w-full flex-col gap-2 px-1"
-            accessibilityLabel="Add shortcut"
+            accessibilityLabel={t('browser.addShortcut')}
             onPress={() => setEditing(true)}
           >
             <View className="size-12 items-center justify-center rounded-2xl border border-border">
               <Plus size={22} color={colors.text} />
             </View>
-            <Text className="text-xs">Add shortcut</Text>
+            <Text className="text-xs">{t('browser.addShortcut')}</Text>
           </Button>
         </View>
       </View>
       {editing && (
         <View className="mt-8 gap-3">
-          <Text className="font-semibold">Add shortcut</Text>
+          <Text className="font-semibold">{t('browser.addShortcut')}</Text>
           <Input
-            accessibilityLabel="Shortcut name"
-            placeholder="Name"
+            accessibilityLabel={t('browser.shortcutName')}
+            placeholder={t('browser.name')}
             maxLength={256}
             value={title}
             onChangeText={setTitle}
           />
           <Input
-            accessibilityLabel="Shortcut address"
-            placeholder="Website address"
+            accessibilityLabel={t('browser.shortcutAddress')}
+            placeholder={t('browser.websiteAddress')}
             maxLength={8192}
             autoCapitalize="none"
             autoCorrect={false}
             value={address}
             onChangeText={setAddress}
           />
-          {!!error && <Text className="text-sm text-destructive">{error}</Text>}
+          {!!error && (
+            <Text className="text-sm text-destructive">{t(error)}</Text>
+          )}
           <View className="flex-row gap-3">
             <Button
               onPress={() => {
@@ -106,17 +112,13 @@ export function BrowserStartPage({
                       setAddress('');
                       setError('');
                     })
-                    .catch(() => setError('Could not save shortcut.'));
-                } catch (reason) {
-                  setError(
-                    reason instanceof Error
-                      ? reason.message
-                      : 'Enter a web address.',
-                  );
+                    .catch(() => setError('browser.saveShortcutFailed'));
+                } catch {
+                  setError('browser.invalidAddress');
                 }
               }}
             >
-              <Text>Save shortcut</Text>
+              <Text>{t('browser.saveShortcut')}</Text>
             </Button>
             <Button
               variant="ghost"
@@ -125,7 +127,7 @@ export function BrowserStartPage({
                 setError('');
               }}
             >
-              <Text>Cancel</Text>
+              <Text>{t('common.cancel')}</Text>
             </Button>
           </View>
         </View>

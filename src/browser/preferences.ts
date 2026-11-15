@@ -30,32 +30,40 @@ export const BROWSER_IDLE_MINUTES = {
 export const BROWSER_VIEWPORT_LIMITS = { minimum: 200, maximum: 4096 } as const;
 export const BROWSER_VIEWPORT_BREAKPOINT = 768;
 export const BROWSER_DESKTOP_VIEWPORT_WIDTH = 1280;
-const MOBILE_PROFILE_LABEL =
-  Platform.OS === 'ios' ? 'Mobile WebKit' : 'Mobile Chrome';
-const DESKTOP_PROFILE_LABEL =
-  Platform.OS === 'ios' ? 'Desktop WebKit' : 'Desktop Chrome';
 export const BROWSER_USER_AGENT_PROFILES = [
-  { value: 'mobile', label: MOBILE_PROFILE_LABEL },
-  { value: 'desktop', label: DESKTOP_PROFILE_LABEL },
-  { value: 'custom', label: 'Custom' },
+  {
+    value: 'mobile',
+    labelKey:
+      Platform.OS === 'ios' ? 'browser.mobileWebkit' : 'browser.mobileChrome',
+  },
+  {
+    value: 'desktop',
+    labelKey:
+      Platform.OS === 'ios' ? 'browser.desktopWebkit' : 'browser.desktopChrome',
+  },
+  { value: 'custom', labelKey: 'browser.custom' },
 ] as const;
 export const BROWSER_VIEWPORT_PRESETS = [
-  { label: 'Phone', width: 412, height: 915 },
-  { label: 'Phone Pro', width: 430, height: 932 },
-  { label: 'Tablet', width: 820, height: 1180 },
-  { label: 'Laptop', width: BROWSER_DESKTOP_VIEWPORT_WIDTH, height: 800 },
-  { label: 'Desktop', width: 1440, height: 900 },
-  { label: 'Full HD', width: 1920, height: 1080 },
+  { labelKey: 'browser.presetPhone', width: 412, height: 915 },
+  { labelKey: 'browser.presetPhonePro', width: 430, height: 932 },
+  { labelKey: 'browser.presetTablet', width: 820, height: 1180 },
+  {
+    labelKey: 'browser.presetLaptop',
+    width: BROWSER_DESKTOP_VIEWPORT_WIDTH,
+    height: 800,
+  },
+  { labelKey: 'browser.presetDesktop', width: 1440, height: 900 },
+  { labelKey: 'browser.presetFullHd', width: 1920, height: 1080 },
 ] as const;
 export function browserViewportWarning(
   profile: BrowserUserAgent,
   width: number,
-): string | null {
+) {
   if (!Number.isFinite(width) || width <= 0) return null;
   if (profile === 'desktop' && width < BROWSER_VIEWPORT_BREAKPOINT)
-    return `This viewport is narrower than 768 px with a Desktop user agent. Sites may use an awkward mobile layout. Consider ${MOBILE_PROFILE_LABEL}.`;
+    return 'browser.viewportNarrowWarning';
   if (profile !== 'desktop' && width >= BROWSER_VIEWPORT_BREAKPOINT)
-    return `This viewport is at least 768 px with a Mobile or Custom user agent. Sites may use an awkward desktop layout. Consider ${DESKTOP_PROFILE_LABEL}.`;
+    return 'browser.viewportWideWarning';
   return null;
 }
 export function clampBrowserIdleMinutes(minutes: number): number {

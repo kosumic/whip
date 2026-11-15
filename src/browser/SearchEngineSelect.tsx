@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState } from 'react';
 import { View } from 'react-native';
 import Check from 'lucide-react-native/icons/check';
@@ -17,6 +18,7 @@ export function SearchEngineSelect({
   value: BrowserSearchEngine;
   onChange: (engine: BrowserSearchEngine) => void;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const glassEnabled = useAppGlassEnabled();
   const selected =
@@ -26,7 +28,7 @@ export function SearchEngineSelect({
     <View className="gap-2">
       <GlassSurface className="rounded-md border border-white/30 dark:border-white/10">
         <Button
-          accessibilityLabel="Choose search engine"
+          accessibilityLabel={t('browser.chooseSearchEngine')}
           accessibilityState={{ expanded: open }}
           className="h-12 justify-start bg-transparent px-3"
           variant="ghost"
@@ -51,7 +53,9 @@ export function SearchEngineSelect({
           {BROWSER_SEARCH_ENGINES.map((engine, index) => (
             <Button
               key={engine.id}
-              accessibilityLabel={`Search with ${engine.label}`}
+              accessibilityLabel={t('browser.searchWith', {
+                engine: engine.label,
+              })}
               role="menuitem"
               accessibilityState={{ selected: value === engine.id }}
               className={`h-12 justify-start rounded-none px-3 ${index ? 'border-t border-border' : ''} ${glassEnabled && value === engine.id ? 'bg-primary/10 active:bg-primary/20' : ''}`}

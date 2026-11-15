@@ -1,5 +1,8 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { Platform } from 'react-native';
+import { createInstance } from 'i18next';
+import { en } from '../src/locales/en';
+import { fr } from '../src/locales/fr';
 jest.mock('../src/services/appStorage', () => ({
   appStorage: { getItem: jest.fn(async () => null), setItem: jest.fn(async () => undefined) },
 }));
@@ -30,12 +33,7 @@ jest.mock('react-native', () => ({
 }));
 jest.mock('react-native-svg/css', () => ({ LocalSvg: 'LocalSvg' }));
 jest.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string, values?: { host: string }) => {
-      const { en } = jest.requireActual('../src/locales/en');
-      return (en[key] || key).replace('{{host}}', values?.host || '');
-    },
-  }),
+  useTranslation: () => ({ t: mockBrowserI18n.t }),
 }));
 jest.mock('../src/browser/searchHistory', () => ({
   browserSearchHistory: {
@@ -79,6 +77,13 @@ jest.mock('lucide-react-native/icons/chevron-down', () => ('ChevronDown'));
 jest.mock('lucide-react-native/icons/chevron-up', () => ('ChevronUp'));
 
 let view: ReactTestRenderer;
+const mockBrowserI18n = createInstance();
+void mockBrowserI18n.init({
+  lng: 'en',
+  resources: { en: { translation: en }, fr: { translation: fr } },
+  keySeparator: false,
+  initAsync: false,
+});
 const mockTunneledHosts = new Set<string>();
 const mockLibraryListeners = new Set<() => void>();
 let mockLibraryRevision = 0;
@@ -116,6 +121,7 @@ const textContent = () =>
     .join('\n');
 beforeEach(async () => {
   jest.clearAllMocks();
+  await mockBrowserI18n.changeLanguage('en');
   mockSupportsProxy = false;
   Platform.OS = 'android';
   mockTunneledHosts.clear();
@@ -269,7 +275,7 @@ test('custom viewport is a draft until applied, clamps limits, and has all six n
   });
   expect(input('Browser viewport width').props.value).toBe('200');
   for (const preset of BROWSER_VIEWPORT_PRESETS) {
-    await press(`${preset.label} viewport`);
+    await press(`${en[preset.labelKey]} viewport`);
     expect(browserPreferences.getSnapshot().viewport).toEqual({
       width: preset.width,
       height: preset.height,
@@ -373,4 +379,22 @@ test('search engine dropdown shows vector provider icons, applies the choice and
   await press('Choose search engine');
   await press('Choose search engine');
   expect(browserPreferences.getSnapshot().searchEngine).toBe('google');
+});
+
+test('settings translate profiles, presets, validation, warnings, and confirmation copy', async () => {
+  await mockBrowserI18n.changeLanguage('fr');
+  await act(async () => view.update(<BrowserSettings />));
+  expect(textContent()).toContain(fr['browser.searchEngine']);
+  await press(fr['browser.desktopChrome']);
+  await press(fr['browser.customViewport']);
+  await press(fr['browser.applyViewport']);
+  expect(textContent()).toContain(fr['browser.enterDimensions']);
+  await change(fr['browser.viewportWidth'], '500');
+  expect(textContent()).toContain('Essayez Chrome mobile.');
+  expect(textContent()).toContain(fr['browser.presetPhone']);
+  await press(fr['browser.clearAllData']);
+  const confirmation = view.root.findByType('ConfirmationPopup' as never);
+  expect(confirmation.props.title).toBe(fr['browser.confirmClearData']);
+  expect(confirmation.props.copy).toBe(fr['browser.confirmClearDataCopy']);
+  expect(confirmation.props.confirmLabel).toBe(fr['browser.clearAll']);
 });

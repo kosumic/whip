@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState, useSyncExternalStore } from 'react';
 import { View } from 'react-native';
 import { browserLibrary } from './library';
@@ -13,8 +14,12 @@ export function BrowserLibraryScreen({
   kind: 'bookmarks' | 'history';
   onOpen: (url: string) => void;
 }) {
+  const { t, i18n } = useTranslation();
   useSyncExternalStore(browserLibrary.subscribe, browserLibrary.getSnapshot);
   const [filter, setFilter] = useState('');
+  const searchLabel = t(
+    kind === 'bookmarks' ? 'browser.searchBookmarks' : 'browser.searchHistory',
+  );
   const entries = (
     kind === 'bookmarks' ? browserLibrary.bookmarks() : browserLibrary.history()
   ).filter(site =>
@@ -25,8 +30,8 @@ export function BrowserLibraryScreen({
   return (
     <View className="gap-3 p-4">
       <Input
-        accessibilityLabel={`Search ${kind}`}
-        placeholder={`Search ${kind}`}
+        accessibilityLabel={searchLabel}
+        placeholder={searchLabel}
         value={filter}
         onChangeText={setFilter}
       />
@@ -40,7 +45,7 @@ export function BrowserLibraryScreen({
             )
           }
         >
-          <Text>Clear browsing history</Text>
+          <Text>{t('browser.clearHistory')}</Text>
         </Button>
       )}
       {entries.map(site => (
@@ -51,24 +56,33 @@ export function BrowserLibraryScreen({
           <Button
             variant="ghost"
             className="h-auto min-w-0 flex-1 flex-col items-start gap-1 px-0 py-3"
-            accessibilityLabel={`Open ${site.title || site.url}`}
+            accessibilityLabel={t('browser.openSite', {
+              site: site.title || site.url,
+            })}
             onPress={() => onOpen(site.url)}
           >
             <Text numberOfLines={1} className="w-full">
               {site.title || new URL(site.url).hostname}
             </Text>
-            <Text numberOfLines={1} className="w-full text-xs text-muted-foreground">
+            <Text
+              numberOfLines={1}
+              className="w-full text-xs text-muted-foreground"
+            >
               {site.url}
             </Text>
             {kind === 'history' && (
               <Text className="w-full text-xs text-muted-foreground">
-                {new Date(Number(site.visitedAt)).toLocaleString()}
+                {new Date(Number(site.visitedAt)).toLocaleString(
+                  i18n.resolvedLanguage,
+                )}
               </Text>
             )}
           </Button>
           <Button
             variant="ghost"
-            accessibilityLabel={`Remove ${site.title || site.url}`}
+            accessibilityLabel={t('browser.removeSite', {
+              site: site.title || site.url,
+            })}
             onPress={() =>
               bestEffortCleanup(
                 kind === 'bookmarks'
@@ -78,17 +92,17 @@ export function BrowserLibraryScreen({
               )
             }
           >
-            <Text>Remove</Text>
+            <Text>{t('common.remove')}</Text>
           </Button>
         </View>
       ))}
       {entries.length === 0 && (
         <Text className="py-8 text-center text-muted-foreground">
           {filter
-            ? 'No matches.'
+            ? t('browser.noMatches')
             : kind === 'bookmarks'
-              ? 'Save a page using Bookmark in the browser menu.'
-              : 'Pages you visit will appear here.'}
+              ? t('browser.emptyBookmarks')
+              : t('browser.emptyHistory')}
         </Text>
       )}
     </View>

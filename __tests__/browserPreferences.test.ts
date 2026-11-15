@@ -1,4 +1,5 @@
 import { appStorage } from '../src/services/appStorage';
+import { en } from '../src/locales/en';
 const mockStored = new Map<string, string>();
 jest.mock('../src/services/appStorage', () => ({
   appStorage: {
@@ -136,7 +137,7 @@ test('automatic viewport default, named presets and dimension limits', () => {
   expect(DEFAULT_BROWSER_PREFERENCES.viewport).toBeNull();
   expect(
     BROWSER_VIEWPORT_PRESETS.map(preset => [
-      preset.label,
+      en[preset.labelKey],
       preset.width,
       preset.height,
     ]),
@@ -155,9 +156,9 @@ test('automatic viewport default, named presets and dimension limits', () => {
 
 test('viewport warnings follow draft width and the 768px breakpoint', () => {
   expect(browserViewportWarning('mobile', 767)).toBeNull();
-  expect(browserViewportWarning('mobile', 768)).toContain('Desktop Chrome');
-  expect(browserViewportWarning('custom', 768)).toContain('Desktop Chrome');
-  expect(browserViewportWarning('desktop', 767)).toContain('Mobile Chrome');
+  expect(browserViewportWarning('mobile', 768)).toBe('browser.viewportWideWarning');
+  expect(browserViewportWarning('custom', 768)).toBe('browser.viewportWideWarning');
+  expect(browserViewportWarning('desktop', 767)).toBe('browser.viewportNarrowWarning');
   expect(browserViewportWarning('desktop', 768)).toBeNull();
   expect(browserViewportWarning('desktop', 0)).toBeNull();
 });

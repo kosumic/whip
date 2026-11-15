@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Share, View } from 'react-native';
 import Copy from 'lucide-react-native/icons/copy';
 import Pencil from 'lucide-react-native/icons/pencil';
@@ -17,13 +18,14 @@ export function BrowserAddressActions({
   onEdit: () => void;
   compact?: boolean;
 }) {
+  const { t } = useTranslation();
   const { colors } = useTheme();
   const disabled = !url || url === 'about:blank';
   const size = compact ? 'icon' : 'default';
   return (
     <View className="flex-row items-center justify-around">
       <Button
-        accessibilityLabel="Share current browser address"
+        accessibilityLabel={t('browser.shareAddress')}
         variant="ghost"
         size={size}
         className="rounded-full"
@@ -37,10 +39,10 @@ export function BrowserAddressActions({
         }}
       >
         <Share2 size={20} color={colors.text} />
-        {!compact && <Text>Share</Text>}
+        {!compact && <Text>{t('browser.share')}</Text>}
       </Button>
       <Button
-        accessibilityLabel="Copy current browser address"
+        accessibilityLabel={t('browser.copyAddress')}
         variant="ghost"
         size={size}
         className="rounded-full"
@@ -50,10 +52,10 @@ export function BrowserAddressActions({
         }}
       >
         <Copy size={20} color={colors.text} />
-        {!compact && <Text>Copy</Text>}
+        {!compact && <Text>{t('browser.copy')}</Text>}
       </Button>
       <Button
-        accessibilityLabel="Edit current browser address"
+        accessibilityLabel={t('browser.editAddress')}
         variant="ghost"
         size={size}
         className="rounded-full"
@@ -61,7 +63,7 @@ export function BrowserAddressActions({
         onPress={onEdit}
       >
         <Pencil size={20} color={colors.text} />
-        {!compact && <Text>Edit</Text>}
+        {!compact && <Text>{t('browser.edit')}</Text>}
       </Button>
     </View>
   );

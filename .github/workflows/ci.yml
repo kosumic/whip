@@ -264,6 +264,9 @@ jobs:
       - name: Check app version configuration
         run: npm run check:app-version
 
+      - name: Check UI localization
+        run: npm run check:localization
+
       - name: Check types
         run: |
           npx tsc --noEmit

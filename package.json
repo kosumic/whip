@@ -13,6 +13,7 @@
     "benchmark:codex-ingestion": "node scripts/benchmark-codex-ingestion.ts",
     "check:cargo-license-notices": "node scripts/check-cargo-license-notices.ts",
     "check:app-version": "node scripts/check-app-version.cjs",
+    "check:localization": "node scripts/check-ui-localization.cjs",
     "check:scripts": "tsc --project scripts/tsconfig.json",
     "check:license-notices": "npm run check:npm-license-notices && npm run check:cargo-license-notices && node scripts/sync-bundled-license-notices.ts",
     "check:npm-license-notices": "node scripts/check-license-notices.ts",

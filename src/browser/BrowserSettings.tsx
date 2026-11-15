@@ -1,9 +1,11 @@
+import { useTranslation } from 'react-i18next';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Platform, ScrollView, View } from 'react-native';
 import {
   BROWSER_IDLE_MINUTES,
   BROWSER_USER_AGENT_PROFILES,
   BROWSER_VIEWPORT_LIMITS,
+  BROWSER_VIEWPORT_BREAKPOINT,
   BROWSER_VIEWPORT_PRESETS,
   browserPreferences,
   browserUserAgent,
@@ -44,6 +46,7 @@ export function BrowserSettings({
 }: {
   runtimeId?: string;
 } = {}) {
+  const { t } = useTranslation();
   const settings = useSyncExternalStore(
     browserPreferences.subscribe,
     browserPreferences.getSnapshot,
@@ -103,7 +106,7 @@ export function BrowserSettings({
         if (!cancelled) setSites(data);
       })
       .catch(() => {
-        if (!cancelled) setMessage('Could not read browser site data.');
+        if (!cancelled) setMessage('browser.readSiteDataFailed');
       });
     return () => {
       cancelled = true;
@@ -113,7 +116,7 @@ export function BrowserSettings({
     setMessage(null);
     void browserPreferences
       .set(update)
-      .catch(() => setMessage('Could not save browser setting.'));
+      .catch(() => setMessage('browser.saveSettingFailed'));
   };
   if (!supportsBrowserControl()) return null;
   const clear = async (domain?: string) => {
@@ -136,12 +139,12 @@ export function BrowserSettings({
       setMessage(
         domain
           ? Platform.OS === 'ios'
-            ? 'Cookies for this domain cleared. Reload the page.'
-            : 'Cookies for visited paths cleared. Reload the page.'
-          : 'Cookies, site data, browsing and search history cleared. Reload a page to sign in again.',
+            ? 'browser.domainCookiesCleared'
+            : 'browser.pathCookiesCleared'
+          : 'browser.allDataCleared',
       );
     } catch {
-      setMessage('Could not clear browser data.');
+      setMessage('browser.clearDataFailed');
     } finally {
       setBusy(false);
       setConfirmClear(false);
@@ -161,7 +164,7 @@ export function BrowserSettings({
           accessibilityRole="alert"
           className="text-sm text-muted-foreground"
         >
-          {message}
+          {t(message)}
         </Text>
       )}
       {runtimeId && (
@@ -169,25 +172,29 @@ export function BrowserSettings({
           <BrowserTunnelingSetting runtimeId={runtimeId} />
         </View>
       )}
-      <Text className="text-sm text-muted-foreground">Search engine</Text>
+      <Text className="text-sm text-muted-foreground">
+        {t('browser.searchEngine')}
+      </Text>
       <SearchEngineSelect
         value={settings.searchEngine}
         onChange={searchEngine => save({ searchEngine })}
       />
       <Text className="text-xs text-muted-foreground">
-        Used for searches from the address bar.
+        {t('browser.searchEngineHelp')}
       </Text>
-      <Text className="text-sm text-muted-foreground">User agent</Text>
+      <Text className="text-sm text-muted-foreground">
+        {t('browser.userAgent')}
+      </Text>
       {BROWSER_USER_AGENT_PROFILES.map(profile => (
         <View key={profile.value} className="gap-2">
           <Button
-            accessibilityLabel={profile.label}
+            accessibilityLabel={t(profile.labelKey)}
             variant={
               settings.userAgent === profile.value ? 'default' : 'secondary'
             }
             onPress={() => save({ userAgent: profile.value })}
           >
-            <Text>{profile.label}</Text>
+            <Text>{t(profile.labelKey)}</Text>
           </Button>
           {settings.userAgent === 'custom' && profile.value === 'custom' && (
             <Text
@@ -201,7 +208,7 @@ export function BrowserSettings({
                   userAgent: profile.value,
                 },
                 nativeAgent,
-              ) || 'Not set'}
+              ) || t('browser.notSet')}
             </Text>
           )}
         </View>
@@ -209,7 +216,7 @@ export function BrowserSettings({
       {settings.userAgent === 'custom' && (
         <View className="gap-2">
           <Input
-            accessibilityLabel="Custom browser user agent"
+            accessibilityLabel={t('browser.customUserAgent')}
             value={customAgent}
             onChangeText={setCustomAgent}
             autoCapitalize="none"
@@ -217,69 +224,70 @@ export function BrowserSettings({
             maxLength={512}
           />
           <Button
-            accessibilityLabel="Apply user agent"
+            accessibilityLabel={t('browser.applyUserAgent')}
             variant="secondary"
             onPress={() => save({ customUserAgent: customAgent.trim() })}
           >
-            <Text>Apply user agent</Text>
+            <Text>{t('browser.applyUserAgent')}</Text>
           </Button>
         </View>
       )}
       <Text className="text-xs text-muted-foreground">
-        Changing the profile reloads open pages. Tabs share site data within
-        their browsing connection.
+        {t('browser.userAgentHelp')}
       </Text>
-      <Text className="text-sm text-muted-foreground">Viewport</Text>
+      <Text className="text-sm text-muted-foreground">
+        {t('browser.viewport')}
+      </Text>
       <View className="flex-row flex-wrap gap-2">
         <Button
-          accessibilityLabel="Default viewport"
+          accessibilityLabel={t('browser.defaultViewport')}
           variant={!customViewport ? 'default' : 'secondary'}
           onPress={() => {
             setCustomViewport(false);
             save({ viewport: null });
           }}
         >
-          <Text>Default (Auto fit)</Text>
+          <Text>{t('browser.autoFit')}</Text>
         </Button>
         <Button
-          accessibilityLabel="Custom viewport"
+          accessibilityLabel={t('browser.customViewport')}
           variant={customViewport ? 'default' : 'secondary'}
           onPress={() => setCustomViewport(true)}
         >
-          <Text>Custom</Text>
+          <Text>{t('browser.custom')}</Text>
         </Button>
       </View>
       <Text className="text-xs text-muted-foreground">
-        Auto fit uses a wider page in desktop mode. Custom sizes override it.
+        {t('browser.autoFitHelp')}
       </Text>
       {customViewport && (
         <View className="gap-3">
           <View className="flex-row items-center gap-2">
             <Input
-              accessibilityLabel="Browser viewport width"
+              accessibilityLabel={t('browser.viewportWidth')}
               className="min-w-0 flex-1"
               value={width}
               onChangeText={text => setWidth(digits(text, 5))}
               keyboardType="number-pad"
               maxLength={5}
-              placeholder="Width"
+              placeholder={t('browser.width')}
             />
             <Text>×</Text>
             <Input
-              accessibilityLabel="Browser viewport height"
+              accessibilityLabel={t('browser.viewportHeight')}
               className="min-w-0 flex-1"
               value={height}
               onChangeText={text => setHeight(digits(text, 5))}
               keyboardType="number-pad"
               maxLength={5}
-              placeholder="Height"
+              placeholder={t('browser.height')}
             />
             <Button
-              accessibilityLabel="Apply viewport"
+              accessibilityLabel={t('browser.applyViewport')}
               variant="secondary"
               onPress={() => {
                 if (!width || !height) {
-                  setMessage('Enter viewport width and height.');
+                  setMessage('browser.enterDimensions');
                   return;
                 }
                 const clamp = (size: string) =>
@@ -293,14 +301,16 @@ export function BrowserSettings({
                 save({ viewport: next });
               }}
             >
-              <Text>Apply</Text>
+              <Text>{t('browser.apply')}</Text>
             </Button>
           </View>
           <View className="flex-row flex-wrap gap-2">
             {BROWSER_VIEWPORT_PRESETS.map(preset => (
               <Button
-                key={preset.label}
-                accessibilityLabel={`${preset.label} viewport`}
+                key={preset.labelKey}
+                accessibilityLabel={t('browser.presetViewport', {
+                  preset: t(preset.labelKey),
+                })}
                 variant={
                   settings.viewport?.width === preset.width &&
                   settings.viewport.height === preset.height
@@ -317,38 +327,52 @@ export function BrowserSettings({
                 }
               >
                 <Text>
-                  {preset.label} ({preset.width} × {preset.height})
+                  {t('browser.presetDimensions', {
+                    preset: t(preset.labelKey),
+                    width: preset.width,
+                    height: preset.height,
+                  })}
                 </Text>
               </Button>
             ))}
           </View>
           <Text className="text-xs text-muted-foreground">
-            Custom dimensions: {BROWSER_VIEWPORT_LIMITS.minimum}–
-            {BROWSER_VIEWPORT_LIMITS.maximum} px.
+            {t('browser.dimensionLimits', BROWSER_VIEWPORT_LIMITS)}
           </Text>
         </View>
       )}
       {warning && (
-        <Text className="text-xs text-muted-foreground">{warning}</Text>
+        <Text className="text-xs text-muted-foreground">
+          {t(warning, {
+            breakpoint: BROWSER_VIEWPORT_BREAKPOINT,
+            profile: t(
+              BROWSER_USER_AGENT_PROFILES[
+                settings.userAgent === 'desktop' ? 0 : 1
+              ].labelKey,
+            ),
+          })}
+        </Text>
       )}
       <Text className="text-xs text-muted-foreground">
         {viewport
-          ? `Current viewport: ${viewport.width} × ${viewport.height}. Larger viewports scale to fit the screen.`
-          : 'Automatically fits the available browser area, including when you rotate the phone.'}
+          ? t('browser.currentViewport', { ...viewport })
+          : t('browser.automaticViewportHelp')}
       </Text>
-      <Text className="text-sm text-muted-foreground">Idle timeout</Text>
+      <Text className="text-sm text-muted-foreground">
+        {t('browser.idleTimeout')}
+      </Text>
       <View className="flex-row items-center gap-2">
         <Input
-          accessibilityLabel="Browser idle timeout"
+          accessibilityLabel={t('browser.browserIdleTimeout')}
           className="min-w-0 flex-1"
           value={idleMinutes}
           onChangeText={text => setIdleMinutes(digits(text, 3))}
           keyboardType="number-pad"
           maxLength={3}
         />
-        <Text>minutes</Text>
+        <Text>{t('browser.minutes')}</Text>
         <Button
-          accessibilityLabel="Apply idle timeout"
+          accessibilityLabel={t('browser.applyIdleTimeout')}
           variant="secondary"
           onPress={() => {
             const next = clampBrowserIdleMinutes(
@@ -358,23 +382,27 @@ export function BrowserSettings({
             save({ idleMinutes: next });
           }}
         >
-          <Text>Apply</Text>
+          <Text>{t('browser.apply')}</Text>
         </Button>
       </View>
       <Text className="text-xs text-muted-foreground">
-        {BROWSER_IDLE_MINUTES.minimum}–{BROWSER_IDLE_MINUTES.maximum} minutes;
-        default {BROWSER_IDLE_MINUTES.default}. Paused tabs keep their address
-        and reload when reopened. Busy tabs stay active.
+        {t('browser.idleTimeoutHelp', BROWSER_IDLE_MINUTES)}
       </Text>
-      <Text className="text-sm text-muted-foreground">Cookies</Text>
+      <Text className="text-sm text-muted-foreground">
+        {t('browser.cookies')}
+      </Text>
       <Text className="text-xs text-muted-foreground">
-        {sites.hasCookies ? 'Cookies stored' : 'No cookies stored'}
+        {t(
+          sites.hasCookies
+            ? 'browser.cookiesStored'
+            : 'browser.noCookiesStored',
+        )}
       </Text>
       {sites.domains.length > 0 && (
         <View className="gap-2">
           <Input
-            accessibilityLabel="Filter cookie domains"
-            placeholder="Filter domains"
+            accessibilityLabel={t('browser.filterCookieDomains')}
+            placeholder={t('browser.filterDomains')}
             value={filter}
             onChangeText={setFilter}
             autoCapitalize="none"
@@ -387,38 +415,41 @@ export function BrowserSettings({
                   {domain}
                 </Text>
                 <Button
-                  accessibilityLabel={`Clear cookies for ${domain}`}
+                  accessibilityLabel={t('browser.clearDomainCookies', {
+                    domain,
+                  })}
                   disabled={busy || !sites.canClearDomains}
                   variant="ghost"
                   onPress={() => {
                     void clear(domain);
                   }}
                 >
-                  <Text>Clear</Text>
+                  <Text>{t('browser.clear')}</Text>
                 </Button>
               </View>
             ))}
           </ScrollView>
           {domains.length === 0 && (
             <Text className="text-xs text-muted-foreground">
-              No domains match.
+              {t('browser.noMatchingDomains')}
             </Text>
           )}
           <Text className="text-xs text-muted-foreground">
-            {Platform.OS === 'ios'
-              ? 'Domain clearing removes all cookies owned by this domain. Use Clear All for all cookies and site data.'
-              : 'Domain clearing covers cookies on visited paths. Use Clear All for all cookies and site data.'}
+            {t(
+              Platform.OS === 'ios'
+                ? 'browser.domainClearingIosHelp'
+                : 'browser.domainClearingHelp',
+            )}
           </Text>
           {!sites.canClearDomains && (
             <Text className="text-xs text-muted-foreground">
-              Update Android System WebView to enable clearing cookies by
-              domain.
+              {t('browser.updateWebviewCookies')}
             </Text>
           )}
         </View>
       )}
       <Button
-        accessibilityLabel="Clear all browser data"
+        accessibilityLabel={t('browser.clearAllData')}
         variant="secondary"
         disabled={
           busy ||
@@ -428,16 +459,15 @@ export function BrowserSettings({
         }
         onPress={() => setConfirmClear(true)}
       >
-        <Text>Clear All</Text>
+        <Text>{t('browser.clearAll')}</Text>
       </Button>
       {browserArchive.list().length > 0 && (
         <View className="gap-2">
           <Text className="text-sm text-muted-foreground">
-            Saved browser sessions
+            {t('browser.savedSessions')}
           </Text>
           <Text className="text-xs text-muted-foreground">
-            Tabs reopen automatically after an app restart and load when
-            selected. Host tabs return when you reconnect to the original host.
+            {t('browser.savedSessionsHelp')}
           </Text>
           {browserArchive.list().map(record => (
             <View
@@ -448,7 +478,7 @@ export function BrowserSettings({
                 {record.tabs[0]?.title || record.tabs[0]?.url}
               </Text>
               <Text className="text-xs text-muted-foreground">
-                {record.tabs.length} tabs
+                {t('browser.tabCount', { count: record.tabs.length })}
               </Text>
               <View className="flex-row gap-2">
                 <Button
@@ -457,16 +487,16 @@ export function BrowserSettings({
                   onPress={() => {
                     void browserRegistry
                       .restore(record)
-                      .catch(() => setMessage('Could not restore tabs.'));
+                      .catch(() => setMessage('browser.restoreTabsFailed'));
                   }}
                 >
-                  <Text>Open tabs</Text>
+                  <Text>{t('browser.openTabs')}</Text>
                 </Button>
                 <Button
                   variant="ghost"
                   onPress={() => browserArchive.remove(record.id)}
                 >
-                  <Text>Forget</Text>
+                  <Text>{t('browser.forget')}</Text>
                 </Button>
               </View>
             </View>
@@ -476,9 +506,9 @@ export function BrowserSettings({
       <ConfirmationPopup
         visible={confirmClear}
         busy={busy}
-        title="Clear browser data?"
-        copy="This clears browsing and search history, cookies and site data for all browser tabs. Bookmarks and shortcuts are kept. You may need to sign in again."
-        confirmLabel="Clear All"
+        title={t('browser.confirmClearData')}
+        copy={t('browser.confirmClearDataCopy')}
+        confirmLabel={t('browser.clearAll')}
         onCancel={() => setConfirmClear(false)}
         onConfirm={() => {
           void clear();

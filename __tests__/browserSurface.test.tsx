@@ -1,4 +1,6 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+jest.mock('expo-localization', () => ({ getLocales: () => [] }));
+import '../src/i18n';
 jest.mock('../src/services/appStorage', () => ({
   appStorage: { getItem: jest.fn(async () => null), setItem: jest.fn(async () => undefined) },
 }));
