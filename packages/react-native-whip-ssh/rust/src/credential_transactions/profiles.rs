@@ -91,15 +91,7 @@ impl Workflow {
                 .upsert(host.clone(), now())
                 .map_err(|_| CredentialTransactionError::InvalidProfile)?;
             if material.present() {
-                let receipt = uuid::Uuid::new_v4().to_string();
-                self.journal.hosts.insert(
-                    host.id.clone(),
-                    HostPending::Write {
-                        receipt: receipt.clone(),
-                        username: host.username.clone(),
-                        legacy: true,
-                    },
-                );
+                let receipt = self.stage_host_write(&host, true);
                 self.commit_profiles(store, true).await?;
                 let result = self.finish_host_write(&host, material, receipt).await;
                 self.publish_repairs();
@@ -162,21 +154,16 @@ impl Workflow {
             .into_iter()
             .find(|value| value.id == host.id)
             .ok_or(CredentialTransactionError::InvalidProfile)?;
-        let receipt = uuid::Uuid::new_v4().to_string();
-        self.journal.hosts.insert(
-            host.id.clone(),
-            if credential.present() {
-                HostPending::Write {
-                    receipt: receipt.clone(),
-                    username: host.username.clone(),
-                    legacy: false,
-                }
-            } else {
-                HostPending::Clear
-            },
-        );
+        let receipt = if credential.present() {
+            Some(self.stage_host_write(&host, false))
+        } else {
+            self.journal
+                .hosts
+                .insert(host.id.clone(), HostPending::Clear);
+            None
+        };
         let hosts = self.commit_profiles(next, true).await?;
-        let result = if credential.present() {
+        let result = if let Some(receipt) = receipt {
             self.finish_host_write(&host, credential, receipt).await
         } else {
             self.finish_host_clear(&host.id).await
@@ -282,20 +269,13 @@ impl Workflow {
         };
         next.upsert(host.clone(), timestamp)
             .map_err(|_| CredentialTransactionError::InvalidProfile)?;
-        let receipt = uuid::Uuid::new_v4().to_string();
-        if material.is_some() {
+        let staged = material.map(|material| {
             self.journal.deleted.remove(&id);
-            self.journal.hosts.insert(
-                id,
-                HostPending::Write {
-                    receipt: receipt.clone(),
-                    username: host.username.clone(),
-                    legacy: false,
-                },
-            );
-        }
-        self.commit_profiles(next, material.is_some()).await?;
-        let result = if let Some(material) = material {
+            let receipt = self.stage_host_write(&host, false);
+            (material, receipt)
+        });
+        self.commit_profiles(next, staged.is_some()).await?;
+        let result = if let Some((material, receipt)) = staged {
             self.finish_host_write(&host, material, receipt).await
         } else {
             Ok(())
@@ -483,15 +463,7 @@ impl Workflow {
         if saved.tailcat_private_key != prepared.tailcat_private_key
             || saved.tailcat_public_key != prepared.tailcat_public_key
         {
-            let receipt = uuid::Uuid::new_v4().to_string();
-            self.journal.hosts.insert(
-                host.id.clone(),
-                HostPending::Write {
-                    receipt: receipt.clone(),
-                    username: host.username.clone(),
-                    legacy: false,
-                },
-            );
+            let receipt = self.stage_host_write(&host, false);
             self.persist_journal(false).await?;
             let material = CredentialMaterial {
                 tailcat_private_key: prepared.tailcat_private_key.clone(),
