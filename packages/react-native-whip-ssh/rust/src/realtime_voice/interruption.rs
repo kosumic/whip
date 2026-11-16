@@ -16,6 +16,7 @@ impl RealtimeVoiceAdapter {
         // The normal skip protocol truncates at the heard position and cancels
         // speech; it does not cancel tools or replace the conversation.
         self.command(Command::SuspendAudio);
+        drop(interruption);
         tracing::info!(call_id = ?self.session_id, attempt = self.attempt.load(Ordering::Acquire), event = "audio_suspended");
     }
 
@@ -29,6 +30,7 @@ impl RealtimeVoiceAdapter {
         self.output.lock().clear();
         self.input.discard();
         self.suspended.store(false, Ordering::Release);
+        drop(interruption);
         tracing::info!(call_id = ?self.session_id, attempt = self.attempt.load(Ordering::Acquire), event = "audio_resumed");
     }
 

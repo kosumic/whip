@@ -194,6 +194,7 @@ fn native_service_admission_and_interruption_use_the_same_generation()
     core.take_effects()?;
     let current = std::ffi::CString::new(replacement.clone())?;
     // A late service destruction callback must not close the replacement.
+    // SAFETY: The CString token and static C string remain valid through the synchronous call.
     unsafe {
         whip_voice_session_end_reason(
             token.as_ptr(),
@@ -201,6 +202,7 @@ fn native_service_admission_and_interruption_use_the_same_generation()
         );
     }
     assert!(service_current(&current));
+    // SAFETY: The CString token and static C string remain valid through the synchronous call.
     unsafe {
         whip_voice_session_end_reason(
             current.as_ptr(),

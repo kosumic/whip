@@ -107,9 +107,14 @@ fn recovery_deadline_is_not_extended_by_duplicate_loss() -> Result<(), &'static 
     owner.suspend_audio();
     let since = owner.interruption.lock().ok_or("Missing interruption")?;
     owner.suspend_audio();
-    owner.interruption_tick(since + RECOVERY_TIMEOUT - Duration::from_millis(1));
+    let deadline = since + RECOVERY_TIMEOUT;
+    owner.interruption_tick(
+        deadline
+            .checked_sub(Duration::from_millis(1))
+            .ok_or("Invalid recovery deadline")?,
+    );
     assert!(!owner.closed.load(Ordering::Acquire));
-    owner.interruption_tick(since + RECOVERY_TIMEOUT);
+    owner.interruption_tick(deadline);
     assert!(owner.closed.load(Ordering::Acquire));
     assert_eq!(ffi::snapshot(&owner).ok_or("Snapshot")?["phase"], "error");
     owner.resume_audio();
