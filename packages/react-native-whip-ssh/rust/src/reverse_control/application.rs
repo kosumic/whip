@@ -107,7 +107,7 @@ fn decode<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, BrowserErro
 }
 
 pub(super) fn identifier(value: &str) -> Result<(), BrowserError> {
-    if value.is_empty() || value.len() > 256 || value.chars().any(char::is_control) {
+    if !agent_browser_control::model::valid_identifier(value) {
         return Err(BrowserError::invalid(
             "Invalid host, terminal or pane identifier",
         ));
@@ -889,6 +889,27 @@ fn statuses_schema() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn identifier_validation_keeps_its_domain_error() {
+        for value in [
+            String::new(),
+            "é".repeat(129),
+            "pane\0name".into(),
+            "pane\u{85}name".into(),
+        ] {
+            let error = identifier(&value).err().unwrap();
+            assert_eq!(
+                error.code,
+                agent_browser_control::model::ErrorCode::InvalidArgument
+            );
+            assert_eq!(error.message, "Invalid host, terminal or pane identifier");
+        }
+        for value in ["é".repeat(128), "pane / name".into()] {
+            assert!(identifier(&value).is_ok());
+        }
+    }
+
     use crate::herdr_api::HerdrControlRequest;
 
     #[test]

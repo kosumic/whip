@@ -149,7 +149,7 @@ fn decode<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, BrowserErro
         .map_err(|_| BrowserError::invalid("Invalid global call arguments"))
 }
 fn identifier(id: &str) -> Result<(), BrowserError> {
-    if id.is_empty() || id.len() > 256 || id.chars().any(char::is_control) {
+    if !agent_browser_control::model::valid_identifier(id) {
         return Err(BrowserError::invalid(
             "Use an explicit saved host, tab or pane ID",
         ));
@@ -674,6 +674,26 @@ fn schema(name: &str, description: &str, properties: Value, required: &[&str]) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn identifier_validation_keeps_its_domain_error() {
+        for value in [
+            String::new(),
+            "é".repeat(129),
+            "pane\0name".into(),
+            "pane\u{85}name".into(),
+        ] {
+            let error = identifier(&value).err().unwrap();
+            assert_eq!(
+                error.code,
+                agent_browser_control::model::ErrorCode::InvalidArgument
+            );
+            assert_eq!(error.message, "Use an explicit saved host, tab or pane ID");
+        }
+        for value in ["é".repeat(128), "pane / name".into()] {
+            assert!(identifier(&value).is_ok());
+        }
+    }
 
     #[derive(Default)]
     struct Platform {
