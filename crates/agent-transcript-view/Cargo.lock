@@ -14,7 +14,7 @@ dependencies = [
 
 [[package]]
 name = "agent-transcript-view"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "agent-transcript-core",
  "serde_json",

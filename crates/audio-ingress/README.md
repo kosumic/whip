@@ -7,7 +7,7 @@ It is distributed under Whip's AGPL-3.0-or-later license.
 
 ```toml
 [dependencies]
-audio-ingress = "0.1.0"
+audio-ingress = "0.1.1"
 ```
 
 Create an `Ingress` with an explicit mono sample rate, packet count, maximum

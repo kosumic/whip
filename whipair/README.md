@@ -336,7 +336,7 @@ prompt.
 
 The CLI uses versioned registry dependencies with local development paths.
 Publish `tailcat-client` 0.1.1 (offline validation support), then
-`whipair-protocol` 0.2.0 before publishing a CLI release that uses them.
+`whipair-protocol` 0.2.1 before publishing a CLI release that uses them.
 Each library has a tag-triggered crates.io workflow. See the
 [protocol release instructions](../crates/whipair-protocol/README.md).
 

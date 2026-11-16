@@ -226,7 +226,7 @@ stock WebRTC peer over real local transport.
 Add the provider and media crates to your Cargo dependencies:
 
 ```toml
-voice-call-openai = "0.2.0"
+voice-call-openai = "0.2.1"
 voice-call-media = "0.2.0"
 ```
 

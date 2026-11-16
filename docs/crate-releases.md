@@ -28,6 +28,23 @@ checksum and its license against the tagged manifest before attaching it to a
 GitHub release. Releases do not replace the mobile app's latest release.
 Whip Notify retains its separate binary release workflow and installer tag.
 
+## November 16, 2026 patch releases
+
+| Crate | Version | Changes |
+| --- | --- | --- |
+| `audio-ingress` | `0.1.1` | Invalidate queued and in-flight PCM on device interruption without changing mute intent (#448, #451). |
+| `voice-call-openai` | `0.2.1` | Suspend audio without replacing the conversation; share bounded WebRTC sideband operations (#448, #459). |
+| `herdr-protocol` | `0.2.3` | Preserve nested POSIX shell arguments through Fish (#459). |
+| `agent-transcript-view` | `0.2.1` | Add an application-supplied user-text transform for search documents (#445). |
+| `whipair-protocol` | `0.2.1` | Expose shared bounded SSH enrollment exchange helpers (#459). |
+| `agent-browser-control` | `0.2.1` | Expose the shared identifier validator and byte limit (#459). |
+
+Publish `audio-ingress` before `voice-call-openai`, which now requires at least
+`audio-ingress` 0.1.1. These releases preserve the existing public API and wire
+formats.
+
+## Initial releases
+
 New packages, including `native-credentials`, `voice-call-local`, and
 `voice-call-openai`, use the initial-release procedure below. Renaming a source
 crate does not rename existing registry releases. These crates can also be
