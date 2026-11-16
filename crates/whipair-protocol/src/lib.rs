@@ -1,5 +1,7 @@
 #![doc = include_str!("../README.md")]
 
+pub mod exchange;
+
 use serde::{Deserialize, Serialize};
 use ssh_key::{HashAlg, PublicKey};
 use std::net::IpAddr;
