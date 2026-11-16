@@ -61,12 +61,13 @@ jobs:
           working-directory: fastlane
 
       - name: Verify App Store access before building
+        id: validate
         env:
           APP_STORE_CONNECT_API_KEY_JSON: ${{ secrets.APP_STORE_CONNECT_API_KEY_JSON }}
         run: bundle exec fastlane ios validate_release
 
       - name: Build production iOS app
-        if: inputs.operation == 'release'
+        if: inputs.operation == 'release' && steps.validate.outputs.already_submitted != 'true'
         id: build
         env:
           NODE_ENV: production
@@ -83,7 +84,7 @@ jobs:
           echo "build_id=$build_id" >> "$GITHUB_OUTPUT"
 
       - name: Upload iOS build to App Store Connect
-        if: inputs.operation == 'release'
+        if: inputs.operation == 'release' && steps.validate.outputs.already_submitted != 'true'
         env:
           EAS_BUILD_ID: ${{ steps.build.outputs.build_id }}
         run: >-

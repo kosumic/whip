@@ -43,6 +43,11 @@ platform :ios do
       # A different build or unresolved review must not be silently accepted.
       verify_submission
     end
+    if ENV['GITHUB_OUTPUT']
+      File.open(ENV.fetch('GITHUB_OUTPUT'), 'a') do |output|
+        output.puts("already_submitted=#{!!submission_status(release: release)[:submitted]}")
+      end
+    end
     UI.success("App Store access verified: #{release[:app].bundle_id}, #{release[:version]} (#{release[:build_number]})")
   end
 
