@@ -175,7 +175,7 @@ impl Workflow {
         if self.journal.deleted.contains(&host.id) {
             return Err(CredentialTransactionError::InvalidProfile);
         }
-        let receipt = self.stage_host_write(host, false);
+        let receipt = self.stage_host_write(&host.id, &host.username, false);
         self.persist_journal(false).await?;
         let envelope = HostEnvelope {
             material,

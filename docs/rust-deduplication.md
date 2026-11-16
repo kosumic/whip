@@ -25,12 +25,13 @@ The caller still chooses whether to commit intent with profile metadata or as a
 standalone journal write, always before writing secure material.
 
 Ordinary saves and identity writes use `finish_host_write`: secure write,
-cancellation check, backup of the committed material, then intent acknowledgement.
+cancellation check, an optional backup attempt of the committed material, then
+intent acknowledgement. Optional backup failures remain diagnostic-only.
 Legacy migration alone permits replay from the legacy slot, which remains intact.
 Recovery installation instead preserves the encrypted backup it just read: intent
 write, secure write, cancellation check, acknowledgement, then repair publication.
 It does not encrypt another backup or mark backup migration complete. Existing
-receipt reconciliation still backs up a receipt-proven primary before clearing
+receipt reconciliation still attempts backup of a receipt-proven primary before clearing
 an interrupted intent. Deletion and cleanup permits are unchanged. Receipts from
 another host cannot prove a pending write.
 

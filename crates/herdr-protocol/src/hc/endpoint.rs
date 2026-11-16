@@ -33,7 +33,7 @@ pub fn validate_session(session: &str) -> Result<(), Error> {
 /// Callers validate paths/control data where required. This is not the mobile
 /// agent-session helper, which also escapes backslashes for Fish login shells.
 pub fn shell_quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\\''"))
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 use shell_quote as quote;
 

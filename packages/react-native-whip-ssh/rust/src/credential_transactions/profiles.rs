@@ -91,7 +91,7 @@ impl Workflow {
                 .upsert(host.clone(), now())
                 .map_err(|_| CredentialTransactionError::InvalidProfile)?;
             if material.present() {
-                let receipt = self.stage_host_write(&host, true);
+                let receipt = self.stage_host_write(&host.id, &host.username, true);
                 self.commit_profiles(store, true).await?;
                 let result = self.finish_host_write(&host, material, receipt).await;
                 self.publish_repairs();
@@ -155,7 +155,7 @@ impl Workflow {
             .find(|value| value.id == host.id)
             .ok_or(CredentialTransactionError::InvalidProfile)?;
         let receipt = if credential.present() {
-            Some(self.stage_host_write(&host, false))
+            Some(self.stage_host_write(&host.id, &host.username, false))
         } else {
             self.journal
                 .hosts
@@ -271,7 +271,7 @@ impl Workflow {
             .map_err(|_| CredentialTransactionError::InvalidProfile)?;
         let staged = material.map(|material| {
             self.journal.deleted.remove(&id);
-            let receipt = self.stage_host_write(&host, false);
+            let receipt = self.stage_host_write(&id, &host.username, false);
             (material, receipt)
         });
         self.commit_profiles(next, staged.is_some()).await?;
@@ -463,7 +463,7 @@ impl Workflow {
         if saved.tailcat_private_key != prepared.tailcat_private_key
             || saved.tailcat_public_key != prepared.tailcat_public_key
         {
-            let receipt = self.stage_host_write(&host, false);
+            let receipt = self.stage_host_write(&host.id, &host.username, false);
             self.persist_journal(false).await?;
             let material = CredentialMaterial {
                 tailcat_private_key: prepared.tailcat_private_key.clone(),
