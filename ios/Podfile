@@ -32,7 +32,7 @@ target 'HerdR' do
   # version, until CocoaPods trunk publishes these specs.
   revenuecat_hybrid_source = {
     :git => 'https://github.com/RevenueCat/purchases-hybrid-common.git',
-    :tag => '20.4.0'
+    :tag => '20.7.0'
   }
   pod 'PurchasesHybridCommon', **revenuecat_hybrid_source
   pod 'PurchasesHybridCommonUI', **revenuecat_hybrid_source
