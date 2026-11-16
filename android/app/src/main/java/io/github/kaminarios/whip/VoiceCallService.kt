@@ -28,17 +28,23 @@ import com.facebook.react.jstasks.HeadlessJsTaskConfig
 import com.facebook.react.jstasks.HeadlessJsTaskContext
 import com.whipssh.HostRuntimeMonitoring
 import com.whipssh.SpeechPolicy
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 
-/** Background microphone/media owner. Android media volume also applies between turns. */
+/** Background call host; Rust remains the authority for every provider's logical call. */
 @android.annotation.SuppressLint("NewApi") // start() admits only Android 13+ with microphone permission.
 class VoiceCallService : Service() {
   enum class Mode { LOCAL, OPENAI_REALTIME }
 
   private var wakeLock: PowerManager.WakeLock? = null
   private var focus: VoiceMediaFocus? = null
+  private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
   private val audio by lazy { getSystemService(AudioManager::class.java) }
   private val devices = object : AudioDeviceCallback() {
     override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
+      if (current?.telecomManaged == true) return
       current?.let { session ->
         if (session.diagnosticEvents++ < MAX_DIAGNOSTIC_EVENTS) Log.i(LOG_TAG, "event=devices_added token=${session.token} types=${addedDevices.joinToString { it.type.toString() }}")
       }
@@ -47,6 +53,7 @@ class VoiceCallService : Service() {
     override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
       // End instead of unexpectedly playing private conversation on the speaker.
       val session = current ?: return
+      if (session.telecomManaged) return // Telecom endpoint flows own communication routes.
       Log.i(LOG_TAG, "event=devices_removed token=${session.token} types=${removedDevices.joinToString { it.type.toString() }}")
       if (removedDevices.any { it.id == session.output?.id || session.output == null && it.type in HEADSETS }) finish(session, "The audio output was disconnected.")
       else publishRoute()
@@ -67,6 +74,7 @@ class VoiceCallService : Service() {
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     val session = current
     Log.i(LOG_TAG, "event=service_start token=${session?.token} startId=$startId")
+    if (session?.ending == true) return START_NOT_STICKY
     try { promote(session) } catch (_: Exception) {
       session?.let { finish(it, "Android could not start voice chat.") } ?: stopSelf()
       return START_NOT_STICKY
@@ -88,9 +96,61 @@ class VoiceCallService : Service() {
       main.removeCallbacks(session.timeout)
       return
     }
+    if (session.telecom == null && BuildConfig.WHIP_TELECOM_ENABLED) {
+      session.telecom = VoiceTelecomCall(serviceScope, AndroidVoiceTelecom(this), session.token, session.label,
+        registered = {
+          if (current === session && !session.ending) {
+            session.telecomManaged = true
+            VoiceMediaAudio.communication = true
+            promote(session)
+            if (session.muted) audio.isMicrophoneMute = true
+          }
+        },
+        ready = { managed ->
+          if (current === session && !session.ending) {
+            session.telecomManaged = managed
+            Log.i(LOG_TAG, "event=telecom_ready token=${session.token} managed=$managed")
+            completeConnection(session)
+          }
+        },
+        ended = { error -> if (current === session) finish(session, error) },
+        muted = { muted -> if (current === session && !session.ending) setMuted(session.token, muted) },
+        route = { speaker -> if (current === session && !session.ending) {
+          session.speaker = speaker
+          emit(session, "route", speaker = speaker)
+        } },
+      )
+      session.telecom?.start()
+      return
+    }
+    if (session.telecom != null) return
+    completeConnection(session)
+  }
+  private fun completeConnection(session: Session) {
+    if (current !== session || session.ending || !SpeechPolicy.voiceSessionCurrent(session.token)) {
+      finish(session, null); return
+    }
     try {
       SpeechPlayback.playback.started(session)
-      focus = VoiceMediaFocus(this) { change ->
+      HostRuntimeMonitoring.setOwnerActive(this, true)
+      wakeLock = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:voice-call").apply { acquire() }
+      session.ready = true
+      if (!session.telecomManaged && !activateMedia(session)) return
+      SpeechPlayback.notifyPlaybackStateChanged()
+      main.removeCallbacks(session.timeout)
+      publishRoute()
+      if (session.mode == Mode.LOCAL) SpeechPlayback.warmUp(this)
+      session.start?.resolve(null)
+      session.start = null
+    } catch (_: Exception) { finish(session, "Voice chat could not start.") }
+  }
+  /** Telecom owns focus; fallback retains the existing media-focus policy. */
+  private fun activateMedia(session: Session): Boolean {
+    if (current !== session || !session.ready || session.ending || session.focusPolicy.suspended) return false
+    if (session.telecomManaged) return session.telecom?.active == true
+    if (focus != null) return true
+    try {
+      val next = VoiceMediaFocus(this) { change ->
         if (current === session && !session.ending) {
           if (session.diagnosticEvents++ < MAX_DIAGNOSTIC_EVENTS) Log.i(LOG_TAG, "event=focus token=${session.token} change=$change")
           when (session.focusPolicy.change(change)) {
@@ -105,22 +165,17 @@ class VoiceCallService : Service() {
           }
         }
       }
-      val granted = focus!!.acquire()
-      Log.i(LOG_TAG, "event=focus_request token=${session.token} granted=$granted")
+      focus = next
+      Log.i(LOG_TAG, "event=media_ready token=${session.token} at_ms=${android.os.SystemClock.elapsedRealtime()}")
+      val granted = next.acquire()
+      Log.i(LOG_TAG, "event=focus_request token=${session.token} granted=$granted at_ms=${android.os.SystemClock.elapsedRealtime()}")
       check(granted)
-      HostRuntimeMonitoring.setOwnerActive(this, true)
-      wakeLock = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:voice-call").apply { acquire() }
-      session.ready = true
-      SpeechPlayback.notifyPlaybackStateChanged()
-      main.removeCallbacks(session.timeout)
-      publishRoute()
-      if (session.mode == Mode.LOCAL) SpeechPlayback.warmUp(this)
-      session.start?.resolve(null)
-      session.start = null
-    } catch (_: Exception) { finish(session, "Media audio focus is unavailable.") }
+      return true
+    } catch (_: Exception) { finish(session, "Media audio focus is unavailable."); return false }
   }
   private fun publishRoute() {
     val session = current?.takeIf { it.ready && !it.ending } ?: return
+    if (session.telecomManaged) return
     if (session.output == null) session.speaker = audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS).none { it.type in HEADSETS }
     emit(session, "route", speaker = session.speaker)
   }
@@ -137,7 +192,9 @@ class VoiceCallService : Service() {
       .setStyle(Notification.CallStyle.forOngoingCall(caller, hangup))
     if (session != null) builder.addAction(Notification.Action.Builder(null,
       getString(if (session.muted) R.string.voice_call_unmute else R.string.voice_call_mute), action(MUTE, token, 2)).build())
-    startForeground(NOTIFICATION, builder.build(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+    val type = if (session?.telecomManaged == true) ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
+      else ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+    startForeground(NOTIFICATION, builder.build(), type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
   }
   private fun action(action: String, token: String, request: Int): PendingIntent = PendingIntent.getService(this, request,
     Intent(this, VoiceCallService::class.java).setAction(action)
@@ -155,14 +212,16 @@ class VoiceCallService : Service() {
     main.removeCallbacks(session.authority)
     RealtimeVoice.stop(session.token)
     SpeechPlayback.shutdown()
+    focus?.close(); focus = null
     session.start?.reject("E_VOICE_CALL", error ?: "Voice chat ended before activation.")
     session.start = null
     emit(session, "ended", error = error)
     stopForeground(STOP_FOREGROUND_REMOVE)
-    stopSelf()
+    session.telecom?.close { if (current === session) stopSelf() } ?: stopSelf()
   }
   override fun onDestroy() {
     Log.i(LOG_TAG, "event=service_destroy token=${current?.token} ending=${current?.ending}")
+    serviceScope.cancel()
     audio.unregisterAudioDeviceCallback(devices)
     current?.let { session ->
       SpeechPlayback.playback.cancel(session)
@@ -194,6 +253,9 @@ class VoiceCallService : Service() {
     var diagnosticEvents = 0
     var ready = false
     var ending = false
+    var telecom: VoiceTelecomCall? = null
+    var telecomManaged = false
+    var pendingLocalMute = false
     val focusPolicy = VoiceFocusPolicy()
     var muted = false
     var reconnecting = false
@@ -206,6 +268,7 @@ class VoiceCallService : Service() {
       override fun run() {
         if (current !== this@Session || ending) return
         if (!SpeechPolicy.voiceSessionCurrent(token)) { end(token); return }
+        if (pendingLocalMute && SpeechPolicy.muteLocalVoiceSession(token, muted)) pendingLocalMute = false
         main.postDelayed(this, AUTHORITY_INTERVAL_MS)
       }
     }
@@ -230,10 +293,15 @@ class VoiceCallService : Service() {
     private val current: Session? get() = calls.active
     var onEvent: ((String, String, Boolean?, Boolean?, String?) -> Unit)? = null
     val active: Boolean get() = current?.let { it.ready && !it.ending } == true
+    val communicationAudio: Boolean get() = current?.let { it.telecomManaged && !it.ending } == true
     internal fun audioAllowed(token: String): Boolean = current?.let { it.token == token && it.ready && !it.ending && !it.focusPolicy.suspended } == true
     internal fun owns(token: String): Boolean = current?.let { it.token == token && it.ready && !it.ending } == true
     internal fun playbackKey(token: String): Any? = current?.takeIf { it.token == token && !it.ending }
     internal fun ownsPlayback(key: Any): Boolean = current === key
+    internal fun activateAudio(token: String): Boolean = current?.takeIf { it.token == token }
+      ?.let { instance?.activateMedia(it) } == true
+    internal fun activatePlayback(key: Any): Boolean = current?.takeIf { it === key }
+      ?.let { instance?.activateMedia(it) } == true
     internal fun muted(token: String): Boolean = current?.takeIf { it.token == token }?.muted == true
     internal fun reconnecting(token: String, reconnecting: Boolean) {
       val session = current?.takeIf { it.token == token && !it.ending } ?: return
@@ -280,14 +348,18 @@ class VoiceCallService : Service() {
       val session = current?.takeIf { it.token == token && !it.ending } ?: return
       if (session.muted == muted) return
       session.muted = muted
+      if (session.telecomManaged) instance?.audio?.isMicrophoneMute = muted
       emit(session, "muted", muted = muted)
       instance?.promote(session)
     }
     fun setMuted(token: String, muted: Boolean, promise: Promise? = null) {
       val session = current?.takeIf { it.token == token && !it.ending }
       if (session == null) { promise?.reject("E_VOICE_CALL", "Voice chat has ended."); return }
+      if (session.muted == muted) { promise?.resolve(null); return }
       session.muted = muted
-      RealtimeVoice.muted(token, muted)
+      if (session.mode == Mode.LOCAL) session.pendingLocalMute = !SpeechPolicy.muteLocalVoiceSession(token, muted)
+      else RealtimeVoice.muted(token, muted)
+      if (session.telecomManaged && instance?.audio?.isMicrophoneMute != muted) instance?.audio?.isMicrophoneMute = muted
       emit(session, "muted", muted = muted)
       instance?.promote(session)
       promise?.resolve(null)
@@ -296,6 +368,13 @@ class VoiceCallService : Service() {
       val session = current?.takeIf { it.token == token && it.ready && !it.ending }
       val service = instance
       if (session == null || service == null) { promise.reject("E_VOICE_CALL", "Voice chat is not active."); return }
+      if (session.telecomManaged) {
+        session.telecom?.speaker(speaker) { success ->
+          if (success) promise.resolve(null)
+          else promise.reject("E_VOICE_ROUTE", "Android could not select that call audio output.")
+        }
+        return
+      }
       val outputs = service.audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
       val output = if (speaker) outputs.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
         else outputs.firstOrNull { it.type in HEADSETS }

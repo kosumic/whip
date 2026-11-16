@@ -17,6 +17,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" tools:node="${whipTelecomPermission}" />
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" tools:node="${whipTelecomPermission}" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" tools:node="${whipTelecomPermission}" />
 
     <queries>
       <package android:name="moe.shizuku.privileged.api" />
@@ -66,7 +70,7 @@
       <service
         android:name=".VoiceCallService"
         android:exported="false"
-        android:foregroundServiceType="mediaPlayback|microphone"
+        android:foregroundServiceType="${whipVoiceServiceTypes}"
         android:stopWithTask="false" />
       <service
         android:name=".HerdrBackgroundService"
