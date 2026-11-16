@@ -75,13 +75,14 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
       const call = emitter.addListener('WhipVoiceCall', event => {
         if (this.closed || event.token !== this.token) return;
         if (event.type === 'ended' || event.type === 'audioInactive') {
-          if (event.type === 'audioInactive') this.allowClosedSound = false;
+          this.allowClosedSound = false;
           void this.sounds?.stop();
           // Native owners stop PCM immediately, including while JS is suspended.
           void this.refresh().finally(() => {
-            if (this.closed) return;
-            if (event.type === 'audioInactive') this.fail('The system interrupted the voice audio session.');
-            else { this.publish({ phase: 'closed', level: 0, playbackLevel: 0 }); void this.close(); }
+            // Recovery may finish before JS receives the inactive event. The
+            // native snapshot owns suspension and terminal failure decisions.
+            if (this.closed || event.type !== 'ended') return;
+            this.publish({ phase: 'closed', level: 0, playbackLevel: 0 }); void this.close();
           });
           return;
         }
@@ -124,7 +125,7 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
     this.view = { ...this.view, ...update };
     this.changed(this.view);
   }
-  private fail(message: string): void { if (!this.closed) { this.publish({ phase: 'error', error: message, level: 0, playbackLevel: 0, costIncomplete: true }); void this.close(); } }
+  private fail(message: string): void { if (!this.closed) { this.allowClosedSound = false; this.publish({ phase: 'error', error: message, level: 0, playbackLevel: 0, costIncomplete: true }); void this.close(); } }
   private inputReady(): boolean { return this.view.phase === 'listening' || this.view.phase === 'muted'; }
   private accept(observation: SessionObservation): void {
     if (this.closed) return;
@@ -137,6 +138,8 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
       return;
     }
     this.publish(observation.view);
+    if (this.view.phase === 'suspended' || this.view.phase === 'error') this.allowClosedSound = false;
+    else if (this.inputReady()) this.allowClosedSound = true;
     if (this.inputReady() && !this.readySoundPlayed) {
       this.readySoundPlayed = true;
       void this.sounds?.play('ready');
@@ -188,10 +191,11 @@ export class RealtimeVoiceConversation implements VoiceSessionAdapter {
         await this.playback?.stopRealtimeVoice?.(this.token);
         const final = this.nativeMediaAttempted ? JSON.parse(await nativeVoiceSessions().realtimeSnapshot(this.token)) as SessionObservation : undefined;
         if (final?.view) {
+          if (final.view.phase === 'error') this.allowClosedSound = false;
           const previous = this.view;
           this.view = { ...this.view, ...final.view };
           if (previous.phase === 'error') this.view = { ...this.view, phase: 'error', error: previous.error };
-          else this.view = { ...this.view, phase: 'closed', level: 0, playbackLevel: 0 };
+          else this.view = { ...this.view, phase: final.view.phase === 'error' ? 'error' : 'closed', level: 0, playbackLevel: 0 };
           this.changed(this.view, true);
         }
         await this.observation;

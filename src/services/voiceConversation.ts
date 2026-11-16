@@ -29,7 +29,7 @@ export type GlobalVoiceChatTarget = {
 export type RealtimeVoiceChatTarget = VoiceChatTarget | GlobalVoiceChatTarget;
 
 export interface VoiceConversationView {
-  phase: VoiceChatView['phase'] | 'error' | 'starting' | 'reconnecting';
+  phase: VoiceChatView['phase'] | 'error' | 'starting' | 'reconnecting' | 'suspended';
   muted: boolean;
   smartTurn: boolean;
   speaker: boolean;

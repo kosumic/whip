@@ -271,3 +271,47 @@ fn realtime_hosts_can_disable_automatic_responses_or_turn_detection() -> Result 
     expected.validate_audio(serde_json::from_value(audio)?)?;
     Ok(())
 }
+
+#[tokio::test]
+async fn device_suspension_clears_partial_input_without_mute_or_conversation_replacement() -> Result
+{
+    use futures::FutureExt;
+    use voice_call_openai::session::{Audio, RealtimeConfig, Session};
+    for muted in [false, true] {
+        let app = App::new(true)?;
+        app.input.set_muted(muted);
+        let (mut socket, mut commands, _events) = Socket::relay();
+        let mut session = Session::realtime(
+            &mut socket,
+            RealtimeConfig {
+                model: "custom-realtime".into(),
+                audio: voice_call_openai::settings::AudioSettings {
+                    voice: "cedar".into(),
+                    preview: false,
+                    turn_detection: None,
+                    language: voice_call_openai::captions::Language::Auto,
+                },
+            },
+            true,
+        );
+        session.suspend_audio(&app).await?;
+        let mut types = Vec::new();
+        while let Some(Some(command)) = commands.next().now_or_never() {
+            let value: Value = serde_json::from_str(command.to_text()?)?;
+            types.push(
+                value["type"]
+                    .as_str()
+                    .ok_or("missing command type")?
+                    .to_owned(),
+            );
+        }
+        assert_eq!(
+            types,
+            ["input_audio_buffer.clear", "output_audio_buffer.clear"]
+        );
+        assert_eq!(Audio::is_muted(&app), muted);
+        assert!(app.current.load(Ordering::Acquire));
+        app.input.close();
+    }
+    Ok(())
+}

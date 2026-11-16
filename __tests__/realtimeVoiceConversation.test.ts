@@ -32,12 +32,13 @@ async function notify() {
   }
   await flush();
 }
+const mockDefaultView = { phase: 'listening', muted: false, level: 0.2, playbackLevel: 0, text: 'hello', error: null, inputTokens: 3, outputTokens: 4, estimatedUsd: 0.0123, messages: [{ id: 'reply', role: 'assistant', text: 'hello', spokenUtf16: 2, active: true }] };
 const mockNative = {
   playVoiceCallSound: jest.fn((_uri: string, _inCall: boolean) => Promise.resolve()),
   stopVoiceCallSound: jest.fn(() => Promise.resolve()),
   startVoiceCall: jest.fn(() => Promise.resolve()), endVoiceCall: jest.fn(() => Promise.resolve()),
   startRealtimeVoice: jest.fn(() => Promise.resolve()), stopRealtimeVoice: jest.fn(() => Promise.resolve()),
-  realtimeVoiceView: jest.fn(() => Promise.resolve(JSON.stringify({ phase: 'listening', muted: false, level: 0.2, playbackLevel: 0, text: 'hello', error: null, inputTokens: 3, outputTokens: 4, estimatedUsd: 0.0123, messages: [{ id: 'reply', role: 'assistant', text: 'hello', spokenUtf16: 2, active: true }] }))),
+  realtimeVoiceView: jest.fn(() => Promise.resolve(JSON.stringify(mockDefaultView))),
   realtimeVoiceControl: jest.fn(() => Promise.resolve()),
   realtimeVoiceSubmitted: jest.fn((_token: string, _text: string) => Promise.resolve()),
   setVoiceCallMuted: jest.fn(() => Promise.resolve()), setVoiceCallSpeaker: jest.fn(() => Promise.resolve()),
@@ -168,6 +169,7 @@ test('a status-read failure retains the known voice estimate and marks it incomp
 });
 beforeEach(() => {
   jest.useFakeTimers(); jest.clearAllMocks(); mockEvents.clear(); mockWaiting.clear(); mockApp.currentState = 'active'; mockOs = 'android';
+  mockNative.realtimeVoiceView.mockReset().mockResolvedValue(JSON.stringify(mockDefaultView));
   mockAuthority = Object.assign(new MockVoiceSessions(), {
     realtimeSnapshot: jest.fn(async () => observation(JSON.parse(await mockNative.realtimeVoiceView()))),
     nextRealtimeView: jest.fn((token: string) => new Promise<string>((resolve, reject) => { mockWaiting.set(token, { resolve, reject }); })),
@@ -238,6 +240,7 @@ test('an audio interruption suppresses the closing piano', async () => {
   const { call } = setup();
   await call.start();
   const token = (mockNative.startVoiceCall.mock.calls[0] as unknown as [string])[0];
+  mockNative.realtimeVoiceView.mockResolvedValue(JSON.stringify({ phase: 'suspended', muted: false }));
   mockEvents.get('WhipVoiceCall')?.({ token, type: 'audioInactive' });
   await flush();
   await call.close();
@@ -549,4 +552,43 @@ test('publishes the finalized native usage snapshot before closing completes', a
   mockAuthority.realtimeSnapshot.mockResolvedValueOnce(observation({ phase: 'closed', inputTokens: 9, outputTokens: 12, estimatedUsd: 0.5, usageFinalized: true }, true));
   await call.close();
   expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'closed', inputTokens: 9, outputTokens: 12, estimatedUsd: 0.5, usageFinalized: true }), true);
+});
+
+test.each(['android', 'ios'])('%s suspension retains the provider and muted conversation until recovery', async os => {
+  mockOs = os;
+  const { call, changed } = setup();
+  await call.start();
+  const token = (mockNative.startVoiceCall.mock.calls[0] as unknown as [string])[0];
+  mockNative.realtimeVoiceView.mockResolvedValue(JSON.stringify({ phase: 'suspended', muted: true, messages: [{ id: 'saved', role: 'user', text: 'Keep context' }] }));
+  mockEvents.get('WhipVoiceCall')?.({ token, type: 'audioInactive' });
+  await notify();
+  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'suspended', muted: true }));
+  expect(mockNative.stopRealtimeVoice).not.toHaveBeenCalled();
+  expect(mockNative.endVoiceCall).not.toHaveBeenCalled();
+  mockNative.realtimeVoiceView.mockResolvedValue(JSON.stringify({ phase: 'muted', muted: true, messages: [{ id: 'saved', role: 'user', text: 'Keep context' }] }));
+  await notify();
+  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'muted', muted: true, messages: expect.arrayContaining([expect.objectContaining({ id: 'saved' })]) }));
+  expect(mockNative.startRealtimeVoice).toHaveBeenCalledTimes(1);
+  await call.close();
+});
+
+test('final native audio failure remains terminal with its reason after owner teardown', async () => {
+  const { call, changed } = setup();
+  await call.start();
+  mockNative.realtimeVoiceView.mockResolvedValue(JSON.stringify({ phase: 'error', error: 'The audio output was disconnected.', muted: false }));
+  await call.close();
+  expect(changed.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({ phase: 'error', error: 'The audio output was disconnected.' }));
+  expect(mockNative.playVoiceCallSound.mock.calls).not.toContainEqual(['file:///closed.mp3', false]);
+});
+
+test('a delayed inactive event cannot end a call already recovered by native audio', async () => {
+  const { call, changed } = setup();
+  await call.start();
+  const token = (mockNative.startVoiceCall.mock.calls[0] as unknown as [string])[0];
+  mockEvents.get('WhipVoiceCall')?.({ token, type: 'audioInactive' });
+  await flush();
+  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'listening', error: null }));
+  expect(mockNative.stopRealtimeVoice).not.toHaveBeenCalled();
+  expect(mockNative.endVoiceCall).not.toHaveBeenCalled();
+  await call.close();
 });

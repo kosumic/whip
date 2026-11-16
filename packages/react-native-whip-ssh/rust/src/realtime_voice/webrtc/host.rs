@@ -15,6 +15,7 @@ impl Capture for RealtimeVoiceAdapter {
     }
     fn capture_enabled(&self) -> bool {
         self.allow_input
+            && !self.suspended.load(Ordering::Acquire)
             && self.ready.load(Ordering::Acquire)
             && !self.closed.load(Ordering::Acquire)
             && !self
@@ -118,7 +119,7 @@ impl Host for AppHost {
     ) -> Result<(), &'static str> {
         let bytes = pcm.iter().flat_map(|sample| sample.to_le_bytes()).collect();
         let mut output = self.owner.output.lock();
-        if !self.attempt.current() {
+        if !self.attempt.current() || self.owner.suspended.load(Ordering::Acquire) {
             return Ok(());
         }
         let start = output.generated;

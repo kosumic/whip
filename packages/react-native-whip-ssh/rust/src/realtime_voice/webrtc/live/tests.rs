@@ -229,6 +229,8 @@ pub(crate) fn playback_owner_with_commands() -> Result<
             stopped: AtomicBool::new(false),
             attempt: AtomicU64::new(0),
             devices_ready: AtomicBool::new(true),
+            suspended: AtomicBool::new(false),
+            interruption: Mutex::new(None),
             allow_input: true,
             credential_generation: crate::voice_credentials::generation(),
             speech,

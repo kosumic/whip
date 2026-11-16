@@ -16,7 +16,7 @@ void whip_voice_credentials_updating(bool updating);
 bool whip_voice_credentials_prepare(WhipReadVoiceCredential reader, void *context);
 void whip_realtime_stop(uint64_t call);
 bool whip_realtime_stopped(uint64_t call);
-enum WhipRealtimeControl { WhipRealtimeSkip = 1, WhipRealtimeMute = 3, WhipRealtimeUnmute = 4, WhipRealtimeAudioFailed = 5, WhipRealtimeMediaReady = 6 };
+enum WhipRealtimeControl { WhipRealtimeSkip = 1, WhipRealtimeMute = 3, WhipRealtimeUnmute = 4, WhipRealtimeAudioFailed = 5, WhipRealtimeMediaReady = 6, WhipRealtimeAudioSuspended = 7, WhipRealtimeAudioResumed = 8, WhipRealtimeRecoveryDenied = 9, WhipRealtimeRecoveryFailed = 10, WhipRealtimeRouteLost = 11, WhipRealtimeRecoveryTimedOut = 12 };
 void whip_realtime_control(uint64_t call, uint8_t action);
 void whip_realtime_announcement_finished(uint64_t call, uint64_t announcement);
 bool whip_realtime_announcement_start(uint64_t call, uint64_t announcement);

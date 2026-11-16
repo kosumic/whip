@@ -255,3 +255,25 @@ fn realtime_gate_fences_rapid_toggles_without_changing_repeated_controls() {
     assert!(!gate.accepts(before));
     assert!(gate.accepts(gate.generation()));
 }
+
+#[test]
+fn device_interruption_discards_queued_and_inflight_pcm_without_unmuting() {
+    let queue = queue(2, 4);
+    let old = queue.ticket();
+    queue.push(old, FORMAT, 0, Instant::now(), &[42]).unwrap();
+    queue.invalidate();
+    assert_eq!(
+        queue.push(old, FORMAT, 1, Instant::now(), &[43]),
+        Err(Error::Stale)
+    );
+    assert!(!queue.pop_into(&mut Packet::new(4)).unwrap());
+    let fresh = queue.ticket();
+    assert_ne!(fresh.generation, old.generation);
+    queue.push(fresh, FORMAT, 0, Instant::now(), &[44]).unwrap();
+    queue.set_muted(true);
+    queue.invalidate();
+    assert!(!queue.accepts(queue.ticket()));
+    queue.set_muted(false);
+    assert!(!queue.accepts(fresh));
+    assert!(queue.accepts(queue.ticket()));
+}

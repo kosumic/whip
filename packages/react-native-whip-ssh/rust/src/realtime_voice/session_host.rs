@@ -320,6 +320,10 @@ impl Delegate for App<'_> {
                     self.owner.view.lock().playback_level = 0.0;
                     self.owner.view.lock().phase = "listening";
                 }
+                Command::SuspendAudio => {
+                    session.suspend_audio(&**self.owner).await?;
+                    self.owner.view.lock().playback_level = 0.0;
+                }
                 Command::Mute(muted) => {
                     let current = self.owner.microphone.lock().muted;
                     if current == muted {

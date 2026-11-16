@@ -11,12 +11,12 @@ import android.os.Build
 import android.os.Looper
 
 /** Media focus never changes AudioManager's mode or the user's volume levels. */
-internal class VoiceMediaFocus(context: Context, interrupted: () -> Unit) : AutoCloseable {
+internal class VoiceMediaFocus(context: Context, changed: (Int) -> Unit) : AutoCloseable {
   private val manager = context.getSystemService(AudioManager::class.java)
   private val main = Handler(Looper.getMainLooper())
+  private var closed = false
   private val listener = AudioManager.OnAudioFocusChangeListener { change ->
-    // Notification ducking must not end a conversation between agent turns.
-    if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) main.post { interrupted() }
+    if (!closed) changed(change)
   }
   private val request = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
     .setAudioAttributes(VoiceMediaAudio.attributes)
@@ -26,6 +26,7 @@ internal class VoiceMediaFocus(context: Context, interrupted: () -> Unit) : Auto
     else manager.requestAudioFocus(listener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN)) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
   @Suppress("DEPRECATION")
   override fun close() {
+    closed = true
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && request != null) manager.abandonAudioFocusRequest(request)
     else manager.abandonAudioFocus(listener)
   }

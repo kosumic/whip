@@ -198,6 +198,12 @@ pub extern "C" fn whip_realtime_control(id: u64, action: u8) {
                 let _ = call.set_microphone(action == 3, None);
             }
             6 => super::webrtc::devices_started(&call),
+            7 => call.suspend_audio(),
+            8 => call.resume_audio(),
+            9 => call.fail("Audio recovery was not authorized. Start a new call or resume from call history."),
+            10 => call.fail("The native audio engine could not recover. Start a new call."),
+            11 => call.fail("The audio output was disconnected."),
+            12 => call.fail("Audio did not become available again. Start a new call or resume from call history."),
             5 => call.fail("The native audio device was interrupted or became unavailable."),
             _ => {}
         }
@@ -414,6 +420,11 @@ pub(crate) fn snapshot(call: &RealtimeVoiceAdapter) -> Option<serde_json::Value>
     let mut value = serde_json::to_value(&*view).ok();
     drop(view);
     if let Some(value) = &mut value {
+        if call.suspended.load(Ordering::Acquire) && !call.closed.load(Ordering::Acquire) {
+            value["phase"] = "suspended".into();
+            value["level"] = 0.into();
+            value["playbackLevel"] = 0.into();
+        }
         value["microphoneAnnouncement"] = call
             .microphone
             .lock()

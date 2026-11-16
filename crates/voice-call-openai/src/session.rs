@@ -217,6 +217,17 @@ impl<'a> Session<'a> {
             }
         }
     }
+    /// Device loss discards an unfinished utterance without changing mute intent
+    /// or retiring the provider conversation and its tool ledger.
+    pub async fn suspend_audio(&mut self, audio: &impl Audio) -> Result {
+        self.capture_reset = true;
+        if let Protocol::Realtime(state) = &mut self.protocol {
+            state.responses.clear_input();
+            self.send(ClientEvent::InputAudioBufferClear { event_id: None })
+                .await?;
+        }
+        self.interrupt(audio).await
+    }
     pub async fn interrupt(&mut self, audio: &impl Audio) -> Result {
         match &mut self.protocol {
             Protocol::Realtime(state) => {

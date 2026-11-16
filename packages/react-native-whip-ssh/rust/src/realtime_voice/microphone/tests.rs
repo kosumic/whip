@@ -5,6 +5,23 @@ use voice_call_openai::session::Audio;
 mod provider;
 mod scheduling;
 
+#[test]
+fn timed_mute_cannot_expire_into_capture_while_audio_is_suspended() -> Result<(), &'static str> {
+    let (owner, _commands) = playback_owner_with_commands()?;
+    owner.set_microphone(true, Some(Duration::from_secs(60)))?;
+    let deadline = owner.microphone.lock().deadline.ok_or("Missing deadline")?;
+    owner.suspend_audio();
+    owner.microphone_tick(deadline);
+    assert!(owner.microphone.lock().muted);
+    assert_eq!(owner.microphone.lock().deadline, Some(deadline));
+    owner.resume_audio();
+    assert!(owner.microphone.lock().muted);
+    owner.microphone_tick(deadline);
+    assert!(!owner.microphone.lock().muted);
+    owner.close();
+    Ok(())
+}
+
 fn owner(
     live: bool,
 ) -> Result<

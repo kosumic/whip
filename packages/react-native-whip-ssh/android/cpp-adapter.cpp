@@ -357,6 +357,13 @@ Java_com_whipssh_SpeechPolicy_endVoiceSession(JNIEnv *env, jclass, jstring token
     whip_voice_session_end(value.c_str(), interrupted == JNI_TRUE);
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_com_whipssh_SpeechPolicy_endVoiceSessionReason(JNIEnv *env, jclass, jstring token, jstring reason) {
+    const auto value = speechUtf8(env, token);
+    const auto error = reason ? speechUtf8(env, reason) : std::string();
+    whip_voice_session_end_reason(value.c_str(), reason ? error.c_str() : nullptr);
+}
+
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_whipssh_SpeechPolicy_captionCommand(JNIEnv *env, jclass, jstring command) {
     const auto json = speechUtf8(env, command);

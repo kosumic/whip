@@ -20,6 +20,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.util.Log
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -37,10 +38,16 @@ class VoiceCallService : Service() {
   private var focus: VoiceMediaFocus? = null
   private val audio by lazy { getSystemService(AudioManager::class.java) }
   private val devices = object : AudioDeviceCallback() {
-    override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) { publishRoute() }
+    override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
+      current?.let { session ->
+        if (session.diagnosticEvents++ < MAX_DIAGNOSTIC_EVENTS) Log.i(LOG_TAG, "event=devices_added token=${session.token} types=${addedDevices.joinToString { it.type.toString() }}")
+      }
+      publishRoute()
+    }
     override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
       // End instead of unexpectedly playing private conversation on the speaker.
       val session = current ?: return
+      Log.i(LOG_TAG, "event=devices_removed token=${session.token} types=${removedDevices.joinToString { it.type.toString() }}")
       if (removedDevices.any { it.id == session.output?.id || session.output == null && it.type in HEADSETS }) finish(session, "The audio output was disconnected.")
       else publishRoute()
     }
@@ -50,6 +57,7 @@ class VoiceCallService : Service() {
   override fun onCreate() {
     super.onCreate()
     instance = this
+    Log.i(LOG_TAG, "event=service_created")
     getSystemService(NotificationManager::class.java).createNotificationChannel(
       NotificationChannel(CHANNEL, getString(R.string.voice_call_channel), NotificationManager.IMPORTANCE_LOW)
         .apply { setSound(null, null); setShowBadge(false) },
@@ -58,6 +66,7 @@ class VoiceCallService : Service() {
   }
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     val session = current
+    Log.i(LOG_TAG, "event=service_start token=${session?.token} startId=$startId")
     try { promote(session) } catch (_: Exception) {
       session?.let { finish(it, "Android could not start voice chat.") } ?: stopSelf()
       return START_NOT_STICKY
@@ -81,8 +90,24 @@ class VoiceCallService : Service() {
     }
     try {
       SpeechPlayback.playback.started(session)
-      focus = VoiceMediaFocus(this) { if (current === session) finish(session, "Voice chat was interrupted by another audio session.") }
-      check(focus!!.acquire())
+      focus = VoiceMediaFocus(this) { change ->
+        if (current === session && !session.ending) {
+          if (session.diagnosticEvents++ < MAX_DIAGNOSTIC_EVENTS) Log.i(LOG_TAG, "event=focus token=${session.token} change=$change")
+          when (session.focusPolicy.change(change)) {
+            VoiceFocusPolicy.Effect.END -> finish(session, "Another app took audio focus. Start a new call or resume from call history.")
+            VoiceFocusPolicy.Effect.SUSPEND -> {
+              main.postDelayed(session.recoveryTimeout, RECOVERY_TIMEOUT_MS)
+              if (session.mode == Mode.OPENAI_REALTIME) RealtimeVoice.suspendAudio(session.token)
+              else finish(session, "Voice audio was interrupted. Start a new call.")
+            }
+            VoiceFocusPolicy.Effect.RESUME -> main.removeCallbacks(session.recoveryTimeout)
+            VoiceFocusPolicy.Effect.NONE -> {}
+          }
+        }
+      }
+      val granted = focus!!.acquire()
+      Log.i(LOG_TAG, "event=focus_request token=${session.token} granted=$granted")
+      check(granted)
       HostRuntimeMonitoring.setOwnerActive(this, true)
       wakeLock = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:voice-call").apply { acquire() }
       session.ready = true
@@ -120,11 +145,13 @@ class VoiceCallService : Service() {
       .putExtra(TOKEN, token), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
   private fun finish(session: Session, error: String?) {
     if (current !== session || session.ending) return
+    Log.i(LOG_TAG, "event=service_finish token=${session.token} failed=${error != null}")
     session.ending = true
-    SpeechPolicy.endVoiceSession(session.token, error != null)
+    SpeechPolicy.endVoiceSessionReason(session.token, error)
     SpeechPlayback.playback.cancel(session)
     session.ready = false
     main.removeCallbacks(session.timeout)
+    main.removeCallbacks(session.recoveryTimeout)
     main.removeCallbacks(session.authority)
     RealtimeVoice.stop(session.token)
     SpeechPlayback.shutdown()
@@ -135,15 +162,17 @@ class VoiceCallService : Service() {
     stopSelf()
   }
   override fun onDestroy() {
+    Log.i(LOG_TAG, "event=service_destroy token=${current?.token} ending=${current?.ending}")
     audio.unregisterAudioDeviceCallback(devices)
     current?.let { session ->
       SpeechPlayback.playback.cancel(session)
+      SpeechPolicy.endVoiceSessionReason(session.token, if (session.ending) null else "Android stopped the voice service. Start a new call.")
       RealtimeVoice.stop(session.token)
       SpeechPlayback.shutdown()
       session.finishBackgroundTask()
       main.removeCallbacks(session.timeout)
+      main.removeCallbacks(session.recoveryTimeout)
       main.removeCallbacks(session.authority)
-      SpeechPolicy.endVoiceSession(session.token, !session.ending)
       session.start?.reject("E_VOICE_CALL", "Android stopped voice chat.")
       if (!session.ending) emit(session, "ended")
       calls.release(session)
@@ -162,13 +191,16 @@ class VoiceCallService : Service() {
     var taskContext: HeadlessJsTaskContext? = null
     var taskId: Int? = null
     fun finishBackgroundTask() { taskId?.let { taskContext?.finishTask(it) }; taskId = null; taskContext = null }
+    var diagnosticEvents = 0
     var ready = false
     var ending = false
+    val focusPolicy = VoiceFocusPolicy()
     var muted = false
     var reconnecting = false
     var speaker = true
     var output: AudioDeviceInfo? = null
     val endings = mutableListOf<Promise>()
+    val recoveryTimeout = Runnable { if (current === this && !ending) instance?.finish(this, "Audio did not become available again. Start a new call or resume from call history.") }
     val timeout = Runnable { if (current === this) instance?.finish(this, "Voice chat did not start.") ?: end(token) }
     val authority = object : Runnable {
       override fun run() {
@@ -179,6 +211,9 @@ class VoiceCallService : Service() {
     }
   }
   companion object {
+    private const val RECOVERY_TIMEOUT_MS = 60_000L
+    private const val MAX_DIAGNOSTIC_EVENTS = 64
+    private const val LOG_TAG = "WhipVoiceCall"
     const val EVENT = "WhipVoiceCall"
     private const val CHANNEL = "whip-voice-call"
     private const val NOTIFICATION = 1941
@@ -195,6 +230,7 @@ class VoiceCallService : Service() {
     private val current: Session? get() = calls.active
     var onEvent: ((String, String, Boolean?, Boolean?, String?) -> Unit)? = null
     val active: Boolean get() = current?.let { it.ready && !it.ending } == true
+    internal fun audioAllowed(token: String): Boolean = current?.let { it.token == token && it.ready && !it.ending && !it.focusPolicy.suspended } == true
     internal fun owns(token: String): Boolean = current?.let { it.token == token && it.ready && !it.ending } == true
     internal fun playbackKey(token: String): Any? = current?.takeIf { it.token == token && !it.ending }
     internal fun ownsPlayback(key: Any): Boolean = current === key

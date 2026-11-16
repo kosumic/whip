@@ -127,7 +127,8 @@ impl RealtimeVoiceAdapter {
     /// snapshot cannot admit speech or release another cue's reservation.
     pub(super) fn announcement_start(&self, id: u64) -> bool {
         let mut state = self.microphone.lock();
-        if self.closed.load(Ordering::Acquire)
+        if self.suspended.load(Ordering::Acquire)
+            || self.closed.load(Ordering::Acquire)
             || !self.speech.is_current()
             || state.announcement_id != id
             || state.active
@@ -149,7 +150,8 @@ impl RealtimeVoiceAdapter {
     /// not keep an unmuted microphone closed while the cue is being prepared.
     pub(super) fn announcement_playing(&self, id: u64) -> bool {
         let mut state = self.microphone.lock();
-        if self.closed.load(Ordering::Acquire)
+        if self.suspended.load(Ordering::Acquire)
+            || self.closed.load(Ordering::Acquire)
             || !self.speech.is_current()
             || state.announcement_id != id
             || !state.active
@@ -165,7 +167,7 @@ impl RealtimeVoiceAdapter {
         let state = self.microphone.lock();
         let mut output = self.output.lock();
         let epoch = output.epoch;
-        if state.active {
+        if self.suspended.load(Ordering::Acquire) || state.active {
             return (epoch, 0);
         }
         let pending = !state.announcements.is_empty();
@@ -269,7 +271,8 @@ impl RealtimeVoiceAdapter {
         }
         // Recovery may outlast the deadline. Leave it due until this logical
         // call has an active provider again; never restart the mute duration.
-        if self.retiring.load(Ordering::Acquire)
+        if self.suspended.load(Ordering::Acquire)
+            || self.retiring.load(Ordering::Acquire)
             || !self.ready.load(Ordering::Acquire)
             || state.deadline.is_none_or(|deadline| now < deadline)
         {

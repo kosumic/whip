@@ -70,13 +70,15 @@ internal object RealtimeVoice {
   private class CaptureBoundary(val cutoff: Long = System.nanoTime())
   private class Session(val token: String, val call: Long, var input: AudioRecord?, var output: AudioTrack?, val preview: Boolean, val focus: VoiceMediaFocus?, val mediaStartedAt: Long, val clientElapsedMs: Long, val turn: Any) {
     val running = AtomicBoolean(true)
+    var mediaRunning = AtomicBoolean(false)
+    var suspended = false
     var coreStartMs = 0L
     var capture: Thread? = null
     var playback: Thread? = null
     var monitor: Runnable? = null
     var announcement: CallAnnouncementSpeaker? = null
     var announcementId = -1L
-    val announcementBoundary = CallPlaybackBoundary()
+    var announcementBoundary = CallPlaybackBoundary()
     @Volatile var boundary = CaptureBoundary()
     @Volatile var playedAudioSamples = 0L
     @Volatile var playedAudioPeak = 0
@@ -167,7 +169,8 @@ internal object RealtimeVoice {
       SpeechPlayback.playback.started(turn)
       SpeechPlayback.yieldIdlePlayback()
       if (preview) {
-        focus = VoiceMediaFocus(context) {
+        focus = VoiceMediaFocus(context) { change ->
+          if (change == android.media.AudioManager.AUDIOFOCUS_GAIN) return@VoiceMediaFocus
           current?.takeIf { it.token == token }?.let { Core.control(it.call, Core.AUDIO_FAILED) }
           stop(token)
         }
@@ -192,11 +195,17 @@ internal object RealtimeVoice {
       val session = Session(token, call, null, null, preview, focus, mediaStartedAt, clientElapsedMs, turn)
       session.coreStartMs = SystemClock.elapsedRealtime() - coreStartedAt
       current = session
+      if (!preview && !VoiceCallService.audioAllowed(token)) suspendAudio(token)
       SpeechPlayback.notifyPlaybackStateChanged()
       session.monitor = object : Runnable {
         override fun run() {
           if (current !== session) return
           if (preview && context.getSystemService(KeyguardManager::class.java).isDeviceLocked) { stopPreview(); return }
+          if (!session.mediaRunning.get() && session.capture?.isAlive != true && session.playback?.isAlive != true) {
+            session.input = null; session.output = null; session.capture = null; session.playback = null
+          }
+          val audioAllowed = preview || VoiceCallService.audioAllowed(token) &&
+            (!session.suspended || !context.getSystemService(KeyguardManager::class.java).isDeviceLocked)
           val view = Core.view(session.call)
           val state = JSONObject(view)
           val phase = state.optString("phase")
@@ -222,7 +231,7 @@ internal object RealtimeVoice {
           // as in the Agents SDK's early getUserMedia flow. Rust drops capture
           // until both devices and transport are ready; never queue startup PCM.
           // Output-only previews retain their existing deferred device open.
-          if (phase != "error" && phase != "closed" && session.output == null && (!preview || state.optBoolean("mediaReady"))) {
+          if (phase != "error" && phase != "closed" && session.output == null && audioAllowed && (!preview || state.optBoolean("mediaReady"))) {
             try { openDevices(session) } catch (_: Exception) {
               Core.control(session.call, Core.AUDIO_FAILED); stop(token)
               if (!preview) VoiceCallService.end(token)
@@ -289,6 +298,8 @@ internal object RealtimeVoice {
   @SuppressLint("MissingPermission")
   private fun openDevices(session: Session) {
     val started = SystemClock.elapsedRealtime()
+    val mediaRunning = AtomicBoolean(true)
+    session.mediaRunning = mediaRunning
     try {
       if (!session.preview) {
         val inputSize = maxOf(AudioRecord.getMinBufferSize(Core.RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT), Core.FRAME * 8)
@@ -304,15 +315,23 @@ internal object RealtimeVoice {
       VoiceMediaAudio.attach(output)
       output.play()
       session.boundary = CaptureBoundary()
+      session.announcementBoundary = CallPlaybackBoundary()
       session.input?.startRecording()
       Core.control(session.call, Core.MEDIA_READY)
+      if (session.suspended) {
+        session.suspended = false
+        Core.control(session.call, Core.AUDIO_RESUMED)
+        Log.i(LOG_TAG, "event=audio_resumed token=${session.token} call=${session.call}")
+      }
       if (!session.preview) {
         Log.i(LOG_TAG, "Startup preMediaMs=${session.clientElapsedMs} coreStartMs=${session.coreStartMs} mediaSetupMs=${SystemClock.elapsedRealtime() - started} micStartMs=${session.elapsedMs()}")
         Log.i(LOG_TAG, "Software AEC3 enabled with media playback reference")
-        session.capture = Thread({ capture(session) }, "WhipRealtimeCapture").apply { start() }
+        session.capture = Thread({ capture(session, requireNotNull(session.input), mediaRunning) }, "WhipRealtimeCapture").apply { start() }
       }
-      session.playback = Thread({ playback(session) }, "WhipRealtimePlayback").apply { start() }
+      session.playback = Thread({ playback(session, output, mediaRunning) }, "WhipRealtimePlayback").apply { start() }
     } catch (failure: Exception) {
+      mediaRunning.set(false)
+      Log.e(LOG_TAG, "event=device_start_failed token=${session.token} call=${session.call} type=${failure.javaClass.simpleName}")
       try { session.input?.release() } catch (_: Exception) {}
       session.output?.let { VoiceMediaAudio.detach(it); try { it.release() } catch (_: Exception) {} }
       session.input = null; session.output = null
@@ -320,18 +339,17 @@ internal object RealtimeVoice {
     }
   }
 
-  private fun capture(session: Session) {
+  private fun capture(session: Session, input: AudioRecord, mediaRunning: AtomicBoolean) {
     Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
     try {
       val pcm = ShortArray(Core.FRAME)
       val timestamp = AudioTimestamp()
-      val input = requireNotNull(session.input)
       var captured = 0L
-      while (session.running.get()) {
+      while (session.running.get() && mediaRunning.get()) {
         val generation = Core.inputGeneration(session.call)
         val boundary = session.boundary
         val count = input.read(pcm, 0, pcm.size, AudioRecord.READ_BLOCKING)
-        if (count <= 0) { if (session.running.get()) Core.control(session.call, Core.AUDIO_FAILED); break }
+        if (count <= 0) { if (session.running.get() && mediaRunning.get()) audioFailed(session, "capture", count); break }
         if (captured == 0L) Log.i(LOG_TAG, "Startup firstCaptureMs=${session.elapsedMs()}")
         val first = captured
         captured += count
@@ -350,13 +368,12 @@ internal object RealtimeVoice {
         }
         if (!Core.captureTimed(session.call, pcm, count, generation, now - at)) break
       }
-    } catch (_: Exception) { if (session.running.get()) Core.control(session.call, Core.AUDIO_FAILED) }
-    finally { session.input?.release() }
+    } catch (_: Exception) { if (session.running.get() && mediaRunning.get()) audioFailed(session, "capture") }
+    finally { input.release() }
   }
 
-  private fun playback(session: Session) {
+  private fun playback(session: Session, track: AudioTrack, mediaRunning: AtomicBoolean) {
     Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
-    val track = requireNotNull(session.output)
     try {
       val pcm = ShortArray(Core.FRAME)
       val epoch = LongArray(1)
@@ -364,7 +381,7 @@ internal object RealtimeVoice {
       var generation = 0L
       var submitted = 0L
       var epochStart = 0L
-      while (session.running.get()) {
+      while (session.running.get() && mediaRunning.get()) {
         val nextEpoch = Core.epoch(session.call)
         if (nextEpoch != generation) {
           // Response epochs are not device epochs. Keep the hardware clock and
@@ -393,7 +410,7 @@ internal object RealtimeVoice {
         // its PCM for AudioTrack and AEC; only audioCount acknowledges speech.
         val count = if (audioCount > 0) audioCount else pcm.size
         var offset = 0
-        while (offset < count && session.running.get()) {
+        while (offset < count && session.running.get() && mediaRunning.get()) {
           val now = System.nanoTime()
           val queued = (submitted - (track.playbackHeadPosition.toLong() and 0xffffffffL)).coerceAtLeast(0)
           val estimatedAt = now + queued * NANOS_PER_SECOND / Core.RATE
@@ -402,7 +419,10 @@ internal object RealtimeVoice {
           } else estimatedAt
           val at = if (measuredAt - now in -MAX_AUDIO_AGE_NS..MAX_AUDIO_AGE_NS) measuredAt else estimatedAt
           val written = track.write(pcm, offset, count - offset, AudioTrack.WRITE_BLOCKING)
-          check(written > 0)
+          if (written <= 0) {
+            if (session.running.get() && mediaRunning.get()) audioFailed(session, "playback", written)
+            return
+          }
           if (!session.preview) {
             check(Core.render(session.call, generation, pcm, offset, written, audioCount > 0, at - System.nanoTime()))
           }
@@ -410,13 +430,31 @@ internal object RealtimeVoice {
           if (audioCount > 0) session.playedAudioSamples += written
         }
       }
-    } catch (_: Exception) { if (session.running.get()) Core.control(session.call, Core.AUDIO_FAILED) }
+    } catch (_: Exception) { if (session.running.get() && mediaRunning.get()) audioFailed(session, "playback") }
     finally { VoiceMediaAudio.detach(track); track.release() }
   }
 
   fun stopPreview() {
     pendingStart?.takeIf { it.preview }?.let { stop(it.token) }
     current?.takeIf { it.preview }?.let { stop(it.token) }
+  }
+
+  private fun audioFailed(session: Session, device: String, code: Int = 0) {
+    Log.e(LOG_TAG, "event=device_failed token=${session.token} call=${session.call} device=$device code=$code")
+    Core.control(session.call, Core.AUDIO_FAILED)
+  }
+
+  /** Stop hardware immediately; the monitor waits for old workers before reopening. */
+  fun suspendAudio(token: String) {
+    val session = current?.takeIf { it.token == token && !it.suspended } ?: return
+    session.suspended = true
+    Core.control(session.call, Core.AUDIO_SUSPENDED)
+    Log.i(LOG_TAG, "event=audio_suspended token=$token call=${session.call}")
+    session.announcement?.cancel()
+    session.mediaRunning.set(false)
+    session.boundary = CaptureBoundary()
+    try { session.input?.stop() } catch (_: Exception) {}
+    try { session.output?.stop(); session.output?.flush() } catch (_: Exception) {}
   }
 
   fun control(token: String, action: Int) { current?.takeIf { it.token == token }?.let {

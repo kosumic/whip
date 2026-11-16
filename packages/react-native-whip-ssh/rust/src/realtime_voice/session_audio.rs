@@ -50,7 +50,7 @@ impl Audio for RealtimeVoiceAdapter {
         }
     }
     fn render_pcm(&self, item: String, index: u32, pcm: Vec<u8>) -> Result<(), &'static str> {
-        if self.closed.load(Ordering::Acquire) {
+        if self.closed.load(Ordering::Acquire) || self.suspended.load(Ordering::Acquire) {
             return Ok(());
         }
         self.output.lock().append(item, index, pcm)

@@ -319,3 +319,23 @@ test.each(['speaking', 'error'] as const)('Live shows the backend result once in
   act(() => { details?.props.onPress(); });
   expect(renderedText().filter(text => text === backendText)).toHaveLength(1);
 });
+
+test('a terminal voice error offers a working fresh call without closing the screen', async () => {
+  act(() => publish({ ...listening, phase: 'error', error: 'The audio output was disconnected.' }));
+  expect(renderedText()).toContain('voiceChat.error');
+  expect(renderedText()).toContain('The audio output was disconnected.');
+  await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'voiceChat.restart' }).props.onPress(); });
+  expect(session.start).toHaveBeenCalledTimes(2);
+  expect(onClose).not.toHaveBeenCalled();
+  act(() => publish(listening));
+  expect(renderedText()).toContain('voiceChat.listening');
+});
+
+test('recoverable suspension shows waiting status and keeps the same call', () => {
+  act(() => publish({ ...listening, phase: 'suspended', muted: true }));
+  expect(renderedText()).toContain('voiceChat.suspended');
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'voiceChat.restart' })).toHaveLength(0);
+  expect(session.close).not.toHaveBeenCalled();
+  act(() => publish({ ...listening, phase: 'muted', muted: true }));
+  expect(session.start).toHaveBeenCalledTimes(1);
+});

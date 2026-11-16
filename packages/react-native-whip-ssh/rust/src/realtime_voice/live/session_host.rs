@@ -124,6 +124,10 @@ impl Delegate for App<'_> {
                 session.interrupt(&**self.owner).await?;
                 self.owner.view.lock().playback_level = 0.0;
             }
+            Work::Command(super::super::Command::SuspendAudio) => {
+                session.suspend_audio(&**self.owner).await?;
+                self.owner.view.lock().playback_level = 0.0;
+            }
             Work::Command(super::super::Command::Submitted(text)) => {
                 if let Some(backend) = self.backend.as_mut() {
                     session

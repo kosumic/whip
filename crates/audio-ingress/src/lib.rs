@@ -47,6 +47,14 @@ impl InputGate {
             })
             .is_ok()
     }
+    /// Retire in-flight audio without changing the provider/user mute gate.
+    pub fn invalidate(&self) {
+        let _ = self
+            .0
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |old| {
+                Some(old.checked_add(2).unwrap_or(u64::MAX))
+            });
+    }
     #[must_use]
     pub fn generation(&self) -> u64 {
         self.0.load(Ordering::Acquire) >> 1
@@ -211,6 +219,12 @@ impl Ingress {
         }
     }
     /// Discard a bounded backlog without contending with capture's ordering lock.
+    pub fn invalidate(&self) {
+        self.gate.invalidate();
+        self.discard();
+    }
+
+    /// Discard queued packets without retiring the capture generation.
     pub fn discard(&self) {
         let _consumer = self
             .consumer

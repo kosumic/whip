@@ -18,6 +18,7 @@ uint64_t whip_speech_claim(uint8_t kind, const char *owner, const char *request)
 bool whip_speech_is_current(uint64_t lease);
 // Native call services fence startup/shutdown even when JS is suspended.
 bool whip_voice_session_current(const char *token);
+void whip_voice_session_end_reason(const char *token, const char *reason);
 void whip_voice_session_end(const char *token, bool interrupted);
 bool whip_speech_complete(uint64_t lease);
 bool whip_speech_stop(uint64_t lease);

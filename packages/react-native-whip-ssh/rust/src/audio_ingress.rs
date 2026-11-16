@@ -146,6 +146,11 @@ impl NativeIngress {
         let sequence = self.sequence.fetch_add(1, Ordering::Relaxed);
         self.admitted(self.queue.push(ticket, self.format, sequence, at, samples))
     }
+    pub(crate) fn discard(&self) {
+        self.queue.invalidate();
+        self.discontinuity.store(true, Ordering::Release);
+        self.wake.notify_one();
+    }
     /// Retire queued PCM before processing another pending packet after overload.
     pub(crate) fn recover(&self) -> bool {
         if !self.discontinuity.swap(false, Ordering::AcqRel) {

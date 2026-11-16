@@ -85,6 +85,7 @@ impl RealtimeVoiceAdapter {
     }
 
     pub(super) fn continuity_tick(&self, idle: bool) -> Result<bool, &'static str> {
+        self.interruption_tick(std::time::Instant::now());
         if let Some(error) = *self.failure.lock() {
             return Err(error.message);
         }

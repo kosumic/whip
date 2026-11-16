@@ -15,6 +15,7 @@ pub(crate) mod feedback;
 pub(crate) mod ffi;
 pub(crate) mod handoff_context;
 mod health;
+mod interruption;
 mod live;
 pub(crate) mod microphone;
 mod models;
@@ -642,6 +643,7 @@ impl Config {
 
 pub(super) enum Command {
     Skip,
+    SuspendAudio,
     Mute(bool),
     Submitted(String),
 }
@@ -666,6 +668,8 @@ pub(crate) struct RealtimeVoiceAdapter {
     stopped: AtomicBool,
     attempt: AtomicU64,
     devices_ready: AtomicBool,
+    suspended: AtomicBool,
+    interruption: Mutex<Option<Instant>>,
     allow_input: bool,
     credential_generation: u64,
     speech: crate::speech_playback::RealtimeSpeechLease,
@@ -855,6 +859,8 @@ impl RealtimeVoiceAdapter {
             stopped: AtomicBool::new(false),
             attempt: AtomicU64::new(0),
             devices_ready: AtomicBool::new(false),
+            suspended: AtomicBool::new(false),
+            interruption: Mutex::new(None),
             allow_input: !config.preview,
             credential_generation: crate::voice_credentials::generation(),
             speech,
@@ -930,6 +936,24 @@ impl RealtimeVoiceAdapter {
         Ok(adapter)
     }
 
+    pub(crate) fn fail_native(&self, reason: &str) {
+        const REASONS: &[&str] = &[
+            "Another app took audio focus. Start a new call or resume from call history.",
+            "The audio output was disconnected.",
+            "Android stopped the voice service. Start a new call.",
+            "The system reset voice chat.",
+            "Audio did not become available again. Start a new call or resume from call history.",
+            "Audio recovery was not authorized. Start a new call or resume from call history.",
+            "The native audio engine could not recover. Start a new call.",
+        ];
+        self.fail(
+            REASONS
+                .iter()
+                .copied()
+                .find(|value| *value == reason)
+                .unwrap_or("Voice audio ended. Start a new call or resume from call history."),
+        );
+    }
     fn fail(&self, error: &'static str) {
         self.updates.lock().take();
         self.speech.end_call();
@@ -978,7 +1002,7 @@ impl RealtimeVoiceAdapter {
         self.output.lock().clear();
     }
     fn command(&self, command: Command) {
-        if matches!(command, Command::Skip) {
+        if matches!(command, Command::Skip | Command::SuspendAudio) {
             self.microphone.lock().cancel_speech();
         }
         if self.retiring.load(Ordering::Acquire)
@@ -1010,7 +1034,8 @@ impl RealtimeVoiceAdapter {
             self.fail("The microphone returned an oversized audio frame.");
             return false;
         }
-        if !self.ready.load(Ordering::Acquire)
+        if self.suspended.load(Ordering::Acquire)
+            || !self.ready.load(Ordering::Acquire)
             || self.microphone.lock().blocks_capture(Instant::now())
             || !self.input.accepts(generation)
         {
@@ -1040,7 +1065,8 @@ impl RealtimeVoiceAdapter {
         if self.input.receive(packet).await? {
             return Ok(true);
         }
-        if !self.input.accepts(packet.ticket.generation)
+        if self.suspended.load(Ordering::Acquire)
+            || !self.input.accepts(packet.ticket.generation)
             || !self.ready.load(Ordering::Acquire)
             || self.microphone.lock().blocks_capture(Instant::now())
         {

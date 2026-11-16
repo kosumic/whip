@@ -571,3 +571,39 @@ pub unsafe extern "C" fn whip_voice_session_end(token: *const std::ffi::c_char, 
         );
     }
 }
+
+/// Native-owned, non-sensitive lifecycle reason; never pass provider errors here.
+/// # Safety
+/// Both pointers are borrowed NUL-terminated UTF-8 strings; reason may be null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn whip_voice_session_end_reason(
+    token: *const std::ffi::c_char,
+    reason: *const std::ffi::c_char,
+) {
+    if token.is_null() {
+        return;
+    }
+    // SAFETY: Native adapters lend these strings until the synchronous return.
+    let Ok(token) = (unsafe { std::ffi::CStr::from_ptr(token) }).to_str() else {
+        return;
+    };
+    if token.len() > MAX_TOKEN_BYTES || !token.starts_with(state::CALL_PREFIX) {
+        return;
+    }
+    let error = if reason.is_null() {
+        None
+    } else {
+        // SAFETY: Same native borrowed-string contract as token.
+        unsafe { std::ffi::CStr::from_ptr(reason) }
+            .to_str()
+            .ok()
+            .filter(|reason| reason.len() <= 512)
+            .map(str::to_owned)
+    };
+    let coordinator = voice_session_coordinator();
+    let resource = coordinator.inner.lock().resources.get(token).cloned();
+    if let (Some(Resource::Realtime(call)), Some(error)) = (&resource, &error) {
+        call.fail_native(error);
+    }
+    coordinator.end(token.into(), error);
+}

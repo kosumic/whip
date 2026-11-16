@@ -182,6 +182,39 @@ fn native_service_admission_and_interruption_use_the_same_generation()
     );
     core.acknowledge(id, "closed".into())?;
     core.take_effects()?;
+    let replacement: Value = decode(&core.request(
+        json!({"scope":{"kind":"Global"},"mode":"Realtime","available":true}).to_string(),
+    )?)?;
+    let replacement = replacement["id"]
+        .as_str()
+        .ok_or("missing replacement")?
+        .to_owned();
+    core.take_effects()?;
+    core.acknowledge(replacement.clone(), "prepared".into())?;
+    core.take_effects()?;
+    let current = std::ffi::CString::new(replacement.clone())?;
+    // A late service destruction callback must not close the replacement.
+    unsafe {
+        whip_voice_session_end_reason(
+            token.as_ptr(),
+            c"The audio output was disconnected.".as_ptr(),
+        );
+    }
+    assert!(service_current(&current));
+    unsafe {
+        whip_voice_session_end_reason(
+            current.as_ptr(),
+            c"The audio output was disconnected.".as_ptr(),
+        );
+    }
+    let effects: Value = decode(&core.take_effects()?)?;
+    assert_eq!(
+        effects["effects"][0]["error"],
+        "The audio output was disconnected."
+    );
+    assert!(!service_current(&current));
+    core.acknowledge(replacement, "closed".into())?;
+    core.take_effects()?;
     Ok(())
 }
 

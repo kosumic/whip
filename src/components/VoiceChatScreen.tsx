@@ -35,7 +35,7 @@ const VOICE_COLORS = { canvas: '#000000', text: '#ffffff', muted: '#a3a3a3', con
 const INITIAL: VoiceConversationView = { phase: 'starting', muted: false, smartTurn: false, speaker: false, text: '', level: 0, progress: 0, error: null, transcript: null };
 const STATUS = {
   starting: 'voiceChat.starting',
-  reconnecting: 'voiceChat.reconnecting',
+  reconnecting: 'voiceChat.reconnecting', suspended: 'voiceChat.suspended',
   setup: 'voiceChat.setup', preparing: 'voiceChat.preparing', listening: 'voiceChat.listening',
   finishing: 'voiceChat.finishing', waiting: 'voiceChat.waiting', speaking: 'voiceChat.speaking',
   muted: 'voiceChat.muted', closed: 'voiceChat.closed', error: 'voiceChat.error',
@@ -71,6 +71,9 @@ export function VoiceChatScreen({ ref, target, resumeCallId, settingsOverride, s
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
+  const [attempt, setAttempt] = useState(0);
+  const [restarting, setRestarting] = useState(false);
+  const retrying = useRef(false);
   const [startedAt, setStartedAt] = useState(Date.now);
   const [view, setView] = useState(INITIAL);
   const [headerHeight, setHeaderHeight] = useState(CONTROL_SIZE);
@@ -130,21 +133,29 @@ export function VoiceChatScreen({ ref, target, resumeCallId, settingsOverride, s
   useEffect(() => {
     const currentTarget = latestTarget.current;
     const scope = 'global' in currentTarget ? { kind: 'Global' as const } : currentTarget.terminal ? { kind: 'Terminal' as const, target: currentTarget } : { kind: 'Agent' as const, target: currentTarget };
-    const session = voiceSessionManager.start(scope, callbacks.current.send, callbacks.current.settings, ...(resumeCallId ? [resumeCallId] : []));
+    const session = voiceSessionManager.start(scope, callbacks.current.send, callbacks.current.settings, ...(resumeCallId && attempt === 0 ? [resumeCallId] : []));
     conversation.current = session;
     setStartedAt(session.startedAt);
     session.setVadSensitivity(callbacks.current.vadSensitivity);
     const unsubscribe = session.subscribe(setView);
     return () => { unsubscribe(); conversation.current = null; };
-  }, [isGlobal, agent, hostId, paneId, tabId, terminal?.runtimeId, terminal?.runtimeIncarnation, terminal?.connectionGeneration, terminal?.terminalId, terminal?.paneId, resumeCallId]);
+  }, [isGlobal, agent, hostId, paneId, tabId, terminal?.runtimeId, terminal?.runtimeIncarnation, terminal?.connectionGeneration, terminal?.terminalId, terminal?.paneId, resumeCallId, attempt]);
   useEffect(() => { conversation.current?.setTranscriptBinding(bindingToken); }, [bindingToken]);
   useEffect(() => { conversation.current?.setVadSensitivity(vadSensitivity); }, [vadSensitivity]);
   useEffect(() => {
-    if (view.phase === 'closed' && conversation.current?.getSnapshot() === view) callbacks.current.onClose();
+    if (!retrying.current && view.phase === 'closed' && conversation.current?.getSnapshot() === view) callbacks.current.onClose();
   }, [view]);
   const close = () => {
     if (conversation.current) { void voiceSessionManager.hangup(conversation.current); }
     callbacks.current.onClose();
+  };
+  const restart = async () => {
+    if (retrying.current) return;
+    retrying.current = true; setRestarting(true);
+    try {
+      if (conversation.current) await voiceSessionManager.hangup(conversation.current, true);
+      setView(INITIAL); setAttempt(value => value + 1);
+    } finally { retrying.current = false; setRestarting(false); }
   };
   const interactive = ['listening', 'muted', 'waiting', 'speaking'].includes(view.phase);
   const status = t((terminal || isGlobal) && view.phase === 'waiting' ? 'voiceChat.terminalWaiting' : STATUS[view.phase]);
@@ -202,6 +213,10 @@ export function VoiceChatScreen({ ref, target, resumeCallId, settingsOverride, s
           {view.resumedContextTruncated && <Text className="text-center text-xs" style={styles.statusText}>{t('voiceUsage.resumeTruncated')}</Text>}
         </Animated.View>
         <Animated.View pointerEvents="box-none" style={chromeMotion}>
+          {view.phase === 'error' && <View className="items-center gap-2 pb-4">
+            <Button accessibilityLabel={t('voiceChat.restart')} disabled={restarting} onPress={() => { void restart(); }}><Text>{t('voiceChat.restart')}</Text></Button>
+            {view.provider === 'openai' && <Text style={styles.statusText}>{t('voiceChat.restartHint')}</Text>}
+          </View>}
           {expanded && composer}
         </Animated.View>
       </View>

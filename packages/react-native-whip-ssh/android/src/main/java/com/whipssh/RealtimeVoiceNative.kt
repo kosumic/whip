@@ -10,6 +10,8 @@ object RealtimeVoiceNative {
   const val UNMUTE = 4
   const val AUDIO_FAILED = 5
   const val MEDIA_READY = 6
+  const val AUDIO_SUSPENDED = 7
+  const val AUDIO_RESUMED = 8
   @JvmStatic external fun start(config: String, credentials: Any): Long
   @JvmStatic external fun prepare(enabled: Boolean): Boolean
   @JvmStatic external fun credentialsUpdating(updating: Boolean)

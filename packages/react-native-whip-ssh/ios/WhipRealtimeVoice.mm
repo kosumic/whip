@@ -6,6 +6,8 @@
 #import <AVFoundation/AVFoundation.h>
 #import <UIKit/UIKit.h>
 #include <atomic>
+#import "WhipAudioInterruption.h"
+#import <mach/mach_time.h>
 #import <Security/Security.h>
 #import <LocalAuthentication/LocalAuthentication.h>
 
@@ -45,6 +47,10 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
 
 @interface WhipRealtimeVoice () {
   std::atomic<uint64_t> _call;
+  std::atomic<bool> _audioSuspended;
+  std::atomic<uint64_t> _captureAfter;
+  std::atomic<unsigned> _diagnosticEvents;
+  WhipAudioInterruption _interruption;
   WhipCallPlaybackBoundary _announcementBoundary;
 }
 @property(nonatomic, copy) NSString *token;
@@ -63,6 +69,7 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
 @property(nonatomic) NSUInteger ticks;
 @property(nonatomic) uint64_t closingCall;
 @property(nonatomic) BOOL preview;
+@property(nonatomic, strong) NSTimer *recoveryTimeout;
 @property(nonatomic, strong) id turn;
 @property(nonatomic, strong) id closingTurn;
 @property(nonatomic, strong) NSDictionary *pendingStart;
@@ -80,6 +87,7 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
 - (instancetype)init {
   if ((self = [super init])) {
     _call.store(0);
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(protectedDataAvailable:) name:UIApplicationProtectedDataDidBecomeAvailable object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(protectedDataLost:) name:UIApplicationProtectedDataWillBecomeUnavailable object:nil];
     _media = dispatch_queue_create("whip.realtime.media", DISPATCH_QUEUE_SERIAL);
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(audioChanged:) name:AVAudioEngineConfigurationChangeNotification object:nil];
@@ -100,6 +108,9 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
 }
 - (void)prepare:(BOOL)enabled {
   whip_realtime_prepare(enabled && UIApplication.sharedApplication.applicationState == UIApplicationStateActive && UIApplication.sharedApplication.protectedDataAvailable);
+}
+- (void)protectedDataAvailable:(NSNotification *)notification {
+  dispatch_async(dispatch_get_main_queue(), ^{ [self resumeAudioIfAllowed]; });
 }
 - (void)protectedDataLost:(NSNotification *)notification {
   whip_realtime_prepare(false);
@@ -182,6 +193,9 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
   uint64_t call = (uint64_t)result;
   if (WhipVoiceCall.shared.muted) whip_realtime_control(call, WhipRealtimeMute);
   self.token = token; self.preview = preview; _call.store(call);
+  _audioSuspended.store(false); _captureAfter.store(mach_absolute_time());
+  _interruption.reset(preview || [WhipVoiceCall.shared owns:token]);
+  _diagnosticEvents.store(0);
   self.turn = turn;
   [WhipSpeechPlayback.shared watchPlaybackShake];
   self.engine = engine; self.format = format; self.converter = converter;
@@ -194,7 +208,10 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
   AVAudioPCMBuffer *capture = self.capture;
   if (!preview) [input installTapOnBus:0 bufferSize:WhipRealtimeFrame * 2 format:source block:^(AVAudioPCMBuffer *buffer, AVAudioTime *when) {
     WhipRealtimeVoice *owner = weakSelf;
-    if (!owner || owner->_call.load() != call) return;
+    if (!owner) return;
+    @synchronized (converter) {
+    if (owner->_call.load() != call || owner->_audioSuspended.load() || when.hostTime < owner->_captureAfter.load()) return;
+    uint64_t generation = whip_realtime_input_generation(call);
     __block BOOL supplied = NO;
     NSError *conversionError = nil;
     capture.frameLength = 0;
@@ -202,8 +219,16 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
       if (supplied) { *state = AVAudioConverterInputStatus_NoDataNow; return nil; }
       supplied = YES; *state = AVAudioConverterInputStatus_HaveData; return buffer;
     }];
-    if (status == AVAudioConverterOutputStatus_Error || conversionError) { whip_realtime_control(call, WhipRealtimeAudioFailed); return; }
-    if (capture.frameLength) whip_realtime_capture(call, capture.int16ChannelData[0], capture.frameLength);
+    if (status == AVAudioConverterOutputStatus_Error || conversionError) {
+      if (!owner->_audioSuspended.load() && whip_realtime_input_generation(call) == generation) whip_realtime_control(call, WhipRealtimeAudioFailed);
+      return;
+    }
+    if (capture.frameLength && !owner->_audioSuspended.load()) {
+      double age = [AVAudioTime secondsForHostTime:mach_absolute_time()] - [AVAudioTime secondsForHostTime:when.hostTime];
+      if (when.hostTime && age >= 0 && age <= 0.5)
+        whip_realtime_capture_timed(call, capture.int16ChannelData[0], capture.frameLength, generation, (uint64_t)(age * NSEC_PER_SEC));
+    }
+    }
   }];
   if (![engine startAndReturnError:&error]) {
     [self stop:token]; reject(@"E_REALTIME", @"The native audio engine could not start.", nil); return;
@@ -220,7 +245,7 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
 - (void)pump:(uint64_t)call token:(NSString *)token {
   if (_call.load() != call) return;
   uint64_t currentEpoch = whip_realtime_epoch(call);
-  if (currentEpoch != self.epoch) {
+  if (!_audioSuspended.load() && currentEpoch != self.epoch) {
     [self.player stop];
     self.epoch = currentEpoch; _announcementBoundary.reset(currentEpoch); self.queued = 0;
     [self.player play];
@@ -277,7 +302,7 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
       return;
     }
   }
-  if (self.queued >= 4) return;
+  if (_audioSuspended.load() || self.queued >= 4) return;
   AVAudioPCMBuffer *buffer = [[AVAudioPCMBuffer alloc] initWithPCMFormat:self.format frameCapacity:WhipRealtimeFrame];
   uint64_t epoch = 0;
   NSUInteger count = whip_realtime_read(call, buffer.int16ChannelData[0], WhipRealtimeFrame, &epoch);
@@ -301,7 +326,7 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
     WhipRealtimeVoice *owner = weakSelf;
     if (!owner) return;
     dispatch_async(owner.media, ^{
-      if (owner->_call.load() != call || !owner->_announcementBoundary.complete(epoch, played)) return;
+      if (owner->_call.load() != call || owner->_audioSuspended.load() || !owner->_announcementBoundary.complete(epoch, played)) return;
       if (owner.queued) owner.queued--;
       whip_realtime_played(call, epoch, played);
     });
@@ -319,6 +344,8 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
   id turn = self.turn;
   BOOL preview = self.preview;
   uint64_t call = _call.exchange(0);
+  _audioSuspended.store(true);
+  [self.recoveryTimeout invalidate]; self.recoveryTimeout = nil;
   self.announcementId = nil;
   [WhipSpeechPlayback.shared cancelCallAnnouncement];
   self.lastToken = token;
@@ -378,9 +405,9 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
   // the existing graph without replacing the Rust call or its media session.
   dispatch_async(dispatch_get_main_queue(), ^{
     uint64_t call = self->_call.load();
-    if (!call || engine != self.engine || engine.running) return;
+    if (!call || engine != self.engine || engine.running || self->_audioSuspended.load() || !self->_interruption.canResume()) return;
     dispatch_sync(self.media, ^{
-      if (self->_call.load() != call || engine.running) return;
+      if (self->_call.load() != call || engine.running || self->_audioSuspended.load()) return;
       NSError *error = nil;
       if (![engine startAndReturnError:&error]) {
         whip_realtime_control(call, WhipRealtimeAudioFailed);
@@ -390,8 +417,73 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
     });
   });
 }
+- (void)suspendAudio {
+  uint64_t call = _call.load();
+  if (!call || self.recoveryTimeout) return;
+  _audioSuspended.store(true);
+  whip_realtime_control(call, WhipRealtimeAudioSuspended);
+  NSLog(@"WhipVoice event=audio_suspended token=%@ call=%llu", self.token, (unsigned long long)call);
+  [WhipSpeechPlayback.shared cancelCallAnnouncement];
+  dispatch_sync(self.media, ^{ [self.player stop]; [self.engine pause]; self.queued = 0; });
+  __weak WhipRealtimeVoice *weakSelf = self;
+  self.recoveryTimeout = [NSTimer scheduledTimerWithTimeInterval:60 repeats:NO block:^(NSTimer *timer) {
+    WhipRealtimeVoice *owner = weakSelf;
+    if (owner && owner->_call.load() == call && owner->_audioSuspended.load())
+      whip_realtime_control(call, WhipRealtimeRecoveryTimedOut);
+  }];
+}
+- (void)resumeAudioIfAllowed {
+  uint64_t call = _call.load();
+  if (!call || !_audioSuspended.load() || !_interruption.canResume() || !UIApplication.sharedApplication.protectedDataAvailable) return;
+  // Never activate a CallKit session ourselves. A preview owns its own session.
+  if (!self.preview && ![WhipVoiceCall.shared owns:self.token]) return;
+  NSError *error = nil;
+  if (self.preview && ![AVAudioSession.sharedInstance setActive:YES error:&error]) {
+    whip_realtime_control(call, WhipRealtimeRecoveryFailed); return;
+  }
+  __block BOOL started = NO;
+  dispatch_sync(self.media, ^{
+    NSError *failure = nil;
+    started = [self.engine startAndReturnError:&failure];
+    if (started) {
+      @synchronized (self.converter) { [self.converter reset]; }
+      self->_captureAfter.store(mach_absolute_time());
+      whip_realtime_control(call, WhipRealtimeAudioResumed);
+      self.epoch = whip_realtime_epoch(call); self->_announcementBoundary.reset(self.epoch); self.queued = 0;
+      self->_audioSuspended.store(false);
+      [self.player play];
+    }
+  });
+  NSLog(@"WhipVoice event=audio_recovery token=%@ call=%llu success=%d", self.token, (unsigned long long)call, started);
+  [self.recoveryTimeout invalidate]; self.recoveryTimeout = nil;
+  if (!started) whip_realtime_control(call, WhipRealtimeRecoveryFailed);
+}
+- (void)callAudioActive:(BOOL)active token:(NSString *)token {
+  if (![self.token isEqualToString:token] || self.preview) return;
+  _interruption.authorized = active;
+  if (active) [self resumeAudioIfAllowed]; else [self suspendAudio];
+}
 - (void)interrupted:(NSNotification *)notification {
-  if ([notification.userInfo[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue] == AVAudioSessionInterruptionTypeBegan) whip_realtime_control(_call.load(), WhipRealtimeAudioFailed);
+  uint64_t call = _call.load();
+  NSUInteger type = [notification.userInfo[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue];
+  NSUInteger options = [notification.userInfo[AVAudioSessionInterruptionOptionKey] unsignedIntegerValue];
+  if (call && type == AVAudioSessionInterruptionTypeBegan) {
+    // Gate the captured Rust handle immediately. Only the main-queue identity
+    // check below may mutate this owner's engine state or a replacement call.
+    whip_realtime_control(call, WhipRealtimeAudioSuspended);
+  }
+  dispatch_async(dispatch_get_main_queue(), ^{
+    if (!call || self->_call.load() != call) return;
+    if (self->_diagnosticEvents.fetch_add(1) < 64) NSLog(@"WhipVoice event=interruption token=%@ call=%llu type=%lu options=%lu", self.token, (unsigned long long)call, (unsigned long)type, (unsigned long)options);
+    if (type == AVAudioSessionInterruptionTypeBegan) {
+      self->_interruption.begin(); [self suspendAudio];
+    } else if (self->_interruption.interrupted) {
+      BOOL shouldResume = (options & AVAudioSessionInterruptionOptionShouldResume) != 0;
+      self->_interruption.ended(shouldResume);
+      if (shouldResume) [self resumeAudioIfAllowed];
+      else whip_realtime_control(call, WhipRealtimeRecoveryDenied);
+    }
+  });
 }
 - (void)backgrounded:(NSNotification *)notification {
   whip_realtime_prepare(false);
@@ -399,7 +491,8 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
   if (self.preview && self.token) [self stop:self.token];
 }
 - (void)routeChanged:(NSNotification *)notification {
-  if (self.preview && [notification.userInfo[AVAudioSessionRouteChangeReasonKey] unsignedIntegerValue] == AVAudioSessionRouteChangeReasonOldDeviceUnavailable)
-    whip_realtime_control(_call.load(), WhipRealtimeAudioFailed);
+  if (_diagnosticEvents.fetch_add(1) < 64) NSLog(@"WhipVoice event=route token=%@ call=%llu reason=%lu", self.token, (unsigned long long)_call.load(), (unsigned long)[notification.userInfo[AVAudioSessionRouteChangeReasonKey] unsignedIntegerValue]);
+  if ([notification.userInfo[AVAudioSessionRouteChangeReasonKey] unsignedIntegerValue] == AVAudioSessionRouteChangeReasonOldDeviceUnavailable)
+    whip_realtime_control(_call.load(), WhipRealtimeRouteLost);
 }
 @end
