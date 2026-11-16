@@ -1,6 +1,7 @@
 import {
   BROWSER_LIVE_VIEW_BUDGET,
   BROWSER_ACTION_TIMEOUT_MS,
+  BrowserController,
   type BrowserDriver,
 } from '../src/browser/controller';
 import { browserAddress } from '../src/browser/address';
@@ -9,6 +10,98 @@ import {
   type BrowserSessionIdentity,
 } from '../src/browser/registry';
 import { offersReverseControl } from '../src/browser/launch';
+
+function htmlFixture(tunneled: boolean) {
+  let port = 41000;
+  let document = { id: '0', url: 'about:blank', ready: true };
+  const transport = {
+    startWebPreview: jest.fn(),
+    startHtmlPreview: jest.fn(async () => ({
+      id: `html-${++port}`,
+      url: `http://127.0.0.1:${port}/report.html`,
+      displayUrl: `http://127.0.0.1:${port + 1000}/report.html`,
+    })),
+    stopPreview: jest.fn(async () => undefined),
+  };
+  const route = { activate: jest.fn(async () => undefined), usesTunnel: () => tunneled };
+  const controller = new BrowserController('html', transport, () => true, route);
+  const driver: BrowserDriver = {
+    documentState: jest.fn(async () => document),
+    navigate: jest.fn(url => { document = { ...document, id: String(Number(document.id) + 1), url }; }),
+    reload: jest.fn(), back: jest.fn(), forward: jest.fn(),
+    evaluate: jest.fn(), screenshot: jest.fn(), clearData: jest.fn(),
+  };
+  controller.subscribe(() => {
+    for (const tab of controller.tabs) {
+      if (tab.lifecycle === 'active' && !tab.driver) {
+        document = { ...document, id: String(Number(document.id) + 1), url: tab.source };
+        controller.attach(tab.id, driver);
+      }
+    }
+  });
+  return { controller, transport, driver, setTunneling: (enabled: boolean) => {
+    tunneled = enabled;
+    controller.resetRoute();
+  } };
+}
+
+test.each([true, false])('HTML tabs use their host server with tunneling=%s and own its lifetime', async tunneled => {
+  const { controller, transport, driver } = htmlFixture(tunneled);
+  const tab = await controller.openHtmlPreview('/repo/report.html');
+  await controller.action('reload', { tab_id: tab.id });
+  expect(tab.source).toBe(`http://${tunneled ? 'localhost:42001' : '127.0.0.1:41001'}/report.html`);
+  expect(tab.url).toBe('http://localhost:42001/report.html');
+  await controller.action('navigate', { tab_id: tab.id, url: 'http://localhost:42001/details.html?q=1' });
+  expect(driver.navigate).toHaveBeenCalledWith(`http://${tunneled ? 'localhost:42001' : '127.0.0.1:41001'}/details.html?q=1`);
+  expect(transport.startWebPreview).not.toHaveBeenCalled();
+  expect(transport.startHtmlPreview).toHaveBeenCalledTimes(1);
+  await controller.closeTab(tab.id);
+  expect(transport.stopPreview).toHaveBeenCalledWith('html-41001');
+  await controller.dispose();
+  expect(transport.stopPreview).toHaveBeenCalledTimes(1);
+});
+
+test.each([true, false])('HTML tabs restart their server when changing tunneling from %s and preserve the page path', async tunneled => {
+  const { controller, transport, setTunneling } = htmlFixture(tunneled);
+  const tab = await controller.openHtmlPreview('/repo/report.html');
+  await controller.action('reload', { tab_id: tab.id });
+  await controller.action('navigate', { tab_id: tab.id, url: 'http://localhost:42001/details.html?q=1' });
+  setTunneling(!tunneled);
+  expect(transport.stopPreview).toHaveBeenCalledWith('html-41001');
+  await controller.action('reload', { tab_id: tab.id });
+  expect(transport.startHtmlPreview).toHaveBeenCalledTimes(2);
+  expect(tab.source).toBe(`http://${tunneled ? '127.0.0.1:41002' : 'localhost:42002'}/details.html?q=1`);
+  expect(tab.url).toBe('http://localhost:42002/details.html?q=1');
+  await controller.dispose();
+});
+
+test('closing a browser session while an HTML server starts cleans up the server', async () => {
+  const { controller, transport } = htmlFixture(false);
+  let finish!: (value: { id: string; url: string; displayUrl: string }) => void;
+  transport.startHtmlPreview.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const opening = controller.openHtmlPreview('/repo/report.html');
+  await Promise.resolve();
+  await controller.dispose();
+  finish({ id: 'abandoned', url: 'http://127.0.0.1:4000/report.html', displayUrl: 'http://127.0.0.1:5000/report.html' });
+  await expect(opening).rejects.toThrow('Browser session closed');
+  expect(transport.stopPreview).toHaveBeenCalledWith('abandoned');
+});
+
+test('repeated HTML file opens reuse a tab, and hiding the browser keeps its preview alive', async () => {
+  const { transport } = htmlFixture(false);
+  const registry = new BrowserRegistry();
+  const entry = registry.ensure(identity('html-owner'), transport, false);
+  await Promise.all([
+    registry.openHtmlPreview(entry.identity.sessionId, '/repo/report.html'),
+    registry.openHtmlPreview(entry.identity.sessionId, '/repo/report.html'),
+  ]);
+  expect(transport.startHtmlPreview).toHaveBeenCalledTimes(1);
+  expect(entry.controller.tabs.filter(tab => tab.htmlPreview)).toHaveLength(1);
+  registry.hide();
+  expect(transport.stopPreview).not.toHaveBeenCalled();
+  await registry.close(entry.identity.sessionId);
+  expect(transport.stopPreview).toHaveBeenCalledWith('html-41001');
+});
 
 const identity = (id: string): BrowserSessionIdentity => ({
   runtimeId: 'host',

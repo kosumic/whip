@@ -254,15 +254,17 @@ export class BrowserRegistry {
     }
   }
   private save(entry: BrowserEntry) {
+    // Preview servers and ports are ephemeral; never restore a dead address.
+    const tabs = entry.controller.tabs.filter(tab => !tab.htmlPreview);
     this.archive?.save({
       id: entry.identity.sessionId,
       runtimeId: entry.identity.runtimeId,
       paneId: entry.identity.paneId,
       terminalId: entry.identity.terminalId,
-      selected: entry.controller.tabs.findIndex(
+      selected: Math.max(0, tabs.findIndex(
         tab => tab.id === entry.controller.selectedTabId,
-      ),
-      tabs: entry.controller.tabs.map(tab => ({
+      )),
+      tabs: tabs.map(tab => ({
         url: tab.url,
         title: tab.title,
       })),
@@ -357,7 +359,10 @@ export class BrowserRegistry {
       runtime,
       () => this.activeViews() < BROWSER_LIVE_VIEW_BUDGET,
       this.routing
-        ? { activate: () => this.routing!.activate(identity.runtimeId) }
+        ? {
+            activate: () => this.routing!.activate(identity.runtimeId),
+            usesTunnel: () => this.routing!.runtimeId === identity.runtimeId,
+          }
         : undefined,
       tab => this.activateView(controller, tab),
       { runtimeId: identity.runtimeId, sessionId: identity.sessionId, paneId: identity.paneId, terminalId: identity.terminalId },
@@ -429,6 +434,28 @@ export class BrowserRegistry {
     if (controller.selectedTabId) controller.touch(controller.selectedTabId);
     this.changed();
   }
+  /** Repeated file opens select the owning tab without creating another server. */
+  openHtmlPreview(id: string, path: string, isCurrent: () => boolean = () => true): Promise<void> {
+    const operation = this.linkQueue.then(async () => {
+      if (!isCurrent()) return;
+      const entry = this.entries.get(id);
+      if (!entry) throw new Error('Browser session closed');
+      const tab = entry.controller.tabs.find(item => item.htmlPreview?.path === path);
+      if (tab) entry.controller.select(tab.id);
+      else {
+        const created = await entry.controller.openHtmlPreview(path);
+        if (!isCurrent()) {
+          await entry.controller.closeTab(created.id);
+          return;
+        }
+      }
+      if (this.entries.get(id) !== entry) throw new Error('Browser session closed');
+      this.open(id);
+    });
+    this.linkQueue = operation.then(() => undefined, () => undefined);
+    return operation;
+  }
+
   /** User link opens reuse the host's tabs without navigating an existing page. */
   openLink(id: string, value: string): Promise<unknown> {
     const operation = this.linkQueue.then(async () => {

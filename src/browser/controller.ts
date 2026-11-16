@@ -68,6 +68,7 @@ export interface BrowserDocumentState {
 }
 export interface PreviewTransport {
   startWebPreview(url: string): Promise<{ id: string; url: string }>;
+  startHtmlPreview?(path: string): Promise<{ id: string; url: string; displayUrl?: string }>;
   stopPreview(id: string): Promise<void>;
 }
 export interface BrowserTab {
@@ -86,6 +87,7 @@ export interface BrowserTab {
   driver: BrowserDriver | null;
   savedState: BrowserSavedState | null;
   previews: Map<string, { id: string; local: string; remote: string }>;
+  htmlPreview?: { path: string; remote: string };
 }
 /** WebView error documents (chrome-error:, data:, etc.) are not tab locations. */
 function isBrowserPageUrl(value: string): boolean {
@@ -106,6 +108,13 @@ function publicUrl(value: string) {
   if (value === 'about:blank') return value;
   const url = new URL(value);
   return url.origin + url.pathname;
+}
+function htmlPreviewRemoteUrl(value: string) {
+  const url = new URL(value);
+  // WebKit can bypass its SOCKS proxy for numeric IPs. A hostname keeps this
+  // loopback destination on the SSH host when tunneled browsing is enabled.
+  url.hostname = 'localhost';
+  return url.toString();
 }
 function requireString(
   args: Record<string, unknown>,
@@ -139,7 +148,7 @@ export class BrowserController {
     readonly id: string,
     previews: PreviewTransport,
     private readonly canActivate: () => boolean = () => true,
-    private readonly routing?: { activate(): Promise<void> },
+    private readonly routing?: { activate(): Promise<void>; usesTunnel?(): boolean },
     private readonly activateView?: (tab: BrowserTab) => Promise<void>,
     owner?: BrowserOwner,
   ) {
@@ -201,7 +210,10 @@ export class BrowserController {
       tab.driver = null;
       tab.source = tab.url;
       this.change(tab, BrowserTabChange.Route);
-      tab.loading = tab.url !== 'about:blank';
+      // A restarted HTML server may have a new port. Resolve it before mounting
+      // the next document, including when switching to phone-network browsing.
+      if (tab.htmlPreview) this.change(tab, BrowserTabChange.Suspend);
+      tab.loading = !tab.htmlPreview && tab.url !== 'about:blank';
       tab.loadError = null;
       for (const preview of tab.previews.values())
         bestEffortCleanup(
@@ -237,6 +249,32 @@ export class BrowserController {
     this.selectedTabId = view.id;
     this.changed();
     return tab;
+  }
+  /** The tab, rather than the file manager, owns this server and its forward. */
+  async openHtmlPreview(path: string) {
+    if (!this.previews.startHtmlPreview)
+      throw new Error('HTML previews are unavailable on this host.');
+    await this.routing?.activate();
+    this.ensureLive();
+    const preview = await this.previews.startHtmlPreview(path);
+    try {
+      this.ensureLive();
+      if (!preview.displayUrl) throw new Error('HTML preview has no remote address.');
+      const remote = htmlPreviewRemoteUrl(preview.displayUrl);
+      const tab = this.newTab(false);
+      tab.htmlPreview = { path, remote };
+      tab.previews.set(new URL(remote).origin, {
+        id: preview.id, local: preview.url, remote,
+      });
+      tab.url = remote;
+      tab.title = path.slice(path.lastIndexOf('/') + 1);
+      this.publishLocation(tab);
+      this.changed();
+      return tab;
+    } catch (error) {
+      await this.previews.stopPreview(preview.id);
+      throw error;
+    }
   }
   private adoptTab(view: BrowserTabProjection): BrowserTab {
     const existing = this.tabs.find(tab => tab.id === view.id);
@@ -597,6 +635,30 @@ export class BrowserController {
   ) {
     const target = terminalWebLinkTarget(browserAddress(value));
     const url = new URL(target.url);
+    const html = tab.htmlPreview;
+    if (html && url.origin === new URL(html.remote).origin) {
+      let preview = tab.previews.get(url.origin);
+      if (!preview) {
+        const started = await this.previews.startHtmlPreview!(html.path);
+        if (this.disposed || !this.tabs.includes(tab) || signal.aborted || !started.displayUrl) {
+          await this.previews.stopPreview(started.id);
+          throw new Error('HTML preview navigation cancelled');
+        }
+        preview = { id: started.id, local: started.url, remote: htmlPreviewRemoteUrl(started.displayUrl) };
+        html.remote = preview.remote;
+        tab.previews.set(new URL(html.remote).origin, preview);
+      }
+      const remote = new URL(preview.remote);
+      url.hostname = remote.hostname;
+      url.port = remote.port;
+      const address = url.toString();
+      if (!this.routing?.usesTunnel?.()) {
+        const local = new URL(preview.local);
+        url.hostname = local.hostname;
+        url.port = local.port;
+      }
+      return { remote: address, local: url.toString() };
+    }
     if (!this.routing && target.requiresSshTunnel) {
       let preview = tab.previews.get(url.origin);
       if (!preview) {
@@ -627,10 +689,11 @@ export class BrowserController {
         : 'about:blank';
       if (tab.url === 'about:blank') tab.title = '';
     }
-    const url =
-      tab.url === 'about:blank'
-        ? 'about:blank'
-        : (await this.resolveUrl(tab, tab.url, signal)).local;
+    const target = tab.url === 'about:blank'
+      ? { remote: tab.url, local: tab.url }
+      : await this.resolveUrl(tab, tab.url, signal);
+    tab.url = target.remote;
+    const url = target.local;
     this.tab(tab.id);
     if (signal.aborted) throw new Error('Browser action cancelled');
     tab.source = url;
@@ -712,8 +775,13 @@ export class BrowserController {
         tab.url = isBrowserPageUrl(tab.source) ? this.remoteUrl(tab, tab.source) : 'about:blank';
         this.publishLocation(tab);
       }
-      const source = navigation && !tab.savedState ? 'about:blank'
-        : tab.url === 'about:blank' ? tab.url : (await this.resolveUrl(tab, tab.url, signal)).local;
+      const target = navigation && !tab.savedState
+        ? { remote: tab.url, local: 'about:blank' }
+        : tab.url === 'about:blank' ? { remote: tab.url, local: tab.url }
+        : await this.resolveUrl(tab, tab.url, signal);
+      const source = target.local;
+      tab.url = target.remote;
+      this.publishLocation(tab);
       permit.checkActive();
       tab.source = source;
       if (this.activateView) await this.activateView(tab);

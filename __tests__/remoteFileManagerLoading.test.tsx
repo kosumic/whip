@@ -103,7 +103,6 @@ jest.mock('../src/components/ui/icon', () => ({ Icon: 'Icon' }));
 jest.mock('../src/components/ui/switch', () => ({ Switch: 'Switch' }));
 jest.mock('../src/components/CodePreview', () => ({ CodeEditor: 'CodeEditor', CodePreview: 'CodePreview' }));
 jest.mock('../src/components/ConfirmationPopup', () => ({ ConfirmationPopup: 'ConfirmationPopup' }));
-jest.mock('../src/components/HtmlPreview', () => ({ HtmlPreview: 'HtmlPreview' }));
 jest.mock('../src/components/MarkdownPreview', () => ({ MarkdownPreview: 'MarkdownPreview' }));
 jest.mock('../src/components/MermaidPreview', () => ({ MermaidPreview: 'MermaidPreview' }));
 jest.mock('../src/components/RemoteGitDiffPreview', () => ({ RemoteGitDiffPreview: 'RemoteGitDiffPreview' }));
@@ -415,6 +414,31 @@ it('opens an extensionless UTF-8 file as editable plain text', async () => {
   const preview = tree.root.find(node => String(node.type) === 'RemoteTextPreview');
   expect(preview.props.content).toBe(content);
   expect(button('files.edit').props.disabled).toBe(false);
+});
+
+it('hands HTML files to the in-app browser without downloading or owning their preview', async () => {
+  const entry: RuntimeRemoteFileEntry = { name: 'report.html', path: '/repo/report.html', kind: 'file', size: 100 };
+  native.listDirectory.mockResolvedValue({ path: '/repo', entries: [entry] });
+  props.onOpenHtmlPreview = jest.fn().mockResolvedValue(undefined);
+  props.onFileChange = jest.fn();
+  await mount();
+  await act(async () => { await button('files.openFile:report.html').props.onPress(); });
+  expect(props.onOpenHtmlPreview).toHaveBeenCalledWith(entry.path, expect.any(Function));
+  expect(cacheRemoteFile).not.toHaveBeenCalled();
+  expect(props.onClose).toHaveBeenCalledTimes(1);
+  expect(props.onFileChange).toHaveBeenLastCalledWith(null);
+  act(() => tree.unmount());
+  expect(native.stopPreview).not.toHaveBeenCalled();
+});
+
+it('keeps HTML browser startup failures visible and retryable', async () => {
+  const entry: RuntimeRemoteFileEntry = { name: 'report.html', path: '/repo/report.html', kind: 'file', size: 100 };
+  native.listDirectory.mockResolvedValue({ path: '/repo', entries: [entry] });
+  props.onOpenHtmlPreview = jest.fn().mockRejectedValue(new Error('SSH disconnected'));
+  await mount();
+  await act(async () => { await button('files.openFile:report.html').props.onPress(); });
+  expect(text()).toContain('SSH disconnected');
+  expect(props.onClose).not.toHaveBeenCalled();
 });
 
 it.each(['file.ts', 'notes.md'])('isolates %s code editing from the native app while keeping directory glass', async filename => {

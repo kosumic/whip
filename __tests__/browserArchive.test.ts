@@ -52,6 +52,23 @@ function runtimeFixture() {
   };
 }
 
+test('HTML preview ports are excluded from saved tabs while ordinary pages remain recoverable', async () => {
+  const archive = new BrowserArchive(storageFixture());
+  const registry = new BrowserRegistry(archive);
+  const runtime = {
+    ...runtimeFixture(),
+    startHtmlPreview: jest.fn(async () => ({
+      id: 'html', url: 'http://127.0.0.1:4000/report.html', displayUrl: 'http://127.0.0.1:5000/report.html',
+    })),
+  };
+  const entry = registry.ensure({ runtimeId: 'host', sessionId: 'html-owner', paneId: 'pane', terminalId: 'terminal' }, runtime, false);
+  entry.controller.restoreTabs([{ url: 'https://example.test/', title: 'Keep this page' }], 0);
+  await registry.openHtmlPreview(entry.identity.sessionId, '/repo/report.html');
+  expect(archive.list()[0].tabs).toEqual([{ url: 'https://example.test/', title: 'Keep this page' }]);
+  expect(archive.list()[0].selected).toBe(0);
+  await registry.dispose();
+});
+
 test('startup automatically restores local tabs without opening or loading pages', async () => {
   const storage = storageFixture();
   const archive = new BrowserArchive(storage);

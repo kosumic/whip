@@ -1,4 +1,6 @@
 import { View } from 'react-native';
+import { browserRegistry } from '../browser/registry';
+import { sessionSnapshot } from '../liveHostSessions';
 
 import type { DevicePreferences } from '../services/devicePreferences';
 import type { HostManagementController } from '../hooks/useHostManagement';
@@ -174,6 +176,23 @@ export function AppOverlays({
           initialPath={remoteFiles.request.initialPath}
           initialFilePath={remoteFiles.request.initialFilePath}
           initialLine={remoteFiles.request.initialLine}
+          onOpenHtmlPreview={async (path, isCurrent) => {
+            const request = remoteFiles.request!;
+            const client = remoteFiles.client!;
+            const session = sessions.presentationSessions.find(item => item.id === request.hostSessionId);
+            const pane = session && sessionSnapshot(session).panes.find(item => item.terminal_id === request.terminalId);
+            if (!pane) throw new Error('The terminal for this file is no longer available.');
+            await browserRegistry.loadArchive();
+            if (!isCurrent()) return;
+            const entry = browserRegistry.forPane(client.native.runtimeId, pane.pane_id)
+              || browserRegistry.ensure({
+                runtimeId: client.native.runtimeId,
+                sessionId: `manual-${request.hostSessionId}-${request.terminalId}`,
+                paneId: pane.pane_id,
+                terminalId: request.terminalId,
+              }, client.native, false);
+            await browserRegistry.openHtmlPreview(entry.identity.sessionId, path, isCurrent);
+          }}
           onAskAgent={text => remoteFiles.askAgent(remoteFiles.request!.id, text)}
           visible
           onPathChange={path =>

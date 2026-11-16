@@ -54,7 +54,6 @@ import { hapticPress } from './app-ui';
 import { CodeEditor, CodePreview, type CodeEditorHandle } from './CodePreview';
 import { ConfirmationPopup } from './ConfirmationPopup';
 import { GlassOverlayHost, GlassSurface, useAppGlassEnabled } from './GlassSurface';
-import { HtmlPreview } from './HtmlPreview';
 import { MarkdownPreview } from './MarkdownPreview';
 import { MermaidPreview } from './MermaidPreview';
 import { RemoteGitDiffPreview } from './RemoteGitDiffPreview';
@@ -109,6 +108,7 @@ interface Props {
   initialPath: string;
   initialFilePath?: string;
   initialLine?: number;
+  onOpenHtmlPreview?: (path: string, isCurrent: () => boolean) => Promise<void>;
   onPathChange: (path: string) => void;
   onFileChange?: (path: string | null) => void;
   onClose: () => void;
@@ -125,9 +125,7 @@ interface FilePreview {
   draft: string;
   editing: boolean;
   error: string | null;
-  htmlPreview: RuntimePreviewInfo | null;
   filePreview: RuntimePreviewInfo | null;
-  htmlRevision: number;
   gitDiff: RemoteGitDiff | null;
   gitStatus: RemoteGitStatusEntry | null;
   initialLine?: number;
@@ -147,7 +145,7 @@ const remoteGitTreeIndentStyles = Array.from({ length: 16 }, (_, depth) => ({
   paddingLeft: 8 + depth * 16,
 }));
 
-export function RemoteFileManager({ visible, client, hostId, initialPath, initialFilePath, initialLine, onPathChange, onFileChange, onClose, onAskAgent }: Props) {
+export function RemoteFileManager({ visible, client, hostId, initialPath, initialFilePath, initialLine, onOpenHtmlPreview, onPathChange, onFileChange, onClose, onAskAgent }: Props) {
   const { colors } = useTheme();
   const appGlassEnabled = useAppGlassEnabled();
   const backgroundClassName = appGlassBackgroundClassName(appGlassEnabled);
@@ -254,9 +252,6 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     (next: FilePreview | null) => {
       const previous = previewRef.current;
       if (previous?.cached && previous.cached !== next?.cached) previous.cached.dispose();
-      if (previous?.htmlPreview && previous.htmlPreview !== next?.htmlPreview) {
-        bestEffortCleanup(client.native.stopPreview(previous.htmlPreview.id), REMOTE_PREVIEW_CLOSE_CONTEXT);
-      }
       if (previous?.filePreview && previous.filePreview !== next?.filePreview) {
         bestEffortCleanup(client.native.stopPreview(previous.filePreview.id), REMOTE_PREVIEW_CLOSE_CONTEXT);
       }
@@ -450,7 +445,6 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     () => () => {
       const current = previewRef.current;
       current?.cached?.dispose();
-      if (current?.htmlPreview) bestEffortCleanup(client.native.stopPreview(current.htmlPreview.id), REMOTE_PREVIEW_CLOSE_CONTEXT);
       if (current?.filePreview) bestEffortCleanup(client.native.stopPreview(current.filePreview.id), REMOTE_PREVIEW_CLOSE_CONTEXT);
       previewRef.current = null;
     },
@@ -626,9 +620,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       draft: '',
       editing: false,
       error: null,
-      htmlPreview: null,
       filePreview: null,
-      htmlRevision: 0,
       gitDiff: null,
       gitStatus: status,
       gitCommit: commit,
@@ -683,9 +675,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       draft: '',
       editing: false,
       error: null,
-      htmlPreview: null,
       filePreview: null,
-      htmlRevision: 0,
       gitDiff: null,
       gitStatus: null,
       initialLine: targetLine,
@@ -695,10 +685,18 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     if (kind === 'unsupported' || kind === 'paged-text') return;
 
     let cached: CachedRemoteFile | null = null;
-    let htmlPreview: RuntimePreviewInfo | null = null;
     let filePreview: RuntimePreviewInfo | null = null;
     try {
       let content: string | null = null;
+      if (kind === 'html') {
+        if (!onOpenHtmlPreview) throw new Error('HTML browser previews are unavailable.');
+        await onOpenHtmlPreview(entryPath, () => request === requestRef.current);
+        if (request === requestRef.current) {
+          onFileChangeRef.current?.(null);
+          onClose();
+        }
+        return;
+      }
       if (isSftpStreamPreview(kind)) {
         filePreview = await client.native.startRemoteFilePreview(entryPath);
       } else {
@@ -710,25 +708,16 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
         if (filePreview) bestEffortCleanup(client.native.stopPreview(filePreview.id), REMOTE_PREVIEW_CLOSE_CONTEXT);
         return;
       }
-      if (kind === 'html') htmlPreview = await client.native.startHtmlPreview(entryPath);
-      if (request !== requestRef.current) {
-        cached?.dispose();
-        if (htmlPreview) bestEffortCleanup(client.native.stopPreview(htmlPreview.id), REMOTE_PREVIEW_CLOSE_CONTEXT);
-        if (filePreview) bestEffortCleanup(client.native.stopPreview(filePreview.id), REMOTE_PREVIEW_CLOSE_CONTEXT);
-        return;
-      }
       replacePreview({
         ...loadingPreview,
         cached,
         content,
         draft: content || '',
-        htmlPreview,
         filePreview,
       });
       if (kind === 'pdf' && filePreview) await openPdfBrowser(filePreview.url, request);
     } catch (reason) {
       cached?.dispose();
-      if (htmlPreview) bestEffortCleanup(client.native.stopPreview(htmlPreview.id), REMOTE_PREVIEW_CLOSE_CONTEXT);
       if (filePreview) bestEffortCleanup(client.native.stopPreview(filePreview.id), REMOTE_PREVIEW_CLOSE_CONTEXT);
       if (request === requestRef.current) {
         replacePreview({ ...loadingPreview, error: String(reason) });
@@ -836,7 +825,6 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
         content: draft,
         draft,
         editing: false,
-        htmlRevision: current.htmlRevision + 1,
       });
       Alert.alert(t('files.savedTitle'), t('files.savedCopy', { name: remoteEntryName(current.entry) }));
     } catch (reason) {
@@ -1179,8 +1167,6 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                 <MarkdownPreview key={preview.path} client={client} content={preview.content || ''} onOpenRemotePath={openRemotePath} progressIdentity={previewProgressIdentity!} remotePath={preview.path} />
               ) : preview.kind === 'mermaid' ? (
                 <MermaidPreview content={preview.content || ''} filename={remoteEntryName(preview.entry)} />
-              ) : preview.kind === 'html' && preview.htmlPreview ? (
-                <HtmlPreview filename={remoteEntryName(preview.entry)} revision={preview.htmlRevision} uri={preview.htmlPreview.url} />
               ) : preview.kind === 'code' ? (
                 <CodePreview content={preview.content || ''} filename={remoteEntryName(preview.entry)} initialLine={preview.initialLine} progressIdentity={previewProgressIdentity!} />
               ) : (
