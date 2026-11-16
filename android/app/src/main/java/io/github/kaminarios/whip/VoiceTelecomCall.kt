@@ -2,6 +2,7 @@ package io.github.kaminarios.whip
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import android.net.Uri
 import android.telecom.DisconnectCause
 import androidx.core.telecom.CallAttributesCompat
@@ -9,6 +10,7 @@ import androidx.core.telecom.CallControlResult
 import androidx.core.telecom.CallControlScope
 import androidx.core.telecom.CallEndpointCompat
 import androidx.core.telecom.CallsManager
+import androidx.annotation.RequiresApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -29,6 +31,8 @@ internal interface VoiceTelecomPlatform {
                      connected: CallControlScope.() -> Unit)
 }
 
+@RequiresApi(Build.VERSION_CODES.O)
+@android.annotation.SuppressLint("MissingPermission") // Constructed only by the MANAGE_OWN_CALLS-enabled build path.
 internal class AndroidVoiceTelecom(private val context: Context) : VoiceTelecomPlatform {
   private val manager by lazy { CallsManager(context) }
   override suspend fun addCall(token: String, label: String, onDisconnect: suspend () -> Unit,
@@ -52,6 +56,7 @@ internal class AndroidVoiceTelecom(private val context: Context) : VoiceTelecomP
 /** One registration per token, including startup, provider rotation, and asynchronous teardown.
  * All callbacks/state run on the service's main dispatcher. No callback waits for JavaScript.
  */
+@RequiresApi(Build.VERSION_CODES.O)
 internal class VoiceTelecomCall(
   private val scope: CoroutineScope,
   private val platform: VoiceTelecomPlatform,
