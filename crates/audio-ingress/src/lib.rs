@@ -52,7 +52,7 @@ impl InputGate {
         let _ = self
             .0
             .try_update(Ordering::AcqRel, Ordering::Acquire, |old| {
-                Some(old.checked_add(2).unwrap_or(u64::MAX))
+                Some(old.saturating_add(2))
             });
     }
     #[must_use]
