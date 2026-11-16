@@ -666,6 +666,23 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     }
 
     const kind = remotePreviewKind(name, entry.size);
+    if (kind === 'html') {
+      setBusy(true);
+      setError(null);
+      try {
+        if (!onOpenHtmlPreview) throw new Error('HTML browser previews are unavailable.');
+        await onOpenHtmlPreview(entryPath, () => request === requestRef.current);
+        if (request === requestRef.current) {
+          onFileChangeRef.current?.(null);
+          onClose();
+        }
+      } catch (reason) {
+        if (request === requestRef.current) setError(String(reason));
+      } finally {
+        if (request === requestRef.current) setBusy(false);
+      }
+      return;
+    }
     const loadingPreview: FilePreview = {
       entry,
       path: entryPath,
@@ -688,15 +705,6 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     let filePreview: RuntimePreviewInfo | null = null;
     try {
       let content: string | null = null;
-      if (kind === 'html') {
-        if (!onOpenHtmlPreview) throw new Error('HTML browser previews are unavailable.');
-        await onOpenHtmlPreview(entryPath, () => request === requestRef.current);
-        if (request === requestRef.current) {
-          onFileChangeRef.current?.(null);
-          onClose();
-        }
-        return;
-      }
       if (isSftpStreamPreview(kind)) {
         filePreview = await client.native.startRemoteFilePreview(entryPath);
       } else {

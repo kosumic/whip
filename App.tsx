@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { useFonts } from 'expo-font';
 import { PortalHost } from '@rn-primitives/portal';
-import { NativeModules, View } from 'react-native';
+import { Alert, NativeModules, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { useTranslation } from 'react-i18next';
@@ -181,6 +181,7 @@ function AppContent({ fontsReady }: { fontsReady: boolean }) {
     getSessions: sessions.getState,
     getClient: sessions.getClient,
     openTerminal: sessions.openPaneTerminal,
+    onOpenError: error => Alert.alert(t('files.openFailed'), String(error)),
   });
   const { request: remoteFilesRequest, close: closeRemoteFiles } = remoteFiles;
   useEffect(() => {

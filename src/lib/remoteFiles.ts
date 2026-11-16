@@ -142,6 +142,10 @@ export function sortRemoteEntries(entries: RuntimeRemoteFileEntry[], field: Remo
   });
 }
 
+export function isRemoteHtmlFile(filename: string): boolean {
+  return HTML_EXTENSIONS.has(remoteFilenameParts(filename).extension);
+}
+
 export function remotePreviewKind(filename: string, fileSize: number | undefined): RemotePreviewKind {
   if (fileSize === undefined || !Number.isFinite(fileSize) || fileSize < 0) return 'unsupported';
   const { base, extension } = remoteFilenameParts(filename);
@@ -164,7 +168,7 @@ export function remotePreviewKind(filename: string, fileSize: number | undefined
     return code || text || MARKDOWN_EXTENSIONS.has(extension) ? 'paged-text' : 'unsupported';
   }
   if (SVG_EXTENSIONS.has(extension)) return 'svg';
-  if (HTML_EXTENSIONS.has(extension)) return 'html';
+  if (isRemoteHtmlFile(filename)) return 'html';
   if (MARKDOWN_EXTENSIONS.has(extension)) return 'markdown';
   if (code) return 'code';
   if (text) return 'text';

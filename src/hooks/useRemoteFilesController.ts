@@ -5,7 +5,9 @@ import {
   findLiveHostSession,
   sessionSnapshot,
 } from '../liveHostSessions';
-import { parentRemotePath } from '../lib/remoteFiles';
+import { isRemoteHtmlFile, parentRemotePath } from '../lib/remoteFiles';
+import { browserRegistry } from '../browser/registry';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 import type { TranscriptFileLinkTarget } from '../lib/transcriptLinks';
 import type { HerdrClient } from '../services/HerdrClient';
 import type { PaneInfo } from '../types';
@@ -25,6 +27,7 @@ interface RemoteFilesControllerOptions {
   getSessions: () => AppCoreProjection;
   getClient: (sessionId: string) => HerdrClient | undefined;
   openTerminal: (sessionId: string, pane: PaneInfo) => void;
+  onOpenError?: (error: unknown) => void;
 }
 
 export interface RemoteFilesController {
@@ -40,6 +43,7 @@ export interface RemoteFilesController {
   ) => void;
   close: (requestId?: number) => void;
   closeForSession: (sessionId: string) => void;
+  openHtmlPreview: (sessionId: string, terminalId: string, path: string, isCurrent?: () => boolean) => Promise<void>;
   rememberPath: (requestId: number, path: string) => void;
   rememberFile: (requestId: number, path: string | null) => void;
 }
@@ -49,12 +53,37 @@ export function useRemoteFilesController({
   getSessions,
   getClient,
   openTerminal,
+  onOpenError,
 }: RemoteFilesControllerOptions): RemoteFilesController {
   const [request, setRequest] = useState<RemoteFilesRequest | null>(null);
   const [draftRequest, setDraftRequest] =
     useState<RemoteFilesController['draftRequest']>(null);
   const requestIdRef = useRef(0);
   const locationsRef = useRef(new Map<string, { path: string; filePath?: string }>());
+
+  const openHtmlPreview = useCallback(async (
+    sessionId: string,
+    terminalId: string,
+    path: string,
+    isCurrent: () => boolean = () => true,
+  ) => {
+    const session = findLiveHostSession(getSessions(), sessionId);
+    const pane = session && sessionSnapshot(session).panes.find(item => item.terminal_id === terminalId);
+    const client = getClient(sessionId);
+    if (!pane || !client) throw new Error('The terminal for this file is no longer available.');
+    await browserRegistry.loadArchive();
+    const current = () => isCurrent() && getClient(sessionId) === client
+      && !!findLiveHostSession(getSessions(), sessionId);
+    if (!current()) return;
+    const entry = browserRegistry.forPane(client.native.runtimeId, pane.pane_id)
+      || browserRegistry.ensure({
+        runtimeId: client.native.runtimeId,
+        sessionId: `manual-${sessionId}-${terminalId}`,
+        paneId: pane.pane_id,
+        terminalId,
+      }, client.native, false);
+    await browserRegistry.openHtmlPreview(entry.identity.sessionId, path, current);
+  }, [getClient, getSessions]);
 
   const open = useCallback(
     (
@@ -72,8 +101,20 @@ export function useRemoteFilesController({
       );
       const pathKey = `${sessionId}:${terminalId}`;
       const location = locationsRef.current.get(pathKey);
+      const requestId = ++requestIdRef.current;
+      if (target && isRemoteHtmlFile(target.path)) {
+        setRequest(null);
+        const isCurrent = () => requestId === requestIdRef.current;
+        reportBackgroundFailure(
+          openHtmlPreview(sessionId, terminalId, target.path, isCurrent).catch(error => {
+            if (isCurrent()) onOpenError?.(error);
+          }),
+          'remote-html-open',
+        );
+        return;
+      }
       setRequest({
-        id: ++requestIdRef.current,
+        id: requestId,
         hostSessionId: sessionId,
         terminalId,
         initialPath: target
@@ -89,10 +130,11 @@ export function useRemoteFilesController({
         pathKey,
       });
     },
-    [getSessions],
+    [getSessions, onOpenError, openHtmlPreview],
   );
 
   const close = useCallback((requestId?: number) => {
+    if (requestId === undefined) requestIdRef.current += 1;
     setRequest(current =>
       requestId === undefined || current?.id === requestId ? null : current,
     );
@@ -172,6 +214,7 @@ export function useRemoteFilesController({
       open,
       close,
       closeForSession,
+      openHtmlPreview,
       rememberPath,
       rememberFile,
       draftRequest,
@@ -182,6 +225,7 @@ export function useRemoteFilesController({
       client,
       close,
       closeForSession,
+      openHtmlPreview,
       open,
       rememberPath,
       rememberFile,

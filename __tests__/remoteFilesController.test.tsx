@@ -5,10 +5,84 @@ import {
 } from '../src/hooks/useRemoteFilesController';
 import type { AppCoreProjection } from 'react-native-whip-ssh';
 import type { HerdrClient } from '../src/services/HerdrClient';
+import { browserRegistry } from '../src/browser/registry';
+
+jest.mock('../src/browser/registry', () => ({
+  browserRegistry: {
+    loadArchive: jest.fn(async () => undefined),
+    forPane: jest.fn(),
+    ensure: jest.fn(() => ({ identity: { sessionId: 'html-browser' } })),
+    openHtmlPreview: jest.fn(async () => undefined),
+  },
+}));
 
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );
+
+function htmlLinkFixture() {
+  const pane = { terminal_id: 'terminal', pane_id: 'pane', workspace_id: 'workspace', cwd: '/repo' };
+  const state = {
+    sessions: [{ id: 'host', hostState: { snapshot: { panes: [pane], workspaces: [] } } }],
+  } as unknown as AppCoreProjection;
+  const client = { native: { runtimeId: 'host' } } as unknown as HerdrClient;
+  const onOpenError = jest.fn();
+  let controller!: RemoteFilesController;
+  function Harness() {
+    controller = useRemoteFilesController({
+      getSessions: () => state, getClient: () => client, openTerminal: jest.fn(), onOpenError,
+    });
+    return null;
+  }
+  let tree!: ReactTestRenderer;
+  act(() => { tree = create(<Harness />); });
+  return { get controller() { return controller; }, tree, client, onOpenError };
+}
+
+it.each(['report.html', 'report.htm', 'REPORT.HTML'])('opens %s links without mounting the file manager, including during browser startup', async filename => {
+  const fixture = htmlLinkFixture();
+  let finish!: () => void;
+  jest.mocked(browserRegistry.openHtmlPreview).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  try {
+    await act(async () => { fixture.controller.open('host', 'terminal', { path: `/repo/${filename}` }); });
+    expect(fixture.controller.request).toBeNull();
+    expect(browserRegistry.ensure).toHaveBeenLastCalledWith({
+      runtimeId: 'host', sessionId: 'manual-host-terminal', paneId: 'pane', terminalId: 'terminal',
+    }, fixture.client.native, false);
+    expect(browserRegistry.openHtmlPreview).toHaveBeenLastCalledWith('html-browser', `/repo/${filename}`, expect.any(Function));
+    await act(async () => { finish(); });
+    expect(fixture.controller.request).toBeNull();
+  } finally { act(() => fixture.tree.unmount()); }
+});
+
+it('reports failed HTML link startup without opening a file preview', async () => {
+  const fixture = htmlLinkFixture();
+  const error = new Error('SSH disconnected');
+  jest.mocked(browserRegistry.openHtmlPreview).mockRejectedValueOnce(error);
+  try {
+    await act(async () => { fixture.controller.open('host', 'terminal', { path: '/repo/report.html' }); });
+    expect(fixture.onOpenError).toHaveBeenCalledWith(error);
+    expect(fixture.controller.request).toBeNull();
+  } finally { act(() => fixture.tree.unmount()); }
+});
+
+it('cancels a pending HTML link when another file is opened', async () => {
+  const fixture = htmlLinkFixture();
+  let current!: () => boolean;
+  let finish!: () => void;
+  jest.mocked(browserRegistry.openHtmlPreview).mockImplementationOnce((_id, _path, isCurrent) => {
+    current = isCurrent!;
+    return new Promise(resolve => { finish = resolve; });
+  });
+  try {
+    await act(async () => { fixture.controller.open('host', 'terminal', { path: '/repo/report.html' }); });
+    expect(current()).toBe(true);
+    act(() => { fixture.controller.open('host', 'terminal', { path: '/repo/source.ts' }); });
+    expect(current()).toBe(false);
+    await act(async () => { finish(); });
+    expect(fixture.controller.request?.initialFilePath).toBe('/repo/source.ts');
+  } finally { act(() => fixture.tree.unmount()); }
+});
 
 it('routes the selected diff back to its source pane and rejects stale or closed pane requests', () => {
   const pane = {

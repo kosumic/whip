@@ -431,6 +431,20 @@ it('hands HTML files to the in-app browser without downloading or owning their p
   expect(native.stopPreview).not.toHaveBeenCalled();
 });
 
+it('does not show a file preview while an HTML browser tab is starting', async () => {
+  const entry: RuntimeRemoteFileEntry = { name: 'report.html', path: '/repo/report.html', kind: 'file', size: 100 };
+  native.listDirectory.mockResolvedValue({ path: '/repo', entries: [entry] });
+  let finish!: () => void;
+  props.onOpenHtmlPreview = jest.fn(() => new Promise(resolve => { finish = resolve; }));
+  await mount();
+  await act(async () => { button('files.openFile:report.html').props.onPress(); });
+  expect(hasButton('files.backToDirectory')).toBe(false);
+  expect(text()).not.toContain('files.opening');
+  expect(props.onClose).not.toHaveBeenCalled();
+  await act(async () => { finish(); });
+  expect(props.onClose).toHaveBeenCalledTimes(1);
+});
+
 it('keeps HTML browser startup failures visible and retryable', async () => {
   const entry: RuntimeRemoteFileEntry = { name: 'report.html', path: '/repo/report.html', kind: 'file', size: 100 };
   native.listDirectory.mockResolvedValue({ path: '/repo', entries: [entry] });
