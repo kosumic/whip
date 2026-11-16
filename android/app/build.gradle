@@ -154,7 +154,7 @@ android {
         applicationId = "io.github.kaminarios.whip"
         minSdkVersion = rootProject.ext.minSdkVersion
         targetSdkVersion = rootProject.ext.targetSdkVersion
-        versionCode = 243
+        versionCode = 244
         versionName = appVersion
         manifestPlaceholders.whipProfileable = enableProfiling.toString()
         manifestPlaceholders.whipVoiceServiceTypes = telecomEnabled
