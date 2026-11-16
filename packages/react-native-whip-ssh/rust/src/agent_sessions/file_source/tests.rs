@@ -13,20 +13,36 @@ const WAIT: Duration = Duration::from_secs(25);
 
 #[test]
 fn nested_remote_shell_arguments_preserve_quotes_backslashes_and_newlines() -> TestResult {
-    let value = r#"quotes ' and \\ and \' and " and $HOME and `uname`
-next line"#;
-    let inner = format!("printf '%s' {}", shell_quote(value));
-    let outer = format!("sh -c {}", shell_quote(&inner));
-    let shell = std::env::var("WHIP_TEST_REMOTE_SHELL").unwrap_or_else(|_| "bash".into());
-    let output = std::process::Command::new(shell)
-        .args(["-c", &outer])
-        .output()?;
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert_eq!(output.stdout, value.as_bytes());
+    let mut shells = vec!["sh", "bash"];
+    if std::process::Command::new("fish")
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| output.status.success())
+    {
+        shells.push("fish");
+    }
+    for value in [
+        r#"quotes ' and \\ and \\' and " and $HOME and `uname`
+next line"#,
+        "日本語\t\r",
+        "$(printf injected); #",
+        "'\\'\\",
+        "",
+    ] {
+        let inner = format!("printf '%s' {}", shell_quote(value));
+        let outer = format!("sh -c {}", shell_quote(&inner));
+        for shell in &shells {
+            let output = std::process::Command::new(shell)
+                .args(["-c", &outer])
+                .output()?;
+            assert!(
+                output.status.success(),
+                "{shell}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(output.stdout, value.as_bytes(), "{shell}: {value:?}");
+        }
+    }
     Ok(())
 }
 

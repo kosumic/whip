@@ -600,9 +600,8 @@ pub(crate) fn remote_parent(path: &str) -> Result<String, String> {
     })
 }
 
-pub(crate) fn shell_quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\"'\"'"))
-}
+// Both the inner script arguments and outer sh -c argument use POSIX quoting.
+pub(crate) use herdr_protocol::hc::endpoint::shell_quote;
 
 pub(crate) fn git_repository_command(path: &str) -> String {
     let script = format!(

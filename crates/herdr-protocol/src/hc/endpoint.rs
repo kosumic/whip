@@ -29,6 +29,9 @@ pub fn validate_session(session: &str) -> Result<(), Error> {
     Ok(())
 }
 
+/// Quote one POSIX shell argument, including an entire script passed to sh -c.
+/// Callers validate paths/control data where required. This is not the mobile
+/// agent-session helper, which also escapes backslashes for Fish login shells.
 pub fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
