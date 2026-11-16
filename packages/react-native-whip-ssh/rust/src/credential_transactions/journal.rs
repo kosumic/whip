@@ -61,6 +61,26 @@ pub(super) struct HostEnvelope {
 }
 
 impl Workflow {
+    /// Stage only public receipt metadata in memory. The caller persists this
+    /// alongside profiles or as a standalone intent before touching secure storage.
+    /// Only legacy migration may replay from the legacy credential slot.
+    pub(super) fn stage_host_write(
+        &mut self,
+        host: &crate::HostProfileRecord,
+        legacy: bool,
+    ) -> String {
+        let receipt = uuid::Uuid::new_v4().to_string();
+        self.journal.hosts.insert(
+            host.id.clone(),
+            HostPending::Write {
+                receipt: receipt.clone(),
+                username: host.username.clone(),
+                legacy,
+            },
+        );
+        receipt
+    }
+
     pub(super) async fn load_journal(&self) -> Result<Journal> {
         let Some(value) = self.read_value(CredentialStorageKey::Transactions).await? else {
             return Ok(Journal::default());

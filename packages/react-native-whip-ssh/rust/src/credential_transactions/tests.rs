@@ -872,9 +872,210 @@ fn backups_are_ciphertext_only_and_bulk_restore_uses_canonical_profiles() -> Tes
             }
         ));
         assert_eq!(platform.count(&Phase::Decrypt), 1);
+        assert_eq!(platform.count(&Phase::Encrypt), 1);
+        assert!(
+            platform
+                .metadata(CredentialStorageKey::BackupMigration)
+                .is_none()
+        );
         assert!(platform.state.lock().secure.contains_key("a"));
         platform.assert_no_plaintext();
         coordinator.close();
+        Ok(())
+    })
+}
+
+#[test]
+fn recovered_write_interruptions_preserve_backups_and_require_receipt_proven_repair() -> TestResult
+{
+    crate::runtime()?.block_on(async {
+        for (phase, committed, pending, installed) in [
+            (
+                Phase::WriteMetadata(CredentialStorageKey::Transactions),
+                false,
+                false,
+                false,
+            ),
+            (
+                Phase::WriteMetadata(CredentialStorageKey::Transactions),
+                true,
+                true,
+                false,
+            ),
+            (Phase::WriteSecure, false, true, false),
+            (Phase::WriteSecure, true, false, true),
+        ] {
+            let (_lock, platform, coordinator) = fixture().await;
+            platform.state.lock().vault = true;
+            platform.state.lock().recovery_key = true;
+            load(&platform, &coordinator, vec![host("a")]).await?;
+            run(
+                &coordinator,
+                CredentialCommand::Backup {
+                    id: "a".into(),
+                    credential: material(),
+                    only_missing: false,
+                },
+            )
+            .await?;
+            let backup = platform.metadata(CredentialStorageKey::Backups);
+            platform.fail(phase, committed);
+            let result = run(
+                &coordinator,
+                CredentialCommand::RecoverHost { host: host("a") },
+            )
+            .await?;
+            assert!(matches!(
+                result,
+                CredentialResult::Recovered { credential: None }
+            ));
+            // Installation recovery must never rotate or overwrite its source backup.
+            assert_eq!(platform.metadata(CredentialStorageKey::Backups), backup);
+            assert_eq!(platform.count(&Phase::Encrypt), 1);
+            coordinator.close();
+            let restarted = CredentialCoordinator::new(platform.clone());
+            run(
+                &restarted,
+                CredentialCommand::LoadHosts {
+                    from_storage: true,
+                    hosts: None,
+                    legacy: None,
+                },
+            )
+            .await?;
+            assert_eq!(restarted.view().repair_host_ids == ["a"], pending);
+            assert_eq!(platform.state.lock().secure.contains_key("a"), installed);
+            assert!(
+                platform
+                    .metadata(CredentialStorageKey::BackupMigration)
+                    .is_none()
+            );
+            platform.assert_no_plaintext();
+            restarted.close();
+        }
+        Ok(())
+    })
+}
+
+#[test]
+fn another_hosts_receipt_cannot_acknowledge_an_interrupted_write() -> TestResult {
+    crate::runtime()?.block_on(async {
+        let (_lock, platform, coordinator) = fixture().await;
+        load(&platform, &coordinator, vec![]).await?;
+        run(
+            &coordinator,
+            CredentialCommand::SaveHost {
+                profile: host("b"),
+                credential: material(),
+            },
+        )
+        .await?;
+        platform.fail(Phase::WriteSecure, false);
+        assert_eq!(
+            error(
+                run(
+                    &coordinator,
+                    CredentialCommand::SaveHost {
+                        profile: host("a"),
+                        credential: material(),
+                    }
+                )
+                .await
+            ),
+            Some(CredentialTransactionError::PartialCommit)
+        );
+        {
+            let mut store = platform.state.lock();
+            let wrong_receipt = store.secure.get("b").cloned().ok_or("missing b")?;
+            store.secure.insert("a".into(), wrong_receipt);
+        }
+        coordinator.close();
+        let restarted = CredentialCoordinator::new(platform.clone());
+        run(
+            &restarted,
+            CredentialCommand::LoadHosts {
+                from_storage: true,
+                hosts: None,
+                legacy: None,
+            },
+        )
+        .await?;
+        assert_eq!(restarted.view().repair_host_ids, ["a"]);
+        let current = restarted
+            .view()
+            .hosts
+            .into_iter()
+            .find(|host| host.id == "a")
+            .ok_or("missing a")?;
+        assert_eq!(
+            error(
+                run(
+                    &restarted,
+                    CredentialCommand::ReadHost {
+                        host: current,
+                        strict: true
+                    }
+                )
+                .await
+            ),
+            Some(CredentialTransactionError::RepairRequired)
+        );
+        platform.assert_no_plaintext();
+        restarted.close();
+        Ok(())
+    })
+}
+
+#[test]
+fn cancellation_drains_recovery_effects_and_leaves_only_receipt_proven_repair() -> TestResult {
+    crate::runtime()?.block_on(async {
+        for phase in [
+            Phase::WriteMetadata(CredentialStorageKey::Transactions),
+            Phase::WriteSecure,
+        ] {
+            let (_lock, platform, coordinator) = fixture().await;
+            platform.state.lock().vault = true;
+            platform.state.lock().recovery_key = true;
+            load(&platform, &coordinator, vec![host("a")]).await?;
+            run(
+                &coordinator,
+                CredentialCommand::Backup {
+                    id: "a".into(),
+                    credential: material(),
+                    only_missing: false,
+                },
+            )
+            .await?;
+            let backup = platform.metadata(CredentialStorageKey::Backups);
+            let before = platform.count(&phase);
+            platform.state.lock().hold = Some(phase.clone());
+            let operation =
+                coordinator.begin(CredentialCommand::RecoverHost { host: host("a") }, None);
+            until(|| platform.count(&phase) > before).await?;
+            operation.cancel();
+            platform.resume();
+            assert_eq!(
+                error(operation.result().await),
+                Some(CredentialTransactionError::Cancelled)
+            );
+            let installed = phase == Phase::WriteSecure;
+            assert_eq!(platform.state.lock().secure.contains_key("a"), installed);
+            assert_eq!(platform.metadata(CredentialStorageKey::Backups), backup);
+            coordinator.close();
+            let restarted = CredentialCoordinator::new(platform.clone());
+            run(
+                &restarted,
+                CredentialCommand::LoadHosts {
+                    from_storage: true,
+                    hosts: None,
+                    legacy: None,
+                },
+            )
+            .await?;
+            assert_eq!(restarted.view().repair_host_ids.is_empty(), installed);
+            platform.assert_no_plaintext();
+            restarted.close();
+        }
         Ok(())
     })
 }

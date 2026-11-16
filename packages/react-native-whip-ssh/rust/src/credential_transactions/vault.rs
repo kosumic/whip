@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use super::journal::{HostEnvelope, HostPending};
+use super::journal::HostEnvelope;
 use super::profiles::parse_host;
 use super::storage::{encode, entry};
 use super::{
@@ -135,6 +135,9 @@ impl Workflow {
         Ok(material)
     }
 
+    // Recovery persists an intent before the secure write, then acknowledges it
+    // without re-encrypting the existing backup or marking backup migration done.
+    // Ordinary writes use finish_host_write to create/update their backup first.
     async fn install_recovered(
         &mut self,
         host: &HostProfileRecord,
@@ -143,15 +146,7 @@ impl Workflow {
         if self.journal.deleted.contains(&host.id) {
             return Err(CredentialTransactionError::InvalidProfile);
         }
-        let receipt = uuid::Uuid::new_v4().to_string();
-        self.journal.hosts.insert(
-            host.id.clone(),
-            HostPending::Write {
-                receipt: receipt.clone(),
-                username: host.username.clone(),
-                legacy: false,
-            },
-        );
+        let receipt = self.stage_host_write(host, false);
         self.persist_journal(false).await?;
         let envelope = HostEnvelope {
             material,
