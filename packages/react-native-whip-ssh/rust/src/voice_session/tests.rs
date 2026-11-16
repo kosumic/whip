@@ -58,6 +58,7 @@ fn native_local_mute_needs_a_bound_current_owner() -> Result<(), VoiceSessionErr
     assert!(core.mute_local(&id, false));
     assert!(!local.view().muted);
     core.end(id.clone(), None);
+    core.acknowledge(id.clone(), "closed".into())?;
     let replacement = admit(&core, "TurnBased")?;
     let next = VoiceChat::new(String::new());
     core.bind_local(replacement, next.clone(), encode(&source())?)?;

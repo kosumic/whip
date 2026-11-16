@@ -176,6 +176,10 @@ test sources compiled against Core-Telecom 1.1.0. The GitHub merged manifest
 contains the own-call/phone-call permissions and service type. These Android
 unit checks used the independently running ARM64 Rust build rather than waiting
 for it in each Gradle invocation; they do not exercise JNI or a physical call.
+All nine Rust voice-session regressions also passed, including Local native
+mute, stale-token fencing and teardown acknowledgements. The store-channel
+fallback manifest was generated and checked: Bluetooth/own-call/phone-call
+permissions are absent and the service retains `mediaPlayback|microphone`.
 
 No physical Android device was attached to the development host (`adb devices
 -l` returned an empty list). **Every physical matrix row above remains
