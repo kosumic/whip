@@ -2036,7 +2036,6 @@ dependencies = [
  "rand 0.8.7",
  "russh",
  "serde_json",
- "sha2 0.10.9",
  "ssh-key",
  "tempfile",
  "thiserror",
@@ -2049,6 +2048,8 @@ name = "whipair-protocol"
 version = "0.2.0"
 dependencies = [
  "serde",
+ "serde_json",
+ "sha2 0.10.9",
  "ssh-key",
  "tailcat-client",
  "thiserror",

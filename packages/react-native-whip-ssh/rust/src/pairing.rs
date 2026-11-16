@@ -15,12 +15,12 @@ use tokio::time::timeout;
 use crate::host_runtime::{HostSshConfig, ssh_config};
 use crate::ssh::{SshFailure, SshSession};
 
+use whipair_protocol::exchange;
 use whipair_protocol::{
     ED25519_SEED_BYTES, EnrollmentRequest, EnrollmentResponse, ProtocolError, SHA256_BYTES,
 };
 
 const CANCELLED_OPERATION: &str = "SSH operation cancelled";
-const MAX_MESSAGE_BYTES: usize = 16 * 1024;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const TAILCAT_CONNECT_TIMEOUT: Duration = Duration::from_secs(60);
 const APPROVAL_TIMEOUT: Duration = Duration::from_mins(10);
@@ -117,9 +117,7 @@ impl PinnedSshHostKey {
         else {
             return Err(PairingError::UnsupportedHostCertificate);
         };
-        let encoded = server_public_key.to_bytes()?;
-        let actual: [u8; SHA256_BYTES] = Sha256::digest(&encoded).into();
-        if actual != self.expected_sha256 {
+        if !exchange::host_key_matches(server_public_key, Some(&self.expected_sha256))? {
             return Err(PairingError::HostKeyMismatch);
         }
         if let Ok(mut accepted) = self.accepted.lock() {
@@ -266,11 +264,10 @@ pub(crate) async fn pair_host_guarded(
     let mut channel = handle.channel_open_session().await?;
     channel.exec(true, "whipair").await?;
     let device_name = printable_device_name(device_name);
-    let mut encoded = serde_json::to_vec(&EnrollmentRequest {
+    let encoded = exchange::encode_request(&EnrollmentRequest {
         device_name,
         public_key: public_key.to_owned(),
     })?;
-    encoded.push(b'\n');
     if let Some(control) = &control {
         control
             .admit_mutation()
@@ -301,8 +298,8 @@ pub(crate) async fn pair_host_guarded(
         ));
     }
 
-    let response: EnrollmentResponse = serde_json::from_slice(trim_line_ending(&stdout))
-        .map_err(|_| PairingError::InvalidResponse)?;
+    let response: EnrollmentResponse =
+        exchange::decode_response(&stdout).map_err(|_| PairingError::InvalidResponse)?;
     if !response.approved {
         return Err(PairingError::Refused {
             code: response.code.unwrap_or_else(|| "unknown".into()),
@@ -367,16 +364,7 @@ fn temporary_private_key(seed: &[u8; ED25519_SEED_BYTES]) -> PrivateKey {
 }
 
 fn append_bounded(destination: &mut Vec<u8>, source: &[u8]) -> Result<(), PairingError> {
-    if destination.len().saturating_add(source.len()) > MAX_MESSAGE_BYTES {
-        return Err(PairingError::InvalidResponse);
-    }
-    destination.extend_from_slice(source);
-    Ok(())
-}
-
-fn trim_line_ending(bytes: &[u8]) -> &[u8] {
-    let bytes = bytes.strip_suffix(b"\n").unwrap_or(bytes);
-    bytes.strip_suffix(b"\r").unwrap_or(bytes)
+    exchange::append_bounded(destination, source).map_err(|_| PairingError::InvalidResponse)
 }
 
 fn printable_device_name(value: &str) -> String {
@@ -413,6 +401,28 @@ mod transport_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pairing_rejects_host_certificates_even_when_the_subject_key_is_pinned()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let key = temporary_private_key(&[3; ED25519_SEED_BYTES]);
+        let mut builder =
+            ssh_key::certificate::Builder::new(vec![0; 32], key.public_key(), 0, u64::MAX)?;
+        builder.cert_type(ssh_key::certificate::CertType::Host)?;
+        builder.valid_principal("host.test")?;
+        let certificate = builder.sign(&key)?;
+        let accepted = Arc::new(Mutex::new(None));
+        let handler = PinnedSshHostKey {
+            expected_sha256: Sha256::digest(key.public_key().to_bytes()?).into(),
+            accepted: accepted.clone(),
+        };
+        assert!(matches!(
+            handler.verify_server_key(&PublicKeyOrCertificate::Certificate(certificate)),
+            Err(PairingError::UnsupportedHostCertificate)
+        ));
+        assert!(accepted.lock().map_err(|_| "poisoned")?.is_none());
+        Ok(())
+    }
 
     #[test]
     fn decodes_cli_golden_tailcat_codes() {

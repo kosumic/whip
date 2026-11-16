@@ -12,6 +12,8 @@ keywords = ["ssh", "qr-code", "pairing", "protocol"]
 categories = ["authentication", "encoding"]
 
 [dependencies]
+serde_json = "1"
+sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }
 ssh-key = { version = "=0.7.0-rc.11", default-features = false, features = ["ecdsa", "ed25519", "std"] }
 tailcat-client = { version = "0.1.1", path = "../tailcat-client", default-features = false }
@@ -22,7 +24,6 @@ base64 = "0.22"
 ciborium = "0.2"
 proptest = "1"
 qrcode = { version = "0.14", default-features = false }
-serde_json = "1"
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }

@@ -20,7 +20,6 @@ use russh::{
     ChannelMsg, client,
     keys::{PrivateKeyWithHashAlg, PublicKeyOrCertificate},
 };
-use sha2::{Digest, Sha256};
 use ssh_key::{PrivateKey, PublicKey, private::Ed25519Keypair};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -35,14 +34,15 @@ use crate::{
     network::{AddressSelection, discover_address_candidates, select_address},
     protocol::{
         EnrollmentRequest, EnrollmentResponse, PairingPayload, decode_pairing_code,
-        encode_pairing_code, fingerprint_public_key, validate_public_key, validate_tailcat_address,
+        encode_pairing_code,
+        exchange::{self, MAX_MESSAGE_BYTES},
+        fingerprint_public_key, validate_public_key, validate_tailcat_address,
         verification_code_public_key,
     },
 };
 
 const DEFAULT_TTL_SECONDS: u64 = 120;
 const DEFAULT_SSH_PORT: u16 = 22;
-const MAX_MESSAGE_BYTES: usize = 16 * 1024;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const TAILCAT_CONNECT_TIMEOUT: Duration = Duration::from_secs(60);
 const APPROVAL_TIMEOUT: Duration = Duration::from_secs(600);
@@ -676,8 +676,7 @@ async fn pair_over_ssh(
 
     let mut channel = handle.channel_open_session().await?;
     channel.exec(true, "whipair").await?;
-    let mut encoded = serde_json::to_vec(request)?;
-    encoded.push(b'\n');
+    let encoded = exchange::encode_request(request)?;
     channel.data(encoded.as_slice()).await?;
     channel.eof().await?;
 
@@ -703,7 +702,7 @@ async fn pair_over_ssh(
             String::from_utf8_lossy(&stderr).trim()
         )));
     }
-    let response: EnrollmentResponse = serde_json::from_slice(trim_line_ending(&stdout))?;
+    let response: EnrollmentResponse = exchange::decode_response(&stdout)?;
     accepted_host_key
         .lock()
         .ok()
@@ -720,12 +719,7 @@ struct PinnedSshHostKey {
 
 impl PinnedSshHostKey {
     fn verify_server_key(&self, server_public_key: &PublicKey) -> Result<bool, Error> {
-        let encoded = server_public_key.to_bytes()?;
-        let actual: [u8; 32] = Sha256::digest(&encoded).into();
-        if self
-            .expected_sha256
-            .is_some_and(|expected| actual != expected)
-        {
+        if !exchange::host_key_matches(server_public_key, self.expected_sha256.as_ref())? {
             return Err(Error::Message(
                 "SSH host key did not match the fingerprint pinned in the QR code".into(),
             ));
@@ -754,18 +748,7 @@ impl client::Handler for PinnedSshHostKey {
 }
 
 fn append_bounded(destination: &mut Vec<u8>, source: &[u8]) -> Result<(), Error> {
-    if destination.len().saturating_add(source.len()) > MAX_MESSAGE_BYTES {
-        return Err(Error::Message(
-            "restricted pairing command returned too much data".into(),
-        ));
-    }
-    destination.extend_from_slice(source);
-    Ok(())
-}
-
-fn trim_line_ending(bytes: &[u8]) -> &[u8] {
-    let bytes = bytes.strip_suffix(b"\n").unwrap_or(bytes);
-    bytes.strip_suffix(b"\r").unwrap_or(bytes)
+    exchange::append_bounded(destination, source).map_err(|error| Error::Message(error.to_string()))
 }
 
 fn refusal_error(response: &EnrollmentResponse) -> Error {
@@ -821,6 +804,9 @@ fn forced_command(socket_path: &Path) -> Result<String, Error> {
 }
 
 fn shell_quote(path: &Path) -> Result<String, Error> {
+    // authorized_keys command paths require UTF-8 and reject line/NUL control
+    // data before POSIX quoting. Keep this checked filesystem boundary here;
+    // depending on Herdr just to share the final quoting expression adds coupling.
     let value = path
         .to_str()
         .ok_or_else(|| Error::Message("pairing paths must be valid UTF-8".into()))?;
@@ -1206,6 +1192,68 @@ fn write_secret_file(path: &Path, value: &str) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pairing_command_paths_round_trip_and_keep_their_validation_boundary()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use std::os::unix::ffi::OsStringExt;
+        for value in [
+            "a b",
+            "'",
+            "\\\\'",
+            "日本語",
+            "$HOME",
+            "$(printf injected)",
+            "`printf injected`",
+            "x\ty",
+        ] {
+            let command = format!("printf '%s' {}", shell_quote(Path::new(value))?);
+            let output = std::process::Command::new("sh")
+                .args(["-c", &command])
+                .output()?;
+            assert!(output.status.success());
+            assert_eq!(output.stdout, value.as_bytes());
+        }
+        for value in ["x\ny", "x\ry", "x\0y"] {
+            assert!(
+                matches!(shell_quote(Path::new(value)), Err(Error::Message(message)) if message == "pairing path contains control data")
+            );
+        }
+        let invalid = PathBuf::from(std::ffi::OsString::from_vec(vec![0xff]));
+        assert!(
+            matches!(shell_quote(&invalid), Err(Error::Message(message)) if message == "pairing paths must be valid UTF-8")
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn certificates_are_rejected_during_pairing_and_unpinned_discovery()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let key = temporary_private_key(&[3; 32]);
+        let mut builder =
+            ssh_key::certificate::Builder::new(vec![0; 32], key.public_key(), 0, u64::MAX)?;
+        builder.cert_type(ssh_key::certificate::CertType::Host)?;
+        builder.valid_principal("host.test")?;
+        let certificate = PublicKeyOrCertificate::Certificate(builder.sign(&key)?);
+        let digest = key
+            .public_key()
+            .fingerprint(ssh_key::HashAlg::Sha256)
+            .sha256()
+            .ok_or("digest")?;
+        for pin in [None, Some(digest)] {
+            let accepted = Arc::new(Mutex::new(None));
+            let mut handler = PinnedSshHostKey {
+                expected_sha256: pin,
+                accepted_public_key: accepted.clone(),
+            };
+            let result = client::Handler::check_server_key(&mut handler, &certificate).await;
+            assert!(
+                matches!(result, Err(Error::Message(message)) if message == "SSH host certificates are not supported for QR pairing")
+            );
+            assert!(accepted.lock().map_err(|_| "poisoned")?.is_none());
+        }
+        Ok(())
+    }
 
     const ED25519_BLOB: &str =
         "AAAAC3NzaC1lZDI1NTE5AAAAIJdD7y3aLq454yWBdwLWbieU1ebz9/cu7/QEXn9OIeZJ";

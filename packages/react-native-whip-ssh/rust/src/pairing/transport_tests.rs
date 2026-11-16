@@ -61,6 +61,7 @@ async fn live_builtin_tailcat_pairing_and_reconnect() -> Result<(), Box<dyn std:
 #[derive(Clone)]
 struct PairingServer {
     forward: Option<SocketAddr>,
+    response: Vec<u8>,
     expected_key: ssh_key::PublicKey,
     requests: Arc<AtomicUsize>,
     channels: HashMap<russh::ChannelId, Vec<u8>>,
@@ -156,10 +157,7 @@ impl server::Handler for PairingServer {
         self.requests.fetch_add(1, Ordering::Relaxed);
         ready(
             session
-                .data(
-                    channel,
-                    br#"{"approved":true,"already_present":false}"#.to_vec(),
-                )
+                .data(channel, self.response.clone())
                 .and_then(|()| session.exit_status_request(channel, 0))
                 .and_then(|()| session.eof(channel))
                 .and_then(|()| session.close(channel)),
@@ -182,6 +180,17 @@ impl Drop for Fixture {
 
 impl Fixture {
     async fn new(forward: Option<SocketAddr>) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::with_response(
+            forward,
+            br#"{"approved":true,"already_present":false}"#.to_vec(),
+        )
+        .await
+    }
+
+    async fn with_response(
+        forward: Option<SocketAddr>,
+        response: Vec<u8>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let key = temporary_private_key(&[3; ED25519_SEED_BYTES]);
         let host_key = key.public_key().clone();
         let config = Arc::new(server::Config {
@@ -194,6 +203,7 @@ impl Fixture {
         let requests = Arc::new(AtomicUsize::new(0));
         let handler = PairingServer {
             forward,
+            response,
             expected_key: temporary_private_key(&[7; ED25519_SEED_BYTES])
                 .public_key()
                 .clone(),
@@ -347,4 +357,47 @@ fn pairs_directly_and_through_nested_jump_hosts() -> Result<(), Box<dyn std::err
         assert_eq!(target.requests.load(Ordering::Relaxed), 2);
         Ok(())
     })
+}
+
+#[tokio::test]
+async fn rejects_invalid_or_denied_responses_over_the_restricted_ssh_channel()
+-> Result<(), Box<dyn std::error::Error>> {
+    for response in [
+        b"{\"approved\":".to_vec(),
+        b"{\"approved\":true}trailing".to_vec(),
+        vec![b' '; exchange::MAX_MESSAGE_BYTES + 1],
+        br#"{"approved":false,"code":"denied","message":"operator refused"}"#.to_vec(),
+        br#"{"approved":false}"#.to_vec(),
+    ] {
+        let target = Fixture::with_response(None, response.clone()).await?;
+        let error = pair_host(
+            &target.code(false, &target.host_key),
+            ENROLLED_KEY,
+            "phone",
+            &[],
+        )
+        .await
+        .err()
+        .ok_or("unexpected approval")?;
+        if response.starts_with(br#"{"approved":false"#) {
+            match error {
+                PairingError::Refused { code, message } => {
+                    let specified = response.windows(6).any(|part| part == b"denied");
+                    assert_eq!(code, if specified { "denied" } else { "unknown" });
+                    assert_eq!(
+                        message,
+                        if specified {
+                            "operator refused"
+                        } else {
+                            "no detail"
+                        }
+                    );
+                }
+                other => return Err(format!("unexpected refusal category: {other}").into()),
+            }
+        } else {
+            assert!(matches!(error, PairingError::InvalidResponse));
+        }
+    }
+    Ok(())
 }
