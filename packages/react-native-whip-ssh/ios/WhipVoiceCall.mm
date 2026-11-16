@@ -36,7 +36,7 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
 @end
 
 @implementation WhipVoiceCall
-- (BOOL)owns:(NSString *)token { return self.active && [self.token isEqualToString:token]; }
+- (BOOL)owns:(NSString *)token { return self.playbackTurn && !self.ending && [self.token isEqualToString:token]; }
 - (id)playbackKey:(NSString *)token { return !token ? (self.closingTurn ?: self.playbackTurn) : [self.token isEqualToString:token] ? self.playbackTurn : nil; }
 + (instancetype)shared
 {
@@ -87,7 +87,21 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
   if (!whip_voice_session_current(token.UTF8String)) { [self clear:nil]; return; }
   if ([WhipSpeechPlayback.shared deferPlayback:turn block:^{ [self activateCall:token turn:turn]; }]) return;
   [WhipSpeechPlayback.shared startPlayback:turn];
+  // Reserve the playback owner while credentials/models/transport prepare.
+  // CallKit activation is requested only when live capture/playout can start.
+  RCTPromiseResolveBlock ready = self.ready;
+  self.ready = nil; self.failed = nil;
+  if (ready) ready(nil);
+}
+- (void)activateAudio:(NSString *)token resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
+{
+  if (![self owns:token]) { reject(WhipCallError, @"The voice call was cancelled.", nil); return; }
+  if (self.active) { resolve(nil); return; }
+  if (self.startRequested) { reject(WhipCallError, @"Voice audio is already activating.", nil); return; }
+  self.ready = resolve; self.failed = reject;
   self.startRequested = YES;
+  NSLog(@"WhipVoice event=media_ready token=%@ at_s=%.3f", token, NSProcessInfo.processInfo.systemUptime);
+  NSLog(@"WhipVoice event=focus_request token=%@ at_s=%.3f owner=callkit", token, NSProcessInfo.processInfo.systemUptime);
   CXStartCallAction *action = [[CXStartCallAction alloc] initWithCallUUID:self.uuid handle:[[CXHandle alloc] initWithType:CXHandleTypeGeneric value:self.label]];
   action.video = NO;
   __weak WhipVoiceCall *weakSelf = self;
@@ -129,6 +143,7 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
   }
   BOOL firstActivation = self.ready != nil;
   self.active = YES;
+  if (self.muted) [self mirrorMuted];
   [WhipRealtimeVoice.shared callAudioActive:YES token:self.token];
   // Start hands-free unless the user already has a headset connected. Leaving
   // defaultToSpeaker unset allows the speaker control to return to the receiver.
@@ -240,6 +255,12 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
 - (void)mute:(NSString *)token muted:(BOOL)muted resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
   if (![self.token isEqualToString:token]) { reject(WhipCallError, @"The voice call has ended.", nil); return; }
+  if (!self.startRequested) {
+    self.muted = muted;
+    [WhipRealtimeVoice.shared mute:token muted:muted];
+    [self emit:@{@"type": @"muted", @"muted": @(muted)}];
+    resolve(nil); return;
+  }
   CXSetMutedCallAction *action = [[CXSetMutedCallAction alloc] initWithCallUUID:self.uuid muted:muted];
   [self.controller requestTransaction:[[CXTransaction alloc] initWithAction:action] completion:^(NSError *error) {
     if (error) reject(WhipCallError, error.localizedDescription, error); else resolve(nil);
@@ -263,9 +284,13 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
   if (![self.token isEqualToString:token] || self.muted == muted) return;
   self.muted = muted;
   [self emit:@{@"type": @"muted", @"muted": @(muted)}];
+  if (self.active) [self mirrorMuted];
+}
+- (void)mirrorMuted
+{
   // Reflect native tools/timers in system CallKit UI without treating its
   // callback as a manual override (which would cancel the Rust deadline).
-  CXSetMutedCallAction *action = [[CXSetMutedCallAction alloc] initWithCallUUID:self.uuid muted:muted];
+  CXSetMutedCallAction *action = [[CXSetMutedCallAction alloc] initWithCallUUID:self.uuid muted:self.muted];
   [self.mirroredMuteActions addObject:action.UUID];
   [self.controller requestTransaction:[[CXTransaction alloc] initWithAction:action] completion:^(NSError *error) {
     if (error) dispatch_async(dispatch_get_main_queue(), ^{ [self.mirroredMuteActions removeObject:action.UUID]; });
@@ -323,7 +348,7 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
 }
 - (void)fail:(NSString *)error
 {
-  if (self.uuid) [self.provider reportCallWithUUID:self.uuid endedAtDate:NSDate.date reason:CXCallEndedReasonFailed];
+  if (self.uuid && self.startRequested) [self.provider reportCallWithUUID:self.uuid endedAtDate:NSDate.date reason:CXCallEndedReasonFailed];
   [self clear:error ?: @"The system voice call failed."];
 }
 - (void)providerDidReset:(CXProvider *)provider {

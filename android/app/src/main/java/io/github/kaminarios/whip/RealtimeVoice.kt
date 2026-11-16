@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 /** Media-volume playback; dedicated audio workers feed bounded Rust queues. */
 internal object RealtimeVoice {
   private val main = Handler(Looper.getMainLooper())
+  private val activation = PreparedMedia { main.post(it) }
   private const val NANOS_PER_SECOND = 1_000_000_000L
   private const val MAX_AUDIO_AGE_NS = NANOS_PER_SECOND / 2
   private const val LOG_TAG = "WhipRealtimeAudio"
@@ -174,7 +175,6 @@ internal object RealtimeVoice {
           current?.takeIf { it.token == token }?.let { Core.control(it.call, Core.AUDIO_FAILED) }
           stop(token)
         }
-        require(focus.acquire())
       }
       val coreStartedAt = SystemClock.elapsedRealtime()
       val nativeConfigValue = JSONObject(config)
@@ -195,7 +195,6 @@ internal object RealtimeVoice {
       val session = Session(token, call, null, null, preview, focus, mediaStartedAt, clientElapsedMs, turn)
       session.coreStartMs = SystemClock.elapsedRealtime() - coreStartedAt
       current = session
-      if (!preview && !VoiceCallService.audioAllowed(token)) suspendAudio(token)
       SpeechPlayback.notifyPlaybackStateChanged()
       session.monitor = object : Runnable {
         override fun run() {
@@ -227,11 +226,9 @@ internal object RealtimeVoice {
           } else if (announcement == null) session.announcement?.cancel()
           if (!preview && state.has("muted")) VoiceCallService.syncMuted(token, state.getBoolean("muted"))
           if (!preview) VoiceCallService.reconnecting(token, phase == "reconnecting")
-          // Acquire call devices while Rust creates and negotiates the session,
-          // as in the Agents SDK's early getUserMedia flow. Rust drops capture
-          // until both devices and transport are ready; never queue startup PCM.
-          // Output-only previews retain their existing deferred device open.
-          if (phase != "error" && phase != "closed" && session.output == null && audioAllowed && (!preview || state.optBoolean("mediaReady"))) {
+          // Negotiation and settings preflight own no focus. Activate duplex
+          // capture/playout as soon as transport is ready, before any response.
+          if (phase != "error" && phase != "closed" && session.output == null && audioAllowed && state.optBoolean("mediaReady")) {
             try { openDevices(session) } catch (_: Exception) {
               Core.control(session.call, Core.AUDIO_FAILED); stop(token)
               if (!preview) VoiceCallService.end(token)
@@ -313,7 +310,11 @@ internal object RealtimeVoice {
       session.output = output
       require(output.state == AudioTrack.STATE_INITIALIZED)
       VoiceMediaAudio.attach(output)
-      output.play()
+      Log.i(LOG_TAG, "event=media_ready token=${session.token} at_ms=${SystemClock.elapsedRealtime()}")
+      if (!session.preview) {
+        check(VoiceCallService.activateAudio(session.token)) { "Call audio focus is unavailable" }
+        output.play()
+      }
       session.boundary = CaptureBoundary()
       session.announcementBoundary = CallPlaybackBoundary()
       session.input?.startRecording()
@@ -381,6 +382,10 @@ internal object RealtimeVoice {
       var generation = 0L
       var submitted = 0L
       var epochStart = 0L
+      var previewStarted = false
+      var firstPcm = false
+      var firstAudible = false
+      var firstAudioFrame: Long? = null
       while (session.running.get() && mediaRunning.get()) {
         val nextEpoch = Core.epoch(session.call)
         if (nextEpoch != generation) {
@@ -389,6 +394,10 @@ internal object RealtimeVoice {
           generation = nextEpoch; epochStart = submitted
         }
         val played = track.playbackHeadPosition.toLong() and 0xffffffffL
+        if (!firstAudible && firstAudioFrame?.let { played > it } == true) {
+          firstAudible = true
+          Log.i(LOG_TAG, "event=first_audible_frame token=${session.token} at_ms=${SystemClock.elapsedRealtime()}")
+        }
         session.playbackQueuedMs = (submitted - played).coerceAtLeast(0) * 1000 / Core.RATE
         Core.played(session.call, generation, (played - epochStart).coerceAtLeast(0))
         // AudioTrack's bounded buffer and WRITE_BLOCKING below pace output.
@@ -404,6 +413,23 @@ internal object RealtimeVoice {
           generation = epoch[0]; epochStart = submitted
         }
         if (audioCount == 0 && session.preview) { Thread.sleep(5); continue }
+        if (audioCount > 0 && !firstPcm) {
+          firstPcm = true
+          firstAudioFrame = submitted
+          Log.i(LOG_TAG, "event=first_pcm_ready token=${session.token} at_ms=${SystemClock.elapsedRealtime()}")
+        }
+        if (session.preview && !previewStarted) {
+          if (!activation.activate({ session.running.get() && mediaRunning.get() }) {
+              if (current !== session) false else {
+                val granted = session.focus?.acquire() == true
+                Log.i(LOG_TAG, "event=focus_request token=${session.token} granted=$granted at_ms=${SystemClock.elapsedRealtime()}")
+                check(granted) { "Preview audio focus is unavailable" }
+                true
+              }
+            }) return
+          track.play()
+          previewStarted = true
+        }
         // Clock the render reference continuously, including silence between
         // responses. Rust excludes that silence from played-audio truncation.
         // JNI fills absent speech with silence and mixes the local cue. Keep

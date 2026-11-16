@@ -129,6 +129,11 @@ static dispatch_queue_t WhipPcmSpeechWorker(void)
   if (!self.format) return NO;
   [self.engine attachNode:self.node];
   [self.engine connect:self.node to:self.engine.mainMixerNode format:self.format];
+  return YES;
+}
+- (BOOL)startEngine:(NSError **)error
+{
+  // Hardware-dependent tap formats are queried only after session activation.
   __weak WhipPcmSpeechAudio *weakSelf = self;
   [self.engine.mainMixerNode installTapOnBus:0 bufferSize:1024 format:nil block:^(AVAudioPCMBuffer *buffer, AVAudioTime *when) {
     WhipPcmSpeechAudio *audio = weakSelf;
@@ -149,9 +154,7 @@ static dispatch_queue_t WhipPcmSpeechWorker(void)
     });
   }];
   self.levelTapInstalled = YES;
-  if (![self.engine startAndReturnError:error]) return NO;
-  [self.node play];
-  return YES;
+  return [self.engine startAndReturnError:error];
 }
 - (BOOL)write:(const float *)samples count:(NSUInteger)count
 {
@@ -174,7 +177,12 @@ static dispatch_queue_t WhipPcmSpeechWorker(void)
     BOOL current = !self.cancelled && whip_speech_is_current(self.lease);
     [self.condition unlock];
     if (!current) return;
+    if (!self.started) NSLog(@"WhipSpeech event=first_pcm_ready lease=%llu at_s=%.3f", self.lease, NSProcessInfo.processInfo.systemUptime);
     if (!self.started && self.beforePlayback && !self.beforePlayback()) { [self stop]; return; }
+    if (!self.started && self.engine) {
+      NSError *error = nil;
+      if (![self startEngine:&error]) { [self stop]; return; }
+    }
     [self.node scheduleBuffer:buffer completionCallbackType:AVAudioPlayerNodeCompletionDataPlayedBack completionHandler:^(AVAudioPlayerNodeCompletionCallbackType type) {
       [self.condition lock];
       if (self.queued) self.queued -= 1;
@@ -188,7 +196,12 @@ static dispatch_queue_t WhipPcmSpeechWorker(void)
         if (!self.cancelled && self.onProgress) self.onProgress(played, samples, done);
       });
     }];
-    if (!self.started) { self.started = YES; if (self.onStarted) self.onStarted(); }
+    if (!self.started) {
+      self.started = YES;
+      [self.node play];
+      NSLog(@"WhipSpeech event=first_audible_frame lease=%llu at_s=%.3f boundary=scheduled", self.lease, NSProcessInfo.processInfo.systemUptime);
+      if (self.onStarted) self.onStarted();
+    }
   });
   [self.condition lock];
   accepted = !self.cancelled && whip_speech_is_current(self.lease);
@@ -898,6 +911,14 @@ static void WhipWakeAutomaticSpeech(void)
 - (void)startLocalChat:(NSString *)owner label:(NSString *)label callToken:(NSString *)callToken resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
   id turn = callToken ? [WhipVoiceCall.shared playbackKey:callToken] : nil;
+  // A call started muted can reach a spoken turn before its first capture.
+  // Its output must still borrow CallKit's owner rather than activate a second session.
+  if (turn && !WhipVoiceCall.shared.active) {
+    [WhipVoiceCall.shared activateAudio:callToken resolve:^(id value) {
+      [self startLocalChat:owner label:label callToken:callToken resolve:resolve reject:reject];
+    } reject:reject];
+    return;
+  }
   if (!turn) { reject(WhipSpeechError, @"Voice chat is no longer active", nil); return; }
   [self startChat:owner localOnly:YES atomic:NO turn:turn resolve:resolve reject:reject];
 }
@@ -1015,14 +1036,7 @@ static void WhipWakeAutomaticSpeech(void)
     [self stopWithReason:WhipSpeechStopped error:@"Requested speech voice or rate is unavailable"];
     return NO;
   }
-  AVAudioSession *audio = AVAudioSession.sharedInstance;
   NSError *error = nil;
-  if (!WhipVoiceCall.shared.active && (![audio setCategory:AVAudioSessionCategoryPlayback mode:AVAudioSessionModeSpokenAudio
-         options:AVAudioSessionCategoryOptionDuckOthers error:&error] || ![audio setActive:YES error:&error])) {
-    [self stopWithReason:WhipSpeechStopped error:error.localizedDescription ?: @"Could not activate speech audio"];
-    return NO;
-  }
-  self.audioActive = YES;
   AVSpeechUtterance *utterance = [AVSpeechUtterance speechUtteranceWithString:text];
   utterance.voice = voice;
   utterance.rate = MIN(AVSpeechUtteranceMaximumSpeechRate, MAX(AVSpeechUtteranceMinimumSpeechRate, AVSpeechUtteranceDefaultSpeechRate * rate));
@@ -1042,6 +1056,10 @@ static void WhipWakeAutomaticSpeech(void)
   if (local) {
     WhipPcmSpeechAudio *player = [WhipPcmSpeechAudio new];
     player.lease = lease;
+    player.beforePlayback = ^BOOL {
+      WhipSpeechPlayback *playback = weakSelf;
+      return playback.lease == lease && playback.utterance == utterance && [playback activateSpeechAudio];
+    };
     player.onLevel = ^(float level) {
       if (weakSelf.lease == lease && weakSelf.utterance == utterance) [weakSelf reportLevel:level];
     };
@@ -1068,6 +1086,7 @@ static void WhipWakeAutomaticSpeech(void)
       whip_speech_pcm_playback_failed();
       [player stop]; self.pcm = nil;
       if (self.localOnly || cloud) { [self stopWithReason:WhipSpeechStopped error:error.localizedDescription ?: @"The selected voice could not start."]; return NO; }
+      if (![self activateSpeechAudio]) return NO;
       [self.speech speakUtterance:utterance];
       playbackStarted();
       return YES;
@@ -1085,15 +1104,35 @@ static void WhipWakeAutomaticSpeech(void)
           else { [playback clear:WhipSpeechCompleted error:nil]; [playback drainStatus]; }
         } else if (result < 0 && !player.started && !playback.localOnly && !cloud) {
           [player stop]; playback.pcm = nil;
+          if (![playback activateSpeechAudio]) return;
           [playback.speech speakUtterance:utterance];
           playbackStarted();
         } else [playback stopWithReason:WhipSpeechInterrupted error:result < 0 ? @"Speech synthesis failed. Check the selected backend in Settings." : nil];
       });
     });
   } else {
+    // AVSpeechSynthesizer's direct playback has no prepared-PCM handoff.
+    // Activate before speakUtterance; didStart would risk clipping the first word.
+    if (![self activateSpeechAudio]) return NO;
     [self.speech speakUtterance:utterance];
     if (started) started();
   }
+  return YES;
+}
+- (BOOL)activateSpeechAudio
+{
+  if (self.audioActive) return YES;
+  AVAudioSession *audio = AVAudioSession.sharedInstance;
+  NSError *error = nil;
+  BOOL granted = WhipVoiceCall.shared.active ||
+    ([audio setCategory:AVAudioSessionCategoryPlayback mode:AVAudioSessionModeSpokenAudio
+       options:AVAudioSessionCategoryOptionDuckOthers error:&error] && [audio setActive:YES error:&error]);
+  NSLog(@"WhipSpeech event=focus_request lease=%llu granted=%d at_s=%.3f", self.lease, granted, NSProcessInfo.processInfo.systemUptime);
+  if (!granted) {
+    [self stopWithReason:WhipSpeechStopped error:error.localizedDescription ?: @"Could not activate speech audio"];
+    return NO;
+  }
+  self.audioActive = YES;
   return YES;
 }
 - (BOOL)stopOwner:(NSString *)owner kind:(enum WhipSpeechKind)kind

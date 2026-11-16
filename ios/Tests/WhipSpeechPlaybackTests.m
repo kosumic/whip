@@ -145,6 +145,7 @@ static NSString *voiceCallToken;
 - (BOOL)owns:(NSString *)token { return NO; }
 - (id)playbackKey:(NSString *)token { return !token || [token isEqualToString:voiceCallToken] ? voiceCallTurn : nil; }
 - (void)start:(NSString *)token label:(NSString *)label resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {}
+- (void)activateAudio:(NSString *)token resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject { voiceCallActive = YES; resolve(nil); }
 - (void)end:(NSString *)token resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {}
 - (void)mute:(NSString *)token muted:(BOOL)muted resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {}
 - (void)syncMuted:(NSString *)token muted:(BOOL)muted {}
@@ -210,6 +211,7 @@ static NSString *voiceCallToken;
 @property(nonatomic, strong) AVAudioFormat *format;
 @property(nonatomic, strong) AVAudioPlayerNode *node;
 @property(nonatomic, copy) BOOL (^beforePlayback)(void);
+- (void)stop;
 - (BOOL)write:(const float *)samples count:(NSUInteger)count;
 @end
 @interface TestCueAudioNode : AVAudioPlayerNode
@@ -222,6 +224,7 @@ static NSString *voiceCallToken;
   if (completion) completion(type);
 }
 - (void)stop {}
+- (void)play {}
 @end
 @interface TestSpeechPlayback : WhipSpeechPlayback
 @property(nonatomic, strong) NSMutableArray<NSString *> *spoken;
@@ -407,6 +410,24 @@ static NSString *voiceCallToken;
   audio.beforePlayback = ^BOOL { return NO; };
   node.onSchedule = ^{ XCTFail(@"Cancelled cue reached the speaker"); };
   XCTestExpectation *written = [self expectationWithDescription:@"Superseded PCM is rejected"];
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    float samples[480] = {0};
+    XCTAssertFalse([audio write:samples count:480]);
+    [written fulfill];
+  });
+  [self waitForExpectations:@[written] timeout:2];
+}
+
+- (void)testCancelledPreparationNeverRequestsAnAudioSession {
+  uint64_t lease = whip_speech_claim(WhipSpeechChat, "prepared-cancel", "");
+  WhipPcmSpeechAudio *audio = [WhipPcmSpeechAudio new];
+  audio.lease = lease;
+  audio.format = [[AVAudioFormat alloc] initStandardFormatWithSampleRate:24000 channels:1];
+  TestCueAudioNode *node = [TestCueAudioNode new]; audio.node = node;
+  audio.beforePlayback = ^BOOL { XCTFail(@"Cancelled synthesis requested audio ownership"); return YES; };
+  node.onSchedule = ^{ XCTFail(@"Cancelled synthesis scheduled output"); };
+  [audio stop];
+  XCTestExpectation *written = [self expectationWithDescription:@"Late synthesis remains cancelled"];
   dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
     float samples[480] = {0};
     XCTAssertFalse([audio write:samples count:480]);

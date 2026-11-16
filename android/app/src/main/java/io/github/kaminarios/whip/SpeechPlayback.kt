@@ -9,7 +9,6 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.media.AudioAttributes
-import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
@@ -354,11 +353,9 @@ object SpeechPlayback : SensorEventListener {
   private var caption: JSONObject? = null
   private var captionClock = 0L
   private var captionPrefix = 0
-  private var audioManager: AudioManager? = null
   private var sensorManager: SensorManager? = null
   private val shakeDetector = SpeechShakeDetector()
-  private var focusRequest: AudioFocusRequest? = null
-  private var focusListener: AudioManager.OnAudioFocusChangeListener? = null
+  private var focus: VoiceMediaFocus? = null
   private var receiverContext: Context? = null
   private val mediaAttributes = AudioAttributes.Builder()
     .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -490,7 +487,7 @@ object SpeechPlayback : SensorEventListener {
       if (session === current && queuedChat.firstOrNull() === entry && !pcmStalled(current, played)) {
         if (caption === event && clock != 0L && played > 0L) reportPcmCaption(clock, played, samples, complete)
       }
-    }) { completed, spoke, error ->
+    }, beforePlayback = { acquireFocus(current) }) { completed, spoke, error ->
       if (session !== current || !queuedChat.contains(entry)) return@enqueue
       if (!completed || !spoke || error != null || !SpeechPolicy.complete(current.id)) {
         stop(error = error ?: "Local speech did not finish")
@@ -580,7 +577,6 @@ object SpeechPlayback : SensorEventListener {
     shakeDetector.reset()
     try {
       val app = context.applicationContext
-      audioManager = app.getSystemService(AudioManager::class.java)
       val filter = IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         app.registerReceiver(noisyReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -646,7 +642,10 @@ object SpeechPlayback : SensorEventListener {
       val tts = checkNotNull(engine) { "Speech engine is unavailable" }
       tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
         override fun onStart(utteranceId: String?) { handler.post {
-          if (utteranceId != null && utteranceId == SpeechPlayback.utteranceId) session?.let { reportStarted(it) }
+          if (utteranceId != null && utteranceId == SpeechPlayback.utteranceId) session?.let {
+            Log.i(TAG, "event=first_audible_frame lease=${it.id} at_ms=${android.os.SystemClock.elapsedRealtime()} boundary=system_callback")
+            reportStarted(it)
+          }
         } }
         override fun onDone(utteranceId: String?) { handler.post { finish(utteranceId) } }
         override fun onRangeStart(utteranceId: String?, start: Int, end: Int, frame: Int) { handler.post {
@@ -701,7 +700,6 @@ object SpeechPlayback : SensorEventListener {
       stop(error = if (current.localOnly) "The voice selected in Settings is not available offline. Select an installed local voice." else "Install a speech voice for the requested language in Android settings")
       return false
     }
-    val manager = checkNotNull(audioManager) { "Audio is unavailable" }
     val id = "speech-${current.id}-${++sequence}"
     utteranceId = id
     notifyPlaybackStateChanged()
@@ -711,26 +709,6 @@ object SpeechPlayback : SensorEventListener {
     captionPrefix = caption?.optString("text")?.let { text.length - it.length } ?: 0
     captionClock = if (caption != null) SpeechPolicy.captionStart(text, captionPrefix.toLong()) else 0L
     caption?.let { bindCaption(current, it) }
-    val listener = AudioManager.OnAudioFocusChangeListener { change ->
-      // Immediate agent notifications may duck audio; their sound must not
-      // turn deferred status delivery into an interruption of the current chunk.
-      if (change < AudioManager.AUDIOFOCUS_GAIN && change != AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) handler.post {
-        if (session?.id == current.id && utteranceId == id) stop(reason = INTERRUPTED)
-      }
-    }
-    focusListener = listener
-    val granted = if (VoiceCallService.active) AudioManager.AUDIOFOCUS_REQUEST_GRANTED else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-        .setAudioAttributes(attributes).setOnAudioFocusChangeListener(listener, handler).build()
-      focusRequest = request
-      manager.requestAudioFocus(request)
-    } else {
-      manager.requestAudioFocus(listener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-    }
-    if (granted != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-      stop(error = "Audio focus is unavailable")
-      return false
-    }
     // Preview retains announcement admission, with a text-sized budget before
     // yielding to competing playback.
     val playbackTimeout = SpeechPolicy.timeoutMs(if (preview) SpeechPolicy.CHAT else current.kind, text.length.toLong())
@@ -748,10 +726,11 @@ object SpeechPlayback : SensorEventListener {
         if (session === current && utteranceId == id && !pcmStalled(current, played)) {
           if (captionClock != 0L && played > 0L) reportPcmCaption(captionClock, played, samples, complete)
         }
-      }) { completed, spoke, error ->
+      }, beforePlayback = { acquireFocus(current) }) { completed, spoke, error ->
         if (session?.id == current.id && utteranceId == id) {
           when {
             completed -> finish(id)
+            error == AudioFocusUnavailable.MESSAGE -> stop(error = error)
             error != null && (current.localOnly || cloud) -> stop(error = error)
             error != null && !spoke -> {
               // A failed load can still use the initialized OS engine. Never
@@ -759,9 +738,11 @@ object SpeechPlayback : SensorEventListener {
               playback.unwatchProgress(current.turn)
               val fallback = engine?.takeIf { engineReady }
               fallback?.setAudioAttributes(attributes)
-              if (fallback == null || !configureSystemVoice(fallback, locale, languageExplicit, rate, current.localOnly) ||
-                fallback.speak(text, TextToSpeech.QUEUE_FLUSH, null, id) == TextToSpeech.ERROR) stop(error = error)
-              else playbackStarted()
+              val accepted = try {
+                fallback != null && configureSystemVoice(fallback, locale, languageExplicit, rate, current.localOnly) && acquireFocus(current) &&
+                  fallback.speak(text, TextToSpeech.QUEUE_FLUSH, null, id) != TextToSpeech.ERROR
+              } catch (_: Exception) { false }
+              if (accepted) playbackStarted() else stop(error = error)
             }
             error != null -> stop(error = error)
             else -> stop(reason = INTERRUPTED)
@@ -770,7 +751,9 @@ object SpeechPlayback : SensorEventListener {
       }
       return true
     }
-    if (checkNotNull(tts).speak(text, TextToSpeech.QUEUE_FLUSH, null, id) == TextToSpeech.ERROR) {
+    // Android's speak API has no prepare/play split. onStart is already too late
+    // to protect the first phoneme, so focus is requested immediately before speak.
+    if (!acquireFocus(current) || checkNotNull(tts).speak(text, TextToSpeech.QUEUE_FLUSH, null, id) == TextToSpeech.ERROR) {
       stop(error = "Could not start speech playback")
       return false
     }
@@ -782,6 +765,26 @@ object SpeechPlayback : SensorEventListener {
     if (session !== current || current.kind != SpeechPolicy.CHAT || current.reportedStart) return
     current.reportedStart = true
     onChatStarted?.invoke(current.owner)
+  }
+
+  private fun acquireFocus(current: Session): Boolean {
+    if (session !== current || !SpeechPolicy.isCurrent(current.id)) return false
+    if (VoiceCallService.ownsPlayback(current.turn)) {
+      check(VoiceCallService.activatePlayback(current.turn)) { "Call audio focus is unavailable" }
+      return true
+    }
+    if (focus != null) return true
+    val next = VoiceMediaFocus(checkNotNull(appContext), AudioManager.AUDIOFOCUS_GAIN_TRANSIENT) { change ->
+      // Notification ducking does not interrupt a chunk. Other losses end this owner.
+      if (change < AudioManager.AUDIOFOCUS_GAIN && change != AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK && session === current)
+        stop(reason = INTERRUPTED)
+    }
+    focus = next
+    Log.i(TAG, "event=media_ready lease=${current.id} at_ms=${android.os.SystemClock.elapsedRealtime()}")
+    val granted = next.acquire()
+    Log.i(TAG, "event=focus_request lease=${current.id} granted=$granted at_ms=${android.os.SystemClock.elapsedRealtime()}")
+    if (!granted) throw AudioFocusUnavailable()
+    return true
   }
 
   private fun reportLevel(current: Session, level: Float) {
@@ -966,7 +969,7 @@ object SpeechPlayback : SensorEventListener {
     val completed = utterance
     utterance = null
     if (queuedChat.firstOrNull()?.promise === completed) queuedChat.removeFirst()
-    releaseFocus()
+    if (queuedChat.isEmpty()) releaseFocus()
     if (queuedChat.isEmpty() && !VoiceCallService.active && !current.atomicPlaying) {
       drainStatus()
     }
@@ -979,12 +982,9 @@ object SpeechPlayback : SensorEventListener {
     notifyPlaybackStateChanged()
   }
 
-  @Suppress("DEPRECATION")
   private fun releaseFocus() {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) focusRequest?.let { audioManager?.abandonAudioFocusRequest(it) }
-    else focusListener?.let { audioManager?.abandonAudioFocus(it) }
-    focusRequest = null
-    focusListener = null
+    focus?.close()
+    focus = null
   }
 
   override fun onSensorChanged(event: SensorEvent) {

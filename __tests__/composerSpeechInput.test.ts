@@ -182,9 +182,55 @@ test('audio sinks rotate on native restart effects and close before stop/abort',
 test('sink startup failure reports that no recognizer operation occurred', async () => {
   const s = setup(); const { started } = await s.prepare({ audioCapture: { open: () => { throw new Error('sink'); }, close: jest.fn() } });
   const effect = s.deliver({ action: 'startRecognition', continuous: true, onDevice: true, monitoring: false, context: [] }, { epoch: '1' });
+  await flush();
   expect(s.recognizer.start).not.toHaveBeenCalled();
   expect(s.commands).toContainEqual({ ...scope(effect), kind: 'ack', outcome: { kind: 'captureFailed' } });
   s.deliver({ action: 'release' }); await started;
+});
+
+test('managed call prepares without focus and activates audio immediately before capture', async () => {
+  const s = setup();
+  let activate!: () => void;
+  const beforeCapture = jest.fn(() => new Promise<void>(resolve => { activate = resolve; }));
+  const open = jest.fn(() => 'capture');
+  const { started } = await s.prepare({ managedCall: true, beforeCapture, audioCapture: { open, close: jest.fn() } });
+  expect(beforeCapture).not.toHaveBeenCalled();
+  s.deliver({ action: 'startRecognition', continuous: true, onDevice: true, monitoring: false, context: [] }, { epoch: '1' });
+  expect(beforeCapture).toHaveBeenCalledTimes(1);
+  expect(open).not.toHaveBeenCalled();
+  expect(s.recognizer.start).not.toHaveBeenCalled();
+  activate(); await started;
+  expect(open).toHaveBeenCalledTimes(1);
+  expect(s.recognizer.start).toHaveBeenCalledTimes(1);
+});
+
+test('cancelling during OS audio activation cannot start a retired recognizer', async () => {
+  const s = setup();
+  let activate!: () => void;
+  const open = jest.fn(() => 'capture');
+  const { started } = await s.prepare({ managedCall: true,
+    beforeCapture: () => new Promise<void>(resolve => { activate = resolve; }),
+    audioCapture: { open, close: jest.fn() },
+  });
+  s.deliver({ action: 'startRecognition', continuous: true, onDevice: true, monitoring: false, context: [] }, { epoch: '1' });
+  s.refuseEffects();
+  activate(); await started;
+  expect(open).not.toHaveBeenCalled();
+  expect(s.recognizer.start).not.toHaveBeenCalled();
+});
+
+test('denied call audio settles startup without opening capture', async () => {
+  const s = setup();
+  const open = jest.fn(() => 'capture');
+  const { started } = await s.prepare({ managedCall: true,
+    beforeCapture: async () => { throw new Error('Audio focus denied'); },
+    audioCapture: { open, close: jest.fn() },
+  });
+  const effect = s.deliver({ action: 'startRecognition', continuous: true, onDevice: true, monitoring: false, context: [] }, { epoch: '1' });
+  await started;
+  expect(open).not.toHaveBeenCalled();
+  expect(s.recognizer.start).not.toHaveBeenCalled();
+  expect(s.commands).toContainEqual({ ...scope(effect), kind: 'ack', outcome: { kind: 'failed', error: 'failed' } });
 });
 
 test('PCM requires native audio admission and an exact generation/cycle token', async () => {

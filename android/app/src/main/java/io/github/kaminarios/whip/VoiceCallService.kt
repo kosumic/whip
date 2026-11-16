@@ -90,7 +90,23 @@ class VoiceCallService : Service() {
     }
     try {
       SpeechPlayback.playback.started(session)
-      focus = VoiceMediaFocus(this) { change ->
+      HostRuntimeMonitoring.setOwnerActive(this, true)
+      wakeLock = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:voice-call").apply { acquire() }
+      session.ready = true
+      SpeechPlayback.notifyPlaybackStateChanged()
+      main.removeCallbacks(session.timeout)
+      publishRoute()
+      if (session.mode == Mode.LOCAL) SpeechPlayback.warmUp(this)
+      session.start?.resolve(null)
+      session.start = null
+    } catch (_: Exception) { finish(session, "Voice chat could not start.") }
+  }
+  /** Service readiness admits preflight. Focus starts only with live capture/playout. */
+  private fun activateMedia(session: Session): Boolean {
+    if (current !== session || !session.ready || session.ending || session.focusPolicy.suspended) return false
+    if (focus != null) return true
+    try {
+      val next = VoiceMediaFocus(this) { change ->
         if (current === session && !session.ending) {
           if (session.diagnosticEvents++ < MAX_DIAGNOSTIC_EVENTS) Log.i(LOG_TAG, "event=focus token=${session.token} change=$change")
           when (session.focusPolicy.change(change)) {
@@ -105,19 +121,13 @@ class VoiceCallService : Service() {
           }
         }
       }
-      val granted = focus!!.acquire()
-      Log.i(LOG_TAG, "event=focus_request token=${session.token} granted=$granted")
+      focus = next
+      Log.i(LOG_TAG, "event=media_ready token=${session.token} at_ms=${android.os.SystemClock.elapsedRealtime()}")
+      val granted = next.acquire()
+      Log.i(LOG_TAG, "event=focus_request token=${session.token} granted=$granted at_ms=${android.os.SystemClock.elapsedRealtime()}")
       check(granted)
-      HostRuntimeMonitoring.setOwnerActive(this, true)
-      wakeLock = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:voice-call").apply { acquire() }
-      session.ready = true
-      SpeechPlayback.notifyPlaybackStateChanged()
-      main.removeCallbacks(session.timeout)
-      publishRoute()
-      if (session.mode == Mode.LOCAL) SpeechPlayback.warmUp(this)
-      session.start?.resolve(null)
-      session.start = null
-    } catch (_: Exception) { finish(session, "Media audio focus is unavailable.") }
+      return true
+    } catch (_: Exception) { finish(session, "Media audio focus is unavailable."); return false }
   }
   private fun publishRoute() {
     val session = current?.takeIf { it.ready && !it.ending } ?: return
@@ -155,6 +165,7 @@ class VoiceCallService : Service() {
     main.removeCallbacks(session.authority)
     RealtimeVoice.stop(session.token)
     SpeechPlayback.shutdown()
+    focus?.close(); focus = null
     session.start?.reject("E_VOICE_CALL", error ?: "Voice chat ended before activation.")
     session.start = null
     emit(session, "ended", error = error)
@@ -234,6 +245,10 @@ class VoiceCallService : Service() {
     internal fun owns(token: String): Boolean = current?.let { it.token == token && it.ready && !it.ending } == true
     internal fun playbackKey(token: String): Any? = current?.takeIf { it.token == token && !it.ending }
     internal fun ownsPlayback(key: Any): Boolean = current === key
+    internal fun activateAudio(token: String): Boolean = current?.takeIf { it.token == token }
+      ?.let { instance?.activateMedia(it) } == true
+    internal fun activatePlayback(key: Any): Boolean = current?.takeIf { it === key }
+      ?.let { instance?.activateMedia(it) } == true
     internal fun muted(token: String): Boolean = current?.takeIf { it.token == token }?.muted == true
     internal fun reconnecting(token: String, reconnecting: Boolean) {
       val session = current?.takeIf { it.token == token && !it.ending } ?: return

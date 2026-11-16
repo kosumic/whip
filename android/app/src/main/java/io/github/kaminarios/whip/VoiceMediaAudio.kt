@@ -10,25 +10,39 @@ import android.os.Handler
 import android.os.Build
 import android.os.Looper
 
+internal class AudioFocusUnavailable : IllegalStateException(MESSAGE) {
+  companion object { const val MESSAGE = "Audio focus is unavailable" }
+}
+
 /** Media focus never changes AudioManager's mode or the user's volume levels. */
-internal class VoiceMediaFocus(context: Context, changed: (Int) -> Unit) : AutoCloseable {
+internal class VoiceMediaFocus(context: Context, private val gain: Int = AudioManager.AUDIOFOCUS_GAIN,
+                               changed: (Int) -> Unit) : AutoCloseable {
   private val manager = context.getSystemService(AudioManager::class.java)
   private val main = Handler(Looper.getMainLooper())
   private var closed = false
+  private var acquired = false
   private val listener = AudioManager.OnAudioFocusChangeListener { change ->
     if (!closed) changed(change)
   }
-  private val request = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+  private val request = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) AudioFocusRequest.Builder(gain)
     .setAudioAttributes(VoiceMediaAudio.attributes)
     .setOnAudioFocusChangeListener(listener, main).build() else null
   @Suppress("DEPRECATION")
-  fun acquire(): Boolean = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && request != null) manager.requestAudioFocus(request)
-    else manager.requestAudioFocus(listener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN)) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+  fun acquire(): Boolean {
+    if (closed) return false
+    if (acquired) return true
+    acquired = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && request != null) manager.requestAudioFocus(request)
+      else manager.requestAudioFocus(listener, AudioManager.STREAM_MUSIC, gain)) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+    return acquired
+  }
   @Suppress("DEPRECATION")
   override fun close() {
+    if (closed) return
     closed = true
+    if (!acquired) return
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && request != null) manager.abandonAudioFocusRequest(request)
     else manager.abandonAudioFocus(listener)
+    acquired = false
   }
 }
 

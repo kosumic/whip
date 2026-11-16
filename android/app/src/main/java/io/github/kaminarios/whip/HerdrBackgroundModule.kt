@@ -183,6 +183,14 @@ class HerdrBackgroundModule(
   }
 
   @ReactMethod
+  fun activateVoiceCallAudio(token: String, promise: Promise) {
+    mainHandler.post {
+      if (VoiceCallService.activateAudio(token)) promise.resolve(null)
+      else promise.reject("E_VOICE_CALL", "Voice call audio is unavailable.")
+    }
+  }
+
+  @ReactMethod
   fun prepareRealtimeVoice(enabled: Boolean, promise: Promise) {
     mainHandler.post {
       RealtimeVoice.prepare(context, enabled && context.lifecycleState == LifecycleState.RESUMED)

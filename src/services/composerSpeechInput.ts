@@ -33,6 +33,7 @@ interface Request {
   onError: (error: SpeechInputError, message?: string) => void;
   localOnly?: boolean;
   managedCall?: boolean;
+  beforeCapture?: () => Promise<void>;
   duringPlayback?: boolean;
   onAudio?: (pcm: string) => void;
   audioCapture?: { open: () => string; close: (handle: string) => void };
@@ -223,26 +224,31 @@ export class ComposerSpeechInput {
           break;
         case 'startRecognition': {
           session.epoch = effect.epoch;
-          this.startHistory(session);
-          this.closeCapture(session);
-          // Opening a sink can fail before any native recognizer was started.
-          try { session.audioHandle = request.audioCapture?.open(); }
-          catch {
-            this.acknowledge(effect, { kind: 'captureFailed' });
-            break;
-          }
-          session.dependencies!.recognizer.start({
-            lang: session.dependencies!.locale, interimResults: true, maxAlternatives: 1,
-            continuous: effect.continuous, contextualStrings: effect.context, iosTaskHint: 'dictation', recordingOptions: { persist: false },
-            ...(effect.onDevice ? { requiresOnDeviceRecognition: true } : {}),
-            ...(request.localOnly ? { audioChunkEvents: true } : {}),
-            ...(request.managedCall ? { iosAudioSessionManaged: true, iosVoiceProcessingEnabled: true } : {}),
-            ...(effect.monitoring ? { androidEchoCancellation: true } : {}),
-            ...(session.audioHandle ? { audioIngressHandle: session.audioHandle, audioChunkEvents: false } : {}),
-            ...(request.onAudio ? { audioChunkToken: `${effect.generation}:${effect.epoch}` } : {}),
-          });
-          this.acknowledge(effect, { kind: 'done' });
-          session.ready();
+          this.complete(effect, async () => {
+            if (request.beforeCapture) {
+              await request.beforeCapture();
+              // Audio activation can await the OS. Cancellation retires this scope.
+              if (!this.policy().dispatch(JSON.stringify({ id, generation, epoch, kind: 'execute' } satisfies DictationCommand))) return { kind: 'done' };
+            }
+            this.startHistory(session);
+            this.closeCapture(session);
+            // Opening a sink can fail before any native recognizer was started.
+            try { session.audioHandle = request.audioCapture?.open(); }
+            catch {
+              return { kind: 'captureFailed' };
+            }
+            session.dependencies!.recognizer.start({
+              lang: session.dependencies!.locale, interimResults: true, maxAlternatives: 1,
+              continuous: effect.continuous, contextualStrings: effect.context, iosTaskHint: 'dictation', recordingOptions: { persist: false },
+              ...(effect.onDevice ? { requiresOnDeviceRecognition: true } : {}),
+              ...(request.localOnly ? { audioChunkEvents: true } : {}),
+              ...(request.managedCall ? { iosAudioSessionManaged: true, iosVoiceProcessingEnabled: true } : {}),
+              ...(effect.monitoring ? { androidEchoCancellation: true } : {}),
+              ...(session.audioHandle ? { audioIngressHandle: session.audioHandle, audioChunkEvents: false } : {}),
+              ...(request.onAudio ? { audioChunkToken: `${effect.generation}:${effect.epoch}` } : {}),
+            });
+            return { kind: 'done' };
+          }, session.ready);
           break;
         }
         case 'startCloud':

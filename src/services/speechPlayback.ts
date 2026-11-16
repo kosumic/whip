@@ -18,6 +18,8 @@ export interface NativeSpeechPlayback {
   startLocalChatSpeech(token: string, label: string, callToken: string): Promise<void>;
   startVoiceCall(token: string, label: string): Promise<void>;
   startRealtimeVoiceCall?(token: string, label: string): Promise<void>;
+  /** Activate the call's shared audio ownership immediately before live capture. */
+  activateVoiceCallAudio?(token: string): Promise<void>;
   endVoiceCall(token: string): Promise<void>;
   startRealtimeVoice?(token: string, config: string): Promise<void>;
   prepareRealtimeVoice?(enabled: boolean): Promise<void>;

@@ -25,6 +25,41 @@ class PcmSpeechPlaybackTest {
   private val samples = FloatArray(1_920) { 0.01f }
   private fun main(work: () -> Unit) = instrumentation.runOnMainSync { work() }
 
+  @Test fun delayedSynthesisRequestsFocusOnlyAfterPcmAndBeforePlayback() {
+    val original = PcmSpeechPlayback.synthesize
+    val preparing = CountDownLatch(1)
+    val release = CountDownLatch(1)
+    val done = CountDownLatch(1)
+    val focus = AtomicBoolean(false)
+    val failure = AtomicReference<String?>(null)
+    val lease = SpeechPolicy.claim(SpeechPolicy.CHAT, "delayed-pcm-focus", "")
+    try {
+      PcmSpeechPlayback.synthesize = { _, _, _, sink, _ ->
+        preparing.countDown()
+        check(release.await(10, TimeUnit.SECONDS))
+        if (sink.write(samples)) 1 else 0
+      }
+      main {
+        PcmSpeechPlayback.start(lease, "Keep the first word.", 1.0, attributes, 0L,
+          { assertTrue("Focus must precede the first played frame", focus.get()) }, {}, { _, _, _ -> },
+          beforePlayback = { focus.set(true); true }) { completed, spoke, error ->
+          failure.set(error ?: if (!completed || !spoke) "Prepared speech did not drain" else null)
+          done.countDown()
+        }
+      }
+      assertTrue(preparing.await(10, TimeUnit.SECONDS))
+      assertFalse("Model/network preparation cannot interrupt music", focus.get())
+      release.countDown()
+      assertTrue(done.await(10, TimeUnit.SECONDS))
+      assertTrue(focus.get())
+      assertNull(failure.get())
+    } finally {
+      release.countDown()
+      main { SpeechPolicy.stop(lease); PcmSpeechPlayback.stop() }
+      PcmSpeechPlayback.synthesize = original
+    }
+  }
+
   @Test fun callCueGatesCaptureAtDeviceStartAndRejectsSupersededSynthesis() {
     val original = PcmSpeechPlayback.synthesize
     val producing = CountDownLatch(1)
@@ -156,7 +191,7 @@ class PcmSpeechPlaybackTest {
             // Check the platform counter while speech remains to be heard.
             if (!complete || played < total) metrics.set(PcmSpeechPlayback.statistics())
           },
-          { completed, spoke, failure ->
+          ended = { completed, spoke, failure ->
             error.set(failure ?: if (!completed || !spoke) "Phonon did not drain" else null)
             done.countDown()
           })
@@ -244,8 +279,9 @@ class PcmSpeechPlaybackTest {
         if (accepted) 1 else 0
       }
       main {
-        PcmSpeechPlayback.start(lease, "old", 1.0, attributes,
-          { staleCallback.set(true) }, { _, _, _ -> staleCallback.set(true) })
+        PcmSpeechPlayback.start(lease, "old", 1.0, attributes, 0L,
+          { staleCallback.set(true) }, {}, { _, _, _ -> },
+          beforePlayback = { staleCallback.set(true); true }) { _, _, _ -> staleCallback.set(true) }
       }
       assertTrue(prepared.await(10, TimeUnit.SECONDS))
       main { SpeechPolicy.stop(lease); PcmSpeechPlayback.stop() }

@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /** PCM never crosses JS. AudioTrack resamples 24 kHz mono to the device output. */
 object PcmSpeechPlayback {
+  private class PlaybackCancelled : IllegalStateException("Call announcement cancelled")
   private const val SAMPLE_RATE = 24_000
   private const val BUFFER_SAMPLES = SAMPLE_RATE * 6
   private const val STREAM_PREFILL_SAMPLES = SAMPLE_RATE / 4
@@ -35,6 +36,7 @@ object PcmSpeechPlayback {
   private const val LEVEL_SAMPLES = SAMPLE_RATE / 25
   private const val LEVEL_INTERVAL_MS = 40L
   private val main = Handler(Looper.getMainLooper())
+  private val activation = PreparedMedia { main.post(it) }
   private val audioWorker = Executors.newSingleThreadExecutor()
   private val synthesisWorker = Executors.newSingleThreadExecutor()
   private val settingsWorker = Executors.newSingleThreadExecutor()
@@ -115,14 +117,15 @@ object PcmSpeechPlayback {
 
   fun start(lease: Long, text: String, rate: Double, attributes: AudioAttributes,
             started: () -> Unit, level: (Float) -> Unit, ended: (Boolean, Boolean, String?) -> Unit) {
-    start(lease, text, rate, attributes, 0L, started, level, { _, _, _ -> }, ended)
+    start(lease, text, rate, attributes, 0L, started, level, { _, _, _ -> }, ended = ended)
   }
 
   fun start(lease: Long, text: String, rate: Double, attributes: AudioAttributes, captionId: Long,
             started: () -> Unit, level: (Float) -> Unit, progress: (Long, Long, Boolean) -> Unit,
+            beforePlayback: () -> Boolean = { true },
             ended: (Boolean, Boolean, String?) -> Unit) {
     stop()
-    begin(lease, rate, attributes, retained = false).enqueue(text, started, level, ended, progress, captionId)
+    begin(lease, rate, attributes, retained = false, beforePlayback = beforePlayback).enqueue(text, started, level, ended, progress, captionId)
   }
 
   fun startGuarded(lease: Long, text: String, attributes: AudioAttributes,
@@ -135,13 +138,14 @@ object PcmSpeechPlayback {
   /** Voice chat may prepare one following utterance while this track is playing. */
   fun enqueue(lease: Long, text: String, attributes: AudioAttributes,
               started: () -> Unit, level: (Float) -> Unit, ended: (Boolean, Boolean, String?) -> Unit) =
-    enqueue(lease, text, attributes, 0L, started, level, { _, _, _ -> }, ended)
+    enqueue(lease, text, attributes, 0L, started, level, { _, _, _ -> }, ended = ended)
 
   fun enqueue(lease: Long, text: String, attributes: AudioAttributes, captionId: Long,
               started: () -> Unit, level: (Float) -> Unit, progress: (Long, Long, Boolean) -> Unit,
+              beforePlayback: () -> Boolean = { true },
               ended: (Boolean, Boolean, String?) -> Unit) {
     val current = player?.takeIf { it.lease == lease && it.retained && !it.cancelled.get() }
-      ?: run { stop(); begin(lease, 1.0, attributes, retained = true) }
+      ?: run { stop(); begin(lease, 1.0, attributes, retained = true, beforePlayback = beforePlayback) }
     current.enqueue(text, started, level, ended, progress, captionId)
   }
 
@@ -260,7 +264,7 @@ object PcmSpeechPlayback {
         }
       } catch (failure: Exception) {
         if (current()) {
-          SpeechPolicy.pcmPlaybackFailed()
+          if (failure !is AudioFocusUnavailable && failure !is PlaybackCancelled) SpeechPolicy.pcmPlaybackFailed()
           main.post {
             if (player === this && current()) {
               val pending = utterances.peek()
@@ -284,7 +288,7 @@ object PcmSpeechPlayback {
         val first = utterance.firstFrame ?: return
         if (!utterance.acknowledged && position > first) {
           utterance.acknowledged = true
-          Log.i("SpeechPCM", "first_output_ms=${SystemClock.elapsedRealtime() - utterance.began}")
+          Log.i("SpeechPCM", "event=first_audible_frame lease=$lease at_ms=${SystemClock.elapsedRealtime()} first_output_ms=${SystemClock.elapsedRealtime() - utterance.began}")
           utterance.started()
         }
         if (SystemClock.elapsedRealtime() >= levelAt) {
@@ -311,6 +315,7 @@ object PcmSpeechPlayback {
     @Volatile private var frames = 0L
     private var playing = false
     private var peakRms = 0f
+    private var firstPcm = false
 
     fun open() = synchronized(lifecycle) {
       if (cancelled.get() || !SpeechPolicy.isCurrent(lease)) return@synchronized
@@ -349,6 +354,10 @@ object PcmSpeechPlayback {
           if (cancelled.get()) return false
           check(count >= 0) { "Streaming audio write failed ($count)" }
           frames += count
+          if (count > 0 && !firstPcm) {
+            firstPcm = true
+            Log.i("SpeechPCM", "event=first_pcm_ready lease=$lease at_ms=${SystemClock.elapsedRealtime()}")
+          }
           offset += count
           if (!playing && (count == 0 || frames - playedFrames() >= prefillSamples)) playBuffered()
         }
@@ -356,20 +365,23 @@ object PcmSpeechPlayback {
       return true
     }
 
-    private fun playBuffered() = synchronized(lifecycle) {
-      val output = track ?: return@synchronized
-      val buffered = frames - Integer.toUnsignedLong(output.playbackHeadPosition)
-      if (!playing && current() && buffered > 0) {
-        if (!beforePlayback()) {
-          val pending = utterances.peek()
-          main.post {
-            if (player === this) {
-              PcmSpeechPlayback.stop()
-              pending?.ended?.invoke(false, false, "Call announcement cancelled")
-            }
-          }
-          return@synchronized
-        }
+    private fun playBuffered() {
+      val buffered = synchronized(lifecycle) {
+        val output = track ?: return
+        if (playing || !current()) return
+        frames - Integer.toUnsignedLong(output.playbackHeadPosition)
+      }
+      if (buffered <= 0) return
+      Log.i("SpeechPCM", "event=media_ready lease=$lease at_ms=${SystemClock.elapsedRealtime()} buffered=$buffered")
+      // Never wait for main while holding lifecycle: stop() needs that lock.
+      // PCM stays on the paused track until focus is granted, including its first phoneme.
+      if (!activation.activate(::current, beforePlayback)) {
+        if (current()) throw PlaybackCancelled()
+        return
+      }
+      synchronized(lifecycle) {
+        val output = track ?: return
+        if (!current()) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) output.setStartThresholdInFrames(minOf(buffered, prefillSamples.toLong()).toInt())
         output.play()
         playing = true

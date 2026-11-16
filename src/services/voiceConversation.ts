@@ -344,6 +344,10 @@ export class VoiceConversation {
       this.armWatchdog('The on-device recognizer did not start. Check the offline speech language in device settings.');
       await composerSpeechInput.start({
         owner: this.session, draft: '', localOnly: true, managedCall: true, duringPlayback: monitor,
+        beforeCapture: async () => {
+          if (this.closed || this.input?.id !== id) throw new Error('The voice input was replaced.');
+          await this.playback?.activateVoiceCallAudio?.(this.session);
+        },
         readDraft: () => this.draft,
         context: () => Promise.resolve(this.view.transcript?.transcript.messages.slice(-10).flatMap(message =>
           message.parts.flatMap(part => part.type === 'text' ? [part.text] : [])) ?? []),

@@ -45,6 +45,8 @@ RCT_EXPORT_MODULE(HerdrBackground)
 - (void)callChanged:(NSNotification *)notification { [self sendEventWithName:WhipVoiceCallEvent body:notification.userInfo]; }
 RCT_EXPORT_METHOD(startVoiceCall:(NSString *)token label:(NSString *)label resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 { [WhipVoiceCall.shared start:token label:label resolve:resolve reject:reject]; }
+RCT_EXPORT_METHOD(activateVoiceCallAudio:(NSString *)token resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{ [WhipVoiceCall.shared activateAudio:token resolve:resolve reject:reject]; }
 RCT_EXPORT_METHOD(startRealtimeVoice:(NSString *)token config:(NSString *)config resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 { [WhipRealtimeVoice.shared start:token config:config resolve:resolve reject:reject]; }
 RCT_EXPORT_METHOD(prepareRealtimeVoice:(BOOL)enabled resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
