@@ -1,4 +1,5 @@
 import * as Keychain from 'react-native-keychain';
+import { Platform } from 'react-native';
 import { getSpeechPlayback } from './speechPlayback';
 import { settledPromise } from '../lib/promises';
 
@@ -50,7 +51,14 @@ export function voiceCredentialError(error: unknown, fallback: string): string {
 
 /** Kept out of preferences, SSH profiles, diagnostics, and rendered input values. */
 export async function hasOpenAiVoiceKey(): Promise<boolean> {
-  try { return await Keychain.hasGenericPassword({ service: SERVICE }); }
+  try {
+    if (Platform.OS === 'android') {
+      const native = getSpeechPlayback();
+      if (!native.hasOpenAiVoiceCredential) throw new Error('Credential storage unavailable');
+      return await native.hasOpenAiVoiceCredential();
+    }
+    return await Keychain.hasGenericPassword({ service: SERVICE });
+  }
   catch { throw new Error('Could not access the OpenAI API credential.'); }
 }
 
@@ -59,6 +67,12 @@ export async function saveOpenAiVoiceKey(value: string): Promise<void> {
   if (!key || /\s/.test(key)) throw new Error('Enter a valid OpenAI API key.');
   try {
     await updateCredential(async () => {
+      if (Platform.OS === 'android') {
+        const native = getSpeechPlayback();
+        if (!native.saveOpenAiVoiceCredential) throw new Error('Credential storage unavailable');
+        await native.saveOpenAiVoiceCredential(key);
+        return;
+      }
       const stored = await Keychain.setGenericPassword('openai-api', key, {
         service: SERVICE,
         accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
@@ -71,6 +85,12 @@ export async function saveOpenAiVoiceKey(value: string): Promise<void> {
 export async function removeOpenAiVoiceKey(): Promise<void> {
   try {
     await updateCredential(async () => {
+      if (Platform.OS === 'android') {
+        const native = getSpeechPlayback();
+        if (!native.removeOpenAiVoiceCredential) throw new Error('Credential storage unavailable');
+        await native.removeOpenAiVoiceCredential();
+        return;
+      }
       const removed = await Keychain.resetGenericPassword({ service: SERVICE });
       if (!removed && await Keychain.hasGenericPassword({ service: SERVICE })) throw new Error('Credential removal failed');
     });

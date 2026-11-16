@@ -212,6 +212,25 @@ class HerdrBackgroundModule(
     }
   }
   @ReactMethod
+  fun hasOpenAiVoiceCredential(promise: Promise) {
+    try { promise.resolve(WhipVoiceCredentialStore.create(context).has()) }
+    catch (_: Exception) { promise.reject(VOICE_CREDENTIAL_ERROR, "Could not access the OpenAI API credential.") }
+  }
+  @ReactMethod
+  fun saveOpenAiVoiceCredential(value: String, promise: Promise) {
+    val bytes = value.toByteArray(Charsets.UTF_8)
+    try {
+      WhipVoiceCredentialStore.create(context).save(bytes)
+      promise.resolve(null)
+    } catch (_: Exception) { promise.reject(VOICE_CREDENTIAL_ERROR, "Could not save the OpenAI API credential.") }
+    finally { bytes.fill(0) }
+  }
+  @ReactMethod
+  fun removeOpenAiVoiceCredential(promise: Promise) {
+    try { WhipVoiceCredentialStore.create(context).remove(); promise.resolve(null) }
+    catch (_: Exception) { promise.reject(VOICE_CREDENTIAL_ERROR, "Could not remove the OpenAI API credential.") }
+  }
+  @ReactMethod
   fun voiceCredentialsUpdating(updating: Boolean, promise: Promise) {
     mainHandler.post {
       RealtimeVoice.credentialsUpdating(updating)
@@ -792,6 +811,7 @@ class HerdrBackgroundModule(
   }
 
   companion object {
+    private const val VOICE_CREDENTIAL_ERROR = "E_VOICE_CREDENTIAL_FAILED"
     private const val NOTIFICATION_CONSUMER_PULSE = "WhipNotificationConsumerPulse"
     private const val CALL_SOUND_ERROR = "E_VOICE_CALL_SOUND"
     private const val CALL_SOUND_TIMEOUT_MS = 5_000L

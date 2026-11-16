@@ -1,4 +1,5 @@
 import * as Keychain from 'react-native-keychain';
+import { Platform } from 'react-native';
 import { settledPromise } from '../src/lib/promises';
 import { hasOpenAiVoiceKey, isOpenAiVoiceCredentialUpdating, saveOpenAiVoiceKey, removeOpenAiVoiceKey, onOpenAiVoiceCredentialChange, voiceCredentialError } from '../src/services/openAiVoiceCredentials';
 jest.mock('react-native-keychain', () => ({
@@ -7,8 +8,46 @@ jest.mock('react-native-keychain', () => ({
   STORAGE_TYPE: { AES_GCM: 'KeystoreAESGCM' },
 }));
 const mockUpdating = jest.fn((_updating: boolean) => Promise.resolve());
-jest.mock('../src/services/speechPlayback', () => ({ getSpeechPlayback: () => ({ voiceCredentialsUpdating: mockUpdating }) }));
-beforeEach(() => { jest.resetAllMocks(); mockUpdating.mockResolvedValue(undefined); });
+const mockHas = jest.fn<Promise<boolean>, []>();
+const mockSave = jest.fn<Promise<void>, [string]>();
+const mockRemove = jest.fn<Promise<void>, []>();
+jest.mock('../src/services/speechPlayback', () => ({ getSpeechPlayback: () => ({
+  voiceCredentialsUpdating: mockUpdating,
+  hasOpenAiVoiceCredential: mockHas,
+  saveOpenAiVoiceCredential: mockSave,
+  removeOpenAiVoiceCredential: mockRemove,
+}) }));
+beforeEach(() => {
+  jest.resetAllMocks();
+  mockUpdating.mockResolvedValue(undefined);
+  Object.defineProperty(Platform, 'OS', { configurable: true, value: 'ios' });
+});
+
+test('Android saves, checks presence, and deletes through native storage without reading saved secrets', async () => {
+  Object.defineProperty(Platform, 'OS', { configurable: true, value: 'android' });
+  mockHas.mockResolvedValue(true);
+  await saveOpenAiVoiceKey(' sk-android-fixture ');
+  expect(mockSave).toHaveBeenCalledWith('sk-android-fixture');
+  expect(await hasOpenAiVoiceKey()).toBe(true);
+  await removeOpenAiVoiceKey();
+  expect(mockRemove).toHaveBeenCalledTimes(1);
+  expect(mockUpdating.mock.calls).toEqual([[true], [false], [true], [false]]);
+  expect(Keychain.setGenericPassword).not.toHaveBeenCalled();
+  expect(Keychain.getGenericPassword).not.toHaveBeenCalled();
+  expect(Keychain.hasGenericPassword).not.toHaveBeenCalled();
+  expect(Keychain.resetGenericPassword).not.toHaveBeenCalled();
+});
+
+test('Android failures are sanitized and release credential admission', async () => {
+  Object.defineProperty(Platform, 'OS', { configurable: true, value: 'android' });
+  mockSave.mockRejectedValue(new Error('sk-private'));
+  mockRemove.mockRejectedValue(new Error('sk-private'));
+  mockHas.mockRejectedValue(new Error('sk-private'));
+  await expect(saveOpenAiVoiceKey('sk-test')).rejects.toThrow('Could not securely save');
+  await expect(removeOpenAiVoiceKey()).rejects.toThrow('Could not remove');
+  await expect(hasOpenAiVoiceKey()).rejects.toThrow('Could not access');
+  expect(mockUpdating.mock.calls).toEqual([[true], [false], [true], [false]]);
+});
 
 test('saves only in a dedicated native protected credential slot', async () => {
   jest.mocked(Keychain.setGenericPassword).mockResolvedValue({ service: 'voice', storage: Keychain.STORAGE_TYPE.AES_GCM });

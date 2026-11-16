@@ -25,6 +25,10 @@ export interface NativeSpeechPlayback {
   prepareRealtimeVoice?(enabled: boolean): Promise<void>;
   startRealtimeVoicePreview?(token: string, config: string): Promise<void>;
   voiceCredentialsUpdating?(updating: boolean): Promise<void>;
+  /** Android native storage; saved secrets have no bridge read method. */
+  hasOpenAiVoiceCredential?(): Promise<boolean>;
+  saveOpenAiVoiceCredential?(value: string): Promise<void>;
+  removeOpenAiVoiceCredential?(): Promise<void>;
   stopRealtimeVoice?(token: string): Promise<void>;
   realtimeVoiceControl?(token: string, action: number): Promise<void>;
   realtimeVoiceSubmitted?(token: string, text: string): Promise<void>;

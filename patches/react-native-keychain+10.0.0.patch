@@ -1,13 +1,76 @@
+diff --git a/node_modules/react-native-keychain/android/src/main/java/com/oblador/keychain/DataStorePrefsStorage.kt b/node_modules/react-native-keychain/android/src/main/java/com/oblador/keychain/DataStorePrefsStorage.kt
+index 70912a9..e50cec1 100644
+--- a/node_modules/react-native-keychain/android/src/main/java/com/oblador/keychain/DataStorePrefsStorage.kt
++++ b/node_modules/react-native-keychain/android/src/main/java/com/oblador/keychain/DataStorePrefsStorage.kt
+@@ -114,4 +114,20 @@ class DataStorePrefsStorage(
+   private fun getBytes(prefKey: Preferences.Key<String>): ByteArray? {
+     return prefsData[prefKey]?.let { Base64.decode(it, Base64.DEFAULT) }
+   }
++
++  private val whipVoiceRecord = stringPreferencesKey("${PrefsStorageBase.WHIP_VOICE_SERVICE}:gcm-v1")
++
++  override fun getWhipVoiceGcmRecord(): String? = prefsData[whipVoiceRecord]
++
++  override fun replaceWhipVoiceRecord(record: String?) {
++    callSuspendable {
++      prefs.edit {
++        if (record == null) it.remove(whipVoiceRecord) else it[whipVoiceRecord] = record
++        val service = PrefsStorageBase.WHIP_VOICE_SERVICE
++        it.remove(stringPreferencesKey(getKeyForUsername(service)))
++        it.remove(stringPreferencesKey(getKeyForPassword(service)))
++        it.remove(stringPreferencesKey(getKeyForCipherStorage(service)))
++      }
++    }
++  }
+ }
 diff --git a/node_modules/react-native-keychain/android/src/main/java/com/oblador/keychain/KeychainModule.kt b/node_modules/react-native-keychain/android/src/main/java/com/oblador/keychain/KeychainModule.kt
+index 722a5ed..5ffef32 100644
 --- a/node_modules/react-native-keychain/android/src/main/java/com/oblador/keychain/KeychainModule.kt
 +++ b/node_modules/react-native-keychain/android/src/main/java/com/oblador/keychain/KeychainModule.kt
-@@ -106 +106 @@
+@@ -103,7 +103,7 @@ class KeychainModule(reactContext: ReactApplicationContext) :
+   }
+ 
+   /** Supported ciphers. */
 -  @StringDef(KnownCiphers.AES_CBC, KnownCiphers.AES_GCM, KnownCiphers.RSA)
 +  @StringDef(KnownCiphers.AES_CBC, KnownCiphers.AES_GCM, KnownCiphers.AES_GCM_NO_AUTH, KnownCiphers.RSA)
-@@ -129 +129,6 @@
+   annotation class KnownCiphers {
+     companion object {
+       /** AES CBC encryption. */
+@@ -128,6 +128,14 @@ class KeychainModule(reactContext: ReactApplicationContext) :
+   /** Shared preferences storage. */
    private val prefsStorage: PrefsStorageBase
-+
+ 
 +  // Whip native-only adapter shares this DataStore instance. No ReactMethod,
-+  // plaintext, migration, key generation, or additional DataStore instance.
++  // plaintext, key generation, or additional DataStore instance.
 +  fun getWhipVoiceEncryptedEntry(): PrefsStorageBase.ResultSet? =
-+    prefsStorage.getEncryptedEntry("io.github.kaminarios.whip.openai.voice")
++    prefsStorage.getEncryptedEntry(PrefsStorageBase.WHIP_VOICE_SERVICE)
++
++  fun getWhipVoiceGcmRecord(): String? = prefsStorage.getWhipVoiceGcmRecord()
++  fun replaceWhipVoiceRecord(record: String?) = prefsStorage.replaceWhipVoiceRecord(record)
++
+   /** Launches a coroutine to perform non-blocking UI operations */
+   private val coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+ 
+diff --git a/node_modules/react-native-keychain/android/src/main/java/com/oblador/keychain/PrefsStorageBase.kt b/node_modules/react-native-keychain/android/src/main/java/com/oblador/keychain/PrefsStorageBase.kt
+index d165f3e..9dd6bd4 100644
+--- a/node_modules/react-native-keychain/android/src/main/java/com/oblador/keychain/PrefsStorageBase.kt
++++ b/node_modules/react-native-keychain/android/src/main/java/com/oblador/keychain/PrefsStorageBase.kt
+@@ -17,6 +17,10 @@ interface PrefsStorageBase {
+ 
+   fun storeEncryptedEntry(service: String, encryptionResult: EncryptionResult)
+ 
++  // Native-only Whip voice migration. Replacement and legacy removal are atomic.
++  fun getWhipVoiceGcmRecord(): String?
++  fun replaceWhipVoiceRecord(record: String?)
++
+   /**
+    * List all types of cipher which are involved in en/decryption of the data stored herein.
+    *
+@@ -30,6 +34,7 @@ interface PrefsStorageBase {
+ 
+   companion object {
+     const val KEYCHAIN_DATA = "RN_KEYCHAIN"
++    const val WHIP_VOICE_SERVICE = "io.github.kaminarios.whip.openai.voice"
+ 
+     fun getKeyForUsername(service: String): String {
+       return "$service:u"

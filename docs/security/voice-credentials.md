@@ -12,9 +12,9 @@ Phone Use do not invoke this ingress.
 
 ## Existing records and compatibility
 
-The service remains `io.github.kaminarios.whip.openai.voice`. Settings retains
-its presence/save/delete functions and the initially entered key still passes
-through the password input and react-native-keychain. Saved-key retrieval has
+The logical service remains `io.github.kaminarios.whip.openai.voice`. Settings retains
+its presence/save/delete functions. The initially entered key passes through the
+password input, then native Android storage or react-native-keychain on iOS. Saved-key retrieval has
 no TypeScript API and cloud bridge methods have no credential argument.
 
 The audit used the installed/pinned react-native-keychain 10.0.0 source:
@@ -25,27 +25,61 @@ The audit used the installed/pinned react-native-keychain 10.0.0 source:
   prompts. Existing `WhenUnlockedThisDeviceOnly` accessibility is untouched.
   No Keychain item is rewritten, so reinstall and device-only backup behavior
   remain OS-controlled as before.
-- Android `DataStorePrefsStorage.kt` stores Base64 ciphertext under `:u`, `:p`
+- Legacy Android `DataStorePrefsStorage.kt` stores Base64 ciphertext under `:u`, `:p`
   and the cipher name under `:c`, in `RN_KEYCHAIN` preferences DataStore. The
   library handles its legacy SharedPreferences import. A narrow patch exposes
   only this service's encrypted entry to native app code, using the existing
-  module's DataStore instance. Creating a second instance for the same file is
-  avoided. This method is not a React method and returns no plaintext.
-- Android decryption reads an existing AndroidKeyStore key at the service alias.
-  The selected record format controls decryption: AES-GCM uses a 12-byte IV and
+  module's DataStore instance. The patch also exposes native-only encrypted record
+  replacement; no second DataStore instance is created.
+- Android foreground migration reads an existing AndroidKeyStore key at the service alias.
+  The legacy record format controls decryption: AES-GCM uses a 12-byte IV and
   128-bit tag, AES-CBC uses a 16-byte IV and PKCS7 padding, and legacy RSA uses
   ECB/PKCS1 padding. Unknown formats, missing keys and corrupt records fail
   without changing the encrypted record or generating/replacing a Keystore key.
   In particular, the library's `extractGeneratedKey` retry path is not used.
   An instrumented compatibility test encrypts with the actual library's GCM and
-  CBC implementations at disposable test aliases, then verifies both readers.
+  CBC implementations at disposable test aliases, verifies the legacy reader,
+  and migrates to GCM using the production Android Keystore implementation.
 
-There is no storage migration or duplicate secret store. Android's
+### Android authenticated storage and migration
+
+New Android saves use AES-256-GCM exclusively, with a provider-generated 12-byte
+IV and 128-bit tag. Every write creates a new Android Keystore key at
+`<service>.gcm.<UUID>`; the key alias is also authenticated as additional data.
+The versioned record contains only its alias and Base64 IV/ciphertext/tag, under
+`<service>:gcm-v1` in the same `RN_KEYCHAIN` DataStore. The native methods expose
+presence, saving an initially entered key, and deletion; there is no saved-key
+read method on the React bridge.
+
+An unlocked foreground credential read migrates existing GCM, CBC, or RSA records.
+Presence checks never decrypt or migrate. Migration verifies a round trip through
+the serialized new record and the newly generated Keystore key, rechecks foreground
+and device-lock state, then atomically commits the GCM record and removes all three
+legacy fields in one DataStore transaction. Only after commit does best-effort
+cleanup remove the old key and unused candidate keys. Reads, writes, migration,
+and deletion share a process-wide native lock across React reloads.
+
+Failed encryption, verification, or commit preserves the old record and key. A
+process death before commit leaves the old credential and possibly an orphan key;
+after commit the new credential is authoritative even if cleanup was interrupted.
+Later successful operations retry cleanup. Deletion atomically removes both record
+formats before deleting keys, so a leftover legacy record cannot resurrect a deleted
+credential. Missing keys, unsupported versions, and corrupt current records fail
+without falling back to legacy data or regenerating an active key. Background
+announcements can read an already migrated GCM record but cannot initiate migration.
+
+The CBC and PKCS#1 decryption branches remain migration-only compatibility code.
+CodeQL alerts #29 and #30 may remain until support for unmigrated upgrades is
+retired; no alert suppression or crypto-string substitution is used. Retiring
+these readers later requires users who skipped migration to re-enter their key.
+
+Android's
 react-native-keychain `accessible` option does not configure the iOS-style
 unlocked policy: existing no-auth Android keys cannot be retroactively given
-`setUnlockedDeviceRequired` without replacing them. This change preserves them
-and checks foreground/device unlock before and after reading; native device-lock
-monitoring stops cloud media. AndroidKeyStore keys remain device-bound and cannot
+`setUnlockedDeviceRequired` without replacing them. GCM keys remain no-auth keys
+so admitted background status announcements retain their existing behavior.
+Foreground migration and credential mutations check foreground/device unlock;
+call admission applies its existing lifecycle policy. AndroidKeyStore keys remain device-bound and cannot
 be recovered by restoring ciphertext alone. No existing backup rules change.
 
 ## Admission, revocation and errors
@@ -99,3 +133,7 @@ diagnostic output using disposable fixture credentials, never exporting a real
 saved key. Confirm local calls and passive Settings/startup do not authenticate.
 Run Android `WhipVoiceCredentialsTest` on device. Physical-device acceptance and
 real upgraded-install checks must be reported separately from source tests.
+`WhipVoiceCredentialStoreTest` exercises authenticated writes, RSA/GCM migration,
+failed commits and deletion, interrupted cleanup, reopening, tampering, missing
+keys, unknown formats, lock transitions, and background admission with disposable
+software keys. These JVM tests do not replace physical Android Keystore checks.
