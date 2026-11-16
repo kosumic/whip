@@ -309,7 +309,9 @@ fn spawn_sideband(
 ) -> JoinHandle<Result<(), &'static str>> {
     tokio::spawn(async move {
         let started = Instant::now();
-        let connected = tokio::select! { biased; _ = stop.changed() => return Ok(()), result = voice::connect_request(request) => result };
+        let Some(connected) = super::sideband::connect(request, &mut stop).await else {
+            return Ok(());
+        };
         let result = async {
             let mut socket = connected.map_err(|error| error.message)?;
             attempt.timing(Timing::Sideband(startup::elapsed(started)));
@@ -337,7 +339,7 @@ fn spawn_sideband(
                     }
                 }
             };
-            let _ = tokio::time::timeout(Duration::from_secs(2), socket.close(None)).await;
+            let _ = super::sideband::close(&mut socket).await;
             result
         }.await;
         if let Err(error) = result {

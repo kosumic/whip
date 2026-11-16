@@ -3,6 +3,7 @@ pub mod api;
 pub mod identity;
 pub mod live;
 pub mod media;
+mod sideband;
 use voice_call_media::transport;
 
 use super::{ClientEvent, Host, RealtimeSocket, Timing, recovery, socket, startup};
@@ -249,10 +250,8 @@ fn spawn_sideband(
 ) -> JoinHandle<Result<(), &'static str>> {
     tokio::spawn(async move {
         let started = Instant::now();
-        let result = tokio::select! {
-            biased;
-            _ = stop.changed() => return Ok(()),
-            result = super::connect_request(request) => result,
+        let Some(result) = sideband::connect(request, &mut stop).await else {
+            return Ok(());
         };
         let result = match result {
             Ok(mut socket) => {
@@ -275,15 +274,7 @@ fn spawn_sideband(
                 } else {
                     Ok(())
                 };
-                let closed =
-                    tokio::time::timeout(std::time::Duration::from_secs(2), socket.close(None))
-                        .await;
-                if !matches!(
-                    closed,
-                    Ok(Ok(())
-                        | Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed
-                            | tokio_tungstenite::tungstenite::Error::AlreadyClosed))
-                ) {
+                if !sideband::close(&mut socket).await {
                     attempt.fail(recovery::CLEANUP_FAILED.into());
                     return Err(recovery::CLEANUP_FAILED);
                 }
