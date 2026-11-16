@@ -12,150 +12,141 @@ import {
 } from '../src/lib/hostProfiles';
 import type { ConnectionProfile, HostProfile } from '../src/types';
 
-jest.mock('react-native-whip-ssh', () => require('./mockWhipSsh').createMockWhipSshModule());
+jest.mock('react-native-whip-ssh', () => ({
+  ...require('../test-support/mockHostProfiles'),
+  createSecureId: jest.fn(() => 'host-native-id'),
+}));
+import { createSecureId } from 'react-native-whip-ssh';
 
-const profile: ConnectionProfile = {
-  id: 'host-1',
-  name: 'Savior',
-  host: 'savior.example.ts.net',
-  port: '22',
-  username: 'kosumi',
-  authMode: 'key',
-  secret: 'private',
-  passphrase: '',
-  herdrCommand: 'herdr',
-  sessionName: '',
-  createdAt: '2026-01-01T00:00:00.000Z',
-  updatedAt: '2026-01-01T00:00:00.000Z',
+const { hostProfileCalls: native } = require('../test-support/mockHostProfiles') as {
+  hostProfileCalls: Record<string, jest.Mock>;
 };
+const NOW = '2026-11-15T12:00:00.000Z';
+const host: HostProfile = {
+  id: 'host-1', name: 'Savior', host: 'savior.example.ts.net', port: '22',
+  username: 'kosumi', authMode: 'key', herdrCommand: 'herdr', sessionName: '',
+  createdAt: '2026-01-01T00:00:00.000Z', updatedAt: NOW,
+};
+const profile: ConnectionProfile = { ...host, secret: 'private', passphrase: 'phrase' };
 
-test('removes the legacy remember-credentials flag from stored hosts', () => {
-  const [host] = parseHosts(JSON.stringify([{
-    ...toHostProfile(profile),
-    rememberCredentials: false,
-  }]));
-  expect(host).not.toHaveProperty('rememberCredentials');
+beforeEach(() => {
+  jest.useFakeTimers().setSystemTime(new Date(NOW));
+  for (const method of Object.keys(native)) {
+    native[method].mockReset().mockImplementation(() => {
+      throw new Error(`Unscripted NativeHostProfileStore.${method}`);
+    });
+  }
 });
+afterEach(() => jest.useRealTimers());
 
-test('keeps agent forwarding opt-in for new and legacy hosts', () => {
-  expect(emptyConnectionProfile().forwardAgent).toBe(false);
-  expect(parseHosts(JSON.stringify([toHostProfile(profile)]))[0].forwardAgent).toBe(false);
-  expect(migrateLegacyProfile(JSON.stringify({
-    host: 'savior.tailnet.ts.net',
-    username: 'kosumi',
-    authMode: 'key',
-  }))?.forwardAgent).toBe(false);
-});
-
-test('enables Herdr by default and persists an explicit plain SSH host', () => {
-  expect(emptyConnectionProfile().herdrEnabled).toBe(true);
-  expect(toHostProfile(profile).herdrEnabled).toBe(true);
-  const host = toHostProfile({ ...profile, herdrEnabled: false });
-  expect(parseHosts(JSON.stringify([host]))[0].herdrEnabled).toBe(false);
-  expect(migrateLegacyProfile(JSON.stringify({ host: profile.host, username: profile.username }))?.herdrEnabled).toBe(true);
-});
-
-test('uses cryptographically generated UUIDs for host IDs', () => {
-  expect(createHostId()).toMatch(
-    /^host-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/,
-  );
-  expect(createHostId()).not.toBe(createHostId());
-});
-
-test('strips credentials from persisted host metadata', () => {
-  const host = toHostProfile(profile);
-  expect(host).not.toHaveProperty('secret');
-  expect(host).not.toHaveProperty('passphrase');
-  expect(host.name).toBe('Savior');
-});
-
-test('persists the selected jump host without copying its credentials', () => {
-  const host = toHostProfile({ ...profile, jumpHostId: 'host-bastion' });
-
-  expect(host.jumpHostId).toBe('host-bastion');
-  expect(host).not.toHaveProperty('secret');
-});
-
-test('persists agent forwarding only for private-key hosts', () => {
-  expect(toHostProfile({ ...profile, forwardAgent: true }).forwardAgent).toBe(true);
-  expect(toHostProfile({
-    ...profile,
-    authMode: 'password',
-    forwardAgent: true,
-  }).forwardAgent).toBe(false);
-});
-
-test('migrates the legacy single profile into a stable first host', () => {
-  const migrated = migrateLegacyProfile(JSON.stringify({
-    host: 'savior.tailnet.ts.net',
-    port: '2222',
-    username: 'kosumi',
-    authMode: 'key',
-    herdrCommand: 'herdr',
-  }));
-  expect(migrated).toMatchObject({
-    id: 'host-legacy-default',
-    name: 'savior',
-    host: 'savior.tailnet.ts.net',
-    port: '2222',
+test('new editor defaults keep forwarding opt-in and Herdr enabled', () => {
+  expect(emptyConnectionProfile()).toMatchObject({
+    forwardAgent: false, herdrEnabled: true, secret: '', passphrase: '',
+    createdAt: NOW, updatedAt: NOW,
   });
 });
 
-test('sorts most recently connected hosts first', () => {
-  const hosts: HostProfile[] = [
-    { ...toHostProfile(profile), id: 'old', name: 'Old', lastConnectedAt: '2026-01-01T00:00:00.000Z' },
-    { ...toHostProfile(profile), id: 'new', name: 'New', lastConnectedAt: '2026-06-01T00:00:00.000Z' },
-  ];
-  expect(sortHosts(hosts).map(host => host.id)).toEqual(['new', 'old']);
+test('requests host IDs from the native secure-ID boundary', () => {
+  jest.mocked(createSecureId).mockReturnValueOnce('host-native-unique-id');
+  expect(createHostId()).toBe('host-native-unique-id');
+  expect(createSecureId).toHaveBeenLastCalledWith('host');
+});
+
+test('passes only metadata to native normalization and returns its projection', () => {
+  const normalized = { ...host, name: 'Native projection', forwardAgent: false };
+  native.normalizeProfile.mockReturnValueOnce(normalized);
+  const previous = { ...host, createdAt: '2025-01-01', lastConnectedAt: '2026-06-01' };
+  expect(toHostProfile({ ...profile, jumpHostId: 'bastion', forwardAgent: true }, previous)).toBe(normalized);
+  expect(native.normalizeProfile).toHaveBeenCalledWith({
+    ...host, createdAt: previous.createdAt, lastConnectedAt: previous.lastConnectedAt,
+    jumpHostId: 'bastion', forwardAgent: true, tailcatEnabled: false, tailcatSshServer: false,
+    herdrEnabled: true, herdrBackend: undefined, herdrSocketPath: '', agentInstructions: '',
+  }, previous.createdAt, NOW);
+  const metadata = native.normalizeProfile.mock.calls[0][0];
+  expect(metadata).not.toHaveProperty('secret');
+  expect(metadata).not.toHaveProperty('passphrase');
+});
+
+test('normalization failures propagate without returning unvalidated metadata', () => {
+  const failure = new Error('native validation failed');
+  native.normalizeProfile.mockImplementationOnce(() => { throw failure; });
+  expect(() => toHostProfile(profile)).toThrow(failure);
+});
+
+test.each([null, 'native persisted data'])('hydrates %p through native and returns its host list', value => {
+  const hosts = [host];
+  native.hydrate.mockReturnValueOnce({ hosts });
+  expect(parseHosts(value)).toBe(hosts);
+  expect(native.hydrate).toHaveBeenCalledWith(value ?? undefined);
+});
+
+test('sorting delegates the serialized input and preserves native ordering', () => {
+  const hosts = [host, { ...host, id: 'other' }];
+  const sorted = [hosts[1], hosts[0]];
+  native.hydrate.mockReturnValueOnce({ hosts: sorted });
+  expect(sortHosts(hosts)).toBe(sorted);
+  expect(native.hydrate).toHaveBeenCalledWith(JSON.stringify(hosts));
+});
+
+test.each(['parse', 'migration'] as const)('%s reports native errors once and rethrows the same error', operation => {
+  const failure = new Error('native rejected persisted data');
+  const onError = jest.fn();
+  const method = operation === 'parse' ? native.hydrate : native.migrateLegacy;
+  method.mockImplementationOnce(() => { throw failure; });
+  const invoke = () => operation === 'parse'
+    ? parseHosts('invalid', onError) : migrateLegacyProfile('invalid', onError);
+  expect(invoke).toThrow(failure);
+  expect(onError).toHaveBeenCalledTimes(1);
+  expect(onError).toHaveBeenCalledWith(failure);
+});
+
+test('legacy migration adds empty ephemeral credentials to the native projection', () => {
+  native.migrateLegacy.mockReturnValueOnce(host);
+  expect(migrateLegacyProfile('legacy data')).toEqual({ ...host, secret: '', passphrase: '' });
+  expect(native.migrateLegacy).toHaveBeenCalledWith('legacy data', NOW);
+});
+
+test('missing legacy data skips native migration and an absent projection returns null', () => {
+  expect(migrateLegacyProfile(null)).toBeNull();
+  expect(native.migrateLegacy).not.toHaveBeenCalled();
+  native.migrateLegacy.mockReturnValueOnce(undefined);
+  expect(migrateLegacyProfile('{}')).toBeNull();
+});
+
+test.each(['chain', 'candidates'] as const)('%s hydrates before requesting native graph policy', operation => {
+  const hosts = [host];
+  const projection = [{ ...host, id: 'bastion' }];
+  native.hydrate.mockReturnValueOnce({ hosts });
+  const method = operation === 'chain' ? native.resolveJumpChain : native.jumpCandidates;
+  method.mockImplementationOnce(() => {
+    expect(native.hydrate).toHaveBeenCalledWith(JSON.stringify(hosts));
+    return projection;
+  });
+  const result = operation === 'chain'
+    ? resolveJumpHostChain(hosts, { id: host.id, jumpHostId: 'bastion' })
+    : jumpHostCandidates(hosts, host.id);
+  expect(result).toBe(projection);
+  expect(method.mock.calls).toEqual([operation === 'chain' ? [host.id, 'bastion'] : [host.id]]);
+});
+
+test('graph hydration failures stop resolution and native resolution errors propagate', () => {
+  const failure = new Error('native graph error');
+  native.hydrate.mockImplementationOnce(() => { throw failure; });
+  expect(() => jumpHostCandidates([host], host.id)).toThrow(failure);
+  expect(native.jumpCandidates).not.toHaveBeenCalled();
+  native.hydrate.mockReturnValueOnce({ hosts: [host] });
+  native.resolveJumpChain.mockImplementationOnce(() => { throw failure; });
+  expect(() => resolveJumpHostChain([host], host)).toThrow(failure);
 });
 
 test('uses isolated credential services per host', () => {
   expect(hostCredentialService('host-1')).toBe('io.github.kaminarios.whip.ssh.host.host-1');
+  expect(hostCredentialService('host-2')).not.toBe(hostCredentialService('host-1'));
 });
 
-test.each(['not json', '', '{}'])(
-  'rejects malformed host metadata: %p',
-  value => {
-    const onError = jest.fn();
-    expect(() => parseHosts(value, onError)).toThrow();
-    expect(onError).toHaveBeenCalledTimes(1);
-  },
-);
-
-test('treats a missing host list as an empty installation', () => {
-  expect(parseHosts(null)).toEqual([]);
-});
-
-test('surfaces malformed legacy metadata', () => {
-  const onError = jest.fn();
-  expect(() => migrateLegacyProfile('{invalid', onError)).toThrow();
-  expect(onError).toHaveBeenCalledTimes(1);
-});
-
-test('uses the hostname or IP as the default display name', () => {
-  expect(hostDisplayName({ name: '', username: 'root', host: 'box.example.test' })).toBe('box.example.test');
-  expect(hostDisplayName({ name: 'Builder', username: 'root', host: '192.0.2.10' })).toBe('Builder');
+test('presents a trimmed name, hostname, or placeholder', () => {
+  expect(hostDisplayName({ name: ' Builder ', username: 'root', host: '192.0.2.10' })).toBe('Builder');
+  expect(hostDisplayName({ name: '', username: 'root', host: ' box.example.test ' })).toBe('box.example.test');
   expect(hostDisplayName({ name: '', username: 'root', host: '192.0.2.10' })).toBe('192.0.2.10');
-});
-
-test('resolves nested jump hosts from the outermost host inward', () => {
-  const outer = { ...toHostProfile(profile), id: 'outer', name: 'Outer' };
-  const inner = { ...toHostProfile(profile), id: 'inner', name: 'Inner', jumpHostId: outer.id };
-  const target = { ...toHostProfile(profile), id: 'target', jumpHostId: inner.id };
-
-  expect(resolveJumpHostChain([target, inner, outer], target).map(host => host.id))
-    .toEqual(['outer', 'inner']);
-});
-
-test('excludes self references and jump-host cycles from picker candidates', () => {
-  const target = { ...toHostProfile(profile), id: 'target', jumpHostId: undefined };
-  const safe = { ...toHostProfile(profile), id: 'safe' };
-  const dependent = { ...toHostProfile(profile), id: 'dependent', jumpHostId: target.id };
-
-  expect(jumpHostCandidates([target, safe, dependent], target.id).map(host => host.id))
-    .toEqual(['safe']);
-  expect(() => resolveJumpHostChain(
-    [{ ...target, jumpHostId: dependent.id }, dependent],
-    { ...target, jumpHostId: dependent.id },
-  )).toThrow('cycle');
+  expect(hostDisplayName({ name: '', username: '', host: '' })).toBe('New host');
 });

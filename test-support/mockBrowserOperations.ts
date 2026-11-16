@@ -14,6 +14,7 @@ export { BrowserTabChange, BrowserTabLifecycle, BrowserPlatformAction, BrowserPl
 
 // A view-adapter fixture. The real Rust tests exercise admission, authorization,
 // operation queues, leases across requests, deadlines and cancellation races.
+// Ownership and limits are mapped in docs/testing-native-boundaries.md.
 export class BrowserOperationSession {
   private readonly values: BrowserTabProjection[] = [];
   private readonly leases = new Map<string, Set<string>>();

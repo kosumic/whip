@@ -1,15 +1,24 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { Script } from 'node:vm';
+import { ModuleKind, transpileModule } from 'typescript';
 
 const root = join(__dirname, '..');
 
 describe('bundled direct dependency license notices', () => {
   const generatedRegistry = read('src/licenses/generated.ts');
-  const generatedEntries = [...generatedRegistry.matchAll(/[ ]{2}\{\n([\s\S]*?)\n[ ]{2}\},/g)]
-    .map(match => Object.fromEntries(
-      [...match[1].matchAll(/^[ ]{4}(\w+): "([^"]*)",?$/gm)]
-        .map(field => [field[1], field[2]]),
-    ));
+  // Execute the registry so quote style, indentation and object formatting are
+  // irrelevant. Metro asset requires resolve to file contents in this harness.
+  const registry = { exports: {} as { GENERATED_OPEN_SOURCE_LICENSES: Array<{
+    category: string; projectName: string; licenseAsset: string;
+  }> } };
+  new Script(transpileModule(generatedRegistry, {
+    compilerOptions: { module: ModuleKind.CommonJS },
+  }).outputText).runInNewContext({
+    exports: registry.exports,
+    require: (path: string) => readFileSync(join(root, 'src/licenses', path), 'utf8'),
+  });
+  const generatedEntries = registry.exports.GENERATED_OPEN_SOURCE_LICENSES;
 
   test('contains one row for every direct npm production dependency and nothing else', () => {
     const packageJson = JSON.parse(read('package.json'));
@@ -33,12 +42,9 @@ describe('bundled direct dependency license notices', () => {
     expect(noticedPackages).not.toContain('whip-ssh');
   });
 
-  test('every row points to a non-empty deduplicated license asset', () => {
-    const assets = [...generatedRegistry.matchAll(/require\("\.\.\/\.\.\/(assets\/licenses\/generated\/[^"]+)"\)/g)]
-      .map(match => match[1]);
-
-    expect(assets).toHaveLength(generatedEntries.length);
-    for (const asset of new Set(assets)) expect(read(asset).trim()).not.toBe('');
+  test('every row loads a non-empty license asset', () => {
+    expect(generatedEntries.length).toBeGreaterThan(0);
+    for (const entry of generatedEntries) expect(entry.licenseAsset.trim()).not.toBe('');
   });
 });
 

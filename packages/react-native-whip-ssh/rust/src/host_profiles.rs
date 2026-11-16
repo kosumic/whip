@@ -473,6 +473,222 @@ mod tests {
     use super::*;
 
     #[test]
+    fn normalizes_metadata_and_preserves_original_creation_time()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let mut profile = host(" mini ", Some(" bastion "));
+        profile.name = " Builder ".into();
+        profile.host = " mini.example ".into();
+        profile.username = " root ".into();
+        profile.port = " ".into();
+        profile.herdr_command = " ".into();
+        profile.herdr_socket_path = " /run/herdr.sock ".into();
+        profile.session_name = " work ".into();
+        let normalized = HostProfileStore::new().normalize_profile(
+            profile,
+            Some("original".into()),
+            "now".into(),
+        )?;
+        assert_eq!(normalized.id, "mini");
+        assert_eq!(normalized.name, "Builder");
+        assert_eq!(normalized.host, "mini.example");
+        assert_eq!(normalized.username, "root");
+        assert_eq!(normalized.port, DEFAULT_SSH_PORT);
+        assert_eq!(normalized.herdr_command, DEFAULT_HERDR_COMMAND);
+        assert_eq!(normalized.herdr_socket_path, "/run/herdr.sock");
+        assert_eq!(normalized.session_name, "work");
+        assert_eq!(normalized.jump_host_id.as_deref(), Some("bastion"));
+        assert_eq!(normalized.created_at, "original");
+        assert_eq!(normalized.updated_at, "now");
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_invalid_identity_address_port_and_authentication()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let store = HostProfileStore::new();
+        let mut profile = host("valid", None);
+        profile.id = " ".into();
+        assert!(matches!(
+            store.upsert(profile, "now".into()),
+            Err(HostProfileStoreError::EmptyId)
+        ));
+        let mut profile = host("valid", None);
+        profile.host = " ".into();
+        assert!(matches!(
+            store.upsert(profile, "now".into()),
+            Err(HostProfileStoreError::EmptyHost)
+        ));
+        let mut profile = host("valid", None);
+        profile.username = " ".into();
+        assert!(matches!(
+            store.upsert(profile, "now".into()),
+            Err(HostProfileStoreError::EmptyUsername)
+        ));
+        for port in ["0", "65536", "ssh", "-1"] {
+            let mut profile = host("valid", None);
+            profile.port = port.into();
+            assert!(matches!(
+                store.upsert(profile, "now".into()),
+                Err(HostProfileStoreError::InvalidPort(_))
+            ));
+        }
+        let mut profile = host("valid", None);
+        profile.auth_mode = HostAuthMode::None;
+        assert!(matches!(
+            store.upsert(profile, "now".into()),
+            Err(HostProfileStoreError::InvalidAuthentication)
+        ));
+        assert!(store.view()?.hosts.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn forwarding_is_opt_in_and_only_available_with_private_keys()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let store = HostProfileStore::new();
+        let mut legacy = serde_json::to_value(host("legacy", None))?;
+        legacy
+            .as_object_mut()
+            .ok_or("missing profile")?
+            .remove("forwardAgent");
+        let restored = store.hydrate(Some(serde_json::to_string(&vec![legacy])?))?;
+        assert!(!restored.hosts[0].forward_agent);
+        for (auth_mode, expected) in [(HostAuthMode::Key, true), (HostAuthMode::Password, false)] {
+            let mut profile = host("forwarded", None);
+            profile.auth_mode = auth_mode;
+            profile.forward_agent = true;
+            assert_eq!(
+                store
+                    .normalize_profile(profile, None, "now".into())?
+                    .forward_agent,
+                expected
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn hydration_drops_legacy_flags_and_secrets_from_persisted_metadata()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let mut legacy = serde_json::to_value(host("legacy", None))?;
+        legacy["rememberCredentials"] = serde_json::json!(false);
+        legacy["secret"] = serde_json::json!("PRIVATE KEY");
+        legacy["passphrase"] = serde_json::json!("phrase");
+        let view = HostProfileStore::new().hydrate(Some(serde_json::to_string(&vec![legacy])?))?;
+        let persisted: Vec<serde_json::Value> = serde_json::from_str(&view.persisted_value)?;
+        for key in ["rememberCredentials", "secret", "passphrase"] {
+            assert!(persisted[0].get(key).is_none(), "persisted {key}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn hydration_rejects_malformed_data_without_replacing_loaded_hosts()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let store = HostProfileStore::new();
+        assert!(store.hydrate(None)?.hosts.is_empty());
+        let previous = store.upsert(host("saved", None), "now".into())?;
+        for value in ["not json", "", "{}"] {
+            assert!(matches!(
+                store.hydrate(Some(value.into())),
+                Err(HostProfileStoreError::MalformedPersistedData(_))
+            ));
+            assert_eq!(store.view()?.persisted_value, previous.persisted_value);
+            assert_eq!(store.view()?.revision, previous.revision);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn migrates_legacy_identity_defaults_and_names() -> Result<(), Box<dyn std::error::Error>> {
+        let store = HostProfileStore::new();
+        for (address, name) in [
+            ("savior.tailnet.ts.net", "savior"),
+            ("192.0.2.10", "192.0.2.10"),
+        ] {
+            let legacy = serde_json::json!({ "host": address, "username": "kosumi", "port": "2222", "authMode": "key" });
+            let migrated = store
+                .migrate_legacy(legacy.to_string(), "now".into())?
+                .ok_or("missing migration")?;
+            assert_eq!(migrated.id, "host-legacy-default");
+            assert_eq!(migrated.name, name);
+            assert_eq!(migrated.host, address);
+            assert_eq!(migrated.port, "2222");
+            assert_eq!(migrated.auth_mode, HostAuthMode::Key);
+            assert!(!migrated.forward_agent);
+            assert!(migrated.herdr_enabled);
+            assert_eq!(migrated.created_at, "now");
+            assert_eq!(migrated.updated_at, "now");
+        }
+        let minimal = store
+            .migrate_legacy(
+                r#"{"host":"box.example","username":"root"}"#.into(),
+                "now".into(),
+            )?
+            .ok_or("missing migration")?;
+        assert_eq!(minimal.port, DEFAULT_SSH_PORT);
+        assert_eq!(minimal.herdr_command, DEFAULT_HERDR_COMMAND);
+        assert_eq!(minimal.auth_mode, HostAuthMode::Password);
+        assert!(store.migrate_legacy("{}".into(), "now".into())?.is_none());
+        assert!(matches!(
+            store.migrate_legacy("{invalid".into(), "now".into()),
+            Err(HostProfileStoreError::MalformedPersistedData(_))
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn orders_by_recency_then_case_insensitive_display_name_and_id()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let mut old = host("old", None);
+        old.last_connected_at = Some("2026-01-01".into());
+        let mut recent = host("recent", None);
+        recent.last_connected_at = Some("2026-06-01".into());
+        let mut unnamed = host("unnamed", None);
+        unnamed.name.clear();
+        unnamed.host = "ALPHA.example".into();
+        let mut tie = host("tie", None);
+        tie.name = "alpha.example".into();
+        let store = HostProfileStore::new();
+        let view = store.hydrate(Some(serde_json::to_string(&vec![
+            unnamed, old, tie, recent,
+        ])?))?;
+        assert_eq!(
+            view.hosts
+                .iter()
+                .map(|host| host.id.as_str())
+                .collect::<Vec<_>>(),
+            ["recent", "old", "tie", "unnamed"]
+        );
+        let view = store.mark_disconnected("unnamed".into(), "2026-11-15".into())?;
+        assert_eq!(view.hosts[0].id, "unnamed");
+        assert_eq!(view.hosts[0].updated_at, "2026-11-15");
+        Ok(())
+    }
+
+    #[test]
+    fn failed_graph_mutations_preserve_the_last_valid_projection()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let store = HostProfileStore::new();
+        store.upsert(host("outer", None), "now".into())?;
+        let previous = store.upsert(host("inner", Some("outer")), "now".into())?;
+        assert!(matches!(
+            store.upsert(host("outer", Some("inner")), "later".into()),
+            Err(HostProfileStoreError::JumpHostCycle)
+        ));
+        assert!(matches!(
+            store.hydrate(Some(serde_json::to_string(&vec![host(
+                "target",
+                Some("missing")
+            )])?)),
+            Err(HostProfileStoreError::MissingJumpHost(_))
+        ));
+        assert_eq!(store.view()?.persisted_value, previous.persisted_value);
+        assert_eq!(store.view()?.revision, previous.revision);
+        Ok(())
+    }
+
+    #[test]
     fn tailcat_defaults_off_and_round_trips_per_host() -> Result<(), Box<dyn std::error::Error>> {
         let mut enabled = host("tunnel", None);
         enabled.tailcat_enabled = true;

@@ -13,90 +13,6 @@ function unavailable(error) {
     || value.includes('socket is not established');
 }
 
-class MockNativeHostProfileStore {
-  constructor() { this.hosts = []; this.revision = 0; }
-  normalizeProfile(profile, previousCreatedAt, now) {
-    const host = {
-      ...profile,
-      id: profile.id.trim(), name: profile.name.trim(), host: profile.host.trim(),
-      port: profile.port.trim() || '22', username: profile.username.trim(),
-      jumpHostId: profile.jumpHostId?.trim() || undefined,
-      forwardAgent: profile.authMode === 'key' && Boolean(profile.forwardAgent),
-      tailcatEnabled: Boolean(profile.tailcatEnabled),
-      tailcatSshServer: Boolean(profile.tailcatSshServer),
-      herdrEnabled: profile.herdrEnabled !== false,
-      herdrCommand: profile.herdrCommand.trim() || 'herdr',
-      herdrSocketPath: profile.herdrSocketPath.trim(), sessionName: profile.sessionName.trim(),
-      agentInstructions: profile.agentInstructions || '',
-      createdAt: previousCreatedAt || profile.createdAt || now, updatedAt: now,
-    };
-    if (!host.id || !host.host || !host.username) throw new Error('invalid host profile');
-    return host;
-  }
-  result() {
-    return { revision: ++this.revision, hosts: this.hosts, persistedValue: JSON.stringify(this.hosts) };
-  }
-  hydrate(value) {
-    const parsed = value === undefined ? [] : JSON.parse(value);
-    if (!Array.isArray(parsed)) throw new Error('host profile data is malformed');
-    this.hosts = parsed.map(profile => {
-      const { rememberCredentials: _ignored, ...host } = profile;
-      return this.normalizeProfile(host, host.createdAt, host.updatedAt);
-    }).sort((a, b) => (b.lastConnectedAt || '').localeCompare(a.lastConnectedAt || '')
-      || (a.name || a.host).localeCompare(b.name || b.host));
-    return this.result();
-  }
-  view() { return this.result(); }
-  upsert(profile, now) {
-    const previous = this.hosts.find(host => host.id === profile.id);
-    const next = this.normalizeProfile(profile, previous?.createdAt, now);
-    this.hosts = [...this.hosts.filter(host => host.id !== next.id), next]
-      .sort((a, b) => (b.lastConnectedAt || '').localeCompare(a.lastConnectedAt || '')
-        || (a.name || a.host).localeCompare(b.name || b.host));
-    return this.result();
-  }
-  markDisconnected(id, now) {
-    this.hosts = this.hosts.map(host => host.id === id
-      ? { ...host, lastConnectedAt: now, updatedAt: now } : host);
-    return this.hydrate(JSON.stringify(this.hosts));
-  }
-  remove(id, now) {
-    this.hosts = this.hosts.filter(host => host.id !== id).map(host => host.jumpHostId === id
-      ? { ...host, jumpHostId: undefined, updatedAt: now } : host);
-    return this.result();
-  }
-  resolveJumpChain(profileId, jumpHostId) {
-    const byId = new Map(this.hosts.map(host => [host.id, host]));
-    const seen = new Set([profileId]);
-    const chain = [];
-    for (let id = jumpHostId; id;) {
-      if (seen.has(id)) throw new Error('cycle');
-      const host = byId.get(id);
-      if (!host) throw new Error(`missing jump host ${id}`);
-      seen.add(id); chain.unshift(host); id = host.jumpHostId;
-    }
-    return chain;
-  }
-  jumpCandidates(profileId) {
-    return this.hosts.filter(host => {
-      if (host.id === profileId) return false;
-      try { this.resolveJumpChain(profileId, host.id); return true; } catch { return false; }
-    });
-  }
-  migrateLegacy(value, now) {
-    const parsed = JSON.parse(value);
-    if (!parsed.host || !parsed.username) return undefined;
-    const ip = /^\d{1,3}(\.\d{1,3}){3}$/.test(parsed.host);
-    return this.normalizeProfile({
-      id: 'host-legacy-default', name: parsed.name || (ip ? parsed.host : parsed.host.split('.')[0]),
-      host: parsed.host, port: parsed.port || '22', username: parsed.username,
-      forwardAgent: false, authMode: parsed.authMode === 'key' ? 'key' : 'password',
-      herdrCommand: parsed.herdrCommand || 'herdr', herdrSocketPath: parsed.herdrSocketPath || '',
-      sessionName: parsed.sessionName || '', createdAt: now, updatedAt: now,
-    }, undefined, now);
-  }
-}
-
 function createMockWhipSshModule() {
   const api = {
     connectWithPassword: jest.fn(),
@@ -583,7 +499,7 @@ function createMockWhipSshModule() {
     HerdrAgentKind: { Claude: 0, Codex: 1, OpenCode: 2 },
     ReverseControlState: { Off: 0, RestartRequired: 1, Recovering: 2, Connected: 3 },
     subscribeReverseControlEvents: jest.fn(() => () => {}),
-    NativeHostProfileStore: MockNativeHostProfileStore,
+    NativeHostProfileStore: require('../test-support/mockHostProfiles').NativeHostProfileStore,
     KnownHostRepositoryStatus: { Loading: 0, Loaded: 1, ReadFailed: 2, InvalidData: 3 },
     KnownHostRepositoryError: {
       NotLoaded: class NotLoaded extends Error {}, Cancelled: class Cancelled extends Error {},

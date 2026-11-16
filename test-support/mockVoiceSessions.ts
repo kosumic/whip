@@ -1,6 +1,8 @@
 import type { VoiceSessionAuthority, SessionEffect } from '../packages/react-native-whip-ssh/src/voiceSession';
 
-/** Native transport fake for presenter tests. Arbitration regressions live in Rust. */
+/** Lifecycle/effect fixture for presenter tests, not an arbitration oracle.
+ * See docs/testing-native-boundaries.md and Rust voice_session/state/tests.rs.
+ */
 type MockRequest = { scope: { kind: string; hostId?: string }; mode: string; resumeCallId?: string; available: boolean };
 export class MockVoiceSessions implements VoiceSessionAuthority {
   private current?: string;
