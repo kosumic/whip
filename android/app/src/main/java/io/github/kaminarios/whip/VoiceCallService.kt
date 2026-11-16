@@ -74,12 +74,12 @@ class VoiceCallService : Service() {
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     val session = current
     Log.i(LOG_TAG, "event=service_start token=${session?.token} startId=$startId")
-    if (session?.ending == true) return START_NOT_STICKY
+    if (session == null) { stopSelf(); return START_NOT_STICKY }
+    if (session.ending) return START_NOT_STICKY
     try { promote(session) } catch (_: Exception) {
-      session?.let { finish(it, "Android could not start voice chat.") } ?: stopSelf()
+      finish(session, "Android could not start voice chat.")
       return START_NOT_STICKY
     }
-    if (session == null) { stopSelf(); return START_NOT_STICKY }
     if (intent?.getStringExtra(TOKEN) != session.token) return START_NOT_STICKY
     when (intent.action) {
       END -> finish(session, null)

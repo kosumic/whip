@@ -61,7 +61,9 @@ then reposts that notification as soon as the call scope arrives, within the
 five-second notification deadline. Mute, hang-up and app-open PendingIntents
 remain token-scoped. Registration upgrades the same service from
 `microphone|mediaPlayback` to `microphone|phoneCall`; there is one notification
-ID and one foreground-service owner. A user ending during registration revokes
+ID and one foreground-service owner. A start/action with no remaining native
+owner stops before foreground promotion, so stale intents cannot recreate a
+call notification after hang-up. A user ending during registration revokes
 Rust/audio immediately, and holds the native owner until the late registration
 is disconnected (Core-Telecom setup timeout plus bounded cleanup). No stale
 callback may start capture or mutate a replacement session.
