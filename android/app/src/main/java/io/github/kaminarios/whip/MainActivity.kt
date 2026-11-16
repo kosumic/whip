@@ -98,7 +98,8 @@ class MainActivity : ReactActivity() {
   }
 
   override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-    if (HerdrVolumeKeysModule.dispatchKey(keyCode)) {
+    volumeControlStream = if (VoiceCallService.communicationAudio) AudioManager.STREAM_VOICE_CALL else AudioManager.STREAM_MUSIC
+    if (!VoiceCallService.active && HerdrVolumeKeysModule.dispatchKey(keyCode)) {
       handledVolumeKeys.add(keyCode)
       return true
     }

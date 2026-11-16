@@ -351,6 +351,11 @@ Java_com_whipssh_SpeechPolicy_voiceSessionCurrent(JNIEnv *env, jclass, jstring t
     const auto value = speechUtf8(env, token);
     return whip_voice_session_current(value.c_str());
 }
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_whipssh_SpeechPolicy_muteLocalVoiceSession(JNIEnv *env, jclass, jstring token, jboolean muted) {
+    const auto value = speechUtf8(env, token);
+    return whip_voice_session_mute_local(value.c_str(), muted == JNI_TRUE);
+}
 extern "C" JNIEXPORT void JNICALL
 Java_com_whipssh_SpeechPolicy_endVoiceSession(JNIEnv *env, jclass, jstring token, jboolean interrupted) {
     const auto value = speechUtf8(env, token);

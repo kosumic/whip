@@ -1,5 +1,10 @@
 # Voice lock lifecycle regression checks (#390)
 
+Android system-call integration, eligibility/rollout limits and the additional
+physical Telecom matrix are documented in [Android Core-Telecom](android-core-telecom.md)
+(#458, related ownership #434 and provider rotation #378). No expanded or
+full-screen lock-screen call UI is guaranteed by Telecom.
+
 Run the automated security, ownership and native-bridge regressions in the
 repository development shell:
 

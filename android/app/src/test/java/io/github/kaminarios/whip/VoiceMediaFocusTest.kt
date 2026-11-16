@@ -2,6 +2,7 @@ package io.github.kaminarios.whip
 
 import android.app.Application
 import android.media.AudioManager
+import android.media.AudioAttributes
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -13,6 +14,16 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], manifest = Config.NONE, application = Application::class)
 class VoiceMediaFocusTest {
+  @Test fun `managed calls use communication attributes and restore media on teardown`() {
+    try {
+      VoiceMediaAudio.communication = true
+      assertEquals(AudioAttributes.USAGE_VOICE_COMMUNICATION, VoiceMediaAudio.attributes.usage)
+      assertEquals(AudioAttributes.CONTENT_TYPE_SPEECH, VoiceMediaAudio.attributes.contentType)
+      VoiceMediaAudio.reset()
+      assertEquals(AudioAttributes.USAGE_MEDIA, VoiceMediaAudio.attributes.usage)
+    } finally { VoiceMediaAudio.reset() }
+  }
+
   @Test fun `preparing an owner and cancelling it never requests focus`() {
     val context = RuntimeEnvironment.getApplication()
     val audio = shadowOf(context.getSystemService(AudioManager::class.java))

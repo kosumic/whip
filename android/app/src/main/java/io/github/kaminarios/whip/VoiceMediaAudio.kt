@@ -46,19 +46,24 @@ internal class VoiceMediaFocus(context: Context, private val gain: Int = AudioMa
   }
 }
 
-/** Output preference belongs to the voice owner, not Android's communication route. */
+/** Media fallback uses track preferences; Telecom alone controls communication endpoints. */
 internal object VoiceMediaAudio {
-  val attributes: AudioAttributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+  @Volatile var communication = false
+  private val mediaAttributes: AudioAttributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
     .apply { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) setAllowedCapturePolicy(AudioAttributes.ALLOW_CAPTURE_BY_NONE) }.build()
+  private val communicationAttributes = AudioAttributes.Builder(mediaAttributes)
+    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION).build()
+  val attributes: AudioAttributes get() = if (communication) communicationAttributes else mediaAttributes
   private val outputs = mutableSetOf<AudioTrack>()
   private var preferred: AudioDeviceInfo? = null
   @Synchronized fun attach(track: AudioTrack) {
-    check(track.setPreferredDevice(preferred)) { "The media audio route is unavailable" }
+    if (!communication) check(track.setPreferredDevice(preferred)) { "The media audio route is unavailable" }
     outputs.add(track)
   }
   @Synchronized fun detach(track: AudioTrack) { outputs.remove(track) }
   @Synchronized fun select(device: AudioDeviceInfo?): Boolean {
+    if (communication) return false
     if (outputs.isEmpty()) return false
     val previous = preferred
     if (outputs.any { !it.setPreferredDevice(device) }) {
@@ -68,5 +73,9 @@ internal object VoiceMediaAudio {
     preferred = device
     return true
   }
-  @Synchronized fun reset() { preferred = null; outputs.forEach { it.setPreferredDevice(null) } }
+  @Synchronized fun reset() {
+    preferred = null
+    if (!communication) outputs.forEach { it.setPreferredDevice(null) }
+    communication = false
+  }
 }

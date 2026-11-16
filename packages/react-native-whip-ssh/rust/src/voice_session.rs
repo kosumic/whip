@@ -89,6 +89,22 @@ fn decode<T: serde::de::DeserializeOwned>(value: &str) -> Result<T, VoiceSession
 }
 
 impl VoiceSessionCoordinator {
+    // System call controls must reach Local even when React is suspended.
+    fn mute_local(&self, id: &str, muted: bool) -> bool {
+        let call = {
+            let inner = self.inner.lock();
+            if !inner.state.is_current(id) {
+                return false;
+            }
+            match inner.resources.get(id) {
+                Some(Resource::Local(call)) => call.clone(),
+                _ => return false,
+            }
+        };
+        call.set_muted(muted);
+        true
+    }
+
     pub(crate) fn accepts_realtime(
         &self,
         id: &str,
@@ -551,6 +567,25 @@ pub unsafe extern "C" fn whip_voice_session_current(token: *const std::ffi::c_ch
                     Some(Phase::Starting | Phase::Active)
                 )
         })
+}
+
+/// Apply native notification/Telecom mute to the admitted Local backend.
+/// False means the backend is not bound yet or the token has been revoked.
+/// # Safety
+/// `token` is a borrowed, NUL-terminated UTF-8 string until this call returns.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn whip_voice_session_mute_local(
+    token: *const std::ffi::c_char,
+    muted: bool,
+) -> bool {
+    if token.is_null() {
+        return false;
+    }
+    // SAFETY: Platform adapters lend a valid C string for this synchronous call.
+    let Ok(token) = unsafe { std::ffi::CStr::from_ptr(token) }.to_str() else {
+        return false;
+    };
+    token.len() <= MAX_TOKEN_BYTES && voice_session_coordinator().mute_local(token, muted)
 }
 
 /// # Safety

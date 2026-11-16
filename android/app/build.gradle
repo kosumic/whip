@@ -103,6 +103,25 @@ def hasUploadSigning = uploadKeystorePropertiesFile.isFile()
 def usePreviewSigning = (findProperty('whip.previewSigning') ?: 'false').toBoolean()
 def skipR8 = (findProperty('whip.skipR8') ?: 'false').toBoolean()
 def enableProfiling = (findProperty('whip.profileable') ?: 'false').toBoolean()
+// AI conversation eligibility is not explicitly established by Play's phoneCall policy.
+// Keep store/unspecified distributions on the existing microphone/media service.
+def telecomEnabled = (findProperty('whip.telecomEnabled')
+    ?: (System.getenv('WHIP_DISTRIBUTION_CHANNEL') == 'github' ? 'true' : 'false')).toBoolean()
+// Manifest merger parses tools:node before expanding placeholders. Materialize
+// this one build-time operation before passing the manifest to Android tooling.
+def voiceManifest = layout.buildDirectory.file(
+    "generated/voice-call/${telecomEnabled ? 'telecom' : 'fallback'}/AndroidManifest.xml")
+def prepareVoiceManifest = tasks.register('prepareVoiceManifest') {
+    inputs.file('src/main/AndroidManifest.xml')
+    inputs.property('telecomEnabled', telecomEnabled)
+    outputs.file(voiceManifest)
+    doLast {
+        def output = voiceManifest.get().asFile
+        output.parentFile.mkdirs()
+        output.text = file('src/main/AndroidManifest.xml').getText('UTF-8')
+            .replace('${whipTelecomPermission}', telecomEnabled ? 'merge' : 'remove')
+    }
+}
 
 if (hasUploadSigning) {
     uploadKeystorePropertiesFile.withInputStream {
@@ -127,6 +146,7 @@ android {
     compileSdk = rootProject.ext.compileSdkVersion
 
     namespace = "io.github.kaminarios.whip"
+    sourceSets.main.manifest.srcFile(voiceManifest)
     sourceSets.androidTest.assets.srcDir("../../packages/react-native-whip-ssh/rust/src/reverse_control/browser")
     // Device regression tests can target an upload-signed local release.
     testBuildType = findProperty('whip.testBuildType') ?: 'debug'
@@ -137,6 +157,9 @@ android {
         versionCode = 243
         versionName = appVersion
         manifestPlaceholders.whipProfileable = enableProfiling.toString()
+        manifestPlaceholders.whipVoiceServiceTypes = telecomEnabled
+            ? 'mediaPlayback|microphone|phoneCall' : 'mediaPlayback|microphone'
+        buildConfigField "boolean", "WHIP_TELECOM_ENABLED", telecomEnabled.toString()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
@@ -217,6 +240,7 @@ def syncTerminalAssets = tasks.register('syncTerminalAssets', Exec) {
 }
 tasks.named('preBuild').configure {
     dependsOn syncTerminalAssets
+    dependsOn prepareVoiceManifest
 }
 
 // Evaluate the Android model without compiling an APK, including any future
@@ -261,6 +285,7 @@ configurations.configureEach {
 dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.17")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     constraints {
@@ -278,6 +303,7 @@ dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
     implementation("androidx.biometric:biometric:1.1.0")
+    implementation("androidx.core:core-telecom:1.1.0")
     implementation("androidx.webkit:webkit:1.18.0")
     def shizukuVersion = "13.1.5"
     implementation("dev.rikka.shizuku:api:${shizukuVersion}")
