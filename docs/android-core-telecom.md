@@ -36,6 +36,11 @@ and the microphone service type: call registration does not authorize capture.
 Start from a visible user action, never from boot or as an unsolicited background
 call. Existing supported OS versions are unchanged (voice requires Android 13+).
 
+The 1.1.0 AAR requires minSdk 24, compile SDK 36.1 and Android Gradle Plugin
+8.9.1 or later. The project retains minSdk 24 and compile SDK 37; dependency
+metadata and Kotlin compilation pass without an SDK increase. The adapter's
+API 26 requirement is annotated, and voice admission still requires API 33.
+
 There is no full-screen intent, incoming-call screen, lock-screen activity, or
 automatic app unlock. CallStyle presentation, notification visibility, OEM lock
 screen banners and third-party wearable/car surfaces depend on system settings
@@ -129,7 +134,7 @@ permission-denied and permission-granted behavior when qualifying devices.
 Run from the development shell (ARM64 is the only app/native target):
 
 ```bash
-WHIP_DISTRIBUTION_CHANNEL=github nix develop --command \
+EXPO_SKIP_FINGERPRINT_EMBED=1 WHIP_DISTRIBUTION_CHANNEL=github nix develop --command \
   android/gradlew -p android :app:testDebugUnitTest \
   --tests io.github.kaminarios.whip.VoiceTelecomCallTest \
   --tests io.github.kaminarios.whip.VoiceMediaFocusTest \
@@ -180,6 +185,10 @@ All nine Rust voice-session regressions also passed, including Local native
 mute, stale-token fencing and teardown acknowledgements. The store-channel
 fallback manifest was generated and checked: Bluetooth/own-call/phone-call
 permissions are absent and the service retains `mediaPlayback|microphone`.
+The same 18 Android tests also passed on the isolated PR checkout against
+published main. Optional Expo debug fingerprint embedding was disabled for
+that unit-test run to avoid hashing the shared dependency checkout; production
+release fingerprint behavior is unchanged.
 
 No physical Android device was attached to the development host (`adb devices
 -l` returned an empty list). **Every physical matrix row above remains
