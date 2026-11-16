@@ -61,6 +61,34 @@ jest.mock('../src/services/remoteNotifications', () => ({
   subscribeRemoteNotifications: jest.fn(() => jest.fn()),
 }));
 
+test('unavailable optional recovery still permits manual host setup', async () => {
+  const onAdd = jest.fn();
+  let view!: ReactTestRenderer;
+  try {
+    await act(async () => {
+      view = create(<HostsScreen
+        hosts={[]}
+        error={null}
+        credentialRecovery={{ state: 'unavailable', count: 0 }}
+        credentialRecoveryBusy={false}
+        onAdd={onAdd}
+        onConnect={jest.fn()}
+        onDelete={jest.fn()}
+        onDisconnect={jest.fn()}
+        onEdit={jest.fn()}
+        onManageGlobalKeychain={jest.fn()}
+        onUnlockCredentials={jest.fn()}
+      />);
+    });
+    expect(view.root.findByProps({ children: 'hosts.recoveryUnavailable' })).toBeTruthy();
+    const add = view.root.findByProps({ accessibilityLabel: 'hosts.add' });
+    await act(async () => add.props.onPress());
+    expect(onAdd).toHaveBeenCalledTimes(1);
+  } finally {
+    if (view) await act(async () => view.unmount());
+  }
+});
+
 test('the Hosts header offers global calls and reuses its browser without any connected hosts', async () => {
   const onAdd = jest.fn();
   const onGlobalCall = jest.fn();

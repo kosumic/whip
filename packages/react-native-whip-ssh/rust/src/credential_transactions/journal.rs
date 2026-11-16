@@ -155,7 +155,7 @@ impl Workflow {
                 } else {
                     return Err(CredentialTransactionError::RepairRequired);
                 };
-                self.backup(id, &envelope.material, false).await?;
+                self.backup_committed_host(id, &envelope.material).await?;
             }
         }
         self.clear_host_pending(id, false).await?;

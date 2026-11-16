@@ -13,6 +13,24 @@ use crate::HostProfileRecord;
 const BACKUP_MIGRATION_VERSION: &str = "1";
 
 impl Workflow {
+    /// The caller has already committed or receipt-verified the primary secret.
+    /// Optional backup work must never keep that secret behind a repair marker.
+    pub(super) async fn backup_committed_host(
+        &self,
+        id: &str,
+        credential: &CredentialMaterial,
+    ) -> Result<()> {
+        match self.backup(id, credential, false).await {
+            Err(CredentialTransactionError::Cancelled) => {
+                return Err(CredentialTransactionError::Cancelled);
+            }
+            Err(_) => self.diagnostic("credential-backup-failed-local-credential-saved", None),
+            Ok(false) => self.diagnostic("credential-backup-unavailable", None),
+            Ok(true) => {}
+        }
+        self.operation.check()
+    }
+
     pub(super) async fn backups(&self) -> Result<BTreeMap<String, String>> {
         let Some(value) = self.read_value(CredentialStorageKey::Backups).await? else {
             return Ok(BTreeMap::new());
@@ -44,9 +62,13 @@ impl Workflow {
         if only_missing && backups.contains_key(id) {
             return Ok(true);
         }
-        let CredentialEffectResult::Text {
-            value: Some(ciphertext),
-        } = self
+        // A restored ciphertext needs its original recovery key. Never replace
+        // that key (and orphan other backups) while it is still locked.
+        if !backups.is_empty() && !self.boolean(CredentialEffect::HasRecoveryKey).await? {
+            self.diagnostic("credential-backup-recovery-key-locked", None);
+            return Ok(false);
+        }
+        let encrypted = match self
             .effect(
                 CredentialEffect::Encrypt {
                     id: id.into(),
@@ -54,7 +76,14 @@ impl Workflow {
                 },
                 false,
             )
-            .await?
+            .await
+        {
+            Err(CredentialTransactionError::Unsupported) => return Ok(false),
+            result => result?,
+        };
+        let CredentialEffectResult::Text {
+            value: Some(ciphertext),
+        } = encrypted
         else {
             return Err(CredentialTransactionError::InvalidResult);
         };
@@ -99,10 +128,10 @@ impl Workflow {
     pub(super) async fn recovery_status(&self) -> Result<CredentialResult> {
         let count = u32::try_from(self.backups().await?.len())
             .map_err(|_| CredentialTransactionError::MalformedMetadata)?;
-        let state = if count == 0 {
-            CredentialRecoveryState::None
-        } else if !self.boolean(CredentialEffect::VaultAvailable).await? {
+        let state = if !self.boolean(CredentialEffect::VaultAvailable).await? {
             CredentialRecoveryState::Unavailable
+        } else if count == 0 {
+            CredentialRecoveryState::None
         } else {
             match self.boolean(CredentialEffect::HasRecoveryKey).await {
                 Ok(true) => CredentialRecoveryState::Ready,
@@ -176,18 +205,16 @@ impl Workflow {
         &mut self,
         host: &HostProfileRecord,
     ) -> Result<Option<CredentialMaterial>> {
-        if self.journal.deleted.contains(&host.id)
-            || !self.boolean(CredentialEffect::VaultAvailable).await?
-        {
+        if self.journal.deleted.contains(&host.id) {
             return Ok(None);
         }
-        let Some(ciphertext) = self.backups().await?.remove(&host.id) else {
-            return Ok(None);
-        };
         let result = async {
             if !self.boolean(CredentialEffect::HasRecoveryKey).await? {
                 return Ok(None);
             }
+            let Some(ciphertext) = self.backups().await?.remove(&host.id) else {
+                return Ok(None);
+            };
             let material = self.decrypt(&host.id, ciphertext).await?;
             self.install_recovered(host, material).await.map(Some)
         }
@@ -208,7 +235,9 @@ impl Workflow {
         &mut self,
         host_ids: Vec<String>,
     ) -> Result<CredentialResult> {
-        if !self.boolean(CredentialEffect::VaultAvailable).await? {
+        if !self.boolean(CredentialEffect::HasRecoveryKey).await?
+            && !self.boolean(CredentialEffect::VaultAvailable).await?
+        {
             return Err(CredentialTransactionError::Unsupported);
         }
         let backups = self.backups().await?;

@@ -642,7 +642,7 @@ export const zhHans = {
   'hosts.recoveryCopy_other': '使用指纹、面部或设备 PIN 码解锁 {{count}} 凭证。',
   'hosts.unlocking': '解锁...',
   'hosts.unlock': '解锁',
-  'hosts.recoveryUnavailable': '加密凭据已恢复，但此应用程序版本不包含 Android 恢复模块。',
+  'hosts.recoveryUnavailable': '可选的 Google 凭据恢复不可用。本地 SSH 凭据仍可正常使用。重新安装或更换设备后，可能需要重新输入凭据。',
   'hosts.emptyTitle': '还没有服务器',
   'hosts.emptyCopy': '添加 SSH 目标来管理其 Herdr 会话。',
   'hosts.addFirst': '添加您的第一个主机',

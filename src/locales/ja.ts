@@ -642,7 +642,7 @@ export const ja = {
   'hosts.recoveryCopy_other': '指紋、顔、またはデバイス PIN を使用して {{count}} 資格情報のロックを解除します。',
   'hosts.unlocking': 'ロックを解除中…',
   'hosts.unlock': 'ロック解除',
-  'hosts.recoveryUnavailable': '暗号化された資格情報が復元されましたが、このアプリのビルドには Android 回復モジュールが含まれていません。',
+  'hosts.recoveryUnavailable': 'Google による任意の認証情報の復元は利用できません。ローカルの SSH 認証情報は引き続き使用できます。再インストールや端末の変更後は、再入力が必要になる場合があります。',
   'hosts.emptyTitle': 'サーバーはまだありません',
   'hosts.emptyCopy': 'Herdr セッションを管理するために SSH 宛先を追加します。',
   'hosts.addFirst': '最初のホストを追加します',

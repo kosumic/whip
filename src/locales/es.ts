@@ -642,7 +642,7 @@ export const es = {
   'hosts.recoveryCopy_other': 'Desbloquee las credenciales {{count}} con huella digital, rostro o PIN del dispositivo.',
   'hosts.unlocking': 'Desbloqueando…',
   'hosts.unlock': 'Desbloquear',
-  'hosts.recoveryUnavailable': 'Se restauraron las credenciales cifradas, pero esta compilación de aplicación no incluye el módulo de recuperación Android.',
+  'hosts.recoveryUnavailable': 'La recuperación opcional de credenciales de Google no está disponible. Las credenciales SSH locales siguen funcionando. Si reinstalas la app o cambias de dispositivo, puede que debas introducirlas de nuevo.',
   'hosts.emptyTitle': 'Aún no hay servidores',
   'hosts.emptyCopy': 'Agregue un destino SSH para administrar su sesión Herdr.',
   'hosts.addFirst': 'Añadir el primer host',

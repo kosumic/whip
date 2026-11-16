@@ -18,11 +18,12 @@ import { appStorage } from '../src/services/appStorage';
 import { authenticateGlobalKeychain } from '../src/services/appAuthentication';
 
 const permit = (): CredentialEffectPermitLike => ({ checkActive: jest.fn() });
-const vault = { encryptCredential: jest.fn(), decryptCredential: jest.fn(), hasLocalRecoveryKey: jest.fn(), unlockRecoveryKey: jest.fn(), clearRecoveryKey: jest.fn() };
+const vault = { isBackupAvailable: jest.fn(), encryptCredential: jest.fn(), decryptCredential: jest.fn(), hasLocalRecoveryKey: jest.fn(), unlockRecoveryKey: jest.fn(), clearRecoveryKey: jest.fn() };
 
 beforeEach(() => {
   jest.clearAllMocks();
   NativeModules.HerdrCredentialVault = vault;
+  vault.isBackupAvailable.mockResolvedValue(true);
   jest.mocked(Keychain.setGenericPassword).mockResolvedValue(true as never);
   jest.mocked(Keychain.resetGenericPassword).mockResolvedValue(true);
   jest.mocked(Keychain.getGenericPassword).mockResolvedValue(false);
@@ -77,6 +78,24 @@ test('vault crypto forwards opaque payloads and returns only the typed native ou
   expect(vault.encryptCredential).toHaveBeenCalledWith('PRIVATE', 'a');
   expect(result).toMatchObject({ tag: CredentialEffectResult_Tags.Text, inner: { value: 'ciphertext' } });
 });
+
+test('a native module on Google-free Android reports backup unavailable', async () => {
+  vault.isBackupAvailable.mockResolvedValueOnce(false);
+  await expect(credentialPlatform().effect(permit(), new CredentialEffect.VaultAvailable()))
+    .resolves.toMatchObject({ tag: CredentialEffectResult_Tags.Boolean, inner: { value: false } });
+  expect(vault.encryptCredential).not.toHaveBeenCalled();
+});
+
+test.each(['E_CREDENTIAL_VAULT_BACKUP_UNAVAILABLE', 'E_CREDENTIAL_VAULT_BLOCK_STORE'])(
+  'optional backup failure %s is distinct from primary secure storage failure', async code => {
+    vault.encryptCredential.mockRejectedValueOnce({ code, message: 'PRIVATE-PASSPHRASE' });
+    const consoleWarn = jest.spyOn(console, 'warn').mockImplementation();
+    await expect(credentialPlatform().effect(permit(), new CredentialEffect.Encrypt({ id: 'a', plaintext: 'PRIVATE' })))
+      .rejects.toBeInstanceOf(CredentialPlatformError.Unsupported);
+    expect(JSON.stringify(consoleWarn.mock.calls)).not.toContain('PRIVATE-PASSPHRASE');
+    consoleWarn.mockRestore();
+  },
+);
 
 test('native cancellation stops effects before their OS calls', async () => {
   const cancelled = permit();

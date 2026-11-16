@@ -642,7 +642,7 @@ export const zhHant: Record<string, string> = {
   'hosts.recoveryCopy_other': '使用指紋、臉部或裝置 PIN 解鎖 {{count}} 組認證資料。',
   'hosts.unlocking': '解鎖中…',
   'hosts.unlock': '解鎖',
-  'hosts.recoveryUnavailable': '已還原加密的認證資料，但此版本未包含 Android 復原模組。',
+  'hosts.recoveryUnavailable': '選用的 Google 認證資料復原無法使用。本機 SSH 認證資料仍可正常使用。重新安裝或更換裝置後，可能需要重新輸入認證資料。',
   'hosts.emptyTitle': '尚無伺服器',
   'hosts.emptyCopy': '新增 SSH 目的地以管理其 Herdr 工作階段。',
   'hosts.addFirst': '新增第一台主機',

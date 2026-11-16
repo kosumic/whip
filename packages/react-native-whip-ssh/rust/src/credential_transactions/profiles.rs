@@ -351,7 +351,8 @@ impl Workflow {
         )
         .await?;
         self.operation.check()?;
-        self.backup(&host.id, &envelope.material, false).await?;
+        self.backup_committed_host(&host.id, &envelope.material)
+            .await?;
         self.clear_host_pending(&host.id, true).await
     }
 

@@ -21,6 +21,8 @@ import com.google.android.gms.auth.blockstore.Blockstore
 import com.google.android.gms.auth.blockstore.DeleteBytesRequest
 import com.google.android.gms.auth.blockstore.RetrieveBytesRequest
 import com.google.android.gms.auth.blockstore.StoreBytesData
+import com.google.android.gms.common.ConnectionResult
+import com.google.android.gms.common.GoogleApiAvailabilityLight
 import java.nio.charset.StandardCharsets
 import java.security.KeyStore
 import java.security.SecureRandom
@@ -35,11 +37,20 @@ class CredentialVaultModule(
 ) : ReactContextBaseJavaModule(context) {
   private val preferences = context.getSharedPreferences(LOCAL_PREFERENCES, 0)
   private val blockstore by lazy { Blockstore.getClient(context) }
+  private val backup = OptionalCredentialBackup {
+    GoogleApiAvailabilityLight.getInstance().isGooglePlayServicesAvailable(context) == ConnectionResult.SUCCESS
+  }
   private var activePrompt: BiometricPrompt? = null
   private var pendingUnlock: Promise? = null
   private var pendingAppAuthentication: Promise? = null
 
   override fun getName(): String = "HerdrCredentialVault"
+
+  @ReactMethod
+  fun isBackupAvailable(promise: Promise) {
+    backup.request { blockstore.isEndToEndEncryptionAvailable() }
+      .addOnCompleteListener { promise.resolve(it.isSuccessful) }
+  }
 
   @ReactMethod
   fun hasLocalRecoveryKey(promise: Promise) {
@@ -70,7 +81,7 @@ class CredentialVaultModule(
           promise.reject("E_CREDENTIAL_VAULT_ENCRYPT", error)
         }
       },
-      onFailure = { promise.reject("E_CREDENTIAL_VAULT_BLOCK_STORE", it) },
+      onFailure = { promise.reject(OptionalCredentialBackup.ERROR_CODE, it) },
     )
   }
 
@@ -92,6 +103,10 @@ class CredentialVaultModule(
   fun unlockRecoveryKey(promise: Promise) {
     if (readLocalRecoveryKey() != null) {
       promise.resolve(true)
+      return
+    }
+    if (!backup.isAvailable()) {
+      promise.reject(OptionalCredentialBackup.ERROR_CODE, OptionalCredentialBackup.Unavailable())
       return
     }
     val activity = context.currentActivity as? FragmentActivity
@@ -222,10 +237,15 @@ class CredentialVaultModule(
   @ReactMethod
   fun clearRecoveryKey(promise: Promise) {
     val request = DeleteBytesRequest.Builder().setDeleteAll(true).build()
-    blockstore.deleteBytes(request).addOnCompleteListener { task ->
-      clearLocalRecoveryKey()
-      if (task.isSuccessful) promise.resolve(null)
-      else promise.reject("E_CREDENTIAL_VAULT_CLEAR", task.exception)
+    backup.request { blockstore.deleteBytes(request) }.addOnCompleteListener { task ->
+      if (task.isSuccessful) {
+        clearLocalRecoveryKey()
+        promise.resolve(null)
+      } else {
+        // Keep the local key if provider deletion failed; existing ciphertext
+        // may still depend on it.
+        promise.reject(OptionalCredentialBackup.ERROR_CODE, task.exception)
+      }
     }
   }
 
@@ -274,7 +294,7 @@ class CredentialVaultModule(
     val request = RetrieveBytesRequest.Builder()
       .setKeys(listOf(BLOCK_STORE_KEY))
       .build()
-    blockstore.retrieveBytes(request)
+    backup.request { blockstore.retrieveBytes(request) }
       .addOnSuccessListener { response ->
         val bytes = response.blockstoreDataMap[BLOCK_STORE_KEY]?.bytes
         if (bytes == null || bytes.size != RECOVERY_KEY_BYTES) {
@@ -291,7 +311,7 @@ class CredentialVaultModule(
           finishUnlockError("E_CREDENTIAL_VAULT_INSTALL", error)
         }
       }
-      .addOnFailureListener { finishUnlockError("E_CREDENTIAL_VAULT_RETRIEVE", it) }
+      .addOnFailureListener { finishUnlockError(OptionalCredentialBackup.ERROR_CODE, it) }
   }
 
   private fun storeInitialRecoveryKey(
@@ -299,21 +319,25 @@ class CredentialVaultModule(
     onSuccess: () -> Unit,
     onFailure: (Throwable) -> Unit,
   ) {
-    blockstore.isEndToEndEncryptionAvailable().addOnCompleteListener { encryptionTask ->
-      val cloudEnabled = encryptionTask.isSuccessful && encryptionTask.result == true
+    backup.request { blockstore.isEndToEndEncryptionAvailable() }.addOnCompleteListener { encryptionTask ->
+      if (!encryptionTask.isSuccessful) {
+        onFailure(OptionalCredentialBackup.Unavailable())
+        return@addOnCompleteListener
+      }
+      val cloudEnabled = encryptionTask.result == true
       val request = StoreBytesData.Builder()
         .setKey(BLOCK_STORE_KEY)
         .setBytes(recoveryKey)
         .setShouldBackupToCloud(cloudEnabled)
         .build()
-      blockstore.storeBytes(request)
+      backup.request { blockstore.storeBytes(request) }
         .addOnSuccessListener { onSuccess() }
         .addOnFailureListener(onFailure)
     }
   }
 
   private fun refreshCloudRecovery(recoveryKey: ByteArray) {
-    blockstore.isEndToEndEncryptionAvailable()
+    backup.request { blockstore.isEndToEndEncryptionAvailable() }
       .addOnSuccessListener { available ->
         if (!available) return@addOnSuccessListener
         val request = StoreBytesData.Builder()
@@ -321,10 +345,10 @@ class CredentialVaultModule(
           .setBytes(recoveryKey)
           .setShouldBackupToCloud(true)
           .build()
-        blockstore.storeBytes(request)
-          .addOnFailureListener { Log.w(TAG, "Could not refresh Block Store recovery key", it) }
+        backup.request { blockstore.storeBytes(request) }
+          .addOnFailureListener { Log.w(TAG, OptionalCredentialBackup.UNAVAILABLE_MESSAGE) }
       }
-      .addOnFailureListener { Log.w(TAG, "Could not check Block Store encryption", it) }
+      .addOnFailureListener { Log.w(TAG, OptionalCredentialBackup.UNAVAILABLE_MESSAGE) }
   }
 
   @SuppressLint("ApplySharedPref")

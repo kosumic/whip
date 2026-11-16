@@ -650,7 +650,7 @@ export const fr = {
   'hosts.recoveryCopy_other': 'Déverrouillez {{count}} identifiants par empreinte digitale, reconnaissance faciale ou code PIN de l’appareil.',
   'hosts.unlocking': 'Déverrouillage…',
   'hosts.unlock': 'Déverrouiller',
-  'hosts.recoveryUnavailable': 'Les identifiants chiffrés ont été restaurés, mais cette version de l’application n’inclut pas le module de récupération Android.',
+  'hosts.recoveryUnavailable': 'La récupération facultative des identifiants par Google est indisponible. Les identifiants SSH locaux fonctionnent toujours. Une réinstallation ou un changement d’appareil peut nécessiter de les saisir à nouveau.',
   'hosts.emptyTitle': 'Aucun serveur pour le moment',
   'hosts.emptyCopy': 'Ajoutez une destination SSH pour gérer sa session Herdr.',
   'hosts.addFirst': 'Ajouter votre premier hôte',

@@ -46,6 +46,8 @@ struct Store {
     permits: Vec<Arc<CredentialEffectPermit>>,
     vault: bool,
     recovery_key: bool,
+    backup_unavailable: bool,
+    diagnostics: Vec<(String, Option<String>)>,
 }
 #[derive(Default)]
 struct Platform {
@@ -186,6 +188,10 @@ impl CredentialPlatform for Platform {
                 CredentialEffectResult::Done
             }
             CredentialEffect::Encrypt { plaintext, .. } => {
+                if state.backup_unavailable {
+                    return Err(CredentialPlatformError::Unsupported);
+                }
+                state.recovery_key = true;
                 let ciphertext = format!("encrypted-{}", state.ciphertext.len());
                 state.ciphertext.insert(ciphertext.clone(), plaintext);
                 CredentialEffectResult::Text {
@@ -221,7 +227,9 @@ impl CredentialPlatform for Platform {
     fn profiles_changed(&self, view: CredentialProfileView) {
         self.state.lock().views.push(view);
     }
-    fn diagnostic(&self, _event: String, _host_id: Option<String>) {}
+    fn diagnostic(&self, event: String, host_id: Option<String>) {
+        self.state.lock().diagnostics.push((event, host_id));
+    }
 }
 
 async fn fixture() -> (
@@ -849,6 +857,8 @@ fn backups_are_ciphertext_only_and_bulk_restore_uses_canonical_profiles() -> Tes
         )
         .await?;
         assert_eq!(platform.count(&Phase::Encrypt), 1);
+        // Simulate restoring ciphertext onto a device without the local key.
+        platform.state.lock().recovery_key = false;
         let status = run(&coordinator, CredentialCommand::RecoveryStatus).await?;
         assert!(matches!(
             status,
@@ -1187,25 +1197,17 @@ fn failure_to_clear_a_completed_intent_still_reports_repair_and_is_safe_to_retry
 }
 
 #[test]
-fn backup_failure_retains_the_committed_primary_and_retries_without_rotating_it() -> TestResult {
+fn backup_failure_does_not_fail_the_save_or_block_reads_after_restart() -> TestResult {
     crate::runtime()?.block_on(async {
         let (_lock, platform, coordinator) = fixture().await;
         load(&platform, &coordinator, vec![]).await?;
         platform.state.lock().vault = true;
         platform.fail(Phase::Encrypt, false);
-        assert_eq!(
-            error(
-                run(
-                    &coordinator,
-                    CredentialCommand::SaveHost {
-                        profile: host("a"),
-                        credential: material()
-                    }
-                )
-                .await
-            ),
-            Some(CredentialTransactionError::PartialCommit)
-        );
+        run(
+            &coordinator,
+            CredentialCommand::SaveHost { profile: host("a"), credential: material() },
+        ).await?;
+        assert!(coordinator.view().repair_host_ids.is_empty());
         let primary = platform.state.lock().secure.get("a").cloned();
         coordinator.close();
         let restarted = CredentialCoordinator::new(platform.clone());
@@ -1220,9 +1222,171 @@ fn backup_failure_retains_the_committed_primary_and_retries_without_rotating_it(
         .await?;
         assert_eq!(platform.state.lock().secure.get("a").cloned(), primary);
         assert!(restarted.view().repair_host_ids.is_empty());
+        let saved = restarted.view().hosts[0].clone();
+        assert!(matches!(run(&restarted, CredentialCommand::ReadHost { host: saved, strict: true }).await?,
+            CredentialResult::Material { credential } if credential == material()));
+        // Migration can retry the optional backup independently of host repair.
+        run(&restarted, CredentialCommand::MigrateBackups).await?;
         assert!(platform.metadata(CredentialStorageKey::Backups).is_some());
         platform.assert_no_plaintext();
         restarted.close();
+        Ok(())
+    })
+}
+
+#[test]
+fn google_free_credentials_can_be_saved_edited_and_read_without_optional_backup() -> TestResult {
+    crate::runtime()?.block_on(async {
+        let (_lock, platform, coordinator) = fixture().await;
+        load(&platform, &coordinator, vec![]).await?;
+        // Missing/disabled GMS is a false capability. A provider that fails
+        // after a successful preflight instead returns typed Unsupported.
+        for (id, vault, auth_mode) in [
+            ("password", false, HostAuthMode::Password),
+            ("key", false, HostAuthMode::Key),
+            ("failed-provider", true, HostAuthMode::Key),
+        ] {
+            platform.state.lock().vault = vault;
+            platform.state.lock().backup_unavailable = true;
+            let mut profile = host(id);
+            profile.auth_mode = auth_mode;
+            run(&coordinator, CredentialCommand::SaveHost { profile, credential: material() }).await?;
+            let mut saved = coordinator.view().hosts.into_iter().find(|host| host.id == id).ok_or("missing host")?;
+            assert!(matches!(run(&coordinator, CredentialCommand::ReadHost { host: saved.clone(), strict: true }).await?,
+                CredentialResult::Material { credential } if credential == material()));
+            saved.name = "Edited".into();
+            run(&coordinator, CredentialCommand::SaveHost { profile: saved, credential: material() }).await?;
+            assert!(coordinator.view().repair_host_ids.is_empty());
+        }
+        platform.state.lock().vault = false;
+        assert!(matches!(run(&coordinator, CredentialCommand::RecoveryStatus).await?,
+            CredentialResult::RecoveryStatus { state: CredentialRecoveryState::Unavailable, count: 0 }));
+        assert!(platform.state.lock().diagnostics.iter().any(|(event, id)| event == "credential-backup-unavailable" && id.is_none()));
+        coordinator.close();
+        let restarted = CredentialCoordinator::new(platform.clone());
+        run(&restarted, CredentialCommand::LoadHosts { from_storage: false, hosts: None, legacy: None }).await?;
+        for saved in restarted.view().hosts {
+            assert!(matches!(run(&restarted, CredentialCommand::ReadHost { host: saved, strict: true }).await?,
+                CredentialResult::Material { credential } if credential == material()));
+        }
+        assert!(restarted.view().repair_host_ids.is_empty());
+        platform.assert_no_plaintext();
+        restarted.close();
+        Ok(())
+    })
+}
+
+#[test]
+fn old_partial_commits_reconcile_without_gms_but_unproven_receipts_still_require_repair()
+-> TestResult {
+    crate::runtime()?.block_on(async {
+        let (_lock, platform, coordinator) = fixture().await;
+        load(&platform, &coordinator, vec![host("a"), host("unproven")]).await?;
+        platform.put(CredentialStorageKey::Transactions, serde_json::json!({
+            "version": 1,
+            "hosts": {
+                "a": { "kind": "write", "receipt": "committed", "username": "user" },
+                "unproven": { "kind": "write", "receipt": "expected", "username": "user" }
+            },
+            "deleted": [], "global": null
+        }).to_string());
+        let envelope = super::journal::HostEnvelope { material: material(), receipt: Some("committed".into()) };
+        let primary = serde_json::to_string(&envelope)?;
+        platform.state.lock().secure.insert("a".into(), primary.clone());
+        platform.state.lock().secure.insert("unproven".into(), primary.clone());
+        coordinator.close();
+        let restarted = CredentialCoordinator::new(platform.clone());
+        run(&restarted, CredentialCommand::LoadHosts { from_storage: false, hosts: None, legacy: None }).await?;
+        assert_eq!(restarted.view().repair_host_ids, ["unproven"]);
+        assert!(matches!(run(&restarted, CredentialCommand::ReadHost { host: host("a"), strict: true }).await?,
+            CredentialResult::Material { credential } if credential == material()));
+        assert_eq!(error(run(&restarted, CredentialCommand::ReadHost { host: host("unproven"), strict: true }).await),
+            Some(CredentialTransactionError::RepairRequired));
+        assert_eq!(platform.state.lock().secure.get("a"), Some(&primary));
+        assert_eq!(platform.count(&Phase::WriteSecure), 0);
+        platform.assert_no_plaintext();
+        restarted.close();
+        Ok(())
+    })
+}
+
+#[test]
+fn cancellation_during_failed_optional_backup_drains_before_deletion() -> TestResult {
+    crate::runtime()?.block_on(async {
+        let (_lock, platform, coordinator) = fixture().await;
+        load(&platform, &coordinator, vec![]).await?;
+        platform.state.lock().vault = true;
+        platform.state.lock().backup_unavailable = true;
+        platform.state.lock().hold = Some(Phase::Encrypt);
+        let save = coordinator.begin(
+            CredentialCommand::SaveHost {
+                profile: host("a"),
+                credential: material(),
+            },
+            None,
+        );
+        until(|| platform.count(&Phase::Encrypt) == 1).await?;
+        save.cancel();
+        let delete = coordinator.begin(CredentialCommand::DeleteHost { id: "a".into() }, None);
+        tokio::task::yield_now().await;
+        assert_eq!(platform.count(&Phase::ClearSecure), 0);
+        platform.resume();
+        assert_eq!(
+            error(save.result().await),
+            Some(CredentialTransactionError::PartialCommit)
+        );
+        delete.result().await?;
+        assert!(coordinator.view().hosts.is_empty());
+        assert!(!platform.state.lock().secure.contains_key("a"));
+        platform.assert_no_plaintext();
+        coordinator.close();
+        Ok(())
+    })
+}
+
+#[test]
+fn optional_backup_metadata_failure_preserves_existing_ciphertext_and_primary_success() -> TestResult
+{
+    crate::runtime()?.block_on(async {
+        let (_lock, platform, coordinator) = fixture().await;
+        load(&platform, &coordinator, vec![]).await?;
+        platform.state.lock().vault = true;
+        platform.state.lock().recovery_key = true;
+        let existing = "{\"a\":\"existing-ciphertext\"}";
+        platform.put(CredentialStorageKey::Backups, existing.into());
+        platform.fail(Phase::WriteMetadata(CredentialStorageKey::Backups), false);
+        run(&coordinator, CredentialCommand::SaveHost { profile: host("a"), credential: material() }).await?;
+        assert!(coordinator.view().repair_host_ids.is_empty());
+        assert_eq!(platform.metadata(CredentialStorageKey::Backups).as_deref(), Some(existing));
+        let saved = coordinator.view().hosts[0].clone();
+        assert!(matches!(run(&coordinator, CredentialCommand::ReadHost { host: saved, strict: true }).await?,
+            CredentialResult::Material { credential } if credential == material()));
+        platform.assert_no_plaintext();
+        coordinator.close();
+        Ok(())
+    })
+}
+
+#[test]
+fn locked_recovery_keys_and_google_free_local_decryption_preserve_existing_backups() -> TestResult {
+    crate::runtime()?.block_on(async {
+        let (_lock, platform, coordinator) = fixture().await;
+        load(&platform, &coordinator, vec![host("restored")]).await?;
+        platform.state.lock().vault = true;
+        let existing = "{\"restored\":\"existing-ciphertext\"}";
+        platform.put(CredentialStorageKey::Backups, existing.into());
+        run(&coordinator, CredentialCommand::SaveHost { profile: host("new"), credential: material() }).await?;
+        assert_eq!(platform.count(&Phase::Encrypt), 0);
+        assert_eq!(platform.metadata(CredentialStorageKey::Backups).as_deref(), Some(existing));
+        // Removing GMS does not disable decrypting with an already local key.
+        platform.state.lock().vault = false;
+        platform.state.lock().recovery_key = true;
+        platform.state.lock().ciphertext.insert("existing-ciphertext".into(), serde_json::to_string(&material())?);
+        assert!(matches!(run(&coordinator, CredentialCommand::ReadHost { host: host("restored"), strict: true }).await?,
+            CredentialResult::Material { credential } if credential == material()));
+        assert_eq!(platform.metadata(CredentialStorageKey::Backups).as_deref(), Some(existing));
+        platform.assert_no_plaintext();
+        coordinator.close();
         Ok(())
     })
 }

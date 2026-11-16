@@ -37,6 +37,7 @@ const STORAGE_KEYS = {
 export const GLOBAL_SSH_KEYCHAIN_SERVICE = 'io.github.kaminarios.whip.ssh.global-keychain.v1';
 
 interface NativeVault {
+  isBackupAvailable(): Promise<boolean>;
   hasLocalRecoveryKey(): Promise<boolean>;
   encryptCredential(plaintext: string, credentialId: string): Promise<string>;
   decryptCredential(ciphertext: string, credentialId: string): Promise<string>;
@@ -104,7 +105,7 @@ export function credentialPlatform(changed: (view: CredentialProfileView) => voi
           case CredentialEffect_Tags.Decrypt:
             return new CredentialEffectResult.Text({ value: await requireVault().decryptCredential(effect.inner.ciphertext, effect.inner.id) });
           case CredentialEffect_Tags.VaultAvailable:
-            return new CredentialEffectResult.Boolean({ value: !!vault() });
+            return new CredentialEffectResult.Boolean({ value: await vault()?.isBackupAvailable() ?? false });
           case CredentialEffect_Tags.HasRecoveryKey:
             return new CredentialEffectResult.Boolean({ value: await requireVault().hasLocalRecoveryKey() });
           case CredentialEffect_Tags.UnlockRecoveryKey:
@@ -120,6 +121,11 @@ export function credentialPlatform(changed: (view: CredentialProfileView) => voi
         if (error instanceof CredentialPlatformError.Unsupported) throw error;
         if (error instanceof CredentialTransactionError.Cancelled) throw new CredentialPlatformError.Cancelled();
         if (error && typeof error === 'object' && 'code' in error && error.code === 'E_CREDENTIAL_VAULT_CANCELLED') throw new CredentialPlatformError.Cancelled();
+        if (error && typeof error === 'object' && 'code' in error &&
+          (error.code === 'E_CREDENTIAL_VAULT_BACKUP_UNAVAILABLE' || error.code === 'E_CREDENTIAL_VAULT_BLOCK_STORE')) {
+          recordOperationalDiagnostic('warn', 'Credential', 'credential-backup-unavailable', {});
+          throw new CredentialPlatformError.Unsupported();
+        }
         if (effect.tag === CredentialEffect_Tags.AuthenticateGlobal || effect.tag === CredentialEffect_Tags.UnlockRecoveryKey) throw new CredentialPlatformError.Denied();
         const metadata = effect.tag === CredentialEffect_Tags.ReadMetadata || effect.tag === CredentialEffect_Tags.WriteMetadata;
         if (metadata) recordStorageDiagnostic('error', effect.tag === CredentialEffect_Tags.ReadMetadata ? 'storage-read-failed' : 'storage-write-failed', { store: 'credential-transactions', operation: effect.tag });

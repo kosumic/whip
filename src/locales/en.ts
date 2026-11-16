@@ -643,7 +643,7 @@ export const en = {
   'hosts.recoveryCopy_other': 'Unlock {{count}} credentials with fingerprint, face, or device PIN.',
   'hosts.unlocking': 'Unlocking…',
   'hosts.unlock': 'Unlock',
-  'hosts.recoveryUnavailable': 'Encrypted credentials were restored, but this app build does not include the Android recovery module.',
+  'hosts.recoveryUnavailable': 'Optional Google credential recovery is unavailable. Local SSH credentials still work. Reinstalling or moving devices may require entering them again.',
   'hosts.emptyTitle': 'No servers yet',
   'hosts.emptyCopy': 'Add an SSH destination to manage its Herdr session.',
   'hosts.addFirst': 'Add your first host',
