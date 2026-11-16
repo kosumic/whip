@@ -15,6 +15,15 @@ pub const MAX_STEPS_MS: u32 = 60_000;
 // Reserve room for the final failure and page metadata in a partial report.
 pub const MAX_STEPS_RESULTS: usize = MAX_TEXT_RESULT / 2;
 
+/// Basic host, pane, tab and browser identifier policy. Length is UTF-8 bytes;
+/// whitespace and punctuation are allowed. Endpoint-specific ID grammars (such
+/// as provider call IDs) must keep their stronger validation.
+pub const MAX_IDENTIFIER_BYTES: usize = 256;
+
+pub fn valid_identifier(value: &str) -> bool {
+    !value.is_empty() && value.len() <= MAX_IDENTIFIER_BYTES && !value.chars().any(char::is_control)
+}
+
 macro_rules! identifier {
     ($name:ident) => {
         #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
@@ -22,7 +31,7 @@ macro_rules! identifier {
         pub struct $name(pub String);
         impl $name {
             pub fn validate(&self) -> Result<(), BrowserError> {
-                if self.0.is_empty() || self.0.len() > 256 || self.0.chars().any(char::is_control) {
+                if !valid_identifier(&self.0) {
                     return Err(BrowserError::invalid("Invalid identifier"));
                 }
                 Ok(())
@@ -33,6 +42,47 @@ macro_rules! identifier {
 identifier!(SessionId);
 identifier!(TabId);
 identifier!(ElementRef);
+
+#[cfg(test)]
+mod identifier_tests {
+    use super::*;
+
+    #[test]
+    fn byte_boundaries_and_control_characters_preserve_browser_errors() {
+        let cases = [
+            (String::new(), false),
+            ("pane-1 / tab".into(), true),
+            (" ".into(), true),
+            ("a".repeat(MAX_IDENTIFIER_BYTES), true),
+            ("a".repeat(MAX_IDENTIFIER_BYTES + 1), false),
+            ("é".repeat(MAX_IDENTIFIER_BYTES / 2), true),
+            (format!("{}a", "é".repeat(MAX_IDENTIFIER_BYTES / 2)), false),
+            ("界".repeat(85), true),
+            ("界".repeat(86), false),
+            ("a\0b".into(), false),
+            ("a\nb".into(), false),
+            ("a\rb".into(), false),
+            ("a\tb".into(), false),
+            ("a\u{7f}b".into(), false),
+            ("a\u{85}b".into(), false),
+            ("a\u{2028}b".into(), true),
+        ];
+        for (value, valid) in cases {
+            assert_eq!(valid_identifier(&value), valid, "{value:?}");
+            for result in [
+                SessionId(value.clone()).validate(),
+                TabId(value.clone()).validate(),
+                ElementRef(value).validate(),
+            ] {
+                assert_eq!(result.is_ok(), valid);
+                if let Err(error) = result {
+                    assert_eq!(error.code, ErrorCode::InvalidArgument);
+                    assert_eq!(error.message, "Invalid identifier");
+                }
+            }
+        }
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]

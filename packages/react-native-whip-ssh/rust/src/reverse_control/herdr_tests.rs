@@ -214,3 +214,21 @@ fn ambiguous_writes_and_blocked_prompts_are_never_replayed() -> TestResult {
     }
     Ok(())
 }
+
+#[test]
+fn identifier_validation_keeps_its_domain_error() {
+    for value in [
+        String::new(),
+        "é".repeat(129),
+        "pane\0name".into(),
+        "pane\u{85}name".into(),
+    ] {
+        let error = target(&value).err().unwrap();
+        assert!(
+            matches!(error, HerdrControlError::InvalidField(message) if message == "Use a live agent name or pane ID from this host")
+        );
+    }
+    for value in ["é".repeat(128), "pane / name".into()] {
+        assert!(target(&value).is_ok());
+    }
+}

@@ -133,7 +133,7 @@ fn lines(value: u32) -> Result<(), HerdrControlError> {
 }
 
 fn target(value: &str) -> Result<(), HerdrControlError> {
-    if value.is_empty() || value.len() > 256 || value.chars().any(char::is_control) {
+    if !agent_browser_control::model::valid_identifier(value) {
         return Err(invalid("Use a live agent name or pane ID from this host"));
     }
     Ok(())
