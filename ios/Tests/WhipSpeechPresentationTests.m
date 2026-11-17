@@ -22,12 +22,27 @@
   [source addAttribute:ENRMSpeechSourceAttribute value:@{@"start":@0, @"end":@13} range:NSMakeRange(0,13)];
   [source addAttribute:NSFontAttributeName value:[UIFont systemFontOfSize:14] range:NSMakeRange(0,13)];
   NSDictionary *config = @{@"spokenEnd":@3, @"currentWord":@{@"start":@4,@"end":@7}};
-  NSAttributedString *painted = ENRMSpeechPaintRanges(source, config, UIColor.whiteColor, UIColor.grayColor,
-    ^UIFont *(UIFont *font) { return [UIFont boldSystemFontOfSize:font.pointSize]; });
-  XCTAssertEqualObjects([painted attribute:NSForegroundColorAttributeName atIndex:5 effectiveRange:nil], UIColor.whiteColor);
-  XCTAssertEqualObjects([painted attribute:NSForegroundColorAttributeName atIndex:9 effectiveRange:nil], UIColor.grayColor);
-  UIFont *word = [painted attribute:NSFontAttributeName atIndex:5 effectiveRange:nil];
-  XCTAssertTrue(word.fontDescriptor.symbolicTraits & UIFontDescriptorTraitBold);
-  XCTAssertEqualObjects(config[@"spokenEnd"], @3);
+  NSArray *themes = @[
+    @[UIColor.whiteColor, [UIColor colorWithWhite:163.0/255.0 alpha:1]],
+    @[[UIColor colorWithRed:36.0/255.0 green:41.0/255.0 blue:47.0/255.0 alpha:1],
+      [UIColor colorWithWhite:102.0/255.0 alpha:1]],
+  ];
+  for (NSArray<UIColor *> *theme in themes) {
+    UIColor *heard = theme[0], *upcoming = theme[1];
+    [source addAttribute:NSForegroundColorAttributeName value:heard range:NSMakeRange(0, source.length)];
+    NSAttributedString *painted = ENRMSpeechPaintRanges(source, config, heard, upcoming,
+      ^UIFont *(UIFont *font) { return [UIFont systemFontOfSize:font.pointSize weight:UIFontWeightSemibold]; });
+    XCTAssertEqualObjects([painted attribute:NSForegroundColorAttributeName atIndex:1 effectiveRange:nil], heard);
+    XCTAssertEqualObjects([painted attribute:NSForegroundColorAttributeName atIndex:5 effectiveRange:nil], heard);
+    XCTAssertEqualObjects([painted attribute:NSForegroundColorAttributeName atIndex:9 effectiveRange:nil], upcoming);
+    XCTAssertEqualObjects([painted attribute:NSFontAttributeName atIndex:5 effectiveRange:nil],
+                          [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold]);
+    XCTAssertEqualObjects(painted.string, source.string);
+    XCTAssertEqualObjects(config[@"spokenEnd"], @3);
+    NSAttributedString *cleared = ENRMSpeechPaintRanges(source, nil, heard, upcoming, nil);
+    XCTAssertEqualObjects(cleared, source);
+    XCTAssertEqualObjects([cleared attribute:NSForegroundColorAttributeName atIndex:9 effectiveRange:nil], heard);
+    XCTAssertEqualObjects([cleared attribute:NSFontAttributeName atIndex:5 effectiveRange:nil], [UIFont systemFontOfSize:14]);
+  }
 }
 @end

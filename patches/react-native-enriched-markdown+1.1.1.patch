@@ -2515,13 +2515,14 @@ new file mode 100644
 index 00000000..ea37ad5e
 --- /dev/null
 +++ b/node_modules/react-native-enriched-markdown/android/src/test/java/com/swmansion/enriched/markdown/SpeechPresentationTest.kt
-@@ -0,0 +1,54 @@
+@@ -0,0 +1,76 @@
 +package com.swmansion.enriched.markdown
 +
 +import android.graphics.Color
 +import android.text.SpannableString
 +import android.text.TextPaint
 +import android.text.style.ForegroundColorSpan
++import android.text.style.MetricAffectingSpan
 +import android.widget.TextView
 +import org.junit.Assert.*
 +import org.junit.Test
@@ -2529,16 +2530,18 @@ index 00000000..ea37ad5e
 +import org.robolectric.RobolectricTestRunner
 +import org.robolectric.RuntimeEnvironment
 +import org.robolectric.annotation.Config
++import org.robolectric.annotation.GraphicsMode
 +
 +@RunWith(RobolectricTestRunner::class)
 +@Config(manifest = Config.NONE, sdk = [35])
++@GraphicsMode(GraphicsMode.Mode.NATIVE)
 +class SpeechPresentationTest {
 +  @Test fun missingWordDuringHandoffKeepsEntireUnspokenSuffixDim() {
 +    val text = SpannableString("Hello unspoken suffix")
 +    text.setSpan(SpeechSourceSpan(0, text.length), 0, text.length, 0)
 +    val view = TextView(RuntimeEnvironment.getApplication()).apply { setText(text, TextView.BufferType.SPANNABLE) }
 +    val painter = SpeechPresentation()
-+    fun config(word: String = "null") = ReadAloudConfig.parse("""{"spokenEnd":5,"currentWord":$word,"heard":"#ffffff","upcoming":"#777777","weight":"600"}""")!!
++    fun config(word: String = "null") = ReadAloudConfig.parse("""{"spokenEnd":5,"currentWord":$word,"heard":"#ffffff","upcoming":"#A3A3A3","weight":"600"}""")!!
 +    fun colorAt(position: Int): Int {
 +      val paint = TextPaint()
 +      val content = view.text as android.text.Spanned
@@ -2547,12 +2550,12 @@ index 00000000..ea37ad5e
 +    }
 +    painter.apply(listOf(view), config("""{"start":0,"end":5}"""))
 +    assertEquals(Color.WHITE, colorAt(2))
-+    assertEquals(Color.rgb(119,119,119), colorAt(10))
++    assertEquals(Color.rgb(163,163,163), colorAt(10))
 +    // A new caption arrives without a marker. The previous implementation
 +    // cleared all speech spans here, exposing the normal bright text color.
 +    painter.apply(listOf(view), config())
 +    assertEquals(Color.WHITE, colorAt(2))
-+    assertEquals(Color.rgb(119,119,119), colorAt(10))
++    assertEquals(Color.rgb(163,163,163), colorAt(10))
 +    painter.apply(listOf(view), null)
 +    assertEquals(0, (view.text as android.text.Spanned).getSpans(0, view.text.length, ForegroundColorSpan::class.java).size)
 +  }
@@ -2562,9 +2565,28 @@ index 00000000..ea37ad5e
 +    fun source(value: String): SpannableString = SpannableString(value).apply { setSpan(SpeechSourceSpan(0, length),0,length,0) }
 +    view.setText(source("One two three"),TextView.BufferType.SPANNABLE)
 +    val painter = SpeechPresentation()
-+    val config = ReadAloudConfig.parse("""{"spokenEnd":3,"currentWord":{"start":4,"end":7},"heard":"#ffffff","upcoming":"#777777","weight":"600"}""")!!
-+    painter.apply(listOf(view),config)
-+    assertEquals(3,config.spokenEnd)
++    for ((heard, upcoming) in listOf("#ffffff" to "#A3A3A3", "#24292f" to "#666666")) {
++      val normal = TextPaint(view.paint)
++      val config = ReadAloudConfig.parse("""{"spokenEnd":3,"currentWord":{"start":4,"end":7},"heard":"$heard","upcoming":"$upcoming","weight":"600"}""")!!
++      painter.apply(listOf(view), config)
++      fun paintAt(position: Int): TextPaint {
++        val paint = TextPaint(view.paint)
++        val text = view.text as android.text.Spanned
++        for (span in text.getSpans(position, position + 1, android.text.style.CharacterStyle::class.java)) span.updateDrawState(paint)
++        return paint
++      }
++      assertEquals(Color.parseColor(heard), paintAt(1).color)
++      assertEquals(Color.parseColor(heard), paintAt(5).color)
++      assertEquals(600, paintAt(5).typeface.weight)
++      assertEquals(Color.parseColor(upcoming), paintAt(9).color)
++      assertEquals(3, config.spokenEnd)
++      assertEquals("One two three", view.text.toString())
++      painter.apply(listOf(view), null)
++      assertEquals(normal.color, paintAt(9).color)
++      assertEquals(normal.typeface, paintAt(5).typeface)
++      assertEquals(0, (view.text as android.text.Spanned).getSpans(0, view.text.length, MetricAffectingSpan::class.java).size)
++    }
++    painter.apply(listOf(view), ReadAloudConfig(3, 4, 7, Color.WHITE, Color.GRAY, 600))
 +    view.setText(source("A different response"),TextView.BufferType.SPANNABLE)
 +    painter.apply(listOf(view),null)
 +    assertEquals(0,(view.text as android.text.Spanned).getSpans(0,view.text.length,ForegroundColorSpan::class.java).size)

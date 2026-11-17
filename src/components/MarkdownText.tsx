@@ -255,7 +255,8 @@ export function MarkdownText({
   variant = 'default',
 }: Props) {
   const { t } = useTranslation();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
+  const upcomingColor = SPEECH_CAPTION_COLORS.upcoming[isDark ? 'dark' : 'light'];
   const markdownStyle = useWhipMarkdownStyle(variant);
   const searchQuery = useContext(ChatSearchQuery);
   const contextMenuItems = useChatComposerSelectionMenu();
@@ -291,10 +292,10 @@ export function MarkdownText({
           && projection.currentWord.end > part.start ? {
             start: offset(projection.currentWord.start), end: offset(projection.currentWord.end),
           } : null,
-        heard: colors.text, upcoming: SPEECH_CAPTION_COLORS.upcoming, weight: SPEECH_CAPTION_WEIGHT,
+        heard: colors.text, upcoming: upcomingColor, weight: SPEECH_CAPTION_WEIGHT,
       });
     });
-  }, [speechCaption, content, parts, variant, colors.text, images]);
+  }, [speechCaption, content, parts, variant, colors.text, upcomingColor, images]);
   const accessibilityLabels = useMemo(() => ({
     list: {
       bulletPoint: t('markdown.a11y.bulletPoint'),

@@ -12,7 +12,8 @@ import { ChatToolCard } from './ChatToolCard';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { useTheme } from '../theme';
 
-const COLORS = { text: SPEECH_CAPTION_COLORS.heard, upcoming: SPEECH_CAPTION_COLORS.upcoming, bubble: '#282828', accent: '#c797fa' };
+// Voice transcripts always appear on a dark surface.
+const COLORS = { text: SPEECH_CAPTION_COLORS.heard, upcoming: SPEECH_CAPTION_COLORS.upcoming.dark, bubble: '#282828', accent: '#c797fa' };
 const FOLLOW_MARGIN = 56;
 const CONTENT_TOP = 24;
 const CONTENT_BOTTOM = 36;

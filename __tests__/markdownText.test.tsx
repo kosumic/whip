@@ -6,7 +6,6 @@ import { NativeCodeBlock } from '../src/components/NativeCodeBlock';
 import { ChatComposerSelection } from '../src/components/ChatComposerSelection';
 import { AppFontScaleContext } from '../src/hooks/useAppFontScale';
 import { SelectableChatText } from '../src/components/SelectableChatText';
-import { SPEECH_CAPTION_COLORS, SPEECH_CAPTION_WEIGHT } from '../src/lib/speechCaptionStyle';
 import { TranscriptMarkdownImages } from '../src/hooks/useTranscriptMarkdownImages';
 import { cacheRemoteFile, type CachedRemoteFile, type RemoteFileClient } from '../src/services/remoteFileTransfer';
 
@@ -50,16 +49,18 @@ jest.mock('../src/lib/guiFonts', () => ({
     mono: 'Mono',
   },
 }));
+let mockIsDark = false;
 jest.mock('../src/theme', () => ({
   colorWithAlpha: (color: string, alpha: string) => `${color}${alpha}`,
   useTheme: () => ({
+    isDark: mockIsDark,
     colors: {
       canvas: '#ffffff',
       sidebar: '#f6f8fa',
       surface: '#f6f8fa',
       surfaceRaised: '#eaeef2',
       divider: '#d0d7de',
-      text: '#24292f',
+      text: mockIsDark ? '#ffffff' : '#24292f',
       textSecondary: '#57606a',
       textTertiary: '#6e7781',
       primary: '#0969da',
@@ -76,6 +77,7 @@ describe('MarkdownText', () => {
   let renderer: ReactTestRenderer;
 
   beforeEach(() => {
+    mockIsDark = false;
     jest.mocked(Clipboard.setString).mockClear();
     jest.mocked(Haptics.notificationAsync).mockClear();
   });
@@ -85,13 +87,17 @@ describe('MarkdownText', () => {
     jest.useRealTimers();
   });
 
-  test('uses voice-caption colors and weight while preserving the original Markdown for native styling', () => {
+  test.each([
+    { theme: 'dark', isDark: true, heard: '#ffffff', upcoming: '#A3A3A3' },
+    { theme: 'light', isDark: false, heard: '#24292f', upcoming: '#666666' },
+  ])('uses $theme caption colors and clears highlighting without changing Markdown', ({ isDark, heard, upcoming }) => {
+    mockIsDark = isDark;
     const original = 'Heard **words** and [current](https://example.com) then upcoming.';
     jest.mocked(chatSpeechPresentation).mockReturnValue(JSON.stringify({ phase: 'speaking', spokenEnd: 20, currentWord: { start: 21, end: 28 } }));
     act(() => { renderer = create(<MarkdownText content={original} speechCaption={speechCaption} variant="transcript" />); });
     const native = () => renderer.root.find(node => String(node.type) === 'EnrichedMarkdownText');
     expect(JSON.parse(native().props.readAloud)).toMatchObject({
-      phase: 'speaking', spokenEnd: 20, currentWord: { start: 21, end: 28 }, upcoming: SPEECH_CAPTION_COLORS.upcoming, weight: SPEECH_CAPTION_WEIGHT,
+      phase: 'speaking', spokenEnd: 20, currentWord: { start: 21, end: 28 }, heard, upcoming, weight: '600',
     });
     expect(native().props.markdown).toBe(original);
     act(() => { renderer.update(<MarkdownText content={original} variant="transcript" />); });
@@ -99,13 +105,31 @@ describe('MarkdownText', () => {
     expect(native().props.markdown).toBe(original);
   });
 
-  test('missing current word keeps explicit upcoming styling through preparing and buffering', () => {
+  test('updates upcoming color when the theme changes during playback', () => {
+    const original = 'Heard **words** then upcoming.';
+    jest.mocked(chatSpeechPresentation).mockReturnValue(JSON.stringify({ phase: 'speaking', spokenEnd: 5, currentWord: { start: 8, end: 13 } }));
+    act(() => { renderer = create(<MarkdownText content={original} speechCaption={speechCaption} variant="transcript" />); });
+    const native = () => renderer.root.find(node => String(node.type) === 'EnrichedMarkdownText');
+    expect(JSON.parse(native().props.readAloud).upcoming).toBe('#666666');
+    mockIsDark = true;
+    act(() => { renderer.update(<MarkdownText content={original} speechCaption={speechCaption} variant="transcript" />); });
+    expect(JSON.parse(native().props.readAloud)).toMatchObject({
+      spokenEnd: 5, currentWord: { start: 8, end: 13 }, heard: '#ffffff', upcoming: '#A3A3A3', weight: '600',
+    });
+    expect(native().props.markdown).toBe(original);
+  });
+
+  test.each([
+    { isDark: true, upcoming: '#A3A3A3' },
+    { isDark: false, upcoming: '#666666' },
+  ])('missing current word keeps upcoming styling through preparing and buffering ($upcoming)', ({ isDark, upcoming }) => {
+    mockIsDark = isDark;
     for (const phase of ['preparing', 'buffering']) {
       jest.mocked(chatSpeechPresentation).mockReturnValue(JSON.stringify({ phase, spokenEnd: 5, currentWord: null }));
       act(() => { renderer = create(<MarkdownText content="Hello unspoken suffix" speechCaption={speechCaption} variant="transcript" />); });
       const native = renderer.root.find(node => String(node.type) === 'EnrichedMarkdownText');
       expect(native.props.markdown).toBe('Hello unspoken suffix');
-      expect(JSON.parse(native.props.readAloud)).toMatchObject({ phase, spokenEnd: 5, currentWord: null, upcoming: SPEECH_CAPTION_COLORS.upcoming });
+      expect(JSON.parse(native.props.readAloud)).toMatchObject({ phase, spokenEnd: 5, currentWord: null, upcoming });
       act(() => renderer.unmount());
     }
   });
