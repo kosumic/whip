@@ -112,13 +112,14 @@ def telecomEnabled = (findProperty('whip.telecomEnabled')
 def voiceManifest = layout.buildDirectory.file(
     "generated/voice-call/${telecomEnabled ? 'telecom' : 'fallback'}/AndroidManifest.xml")
 def prepareVoiceManifest = tasks.register('prepareVoiceManifest') {
-    inputs.file('src/main/AndroidManifest.xml')
+    def sourceManifest = file('src/main/AndroidManifest.xml')
+    inputs.file(sourceManifest)
     inputs.property('telecomEnabled', telecomEnabled)
     outputs.file(voiceManifest)
     doLast {
         def output = voiceManifest.get().asFile
         output.parentFile.mkdirs()
-        output.text = file('src/main/AndroidManifest.xml').getText('UTF-8')
+        output.text = sourceManifest.getText('UTF-8')
             .replace('${whipTelecomPermission}', telecomEnabled ? 'merge' : 'remove')
     }
 }
