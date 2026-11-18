@@ -253,11 +253,11 @@ Used by:
 - cpubits 0.1.1
 - cpufeatures 0.2.17
 - cpufeatures 0.3.0
-- crypto-bigint 0.7.10
+- crypto-bigint 0.7.11
 - crypto-common 0.1.7
 - crypto-common 0.2.2
 - ctr 0.10.1
-- der 0.8.1
+- der 0.8.3
 - der_derive 0.8.0
 - digest 0.10.7
 - digest 0.11.3
@@ -283,7 +283,7 @@ Used by:
 - sha2 0.10.9
 - sha2 0.11.0
 - signature 3.0.0
-- spki 0.8.0
+- spki 0.8.1
 - universal-hash 0.6.1
 - wnaf 0.14.1
 

@@ -10,6 +10,8 @@ import { runSessionConnection, sessionConnectionPlatform } from '../src/services
 import { material, nativeHost } from '../src/services/credentialTransactions';
 import { herdrSnapshotCache } from '../src/services/herdrSnapshotCache';
 import { loadConnectionProfile } from '../src/services/hostProfiles';
+import { CredentialTransactionError } from 'react-native-whip-ssh/src/credentialTransactions';
+import { recordNetworkDiagnostic } from '../src/services/networkDiagnostics';
 import type { ConnectionProfile } from '../src/types';
 import type { NativeAppCore } from 'react-native-whip-ssh';
 import type { LiveRuntime } from '../src/hooks/sessionRuntimeTypes';
@@ -114,6 +116,23 @@ test('background credential effects read the store without opening recovery or e
   jest.mocked(loadConnectionProfile).mockResolvedValueOnce(host);
   await expect(adapter.loadProfile(lease(), nativeHost(host), false)).resolves.toEqual(value());
   expect(options.hosts.loadProfileForConnection).not.toHaveBeenCalled();
+});
+
+test.each([true, false])('credential storage failures remain distinct from missing credentials (interactive: %s)', async interactive => {
+  const { adapter, options } = setup();
+  const failure = new CredentialTransactionError.SecureStorage();
+  if (interactive) options.hosts.loadProfileForConnection.mockRejectedValueOnce(failure);
+  else jest.mocked(loadConnectionProfile).mockRejectedValueOnce(failure);
+  await expect(adapter.loadProfile(lease(), nativeHost(host), interactive)).rejects.toMatchObject({
+    inner: { kind: Kind.Platform },
+  });
+  const failed = { phase: Phase.Credentials, kind: Kind.Platform, hostId: host.id, host: host.host, expectedProtocol: undefined, receivedProtocol: undefined };
+  expect(adapter.failureMessage(failed)).toBe('app.credentialStorageError');
+  adapter.present(lease(), new SessionConnectionPresentation.Failed({ navigate: false, failure: failed }));
+  expect(recordNetworkDiagnostic).toHaveBeenLastCalledWith('warn', 'connection-failed', { phase: Phase.Credentials, cause: Kind.Platform });
+  expect(adapter.failureMessage({ ...failed, kind: Kind.Credential })).toBe('app.enterCredential');
+  expect(adapter.failureMessage({ ...failed, phase: Phase.Transport, kind: Kind.Authentication })).toBe('app.connectAuthenticationError');
+  expect(options.createRuntime).not.toHaveBeenCalled();
 });
 
 test('terminal restoration receives the native lease predicate', async () => {

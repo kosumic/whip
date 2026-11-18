@@ -1436,6 +1436,7 @@ export const zhHans = {
   'app.deleteHostTitle': '删除主机？',
   'app.deleteHostCopy': '{{host}} 及其保存的凭据将从该设备中删除。',
   'app.enterCredential': '连接前输入此主机凭据。 Whip 将保存它以供下次一键连接。',
+  'app.credentialStorageError': 'Whip 无法读取或保存安全凭据。请解锁设备后重试。现有存储数据已保留。',
   'app.connectUnreachableError': '无法到达 {{host}}。检查您的网络和 SSH 服务器，然后重试。',
   'app.connectTimeoutError': '与 {{host}} 的连接超时。检查主机是否在线并且 SSH 是否可达。',
   'app.connectRefusedError': '{{host}} 拒绝连接。检查 SSH 是否正在运行并且端口是否正确。',

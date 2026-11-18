@@ -5,6 +5,7 @@
 //! module through ordinary typed Rust handles; there is no native callback ABI
 //! between the SSH and Herdr implementations.
 
+mod agent_policy;
 mod browser_proxy;
 mod channel;
 pub(crate) mod known_hosts;
@@ -31,7 +32,7 @@ use std::sync::{
 use std::time::{Duration, Instant};
 
 use self::channel::SessionChannel;
-use futures::{channel::mpsc as futures_mpsc, future::try_join_all};
+use futures::{StreamExt, channel::mpsc as futures_mpsc, future::try_join_all};
 use parking_lot::RwLock;
 use russh::client;
 use russh::keys::{PrivateKeyWithHashAlg, PublicKeyOrCertificate};
@@ -206,6 +207,7 @@ const COMPATIBILITY_SHELL_ID: &str = "default";
 const TRANSFER_BUFFER_BYTES: usize = 64 * 1024;
 const TRANSFER_PROGRESS_BYTES: u64 = 256 * 1024;
 const TRANSFER_PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
+const MIN_RSA_KEY_BITS: u32 = 2048;
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum TransportError {
@@ -215,6 +217,10 @@ pub(crate) enum TransportError {
     UnknownClient,
     #[error("authentication failed")]
     AuthenticationFailed,
+    #[error("RSA keys must be at least {minimum} bits")]
+    WeakRsaKey { minimum: u32 },
+    #[error("The SSH server must support RSA SHA-256 or SHA-512 signatures")]
+    RsaSha2Required,
     #[error("{0}")]
     ChannelUnavailable(String),
     #[error("{0}")]
@@ -362,7 +368,9 @@ impl From<TransportError> for SshError {
 
 fn transport_error_code(error: &TransportError) -> SshErrorCode {
     match error {
-        TransportError::InvalidRequest(_) => SshErrorCode::InvalidRequest,
+        TransportError::InvalidRequest(_) | TransportError::RsaSha2Required => {
+            SshErrorCode::InvalidRequest
+        }
         TransportError::UnknownClient | TransportError::SessionClosed(_) => {
             SshErrorCode::SessionClosed
         }
@@ -387,7 +395,9 @@ fn transport_error_code(error: &TransportError) -> SshErrorCode {
             russh::Error::IO(error) => io_error_code(error),
             _ => SshErrorCode::Unknown,
         },
-        TransportError::Key(_) | TransportError::SshKey(_) => SshErrorCode::InvalidPrivateKey,
+        TransportError::Key(_) | TransportError::SshKey(_) | TransportError::WeakRsaKey { .. } => {
+            SshErrorCode::InvalidPrivateKey
+        }
         TransportError::Io(error) => io_error_code(error),
         TransportError::Sftp(_) => SshErrorCode::SftpFailure,
     }
@@ -763,6 +773,11 @@ impl RusshHandler {
         else {
             return Err(TransportError::UnsupportedHostCertificate);
         };
+        validate_rsa_key(server_public_key).map_err(|_| {
+            TransportError::InvalidRequest(format!(
+                "SSH server RSA keys must be at least {MIN_RSA_KEY_BITS} bits"
+            ))
+        })?;
         // In-process SSH tests pin a fixture key without mutating the shared
         // known-host store used concurrently by other domain tests.
         #[cfg(test)]
@@ -917,6 +932,7 @@ fn key_details(
 ) -> Result<SshKeyDetails, TransportError> {
     let key = russh::keys::decode_secret_key(private_key, passphrase)?;
     let public_key = key.public_key();
+    validate_rsa_key(public_key)?;
     let key_size = match public_key.algorithm() {
         russh::keys::Algorithm::Ed25519 => 256,
         russh::keys::Algorithm::Ecdsa { curve } => match curve {
@@ -939,6 +955,52 @@ fn key_details(
             .to_string(),
         public_key: public_key.to_openssh()?,
     })
+}
+
+fn validate_rsa_key(key: &russh::keys::PublicKey) -> Result<(), TransportError> {
+    if key
+        .key_data()
+        .rsa()
+        .is_some_and(|rsa| rsa.key_size() < MIN_RSA_KEY_BITS)
+    {
+        return Err(TransportError::WeakRsaKey {
+            minimum: MIN_RSA_KEY_BITS,
+        });
+    }
+    Ok(())
+}
+
+async fn authenticate_private_key<H: client::Handler>(
+    handle: &mut client::Handle<H>,
+    username: &str,
+    key: Arc<russh::keys::PrivateKey>,
+    control: Option<&crate::ssh_workflows::Control>,
+) -> Result<bool, TransportError> {
+    validate_rsa_key(key.public_key())?;
+    let hashes = if key.algorithm().is_rsa() {
+        match handle.best_supported_rsa_hash().await? {
+            Some(Some(hash)) => vec![Some(hash)],
+            Some(None) => return Err(TransportError::RsaSha2Required),
+            // Absence of EXT_INFO does not mean the server requires SHA-1.
+            None => vec![
+                Some(russh::keys::HashAlg::Sha512),
+                Some(russh::keys::HashAlg::Sha256),
+            ],
+        }
+    } else {
+        vec![None]
+    };
+    for hash in hashes {
+        check_workflow_control(control)?;
+        if handle
+            .authenticate_publickey(username, PrivateKeyWithHashAlg::new(key.clone(), hash))
+            .await?
+            .success()
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn generate_key_pair(
@@ -974,12 +1036,23 @@ async fn initialize_agent(
     private_key: Arc<russh::keys::PrivateKey>,
     state: Arc<AgentState>,
 ) -> Result<(), TransportError> {
+    validate_rsa_key(private_key.public_key())?;
+    let rsa = private_key.algorithm().is_rsa();
     let (sender, receiver) = futures_mpsc::unbounded::<std::io::Result<Box<dyn AgentIo>>>();
     let agent_policy = RestrictedAgent {
         allow_initial_add: Arc::new(AtomicBool::new(true)),
     };
     tokio::spawn(async move {
-        let _ = russh::keys::agent::server::serve(receiver, agent_policy).await;
+        let streams = receiver.map(move |stream| {
+            stream.map(|stream| {
+                if rsa {
+                    agent_policy::protect_rsa_signing(stream)
+                } else {
+                    stream
+                }
+            })
+        });
+        let _ = russh::keys::agent::server::serve(streams, agent_policy).await;
     });
 
     // Seed the private key into the in-process agent over the same protocol
@@ -1147,13 +1220,9 @@ async fn connect_inner_guarded(
                 private_key,
                 passphrase.as_deref(),
             )?);
-            let hash_alg = handle.best_supported_rsa_hash().await?.flatten();
             check_workflow_control(control)?;
-            let auth_key = PrivateKeyWithHashAlg::new(key_pair.clone(), hash_alg);
-            let result = handle
-                .authenticate_publickey(&username, auth_key)
-                .await?
-                .success();
+            let result =
+                authenticate_private_key(&mut handle, &username, key_pair.clone(), control).await?;
             if result {
                 forwarding_key = Some(key_pair);
             }

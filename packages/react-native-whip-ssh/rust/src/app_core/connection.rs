@@ -41,6 +41,17 @@ fn platform_failure(kind: SessionConnectionFailureKind) -> SessionConnectionPlat
     }
 }
 
+fn credential_failure(error: crate::CredentialTransactionError) -> SessionConnectionPlatformError {
+    use crate::CredentialTransactionError;
+    match error {
+        CredentialTransactionError::Cancelled => SessionConnectionPlatformError::Cancelled,
+        CredentialTransactionError::StaleProfile => {
+            platform_failure(SessionConnectionFailureKind::StaleProfile)
+        }
+        _ => platform_failure(SessionConnectionFailureKind::Platform),
+    }
+}
+
 // Connection identity excludes display metadata and last-connected timestamps.
 fn same_target(a: &HostProfileRecord, b: &HostProfileRecord) -> bool {
     a.id == b.id
@@ -255,7 +266,7 @@ impl Workflow {
             )
             .result()
             .await
-            .map_err(|_| platform_failure(SessionConnectionFailureKind::Credential))?;
+            .map_err(credential_failure)?;
         self.transaction.check()?;
         match result {
             CredentialResult::Hosts { hosts } => Ok(hosts),
@@ -441,6 +452,7 @@ impl Workflow {
         {
             return Err(SessionConnectionPlatformError::Cancelled);
         }
+        self.phase = SessionConnectionPhase::Credentials;
         self.canonical().await?;
         self.phase = SessionConnectionPhase::Persistence;
         if self.request.persist_profile {
@@ -456,7 +468,7 @@ impl Workflow {
                 )
                 .result()
                 .await
-                .map_err(|_| platform_failure(SessionConnectionFailureKind::Credential))?;
+                .map_err(credential_failure)?;
             if let CredentialResult::Saved { host, .. } = result {
                 self.transaction.pin(host.clone());
                 profile.host = host;

@@ -930,24 +930,202 @@ fn generated_ed25519_key_round_trips_through_inspection() {
 }
 
 #[test]
+fn inspected_rsa_private_keys_authenticate_with_sha2() -> Result<(), Box<dyn std::error::Error>> {
+    const PASSPHRASE: &str = "rsa-test-only-passphrase";
+    runtime()?.block_on(async {
+        for passphrase in [None, Some(PASSPHRASE)] {
+            let private_key = rsa_fixture(2048, passphrase)?;
+            let details = key_details(&private_key, passphrase)?;
+            assert_eq!(details.key_type, "ssh-rsa");
+            let decoded = russh::keys::decode_secret_key(&private_key, passphrase)?;
+            assert_eq!(
+                details.fingerprint,
+                decoded
+                    .public_key()
+                    .fingerprint(russh::keys::HashAlg::Sha256)
+                    .to_string()
+            );
+            let fixture = ReverseForwardFixture::with_rsa_authentication(decoded).await?;
+            fixture.respond_next_exec(b"rsa-authenticated", b"", Some(0));
+            assert_eq!(
+                fixture.ssh.execute("fixture-command").await?.stdout,
+                b"rsa-authenticated"
+            );
+        }
+        Ok(())
+    })
+}
+
+fn rsa_fixture(bits: u32, passphrase: Option<&str>) -> Result<String, Box<dyn std::error::Error>> {
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("id_rsa");
+    // Generate disposable OpenSSH fixtures without embedding or logging keys.
+    let generated = std::process::Command::new("ssh-keygen")
+        .args(["-q", "-t", "rsa", "-b"])
+        .arg(bits.to_string())
+        .arg("-N")
+        .arg(passphrase.unwrap_or_default())
+        .arg("-f")
+        .arg(&path)
+        .output()?;
+    assert!(generated.status.success(), "Could not generate RSA fixture");
+    Ok(std::fs::read_to_string(path)?)
+}
+
+#[test]
+fn weak_rsa_keys_are_rejected_during_inspection_and_authentication()
+-> Result<(), Box<dyn std::error::Error>> {
+    let private_key = rsa_fixture(1024, None)?;
+    assert!(matches!(
+        key_details(&private_key, None),
+        Err(TransportError::WeakRsaKey { minimum: 2048 })
+    ));
+    runtime()?.block_on(async {
+        let decoded = russh::keys::decode_secret_key(&private_key, None)?;
+        let Err(error) = ReverseForwardFixture::with_rsa_authentication(decoded).await else {
+            return Err("Weak RSA key authenticated".into());
+        };
+        assert!(matches!(
+            error.downcast_ref::<TransportError>(),
+            Some(TransportError::WeakRsaKey { minimum: 2048 })
+        ));
+        Ok(())
+    })
+}
+
+#[test]
+fn weak_rsa_host_keys_are_rejected_before_trust() -> Result<(), Box<dyn std::error::Error>> {
+    let private_key = rsa_fixture(1024, None)?;
+    let public_key = russh::keys::decode_secret_key(&private_key, None)?
+        .public_key()
+        .clone();
+    let handler = RusshHandler {
+        host: "rsa-policy-fixture".into(),
+        port: 2222,
+        agent: Arc::new(AgentState::default()),
+        lifecycle: Arc::new(ConnectionLifecycle::default()),
+        reverse_forwards: Arc::new(reverse_forward::Routes::default()),
+        fixture_key: Some(public_key.clone()),
+    };
+    assert!(matches!(
+        handler.verify_server_key(&PublicKeyOrCertificate::PublicKey {
+            key: public_key,
+            hash_alg: Some(russh::keys::HashAlg::Sha512),
+        }),
+        Err(TransportError::InvalidRequest(_))
+    ));
+    Ok(())
+}
+
+#[test]
+fn rsa_sha256_authenticates_with_and_without_signature_advertisement()
+-> Result<(), Box<dyn std::error::Error>> {
+    let private_key = rsa_fixture(2048, None)?;
+    runtime()?.block_on(async {
+        for advertise in [true, false] {
+            let decoded = russh::keys::decode_secret_key(&private_key, None)?;
+            let fixture = ReverseForwardFixture::with_rsa_policy(
+                decoded,
+                vec![Some(russh::keys::HashAlg::Sha256)],
+                advertise,
+            )
+            .await?;
+            fixture.respond_next_exec(b"sha256-authenticated", b"", Some(0));
+            assert_eq!(
+                fixture.ssh.execute("fixture-command").await?.stdout,
+                b"sha256-authenticated"
+            );
+        }
+        Ok(())
+    })
+}
+
+#[test]
+fn rsa_authentication_rejects_sha1_only_servers() -> Result<(), Box<dyn std::error::Error>> {
+    let private_key = rsa_fixture(2048, None)?;
+    runtime()?.block_on(async {
+        let decoded = russh::keys::decode_secret_key(&private_key, None)?;
+        let Err(error) = ReverseForwardFixture::with_rsa_policy(decoded, vec![None], true).await
+        else {
+            return Err("RSA SHA-1 authentication was permitted".into());
+        };
+        assert!(matches!(
+            error.downcast_ref::<TransportError>(),
+            Some(TransportError::RsaSha2Required)
+        ));
+        Ok(())
+    })
+}
+
+async fn forwarded_agent_stream(
+    private_key: russh::keys::PrivateKey,
+) -> Result<tokio::io::DuplexStream, TransportError> {
+    let state = Arc::new(AgentState::default());
+    initialize_agent(Arc::new(private_key), state.clone()).await?;
+    let (client_stream, server_stream) = tokio::io::duplex(256 * 1024);
+    state
+        .sender
+        .read()
+        .as_ref()
+        .unwrap()
+        .unbounded_send(Ok(Box::new(server_stream)))
+        .unwrap();
+    Ok(client_stream)
+}
+
+#[test]
+fn forwarded_rsa_agent_rejects_sha1_and_malformed_signing_requests()
+-> Result<(), Box<dyn std::error::Error>> {
+    let private_key = rsa_fixture(2048, None)?;
+    runtime()?.block_on(async {
+        let decoded = russh::keys::decode_secret_key(&private_key, None)?;
+        let public_key = decoded.public_key().clone();
+        let mut stream = forwarded_agent_stream(decoded).await?;
+        // A SHA-1 request followed by a misleading SHA-2 flags word must not
+        // bypass policy checking. Test the actual forwarded agent protocol.
+        let mut malformed = vec![13];
+        for value in [public_key.to_bytes()?, b"forwarded-rsa-test".to_vec()] {
+            malformed.extend_from_slice(&u32::try_from(value.len())?.to_be_bytes());
+            malformed.extend_from_slice(&value);
+        }
+        malformed.extend_from_slice(&0_u32.to_be_bytes());
+        malformed.extend_from_slice(&2_u32.to_be_bytes());
+        stream.write_u32(u32::try_from(malformed.len())?).await?;
+        stream.write_all(&malformed).await?;
+        assert_eq!(stream.read_u32().await?, 1);
+        assert_eq!(stream.read_u8().await?, 5);
+
+        let mut client = russh::keys::agent::client::AgentClient::connect(stream);
+        let identities = client.request_identities().await?;
+        assert_eq!(identities.len(), 1);
+        let identity = &identities[0];
+        assert!(
+            client
+                .sign_request(identity, None, b"legacy-request".to_vec())
+                .await
+                .is_err()
+        );
+        for hash in [russh::keys::HashAlg::Sha256, russh::keys::HashAlg::Sha512] {
+            let payload = b"forwarded-rsa-test".to_vec();
+            let signed = client
+                .sign_request(identity, Some(hash), payload.clone())
+                .await?;
+            assert!(signed.starts_with(&payload));
+            assert!(signed.len() > payload.len());
+        }
+        Ok(())
+    })
+}
+
+#[test]
 fn forwarded_agent_lists_and_signs_with_the_authenticated_key() {
     let mut rng =
         russh::keys::ssh_key::rand_core::UnwrapErr(russh::keys::ssh_key::getrandom::SysRng);
-    let private_key = Arc::new(
-        russh::keys::PrivateKey::random(&mut rng, russh::keys::Algorithm::Ed25519).unwrap(),
-    );
-    let state = Arc::new(AgentState::default());
+    let private_key =
+        russh::keys::PrivateKey::random(&mut rng, russh::keys::Algorithm::Ed25519).unwrap();
 
     runtime().unwrap().block_on(async {
-        initialize_agent(private_key, state.clone()).await.unwrap();
-        let (client_stream, server_stream) = tokio::io::duplex(256 * 1024);
-        state
-            .sender
-            .read()
-            .as_ref()
-            .unwrap()
-            .unbounded_send(Ok(Box::new(server_stream)))
-            .unwrap();
+        let client_stream = forwarded_agent_stream(private_key).await.unwrap();
         let mut client = russh::keys::agent::client::AgentClient::connect(client_stream);
         let identities = client.request_identities().await.unwrap();
         assert_eq!(identities.len(), 1);

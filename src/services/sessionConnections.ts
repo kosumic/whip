@@ -2,6 +2,7 @@ import type { TFunction } from 'i18next';
 import type { NativeAppCore } from 'react-native-whip-ssh';
 import {
   SessionConnectionFailureKind as FailureKind,
+  SessionConnectionPhase as Phase,
   SessionConnectionPlatformError as PlatformError,
   SessionConnectionPresentation_Tags as Presentation,
   SessionConnectionOutcome_Tags as Outcome,
@@ -62,6 +63,7 @@ function profile(value: SessionConnectionProfile): ConnectionProfile {
 
 export function connectionFailureMessage(value: SessionConnectionFailure, t: TFunction): string {
   if (value.kind === FailureKind.Credential) return t('app.enterCredential');
+  if (value.kind === FailureKind.Platform && [Phase.Credentials, Phase.JumpCredentials, Phase.Persistence].includes(value.phase)) return t('app.credentialStorageError');
   const kind = Object.entries(failureKinds).find(([, native]) => native === value.kind)?.[0] as keyof typeof failureKinds | undefined;
   return t(connectionErrorTranslationKeys[kind ?? 'unknown'], {
     host: value.host,
@@ -97,7 +99,8 @@ export function sessionConnectionPlatform({
         return loaded?.secret ? { host: nativeHost(loaded), credential: material(loaded) } : undefined;
       } catch (error) {
         if (CredentialTransactionError.Cancelled.instanceOf(error)) throw new PlatformError.Cancelled();
-        throw new PlatformError.Failed({ kind: FailureKind.Credential, expectedProtocol: undefined, receivedProtocol: undefined });
+        const kind = CredentialTransactionError.StaleProfile.instanceOf(error) ? FailureKind.StaleProfile : FailureKind.Platform;
+        throw new PlatformError.Failed({ kind, expectedProtocol: undefined, receivedProtocol: undefined });
       }
     },
     async verifyKeys(permit) {
@@ -179,6 +182,7 @@ export function sessionConnectionPlatform({
           else navigation.showHerd(event.inner.sessionId);
         }
       } else if (event.tag === Presentation.Failed) {
+        recordNetworkDiagnostic('warn', 'connection-failed', { phase: event.inner.failure.phase, cause: event.inner.failure.kind });
         hosts.setError(connectionFailureMessage(event.inner.failure, t));
         if (event.inner.navigate) navigation.selectTab('hosts');
       }

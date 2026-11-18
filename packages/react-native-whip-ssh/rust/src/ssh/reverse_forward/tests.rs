@@ -20,6 +20,8 @@ enum ExecFault {
 
 #[derive(Default)]
 struct ServerState {
+    auth_key: Option<russh::keys::PublicKey>,
+    auth_hashes: Vec<Option<russh::keys::HashAlg>>,
     listeners: RwLock<HashMap<u16, watch::Sender<bool>>>,
     handle: RwLock<Option<server::Handle>>,
     allocated: AtomicUsize,
@@ -46,6 +48,12 @@ struct ServerState {
     tail_channels: RwLock<Vec<russh::ChannelId>>,
     closed_commands: AtomicUsize,
     next_session_delay_ms: AtomicU64,
+}
+
+struct KeyAuthentication {
+    key: Arc<russh::keys::PrivateKey>,
+    hashes: Vec<Option<russh::keys::HashAlg>>,
+    advertise: bool,
 }
 
 /// A real SSH server on loopback, with actual remote TCP listeners. Tests use
@@ -150,18 +158,88 @@ impl Fixture {
         delay: Duration,
         command_env: Option<std::collections::BTreeMap<String, String>>,
     ) -> Result<Self, Box<dyn Error>> {
+        Self::with_authentication(allow, delay, command_env, None).await
+    }
+
+    pub(crate) async fn with_rsa_authentication(
+        key: russh::keys::PrivateKey,
+    ) -> Result<Self, Box<dyn Error>> {
+        Self::with_rsa_policy(
+            key,
+            vec![
+                Some(russh::keys::HashAlg::Sha512),
+                Some(russh::keys::HashAlg::Sha256),
+            ],
+            true,
+        )
+        .await
+    }
+
+    pub(crate) async fn with_rsa_policy(
+        key: russh::keys::PrivateKey,
+        hashes: Vec<Option<russh::keys::HashAlg>>,
+        advertise: bool,
+    ) -> Result<Self, Box<dyn Error>> {
+        Self::with_authentication(
+            true,
+            Duration::ZERO,
+            None,
+            Some(KeyAuthentication {
+                key: Arc::new(key),
+                hashes,
+                advertise,
+            }),
+        )
+        .await
+    }
+
+    async fn with_authentication(
+        allow: bool,
+        delay: Duration,
+        command_env: Option<std::collections::BTreeMap<String, String>>,
+        authentication: Option<KeyAuthentication>,
+    ) -> Result<Self, Box<dyn Error>> {
         let mut rng =
             russh::keys::ssh_key::rand_core::UnwrapErr(russh::keys::ssh_key::getrandom::SysRng);
         let key = russh::keys::PrivateKey::random(&mut rng, russh::keys::Algorithm::Ed25519)?;
         let public_key = key.public_key().clone();
-        let config = Arc::new(server::Config {
+        let mut config = server::Config {
             keys: vec![key],
             auth_rejection_time: Duration::ZERO,
             ..Default::default()
-        });
+        };
+        let mut client_config = client::Config::default();
+        if let Some(authentication) = &authentication {
+            config
+                .preferred
+                .key
+                .to_mut()
+                .retain(|algorithm| !matches!(algorithm, russh::keys::Algorithm::Rsa { .. }));
+            config.preferred.key.to_mut().extend(
+                authentication
+                    .hashes
+                    .iter()
+                    .map(|hash| russh::keys::Algorithm::Rsa { hash: *hash }),
+            );
+            if !authentication.advertise {
+                client_config
+                    .preferred
+                    .kex
+                    .to_mut()
+                    .retain(|algorithm| *algorithm != russh::kex::EXTENSION_SUPPORT_AS_CLIENT);
+            }
+        }
+        let config = Arc::new(config);
         let listener = TcpListener::bind((BIND_ADDRESS, 0)).await?;
         let address = listener.local_addr()?;
         let state = Arc::new(ServerState {
+            auth_key: authentication
+                .as_ref()
+                .map(|auth| auth.key.public_key().clone()),
+            auth_hashes: authentication
+                .as_ref()
+                .map(|auth| auth.hashes.clone())
+                .unwrap_or_default(),
             command_env,
             home: RwLock::new("/home/test".to_owned()),
             ..ServerState::default()
@@ -192,9 +270,28 @@ impl Fixture {
             reverse_forwards: reverse_forwards.clone(),
             fixture_key: Some(public_key),
         };
-        let mut handle =
-            client::connect(Arc::new(client::Config::default()), address, client).await?;
-        assert!(handle.authenticate_none("test").await?.success());
+        let mut handle = client::connect(Arc::new(client_config), address, client).await?;
+        let authentication = if let Some(authentication) = authentication {
+            crate::ssh::authenticate_private_key(&mut handle, "test", authentication.key, None)
+                .await
+        } else {
+            handle
+                .authenticate_none("test")
+                .await
+                .map(|result| result.success())
+                .map_err(crate::ssh::TransportError::from)
+        };
+        match authentication {
+            Ok(true) => {}
+            Ok(false) => {
+                task.abort();
+                return Err("Loopback SSH fixture credential was not authenticated".into());
+            }
+            Err(error) => {
+                task.abort();
+                return Err(Box::new(error));
+            }
+        }
         let ssh = Arc::new(SshSession {
             inner: Arc::new(Session {
                 builtin_tailcat_ssh: false,
@@ -556,7 +653,32 @@ impl server::Handler for ForwardServer {
         &mut self,
         _user: &str,
     ) -> impl Future<Output = Result<server::Auth, Self::Error>> {
-        ready(Ok(server::Auth::Accept))
+        ready(Ok(if self.state.auth_key.is_none() {
+            server::Auth::Accept
+        } else {
+            server::Auth::reject()
+        }))
+    }
+
+    async fn auth_publickey(
+        &mut self,
+        _user: &str,
+        key: server::VerifiedPublicKey<'_>,
+    ) -> Result<server::Auth, Self::Error> {
+        let expected = self
+            .state
+            .auth_key
+            .as_ref()
+            .is_some_and(|expected| expected.key_data() == key.public_key.key_data());
+        let allowed = match key.algorithm {
+            russh::keys::Algorithm::Rsa { hash } => self.state.auth_hashes.contains(hash),
+            _ => false,
+        };
+        Ok(if expected && allowed {
+            server::Auth::Accept
+        } else {
+            server::Auth::reject()
+        })
     }
 
     async fn tcpip_forward(

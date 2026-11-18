@@ -1457,6 +1457,7 @@ export const fr = {
   'app.deleteHostTitle': 'Supprimer l’hôte ?',
   'app.deleteHostCopy': '{{host}} et son identifiant enregistré seront supprimés de cet appareil.',
   'app.enterCredential': 'Saisissez l’identifiant de cet hôte avant de vous connecter. Whip l’enregistrera pour une connexion en un seul geste la prochaine fois.',
+  'app.credentialStorageError': 'Whip n’a pas pu lire ou enregistrer les identifiants sécurisés. Déverrouillez votre appareil et réessayez. Les données enregistrées ont été conservées.',
   'app.connectUnreachableError': 'Impossible de joindre {{host}}. Vérifiez votre réseau et le serveur SSH, puis réessayez.',
   'app.connectTimeoutError': 'La connexion à {{host}} a expiré. Vérifiez que l’hôte est en ligne et que SSH est accessible.',
   'app.connectRefusedError': '{{host}} a refusé la connexion. Vérifiez que SSH fonctionne et que le port est correct.',

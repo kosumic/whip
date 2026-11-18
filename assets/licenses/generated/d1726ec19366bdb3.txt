@@ -1104,7 +1104,7 @@ Used by:
 - cpufeatures 0.3.0
 - crypto-common 0.2.2
 - ctr 0.10.1
-- der 0.8.1
+- der 0.8.3
 - der_derive 0.8.0
 - digest 0.11.3
 - ghash 0.6.0
@@ -1121,7 +1121,7 @@ Used by:
 - sec1 0.8.1
 - sha2 0.11.0
 - signature 3.0.0
-- spki 0.8.0
+- spki 0.8.1
 - universal-hash 0.6.1
 - x509-cert 0.3.0
 
@@ -1779,6 +1779,7 @@ Apache License 2.0 (Apache-2.0)
 
 Used by:
 - aws-lc-sys 0.47.0
+- earshot 1.2.2
 - is 0.12.0
 - itoa 1.0.18
 - libc 0.2.189

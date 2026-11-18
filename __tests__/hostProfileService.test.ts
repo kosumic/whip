@@ -76,8 +76,15 @@ test('identity setup and connection reads return explicit ephemeral native mater
   const guard = { operationId: () => 'operation', checkActive: jest.fn() };
   credentialRequest.mockResolvedValueOnce(new CredentialResult.Material({ credential: { secret: 'private', passphrase: '' } }));
   await expect(loadConnectionProfile(host, guard)).resolves.toMatchObject({ ...host, secret: 'private' });
-  expect(credentialRequest).toHaveBeenLastCalledWith(expect.objectContaining({ tag: CredentialCommand_Tags.ReadHost }), guard, expect.anything());
+  expect(credentialRequest).toHaveBeenLastCalledWith(expect.objectContaining({ tag: CredentialCommand_Tags.ReadHost, inner: { host: nativeHost(host), strict: true } }), guard, expect.anything());
 });
+test.each([CredentialTransactionError.SecureStorage, CredentialTransactionError.MalformedCredential, CredentialTransactionError.RepairRequired])(
+  'connection reads preserve %s instead of returning an empty secret', async ErrorType => {
+    const failure = new ErrorType();
+    credentialRequest.mockRejectedValueOnce(failure);
+    await expect(loadConnectionProfile(host)).rejects.toBe(failure);
+  },
+);
 test('migration delegates to native policy without iterating a stale host list', async () => {
   credentialRequest.mockResolvedValueOnce(new CredentialResult.Done());
   await migrateCredentialBackupsIfNeeded([host]);

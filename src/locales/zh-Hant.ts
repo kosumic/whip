@@ -1436,6 +1436,7 @@ export const zhHant: Record<string, string> = {
   'app.deleteHostTitle': '刪除主機？',
   'app.deleteHostCopy': '將從此裝置移除 {{host}} 及其儲存的認證資料。',
   'app.enterCredential': '連線前請輸入此主機的認證資料。Whip 會儲存認證資料，供下次一鍵連線。',
+  'app.credentialStorageError': 'Whip 無法讀取或儲存安全認證資料。請解鎖裝置後重試。現有儲存資料已保留。',
   'app.connectUnreachableError': '無法連上 {{host}}。請檢查網路和 SSH 伺服器後再試一次。',
   'app.connectTimeoutError': '連線至 {{host}} 逾時。請確認主機在線上且可透過 SSH 連線。',
   'app.connectRefusedError': '{{host}} 拒絕連線。請確認 SSH 正在執行且連接埠正確。',

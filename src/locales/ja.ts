@@ -1436,6 +1436,7 @@ export const ja = {
   'app.deleteHostTitle': 'ホストを削除しますか?',
   'app.deleteHostCopy': '{{host}} とその保存された認証情報はこのデバイスから削除されます。',
   'app.enterCredential': '接続する前に、このホスト資格情報を入力してください。 Whip は、次回からワンタップで接続できるように保存します。',
+  'app.credentialStorageError': '安全な認証情報の読み取りまたは保存ができませんでした。端末のロックを解除して再試行してください。既存の保存データは保持されています。',
   'app.connectUnreachableError': '{{host}} に到達できませんでした。ネットワークと SSH サーバーを確認して、再試行してください。',
   'app.connectTimeoutError': '{{host}} への接続がタイムアウトしました。ホストがオンラインであり、SSH に到達可能であることを確認してください。',
   'app.connectRefusedError': '{{host}} が接続を拒否しました。 SSH が実行中であり、ポートが正しいことを確認してください。',

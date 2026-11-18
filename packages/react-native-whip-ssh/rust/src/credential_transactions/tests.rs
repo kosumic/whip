@@ -327,6 +327,62 @@ fn error(result: TransactionResult) -> Option<CredentialTransactionError> {
 }
 
 #[test]
+fn strict_connection_reads_distinguish_absence_invalid_data_and_primary_failure() -> TestResult {
+    crate::runtime()?.block_on(async {
+        let (_lock, platform, coordinator) = fixture().await;
+        let saved = host("a");
+        load(&platform, &coordinator, vec![saved.clone()]).await?;
+        let command = || CredentialCommand::ReadHost {
+            host: saved.clone(),
+            strict: true,
+        };
+        assert!(matches!(run(&coordinator, command()).await?,
+            CredentialResult::Material { credential } if credential.secret.is_empty()));
+
+        platform
+            .state
+            .lock()
+            .secure
+            .insert(saved.id.clone(), "invalid PRIVATE-MATERIAL".into());
+        assert_eq!(
+            error(run(&coordinator, command()).await),
+            Some(CredentialTransactionError::MalformedCredential)
+        );
+        assert_eq!(
+            platform.state.lock().secure[&saved.id],
+            "invalid PRIVATE-MATERIAL"
+        );
+
+        platform.fail(Phase::ReadSecure, false);
+        assert_eq!(
+            error(run(&coordinator, command()).await),
+            Some(CredentialTransactionError::SecureStorage)
+        );
+        assert!(
+            platform
+                .state
+                .lock()
+                .diagnostics
+                .iter()
+                .any(
+                    |(event, id)| event == "credential-transaction-failed-SecureStorage"
+                        && id.is_none()
+                )
+        );
+        assert!(
+            platform
+                .state
+                .lock()
+                .diagnostics
+                .iter()
+                .all(|(event, _)| !event.contains("PRIVATE-MATERIAL"))
+        );
+        coordinator.close();
+        Ok(())
+    })
+}
+
+#[test]
 fn metadata_failure_does_not_publish_or_write_credentials_and_later_save_can_retry() -> TestResult {
     crate::runtime()?.block_on(async {
         let (_lock, platform, coordinator) = fixture().await;

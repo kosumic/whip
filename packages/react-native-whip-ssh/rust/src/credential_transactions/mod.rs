@@ -120,6 +120,7 @@ impl CredentialCoordinator {
                     // storage callback settles, even if the caller disappears.
                     let _mutation = mutation;
                     let _queue = QueueGuard(inner.id.clone());
+                    let platform = inner.coordinator.platform.clone();
                     let result = async {
                         inner.wait_turn().await?;
                         let mut workflow = Workflow {
@@ -134,6 +135,11 @@ impl CredentialCoordinator {
                         })
                     }
                     .await;
+                    if let Err(error) = &result {
+                        // This enum has no foreign messages or credential fields.
+                        platform
+                            .diagnostic(format!("credential-transaction-failed-{error:?}"), None);
+                    }
                     let _ = send.send(result);
                 });
             }

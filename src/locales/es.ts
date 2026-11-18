@@ -1436,6 +1436,7 @@ export const es = {
   'app.deleteHostTitle': '¿Eliminar host?',
   'app.deleteHostCopy': '{{host}} y su credencial guardada se eliminarán de este dispositivo.',
   'app.enterCredential': 'Ingrese esta credencial de host antes de conectarse. Whip lo guardará para conectarlo con un solo toque la próxima vez.',
+  'app.credentialStorageError': 'Whip no pudo leer o guardar las credenciales seguras. Desbloquea el dispositivo y vuelve a intentarlo. Se han conservado los datos guardados.',
   'app.connectUnreachableError': 'No se pudo alcanzar {{host}}. Verifique su red y el servidor SSH, luego intente nuevamente.',
   'app.connectTimeoutError': 'Se agotó el tiempo de espera de la conexión a {{host}}. Verifique que el host esté en línea y que se pueda acceder a SSH.',
   'app.connectRefusedError': '{{host}} rechazó la conexión. Verifique que SSH se esté ejecutando y que el puerto sea correcto.',

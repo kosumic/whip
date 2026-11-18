@@ -1454,6 +1454,7 @@ export const en = {
   'app.deleteHostTitle': 'Delete host?',
   'app.deleteHostCopy': '{{host}} and its saved credential will be removed from this device.',
   'app.enterCredential': 'Enter this host credential before connecting. Whip will save it for one-tap connect next time.',
+  'app.credentialStorageError': 'Whip could not read or save secure credentials. Unlock your device and retry. Existing stored data has been preserved.',
   'app.connectUnreachableError': 'Couldn’t reach {{host}}. Check your network and SSH server, then try again.',
   'app.connectTimeoutError': 'The connection to {{host}} timed out. Check that the host is online and SSH is reachable.',
   'app.connectRefusedError': '{{host}} refused the connection. Check that SSH is running and the port is correct.',

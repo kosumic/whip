@@ -23,6 +23,8 @@ type TestResult = Result<(), Box<dyn Error>>;
 struct Storage {
     hosts: Mutex<Vec<HostProfileRecord>>,
     other: Mutex<std::collections::HashMap<String, String>>,
+    read_failure: Mutex<bool>,
+    write_failure: Mutex<bool>,
 }
 #[async_trait::async_trait]
 impl CredentialPlatform for Storage {
@@ -31,6 +33,12 @@ impl CredentialPlatform for Storage {
         _permit: Arc<CredentialEffectPermit>,
         effect: CredentialEffect,
     ) -> Result<CredentialEffectResult, CredentialPlatformError> {
+        if matches!(&effect, CredentialEffect::ReadMetadata { .. }) && *self.read_failure.lock() {
+            return Err(CredentialPlatformError::MetadataStorage);
+        }
+        if matches!(&effect, CredentialEffect::WriteSecure { .. }) && *self.write_failure.lock() {
+            return Err(CredentialPlatformError::SecureStorage);
+        }
         match effect {
             CredentialEffect::ReadMetadata { keys } => Ok(CredentialEffectResult::Metadata {
                 entries: keys
@@ -372,6 +380,50 @@ async fn missing_credentials_fail_in_a_recoverable_placeholder_before_transport(
         f.core.view().sessions[0].connection_status,
         super::super::AppConnectionStatus::Error
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn metadata_read_failure_is_not_reported_as_missing_credentials() -> TestResult {
+    let f = Fixture::new();
+    *f.storage.read_failure.lock() = true;
+    assert!(matches!(
+        f.start().result().await,
+        SessionConnectionOutcome::Failed {
+            failure: SessionConnectionFailure {
+                phase: SessionConnectionPhase::Credentials,
+                kind: SessionConnectionFailureKind::Platform,
+                ..
+            }
+        }
+    ));
+    assert!(!f.platform.state.lock().calls.contains(&"connect"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn editor_connect_primary_write_failure_is_not_reported_as_missing_credentials() -> TestResult
+{
+    let mut f = Fixture::new();
+    f.request.saved = false;
+    f.request.persist_profile = true;
+    f.request.credential = Some(crate::CredentialMaterial {
+        secret: "PRIVATE-MATERIAL".into(),
+        ..Default::default()
+    });
+    *f.storage.write_failure.lock() = true;
+    assert!(matches!(
+        f.start().result().await,
+        SessionConnectionOutcome::Failed {
+            failure: SessionConnectionFailure {
+                phase: SessionConnectionPhase::Persistence,
+                kind: SessionConnectionFailureKind::Platform,
+                ..
+            }
+        }
+    ));
+    assert!(!f.platform.state.lock().calls.contains(&"connect"));
+    assert_eq!(f.credentials.view().repair_host_ids, [f.request.host.id]);
     Ok(())
 }
 #[tokio::test]

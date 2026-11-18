@@ -25,6 +25,15 @@ import { hostCredentialService, LEGACY_CREDENTIAL_SERVICE } from '../lib/hostPro
 import type { ConnectionProfile, HostProfile } from '../types';
 import { recordOperationalDiagnostic } from './operationalDiagnostics';
 import { recordStorageDiagnostic } from './storageDiagnostics';
+import { recordDiagnostic } from './diagnosticFormatting';
+
+// Only documented, bounded provider codes are safe to include in diagnostics.
+const SECURE_STORAGE_CAUSES = new Map([
+  ['E_KEYSTORE_ACCESS_ERROR', 'keystore-access'],
+  ['E_CRYPTO_FAILED', 'crypto'],
+  ['E_EMPTY_PARAMETERS', 'empty-parameters'],
+  ['E_UNKNOWN_ERROR', 'provider'],
+]);
 
 const STORAGE_KEYS = {
   [CredentialStorageKey.Hosts]: 'herdr.hosts.v2',
@@ -84,6 +93,7 @@ export function credentialPlatform(changed: (view: CredentialProfileView) => voi
           }
           case CredentialEffect_Tags.ReadSecure: {
             const value = await Keychain.getGenericPassword({ service: service(effect.inner.slot) });
+            recordDiagnostic('info', 'Credential', 'credential-secure-read', { slot: effect.inner.slot.tag, present: Boolean(value) });
             return new CredentialEffectResult.Text({ value: value ? value.password : undefined });
           }
           case CredentialEffect_Tags.WriteSecure: {
@@ -92,6 +102,7 @@ export function credentialPlatform(changed: (view: CredentialProfileView) => voi
               service: service(effect.inner.slot),
             });
             if (!value) throw new CredentialPlatformError.SecureStorage();
+            recordDiagnostic('info', 'Credential', 'credential-secure-write', { slot: effect.inner.slot.tag, acknowledged: true });
             return new CredentialEffectResult.Done();
           }
           case CredentialEffect_Tags.ClearSecure: {
@@ -118,6 +129,13 @@ export function credentialPlatform(changed: (view: CredentialProfileView) => voi
             return new CredentialEffectResult.Boolean({ value: true });
         }
       } catch (error) {
+        if (effect.tag === CredentialEffect_Tags.ReadSecure || effect.tag === CredentialEffect_Tags.WriteSecure || effect.tag === CredentialEffect_Tags.ClearSecure) {
+          const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+          recordDiagnostic('warn', 'Credential', 'credential-secure-effect-failed', {
+            operation: effect.tag, slot: effect.inner.slot.tag,
+            cause: typeof code === 'string' ? SECURE_STORAGE_CAUSES.get(code) ?? 'unknown' : 'unknown',
+          });
+        }
         if (error instanceof CredentialPlatformError.Unsupported) throw error;
         if (error instanceof CredentialTransactionError.Cancelled) throw new CredentialPlatformError.Cancelled();
         if (error && typeof error === 'object' && 'code' in error && error.code === 'E_CREDENTIAL_VAULT_CANCELLED') throw new CredentialPlatformError.Cancelled();

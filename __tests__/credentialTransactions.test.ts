@@ -120,3 +120,27 @@ test('foreign exceptions cannot expose their credential-bearing messages', async
   expect(JSON.stringify(consoleError.mock.calls)).not.toContain('PRIVATE-PASSPHRASE');
   consoleError.mockRestore();
 });
+
+test.each(['E_CRYPTO_FAILED', 'PRIVATE-PASSPHRASE'])('secure read diagnostics bound provider cause %s and omit credential contents', async code => {
+  const warn = jest.spyOn(console, 'warn').mockImplementation();
+  const error = jest.spyOn(console, 'error').mockImplementation();
+  jest.mocked(Keychain.getGenericPassword).mockRejectedValueOnce({ code, message: 'PRIVATE-PASSPHRASE' });
+  await expect(credentialPlatform().effect(permit(), new CredentialEffect.ReadSecure({ slot: new CredentialSlot.Host({ id: 'PRIVATE-HOST' }) })))
+    .rejects.toBeInstanceOf(CredentialPlatformError.SecureStorage);
+  expect(warn).toHaveBeenCalledWith(expect.stringContaining(`"cause":"${code === 'E_CRYPTO_FAILED' ? 'crypto' : 'unknown'}"`));
+  expect(JSON.stringify([...warn.mock.calls, ...error.mock.calls])).not.toMatch(/PRIVATE/);
+  warn.mockRestore();
+  error.mockRestore();
+});
+
+test('secure read diagnostics distinguish absence from an acknowledged present entry without logging material', async () => {
+  const info = jest.spyOn(console, 'info').mockImplementation();
+  const effect = new CredentialEffect.ReadSecure({ slot: new CredentialSlot.Host({ id: 'PRIVATE-HOST' }) });
+  await credentialPlatform().effect(permit(), effect);
+  expect(info).toHaveBeenLastCalledWith(expect.stringContaining('"present":false'));
+  jest.mocked(Keychain.getGenericPassword).mockResolvedValueOnce({ username: 'PRIVATE-USER', password: 'PRIVATE-PASSPHRASE' } as never);
+  await credentialPlatform().effect(permit(), effect);
+  expect(info).toHaveBeenLastCalledWith(expect.stringContaining('"present":true'));
+  expect(JSON.stringify(info.mock.calls)).not.toContain('PRIVATE');
+  info.mockRestore();
+});

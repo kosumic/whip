@@ -107,7 +107,8 @@ export async function migrateCredentialBackupsIfNeeded(_hosts: readonly HostProf
   await credentialTransactions.run(new CredentialCommand.MigrateBackups());
 }
 export async function loadConnectionProfile(host: HostProfile, guard?: HostActionPermitLike): Promise<ConnectionProfile> {
-  const result = await credentialTransactions.run(new CredentialCommand.ReadHost({ host: nativeHost(host), strict: false }), guard);
+  // A failed or malformed primary read must not look like an absent credential.
+  const result = await credentialTransactions.run(new CredentialCommand.ReadHost({ host: nativeHost(host), strict: true }), guard);
   if (result.tag !== CredentialResult_Tags.Material) throw new Error('Invalid native credential result');
   return { ...host, ...result.inner.credential };
 }
