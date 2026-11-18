@@ -660,11 +660,11 @@ impl server::Handler for ForwardServer {
         }))
     }
 
-    async fn auth_publickey(
+    fn auth_publickey(
         &mut self,
         _user: &str,
         key: server::VerifiedPublicKey<'_>,
-    ) -> Result<server::Auth, Self::Error> {
+    ) -> impl Future<Output = Result<server::Auth, Self::Error>> {
         let expected = self
             .state
             .auth_key
@@ -674,11 +674,11 @@ impl server::Handler for ForwardServer {
             russh::keys::Algorithm::Rsa { hash } => self.state.auth_hashes.contains(hash),
             _ => false,
         };
-        Ok(if expected && allowed {
+        ready(Ok(if expected && allowed {
             server::Auth::Accept
         } else {
             server::Auth::reject()
-        })
+        }))
     }
 
     async fn tcpip_forward(

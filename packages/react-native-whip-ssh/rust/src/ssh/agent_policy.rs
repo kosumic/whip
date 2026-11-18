@@ -56,8 +56,7 @@ fn uses_rsa_sha2(request: &[u8]) -> bool {
     }
     fields
         .try_into()
-        .ok()
-        .is_some_and(|word| matches!(u32::from_be_bytes(word), RSA_SHA2_256 | RSA_SHA2_512))
+        .is_ok_and(|word| matches!(u32::from_be_bytes(word), RSA_SHA2_256 | RSA_SHA2_512))
 }
 
 async fn read_frame(stream: &mut (impl AsyncRead + Unpin)) -> io::Result<Zeroizing<Vec<u8>>> {
