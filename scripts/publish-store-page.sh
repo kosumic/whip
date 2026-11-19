@@ -15,9 +15,12 @@ if [[ -n "$(git -C "$publish_dir" ls-remote --heads origin "$pages_branch")" ]];
   git -C "$publish_dir" checkout --quiet -B "$pages_branch" FETCH_HEAD
 fi
 
-cp "$repo_root"/site/{index.html,styles.css,store-redirect.js,whip-install-qr.svg,whip-install-qr.png} "$publish_dir/"
+page_files=(index.html styles.css store-redirect.js whip-install-qr.svg whip-install-qr.png app-store.svg google-play.png)
+for page_file in "${page_files[@]}"; do
+  cp "$repo_root/site/$page_file" "$publish_dir/"
+done
 touch "$publish_dir/.nojekyll"
-git -C "$publish_dir" add index.html styles.css store-redirect.js whip-install-qr.svg whip-install-qr.png .nojekyll
+git -C "$publish_dir" add "${page_files[@]}" .nojekyll
 
 if git -C "$publish_dir" diff --cached --quiet; then
   echo 'The published store page is already up to date.'

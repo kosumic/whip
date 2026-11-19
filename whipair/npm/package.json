@@ -4,7 +4,7 @@
   "description": "Direct, QR-based SSH public-key enrollment prototype for Whip",
   "license": "MIT",
   "author": "kosumic",
-  "homepage": "https://github.com/kosumic/whip/tree/main/whipair#readme",
+  "homepage": "https://whip.kosumi.dev/",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kosumic/whip.git",

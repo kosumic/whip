@@ -6,6 +6,7 @@ rust-version = "1.100"
 license = "MIT"
 description = "Direct, QR-based SSH public-key enrollment prototype for Whip"
 repository = "https://github.com/kosumic/whip"
+homepage = "https://whip.kosumi.dev/"
 readme = "README.md"
 keywords = ["ssh", "qr-code", "authorized-keys", "pairing", "cli"]
 categories = ["authentication", "command-line-utilities"]

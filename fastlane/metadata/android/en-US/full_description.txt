@@ -1,4 +1,4 @@
-Whip is a touch-friendly Android client for supervising Herdr agents and working on remote development hosts over SSH.
+Whip is an open-source SSH client for Android, with native Herdr workflows for Claude Code, Codex, OpenCode, and Pi. Supervise your coding agents and work on remote development hosts from your phone or tablet.
 
 Connect directly to machines you control or reach private destinations through saved jump hosts. Whip verifies SSH host keys and keeps credentials protected by Android Keystore.
 
@@ -6,6 +6,7 @@ Features include:
 
 * Monitor agents from multiple Herdr hosts in one attention queue
 * Prompt agents with a native multiline composer
+* Follow coding-agent conversations in native Chat View and review Git diffs
 * Attach to full terminal sessions with mobile-friendly controls
 * Browse, upload, download, edit, and preview remote files over SFTP
 * Open local and private web services through on-demand SSH tunnels
@@ -18,3 +19,5 @@ Whip connects Android directly to your SSH host. It does not use a Whip-operated
 The F-Droid build keeps credential recovery on the device and does not include Google Play Services. Google Play builds can additionally use Android Block Store for encrypted credential recovery.
 
 Whip is not developed, maintained, or endorsed by the Herdr project or its authors.
+
+Learn more and get started: https://whip.kosumi.dev/

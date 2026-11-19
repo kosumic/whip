@@ -1,5 +1,11 @@
 # whipair
 
+`whipair` is the optional SSH pairing helper for [Whip](https://whip.kosumi.dev/),
+the open-source SSH client for Android, iPhone, and iPad with native Herdr
+workflows for Claude Code, Codex, OpenCode, and Pi. Get the mobile app from the
+[App Store](https://apps.apple.com/app/id6808226150) or
+[Google Play](https://play.google.com/store/apps/details?id=io.github.kaminarios.whip).
+
 Run Whip's direct, one-shot SSH public-key enrollment helper without installing
 Rust:
 

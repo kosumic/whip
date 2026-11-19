@@ -5,7 +5,13 @@
 [![npm](https://img.shields.io/npm/v/whipair.svg)](https://www.npmjs.com/package/whipair)
 
 `whipair` is a direct, one-shot SSH public-key enrollment prototype for
-Whip. By default it uses the host's existing SSH port: no relay, TLS listener,
+[Whip](https://whip.kosumi.dev/), the open-source SSH client for Android,
+iPhone, and iPad with native Herdr workflows for Claude Code, Codex, OpenCode,
+and Pi. `whipair` is the optional pairing helper; download the mobile app from
+the [App Store](https://apps.apple.com/app/id6808226150) or
+[Google Play](https://play.google.com/store/apps/details?id=io.github.kaminarios.whip).
+
+By default it uses the host's existing SSH port: no relay, TLS listener,
 additional firewall rule, pairing account, or `sshd_config` change is required.
 
 The host creates a temporary Ed25519 credential and adds only its public half

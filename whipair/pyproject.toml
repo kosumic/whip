@@ -22,7 +22,8 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/kosumic/whip/tree/main/whipair"
+Homepage = "https://whip.kosumi.dev/"
+Documentation = "https://github.com/kosumic/whip/tree/main/whipair"
 Repository = "https://github.com/kosumic/whip"
 Issues = "https://github.com/kosumic/whip/issues"
 

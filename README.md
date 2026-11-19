@@ -5,8 +5,14 @@
 <h1 align="center">Whip</h1>
 
 <p align="center">
-  <strong>Run your Herdr workflow from your phone or tablet.</strong><br>
+  <strong>Open-source SSH for Android, iPhone, and iPad. Run your Herdr workflow from your phone or tablet.</strong><br>
   Chat with Claude Code, Codex, OpenCode, and Pi, review their changes, and work in remote terminals from a native Android or iOS interface.
+</p>
+
+<p align="center">
+  <a href="https://whip.kosumi.dev/"><strong>Whip website</strong></a> ·
+  <a href="https://whip.kosumi.dev/#setup">Getting started</a> ·
+  <a href="https://kosumic.github.io/whip/">Download Whip</a>
 </p>
 
 <p align="center">

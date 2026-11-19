@@ -22,3 +22,5 @@ Core SSH, SFTP, terminal, and Herdr workflows are free. The optional Rancher in-
 Your computer or server must be reachable over SSH. Herdr is required for the integrated agent and workspace features; ordinary SSH and SFTP connections do not require it. Agent software and any model-provider accounts are configured on your remote machine.
 
 Whip is an independent app and is not developed, maintained, or endorsed by the Herdr project or the supported agent providers.
+
+Learn more and get started: https://whip.kosumi.dev/

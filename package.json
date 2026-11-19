@@ -19,6 +19,7 @@
     "check:npm-license-notices": "node scripts/check-license-notices.ts",
     "generate:android-icon": "node scripts/generate-android-launcher-vector.ts",
     "generate:install-qr": "node scripts/generate-install-qr.ts",
+    "generate:site-assets": "node scripts/generate-site-assets.ts",
     "generate:license-notices": "npm run check:npm-license-notices && npm run check:cargo-license-notices && node scripts/sync-bundled-license-notices.ts --write",
     "generate:readme-phone-mockups": "node scripts/generate-readme-phone-mockups.ts",
     "generate:readme-diagrams": "node scripts/render-readme-diagrams.ts",

@@ -1,6 +1,8 @@
 # Whip install QR code
 
 The QR encodes one permanent address: <https://kosumic.github.io/whip/>.
+The product homepage is <https://whip.kosumi.dev/>; the QR address remains the
+store chooser and links back to the homepage for features and setup.
 The page routes Android to Google Play and iPhone, iPod touch and iPad to the
 App Store, including iPads that request desktop websites. Desktops and unknown
 devices show both store links. The links also work when JavaScript is disabled
@@ -44,6 +46,13 @@ For initial setup, select **Settings → Pages → Deploy from a branch → gh-p
 Store destinations are the two links in `site/index.html`; the redirect script
 reads those same links. Updating a destination and republishing does not require
 a new QR as long as the page address stays the same.
+
+Both download links use unmodified official store badges downloaded on
+2026-11-19: [Apple's App Store badge](https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/en-us?size=250x83)
+(`site/app-store.svg`) and [Google Play's English badge](https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png)
+(`site/google-play.png`). They remain trademarks of Apple and Google and identify
+the installation destinations. `npm run generate:site-assets` copies these
+assets to the product homepage as well.
 
 ## Regenerating the QR
 
