@@ -1443,6 +1443,40 @@ async fn deliver_agent_context(
     .map_err(|_| "Coding-agent context delivery timed out.")?
 }
 
+/// A pending snapshot is quiet context, not a second function result. The
+/// original observer task remains alive until the correlated turn terminates.
+async fn deliver_pending_observations(
+    owner: &RealtimeVoiceAdapter,
+    session: &mut voice_call_openai::session::Session<'_>,
+    agent: Option<&PinnedAgent>,
+) {
+    let notices = agent.map_or_else(
+        || {
+            owner
+                .global
+                .lock()
+                .as_ref()
+                .map(|global| global.take_pending_observations())
+                .unwrap_or_default()
+        },
+        PinnedAgent::take_pending_observations,
+    );
+    for (id, value) in notices {
+        if agent.is_some() {
+            let mut output = owner.output.lock();
+            if let Some(transcript) = &mut output.live_transcript {
+                transcript.event_result(&id, &value);
+            } else {
+                output.transcript.event_result(&id, &value);
+            }
+        }
+        owner.view.lock().backend_text = Some(live::public_result(&value));
+        // Quiet context failure must not cancel the original observer. The
+        // local tool row and text fallback already retain this status.
+        let _ = deliver_agent_context(session, &format!("Delegation status for {id}: {value}. This is a pending observation, not completion or a new request. Do not resubmit it. Observation continues; approval controls remain in Whip.")).await;
+    }
+}
+
 impl RealtimeVoiceAdapter {
     fn context_delivery(
         &self,

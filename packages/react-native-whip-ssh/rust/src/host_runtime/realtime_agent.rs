@@ -65,6 +65,7 @@ pub(crate) struct PinnedAgent {
 
 #[derive(Default)]
 struct Receipt {
+    submitted: bool,
     accepted: bool,
     turn_id: Option<String>,
     lost: bool,
@@ -72,6 +73,7 @@ struct Receipt {
     pending: bool,
     epoch: Option<u64>,
     after_revision: Option<u64>,
+    notice: Option<Value>,
 }
 
 fn changed() -> HerdrControlError {
@@ -306,18 +308,13 @@ impl PinnedAgent {
                 value.assistant_output = None;
                 value.turn_id = None;
             }
-            self.receipts.lock().insert(
-                delegation_id.into(),
-                Receipt {
-                    accepted: value.accepted && value.provider,
-                    turn_id: value.turn_id.clone(),
-                    lost: value.lost,
-                    terminal: value.outcome.is_some(),
-                    pending: true,
-                    epoch: Some(epoch),
-                    after_revision: tracker.admission_revision(),
-                },
-            );
+            if let Some(receipt) = self.receipts.lock().get_mut(delegation_id) {
+                receipt.accepted = value.accepted && value.provider;
+                receipt.turn_id.clone_from(&value.turn_id);
+                receipt.lost = value.lost;
+                receipt.terminal = value.outcome.is_some();
+                receipt.epoch = Some(epoch);
+            }
             value
         });
         Ok(observation)
@@ -340,6 +337,21 @@ impl PinnedAgent {
                     .is_some_and(|before| revision > before)
                 && receipt.turn_id.as_deref() == Some(turn)
         })
+    }
+
+    /// Status snapshots do not resolve the original tool call. Its task stays
+    /// alive to deliver exactly one eventual terminal receipt.
+    pub(crate) fn take_pending_observations(&self) -> Vec<(String, Value)> {
+        self.receipts
+            .lock()
+            .iter_mut()
+            .filter_map(|(id, receipt)| {
+                receipt
+                    .pending
+                    .then(|| receipt.notice.take().map(|notice| (id.clone(), notice)))
+                    .flatten()
+            })
+            .collect()
     }
 
     pub(crate) fn context_delivery(
@@ -525,6 +537,31 @@ impl PinnedAgent {
         self.uncertain.store(true, Ordering::Release);
     }
 
+    fn delegation_error(&self, id: &str, error: HerdrControlError) -> Value {
+        if self
+            .receipts
+            .lock()
+            .get(id)
+            .is_some_and(|receipt| receipt.submitted)
+        {
+            return json!({"delivery":"submitted", "completion":"unknown", "error":"observation_unavailable",
+                "guidance":"The prompt was submitted, but observation ended before its terminal outcome was verified. Inspect the original agent chat. Do not repeat the prompt."});
+        }
+        let code = match error {
+            HerdrControlError::ProtocolError(code, _) => match code.as_str() {
+                "agent_blocked" | "agent_not_ready" => "approval_required",
+                "agent_pane_busy" => "agent_busy",
+                "unsupported_feature" => "unsupported_host",
+                _ => "outcome_unknown",
+            },
+            _ => "outcome_unknown",
+        };
+        if code == "outcome_unknown" {
+            self.mark_uncertain();
+        }
+        json!({"error":code,"guidance":"Inspect the bound agent in Whip. Never repeat a prompt after an uncertain outcome."})
+    }
+
     pub(crate) async fn delegate(&self, request: Delegation, followup: bool) -> Value {
         self.delegate_for(&uuid::Uuid::new_v4().to_string(), request, followup)
             .await
@@ -556,22 +593,7 @@ impl PinnedAgent {
         let result = match self.delegate_inner(id, request, followup).await {
             Ok(value) if value.to_string().len() <= MAX_RESULT_BYTES => value,
             Ok(_) => json!({"error":"result_too_large"}),
-            Err(HerdrControlError::ProtocolError(code, _)) => {
-                let code = match code.as_str() {
-                    "agent_blocked" | "agent_not_ready" => "approval_required",
-                    "agent_pane_busy" => "agent_busy",
-                    "unsupported_feature" => "unsupported_host",
-                    _ => "outcome_unknown",
-                };
-                if code == "outcome_unknown" {
-                    self.mark_uncertain();
-                }
-                json!({"error":code,"guidance":"Inspect the bound agent in Whip. Never repeat a prompt after an uncertain outcome."})
-            }
-            Err(_) => {
-                self.mark_uncertain();
-                json!({"error":"outcome_unknown","guidance":"Inspect the agent in Whip before submitting again."})
-            }
+            Err(error) => self.delegation_error(id, error),
         };
         if let Some(receipt) = self.receipts.lock().get_mut(id) {
             receipt.pending = false;
@@ -626,17 +648,32 @@ impl PinnedAgent {
             }
             let target = self.binding.pane_id.as_str();
             let was_working = status == HerdrAgentStatus::Working;
-            let (epoch, mut tracker) = self
-                .runtime
-                .inner
-                .agents
-                .project_live_transcript(&self.binding.transcript_key, None, |view| {
-                    correlation::Tracker::new(Some(view), was_working)
-                })
-                .map(|(epoch, tracker)| (Some(epoch), tracker))
-                .unwrap_or_else(|| (None, correlation::Tracker::new(None, was_working)));
+            self.runtime.inner.agents.wake_pane(target);
+            let deadline = tokio::time::Instant::now() + START_TIMEOUT;
+            let (epoch, mut tracker) = loop {
+                self.wait_fresh().await?;
+                if let Some(snapshot) = self.runtime.inner.agents.project_live_transcript(
+                    &self.binding.transcript_key,
+                    None,
+                    |view| correlation::Tracker::new(Some(view), was_working),
+                ) {
+                    break snapshot;
+                }
+                if tokio::time::Instant::now() >= deadline {
+                    return Ok(
+                        json!({"error":"agent_syncing","guidance":"No prompt was submitted. The agent transcript is still synchronizing."}),
+                    );
+                }
+                tokio::time::sleep(POLL_INTERVAL).await;
+            };
+            // A reader wake can outlast a pane lifecycle transition. Replan
+            // against fresh status before sending any input.
+            if self.live_status().await? != status {
+                drop(admission);
+                continue;
+            }
             if let Some(receipt) = self.receipts.lock().get_mut(id) {
-                receipt.epoch = epoch;
+                receipt.epoch = Some(epoch);
                 receipt.after_revision = tracker.admission_revision();
             }
             let text = if let Some(context) = &request.context {
@@ -661,6 +698,9 @@ impl PinnedAgent {
             );
             self.request(json!({"action":"agent_prompt","target":target,"text":text}))
                 .await?;
+            if let Some(receipt) = self.receipts.lock().get_mut(id) {
+                receipt.submitted = true;
+            }
             if let Some(context) = &request.context {
                 context.acknowledge();
             }
@@ -711,22 +751,7 @@ impl PinnedAgent {
             drop(admission);
             // Only reads repeat. An idle pane or another turn completing cannot
             // complete this request. Unavailable correlation never replays input.
-            loop {
-                self.wait_fresh().await?;
-                let observation = self.observe_request(id, &mut tracker)?;
-                let status = self.live_status().await?;
-                if observation
-                    .as_ref()
-                    .is_some_and(|value| value.outcome.is_some() || value.lost)
-                    || settled(status)
-                    || status == HerdrAgentStatus::Blocked
-                {
-                    return self
-                        .request_result(id, &mut tracker, delivery, status)
-                        .await;
-                }
-                tokio::time::sleep(POLL_INTERVAL).await;
-            }
+            return self.wait_for_result(id, &mut tracker, delivery).await;
         }
     }
 
@@ -755,34 +780,49 @@ impl PinnedAgent {
         }
     }
 
-    async fn request_result(
+    async fn wait_for_result(
         &self,
         id: &str,
         tracker: &mut correlation::Tracker,
         delivery: &str,
-        status: HerdrAgentStatus,
     ) -> Result<Value, HerdrControlError> {
-        // Provider items can trail terminal/status events. Read a bounded tail
-        // from the same identity; never select a different turn or stale answer.
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        let mut wait = correlation::CompletionWait::new(std::time::Instant::now());
         loop {
             self.wait_fresh().await?;
+            self.runtime
+                .inner
+                .agents
+                .wake_pane(self.binding.pane_id.as_str());
             let observation = self.observe_request(id, tracker)?;
-            if tokio::time::Instant::now() >= deadline
-                || observation.as_ref().is_some_and(|value| value.lost)
+            let status = self.live_status().await?;
+            let update = wait.observe(observation.as_ref(), status, std::time::Instant::now());
+            if update.finished
+                && let Some(observation) = observation.as_ref()
             {
-                let Some(observation) = observation else {
-                    return Ok(
-                        json!({"error":"outcome_unknown","completion":"unknown","correlation":"unavailable"}),
-                    );
-                };
                 let mut result = observation.result(delivery, status);
-                if observation.lost || !observation.accepted {
-                    result["error"] = json!("outcome_unknown");
-                } else if observation.outcome.is_none() && status == HerdrAgentStatus::Blocked {
-                    result["observation"] = json!("agent_blocked");
+                if observation.lost {
+                    result["error"] = json!("correlation_lost");
                 }
                 return Ok(result);
+            }
+            if update.catch_up {
+                self.runtime
+                    .inner
+                    .agents
+                    .catch_up_voice_transcript(&self.binding.transcript_key);
+            }
+            if update.notify {
+                let mut notice = observation.map_or_else(
+                    || json!({"delivery":delivery,"completion":"pending","agent_status":status,"observation":"waiting_for_transcript"}),
+                    |observation| observation.result(delivery, status),
+                );
+                if let Some(object) = notice.as_object_mut() {
+                    object.remove("assistant_output");
+                }
+                notice["source"] = json!(self.source_id());
+                if let Some(receipt) = self.receipts.lock().get_mut(id) {
+                    receipt.notice = Some(notice);
+                }
             }
             tokio::time::sleep(POLL_INTERVAL).await;
         }

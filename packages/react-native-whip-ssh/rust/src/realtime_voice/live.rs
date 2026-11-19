@@ -505,6 +505,9 @@ pub(super) fn public_result(value: &Value) -> String {
         Some("outcome_unknown") => {
             "The submission outcome is unknown. Inspect the agent chat before trying again."
         }
+        Some("correlation_lost" | "observation_unavailable") => {
+            "The request was submitted, but its completion could not be verified. Inspect the agent chat without repeating the request."
+        }
         Some(_) => "The agent request could not be confirmed. Inspect its chat.",
         None => match value["completion"].as_str() {
             Some("completed") => "The agent finished the task.",
@@ -516,6 +519,7 @@ pub(super) fn public_result(value: &Value) -> String {
             _ if value["observation"] == "agent_blocked" => {
                 "The agent needs attention or approval in Whip. Completion is not confirmed."
             }
+            Some("pending") => "Still waiting for the agent’s result. I’ll keep checking.",
             _ => "The agent outcome is not confirmed. Inspect the agent chat.",
         },
     };

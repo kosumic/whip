@@ -67,6 +67,12 @@ impl<'a> App<'a> {
         if self.agent.is_some_and(|agent| agent.check().is_err()) {
             return Ok(());
         }
+        super::super::deliver_pending_observations(
+            self.owner,
+            session,
+            self.agent.map(AsRef::as_ref),
+        )
+        .await;
         if let Some(updates) = &self.updates {
             let batch = updates.take_for_call(
                 crate::automatic_speech::tracking_enabled(),

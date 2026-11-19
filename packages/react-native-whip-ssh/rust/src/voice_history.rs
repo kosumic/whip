@@ -77,7 +77,10 @@ impl Event {
         }
     }
     pub fn result(&mut self, value: &serde_json::Value) {
-        self.status = if value["error"] == "outcome_unknown" {
+        self.status = if matches!(
+            value["error"].as_str(),
+            Some("outcome_unknown" | "correlation_lost" | "observation_unavailable")
+        ) {
             "unknown"
         } else if value.get("error").is_some_and(|value| !value.is_null())
             || value["result"]["exit_code"]
@@ -88,6 +91,7 @@ impl Event {
         } else {
             match value["completion"].as_str() {
                 Some("submitted") => "submitted",
+                Some("pending") => "pending",
                 Some("running") => "running",
                 Some("unknown") => "unknown",
                 Some("queued" | "not_started") => "queued",
@@ -402,6 +406,23 @@ pub(crate) async fn persist_call(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn delegation_history_distinguishes_pending_completion_from_lost_observation() {
+        let mut event = Event::new("delegation", "background_agent", "requested");
+        event.result(&serde_json::json!({"completion":"pending","observation":"agent_blocked"}));
+        assert_eq!(event.status, "pending");
+        for error in [
+            "correlation_lost",
+            "observation_unavailable",
+            "outcome_unknown",
+        ] {
+            event.result(&serde_json::json!({"completion":"unknown","error":error}));
+            assert_eq!(event.status, "unknown");
+        }
+        event.result(&serde_json::json!({"completion":"completed"}));
+        assert_eq!(event.status, "completed");
+    }
     fn call(index: usize, model: &str) -> SavedCall {
         let mut conversation = Conversation::default();
         conversation.user(&format!("call {index}"));

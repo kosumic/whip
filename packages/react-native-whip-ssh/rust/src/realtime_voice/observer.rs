@@ -118,6 +118,7 @@ impl Scope {
 struct Cursor {
     epoch: u64,
     revision: Option<u64>,
+    baselined: bool,
     live: bool,
     selector: ChatSpeechQueue,
     messages: VecDeque<String>,
@@ -244,6 +245,16 @@ impl Subscription {
         let mut bytes = 0;
         let ready = now.duration_since(state.last_batch) >= BATCH_INTERVAL;
         while let Some(front) = state.pending.front() {
+            // A reader restart pauses delivery, but does not discard unsent
+            // context from this same history. Host loss explicitly clears it.
+            if matches!(front.content, Content::Context(..))
+                && now.duration_since(front.at) <= MAX_AGE
+                && state.sources.get(&front.source).is_some_and(|cursor| {
+                    cursor.epoch == front.epoch && cursor.baselined && !cursor.live
+                })
+            {
+                break;
+            }
             let valid = state
                 .sources
                 .get(&front.source)
@@ -361,10 +372,8 @@ impl Observer {
             return;
         }
         let baseline = reset
-            || cursor.revision.is_none()
+            || !cursor.baselined
             || epoch != cursor.epoch
-            || !cursor.live
-            || status != AgentTranscriptStatus::Live
             || cursor
                 .anchor
                 .as_ref()
@@ -383,6 +392,10 @@ impl Observer {
             });
             self.pending_bytes = self.pending.iter().map(|pending| pending.bytes).sum();
         }
+        if !cursor.live {
+            return;
+        }
+        cursor.baselined = true;
         // Global observation provides speakable context across agents. Their
         // tool activity belongs to agent-bound history, not the global call.
         let record_tools = matches!(self.scope, Scope::Pinned(_));
@@ -655,6 +668,7 @@ pub(crate) fn host_available(host: &str, available: bool) {
             for (source, cursor) in &mut observer.sources {
                 if source.host_id == host {
                     cursor.live = false;
+                    cursor.baselined = false;
                 }
             }
             observer.pending.retain(|entry| {
@@ -727,8 +741,7 @@ pub(crate) fn accept(
     let reset = update.deltas.iter().any(|delta| {
         matches!(
             delta,
-            crate::AgentTranscriptDelta::Reset { .. }
-                | crate::AgentTranscriptDelta::MessageRemoved { .. }
+            crate::AgentTranscriptDelta::MessageRemoved { .. }
                 | crate::AgentTranscriptDelta::MessagesTruncated { .. }
         )
     });
@@ -737,11 +750,15 @@ pub(crate) fn accept(
             continue;
         }
         registry.each(|observer| {
-            let baseline = reset
+            let full_view = reset
+                || update
+                    .deltas
+                    .iter()
+                    .any(|delta| matches!(delta, crate::AgentTranscriptDelta::Reset { .. }))
                 || observer.sources.get(&source.id).is_none_or(|cursor| {
-                    !cursor.live || cursor.revision.is_none() || cursor.epoch != epoch
+                    !cursor.live || !cursor.baselined || cursor.epoch != epoch
                 });
-            if baseline || view.revision != update.revision {
+            if full_view || view.revision != update.revision {
                 observer.accept(
                     &source,
                     epoch,
@@ -755,7 +772,7 @@ pub(crate) fn accept(
                         .collect::<Vec<_>>()
                         .into_iter()
                         .rev(),
-                    baseline,
+                    reset,
                     enabled,
                 );
             } else {

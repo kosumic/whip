@@ -95,6 +95,7 @@ impl<'a> App<'a> {
         {
             return Ok(());
         }
+        super::deliver_pending_observations(self.owner, session, self.agent.as_deref()).await;
         if let Some(updates) = &self.updates {
             let batch = updates.take_for_call(
                 crate::automatic_speech::tracking_enabled(),

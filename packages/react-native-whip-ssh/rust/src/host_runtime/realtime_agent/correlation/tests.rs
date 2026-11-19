@@ -116,7 +116,8 @@ fn blocked_or_idle_status_and_inferred_grouping_never_establish_completion() {
         assert!(observed.accepted);
         assert!(observed.outcome.is_none());
         let result = observed.result("started", crate::herdr_api::HerdrAgentStatus::Blocked);
-        assert_eq!(result["completion"], "unknown");
+        assert_eq!(result["completion"], "pending");
+        assert_eq!(result["observation"], "agent_blocked");
         let mut inferred = view(3, &messages, &turns);
         inferred.provider_turns = false;
         assert!(tracker.observe(inferred).outcome.is_none());
@@ -185,4 +186,89 @@ fn missing_initial_history_and_multiple_running_turns_cannot_be_guessed_after_su
     let ambiguous = [turn("one", "u1", "a1", None), turn("two", "u2", "a2", None)];
     let mut steering = Tracker::new(Some(view(1, &[], &ambiguous)), true);
     assert!(steering.observe(view(2, &messages, &ambiguous)).lost);
+}
+
+#[test]
+fn idle_and_observation_deadlines_keep_the_original_turn_pending_until_its_terminal_event() {
+    use crate::herdr_api::HerdrAgentStatus;
+    let now = Instant::now();
+    let mut wait = CompletionWait::new(now);
+    let mut tracker = Tracker::new(Some(view(1, &[], &[])), false);
+    let messages = [message(
+        "user",
+        AgentMessageRole::User,
+        tracker.text("status"),
+    )];
+    let mut turns = [turn("requested", "user", "answer", None)];
+    let observed = tracker.observe(view(2, &messages, &turns));
+    let first = wait.observe(Some(&observed), HerdrAgentStatus::Idle, now);
+    assert!(first.catch_up);
+    assert!(!first.finished);
+    for elapsed in [
+        Duration::from_secs(3),
+        PENDING_NOTICE_DELAY,
+        Duration::from_secs(60),
+    ] {
+        let update = wait.observe(Some(&observed), HerdrAgentStatus::Idle, now + elapsed);
+        assert!(!update.finished);
+        assert!(
+            !update.catch_up,
+            "One idle transition requests one catch-up"
+        );
+        assert_eq!(update.notify, elapsed == PENDING_NOTICE_DELAY);
+    }
+    turns[0] = turn(
+        "requested",
+        "user",
+        "answer",
+        Some(AgentTurnOutcome::Completed),
+    );
+    let completed = tracker.observe(view(3, &messages, &turns));
+    assert!(
+        wait.observe(
+            Some(&completed),
+            HerdrAgentStatus::Idle,
+            now + Duration::from_secs(61)
+        )
+        .finished
+    );
+    assert_eq!(
+        completed.result("started", HerdrAgentStatus::Idle)["completion"],
+        "completed"
+    );
+}
+
+#[test]
+fn blocked_and_unavailable_readers_report_pending_and_can_recover_without_a_new_request() {
+    use crate::herdr_api::HerdrAgentStatus;
+    let now = Instant::now();
+    let mut wait = CompletionWait::new(now);
+    let pending = wait.observe(None, HerdrAgentStatus::Blocked, now);
+    assert!(pending.notify);
+    assert!(!pending.finished);
+    let mut tracker = Tracker::new(Some(view(1, &[], &[])), false);
+    let messages = [message(
+        "user",
+        AgentMessageRole::User,
+        tracker.text("request"),
+    )];
+    let turns = [turn(
+        "requested",
+        "user",
+        "answer",
+        Some(AgentTurnOutcome::Interrupted),
+    )];
+    let observed = tracker.observe(view(2, &messages, &turns));
+    assert!(
+        wait.observe(
+            Some(&observed),
+            HerdrAgentStatus::Working,
+            now + PENDING_NOTICE_DELAY
+        )
+        .finished
+    );
+    assert_eq!(
+        observed.result("started", HerdrAgentStatus::Working)["completion"],
+        "interrupted"
+    );
 }

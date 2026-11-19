@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 const PROGRESS_INTERVAL: Duration = Duration::from_secs(15);
 pub(super) const BACKEND_PREFIX: &str = "[BACKEND] ";
-pub(crate) const FINISHED_GUIDANCE: &str = "Use the source-attributed coding-agent context as the answer. This receipt contains status only, never a second copy of the answer. If context does not contain the answer, say it is unavailable in this voice call and direct the user to the agent chat. Completion applies only to the associated provider turn. Unknown, inferred, blocked or submitted observations do not establish completion. Do not resubmit the request.";
+pub(crate) const FINISHED_GUIDANCE: &str = "Use the source-attributed coding-agent context as the answer. This receipt contains status only, never a second copy of the answer. If context does not contain the answer, say it is unavailable in this voice call and direct the user to the agent chat. Completion applies only to the associated provider turn. Pending, unknown, inferred, blocked or submitted observations do not establish completion. Do not resubmit the request.";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Notice {

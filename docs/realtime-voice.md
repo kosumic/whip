@@ -323,8 +323,13 @@ acknowledgement after the original response ends. Further spoken progress
 requires new agent text and is coalesced at 15-second intervals; idle timers
 never invent progress. User speech and active playback defer notices, and tool
 results take priority. Completion flushes the latest backend text before the
-function result and resumes voice. Native completion also allows two seconds
-for the transcript tail and returns bounded public assistant text from that
+function result and resumes voice. Idle/done pane status requests an immediate
+transcript catch-up; it never starts a completion deadline. The original observer
+keeps running until its correlated provider turn explicitly completes, fails or
+is interrupted, or correlation/liveness is lost. After five seconds, or when the
+agent becomes blocked, a quiet pending snapshot updates the call's tool row and
+voice context without resolving the function call. The eventual terminal receipt
+is delivered once. Results include bounded public assistant text from that
 turn, excluding private parts and stale history. If no answer text is available, voice directs
 the user to the agent chat instead of inventing an answer or resubmitting work.
 Notices expose only `remain_silent`, allowing the voice model to honor silence
@@ -345,8 +350,19 @@ grouping. Current paginated Codex rollouts preserve provider turn IDs,
 membership and outcomes. Other projections can report inferred acceptance, but
 cannot establish completion or supply attributed voice output. Missing or
 ambiguous membership, a disappearing anchor, revision rollback, changed user
-content or session replacement yields unknown/unavailable correlation. Input
-is never replayed to recover correlation.
+content or session replacement yields unknown/unavailable correlation. Voice
+receipts and output cursors use a separate history continuity token. Pausing,
+resuming or reopening the same file preserves it; file replacement/truncation,
+inherited-history replacement, rollback and host disconnection invalidate it.
+Reader operation epochs and file bind generations still reject stale callbacks
+and never serve as handoff identities. Temporary reader unavailability holds
+bounded unsent voice context; recovery emits only the new text once.
+
+A confirmed submission whose observation is subsequently lost reports
+`correlation_lost` or `observation_unavailable`, separately from uncertain
+submission (`outcome_unknown`). Only uncertain submission disables further
+mutations and cancels deferred requests. Pending or blocked completion never
+poisons the submission ledger. Input is never replayed to recover correlation.
 
 The first delegation keeps its feedback cursor while follow-ups steer active
 Codex. Admission is serialized until acceptance or startup is observed; a

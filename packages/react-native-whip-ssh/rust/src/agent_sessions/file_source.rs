@@ -236,8 +236,11 @@ impl Monitor {
                 let current = {
                     let mut state = manager.inner.state.lock();
                     current_session_mut(&mut state, &key, epoch)
-                        .and_then(|session| session.core.file())
-                        .map(|core| invalidate.then(|| core.invalidate_source()))
+                        .map(|session| {
+                            if invalidate {
+                                session.invalidate_file_source();
+                            }
+                        })
                         .is_some()
                 };
                 if current {

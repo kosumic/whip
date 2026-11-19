@@ -3200,6 +3200,9 @@ fn herdr_event_burst_is_fully_applied_before_one_projection() {
     set_host_runtime_event_sink(sink.clone());
 
     let revision_before_output = inner.state.lock().host_state.projection().revision;
+    // The sink is process-wide: earlier runtimes can still finish background
+    // work. This contract counts projections of this host's event burst.
+    let is_projection = |event: &HostRuntimeEvent| matches!(event, HostRuntimeEvent::HostStateChanged { runtime_id, .. } if runtime_id == &inner.id);
     let output_forwarded = deliver_herdr_events(
         &inner.id,
         vec![HerdrEvent::PaneOutputChanged {
@@ -3209,7 +3212,7 @@ fn herdr_event_burst_is_fully_applied_before_one_projection() {
         }],
     );
     assert!(output_forwarded.is_none());
-    assert!(sink.events.lock().is_empty());
+    assert!(!sink.events.lock().iter().any(is_projection));
     assert_eq!(
         inner.state.lock().host_state.projection().revision,
         revision_before_output
@@ -3228,12 +3231,13 @@ fn herdr_event_burst_is_fully_applied_before_one_projection() {
 
     assert!(forwarded.is_none());
     let events = sink.events.lock();
-    assert_eq!(events.len(), 1);
+    let projections: Vec<_> = events.iter().filter(|event| is_projection(event)).collect();
+    assert_eq!(projections.len(), 1);
     let HostRuntimeEvent::HostStateChanged {
         state,
         agent_status_transitions,
         ..
-    } = &events[0]
+    } = projections[0]
     else {
         panic!("event burst emitted an unexpected runtime event");
     };

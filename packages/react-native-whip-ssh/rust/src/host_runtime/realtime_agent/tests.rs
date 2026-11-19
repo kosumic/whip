@@ -5,6 +5,34 @@ use crate::host_runtime::{register_connected_test_runtime, terminal_delivery_tes
 type Fixture = (Arc<HostRuntime>, Arc<PinnedAgent>, HerdrSessionSnapshot);
 
 #[test]
+fn lost_completion_observation_does_not_disable_submissions_but_an_uncertain_write_does()
+-> Result<(), Box<dyn std::error::Error>> {
+    let _guard = terminal_delivery_test_guard();
+    let (_, pinned, _) = fixture("voice-observation-loss")?;
+    pinned.receipts.lock().insert(
+        "original".into(),
+        Receipt {
+            submitted: true,
+            ..Receipt::default()
+        },
+    );
+    let result = pinned.delegation_error(
+        "original",
+        HerdrControlError::RequestTimeout("late reader".into()),
+    );
+    assert_eq!(result["completion"], "unknown");
+    assert_eq!(result["error"], "observation_unavailable");
+    assert!(!pinned.uncertain.load(Ordering::Acquire));
+    let result = pinned.delegation_error(
+        "unacknowledged-write",
+        HerdrControlError::RequestTimeout("acknowledgement lost".into()),
+    );
+    assert_eq!(result["error"], "outcome_unknown");
+    assert!(pinned.uncertain.load(Ordering::Acquire));
+    Ok(())
+}
+
+#[test]
 fn delegated_context_and_progress_require_the_original_source_epoch_and_post_admission_revision()
 -> Result<(), Box<dyn std::error::Error>> {
     use crate::realtime_voice::observer::DeliveryDecision;

@@ -205,6 +205,14 @@ impl WhipToolSession {
         *self.microphone.lock() = Arc::downgrade(owner);
     }
 
+    pub(crate) fn take_pending_observations(&self) -> Vec<(String, Value)> {
+        self.observed_delegations
+            .lock()
+            .iter()
+            .flat_map(|agent| agent.take_pending_observations())
+            .collect()
+    }
+
     pub(crate) fn context_delivery(
         &self,
         source: &crate::realtime_voice::observer::SourceId,

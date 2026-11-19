@@ -402,7 +402,7 @@ impl Transcript {
             });
         }
     }
-    pub(super) fn event_result(&mut self, id: &str, value: &serde_json::Value) {
+    pub(in crate::realtime_voice) fn event_result(&mut self, id: &str, value: &serde_json::Value) {
         if let Some(event) = self
             .fragments
             .iter()

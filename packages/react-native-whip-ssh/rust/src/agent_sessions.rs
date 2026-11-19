@@ -56,6 +56,7 @@ const OPENCODE_CHECKPOINT_EVENTS: u64 = 64;
 const OPENCODE_V2_PAGE_SIZE: usize = 200;
 static NEXT_STREAM_CONTEXT: AtomicU64 = AtomicU64::new(1);
 static NEXT_OPERATION_EPOCH: AtomicU64 = AtomicU64::new(1);
+static NEXT_CONTINUITY_EPOCH: AtomicU64 = AtomicU64::new(1);
 static STREAMS: OnceLock<RwLock<HashMap<u64, StreamContext>>> = OnceLock::new();
 static EVENT_SINK: OnceLock<RwLock<Option<Arc<dyn AgentTranscriptEventSink>>>> = OnceLock::new();
 
@@ -242,6 +243,8 @@ struct SessionRuntime {
     terminals: HashSet<TerminalId>,
     core: AgentSessionCore,
     operation_epoch: u64,
+    // Voice receipts identify history, independently of the reader opening it.
+    continuity_epoch: u64,
     stream_context: Option<u64>,
     stream: Option<Arc<ConnectionExecStream>>,
     retry_running: bool,
@@ -333,6 +336,17 @@ fn transcript_done(
 }
 
 impl SessionRuntime {
+    fn invalidate_continuity(&mut self) {
+        self.continuity_epoch = NEXT_CONTINUITY_EPOCH.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn invalidate_file_source(&mut self) {
+        self.invalidate_continuity();
+        if let Some(core) = self.core.file() {
+            core.invalidate_source();
+        }
+    }
+
     fn pause_file_if_quiet(&mut self, remote_size: u64, now: Instant) {
         let Some(core) = self.core.file() else {
             return;
@@ -436,7 +450,7 @@ impl AutomaticSpeechSource {
             return;
         };
         apply(
-            session.operation_epoch,
+            session.continuity_epoch,
             session.core.status(),
             crate::realtime_voice::observer::Window::from_core(&session.core),
         );
@@ -615,6 +629,7 @@ impl AgentSessionManager {
             let mut emissions = Vec::new();
             for session in state.sessions.values_mut() {
                 session.operation_epoch = NEXT_OPERATION_EPOCH.fetch_add(1, Ordering::Relaxed);
+                session.invalidate_continuity();
                 session.retry_running = false;
                 if let Some(context) = session.stream_context.take() {
                     streams().write().remove(&context);
@@ -769,6 +784,7 @@ impl AgentSessionManager {
                     terminals: HashSet::new(),
                     core,
                     operation_epoch: NEXT_OPERATION_EPOCH.fetch_add(1, Ordering::Relaxed),
+                    continuity_epoch: NEXT_CONTINUITY_EPOCH.fetch_add(1, Ordering::Relaxed),
                     stream_context: None,
                     stream: None,
                     retry_running: false,
@@ -799,6 +815,7 @@ impl AgentSessionManager {
                 .sessions
                 .get(&key)
                 .map_or(0, |session| session.operation_epoch);
+            let continuity = state.sessions[&key].continuity_epoch;
             crate::automatic_speech::bound(
                 &self.inner.runtime_id,
                 self.inner.runtime_incarnation,
@@ -828,7 +845,7 @@ impl AgentSessionManager {
                     manager: Arc::downgrade(&self.inner),
                     key: key.clone(),
                 },
-                epoch,
+                continuity,
                 &state_snapshot,
             );
             drop(state);
@@ -1012,7 +1029,7 @@ impl AgentSessionManager {
             .map(|session| session.core.state())
     }
 
-    /// Lifecycle correlation reads the canonical provider view and source epoch
+    /// Lifecycle correlation reads the canonical provider view and continuity
     /// atomically. Public history and event forwarding use the bounded reader.
     pub(crate) fn project_live_transcript<T>(
         &self,
@@ -1036,7 +1053,7 @@ impl AgentSessionManager {
             }
         };
         let projected = project(view);
-        let epoch = session.operation_epoch;
+        let epoch = session.continuity_epoch;
         drop(state);
         Some((epoch, projected))
     }
@@ -1149,6 +1166,26 @@ impl AgentSessionManager {
         };
         for (key, epoch) in wake {
             self.restart_operation(key, "Chat input submitted".to_owned(), Some(epoch));
+        }
+    }
+
+    /// Wake a paused reader and read the same source immediately when terminal
+    /// status gets ahead of its persisted lifecycle events.
+    pub(crate) fn catch_up_voice_transcript(&self, key: &TranscriptKey) {
+        let epoch = {
+            let state = self.inner.state.lock();
+            state.sessions.get(key).and_then(|session| {
+                (session.core.status() == AgentTranscriptStatus::Live
+                    && session.core.kind() != AgentTranscriptKind::OpenCode)
+                    .then_some(session.operation_epoch)
+            })
+        };
+        if let Some(epoch) = epoch {
+            self.restart_operation(
+                key.clone(),
+                "Voice handoff transcript catch-up".into(),
+                Some(epoch),
+            );
         }
     }
 
@@ -1601,6 +1638,7 @@ impl AgentSessionManager {
             let kind = session.core.kind();
             if let AgentSessionCore::OpenCode(core) = &mut session.core {
                 core.begin_sync_generation();
+                session.invalidate_continuity();
             }
             let update = session.core.mark_restarting_update(reason);
             let operation = (
@@ -2017,6 +2055,9 @@ impl AgentSessionManager {
             let reset = binding
                 .rebuilt
                 .then(|| AgentTranscriptUpdate::reset(core.state()));
+            if binding.rebuilt {
+                session.invalidate_continuity();
+            }
             if let Some(reset) = &reset {
                 crate::automatic_speech::source_replaced(
                     self.inner.runtime_incarnation,
@@ -2735,7 +2776,7 @@ fn emit(
                 &manager.runtime_id,
                 manager.runtime_incarnation,
                 key.as_str(),
-                operation_epoch,
+                session.continuity_epoch,
                 session.core.status(),
                 &view,
                 &update,
@@ -2896,6 +2937,18 @@ fn stream_data(context: u64, bytes: Vec<u8>) {
                             session.pending_cache_offset = Some(result.committable_offset);
                             (blob, result.committable_offset)
                         });
+                    if update.as_ref().is_some_and(|update| {
+                        update.deltas.iter().any(|delta| {
+                            matches!(
+                                delta,
+                                AgentTranscriptDelta::MessageRemoved { .. }
+                                    | AgentTranscriptDelta::MessagesTruncated { .. }
+                                    | AgentTranscriptDelta::TurnsTruncated { .. }
+                            )
+                        })
+                    }) {
+                        session.invalidate_continuity();
+                    }
                     (update, cache)
                 }
                 Err(error) => {
@@ -5279,6 +5332,90 @@ mod tests {
         );
 
         assert_eq!(manager.state(&replacement.transcript_key).unwrap(), before);
+    }
+
+    #[test]
+    fn voice_continuity_preserves_restarts_and_rejects_history_replacement() {
+        use serde_json::json;
+        let jsonl = |records: &[serde_json::Value]| {
+            let mut text = String::new();
+            for record in records {
+                writeln!(text, "{record}").unwrap();
+            }
+            text
+        };
+        for change in ["replacement", "truncation", "rollback"] {
+            let (manager, binding, operation) = discovery_fixture();
+            let key = &binding.transcript_key;
+            let initial = jsonl(&[
+                json!({"type":"session_meta","payload":{"id":SESSION,"history_mode":"paginated"}}),
+                json!({"type":"event_msg","payload":{"type":"task_started","turn_id":"handoff"}}),
+                json!({"type":"event_msg","payload":{"type":"item_completed","thread_id":SESSION,"turn_id":"handoff","item":{
+                    "type":"UserMessage","id":"request","content":[{"type":"text","text":"A unique handoff request"}]}}}),
+            ]);
+            let opened = manager
+                .bind_discovered_file(key, operation, "/rollout", "1:2", initial.len() as u64)
+                .unwrap();
+            stream_data(opened.0, initial.as_bytes().to_vec());
+            let (continuity, _) = manager.project_live_transcript(key, None, |_| ()).unwrap();
+            // The reader restarts while the same pinned conversation stays live.
+            let restarted = manager
+                .prepare_restart(key, "Reader resumed".into(), Some(operation))
+                .unwrap();
+            assert_ne!(restarted.0, operation);
+            let resumed = manager
+                .bind_discovered_file(key, restarted.0, "/rollout", "1:2", initial.len() as u64)
+                .unwrap();
+            assert!(resumed.2.is_none());
+            stream_data(resumed.0, Vec::new());
+            assert_eq!(
+                manager
+                    .project_live_transcript(key, None, |_| ())
+                    .unwrap()
+                    .0,
+                continuity
+            );
+            let records = [
+                json!({"type":"event_msg","payload":{"type":"item_completed","thread_id":SESSION,"turn_id":"handoff","item":{
+                    "type":"AgentMessage","id":"answer","content":[{"type":"Text","text":"The result arrived after the reader resumed."}]}}}),
+                json!({"type":"event_msg","payload":{"type":"task_complete","turn_id":"handoff"}}),
+            ];
+            let appended = jsonl(&records);
+            stream_data(resumed.0, appended.as_bytes().to_vec());
+            let observed = manager
+                .project_live_transcript(key, None, |view| {
+                    assert!(view.provider_turns);
+                    assert_eq!(view.turns[0].id, "handoff");
+                    assert_eq!(
+                        view.turns[0].details.as_ref().unwrap().outcome,
+                        Some(crate::AgentTurnOutcome::Completed)
+                    );
+                    view.messages.len()
+                })
+                .unwrap();
+            assert_eq!(observed.0, continuity);
+            let before = manager.state(key).unwrap();
+            stream_data(opened.0, b"stale callback\n".to_vec());
+            assert_eq!(manager.state(key).unwrap(), before);
+            match change {
+                "rollback" => stream_data(resumed.0, format!("{}\n", json!({"type":"event_msg","payload":{"type":"thread_rolled_back","num_turns":1}})).into_bytes()),
+                _ => {
+                    let bytes = if change == "truncation" { initial } else { format!("{initial}{appended}") };
+                    let file = if change == "replacement" { "1:3" } else { "1:2" };
+                    let replacement = manager.bind_discovered_file(key, restarted.0, "/rollout", file, bytes.len() as u64).unwrap();
+                    assert!(replacement.2.is_some());
+                    stream_data(replacement.0, bytes.into_bytes());
+                }
+            }
+            assert_ne!(
+                manager
+                    .project_live_transcript(key, None, |_| ())
+                    .unwrap()
+                    .0,
+                continuity
+            );
+            manager.disconnected(true, "test finished");
+        }
     }
 
     fn discovery_fixture() -> (AgentSessionManager, BoundAgentChat, u64) {

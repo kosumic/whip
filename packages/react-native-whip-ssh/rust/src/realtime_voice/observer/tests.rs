@@ -109,6 +109,112 @@ fn records(batch: &Batch) -> Vec<serde_json::Value> {
 }
 
 #[test]
+fn reader_recovery_keeps_unsent_prose_and_delivers_gap_text_once() {
+    let source = source("host", "pane", AgentTranscriptKind::Codex);
+    let call = observer(Scope::Pinned(source.id.clone()));
+    let history = message("old", "Historical answer.", true);
+    update(
+        &call,
+        &source,
+        1,
+        1,
+        std::slice::from_ref(&history),
+        true,
+        true,
+    );
+    let before_pause = [
+        history.clone(),
+        message("answer", "First sentence. ", false),
+    ];
+    update(&call, &source, 1, 2, &before_pause, false, true);
+    call.0.lock().accept(
+        &source,
+        1,
+        AgentTranscriptStatus::Stale,
+        &Window::from(AgentTranscriptView {
+            revision: 3,
+            messages: &before_pause,
+            turns: &[],
+            provider_turns: true,
+        }),
+        before_pause.iter(),
+        false,
+        true,
+    );
+    assert!(
+        take(&call).context.is_none(),
+        "Unsent text waits for the same reader's recovery"
+    );
+    let recovered = [
+        history,
+        message("answer", "First sentence. Recovered sentence.", true),
+    ];
+    update(&call, &source, 1, 4, &recovered, false, true);
+    let text = records(&take(&call))
+        .into_iter()
+        .map(|record| record["text"].as_str().unwrap().to_owned())
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert_eq!(text, "First sentence. Recovered sentence.");
+    update(&call, &source, 1, 5, &recovered, false, true);
+    assert!(
+        take(&call).context.is_none(),
+        "Recovery never repeats the delivered answer"
+    );
+    update(&call, &source, 2, 6, &recovered, true, true);
+    assert!(
+        take(&call).context.is_none(),
+        "Replacement history remains silent"
+    );
+}
+
+#[test]
+fn reset_projections_of_the_same_history_forward_new_text_without_replaying_history() {
+    let source = source("voice-reset-projection", "pane", AgentTranscriptKind::Codex);
+    let mut state =
+        crate::AgentTranscriptState::empty("session".into(), AgentTranscriptKind::Codex);
+    state.status = AgentTranscriptStatus::Live;
+    state.revision = 1;
+    state.messages = vec![message("old", "Historical answer.", true)];
+    bound(source.id.clone(), source.agent, source.authority, 1, &state);
+    let call = Subscription::new(Scope::Pinned(source.id.clone()));
+    let publish = |state: &crate::AgentTranscriptState| {
+        let view = Window::from(AgentTranscriptView::from(state));
+        accept(
+            &source.id.host_id,
+            source.id.runtime_incarnation,
+            &source.id.transcript_key,
+            1,
+            state.status,
+            &view,
+            &crate::AgentTranscriptUpdate::reset(state.clone()),
+        );
+    };
+    let read = || {
+        call.take_for_call(true, Instant::now() + BATCH_INTERVAL, |_, _, _, _| {
+            DeliveryDecision::Allow
+        })
+    };
+    publish(&state);
+    assert!(read().context.is_none());
+    state.revision += 1;
+    state.messages.push(message("answer", "New answer.", true));
+    publish(&state);
+    let first = records(&read());
+    state.revision += 1;
+    publish(&state);
+    let repeated = read();
+    unbound(
+        &source.id.host_id,
+        source.id.runtime_incarnation,
+        Some(&source.id.terminal_id),
+    );
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0]["text"], "New answer.");
+    assert!(repeated.context.is_none());
+}
+
+#[test]
 fn global_and_pinned_calls_baseline_and_attribute_independent_agents_with_identical_message_ids() {
     let one = source("one", "pane", AgentTranscriptKind::Codex);
     let two = source("two", "pane", AgentTranscriptKind::Codex);

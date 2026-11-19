@@ -4,6 +4,7 @@
 //! Reference: openai/codex ede589336e9ecc64cb05045c2961fb1277858f1d,
 //! codex-rs/core/src/realtime_conversation.rs (RealtimeHandoffStreamState).
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -16,6 +17,55 @@ use crate::agent_transcript::{
 const MAX_MESSAGES: usize = 128;
 const MAX_ID_BYTES: usize = 512;
 const MAX_OUTPUT_BYTES: usize = 8192;
+const PENDING_NOTICE_DELAY: Duration = Duration::from_secs(5);
+
+/// Pane status requests catch-up and attention notices, never turn completion.
+pub(super) struct CompletionWait {
+    started: Instant,
+    idle: bool,
+    blocked: bool,
+    notified: bool,
+}
+
+pub(super) struct WaitUpdate {
+    pub finished: bool,
+    pub catch_up: bool,
+    pub notify: bool,
+}
+
+impl CompletionWait {
+    pub fn new(now: Instant) -> Self {
+        Self {
+            started: now,
+            idle: false,
+            blocked: false,
+            notified: false,
+        }
+    }
+
+    pub fn observe(
+        &mut self,
+        observation: Option<&Observation>,
+        status: crate::herdr_api::HerdrAgentStatus,
+        now: Instant,
+    ) -> WaitUpdate {
+        let finished = observation.is_some_and(|value| value.outcome.is_some() || value.lost);
+        let idle = super::settled(status);
+        let blocked = status == crate::herdr_api::HerdrAgentStatus::Blocked;
+        let notify = !finished
+            && ((blocked != self.blocked)
+                || (!self.notified && now.duration_since(self.started) >= PENDING_NOTICE_DELAY));
+        let catch_up = !finished && idle && !self.idle;
+        self.idle = idle;
+        self.blocked = blocked;
+        self.notified |= notify;
+        WaitUpdate {
+            finished,
+            catch_up,
+            notify,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests;
@@ -107,17 +157,26 @@ pub(super) struct Observation {
 }
 
 impl Observation {
-    pub(super) fn result(&self, delivery: &str, status: impl serde::Serialize) -> Value {
+    pub(super) fn result(
+        &self,
+        delivery: &str,
+        status: crate::herdr_api::HerdrAgentStatus,
+    ) -> Value {
         let completion = match self.outcome {
             Some(AgentTurnOutcome::Completed) => "completed",
             Some(AgentTurnOutcome::Interrupted) => "interrupted",
             Some(AgentTurnOutcome::Failed) => "failed",
-            None => "unknown",
+            None if self.lost => "unknown",
+            None => "pending",
         };
-        json!({"delivery":delivery,"completion":completion,"accepted":self.accepted,
+        let mut result = json!({"delivery":delivery,"completion":completion,"accepted":self.accepted,
             "correlation":if self.lost {"unavailable"} else if self.provider {"provider_turn"} else if self.accepted {"inferred"} else {"unavailable"},
             "turn_id":self.turn_id,"agent_status":status,"assistant_output":self.assistant_output,
-            "guidance":"Only an explicit terminal outcome of the associated provider turn establishes turn completion. Unknown or inferred observations are not completion. Never replay the submitted request; inspect the agent chat if the answer is unavailable."})
+            "guidance":"Only an explicit terminal outcome of the associated provider turn establishes turn completion. Pending, unknown or inferred observations are not completion. Never replay the submitted request; inspect the agent chat if the answer is unavailable."});
+        if status == crate::herdr_api::HerdrAgentStatus::Blocked && self.outcome.is_none() {
+            result["observation"] = json!("agent_blocked");
+        }
+        result
     }
 }
 
