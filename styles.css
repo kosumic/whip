@@ -115,6 +115,12 @@ figure img {
 }
 
 @media (max-width: 680px) {
+  .store-badge img {
+    width: 145px;
+  }
+  .google-play-badge img {
+    width: 188px;
+  }
   main {
     max-width: 400px;
     grid-template-columns: 1fr;
