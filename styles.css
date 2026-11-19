@@ -55,32 +55,25 @@ h1 {
 
 nav {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 12px;
 }
 
-.store-link {
-  flex: 1;
-  min-width: 145px;
-  padding: 14px 18px;
-  border-radius: 8px;
-  color: #fff;
-  background: #201b18;
-  font-size: 17px;
-  font-weight: 600;
-  text-decoration: none;
-  line-height: 1.5;
+.store-badge {
+  display: inline-flex;
+  flex: 0 0 auto;
 }
-
-.store-link > span:first-child {
+.store-badge img {
   display: block;
-  color: #e5dbd0;
-  font-size: 12px;
-  font-weight: 400;
+  width: 156px;
+  height: auto;
 }
-
-.store-link:hover {
-  background: #473d35;
+.google-play-badge {
+  margin: -13px -5px -13px -13px;
+}
+.google-play-badge img {
+  width: 202px;
 }
 
 a:focus-visible {
@@ -107,6 +100,17 @@ figure img {
 .qr-downloads a {
   margin-left: 8px;
   color: inherit;
+  text-underline-offset: 3px;
+}
+
+.about-link {
+  margin-top: 24px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.about-link a {
+  color: #9f2815;
   text-underline-offset: 3px;
 }
 
