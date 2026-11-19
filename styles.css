@@ -92,17 +92,6 @@ figure img {
   height: auto;
 }
 
-.qr-downloads {
-  color: #625950;
-  font-size: 13px;
-}
-
-.qr-downloads a {
-  margin-left: 8px;
-  color: inherit;
-  text-underline-offset: 3px;
-}
-
 .about-link {
   margin-top: 24px;
   font-size: 14px;
