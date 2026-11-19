@@ -60,12 +60,20 @@ the next package release.
 The checked-in store descriptions and iOS marketing URL also point here; publish
 them through the normal store metadata release process.
 
-In Google Search Console, verify the `https://whip.kosumi.dev/` URL-prefix
-property (or its parent domain), submit `https://whip.kosumi.dev/sitemap.xml`,
-and inspect/request indexing for the homepage. In Bing Webmaster Tools, import
-the verified property or verify it separately and submit the same sitemap.
-Verification requires the site owner's search-console account; never invent
-verification tokens or publish placeholder verification records.
+The `https://whip.kosumi.dev/` URL-prefix property was verified in Google Search
+Console on November 19, 2026 using the homepage's `google-site-verification`
+meta tag. Keep this tag when updating the homepage so ownership remains valid.
+The sitemap at `https://whip.kosumi.dev/sitemap.xml` was submitted the same day;
+Google reported **Success** and discovered both the homepage and `/terms`.
+Google also accepted a homepage indexing request that day and added the URL to
+its priority crawl queue.
+The Search generative AI control was confirmed as **Include**, inherited from
+`kosumi.dev`.
+
+Use URL inspection in this property to check the homepage's indexing status.
+In Bing Webmaster Tools, import the verified property or verify it separately
+and submit the same sitemap. Verification requires the site owner's account;
+never invent verification tokens or publish placeholder verification records.
 
 The sitemap and metadata support discovery but do not guarantee indexing or
 inclusion in an AI answer. Use Search Console/Bing reports and repeat the same
