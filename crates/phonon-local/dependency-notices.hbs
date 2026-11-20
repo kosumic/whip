@@ -1,0 +1,18 @@
+phonon-local production dependency licenses
+
+This notice contains the locked Android/iOS production graph, including build
+and transitive dependencies. Development-only dependencies are excluded.
+
+{{#each licenses}}
+================================================================================
+{{{name}}} ({{{id}}})
+
+Used by:
+{{#each used_by}}
+- {{{crate.name}}} {{{crate.version}}}
+{{/each}}
+
+--------------------------------------------------------------------------------
+{{{text}}}
+
+{{/each}}

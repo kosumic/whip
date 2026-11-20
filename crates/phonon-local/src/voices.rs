@@ -6,10 +6,10 @@ use std::{
     sync::LazyLock,
 };
 
-pub(crate) const REVISION_ID: &str = "0ee17205f254b5abc43b266c8a0f215565c352f7";
+pub const REVISION_ID: &str = "0ee17205f254b5abc43b266c8a0f215565c352f7";
 
 #[derive(Deserialize)]
-pub(crate) struct Voice {
+pub struct Voice {
     pub id: String,
     pub name: String,
     pub locale: String,
@@ -19,21 +19,21 @@ pub(crate) struct Voice {
     pub sha256: String,
 }
 
-pub(crate) static CATALOG: LazyLock<Vec<Voice>> = LazyLock::new(|| {
+pub static CATALOG: LazyLock<Vec<Voice>> = LazyLock::new(|| {
     serde_json::from_str(include_str!("voices.json")).unwrap_or_else(|error| {
         eprintln!("[Phonon] Could not read the bundled voice catalog: {error}");
         Vec::new()
     })
 });
 
-pub(crate) fn find(id: &str) -> Result<&'static Voice, String> {
+pub fn find(id: &str) -> Result<&'static Voice, String> {
     CATALOG
         .iter()
         .find(|v| v.id == id)
         .ok_or_else(|| "Unknown Phonon voice".into())
 }
 
-pub(crate) fn path(root: &Path, id: &str) -> PathBuf {
+pub fn path(root: &Path, id: &str) -> PathBuf {
     root.join(REVISION)
         .join(if cfg!(target_os = "ios") {
             "Models/voices"
@@ -43,11 +43,11 @@ pub(crate) fn path(root: &Path, id: &str) -> PathBuf {
         .join(format!("{id}.safetensors"))
 }
 
-pub(crate) fn partial(root: &Path, id: &str) -> PathBuf {
+pub fn partial(root: &Path, id: &str) -> PathBuf {
     root.join("voice-downloads").join(format!("{id}.partial"))
 }
 
-pub(crate) fn artifact(voice: &'static Voice) -> Artifact {
+pub fn artifact(voice: &'static Voice) -> Artifact {
     Artifact {
         name: &voice.file,
         bytes: voice.bytes,
@@ -55,7 +55,7 @@ pub(crate) fn artifact(voice: &'static Voice) -> Artifact {
     }
 }
 
-pub(crate) fn installed(root: &Path, id: &str) -> bool {
+pub fn installed(root: &Path, id: &str) -> bool {
     id == DEFAULT_VOICE
         || find(id).is_ok_and(|voice| {
             download::verify_digest(&path(root, id), voice.bytes, &voice.sha256).is_ok()

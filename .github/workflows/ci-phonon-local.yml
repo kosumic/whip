@@ -1,0 +1,61 @@
+name: Phonon local CI
+
+on:
+  push:
+    branches: [main]
+    paths: &phonon-paths
+      - 'crates/phonon-local/**'
+      - '.github/workflows/ci-phonon-local.yml'
+      - 'rust-toolchain.toml'
+  pull_request:
+    branches: [main]
+    paths: *phonon-paths
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-phonon-local-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Independent Rust host (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04-arm, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      # The pinned xn-gemm ARM debug assembler requires FP16 instructions.
+      # These flags apply only to the actual CI host, never mobile artifacts.
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS: '-C target-cpu=native'
+      CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS: '-C target-cpu=native'
+    defaults:
+      run:
+        working-directory: crates/phonon-local
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: crates/phonon-local
+      - name: Check formatting and lint
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+      - name: Model-free regressions and independent host
+        run: |
+          cargo test --locked
+          cargo run --locked --example inspect
+      - name: Build Core ML device and simulator targets
+        if: runner.os == 'macOS'
+        env:
+          IPHONEOS_DEPLOYMENT_TARGET: '16.4'
+        run: |
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+          cargo build --release --locked --target aarch64-apple-ios
+          cargo build --release --locked --target aarch64-apple-ios-sim

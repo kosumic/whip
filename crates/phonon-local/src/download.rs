@@ -1,3 +1,6 @@
+//! Explicit, blocking artifact installation. Call from a worker outside a Tokio
+//! runtime. The host serializes installation/removal for each storage root.
+//! Existing file formats, revision directories, and progress units match Whip.
 use super::{ARTIFACTS, Artifact, REVISION};
 use reqwest::{
     Client, StatusCode,
@@ -12,11 +15,11 @@ use std::{
     time::Duration,
 };
 
-pub(crate) fn staging(root: &Path) -> PathBuf {
+pub fn staging(root: &Path) -> PathBuf {
     root.join(format!("{REVISION}.partial"))
 }
 
-pub(crate) fn partial_bytes(root: &Path) -> u64 {
+pub fn partial_bytes(root: &Path) -> u64 {
     ARTIFACTS
         .iter()
         .map(|a| fs::metadata(staging(root).join(a.name)).map_or(0, |m| m.len().min(a.bytes)))
@@ -27,7 +30,7 @@ fn verify_file(path: &Path, artifact: Artifact) -> Result<(), String> {
     verify_digest(path, artifact.bytes, artifact.sha256)
 }
 
-pub(crate) fn verify_digest(path: &Path, bytes: u64, sha256: &str) -> Result<(), String> {
+pub fn verify_digest(path: &Path, bytes: u64, sha256: &str) -> Result<(), String> {
     let mut file = fs::File::open(path).map_err(|e| e.to_string())?;
     if file.metadata().map_err(|e| e.to_string())?.len() != bytes {
         return Err("The model download is incomplete. Retry the download.".into());
@@ -47,7 +50,7 @@ pub(crate) fn verify_digest(path: &Path, bytes: u64, sha256: &str) -> Result<(),
     Ok(())
 }
 
-pub(crate) fn verify(directory: &Path) -> Result<(), String> {
+pub fn verify(directory: &Path) -> Result<(), String> {
     for &artifact in ARTIFACTS {
         verify_file(&directory.join(artifact.name), artifact)?;
     }
@@ -89,11 +92,7 @@ async fn cancellable<T>(
     }
 }
 
-pub(crate) fn install(
-    root: &Path,
-    cancel: &AtomicBool,
-    progress: impl Fn(u64),
-) -> Result<(), String> {
+pub fn install(root: &Path, cancel: &AtomicBool, progress: impl Fn(u64)) -> Result<(), String> {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -106,8 +105,21 @@ async fn install_async(
     cancel: &AtomicBool,
     progress: impl Fn(u64),
 ) -> Result<(), String> {
+    if cancel.load(Ordering::Acquire) {
+        return Err("Download cancelled".into());
+    }
+    if verify(&root.join(REVISION)).is_ok() {
+        progress(ARTIFACTS.iter().map(|artifact| artifact.bytes).sum());
+        return Ok(());
+    }
     let directory = staging(root);
     fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
+    let required = if cfg!(target_os = "ios") {
+        600_000_000
+    } else {
+        ARTIFACTS.iter().map(|artifact| artifact.bytes).sum()
+    };
+    ensure_space(root, required.saturating_sub(partial_bytes(root)))?;
     let client = Client::builder()
         .connect_timeout(Duration::from_secs(15))
         .read_timeout(Duration::from_secs(10))
@@ -161,6 +173,9 @@ async fn fetch(
     cancel: &AtomicBool,
     progress: impl Fn(u64),
 ) -> Result<(), String> {
+    if cancel.load(Ordering::Acquire) {
+        return Err("Download cancelled".into());
+    }
     if verify_file(path, artifact).is_ok() {
         progress(artifact.bytes);
         return Ok(());
@@ -171,6 +186,10 @@ async fn fetch(
         fs::remove_file(path).map_err(|e| e.to_string())?;
         offset = 0;
     }
+    ensure_space(
+        path.parent().ok_or("Invalid download path")?,
+        artifact.bytes - offset,
+    )?;
     let mut request = client.get(url);
     if offset > 0 {
         request = request.header(RANGE, format!("bytes={offset}-"));
@@ -187,6 +206,11 @@ async fn fetch(
             .and_then(|v| v.to_str().ok()),
         offset,
         artifact.bytes,
+    )?;
+    // A server may ignore Range. Reserve enough for the full restart too.
+    ensure_space(
+        path.parent().ok_or("Invalid download path")?,
+        artifact.bytes - offset,
     )?;
     let mut file = OpenOptions::new()
         .create(true)
@@ -210,6 +234,11 @@ async fn fetch(
         progress(offset);
     }
     file.sync_all().map_err(|e| e.to_string())?;
+    // A clean HTTP EOF can still be shorter than the pinned artifact. Preserve
+    // those bytes for Range resume rather than treating them as corrupt.
+    if offset != artifact.bytes {
+        return Err("Download interrupted. Resume to finish installing Phonon.".into());
+    }
     if let Err(error) = verify_file(path, artifact) {
         fs::remove_file(path).map_err(|e| e.to_string())?;
         return Err(error);
@@ -217,47 +246,84 @@ async fn fetch(
     Ok(())
 }
 
-pub(crate) fn install_voice(
+const STORAGE_MARGIN: u64 = 16 * 1024 * 1024;
+
+fn ensure_space(directory: &Path, remaining: u64) -> Result<(), String> {
+    check_space(
+        fs2::available_space(directory).map_err(|error| error.to_string())?,
+        remaining,
+    )
+}
+
+fn check_space(available: u64, remaining: u64) -> Result<(), String> {
+    if remaining
+        .checked_add(STORAGE_MARGIN)
+        .is_none_or(|needed| available < needed)
+    {
+        return Err(
+            "Not enough storage for Phonon. Free space and retry; partial downloads are kept."
+                .into(),
+        );
+    }
+    Ok(())
+}
+
+pub fn install_voice(
     root: &Path,
     voice: &'static super::voices::Voice,
     cancel: &AtomicBool,
     progress: impl Fn(u64),
 ) -> Result<(), String> {
+    let url = format!(
+        "https://huggingface.co/gradium/phonon-voices/resolve/{}/{}",
+        super::voices::REVISION_ID,
+        voice.file
+    );
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| error.to_string())?
-        .block_on(async {
-            let partial = super::voices::partial(root, &voice.id);
-            fs::create_dir_all(partial.parent().ok_or("Invalid voice path")?)
-                .map_err(|error| error.to_string())?;
-            let client = Client::builder()
-                .connect_timeout(Duration::from_secs(15))
-                .read_timeout(Duration::from_secs(10))
-                .build()
-                .map_err(|error| error.to_string())?;
-            let url = format!(
-                "https://huggingface.co/gradium/phonon-voices/resolve/{}/{}",
-                super::voices::REVISION_ID,
-                voice.file
-            );
-            fetch(
-                &client,
-                &url,
-                &partial,
-                super::voices::artifact(voice),
-                cancel,
-                progress,
-            )
-            .await?;
-            if cancel.load(Ordering::Acquire) {
-                return Err("Download cancelled".into());
-            }
-            let destination = super::voices::path(root, &voice.id);
-            fs::create_dir_all(destination.parent().ok_or("Invalid voice path")?)
-                .map_err(|error| error.to_string())?;
-            fs::rename(partial, destination).map_err(|error| error.to_string())
-        })
+        .block_on(install_voice_from(root, voice, &url, cancel, progress))
+}
+
+async fn install_voice_from(
+    root: &Path,
+    voice: &'static super::voices::Voice,
+    url: &str,
+    cancel: &AtomicBool,
+    progress: impl Fn(u64),
+) -> Result<(), String> {
+    if cancel.load(Ordering::Acquire) {
+        return Err("Download cancelled".into());
+    }
+    let destination = super::voices::path(root, &voice.id);
+    if verify_digest(&destination, voice.bytes, &voice.sha256).is_ok() {
+        progress(voice.bytes);
+        return Ok(());
+    }
+    let partial = super::voices::partial(root, &voice.id);
+    fs::create_dir_all(partial.parent().ok_or("Invalid voice path")?)
+        .map_err(|error| error.to_string())?;
+    let client = Client::builder()
+        .connect_timeout(Duration::from_secs(15))
+        .read_timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|error| error.to_string())?;
+    fetch(
+        &client,
+        url,
+        &partial,
+        super::voices::artifact(voice),
+        cancel,
+        progress,
+    )
+    .await?;
+    if cancel.load(Ordering::Acquire) {
+        return Err("Download cancelled".into());
+    }
+    fs::create_dir_all(destination.parent().ok_or("Invalid voice path")?)
+        .map_err(|error| error.to_string())?;
+    fs::rename(partial, destination).map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
@@ -291,3 +357,6 @@ mod tests {
         assert!(verify(dir.path()).is_err());
     }
 }
+
+#[cfg(test)]
+mod recovery_tests;

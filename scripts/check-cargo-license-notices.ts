@@ -95,10 +95,7 @@ for (const rustPackage of packages) {
   const metadata = await cargoMetadata(rustPackage);
   for (const notice of parseDirectNotices(textNotice, metadata, rustPackage.name)) {
     if (notice.name === 'two-face') {
-      const { stdout } = await execFileAsync('cargo', [
-        'run', '--locked', '--quiet', '--manifest-path', resolve(root, rustPackage.manifest),
-        '--example', 'syntax-notices',
-      ], { cwd: root, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 600_000 });
+      const stdout = await syntaxNotices(rustPackage, notice.version);
       notice.licenseText += `\n\nBundled syntax definitions and themes\n\n${stdout}`;
     }
     if (notice.name === 'turso') {
@@ -110,7 +107,10 @@ for (const rustPackage of packages) {
     if (['herdr-protocol', 'voice-call-media', 'voice-call-openai'].includes(notice.name)) {
       notice.licenseText += `\n\n${await readFile(resolve(root, `crates/${notice.name}/NOTICE`),'utf8')}\n${await readFile(resolve(root, `crates/${notice.name}/LICENSE-APACHE`),'utf8')}`;
     }
-    if (['voice-call-media', 'voice-call-openai', 'voice-call-local', 'audio-ingress', 'agent-browser-control', 'agent-transcript-core', 'agent-transcript-view', 'herdr-protocol', 'native-credentials', 'whip-notify', 'whipair-protocol', 'tailcat-client', 'ptts', 'ptts-ffi', 'zip', 'rayon', 'reqwest', 'tract-onnx', 'rustfft', 'sonora', 'rubato', 'str0m'].includes(notice.name)) {
+    if (notice.name === 'phonon-local') {
+      notice.licenseText += `\n\n${await readFile(resolve(root, 'crates/phonon-local/NOTICE'), 'utf8')}\n${await readFile(resolve(root, 'crates/phonon-local/THIRD_PARTY_NOTICES.md'), 'utf8')}\n${await readFile(resolve(root, 'crates/phonon-local/LICENSE-PHONON-APACHE'), 'utf8')}`;
+    }
+    if (['phonon-local', 'voice-call-media', 'voice-call-openai', 'voice-call-local', 'audio-ingress', 'agent-browser-control', 'agent-transcript-core', 'agent-transcript-view', 'herdr-protocol', 'native-credentials', 'whip-notify', 'whipair-protocol', 'tailcat-client', 'ptts', 'ptts-ffi', 'zip', 'rayon', 'reqwest', 'tract-onnx', 'rustfft', 'sonora', 'rubato', 'str0m'].includes(notice.name)) {
       notice.licenseText += `\n\n${await productionTransitiveNotices(rustPackage, notice.name)}`;
     }
     const key = `${notice.name}@${notice.version}`;
@@ -147,6 +147,37 @@ function omitRootPackage(notice: string, rootPackageName: string) {
     return [section.replace(usedBy[1], directUsers.join('\n'))];
   });
   return [header, ...directDependencySections].join(divider);
+}
+
+/** Read two-face's bundled notices without compiling Whip's native static archive. */
+async function syntaxNotices(rustPackage: RustPackage, version: string): Promise<string> {
+  const directory = resolve(outputDirectory, 'syntax-notices');
+  await mkdir(directory, { recursive: true });
+  const manifest = resolve(directory, 'Cargo.toml');
+  const source = resolve(dirname(resolve(root, rustPackage.manifest)), 'examples/syntax-notices.rs');
+  await writeFile(manifest, `[package]
+name = "whip-syntax-notices"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "syntax-notices"
+path = ${JSON.stringify(source)}
+
+[dependencies]
+two-face = { version = "=${version}", default-features = false, features = ["syntect-fancy"] }
+`);
+  // Preserve the app's exact dependency versions; Cargo only prunes unused
+  // entries in this generated lockfile. No network or new resolution is needed.
+  await writeFile(resolve(directory, 'Cargo.lock'), await readFile(resolve(dirname(source), '../Cargo.lock')));
+  const { stdout } = await execFileAsync('cargo', [
+    'run', '--offline', '--quiet', '--manifest-path', manifest,
+  ], {
+    cwd: root, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 600_000,
+    env: { ...process.env, CARGO_TARGET_DIR: process.env.CARGO_TARGET_DIR || resolve(dirname(source), '../target') },
+  });
+  return stdout;
 }
 
 /** Include production subtrees with their parent notice, using the exact mobile lockfile. */

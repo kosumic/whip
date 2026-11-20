@@ -18,7 +18,7 @@ use std::{
 };
 
 pub(crate) const MAX_TEXT_UNITS: usize = 3_000;
-pub(crate) const PCM_CHUNK_SAMPLES: usize = 1_920;
+pub(crate) const PCM_CHUNK_SAMPLES: usize = phonon_local::PCM_CHUNK_SAMPLES;
 const PREVIEW_TEXT_COMMAND: &str = "preview-text:";
 
 #[derive(Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -320,17 +320,7 @@ fn command(root: &str, action: &str) -> Result<serde_json::Value, String> {
             // release its files before deleting them. Never hold STATE while
             // waiting for the Phonon model; synthesis may publish fallback status.
             phonon::clear_model();
-            for dir in [
-                root.join(REVISION),
-                download::staging(&root),
-                root.join("voice-downloads"),
-            ] {
-                match fs::remove_dir_all(dir) {
-                    Ok(()) => {}
-                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(e) => return Err(e.to_string()),
-                }
-            }
+            remove_phonon_files(&root)?;
             let mut current = state.lock();
             current.installed = false;
             current.downloaded_bytes = 0;
@@ -441,6 +431,22 @@ fn command(root: &str, action: &str) -> Result<serde_json::Value, String> {
         _ => return Err("Unknown speech backend action".into()),
     }
     Ok(current.status())
+}
+
+// Call only after cancelling playback and releasing the crate's model cache.
+fn remove_phonon_files(root: &Path) -> Result<(), String> {
+    for directory in [
+        root.join(REVISION),
+        download::staging(root),
+        root.join("voice-downloads"),
+    ] {
+        match fs::remove_dir_all(directory) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    Ok(())
 }
 
 pub(crate) type PcmCallback = unsafe extern "C" fn(*mut c_void, *const f32, usize) -> bool;
@@ -688,6 +694,30 @@ pub(super) fn phonon_available(language: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn removing_phonon_clears_models_and_partials_but_preserves_host_preferences() {
+        let root = tempfile::tempdir().unwrap();
+        let mut state = State::open(root.path()).unwrap();
+        state.select(Backend::Openai).unwrap();
+        state.select_openai_voice("cedar").unwrap();
+        for directory in [
+            root.path().join(REVISION),
+            download::staging(root.path()),
+            root.path().join("voice-downloads"),
+        ] {
+            fs::create_dir_all(&directory).unwrap();
+            fs::write(directory.join("fixture"), b"partial").unwrap();
+        }
+        remove_phonon_files(root.path()).unwrap();
+        remove_phonon_files(root.path()).unwrap();
+        let restored = State::open(root.path()).unwrap();
+        assert_eq!(restored.status()["backend"], "openai");
+        assert_eq!(restored.status()["openaiVoice"], "cedar");
+        assert!(!restored.installed);
+        assert_eq!(restored.downloaded_bytes, 0);
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
+    }
 
     #[test]
     fn missing_phonon_model_persists_system_selection_on_restore() {

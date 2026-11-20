@@ -1,0 +1,7 @@
+phonon-local
+Copyright Whip contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+
+Extracted from Whip's canonical Phonon implementation for issue #480.
+GymAmi's Whip-derived port was consulted for disk-space checks and download
+recovery. Third-party runtime, model, and voice artifacts retain their licenses.

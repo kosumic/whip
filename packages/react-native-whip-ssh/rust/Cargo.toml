@@ -14,6 +14,7 @@ default = []
 smart-turn = ["voice-call-local/smart-turn", "dep:tract-onnx", "dep:rustfft"]
 
 [dependencies]
+phonon-local = { version = "0.1.0", path = "../../../crates/phonon-local" }
 voice-call-openai = { path = "../../../crates/voice-call-openai" }
 voice-call-media = { path = "../../../crates/voice-call-media" }
 voice-call-local = { version = "0.1.0", path = "../../../crates/voice-call-local" }
@@ -64,13 +65,6 @@ url = "2"
 uuid = { version = "1", features = ["v4"] }
 native-credentials = { path = "../../../crates/native-credentials" }
 zeroize = "1"
-
-[target.'cfg(not(target_os = "ios"))'.dependencies]
-ptts = { version = "=0.6.0", default-features = false, features = ["hf"] }
-
-[target.'cfg(target_os = "ios")'.dependencies]
-ptts-ffi = { git = "https://github.com/gradium-ai/xn-ptts", rev = "cf90537f4599fb5ae6b09ac88258ce69e8e2f133" }
-zip = { version = "=9.0.5", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util", "process"] }

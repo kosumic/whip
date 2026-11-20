@@ -1,6 +1,6 @@
 //! Read only the model files and one voice from the verified official archive.
 //! The archive's pinned digest authenticates bundle.json and each file digest.
-use super::{ARTIFACTS, download::verify_digest};
+use super::{artifacts::COREML_ARTIFACT, download::verify_digest};
 use serde::Deserialize;
 use std::{
     fs,
@@ -97,7 +97,7 @@ fn manifest(archive: &mut ZipArchive<fs::File>) -> Result<(PathBuf, Vec<u8>, Vec
 
 pub(super) fn verify(directory: &Path) -> Result<(), String> {
     let mut archive = ZipArchive::new(
-        fs::File::open(directory.join(ARTIFACTS[0].name)).map_err(|e| e.to_string())?,
+        fs::File::open(directory.join(COREML_ARTIFACT.name)).map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())?;
     let (_, bytes, files) = manifest(&mut archive)?;
@@ -113,7 +113,7 @@ pub(super) fn verify(directory: &Path) -> Result<(), String> {
 
 pub(super) fn unpack(directory: &Path, cancel: &AtomicBool) -> Result<(), String> {
     let mut archive = ZipArchive::new(
-        fs::File::open(directory.join(ARTIFACTS[0].name)).map_err(|e| e.to_string())?,
+        fs::File::open(directory.join(COREML_ARTIFACT.name)).map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())?;
     let (prefix, bytes, files) = manifest(&mut archive)?;
@@ -160,3 +160,6 @@ pub(super) fn unpack(directory: &Path, cancel: &AtomicBool) -> Result<(), String
     fs::write(model.join("bundle.json"), bytes).map_err(|e| e.to_string())?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;
