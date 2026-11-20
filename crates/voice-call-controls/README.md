@@ -40,12 +40,12 @@ cargo clippy --locked --manifest-path crates/voice-call-controls/Cargo.toml --al
 cargo run --locked --manifest-path crates/voice-call-controls/Cargo.toml --example host
 ```
 
-The example demonstrates another host without migrating GymAmi. Consume this
-initial version by path or a pinned Git revision. The intended registry release
-is `voice-call-controls = "0.1.0"`, tagged `voice-call-controls-v0.1.0` through the
-standalone-library publish workflow after initial registry setup; see
-[crate releases](../../docs/crate-releases.md). No package is published by this
-extraction. GymAmi remains reference/prior art, not the behavioral authority.
+The example demonstrates another host without migrating GymAmi. Add the registry
+dependency `voice-call-controls = "0.1.0"`, or use a path/pinned Git revision while
+developing. Versioned releases use `voice-call-controls-v<version>` tags through
+the standalone-library publishing workflow; see
+[crate releases](../../docs/crate-releases.md).
+GymAmi remains reference/prior art, not the behavioral authority.
 
 Standalone tests cover contract validation, deadline replacement, suspension,
 recovery and stale call identities. Whip's integration regressions additionally

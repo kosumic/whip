@@ -7,6 +7,7 @@ on:
       - 'audio-ingress-v*'
       - 'mobile-speech-v*'
       - 'native-credentials-v*'
+      - 'speech-timeline-v*'
       - 'voice-call-local-v*'
       - 'voice-call-controls-v*'
       - 'voice-call-media-v*'
@@ -23,6 +24,7 @@ on:
           - audio-ingress
           - mobile-speech
           - native-credentials
+          - speech-timeline
           - voice-call-local
           - voice-call-controls
           - voice-call-media
@@ -79,7 +81,7 @@ jobs:
             version="$MANUAL_VERSION"
           fi
           case "$crate" in
-            agent-transcript-view|audio-ingress|mobile-speech|native-credentials|voice-call-controls|voice-call-local|voice-call-media|voice-call-openai)
+            agent-transcript-view|audio-ingress|mobile-speech|native-credentials|speech-timeline|voice-call-controls|voice-call-local|voice-call-media|voice-call-openai)
               directory="crates/$crate" ;;
             whip-notify) directory=whip-notify ;;
             *) echo 'Unsupported release crate' >&2; exit 1 ;;
