@@ -1,0 +1,15 @@
+[package]
+name = "voice-call-controls"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.100"
+license = "AGPL-3.0-or-later"
+description = "Portable microphone tool contract and logical-call timed-mute policy"
+repository = "https://github.com/kosumic/whip"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[lints.rust]
+unsafe_code = "forbid"

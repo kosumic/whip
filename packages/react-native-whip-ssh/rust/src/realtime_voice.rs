@@ -795,7 +795,7 @@ impl RealtimeVoiceAdapter {
         let adapter = Arc::new(Self {
             session_id: config.session_id.clone(),
             cue: Mutex::default(),
-            microphone: Mutex::new(microphone::State::new(config.preview)),
+            microphone: Mutex::new(microphone::State::new(speech.id(), config.preview)),
             started_at,
             client_elapsed_ms: config.client_elapsed_ms,
             webrtc: config.webrtc && !(config.live && config.preview),

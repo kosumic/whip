@@ -99,7 +99,12 @@ async fn acknowledge(
 async fn recovered_realtime_unmute_clears_provider_input_at_the_original_deadline() -> TestResult {
     let (owner, mut controls) = owner(false)?;
     owner.set_microphone(true, Some(Duration::from_secs(60)))?;
-    let deadline = owner.microphone.lock().deadline.ok_or("Missing deadline")?;
+    let deadline = owner
+        .microphone
+        .lock()
+        .policy
+        .deadline()
+        .ok_or("Missing deadline")?;
     owner.retire_session();
     while controls.try_recv().is_ok() {}
     owner.retiring.store(false, Ordering::Release);
@@ -137,7 +142,12 @@ async fn recovered_realtime_unmute_clears_provider_input_at_the_original_deadlin
 async fn recovered_live_unmute_waits_for_matching_ack_and_newer_intent_wins() -> TestResult {
     let (owner, mut controls) = owner(true)?;
     owner.set_microphone(true, Some(Duration::from_secs(60)))?;
-    let deadline = owner.microphone.lock().deadline.ok_or("Missing deadline")?;
+    let deadline = owner
+        .microphone
+        .lock()
+        .policy
+        .deadline()
+        .ok_or("Missing deadline")?;
     owner.retire_session();
     while controls.try_recv().is_ok() {}
     owner.microphone_tick(deadline);
@@ -212,7 +222,7 @@ async fn recovered_live_unmute_waits_for_matching_ack_and_newer_intent_wins() ->
     assert!(owner.input.accepts(owner.input.generation()));
     owner.microphone_tick(deadline + Duration::from_secs(600));
     assert!(!owner.view.lock().muted);
-    assert!(owner.microphone.lock().deadline.is_none());
+    assert!(owner.microphone.lock().policy.deadline().is_none());
     owner.close();
     Ok(())
 }

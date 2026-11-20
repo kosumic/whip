@@ -5,6 +5,7 @@ module.exports = [
   'android/build',
   'build',
   'crates/audio-ingress/target',
+  'crates/voice-call-controls/target',
   'crates/voice-call-local/target',
   'crates/voice-call-media/target',
   'crates/voice-call-openai/target',

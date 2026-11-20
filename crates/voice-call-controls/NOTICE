@@ -1,0 +1,4 @@
+voice-call-controls is extracted from Whip's logical-call microphone controls
+(packages/react-native-whip-ssh/rust/src/realtime_voice/microphone.rs), including
+the voice_set_microphone protocol and timed-mute behavior. Whip is the behavioral
+source of truth. This code retains Whip's AGPL-3.0-or-later license.

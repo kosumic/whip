@@ -7642,6 +7642,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "voice-call-controls"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "voice-call-local"
 version = "0.1.0"
 dependencies = [
@@ -7916,6 +7924,7 @@ dependencies = [
  "uniffi",
  "url",
  "uuid",
+ "voice-call-controls",
  "voice-call-local",
  "voice-call-media",
  "voice-call-openai",

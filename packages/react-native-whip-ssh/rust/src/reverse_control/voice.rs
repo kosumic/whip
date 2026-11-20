@@ -13,7 +13,8 @@ use serde_json::{Value, json};
 use super::browser::model::{BrowserError, ErrorCode};
 use super::{application, device, hosts};
 use crate::host_runtime::realtime_agent::{Delegation, PinnedAgent};
-use crate::realtime_voice::{RealtimeVoiceAdapter, microphone};
+use crate::realtime_voice::RealtimeVoiceAdapter;
+use voice_call_controls as microphone;
 
 #[cfg(test)]
 #[path = "voice_api_tests.rs"]
@@ -388,7 +389,8 @@ impl WhipToolSession {
                     self.operation(name, args, dispatched).await
                 }
                 microphone::TOOL => {
-                    let request: microphone::Request = decode(args)?;
+                    let request =
+                        microphone::Request::parse(arguments).map_err(BrowserError::invalid)?;
                     let duration = request.duration().map_err(BrowserError::invalid)?;
                     let owner = self.microphone.lock().upgrade().ok_or_else(|| {
                         BrowserError::new(ErrorCode::Cancelled, "The global voice call has ended")
@@ -400,9 +402,10 @@ impl WhipToolSession {
                             "The microphone control is unavailable",
                         )
                     })?;
-                    Ok(
-                        json!({"muted":request.muted,"duration_minutes":duration.map(|duration| duration.as_secs_f64() / 60.0)}),
-                    )
+                    Ok(json!(microphone::Acknowledgement::new(
+                        request.muted,
+                        duration
+                    )))
                 }
                 HOSTS_LIST => {
                     application::Action::parse(application::LIST, &args)?;
@@ -584,12 +587,11 @@ pub(crate) fn base_instructions(shizuku_access: bool) -> String {
 pub(crate) fn schemas(shizuku_access: bool) -> Vec<Value> {
     let string = || json!({"type":"string","maxLength":256});
     let mut tools = vec![
-        schema(
-            microphone::TOOL,
-            "Mute or unmute the user's microphone in this global call immediately, without confirmation. Optional positive duration_minutes (up to 60) automatically unmutes; omit for indefinite mute. Unmuting must omit duration_minutes. Whip speaks the state change locally.",
-            json!({"muted":{"type":"boolean"},"duration_minutes":{"type":"number","exclusiveMinimum":0,"maximum":microphone::MAX_MINUTES}}),
-            &["muted"],
-        ),
+        json!({
+            "type": "function", "name": microphone::TOOL,
+            "description": "Mute or unmute the user's microphone in this global call immediately, without confirmation. Optional positive duration_minutes (up to 60) automatically unmutes; omit for indefinite mute. Unmuting must omit duration_minutes. Whip speaks the state change locally.",
+            "parameters": microphone::parameters(),
+        }),
         schema(
             HOSTS_LIST,
             "List saved host metadata and connection status, without credentials or instructions.",
@@ -803,11 +805,15 @@ mod tests {
                 r#"{"muted":true,"duration_minutes":61}"#,
                 r#"{"muted":false,"duration_minutes":1}"#,
                 r#"{"muted":true,"duration_seconds":10}"#,
+                r#"{"muted":true,"muted":false}"#,
+                r#"{"muted":true,"duration_minutes":1,"duration_minutes":2}"#,
+                r#"{"muted":true,"duration_minutes":null}"#,
             ] {
                 assert_eq!(
                     session.execute(microphone::TOOL, invalid).await["error"],
                     "invalid_argument"
                 );
+                assert!(!voice_call_openai::session::Audio::is_muted(&*owner));
             }
             assert_eq!(
                 session.execute(microphone::TOOL, mute).await,

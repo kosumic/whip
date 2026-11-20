@@ -28,7 +28,7 @@ fn interruption_preserves_call_and_mute_for_both_providers() -> Result<(), &'sta
             assert!(!owner.input.accepts(generation));
             owner.resume_audio();
             owner.resume_audio();
-            assert_eq!(owner.microphone.lock().muted, muted);
+            assert_eq!(owner.microphone.lock().policy.muted(), muted);
             assert_eq!(owner.capture_enabled(), !muted);
             assert!(!owner.input.accepts(generation));
             owner.close();

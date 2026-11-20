@@ -117,5 +117,6 @@ AGENTS.md
 /crates/voice-call-local/target/
 /crates/voice-call-media/target/
 /crates/voice-call-openai/target/
+/crates/voice-call-controls/target/
 /crates/phonon-local/target/
 /crates/speech-timeline/target/

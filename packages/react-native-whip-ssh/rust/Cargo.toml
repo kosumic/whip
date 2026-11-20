@@ -14,6 +14,7 @@ default = []
 smart-turn = ["voice-call-local/smart-turn", "dep:tract-onnx", "dep:rustfft"]
 
 [dependencies]
+voice-call-controls = { version = "0.1.0", path = "../../../crates/voice-call-controls" }
 speech-timeline = { version = "0.1.0", path = "../../../crates/speech-timeline" }
 phonon-local = { version = "0.1.0", path = "../../../crates/phonon-local" }
 voice-call-openai = { path = "../../../crates/voice-call-openai" }

@@ -1,49 +1,16 @@
 //! Logical-call microphone intent, deadline and backend-driven transition speech.
 use super::{Command, Duration, Instant, Ordering, RealtimeVoiceAdapter};
-use serde::Deserialize;
 use std::collections::VecDeque;
+use voice_call_controls::{Context, Policy};
 
-pub(crate) const TOOL: &str = "voice_set_microphone";
-pub(crate) const MAX_MINUTES: u32 = 60;
 const OUTPUT_TAIL: Duration = Duration::from_millis(500);
 // A real pause in the continuous GPT-Live PCM stream is a speech boundary.
 const BOUNDARY_QUIET_MS: usize = 160;
 pub(super) const BOUNDARY_QUIET: Duration = Duration::from_millis(BOUNDARY_QUIET_MS as u64);
 pub(super) const QUIET_SAMPLES: usize = super::RATE * BOUNDARY_QUIET_MS / 1000;
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Request {
-    pub muted: bool,
-    #[serde(default, deserialize_with = "minutes")]
-    duration_minutes: Option<f64>,
-}
-
-fn minutes<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<f64>, D::Error> {
-    f64::deserialize(deserializer).map(Some)
-}
-
-impl Request {
-    pub fn duration(&self) -> Result<Option<Duration>, &'static str> {
-        let Some(minutes) = self.duration_minutes else {
-            return Ok(None);
-        };
-        if !self.muted || !minutes.is_finite() || minutes <= 0.0 || minutes > f64::from(MAX_MINUTES)
-        {
-            return Err("Use a positive duration_minutes of at most 60, only when muting.");
-        }
-        Duration::try_from_secs_f64(minutes * 60.0)
-            .ok()
-            .filter(|duration| !duration.is_zero())
-            .map(Some)
-            .ok_or("Invalid mute duration.")
-    }
-}
-
-#[derive(Default)]
 pub(super) struct State {
-    pub muted: bool,
-    deadline: Option<Instant>,
+    pub(super) policy: Policy,
     announcements: VecDeque<bool>,
     announcement_id: u64,
     pub(super) active: bool,
@@ -53,15 +20,20 @@ pub(super) struct State {
 }
 
 impl State {
-    pub fn new(muted: bool) -> Self {
+    pub fn new(call_id: u64, muted: bool) -> Self {
         Self {
-            muted,
-            ..Self::default()
+            policy: Policy::new(call_id, muted),
+            announcements: VecDeque::new(),
+            announcement_id: 0,
+            active: false,
+            speaking: false,
+            cancelled: false,
+            capture_after: None,
         }
     }
 
     pub fn cancel(&mut self) {
-        self.deadline = None;
+        self.policy.cancel();
         self.cancel_speech();
     }
 
@@ -78,7 +50,7 @@ impl State {
     }
 
     pub fn blocks_capture(&self, now: Instant) -> bool {
-        self.muted || self.speaking || self.capture_after.is_some_and(|after| now < after)
+        self.policy.muted() || self.speaking || self.capture_after.is_some_and(|after| now < after)
     }
 
     pub fn announcement(&self, lease: u64) -> Option<serde_json::Value> {
@@ -123,6 +95,16 @@ impl State {
 }
 
 impl RealtimeVoiceAdapter {
+    fn microphone_context(&self) -> Context {
+        Context {
+            call_id: self.speech.id(),
+            current: !self.closed.load(Ordering::Acquire) && self.speech.is_current(),
+            provider_ready: self.ready.load(Ordering::Acquire)
+                && !self.retiring.load(Ordering::Acquire),
+            suspended: self.suspended.load(Ordering::Acquire),
+        }
+    }
+
     /// The output lock serializes reservation with native PCM reads. A stale
     /// snapshot cannot admit speech or release another cue's reservation.
     pub(super) fn announcement_start(&self, id: u64) -> bool {
@@ -208,15 +190,14 @@ impl RealtimeVoiceAdapter {
         duration: Option<Duration>,
     ) -> Result<(), &'static str> {
         let mut state = self.microphone.lock();
-        if self.closed.load(Ordering::Acquire) || !self.allow_input || !self.speech.is_current() {
+        if !self.allow_input {
             return Err("The voice call has ended.");
         }
-        if duration.is_some()
-            && (!self.ready.load(Ordering::Acquire) || self.retiring.load(Ordering::Acquire))
-        {
-            return Err("Wait for the voice call to reconnect before setting a timed mute.");
-        }
-        self.update_microphone(&mut state, muted, duration, Instant::now());
+        let changed =
+            state
+                .policy
+                .set(self.microphone_context(), muted, duration, Instant::now())?;
+        self.update_microphone(&mut state, muted, changed);
         drop(state);
         self.command(Command::Mute(muted));
         if self.closed.load(Ordering::Acquire) {
@@ -226,20 +207,8 @@ impl RealtimeVoiceAdapter {
         }
     }
 
-    fn update_microphone(
-        &self,
-        state: &mut State,
-        muted: bool,
-        duration: Option<Duration>,
-        now: Instant,
-    ) {
-        state.deadline = if muted {
-            duration.map(|duration| now + duration)
-        } else {
-            None
-        };
-        if state.muted != muted {
-            state.muted = muted;
+    fn update_microphone(&self, state: &mut State, muted: bool, changed: bool) {
+        if changed {
             state.queue(muted);
             // Invalidate queued and in-flight PCM on both edges. Live unmute
             // still waits for its matching provider acknowledgement.
@@ -269,16 +238,10 @@ impl RealtimeVoiceAdapter {
             state.cancel();
             return;
         }
-        // Recovery may outlast the deadline. Leave it due until this logical
-        // call has an active provider again; never restart the mute duration.
-        if self.suspended.load(Ordering::Acquire)
-            || self.retiring.load(Ordering::Acquire)
-            || !self.ready.load(Ordering::Acquire)
-            || state.deadline.is_none_or(|deadline| now < deadline)
-        {
+        if !state.policy.expire(self.microphone_context(), now) {
             return;
         }
-        self.update_microphone(&mut state, false, None, now);
+        self.update_microphone(&mut state, false, true);
         drop(state);
         self.command(Command::Mute(false));
     }
