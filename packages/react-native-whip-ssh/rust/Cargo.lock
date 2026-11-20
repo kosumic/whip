@@ -6062,6 +6062,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "speech-timeline"
+version = "0.1.0"
+
+[[package]]
 name = "spki"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7897,6 +7901,7 @@ dependencies = [
  "sha1 0.10.7",
  "sha2 0.10.9",
  "shlex 2.0.1",
+ "speech-timeline",
  "ssh-key",
  "syntect",
  "tailcat-client",

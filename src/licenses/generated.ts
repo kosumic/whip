@@ -991,6 +991,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/fae70451618f664b.txt"),
   },
   {
+    id: "cargo-speech-timeline-0-1-0",
+    category: "cargo",
+    projectName: "speech-timeline",
+    sourceUrl: "https://github.com/kosumic/whip",
+    attribution: "Direct Rust dependency · version 0.1.0 · used by whip-ssh",
+    licenseName: "AGPL-3.0-or-later",
+    licenseAsset: require("../../assets/licenses/generated/cc3f9cabba8cec31.txt"),
+  },
+  {
     id: "cargo-ssh-key-0-7-0-rc-12",
     category: "cargo",
     projectName: "ssh-key",

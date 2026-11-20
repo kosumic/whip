@@ -118,3 +118,4 @@ AGENTS.md
 /crates/voice-call-media/target/
 /crates/voice-call-openai/target/
 /crates/phonon-local/target/
+/crates/speech-timeline/target/

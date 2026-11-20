@@ -44,7 +44,6 @@ mod rich_text_html;
 mod secure_id;
 mod speech_backend;
 mod speech_captions;
-mod speech_pacing;
 mod speech_playback;
 mod ssh;
 mod ssh_workflows;

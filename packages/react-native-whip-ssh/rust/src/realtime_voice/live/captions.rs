@@ -1,7 +1,7 @@
 //! Live fragments have timeline intervals, not provider turns or playback marks.
 use serde::{Deserialize, Serialize};
+use speech_timeline::SourceClock;
 use std::collections::HashSet;
-mod source_clock;
 #[cfg(test)]
 mod tests;
 
@@ -46,7 +46,7 @@ pub(in crate::realtime_voice) struct Transcript {
     received_samples: usize,
     playback_origin: Option<usize>,
     caption_origin: Option<f64>,
-    source_clock: Option<source_clock::SourceClock>,
+    source_clock: Option<SourceClock>,
     source_origin: Option<usize>,
     heard: Vec<(f64, f64)>,
 }
@@ -252,7 +252,9 @@ impl Transcript {
             self.source_clock.get_or_insert_default();
         }
         if let Some(clock) = &mut self.source_clock {
-            clock.record(start, count, rtp_timestamp)?;
+            clock
+                .record(start, count, rtp_timestamp)
+                .map_err(|_| "GPT-Live playback timing fell behind.")?;
         }
         Ok(())
     }

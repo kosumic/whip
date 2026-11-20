@@ -1,10 +1,10 @@
 //! Call-owned captions paced by acknowledged playback, including while the
 //! server is still generating. Generated duration excludes transport padding.
-use crate::speech_pacing as pacing;
+use speech_timeline as pacing;
+use speech_timeline::StreamPace;
 mod duration;
 #[cfg(test)]
 mod duration_tests;
-mod streaming;
 use std::collections::{HashSet, VecDeque};
 
 use oai_rt_rs::ServerEvent;
@@ -49,7 +49,7 @@ struct Turn {
     timing: pacing::Text,
     clock: pacing::Clock,
     pace_source: PaceSource,
-    stream_pace: streaming::StreamPace,
+    stream_pace: StreamPace,
 }
 
 #[derive(Default, PartialEq, Eq)]
@@ -169,7 +169,7 @@ impl Transcript {
             timing: pacing::Text::default(),
             clock: pacing::Clock::new(self.pace),
             pace_source: PaceSource::Pending,
-            stream_pace: streaming::StreamPace::new(self.pace),
+            stream_pace: StreamPace::new(self.pace),
         });
         self.turns.back_mut()
     }

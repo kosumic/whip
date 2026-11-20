@@ -1,5 +1,5 @@
 use super::*;
-use crate::realtime_voice::RATE;
+const RATE: usize = crate::SAMPLE_RATE as usize;
 
 fn text(value: &str) -> Text {
     let mut text = Text::default();

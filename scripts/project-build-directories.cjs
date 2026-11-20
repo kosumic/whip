@@ -12,6 +12,7 @@ module.exports = [
   'crates/agent-transcript-core/target',
   'crates/herdr-protocol/target',
   'crates/mobile-speech/target',
+  'crates/speech-timeline/target',
   'crates/phonon-local/target',
   'crates/native-credentials/target',
   'crates/tailcat-client/target',

@@ -135,6 +135,14 @@ jobs:
           cargo test --locked
           cargo run --locked --example plain_text
 
+      - name: Check shared speech timeline
+        working-directory: crates/speech-timeline
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+          cargo run --locked --example native_shell
+
       - name: Check shared PCM ingress
         working-directory: crates/audio-ingress
         run: |

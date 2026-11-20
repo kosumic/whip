@@ -1,0 +1,15 @@
+[package]
+name = "speech-timeline"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.100"
+license = "AGPL-3.0-or-later"
+description = "Whip's playback-driven speech pacing, text positions and source clock mapping"
+repository = "https://github.com/kosumic/whip"
+readme = "README.md"
+keywords = ["speech", "tts", "captions", "audio"]
+categories = ["multimedia::audio"]
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"

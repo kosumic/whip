@@ -101,8 +101,8 @@ for (const rustPackage of packages) {
     if (notice.name === 'turso') {
       notice.licenseText += `\n\n${await productionTransitiveNotices(rustPackage, 'turso')}`;
     }
-    if (notice.name === 'agent-transcript-view') {
-      notice.licenseText += `\n\n${await readFile(resolve(root, 'crates/agent-transcript-view/NOTICE'), 'utf8')}`;
+    if (['agent-transcript-view', 'speech-timeline'].includes(notice.name)) {
+      notice.licenseText += `\n\n${await readFile(resolve(root, `crates/${notice.name}/NOTICE`), 'utf8')}`;
     }
     if (['herdr-protocol', 'voice-call-media', 'voice-call-openai'].includes(notice.name)) {
       notice.licenseText += `\n\n${await readFile(resolve(root, `crates/${notice.name}/NOTICE`),'utf8')}\n${await readFile(resolve(root, `crates/${notice.name}/LICENSE-APACHE`),'utf8')}`;
