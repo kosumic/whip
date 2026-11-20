@@ -662,6 +662,10 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+      # Release simulator and WebKit processes before compiling the device app.
+      - name: Shut down iOS simulators
+        run: xcrun simctl shutdown all
+
       - name: Compute iOS Xcode cache key
         id: ios-xcode-key
         env:

@@ -10,6 +10,9 @@
 #import <net/if.h>
 #import "WhipBrowser.h"
 
+// The first request also starts WebKit's processes on a cold CI simulator.
+static const NSTimeInterval BrowserProxyRequestTimeout = 60;
+
 @interface WhipBrowser (ProxyTesting)
 + (BOOL)supportsProxy;
 - (NSDictionary *)constantsToExport;
@@ -189,7 +192,7 @@ static BOOL ReadBytes(int socket, void *buffer, size_t length) {
   WKWebView *browser = [self browserForRuntime:@"a" host:@"saved-a"];
   self.navigation = [self expectationWithDescription:@"redirect through proxy"];
   [browser loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:@"http://ssh-only.invalid/start"]]];
-  [self waitForExpectations:@[self.navigation] timeout:60];
+  [self waitForExpectations:@[self.navigation] timeout:BrowserProxyRequestTimeout];
   XCTestExpectation *resource = [self expectationWithDescription:@"subresource through proxy"];
   [self waitForTitle:browser completion:resource attempts:100];
   [self waitForExpectations:@[resource] timeout:15];
@@ -263,7 +266,7 @@ static BOOL ReadBytes(int socket, void *buffer, size_t length) {
   self.navigation = [self expectationWithDescription:@"direct IP fallback"];
   NSString *url = [NSString stringWithFormat:@"http://127.0.0.1:%u/", self.proxy.port];
   [browser loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:url]]];
-  [self waitForExpectations:@[self.navigation] timeout:60];
+  [self waitForExpectations:@[self.navigation] timeout:BrowserProxyRequestTimeout];
   @synchronized(self.proxy) { XCTAssertGreaterThan(self.proxy.connections, 0); }
   XCTAssertNil(self.probeError);
 }
@@ -321,7 +324,7 @@ static BOOL ReadBytes(int socket, void *buffer, size_t length) {
       self.probeError = nil;
       self.navigation = [self expectationWithDescription:@"raw proxy probe"];
       [browser loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:[NSString stringWithFormat:@"%@://%@:%u/", scheme, probe[2], target.port]] cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:3]];
-      [self waitForExpectations:@[self.navigation] timeout:60];
+      [self waitForExpectations:@[self.navigation] timeout:BrowserProxyRequestTimeout];
       @synchronized(self.proxy) { @synchronized(target) {
         BOOL hostname = [probe[2] isEqual:@"localhost"] || [probe[2] isEqual:@"ssh-only.invalid"];
         NSLog(@"PROXY_DIAGNOSTIC scheme=%@ kind=%@ host=%@ proxied=%lu direct=%lu prefixes=%@ error=%ld", scheme, probe[0], probe[2],
@@ -491,7 +494,7 @@ static BOOL ReadBytes(int socket, void *buffer, size_t length) {
     body = [NSString stringWithContentsOfFile:result[@"local_path"] encoding:NSUTF8StringEncoding error:nil];
     [[NSFileManager defaultManager] removeItemAtPath:result[@"local_path"] error:nil]; [done fulfill];
   } reject:^(NSString *code, NSString *message, NSError *error) { XCTFail(@"%@", message); [done fulfill]; }];
-  [self waitForExpectations:@[done] timeout:15];
+  [self waitForExpectations:@[done] timeout:BrowserProxyRequestTimeout];
   @synchronized(self.proxy) { XCTAssertTrue([self.proxy.hosts containsObject:@"ssh-only.invalid"]); }
   @synchronized(target) { XCTAssertGreaterThan(target.connections, 0); }
   XCTAssertEqualObjects(body, @"direct-leak");
