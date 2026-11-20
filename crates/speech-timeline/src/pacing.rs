@@ -6,13 +6,15 @@ const MAX_UNITS_PER_SECOND: f64 = 32.0;
 const MAX_CORRECTION_UNITS_PER_SECOND: f64 = 40.0;
 
 #[derive(Clone, Copy)]
-pub(crate) struct Pace(f64);
+/// Adaptive weighted text units per second, learned from 24 kHz source PCM.
+pub struct Pace(f64);
 impl Default for Pace {
     fn default() -> Self {
         Self(INITIAL_UNITS_PER_SECOND)
     }
 }
 impl Pace {
+    /// Learn a sustained streaming window. Reject implausible rates and empty PCM.
     pub fn observe_streaming(&mut self, units: u32, samples: usize) -> bool {
         if samples == 0 {
             return false;
@@ -24,6 +26,7 @@ impl Pace {
         self.observe(units, samples);
         true
     }
+    /// Blend an observed decoded duration with the previous estimate.
     pub fn observe(&mut self, units: u32, samples: usize) {
         let previous = self.0;
         self.observe_measured(units, samples);
@@ -40,7 +43,7 @@ impl Pace {
 }
 
 fn seconds(samples: usize) -> f64 {
-    f64::from(u32::try_from(samples).unwrap_or(u32::MAX)) / 24_000.0
+    f64::from(u32::try_from(samples).unwrap_or(u32::MAX)) / f64::from(crate::SAMPLE_RATE)
 }
 
 #[derive(Clone, Copy)]
@@ -50,9 +53,11 @@ struct Point {
 }
 
 #[derive(Default)]
-pub(crate) struct Text {
+/// Weighted text mapping. Positions are UTF-16 offsets at scalar boundaries.
+pub struct Text {
     points: Vec<Point>,
     words: Vec<Point>,
+    /// Total weighted speech units, including punctuation pauses.
     pub units: u32,
 }
 
@@ -68,6 +73,8 @@ fn combining(character: char) -> bool {
 }
 
 impl Text {
+    /// Rebuild mappings for the current accumulated text, including unfinished
+    /// streaming words. This supplies no playback evidence and advances no clock.
     pub fn update(&mut self, text: &str) {
         self.points.clear();
         self.words.clear();
@@ -125,6 +132,8 @@ impl Text {
             .map_or(units, |point| f64::from(point.units))
     }
 
+    /// Preserve the bright prefix through the current word after interruption.
+    /// Zero stays zero; this is a display boundary, not additional heard audio.
     pub fn freeze(&self, utf16: usize) -> usize {
         if utf16 == 0 {
             return 0;
@@ -136,12 +145,14 @@ impl Text {
     }
 }
 
-pub(crate) struct Clock {
+/// Monotonic display clock for one utterance. Only acknowledged PCM supplies time.
+pub struct Clock {
     pace: Pace,
     progress: f64,
     played: usize,
 }
 impl Clock {
+    /// Start an independent utterance at zero played frames and display units.
     pub fn new(pace: Pace) -> Self {
         Self {
             pace,
@@ -150,12 +161,14 @@ impl Clock {
         }
     }
 
+    /// Refine the estimate. The cursor changes only on subsequent played frames.
     pub fn set_pace(&mut self, pace: Pace) {
         self.pace = pace;
     }
 
     /// Generated PCM has a measured duration. Reconcile on the next consumed
-    /// frame, without the streaming estimate's catch-up speed limit.
+    /// frame, without the streaming estimate's catch-up speed limit or word lead.
+    /// `played` is acknowledged source PCM, `samples` is the measured full length.
     pub fn advance_measured(&mut self, text: &Text, played: usize, samples: usize) -> usize {
         let played = played.min(samples);
         if samples > 0 && played > self.played {
@@ -167,6 +180,13 @@ impl Clock {
         text.position(self.progress)
     }
 
+    /// Return the paced UTF-16 position for acknowledged source PCM.
+    ///
+    /// `samples` is the available/final audio length; it is not a playback mark.
+    /// The adapter must bound `played <= samples`. `complete` means the text and
+    /// duration are final, not that the audio was heard. Whip's existing word lead
+    /// applies to known durations. At `played == samples && complete`, the device
+    /// has acknowledged all final audio, so the full text is exposed.
     pub fn advance(&mut self, text: &Text, played: usize, samples: usize, complete: bool) -> usize {
         let elapsed = seconds(played.saturating_sub(self.played));
         self.played = self.played.max(played);

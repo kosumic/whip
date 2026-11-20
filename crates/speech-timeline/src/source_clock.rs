@@ -11,13 +11,19 @@ struct Anchor {
 }
 
 #[derive(Default)]
-pub(super) struct SourceClock {
+/// Maps 24 kHz PCM to a wrapping 48 kHz source timestamp clock.
+/// Timestamp parsing and packet delivery remain the provider adapter’s job.
+pub struct SourceClock {
     next_timestamp: Option<u32>,
     source: usize,
     anchors: VecDeque<Anchor>,
 }
 
 impl SourceClock {
+    /// Record a decoded packet before queueing it. `pcm` and `count` are source
+    /// PCM frames, while `timestamp` uses 48 kHz ticks. Missing timestamps retain
+    /// continuity; positive gaps add source time without inserting silence.
+    /// Returns an error if 4096 unconsumed gap anchors accumulate.
     pub fn record(
         &mut self,
         pcm: usize,
@@ -35,7 +41,7 @@ impl SourceClock {
         self.source = self.source.saturating_add(gap);
         if self.anchors.is_empty() || gap > 0 {
             if self.anchors.len() == MAX_ANCHORS {
-                return Err("GPT-Live playback timing fell behind.");
+                return Err("Source playback timing fell behind.");
             }
             self.anchors.push_back(Anchor {
                 pcm,
@@ -62,6 +68,9 @@ impl SourceClock {
         Some(anchor.source.saturating_add(pcm.saturating_sub(anchor.pcm)))
     }
 
+    /// Map monotonically acknowledged device PCM into source time. A gap becomes
+    /// visible only after the next packet starts playing. Retires old anchors;
+    /// callers must fence stale generations and never supply decreasing PCM.
     pub fn played(&mut self, pcm: usize) -> Option<usize> {
         // A queued packet's timestamp cannot advance the caption before any
         // of that packet has actually played, including at a gap boundary.

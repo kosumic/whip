@@ -16,7 +16,7 @@ fn bind(state: &mut Captions, text: &str, start: usize) -> u64 {
         id,
         ..Caption::default()
     };
-    caption.start(text, 0);
+    caption.timeline.start(text, 0);
     state.pending.push_back(caption);
     send(
         state,
@@ -132,7 +132,7 @@ fn generation_and_stalled_pcm_never_supply_playback_evidence() {
         .pending
         .back_mut()
         .unwrap_or_else(|| panic!("missing caption"));
-    caption.generated_samples = Some(48_000);
+    caption.timeline.generated_samples = Some(48_000);
     let snapshot = state
         .presentation
         .as_mut()

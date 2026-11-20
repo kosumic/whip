@@ -1,0 +1,6 @@
+Extracted from Whip (https://github.com/kosumic/whip), issue #481.
+Copyright Whip contributors. AGPL-3.0-or-later.
+
+Whip's speech_pacing.rs, speech_captions.rs, speech_captions/presentation.rs,
+realtime_voice/transcript/streaming.rs and live/captions/source_clock.rs are
+the behavioral source of truth. GymAmi's adaptation is not the source algorithm.

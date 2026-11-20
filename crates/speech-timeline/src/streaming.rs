@@ -1,22 +1,26 @@
 //! Learn rate from text/audio progress windows, never from one early text burst.
 use super::pacing::Pace;
-use crate::realtime_voice::RATE;
+const RATE: usize = crate::SAMPLE_RATE as usize;
 
 struct Anchor {
     units: u32,
     samples: usize,
 }
 
-pub(super) struct StreamPace {
+/// Learns from sustained text/audio progress windows rather than arrival bursts.
+pub struct StreamPace {
     pace: Pace,
     anchor: Option<Anchor>,
 }
 
 impl StreamPace {
+    /// Start rate learning for one text/audio stream with the current voice pace.
     pub fn new(pace: Pace) -> Self {
         Self { pace, anchor: None }
     }
 
+    /// Observe accumulated text units and received PCM. Returns a refined pace
+    /// after a plausible window of at least one second. This never advances time.
     pub fn observe(&mut self, units: u32, samples: usize) -> Option<Pace> {
         if units == 0 || samples < RATE / 2 {
             return None;
@@ -44,9 +48,9 @@ impl StreamPace {
 
 #[cfg(test)]
 mod tests {
-    use super::super::pacing::{Clock, Pace, Text};
     use super::StreamPace;
-    use crate::realtime_voice::RATE;
+    use crate::pacing::{Clock, Pace, Text};
+    const RATE: usize = crate::SAMPLE_RATE as usize;
 
     #[test]
     fn faster_streaming_speech_does_not_accumulate_display_lag() {

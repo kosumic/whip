@@ -98,34 +98,10 @@ enum Command {
 }
 
 pub(super) fn word_at(text: &str, cursor: usize) -> Option<WordRange> {
-    let mut position = 0;
-    let mut begin = None;
-    for c in text.chars().chain(std::iter::once(' ')) {
-        let end = position + c.len_utf16();
-        let cjk = matches!(u32::from(c), 0x3040..=0x30ff | 0x3400..=0x9fff | 0xac00..=0xd7ff | 0x2_0000..=0x3_134f);
-        let lexical = c.is_alphanumeric() || matches!(c, '\'' | '’' | '\u{0300}'..='\u{036f}');
-        if cjk || !lexical {
-            if let Some(start) = begin.take()
-                && start <= cursor
-                && cursor < position
-            {
-                return Some(WordRange {
-                    start,
-                    end: position,
-                });
-            }
-            if cjk && position <= cursor && cursor < end {
-                return Some(WordRange {
-                    start: position,
-                    end,
-                });
-            }
-        } else if begin.is_none() {
-            begin = Some(position);
-        }
-        position = end;
-    }
-    None
+    speech_timeline::word_at(text, cursor).map(|range| WordRange {
+        start: range.start,
+        end: range.end,
+    })
 }
 
 fn source_snapshot(
@@ -224,8 +200,8 @@ fn apply(state: &mut super::Captions, command: Command) -> String {
             let Some(caption) = state.pending.iter().find(|c| c.id == id) else {
                 return "null".into();
             };
-            let prefix = caption.prefix_utf16;
-            let length = caption.spoken.encode_utf16().count();
+            let prefix = caption.timeline.prefix_utf16;
+            let length = caption.timeline.spoken.encode_utf16().count();
             if start < prefix || start >= end || end > length {
                 return "null".into();
             }
@@ -302,11 +278,15 @@ pub(super) fn pcm(
         return;
     }
     snapshot.played_frames = played;
-    if position < caption.prefix_utf16 || caption.response_start.is_none_or(|start| played <= start)
+    if position < caption.timeline.prefix_utf16
+        || caption
+            .timeline
+            .response_start
+            .is_none_or(|start| played <= start)
     {
         return;
     }
-    let cursor = position - caption.prefix_utf16;
+    let cursor = position - caption.timeline.prefix_utf16;
     let word = word_at(&snapshot.text, cursor).map(|r| WordRange {
         start: r.start + snapshot.start_utf16,
         end: r.end + snapshot.start_utf16,

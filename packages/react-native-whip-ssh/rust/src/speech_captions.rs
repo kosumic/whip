@@ -1,5 +1,4 @@
 //! Shared caption pacing for native read-aloud. Only consumed PCM advances time.
-use crate::speech_pacing::{Clock, Pace, Text};
 use parking_lot::Mutex;
 use std::{
     collections::VecDeque,
@@ -10,30 +9,10 @@ use std::{
 mod presentation;
 pub use presentation::{chat_speech_presentation, speech_caption_snapshot};
 
+#[derive(Default)]
 struct Caption {
     id: u64,
-    spoken: String,
-    prefix_bytes: usize,
-    prefix_utf16: usize,
-    response_start: Option<usize>,
-    generated_samples: Option<usize>,
-    text: Text,
-    clock: Clock,
-}
-
-impl Default for Caption {
-    fn default() -> Self {
-        Self {
-            id: 0,
-            spoken: String::new(),
-            prefix_bytes: 0,
-            prefix_utf16: 0,
-            response_start: Some(0),
-            generated_samples: None,
-            text: Text::default(),
-            clock: Clock::new(Pace::default()),
-        }
-    }
+    timeline: speech_timeline::ReadAloud,
 }
 const MAX_CAPTIONS: usize = 16;
 #[derive(Default)]
@@ -62,61 +41,13 @@ pub unsafe extern "C" fn whip_speech_caption_start(
         id: captions.sequence,
         ..Caption::default()
     };
-    caption.start(&text, prefix_utf16);
+    caption.timeline.start(&text, prefix_utf16);
     let id = caption.id;
     captions.pending.push_back(caption);
     if captions.pending.len() > MAX_CAPTIONS {
         captions.pending.pop_front();
     }
     id
-}
-
-impl Caption {
-    fn start(&mut self, spoken: &str, prefix_utf16: usize) {
-        let mut units = 0;
-        let prefix_bytes = spoken
-            .char_indices()
-            .chain(std::iter::once((spoken.len(), '\0')))
-            .find_map(|(byte, character)| {
-                let matches = units == prefix_utf16;
-                units += character.len_utf16();
-                matches.then_some(byte)
-            })
-            .unwrap_or(0);
-        self.spoken = spoken.into();
-        self.prefix_bytes = prefix_bytes;
-        self.prefix_utf16 = spoken[..prefix_bytes].encode_utf16().count();
-        self.response_start = (prefix_bytes == 0).then_some(0);
-        self.generated_samples = None;
-        self.text.update(&spoken[prefix_bytes..]);
-        self.clock = Clock::new(Pace::default());
-    }
-
-    fn progress(&mut self, played: usize, samples: usize, complete: bool) -> usize {
-        let Some(start) = self.response_start else {
-            return 0;
-        };
-        // The exact prefix duration includes its trailing pause. Even synthesis
-        // completion cannot advance captions until native playback crosses it.
-        if self.prefix_utf16 > 0 && played <= start {
-            return 0;
-        }
-        if let Some(duration) = self.generated_samples.or(complete.then_some(samples)) {
-            return self.prefix_utf16
-                + self.clock.advance_measured(
-                    &self.text,
-                    played.saturating_sub(start),
-                    duration.saturating_sub(start),
-                );
-        }
-        self.prefix_utf16
-            + self.clock.advance(
-                &self.text,
-                played.min(samples).saturating_sub(start),
-                samples.saturating_sub(start),
-                complete,
-            )
-    }
 }
 
 /// Synthesize the announcement and response separately on the same PCM sink.
@@ -133,8 +64,8 @@ pub(crate) fn synthesize(
             .lock()
             .pending
             .iter()
-            .find(|caption| id != 0 && caption.id == id && caption.spoken == text)
-            .map(|caption| caption.prefix_bytes)
+            .find(|caption| id != 0 && caption.id == id && caption.timeline.spoken == text)
+            .map(|caption| caption.timeline.prefix_bytes)
     };
     let Some(prefix) = prefix else {
         return generate(text, &mut sink);
@@ -160,7 +91,7 @@ pub(crate) fn synthesize(
         {
             let mut captions = CAPTIONS.lock();
             if let Some(caption) = captions.pending.iter_mut().find(|caption| caption.id == id) {
-                caption.response_start = Some(frames + offset);
+                caption.timeline.response_start = Some(frames + offset);
             }
             drop(captions);
             aligned = true;
@@ -175,7 +106,7 @@ pub(crate) fn synthesize(
         // Publish the full duration now, before their final-frame callback.
         let mut captions = CAPTIONS.lock();
         if let Some(caption) = captions.pending.iter_mut().find(|caption| caption.id == id) {
-            caption.generated_samples = Some(frames);
+            caption.timeline.generated_samples = Some(frames);
         }
     }
     result
@@ -200,7 +131,7 @@ pub extern "C" fn whip_speech_caption_progress(
     if played > samples {
         return 0;
     }
-    let position = caption.progress(played, samples, complete);
+    let position = caption.timeline.progress(played, samples, complete);
     if let Some(snapshot) = presentation
         && crate::speech_playback::is_current(snapshot.lease)
     {
@@ -230,26 +161,8 @@ pub fn chat_speech_highlight(
     if cursor < start || cursor >= start.saturating_add(expected.len()) {
         return markdown;
     }
-    let mut position = 0;
-    let mut word = None;
-    for character in prose.chars().chain(std::iter::once(' ')) {
-        let end = position + character.len_utf16();
-        let cjk = matches!(u32::from(character), 0x3040..=0x30ff | 0x3400..=0x9fff | 0xac00..=0xd7ff | 0x2_0000..=0x3_134f);
-        let lexical = character.is_alphanumeric()
-            || matches!(character, '\'' | '’' | '\u{0300}'..='\u{036f}');
-        if cjk || !lexical {
-            if let Some(begin) = word.take()
-                && position > cursor
-            {
-                return mark_word(markdown, &spans, begin, position);
-            }
-            if cjk && end > cursor {
-                return mark_word(markdown, &spans, position, end);
-            }
-        } else if word.is_none() {
-            word = Some(position);
-        }
-        position = end;
+    if let Some(word) = speech_timeline::word_after(&prose, cursor) {
+        return mark_word(markdown, &spans, word.start, word.end);
     }
     markdown
 }
