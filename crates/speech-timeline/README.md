@@ -7,7 +7,7 @@ See `NOTICE` for provenance.
 
 ```toml
 [dependencies]
-speech-timeline = { path = "../whip/crates/speech-timeline" }
+speech-timeline = "0.1.0"
 ```
 
 Run the standalone consumer without mobile SDKs:
@@ -16,6 +16,9 @@ Run the standalone consumer without mobile SDKs:
 cargo run --manifest-path crates/speech-timeline/Cargo.toml --example native_shell
 cargo test --manifest-path crates/speech-timeline/Cargo.toml
 ```
+
+Versioned registry releases use `speech-timeline-v<version>` tags and the shared
+standalone-library publishing workflow. See [crate releases](../../docs/crate-releases.md).
 
 All frame counts are **24 kHz mono source PCM**, independent of native output rate
 or playback speed. Adapters must translate native counters into that space.
