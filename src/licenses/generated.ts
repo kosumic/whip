@@ -1117,6 +1117,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/d00aa65d7a05d267.txt"),
   },
   {
+    id: "cargo-voice-call-controls-0-1-0",
+    category: "cargo",
+    projectName: "voice-call-controls",
+    sourceUrl: "https://github.com/kosumic/whip",
+    attribution: "Direct Rust dependency · version 0.1.0 · used by whip-ssh",
+    licenseName: "AGPL-3.0-or-later",
+    licenseAsset: require("../../assets/licenses/generated/c1a8bb0101effcd8.txt"),
+  },
+  {
     id: "cargo-voice-call-local-0-1-0",
     category: "cargo",
     projectName: "voice-call-local",

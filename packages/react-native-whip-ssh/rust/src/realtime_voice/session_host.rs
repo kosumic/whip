@@ -326,7 +326,7 @@ impl Delegate for App<'_> {
                     self.owner.view.lock().playback_level = 0.0;
                 }
                 Command::Mute(muted) => {
-                    let current = self.owner.microphone.lock().muted;
+                    let current = self.owner.microphone.lock().policy.muted();
                     if current == muted {
                         session.mute(&**self.owner, muted).await?;
                     }

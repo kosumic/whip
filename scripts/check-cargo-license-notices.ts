@@ -101,7 +101,7 @@ for (const rustPackage of packages) {
     if (notice.name === 'turso') {
       notice.licenseText += `\n\n${await productionTransitiveNotices(rustPackage, 'turso')}`;
     }
-    if (['agent-transcript-view', 'speech-timeline'].includes(notice.name)) {
+    if (['agent-transcript-view', 'speech-timeline', 'voice-call-controls'].includes(notice.name)) {
       notice.licenseText += `\n\n${await readFile(resolve(root, `crates/${notice.name}/NOTICE`), 'utf8')}`;
     }
     if (['herdr-protocol', 'voice-call-media', 'voice-call-openai'].includes(notice.name)) {
@@ -110,7 +110,7 @@ for (const rustPackage of packages) {
     if (notice.name === 'phonon-local') {
       notice.licenseText += `\n\n${await readFile(resolve(root, 'crates/phonon-local/NOTICE'), 'utf8')}\n${await readFile(resolve(root, 'crates/phonon-local/THIRD_PARTY_NOTICES.md'), 'utf8')}\n${await readFile(resolve(root, 'crates/phonon-local/LICENSE-PHONON-APACHE'), 'utf8')}`;
     }
-    if (['phonon-local', 'voice-call-media', 'voice-call-openai', 'voice-call-local', 'audio-ingress', 'agent-browser-control', 'agent-transcript-core', 'agent-transcript-view', 'herdr-protocol', 'native-credentials', 'whip-notify', 'whipair-protocol', 'tailcat-client', 'ptts', 'ptts-ffi', 'zip', 'rayon', 'reqwest', 'tract-onnx', 'rustfft', 'sonora', 'rubato', 'str0m'].includes(notice.name)) {
+    if (['phonon-local', 'voice-call-media', 'voice-call-openai', 'voice-call-controls', 'voice-call-local', 'audio-ingress', 'agent-browser-control', 'agent-transcript-core', 'agent-transcript-view', 'herdr-protocol', 'native-credentials', 'whip-notify', 'whipair-protocol', 'tailcat-client', 'ptts', 'ptts-ffi', 'zip', 'rayon', 'reqwest', 'tract-onnx', 'rustfft', 'sonora', 'rubato', 'str0m'].includes(notice.name)) {
       notice.licenseText += `\n\n${await productionTransitiveNotices(rustPackage, notice.name)}`;
     }
     const key = `${notice.name}@${notice.version}`;

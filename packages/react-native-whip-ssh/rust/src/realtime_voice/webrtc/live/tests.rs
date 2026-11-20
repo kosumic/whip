@@ -175,7 +175,7 @@ pub(crate) fn playback_owner_with_commands() -> Result<
         Arc::new(RealtimeVoiceAdapter {
             session_id: None,
             cue: Mutex::default(),
-            microphone: Mutex::default(),
+            microphone: Mutex::new(voice::microphone::State::new(speech.id(), false)),
             started_at: Instant::now(),
             client_elapsed_ms: 0,
             webrtc: true,

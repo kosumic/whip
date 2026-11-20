@@ -22,7 +22,7 @@ impl RealtimeVoiceAdapter {
 
 impl Audio for RealtimeVoiceAdapter {
     fn is_muted(&self) -> bool {
-        self.microphone.lock().muted
+        self.microphone.lock().policy.muted()
     }
     fn current(&self) -> bool {
         !self.closed.load(Ordering::Acquire)
@@ -35,7 +35,8 @@ impl Audio for RealtimeVoiceAdapter {
         self.view.lock().level = 0.0;
         // Live can acknowledge an older command after a newer user/tool mute.
         // Provider acknowledgements may gate capture, never replace intent.
-        self.input.set_muted(muted || self.microphone.lock().muted);
+        self.input
+            .set_muted(muted || self.microphone.lock().policy.muted());
         if let Some(echo) = self.echo.lock().as_mut() {
             echo.reset_capture()?;
         }

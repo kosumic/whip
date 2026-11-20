@@ -11,7 +11,7 @@ including before 1.0. Publish registry dependencies before their consumers:
   `voice-call-openai`.
 
 `publish-standalone-libraries.yml` publishes `agent-transcript-view`,
-`audio-ingress`, `mobile-speech`, `native-credentials`, `voice-call-local`,
+`audio-ingress`, `mobile-speech`, `native-credentials`, `voice-call-controls`, `voice-call-local`,
 `voice-call-media`, `voice-call-openai`, and `whip-notify`. It checks formatting,
 all-feature Clippy and tests, and a publish
 dry run before publishing on an ARM64 runner. Push `<crate>-v<version>` to
@@ -45,10 +45,15 @@ formats.
 
 ## Initial releases
 
-New packages, including `native-credentials`, `voice-call-local`, and
+New packages, including `voice-call-controls`, `native-credentials`, `voice-call-local`, and
 `voice-call-openai`, use the initial-release procedure below. Renaming a source
 crate does not rename existing registry releases. These crates can also be
 consumed as path or Git dependencies.
+
+`voice-call-controls` starts at `0.1.0` and uses the
+`voice-call-controls-v0.1.0` tag. It retains Whip's AGPL-3.0-or-later microphone
+contract and logical-call timed-mute policy; native audio and provider admission
+remain in host adapters. Initial registry publication is a separate release step.
 
 For an initial crates.io release, create a short-lived API token with permission
 to publish the new crate, store it as the `CRATES_IO_TOKEN` secret in the
@@ -56,7 +61,7 @@ to publish the new crate, store it as the `CRATES_IO_TOKEN` secret in the
 `bootstrap_with_token=true`. After publishing, configure its Trusted Publisher:
 
 - GitHub owner: `kosumic`; repository: `whip`.
-- Workflow: `publish-standalone-libraries.yml` for the eight crates above, or the
+- Workflow: `publish-standalone-libraries.yml` for the crates above, or the
   existing dedicated workflow for other crates.
 - Environment: `crates-io`.
 

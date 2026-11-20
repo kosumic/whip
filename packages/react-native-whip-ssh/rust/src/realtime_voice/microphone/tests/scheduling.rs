@@ -194,7 +194,7 @@ fn skip_and_rotation_wait_for_native_cancellation_before_releasing_new_output()
     for retire in [false, true] {
         let (owner, _commands) = owner(false)?;
         owner.set_microphone(true, Some(Duration::from_secs(60)))?;
-        let deadline = owner.microphone.lock().deadline;
+        let deadline = owner.microphone.lock().policy.deadline();
         owner.read_output(&mut [0; FRAME]);
         let id = identity(&owner);
         assert!(owner.announcement_start(id));
@@ -203,7 +203,7 @@ fn skip_and_rotation_wait_for_native_cancellation_before_releasing_new_output()
         } else {
             owner.command(Command::Skip);
         }
-        assert_eq!(owner.microphone.lock().deadline, deadline);
+        assert_eq!(owner.microphone.lock().policy.deadline(), deadline);
         assert!(owner.microphone.lock().cancelled);
         owner.render_pcm("replacement".into(), 0, vec![1; FRAME * 2])?;
         assert_eq!(owner.read_output(&mut [0; FRAME]).1, 0);

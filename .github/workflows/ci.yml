@@ -150,6 +150,14 @@ jobs:
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked
 
+      - name: Check microphone call controls
+        working-directory: crates/voice-call-controls
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets
+          cargo run --locked --example host
+
       - name: Check provider-neutral voice media
         working-directory: crates/voice-call-media
         env:

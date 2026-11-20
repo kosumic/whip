@@ -121,7 +121,7 @@ impl Delegate for App<'_> {
         self.forward_updates(session).await?;
         match work {
             Work::Command(super::super::Command::Mute(muted)) => {
-                let current = self.owner.microphone.lock().muted;
+                let current = self.owner.microphone.lock().policy.muted();
                 if current == muted {
                     session.mute(&**self.owner, muted).await?;
                 }

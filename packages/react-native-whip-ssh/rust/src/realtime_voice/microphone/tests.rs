@@ -1,5 +1,6 @@
 use super::*;
 use crate::realtime_voice::playback_owner_with_commands;
+use voice_call_controls::Request;
 use voice_call_openai::session::Audio;
 
 mod provider;
@@ -9,15 +10,20 @@ mod scheduling;
 fn timed_mute_cannot_expire_into_capture_while_audio_is_suspended() -> Result<(), &'static str> {
     let (owner, _commands) = playback_owner_with_commands()?;
     owner.set_microphone(true, Some(Duration::from_secs(60)))?;
-    let deadline = owner.microphone.lock().deadline.ok_or("Missing deadline")?;
+    let deadline = owner
+        .microphone
+        .lock()
+        .policy
+        .deadline()
+        .ok_or("Missing deadline")?;
     owner.suspend_audio();
     owner.microphone_tick(deadline);
-    assert!(owner.microphone.lock().muted);
-    assert_eq!(owner.microphone.lock().deadline, Some(deadline));
+    assert!(owner.microphone.lock().policy.muted());
+    assert_eq!(owner.microphone.lock().policy.deadline(), Some(deadline));
     owner.resume_audio();
-    assert!(owner.microphone.lock().muted);
+    assert!(owner.microphone.lock().policy.muted());
     owner.microphone_tick(deadline);
-    assert!(!owner.microphone.lock().muted);
+    assert!(!owner.microphone.lock().policy.muted());
     owner.close();
     Ok(())
 }
@@ -76,7 +82,12 @@ fn expiry_changes_shared_view_and_coalesces_unheard_state_without_ending_the_cal
 -> Result<(), &'static str> {
     let (owner, _commands) = playback_owner_with_commands()?;
     owner.set_microphone(true, Some(Duration::from_secs(600)))?;
-    let deadline = owner.microphone.lock().deadline.ok_or("Missing deadline")?;
+    let deadline = owner
+        .microphone
+        .lock()
+        .policy
+        .deadline()
+        .ok_or("Missing deadline")?;
     assert!(owner.view.lock().muted);
     owner.microphone_tick(
         deadline
@@ -100,12 +111,18 @@ fn manual_and_overlapping_agent_commands_replace_the_deadline_without_duplicate_
 -> Result<(), &'static str> {
     let (owner, _commands) = playback_owner_with_commands()?;
     owner.set_microphone(true, Some(Duration::from_secs(60)))?;
-    let old = owner.microphone.lock().deadline.ok_or("Missing deadline")?;
+    let old = owner
+        .microphone
+        .lock()
+        .policy
+        .deadline()
+        .ok_or("Missing deadline")?;
     owner.set_microphone(true, Some(Duration::from_secs(600)))?;
     let new = owner
         .microphone
         .lock()
-        .deadline
+        .policy
+        .deadline()
         .ok_or("Missing replacement deadline")?;
     owner.microphone_tick(old);
     assert!(owner.view.lock().muted);
@@ -115,7 +132,7 @@ fn manual_and_overlapping_agent_commands_replace_the_deadline_without_duplicate_
     owner.set_microphone(true, None)?;
     owner.microphone_tick(new);
     assert!(owner.view.lock().muted);
-    assert!(owner.microphone.lock().deadline.is_none());
+    assert!(owner.microphone.lock().policy.deadline().is_none());
     assert_eq!(owner.microphone.lock().announcements, [true]);
     owner.set_microphone(false, None)?;
     owner.microphone_tick(new + Duration::from_secs(600));
@@ -133,12 +150,17 @@ fn hangup_and_permanent_failures_never_allow_an_old_timer_to_unmute() -> Result<
         ] {
             let (owner, _commands) = owner(live)?;
             owner.set_microphone(true, Some(Duration::from_secs(60)))?;
-            let deadline = owner.microphone.lock().deadline.ok_or("Missing deadline")?;
+            let deadline = owner
+                .microphone
+                .lock()
+                .policy
+                .deadline()
+                .ok_or("Missing deadline")?;
             owner.retire_session();
             end(&owner);
             owner.microphone_tick(deadline);
             assert!(owner.view.lock().muted);
-            assert!(owner.microphone.lock().deadline.is_none());
+            assert!(owner.microphone.lock().policy.deadline().is_none());
             assert!(owner.microphone.lock().announcements.is_empty());
             owner.close();
         }
@@ -151,7 +173,12 @@ fn repeated_manual_mute_cancels_timer_and_old_provider_ack_cannot_reopen_capture
 -> Result<(), &'static str> {
     let (owner, _commands) = playback_owner_with_commands()?;
     owner.set_microphone(true, Some(Duration::from_secs(60)))?;
-    let deadline = owner.microphone.lock().deadline.ok_or("Missing deadline")?;
+    let deadline = owner
+        .microphone
+        .lock()
+        .policy
+        .deadline()
+        .ok_or("Missing deadline")?;
     owner.set_microphone(true, None)?;
     owner.set_muted(false)?; // Stale Live unmute acknowledgement.
     assert!(!owner.input.accepts(owner.input.generation()));
@@ -176,12 +203,17 @@ fn concurrent_commands_and_a_replacement_owner_cannot_be_reversed_by_old_deadlin
     })?;
     // Whichever concurrent command won, this later explicit command owns intent.
     owner.set_microphone(true, Some(Duration::from_secs(600)))?;
-    let deadline = owner.microphone.lock().deadline.ok_or("Missing deadline")?;
+    let deadline = owner
+        .microphone
+        .lock()
+        .policy
+        .deadline()
+        .ok_or("Missing deadline")?;
     let (replacement, _replacement_commands) = playback_owner_with_commands()?;
     owner.microphone_tick(deadline);
     assert!(owner.view.lock().muted);
     assert!(!replacement.view.lock().muted);
-    assert!(owner.microphone.lock().deadline.is_none());
+    assert!(owner.microphone.lock().policy.deadline().is_none());
     owner.close();
     replacement.close();
     Ok(())
@@ -196,7 +228,12 @@ fn reconnect_and_rotation_preserve_the_deadline_and_retire_old_transition_speech
     for live in [false, true] {
         let (owner, _commands) = owner(live)?;
         owner.set_microphone(true, Some(Duration::from_secs(600)))?;
-        let deadline = owner.microphone.lock().deadline.ok_or("Missing deadline")?;
+        let deadline = owner
+            .microphone
+            .lock()
+            .policy
+            .deadline()
+            .ok_or("Missing deadline")?;
         for reason in [Reason::ConnectionLost, Reason::Lifetime] {
             owner.retiring.store(false, Ordering::Release);
             let attempt = recovery::Attempt::new(owner.clone());
@@ -210,7 +247,7 @@ fn reconnect_and_rotation_preserve_the_deadline_and_retire_old_transition_speech
                 owner.recovering(reason);
             }
             owner.retire_session();
-            assert_eq!(owner.microphone.lock().deadline, Some(deadline));
+            assert_eq!(owner.microphone.lock().policy.deadline(), Some(deadline));
             assert!(owner.speech.is_current());
             assert!(!owner.input.accepts(owner.input.generation()));
             owner.retiring.store(false, Ordering::Release);
@@ -222,12 +259,12 @@ fn reconnect_and_rotation_preserve_the_deadline_and_retire_old_transition_speech
                     .ok_or("Invalid deadline")?,
             );
             assert!(owner.view.lock().muted);
-            assert_eq!(owner.microphone.lock().deadline, Some(deadline));
+            assert_eq!(owner.microphone.lock().policy.deadline(), Some(deadline));
         }
         owner.microphone_tick(deadline);
         assert!(!owner.view.lock().muted);
         assert_eq!(owner.microphone.lock().announcements, [false]);
-        assert!(owner.microphone.lock().deadline.is_none());
+        assert!(owner.microphone.lock().policy.deadline().is_none());
         // Realtime resumes immediately; GPT-Live still needs its provider ack.
         assert_eq!(owner.input.accepts(owner.input.generation()), !live);
         owner.microphone_tick(deadline + Duration::from_secs(600));
@@ -242,7 +279,12 @@ fn expiry_waits_through_provider_retirement_and_startup_until_ready() -> Result<
     for live in [false, true] {
         let (owner, _commands) = owner(live)?;
         owner.set_microphone(true, Some(Duration::from_secs(60)))?;
-        let deadline = owner.microphone.lock().deadline.ok_or("Missing deadline")?;
+        let deadline = owner
+            .microphone
+            .lock()
+            .policy
+            .deadline()
+            .ok_or("Missing deadline")?;
         // Complete the original mute announcement before the outage.
         let id = owner.microphone.lock().announcement_id;
         owner
@@ -254,7 +296,7 @@ fn expiry_waits_through_provider_retirement_and_startup_until_ready() -> Result<
             owner.retiring.store(retiring, Ordering::Release);
             owner.microphone_tick(deadline);
             assert!(owner.view.lock().muted);
-            assert_eq!(owner.microphone.lock().deadline, Some(deadline));
+            assert_eq!(owner.microphone.lock().policy.deadline(), Some(deadline));
             assert!(owner.microphone.lock().announcements.is_empty());
             assert!(!owner.input.accepts(owner.input.generation()));
         }
@@ -278,11 +320,16 @@ fn recovery_controls_replace_expired_deadlines_without_reopening_inactive_captur
         for muted in [true, false] {
             let (owner, _commands) = owner(live)?;
             owner.set_microphone(true, Some(Duration::from_secs(60)))?;
-            let deadline = owner.microphone.lock().deadline.ok_or("Missing deadline")?;
+            let deadline = owner
+                .microphone
+                .lock()
+                .policy
+                .deadline()
+                .ok_or("Missing deadline")?;
             owner.retire_session();
             owner.microphone_tick(deadline);
             owner.set_microphone(muted, None)?;
-            assert!(owner.microphone.lock().deadline.is_none());
+            assert!(owner.microphone.lock().policy.deadline().is_none());
             assert!(!owner.input.accepts(owner.input.generation()));
             assert!(
                 owner
@@ -312,13 +359,18 @@ fn recovery_controls_replace_expired_deadlines_without_reopening_inactive_captur
 fn revoked_credentials_cancel_the_deadline_even_during_recovery() -> Result<(), &'static str> {
     let (mut owner, _commands) = owner(false)?;
     owner.set_microphone(true, Some(Duration::from_secs(60)))?;
-    let deadline = owner.microphone.lock().deadline.ok_or("Missing deadline")?;
+    let deadline = owner
+        .microphone
+        .lock()
+        .policy
+        .deadline()
+        .ok_or("Missing deadline")?;
     owner.retire_session();
     std::sync::Arc::get_mut(&mut owner)
         .ok_or("Shared test owner")?
         .credential_generation = crate::voice_credentials::generation().wrapping_sub(1);
     owner.microphone_tick(deadline);
-    assert!(owner.microphone.lock().deadline.is_none());
+    assert!(owner.microphone.lock().policy.deadline().is_none());
     assert!(owner.microphone.lock().announcements.is_empty());
     assert!(owner.view.lock().muted);
     assert!(!owner.input.accepts(owner.input.generation()));
@@ -366,7 +418,7 @@ fn cancelled_announcement_callbacks_cannot_consume_speech_for_a_new_transition()
     let (owner, _commands) = playback_owner_with_commands()?;
     owner.set_microphone(true, None)?;
     let old = owner.microphone.lock().announcement_id;
-    owner.microphone.lock().cancel();
+    owner.microphone.lock().cancel_speech();
     owner.set_microphone(false, None)?;
     let mut state = owner.microphone.lock();
     state.announcement_finished(old, Instant::now());
