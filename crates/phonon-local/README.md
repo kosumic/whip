@@ -75,10 +75,12 @@ cargo run --locked --manifest-path crates/phonon-local/Cargo.toml --example insp
 The default suite uses tiny loopback HTTP fixtures, synthetic archives and an
 injected model-free engine for cache/streaming regressions. It never downloads
 models. On an ARM desktop, the pinned upstream `xn-gemm` debug assembler requires
-FP16 instructions. Use a host-only `CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS`
-or `CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS` of `-C target-cpu=native`
-when running these tests; mobile release artifacts retain Whip's compiler
-settings. Real inference is explicitly opt-in and uses already-installed files:
+FP16 instructions. On ARM Linux, use a host-only
+`CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS` of `-C target-cpu=native`
+when running these tests. Apple Silicon's default target already enables FP16;
+keep its default CPU settings so `ring` retains its required crypto features.
+Mobile release artifacts retain Whip's compiler settings. Real inference is
+explicitly opt-in and uses already-installed files:
 
 ```sh
 PHONON_MODEL_DIR=/private/root/8c64b55ec301728e2d1695bfea87a08a267d0c2d \

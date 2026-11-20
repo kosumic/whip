@@ -30,9 +30,9 @@ jobs:
     timeout-minutes: 20
     env:
       # The pinned xn-gemm ARM debug assembler requires FP16 instructions.
-      # These flags apply only to the actual CI host, never mobile artifacts.
+      # Linux needs this host-only flag; Apple's default target already has FP16.
+      # Keep Apple's defaults so ring retains its required crypto features.
       CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS: '-C target-cpu=native'
-      CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS: '-C target-cpu=native'
     defaults:
       run:
         working-directory: crates/phonon-local
