@@ -1,5 +1,26 @@
 import UIKit
+import UIKit.UIGestureRecognizerSubclass
 import WebKit
+
+private func containingWebView(_ view: UIView?) -> WKWebView? {
+  var ancestor = view
+  while let current = ancestor {
+    if let web = current as? WKWebView { return web }
+    ancestor = current.superview
+  }
+  return nil
+}
+
+private final class EdgePanGestureRecognizer: UIPanGestureRecognizer {
+  override func canBePrevented(by other: UIGestureRecognizer) -> Bool {
+    // Terminal touch handlers prevent the DOM default action before the
+    // direction is known. Keep tracking so a horizontal edge drag can exit.
+    if !(other is UILongPressGestureRecognizer), containingWebView(other.view) != nil {
+      return false
+    }
+    return super.canBePrevented(by: other)
+  }
+}
 
 /// Lives outside the RN surface so recognition also cancels Fabric touches.
 /// Only touches originating inside this session's content can participate.
@@ -23,7 +44,7 @@ final class SessionExitGesture: NSObject, UIGestureRecognizerDelegate {
   private var reversed = false
   private let pan: UIPanGestureRecognizer
 
-  init(content: UIView, pan: UIPanGestureRecognizer = UIPanGestureRecognizer(), onExit: @escaping () -> Void) {
+  init(content: UIView, pan: UIPanGestureRecognizer = EdgePanGestureRecognizer(), onExit: @escaping () -> Void) {
     self.content = content
     self.pan = pan
     self.onExit = onExit
@@ -105,14 +126,7 @@ final class SessionExitGesture: NSObject, UIGestureRecognizerDelegate {
   }
 
   private func webHistoryOwns(_ target: UIView) -> Bool {
-    guard preferWebHistory else { return false }
-    var ancestor: UIView? = target
-    while let view = ancestor {
-      if let web = view as? WKWebView { return web.canGoBack }
-      if view === content { break }
-      ancestor = view.superview
-    }
-    return false
+    preferWebHistory && containingWebView(target)?.canGoBack == true
   }
 
   func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {

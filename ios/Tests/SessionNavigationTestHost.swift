@@ -3,7 +3,15 @@ import WebKit
 
 private final class NavigationPages: NSObject, WKURLSchemeHandler {
   func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
-    let second = urlSchemeTask.request.url!.path == "/two"
+    let path = urlSchemeTask.request.url!.path
+    let second = path == "/two"
+    let terminalTouchHandling = path == "/terminal" ? """
+      <script>
+        for (const type of ['touchstart', 'touchmove']) {
+          document.body.addEventListener(type, event => event.preventDefault(), { passive: false });
+        }
+      </script>
+      """ : ""
     let html = """
       <meta name="viewport" content="width=device-width,initial-scale=1">
       <style>body {margin:0;height:1800px} button {width:180px;height:60px}</style>
@@ -11,6 +19,7 @@ private final class NavigationPages: NSObject, WKURLSchemeHandler {
       <p>Scrollable terminal/chat stand-in</p>
       <a href="whip-test://page/two">Next page</a>
       <p>\(second ? "Second page" : "First page")</p>
+      \(terminalTouchHandling)
       """
     urlSchemeTask.didReceive(URLResponse(url: urlSchemeTask.request.url!, mimeType: "text/html", expectedContentLength: html.utf8.count, textEncodingName: "utf-8"))
     urlSchemeTask.didReceive(Data(html.utf8))
@@ -123,7 +132,8 @@ final class SessionNavigationTestController: UIViewController, WKScriptMessageHa
     web = WKWebView(frame: CGRect(x: 0, y: 150, width: view.bounds.width, height: 300), configuration: configuration)
     web.accessibilityIdentifier = "web"
     web.navigationDelegate = self
-    web.load(URLRequest(url: URL(string: "whip-test://page/one")!))
+    let page = ProcessInfo.processInfo.arguments.contains("--terminal-touch") ? "terminal" : "one"
+    web.load(URLRequest(url: URL(string: "whip-test://page/\(page)")!))
     session.addSubview(web)
     updateStatus()
   }

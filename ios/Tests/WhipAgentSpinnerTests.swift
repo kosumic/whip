@@ -65,4 +65,26 @@ final class WhipAgentSpinnerTests: XCTestCase {
     window.rootViewController!.view.addSubview(spinner)
     XCTAssertEqual(rotationLayer.animationKeys()?.count, 1)
   }
+
+  func testDotOrbitRemainsCenteredAfterLayoutWhilePaused() {
+    spinner.setAnimationEnabled(false)
+    rotationLayer.setAffineTransform(CGAffineTransform(rotationAngle: .pi / 4))
+    spinner.bounds = CGRect(x: 7, y: 11, width: 120, height: 64)
+    spinner.setNeedsLayout()
+    spinner.layoutIfNeeded()
+
+    let center = CGPoint(x: spinner.bounds.midX, y: spinner.bounds.midY)
+    let radii = rotationLayer.sublayers?.compactMap { layer -> CGFloat? in
+      guard let path = (layer as? CAShapeLayer)?.path else { return nil }
+      let dot = path.boundingBoxOfPath
+      let point = layer.convert(CGPoint(x: dot.midX, y: dot.midY), to: spinner.layer)
+      return hypot(point.x - center.x, point.y - center.y)
+    } ?? []
+    XCTAssertGreaterThanOrEqual(radii.count, 3)
+    guard let radius = radii.first else { return }
+    XCTAssertGreaterThan(radius, 0)
+    for distance in radii.dropFirst() {
+      XCTAssertEqual(distance, radius, accuracy: 0.01)
+    }
+  }
 }

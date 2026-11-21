@@ -52,8 +52,15 @@ public final class WhipAgentSpinnerView: ExpoView {
 
   public override func layoutSubviews() {
     super.layoutSubviews()
-    spinnerLayer.frame = bounds
-    layoutDots()
+    // A paused spinner retains its transform. Set its geometry directly so
+    // Core Animation never has to derive it from a rotated frame.
+    let orbitBounds = CGRect(origin: .zero, size: bounds.size)
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    spinnerLayer.bounds = orbitBounds
+    spinnerLayer.position = CGPoint(x: bounds.midX, y: bounds.midY)
+    layoutDots(in: orbitBounds)
+    CATransaction.commit()
   }
 
   public override func didMoveToWindow() {
@@ -88,7 +95,7 @@ public final class WhipAgentSpinnerView: ExpoView {
     updateAnimationState()
   }
 
-  private func layoutDots() {
+  private func layoutDots(in bounds: CGRect) {
     let extent = min(bounds.width, bounds.height)
     guard extent > 0 else { return }
 

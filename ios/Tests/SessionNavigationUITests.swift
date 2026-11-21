@@ -56,6 +56,14 @@ final class SessionNavigationUITests: XCTestCase {
     expectStatus("exits:1 native:0 web:0")
   }
 
+  func testEdgeSwipeExitsWhileTheTerminalHandlesWebTouches() {
+    launch(["--terminal-touch"])
+    let terminal = app.webViews.staticTexts["Scrollable terminal/chat stand-in"]
+    XCTAssertTrue(terminal.waitForExistence(timeout: 10))
+    drag(y: terminal.frame.midY)
+    expectStatus("exits:1 native:0 web:0")
+  }
+
   func testKeyboardAndReturnKeepTheDraft() {
     launch()
     let draft = app.textFields["draft"]
