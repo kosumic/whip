@@ -2,6 +2,7 @@ import { createRef, Profiler, type ComponentProps } from 'react';
 import { Linking, Platform, type View } from 'react-native';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { SessionScreen } from '../src/components/SessionScreen';
+import { SessionExitGesture } from '../src/components/SessionExitGesture';
 import { TerminalTabRail } from '../src/components/TerminalTabRail';
 import { moveKeyboard, publishKeyboard, resetKeyboardController } from '../test-support/keyboardAnimation';
 import { TerminalComposerStore } from '../src/lib/terminalComposerStore';
@@ -412,6 +413,58 @@ test('attachment picker keeps the opening composer blur source and clears it for
   act(() => { ui('TerminalScreen').props.onRequestAttachment(); });
   expect(ui('AttachmentSheet').props.visible).toBe(true);
   expect(ui('AttachmentSheet').props.blurTarget).toBeUndefined();
+});
+
+test('edge exit reuses rail navigation and retains the terminal across visibility, keyboard, and connection changes', async () => {
+  const host = setup('codex');
+  await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+  const surface = ui('TerminalScreen');
+  const gesture = () => renderer.root.findByType(SessionExitGesture);
+  expect(gesture().props.enabled).toBe(true);
+  expect(gesture().props.onExit).toBe(host.props.onExit);
+  const back = renderer.root.findByProps({ accessibilityLabel: 'session.backToHerd' });
+  act(() => { back.props.onPress(); });
+  expect(host.props.onExit).toHaveBeenCalledTimes(1);
+
+  host.props.visible = false;
+  act(() => { renderer.update(<SessionScreen {...host.props} />); });
+  expect(gesture().props.enabled).toBe(false);
+  expect(ui('TerminalScreen')).toBe(surface);
+  host.props.visible = true;
+  host.props.client = null as unknown as Props['client'];
+  act(() => { renderer.update(<SessionScreen {...host.props} />); });
+  act(() => { publishKeyboard(true); });
+  expect(gesture().props.enabled).toBe(true);
+  act(() => { gesture().props.onExit(); });
+  expect(host.props.onExit).toHaveBeenCalledTimes(2);
+  expect(host.props.onCloseTerminal).not.toHaveBeenCalled();
+  expect(host.client?.terminal.closeTerminalBridge).not.toHaveBeenCalled();
+  expect(ui('TerminalScreen')).toBe(surface);
+});
+
+test('edge exit is suspended behind app overlays, session sheets, and while inactive', async () => {
+  const host = setup('codex');
+  await act(async () => { renderer = create(<SessionScreen {...host.props} />); });
+  const enabled = () => renderer.root.findByType(SessionExitGesture).props.enabled;
+  host.props.attentionVisible = false;
+  act(() => { renderer.update(<SessionScreen {...host.props} />); });
+  expect(enabled()).toBe(false);
+  host.props.attentionVisible = true;
+  act(() => { renderer.update(<SessionScreen {...host.props} />); });
+  expect(enabled()).toBe(true);
+  act(() => { ui('TerminalScreen').props.onRequestAttachment(); });
+  expect(enabled()).toBe(false);
+  act(() => { ui('AttachmentSheet').props.onClose(); });
+  expect(enabled()).toBe(true);
+  act(() => { renderer.root.findByType(TerminalTabRail).props.onNew(); });
+  expect(enabled()).toBe(false);
+  act(() => { ui('EditorSheet').props.onClose(); });
+  expect(enabled()).toBe(true);
+  act(() => { for (const listener of mockAppStateListeners) listener('inactive'); });
+  expect(enabled()).toBe(false);
+  act(() => { for (const listener of mockAppStateListeners) listener('active'); });
+  expect(enabled()).toBe(true);
+  expect(host.props.onExit).not.toHaveBeenCalled();
 });
 
 test('interacting with a completed agent acknowledges it through Herdr once per pending request', async () => {
@@ -1227,6 +1280,23 @@ test.each(['claude', 'codex', 'opencode', 'pi'] as const)('a brand new %s agent 
 });
 
 describe.each(['codex', 'opencode', 'pi'] as const)('%s SessionScreen', agent => {
+  test('edge exit remains available in Chat and retains its viewport when shown again', async () => {
+    const host = setup(agent);
+    await openReadyChat(host, agent);
+    revealChat();
+    const chat = ui('AgentChatView');
+    const gesture = () => renderer.root.findByType(SessionExitGesture);
+    expect(gesture().props.enabled).toBe(true);
+    act(() => { gesture().props.onExit(); });
+    expect(host.props.onExit).toHaveBeenCalledTimes(1);
+    act(() => { renderer.update(<SessionScreen {...host.props} visible={false} />); });
+    expect(gesture().props.enabled).toBe(false);
+    act(() => { renderer.update(<SessionScreen {...host.props} />); });
+    expect(gesture().props.enabled).toBe(true);
+    expect(ui('AgentChatView')).toBe(chat);
+    expect(host.props.onCloseTerminal).not.toHaveBeenCalled();
+  });
+
   test.each([false, true])('restores Chat after remount (late storage=%s) and saves Terminal selection', async lateStorage => {
     const host = setup(agent);
     await openReadyChat(host, agent);

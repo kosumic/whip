@@ -21,6 +21,7 @@ import { useGithubRepository } from '../hooks/useGithubRepository';
 import { useSshShellDirectory } from '../hooks/useSshShellDirectory';
 import { useTranscriptTabTitles } from '../hooks/useTranscriptTabTitles';
 import { ScreenUpdates } from './ScreenUpdates';
+import { SessionExitGesture } from './SessionExitGesture';
 import ChevronLeft from 'lucide-react-native/icons/chevron-left';
 import Globe2 from 'lucide-react-native/icons/earth';
 import SquareTerminal from 'lucide-react-native/icons/square-terminal';
@@ -1692,7 +1693,10 @@ export function SessionScreen({
   };
 
   return (
-    <View
+    <SessionExitGesture
+      enabled={visible && attentionVisible && appActive && !browserUrl &&
+        !attachmentsOpen && !linksOpen && editorMode === null && !chatOpen.notice && !visibleAppAlert}
+      onExit={onExit}
       accessibilityElementsHidden={!visible}
       importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}
       pointerEvents={visible ? 'auto' : 'none'}
@@ -2440,7 +2444,7 @@ export function SessionScreen({
         visible={visibleAppAlert !== null}
         onClose={() => { setAppAlert(null); chatOpen.dismissNotice(); }}
       />
-    </View>
+    </SessionExitGesture>
   );
 }
 
