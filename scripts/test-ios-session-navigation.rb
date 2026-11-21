@@ -9,6 +9,16 @@ build = File.join(root, 'build', 'ios-session-navigation-tests')
 FileUtils.mkdir_p(build)
 project = Xcodeproj::Project.new(File.join(build, 'SessionNavigationTests.xcodeproj'))
 host = project.new_target(:application, 'SessionNavigationTestHost', :ios, '16.4')
+host_info = File.join(build, 'Host-Info.plist')
+Xcodeproj::Plist.write_to_path({
+  'UIApplicationSceneManifest' => {
+    'UIApplicationSupportsMultipleScenes' => false,
+    'UISceneConfigurations' => {
+      'UIWindowSceneSessionRoleApplication' => [{ 'UISceneConfigurationName' => 'NavigationTests' }]
+    }
+  }
+}, host_info)
+host.build_configurations.each { |config| config.build_settings['INFOPLIST_FILE'] = host_info }
 host.add_system_frameworks(%w[UIKit WebKit])
 %w[modules/whip-session-navigation/ios/SessionExitGesture.swift ios/Tests/SessionNavigationTestHost.swift].each do |path|
   host.source_build_phase.add_file_reference(project.main_group.new_file(File.join(root, path)))

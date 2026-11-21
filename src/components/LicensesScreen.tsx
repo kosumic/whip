@@ -1,5 +1,6 @@
 import ChevronDown from 'lucide-react-native/icons/chevron-down';
 import ChevronLeft from 'lucide-react-native/icons/chevron-left';
+import { EdgeBackGesture } from './EdgeBackGesture';
 import ChevronUp from 'lucide-react-native/icons/chevron-up';
 import ExternalLink from 'lucide-react-native/icons/external-link';
 import Scale from 'lucide-react-native/icons/scale';
@@ -95,7 +96,7 @@ export function LicensesScreen({ onClose }: Props) {
   };
 
   return (
-    <View className="flex-1">
+    <EdgeBackGesture className="flex-1" onBack={onClose}>
       <ScreenHeader
         title={t('licenses.title')}
         subtitle={t('licenses.count', { count: OPEN_SOURCE_LICENSES.length })}
@@ -237,6 +238,6 @@ export function LicensesScreen({ onClose }: Props) {
           })}
         </View>
       </ScrollView>
-    </View>
+    </EdgeBackGesture>
   );
 }

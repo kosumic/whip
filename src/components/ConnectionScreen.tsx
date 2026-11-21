@@ -1,6 +1,7 @@
 import { KeyboardAvoidingView, KeyboardController } from 'react-native-keyboard-controller';
 import ChevronDown from 'lucide-react-native/icons/chevron-down';
 import ChevronLeft from 'lucide-react-native/icons/chevron-left';
+import { EdgeBackGesture } from './EdgeBackGesture';
 import ChevronUp from 'lucide-react-native/icons/chevron-up';
 import ClipboardPaste from 'lucide-react-native/icons/clipboard-paste';
 import FileText from 'lucide-react-native/icons/file-text';
@@ -295,6 +296,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
   };
 
   return (
+    <EdgeBackGesture className="flex-1" enabled={!connecting && !generatingKey && !keyActionsOpen && globalKeys === null && !installPublicKeyOpen} onBack={onCancel}>
     <SettingsDetailsProvider>
     <KeyboardAvoidingView
       accessibilityElementsHidden={installPublicKeyOpen}
@@ -575,6 +577,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, connected 
       onTrustHost={onTrustHost}
     /> : null}
     </SettingsDetailsProvider>
+    </EdgeBackGesture>
   );
 }
 

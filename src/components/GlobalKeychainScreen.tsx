@@ -1,6 +1,7 @@
 import { KeyboardAwareScrollView as ScrollView } from 'react-native-keyboard-controller';
 import { generateKeyPair, getKeyDetails } from 'react-native-whip-ssh';
 import ChevronLeft from 'lucide-react-native/icons/chevron-left';
+import { EdgeBackGesture } from './EdgeBackGesture';
 import ClipboardPaste from 'lucide-react-native/icons/clipboard-paste';
 import FileUp from 'lucide-react-native/icons/file-up';
 import KeyRound from 'lucide-react-native/icons/key-round';
@@ -165,7 +166,7 @@ export function GlobalKeychainScreen({ initialKeys, onClose, onChanged }: Props)
   };
 
   return (
-    <View className="flex-1">
+    <EdgeBackGesture className="flex-1" enabled={!busy && !deleteTarget && !copyTarget} onBack={onClose}>
       <ScreenHeader
         title={t('keychain.title')}
         subtitle={t('keychain.count', { count: keys.length })}
@@ -266,6 +267,6 @@ export function GlobalKeychainScreen({ initialKeys, onClose, onChanged }: Props)
           reportBackgroundFailure(deleteConfirmedKey(), 'global-key-delete');
         }}
       />
-    </View>
+    </EdgeBackGesture>
   );
 }

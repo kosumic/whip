@@ -15,6 +15,7 @@ import { BrowserDownloadProgress } from './BrowserDownloadProgress';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Text } from '../components/ui/text';
+import { EdgeBackGesture } from '../components/EdgeBackGesture';
 import { useTheme } from '../theme';
 
 export function BrowserDownloadsScreen({
@@ -45,6 +46,7 @@ export function BrowserDownloadsScreen({
   };
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <EdgeBackGesture style={{ flex: 1 }} enabled={visible} onBack={onClose}>
       <SafeAreaView className="flex-1 bg-background">
         <View className="h-16 flex-row items-center border-b border-border px-3">
           <Button
@@ -147,6 +149,7 @@ export function BrowserDownloadsScreen({
           )}
         </ScrollView>
       </SafeAreaView>
+      </EdgeBackGesture>
     </Modal>
   );
 }

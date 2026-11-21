@@ -4,6 +4,8 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import { SshWorkflowError } from '../packages/react-native-whip-ssh/src/generated/whip_ssh';
 
 import { NewHostScreen } from '../src/components/NewHostScreen';
+import { EdgeBackGesture } from '../src/components/EdgeBackGesture';
+jest.mock('expo-modules-core', () => ({ requireNativeViewManager: () => 'NativeEdgeBack' }));
 import { JumpHostSelect } from '../src/components/JumpHostSelect';
 import { TAILCAT_SETUP_PROMPT } from '../src/lib/tailcatSetupPrompt';
 import { pairHostWithRoute } from '../src/services/sshPairing';
@@ -93,6 +95,22 @@ async function openScanner(view: ReactTestRenderer) {
     await buttons[buttons.length - 1].props.onPress();
   });
 }
+
+test('edge back returns from scanner to setup to choices before cancelling host creation', async () => {
+  const view = await mountSetup();
+  const onCancel = view.root.findByType(NewHostScreen).props.onCancel;
+  await openScanner(view);
+  const edge = () => view.root.findByType(EdgeBackGesture);
+  act(() => { edge().props.onBack(); });
+  expect(view.root.findAllByType('CameraView' as never)).toHaveLength(0);
+  expect(view.root.findByProps({ title: 'pairing.scan' })).toBeDefined();
+  act(() => { edge().props.onBack(); });
+  expect(view.root.findByProps({ title: 'pairing.title' })).toBeDefined();
+  expect(onCancel).not.toHaveBeenCalled();
+  act(() => { edge().props.onBack(); });
+  expect(onCancel).toHaveBeenCalledTimes(1);
+  act(() => { view.unmount(); });
+});
 
 test('the Tailcat guide copies the setup prompt and leaves scanning to the existing button', async () => {
   const view = await mountSetup();

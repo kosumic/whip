@@ -1,4 +1,5 @@
 import UIKit
+import WebKit
 
 /// Lives outside the RN surface so recognition also cancels Fabric touches.
 /// Only touches originating inside this session's content can participate.
@@ -16,6 +17,8 @@ final class SessionExitGesture: NSObject, UIGestureRecognizerDelegate {
   private let onExit: () -> Void
   private var enabled = false
   private var consumed = false
+  private var revision = 0
+  private var preferWebHistory = false
   private var peakDistance: CGFloat = 0
   private var reversed = false
   private let pan: UIPanGestureRecognizer
@@ -58,6 +61,16 @@ final class SessionExitGesture: NSObject, UIGestureRecognizerDelegate {
     pan.isEnabled = enabled && !consumed && window != nil
   }
 
+  func setRevision(_ value: Int) {
+    guard revision != value else { return }
+    revision = value
+    consumed = false
+  }
+
+  func setPreferWebHistory(_ value: Bool) {
+    preferWebHistory = value
+  }
+
   @objc private func resignActive() {
     // Cancel an in-flight swipe; a subsequent touch may start a fresh one.
     pan.isEnabled = false
@@ -76,7 +89,8 @@ final class SessionExitGesture: NSObject, UIGestureRecognizerDelegate {
     var responder: UIResponder? = content
     while let current = responder {
       if let controller = current as? UIViewController,
-         controller.presentedViewController != nil { return false }
+         let presented = controller.presentedViewController,
+         !content.isDescendant(of: presented.view) { return false }
       responder = current.next
     }
     return true
@@ -85,8 +99,20 @@ final class SessionExitGesture: NSObject, UIGestureRecognizerDelegate {
   func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
     guard canExit, let content, let target = touch.view,
           target.isDescendant(of: content), let window = content.window else { return false }
+    if webHistoryOwns(target) { return false }
     let x = touch.location(in: window).x - window.bounds.minX
     return x >= 0 && x <= Threshold.edgeWidth
+  }
+
+  private func webHistoryOwns(_ target: UIView) -> Bool {
+    guard preferWebHistory else { return false }
+    var ancestor: UIView? = target
+    while let view = ancestor {
+      if let web = view as? WKWebView { return web.canGoBack }
+      if view === content { break }
+      ancestor = view.superview
+    }
+    return false
   }
 
   func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
@@ -101,7 +127,8 @@ final class SessionExitGesture: NSObject, UIGestureRecognizerDelegate {
     // Reserve edge drags before scrolling or rail pans. Let stationary long
     // presses recognize normally so text selection still works at the edge.
     guard otherGestureRecognizer is UIPanGestureRecognizer,
-          let content, let otherView = otherGestureRecognizer.view else { return false }
+          let content, let otherView = otherGestureRecognizer.view,
+          !webHistoryOwns(otherView) else { return false }
     return otherView.isDescendant(of: content)
   }
 

@@ -1,8 +1,9 @@
 import { createRef, Profiler, type ComponentProps } from 'react';
-import { Linking, Platform, type View } from 'react-native';
+import { Linking, Modal, Platform, type View } from 'react-native';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { SessionScreen } from '../src/components/SessionScreen';
 import { SessionExitGesture } from '../src/components/SessionExitGesture';
+import { EdgeBackGesture } from '../src/components/EdgeBackGesture';
 import { TerminalTabRail } from '../src/components/TerminalTabRail';
 import { moveKeyboard, publishKeyboard, resetKeyboardController } from '../test-support/keyboardAnimation';
 import { TerminalComposerStore } from '../src/lib/terminalComposerStore';
@@ -1124,7 +1125,13 @@ test('chat web links open in app without a global browser preference', async () 
   await act(async () => { ui('AgentChatView').props.onOpenWebLink(url); });
   const browsers = renderer.root.findAll(node => String(node.type) === 'WebView' && node.props.source?.uri === url);
   expect(browsers).toHaveLength(1);
-  expect(browsers[0].parent?.parent?.parent?.props.visible).toBe(true);
+  const modal = renderer.root.findAllByType(Modal).find(node => node.findAll(child => child === browsers[0]).length > 0);
+  expect(modal?.props.visible).toBe(true);
+  expect(browsers[0].props.allowsBackForwardNavigationGestures).toBe(true);
+  const browserEdge = modal!.findAllByType(EdgeBackGesture).find(node => node.props.preferWebHistory)!;
+  act(() => { browserEdge.props.onBack(); });
+  expect(host.props.onExit).not.toHaveBeenCalled();
+  expect(renderer.root.findAll(node => String(node.type) === 'WebView' && node.props.source?.uri === url)).toHaveLength(0);
   expect(Linking.openURL).not.toHaveBeenCalled();
 });
 

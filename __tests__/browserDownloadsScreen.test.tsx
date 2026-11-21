@@ -1,5 +1,7 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { BrowserDownloadsScreen } from '../src/browser/BrowserDownloadsScreen';
+import { EdgeBackGesture } from '../src/components/EdgeBackGesture';
+jest.mock('expo-modules-core', () => ({ requireNativeViewManager: () => 'NativeEdgeBack' }));
 import { browserDownloads } from '../src/browser/downloads';
 import type { BrowserSavedDownload } from '../src/browser/library';
 import {
@@ -10,6 +12,7 @@ jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );
 jest.mock('react-native', () => ({
+  Platform: { OS: 'ios' },
   View: 'View',
   ScrollView: 'ScrollView',
   ActivityIndicator: 'ActivityIndicator',
@@ -120,6 +123,17 @@ test('unknown content length shows downloaded bytes without a false percentage',
     mockEntries = previous;
     await act(async () => view.unmount());
   }
+});
+
+test('edge back returns from Downloads without cancelling transfers', () => {
+  const onClose = jest.fn();
+  jest.mocked(cancelSavedBrowserDownload).mockClear();
+  let view!: ReactTestRenderer;
+  act(() => { view = create(<BrowserDownloadsScreen visible onClose={onClose} />); });
+  act(() => { view.root.findByType(EdgeBackGesture).props.onBack(); });
+  expect(onClose).toHaveBeenCalledTimes(1);
+  expect(cancelSavedBrowserDownload).not.toHaveBeenCalled();
+  act(() => { view.unmount(); });
 });
 
 test('explains storage failures and the available-storage download policy', async () => {

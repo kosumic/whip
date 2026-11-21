@@ -5,6 +5,8 @@ import { Alert } from 'react-native';
 
 import { ConnectionScreen } from '../src/components/ConnectionScreen';
 import { GlobalKeychainScreen } from '../src/components/GlobalKeychainScreen';
+import { EdgeBackGesture } from '../src/components/EdgeBackGesture';
+jest.mock('expo-modules-core', () => ({ requireNativeViewManager: () => 'NativeEdgeBack' }));
 import { InstallPublicKeySheet } from '../src/components/InstallPublicKeySheet';
 import { useAppGlassEnabled } from '../src/components/GlassSurface';
 import { SshKeyCopySheet } from '../src/components/SshKeyCopySheet';
@@ -100,6 +102,29 @@ beforeEach(() => {
   jest.mocked(inspectPublicKey).mockReturnValue(share);
   jest.mocked(installPublicKeyForHost).mockResolvedValue('added');
   jest.mocked(Clipboard.getString).mockResolvedValue(PUBLIC_KEY);
+});
+
+test('host editor edge back uses cancel and is disabled while connecting', async () => {
+  const onCancel = jest.fn();
+  const props = { ...route, initialProfile: host, connecting: false, error: null, onCancel, onSave: jest.fn(), onConnect: jest.fn() };
+  let view!: ReactTestRenderer;
+  await act(async () => { view = create(<ConnectionScreen {...props} />); });
+  const edge = () => view.root.findByType(EdgeBackGesture);
+  expect(edge().props.enabled).toBe(true);
+  act(() => { edge().props.onBack(); });
+  expect(onCancel).toHaveBeenCalledTimes(1);
+  act(() => { view.update(<ConnectionScreen {...props} connecting />); });
+  expect(edge().props.enabled).toBe(false);
+  act(() => { view.unmount(); });
+});
+
+test('keychain edge back uses its existing close callback', () => {
+  const onClose = jest.fn();
+  let view!: ReactTestRenderer;
+  act(() => { view = create(<GlobalKeychainScreen initialKeys={[]} onChanged={jest.fn()} onClose={onClose} />); });
+  act(() => { view.root.findByType(EdgeBackGesture).props.onBack(); });
+  expect(onClose).toHaveBeenCalledTimes(1);
+  act(() => { view.unmount(); });
 });
 
 test('host validation identifies every missing field and clears as the user fixes them', async () => {

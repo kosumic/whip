@@ -83,6 +83,16 @@ final class SessionExitGestureTests: XCTestCase {
     XCTAssertEqual(exits, 0, "A reversed swipe stays cancelled even after pausing or moving right again")
   }
 
+  func testAcknowledgingBackAllowsAnotherSwipeWithoutRemounting() {
+    pan.sample(.began, x: 15)
+    pan.sample(.ended, x: 110)
+    XCTAssertEqual(exits, 1)
+    gesture.setRevision(1)
+    pan.sample(.began, x: 15)
+    pan.sample(.ended, x: 110)
+    XCTAssertEqual(exits, 2)
+  }
+
   func testDisablingDuringASwipeAndRemovingTheSessionCancelNavigation() {
     pan.sample(.began, x: 15)
     pan.sample(.changed, x: 110)

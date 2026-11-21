@@ -8,6 +8,7 @@ import ArrowUp from 'lucide-react-native/icons/arrow-up';
 import Check from 'lucide-react-native/icons/check';
 import ChevronDown from 'lucide-react-native/icons/chevron-down';
 import ChevronLeft from 'lucide-react-native/icons/chevron-left';
+import { EdgeBackGesture } from './EdgeBackGesture';
 import ChevronRight from 'lucide-react-native/icons/chevron-right';
 import Download from 'lucide-react-native/icons/download';
 import ExternalLink from 'lucide-react-native/icons/external-link';
@@ -816,6 +817,13 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     setDiscardAction(() => action);
   };
 
+  const goBack = () => {
+    if (actionBusy || discardAction) return;
+    if (contextEntry) setContextEntry(null);
+    else if (sortMenuVisible) setSortMenuVisible(false);
+    else confirmDiscard(preview ? closePreviewNow : dismissNow);
+  };
+
   const updatePreview = (updates: Partial<FilePreview>) => {
     const current = previewRef.current;
     if (current) replacePreview({ ...current, ...updates });
@@ -997,7 +1005,8 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   );
 
   return (
-    <Modal {...appGlassModalPresentation(appGlassEnabled, Platform.OS)} animationType="slide" onRequestClose={() => (actionBusy ? undefined : contextEntry ? setContextEntry(null) : sortMenuVisible ? setSortMenuVisible(false) : confirmDiscard(preview ? closePreviewNow : dismissNow))} statusBarTranslucent visible={visible}>
+    <Modal {...appGlassModalPresentation(appGlassEnabled, Platform.OS)} animationType="slide" onRequestClose={goBack} statusBarTranslucent visible={visible}>
+      <EdgeBackGesture style={{ flex: 1 }} enabled={visible && !actionBusy && !discardAction} onBack={goBack}>
       <KeyboardAvoidingView behavior="padding" automaticOffset style={{ flex: 1 }}>
       <GlassOverlayHost overlays={overlays}>
         <FileSurface
@@ -1424,6 +1433,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
         </FileSurface>
       </GlassOverlayHost>
       </KeyboardAvoidingView>
+      </EdgeBackGesture>
     </Modal>
   );
 }

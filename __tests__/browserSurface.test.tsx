@@ -5,6 +5,8 @@ jest.mock('../src/services/appStorage', () => ({
   appStorage: { getItem: jest.fn(async () => null), setItem: jest.fn(async () => undefined) },
 }));
 import { BrowserSurface } from '../src/browser/BrowserSurface';
+import { EdgeBackGesture } from '../src/components/EdgeBackGesture';
+jest.mock('expo-modules-core', () => ({ requireNativeViewManager: () => 'NativeEdgeBack' }));
 import {
   browserRegistry,
   connectedBrowserRuntimes,
@@ -304,6 +306,37 @@ test('an active page download opens Downloads directly from the browser surface'
     expect(view.root.findByType('BrowserDownloadsScreen' as never).props.visible).toBe(true);
   } finally {
     mockDownloads = [];
+    await act(async () => { await browserRegistry.close(identity.sessionId); view?.unmount(); });
+  }
+});
+
+test('edge back dismisses panels before history and hides the browser without closing its tabs', async () => {
+  const { identity, runtime, entry } = browserSession('edge-back');
+  let view!: ReactTestRenderer;
+  try {
+    browserRegistry.open(identity.sessionId);
+    await act(async () => { view = create(<BrowserSurface runtimes={[runtime]} />); });
+    await layoutBrowserViews(view);
+    const tab = entry.controller.tab();
+    const driver = tab.driver!;
+    await act(async () => { entry.controller.navigation(tab.id, { url: 'https://example.com/two', title: 'Two', canGoBack: true, canGoForward: false }); });
+    const edge = () => view.root.findByType(EdgeBackGesture);
+    await act(async () => { view.root.findByProps({ accessibilityLabel: 'Open browser tabs' }).props.onPress(); });
+    expect(edge().props.preferWebHistory).toBe(false);
+    await act(async () => { edge().props.onBack(); });
+    expect(edge().props.preferWebHistory).toBe(true);
+    expect(driver.back).not.toHaveBeenCalled();
+    expect(browserRegistry.visibleId).toBe(identity.sessionId);
+    await act(async () => { edge().props.onBack(); });
+    expect(driver.back).toHaveBeenCalledTimes(1);
+    expect(browserRegistry.visibleId).toBe(identity.sessionId);
+    await act(async () => { entry.controller.navigation(tab.id, { url: 'https://example.com/one', title: 'One', canGoBack: false, canGoForward: true }); });
+    await act(async () => { edge().props.onBack(); });
+    expect(browserRegistry.visibleId).toBeNull();
+    expect(entry.controller.tabs).toContain(tab);
+    expect(tab.driver).toBe(driver);
+    expect(edge().props.enabled).toBe(false);
+  } finally {
     await act(async () => { await browserRegistry.close(identity.sessionId); view?.unmount(); });
   }
 });

@@ -15,11 +15,11 @@ final class SessionNavigationUITests: XCTestCase {
     XCTAssertTrue(app.staticTexts["status"].waitForExistence(timeout: 10))
   }
 
-  private func drag(x: CGFloat = 8, toX: CGFloat = 200, y: CGFloat, toY: CGFloat? = nil, duration: TimeInterval = 0.6) {
+  private func drag(x: CGFloat = 8, toX: CGFloat = 200, y: CGFloat, toY: CGFloat? = nil, duration: TimeInterval = 0.6, velocity: CGFloat = 250) {
     let origin = app.coordinate(withNormalizedOffset: .zero)
     origin.withOffset(CGVector(dx: x, dy: y)).press(
       forDuration: 0, thenDragTo: origin.withOffset(CGVector(dx: toX, dy: toY ?? y)),
-      withVelocity: XCUIGestureVelocity(rawValue: 250), thenHoldForDuration: duration
+      withVelocity: XCUIGestureVelocity(rawValue: velocity), thenHoldForDuration: duration
     )
   }
 
@@ -102,4 +102,39 @@ final class SessionNavigationUITests: XCTestCase {
     app.swipeDown()
     expectStatus("exits:0 native:0 web:0")
   }
+
+  func testBrowserPanelAndNativeHistoryAdmissionBeforeReturningToApp() {
+    launch(["--browser"])
+    let next = app.webViews.links["Next page"]
+    XCTAssertTrue(next.waitForExistence(timeout: 10))
+    next.tap()
+    XCTAssertTrue(app.webViews.staticTexts["Second page"].waitForExistence(timeout: 10))
+    app.buttons["Panel"].tap()
+    drag(y: 400)
+    XCTAssertFalse(app.otherElements["browser-panel"].exists)
+    XCTAssertTrue(app.webViews.staticTexts["Second page"].exists, "The panel closes before navigating page history")
+    expectStatus("exits:0 native:0 web:0")
+    drag(x: 1, toX: 380, y: 500, duration: 0, velocity: 1000)
+    expectStatus("exits:0 native:0 web:0")
+    // Some simulator runtimes do not complete WebKit's transition even with
+    // our recognizer disabled. Admission must still yield, never exit the app.
+    if !app.webViews.staticTexts["First page"].exists {
+      XCTContext.runActivity(named: "Use WebKit back after verifying that the app gesture yielded") { _ in
+        app.buttons["History back"].tap()
+      }
+    }
+    XCTAssertTrue(app.webViews.staticTexts["First page"].waitForExistence(timeout: 10))
+    drag(y: 540)
+    expectStatus("exits:1 native:0 web:0")
+  }
+
+  func testGestureInsidePresentedScreenReturnsWithoutExitingBehindIt() {
+    launch(["--modal-back"])
+    app.buttons["Modal"].tap()
+    XCTAssertTrue(app.buttons["Modal action"].waitForExistence(timeout: 5))
+    drag(y: app.buttons["Modal action"].frame.midY)
+    XCTAssertFalse(app.buttons["Modal action"].exists)
+    expectStatus("exits:0 native:0 web:0")
+  }
+
 }

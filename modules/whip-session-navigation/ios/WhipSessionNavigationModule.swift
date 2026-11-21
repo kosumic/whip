@@ -9,6 +9,12 @@ public final class WhipSessionNavigationModule: Module {
       Prop("enabled") { (view, enabled: Bool) in
         view.exitGesture.setEnabled(enabled)
       }
+      Prop("preferWebHistory") { (view, value: Bool) in
+        view.exitGesture.setPreferWebHistory(value)
+      }
+      Prop("revision") { (view, value: Int) in
+        view.exitGesture.setRevision(value)
+      }
     }
   }
 }

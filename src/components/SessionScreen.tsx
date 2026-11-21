@@ -22,6 +22,7 @@ import { useSshShellDirectory } from '../hooks/useSshShellDirectory';
 import { useTranscriptTabTitles } from '../hooks/useTranscriptTabTitles';
 import { ScreenUpdates } from './ScreenUpdates';
 import { SessionExitGesture } from './SessionExitGesture';
+import { EdgeBackGesture } from './EdgeBackGesture';
 import ChevronLeft from 'lucide-react-native/icons/chevron-left';
 import Globe2 from 'lucide-react-native/icons/earth';
 import SquareTerminal from 'lucide-react-native/icons/square-terminal';
@@ -862,6 +863,9 @@ export function SessionScreen({
     setBrowserCanGoBack(false);
     setBrowserLoading(false);
   };
+  const backFromBrowser = () => browserCanGoBack
+    ? browserWebView.current?.goBack()
+    : leaveBrowser();
 
   const openNativeBrowser = async () => {
     if (!supportsBrowserControl() || !client) return undefined;
@@ -2256,6 +2260,12 @@ export function SessionScreen({
           statusBarTranslucent
           visible={linksOpen}
         >
+          <EdgeBackGesture
+            style={{ flex: 1 }}
+            enabled={visible && attentionVisible && appActive && linksOpen}
+            preferWebHistory
+            onBack={browserUrl ? backFromBrowser : dismissLinks}
+          >
           <GlassSurface
             {...APP_FROSTED_GLASS_SURFACE_PROPS}
             className="flex-1"
@@ -2272,11 +2282,7 @@ export function SessionScreen({
                     accessibilityLabel={t('terminal.browserBack')}
                     className="h-12 w-12 rounded-none px-0"
                     variant="ghost"
-                    onPress={() =>
-                      browserCanGoBack
-                        ? browserWebView.current?.goBack()
-                        : leaveBrowser()
-                    }
+                    onPress={backFromBrowser}
                   >
                     <ChevronLeft size={21} color={colors.text} />
                   </Button>
@@ -2309,6 +2315,7 @@ export function SessionScreen({
                       browserWebView.current = value;
                     }}
                     source={{ uri: browserUrl }}
+                    allowsBackForwardNavigationGestures
                     javaScriptEnabled
                     onLoadStart={() => setBrowserLoading(true)}
                     onLoadEnd={() => setBrowserLoading(false)}
@@ -2436,6 +2443,7 @@ export function SessionScreen({
               </>
             )}
           </GlassSurface>
+          </EdgeBackGesture>
         </Modal>
       </View>
       <AppAlertPopup

@@ -26,6 +26,7 @@ import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { GoogleQrScanner } from './GoogleQrScanner';
 import { JumpHostSelect } from './JumpHostSelect';
 import { TailcatQuickStartGuide } from './TailcatQuickStartGuide';
+import { EdgeBackGesture } from './EdgeBackGesture';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
@@ -95,6 +96,8 @@ export function NewHostScreen({ hosts, onCancel, onManual, onPaired, onAuthentic
   const error = state.phase === 'setup' ? state.error : undefined;
   const scanHandled = useRef(false);
   const preparing = useRef(false);
+  const closeScanner = () => dispatch({ type: 'scanner-closed' });
+  const backToChoices = () => dispatch({ type: 'back' });
 
   const launchScanner = async () => {
     if (working || preparing.current) return;
@@ -172,12 +175,12 @@ export function NewHostScreen({ hosts, onCancel, onManual, onPaired, onAuthentic
       return <GoogleQrScanner
         title={t('pairing.scan')}
         instruction={t('pairing.scanCopy')}
-        onClose={() => dispatch({ type: 'scanner-closed' })}
+        onClose={closeScanner}
         onScan={data => handleScan({ data })}
       />;
     }
     return (
-      <View className="flex-1 bg-black">
+      <EdgeBackGesture className="flex-1 bg-black" onBack={closeScanner}>
         <CameraView
           style={StyleSheet.absoluteFill}
           facing="back"
@@ -186,7 +189,7 @@ export function NewHostScreen({ hosts, onCancel, onManual, onPaired, onAuthentic
         />
         <View className="flex-1 px-5 pb-10 pt-4">
           <View className="flex-row justify-end">
-            <IconButton icon={X} accessibilityLabel={t('common.close')} onPress={() => dispatch({ type: 'scanner-closed' })} />
+            <IconButton icon={X} accessibilityLabel={t('common.close')} onPress={closeScanner} />
           </View>
           <View className="flex-1 items-center justify-center">
             <View className="size-64 rounded-[28px] border-2 border-white" />
@@ -195,13 +198,13 @@ export function NewHostScreen({ hosts, onCancel, onManual, onPaired, onAuthentic
             </Text>
           </View>
         </View>
-      </View>
+      </EdgeBackGesture>
     );
   }
 
   if (state.phase === 'choose') {
     return (
-      <View className="flex-1">
+      <EdgeBackGesture className="flex-1" onBack={onCancel}>
         <ScreenHeader
           title={t('pairing.title')}
           left={<IconButton icon={ChevronLeft} accessibilityLabel={t('connection.back')} onPress={onCancel} />}
@@ -263,15 +266,15 @@ export function NewHostScreen({ hosts, onCancel, onManual, onPaired, onAuthentic
             </Button>
           </GlassSurface>
         </ScrollView>
-      </View>
+      </EdgeBackGesture>
     );
   }
 
   return (
-    <View className="flex-1">
+    <EdgeBackGesture className="flex-1" enabled={!working} onBack={backToChoices}>
       <ScreenHeader
         title={t('pairing.scan')}
-        left={<IconButton icon={ChevronLeft} accessibilityLabel={t('connection.back')} onPress={() => dispatch({ type: 'back' })} />}
+        left={<IconButton icon={ChevronLeft} accessibilityLabel={t('connection.back')} onPress={backToChoices} />}
       />
       <ScrollView className="flex-1" contentContainerClassName="px-5 pb-8">
         <View className="items-center pb-7 pt-8">
@@ -338,6 +341,6 @@ export function NewHostScreen({ hosts, onCancel, onManual, onPaired, onAuthentic
         </Button>
       </ScrollView>
 
-    </View>
+    </EdgeBackGesture>
   );
 }

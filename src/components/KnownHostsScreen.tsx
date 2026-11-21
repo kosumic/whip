@@ -1,4 +1,5 @@
 import ChevronLeft from 'lucide-react-native/icons/chevron-left';
+import { EdgeBackGesture } from './EdgeBackGesture';
 import CircleAlert from 'lucide-react-native/icons/circle-alert';
 import Fingerprint from 'lucide-react-native/icons/fingerprint-pattern';
 import RefreshCw from 'lucide-react-native/icons/refresh-cw';
@@ -50,7 +51,7 @@ export function KnownHostsScreen({ state, onClose, onDelete, onRetry }: Props) {
   };
 
   return (
-    <View className="flex-1">
+    <EdgeBackGesture className="flex-1" enabled={!busy && !deleteTarget} onBack={onClose}>
       <ScreenHeader
         title={t('knownHosts.title')}
         subtitle={state.status === 'loaded'
@@ -148,7 +149,7 @@ export function KnownHostsScreen({ state, onClose, onDelete, onRetry }: Props) {
           reportBackgroundFailure(deleteConfirmedHost(), 'known-host-delete');
         }}
       />
-    </View>
+    </EdgeBackGesture>
   );
 }
 

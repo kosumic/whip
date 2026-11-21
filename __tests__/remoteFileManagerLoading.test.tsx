@@ -10,6 +10,8 @@ import { cacheRemoteFile } from '../src/services/remoteFileTransfer';
 import { remoteDownloads } from '../src/services/remoteDownloads';
 import { projectRemoteDownload as report } from '../test-support/mockRemoteDownloads';
 import { RemoteFileManager } from '../src/components/RemoteFileManager';
+import { EdgeBackGesture } from '../src/components/EdgeBackGesture';
+jest.mock('expo-modules-core', () => ({ requireNativeViewManager: () => 'NativeEdgeBack' }));
 import { Button } from '../src/components/ui/button';
 import { ConfirmationPopup } from '../src/components/ConfirmationPopup';
 import type { HerdrClient } from '../src/services/HerdrClient';
@@ -228,6 +230,35 @@ afterEach(() => { act(() => tree?.unmount()); jest.restoreAllMocks(); });
 async function flushGitQueries() {
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
 }
+
+it('edge back preserves a dirty editor until discard is confirmed, then returns to the directory before closing', async () => {
+  const entry: RuntimeRemoteFileEntry = { name: 'file.ts', path: '/repo/file.ts', kind: 'file', size: 100 };
+  native.listDirectory.mockResolvedValue({ path: '/repo', entries: [entry] });
+  jest.mocked(cacheRemoteFile).mockResolvedValue({
+    file: { text: jest.fn().mockResolvedValue('original') },
+    uri: 'file:///cache/source', nativePath: '/cache/source', dispose: jest.fn(),
+  } as unknown as Awaited<ReturnType<typeof cacheRemoteFile>>);
+  await mount();
+  await act(async () => { button('files.openFile:file.ts').props.onPress(); });
+  await act(async () => { button('files.edit').props.onPress(); });
+  const editor = () => tree.root.find(node => String(node.type) === 'CodeEditor');
+  act(() => { editor().props.onChangeText('unsaved draft'); });
+  const edge = () => tree.root.findByType(EdgeBackGesture);
+  const discard = () => tree.root.findAllByType(ConfirmationPopup).find(node => node.props.visible)!;
+  act(() => { edge().props.onBack(); });
+  expect(edge().props.enabled).toBe(false);
+  expect(discard().props.title).toBe('files.discardTitle');
+  expect(editor().props.value).toBe('unsaved draft');
+  act(() => { discard().props.onCancel(); });
+  expect(edge().props.enabled).toBe(true);
+  expect(editor().props.value).toBe('unsaved draft');
+  act(() => { edge().props.onBack(); });
+  act(() => { discard().props.onConfirm(); });
+  expect(hasButton('files.openFile:file.ts')).toBe(true);
+  expect(props.onClose).not.toHaveBeenCalled();
+  act(() => { edge().props.onBack(); });
+  expect(props.onClose).toHaveBeenCalledTimes(1);
+});
 
 it('shows the branch and recent commits even for a clean working tree and refreshes them', async () => {
   native.discoverGitRepository.mockResolvedValue(repository);

@@ -26,6 +26,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import WebView from 'react-native-webview';
+import { EdgeBackGesture } from '../components/EdgeBackGesture';
 import ArrowLeft from 'lucide-react-native/icons/arrow-left';
 import Bookmark from 'lucide-react-native/icons/bookmark';
 import ArrowRight from 'lucide-react-native/icons/arrow-right';
@@ -469,6 +470,11 @@ export function BrowserSurface({
   const tab = entry?.controller.tabs.find(
     item => item.id === entry.controller.selectedTabId,
   );
+  const dismissPanel = useCallback(() => {
+    setPanel(null);
+    setAddress(tab?.url === 'about:blank' ? '' : tab?.url || '');
+    Keyboard.dismiss();
+  }, [tab?.url]);
   const viewingSite = !!tab && tab.url !== 'about:blank' && !addressFocused;
   const fullScreenPanel =
     panel === BrowserPanel.Settings ||
@@ -573,16 +579,14 @@ export function BrowserSurface({
     if (!entry) return;
     const handler = BackHandler.addEventListener('hardwareBackPress', () => {
       if (panel) {
-        setPanel(null);
-        setAddress(tab?.url === 'about:blank' ? '' : tab?.url || '');
-        Keyboard.dismiss();
+        dismissPanel();
         return true;
       }
       browserRegistry.hide();
       return true;
     });
     return () => handler.remove();
-  }, [entry, panel, tab?.url]);
+  }, [dismissPanel, entry, panel]);
   useEffect(() => {
     if (!supportsBrowserControl()) return;
     bestEffortCleanup(browserPreferences.load(), 'browser-preferences-load');
@@ -657,8 +661,21 @@ export function BrowserSurface({
     setPanel(BrowserPanel.Address);
     addressInput.current?.focus();
   };
+  const edgeBack = () => {
+    if (panel) {
+      dismissPanel();
+    } else if (tab?.canGoBack) {
+      // Covers a history change between native touch admission and JS dispatch.
+      void action('back');
+    } else {
+      browserRegistry.hide();
+    }
+  };
   return (
-    <View
+    <EdgeBackGesture
+      enabled={!!entry && !downloadsVisible && !scannerVisible}
+      onBack={edgeBack}
+      preferWebHistory={!panel}
       collapsable={false}
       pointerEvents={entry || downloadsVisible ? 'auto' : 'none'}
       accessibilityElementsHidden={!entry && !downloadsVisible}
@@ -1423,7 +1440,7 @@ export function BrowserSurface({
           />
         )}
       </KeyboardAvoidingView>
-    </View>
+    </EdgeBackGesture>
   );
 }
 const styles = StyleSheet.create({
