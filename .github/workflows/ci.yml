@@ -225,7 +225,8 @@ jobs:
         env:
           CORE_TEST_DIRECTORY: ${{ runner.temp }}/herdr-core-0.1.16
         run: |
-          export WHIP_HC_TEST_BINARY="$(bash ../../../scripts/fetch-herdr-core-test.sh "$CORE_TEST_DIRECTORY")"
+          WHIP_HC_TEST_BINARY="$(bash ../../../scripts/fetch-herdr-core-test.sh "$CORE_TEST_DIRECTORY")"
+          export WHIP_HC_TEST_BINARY
           cargo test --locked --lib hc_transport::tests::real_core_socket_multiplex_documents_reconnect_and_exec_fallback -- --ignored --test-threads=1
 
       - name: Test Tailcat against a local upstream relay and server
@@ -297,9 +298,9 @@ jobs:
 
   android:
     name: Android checks
-    if: &native-builds-on-main >-
-      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
-      github.ref == 'refs/heads/main'
+    if: &native-builds >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'schedule' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -552,7 +553,7 @@ jobs:
 
   ios:
     name: iOS unsigned compile check
-    if: *native-builds-on-main
+    if: *native-builds
     runs-on: macos-26
     timeout-minutes: 60
     env:
@@ -661,6 +662,10 @@ jobs:
           path: build/ios-browser-tests/DerivedData/Logs/Test/*.xcresult
           if-no-files-found: warn
           retention-days: 7
+
+      # Release simulator and WebKit processes before compiling the device app.
+      - name: Shut down iOS simulators
+        run: xcrun simctl shutdown all
 
       - name: Compute iOS Xcode cache key
         id: ios-xcode-key

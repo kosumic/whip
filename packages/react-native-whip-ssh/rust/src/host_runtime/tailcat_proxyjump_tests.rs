@@ -341,6 +341,7 @@ impl HostRuntimeEventSink for ShellSink {
 async fn shell_echo(
     runtime: &HostRuntime,
     receiver: &mut tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
+    phase: &str,
 ) -> TestResult {
     // The output token never appears contiguously in the echoed input command.
     runtime.ssh_shell_input(
@@ -359,7 +360,13 @@ async fn shell_echo(
             }
         }
     })
-    .await?
+    .await
+    .map_err(|error| {
+        format!(
+            "{phase}: shell echo timed out: {error}; status={:?}",
+            runtime.status()
+        )
+    })?
 }
 
 async fn cancellation(reference: &mut Reference, config: &HostRuntimeConfig) -> TestResult {
@@ -433,7 +440,7 @@ async fn exercise(builtin: bool, relay_only: bool) -> TestResult {
         .0
         .open_ssh_shell(SHELL.into(), 80, 24, 8, 16)
         .await?;
-    shell_echo(&runtime.0, &mut receiver).await?;
+    shell_echo(&runtime.0, &mut receiver, "initial connection").await?;
     if !relay_only {
         timeout(DEADLINE, async {
             while client.disco_ping().await?.endpoint.is_none() {
@@ -471,7 +478,7 @@ async fn exercise(builtin: bool, relay_only: bool) -> TestResult {
     );
     assert_eq!(client.status().await?.public_key, before.public_key);
     assert_eq!(runtime.0.status().generation, generation);
-    shell_echo(&runtime.0, &mut receiver).await?;
+    shell_echo(&runtime.0, &mut receiver, "network rebind").await?;
     assert_eq!(runtime.0.status().generation, generation);
     // Lose the actual first-hop SSH stream. HostRuntime must recreate every hop
     // and restore the UI shell intent/geometry, using the saved identity/trust.
@@ -484,7 +491,15 @@ async fn exercise(builtin: bool, relay_only: bool) -> TestResult {
             sleep(Duration::from_millis(20)).await;
         }
     })
-    .await?;
+    .await
+    .map_err(|error| {
+        format!(
+            "SSH chain recovery timed out: {error}; status={:?}; shell={}; fixture={:?}",
+            runtime.0.status(),
+            runtime.0.has_ssh_shell(SHELL.into()),
+            reference.command("status")
+        )
+    })?;
     assert_eq!(
         runtime
             .0
@@ -493,7 +508,7 @@ async fn exercise(builtin: bool, relay_only: bool) -> TestResult {
             .columns,
         80
     );
-    shell_echo(&runtime.0, &mut receiver).await?;
+    shell_echo(&runtime.0, &mut receiver, "SSH reconnect").await?;
     let restored = connection::current_ssh(&runtime.0.inner)?;
     assert_eq!(
         restored.execute("printf reconnected").await?.stdout,
