@@ -6,6 +6,8 @@ opt_out_usage
 skip_docs
 default_platform(:ios)
 
+SUBMITTED_IOS_STATES = %w[WAITING_FOR_REVIEW IN_REVIEW ACCEPTED PENDING_APPLE_RELEASE PROCESSING_FOR_DISTRIBUTION READY_FOR_DISTRIBUTION PROCESSING_FOR_APP_STORE READY_FOR_SALE].freeze
+
 platform :ios do
   private_lane :release_context do
     root = File.expand_path('..', __dir__)
@@ -31,28 +33,56 @@ platform :ios do
   desc 'Validate App Store credentials and the release version without submitting'
   lane :validate_release do
     release = release_context
+    review = release[:app].get_in_progress_review_submission(
+      platform: Spaceship::ConnectAPI::Platform::IOS,
+      includes: 'appStoreVersionForReview'
+    )
+    if review
+      reviewing_version = review.app_store_version_for_review
+      UI.message("Existing App Review submission #{review.id}: #{review.state}, version #{reviewing_version&.version_string || 'unknown'}")
+      # A different build or unresolved review must not be silently accepted.
+      verify_submission
+    end
+    if ENV['GITHUB_OUTPUT']
+      File.open(ENV.fetch('GITHUB_OUTPUT'), 'a') do |output|
+        output.puts("already_submitted=#{!!submission_status(release: release)[:submitted]}")
+      end
+    end
     UI.success("App Store access verified: #{release[:app].bundle_id}, #{release[:version]} (#{release[:build_number]})")
   end
 
-  desc 'Verify that the exact release build was submitted to App Review'
-  lane :verify_submission do
-    release = release_context
+  private_lane :submission_status do |options|
+    release = options.fetch(:release)
     version = release[:app].get_app_store_versions(
       filter: {platform: Spaceship::ConnectAPI::Platform::IOS, versionString: release[:version]},
       includes: 'build'
     ).first
     state = version && (version.app_version_state || version.app_store_state)
-    submitted_states = %w[WAITING_FOR_REVIEW IN_REVIEW ACCEPTED PENDING_APPLE_RELEASE PROCESSING_FOR_DISTRIBUTION READY_FOR_DISTRIBUTION PROCESSING_FOR_APP_STORE READY_FOR_SALE]
-    unless version && version.build && version.build.version == release[:build_number] &&
-           version.release_type == 'AFTER_APPROVAL' && submitted_states.include?(state)
-      UI.user_error!("#{release[:version]} (#{release[:build_number]}) has not reached App Review with automatic release: #{state || 'missing'}")
+    submitted = version && version.build && version.build.version == release[:build_number] &&
+                version.release_type == 'AFTER_APPROVAL' && SUBMITTED_IOS_STATES.include?(state)
+    {version: version, state: state, submitted: submitted}
+  end
+
+  desc 'Verify that the exact release build was submitted to App Review'
+  lane :verify_submission do
+    release = release_context
+    status = submission_status(release: release)
+    unless status[:submitted]
+      version = status[:version]
+      UI.user_error!("#{release[:version]} (#{release[:build_number]}) has not reached App Review with automatic release: #{status[:state] || 'missing'}, selected build #{version&.build&.version || 'missing'}, release type #{version&.release_type || 'missing'}")
     end
-    UI.success("App Review verified: #{release[:version]} (#{release[:build_number]}) is #{state}")
+    UI.success("App Review verified: #{release[:version]} (#{release[:build_number]}) is #{status[:state]}")
   end
 
   desc 'Submit the exact uploaded iOS version and build to App Review'
   lane :submit_review do
     release = release_context
+    if submission_status(release: release)[:submitted]
+      UI.message('The exact release is already submitted; skipping duplicate submission')
+      verify_submission
+      next
+    end
+    validate_release
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 30 * 60
     loop do
       builds = Spaceship::ConnectAPI::Build.all(

@@ -56,3 +56,11 @@ BUNDLE_GEMFILE=fastlane/Gemfile bundle exec fastlane ios submit_review
 ```
 
 Provide `APP_STORE_CONNECT_API_KEY_JSON` securely through the environment.
+
+The workflow's `operation` defaults to `release`. Use `verify_submission` to
+check the exact version, build, review state, and automatic release setting
+without building or uploading, or `submit_review` to retry an already uploaded
+build. An exact release already in review succeeds without another submission.
+An existing review for a different release or an unresolved review fails the
+preflight check before building; resolve that submission in App Store Connect
+before retrying. The workflow does not cancel reviews automatically.
