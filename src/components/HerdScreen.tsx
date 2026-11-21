@@ -965,6 +965,7 @@ const HerdScreenContent = memo(function HerdContent({
                         : 'min-h-11 justify-start rounded-none px-2.5 py-2'
                     }
                     disabled={workspaceBusy}
+                    size="content"
                     variant="ghost"
                     onPress={hapticPress(() => {
                       setCommandDraft(entry);
@@ -973,8 +974,8 @@ const HerdScreenContent = memo(function HerdContent({
                     })}
                   >
                     <Text
-                      className="flex-1 text-left font-mono text-[13px] leading-[18px]"
-                      numberOfLines={2}
+                      className="min-w-0 flex-1 text-left font-mono text-[13px] leading-[18px]"
+                      numberOfLines={1}
                       style={{ fontFamily: terminalFontFamily }}
                     >
                       {entry}
