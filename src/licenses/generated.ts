@@ -718,7 +718,7 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     sourceUrl: "https://github.com/kosumic/whip",
     attribution: "Direct Rust dependency · version 0.2.1 · used by whip-ssh",
     licenseName: "MIT",
-    licenseAsset: require("../../assets/licenses/generated/a29ec94949d6977e.txt"),
+    licenseAsset: require("../../assets/licenses/generated/f13a673e28dae9f6.txt"),
   },
   {
     id: "cargo-agent-transcript-core-0-3-0",
@@ -871,7 +871,7 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     sourceUrl: "https://github.com/kosumic/whip",
     attribution: "Direct Rust dependency · version 0.1.0 · used by whip-ssh",
     licenseName: "AGPL-3.0-or-later",
-    licenseAsset: require("../../assets/licenses/generated/03cd3aa5f6618c28.txt"),
+    licenseAsset: require("../../assets/licenses/generated/06443d8a2e76f6c2.txt"),
   },
   {
     id: "cargo-rayon-1-12-0",
@@ -889,7 +889,7 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     sourceUrl: "https://github.com/seanmonstar/reqwest",
     attribution: "Direct Rust dependency · version 0.12.28 · used by whip-ssh",
     licenseName: "Apache-2.0",
-    licenseAsset: require("../../assets/licenses/generated/c2c9b6ecbd4b725e.txt"),
+    licenseAsset: require("../../assets/licenses/generated/ec54fcd45dc4ce6b.txt"),
   },
   {
     id: "cargo-resvg-0-48-1",
@@ -1024,7 +1024,7 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     sourceUrl: "https://github.com/kosumic/whip",
     attribution: "Direct Rust dependency · version 0.1.1 · used by whip-ssh",
     licenseName: "MIT",
-    licenseAsset: require("../../assets/licenses/generated/5b7d481865e34d1e.txt"),
+    licenseAsset: require("../../assets/licenses/generated/a65c11786a90d525.txt"),
   },
   {
     id: "cargo-thiserror-2-0-21",
@@ -1099,11 +1099,11 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/9a45483453dc8226.txt"),
   },
   {
-    id: "cargo-url-2-5-8",
+    id: "cargo-url-2-5-9",
     category: "cargo",
     projectName: "url",
     sourceUrl: "https://github.com/servo/rust-url",
-    attribution: "Direct Rust dependency · version 2.5.8 · used by whip-ssh",
+    attribution: "Direct Rust dependency · version 2.5.9 · used by whip-ssh",
     licenseName: "Apache-2.0",
     licenseAsset: require("../../assets/licenses/generated/d00aa65d7a05d267.txt"),
   },
@@ -1150,7 +1150,7 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     sourceUrl: "https://github.com/kosumic/whip",
     attribution: "Direct Rust dependency · version 0.2.1 · used by whip-ssh",
     licenseName: "AGPL-3.0-or-later",
-    licenseAsset: require("../../assets/licenses/generated/3fe777fb0bccba20.txt"),
+    licenseAsset: require("../../assets/licenses/generated/35c580e825900572.txt"),
   },
   {
     id: "cargo-whip-notify-0-1-6",
@@ -1168,7 +1168,7 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     sourceUrl: "https://github.com/kosumic/whip",
     attribution: "Direct Rust dependency · version 0.2.1 · used by whip-ssh",
     licenseName: "MIT",
-    licenseAsset: require("../../assets/licenses/generated/0b5c0742e8404b62.txt"),
+    licenseAsset: require("../../assets/licenses/generated/f41c047e5769fb9c.txt"),
   },
   {
     id: "cargo-zeroize-1-9-0",

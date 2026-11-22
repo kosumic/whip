@@ -1352,7 +1352,7 @@ Used by:
 - errno 0.3.14
 - fastrand 2.5.0
 - fnv 1.0.7
-- form_urlencoded 1.2.2
+- form_urlencoded 1.2.3
 - hashbrown 0.17.1
 - httparse 1.10.1
 - hyper-rustls 0.27.10
@@ -1383,7 +1383,7 @@ Used by:
 - tungstenite 0.26.2
 - unicase 2.10.0
 - unicode-xid 0.2.6
-- url 2.5.8
+- url 2.5.9
 - uuid 1.28.0
 - yasna 0.6.0
 
