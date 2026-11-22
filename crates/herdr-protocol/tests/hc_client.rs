@@ -285,6 +285,157 @@ fn acknowledged_create_survives_a_lost_document_write_as_a_partial_result() {
 }
 
 #[test]
+fn rapid_tab_creates_and_late_document_echoes_need_no_snapshot_or_refetch() {
+    use hc::events::{Event, Notification};
+    let client = client();
+    let mut replies = prime(layout(), 4);
+    for (address, version) in [("t2", 5), ("t3", 6)] {
+        let mut new = terminal();
+        new["address"] = json!(address);
+        replies.extend([
+            ("terminal.run", Ok(new)),
+            ("doc.set", Ok(json!({"version":version}))),
+        ]);
+    }
+    let io = Fake::new(replies);
+    let mut view = View::default();
+    complete(client.refresh(&io)).unwrap();
+    let before = client.projection(&view).unwrap().snapshot;
+    let workspace = before.workspaces[0].workspace_id.clone();
+    for (nonce, version) in [("create-1", 5), ("create-2", 6)] {
+        let result = complete(client.control(
+            &io,
+            Command::TabCreate {
+                workspace_id: workspace.clone(),
+                label: None,
+            },
+            &mut view,
+            nonce,
+        ))
+        .unwrap();
+        let herdr_protocol::control::HerdrControlResult::TabCreated { tab, root_pane } = result
+        else {
+            panic!("expected tab creation")
+        };
+        assert!(
+            client
+                .projection(&view)
+                .unwrap()
+                .snapshot
+                .layouts
+                .iter()
+                .any(|layout| layout.tab_id == tab.tab_id
+                    && layout.panes[0].pane_id == root_pane.pane_id)
+        );
+        client
+            .apply_notifications(vec![Notification::Event(Event {
+                seq: version,
+                kind: "doc".into(),
+                terminal: None,
+                machine: None,
+                data: json!({"name":"herdr-app", "version":version}),
+            })])
+            .unwrap();
+        assert!(!client.needs_refresh());
+    }
+    // A delayed older echo must not invalidate the newer acknowledged document.
+    client
+        .apply_notifications(vec![Notification::Event(Event {
+            seq: 7,
+            kind: "doc".into(),
+            terminal: None,
+            machine: None,
+            data: json!({"name":"herdr-app", "version":5}),
+        })])
+        .unwrap();
+    assert!(!client.needs_refresh());
+    let after = client.projection(&view).unwrap().snapshot;
+    assert_eq!(after.tabs.len(), 3);
+    assert_eq!(after.panes[0].terminal_id, before.panes[0].terminal_id);
+    assert_eq!(
+        io.calls
+            .lock()
+            .unwrap()
+            .iter()
+            .map(Request::method)
+            .collect::<Vec<_>>(),
+        [
+            "terminal.list",
+            "doc.get",
+            "terminal.run",
+            "doc.set",
+            "terminal.run",
+            "doc.set"
+        ]
+    );
+}
+
+#[test]
+fn external_document_revisions_and_missed_events_still_refresh_authoritatively() {
+    use hc::events::{Event, Notification};
+    let client = client();
+    let mut external = layout();
+    external["spaces"][0]["tabs"][0]["name"] = json!("Other client");
+    let mut replies = prime(layout(), 4);
+    replies.push(("doc.get", Ok(json!({"value":external,"version":8}))));
+    replies.extend(prime(Value::Null, 9));
+    let io = Fake::new(replies);
+    assert!(
+        client
+            .projection_if_current(&View::default())
+            .unwrap()
+            .is_none()
+    );
+    complete(client.refresh(&io)).unwrap();
+    client
+        .apply_notifications(vec![Notification::Event(Event {
+            seq: 2,
+            kind: "doc".into(),
+            terminal: None,
+            machine: None,
+            data: json!({"name":"herdr-app", "version":8}),
+        })])
+        .unwrap();
+    assert!(client.needs_refresh());
+    assert!(
+        client
+            .projection_if_current(&View::default())
+            .unwrap()
+            .is_none()
+    );
+    complete(client.refresh(&io)).unwrap();
+    assert_eq!(
+        client.projection(&View::default()).unwrap().snapshot.tabs[0].label,
+        "Other client"
+    );
+    // Out-of-order events are ignored by the sequenced model.
+    client
+        .apply_notifications(vec![Notification::Event(Event {
+            seq: 1,
+            kind: "doc".into(),
+            terminal: None,
+            machine: None,
+            data: json!({"name":"herdr-app", "version":99}),
+        })])
+        .unwrap();
+    assert!(!client.needs_refresh());
+    client
+        .apply_notifications(vec![Notification::Missed {
+            seq: 10,
+            terminals: vec![serde_json::from_value(terminal()).unwrap()],
+        }])
+        .unwrap();
+    assert!(client.needs_refresh());
+    complete(client.refresh(&io)).unwrap();
+    assert!(!client.needs_refresh());
+    assert_ne!(
+        client.projection(&View::default()).unwrap().snapshot.tabs[0].label,
+        "Other client"
+    );
+    assert!(io.replies.lock().unwrap().is_empty());
+}
+
+#[test]
 fn split_and_rename_preserve_opaque_nodes_and_reject_ambiguous_ids() {
     let space = SpaceLocation {
         key: DocumentKey {

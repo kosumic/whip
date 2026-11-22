@@ -416,6 +416,56 @@ impl HostState {
         replay_error.map_or(ApplyResult::Applied, ApplyResult::NeedsResync)
     }
 
+    /// An exact projection of Core's acknowledged documents and sequenced model.
+    /// Keep sync tokens and per-pane read fences intact; this is not a resync.
+    pub(crate) fn apply_core_projection(
+        &mut self,
+        generation: u64,
+        mut snapshot: HerdrSessionSnapshot,
+        now: u64,
+    ) -> ApplyResult {
+        if generation != self.connection_generation || self.snapshot.is_none() || self.is_syncing()
+        {
+            return ApplyResult::IgnoredStale;
+        }
+        if let Err(reason) = validate_snapshot(&snapshot) {
+            return ApplyResult::NeedsResync(reason);
+        }
+        normalize_snapshot(&mut snapshot);
+        if self.snapshot.as_ref() == Some(&snapshot) {
+            return ApplyResult::IgnoredStale;
+        }
+        let previous_panes = self
+            .snapshot
+            .iter()
+            .flat_map(|old| &old.panes)
+            .map(|pane| (pane.pane_id.as_str(), pane))
+            .collect::<HashMap<_, _>>();
+        let changed_scroll = snapshot
+            .panes
+            .iter()
+            .filter(|pane| {
+                previous_panes
+                    .get(pane.pane_id.as_str())
+                    .is_none_or(|previous| {
+                        previous.scroll != pane.scroll || previous.terminal_id != pane.terminal_id
+                    })
+            })
+            .map(|pane| pane.pane_id.clone())
+            .collect::<Vec<_>>();
+        self.snapshot = Some(snapshot);
+        self.last_event_at_ms = Some(now);
+        self.bump_revision_with_agent_transitions();
+        for pane_id in changed_scroll {
+            self.pane_scroll_revisions.insert(pane_id, self.revision);
+        }
+        ApplyResult::Applied
+    }
+
+    pub(crate) fn is_syncing(&self) -> bool {
+        self.active_sync.is_some()
+    }
+
     pub(crate) fn fail_sync(&mut self, token: SnapshotToken, reason: String) -> ApplyResult {
         if token.connection_generation != self.connection_generation
             || token.sync_generation != self.sync_generation
@@ -1614,17 +1664,65 @@ fn apply_control_to_snapshot(
             Ok(ControlProjection::Applied)
         }
         HerdrControlResult::TabCreated { tab, root_pane } => {
+            if root_pane.tab_id != tab.tab_id || root_pane.workspace_id != tab.workspace_id {
+                return Err("tab creation returned an inconsistent root pane".into());
+            }
             let mut tab = tab.clone();
             if let HerdrControlRequest::TabCreate { label, .. } = request {
                 tab.label_is_custom =
                     Some(label.as_ref().is_some_and(|label| !label.trim().is_empty()));
             }
-            upsert_tab(snapshot, tab)?;
-            upsert_pane(snapshot, root_pane.clone())?;
+            // Lifecycle/layout events can precede the RPC response. Retain their
+            // newer metadata and additional panes instead of replaying creation
+            // over a concurrent split, status change, or transcript binding.
+            if let Some(current) = snapshot
+                .tabs
+                .iter_mut()
+                .find(|current| current.tab_id == tab.tab_id)
+            {
+                if current.workspace_id != tab.workspace_id {
+                    return Err("created tab changed workspace before acknowledgement".into());
+                }
+                current.label_is_custom = current.label_is_custom.or(tab.label_is_custom);
+            } else {
+                upsert_tab(snapshot, tab)?;
+            }
+            if let Some(current) = snapshot
+                .panes
+                .iter()
+                .find(|pane| pane.pane_id == root_pane.pane_id)
+            {
+                if current.tab_id != root_pane.tab_id
+                    || current.terminal_id != root_pane.terminal_id
+                {
+                    return Err("created root pane changed identity before acknowledgement".into());
+                }
+            } else {
+                upsert_pane(snapshot, root_pane.clone())?;
+            }
             focus_pane(snapshot, &root_pane.pane_id)?;
-            Ok(ControlProjection::AppliedNeedsResync(
-                "tab creation result omits the new tab layout".to_owned(),
-            ))
+            let known_layout = snapshot.layouts.iter().any(|layout| {
+                layout.tab_id == root_pane.tab_id
+                    && snapshot
+                        .panes
+                        .iter()
+                        .filter(|pane| pane.tab_id == root_pane.tab_id)
+                        .all(|pane| {
+                            layout
+                                .panes
+                                .iter()
+                                .any(|entry| entry.pane_id == pane.pane_id)
+                        })
+            });
+            if known_layout {
+                Ok(ControlProjection::Applied)
+            } else {
+                // No geometry in TabCreated. Do not guess from terminal rows/
+                // columns: the server area may include padding or other panes.
+                Ok(ControlProjection::AppliedNeedsResync(
+                    "tab creation result omits the new tab layout".to_owned(),
+                ))
+            }
         }
         HerdrControlResult::TabInfo { tab } => {
             let mut projected_tab = tab.clone();
@@ -1866,6 +1964,185 @@ mod tests {
             ApplyResult::Applied
         );
         state
+    }
+
+    fn created_tab() -> (HerdrControlRequest, HerdrControlResult) {
+        (
+            HerdrControlRequest::TabCreate {
+                workspace_id: "w1".into(),
+                label: None,
+            },
+            HerdrControlResult::TabCreated {
+                tab: tab("t2", "w1"),
+                root_pane: pane("p2", "w1", "t2", HerdrAgentStatus::Idle),
+            },
+        )
+    }
+
+    #[test]
+    fn tab_create_without_geometry_keeps_unrelated_metadata_and_requires_recovery() {
+        let mut state = synced_state();
+        let baseline = state.snapshot.clone().unwrap();
+        let (request, result) = created_tab();
+        assert!(matches!(
+            state.apply_control_result(1, &request, &result),
+            ApplyResult::NeedsResync(_)
+        ));
+        let projected = state.snapshot.as_ref().unwrap();
+        let mut previous_pane = baseline.panes[0].clone();
+        previous_pane.focused = false;
+        assert_eq!(projected.panes[0], previous_pane);
+        assert_eq!(projected.agents, baseline.agents);
+        assert!(projected.layouts.is_empty());
+        assert_eq!(projected.focused_pane_id.as_deref(), Some("p2"));
+        assert_eq!(state.pane_ids(), ["p1", "p2"]);
+    }
+
+    #[test]
+    fn tab_create_after_layout_event_preserves_concurrent_split_and_transcript_identity() {
+        let mut state = synced_state();
+        let (request, result) = created_tab();
+        let mut root = pane("p2", "w1", "t2", HerdrAgentStatus::Working);
+        root.agent_session = Some(HerdrAgentSessionInfo {
+            source: "herdr".into(),
+            agent: "codex".into(),
+            kind: HerdrAgentSessionKind::Id,
+            value: "thread-new".into(),
+        });
+        root.title = Some("Concurrent title".into());
+        let mut authoritative_layout = layout("w1", "t2", "p2");
+        authoritative_layout.panes.push(HerdrPaneLayoutPane {
+            pane_id: "p3".into(),
+            focused: false,
+            rect: authoritative_layout.area.clone(),
+        });
+        for event in [
+            HerdrEvent::TabCreated {
+                tab: tab("t2", "w1"),
+            },
+            HerdrEvent::PaneCreated { pane: root.clone() },
+            HerdrEvent::PaneCreated {
+                pane: pane("p3", "w1", "t2", HerdrAgentStatus::Idle),
+            },
+            HerdrEvent::LayoutUpdated {
+                layout: authoritative_layout,
+            },
+        ] {
+            assert_eq!(state.apply_event(1, event, 11), ApplyResult::Applied);
+        }
+        let original_layout = state.snapshot.as_ref().unwrap().layouts.clone();
+        assert_eq!(
+            state.apply_control_result(1, &request, &result),
+            ApplyResult::Applied
+        );
+        let snapshot = state.snapshot.as_ref().unwrap();
+        let projected_root = snapshot
+            .panes
+            .iter()
+            .find(|pane| pane.pane_id == "p2")
+            .unwrap();
+        assert_eq!(projected_root.agent_session, root.agent_session);
+        assert_eq!(projected_root.title, root.title);
+        assert_eq!(projected_root.agent_status, HerdrAgentStatus::Working);
+        assert_eq!(snapshot.layouts, original_layout);
+        assert_eq!(snapshot.tabs[1].pane_count, 2.0);
+        assert!(!state.needs_resync);
+    }
+
+    #[test]
+    fn inconsistent_tab_creation_is_transactional() {
+        let mut state = synced_state();
+        let baseline = state.snapshot.clone();
+        let (request, mut result) = created_tab();
+        if let HerdrControlResult::TabCreated { root_pane, .. } = &mut result {
+            root_pane.tab_id = "t1".into();
+        }
+        assert!(matches!(
+            state.apply_control_result(1, &request, &result),
+            ApplyResult::NeedsResync(_)
+        ));
+        assert_eq!(state.snapshot, baseline);
+    }
+
+    #[test]
+    fn core_projection_keeps_freshness_sync_generation_and_unrelated_metadata() {
+        let mut state = synced_state();
+        let before = state.projection();
+        let mut model = before.snapshot.clone().unwrap();
+        model.tabs.push(tab("t2", "w1"));
+        model
+            .panes
+            .push(pane("p2", "w1", "t2", HerdrAgentStatus::Idle));
+        model.layouts.push(layout("w1", "t2", "p2"));
+        assert_eq!(
+            state.apply_core_projection(1, model.clone(), 11),
+            ApplyResult::Applied
+        );
+        let after = state.projection();
+        assert_eq!(after.freshness, HostFreshness::Fresh);
+        assert_eq!(after.sync_generation, before.sync_generation);
+        assert!(!after.needs_resync);
+        assert_eq!(
+            after.snapshot.unwrap().panes[0],
+            before.snapshot.unwrap().panes[0]
+        );
+        assert_eq!(
+            state.apply_core_projection(1, model, 12),
+            ApplyResult::IgnoredStale
+        );
+    }
+
+    #[test]
+    fn core_projection_defers_during_recovery_and_rejects_old_connection() {
+        let mut state = synced_state();
+        let baseline = state.snapshot.clone().unwrap();
+        let token = state.begin_sync(1);
+        let mut newer = baseline.clone();
+        newer.tabs[0].label = "Remote rename".into();
+        assert_eq!(
+            state.apply_core_projection(1, newer.clone(), 11),
+            ApplyResult::IgnoredStale
+        );
+        assert_eq!(
+            state.complete_sync(token, baseline, 12),
+            ApplyResult::Applied
+        );
+        assert_eq!(
+            state.apply_core_projection(1, newer.clone(), 13),
+            ApplyResult::Applied
+        );
+        state.connection_installed(2);
+        assert_eq!(
+            state.apply_core_projection(1, snapshot(), 14),
+            ApplyResult::IgnoredStale
+        );
+        assert_eq!(state.snapshot.unwrap().tabs[0].label, "Remote rename");
+    }
+
+    #[test]
+    fn core_scroll_projection_rejects_a_pending_older_pane_read() {
+        let mut state = synced_state();
+        let token = state.begin_pane_scroll_read("term-p1").unwrap();
+        let before = state.snapshot.clone().unwrap();
+        let mut model = before.clone();
+        model.panes[0].scroll = Some(crate::herdr_api::HerdrPaneScrollInfo {
+            offset_from_bottom: 2.0,
+            max_offset_from_bottom: 10.0,
+            viewport_rows: 24.0,
+        });
+        assert_eq!(
+            state.apply_core_projection(1, model, 11),
+            ApplyResult::Applied
+        );
+        assert!(!state.complete_pane_scroll_read(token, &before.panes[0]));
+        assert_eq!(
+            state.snapshot.unwrap().panes[0]
+                .scroll
+                .as_ref()
+                .unwrap()
+                .offset_from_bottom,
+            2.0
+        );
     }
 
     fn status_event(status: HerdrAgentStatus) -> HerdrEvent {

@@ -124,7 +124,7 @@ import {
   agentChatDiagnosticToken,
   recordAgentChatDiagnostic,
 } from '../services/agentChatDiagnostics';
-import { terminalTabSelectionStarted } from '../services/performanceTrace';
+import { terminalTabSelectionStarted, withAppPerformanceTrace } from '../services/performanceTrace';
 import { ChatComposerSelectionScope } from './ChatComposerSelection';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import type { TerminalSessionsState } from '../terminalSessions';
@@ -1528,14 +1528,14 @@ export function SessionScreen({
     } else if (workspace) {
       pendingFocus.current = null;
       succeeded = await run(async () => {
-        const created = await client.native.requestHerdrApi({
+        const created = await withAppPerformanceTrace('Whip Herdr tab create RPC', () => client.native.requestHerdrApi({
           method: 'tab.create',
           params: {
             workspace_id: workspace.workspace_id,
             label: name.trim() || null,
             focus: true,
           },
-        });
+        }));
         if (created.type !== 'tab_created') {
           throw new Error(`Unexpected tab.create result: ${created.type}`);
         }

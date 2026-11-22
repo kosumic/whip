@@ -292,6 +292,43 @@ fn real_core_socket_multiplex_documents_reconnect_and_exec_fallback() {
             panic!("wrong terminal result");
         };
         assert_eq!(terminal.state, "live");
+        // A normal acknowledged tab can be projected with its exact layout
+        // directly from Core, without requesting a session snapshot.
+        let HerdrControlResult::TabCreated {
+            tab: new_tab,
+            root_pane: new_root,
+        } = core
+            .control(
+                HerdrControlRequest::TabCreate {
+                    workspace_id: workspace.workspace_id.clone(),
+                    label: Some("Incremental tab".into()),
+                },
+                "incremental-tab",
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("wrong tab create result")
+        };
+        let mut projected = None;
+        core.project_host_state(|snapshot| projected = Some(snapshot))
+            .await
+            .unwrap();
+        let projected = projected.unwrap();
+        crate::host_state::validate_snapshot(&projected).unwrap();
+        assert!(
+            projected
+                .panes
+                .iter()
+                .any(|pane| pane.terminal_id == root_pane.terminal_id)
+        );
+        assert!(projected.layouts.iter().any(|layout| {
+            layout.tab_id == new_tab.tab_id
+                && layout
+                    .panes
+                    .iter()
+                    .any(|pane| pane.pane_id == new_root.pane_id)
+        }));
         // Restart core while SSH and the held program remain alive. A new
         // subscription starts from a fresh snapshot, even if sequence resets.
         core.rpc(Request::server_restart(api::ServerRestartParams::default()))

@@ -135,13 +135,37 @@ impl Client {
         state.machine_epoch != state.machine_refreshed || state.documents.dirty().next().is_some()
     }
 
+    /// Check document freshness and project under one model lock. A notification
+    /// arriving between a refresh and projection must not publish old geometry
+    /// alongside a newer terminal list.
+    pub fn projection_if_current(&self, view: &View) -> Result<Option<Projection>, Error> {
+        let state = self.state();
+        if state.machine_epoch != state.machine_refreshed
+            || state.documents.dirty().next().is_some()
+        {
+            return Ok(None);
+        }
+        projection::project(
+            &state.hello.version,
+            &state.snapshot,
+            &state.documents,
+            view,
+        )
+        .map(Some)
+    }
+
     pub fn apply_notifications(&self, notifications: Vec<Notification>) -> Result<Changes, Error> {
         let mut state = self.state();
         let mut all = Changes::default();
         for notification in notifications {
             let changes = state.snapshot.apply(notification)?;
             for (key, version) in &changes.documents {
-                if key.name == APP_DOCUMENT {
+                if key.name == APP_DOCUMENT
+                    && state
+                        .documents
+                        .get(key)
+                        .is_none_or(|document| document.version < *version)
+                {
                     state.documents.invalidate(key.clone(), *version)?;
                 }
             }

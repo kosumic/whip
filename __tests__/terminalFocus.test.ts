@@ -135,6 +135,27 @@ test('does not clear a pending creation from a partial snapshot', () => {
   })).toBe(createdTab);
 });
 
+test('rapid creates activate immediately while metadata recovery remains pending', () => {
+  const first = createdTab;
+  const second = {
+    tab: { ...first.tab, tab_id: 'tab-next' },
+    root_pane: { ...first.root_pane, tab_id: 'tab-next', pane_id: 'pane-next', terminal_id: 'terminal-next' },
+  };
+  const select = jest.fn();
+  const activateTerminal = jest.fn();
+  const terminalSelectionStarted = jest.fn();
+  for (const created of [first, second]) {
+    activateCreatedTabLocally(created, { select, activateTerminal, terminalSelectionStarted });
+  }
+  expect(activateTerminal.mock.calls.map(([pane]) => pane.terminal_id)).toEqual(['terminal-new', 'terminal-next']);
+  const pending = reconcilePendingCreatedSelection(second, { tabs: [first.tab], panes: [first.root_pane] });
+  const projected = includePendingCreatedSelection({ tabs: [first.tab], panes: [first.root_pane] }, pending);
+  expect(projected.tabs).toEqual([first.tab, second.tab]);
+  expect(projected.panes[0]).toBe(first.root_pane);
+  expect(select).toHaveBeenLastCalledWith(second.tab.workspace_id, second.tab.tab_id);
+  expect(activateTerminal).toHaveBeenLastCalledWith(second.root_pane);
+});
+
 test('ignores stale server focus while a selected pane is pending', () => {
   expect(serverFocusMatchesPendingPane('previous-pane', 'selected-pane')).toBe(false);
   expect(serverFocusMatchesPendingPane('selected-pane', 'selected-pane')).toBe(true);

@@ -951,6 +951,18 @@ pub(super) async fn control_request_inner(
     );
     match result {
         Ok(result) => {
+            if matches!(request_for_state, HerdrControlRequest::TabCreate { .. }) {
+                log_lifecycle(format_args!(
+                    "tab-benchmark phase=rpc runtime={} backend={} duration_ms={:.3}",
+                    inner.id,
+                    if inner.herdr.is_core() {
+                        "core"
+                    } else {
+                        "legacy"
+                    },
+                    started_at.elapsed().as_secs_f64() * 1000.0
+                ));
+            }
             update_server_from_result(&inner, &result);
             reconcile_control_result(
                 &inner,

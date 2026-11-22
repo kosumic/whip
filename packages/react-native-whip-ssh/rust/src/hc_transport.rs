@@ -22,6 +22,7 @@ use tokio::sync::{Mutex as AsyncMutex, Notify, oneshot};
 type Failure = CallError<HerdrControlError>;
 type Reply = oneshot::Sender<Result<Response, Failure>>;
 const TIMEOUT: Duration = Duration::from_secs(15);
+const MAX_PROJECTION_REFRESHES: usize = 4;
 
 #[derive(Clone)]
 enum ByteStream {
@@ -296,6 +297,30 @@ impl Core {
     }
     pub(crate) fn socket_path(&self) -> Option<String> {
         self.socket_path.lock().clone()
+    }
+    /// Refresh only dirty documents/machine discovery, then publish while the
+    /// view lock still serializes controls and other projections. No legacy
+    /// session.snapshot or event-stream replacement is involved.
+    pub(crate) async fn project_host_state(
+        &self,
+        publish: impl FnOnce(crate::herdr_api::HerdrSessionSnapshot),
+    ) -> Result<(), HerdrControlError> {
+        let view = self.view.lock().await;
+        let model = self.model().map_err(control_error)?;
+        for attempt in 0..=MAX_PROJECTION_REFRESHES {
+            if let Some(projection) = model
+                .projection_if_current(&view)
+                .map_err(|e| control_error(e.into()))?
+            {
+                publish(projection.snapshot);
+                return Ok(());
+            }
+            if attempt == MAX_PROJECTION_REFRESHES {
+                break;
+            }
+            model.refresh(self).await.map_err(control_error)?;
+        }
+        Err(control_error(hc::Error::DocumentConflict.into()))
     }
     pub(crate) async fn control(
         &self,

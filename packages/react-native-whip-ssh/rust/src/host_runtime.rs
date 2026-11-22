@@ -8,6 +8,7 @@ mod agents;
 mod chat_identity;
 mod connection;
 mod core_attention;
+mod core_projection;
 #[cfg(test)]
 mod tailcat_proxyjump_tests;
 pub use connection::herdr_protocol_label;
@@ -639,6 +640,7 @@ struct RuntimeInner {
     terminal_settled: Notify,
     monitoring: Mutex<MonitoringState>,
     core_attention: Mutex<core_attention::State>,
+    core_projection: Mutex<core_projection::State>,
     monitoring_changed: Arc<Notify>,
     reconnect_wakeup: Arc<Notify>,
 }
@@ -990,6 +992,7 @@ pub fn create_host_runtime(
         terminal_settled: Notify::new(),
         monitoring: Mutex::new(MonitoringState::default()),
         core_attention: Mutex::new(core_attention::State::default()),
+        core_projection: Mutex::new(core_projection::State::default()),
         monitoring_changed: Arc::new(Notify::new()),
         reconnect_wakeup: Arc::new(Notify::new()),
     });

@@ -255,6 +255,7 @@ fn runtime_inner_with_state(
         terminal_settled: Notify::new(),
         monitoring: Mutex::new(MonitoringState::default()),
         core_attention: Mutex::new(core_attention::State::default()),
+        core_projection: Mutex::new(core_projection::State::default()),
         monitoring_changed: Arc::new(Notify::new()),
         reconnect_wakeup: Arc::new(Notify::new()),
     })
@@ -3379,6 +3380,141 @@ fn event_subscription_closure_schedules_snapshot_resync() {
         state.explicit_disconnect = true;
     }
     runtimes().write().remove(&inner.id);
+}
+
+#[test]
+fn legacy_tab_recovery_subscribes_before_its_only_snapshot_and_recovers_gap_status() {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    crate::runtime().unwrap().block_on(async {
+        let directory = tempfile::tempdir().unwrap();
+        let socket = directory.path().join("herdr.sock");
+        let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+        let before = batch_test_snapshot();
+        let mut tab = before.tabs[0].clone();
+        tab.tab_id = "new-tab".into();
+        let mut root = before.panes[0].clone();
+        root.tab_id = tab.tab_id.clone();
+        root.pane_id = "new-pane".into();
+        root.terminal_id = "new-terminal".into();
+        let mut recovered = before.clone();
+        recovered.tabs.push(tab.clone());
+        let mut gap_root = root.clone();
+        gap_root.agent_status = HerdrAgentStatus::Working;
+        recovered.panes.push(gap_root);
+        let ledger = Arc::new(Mutex::new(Vec::<String>::new()));
+        let tasks = Arc::new(Mutex::new(Vec::new()));
+        let server_ledger = ledger.clone();
+        let server_tasks = tasks.clone();
+        let server = tokio::spawn(async move {
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                let ledger = server_ledger.clone();
+                let snapshot = recovered.clone();
+                server_tasks.lock().push(tokio::spawn(async move {
+                    let mut stream = BufReader::new(stream);
+                    let mut line = String::new();
+                    stream.read_line(&mut line).await.unwrap();
+                    let request: serde_json::Value = serde_json::from_str(&line).unwrap();
+                    let method = request["method"].as_str().unwrap();
+                    ledger.lock().push(method.to_owned());
+                    let result = match method {
+                        "events.subscribe" => {
+                            serde_json::json!({"type":"subscription_started"})
+                        }
+                        "session.snapshot" => {
+                            serde_json::json!({"type":"session_snapshot", "snapshot":snapshot})
+                        }
+                        _ => panic!("unexpected request {method}"),
+                    };
+                    let response = serde_json::json!({"id":request["id"], "result":result});
+                    stream
+                        .get_mut()
+                        .write_all(format!("{response}\n").as_bytes())
+                        .await
+                        .unwrap();
+                    if method == "events.subscribe" {
+                        // Retain the stream until the production replacement or
+                        // shutdown closes it, so no artificial EOF triggers resync.
+                        line.clear();
+                        let _ = stream.read_line(&mut line).await;
+                    }
+                }));
+            }
+        });
+        let ssh = crate::ssh::ReverseForwardFixture::new(true, Duration::ZERO)
+            .await
+            .unwrap();
+        let mut configuration = config();
+        configuration.socket_path = Some(socket.to_str().unwrap().into());
+        let mut state = RuntimeState::new(&configuration);
+        state.connection = HostConnectionState::Connected;
+        state.generation = 1;
+        state.protocol = Some(MAX_PROTOCOL);
+        state.host_state.connection_installed(1);
+        let token = state.host_state.begin_sync(1);
+        state.host_state.complete_sync(token, before, 1);
+        let inner = runtime_inner_with_state("tab-create-gap-test", configuration, state);
+        inner
+            .herdr
+            .configure_backend(crate::HostHerdrBackend::Legacy, String::new());
+        inner.herdr.install(1, ssh.ssh.clone());
+        runtimes().write().insert(inner.id.clone(), inner.clone());
+        events::start_or_update_state_events(inner.clone())
+            .await
+            .unwrap();
+        ledger.lock().clear();
+        // Apply the acknowledged identity without scheduling a timer: drive
+        // recovery directly, exercising the production SSH/subscription path.
+        let request = HerdrControlRequest::TabCreate {
+            workspace_id: tab.workspace_id.clone(),
+            label: None,
+        };
+        assert!(matches!(
+            inner.state.lock().host_state.apply_control_result(
+                1,
+                &request,
+                &HerdrControlResult::TabCreated {
+                    tab,
+                    root_pane: root
+                }
+            ),
+            ApplyResult::NeedsResync(_)
+        ));
+        let projected = events::refresh_host_state_inner(inner.clone()).await;
+        assert_eq!(*ledger.lock(), ["events.subscribe", "session.snapshot"]);
+        assert_eq!(projected.freshness, crate::host_state::HostFreshness::Fresh);
+        assert_eq!(
+            projected
+                .snapshot
+                .unwrap()
+                .panes
+                .iter()
+                .find(|pane| pane.pane_id == "new-pane")
+                .unwrap()
+                .agent_status,
+            HerdrAgentStatus::Working
+        );
+        assert!(
+            inner
+                .state
+                .lock()
+                .event
+                .as_ref()
+                .unwrap()
+                .pane_ids
+                .contains(&"new-pane".to_owned())
+        );
+        inner.state.lock().explicit_disconnect = true;
+        inner.state.lock().event = None;
+        crate::herdr_events::close_herdr_event_subscription(inner.id.clone());
+        agent_view::stop(&inner);
+        runtimes().write().remove(&inner.id);
+        server.abort();
+        for task in tasks.lock().drain(..) {
+            task.abort();
+        }
+    });
 }
 
 #[test]

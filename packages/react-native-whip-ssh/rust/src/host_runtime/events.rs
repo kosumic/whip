@@ -29,6 +29,14 @@ pub(super) fn reconcile_control_result(
     {
         return;
     }
+    if inner.herdr.is_core() && matches!(result, HerdrControlResult::TabCreated { .. }) {
+        // Core's create adapter has already inserted the terminal and acknowledged
+        // the desktop document. Project that model, including its exact layout,
+        // after the control's view lock is released. UI activation need not wait.
+        super::core_projection::schedule(inner);
+        return;
+    }
+    let started_at = Instant::now();
     let outcome = {
         let mut state = inner.state.lock();
         let generation = state.generation;
@@ -36,6 +44,13 @@ pub(super) fn reconcile_control_result(
             .host_state
             .apply_control_result(generation, request, result)
     };
+    if matches!(request, HerdrControlRequest::TabCreate { .. }) {
+        super::log_lifecycle(format_args!(
+            "tab-benchmark phase=projection runtime={} backend=legacy duration_ms={:.3} outcome={outcome:?}",
+            inner.id,
+            started_at.elapsed().as_secs_f64() * 1000.0
+        ));
+    }
     if !matches!(outcome, ApplyResult::IgnoredStale) {
         emit_host_state(inner);
     }
@@ -54,7 +69,6 @@ pub(super) fn reconcile_control_result(
                 request,
                 HerdrControlRequest::WorkspaceCreate { .. }
                     | HerdrControlRequest::WorkspaceClose { .. }
-                    | HerdrControlRequest::TabCreate { .. }
                     | HerdrControlRequest::TabClose { .. }
                     | HerdrControlRequest::PaneSplit { .. }
             ) =>
@@ -62,6 +76,15 @@ pub(super) fn reconcile_control_result(
             schedule_state_resync(
                 inner.clone(),
                 "control result may have changed the pane event subscription set".to_owned(),
+            );
+        }
+        ApplyResult::Applied
+            if matches!(request, HerdrControlRequest::TabCreate { .. })
+                && event_subscription_needs_update(inner) =>
+        {
+            schedule_state_resync(
+                inner.clone(),
+                "control result changed the pane event subscription set".to_owned(),
             );
         }
         ApplyResult::Applied | ApplyResult::IgnoredStale => {}
@@ -84,6 +107,7 @@ pub(super) async fn request_host_state_snapshot(
     inner: Arc<RuntimeInner>,
     token: SnapshotToken,
 ) -> ApplyResult {
+    let started_at = Instant::now();
     let response = control_request_inner(inner.clone(), HerdrControlRequest::SessionSnapshot).await;
     let response = match response {
         Err(error) if is_transport_control_error(&error) => {
@@ -110,6 +134,16 @@ pub(super) async fn request_host_state_snapshot(
             .fail_sync(token, error.to_string()),
     };
     emit_host_state(&inner);
+    super::log_lifecycle(format_args!(
+        "tab-benchmark phase=snapshot runtime={} backend={} duration_ms={:.3} outcome={outcome:?}",
+        inner.id,
+        if inner.herdr.is_core() {
+            "core"
+        } else {
+            "legacy"
+        },
+        started_at.elapsed().as_secs_f64() * 1000.0
+    ));
     outcome
 }
 
@@ -197,6 +231,22 @@ pub(super) async fn refresh_host_state_inner(inner: Arc<RuntimeInner>) -> HostSt
     }
 
     let (connection_generation, token) = begin_host_state_sync(&inner);
+    // Control/lifecycle results already identify new panes. Subscribe first and
+    // use ONE snapshot to recover both missing layout and the replacement gap.
+    // A snapshot that discovers additional panes still takes the reconciliation
+    // path below; never assume that an old pane list covers unknown changes.
+    if event_subscription_needs_update(&inner)
+        && let Err(error) = start_or_update_state_events(inner.clone()).await
+    {
+        let reason = error.to_string();
+        inner
+            .state
+            .lock()
+            .host_state
+            .fail_sync(token, reason.clone());
+        event_subscription_start_failed(inner.clone(), reason);
+        return inner.state.lock().host_state.projection();
+    }
     let outcome = request_host_state_snapshot(inner.clone(), token).await;
     if matches!(outcome, ApplyResult::Applied) {
         agent_view::request_refresh(&inner);
@@ -299,6 +349,8 @@ pub(crate) fn deliver_herdr_events(
     }
     if let Some(reason) = result.resync_reason {
         schedule_state_resync(runtime, reason);
+    } else if event_subscription_needs_update(&runtime) {
+        schedule_state_resync(runtime, "lifecycle event changed pane subscriptions".into());
     }
     None
 }
@@ -335,7 +387,7 @@ pub(crate) fn core_state_changed(client_key: &str, revision: u64) {
         return;
     }
     super::core_attention::schedule(&runtime);
-    schedule_state_resync(runtime, "core terminals or shared layout changed".into());
+    super::core_projection::schedule(&runtime);
 }
 
 pub(crate) fn terminal_bridge_closed(
@@ -392,7 +444,22 @@ pub(super) async fn start_desired_events(
             event.operation_epoch,
         )
     };
-    start_events(inner.herdr.clone(), protocol, pane_ids).await?;
+    let pane_count = pane_ids.len();
+    let started_at = Instant::now();
+    let result = start_events(inner.herdr.clone(), protocol, pane_ids).await;
+    super::log_lifecycle(format_args!(
+        "tab-benchmark phase=subscription runtime={} backend={} duration_ms={:.3} panes={} success={}",
+        inner.id,
+        if inner.herdr.is_core() {
+            "core"
+        } else {
+            "legacy"
+        },
+        started_at.elapsed().as_secs_f64() * 1000.0,
+        pane_count,
+        result.is_ok()
+    ));
+    result?;
     let stale = {
         let state = inner.state.lock();
         state.epoch != epoch
