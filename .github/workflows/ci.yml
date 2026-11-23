@@ -69,7 +69,7 @@ jobs:
         run: rustup toolchain install
 
       - name: Install Go for Tailcat interoperability tests
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version-file: crates/tailcat-client/tests/reference/go.mod
           cache-dependency-path: crates/tailcat-client/tests/reference/go.sum
@@ -236,7 +236,7 @@ jobs:
         run: bash tests/test-tailcat-proxyjump.sh
 
       - name: Install prebuilt cargo-audit
-        uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+        uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-audit@0.22.2
           fallback: none
@@ -488,7 +488,7 @@ jobs:
     steps:
       - *android-checkout
       - name: Install Nix
-        uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31
+        uses: cachix/install-nix-action@bb0495a1086c46893eee56f32fd192dfe4a15bb9 # v32.0.0
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
@@ -509,7 +509,7 @@ jobs:
           nix develop --file .github/nix/codeql.nix -c java -version
 
       - name: Initialize Java and Kotlin CodeQL
-        uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
+        uses: github/codeql-action/init@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4
         with:
           languages: java-kotlin
           build-mode: manual
@@ -529,7 +529,7 @@ jobs:
           --no-daemon
 
       - name: Analyze Java and Kotlin
-        uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
+        uses: github/codeql-action/analyze@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4
         with:
           category: /language:java-kotlin
 
@@ -569,7 +569,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Nix
-        uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31
+        uses: cachix/install-nix-action@bb0495a1086c46893eee56f32fd192dfe4a15bb9 # v32.0.0
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
@@ -621,7 +621,7 @@ jobs:
           key: ${{ steps.ios-rust-cache.outputs.cache-primary-key }}
 
       - name: Set up Ruby and CocoaPods
-        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1
+        uses: ruby/setup-ruby@be3c7df29b3349ec6bcfc6b4792f1cf9f5237d18 # v1
         with:
           ruby-version: '3.4'
           bundler-cache: true
