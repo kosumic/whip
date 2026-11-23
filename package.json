@@ -52,7 +52,7 @@
     "@codemirror/view": "6.43.15",
     "@lezer/highlight": "1.2.5",
     "@react-native-async-storage/async-storage": "2.2.0",
-    "@react-native-clipboard/clipboard": "1.16.3",
+    "@react-native-clipboard/clipboard": "1.17.0",
     "@react-native-community/slider": "5.2.1",
     "@rn-primitives/portal": "^1.5.3",
     "@rn-primitives/separator": "^1.5.2",
