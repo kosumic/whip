@@ -750,6 +750,17 @@ impl Manager {
         }
         self.owner = Some(owner);
     }
+    fn remove_from_history(&mut self, id: &str) -> Result<()> {
+        if let Some(index) = self.ledger.jobs.iter().position(|job| job.id == id) {
+            if self.ledger.jobs[index].busy() {
+                return Err(invalid(
+                    "Wait for the download to finish before removing it from history",
+                ));
+            }
+            self.ledger.jobs.remove(index);
+        }
+        Ok(())
+    }
     fn apply(&mut self, command: Command) -> Result<(Response, Vec<Action>, bool)> {
         let mut actions = Vec::new();
         let mut accepted = true;
@@ -853,14 +864,7 @@ impl Manager {
                 }
             }
             Command::RemoveFromHistory { id } => {
-                if let Some(index) = self.ledger.jobs.iter().position(|job| job.id == id) {
-                    if self.ledger.jobs[index].busy() {
-                        return Err(invalid(
-                            "Wait for the download to finish before removing it from history",
-                        ));
-                    }
-                    self.ledger.jobs.remove(index);
-                }
+                self.remove_from_history(&id)?;
             }
             command @ Command::Ack { .. } => {
                 let (acknowledged, next_actions) = self.acknowledge(command)?;

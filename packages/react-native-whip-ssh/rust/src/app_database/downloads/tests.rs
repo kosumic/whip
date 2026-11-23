@@ -529,6 +529,7 @@ fn history_removal_keeps_a_copy_left_by_an_interrupted_cleanup() {
     complete(&mut manager, &effect);
     manager.save(&mut store).unwrap();
     let mut recovered = Manager::load(&store).unwrap();
+    drop(store);
     assert_eq!(row(&recovered, &id).phase, Phase::Paused);
     assert_eq!(row(&recovered, &id).saved, Some(saved()));
     recovered.apply(Command::RemoveFromHistory { id }).unwrap();
