@@ -72,10 +72,14 @@ fn part_text(part: &AgentTranscriptPart) -> Option<(&str, String)> {
         AgentTranscriptPart::Notice {
             id,
             text: value,
+            summary,
             questions,
             ..
         } => {
             text.push(value);
+            if let Some(summary) = summary {
+                text.push(summary);
+            }
             text.questions(questions);
             id
         }

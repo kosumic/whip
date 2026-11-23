@@ -184,7 +184,7 @@ pub(crate) struct TurnContext {
 
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct Compacted {
-    pub message: String,
+    pub message: Option<String>,
 }
 
 #[derive(Clone, Debug)]

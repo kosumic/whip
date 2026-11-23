@@ -1467,6 +1467,28 @@ describe('AgentChatView activity presentation', () => {
     ));
   }
 
+  test('a compaction notice expands and collapses only when its summary is available', () => {
+    const notice = { type: 'notice', id: 'compact', level: 'info', text: 'Context compacted' } as const;
+    const summary = 'Finished the migration.\n\n**Next step**: run the checks.';
+    const toggles = () => turnRenderer.root.findAll(node => String(node.type) === 'Pressable'
+      && node.props.accessibilityLabel === notice.text);
+    const body = () => turnRenderer.root.findAll(node => String(node.type) === 'MarkdownText'
+      && node.props.content === summary);
+    renderTurn(toolTurn(notice));
+    expect(toggles()).toHaveLength(0);
+    expect(turnRenderer.root.findByProps({ text: notice.text })).toBeDefined();
+
+    renderTurn(toolTurn({ ...notice, summary }));
+    expect(toggles()).toHaveLength(1);
+    expect(body()).toHaveLength(0);
+    for (const expanded of [true, false]) {
+      act(() => { toggles()[0].props.onPress(); });
+      act(() => { turnRenderer.update(renderedBlocks(renderer)); });
+      expect(toggles()[0].props.accessibilityState.expanded).toBe(expanded);
+      expect(body()).toHaveLength(expanded ? 1 : 0);
+    }
+  });
+
   test('shows a terminal icon for shell tools and keeps the command accessible', () => {
     renderTurn(toolTurn(failedTool('shell')));
     expect(turnRenderer.root.find(node => String(node.type) === 'SquareTerminal')).toBeDefined();

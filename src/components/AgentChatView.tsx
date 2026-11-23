@@ -445,20 +445,34 @@ function TranscriptQuestions({ questions }: { questions: readonly TranscriptQues
   ));
 }
 
-function TranscriptNotice({ text, error, questions }: {
+function TranscriptNotice({ text, error, questions, expansion, children }: React.PropsWithChildren<{
   text: string;
   error?: boolean;
   questions?: readonly TranscriptQuestion[];
-}) {
+  expansion?: BlockExpansion;
+}>) {
   const { colors } = useTheme();
+  const Chevron = expansion?.expanded ? ChevronDown : ChevronRight;
+  const label = (
+    <Text selectable={!expansion} className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground">
+      <SearchText text={text} />
+    </Text>
+  );
   return (
     <TranscriptNoticeCard error={error}>
-      <View className="flex-row items-center gap-2">
-        {error && <CircleAlert size={15} color={colors.error} />}
-        <Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground">
-          <SearchText text={text} />
-        </Text>
-      </View>
+      {expansion ? (
+        <Pressable accessibilityRole="button" accessibilityLabel={text} accessibilityState={{ expanded: expansion.expanded }}
+          onPress={hapticPress(expansion.onToggle)} className="min-h-11 flex-row items-center gap-2">
+          <Chevron size={14} color={colors.textTertiary} />
+          {label}
+        </Pressable>
+      ) : (
+        <View className="flex-row items-center gap-2">
+          {error && <CircleAlert size={15} color={colors.error} />}
+          {label}
+        </View>
+      )}
+      {expansion?.expanded && children}
       {questions && <TranscriptQuestions questions={questions} />}
     </TranscriptNoticeCard>
   );
@@ -515,7 +529,12 @@ function AssistantPart({
     return <View className="w-full py-1"><Text className="mb-2 text-[13px] font-medium leading-5 text-foreground">Plan</Text><MarkdownText content={part.text} variant="transcript" onLinkPress={({ url }) => onLinkPress(url)} /></View>;
   }
   if (part.type === 'notice') {
-    return <TranscriptNotice text={part.text} error={part.level === 'error'} questions={part.questions} />;
+    return (
+      <TranscriptNotice text={part.text} error={part.level === 'error'} questions={part.questions}
+        expansion={part.summary ? { expanded, onToggle } : undefined}>
+        {part.summary && <MarkdownText content={part.summary} variant="transcript" onLinkPress={({ url }) => onLinkPress(url)} />}
+      </TranscriptNotice>
+    );
   }
   return null;
 }
@@ -720,6 +739,7 @@ function chatBlockNeedsActivity(block: ChatBlock): boolean {
     const part = block.part;
     needed = block.streaming || (part.type === 'tool' && (isRunning(part) || Boolean(part.state.viewedImages?.length)));
     const markdown = part.type === 'tool' ? part.state.output
+      : part.type === 'notice' ? part.summary
       : part.type === 'text' || part.type === 'reasoning' || part.type === 'plan' ? part.text : undefined;
     needed ||= Boolean(markdown?.includes('![') && markdownImageTargets(markdown).length);
   }

@@ -103,8 +103,9 @@ fn projects_content_once_with_the_list_row_ids_for_each_agent_tool() {
             },
             AgentTranscriptPart::Notice {
                 id: "notice".into(),
-                level: AgentNoticeLevel::Warning,
-                text: "Interrupted".into(),
+                level: AgentNoticeLevel::Info,
+                text: "Context compacted".into(),
+                summary: Some("The regression is fixed.".into()),
                 timestamp_ms: None,
                 questions: Vec::new(),
             },
@@ -144,7 +145,7 @@ fn projects_content_once_with_the_list_row_ids_for_each_agent_tool() {
             "src/lib.rs\nmismatch",
             "Fixed the regression",
             "Verify the fix",
-            "Interrupted",
+            "Context compacted\nThe regression is fixed.",
             "Provider disconnected",
         ] {
             assert!(content.contains(expected), "missing {expected}");
@@ -205,6 +206,7 @@ fn question_tools_and_notices_index_structured_options_without_serialized_inputs
         id: "question".into(),
         level: AgentNoticeLevel::Info,
         text: "Please choose".into(),
+        summary: None,
         timestamp_ms: None,
         questions,
     }]);

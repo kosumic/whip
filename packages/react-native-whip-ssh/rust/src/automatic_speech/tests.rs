@@ -457,6 +457,7 @@ fn transient_failures_preserve_live_admitted_chunks_and_questions_for_every_agen
                 id: "question-part".into(),
                 level: crate::AgentNoticeLevel::Info,
                 text: String::new(),
+                summary: None,
                 timestamp_ms: None,
                 questions: vec![AgentQuestion {
                     header: None,

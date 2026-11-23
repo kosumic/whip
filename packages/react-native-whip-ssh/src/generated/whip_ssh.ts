@@ -4754,6 +4754,7 @@ export const AgentTranscriptPart = (() => {
       id: string;
       level: AgentNoticeLevel;
       text: string;
+      summary?: string;
       timestampMs?: bigint;
       questions: Array<AgentQuestion>;
     }>;
@@ -4769,6 +4770,7 @@ export const AgentTranscriptPart = (() => {
       id: string;
       level: AgentNoticeLevel;
       text: string;
+      summary?: string;
       timestampMs?: bigint;
       questions: Array<AgentQuestion>;
     }>;
@@ -4776,6 +4778,7 @@ export const AgentTranscriptPart = (() => {
       id: string;
       level: AgentNoticeLevel;
       text: string;
+      summary?: string;
       timestampMs?: bigint;
       questions: Array<AgentQuestion>;
     }) {
@@ -4787,6 +4790,7 @@ export const AgentTranscriptPart = (() => {
       id: string;
       level: AgentNoticeLevel;
       text: string;
+      summary?: string;
       timestampMs?: bigint;
       questions: Array<AgentQuestion>;
     }): Notice_ {
@@ -4861,6 +4865,7 @@ const FfiConverterTypeAgentTranscriptPart = (() => {
             id: FfiConverterString.read(from),
             level: FfiConverterTypeAgentNoticeLevel.read(from),
             text: FfiConverterString.read(from),
+            summary: FfiConverterOptionalString.read(from),
             timestampMs: FfiConverterOptionalUInt64.read(from),
             questions: FfiConverterSequenceTypeAgentQuestion.read(from),
           });
@@ -4918,6 +4923,7 @@ const FfiConverterTypeAgentTranscriptPart = (() => {
           FfiConverterString.write(inner.id, into);
           FfiConverterTypeAgentNoticeLevel.write(inner.level, into);
           FfiConverterString.write(inner.text, into);
+          FfiConverterOptionalString.write(inner.summary, into);
           FfiConverterOptionalUInt64.write(inner.timestampMs, into);
           FfiConverterSequenceTypeAgentQuestion.write(inner.questions, into);
           return;
@@ -4977,6 +4983,7 @@ const FfiConverterTypeAgentTranscriptPart = (() => {
           size += FfiConverterString.allocationSize(inner.id);
           size += FfiConverterTypeAgentNoticeLevel.allocationSize(inner.level);
           size += FfiConverterString.allocationSize(inner.text);
+          size += FfiConverterOptionalString.allocationSize(inner.summary);
           size += FfiConverterOptionalUInt64.allocationSize(inner.timestampMs);
           size += FfiConverterSequenceTypeAgentQuestion.allocationSize(
             inner.questions,

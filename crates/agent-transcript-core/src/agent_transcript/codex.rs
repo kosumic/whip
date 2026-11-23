@@ -1359,6 +1359,7 @@ impl CodexTranscriptAdapter {
                             AgentNoticeLevel::Error
                         },
                         text,
+                        summary: None,
                         timestamp_ms: at,
                         questions: Vec::new(),
                     },
@@ -1372,6 +1373,7 @@ impl CodexTranscriptAdapter {
                             id: format!("notice:{}", self.sequence),
                             level: AgentNoticeLevel::Info,
                             text,
+                            summary: None,
                             timestamp_ms: at,
                             questions,
                         },
@@ -3693,6 +3695,87 @@ mod tests {
                 "item": item, "started_at_ms": 10, "completed_at_ms": 20,
             }),
         )
+    }
+
+    #[test]
+    fn compaction_markers_share_a_stable_notice_and_summary_across_reconnects() {
+        let checkpoint = |summary| record("compacted", serde_json::json!({"message":summary}));
+        let item = |event, id| {
+            paginated_item_event(
+                event,
+                serde_json::json!({"type":"ContextCompaction","id":id}),
+            )
+        };
+        let notices = |state: AgentTranscriptState| {
+            state
+                .messages
+                .into_iter()
+                .flat_map(|message| message.parts)
+                .filter_map(|part| match part {
+                    AgentTranscriptPart::Notice {
+                        id, text, summary, ..
+                    } if text == "Context compacted" => Some((id, summary)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let header = paginated_fixture()
+            .split_inclusive(|byte| *byte == b'\n')
+            .take(2)
+            .collect::<Vec<_>>()
+            .concat();
+        for (first, second) in [
+            (checkpoint("First summary"), item("item_completed", "first")),
+            (item("item_completed", "first"), checkpoint("First summary")),
+        ] {
+            let prefix = [header.clone(), first].concat();
+            let mut core = CodexSessionCore::new("thread-current");
+            let binding = core.bind_source("/rollout".into(), "1:2".into(), 0);
+            core.ingest(binding.source_generation, &prefix).unwrap();
+            let first_notices = notices(core.state());
+            assert_eq!(first_notices.len(), 1);
+            let first_id = first_notices[0].0.clone();
+
+            let mut restored = CodexSessionCore::new("thread-current");
+            restored.restore_cache(&core.cache_blob().unwrap()).unwrap();
+            let rebound =
+                restored.bind_source("/rollout".into(), "1:2".into(), prefix.len() as u64);
+            let suffix = [
+                second,
+                item("item_completed", "first"),
+                item("item_started", "second"),
+                checkpoint("Second summary"),
+                item("item_completed", "second"),
+                item("item_started", "third"),
+                checkpoint("  "),
+                item("item_completed", "third"),
+                item("item_completed", "item-only"),
+                item("item_started", "opaque"),
+                record(
+                    "compacted",
+                    serde_json::json!({"replacement_history":[
+                        {"type":"compaction", "encrypted_content":"opaque data"}
+                    ]}),
+                ),
+                item("item_completed", "opaque"),
+            ]
+            .concat();
+            restored.ingest(rebound.source_generation, &suffix).unwrap();
+            assert_eq!(
+                notices(restored.state()),
+                [
+                    (first_id, Some("First summary".into())),
+                    ("second".into(), Some("Second summary".into())),
+                    ("third".into(), None),
+                    ("item-only".into(), None),
+                    ("opaque".into(), None),
+                ]
+            );
+            assert_eq!(
+                notices(parse_codex_chunks(&[prefix, suffix].concat(), 17)),
+                notices(restored.state())
+            );
+        }
     }
 
     #[test]

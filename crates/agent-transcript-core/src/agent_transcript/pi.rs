@@ -180,6 +180,7 @@ fn project_message(record: &Value, id: &str) -> Option<AgentTranscriptMessage> {
             text: error
                 .clone()
                 .unwrap_or_else(|| "Request interrupted".into()),
+            summary: None,
             timestamp_ms: at,
             questions: Vec::new(),
         });

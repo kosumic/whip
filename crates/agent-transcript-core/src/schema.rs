@@ -231,6 +231,8 @@ pub enum AgentTranscriptPart {
         id: String,
         level: AgentNoticeLevel,
         text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        summary: Option<String>,
         timestamp_ms: Option<u64>,
         #[serde(default)]
         questions: Vec<AgentQuestion>,

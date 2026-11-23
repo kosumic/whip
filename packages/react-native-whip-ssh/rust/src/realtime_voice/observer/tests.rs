@@ -364,6 +364,7 @@ fn shared_projection_includes_structured_questions_but_never_users_tools_or_reas
         id: "ask".into(),
         level: crate::AgentNoticeLevel::Info,
         text: "not spoken".into(),
+        summary: None,
         timestamp_ms: None,
         questions: vec![question],
     });

@@ -381,6 +381,7 @@ export type NativeAgentTranscriptPart =
       id: string;
       level: 'info' | 'warning' | 'error';
       text: string;
+      summary?: string;
       timestamp?: number;
       questions?: NativeAgentQuestion[];
     }
@@ -1665,17 +1666,12 @@ function nativeAgentPart(
       };
     }
     case AgentTranscriptPart_Tags.Notice: {
-      const inner = part.inner as {
-        id: string;
-        level: AgentNoticeLevel;
-        text: string;
-        timestampMs?: bigint;
-        questions: AgentQuestion[];
-      };
+      const inner = part.inner;
       return {
         type: 'notice',
         id: inner.id,
         text: inner.text,
+        summary: inner.summary,
         timestamp: nativeNumber(inner.timestampMs),
         questions: inner.questions,
         level:

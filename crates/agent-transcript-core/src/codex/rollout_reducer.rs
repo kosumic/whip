@@ -2,7 +2,7 @@
 //! transcript model. Only rollouts whose SessionMeta selects paginated history
 //! enter this reducer; legacy streams continue through the legacy adapter.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
 
@@ -54,6 +54,21 @@ struct RawToolActivity {
     part_id: String,
 }
 
+// A checkpoint carries the summary but has no item ID. An item start, when
+// present, identifies its checkpoint before the completion reaches the log.
+#[derive(Clone, Debug)]
+enum UnpairedCompaction {
+    Started(String),
+    Checkpoint,
+    Completed(String),
+}
+
+#[derive(Clone, Debug, Default)]
+struct TurnCompactions {
+    unpaired: Option<UnpairedCompaction>,
+    displayed_items: HashSet<String>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct CodexRolloutReducer {
     model: Option<String>,
@@ -67,6 +82,7 @@ pub(crate) struct CodexRolloutReducer {
     active_turn_id: Option<String>,
     context_turn_id: Option<String>,
     raw_tool_activity: HashMap<String, RawToolActivity>,
+    compactions: HashMap<String, TurnCompactions>,
     drift: ProtocolDriftCounters,
     dirty_messages: Vec<usize>,
     dirty_turns: Vec<usize>,
@@ -328,6 +344,7 @@ impl CodexRolloutReducer {
                             id: format!("notice:{sequence}"),
                             level: AgentNoticeLevel::Info,
                             text,
+                            summary: None,
                             timestamp_ms: at,
                             questions,
                         },
@@ -401,18 +418,36 @@ impl CodexRolloutReducer {
 
     fn accept_item(&mut self, event: &ItemEvent, phase: ItemPhase, at: Option<u64>) {
         let item = decode_turn_item(event.item.clone());
-        if phase == ItemPhase::Started
-            && (event.thread_id.trim().is_empty()
-                || event.turn_id.trim().is_empty()
-                || !supported_tool_start(&item))
-        {
-            return;
+        if phase == ItemPhase::Started {
+            if event.thread_id.trim().is_empty() || event.turn_id.trim().is_empty() {
+                return;
+            }
+            if let TurnItem::ContextCompaction(item) = &item {
+                let pair = self.compactions.entry(event.turn_id.clone()).or_default();
+                if !item.id.trim().is_empty() && !pair.displayed_items.contains(&item.id) {
+                    pair.unpaired = Some(UnpairedCompaction::Started(item.id.clone()));
+                }
+                return;
+            }
+            if !supported_tool_start(&item) {
+                return;
+            }
         }
         let started_at = nonzero_millis(event.started_at_ms)
             .or_else(|| (phase == ItemPhase::Started).then_some(at).flatten());
         let completed_at = (phase == ItemPhase::Completed)
             .then(|| nonzero_millis(Some(event.completed_at_ms)))
             .flatten();
+        // When starts are absent, only pair markers from the same stretch of
+        // activity. An intervening chat item can separate two real compactions.
+        if !matches!(
+            item,
+            TurnItem::ContextCompaction(_) | TurnItem::KnownIrrelevant | TurnItem::Unknown { .. }
+        ) && let Some(pair) = self.compactions.get_mut(&event.turn_id)
+            && !matches!(pair.unpaired, Some(UnpairedCompaction::Started(_)))
+        {
+            pair.unpaired = None;
+        }
         let turn_index = self.ensure_turn(&event.turn_id);
         {
             let turn = &mut self.turns[turn_index];
@@ -575,18 +610,13 @@ impl CodexRolloutReducer {
                 );
             }
             TurnItem::ContextCompaction(item) => {
-                self.put_assistant_part(
-                    &event.turn_id,
-                    AgentTranscriptPart::Notice {
-                        id: item.id,
-                        level: AgentNoticeLevel::Info,
-                        text: "Context compacted".to_owned(),
-                        timestamp_ms: completed_at.or(started_at),
-                        questions: Vec::new(),
-                    },
-                    started_at.or(completed_at),
-                    completed_at,
-                );
+                let pair = self.compactions.entry(event.turn_id.clone()).or_default();
+                if pair.displayed_items.insert(item.id.clone())
+                    && !matches!(pair.unpaired.take(), Some(UnpairedCompaction::Checkpoint))
+                {
+                    pair.unpaired = Some(UnpairedCompaction::Completed(item.id.clone()));
+                    self.put_compaction(&event.turn_id, item.id, None, started_at, completed_at);
+                }
             }
             TurnItem::Unknown { kind, value } => {
                 self.drift.unsupported_turn_item_types =
@@ -937,8 +967,6 @@ impl CodexRolloutReducer {
     }
 
     fn accept_compacted(&mut self, compacted: &Compacted, at: Option<u64>, sequence: u64) {
-        // The persisted message is model context, not assistant-authored UI text.
-        let _has_private_summary = !compacted.message.is_empty();
         let turn_id = self
             .active_turn_id
             .clone()
@@ -946,17 +974,46 @@ impl CodexRolloutReducer {
         let Some(turn_id) = turn_id else {
             return;
         };
+        let pair = self.compactions.entry(turn_id.clone()).or_default();
+        let id = match pair.unpaired.take() {
+            Some(UnpairedCompaction::Started(id)) => {
+                pair.displayed_items.insert(id.clone());
+                id
+            }
+            Some(UnpairedCompaction::Completed(id)) => id,
+            _ => {
+                pair.unpaired = Some(UnpairedCompaction::Checkpoint);
+                format!("compacted:{sequence}")
+            }
+        };
+        let summary = compacted
+            .message
+            .as_ref()
+            .filter(|text| !text.trim().is_empty())
+            .cloned();
+        self.put_compaction(&turn_id, id, summary, at, at);
+    }
+
+    fn put_compaction(
+        &mut self,
+        turn_id: &str,
+        id: String,
+        summary: Option<String>,
+        started_at: Option<u64>,
+        completed_at: Option<u64>,
+    ) {
         self.put_assistant_part(
-            &turn_id,
+            turn_id,
             AgentTranscriptPart::Notice {
-                id: format!("compacted:{sequence}"),
+                id,
                 level: AgentNoticeLevel::Info,
                 text: "Context compacted".to_owned(),
-                timestamp_ms: at,
+                summary,
+                timestamp_ms: completed_at.or(started_at),
                 questions: Vec::new(),
             },
-            at,
-            at,
+            started_at.or(completed_at),
+            completed_at,
         );
     }
 
@@ -1144,6 +1201,8 @@ impl CodexRolloutReducer {
             .retain(|_, turn_id| !removed.contains(turn_id));
         self.raw_tool_activity
             .retain(|_, activity| !removed.contains(&activity.turn_id));
+        self.compactions
+            .retain(|turn_id, _| !removed.contains(turn_id));
         if self
             .active_turn_id
             .as_ref()

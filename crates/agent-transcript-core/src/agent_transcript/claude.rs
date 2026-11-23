@@ -367,6 +367,7 @@ impl ClaudeTranscriptAdapter {
                     AgentNoticeLevel::Error
                 },
                 text,
+                summary: None,
                 timestamp_ms: at,
                 questions: Vec::new(),
             }];
