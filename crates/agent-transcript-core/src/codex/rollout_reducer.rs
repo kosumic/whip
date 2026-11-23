@@ -1004,14 +1004,7 @@ impl CodexRolloutReducer {
     ) {
         self.put_assistant_part(
             turn_id,
-            AgentTranscriptPart::Notice {
-                id,
-                level: AgentNoticeLevel::Info,
-                text: "Context compacted".to_owned(),
-                summary,
-                timestamp_ms: completed_at.or(started_at),
-                questions: Vec::new(),
-            },
+            AgentTranscriptPart::context_compaction(id, summary, completed_at.or(started_at)),
             started_at.or(completed_at),
             completed_at,
         );

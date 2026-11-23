@@ -12,6 +12,29 @@ fn snapshot() -> OpenCodeV2Snapshot {
 }
 
 #[test]
+fn v2_only_completed_compactions_show_a_notice_with_the_available_summary() {
+    let mut core = OpenCodeSessionCore::new("ses_v2");
+    for (status, summary) in [
+        ("running", "draft"),
+        ("failed", ""),
+        ("completed", ""),
+        ("completed", "Kept changes"),
+    ] {
+        let mut snapshot = snapshot();
+        snapshot.messages.push(serde_json::json!({"type":"compaction","id":"compact","reason":"auto","status":status,"summary":summary,"time":{"created":2000}}));
+        core.apply_v2_snapshot(snapshot).unwrap();
+        let state = core.state();
+        let row = state.messages.iter().find(|m| m.id == "compact");
+        if status == "completed" {
+            assert!(matches!(row.unwrap().parts.as_slice(),
+                [AgentTranscriptPart::Notice { summary: actual, .. }] if actual.as_deref() == Some(summary).filter(|s| !s.is_empty())));
+        } else {
+            assert!(row.is_none());
+        }
+    }
+}
+
+#[test]
 fn v2_metadata_only_updates_and_idle_outcomes_survive_cache_and_old_cache_refresh() {
     let mut core = OpenCodeSessionCore::new("ses_v2");
     core.apply_v2_snapshot(snapshot()).unwrap();

@@ -621,7 +621,7 @@ fn compact_summary(id: &str, parent: &str) -> Value {
 }
 
 #[test]
-fn compaction_preserves_the_selected_branch_and_hides_the_summary() {
+fn compaction_preserves_the_selected_branch_and_attaches_its_summary_once() {
     for logical_parent in [None, Some("a"), Some("future-preserved-tail")] {
         let bytes = [
             line(user("u", None, json!("Check"))),
@@ -634,7 +634,9 @@ fn compaction_preserves_the_selected_branch_and_hides_the_summary() {
         ]
         .concat();
         let state = parse(&bytes).state();
-        assert_eq!(ids(&state), ["u", "a", "continued"]);
+        assert_eq!(ids(&state), ["u", "a", "boundary", "continued"]);
+        assert!(matches!(state.messages[2].parts.as_slice(),
+            [AgentTranscriptPart::Notice { summary: Some(text), .. }] if text == "Private context summary"));
         assert_eq!(state.turns.len(), 1);
     }
 }
@@ -673,7 +675,10 @@ fn compacted_preserved_suffix_keeps_history_tools_and_checkpoint_ancestry() {
         ]);
         let bytes = records.concat();
         let expected = parse(&bytes).state();
-        assert_eq!(ids(&expected), ["u", "old", "a", "next", "final"]);
+        assert_eq!(
+            ids(&expected),
+            ["u", "old", "boundary", "a", "next", "boundary-2", "final"]
+        );
         assert_eq!(tools(&expected)[0].1.status, AgentToolStatus::Completed);
         for offset in records.iter().scan(0, |offset, record| {
             *offset += record.len();
@@ -692,6 +697,38 @@ fn compacted_preserved_suffix_keeps_history_tools_and_checkpoint_ancestry() {
             assert_eq!(restored.state().messages, expected.messages);
             assert_eq!(restored.state().turns, expected.turns);
         }
+    }
+}
+
+#[test]
+fn claude_boundary_keeps_its_id_as_the_active_summary_arrives_or_changes_branch() {
+    let mut core = parse(
+        &[
+            line(user("u", None, json!("Check"))),
+            line(compact_boundary("b", Some("u"))),
+        ]
+        .concat(),
+    );
+    let state = core.state();
+    let [
+        AgentTranscriptPart::Notice {
+            id, summary: None, ..
+        },
+    ] = state.messages.last().unwrap().parts.as_slice()
+    else {
+        panic!("plain notice")
+    };
+    let generation = core.source_generation();
+    core.ingest(generation, &line(assistant("a", "b", json!("Continuing"))))
+        .unwrap();
+    for (child, text) in [("s1", "First"), ("s2", "Other branch")] {
+        let mut record = compact_summary(child, "a");
+        record["message"]["content"] = json!([{"type":"text","text":text}]);
+        core.ingest(generation, &line(record)).unwrap();
+        let next = core.state();
+        assert_eq!(ids(&next), ["u", "b", "a"]);
+        assert!(matches!(next.messages[1].parts.as_slice(),
+            [AgentTranscriptPart::Notice { id: next_id, summary: Some(body), .. }] if next_id == id && body == text));
     }
 }
 

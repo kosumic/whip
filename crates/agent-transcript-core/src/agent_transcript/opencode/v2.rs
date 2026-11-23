@@ -244,7 +244,11 @@ impl OpenCodeSessionCore {
                 .filter(|message| !incoming.contains(message.id.as_str()))
                 .map(|message| OpenCodeMutation::RemoveMessage(message.id.clone())),
         );
-        plan.extend(messages.into_iter().map(OpenCodeMutation::ReplaceMessage));
+        plan.extend(
+            messages
+                .into_iter()
+                .map(|message| OpenCodeMutation::Message(message, super::MessageParts::Replace)),
+        );
         let deltas = self.apply_open_code_plan(plan);
         let changed = !deltas.is_empty();
         self.cursor = Some(if changed {
@@ -303,6 +307,15 @@ fn message(value: &Value) -> Result<Option<AgentTranscriptMessage>, OpenCodeTran
                         ));
                 }
             }
+        }
+        "compaction" if value["status"] == "completed" => {
+            let at = completed.or(created);
+            result.completed_at_ms = at;
+            result.parts.push(AgentTranscriptPart::context_compaction(
+                format!("{id}:compaction"),
+                value["summary"].as_str().map(str::to_owned),
+                at,
+            ));
         }
         "shell" => {
             let status = required_text(value, "status")?;

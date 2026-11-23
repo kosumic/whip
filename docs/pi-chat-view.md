@@ -17,8 +17,9 @@ Recorded unified edit patches appear in tool details. Signatures, redacted
 thinking, system prompts, and extension state are omitted.
 
 Projection follows the last persisted entry through `parentId`, preserving
-metadata links and excluding abandoned sibling branches. Compaction and branch
-summary entries link history without becoming user prompts. Original messages
+metadata links and excluding abandoned sibling branches. Each compaction on
+the active branch shows one “Context compacted” notice that expands when Pi
+records a summary. Branch summaries remain internal. Original messages
 on the active branch remain available. Context edits do not rewrite raw history.
 An in-memory tree selection without a new persisted entry cannot be observed.
 Custom extension rendering and direct `bashExecution` messages are currently

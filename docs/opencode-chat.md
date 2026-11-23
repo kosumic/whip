@@ -30,6 +30,11 @@ task plans, and shell messages into the existing native chat model. Model-only
 context and timeline control messages are skipped. As in the v1 adapter, user
 file attachments are not rendered as chat attachments.
 
+Both versions show one “Context compacted” notice for each completed
+compaction. Tap it to read the summary when OpenCode supplies text. V1
+assembles the summary assistant's text parts. V2 reads the completed
+compaction message directly.
+
 The first read captures a durable log watermark before fetching all message
 pages. The host filters this initial log to its final `log.synced` frame, so old
 event bodies do not cross SSH. The reader applies a complete snapshot only after

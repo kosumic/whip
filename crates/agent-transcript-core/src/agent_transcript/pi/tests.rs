@@ -55,6 +55,23 @@ fn projects_text_reasoning_tool_results_metadata_and_usage() {
 }
 
 #[test]
+fn compactions_show_once_on_the_active_branch_with_optional_summary() {
+    let mut core = loaded();
+    let generation = core.source_generation();
+    for summary in ["", "Kept the greeting fix"] {
+        let entry = json!({"type":"compaction","id":"compact","parentId":"a2","summary":summary});
+        core.ingest(generation, &line(entry)).unwrap();
+        let state = core.state();
+        assert_eq!(state.turns.len(), 1);
+        assert_eq!(state.messages.len(), 4);
+        assert!(matches!(state.messages[3].parts.as_slice(),
+            [AgentTranscriptPart::Notice { summary: actual, .. }] if actual.as_deref() == Some(summary).filter(|s| !s.is_empty())));
+    }
+    core.ingest(generation, &line(json!({"type":"branch_summary","id":"branch","parentId":"a2","summary":"Another branch"}))).unwrap();
+    assert_eq!(core.state().messages, loaded().state().messages);
+}
+
+#[test]
 fn branches_follow_metadata_ancestry_and_truncate_abandoned_messages() {
     let mut core = loaded();
     let generation = core.source_generation();

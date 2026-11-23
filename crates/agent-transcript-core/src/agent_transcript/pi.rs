@@ -231,7 +231,7 @@ impl JsonlTranscriptAdapter for PiTranscriptAdapter {
         messages
     }
     const AGENT: AgentTranscriptKind = AgentTranscriptKind::Pi;
-    const CACHE_VERSION: u32 = 2;
+    const CACHE_VERSION: u32 = 3;
 
     fn supports_cache(version: u32) -> bool {
         matches!(version, 1..=Self::CACHE_VERSION)
@@ -282,9 +282,15 @@ impl JsonlTranscriptAdapter for PiTranscriptAdapter {
                 .as_str()
                 .and_then(super::title::session_title);
         }
-        let message = (record["type"] == "message")
-            .then(|| project_message(record, &id))
-            .flatten();
+        let message = match record["type"].as_str() {
+            Some("message") => project_message(record, &id),
+            Some("compaction") => Some(AgentTranscriptMessage::context_compaction(
+                &id,
+                string(record, "summary"),
+                timestamp_ms(record.get("timestamp")),
+            )),
+            _ => None,
+        };
         let raw = &record["message"];
         let result = (record["type"] == "message" && raw["role"] == "toolResult")
             .then(|| {

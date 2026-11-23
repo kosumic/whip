@@ -91,6 +91,21 @@ impl<'de> Deserialize<'de> for AgentFileDiff {
 }
 
 impl AgentTranscriptPart {
+    pub(crate) fn context_compaction(
+        id: String,
+        summary: Option<String>,
+        timestamp_ms: Option<u64>,
+    ) -> Self {
+        Self::Notice {
+            id,
+            level: AgentNoticeLevel::Info,
+            text: "Context compacted".into(),
+            summary: summary.filter(|text| !text.trim().is_empty()),
+            timestamp_ms,
+            questions: Vec::new(),
+        }
+    }
+
     pub fn id(&self) -> &str {
         match self {
             Self::Text { id, .. }
@@ -99,6 +114,26 @@ impl AgentTranscriptPart {
             | Self::Tool { id, .. }
             | Self::Plan { id, .. }
             | Self::Notice { id, .. } => id,
+        }
+    }
+}
+
+impl AgentTranscriptMessage {
+    pub(super) fn context_compaction(id: &str, summary: Option<String>, at: Option<u64>) -> Self {
+        Self {
+            id: id.to_owned(),
+            role: AgentMessageRole::Assistant,
+            parent_id: None,
+            created_at_ms: at,
+            completed_at_ms: at,
+            error: None,
+            parts: vec![AgentTranscriptPart::context_compaction(
+                format!("{id}:compaction"),
+                summary,
+                at,
+            )],
+            diffs: Vec::new(),
+            details: None,
         }
     }
 }

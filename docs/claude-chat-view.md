@@ -59,10 +59,10 @@ reached. Source replacement discards the old projection and byte cursor.
   Sidechain bodies never enter the main transcript.
 - Compaction boundaries retain the previous selected history through a known
   `logicalParentUuid`, or the current branch when that UUID refers to a
-  preserved tail written later. Replayed preserved messages keep their original
-  ancestry if reparenting under the summary would create a cycle. Summaries
-  remain internal, and earlier messages and tool results stay visible once.
-  Older checkpoints replay the source on reconnect to recover these links.
+  preserved tail written later. A boundary shows one “Context compacted” notice.
+  When Claude writes the summary, the same notice expands to show it. Replaying
+  a preserved suffix keeps earlier messages, notices, and tool results visible
+  once. Older checkpoints replay the source on reconnect to recover summaries.
 - Multiple assistant records and tool completions stay in the same user turn.
   Custom titles take precedence over AI titles; `cwd` supplies the directory.
 - Ordinary appends emit message/turn deltas. Branch changes truncate the

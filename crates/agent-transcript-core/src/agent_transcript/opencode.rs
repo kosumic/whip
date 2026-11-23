@@ -20,6 +20,8 @@ use super::projection::{
     timestamp_ms, tool_input, unified_diff_files,
 };
 
+mod compaction;
+use compaction::{V1Compaction, compaction_completed};
 mod v2;
 #[cfg(test)]
 mod v2_tests;
@@ -27,7 +29,7 @@ pub use v2::{
     OpenCodeV2History, OpenCodeV2Page, OpenCodeV2ReadState, OpenCodeV2Snapshot, OpenCodeV2Sync,
 };
 
-const OPENCODE_CACHE_SCHEMA_VERSION: u32 = 5;
+const OPENCODE_CACHE_SCHEMA_VERSION: u32 = 6;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OpenCodeProtocol {
@@ -45,6 +47,8 @@ struct CachedOpenCodeSession {
     protocol: OpenCodeProtocol,
     #[serde(default)]
     v2_history: Option<OpenCodeV2History>,
+    #[serde(default)]
+    v1_compactions: HashMap<String, V1Compaction>,
     transcript: AgentTranscriptState,
 }
 
@@ -88,6 +92,8 @@ struct CachedOpenCodeSessionRef<'a> {
     cursor: u64,
     protocol: OpenCodeProtocol,
     v2_history: Option<&'a OpenCodeV2History>,
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    v1_compactions: &'a HashMap<String, V1Compaction>,
     transcript: AgentTranscriptStateRef<'a>,
 }
 
@@ -110,10 +116,16 @@ pub enum OpenCodeTranscriptError {
 }
 
 #[derive(Clone, Debug)]
+enum MessageParts {
+    Preserve,
+    Replace,
+    Compaction { completed: bool },
+}
+
+#[derive(Clone, Debug)]
 enum OpenCodeMutation {
     Info(AgentTranscriptInfo),
-    Message(AgentTranscriptMessage),
-    ReplaceMessage(AgentTranscriptMessage),
+    Message(AgentTranscriptMessage, MessageParts),
     RemoveMessage(String),
     Part {
         message_id: String,
@@ -146,6 +158,7 @@ pub struct OpenCodeSessionCore {
     session_id: String,
     protocol: OpenCodeProtocol,
     v2_history: Option<OpenCodeV2History>,
+    v1_compactions: HashMap<String, V1Compaction>,
     source_generation: u64,
     cursor: Option<u64>,
     committed_cursor: Option<u64>,
@@ -173,6 +186,7 @@ impl OpenCodeSessionCore {
             session_id,
             protocol: OpenCodeProtocol::V1,
             v2_history: None,
+            v1_compactions: HashMap::new(),
             source_generation: 0,
             cursor: None,
             committed_cursor: None,
@@ -198,6 +212,7 @@ impl OpenCodeSessionCore {
             self.cursor = None;
             self.committed_cursor = None;
             self.v2_history = None;
+            self.v1_compactions.clear();
             self.history_gate.reset();
         }
     }
@@ -362,6 +377,7 @@ impl OpenCodeSessionCore {
         let refresh_metadata = cached.schema_version < OPENCODE_CACHE_SCHEMA_VERSION;
         self.cursor = (!refresh_metadata).then_some(cached.cursor);
         self.protocol = cached.protocol;
+        self.v1_compactions = cached.v1_compactions;
         self.v2_history = if refresh_metadata {
             None
         } else {
@@ -398,6 +414,7 @@ impl OpenCodeSessionCore {
             cursor,
             protocol: self.protocol,
             v2_history: self.v2_history.as_ref(),
+            v1_compactions: &self.v1_compactions,
             transcript: AgentTranscriptStateRef {
                 session_id: &self.session_id,
                 agent: AgentTranscriptKind::OpenCode,
@@ -435,7 +452,10 @@ impl OpenCodeSessionCore {
     ) -> Result<bool, OpenCodeTranscriptError> {
         let value: Value = serde_json::from_str(export_json)
             .map_err(|_| OpenCodeTranscriptError::InvalidExport)?;
-        let (info, mut messages) = parse_open_code_export(&value, &self.session_id)?;
+        let mut compactions = HashMap::new();
+        let (info, mut messages) =
+            parse_open_code_export(&value, &self.session_id, &mut compactions)?;
+        self.v1_compactions = compactions;
         for message in &mut messages {
             super::images::resolve_message_sources(message, info.directory.as_deref());
         }
@@ -519,7 +539,11 @@ impl OpenCodeSessionCore {
                         continue;
                     };
                     planned_messages.insert(next.id.clone(), true);
-                    plan.push(OpenCodeMutation::Message(next));
+                    let parts = compaction_completed(next_info)
+                        .map_or(MessageParts::Preserve, |completed| {
+                            MessageParts::Compaction { completed }
+                        });
+                    plan.push(OpenCodeMutation::Message(next, parts));
                 }
                 "message.removed" => {
                     let Some(message_id) = nonempty(data.get("messageID")) else {
@@ -585,7 +609,6 @@ impl OpenCodeSessionCore {
         let mut affected_turns = Vec::new();
         let mut structural = false;
         for mutation in plan {
-            let replace_parts = matches!(&mutation, OpenCodeMutation::ReplaceMessage(_));
             match mutation {
                 OpenCodeMutation::Info(info) => {
                     if self.info.as_ref() != Some(&info) {
@@ -593,8 +616,13 @@ impl OpenCodeSessionCore {
                         deltas.push(AgentTranscriptDelta::InfoChanged { info: Some(info) });
                     }
                 }
-                OpenCodeMutation::Message(mut message)
-                | OpenCodeMutation::ReplaceMessage(mut message) => {
+                OpenCodeMutation::Message(mut message, parts) => {
+                    let replace_parts = !matches!(parts, MessageParts::Preserve);
+                    if let MessageParts::Compaction { completed } = parts {
+                        let compaction = self.v1_compactions.entry(message.id.clone()).or_default();
+                        compaction.completed = completed;
+                        compaction.project(&mut message);
+                    }
                     super::images::resolve_message_sources(
                         &mut message,
                         self.info
@@ -644,6 +672,7 @@ impl OpenCodeSessionCore {
                     }
                 }
                 OpenCodeMutation::RemoveMessage(message_id) => {
+                    self.v1_compactions.remove(&message_id);
                     if let Some(index) = self.message_indexes.get(&message_id).copied() {
                         self.messages.remove(index);
                         deltas.push(AgentTranscriptDelta::MessageRemoved {
@@ -659,6 +688,17 @@ impl OpenCodeSessionCore {
                         continue;
                     };
                     let message = &mut self.messages[index];
+                    if let Some(compaction) = self.v1_compactions.get_mut(&message_id) {
+                        if !compaction.upsert(part) || !compaction.completed {
+                            continue;
+                        }
+                        compaction.project(message);
+                        deltas.push(AgentTranscriptDelta::MessageUpserted {
+                            index: u32::try_from(index).unwrap_or(u32::MAX),
+                            message: message.clone(),
+                        });
+                        continue;
+                    }
                     let mut part = super::images::assistant_image_part(part, message.role);
                     if let AgentTranscriptPart::Tool { state, .. } = &mut part {
                         super::images::resolve_sources(
@@ -696,10 +736,17 @@ impl OpenCodeSessionCore {
                         continue;
                     };
                     let message = &mut self.messages[index];
-                    let before = message.parts.len();
-                    message.parts.retain(|part| part.id() != part_id);
-                    if message.parts.len() == before {
-                        continue;
+                    if let Some(compaction) = self.v1_compactions.get_mut(&message_id) {
+                        if !compaction.remove(&part_id) || !compaction.completed {
+                            continue;
+                        }
+                        compaction.project(message);
+                    } else {
+                        let before = message.parts.len();
+                        message.parts.retain(|part| part.id() != part_id);
+                        if message.parts.len() == before {
+                            continue;
+                        }
                     }
                     if let Some(turn) = self.message_turns.get(&message_id).copied() {
                         affected_turns.push(turn);
@@ -880,6 +927,7 @@ pub fn parse_open_code_cursor(value: &str) -> Result<u64, OpenCodeTranscriptErro
 fn parse_open_code_export(
     value: &Value,
     expected_session_id: &str,
+    compactions: &mut HashMap<String, V1Compaction>,
 ) -> Result<(AgentTranscriptInfo, Vec<AgentTranscriptMessage>), OpenCodeTranscriptError> {
     let export = value
         .as_object()
@@ -901,7 +949,19 @@ fn parse_open_code_export(
                 .and_then(Value::as_array)
                 .map(Vec::as_slice)
                 .unwrap_or_default();
-            open_code_message_from_parts(info, parts)
+            let mut message = open_code_message_from_parts(info, parts)?;
+            if let Some(completed) = compaction_completed(info) {
+                let mut compaction = V1Compaction {
+                    completed,
+                    ..Default::default()
+                };
+                for part in std::mem::take(&mut message.parts) {
+                    compaction.upsert(part);
+                }
+                compaction.project(&mut message);
+                compactions.insert(message.id.clone(), compaction);
+            }
+            Some(message)
         })
         .collect();
     Ok((open_code_session_info(info), messages))
@@ -1322,6 +1382,55 @@ mod tests {
         let mut core = OpenCodeSessionCore::new("ses_messages");
         core.bootstrap(0, &export.to_string()).unwrap();
         core
+    }
+
+    #[test]
+    fn v1_compaction_projects_one_notice_across_export_live_parts_and_reconnect() {
+        use serde_json::json;
+        let marker = json!({"info":{"id":"u","role":"user"},
+            "parts":[{"id":"marker","type":"compaction","auto":true}]});
+        let mut info = json!({"id":"a","role":"assistant","parentID":"u","summary":true});
+        let part =
+            |id: &str, text: &str| json!({"type":"text","messageID":"a","id":id,"text":text});
+        let export = |info: &Value, parts: Value| {
+            json!({"info":{"id":"ses"},
+            "messages":[marker, {"info":info, "parts":parts}]})
+            .to_string()
+        };
+        let mut core = OpenCodeSessionCore::new("ses");
+        core.bootstrap(0, &export(&info, json!([part("p1", "First")])))
+            .unwrap();
+        assert!(core.state().messages[1].parts.is_empty());
+        let blob = core.cache_blob().unwrap();
+        let mut live = OpenCodeSessionCore::new("ses");
+        live.restore_cache(&blob).unwrap();
+        info["finish"] = json!("stop");
+        live.apply_events(1, &open_code_message_updated_event(1, info.clone()))
+            .unwrap();
+        let update =
+            json!([{"seq":2,"type":"message.part.updated","data":{"part":part("p2","Second")}}]);
+        live.apply_events(2, &update.to_string()).unwrap();
+        core.bootstrap(
+            2,
+            &export(&info, json!([part("p1", "First"), part("p2", "Second")])),
+        )
+        .unwrap();
+        let state = live.state();
+        assert_eq!(state.messages, core.state().messages);
+        assert!(matches!(state.messages[1].parts.as_slice(),
+            [AgentTranscriptPart::Notice { summary: Some(text), .. }] if text == "First\n\nSecond"));
+        let update = json!([
+            {"seq":3,"type":"message.part.updated","data":{"part":part("p2","Revised")}},
+            {"seq":4,"type":"message.part.removed","data":{"messageID":"a","partID":"p1"}},
+        ]);
+        live.apply_events(4, &update.to_string()).unwrap();
+        assert!(matches!(live.state().messages[1].parts.as_slice(),
+            [AgentTranscriptPart::Notice { summary: Some(text), .. }] if text == "Revised"));
+        live.apply_events(5, &json!([{"seq":5,"type":"message.part.removed","data":{"messageID":"a","partID":"p2"}}]).to_string()).unwrap();
+        assert!(matches!(
+            live.state().messages[1].parts.as_slice(),
+            [AgentTranscriptPart::Notice { summary: None, .. }]
+        ));
     }
 
     fn open_code_message_updated_event(sequence: u64, info: Value) -> String {

@@ -22,7 +22,7 @@ use super::projection::{
     timestamp_ms,
 };
 
-const CACHE_VERSION: u32 = 6;
+const CACHE_VERSION: u32 = 7;
 
 // Mid-turn input is persisted as a delivered attachment, rather than a user
 // row. Queue operations alone do not establish delivery.
@@ -164,6 +164,12 @@ fn structured_patch(rich: &Value) -> Option<String> {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+enum CompactionRecord {
+    Boundary,
+    Summary,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct ClaudeNode {
     uuid: String,
     parent: Option<String>,
@@ -173,6 +179,8 @@ struct ClaudeNode {
     interrupted: bool,
     order: u64,
     message: Option<AgentTranscriptMessage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    compaction: Option<CompactionRecord>,
     results: Vec<ToolCompletion>,
 }
 
@@ -249,80 +257,120 @@ impl ClaudeTranscriptAdapter {
         let parent = history_parent.or_else(|| string(record, "parentUuid"));
         let root = parent.is_none() && record.get("parentUuid") == Some(&Value::Null);
         let at = timestamp_ms(record.get("timestamp"));
+        let compact_summary = !sidechain && kind == "user" && record["isCompactSummary"] == true;
+        let mut node = ClaudeNode {
+            uuid,
+            parent,
+            root,
+            sidechain,
+            order,
+            interrupted: false,
+            results: Vec::new(),
+            message: None,
+            compaction: None,
+        };
+        if compact_boundary || compact_summary {
+            let summary = compact_summary
+                .then(|| result_text(&record["message"]["content"]))
+                .flatten();
+            node.message = Some(AgentTranscriptMessage::context_compaction(
+                &node.uuid, summary, at,
+            ));
+            node.compaction = Some(if compact_boundary {
+                CompactionRecord::Boundary
+            } else {
+                CompactionRecord::Summary
+            });
+        } else if chat && !sidechain {
+            Self::project_chat(
+                &mut node,
+                record,
+                kind,
+                queued_prompt.unwrap_or(&record["message"]["content"]),
+                at,
+            );
+        }
+        self.insert_node(node);
+    }
+
+    fn project_chat(
+        node: &mut ClaudeNode,
+        record: &Value,
+        kind: &str,
+        content: &Value,
+        at: Option<u64>,
+    ) {
+        let uuid = &node.uuid;
         let mut role = if kind == "assistant" {
             AgentMessageRole::Assistant
         } else {
             AgentMessageRole::User
         };
         let mut parts = Vec::new();
-        let mut results = Vec::new();
-        if chat && !sidechain {
-            let content = queued_prompt.unwrap_or(&record["message"]["content"]);
-            let blocks = match content {
-                Value::Array(blocks) => blocks.iter().take(MAX_BLOCKS).collect::<Vec<_>>(),
-                _ => vec![content],
-            };
-            let result_count = blocks
-                .iter()
-                .filter(|block| block["type"] == "tool_result")
-                .count();
-            for (index, block) in blocks.into_iter().enumerate() {
-                let id = format!("{uuid}:{index}");
-                match block["type"].as_str().unwrap_or_default() {
-                    "image" if role == AgentMessageRole::User => {
-                        if let Some(source) = image_source(block) {
-                            parts.push(AgentTranscriptPart::Image {
-                                id,
-                                source,
-                                timestamp_ms: at,
-                            });
-                        }
-                    }
-                    "tool_result" => {
-                        // A single rich result cannot safely be assigned to
-                        // several parallel calls without an explicit call ID.
-                        let rich = record.get("toolUseResult").filter(|rich| {
-                            result_count == 1 || rich["tool_use_id"] == block["tool_use_id"]
+        let blocks = match content {
+            Value::Array(blocks) => blocks.iter().take(MAX_BLOCKS).collect::<Vec<_>>(),
+            _ => vec![content],
+        };
+        let result_count = blocks
+            .iter()
+            .filter(|block| block["type"] == "tool_result")
+            .count();
+        for (index, block) in blocks.into_iter().enumerate() {
+            let id = format!("{uuid}:{index}");
+            match block["type"].as_str().unwrap_or_default() {
+                "image" if role == AgentMessageRole::User => {
+                    if let Some(source) = image_source(block) {
+                        parts.push(AgentTranscriptPart::Image {
+                            id,
+                            source,
+                            timestamp_ms: at,
                         });
-                        if let Some(mut result) = ToolCompletion::parse(block, rich, at) {
-                            result.directory = string(record, "cwd");
-                            results.push(result);
-                        }
                     }
-                    "tool_use" if role == AgentMessageRole::Assistant => {
-                        if let Some(part) = tool_use_part(block, at) {
-                            parts.push(part);
-                        }
-                    }
-                    "thinking" if role == AgentMessageRole::Assistant => {
-                        if let Some(text) = string(block, "thinking") {
-                            parts.push(AgentTranscriptPart::Reasoning {
-                                id,
-                                text,
-                                timestamp_ms: at,
-                            });
-                        }
-                    }
-                    "text" => {
-                        if let Some(text) = string(block, "text") {
-                            parts.push(AgentTranscriptPart::Text {
-                                id,
-                                text,
-                                timestamp_ms: at,
-                            });
-                        }
-                    }
-                    "" if block.is_string() => {
-                        if let Some(text) = block.as_str().filter(|text| !text.trim().is_empty()) {
-                            parts.push(AgentTranscriptPart::Text {
-                                id,
-                                text: bounded(text),
-                                timestamp_ms: at,
-                            });
-                        }
-                    }
-                    _ => {}
                 }
+                "tool_result" => {
+                    // A single rich result cannot safely be assigned to
+                    // several parallel calls without an explicit call ID.
+                    let rich = record.get("toolUseResult").filter(|rich| {
+                        result_count == 1 || rich["tool_use_id"] == block["tool_use_id"]
+                    });
+                    if let Some(mut result) = ToolCompletion::parse(block, rich, at) {
+                        result.directory = string(record, "cwd");
+                        node.results.push(result);
+                    }
+                }
+                "tool_use" if role == AgentMessageRole::Assistant => {
+                    if let Some(part) = tool_use_part(block, at) {
+                        parts.push(part);
+                    }
+                }
+                "thinking" if role == AgentMessageRole::Assistant => {
+                    if let Some(text) = string(block, "thinking") {
+                        parts.push(AgentTranscriptPart::Reasoning {
+                            id,
+                            text,
+                            timestamp_ms: at,
+                        });
+                    }
+                }
+                "text" => {
+                    if let Some(text) = string(block, "text") {
+                        parts.push(AgentTranscriptPart::Text {
+                            id,
+                            text,
+                            timestamp_ms: at,
+                        });
+                    }
+                }
+                "" if block.is_string() => {
+                    if let Some(text) = block.as_str().filter(|text| !text.trim().is_empty()) {
+                        parts.push(AgentTranscriptPart::Text {
+                            id,
+                            text: bounded(text),
+                            timestamp_ms: at,
+                        });
+                    }
+                }
+                _ => {}
             }
         }
         // Meta prompts and tool responses (including accompanying annotations)
@@ -330,9 +378,7 @@ impl ClaudeTranscriptAdapter {
         let tool_response = record["message"]["content"]
             .as_array()
             .is_some_and(|blocks| blocks.iter().any(|block| block["type"] == "tool_result"));
-        if role == AgentMessageRole::User
-            && (tool_response || record["isMeta"] == true || record["isCompactSummary"] == true)
-        {
+        if role == AgentMessageRole::User && (tool_response || record["isMeta"] == true) {
             parts.clear();
         }
         // Claude persists interruption markers as structured user records.
@@ -347,13 +393,12 @@ impl ClaudeTranscriptAdapter {
                     "[Request interrupted by user]" | "[Request interrupted by user for tool use]"
                 )
             })
-            .filter(|_| kind == "user" && !sidechain);
+            .filter(|_| kind == "user");
         let interrupted = interruption.is_some();
-        let error = (kind == "assistant" && !sidechain && record["isApiErrorMessage"] == true)
-            .then(|| {
-                result_text(&record["message"]["content"])
-                    .unwrap_or_else(|| "Claude API error".to_owned())
-            });
+        let error = (kind == "assistant" && record["isApiErrorMessage"] == true).then(|| {
+            result_text(&record["message"]["content"])
+                .unwrap_or_else(|| "Claude API error".to_owned())
+        });
         let notice = error
             .clone()
             .or_else(|| interruption.map(|text| text.trim_matches(['[', ']']).to_owned()));
@@ -382,13 +427,12 @@ impl ClaudeTranscriptAdapter {
                 AgentTurnOutcome::Failed
             });
         }
-        let accounting_only = chat
-            && !sidechain
-            && role == AgentMessageRole::Assistant
+        let accounting_only = role == AgentMessageRole::Assistant
             && details
                 .as_ref()
                 .is_some_and(|details| details.usage.is_some() || details.outcome.is_some());
-        let message = (!parts.is_empty() || accounting_only).then(|| {
+        node.interrupted = interrupted;
+        node.message = (!parts.is_empty() || accounting_only).then(|| {
             let mut message = AgentTranscriptMessage {
                 details,
                 id: uuid.clone(),
@@ -404,16 +448,6 @@ impl ClaudeTranscriptAdapter {
             };
             normalize_user_images(&mut message);
             message
-        });
-        self.insert_node(ClaudeNode {
-            uuid,
-            parent,
-            root,
-            sidechain,
-            interrupted,
-            order,
-            message,
-            results,
         });
     }
 
@@ -431,18 +465,26 @@ impl ClaudeTranscriptAdapter {
 
     fn insert_node(&mut self, mut node: ClaudeNode) {
         if let Some(index) = self.indexes.get(&node.uuid).copied() {
-            // Claude can replay a preserved suffix under the new summary.
-            // Its historical parent already reaches that suffix, so accepting
-            // the rewritten head's parent would create a cycle and lose the
-            // original ancestry. Keep its link while refreshing the content.
-            if node
+            if let Some(ancestors) = node
                 .parent
                 .as_ref()
                 .and_then(|id| self.indexes.get(id))
-                .is_some_and(|parent| self.ancestry(*parent).0.contains(&index))
+                .map(|parent| self.ancestry(*parent).0)
+                && let Some(head) = ancestors.iter().position(|ancestor| *ancestor == index)
             {
-                node.parent.clone_from(&self.nodes[index].parent);
-                node.root = self.nodes[index].root;
+                let old_parent = self.nodes[index].parent.clone();
+                let old_root = self.nodes[index].root;
+                // A replayed suffix can already be an ancestor of its new
+                // boundary. Splice the boundary before the suffix exactly once.
+                if let Some(boundary) = ancestors[..head].iter().find(|i| {
+                    matches!(self.nodes[**i].compaction, Some(CompactionRecord::Boundary))
+                }) {
+                    self.nodes[*boundary].parent = old_parent;
+                    self.nodes[*boundary].root = old_root;
+                } else {
+                    node.parent = old_parent;
+                    node.root = old_root;
+                }
             }
             self.nodes[index] = node;
         } else {
@@ -558,23 +600,50 @@ impl ClaudeTranscriptAdapter {
         ordered
     }
 
+    /// Pair summaries only on the selected branch, across intervening metadata.
+    fn transcript_chain(&self) -> Vec<(&ClaudeNode, Option<&str>)> {
+        let mut chain = Vec::<(&ClaudeNode, Option<&str>)>::new();
+        let mut boundary: Option<usize> = None;
+        for index in self.main_chain() {
+            let node = &self.nodes[index];
+            if node.sidechain {
+                continue;
+            }
+            if let Some(message) = &node.message {
+                if matches!(node.compaction, Some(CompactionRecord::Summary))
+                    && let Some(index) = boundary.take()
+                    && let [AgentTranscriptPart::Notice { summary, .. }] = message.parts.as_slice()
+                {
+                    chain[index].1 = summary.as_deref();
+                    continue;
+                }
+                if matches!(node.compaction, Some(CompactionRecord::Boundary)) {
+                    boundary = Some(chain.len());
+                }
+            }
+            chain.push((node, None));
+        }
+        chain
+    }
+
     pub fn snapshot(
         &self,
         revision: u64,
         status: AgentTranscriptStatus,
         error: Option<String>,
     ) -> AgentTranscriptState {
-        let chain = self.main_chain();
         let mut messages = Vec::new();
         let mut user = None;
         let mut results = Vec::new();
         let mut interrupted = HashSet::new();
-        for index in chain {
-            let node = &self.nodes[index];
-            if node.sidechain {
-                continue;
-            }
+        for (node, compact_summary) in self.transcript_chain() {
             if let Some(mut message) = node.message.clone() {
+                if let Some(text) = compact_summary
+                    && let [AgentTranscriptPart::Notice { summary, .. }] =
+                        message.parts.as_mut_slice()
+                {
+                    *summary = Some(text.to_owned());
+                }
                 if node.interrupted {
                     interrupted.insert(message.id.clone());
                 }
@@ -677,13 +746,10 @@ impl super::file_session::JsonlTranscriptAdapter for ClaudeTranscriptAdapter {
     }
     fn recent_message_refs(&self, limit: usize) -> Vec<&AgentTranscriptMessage> {
         let mut messages: Vec<_> = self
-            .main_chain()
+            .transcript_chain()
             .into_iter()
             .rev()
-            .filter_map(|index| {
-                let node = &self.nodes[index];
-                (!node.sidechain).then_some(node.message.as_ref()).flatten()
-            })
+            .filter_map(|(node, _)| node.message.as_ref())
             .take(limit)
             .collect();
         messages.reverse();
