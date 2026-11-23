@@ -411,6 +411,11 @@ export const en = {
   'authentication.unlockKeychain': 'Unlock global SSH keychain',
   'authentication.useDevicePasscode': 'Use Device Passcode',
 
+  'chat.viewed': 'Viewed',
+  'chat.imageCount': '{{count}} images',
+  'chat.viewedImage': 'Viewed image',
+  'chat.imageUnavailable': 'Image unavailable',
+
   'markdown.copy': 'Copy',
   'markdown.copied': 'Copied',
   'markdown.copyAsMarkdown': 'Copy as Markdown',

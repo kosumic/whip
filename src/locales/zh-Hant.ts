@@ -416,6 +416,11 @@ export const zhHant: Record<string, string> = {
   'authentication.unlockKeychain': '解鎖全域 SSH 金鑰圈',
   'authentication.useDevicePasscode': '使用裝置密碼',
 
+  'chat.viewed': '已檢視',
+  'chat.imageCount': '{{count}} 張圖片',
+  'chat.viewedImage': '已檢視的圖片',
+  'chat.imageUnavailable': '圖片無法使用',
+
   'markdown.copy': '複製',
   'markdown.copied': '已複製',
   'markdown.copyAsMarkdown': '複製為 Markdown',

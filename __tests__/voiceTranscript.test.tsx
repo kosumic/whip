@@ -24,6 +24,8 @@ jest.mock('lucide-react-native/icons/square-terminal', () => 'SquareTerminal');
 jest.mock('../src/theme', () => ({ useTheme: () => ({ colors: { text: '#fff', textTertiary: '#888', error: '#f00' } }) }));
 jest.mock('../src/components/MarkdownText', () => ({ MarkdownText: 'MarkdownText' }));
 jest.mock('../src/components/ChatFileDiff', () => ({ ChatFileDiff: 'ChatFileDiff' }));
+jest.mock('../src/components/ChatPromptImage', () => ({ ChatPromptImage: 'ChatPromptImage' }));
+jest.mock('../src/services/remoteFileTransfer', () => ({ cacheRemoteFile: jest.fn() }));
 jest.mock('../src/services/interactionFeedback', () => ({ hapticPress: (handler: () => unknown) => handler, copyTextWithHaptic: jest.fn() }));
 
 const reply: VoiceTranscriptMessage = { id: 'reply', role: 'assistant', text: 'Hello, this is a streamed reply.', spokenUtf16: 8, active: true };

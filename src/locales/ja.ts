@@ -416,6 +416,11 @@ export const ja = {
   'authentication.unlockKeychain': 'グローバル SSH キーチェーンのロックを解除',
   'authentication.useDevicePasscode': 'デバイスのパスコードを使用',
 
+  'chat.viewed': '閲覧済み',
+  'chat.imageCount': '{{count}} 枚の画像',
+  'chat.viewedImage': '閲覧した画像',
+  'chat.imageUnavailable': '画像を利用できません',
+
   'markdown.copy': 'コピー',
   'markdown.copied': 'コピーしました',
   'markdown.copyAsMarkdown': 'Markdown としてコピー',

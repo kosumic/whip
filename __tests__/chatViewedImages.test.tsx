@@ -3,7 +3,9 @@ import type { TranscriptToolPart } from '../src/agentChat';
 import { ChatToolCard } from '../src/components/ChatToolCard';
 import { TranscriptMarkdownImages } from '../src/hooks/useTranscriptMarkdownImages';
 import { cacheRemoteFile, type CachedRemoteFile, type RemoteFileClient } from '../src/services/remoteFileTransfer';
+import '../src/i18n';
 
+jest.mock('expo-localization', () => ({ getLocales: () => [] }));
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
 jest.mock('react-native', () => ({ Image: 'Image', Modal: 'Modal', ActivityIndicator: 'ActivityIndicator', Pressable: 'Pressable', ScrollView: 'ScrollView', View: 'View' }));
 jest.mock('react-native-safe-area-context', () => ({ SafeAreaView: 'SafeAreaView' }));

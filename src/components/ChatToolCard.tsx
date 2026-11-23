@@ -1,6 +1,7 @@
 import { memo, useContext, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { t as translate, type TFunction } from 'i18next';
 import Check from 'lucide-react-native/icons/check';
 import ChevronDown from 'lucide-react-native/icons/chevron-down';
 import ChevronRight from 'lucide-react-native/icons/chevron-right';
@@ -75,10 +76,10 @@ function toolKind(name: string): ToolKind {
   return 'other';
 }
 
-export function toolPresentation(item: TranscriptToolPart): ToolPresentation {
+export function toolPresentation(item: TranscriptToolPart, t: TFunction = translate): ToolPresentation {
   const images = item.state.viewedImages;
   if (images?.length) {
-    return { title: 'Viewed', icon: File, subtitle: images.length === 1 ? filename(images[0].label) : `${images.length} images`, args: [], kind: 'file' };
+    return { title: t('chat.viewed'), icon: File, subtitle: images.length === 1 ? filename(images[0].label) : t('chat.imageCount', { count: images.length }), args: [], kind: 'file' };
   }
   const input = item.state.input;
   const name = item.tool.toLowerCase();
@@ -147,11 +148,12 @@ function toolHeaderPreview(text: string): string {
 }
 
 export function ChatToolCard({ item, expanded, onToggle, active, onLinkPress, directory }: BlockExpansion & { item: TranscriptToolPart; active: boolean; onLinkPress: (url: string) => void; directory?: string }) {
+  const { t } = useTranslation();
   const imageContext = useContext(TranscriptMarkdownImages);
   const images = item.state.viewedImages ?? [];
   const { colors } = useTheme();
   const failed = item.state.status === 'error';
-  const presentation = toolPresentation(item);
+  const presentation = toolPresentation(item, t);
   const name = item.tool.toLowerCase();
   const files = item.state.files;
   // Keep tool file diffs collapsed until the user selects a file.
@@ -262,8 +264,8 @@ export function ChatToolCard({ item, expanded, onToggle, active, onLinkPress, di
             <View key={index} className="gap-2">
               <Text selectable className="text-xs text-muted-foreground"><SearchText text={image.label} /></Text>
               {image.source
-                ? <ChatPromptImage source={image.source} label="Viewed image" client={imageContext?.client} directory={directory} active={active && (imageContext?.visible ?? true)} visible={imageContext?.visible ?? true} />
-                : <Text className="text-xs text-muted-foreground">Image unavailable</Text>}
+                ? <ChatPromptImage source={image.source} label={t('chat.viewedImage')} client={imageContext?.client} directory={directory} active={active && (imageContext?.visible ?? true)} visible={imageContext?.visible ?? true} />
+                : <Text className="text-xs text-muted-foreground">{t('chat.imageUnavailable')}</Text>}
             </View>
           ))}
           <ToolMetadata item={item} />

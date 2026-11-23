@@ -416,6 +416,11 @@ export const zhHans = {
   'authentication.unlockKeychain': '解锁全局 SSH 钥匙串',
   'authentication.useDevicePasscode': '使用设备密码',
 
+  'chat.viewed': '已查看',
+  'chat.imageCount': '{{count}} 张图片',
+  'chat.viewedImage': '已查看的图片',
+  'chat.imageUnavailable': '图片不可用',
+
   'markdown.copy': '复制',
   'markdown.copied': '已复制',
   'markdown.copyAsMarkdown': '复制为 Markdown',

@@ -416,6 +416,11 @@ export const es = {
   'authentication.unlockKeychain': 'Desbloquear el llavero SSH global',
   'authentication.useDevicePasscode': 'Usar el código del dispositivo',
 
+  'chat.viewed': 'Visto',
+  'chat.imageCount': '{{count}} imágenes',
+  'chat.viewedImage': 'Imagen vista',
+  'chat.imageUnavailable': 'Imagen no disponible',
+
   'markdown.copy': 'Copiar',
   'markdown.copied': 'Copiado',
   'markdown.copyAsMarkdown': 'Copiar como Markdown',

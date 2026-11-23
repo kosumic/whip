@@ -418,6 +418,11 @@ export const fr = {
   'authentication.unlockKeychain': 'Déverrouiller le trousseau SSH global',
   'authentication.useDevicePasscode': 'Utiliser le code de l’appareil',
 
+  'chat.viewed': 'Consulté',
+  'chat.imageCount': '{{count}} images',
+  'chat.viewedImage': 'Image consultée',
+  'chat.imageUnavailable': 'Image indisponible',
+
   'markdown.copy': 'Copier',
   'markdown.copied': 'Copié',
   'markdown.copyAsMarkdown': 'Copier au format Markdown',
