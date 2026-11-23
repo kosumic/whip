@@ -1,5 +1,5 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import { Modal, Platform } from 'react-native';
+import { Modal, Platform, View } from 'react-native';
 import { VoiceHistoryDetails } from '../src/components/VoiceHistoryDetails';
 import type { SavedCall } from '../src/services/voiceHistory';
 import type { UsageMode, UsageScope, VoiceUsageCall } from '../src/services/voiceUsage';
@@ -12,6 +12,31 @@ jest.mock('../src/components/GlassControls', () => ({ GlassButton: 'GlassButton'
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
 jest.mock('../src/components/VoiceTranscript', () => ({ VoiceTranscript: 'VoiceTranscript' }));
 jest.mock('../src/services/appStorage', () => ({ appStorage: {} }));
+
+test.each(['ios', 'android'] as const)('%s closes on a rightward swipe from the left edge and lets the transcript scroll', async os => {
+  const platform = Platform.OS;
+  Platform.OS = os;
+  const onClose = jest.fn();
+  const touch = (pageX: number, pageY: number, touches = [{}]) => ({ nativeEvent: { pageX, pageY, touches } });
+  let view!: ReactTestRenderer;
+  try {
+    await act(async () => { view = create(<VoiceHistoryDetails onClose={onClose} />); });
+    const screen = view.root.findAllByType(View)[0].props;
+    const swipe = (startX: number, endX: number, endY: number) => {
+      screen.onStartShouldSetResponderCapture(touch(startX, 100));
+      const captured = screen.onMoveShouldSetResponderCapture(touch(endX, endY));
+      if (captured) screen.onResponderRelease(touch(endX, endY, []));
+      return captured;
+    };
+    expect(swipe(4, 16, 200)).toBe(false);
+    expect(swipe(4, 16, 15)).toBe(false);
+    expect(swipe(100, 220, 100)).toBe(false);
+    swipe(4, 24, 100);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(swipe(4, 110, 105)).toBe(true);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  } finally { Platform.OS = platform; await act(async () => view?.unmount()); }
+});
 
 test('iOS dismisses history before presenting the resumed call', async () => {
   const saved: SavedCall = { id: 'ended', model: 'model', endedAtMs: 1, fragments: [{ id: 'u', role: 'user', text: 'Hi' }],
