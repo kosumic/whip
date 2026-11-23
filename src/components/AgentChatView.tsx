@@ -707,7 +707,7 @@ function chatBlockNeedsActivity(block: ChatBlock): boolean {
     needed = block.message.parts.some(part => part.type === 'image');
   } else if (block.type === 'part') {
     const part = block.part;
-    needed = block.streaming || (part.type === 'tool' && isRunning(part));
+    needed = block.streaming || (part.type === 'tool' && (isRunning(part) || Boolean(part.state.viewedImages?.length)));
     const markdown = part.type === 'tool' ? part.state.output
       : part.type === 'text' || part.type === 'reasoning' || part.type === 'plan' ? part.text : undefined;
     needed ||= Boolean(markdown?.includes('![') && markdownImageTargets(markdown).length);

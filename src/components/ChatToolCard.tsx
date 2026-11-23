@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react';
+import { memo, useContext, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import Check from 'lucide-react-native/icons/check';
@@ -16,12 +16,14 @@ import SquareTerminal from 'lucide-react-native/icons/square-terminal';
 import type { LucideIcon } from 'lucide-react-native';
 import type { TranscriptToolPart } from '../agentChat';
 import { useCopyFeedback } from '../hooks/useCopyFeedback';
+import { TranscriptMarkdownImages } from '../hooks/useTranscriptMarkdownImages';
 import { isRunningTool as isRunning } from '../lib/agentChatBlocks';
 import { parseJsonToolOutput, textValue } from '../lib/toolOutput';
 import { cn } from '../lib/utils';
 import { hapticPress } from '../services/interactionFeedback';
 import { useTheme } from '../theme';
 import { ChatFileDiff as ToolFileDiffBlock } from './ChatFileDiff';
+import { ChatPromptImage } from './ChatPromptImage';
 import { JsonOutputViewer } from './JsonOutputViewer';
 import { MarkdownText } from './MarkdownText';
 import { NativeCodeBlock } from './NativeCodeBlock';
@@ -74,6 +76,10 @@ function toolKind(name: string): ToolKind {
 }
 
 export function toolPresentation(item: TranscriptToolPart): ToolPresentation {
+  const images = item.state.viewedImages;
+  if (images?.length) {
+    return { title: 'Viewed', icon: File, subtitle: images.length === 1 ? filename(images[0].label) : `${images.length} images`, args: [], kind: 'file' };
+  }
   const input = item.state.input;
   const name = item.tool.toLowerCase();
   const kind = toolKind(name);
@@ -141,6 +147,8 @@ function toolHeaderPreview(text: string): string {
 }
 
 export function ChatToolCard({ item, expanded, onToggle, active, onLinkPress, directory }: BlockExpansion & { item: TranscriptToolPart; active: boolean; onLinkPress: (url: string) => void; directory?: string }) {
+  const imageContext = useContext(TranscriptMarkdownImages);
+  const images = item.state.viewedImages ?? [];
   const { colors } = useTheme();
   const failed = item.state.status === 'error';
   const presentation = toolPresentation(item);
@@ -172,7 +180,7 @@ export function ChatToolCard({ item, expanded, onToggle, active, onLinkPress, di
   const diagnostics = item.state.diagnostics
     .filter(diagnostic => diagnostic.severity === 'error')
     .slice(0, 3);
-  const hasDetail = Boolean(shellCommand || shellOutput || otherOutput || files.length || markdownOutput || writtenContent || error || item.state.loaded.length || diagnostics.length
+  const hasDetail = Boolean(images.length || shellCommand || shellOutput || otherOutput || files.length || markdownOutput || writtenContent || error || item.state.loaded.length || diagnostics.length
     || item.state.inputJson || Object.keys(item.state.input).length || item.timestamp !== undefined
     || item.state.startedAt !== undefined || item.state.completedAt !== undefined || item.state.exitCode !== undefined || item.state.durationMs !== undefined);
   const subtitle = presentation.subtitle
@@ -218,6 +226,7 @@ export function ChatToolCard({ item, expanded, onToggle, active, onLinkPress, di
             : <Text numberOfLines={1} className="shrink-0 text-[13px] font-medium leading-5 text-foreground">
               <SearchText text={displayedTitle} />
             </Text>}
+          {images.length > 0 && <Text className="text-[13px] font-medium text-foreground"><SearchText text={displayedTitle} /></Text>}
           {displayedSubtitle && !isRunning(item) && (
             <>
               <Text className="text-[11px] leading-5 text-muted-foreground">·</Text>
@@ -249,6 +258,14 @@ export function ChatToolCard({ item, expanded, onToggle, active, onLinkPress, di
       </Pressable>
       {expanded && hasDetail && (
         <View className="mb-3 mt-1 gap-2">
+          {images.map((image, index) => (
+            <View key={index} className="gap-2">
+              <Text selectable className="text-xs text-muted-foreground"><SearchText text={image.label} /></Text>
+              {image.source
+                ? <ChatPromptImage source={image.source} label="Viewed image" client={imageContext?.client} directory={directory} active={active && (imageContext?.visible ?? true)} visible={imageContext?.visible ?? true} />
+                : <Text className="text-xs text-muted-foreground">Image unavailable</Text>}
+            </View>
+          ))}
           <ToolMetadata item={item} />
           <ToolInputDetails item={item} />
           {shellCommand

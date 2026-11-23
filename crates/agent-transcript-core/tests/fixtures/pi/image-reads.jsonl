@@ -1,0 +1,7 @@
+{"type":"session","version":3,"id":"images","cwd":"/repo"}
+{"type":"message","id":"prompt","parentId":null,"message":{"role":"user","content":"Inspect the screenshot"}}
+{"type":"message","id":"calls","parentId":"prompt","message":{"role":"assistant","content":[{"type":"toolCall","id":"view","name":"read","arguments":{"path":"screenshot.png"}},{"type":"toolCall","id":"text","name":"read","arguments":{"path":"README.md"}},{"type":"toolCall","id":"generator","name":"imagegen","arguments":{}}],"stopReason":"toolUse"}}
+{"type":"message","id":"result","parentId":"calls","message":{"role":"toolResult","toolCallId":"view","toolName":"read","content":[{"type":"image","data":"aW1hZ2U=","mimeType":"image/png"}],"isError":false}}
+{"type":"message","id":"text-result","parentId":"result","message":{"role":"toolResult","toolCallId":"text","toolName":"read","content":[{"type":"text","text":"A normal text read"}],"isError":false}}
+{"type":"message","id":"generated","parentId":"text-result","message":{"role":"toolResult","toolCallId":"generator","toolName":"imagegen","content":[{"type":"image","data":"aW1hZ2U=","mimeType":"image/png"}],"isError":false}}
+{"type":"message","id":"reply","parentId":"generated","message":{"role":"assistant","content":[{"type":"text","text":"The screenshot is clear."}],"stopReason":"stop"}}

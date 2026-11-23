@@ -6,7 +6,7 @@ use agent_transcript_core::{
     AgentToolState, AgentToolStatus, AgentTranscriptDelta, AgentTranscriptDetails,
     AgentTranscriptInfo, AgentTranscriptKind, AgentTranscriptMessage, AgentTranscriptPart,
     AgentTranscriptState, AgentTranscriptStatus, AgentTranscriptTurn, AgentTranscriptUpdate,
-    AgentTurnOutcome, AgentTurnStatus,
+    AgentTurnOutcome, AgentTurnStatus, AgentViewedImage,
 };
 
 macro_rules! native_type {

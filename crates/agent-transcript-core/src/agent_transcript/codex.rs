@@ -150,6 +150,11 @@ impl CodexTranscriptAdapter {
                 true
             }
             RolloutRecord::Event(CodexEvent::ItemCompleted(completed)) => {
+                if legacy
+                    && let TurnItem::ImageView(item) = decode_turn_item(completed.item.clone())
+                {
+                    self.accept_image_view(&item.id, item.path.as_deref(), at);
+                }
                 // Legacy persistence also permits item-only plans. Project supported
                 // content in place without handing the rollout to the paginated reducer.
                 if legacy
@@ -725,6 +730,7 @@ impl CodexTranscriptAdapter {
         });
         let (old_state, old_name, old_at) = existing.unwrap_or((
             AgentToolState {
+                viewed_images: Vec::new(),
                 duration_ms: None,
                 input_json: None,
                 status: AgentToolStatus::Pending,
@@ -760,6 +766,7 @@ impl CodexTranscriptAdapter {
             tool: name,
             timestamp_ms: old_at,
             state: AgentToolState {
+                viewed_images: old_state.viewed_images,
                 duration_ms: old_state.duration_ms,
                 input_json: old_state.input_json,
                 status,
@@ -1269,6 +1276,9 @@ impl CodexTranscriptAdapter {
             return;
         }
         match kind {
+            "view_image_tool_call" => {
+                self.accept_image_view(&call_id, nonempty(payload.get("path")), at);
+            }
             "task_started" => self.begin_turn(),
             "task_complete" => {
                 if let Some(id) = self.active_assistant_message_id.clone()
@@ -1369,6 +1379,37 @@ impl CodexTranscriptAdapter {
                     );
                 }
             }
+        }
+    }
+
+    fn accept_image_view(&mut self, call_id: &str, path: Option<&str>, at: Option<u64>) {
+        let input = path.map(|path| {
+            vec![AgentField {
+                key: "path".into(),
+                value: AgentScalarValue::String {
+                    value: path.to_owned(),
+                },
+            }]
+        });
+        self.tool(
+            call_id.into(),
+            super::images::VIEW_IMAGE_TOOL.into(),
+            AgentToolStatus::Completed,
+            input,
+            None,
+            None,
+            None,
+            Vec::new(),
+            at,
+        );
+        let key = format!("tool:{call_id}");
+        if let Some(location) = self.tools.get(&key).cloned()
+            && let Some(message) = self.message_mut(&location.message_id)
+            && let Some(AgentTranscriptPart::Tool { state, .. }) =
+                message.parts.iter_mut().find(|part| part.id() == key)
+            && (path.is_some() || state.viewed_images.is_empty())
+        {
+            state.viewed_images = vec![super::images::viewed_image(path, None)];
         }
     }
 }

@@ -27,7 +27,7 @@ pub use v2::{
     OpenCodeV2History, OpenCodeV2Page, OpenCodeV2ReadState, OpenCodeV2Snapshot, OpenCodeV2Sync,
 };
 
-const OPENCODE_CACHE_SCHEMA_VERSION: u32 = 4;
+const OPENCODE_CACHE_SCHEMA_VERSION: u32 = 5;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OpenCodeProtocol {
@@ -312,7 +312,7 @@ impl OpenCodeSessionCore {
     pub fn restore_cache(&mut self, bytes: &[u8]) -> Result<AgentTranscriptState, AgentCacheError> {
         let cached: CachedOpenCodeSession = serde_json::from_slice(bytes)
             .map_err(|error| AgentCacheError::Malformed(error.to_string()))?;
-        if !matches!(cached.schema_version, 3 | OPENCODE_CACHE_SCHEMA_VERSION) {
+        if !matches!(cached.schema_version, 3..=OPENCODE_CACHE_SCHEMA_VERSION) {
             return Err(AgentCacheError::Malformed("unsupported schema".to_owned()));
         }
         if cached.session_id != self.session_id
@@ -435,7 +435,10 @@ impl OpenCodeSessionCore {
     ) -> Result<bool, OpenCodeTranscriptError> {
         let value: Value = serde_json::from_str(export_json)
             .map_err(|_| OpenCodeTranscriptError::InvalidExport)?;
-        let (info, messages) = parse_open_code_export(&value, &self.session_id)?;
+        let (info, mut messages) = parse_open_code_export(&value, &self.session_id)?;
+        for message in &mut messages {
+            super::images::resolve_message_sources(message, info.directory.as_deref());
+        }
         let changed = self.info.as_ref() != Some(&info) || self.messages != messages;
         self.cursor = Some(cursor);
         self.info = Some(info);
@@ -590,7 +593,14 @@ impl OpenCodeSessionCore {
                         deltas.push(AgentTranscriptDelta::InfoChanged { info: Some(info) });
                     }
                 }
-                OpenCodeMutation::Message(message) | OpenCodeMutation::ReplaceMessage(message) => {
+                OpenCodeMutation::Message(mut message)
+                | OpenCodeMutation::ReplaceMessage(mut message) => {
+                    super::images::resolve_message_sources(
+                        &mut message,
+                        self.info
+                            .as_ref()
+                            .and_then(|info| info.directory.as_deref()),
+                    );
                     if let Some(index) = self.message_indexes.get(&message.id).copied() {
                         let current = &mut self.messages[index];
                         debug_assert_eq!(current.id, message.id);
@@ -649,6 +659,15 @@ impl OpenCodeSessionCore {
                         continue;
                     };
                     let message = &mut self.messages[index];
+                    let mut part = super::images::assistant_image_part(part, message.role);
+                    if let AgentTranscriptPart::Tool { state, .. } = &mut part {
+                        super::images::resolve_sources(
+                            &mut state.viewed_images,
+                            self.info
+                                .as_ref()
+                                .and_then(|info| info.directory.as_deref()),
+                        );
+                    }
                     if let Some(part_index) = message
                         .parts
                         .iter()
@@ -927,6 +946,7 @@ fn open_code_message_from_parts(
             .iter()
             .filter_map(Value::as_object)
             .filter_map(open_code_part)
+            .map(|part| super::images::assistant_image_part(part, role))
             .collect(),
         diffs: summary
             .and_then(|summary| summary.get("diffs"))
@@ -994,6 +1014,34 @@ fn open_code_part(part: &Map<String, Value>) -> Option<AgentTranscriptPart> {
             );
             let metadata = state.and_then(|state| object(state.get("metadata")));
             let input = tool_input(&tool, state.and_then(|state| state.get("input")));
+            let viewed_images = if status == AgentToolStatus::Completed {
+                let images = state
+                    .map(|state| {
+                        ["attachments", "content", "output"]
+                            .iter()
+                            .find_map(|key| {
+                                let images = super::images::result_images(state.get(*key)?);
+                                (!images.is_empty()).then_some(images)
+                            })
+                            .unwrap_or_default()
+                    })
+                    .unwrap_or_default();
+                super::images::inspected_images(&tool, &input, &images)
+            } else {
+                Vec::new()
+            };
+            let output = state
+                .and_then(|state| state.get("output"))
+                .and_then(|output| {
+                    if tool == "read"
+                        && !output.is_string()
+                        && !super::images::result_images(output).is_empty()
+                    {
+                        super::content::result_text(output)
+                    } else {
+                        detail(Some(output))
+                    }
+                });
             Some(AgentTranscriptPart::Tool {
                 call_id: nonempty(part.get("callID")).unwrap_or(&id).to_owned(),
                 tool,
@@ -1001,6 +1049,7 @@ fn open_code_part(part: &Map<String, Value>) -> Option<AgentTranscriptPart> {
                     .and_then(|time| timestamp_ms(time.get("start")))
                     .or(at),
                 state: AgentToolState {
+                    viewed_images,
                     duration_ms: state_time
                         .and_then(|time| timestamp_ms(time.get("end")))
                         .zip(state_time.and_then(|time| timestamp_ms(time.get("start"))))
@@ -1009,7 +1058,7 @@ fn open_code_part(part: &Map<String, Value>) -> Option<AgentTranscriptPart> {
                     status,
                     questions: questions_from_input(&input),
                     input,
-                    output: state.and_then(|state| detail(state.get("output"))),
+                    output,
                     error: state.and_then(|state| detail(state.get("error"))),
                     title: state
                         .and_then(|state| nonempty(state.get("title")))

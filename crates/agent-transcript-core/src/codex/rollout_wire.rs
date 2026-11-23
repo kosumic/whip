@@ -199,6 +199,7 @@ pub(crate) enum TurnItem {
     DynamicToolCall(DynamicToolCall),
     WebSearch(WebSearch),
     ImageGeneration(ImageGeneration),
+    ImageView(ImageView),
     ContextCompaction(ContextCompaction),
     KnownIrrelevant,
     Unknown { kind: String, value: Value },
@@ -373,6 +374,13 @@ pub(crate) struct ImageGeneration {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub(crate) struct ImageView {
+    pub id: String,
+    #[serde(default)]
+    pub path: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub(crate) struct ContextCompaction {
     pub id: String,
 }
@@ -434,11 +442,11 @@ pub(crate) fn decode_turn_item(value: Value) -> TurnItem {
             item!(WebSearch, TurnItem::WebSearch)
         }
         "ImageGeneration" => item!(ImageGeneration, TurnItem::ImageGeneration),
+        "ImageView" => item!(ImageView, TurnItem::ImageView),
         "ContextCompaction" => item!(ContextCompaction, TurnItem::ContextCompaction),
         "HookPrompt"
         | "CollabAgentToolCall"
         | "SubAgentActivity"
-        | "ImageView"
         | "Extension"
         | "EnteredReviewMode"
         | "ExitedReviewMode" => TurnItem::KnownIrrelevant,
@@ -499,7 +507,8 @@ fn decode_event(value: Value) -> Event {
         | "request_user_input_async"
         | "elicitation_request"
         | "apply_patch_approval_request"
-        | "token_count" => Event::Legacy(value),
+        | "token_count"
+        | "view_image_tool_call" => Event::Legacy(value),
         "thread_goal_updated"
         | "thread_settings_applied"
         | "context_compacted"
@@ -523,7 +532,6 @@ fn decode_event(value: Value) -> Event {
         | "session_configured"
         | "environment_connected"
         | "environment_disconnected"
-        | "view_image_tool_call"
         | "terminal_interaction"
         | "plan_delta"
         | "agent_message_content_delta"

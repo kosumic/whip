@@ -71,6 +71,21 @@ fn tool(name: &str) -> AgentTranscriptPart {
 }
 
 #[test]
+fn viewed_image_labels_are_searchable_without_indexing_image_bytes() {
+    let mut part = tool("read");
+    let AgentTranscriptPart::Tool { state, .. } = &mut part else {
+        panic!("tool");
+    };
+    state.viewed_images = vec![AgentViewedImage {
+        label: "/repo/chart.png".into(),
+        source: Some("data:image/png;base64,privatebytes".into()),
+    }];
+    let docs = documents(&snapshot(vec![part]));
+    assert!(docs[1].text.contains("Viewed\n/repo/chart.png"));
+    assert!(!docs[1].text.contains("privatebytes"));
+}
+
+#[test]
 fn projects_content_once_with_the_list_row_ids_for_each_agent_tool() {
     for name in ["shell", "Bash", "exec_command"] {
         let mut state = snapshot(vec![

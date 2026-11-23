@@ -1023,6 +1023,7 @@ fn question_tools_speak_options_while_waiting_and_tool_internals_stay_private() 
         tool: "AskUserQuestion".into(),
         timestamp_ms: None,
         state: AgentToolState {
+            viewed_images: Vec::new(),
             status: AgentToolStatus::Running,
             input: Vec::new(),
             input_json: None,

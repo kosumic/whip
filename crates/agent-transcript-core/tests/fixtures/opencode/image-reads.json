@@ -1,0 +1,13 @@
+{
+  "info": {"id":"images","directory":"/repo"},
+  "messages": [
+    {"info":{"id":"prompt","role":"user"},"parts":[{"id":"prompt-image","type":"file","mime":"image/png","url":"file:///repo/prompt.png"}]},
+    {"info":{"id":"reply","role":"assistant","parentID":"prompt"},"parts":[
+      {"id":"view","type":"tool","tool":"read","callID":"view","state":{"status":"completed","input":{"filePath":"screenshot.png"},"output":"Image read successfully","attachments":[{"type":"file","mime":"image/png","url":"data:image/png;base64,aW1hZ2U=","filename":"screenshot.png"}]}},
+      {"id":"text","type":"tool","tool":"read","callID":"text","state":{"status":"completed","input":{"filePath":"README.md"},"output":"A normal text read"}},
+      {"id":"assistant-image","type":"file","mime":"image/png","url":"https://example.test/inspected.png"},
+      {"id":"generator","type":"tool","tool":"imagegen","callID":"generator","state":{"status":"completed","input":{},"attachments":[{"type":"file","mime":"image/png","url":"https://example.test/generated.png"}]}},
+      {"id":"answer","type":"text","text":"The screenshot is clear."}
+    ]}
+  ]
+}

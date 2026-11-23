@@ -95,6 +95,10 @@ fn part_text(part: &AgentTranscriptPart) -> Option<(&str, String)> {
             } else {
                 text.push(tool);
                 text.push(state.title.as_deref().unwrap_or_default());
+                for image in &state.viewed_images {
+                    text.push("Viewed");
+                    text.push(&image.label);
+                }
                 for field in &state.input {
                     text.scalar(&field.value);
                 }

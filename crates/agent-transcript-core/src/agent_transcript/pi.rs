@@ -21,6 +21,8 @@ pub type PiSessionCore = JsonlSessionCore<PiTranscriptAdapter>;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct ToolResult {
+    #[serde(default)]
+    images: Vec<super::model::AgentViewedImage>,
     call_id: String,
     output: Option<String>,
     failed: bool,
@@ -57,6 +59,7 @@ fn tool_part(id: String, block: &Value, at: Option<u64>) -> Option<AgentTranscri
         tool,
         timestamp_ms: at,
         state: AgentToolState {
+            viewed_images: Vec::new(),
             status: AgentToolStatus::Running,
             input_json: tool_input_json(block.get("arguments")),
             questions: questions_from_input(&input),
@@ -227,7 +230,11 @@ impl JsonlTranscriptAdapter for PiTranscriptAdapter {
         messages
     }
     const AGENT: AgentTranscriptKind = AgentTranscriptKind::Pi;
-    const CACHE_VERSION: u32 = 1;
+    const CACHE_VERSION: u32 = 2;
+
+    fn supports_cache(version: u32) -> bool {
+        matches!(version, 1..=Self::CACHE_VERSION)
+    }
 
     fn new(session_id: impl Into<String>) -> Self {
         let session_id = session_id.into();
@@ -283,6 +290,7 @@ impl JsonlTranscriptAdapter for PiTranscriptAdapter {
                 string(raw, "toolCallId").map(|call_id| ToolResult {
                     call_id,
                     output: result_text(&raw["content"]),
+                    images: super::images::result_images(&raw["content"]),
                     failed: raw["isError"] == true,
                     timestamp: timestamp_ms(raw.get("timestamp"))
                         .or_else(|| timestamp_ms(record.get("timestamp"))),
@@ -352,8 +360,17 @@ impl JsonlTranscriptAdapter for PiTranscriptAdapter {
             }
             if let Some(result) = &node.result
                 && let Some(&(mi, pi)) = tools.get(&result.call_id)
-                && let AgentTranscriptPart::Tool { state, .. } = &mut messages[mi].parts[pi]
+                && let AgentTranscriptPart::Tool { tool, state, .. } = &mut messages[mi].parts[pi]
             {
+                state.viewed_images = if result.failed {
+                    Vec::new()
+                } else {
+                    super::images::inspected_images(tool, &state.input, &result.images)
+                };
+                super::images::resolve_sources(
+                    &mut state.viewed_images,
+                    self.info.directory.as_deref(),
+                );
                 state.status = if result.failed {
                     AgentToolStatus::Error
                 } else {

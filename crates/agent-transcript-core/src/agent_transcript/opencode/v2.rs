@@ -295,7 +295,12 @@ fn message(value: &Value) -> Result<Option<AgentTranscriptMessage>, OpenCodeTran
                 .ok_or(OpenCodeTranscriptError::InvalidSnapshot)?;
             for (ordinal, part) in content.iter().enumerate() {
                 if let Some(part) = content_part(id, ordinal, part)? {
-                    result.parts.push(part);
+                    result
+                        .parts
+                        .push(super::super::images::assistant_image_part(
+                            part,
+                            AgentMessageRole::Assistant,
+                        ));
                 }
             }
         }
@@ -360,6 +365,14 @@ fn content_part(
             part["text"] = Value::String(required_text(value, "text")?.to_owned());
             part["time"] = serde_json::json!({ "start": value.get("time").and_then(|time| time.get("created")) });
         }
+        "file"
+            if value["mime"]
+                .as_str()
+                .is_some_and(|mime| mime.starts_with("image/")) =>
+        {
+            part["mime"] = value["mime"].clone();
+            part["url"] = value["uri"].clone();
+        }
         "tool" => {
             part["callID"] = Value::String(required_text(value, "id")?.to_owned());
             part["tool"] = Value::String(required_text(value, "name")?.to_owned());
@@ -376,7 +389,13 @@ fn content_part(
                     .iter()
                     .filter_map(|item| match item.get("type").and_then(Value::as_str) {
                         Some("text") => item.get("text").and_then(Value::as_str),
-                        Some("file") => item.get("uri").and_then(Value::as_str),
+                        Some("file")
+                            if !item["mime"]
+                                .as_str()
+                                .is_some_and(|mime| mime.starts_with("image/")) =>
+                        {
+                            item.get("uri").and_then(Value::as_str)
+                        }
                         _ => None,
                     })
                     .collect::<Vec<_>>()

@@ -53,6 +53,7 @@ fn tool(id: &str, output: &str) -> AgentTranscriptPart {
         tool: "shell".into(),
         timestamp_ms: None,
         state: AgentToolState {
+            viewed_images: Vec::new(),
             status: AgentToolStatus::Running,
             input: vec![],
             input_json: Some("private_arguments".into()),

@@ -4357,6 +4357,54 @@ const FfiConverterTypeAgentQuestion = (() => {
   return new FFIConverter();
 })();
 
+export type AgentViewedImage = {
+  label: string;
+  /**
+   * None when the transcript records an image but no usable source survives.
+   */
+  source?: string;
+};
+
+/**
+ * Generated factory for {@link AgentViewedImage} record objects.
+ */
+export const AgentViewedImage = (() => {
+  const defaults = () => ({});
+  const create = (() => {
+    return uniffiCreateRecord<AgentViewedImage, ReturnType<typeof defaults>>(
+      defaults,
+    );
+  })();
+  return Object.freeze({
+    create,
+    new: create,
+    defaults: () => Object.freeze(defaults()) as Partial<AgentViewedImage>,
+  });
+})();
+
+const FfiConverterTypeAgentViewedImage = (() => {
+  type TypeName = AgentViewedImage;
+  class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+    read(from: RustBuffer): TypeName {
+      return {
+        label: FfiConverterString.read(from),
+        source: FfiConverterOptionalString.read(from),
+      };
+    }
+    write(value: TypeName, into: RustBuffer): void {
+      FfiConverterString.write(value.label, into);
+      FfiConverterOptionalString.write(value.source, into);
+    }
+    allocationSize(value: TypeName): number {
+      return (
+        FfiConverterString.allocationSize(value.label) +
+        FfiConverterOptionalString.allocationSize(value.source)
+      );
+    }
+  }
+  return new FFIConverter();
+})();
+
 export type AgentToolState = {
   status: AgentToolStatus;
   input: Array<AgentField>;
@@ -4372,6 +4420,11 @@ export type AgentToolState = {
   diagnostics: Array<AgentToolDiagnostic>;
   loaded: Array<string>;
   questions: Array<AgentQuestion>;
+  /**
+   * Images inspected by this operation, distinct from user attachments and
+   * generated images. Inline data is bounded during provider adaptation.
+   */
+  viewedImages: Array<AgentViewedImage>;
 };
 
 /**
@@ -4410,6 +4463,7 @@ const FfiConverterTypeAgentToolState = (() => {
         diagnostics: FfiConverterSequenceTypeAgentToolDiagnostic.read(from),
         loaded: FfiConverterSequenceString.read(from),
         questions: FfiConverterSequenceTypeAgentQuestion.read(from),
+        viewedImages: FfiConverterSequenceTypeAgentViewedImage.read(from),
       };
     }
     write(value: TypeName, into: RustBuffer): void {
@@ -4430,6 +4484,7 @@ const FfiConverterTypeAgentToolState = (() => {
       );
       FfiConverterSequenceString.write(value.loaded, into);
       FfiConverterSequenceTypeAgentQuestion.write(value.questions, into);
+      FfiConverterSequenceTypeAgentViewedImage.write(value.viewedImages, into);
     }
     allocationSize(value: TypeName): number {
       return (
@@ -4448,7 +4503,10 @@ const FfiConverterTypeAgentToolState = (() => {
           value.diagnostics,
         ) +
         FfiConverterSequenceString.allocationSize(value.loaded) +
-        FfiConverterSequenceTypeAgentQuestion.allocationSize(value.questions)
+        FfiConverterSequenceTypeAgentQuestion.allocationSize(value.questions) +
+        FfiConverterSequenceTypeAgentViewedImage.allocationSize(
+          value.viewedImages,
+        )
       );
     }
   }
@@ -64155,6 +64213,11 @@ const FfiConverterSequenceTypeAgentQuestion = new FfiConverterArray(
   FfiConverterTypeAgentQuestion,
 );
 
+// FfiConverter for Array<AgentViewedImage>
+const FfiConverterSequenceTypeAgentViewedImage = new FfiConverterArray(
+  FfiConverterTypeAgentViewedImage,
+);
+
 // FfiConverter for Array<AgentTranscriptPart>
 const FfiConverterSequenceTypeAgentTranscriptPart = new FfiConverterArray(
   FfiConverterTypeAgentTranscriptPart,
@@ -69282,6 +69345,7 @@ export default Object.freeze({
     FfiConverterTypeAgentTranscriptUpdate,
     FfiConverterTypeAgentTurnOutcome,
     FfiConverterTypeAgentTurnStatus,
+    FfiConverterTypeAgentViewedImage,
     FfiConverterTypeAppConnectionStatus,
     FfiConverterTypeAppCore,
     FfiConverterTypeAppCoreView,

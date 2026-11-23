@@ -7,9 +7,10 @@ use std::collections::HashMap;
 use serde_json::Value;
 
 use super::rollout_wire::{
-    CommandExecution, Compacted, DynamicToolCall, Event, FileChange, FileChangeItem, ItemEvent,
-    McpToolCall, ResponseItem, RolloutRecord, TurnAborted, TurnComplete, TurnItem, TurnStarted,
-    decode_turn_item, interactive_response_notice, question_reply_text,
+    CommandExecution, Compacted, DynamicToolCall, Event, FileChange, FileChangeItem,
+    ImageGeneration, ItemEvent, McpToolCall, ResponseItem, RolloutRecord, TurnAborted,
+    TurnComplete, TurnItem, TurnStarted, decode_turn_item, interactive_response_notice,
+    question_reply_text,
 };
 use crate::agent_transcript::{
     AgentField, AgentFileDiff, AgentMessageRole, AgentNoticeLevel, AgentScalarValue,
@@ -276,6 +277,22 @@ impl CodexRolloutReducer {
                 let _ = value;
             }
             Event::Legacy(payload) => {
+                if payload["type"] == "view_image_tool_call"
+                    && let Some(call_id) = payload["call_id"].as_str().filter(|id| !id.is_empty())
+                    && let Some(turn_id) = self
+                        .active_turn_id
+                        .clone()
+                        .or_else(|| self.context_turn_id.clone())
+                {
+                    self.put_image_view(
+                        &turn_id,
+                        call_id.to_owned(),
+                        payload["path"].as_str(),
+                        at,
+                        at,
+                    );
+                    return;
+                }
                 if payload["type"] == "token_count" {
                     let usage = self.usage_tracker.accept(payload);
                     let turn_id = self
@@ -546,27 +563,15 @@ impl CodexRolloutReducer {
                 );
             }
             TurnItem::ImageGeneration(item) => {
-                let mut input = Vec::new();
-                if let Some(prompt) = item.revised_prompt {
-                    input.push(string_field("prompt", prompt));
-                }
-                if let Some(path) = item.saved_path.as_ref().and_then(value_text) {
-                    input.push(string_field("saved_path", path));
-                }
-                let status = phase.tool_status(&item.status);
-                self.put_tool(
+                self.put_image_generation(&event.turn_id, item, phase, started_at, completed_at);
+            }
+            TurnItem::ImageView(item) => {
+                self.put_image_view(
                     &event.turn_id,
                     item.id,
-                    "image_generation".to_owned(),
-                    status,
-                    input,
-                    (!item.result.is_empty()).then_some(item.result),
-                    (status == AgentToolStatus::Error)
-                        .then(|| format!("Image generation {}", item.status)),
-                    None,
-                    Vec::new(),
+                    item.path.as_deref(),
                     started_at,
-                    completed_at,
+                    completed_at.or(at),
                 );
             }
             TurnItem::ContextCompaction(item) => {
@@ -809,6 +814,9 @@ impl CodexRolloutReducer {
         }
         let started_at = started_at.or_else(|| previous.and_then(|state| state.started_at_ms));
         let input_json = previous.and_then(|state| state.input_json.clone());
+        let viewed_images = previous
+            .map(|state| state.viewed_images.clone())
+            .unwrap_or_default();
         let duration_ms = completed_at
             .zip(started_at)
             .and_then(|(end, start)| end.checked_sub(start));
@@ -822,6 +830,7 @@ impl CodexRolloutReducer {
                 tool,
                 timestamp_ms: started_at.or(completed_at),
                 state: AgentToolState {
+                    viewed_images,
                     duration_ms,
                     input_json,
                     status,
@@ -843,6 +852,87 @@ impl CodexRolloutReducer {
         );
         if !files.is_empty() {
             self.merge_turn_diffs(turn_id, message_index, &files);
+        }
+    }
+
+    fn put_image_generation(
+        &mut self,
+        turn_id: &str,
+        item: ImageGeneration,
+        phase: ItemPhase,
+        started_at: Option<u64>,
+        completed_at: Option<u64>,
+    ) {
+        let mut input = Vec::new();
+        if let Some(prompt) = item.revised_prompt {
+            input.push(string_field("prompt", prompt));
+        }
+        if let Some(path) = item.saved_path.as_ref().and_then(value_text) {
+            input.push(string_field("saved_path", path));
+        }
+        let status = phase.tool_status(&item.status);
+        self.put_tool(
+            turn_id,
+            item.id,
+            "image_generation".to_owned(),
+            status,
+            input,
+            (!item.result.is_empty()).then_some(item.result),
+            (status == AgentToolStatus::Error).then(|| format!("Image generation {}", item.status)),
+            None,
+            Vec::new(),
+            started_at,
+            completed_at,
+        );
+    }
+
+    fn put_image_view(
+        &mut self,
+        turn_id: &str,
+        id: String,
+        path: Option<&str>,
+        started_at: Option<u64>,
+        completed_at: Option<u64>,
+    ) {
+        self.remove_raw_tool_activity(&id);
+        let input = path
+            .map(|path| vec![string_field("path", path.to_owned())])
+            .or_else(|| {
+                self.assistant_part_message_index(turn_id, &id)
+                    .and_then(|index| {
+                        self.messages[index]
+                            .parts
+                            .iter()
+                            .find_map(|part| match part {
+                                AgentTranscriptPart::Tool {
+                                    id: part_id, state, ..
+                                } if part_id == &id => Some(state.input.clone()),
+                                _ => None,
+                            })
+                    })
+            })
+            .unwrap_or_default();
+        self.put_tool(
+            turn_id,
+            id.clone(),
+            crate::agent_transcript::images::VIEW_IMAGE_TOOL.into(),
+            AgentToolStatus::Completed,
+            input,
+            None,
+            None,
+            None,
+            Vec::new(),
+            started_at,
+            completed_at,
+        );
+        if let Some(index) = self.assistant_part_message_index(turn_id, &id)
+            && let Some(AgentTranscriptPart::Tool { state, .. }) = self.messages[index]
+                .parts
+                .iter_mut()
+                .find(|part| part.id() == id)
+            && (path.is_some() || state.viewed_images.is_empty())
+        {
+            state.viewed_images = vec![crate::agent_transcript::images::viewed_image(path, None)];
         }
     }
 

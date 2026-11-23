@@ -5,6 +5,7 @@ mod codex;
 mod content;
 mod file_session;
 mod history_gate;
+pub(crate) mod images;
 mod jsonl;
 mod metadata;
 mod model;

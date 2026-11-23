@@ -37,6 +37,9 @@ Ok(())
 ```
 
 The source path and file identity are opaque labels supplied by the caller.
+Image inspections are retained as bounded `AgentToolState.viewed_images`
+metadata, separately from user attachments. See Whip's
+[format validation and preview limitations](../../docs/image-inspection.md).
 `examples/ingest.rs` is a complete example that prints a normalized conversation:
 
 ```sh

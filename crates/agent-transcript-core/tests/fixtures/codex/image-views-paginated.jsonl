@@ -1,0 +1,9 @@
+{"type":"session_meta","payload":{"id":"images","cwd":"/repo","history_mode":"paginated"}}
+{"type":"event_msg","payload":{"type":"task_started","turn_id":"turn"}}
+{"type":"event_msg","payload":{"type":"item_completed","thread_id":"images","turn_id":"turn","item":{"type":"UserMessage","id":"prompt","content":[{"type":"text","text":"Inspect the screenshot"}]}}}
+{"type":"response_item","payload":{"type":"function_call","call_id":"view","name":"view_image","arguments":"{\"path\":\"file:///repo/screenshot.png\"}"}}
+{"type":"event_msg","payload":{"type":"view_image_tool_call","call_id":"view","path":"file:///repo/screenshot.png"}}
+{"type":"event_msg","payload":{"type":"item_completed","thread_id":"images","turn_id":"turn","item":{"type":"ImageView","id":"view","path":"file:///repo/screenshot.png"},"started_at_ms":10,"completed_at_ms":100}}
+{"type":"response_item","payload":{"type":"function_call_output","call_id":"view","output":"attached local image"}}
+{"type":"event_msg","payload":{"type":"item_completed","thread_id":"images","turn_id":"turn","item":{"type":"AgentMessage","id":"reply","content":[{"type":"Text","text":"The screenshot is clear."}]}}}
+{"type":"event_msg","payload":{"type":"item_completed","thread_id":"images","turn_id":"turn","item":{"type":"ImageView","id":"missing"},"completed_at_ms":200}}

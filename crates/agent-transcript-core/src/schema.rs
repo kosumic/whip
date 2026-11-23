@@ -179,6 +179,18 @@ pub struct AgentToolState {
     pub loaded: Vec<String>,
     #[serde(default)]
     pub questions: Vec<AgentQuestion>,
+    /// Images inspected by this operation, distinct from user attachments and
+    /// generated images. Inline data is bounded during provider adaptation.
+    #[serde(default)]
+    pub viewed_images: Vec<AgentViewedImage>,
+}
+        );
+        $apply!(Record,
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AgentViewedImage {
+    pub label: String,
+    /// None when the transcript records an image but no usable source survives.
+    pub source: Option<String>,
 }
         );
         $apply!(Enum,

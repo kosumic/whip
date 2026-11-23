@@ -352,6 +352,7 @@ export type NativeAgentTranscriptDetails = {
 };
 
 export type NativeAgentToolState = {
+  viewedImages?: { label: string; source?: string }[];
   status: 'pending' | 'running' | 'completed' | 'error';
   input: Record<string, string | number | boolean>;
   inputJson?: string;
@@ -1697,6 +1698,7 @@ function nativeAgentPart(
         tool: inner.tool,
         timestamp: nativeNumber(inner.timestampMs),
         state: {
+          viewedImages: inner.state.viewedImages,
           status: nativeToolStatus(inner.state.status),
           input,
           inputJson: inner.state.inputJson,

@@ -22,7 +22,7 @@ use super::projection::{
     timestamp_ms,
 };
 
-const CACHE_VERSION: u32 = 5;
+const CACHE_VERSION: u32 = 6;
 
 // Mid-turn input is persisted as a delivered attachment, rather than a user
 // row. Queue operations alone do not establish delivery.
@@ -41,6 +41,7 @@ fn tool_use_part(block: &Value, at: Option<u64>) -> Option<AgentTranscriptPart> 
         tool,
         timestamp_ms: at,
         state: AgentToolState {
+            viewed_images: Vec::new(),
             duration_ms: None,
             input_json: tool_input_json(block.get("input")),
             status: AgentToolStatus::Running,
@@ -61,6 +62,10 @@ fn tool_use_part(block: &Value, at: Option<u64>) -> Option<AgentTranscriptPart> 
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct ToolCompletion {
+    #[serde(default)]
+    directory: Option<String>,
+    #[serde(default)]
+    images: Vec<super::model::AgentViewedImage>,
     call_id: String,
     output: Option<String>,
     error: Option<String>,
@@ -106,6 +111,15 @@ impl ToolCompletion {
             .into_iter()
             .collect();
         Some(Self {
+            directory: None,
+            images: {
+                let images = super::images::result_images(&block["content"]);
+                if images.is_empty() {
+                    super::images::result_images(rich)
+                } else {
+                    images
+                }
+            },
             call_id,
             output,
             error,
@@ -270,7 +284,8 @@ impl ClaudeTranscriptAdapter {
                         let rich = record.get("toolUseResult").filter(|rich| {
                             result_count == 1 || rich["tool_use_id"] == block["tool_use_id"]
                         });
-                        if let Some(result) = ToolCompletion::parse(block, rich, at) {
+                        if let Some(mut result) = ToolCompletion::parse(block, rich, at) {
+                            result.directory = string(record, "cwd");
                             results.push(result);
                         }
                     }
@@ -584,7 +599,16 @@ impl ClaudeTranscriptAdapter {
                 continue;
             };
             let message = &mut messages[mi];
-            if let AgentTranscriptPart::Tool { state, .. } = &mut message.parts[pi] {
+            if let AgentTranscriptPart::Tool { tool, state, .. } = &mut message.parts[pi] {
+                state.viewed_images = if result.error.is_none() {
+                    super::images::inspected_images(tool, &state.input, &result.images)
+                } else {
+                    Vec::new()
+                };
+                super::images::resolve_sources(
+                    &mut state.viewed_images,
+                    result.directory.as_deref(),
+                );
                 state.status = if result.error.is_some() {
                     AgentToolStatus::Error
                 } else {
