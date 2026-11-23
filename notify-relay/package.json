@@ -26,7 +26,7 @@
     "babel-jest": "~30.5.2",
     "cf": "1.0.0-beta.26",
     "esbuild": "0.28.2",
-    "eslint": "^8.57.1",
+    "eslint": "^10.14.0",
     "eslint-plugin-sonarjs": "^4.2.2",
     "jest": "~30.5.2",
     "miniflare": "5.20261023.2-beta",
