@@ -115,7 +115,7 @@
     "react-native-webview": "14.0.1",
     "react-native-whip-ssh": "file:packages/react-native-whip-ssh",
     "react-native-worklets": "0.13.0",
-    "tailwind-merge": "^3.7.0",
+    "tailwind-merge": "^3.7.1",
     "tailwindcss-animate": "^1.0.7",
     "uniffi-bindgen-react-native": "0.31.0-3"
   },
