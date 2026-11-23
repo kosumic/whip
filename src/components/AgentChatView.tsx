@@ -395,21 +395,22 @@ const chatListStyles = StyleSheet.create({
 });
 
 function TranscriptNoticeCard({
+  children,
   error = false,
-  className,
-  ...props
-}: React.ComponentProps<typeof View> & { error?: boolean }) {
+  testID,
+}: React.PropsWithChildren<{ error?: boolean; testID?: string }>) {
   const glass = useAppGlassEnabled();
   return (
     <GlassSurface
-      {...props}
+      testID={testID}
       className={cn(
         'w-full gap-2 rounded-md px-3 py-2.5',
         glass && APP_GLASS_BORDER_CLASS_NAME,
-        className,
       )}
       fallbackClassName={error ? 'bg-destructive/10' : 'bg-muted'}
-    />
+    >
+      {children}
+    </GlassSurface>
   );
 }
 
@@ -444,6 +445,25 @@ function TranscriptQuestions({ questions }: { questions: readonly TranscriptQues
   ));
 }
 
+function TranscriptNotice({ text, error, questions }: {
+  text: string;
+  error?: boolean;
+  questions?: readonly TranscriptQuestion[];
+}) {
+  const { colors } = useTheme();
+  return (
+    <TranscriptNoticeCard error={error}>
+      <View className="flex-row items-center gap-2">
+        {error && <CircleAlert size={15} color={colors.error} />}
+        <Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground">
+          <SearchText text={text} />
+        </Text>
+      </View>
+      {questions && <TranscriptQuestions questions={questions} />}
+    </TranscriptNoticeCard>
+  );
+}
+
 function AssistantPart({
   part,
   directory,
@@ -461,7 +481,6 @@ function AssistantPart({
   streaming?: boolean;
   speechSource?: SpeechCaptionSource;
 }) {
-  const { colors } = useTheme();
   if (part.type === 'text') {
     if (!part.text.trim()) return null;
     return <View className="min-w-0 w-full"><ChatSpeechText content={part.text} source={speechSource} streaming={streaming} onLinkPress={({ url }) => onLinkPress(url)} /></View>;
@@ -496,15 +515,7 @@ function AssistantPart({
     return <View className="w-full py-1"><Text className="mb-2 text-[13px] font-medium leading-5 text-foreground">Plan</Text><MarkdownText content={part.text} variant="transcript" onLinkPress={({ url }) => onLinkPress(url)} /></View>;
   }
   if (part.type === 'notice') {
-    return (
-      <TranscriptNoticeCard error={part.level === 'error'} className="flex-row">
-        {part.level === 'error' && <CircleAlert size={15} color={colors.error} />}
-        <View className="min-w-0 flex-1 gap-2">
-          <Text selectable className="text-[12px] leading-[18px] text-muted-foreground"><SearchText text={part.text} /></Text>
-          {part.questions && <TranscriptQuestions questions={part.questions} />}
-        </View>
-      </TranscriptNoticeCard>
-    );
+    return <TranscriptNotice text={part.text} error={part.level === 'error'} questions={part.questions} />;
   }
   return null;
 }
@@ -753,7 +764,7 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
         <AssistantPart part={block.part} directory={directory} streaming={active && block.streaming} expanded={expanded} onToggle={toggle} active={active} onLinkPress={onLinkPress}
           speechSource={active && visible && readAloud?.target ? { bindingToken: readAloud.target.bindingToken, hostId: readAloud.target.hostId, paneId: readAloud.target.paneId, messageId: block.messageId, partId: block.part.id } : undefined} />
       </View>;
-      case 'error': return <TranscriptNoticeCard error className="flex-row"><CircleAlert size={15} color={colors.error} /><Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground"><SearchText text={block.error} /></Text></TranscriptNoticeCard>;
+      case 'error': return <TranscriptNotice text={block.error} error />;
       case 'changes': return <ChangedFiles turn={block.turn} expanded={expanded} onToggle={toggle} />;
       case 'diff': return <ToolFileDiffBlock file={block.file} directory={directory} expanded={expanded} onToggle={toggle} />;
       case 'meta': return <TurnMeta turn={block.turn} expanded={expanded} onToggle={toggle} readAloud={readAloud} />;
