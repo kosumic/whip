@@ -257,6 +257,9 @@ pub(super) enum Command {
         id: String,
         delete_local: bool,
     },
+    RemoveFromHistory {
+        id: String,
+    },
     Ack {
         id: String,
         effect_id: String,
@@ -847,6 +850,16 @@ impl Manager {
                     } else {
                         self.ledger.jobs.retain(|job| job.id != id);
                     }
+                }
+            }
+            Command::RemoveFromHistory { id } => {
+                if let Some(index) = self.ledger.jobs.iter().position(|job| job.id == id) {
+                    if self.ledger.jobs[index].busy() {
+                        return Err(invalid(
+                            "Wait for the download to finish before removing it from history",
+                        ));
+                    }
+                    self.ledger.jobs.remove(index);
                 }
             }
             command @ Command::Ack { .. } => {

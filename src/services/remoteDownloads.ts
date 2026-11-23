@@ -256,11 +256,9 @@ export class RemoteDownloads {
     try { await revealSavedRemoteDestination(await this.destination(item)); }
     finally { if (item.saved) await downloadExecution.releaseDownloadDestination(item.saved.directoryUri); }
   }
-  async remove(id: string, deleteLocal: boolean): Promise<void> {
-    await this.mutate({ type: 'remove', id, deleteLocal });
-    await this.wait(id);
-    const item = this.projection.find(value => value.id === id);
-    if (item) throw new Error(item.error ?? 'The local file could not be removed');
+  async removeFromHistory(id: string): Promise<void> {
+    await this.initialize();
+    await this.command({ type: 'removeFromHistory', id });
   }
 }
 export const remoteDownloads = new RemoteDownloads();

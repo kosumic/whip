@@ -148,13 +148,13 @@ it('does not regress projection when a slow bridge response arrives after a newe
 });
 it('keeps transfer ownership through hook unmount and host replacement', async () => {
   let controls!: ReturnType<typeof useRemoteFileDownload>;
-  function Scope({ client }: { client: HerdrClient }) { controls = useRemoteFileDownload(client, 'file'); return null; }
+  function Scope({ client }: { client: HerdrClient }) { controls = useRemoteFileDownload(client, client.native.runtimeId, '/archive'); return null; }
   const a = { native: { runtimeId: 'a' } } as HerdrClient;
   const b = { native: { runtimeId: 'b' } } as HerdrClient;
   handle = command => { if (command.type === 'start') items = [row('downloading')]; };
   let tree!: ReactTestRenderer;
   await act(async () => { tree = create(<Scope client={a} />); });
-  await act(async () => { await controls.start('/archive'); });
+  await act(async () => { await controls.start(); });
   expect(remoteDownloads.snapshot()[0].phase).toBe('downloading');
   await act(async () => { tree.update(<Scope client={b} />); }); expect(controls.progress).toBeNull();
   await act(async () => { tree.unmount(); });
@@ -166,6 +166,16 @@ it('preserves completed history when reveal access is expired or the file has mo
   jest.mocked(downloadExecution.resolveDownloadDestination).mockResolvedValue('file:///moved');
   await expect(manager.open('job')).rejects.toThrow('moved');
   expect(revealSavedRemoteDestination).not.toHaveBeenCalled(); expect(manager.snapshot()).toHaveLength(1);
+});
+it('removes completed history without accessing the saved file', async () => {
+  items = [{ ...row('completed'), saved: { uri: 'file:///picked/archive', directoryUri: 'file:///picked', isDirectory: false } }];
+  await manager.initialize();
+  handle = command => {
+    if (command.type === 'removeFromHistory' && command.id === 'job') items = [];
+  };
+  await manager.removeFromHistory('job');
+  expect(manager.snapshot()).toEqual([]);
+  expect(downloadExecution.resolveDownloadDestination).not.toHaveBeenCalled();
 });
 it('retries a failed save acknowledgement without copying the file a second time', async () => {
   let failures = 1;

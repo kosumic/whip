@@ -3,6 +3,7 @@ import { ActivityIndicator, PanResponder, View } from 'react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import Trash2 from 'lucide-react-native/icons/trash';
+import type { LucideIcon } from 'lucide-react-native';
 import { REMOTE_FILE_SWIPE_ACTION_WIDTH, remoteFileSwipeOffset, shouldClaimRemoteFileSwipe, shouldOpenRemoteFileSwipe } from '../lib/remoteFileSwipeActions';
 import { DEFAULT_SPRING_CONFIG } from '../lib/motion';
 import { hapticPress } from './app-ui';
@@ -10,7 +11,14 @@ import { Button } from './ui/button';
 import { Icon } from './ui/icon';
 import { Text } from './ui/text';
 
-export function SwipeableDeleteRow({ children, deleting, disabled, name, onDelete }: { children: (controls: { actionsOpen: boolean; closeActions: () => void }) => ReactNode; deleting: boolean; disabled: boolean; name: string; onDelete: () => void }) {
+export function SwipeableDeleteRow({ children, deleting, disabled, name, onDelete, removeAction }: {
+  children: (controls: { actionsOpen: boolean; closeActions: () => void }) => ReactNode;
+  deleting: boolean;
+  disabled: boolean;
+  name: string;
+  onDelete: () => void;
+  removeAction?: { accessibilityLabel: string; icon: LucideIcon };
+}) {
   const { t } = useTranslation();
   const swipeOffset = useSharedValue(0);
   const openRef = useRef(false);
@@ -55,9 +63,9 @@ export function SwipeableDeleteRow({ children, deleting, disabled, name, onDelet
   return (
     <View className="relative min-h-[62px] overflow-hidden border-b border-border">
       <Animated.View accessibilityElementsHidden={!actionsOpen} className="absolute inset-y-0 right-0 overflow-hidden" importantForAccessibility={actionsOpen ? 'auto' : 'no-hide-descendants'} pointerEvents={actionsOpen && !disabled ? 'auto' : 'none'} style={actionRevealStyle}>
-        <Button accessibilityLabel={t('files.deleteEntry', { name })} className="absolute inset-y-0 right-0 h-full flex-col gap-1 rounded-none" style={{ width: REMOTE_FILE_SWIPE_ACTION_WIDTH }} disabled={disabled} size="content" variant="destructive" onPress={hapticPress(runDelete)}>
-          {deleting ? <ActivityIndicator color="white" size="small" /> : <Icon as={Trash2} className="text-destructive-foreground" size={19} />}
-          <Text className="text-[11px] font-semibold">{t('common.delete')}</Text>
+        <Button accessibilityLabel={removeAction?.accessibilityLabel ?? t('files.deleteEntry', { name })} className="absolute inset-y-0 right-0 h-full flex-col gap-1 rounded-none" style={{ width: REMOTE_FILE_SWIPE_ACTION_WIDTH }} disabled={disabled} size="content" variant={removeAction ? 'secondary' : 'destructive'} onPress={hapticPress(runDelete)}>
+          {deleting ? <ActivityIndicator color={removeAction ? undefined : 'white'} size="small" /> : <Icon as={removeAction?.icon ?? Trash2} className={removeAction ? 'text-secondary-foreground' : 'text-destructive-foreground'} size={19} />}
+          <Text className="text-[11px] font-semibold">{t(removeAction ? 'common.remove' : 'common.delete')}</Text>
         </Button>
       </Animated.View>
       <Animated.View style={animatedStyle} {...panResponder.panHandlers}>

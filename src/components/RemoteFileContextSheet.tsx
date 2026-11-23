@@ -7,6 +7,7 @@ import Download from 'lucide-react-native/icons/download';
 import FileText from 'lucide-react-native/icons/file-text';
 import Folder from 'lucide-react-native/icons/folder';
 import FolderInput from 'lucide-react-native/icons/folder-input';
+import FolderOpen from 'lucide-react-native/icons/folder-open';
 import Info from 'lucide-react-native/icons/info';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Keyboard, Pressable, ScrollView, View, type TextInputInstance } from 'react-native';
@@ -32,6 +33,7 @@ export function remoteFilenameSelection(entry: Pick<RuntimeRemoteFileEntry, 'nam
 interface Props {
   entry: RuntimeRemoteFileEntry;
   client: HerdrClient;
+  hostId: string;
   onClose: () => void;
   onChanged: () => Promise<void>;
   onBusyChange: (busy: boolean) => void;
@@ -39,7 +41,7 @@ interface Props {
 
 type SheetPage = 'menu' | 'move' | 'properties';
 
-export function RemoteFileContextSheet({ entry, client, onClose, onChanged, onBusyChange }: Props) {
+export function RemoteFileContextSheet({ entry, client, hostId, onClose, onChanged, onBusyChange }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const appGlassEnabled = useAppGlassEnabled();
@@ -57,7 +59,7 @@ export function RemoteFileContextSheet({ entry, client, onClose, onChanged, onBu
   const [loadedPath, setLoadedPath] = useState<string | null>(null);
   const [properties, setProperties] = useState(entry);
   const input = useRef<TextInputInstance>(null);
-  const download = useRemoteFileDownload(client, entry.path);
+  const download = useRemoteFileDownload(client, hostId, entry.path);
   const alive = useRef(true);
   const operation = useRef(false);
   const request = useRef(0);
@@ -76,7 +78,7 @@ export function RemoteFileContextSheet({ entry, client, onClose, onChanged, onBu
     };
   }, [onBusyChange]);
 
-  const run = async (action: () => Promise<void>) => {
+  const run = async (action: () => Promise<void>, { local = false } = {}) => {
     if (operation.current || !alive.current) return;
     operation.current = true;
     setBusy(true);
@@ -84,7 +86,7 @@ export function RemoteFileContextSheet({ entry, client, onClose, onChanged, onBu
     setError(null);
     setFeedback(null);
     try {
-      if (!current()) throw new Error(t('common.notConnected'));
+      if (!local && !current()) throw new Error(t('common.notConnected'));
       await action();
     } catch (reason) {
       if (alive.current) setError(String(reason));
@@ -147,16 +149,21 @@ export function RemoteFileContextSheet({ entry, client, onClose, onChanged, onBu
 
   const startDownload = () => {
     Keyboard.dismiss();
-    void download.start(entry.path);
+    void download.start();
   };
 
+  const openSaved = download.openSaved;
   const actions = [
-    { label: 'files.moveTo', icon: FolderInput, action: () => changePage('move') },
-    { label: 'files.copyPath', icon: Copy, action: () => {
+    { labelKey: 'files.moveTo', icon: FolderInput, action: () => changePage('move') },
+    { labelKey: 'files.copyPath', icon: Copy, action: () => {
       Keyboard.dismiss(); Clipboard.setString(entry.path); setFeedback(t('files.pathCopied'));
     } },
-    { label: 'files.download', icon: Download, action: startDownload },
-    { label: 'files.properties', icon: Info, action: () => {
+    { labelKey: 'files.download', icon: Download, action: startDownload },
+    ...(openSaved ? [{ labelKey: 'files.openInFileBrowser', icon: FolderOpen, action: () => {
+      Keyboard.dismiss();
+      void run(openSaved, { local: true });
+    } }] : []),
+    { labelKey: 'files.properties', icon: Info, action: () => {
       changePage('properties');
       // Listing metadata is immediately usable; STAT adds no recursive work.
       if (entry.kind !== 'symlink') void run(async () => {
@@ -227,16 +234,16 @@ export function RemoteFileContextSheet({ entry, client, onClose, onChanged, onBu
             </View>
             <ScrollView keyboardShouldPersistTaps="handled" bounces={false}>
               <View className="gap-2">
-                {actions.map(({ label, icon: ActionIcon, action }) => (
+                {actions.map(({ labelKey, icon: ActionIcon, action }) => (
                   <GlassButton
-                    key={label}
-                    accessibilityLabel={t(label)}
+                    key={labelKey}
+                    accessibilityLabel={t(labelKey)}
                     className="h-14 justify-start gap-3 rounded-xl px-3"
                     variant="ghost"
                     disabled={busy}
                     onPress={hapticPress(action)}>
                     <ActionIcon size={19} color={colors.text} />
-                    <Text className="text-[15px] font-medium">{t(label)}</Text>
+                    <Text className="text-[15px] font-medium">{t(labelKey)}</Text>
                   </GlassButton>
                 ))}
               </View>

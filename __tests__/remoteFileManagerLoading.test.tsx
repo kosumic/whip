@@ -7,8 +7,8 @@ import { Text } from '../src/components/ui/text';
 import { Input } from '../src/components/ui/input';
 import { RemoteFileContextSheet } from '../src/components/RemoteFileContextSheet';
 import { cacheRemoteFile } from '../src/services/remoteFileTransfer';
-import { remoteDownloads } from '../src/services/remoteDownloads';
-import { projectRemoteDownload as report } from '../test-support/mockRemoteDownloads';
+import { remoteDownloads, type RemoteDownload } from '../src/services/remoteDownloads';
+import { projectRemoteDownload as report, projectRemoteDownloads } from '../test-support/mockRemoteDownloads';
 import { RemoteFileManager } from '../src/components/RemoteFileManager';
 import { EdgeBackGesture } from '../src/components/EdgeBackGesture';
 jest.mock('expo-modules-core', () => ({ requireNativeViewManager: () => 'NativeEdgeBack' }));
@@ -167,6 +167,7 @@ const changes: RuntimeGitStatusEntry[] = [{
 let tree: ReactTestRenderer;
 let mockAppGlassEnabled = false;
 let native: {
+  runtimeId: string;
   status: jest.Mock;
   listDirectory: jest.Mock;
   cachedDirectory: jest.Mock;
@@ -208,6 +209,7 @@ beforeEach(() => {
     setShowHiddenFiles: jest.fn(), selectSortField: jest.fn(),
   });
   native = {
+    runtimeId: 'host',
     status: jest.fn(() => ({ state: 'connected', generation: 1n })),
     listDirectory: jest.fn(async (path: string) => listing(path)),
     cachedDirectory: jest.fn().mockReturnValue(null),
@@ -223,7 +225,7 @@ beforeEach(() => {
     gitDiff: jest.fn().mockResolvedValue({ kind: 'empty', rows: [], additions: 0, deletions: 0, hunkRows: [], truncated: false, revision: 'test' }),
   };
   client = { native, activeNative: native } as unknown as HerdrClient;
-  props = { visible: true, client, hostId: 'host', initialPath: '/repo', onPathChange: jest.fn(), onClose: jest.fn() };
+  props = { visible: true, client, hostId: native.runtimeId, initialPath: '/repo', onPathChange: jest.fn(), onClose: jest.fn() };
 });
 afterEach(() => { act(() => tree?.unmount()); jest.restoreAllMocks(); });
 
@@ -1489,10 +1491,35 @@ it.each(['context', 'preview'] as const)('renders native selection, transfer rat
   expect(tree.root.findAllByProps({ accessibilityRole: 'progressbar' })).toHaveLength(0);
   expect(text()).not.toContain('files.downloadedTitle');
 
-  act(() => { report({ phase: 'completed', bytesTransferred: totalBytes, totalBytes }); });
+  act(() => { report({ phase: 'completed', bytesTransferred: totalBytes, totalBytes,
+    saved: { uri: 'file:///picked/archive.zip', directoryUri: 'file:///picked/', isDirectory: false } }); });
   expect(text()).toContain('128 MB / 128 MB');
-  expect(hasButton('files.openInFileBrowser')).toBe(false);
+  await act(async () => { await button('files.openInFileBrowser').props.onPress(); });
+  expect(remoteDownloads.open).toHaveBeenCalledWith('ui-download');
   expect(button('files.download').props.disabled).toBe(false);
+});
+it.each(['context', 'preview'] as const)('opens the newest completed copy for this host and path from %s', async entryPoint => {
+  const makeDownload = (id: string, createdAt: number, overrides: Partial<RemoteDownload> = {}): RemoteDownload => ({
+    id, hostId: native.runtimeId, remotePath: '/repo/archive.zip', name: 'archive.zip',
+    createdAt, phase: 'completed', bytesTransferred: 100, operation: { executionId: id },
+    saved: { uri: `file:///${id}/archive.zip`, directoryUri: `file:///${id}/`, isDirectory: false },
+    ...overrides,
+  });
+  const newerUnrelated = [
+    makeDownload('other-host', 5, { hostId: 'other' }),
+    makeDownload('other-path', 4, { remotePath: '/other/archive.zip' }),
+    makeDownload('unfinished', 3, { phase: 'downloading', saved: undefined }),
+  ];
+  const olderCopy = makeDownload('older-copy', 1);
+  projectRemoteDownloads([...newerUnrelated, makeDownload('newest-copy', 2), olderCopy]);
+  await openDownloadEntry(entryPoint);
+  await act(async () => { await button('files.openInFileBrowser').props.onPress(); });
+  expect(remoteDownloads.open).toHaveBeenLastCalledWith('newest-copy');
+  act(() => { projectRemoteDownloads([...newerUnrelated, olderCopy]); });
+  await act(async () => { await button('files.openInFileBrowser').props.onPress(); });
+  expect(remoteDownloads.open).toHaveBeenLastCalledWith('older-copy');
+  act(() => { projectRemoteDownloads(newerUnrelated); });
+  expect(hasButton('files.openInFileBrowser')).toBe(false);
 });
 it('shows indeterminate native progress when the total is unknown', async () => {
   await openDownloadEntry('context', true);

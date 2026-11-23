@@ -60,11 +60,12 @@ staging from an uncertain copy is retained while it could still be in use.
 Retries refuse to overwrite existing destination files; inspect the folder or
 choose a new destination after an interrupted save.
 
-More → Downloads retains the #413 UI: newest rows first, speed/ETA, tap a completed
-row to reveal it, swipe to delete, and explicit local-file versus history-only
-removal. No removal calls the remote SSH delete API. Missing files, moved folders,
-revoked SAF grants, and stale iOS bookmarks are surfaced without silently dropping
-history. SAF tree grants and iOS security-scoped access remain platform concerns.
+More → Downloads lists newest rows first with speed and ETA. Tap a completed row
+to reveal its saved destination. Swipe a settled row to remove it from history.
+Use the system file browser to delete the saved copy. The remote file preview and
+context menu offer Open in Files for the newest completed download of that path
+on the current host. Missing files, moved folders, revoked SAF grants, and stale
+iOS bookmarks are surfaced without silently dropping history.
 
 ## Platform execution limits
 

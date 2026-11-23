@@ -7,9 +7,12 @@ import type { RemoteDownloadProgress } from '../src/services/remoteFileTransfer'
 let items: readonly RemoteDownload[] = [];
 const listeners = new Set<() => void>();
 let identity: Pick<RemoteDownload, 'id' | 'hostId' | 'remotePath' | 'name' | 'createdAt' | 'operation'>;
-export function projectRemoteDownload(progress: RemoteDownloadProgress): void {
-  items = [{ ...identity, ...progress }];
+export function projectRemoteDownloads(snapshot: readonly RemoteDownload[]): void {
+  items = snapshot;
   for (const listener of listeners) listener();
+}
+export function projectRemoteDownload(progress: RemoteDownloadProgress & Pick<RemoteDownload, 'saved'>): void {
+  projectRemoteDownloads([{ ...identity, ...progress }]);
 }
 export const remoteDownloads = {
   snapshot: () => items,

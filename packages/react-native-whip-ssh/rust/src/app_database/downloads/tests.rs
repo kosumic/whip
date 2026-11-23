@@ -514,6 +514,28 @@ fn expiry_during_copy_cleans_acknowledged_output_before_allowing_safe_retry() {
 }
 
 #[test]
+fn history_removal_keeps_a_copy_left_by_an_interrupted_cleanup() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut store = store(&directory.path().join("db"));
+    let mut manager = manager();
+    let id = saving(&mut manager, "a");
+    let effect = claim(&mut manager, &id);
+    assert!(
+        manager
+            .apply(Command::RemoveFromHistory { id: id.clone() })
+            .is_err()
+    );
+    manager.apply(Command::Pause { id: id.clone() }).unwrap();
+    complete(&mut manager, &effect);
+    manager.save(&mut store).unwrap();
+    let mut recovered = Manager::load(&store).unwrap();
+    assert_eq!(row(&recovered, &id).phase, Phase::Paused);
+    assert_eq!(row(&recovered, &id).saved, Some(saved()));
+    recovered.apply(Command::RemoveFromHistory { id }).unwrap();
+    assert!(recovered.ledger.jobs.is_empty());
+}
+
+#[test]
 fn legacy_interrupted_rows_can_retry_without_a_native_staging_path() {
     let directory = tempfile::tempdir().unwrap();
     let mut store = store(&directory.path().join("db"));

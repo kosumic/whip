@@ -170,7 +170,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
   const [discardAction, setDiscardAction] = useState<(() => void) | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<FilePreview | null>(null);
-  const download = useRemoteFileDownload(client, `${hostId}:${preview?.path ?? ''}`, visible && preview !== null);
+  const download = useRemoteFileDownload(client, hostId, visible && !preview?.gitStatus ? preview?.path : undefined);
   const actionBusy = otherActionBusy;
   // CodeMirror blurs its own scrolling code, isolated from the app behind it.
   const codeSurfaceVisible = preview?.editing || preview?.kind === 'code';
@@ -850,10 +850,16 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     }
   };
 
-  const downloadPreview = async () => {
-    const current = previewRef.current;
-    if (!current) return;
-    await download.start(current.path);
+  const openSavedDownload = async () => {
+    if (!download.openSaved || actionBusy) return;
+    setActionBusy(true);
+    try {
+      await download.openSaved();
+    } catch (reason) {
+      Alert.alert(t('files.openFailed'), String(reason));
+    } finally {
+      setActionBusy(false);
+    }
   };
 
   const uploadFile = async () => {
@@ -962,7 +968,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
         </View>
       ) : null}
       {contextEntry ? (
-        <RemoteFileContextSheet key={contextEntry.path} entry={contextEntry} client={client} onClose={() => setContextEntry(null)} onBusyChange={setActionBusy} onChanged={() => loadDirectory(pathRef.current, false)} />
+        <RemoteFileContextSheet key={contextEntry.path} entry={contextEntry} client={client} hostId={hostId} onClose={() => setContextEntry(null)} onBusyChange={setActionBusy} onChanged={() => loadDirectory(pathRef.current, false)} />
       ) : null}
       <ConfirmationPopup
         confirmLabel={t('files.discard')}
@@ -1064,15 +1070,20 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                     </Button>
                   ))}
                 {!preview.editing && !preview.gitStatus && (
-                  <Button accessibilityLabel={t('files.download')} className="h-14 w-11 rounded-none px-0" disabled={actionBusy} variant="ghost" onPress={hapticPress(downloadPreview)}>
-                    {actionBusy ? <ActivityIndicator size="small" color={colors.primary} /> : <Download size={18} color={colors.text} />}
+                  <Button accessibilityLabel={t('files.download')} className="h-14 w-11 rounded-none px-0" disabled={actionBusy} variant="ghost" onPress={hapticPress(download.start)}>
+                    <Download size={18} color={colors.text} />
                   </Button>
                 )}
+                {!preview.editing && download.openSaved ? (
+                  <Button accessibilityLabel={t('files.openInFileBrowser')} className="h-14 w-11 rounded-none px-0" disabled={actionBusy} variant="ghost" onPress={hapticPress(openSavedDownload)}>
+                    <FolderOpen size={19} color={colors.text} />
+                  </Button>
+                ) : null}
                 <Button accessibilityLabel={t('files.close')} className="h-14 w-11 rounded-none px-0" disabled={actionBusy} variant="ghost" onPress={() => confirmDiscard(dismissNow)}>
                   <X size={19} color={colors.text} />
                 </Button>
               </View>
-              <RemoteDownloadProgress progress={download.progress} onCancel={download.cancel} onRetry={downloadPreview} />
+              <RemoteDownloadProgress progress={download.progress} onCancel={download.cancel} onRetry={download.start} />
               {visible && preview.gitStatus && gitConnection && gitRepository ? (
                 <RemoteGitRepositorySummary key="preview-summary" connection={gitConnection} root={gitRepository.root} compact onSelectCommit={commit => { void selectGitCommit(commit); }} />
               ) : null}
