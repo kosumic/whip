@@ -25,25 +25,28 @@ function JsonRow({ label, content, color }: { label?: string; content: string; c
   );
 }
 
-function JsonNode({ value, label, root = false, expandChildren = false }: {
+function JsonNode({ value, label, initiallyOpen = false, expandChildren = false }: {
   value: JsonValue;
   label?: string;
-  root?: boolean;
+  initiallyOpen?: boolean;
   expandChildren?: boolean;
 }) {
   const { colors } = useTheme();
   const query = useContext(ChatSearchQuery);
-  const [open, setOpen] = useState(root || expandChildren);
+  const array = Array.isArray(value);
+  const singleItem = array && value.length === 1;
+  const [open, setOpen] = useState(initiallyOpen || singleItem || expandChildren);
   const [limit, setLimit] = useState(JSON_CHILD_PAGE_SIZE);
   const container = value !== null && typeof value === 'object';
-  const array = Array.isArray(value);
   const entries = useMemo(() => {
     if (!container) return [];
-    return array ? value.map((child, index) => [String(index), child] as const) : Object.entries(value);
-  }, [array, container, value]);
-  const matchingEntries = useMemo(() => query ? entries.filter(([key, child]) => (
-    searchTextRanges(`${array ? key : JSON.stringify(key)}: ${JSON.stringify(child, null, 2)}`, query).length > 0
-  )) : entries, [array, entries, query]);
+    if (array) return value.map((child, index) => ({ key: index, label: singleItem ? undefined : String(index), child }));
+    return Object.entries(value).map(([key, child]) => ({ key, label: JSON.stringify(key), child }));
+  }, [array, container, singleItem, value]);
+  const matchingEntries = useMemo(() => query ? entries.filter(entry => {
+    const prefix = entry.label === undefined ? '' : `${entry.label}: `;
+    return searchTextRanges(prefix + JSON.stringify(entry.child, null, 2), query).length > 0;
+  }) : entries, [entries, query]);
   if (!container) {
     const color = typeof value === 'string' ? colors.done
       : typeof value === 'number' ? colors.warning
@@ -53,27 +56,30 @@ function JsonNode({ value, label, root = false, expandChildren = false }: {
   const expanded = open || Boolean(query);
   const opening = array ? '[' : '{';
   const closing = array ? ']' : '}';
-  const entryType = array ? 'items' : 'keys';
-  const summary = entries.length === 0 ? opening + closing
-    : `${opening}…${closing} · ${entries.length} ${entryType}`;
+  if (!entries.length) {
+    return <View className="py-0.5 pl-5"><JsonRow label={label} content={opening + closing} /></View>;
+  }
+  const entryType = array ? 'item' : 'key';
+  const count = `${entries.length} ${entryType}${entries.length === 1 ? '' : 's'}`;
+  const summary = `${opening}…${closing} · ${count}`;
   return (
     <View>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${label ?? 'JSON'}: ${entries.length} ${entryType}`}
+        accessibilityLabel={`${label ?? 'JSON'}: ${count}`}
         accessibilityState={{ expanded }}
-        disabled={entries.length === 0 || Boolean(query)}
+        disabled={Boolean(query)}
         className="min-h-8 flex-row items-center gap-1"
         hitSlop={{ top: 6, bottom: 6 }}
         onPress={() => setOpen(previous => !previous)}
       >
         {expanded ? <ChevronDown size={14} color={colors.textTertiary} /> : <ChevronRight size={14} color={colors.textTertiary} />}
-        <JsonRow label={label} content={expanded && entries.length ? opening : summary} />
+        <JsonRow label={label} content={expanded ? opening : summary} />
       </Pressable>
-      {expanded && entries.length > 0 && (
+      {expanded && (
         <View style={{ paddingLeft: JSON_INDENT }}>
-          {matchingEntries.slice(0, limit).map(([key, child]) => (
-            <JsonNode key={key} label={array ? key : JSON.stringify(key)} value={child} expandChildren={expandChildren} />
+          {matchingEntries.slice(0, limit).map(entry => (
+            <JsonNode key={entry.key} label={entry.label} value={entry.child} initiallyOpen={singleItem} expandChildren={expandChildren} />
           ))}
           {matchingEntries.length > limit && (
             <Pressable accessibilityRole="button" accessibilityLabel="Show more JSON entries" className="min-h-8 justify-center pl-5" onPress={() => setLimit(previous => previous + JSON_CHILD_PAGE_SIZE)}>
@@ -90,5 +96,5 @@ function JsonNode({ value, label, root = false, expandChildren = false }: {
 /** Small results open fully; larger results mount branches and pages on demand. */
 export const JsonOutputViewer = memo(function MemoizedJsonOutputViewer({ value }: { value: JsonValue }) {
   const expandChildren = useMemo(() => isSmallJsonToolOutput(value), [value]);
-  return <JsonNode value={value} root expandChildren={expandChildren} />;
+  return <JsonNode value={value} initiallyOpen expandChildren={expandChildren} />;
 });
