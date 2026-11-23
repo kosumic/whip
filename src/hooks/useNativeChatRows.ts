@@ -9,9 +9,10 @@ import { recordAgentChatDiagnostic } from '../services/agentChatDiagnostics';
  * delivery; stage them until their referenced objects have arrived. */
 export function useNativeChatRows(source: ChatRowsSource | undefined, state: AgentChatState, working: boolean, expanded: ReadonlySet<string>) {
   const transcriptRevision = state.revision;
-  // Tool/meta detail controls stay entirely in React, including their toggles.
+  // Individual tool/meta details stay in React; section toggles change rows.
   const expansionKey = JSON.stringify([...expanded].filter(id => {
-    try { const key: unknown = JSON.parse(id); return Array.isArray(key) && key.length === 2 && key[1] === 'changes'; }
+    try { const key: unknown = JSON.parse(id); return Array.isArray(key)
+      && ((key.length === 2 && key[1] === 'changes') || (key.length === 3 && key[1] === 'tools')); }
     catch { return false; }
   }).sort());
   const [store, setStore] = useState(() => new ChatRowStore());

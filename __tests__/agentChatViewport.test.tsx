@@ -5,6 +5,9 @@ import { JsonOutputViewer } from '../src/components/JsonOutputViewer';
 import { ChatFileDiff } from '../src/components/ChatFileDiff';
 import * as toolOutput from '../src/lib/toolOutput';
 import { Fragment, Profiler, useState, type ReactElement } from 'react';
+import { createInstance } from 'i18next';
+import { I18nextProvider } from 'react-i18next';
+import { en } from '../src/locales/en';
 import Clipboard from '@react-native-clipboard/clipboard';
 import * as Haptics from 'expo-haptics';
 import { ActivityIndicator, Linking } from 'react-native';
@@ -3122,6 +3125,53 @@ test('waits for native rows before mounting FlashList with the restored anchor i
     latestButtonBottom={297} onOpenFile={jest.fn()} savedViewport={savedViewport} />); });
   expect(flatList(renderer).props.initialScrollIndex).toBe(ready.indexOf(anchor.id));
   act(() => renderer.unmount());
+});
+
+test('historical tool groups expose an accessible toggle and preserve individual detail expansion after reopening', () => {
+  const translations = createInstance();
+  void translations.init({ lng: 'en', resources: { en: { translation: en } }, initAsync: false });
+  const state = chatState([SHELL_TURN]);
+  const groupId = JSON.stringify([SHELL_TURN.id, 'tools', 'boundary']);
+  const group: ChatBlock = { type: 'toolGroup', id: groupId, turnId: SHELL_TURN.id,
+    spacing: 'none', count: 2, tools: ['Read', 'Shell'] };
+  jest.mocked(useNativeChatRows).mockImplementation((source, value, working, expanded) => {
+    const store = useMockChatRows(source, value, working, expanded);
+    const tools = store.rows.filter(row => row.type === 'part' && row.partKind === 'tool');
+    store.apply({ baseRevision: store.revision, revision: store.revision + 1, transcriptRevision: 0,
+      patches: [{ type: 'splice', index: 0, deleteCount: store.rows.length,
+        rows: [group, ...(expanded.has(groupId) ? tools : [])] }] });
+    return store;
+  });
+  let renderer!: ReactTestRenderer;
+  let blocks!: ReactTestRenderer;
+  const renderRows = () => <I18nextProvider i18n={translations}>{renderedBlocks(renderer)}</I18nextProvider>;
+  try {
+    act(() => { renderer = create(chatView(state)); });
+    act(() => { blocks = create(renderRows()); });
+    const groupButton = () => blocks.root.find(node => String(node.type) === 'Pressable' && node.props.testID === 'chat-tool-group');
+    const refresh = () => act(() => { blocks.update(renderRows()); });
+    expect(groupButton().props.accessibilityLabel).toBe('2 tools · Read, Shell');
+    expect(groupButton().props.accessibilityState).toEqual({ expanded: false });
+    expect(blocks.root.findAll(isToolToggle)).toHaveLength(0);
+    act(() => { groupButton().props.onPress(); });
+    refresh();
+    expect(groupButton().props.accessibilityState).toEqual({ expanded: true });
+    const tool = blocks.root.findAll(isToolToggle)[0];
+    expect(tool).toBeDefined();
+    act(() => { tool.props.onPress(); });
+    refresh();
+    const choices = jest.mocked(useNativeChatRows).mock.calls.at(-1)![3];
+    expect(choices.has(groupId)).toBe(true);
+    expect(choices.size).toBe(2);
+    act(() => { groupButton().props.onPress(); });
+    refresh();
+    expect(blocks.root.findAll(isToolToggle)).toHaveLength(0);
+    act(() => { groupButton().props.onPress(); });
+    refresh();
+    expect(jest.mocked(useNativeChatRows).mock.calls.at(-1)![3]).toEqual(choices);
+  } finally {
+    act(() => { blocks?.unmount(); renderer?.unmount(); });
+  }
 });
 
 test('retains its native source through a host client gap and clears it for a different binding key', () => {

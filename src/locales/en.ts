@@ -1,4 +1,5 @@
 export const en = {
+  'chat.toolGroup': '{{count}} tools · {{tools}}',
   "browser.searchEngine": "Search engine",
   "browser.searchEngineHelp": "Used for searches from the address bar.",
   "browser.chooseSearchEngine": "Choose search engine",

@@ -11,12 +11,78 @@ use crate::{
     AgentChatRowUpdate,
 };
 use agent_transcript_core::{
-    AgentMessageRole, AgentToolStatus, AgentTranscriptDelta, AgentTranscriptMessage,
-    AgentTranscriptPart, AgentTranscriptState, AgentTranscriptTurn, AgentTranscriptUpdate,
-    AgentTranscriptView, AgentTurnStatus,
+    AgentDiagnosticSeverity, AgentMessageRole, AgentToolStatus, AgentTranscriptDelta,
+    AgentTranscriptMessage, AgentTranscriptPart, AgentTranscriptState, AgentTranscriptTurn,
+    AgentTranscriptUpdate, AgentTranscriptView, AgentTurnStatus, is_question_tool,
 };
 
 const JOURNAL_LIMIT: usize = 128;
+
+/// Only successful, settled activity can be concealed. Questions and errors
+/// retain their original rows even in history.
+pub(crate) fn groupable_tool(part: &AgentTranscriptPart) -> Option<&str> {
+    if let AgentTranscriptPart::Tool { tool, state, .. } = part
+        && state.status == AgentToolStatus::Completed
+        && state.error.as_ref().is_none_or(|error| error.is_empty())
+        && state.exit_code.is_none_or(|code| code == 0)
+        && !state
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.severity == AgentDiagnosticSeverity::Error)
+        && !is_question_tool(tool)
+    {
+        Some(tool)
+    } else {
+        None
+    }
+}
+
+pub(crate) struct ToolGroup {
+    pub id: String,
+    pub start: usize,
+    pub end: usize,
+    pub tools: Vec<String>,
+}
+
+/// Anchor at the following visible boundary, so extending either end of a run
+/// (including history pagination) does not change its identity.
+pub(crate) fn tool_groups<'a>(
+    turn: &str,
+    rows: impl Iterator<Item = (&'a str, Option<&'a str>)>,
+) -> Vec<ToolGroup> {
+    let mut groups = Vec::new();
+    let mut start = None;
+    let mut tools = Vec::new();
+    for (index, (id, tool)) in rows.chain(std::iter::once(("end", None))).enumerate() {
+        if let Some(tool) = tool {
+            start.get_or_insert(index);
+            let tool = tool.rsplit(" · ").next().unwrap_or(tool);
+            let tool = tool.rsplit('.').next().unwrap_or(tool);
+            let tool = match tool.to_ascii_lowercase().as_str() {
+                "bash" | "shell" | "exec_command" | "command" | "terminal" => "Shell",
+                "read" | "read_file" => "Read",
+                "edit" | "patch" | "apply_patch" => "Edit",
+                "write" | "write_file" => "Write",
+                _ => tool,
+            };
+            if !tools.iter().any(|name| name == tool) {
+                tools.push(tool.to_owned());
+            }
+        } else if let Some(start) = start.take() {
+            if index - start < 2 {
+                tools.clear();
+                continue;
+            }
+            groups.push(ToolGroup {
+                id: row_id(&[turn, "tools", id]),
+                start,
+                end: index,
+                tools: std::mem::take(&mut tools),
+            });
+        }
+    }
+    groups
+}
 
 fn row_index(value: usize) -> u32 {
     u32::try_from(value).unwrap_or(u32::MAX)
@@ -79,6 +145,7 @@ struct PartRef {
     id: String,
     index: u32,
     kind: AgentChatPartKind,
+    tool: Option<String>,
 }
 
 #[derive(Debug)]
@@ -109,6 +176,7 @@ impl From<&AgentTranscriptMessage> for MessageRef {
                         id: part.id().to_owned(),
                         index: row_index(index),
                         kind,
+                        tool: groupable_tool(part).map(str::to_owned),
                     })
                 })
                 .collect()
@@ -154,6 +222,9 @@ impl MessageRef {
                 return false;
             }
             if Some(previous.kind) != AgentChatPartKind::of(part) {
+                return false;
+            }
+            if previous.tool.as_deref() != groupable_tool(part) {
                 return false;
             }
         }
@@ -226,10 +297,11 @@ pub struct RowProjection {
     disposed: bool,
     working: bool,
     expanded: HashSet<String>,
+    latest_user: Option<(usize, usize)>,
     messages: HashMap<String, MessageRef>,
     message_order: Vec<String>,
     message_turns: HashMap<String, usize>,
-    changes_turns: HashMap<String, usize>,
+    section_turns: HashMap<String, usize>,
     turns: Vec<TurnRef>,
     journal: VecDeque<AgentChatRowUpdate>,
     #[cfg(test)]
@@ -283,14 +355,20 @@ impl RowProjection {
             .map(|message| message.id.clone())
             .collect();
         self.turns = view.turns.iter().map(TurnRef::from).collect();
+        self.latest_user = self.latest_user_position();
         self.message_turns.clear();
-        self.changes_turns.clear();
+        self.section_turns.clear();
         for index in 0..self.turns.len() {
             self.index_turn(index);
         }
         let mut start = 0;
         for index in 0..self.turns.len() {
             let rows = self.project(index);
+            for row in &rows {
+                if matches!(row.content, AgentChatRowContent::ToolGroup { .. }) {
+                    self.section_turns.insert(row.id.clone(), index);
+                }
+            }
             self.turns[index].start = start;
             start += rows.len();
             self.turns[index].rows = rows;
@@ -372,7 +450,10 @@ impl RowProjection {
             });
         }
         for turn in self.turns.drain(state.turns.len().min(self.turns.len())..) {
-            self.changes_turns.remove(&row_id(&[&turn.id, "changes"]));
+            self.section_turns.remove(&row_id(&[&turn.id, "changes"]));
+            for row in &turn.rows {
+                self.section_turns.remove(&row.id);
+            }
             for id in turn.messages.iter().chain(&turn.assistants) {
                 self.message_turns.remove(id);
             }
@@ -408,6 +489,7 @@ impl RowProjection {
             dirty.extend(old_last);
             dirty.extend(self.turns.len().checked_sub(1));
         }
+        self.refresh_latest_user(&mut dirty);
         self.refresh(dirty, &mut patches);
         self.transcript_revision = revision;
         self.record(patches);
@@ -418,8 +500,35 @@ impl RowProjection {
         for id in turn.messages.iter().chain(&turn.assistants) {
             self.message_turns.insert(id.clone(), index);
         }
-        self.changes_turns
+        self.section_turns
             .insert(row_id(&[&turn.id, "changes"]), index);
+    }
+
+    fn latest_user_position(&self) -> Option<(usize, usize)> {
+        self.turns
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(index, turn)| {
+                turn.messages
+                    .iter()
+                    .rposition(|id| {
+                        self.messages
+                            .get(id)
+                            .is_some_and(|message| message.role == AgentMessageRole::User)
+                    })
+                    .map(|message| (index, message))
+            })
+    }
+
+    fn refresh_latest_user(&mut self, dirty: &mut BTreeSet<usize>) {
+        let latest = self.latest_user_position();
+        if latest != self.latest_user {
+            let before = self.latest_user.map_or(0, |(index, _)| index);
+            let after = latest.map_or(0, |(index, _)| index);
+            dirty.extend(before.min(after)..=before.max(after));
+            self.latest_user = latest;
+        }
     }
 
     fn project(&mut self, index: usize) -> Vec<AgentChatRow> {
@@ -429,6 +538,7 @@ impl RowProjection {
         }
         let turn = &self.turns[index];
         let mut rows = Vec::new();
+        let mut eligible_tools = HashMap::new();
         let mut push = |id, content| {
             let spacing = if rows.is_empty() {
                 if index == 0 {
@@ -451,7 +561,7 @@ impl RowProjection {
                 content,
             });
         };
-        for id in &turn.messages {
+        for (message_index, id) in turn.messages.iter().enumerate() {
             let Some(message) = self.messages.get(id) else {
                 continue;
             };
@@ -466,8 +576,16 @@ impl RowProjection {
                 let mut occurrences = HashMap::<&str, usize>::new();
                 for (part_index, part) in message.parts.iter().enumerate() {
                     let occurrence = occurrences.entry(&part.id).or_default();
+                    let row_id = part_row_id(&turn.id, id, &part.id, *occurrence);
+                    if self
+                        .latest_user
+                        .is_some_and(|latest| (index, message_index) < latest)
+                        && let Some(tool) = &part.tool
+                    {
+                        eligible_tools.insert(row_id.clone(), tool.as_str());
+                    }
                     push(
-                        part_row_id(&turn.id, id, &part.id, *occurrence),
+                        row_id,
                         AgentChatRowContent::Part {
                             message_id: id.clone(),
                             part_id: part.id.clone(),
@@ -533,7 +651,40 @@ impl RowProjection {
         {
             *streaming = true;
         }
-        rows
+        let groups = tool_groups(
+            &turn.id,
+            rows.iter()
+                .map(|row| (row.id.as_str(), eligible_tools.get(&row.id).copied())),
+        );
+        if groups.is_empty() {
+            return rows;
+        }
+        let mut projected = Vec::new();
+        let mut source = rows.into_iter().enumerate().peekable();
+        for group in groups {
+            while source.peek().is_some_and(|(index, _)| *index < group.start) {
+                projected.push(source.next().unwrap().1);
+            }
+            let expanded = self.expanded.contains(&group.id);
+            projected.push(AgentChatRow {
+                id: group.id,
+                turn_id: turn.id.clone(),
+                spacing: source.peek().unwrap().1.spacing,
+                content: AgentChatRowContent::ToolGroup {
+                    count: row_index(group.end - group.start),
+                    tools: group.tools,
+                },
+            });
+            while source.peek().is_some_and(|(index, _)| *index < group.end) {
+                let mut row = source.next().unwrap().1;
+                if expanded {
+                    row.spacing = AgentChatRowSpacing::Part;
+                    projected.push(row);
+                }
+            }
+        }
+        projected.extend(source.map(|(_, row)| row));
+        projected
     }
 
     /// Apply a borrowed canonical event; stale events are ignored and gaps require reset.
@@ -637,7 +788,7 @@ impl RowProjection {
                         for id in old.messages.iter().chain(&old.assistants) {
                             self.message_turns.remove(id);
                         }
-                        self.changes_turns.remove(&row_id(&[&old.id, "changes"]));
+                        self.section_turns.remove(&row_id(&[&old.id, "changes"]));
                         next.start = old.start;
                         next.rows = std::mem::take(&mut old.rows);
                         *old = next;
@@ -663,7 +814,10 @@ impl RowProjection {
                         });
                     }
                     for turn in self.turns.drain(length..) {
-                        self.changes_turns.remove(&row_id(&[&turn.id, "changes"]));
+                        self.section_turns.remove(&row_id(&[&turn.id, "changes"]));
+                        for row in &turn.rows {
+                            self.section_turns.remove(&row.id);
+                        }
                         for id in turn.messages.iter().chain(&turn.assistants) {
                             self.message_turns.remove(id);
                         }
@@ -676,6 +830,7 @@ impl RowProjection {
             dirty.extend(old_last);
             dirty.extend(self.turns.len().checked_sub(1));
         }
+        self.refresh_latest_user(&mut dirty);
         self.refresh(dirty, &mut patches);
         self.transcript_revision = update.revision;
         self.record(patches);
@@ -687,6 +842,16 @@ impl RowProjection {
                 continue;
             }
             let rows = self.project(index);
+            for row in &self.turns[index].rows {
+                if matches!(row.content, AgentChatRowContent::ToolGroup { .. }) {
+                    self.section_turns.remove(&row.id);
+                }
+            }
+            for row in &rows {
+                if matches!(row.content, AgentChatRowContent::ToolGroup { .. }) {
+                    self.section_turns.insert(row.id.clone(), index);
+                }
+            }
             let turn = &mut self.turns[index];
             let before = &turn.rows;
             let prefix = before.iter().zip(&rows).take_while(|(a, b)| a == b).count();
@@ -745,7 +910,7 @@ impl RowProjection {
         let mut dirty: BTreeSet<_> = self
             .expanded
             .symmetric_difference(&expanded)
-            .filter_map(|id| self.changes_turns.get(id).copied())
+            .filter_map(|id| self.section_turns.get(id).copied())
             .collect();
         if self.working != working {
             dirty.extend(self.turns.len().checked_sub(1));

@@ -62,6 +62,21 @@ test('rejects gaps and malformed batches atomically and accepts authoritative re
   expect(store.rows).toHaveLength(2);
 });
 
+test('group summaries retain identity across resets and refresh when counts or tool labels change', () => {
+  const store = new ChatRowStore();
+  const group: ChatRow = { type: 'toolGroup', id: JSON.stringify(['t0', 'tools', 'boundary']), turnId: 't0', spacing: 'none', count: 2, tools: ['Read'] };
+  store.apply(snapshot([group]));
+  expect(resolveChatRow(group, state)).toMatchObject({ type: 'toolGroup', count: 2, tools: ['Read'] });
+  store.apply(update(1, [{ type: 'reset', rows: [{ ...group, tools: ['Read'] }] }]));
+  expect(store.rows[0]).toBe(group);
+  store.apply(update(2, [{ type: 'splice', index: 0, deleteCount: 1, rows: [{ ...group, count: 3 }] }]));
+  expect(store.rows[0]).not.toBe(group);
+  expect(store.indexOf(group.id)).toBe(0);
+  expect(resolveChatRow(store.rows[0], state)).toMatchObject({ count: 3 });
+  store.apply(update(3, [{ type: 'splice', index: 0, deleteCount: 1, rows: [{ ...group, tools: ['Shell'] }] }]));
+  expect(resolveChatRow(store.rows[0], state)).toMatchObject({ tools: ['Shell'] });
+});
+
 test('lazy reference lookup follows text updates without any row patches or turn reconstruction', () => {
   const descriptor = row(0);
   const first = resolveChatRow(descriptor, state);
@@ -128,6 +143,16 @@ describe('viewport owner integration', () => {
     const section = JSON.stringify(['t0', 'changes']);
     await act(async () => { renderer = create(<Probe expanded={new Set([section, 'tool'])} />); });
     expect(mockPoll).toHaveBeenLastCalledWith(0, 0, false, [section]);
+    mockPoll.mockResolvedValue(update(1));
+    await act(async () => { renderer.update(<Probe expanded={EMPTY} />); });
+    expect(mockPoll).toHaveBeenLastCalledWith(1, 0, false, []);
+  });
+  test('restores and forwards group expansion while individual tool detail toggles remain local', async () => {
+    const group = JSON.stringify(['t0', 'tools', 'boundary']);
+    await act(async () => { renderer = create(<Probe expanded={new Set([group, 'tool-detail'])} />); });
+    expect(mockPoll).toHaveBeenLastCalledWith(0, 0, false, [group]);
+    await act(async () => { renderer.update(<Probe expanded={new Set([group])} />); });
+    expect(mockPoll).toHaveBeenCalledTimes(1);
     mockPoll.mockResolvedValue(update(1));
     await act(async () => { renderer.update(<Probe expanded={EMPTY} />); });
     expect(mockPoll).toHaveBeenLastCalledWith(1, 0, false, []);

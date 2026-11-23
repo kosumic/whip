@@ -46,6 +46,10 @@ macro_rules! view_type_schema {
                     index: u32,
                 },
                 Meta,
+                ToolGroup {
+                    count: u32,
+                    tools: Vec<String>,
+                },
             }
         );
         $apply!(

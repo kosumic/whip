@@ -1,4 +1,5 @@
 export const ja = {
+  'chat.toolGroup': '{{count}} 件のツール · {{tools}}',
   "browser.searchEngine": "検索エンジン",
   "browser.searchEngineHelp": "アドレスバーからの検索に使用します。",
   "browser.chooseSearchEngine": "検索エンジンを選択",

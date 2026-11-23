@@ -1,4 +1,5 @@
 export const es = {
+  'chat.toolGroup': '{{count}} herramientas · {{tools}}',
   "browser.searchEngine": "Motor de búsqueda",
   "browser.searchEngineHelp": "Se usa para las búsquedas desde la barra de direcciones.",
   "browser.chooseSearchEngine": "Elegir motor de búsqueda",

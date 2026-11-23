@@ -70,6 +70,401 @@ fn rows_for_empty(state: &AgentTranscriptState) -> Vec<AgentChatRow> {
     rows(state, true)
 }
 
+fn next_prompt(state: &mut AgentTranscriptState) {
+    let index = state.turns.len();
+    let id = format!("u{index}");
+    state
+        .messages
+        .push(message(&id, "User", json!([text("prompt", "Next")])));
+    let mut turn = state.turns[0].clone();
+    turn.id = format!("t{index}");
+    turn.user_message_id = Some(id.clone());
+    turn.assistant_message_ids.clear();
+    turn.message_ids = vec![id];
+    turn.diffs.clear();
+    state.turns.push(turn);
+}
+
+fn group_ids(rows: &[AgentChatRow]) -> Vec<String> {
+    rows.iter()
+        .filter(|row| matches!(row.content, AgentChatRowContent::ToolGroup { .. }))
+        .map(|row| row.id.clone())
+        .collect()
+}
+
+#[test]
+fn latest_turn_has_no_groups_even_when_idle_and_only_new_user_prompts_collapse_history() {
+    let mut state = fixture(1);
+    state.messages[0] = message(
+        "m0",
+        "Assistant",
+        json!([
+            tool("read", "Read", "Completed"),
+            tool("shell", "functions.exec_command", "Completed")
+        ]),
+    );
+    for working in [true, false] {
+        assert!(group_ids(&rows(&state, working)).is_empty());
+        assert_eq!(rows(&state, working).len(), 3);
+    }
+    // A provider can append an assistant-only turn. It is not a new user turn.
+    let mut assistant = state.turns[0].clone();
+    assistant.id = "assistant-only".into();
+    assistant.message_ids.clear();
+    assistant.assistant_message_ids.clear();
+    state.turns.push(assistant);
+    assert!(group_ids(&rows(&state, false)).is_empty());
+    let mut projection = RowProjection::default();
+    projection.restore(&state);
+    let initial = projection.poll(0, false, vec![]);
+    let mut client = Vec::new();
+    apply(&mut client, &initial);
+    next_prompt(&mut state);
+    projection.accept(&AgentTranscriptUpdate {
+        revision: 1,
+        deltas: vec![
+            AgentTranscriptDelta::MessageUpserted {
+                index: 1,
+                message: state.messages[1].clone(),
+            },
+            AgentTranscriptDelta::TurnUpserted {
+                index: 2,
+                turn: state.turns[2].clone(),
+            },
+        ],
+    });
+    let collapsed = projection.poll(initial.revision, false, vec![]);
+    assert!(
+        collapsed
+            .patches
+            .iter()
+            .all(|patch| matches!(patch, AgentChatRowPatch::Splice { .. }))
+    );
+    apply(&mut client, &collapsed);
+    assert_eq!(group_ids(&client).len(), 1);
+    assert!(
+        matches!(&client[0].content, AgentChatRowContent::ToolGroup { count: 2, tools }
+        if tools == &["Read", "Shell"])
+    );
+    assert_eq!(client, rows(&state, false));
+}
+
+#[test]
+fn groups_respect_visible_boundaries_and_expansion_restores_original_rows_for_all_agents() {
+    for agent in [
+        AgentTranscriptKind::Codex,
+        AgentTranscriptKind::Claude,
+        AgentTranscriptKind::Pi,
+        AgentTranscriptKind::OpenCode,
+    ] {
+        let mut state = fixture(1);
+        state.agent = agent;
+        state.messages[0] = message(
+            "m0",
+            "Assistant",
+            json!([
+                tool("same", "Read", "Completed"), tool("same", "Bash", "Completed"),
+                text("boundary", "Visible explanation"),
+                tool("edit", "Edit", "Completed"),
+                { "Notice": { "id": "notice", "text": "Confirm", "level": "Warning" } },
+                tool("tail", "Read", "Completed")
+            ]),
+        );
+        // Consecutive tools can span assistant messages in the same turn.
+        state.messages.push(message(
+            "more",
+            "Assistant",
+            json!([tool("last", "Read", "Completed")]),
+        ));
+        state.turns[0].assistant_message_ids.push("more".into());
+        let original = rows(&state, false);
+        next_prompt(&mut state);
+        let mut projection = RowProjection::default();
+        projection.restore(&state);
+        let initial = projection.poll(0, false, vec![]);
+        let mut client = Vec::new();
+        apply(&mut client, &initial);
+        let groups = group_ids(&client);
+        assert_eq!(groups.len(), 2);
+        let expanded = projection.poll(initial.revision, false, groups.clone());
+        apply(&mut client, &expanded);
+        assert_eq!(group_ids(&client), groups);
+        let revealed: Vec<_> = client
+            .iter()
+            .filter(|row| {
+                row.turn_id == "t0" && !matches!(row.content, AgentChatRowContent::ToolGroup { .. })
+            })
+            .collect();
+        assert_eq!(
+            revealed.iter().map(|row| &row.id).collect::<Vec<_>>(),
+            original.iter().map(|row| &row.id).collect::<Vec<_>>()
+        );
+        for (revealed, original) in revealed.iter().zip(&original) {
+            assert_eq!(revealed.content, original.content);
+        }
+        let collapsed = projection.poll(expanded.revision, false, vec![]);
+        apply(&mut client, &collapsed);
+        assert_eq!(client, rows(&state, false));
+    }
+}
+
+#[test]
+fn actionable_tools_and_all_failure_signals_remain_visible_in_history() {
+    let mut state = fixture(1);
+    let mut exit = tool("exit", "shell", "Completed");
+    exit["Tool"]["state"]["exit_code"] = json!(1);
+    let mut error = tool("error", "Read", "Completed");
+    error["Tool"]["state"]["error"] = json!("Denied");
+    let mut diagnostic = tool("diagnostic", "Edit", "Completed");
+    diagnostic["Tool"]["state"]["diagnostics"] =
+        json!([{ "file": "main.rs", "message": "Invalid", "severity": "Error" }]);
+    state.messages[0] = message(
+        "m0",
+        "Assistant",
+        json!([
+            tool("ok", "Read", "Completed"),
+            tool("pending", "approval", "Pending"),
+            tool("running", "shell", "Running"),
+            tool("failed", "shell", "Error"),
+            tool("question", "functions.request_user_input", "Completed"),
+            exit,
+            error,
+            diagnostic,
+            tool("last", "Edit", "Completed")
+        ]),
+    );
+    state.messages[0].error = Some("Message error".into());
+    next_prompt(&mut state);
+    let projected = rows(&state, false);
+    let visible: Vec<_> = projected
+        .iter()
+        .filter_map(|row| match &row.content {
+            AgentChatRowContent::Part { part_id, .. } => Some(part_id.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        visible,
+        [
+            "ok",
+            "pending",
+            "running",
+            "failed",
+            "question",
+            "exit",
+            "error",
+            "diagnostic",
+            "last"
+        ]
+    );
+    assert!(
+        projected
+            .iter()
+            .any(|row| matches!(row.content, AgentChatRowContent::Error { .. }))
+    );
+    assert!(group_ids(&projected).is_empty());
+}
+
+#[test]
+fn historical_live_status_changes_reveal_errors_and_group_successful_completions() {
+    let mut state = fixture(1);
+    state.messages[0] = message(
+        "m0",
+        "Assistant",
+        json!([
+            tool("tool", "shell", "Running"),
+            tool("settled", "Read", "Completed")
+        ]),
+    );
+    next_prompt(&mut state);
+    let mut projection = RowProjection::default();
+    projection.restore(&state);
+    let mut client = Vec::new();
+    let first = projection.poll(0, false, vec![]);
+    apply(&mut client, &first);
+    let mut after = first.revision;
+    for (revision, status) in [
+        (1, "Completed"),
+        (2, "Error"),
+        (3, "Running"),
+        (4, "Completed"),
+    ] {
+        state.messages[0].parts[0] = serde_json::from_value(tool("tool", "shell", status)).unwrap();
+        projection.accept(&AgentTranscriptUpdate {
+            revision,
+            deltas: vec![AgentTranscriptDelta::MessageUpserted {
+                index: 0,
+                message: state.messages[0].clone(),
+            }],
+        });
+        let update = projection.poll(after, false, vec![]);
+        apply(&mut client, &update);
+        assert_eq!(client, rows(&state, false));
+        assert_eq!(group_ids(&client).len(), usize::from(status == "Completed"));
+        after = update.revision;
+    }
+}
+
+#[test]
+fn pagination_and_live_extensions_preserve_group_identity_expansion_and_search_reveal() {
+    let mut state = fixture(1);
+    state.messages[0] = message(
+        "m0",
+        "Assistant",
+        json!([
+            tool("retained", "Read", "Completed"),
+            tool("second", "Read", "Completed")
+        ]),
+    );
+    next_prompt(&mut state);
+    let mut projection = RowProjection::default();
+    projection.restore(&state);
+    let first = projection.poll(0, false, vec![]);
+    let group = group_ids(&projection.snapshot())[0].clone();
+    let expanded = projection.poll(first.revision, false, vec![group.clone()]);
+    state.messages[0].parts.insert(
+        0,
+        serde_json::from_value(tool("older", "Bash", "Completed")).unwrap(),
+    );
+    state.messages[0]
+        .parts
+        .push(serde_json::from_value(tool("newer", "Edit", "Completed")).unwrap());
+    // An authoritative history reload can also prepend whole turns.
+    let mut older = fixture(1);
+    older.turns[0].id = "older-turn".into();
+    older.turns[0].assistant_message_ids = vec!["older-message".into()];
+    older.messages[0].id = "older-message".into();
+    state.turns.insert(0, older.turns.remove(0));
+    state.messages.insert(0, older.messages.remove(0));
+    projection.reconcile_reset(&state, 1);
+    let mut client = Vec::new();
+    let restored = projection.poll(expanded.revision, false, vec![group.clone()]);
+    apply(&mut client, &restored);
+    assert_eq!(group_ids(&client), std::slice::from_ref(&group));
+    assert!(
+        client
+            .iter()
+            .any(|row| row.id == part_row_id("t0", "m0", "retained", 0))
+    );
+    assert!(
+        client
+            .iter()
+            .any(|row| row.id == part_row_id("t0", "m0", "older", 0))
+    );
+    let docs = crate::search::transcript::documents(&state);
+    let retained = docs
+        .iter()
+        .find(|doc| doc.id == part_row_id("t0", "m0", "retained", 0))
+        .unwrap();
+    assert_eq!(retained.reveal, [group, retained.id.clone()]);
+}
+
+#[test]
+fn a_new_prompt_within_an_ordered_turn_collapses_only_earlier_tools() {
+    let mut state = fixture(1);
+    state.messages[0] = message(
+        "m0",
+        "Assistant",
+        json!([
+            tool("older", "Read", "Completed"),
+            tool("earlier", "Read", "Completed")
+        ]),
+    );
+    state
+        .messages
+        .push(message("user", "User", json!([text("prompt", "Next")])));
+    state.messages.push(message(
+        "new",
+        "Assistant",
+        json!([
+            tool("current", "Bash", "Completed"),
+            tool("current2", "Read", "Completed")
+        ]),
+    ));
+    state.turns[0].message_ids = vec!["m0".into(), "user".into(), "new".into()];
+    state.turns[0].assistant_message_ids.push("new".into());
+    let projected = rows(&state, false);
+    assert_eq!(group_ids(&projected).len(), 1);
+    assert!(
+        !projected
+            .iter()
+            .any(|row| row.id == part_row_id("t0", "m0", "older", 0))
+    );
+    assert!(
+        projected
+            .iter()
+            .any(|row| row.id == part_row_id("t0", "new", "current", 0))
+    );
+    assert!(
+        projected
+            .iter()
+            .any(|row| row.id == part_row_id("t0", "new", "current2", 0))
+    );
+}
+
+#[test]
+fn isolated_historical_tools_never_get_a_group_header_or_search_parent() {
+    let mut state = fixture(1);
+    state.messages[0] = message(
+        "m0",
+        "Assistant",
+        json!([
+            tool("read", "Read", "Completed"),
+            text("text", "Explanation"),
+            tool("shell", "Bash", "Completed")
+        ]),
+    );
+    let original = rows(&state, false);
+    next_prompt(&mut state);
+    let historical = rows(&state, false);
+    assert!(group_ids(&historical).is_empty());
+    assert_eq!(&historical[..original.len()], original.as_slice());
+    for doc in crate::search::transcript::documents(&state) {
+        assert_eq!(doc.reveal, [doc.id]);
+    }
+}
+
+#[test]
+fn long_history_expands_as_virtualized_sibling_rows_and_retains_choices_on_live_updates() {
+    let mut state = fixture(1);
+    state.messages[0] = message(
+        "m0",
+        "Assistant",
+        json!(
+            (0..500)
+                .map(|index| tool(&index.to_string(), "Read", "Completed"))
+                .collect::<Vec<_>>()
+        ),
+    );
+    next_prompt(&mut state);
+    let mut projection = RowProjection::default();
+    projection.restore(&state);
+    let initial = projection.poll(0, false, vec![]);
+    assert_eq!(projection.snapshot().len(), 4);
+    let group = group_ids(&projection.snapshot())[0].clone();
+    let expanded = projection.poll(initial.revision, false, vec![group.clone()]);
+    assert_eq!(projection.snapshot().len(), 504);
+    state.messages[0]
+        .parts
+        .push(serde_json::from_value(tool("extra", "Edit", "Completed")).unwrap());
+    projection.accept(&AgentTranscriptUpdate {
+        revision: 1,
+        deltas: vec![AgentTranscriptDelta::MessageUpserted {
+            index: 0,
+            message: state.messages[0].clone(),
+        }],
+    });
+    let update = projection.poll(expanded.revision, false, vec![group.clone()]);
+    assert_eq!(projection.snapshot().len(), 505);
+    assert_eq!(group_ids(&projection.snapshot()), [group]);
+    assert!(
+        update
+            .patches
+            .iter()
+            .all(|patch| matches!(patch, AgentChatRowPatch::Splice { .. }))
+    );
+}
+
 #[test]
 fn long_turn_keeps_five_hundred_tools_in_order_for_every_provider() {
     for (agent, names) in [

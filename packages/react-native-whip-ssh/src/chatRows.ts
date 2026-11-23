@@ -9,7 +9,8 @@ type Content =
   | { type: 'user' | 'error'; messageId: string }
   | { type: 'part'; messageId: string; partId: string; partIndex: number; partKind: 'text' | 'reasoning' | 'tool' | 'plan' | 'notice'; first: boolean; streaming: boolean }
   | { type: 'changes' | 'meta' }
-  | { type: 'diff'; diffIndex: number };
+  | { type: 'diff'; diffIndex: number }
+  | { type: 'toolGroup'; count: number; tools: string[] };
 export type ChatRow = Content & { id: string; turnId: string; spacing: 'none' | 'turn' | 'part' };
 export type ChatRowPatch = { type: 'reset'; rows: ChatRow[] }
   | { type: 'splice'; index: number; deleteCount: number; rows: ChatRow[] };
@@ -42,6 +43,7 @@ function row(value: AgentChatRow): ChatRow {
     case AgentChatRowContent_Tags.Changes: return { ...base, type: 'changes' };
     case AgentChatRowContent_Tags.Diff: return { ...base, type: 'diff', diffIndex: content.inner.index };
     case AgentChatRowContent_Tags.Meta: return { ...base, type: 'meta' };
+    case AgentChatRowContent_Tags.ToolGroup: return { ...base, type: 'toolGroup', ...content.inner };
   }
 }
 

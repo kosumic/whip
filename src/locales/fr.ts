@@ -1,6 +1,7 @@
 import type { en } from './en';
 
 export const fr = {
+  'chat.toolGroup': '{{count}} outils · {{tools}}',
   "browser.searchEngine": "Moteur de recherche",
   "browser.searchEngineHelp": "Utilisé pour les recherches depuis la barre d’adresse.",
   "browser.chooseSearchEngine": "Choisir le moteur de recherche",

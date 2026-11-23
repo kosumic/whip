@@ -5605,6 +5605,7 @@ export enum AgentChatRowContent_Tags {
   Changes = 'Changes',
   Diff = 'Diff',
   Meta = 'Meta',
+  ToolGroup = 'ToolGroup',
 }
 export const AgentChatRowContent = (() => {
   type User__interface = {
@@ -5785,6 +5786,32 @@ export const AgentChatRowContent = (() => {
     }
   }
 
+  type ToolGroup__interface = {
+    tag: AgentChatRowContent_Tags.ToolGroup;
+    inner: Readonly<{ count: number; tools: Array<string> }>;
+  };
+  class ToolGroup_ extends UniffiEnum implements ToolGroup__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'AgentChatRowContent';
+    readonly tag = AgentChatRowContent_Tags.ToolGroup;
+    readonly inner: Readonly<{ count: number; tools: Array<string> }>;
+    constructor(inner: { count: number; tools: Array<string> }) {
+      super('AgentChatRowContent', 'ToolGroup');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { count: number; tools: Array<string> }): ToolGroup_ {
+      return new ToolGroup_(inner);
+    }
+
+    static instanceOf(obj: any): obj is ToolGroup_ {
+      return obj.tag === AgentChatRowContent_Tags.ToolGroup;
+    }
+  }
+
   function instanceOf(obj: any): obj is AgentChatRowContent {
     return obj[uniffiTypeNameSymbol] === 'AgentChatRowContent';
   }
@@ -5797,11 +5824,12 @@ export const AgentChatRowContent = (() => {
     Changes: Changes_,
     Diff: Diff_,
     Meta: Meta_,
+    ToolGroup: ToolGroup_,
   });
 })();
 export type AgentChatRowContent = InstanceType<
   (typeof AgentChatRowContent)[
-    'User' | 'Part' | 'Error' | 'Changes' | 'Diff' | 'Meta']
+    'User' | 'Part' | 'Error' | 'Changes' | 'Diff' | 'Meta' | 'ToolGroup']
 >;
 
 // FfiConverter for enum AgentChatRowContent
@@ -5836,6 +5864,11 @@ const FfiConverterTypeAgentChatRowContent = (() => {
           });
         case 6:
           return new AgentChatRowContent.Meta();
+        case 7:
+          return new AgentChatRowContent.ToolGroup({
+            count: FfiConverterUInt32.read(from),
+            tools: FfiConverterSequenceString.read(from),
+          });
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
       }
@@ -5879,6 +5912,13 @@ const FfiConverterTypeAgentChatRowContent = (() => {
           ordinalConverter.write(6, into);
           return;
         }
+        case AgentChatRowContent_Tags.ToolGroup: {
+          ordinalConverter.write(7, into);
+          const inner = value.inner;
+          FfiConverterUInt32.write(inner.count, into);
+          FfiConverterSequenceString.write(inner.tools, into);
+          return;
+        }
         default:
           // Throwing from here means that AgentChatRowContent_Tags hasn't matched an ordinal.
           throw new UniffiInternalError.UnexpectedEnumCase();
@@ -5920,6 +5960,13 @@ const FfiConverterTypeAgentChatRowContent = (() => {
         }
         case AgentChatRowContent_Tags.Meta: {
           return ordinalConverter.allocationSize(6);
+        }
+        case AgentChatRowContent_Tags.ToolGroup: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(7);
+          size += FfiConverterUInt32.allocationSize(inner.count);
+          size += FfiConverterSequenceString.allocationSize(inner.tools);
+          return size;
         }
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();

@@ -1,4 +1,5 @@
 export const zhHans = {
+  'chat.toolGroup': '{{count}} 个工具 · {{tools}}',
   "browser.searchEngine": "搜索引擎",
   "browser.searchEngineHelp": "用于地址栏搜索。",
   "browser.chooseSearchEngine": "选择搜索引擎",

@@ -1,4 +1,5 @@
 export const zhHant: Record<string, string> = {
+  'chat.toolGroup': '{{count}} 個工具 · {{tools}}',
   "browser.searchEngine": "搜尋引擎",
   "browser.searchEngineHelp": "用於網址列搜尋。",
   "browser.chooseSearchEngine": "選擇搜尋引擎",

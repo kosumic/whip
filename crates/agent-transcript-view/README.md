@@ -16,17 +16,26 @@ The caller owns the canonical `agent_transcript_core::AgentTranscriptState` and
 its updates. `RowProjection::restore` borrows that state; `restore_view` accepts
 its borrowed view, avoiding any full-history clone. `accept` borrows existing
 `AgentTranscriptUpdate` events. The projection retains only IDs, flags, turn
-membership, filenames, and row descriptors, never message/tool/diff contents.
+membership, filenames, tool-type labels, and row descriptors, never message/tool/diff contents.
 Resolve row references against the caller's canonical state when rendering.
 
 `poll(after, working, expanded)` returns typed reset/splice patches. Row and
-transcript revisions are distinct: ordinary streamed text and tool completion
-are row no-ops. There is one polling consumer per projection. Delivered entries
+transcript revisions are distinct: ordinary streamed text and current-turn tool
+completion are row no-ops. There is one polling consumer per projection. Delivered entries
 are released; the revision journal holds at most 128 entries. Journal exhaustion
 or a retry after delivery returns a reset. Stale updates are ignored; a canonical
 revision gap sets `needs_reset()`. The caller must then supply its authoritative
 snapshot. Lifecycle/epoch validation belongs to the caller. `dispose` clears
 metadata and stops accepting events; create a new projection to reopen.
+
+The latest user turn keeps individual tool rows, even after the assistant becomes
+idle. Once a newer user prompt begins, runs of at least two consecutive successful
+tools in earlier turns become collapsed `ToolGroup` rows. Visible text, notices,
+questions, pending/running tools, and failures remain boundaries and retain their
+original rows. Expanded groups insert the original descriptors as list siblings;
+include the group ID in `expanded` to reveal them. IDs use the following visible
+boundary, preserving expansion when history extends either end of a run. Search
+reveal paths include the group ID and the original tool row ID.
 
 `SearchState::restore` derives an index from a borrowed canonical state. Search
 retains searchable text and its lowercase index, as the original Whip search

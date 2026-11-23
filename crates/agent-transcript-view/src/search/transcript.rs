@@ -8,7 +8,7 @@ use agent_transcript_core::{
 };
 
 use super::ChatSearchDocument;
-use crate::rows::{part_row_id, renderable, row_id};
+use crate::rows::{groupable_tool, part_row_id, renderable, row_id, tool_groups};
 
 #[derive(Default)]
 struct Text(String);
@@ -139,6 +139,7 @@ pub fn documents_with_user_text(
         .map(|message| (message.id.as_str(), message))
         .collect();
     let mut documents = Vec::new();
+    let mut tool_parents = HashMap::new();
     let mut push = |id: String, text: String, parent: Option<String>| {
         if !text.is_empty() {
             let mut reveal: Vec<_> = parent.into_iter().collect();
@@ -147,6 +148,7 @@ pub fn documents_with_user_text(
         }
     };
     for turn in &state.turns {
+        let mut activities = Vec::new();
         let ids: Vec<_> = if turn.message_ids.is_empty() {
             turn.user_message_id
                 .iter()
@@ -171,17 +173,17 @@ pub fn documents_with_user_text(
                         _ => (),
                     }
                 }
-                push(row_id(&[&turn.id, "user", &message.id]), text.0, None);
+                let id = row_id(&[&turn.id, "user", &message.id]);
+                activities.push((id.clone(), None));
+                push(id, text.0, None);
             } else {
                 let mut occurrences = HashMap::<&str, usize>::new();
                 for part in &message.parts {
                     if let Some((id, text)) = part_text(part) {
                         let occurrence = occurrences.entry(id).or_default();
-                        push(
-                            part_row_id(&turn.id, &message.id, id, *occurrence),
-                            text,
-                            None,
-                        );
+                        let id = part_row_id(&turn.id, &message.id, id, *occurrence);
+                        activities.push((id.clone(), groupable_tool(part)));
+                        push(id, text, None);
                         *occurrence += 1;
                     }
                 }
@@ -193,11 +195,26 @@ pub fn documents_with_user_text(
             .filter_map(|id| messages.get(id.as_str()))
         {
             if let Some(error) = &message.error {
+                if !error.is_empty() {
+                    activities.push((row_id(&[&turn.id, "error", &message.id]), None));
+                }
                 push(
                     row_id(&[&turn.id, "error", &message.id]),
                     error.clone(),
                     None,
                 );
+            }
+        }
+        if !turn.diffs.is_empty() {
+            activities.push((row_id(&[&turn.id, "changes"]), None));
+        }
+        activities.push((row_id(&[&turn.id, "meta"]), None));
+        for group in tool_groups(
+            &turn.id,
+            activities.iter().map(|(id, tool)| (id.as_str(), *tool)),
+        ) {
+            for (id, _) in &activities[group.start..group.end] {
+                tool_parents.insert(id.clone(), group.id.clone());
             }
         }
         for (index, file) in turn.diffs.iter().enumerate() {
@@ -208,6 +225,11 @@ pub fn documents_with_user_text(
                 text.0,
                 Some(row_id(&[&turn.id, "changes"])),
             );
+        }
+    }
+    for document in &mut documents {
+        if let Some(parent) = tool_parents.get(&document.id) {
+            document.reveal.insert(0, parent.clone());
         }
     }
     documents

@@ -8,7 +8,8 @@ type Content =
   | { type: 'part'; part: TranscriptPart; streaming: boolean; messageId: string; message?: TranscriptMessage }
   | { type: 'error'; error: string }
   | { type: 'changes' | 'meta'; turn: TranscriptTurn }
-  | { type: 'diff'; file: TranscriptTurn['diffs'][number] };
+  | { type: 'diff'; file: TranscriptTurn['diffs'][number] }
+  | { type: 'toolGroup'; count: number; tools: string[] };
 export type ChatBlock = Content & Pick<ChatRow, 'id' | 'turnId' | 'spacing'>;
 
 function sameRow(a: ChatRow, b: ChatRow): boolean {
@@ -16,6 +17,8 @@ function sameRow(a: ChatRow, b: ChatRow): boolean {
   if (a.type === 'part' && b.type === 'part') return a.partIndex === b.partIndex && a.partId === b.partId && a.messageId === b.messageId
     && a.partKind === b.partKind && a.first === b.first && a.streaming === b.streaming;
   if (a.type === 'diff' && b.type === 'diff') return a.diffIndex === b.diffIndex;
+  if (a.type === 'toolGroup' && b.type === 'toolGroup') return a.count === b.count
+    && a.tools.length === b.tools.length && a.tools.every((tool, index) => tool === b.tools[index]);
   return true;
 }
 
@@ -121,6 +124,7 @@ export function resolveChatRow(row: ChatRow, state: AgentChatState): ChatBlock |
   let content: Content;
   switch (row.type) {
     case 'user': content = { type: 'user', message: source as TranscriptMessage }; break;
+    case 'toolGroup': content = { type: 'toolGroup', count: row.count, tools: row.tools }; break;
     case 'part': {
       const message = source as TranscriptMessage;
       const part = referencedPart(message, row);
