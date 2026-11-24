@@ -2301,7 +2301,7 @@ describe('AgentChatView warm viewport restoration', () => {
       });
     });
     act(() => {
-      chatViewport(renderer).props.onLayout({ nativeEvent: { layout: { height: 400 } } });
+      chatViewport(renderer).props.onLayout({ nativeEvent: { layout: { width: 300, height: 400 } } });
       flatList(renderer).props.onContentSizeChange(0, 1_000);
       flatList(renderer).props.onScroll(scrollEvent(600, 1_000));
       flatList(renderer).props.onViewableItemsChanged({
@@ -2484,8 +2484,23 @@ describe('AgentChatView warm viewport restoration', () => {
     expect(latestButtons()).toHaveLength(1);
   });
 
+  test.each(['following latest', 'reading history'])('rotating a visible chat keeps it interactive while %s', mode => {
+    const following = mode === 'following latest';
+    if (!following) userScrollTo(250);
+    observeCommits = true;
+    for (const [width, height, contentHeight] of [[400, 300, 800], [300, 400, 1_000]]) {
+      scrollToEnd.mockClear();
+      act(() => { chatViewport(renderer).props.onLayout({ nativeEvent: { layout: { width, height } } }); });
+      expect(chatViewport(renderer).parent?.props.pointerEvents).toBe('auto');
+      act(() => { flatList(renderer).props.onContentSizeChange(width, contentHeight); });
+      if (following) expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
+      else expect(scrollToEnd).not.toHaveBeenCalled();
+    }
+    expect(committedOpacities.every(opacity => opacity === 1)).toBe(true);
+    expect(scrollToOffset).not.toHaveBeenCalled();
+  });
+
   test.each(['width', 'height'] as const)('%s changes revalidate retained geometry', change => {
-    act(() => { chatViewport(renderer).props.onLayout({ nativeEvent: { layout: { width: 300, height: 400 } } }); });
     update(false);
     act(() => { chatViewport(renderer).props.onLayout({ nativeEvent: { layout: {
       width: change === 'width' ? 500 : 300,

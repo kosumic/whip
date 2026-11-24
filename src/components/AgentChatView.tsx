@@ -392,7 +392,14 @@ const chatListStyles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: 16,
   },
+  cell: { width: '100%' },
 });
+
+function ChatCell({ style, ...props }: React.ComponentPropsWithRef<typeof View>) {
+  // Single-column rows can wrap at their parent's new width in the native
+  // layout pass, before FlashList receives the resize and updates row offsets.
+  return <View {...props} style={[style, chatListStyles.cell]} />;
+}
 
 function TranscriptNoticeCard({
   children,
@@ -1643,12 +1650,11 @@ export function AgentChatView({
           const widthChanged = previousWidth !== undefined && width !== previousWidth;
           const heightChanged = scrollGeometryRef.current.viewportHeight > 0
             && height !== scrollGeometryRef.current.viewportHeight;
-          if (widthChanged) {
+          // Let FlashList reflow a visible conversation in place and keep its scroll anchor.
+          if ((widthChanged || heightChanged) && !(continuouslyVisible && initialViewportRef.current.ready)) {
             if (activeRef.current) saveViewport();
-            remeasureViewport('viewport-width-changed');
-          } else if (heightChanged && !(continuouslyVisible && initialViewportRef.current.ready)) {
-            if (activeRef.current) saveViewport();
-            invalidateViewport('viewport-height-changed');
+            if (widthChanged) remeasureViewport('viewport-width-changed');
+            else invalidateViewport('viewport-height-changed');
           }
           initialViewportRef.current.viewportLaidOut = true;
           const current = scrollGeometryRef.current;
@@ -1670,6 +1676,7 @@ export function AgentChatView({
           initialScrollIndex={initialScrollIndex}
           drawDistance={scrollGeometry.viewportHeight || undefined}
           data={blocks}
+          CellRendererComponent={ChatCell}
           keyExtractor={block => block.id}
           extraData={state}
           getItemType={block => block.type === 'part' ? block.partKind : block.type}
