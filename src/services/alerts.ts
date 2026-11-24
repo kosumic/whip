@@ -454,16 +454,16 @@ function latestAssistantReply({ messages }: AgentTranscript): string | undefined
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index];
     if (message.role === 'user') return;
-    const text = message.parts
-      .flatMap(part => part.type === 'text' ? [part.text] : [])
-      .join(' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (!text) continue;
-    if (text.length <= MAX_CHAT_PREVIEW_LENGTH) return text;
-    const prefix = text.slice(0, MAX_CHAT_PREVIEW_LENGTH - 1)
-      .replace(/[\uD800-\uDBFF]$/, '');
-    return `${prefix.trimEnd()}…`;
+    for (let partIndex = message.parts.length - 1; partIndex >= 0; partIndex--) {
+      const part = message.parts[partIndex];
+      if (part.type !== 'text') continue;
+      const text = part.text.replace(/\s+/g, ' ').trim();
+      if (!text) continue;
+      if (text.length <= MAX_CHAT_PREVIEW_LENGTH) return text;
+      const prefix = text.slice(0, MAX_CHAT_PREVIEW_LENGTH - 1)
+        .replace(/[\uD800-\uDBFF]$/, '');
+      return `${prefix.trimEnd()}…`;
+    }
   }
 }
 

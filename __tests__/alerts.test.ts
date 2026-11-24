@@ -239,8 +239,10 @@ function chatState(): AgentChatState {
         role: 'assistant',
         diffs: [],
         parts: [
-          { type: 'reasoning', id: 'reasoning', text: 'Internal reasoning' },
+          { type: 'text', id: 'progress', text: 'I’ll check the Herdr APIs.' },
           { type: 'text', id: 'text', text: 'Herdr has agent status APIs.\n\nIt also has control APIs.' },
+          { type: 'text', id: 'empty', text: ' \n' },
+          { type: 'reasoning', id: 'reasoning', text: 'Internal reasoning' },
         ],
       }],
       turns: [],
