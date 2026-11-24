@@ -833,7 +833,9 @@ Whip's Chat View is inspired by and adapted from the conversation design of [Ope
 
 ## License
 
-Whip is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE).
+Whip’s source code is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE), except where otherwise indicated.
+
+Rights in the Whip name and logo and the Rancher and Cowboy illustrations are reserved. See the [branding and artwork notice](BRANDING.md).
 
 Packages published to crates.io, npm, or PyPI use MIT: `whipair`,
 `agent-browser-control`, `agent-transcript-core`, `herdr-protocol`, `whipair-protocol`, `tailcat-client`,

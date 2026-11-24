@@ -60,7 +60,8 @@ export const OPEN_SOURCE_LICENSES: readonly OpenSourceLicenseNotice[] = [
     id: 'whip',
     projectName: 'Whip',
     sourceUrl: 'https://github.com/kosumic/whip',
-    attribution: 'Whip is free software licensed under the GNU Affero General Public License.',
+    attribution:
+      'Whip’s source code is licensed under the GNU Affero General Public License. Rights in the Whip name and logo and the Rancher and Cowboy illustrations are reserved.',
     licenseName: 'AGPL-3.0-or-later',
     licenseAsset: bundledAsset(require('../../assets/licenses/whip-AGPL-3.0.txt')),
   },
