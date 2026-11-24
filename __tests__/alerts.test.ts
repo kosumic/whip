@@ -249,7 +249,7 @@ function chatState(): AgentChatState {
 }
 
 test.each(['android', 'ios'] as const)(
-  '%s presents chat alerts in both a floating banner and a notification group',
+  '%s presents chat previews in the notification shade and floating banner',
   async platform => {
     Platform.OS = platform;
     jest.mocked(agentTranscriptService.currentChatForPane).mockReturnValue(chatState());
@@ -259,10 +259,14 @@ test.each(['android', 'ios'] as const)(
       title: 'Herdr Core Agent Integration',
       subtitle: 'codex finished',
       body: 'Herdr has agent status APIs. It also has control APIs.',
-      threadIdentifier: 'whip-agent-chats',
       data: { ...target, agentAlertLevel: 'persistent' },
     });
-    if (platform === 'android') expect(trigger).toEqual({ channelId: 'agent-state-banner-v1' });
+    if (platform === 'android') {
+      expect(content.threadIdentifier).toBeUndefined();
+      expect(trigger).toEqual({ channelId: 'agent-state-banner-v1' });
+    } else {
+      expect(content.threadIdentifier).toBe('whip-agent-chats');
+    }
     const behavior = await notificationHandler.handleNotification({
       request: { content },
     } as unknown as Notifications.Notification);

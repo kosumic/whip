@@ -488,7 +488,9 @@ function chatAlertContent(
     title,
     subtitle: title !== status ? status : undefined,
     body: reply || request.body,
-    threadIdentifier: CHAT_ALERT_GROUP,
+    // Expo posts an extra summary on Android, even for a single alert.
+    // Let Android group the individual notifications in the shade.
+    ...(Platform.OS === 'ios' && { threadIdentifier: CHAT_ALERT_GROUP }),
   };
 }
 
