@@ -22,6 +22,7 @@ import { transcriptTitleKey } from '../lib/transcriptTabTitles';
 import { notificationRegistrationProof } from '../lib/notificationRegistration';
 import {
   AGENT_BANNER_CHANNEL_ID,
+  AGENT_NOTIFICATION_THREAD_ID,
   AGENT_PUSH_CHANNEL_ID,
 } from '../lib/notificationChannels';
 import type { AgentAlertLevel } from './devicePreferences';
@@ -48,7 +49,6 @@ const PERSISTENT_CHANNEL_ID = 'agent-state-v3';
 const BRIEF_CHANNEL_ID = 'agent-state-brief-v1';
 const REGULAR_CHANNEL_ID = 'agent-state-regular-v1';
 const SILENT_CHANNEL_ID = 'agent-state-silent-v1';
-const CHAT_ALERT_GROUP = 'whip-agent-chats';
 const MAX_CHAT_PREVIEW_LENGTH = 480;
 const ALERT_LEVEL_DATA_KEY = 'agentAlertLevel';
 const ALERT_VIBRATION_PATTERN = [
@@ -495,7 +495,6 @@ function chatAlertContent(
     title,
     subtitle: title !== status ? status : undefined,
     body: reply || request.body,
-    ...(Platform.OS === 'ios' && { threadIdentifier: CHAT_ALERT_GROUP }),
   };
 }
 
@@ -542,7 +541,7 @@ async function performEffect(
         title: request.title,
         body: request.body,
         ...(presentation && chatAlertContent(request, presentation)),
-        ...(Platform.OS === 'android' && { threadIdentifier: CHAT_ALERT_GROUP }),
+        threadIdentifier: AGENT_NOTIFICATION_THREAD_ID,
         priority: Notifications.AndroidNotificationPriority.MAX,
         data: {
           hostId: request.hostId,

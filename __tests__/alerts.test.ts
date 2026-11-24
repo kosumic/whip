@@ -288,6 +288,17 @@ test('keeps the status body for a chat that is blocked or awaiting its latest re
   expect(bodies).toEqual(['Agent is blocked', 'Agent is done']);
 });
 
+test('iOS groups agent alerts even when a chat transcript is unavailable', async () => {
+  Platform.OS = 'ios';
+  await alertAgent(agent, false, target, 'work');
+  const { content } = jest.mocked(Notifications.scheduleNotificationAsync).mock.calls[0][0];
+  expect(content).toMatchObject({
+    title: 'work · codex needs attention',
+    body: 'Agent is blocked',
+    threadIdentifier: 'whip-agent-chats',
+  });
+});
+
 test('voice chat dismisses existing tab alerts and releases only its own suppression', async () => {
   mockNative.setSuppression.mockReturnValueOnce([
     effect(

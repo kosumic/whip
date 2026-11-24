@@ -224,6 +224,7 @@ test('readable previews expose agent details while retaining only authenticated 
   expect(sent).toMatchObject(preview);
   expect(sent).toMatchObject({
     channelId: 'agent-state-regular-v2',
+    threadId: 'whip-agent-chats',
     priority: 'high',
     sound: 'default',
   });
