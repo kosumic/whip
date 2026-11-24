@@ -333,6 +333,13 @@ export function dismissAgentAlerts(): Promise<void> {
   return runEffects(owner, owner.dismiss(new LocalAlertScope.All()));
 }
 
+export async function dismissAgentNotification(notificationId: string): Promise<void> {
+  await Promise.all([
+    dismissPersistentAgentAlert(notificationId),
+    Notifications.dismissNotificationAsync(notificationId),
+  ]);
+}
+
 export function dismissAgentAlertsForTab(
   hostId: string,
   tabId: string,
@@ -571,10 +578,7 @@ async function performEffect(
       return new LocalAlertOutcome.Scheduled({ notificationId });
     }
     case LocalAlertAction_Tags.DismissNotification:
-      await Promise.all([
-        dismissPersistentAgentAlert(action.inner.notificationId),
-        Notifications.dismissNotificationAsync(action.inner.notificationId),
-      ]);
+      await dismissAgentNotification(action.inner.notificationId);
       break;
     case LocalAlertAction_Tags.ArmPersistent:
       await armPersistentAgentAlert(

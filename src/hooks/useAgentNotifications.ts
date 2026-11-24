@@ -1,17 +1,17 @@
 import { isRemoteNotification, remoteNotificationTarget } from '../services/remoteNotifications';
 import { notificationRegistrationProof } from '../lib/notificationRegistration';
+import { parseAgentNotificationTarget } from '../lib/notificationNavigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState } from 'react-native';
 import * as Notifications from 'expo-notifications';
 
-import { dismissAgentAlerts, prepareAlerts } from '../services/alerts';
+import { dismissAgentNotification, prepareAlerts } from '../services/alerts';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import {
   operationalErrorDetails,
   recordOperationalDiagnostic,
 } from '../services/operationalDiagnostics';
 
-/** Owns notification setup, response delivery, and foreground cleanup. */
+/** Owns notification setup, response delivery, and tap dismissal. */
 export function useAgentNotifications() {
   const [ready, setReady] = useState(false);
   const [response, setResponse] =
@@ -35,7 +35,15 @@ export function useAgentNotifications() {
         if (!target) throw new Error('Remote notification is missing authenticated data');
         value = {...value, notification: {...value.notification, request: {...request, content: {...request.content, data: {hostId: target.hostId, paneId: target.paneId, remoteDeviceId: target.remoteDeviceId}}}}};
       }
-      if (active) setResponse(value);
+      if (!active) return;
+      const target = parseAgentNotificationTarget(value, Notifications.DEFAULT_ACTION_IDENTIFIER);
+      if (target) {
+        reportBackgroundFailure(
+          dismissAgentNotification(target.notificationId),
+          'agent-alert-tap-dismiss',
+        );
+      }
+      setResponse(value);
     };
     const subscription = Notifications.addNotificationResponseReceivedListener(
       value => {
@@ -57,19 +65,6 @@ export function useAgentNotifications() {
       active = false;
       subscription.remove();
     };
-  }, []);
-
-  useEffect(() => {
-    let previousState = AppState.currentState;
-    const subscription = AppState.addEventListener('change', state => {
-      const returnedToForeground =
-        previousState !== 'active' && state === 'active';
-      previousState = state;
-      if (returnedToForeground) {
-        reportBackgroundFailure(dismissAgentAlerts(), 'agent-alerts-dismiss');
-      }
-    });
-    return () => subscription.remove();
   }, []);
 
   const wasHandled = useCallback(
