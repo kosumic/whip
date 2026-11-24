@@ -477,7 +477,7 @@ static BOOL ReadBytes(int socket, void *buffer, size_t length) {
   self.probing = YES;
   self.navigation = [self expectationWithDescription:@"redirect finishes"];
   [browser loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:@"http://ssh-only.invalid/escape"]]];
-  [self waitForExpectations:@[self.navigation] timeout:15];
+  [self waitForExpectations:@[self.navigation] timeout:BrowserProxyRequestTimeout];
   @synchronized(self.proxy) { XCTAssertTrue([self.proxy.hosts containsObject:@"ssh-only.invalid"]); }
   @synchronized(target) { XCTAssertGreaterThan(target.connections, 0); }
   XCTAssertNil(self.probeError);
