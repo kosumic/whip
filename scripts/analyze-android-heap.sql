@@ -78,6 +78,22 @@ FROM whip_native_callsites n JOIN whip_native_owners o ON o.allocation_callsite 
 GROUP BY o.library, o.function, o.rel_pc
 ORDER BY SUM(n.live_bytes) DESC LIMIT 25;
 
+-- Keep the full caller chain so a shared kernel can be traced to its workload.
+WITH top_callsites AS (
+  SELECT callsite_id, allocated_bytes, live_bytes FROM whip_native_callsites
+  WHERE allocated_bytes > 0
+  ORDER BY allocated_bytes DESC, callsite_id LIMIT 25
+)
+SELECT n.callsite_id, ROUND(n.allocated_bytes / 1048576.0, 2) AS allocated_mib,
+  ROUND(n.live_bytes / 1048576.0, 2) AS live_mib,
+  GROUP_CONCAT(
+    COALESCE(NULLIF(f.function, ''), PRINTF('0x%x', f.rel_pc)) || ' [' || f.library || ']',
+    CHAR(10) ORDER BY f.distance
+  ) AS allocation_stack
+FROM top_callsites n JOIN whip_allocation_frames f ON f.allocation_callsite = n.callsite_id
+GROUP BY n.callsite_id, n.allocated_bytes, n.live_bytes
+ORDER BY n.allocated_bytes DESC, n.callsite_id;
+
 -- The nearest managed caller explains Java churn better than ART allocator frames.
 WITH ranked AS (
   SELECT *, ROW_NUMBER() OVER (PARTITION BY allocation_callsite ORDER BY distance) AS rank

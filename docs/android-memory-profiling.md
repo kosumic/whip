@@ -174,11 +174,14 @@ trace_processor query -f scripts/analyze-android-heap.sql artifacts/memory/nativ
 ```
 
 The queries report trace health, sampled allocation totals, live native
-allocations, allocating libraries/functions, and Java allocation activity. They
-select the latest Whip process represented in the trace. Native retention only
-includes tracked allocations and excludes existing allocations, direct anonymous
-mappings, and GPU buffers. Java allocation profiles do not track frees, so their
-totals describe allocation activity rather than retained memory.
+allocations, allocating libraries/functions, and Java allocation activity. The
+native churn report lists the 25 stacks with the most allocated bytes, with live
+bytes alongside each stack. Analyze a symbolized trace to resolve native callers.
+The queries select the latest Whip process represented in the trace. Native
+retention only includes tracked allocations and excludes existing allocations,
+direct anonymous mappings, and GPU buffers. Java allocation profiles do not
+track frees, so their totals describe allocation activity rather than retained
+memory.
 
 Discard truncated results when trace health reports client errors, buffer
 overruns, or guardrails. On the Pixel 9 Pro running Android 17, startup profiling
