@@ -213,6 +213,7 @@ function useBackgroundImageActions({
 }
 
 export function SettingsSection(props: SettingsSectionProps) {
+  const supportsLocalAlerts = Platform.OS === 'android' || Platform.OS === 'ios';
   const { expanded: notificationsExpanded, toggleExpanded: toggleNotifications } = useSectionExpansion('notifications', true);
   const { expanded: securityExpanded, toggleExpanded: toggleSecurity } = useSectionExpansion('security', true);
   const { expanded: appearanceExpanded, toggleExpanded: toggleAppearance } = useSectionExpansion('appearance', true);
@@ -258,14 +259,14 @@ export function SettingsSection(props: SettingsSectionProps) {
         expanded={notificationsExpanded}
         onToggle={toggleNotifications}>
         <SettingRow title={t('settings.agentNotifications')} copy={t('settings.agentNotificationsCopy')} value={props.alertsEnabled} onChange={props.onAlertsChange} />
-        {Platform.OS === 'android' ? <AgentAlertLevelRow
+        {supportsLocalAlerts ? <AgentAlertLevelRow
           disabled={!props.alertsEnabled}
           onChange={props.onAgentAlertLevelChange}
           value={props.agentAlertLevel}
         /> : null}
-        {Platform.OS === 'android' && props.agentAlertLevel === 'persistent' ? <ValueRow
-          title={t('settings.backgroundAlertDuration')}
-          copy={t('settings.backgroundAlertDurationCopy')}
+        {supportsLocalAlerts && props.agentAlertLevel === 'persistent' ? <ValueRow
+          title={t('settings.persistentAlertDuration')}
+          copy={t('settings.persistentAlertDurationCopy')}
           value={t('settings.seconds', { count: props.persistentAlertDurationSeconds })}
           disabled={!props.alertsEnabled}
           onDecrease={() => props.onPersistentAlertDurationChange(Math.max(
@@ -286,7 +287,7 @@ export function SettingsSection(props: SettingsSectionProps) {
           onPress={props.onStartBackgroundMonitoring}
           divided
         /> : null}
-        {Platform.OS !== 'web' ? <ActionRow
+        {supportsLocalAlerts ? <ActionRow
           title={t('settings.testAgentNotification')}
           copy={t('settings.testAgentNotificationCopy')}
           icon={BellRing}

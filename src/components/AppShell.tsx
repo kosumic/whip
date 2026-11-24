@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import { replaceEqualDeep } from '@tanstack/react-query';
 import { BlurTargetView } from 'expo-blur';
-import { Platform, StyleSheet, View, type ViewInstance } from 'react-native';
+import { StyleSheet, View, type ViewInstance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
@@ -631,9 +631,7 @@ export function AppShell({
                                 paneId: 'whip-alert-test',
                               },
                               t('settings.testAgentNotificationTab'),
-                              Platform.OS === 'android'
-                                ? agentAlertLevel
-                                : 'persistent',
+                              agentAlertLevel,
                               persistentAlertDurationSeconds * 1_000,
                             ).catch(error => hosts.setError(String(error)));
                           }}

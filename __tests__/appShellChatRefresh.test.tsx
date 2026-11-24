@@ -7,6 +7,7 @@ import { LiveSessionView } from '../src/components/LiveSessionView';
 import { useAppNavigation, type AppNavigationController } from '../src/hooks/useAppNavigation';
 import type { useAgentChatOpen } from '../src/hooks/useAgentChatOpen';
 import { agentTranscriptService } from '../src/services/NativeTranscriptService';
+import { alertAgent } from '../src/services/alerts';
 import type { TerminalRenderTarget } from '../src/lib/terminalRenderer';
 
 jest.mock('react-native-css-interop/jsx-runtime', () =>
@@ -272,6 +273,52 @@ test('tab switches reuse Herd presentation until native session data changes', (
     expect(herd().agents).not.toBe(first.agents);
     expect(herdView.mock.calls.length).toBeGreaterThan(calls);
   } finally { act(() => { renderer.unmount(); }); }
+});
+
+test('an iOS test notification uses the selected regular alert level', () => {
+  const platform = Platform.OS;
+  Platform.OS = 'ios';
+  jest.mocked(alertAgent).mockResolvedValueOnce(undefined);
+  const { props: initial } = setup();
+  const props: Props = {
+    ...initial,
+    hosts: {
+      ...initial.hosts,
+      globalSshKeys: [],
+      knownHosts: [],
+      knownHostsState: { status: 'loaded', hosts: [] },
+    },
+    preferences: {
+      ...initial.preferences,
+      value: {
+        ...initial.preferences.value,
+        agentAlertLevel: 'regular',
+        persistentAlertDurationSeconds: 45,
+      },
+    },
+    navigation: {
+      ...initial.navigation,
+      state: { ...initial.navigation.state, tab: 'more' },
+      mountedTabs: new Set(['more']),
+    },
+  };
+  let renderer!: ReactTestRenderer;
+  try {
+    act(() => { renderer = create(<AppShell {...props} />); });
+    const settings = renderer.root.findByType('MoreScreen' as never);
+    act(() => { settings.props.onTestAgentNotification(); });
+    expect(alertAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ agent_status: 'done' }),
+      false,
+      expect.objectContaining({ paneId: 'whip-alert-test' }),
+      'settings.testAgentNotificationTab',
+      'regular',
+      45_000,
+    );
+  } finally {
+    act(() => renderer?.unmount());
+    Platform.OS = platform;
+  }
 });
 
 test('returning to the same Herd workspace reuses presentation and joins each host rail once', () => {
