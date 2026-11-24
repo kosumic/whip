@@ -29,8 +29,8 @@ async function stopPreviewPlayback(owner: string) {
 const PREVIEW_TEXT_SAVE_DELAY_MS = 500;
 const SPEECH_BACKENDS = ['system', 'phonon', 'openai'] as const;
 
-export function VoiceSettings({ children, announcementSettings, openAiConfigRequest = 0, openAiSectionRef, onOpenAiLayout }: {
-  children?: ReactNode;
+export function VoiceSettings({ localCallSettings, announcementSettings, openAiConfigRequest = 0, openAiSectionRef, onOpenAiLayout }: {
+  localCallSettings?: ReactNode;
   announcementSettings?: ReactNode;
   openAiConfigRequest?: number;
   openAiSectionRef?: Ref<ViewInstance>;
@@ -224,9 +224,8 @@ export function VoiceSettings({ children, announcementSettings, openAiConfigRequ
     <CollapsibleSectionCard title={t('settings.voice')} icon={Volume2}
       expanded={voiceExpanded} onToggle={() => { stopPreview(); toggleVoice(); }} contentClassName="pb-3.5">
       {announcementSettings && <View className="border-b border-border">{announcementSettings}</View>}
-      <VoiceConversationProviderSetting />
+      <VoiceConversationProviderSetting localCallSettings={localCallSettings} />
       <SpeechInputProviderSetting />
-      {children}
       <View className="border-t border-border px-3.5 pt-3">
         <Text className="text-sm font-medium">{t('speech.backend')}</Text>
       </View>

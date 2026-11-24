@@ -1,4 +1,4 @@
-import { useContext } from 'react';
+import { useContext, type ReactNode } from 'react';
 import { View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { VoiceConversationSettingsContext } from '../lib/voiceConversationSettingsContext';
@@ -8,7 +8,7 @@ import { Text } from './ui/text';
 
 const CONVERSATION_PROVIDERS = ['local', 'openai'] as const;
 
-export function VoiceConversationProviderSetting() {
+export function VoiceConversationProviderSetting({ localCallSettings }: { localCallSettings?: ReactNode }) {
   const { t } = useTranslation();
   const { settings, onChange } = useContext(VoiceConversationSettingsContext);
   const credential = useOpenAiVoiceCredentialStatus();
@@ -24,6 +24,9 @@ export function VoiceConversationProviderSetting() {
         <Text>{t(`voiceProvider.${provider}`)}</Text>
       </GlassButton>)}
     </View>
+    {settings.provider === 'local' && localCallSettings && (
+      <View className="ml-2 border-l-2 border-border">{localCallSettings}</View>
+    )}
     <Text className="text-xs text-muted-foreground">{t('voiceProvider.independent')}</Text>
     {!openaiReady && <Text accessibilityLiveRegion="polite" className="text-xs text-muted-foreground">
       {t('voiceProvider.openai')}: {t(credential.reason)}

@@ -5,8 +5,8 @@ uses the existing agent connection and send queue. No speech API, API key, or
 separate assistant session is involved. The agent still needs its usual remote
 connection. Saved transcripts cannot start a voice conversation.
 
-Speak normally. Earshot VAD detects speech on the device. Settings → Voice →
-VAD sensitivity adjusts speech detection from 0–100%. Higher values pick up
+Speak normally. Earshot VAD detects speech on the device. In Settings → Voice →
+Voice call provider, select Local to adjust VAD sensitivity from 0–100%. Higher values pick up
 softer speech; lower values reject more background noise. The saved setting
 applies immediately to voice chat, including reply interruption. The default 50%
 preserves the original detection thresholds. By default, 800 ms of silence after

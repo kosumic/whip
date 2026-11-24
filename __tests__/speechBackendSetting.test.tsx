@@ -1,4 +1,5 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import Slider from '@react-native-community/slider';
 import { VoiceSettings } from '../src/components/VoiceSettings';
 import { SpeechVoicePicker } from '../src/components/SpeechVoicePicker';
 import { CollapsibleSectionCard } from '../src/components/CollapsibleSectionCard';
@@ -70,6 +71,23 @@ beforeEach(async () => {
   await act(async () => { renderer = create(<VoiceSettings />); });
 });
 afterEach(async () => { await act(async () => renderer.unmount()); });
+
+test('VAD sensitivity is visible only for Local voice calls, independently of dictation', async () => {
+  const label = 'voiceChat.vadSensitivity';
+  const slider = <Slider accessibilityLabel={label} />;
+  const select = async (provider: 'local' | 'openai', sttProvider: 'local' | 'openai') => {
+    const settings = { ...DEFAULT_VOICE_CONVERSATION_SETTINGS, provider, sttProvider };
+    await act(async () => renderer.update(
+      <VoiceConversationSettingsContext value={{ settings, onChange: jest.fn() }}>
+        <VoiceSettings localCallSettings={slider} />
+      </VoiceConversationSettingsContext>,
+    ));
+  };
+  await select('local', 'openai');
+  expect(renderer.root.findAllByProps({ accessibilityLabel: label })).toHaveLength(1);
+  await select('openai', 'local');
+  expect(renderer.root.findAllByProps({ accessibilityLabel: label })).toHaveLength(0);
+});
 
 test('STT selection changes dictation independently of the call and speech providers', async () => {
   const onChange = jest.fn();

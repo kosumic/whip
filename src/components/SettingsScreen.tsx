@@ -306,8 +306,8 @@ export function SettingsSection(props: SettingsSectionProps) {
         announcementSettings={<>
           <SettingRow title={t('settings.speakChanges')} copy={t('settings.speakChangesCopy')} value={props.ttsEnabled} onChange={props.onTtsChange} />
           {props.ttsEnabled ? <SettingRow title={t('settings.readAloudWhileLocked')} copy={t('settings.readAloudWhileLockedCopy')} value={props.readAloudWhileLocked} onChange={props.onReadAloudWhileLockedChange} divided /> : null}
-        </>}>
-        <SliderRow
+        </>}
+        localCallSettings={<SliderRow
           title={t('voiceChat.vadSensitivity')}
           copy={t('voiceChat.vadSensitivityDescription')}
           value={props.vadSensitivity}
@@ -316,9 +316,8 @@ export function SettingsSection(props: SettingsSectionProps) {
           step={VAD_SENSITIVITY_STEP}
           formatValue={value => `${value}%`}
           onChange={props.onVadSensitivityChange}
-          divided
-        />
-      </VoiceSettings>
+        />}
+      />
 
       <CollapsibleSectionCard
         title={t('settings.security')}
