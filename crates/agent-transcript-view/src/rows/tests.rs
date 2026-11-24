@@ -93,7 +93,7 @@ fn group_ids(rows: &[AgentChatRow]) -> Vec<String> {
 }
 
 #[test]
-fn latest_turn_has_no_groups_even_when_idle_and_only_new_user_prompts_collapse_history() {
+fn host_activity_keeps_tools_visible_across_assistant_turns_until_idle_or_a_new_prompt() {
     let mut state = fixture(1);
     state.messages[0] = message(
         "m0",
@@ -103,22 +103,29 @@ fn latest_turn_has_no_groups_even_when_idle_and_only_new_user_prompts_collapse_h
             tool("shell", "functions.exec_command", "Completed")
         ]),
     );
-    for working in [true, false] {
-        assert!(group_ids(&rows(&state, working)).is_empty());
-        assert_eq!(rows(&state, working).len(), 3);
-    }
     // A provider can append an assistant-only turn. It is not a new user turn.
     let mut assistant = state.turns[0].clone();
     assistant.id = "assistant-only".into();
     assistant.message_ids.clear();
     assistant.assistant_message_ids.clear();
     state.turns.push(assistant);
-    assert!(group_ids(&rows(&state, false)).is_empty());
     let mut projection = RowProjection::default();
     projection.restore(&state);
-    let initial = projection.poll(0, false, vec![]);
+    let initial = projection.poll(0, true, vec![]);
     let mut client = Vec::new();
     apply(&mut client, &initial);
+    assert!(group_ids(&client).is_empty());
+    let idle = projection.poll(initial.revision, false, vec![]);
+    apply(&mut client, &idle);
+    assert!(
+        matches!(&client[0].content, AgentChatRowContent::ToolGroup { count: 2, tools }
+        if tools == &["Read", "Shell"])
+    );
+    assert_eq!(client, rows(&state, false));
+    let idle_group = client[0].clone();
+    let resumed = projection.poll(idle.revision, true, vec![]);
+    apply(&mut client, &resumed);
+    assert!(group_ids(&client).is_empty());
     next_prompt(&mut state);
     projection.accept(&AgentTranscriptUpdate {
         revision: 1,
@@ -133,7 +140,7 @@ fn latest_turn_has_no_groups_even_when_idle_and_only_new_user_prompts_collapse_h
             },
         ],
     });
-    let collapsed = projection.poll(initial.revision, false, vec![]);
+    let collapsed = projection.poll(resumed.revision, true, vec![]);
     assert!(
         collapsed
             .patches
@@ -142,11 +149,8 @@ fn latest_turn_has_no_groups_even_when_idle_and_only_new_user_prompts_collapse_h
     );
     apply(&mut client, &collapsed);
     assert_eq!(group_ids(&client).len(), 1);
-    assert!(
-        matches!(&client[0].content, AgentChatRowContent::ToolGroup { count: 2, tools }
-        if tools == &["Read", "Shell"])
-    );
-    assert_eq!(client, rows(&state, false));
+    assert_eq!(client[0], idle_group);
+    assert_eq!(client, rows(&state, true));
 }
 
 #[test]
@@ -177,7 +181,7 @@ fn groups_respect_visible_boundaries_and_expansion_restores_original_rows_for_al
             json!([tool("last", "Read", "Completed")]),
         ));
         state.turns[0].assistant_message_ids.push("more".into());
-        let original = rows(&state, false);
+        let original = rows(&state, true);
         next_prompt(&mut state);
         let mut projection = RowProjection::default();
         projection.restore(&state);
@@ -360,7 +364,7 @@ fn pagination_and_live_extensions_preserve_group_identity_expansion_and_search_r
 }
 
 #[test]
-fn a_new_prompt_within_an_ordered_turn_collapses_only_earlier_tools() {
+fn tools_after_the_latest_prompt_collapse_when_the_transcript_turn_finishes() {
     let mut state = fixture(1);
     state.messages[0] = message(
         "m0",
@@ -383,7 +387,12 @@ fn a_new_prompt_within_an_ordered_turn_collapses_only_earlier_tools() {
     ));
     state.turns[0].message_ids = vec!["m0".into(), "user".into(), "new".into()];
     state.turns[0].assistant_message_ids.push("new".into());
-    let projected = rows(&state, false);
+    state.turns[0].status = AgentTurnStatus::Working;
+    let mut projection = RowProjection::default();
+    projection.restore(&state);
+    let mut projected = Vec::new();
+    let initial = projection.poll(0, false, vec![]);
+    apply(&mut projected, &initial);
     assert_eq!(group_ids(&projected).len(), 1);
     assert!(
         !projected
@@ -400,6 +409,20 @@ fn a_new_prompt_within_an_ordered_turn_collapses_only_earlier_tools() {
             .iter()
             .any(|row| row.id == part_row_id("t0", "new", "current2", 0))
     );
+    state.turns[0].status = AgentTurnStatus::Idle;
+    projection.accept(&AgentTranscriptUpdate {
+        revision: 1,
+        deltas: vec![AgentTranscriptDelta::TurnUpserted {
+            index: 0,
+            turn: state.turns[0].clone(),
+        }],
+    });
+    apply(
+        &mut projected,
+        &projection.poll(initial.revision, false, vec![]),
+    );
+    assert_eq!(group_ids(&projected).len(), 2);
+    assert_eq!(projected, rows(&state, false));
 }
 
 #[test]
@@ -1044,8 +1067,9 @@ fn a_structural_backlog_beyond_the_bound_recovers_with_a_snapshot() {
     }
     assert_eq!(projection.journal.len(), JOURNAL_LIMIT);
     let resumed = projection.poll(first.revision, false, vec![]);
+    let expected = rows(&state, false);
     assert!(
-        matches!(&resumed.patches[..], [AgentChatRowPatch::Reset { rows }] if rows.len() == JOURNAL_LIMIT + 4)
+        matches!(&resumed.patches[..], [AgentChatRowPatch::Reset { rows }] if rows == &expected)
     );
     assert!(projection.journal.is_empty());
 }

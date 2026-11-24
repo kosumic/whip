@@ -297,7 +297,7 @@ pub struct RowProjection {
     disposed: bool,
     working: bool,
     expanded: HashSet<String>,
-    latest_user: Option<(usize, usize)>,
+    live_prompt_start: Option<(usize, usize)>,
     messages: HashMap<String, MessageRef>,
     message_order: Vec<String>,
     message_turns: HashMap<String, usize>,
@@ -355,7 +355,7 @@ impl RowProjection {
             .map(|message| message.id.clone())
             .collect();
         self.turns = view.turns.iter().map(TurnRef::from).collect();
-        self.latest_user = self.latest_user_position();
+        self.live_prompt_start = self.find_live_prompt_start();
         self.message_turns.clear();
         self.section_turns.clear();
         for index in 0..self.turns.len() {
@@ -489,7 +489,7 @@ impl RowProjection {
             dirty.extend(old_last);
             dirty.extend(self.turns.len().checked_sub(1));
         }
-        self.refresh_latest_user(&mut dirty);
+        self.refresh_live_prompt(&mut dirty);
         self.refresh(dirty, &mut patches);
         self.transcript_revision = revision;
         self.record(patches);
@@ -504,8 +504,13 @@ impl RowProjection {
             .insert(row_id(&[&turn.id, "changes"]), index);
     }
 
-    fn latest_user_position(&self) -> Option<(usize, usize)> {
-        self.turns
+    fn find_live_prompt_start(&self) -> Option<(usize, usize)> {
+        let last = self.turns.last()?;
+        if !self.working && !last.working {
+            return None;
+        }
+        let latest_user = self
+            .turns
             .iter()
             .enumerate()
             .rev()
@@ -518,16 +523,19 @@ impl RowProjection {
                             .is_some_and(|message| message.role == AgentMessageRole::User)
                     })
                     .map(|message| (index, message))
-            })
+            });
+        // A partial transcript can start in the middle of the active prompt.
+        Some(latest_user.unwrap_or((0, 0)))
     }
 
-    fn refresh_latest_user(&mut self, dirty: &mut BTreeSet<usize>) {
-        let latest = self.latest_user_position();
-        if latest != self.latest_user {
-            let before = self.latest_user.map_or(0, |(index, _)| index);
-            let after = latest.map_or(0, |(index, _)| index);
+    fn refresh_live_prompt(&mut self, dirty: &mut BTreeSet<usize>) {
+        let start = self.find_live_prompt_start();
+        if start != self.live_prompt_start {
+            let last = self.turns.len().saturating_sub(1);
+            let before = self.live_prompt_start.map_or(last, |(index, _)| index);
+            let after = start.map_or(last, |(index, _)| index);
             dirty.extend(before.min(after)..=before.max(after));
-            self.latest_user = latest;
+            self.live_prompt_start = start;
         }
     }
 
@@ -578,8 +586,8 @@ impl RowProjection {
                     let occurrence = occurrences.entry(&part.id).or_default();
                     let row_id = part_row_id(&turn.id, id, &part.id, *occurrence);
                     if self
-                        .latest_user
-                        .is_some_and(|latest| (index, message_index) < latest)
+                        .live_prompt_start
+                        .is_none_or(|start| (index, message_index) < start)
                         && let Some(tool) = &part.tool
                     {
                         eligible_tools.insert(row_id.clone(), tool.as_str());
@@ -626,7 +634,7 @@ impl RowProjection {
         }
         push(row_id(&[&turn.id, "meta"]), AgentChatRowContent::Meta);
         if index + 1 == self.turns.len()
-            && (self.working || turn.working)
+            && self.live_prompt_start.is_some()
             && !turn
                 .messages
                 .iter()
@@ -830,7 +838,7 @@ impl RowProjection {
             dirty.extend(old_last);
             dirty.extend(self.turns.len().checked_sub(1));
         }
-        self.refresh_latest_user(&mut dirty);
+        self.refresh_live_prompt(&mut dirty);
         self.refresh(dirty, &mut patches);
         self.transcript_revision = update.revision;
         self.record(patches);
@@ -913,9 +921,9 @@ impl RowProjection {
             .filter_map(|id| self.section_turns.get(id).copied())
             .collect();
         if self.working != working {
-            dirty.extend(self.turns.len().checked_sub(1));
+            self.working = working;
+            self.refresh_live_prompt(&mut dirty);
         }
-        self.working = working;
         self.expanded = expanded;
         let mut patches = Vec::new();
         self.refresh(dirty, &mut patches);
