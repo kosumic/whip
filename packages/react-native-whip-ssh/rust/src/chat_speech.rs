@@ -57,10 +57,9 @@ pub(crate) struct ChatSpeechChunk {
     pub start_utf16: usize,
 }
 
-#[derive(Default)]
-struct SpokenPart {
-    spoken: String,
-    finished: bool,
+enum SpokenPart {
+    InProgress(String),
+    Finished,
 }
 
 pub(crate) struct SpeechContent {
@@ -193,7 +192,10 @@ impl ChatSpeechQueue {
             && state
                 .parts
                 .values()
-                .map(|part| part.spoken.len())
+                .map(|part| match part {
+                    SpokenPart::InProgress(spoken) => spoken.len(),
+                    SpokenPart::Finished => 0,
+                })
                 .sum::<usize>()
                 <= bytes
     }
@@ -264,44 +266,40 @@ impl ChatSpeechQueue {
                 let progress = state
                     .parts
                     .entry((message.id.clone(), part.id))
-                    .or_default();
-                if progress.finished {
+                    .or_insert_with(|| SpokenPart::InProgress(String::new()));
+                let SpokenPart::InProgress(spoken) = progress else {
+                    continue;
+                };
+                if !live && message.completed {
+                    *progress = SpokenPart::Finished;
                     continue;
                 }
                 let prose = spoken_prose(&part.text);
-                if !live {
-                    let end = if finalized || silent {
-                        prose.len()
-                    } else {
-                        stable_prose_end(&prose, part.text.ends_with(char::is_whitespace))
-                    };
-                    prose[..end].clone_into(&mut progress.spoken);
-                    progress.finished = message.completed;
-                    continue;
-                }
                 // A provider rewriting already spoken prose must not replay it
                 // or reorder it into a later part. New parts remain speakable.
-                if !prose.starts_with(&progress.spoken) {
-                    progress.finished = true;
+                if live && !prose.starts_with(spoken.as_str()) {
+                    *progress = SpokenPart::Finished;
                     continue;
                 }
-                let end = if finalized {
+                let end = if finalized || silent {
                     prose.len()
                 } else {
                     stable_prose_end(&prose, part.text.ends_with(char::is_whitespace))
                 };
-                if end <= progress.spoken.len() {
-                    progress.finished = message.completed;
+                let tail_start = spoken.len();
+                if message.completed {
+                    *progress = SpokenPart::Finished;
+                } else if !live || end > tail_start {
+                    prose[..end].clone_into(spoken);
+                }
+                if !live || end <= tail_start {
                     continue;
                 }
-                let tail_start = progress.spoken.len();
-                let tail = prose[tail_start..end].trim().to_owned();
-                prose[..end].clone_into(&mut progress.spoken);
-                progress.finished = message.completed;
+                let tail = prose[tail_start..end].trim();
                 let mut offset = tail_start;
                 state.pending.extend(
                     speech_chunks_with_limit(
-                        &tail,
+                        tail,
                         if voice {
                             MAX_VOICE_CHUNK_UNITS
                         } else {
@@ -903,6 +901,7 @@ mod tests {
             );
             assert_eq!(queue.next().as_deref(), Some("First sentence."));
             assert_eq!(queue.next(), None);
+            assert!(!queue.within_budget(1, 0));
             queue.update(
                 agent,
                 true,
@@ -915,6 +914,7 @@ mod tests {
                 vec![message("reply", true, "First sentence. Second sentence.")],
             );
             assert_eq!(queue.next().as_deref(), Some("Second sentence."));
+            assert!(queue.within_budget(1, 0));
             queue.update(
                 agent,
                 true,
@@ -961,6 +961,7 @@ mod tests {
             vec![message("reply", true, "Rewritten. New text.")],
         );
         assert_eq!(queue.next(), None);
+        assert!(queue.within_budget(1, 0));
     }
 
     #[test]
@@ -976,6 +977,7 @@ mod tests {
                 ],
             );
             assert_eq!(queue.next(), None);
+            assert!(queue.within_budget(2, 0));
             queue.update(
                 agent,
                 true,
