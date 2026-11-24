@@ -150,6 +150,25 @@ function openedToken(
   return result.binding.bindingToken;
 }
 
+test('notification previews require the current chat for that pane and runtime', () => {
+  const service = new NativeTranscriptService();
+  const remote = fakeTransport();
+  const pane = {
+    pane_id: 'pane-terminal-1',
+    terminal_id: 'terminal-1',
+    agent_session: { agent: 'codex', source: 'herdr', kind: 'id' as const, value: sessionId },
+  };
+  expect(service.currentChatForPane('host', pane, 1)).toBeUndefined();
+  service.reconcile('host', pane.terminal_id, remote.value);
+  jest.mocked(remote.value.agentChatBindingIsCurrent).mockReturnValueOnce(true);
+  expect(service.currentChatForPane('host', pane, 1)).toMatchObject({ sessionId });
+  jest.mocked(remote.value.agentChatBindingIsCurrent).mockReturnValueOnce(false);
+  expect(service.currentChatForPane('host', pane, 1)).toBeUndefined();
+  jest.mocked(remote.value.agentChatBindingIsCurrent).mockReturnValue(true);
+  expect(service.currentChatForPane('host', pane, 2)).toBeUndefined();
+  expect(service.currentChatForPane('host', { ...pane, agent_session: { ...pane.agent_session, value: 'new-session' } }, 1)).toBeUndefined();
+});
+
 test('resident-binding snapshots ignore pins and listeners while reporting bindings appearing and disappearing', () => {
   const service = new NativeTranscriptService();
   const remote = fakeTransport();

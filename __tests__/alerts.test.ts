@@ -44,6 +44,7 @@ jest.mock('../src/services/speechPlayback', () => ({
 }));
 jest.mock('../src/services/NativeTranscriptService', () => ({
   agentTranscriptService: {
+    currentChatForPane: jest.fn(),
     titles:
       new (require('../src/lib/transcriptTabTitles').TranscriptTabTitles)(),
   },
@@ -84,6 +85,7 @@ import {
   type LocalAlertEffect,
 } from 'react-native-whip-ssh';
 import type { SpeechEndReason } from '../src/services/speechPlayback';
+import type { AgentChatState } from '../src/agentChat';
 import type { AgentInfo } from '../src/types';
 import {
   alertAgent,
@@ -159,6 +161,7 @@ beforeEach(() => {
   setChatSpeechFocus(null);
   setNotificationDeliveryAvailable(true);
   notificationRuntimes.clear();
+  jest.mocked(agentTranscriptService.currentChatForPane).mockReset();
   agentTranscriptService.titles.clear();
   i18n.resolvedLanguage = 'en';
   mockNative.alert.mockImplementation((request: LocalAlertRequest) => [
@@ -224,6 +227,63 @@ test('shows the real Herdr agent kind even when its managed name matches the tab
   ).toBe('rev · codex finished');
 });
 
+function chatState(): AgentChatState {
+  return {
+    status: 'live',
+    sessionId: 'conversation-1',
+    transcript: {
+      sessionId: 'conversation-1',
+      info: { id: 'conversation-1', title: 'Herdr Core Agent Integration' },
+      messages: [{
+        id: 'reply',
+        role: 'assistant',
+        diffs: [],
+        parts: [
+          { type: 'reasoning', id: 'reasoning', text: 'Internal reasoning' },
+          { type: 'text', id: 'text', text: 'Herdr has agent status APIs.\n\nIt also has control APIs.' },
+        ],
+      }],
+      turns: [],
+    },
+  };
+}
+
+test.each(['android', 'ios'] as const)(
+  '%s presents chat alerts in both a floating banner and a notification group',
+  async platform => {
+    Platform.OS = platform;
+    jest.mocked(agentTranscriptService.currentChatForPane).mockReturnValue(chatState());
+    await alertAgent({ ...agent, agent_status: 'done' }, false, target, 'work');
+    const { content, trigger } = jest.mocked(Notifications.scheduleNotificationAsync).mock.calls[0][0];
+    expect(content).toMatchObject({
+      title: 'Herdr Core Agent Integration',
+      subtitle: 'codex finished',
+      body: 'Herdr has agent status APIs. It also has control APIs.',
+      threadIdentifier: 'whip-agent-chats',
+      data: { ...target, agentAlertLevel: 'persistent' },
+    });
+    if (platform === 'android') expect(trigger).toEqual({ channelId: 'agent-state-banner-v1' });
+    const behavior = await notificationHandler.handleNotification({
+      request: { content },
+    } as unknown as Notifications.Notification);
+    expect(behavior).toMatchObject({
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: platform === 'android',
+    });
+  },
+);
+
+test('keeps the status body for a chat that is blocked or awaiting its latest reply', async () => {
+  const state = chatState();
+  jest.mocked(agentTranscriptService.currentChatForPane).mockReturnValue(state);
+  await alertAgent(agent, false, target, 'work');
+  state.transcript.messages.push({ id: 'new-prompt', role: 'user', diffs: [], parts: [] });
+  await alertAgent({ ...agent, agent_status: 'done' }, false, target, 'work');
+  const bodies = jest.mocked(Notifications.scheduleNotificationAsync).mock.calls.map(([request]) => request.content.body);
+  expect(bodies).toEqual(['Agent is blocked', 'Agent is done']);
+});
+
 test('voice chat dismisses existing tab alerts and releases only its own suppression', async () => {
   mockNative.setSuppression.mockReturnValueOnce([
     effect(
@@ -261,6 +321,7 @@ test.each(['persistent', 'brief', 'regular'] as const)(
       body: 'Agent is blocked',
       data: { ...target, agentAlertLevel: delivery },
     });
+    expect(request.content.threadIdentifier).toBeUndefined();
     expect(request.trigger).toEqual({ channelId: 'agent-state-banner-v1' });
     expect(request.content.sound).toBe(false);
     expect(request.content.vibrate).toEqual([0]);

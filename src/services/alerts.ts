@@ -14,6 +14,7 @@ import {
 import * as Notifications from 'expo-notifications';
 import { Platform, Vibration } from 'react-native';
 
+import type { AgentTranscript } from '../agentChat';
 import type { AgentInfo, AgentStatus } from '../types';
 import type { AgentNotificationTarget } from '../lib/notificationNavigation';
 import { agentNotificationTitle } from '../lib/agentStatusEvents';
@@ -47,6 +48,8 @@ const PERSISTENT_CHANNEL_ID = 'agent-state-v3';
 const BRIEF_CHANNEL_ID = 'agent-state-brief-v1';
 const REGULAR_CHANNEL_ID = 'agent-state-regular-v1';
 const SILENT_CHANNEL_ID = 'agent-state-silent-v1';
+const CHAT_ALERT_GROUP = 'whip-agent-chats';
+const MAX_CHAT_PREVIEW_LENGTH = 480;
 const ALERT_LEVEL_DATA_KEY = 'agentAlertLevel';
 const ALERT_VIBRATION_PATTERN = [
   300, 100, 300, 100, 300, 100, 300, 2000, 300, 100, 300, 100, 300, 100, 300,
@@ -75,9 +78,14 @@ const SPEECH_END: Record<SpeechEndReason, LocalAlertSpeechEnd> = {
   interrupted: LocalAlertSpeechEnd.Interrupted,
   busy: LocalAlertSpeechEnd.Busy,
 };
+const ALERT_LABELS = {
+  needsAttention: (name: string) => i18n.t('alerts.needsAttention', { name }),
+  finished: (name: string) => i18n.t('alerts.finished', { name }),
+};
 
 export type AgentAlertDelivery = AgentAlertLevel | 'brief';
 type AlertTarget = Pick<AgentNotificationTarget, 'hostId' | 'paneId'>;
+type AlertPresentation = { agent: AgentInfo; tabName?: string };
 let coordinator: LocalAlertCoordinator | undefined;
 
 function runtimeFor(hostId: string): LocalAlertRuntime | undefined {
@@ -212,11 +220,7 @@ function alertRequest(
   delivery: AgentAlertDelivery,
   persistentAlertTimeoutMs: number,
 ): LocalAlertRequest {
-  const labels = {
-    needsAttention: (name: string) => i18n.t('alerts.needsAttention', { name }),
-    finished: (name: string) => i18n.t('alerts.finished', { name }),
-  };
-  const title = agentNotificationTitle(agent, tabName, labels);
+  const title = agentNotificationTitle(agent, tabName, ALERT_LABELS);
   const sessionTitle = speak
     ? agentTranscriptService.titles.title(
         transcriptTitleKey(target.hostId, agent),
@@ -240,7 +244,7 @@ function alertRequest(
       i18n.t('alerts.agentState', { status: agent.agent_status }),
     announcement: speak
       ? sessionTitle
-        ? agentNotificationTitle(agent, undefined, labels, sessionTitle)
+        ? agentNotificationTitle(agent, undefined, ALERT_LABELS, sessionTitle)
         : title
       : undefined,
     language:
@@ -278,6 +282,7 @@ export function alertAgent(
         persistentAlertTimeoutMs,
       ),
     ),
+    { agent, tabName },
   );
 }
 
@@ -319,6 +324,7 @@ export function transitionAgentAlert(
           )
         : undefined,
     }),
+    agent && { agent, tabName: options.tabName },
   );
 }
 
@@ -405,6 +411,7 @@ export function setAgentAlertSpeechEnabled(enabled: boolean): Promise<void> {
 async function runEffects(
   owner: LocalAlertCoordinator,
   effects: LocalAlertEffect[],
+  presentation?: AlertPresentation,
 ): Promise<void> {
   // Wake the native adapter after synchronous Rust invalidation, including
   // queued-only dismissals that produce no StopSpeech effect.
@@ -427,7 +434,7 @@ async function runEffects(
         outcome = new LocalAlertOutcome.Skipped();
       else {
         try {
-          outcome = await performEffect(effect);
+          outcome = await performEffect(effect, presentation);
         } catch (error) {
           outcome = new LocalAlertOutcome.Failed({
             message: error instanceof Error ? error.message : String(error),
@@ -443,9 +450,52 @@ async function runEffects(
   );
 }
 
-async function performEffect({
-  action, id,
-}: LocalAlertEffect): Promise<LocalAlertOutcome> {
+function latestAssistantReply({ messages }: AgentTranscript): string | undefined {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (message.role === 'user') return;
+    const text = message.parts
+      .flatMap(part => part.type === 'text' ? [part.text] : [])
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!text) continue;
+    if (text.length <= MAX_CHAT_PREVIEW_LENGTH) return text;
+    const prefix = text.slice(0, MAX_CHAT_PREVIEW_LENGTH - 1)
+      .replace(/[\uD800-\uDBFF]$/, '');
+    return `${prefix.trimEnd()}…`;
+  }
+}
+
+function chatAlertContent(
+  request: LocalAlertRequest,
+  { agent, tabName }: AlertPresentation,
+) {
+  const state = agentTranscriptService.currentChatForPane(
+    request.hostId,
+    agent,
+    request.runtime && Number(request.runtime.incarnation),
+  );
+  if (!state) return;
+  const info = state.transcript.info;
+  const chatTitle = info?.id === state.sessionId ? info.title?.trim() : undefined;
+  const title = chatTitle || tabName?.trim() || request.title;
+  const status = agentNotificationTitle(agent, undefined, ALERT_LABELS);
+  const reply = state.status === 'live' && request.status !== HerdrAgentStatus.Blocked
+    ? latestAssistantReply(state.transcript)
+    : undefined;
+  return {
+    title,
+    subtitle: title !== status ? status : undefined,
+    body: reply || request.body,
+    threadIdentifier: CHAT_ALERT_GROUP,
+  };
+}
+
+async function performEffect(
+  { action, id }: LocalAlertEffect,
+  presentation?: AlertPresentation,
+): Promise<LocalAlertOutcome> {
   switch (action.tag) {
     case LocalAlertAction_Tags.Speak: {
       const reason = await getSpeechPlayback().speakStatusAnnouncement(
@@ -484,6 +534,7 @@ async function performEffect({
       const content: Notifications.NotificationContentInput = {
         title: request.title,
         body: request.body,
+        ...(presentation && chatAlertContent(request, presentation)),
         priority: Notifications.AndroidNotificationPriority.MAX,
         data: {
           hostId: request.hostId,

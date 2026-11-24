@@ -12,7 +12,7 @@ import type {
 } from 'react-native-whip-ssh';
 
 import type { AgentChatState } from '../agentChat';
-import { TranscriptTabTitles } from '../lib/transcriptTabTitles';
+import { TranscriptTabTitles, type TranscriptTitlePane } from '../lib/transcriptTabTitles';
 import {
   agentChatStateFromNative,
   applyNativeAgentTranscriptUpdate,
@@ -414,6 +414,40 @@ export class NativeTranscriptService {
 
   getState(bindingToken: string): AgentChatState | null {
     return this.entryForBinding(bindingToken)?.state ?? null;
+  }
+
+  /** Read a resident chat without opening one or copying its history from Rust. */
+  currentChatForPane(
+    hostSessionId: string,
+    pane: TranscriptTitlePane,
+    runtimeIncarnation: number | undefined,
+  ): AgentChatState | undefined {
+    const token = this.terminalBindings.get(
+      this.terminalKey(hostSessionId, pane.terminal_id),
+    );
+    if (!token) return;
+    const entry = this.entryForBinding(token);
+    if (!entry || entry.deleted || entry.runtimeIncarnation !== runtimeIncarnation) return;
+    const binding = entry.bindings.get(token);
+    const state = entry.state;
+    if (
+      binding?.paneId !== pane.pane_id ||
+      state.sessionId !== binding.sessionId ||
+      state.revision === undefined || state.status === 'closed'
+    ) return;
+
+    const session = pane.agent_session;
+    if (session && session.agent.toLowerCase() !== binding.agent) return;
+    const sessionId = session?.kind === 'id' ? session.value.trim() : undefined;
+    if (sessionId && sessionId !== binding.sessionId) return;
+
+    try {
+      if (entry.transport.agentChatBindingIsCurrent(
+        pane.terminal_id, token, state.revision,
+      )) return state;
+    } catch {
+      // A disconnect can invalidate the transport before its binding is removed.
+    }
   }
 
   /** A snapshot for native call pinning; cloud tools cannot resolve foreground focus. */
