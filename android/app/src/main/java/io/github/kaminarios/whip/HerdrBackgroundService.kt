@@ -97,6 +97,11 @@ class HerdrBackgroundService : Service() {
       @Suppress("DEPRECATION")
       Notification.Builder(this).setPriority(Notification.PRIORITY_LOW)
     }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
+      // Android exempts colorized foreground-service cards from forced grouping.
+      // Keep the default notification color so System UI supplies the palette.
+      builder.setColorized(true)
+    }
     val listening = SpeechPlayback.label
     if (listening != null) {
       val stopIntent = Intent(this, HerdrBackgroundService::class.java).apply { action = ACTION_STOP_CHAT }
@@ -115,6 +120,7 @@ class HerdrBackgroundService : Service() {
       .setStyle(Notification.BigTextStyle().bigText(content))
       .setContentIntent(contentIntent)
       .setCategory(Notification.CATEGORY_SERVICE)
+      .setGroup(CHANNEL_ID)
       .setOngoing(true)
       .setOnlyAlertOnce(true)
       .setShowWhen(false)

@@ -261,13 +261,11 @@ test.each(['android', 'ios'] as const)(
       title: 'Herdr Core Agent Integration',
       subtitle: 'codex finished',
       body: 'Herdr has agent status APIs. It also has control APIs.',
+      threadIdentifier: 'whip-agent-chats',
       data: { ...target, agentAlertLevel: 'persistent' },
     });
     if (platform === 'android') {
-      expect(content.threadIdentifier).toBeUndefined();
       expect(trigger).toEqual({ channelId: 'agent-state-banner-v1' });
-    } else {
-      expect(content.threadIdentifier).toBe('whip-agent-chats');
     }
     const behavior = await notificationHandler.handleNotification({
       request: { content },
@@ -327,7 +325,7 @@ test.each(['persistent', 'brief', 'regular'] as const)(
       body: 'Agent is blocked',
       data: { ...target, agentAlertLevel: delivery },
     });
-    expect(request.content.threadIdentifier).toBeUndefined();
+    expect(request.content.threadIdentifier).toBe('whip-agent-chats');
     expect(request.trigger).toEqual({ channelId: 'agent-state-banner-v1' });
     expect(request.content.sound).toBe(false);
     expect(request.content.vibrate).toEqual([0]);

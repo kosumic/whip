@@ -177,7 +177,8 @@
       "android": {
         "buildFromSource": [
           "expo-blur",
-          "expo-camera"
+          "expo-camera",
+          "expo-notifications"
         ]
       }
     },

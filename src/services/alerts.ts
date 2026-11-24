@@ -488,8 +488,6 @@ function chatAlertContent(
     title,
     subtitle: title !== status ? status : undefined,
     body: reply || request.body,
-    // Expo posts an extra summary on Android, even for a single alert.
-    // Let Android group the individual notifications in the shade.
     ...(Platform.OS === 'ios' && { threadIdentifier: CHAT_ALERT_GROUP }),
   };
 }
@@ -537,6 +535,7 @@ async function performEffect(
         title: request.title,
         body: request.body,
         ...(presentation && chatAlertContent(request, presentation)),
+        ...(Platform.OS === 'android' && { threadIdentifier: CHAT_ALERT_GROUP }),
         priority: Notifications.AndroidNotificationPriority.MAX,
         data: {
           hostId: request.hostId,

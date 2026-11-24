@@ -1,0 +1,183 @@
+diff --git a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/service/delegates/ExpoPresentationDelegate.kt b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/service/delegates/ExpoPresentationDelegate.kt
+index e365e8a9..5bacd8c7 100644
+--- a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/service/delegates/ExpoPresentationDelegate.kt
++++ b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/service/delegates/ExpoPresentationDelegate.kt
+@@ -23,10 +23,12 @@ import expo.modules.notifications.notifications.presentation.builders.ExpoNotifi
+ import expo.modules.notifications.service.interfaces.PresentationDelegate
+ import kotlinx.coroutines.CoroutineScope
+ import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.delay
+ import kotlinx.coroutines.launch
+ import kotlinx.coroutines.runBlocking
+ import kotlinx.coroutines.sync.Mutex
+ import kotlinx.coroutines.sync.withLock
++import kotlinx.coroutines.withTimeoutOrNull
+ import org.json.JSONException
+ import org.json.JSONObject
+ import java.util.Date
+@@ -42,11 +44,15 @@ open class ExpoPresentationDelegate(
+ 
+     // User notifications use their identifier as the tag, so a distinct ID keeps summary (tag, id) pairs unique.
+     internal val GROUP_SUMMARY_NOTIFICATION_ID = "expo-group-summary".hashCode()
++    private const val DESIRED_GROUP_KEY = "expo.notifications.desiredGroup"
+ 
+     private fun isGroupSummary(notification: StatusBarNotification): Boolean =
+-      notification.notification.flags and android.app.Notification.FLAG_GROUP_SUMMARY != 0 &&
++      notification.id == GROUP_SUMMARY_NOTIFICATION_ID &&
+         notification.tag?.endsWith(GROUP_SUMMARY_TAG_SUFFIX) == true
+ 
++    private fun desiredGroup(notification: android.app.Notification): String? =
++      notification.extras.getString(DESIRED_GROUP_KEY) ?: notification.group
++
+     // Process-wide because delegate instances are short-lived (one per service intent)
+     private val presentationMutex = Mutex()
+ 
+@@ -133,7 +139,8 @@ open class ExpoPresentationDelegate(
+       // notify() replaces a notification with the same (tag, id); if that moves it out of its
+       // group, the old group is about to lose a member.
+       val replaced = notificationManager.activeNotifications.firstOrNull { it.tag == tag && it.id == id }
+-      val leavesOldGroup = replaced != null && replaced.notification.group != request.content.group
++      val group = request.content.group
++      val leavesOldGroup = replaced != null && desiredGroup(replaced.notification) != group
+       runCatching {
+         cleanUpOrphanedGroupSummaries(
+           cancelled = if (leavesOldGroup) {
+@@ -145,11 +152,10 @@ open class ExpoPresentationDelegate(
+       }
+         .onFailure { Log.e("expo-notifications", "Failed to clean up group summary notifications.", it) }
+ 
+-      notificationManager.notify(tag, id, androidNotification)
+-
+-      request.content.group?.let { group ->
+-        runCatching { postGroupSummary(group, tag, androidNotification) }
+-          .onFailure { Log.e("expo-notifications", "Failed to post a group summary notification.", it) }
++      if (group == null) {
++        notificationManager.notify(tag, id, androidNotification)
++      } else {
++        presentGroupMember(group, tag, id, androidNotification)
+       }
+     }
+   }
+@@ -180,7 +186,51 @@ open class ExpoPresentationDelegate(
+     return ANDROID_NOTIFICATION_ID
+   }
+ 
+-  private fun postGroupSummary(group: String, childTag: String, childNotification: android.app.Notification) {
++  private fun withGroup(notification: android.app.Notification, group: String?, quietUpdate: Boolean): android.app.Notification =
++    android.app.Notification.Builder.recoverBuilder(context, notification)
++      .setGroup(group)
++      .apply { if (quietUpdate) setOnlyAlertOnce(true) }
++      .build()
++
++  private suspend fun presentGroupMember(group: String, tag: String, id: Int, notification: android.app.Notification) {
++    fun activeSiblings() = notificationManager.activeNotifications.filter {
++      !isGroupSummary(it) && desiredGroup(it.notification) == group && (it.tag != tag || it.id != id)
++    }
++    notification.extras.putString(DESIRED_GROUP_KEY, group)
++    val grouped = activeSiblings().isNotEmpty()
++    val child = if (grouped) notification else withGroup(notification, null, quietUpdate = false)
++    notificationManager.notify(tag, id, child)
++
++    // NotificationManager posts asynchronously. Wait until this child is
++    // visible so a concurrent post cannot also treat itself as the first.
++    val posted = withTimeoutOrNull(300) {
++      var active = false
++      while (!active) {
++        active = notificationManager.activeNotifications.any {
++          it.tag == tag && it.id == id && desiredGroup(it.notification) == group
++        }
++        if (!active) delay(25)
++      }
++    } != null
++    if (!posted || !grouped) return
++
++    // A swipe can remove a sibling while the new post is being enqueued.
++    val siblings = activeSiblings()
++    if (siblings.isEmpty()) {
++      notificationManager.notify(tag, id, withGroup(child, null, quietUpdate = true))
++      return
++    }
++
++    for (sibling in siblings) {
++      if (sibling.notification.group != group) {
++        notificationManager.notify(sibling.tag, sibling.id, withGroup(sibling.notification, group, quietUpdate = true))
++      }
++    }
++    postGroupSummary(group, siblings.map { it.notification } + child)
++  }
++
++  private fun postGroupSummary(group: String, children: List<android.app.Notification>) {
++    val childNotification = children.last()
+     // Trade-off: the summary uses the last child's channel. Disabling that channel hides
+     // the summary even while siblings' channels stay enabled.
+     val channelId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+@@ -202,20 +252,21 @@ open class ExpoPresentationDelegate(
+       builder.setSmallIcon(context.applicationInfo.icon)
+     }
+ 
+-    // Older Android versions render the summary's own content as the collapsed group row.
+-    // The snapshot may lag the notify() of childNotification, so its title is added explicitly.
+-    val siblingTitles = notificationManager.activeNotifications
+-      .filter { !isGroupSummary(it) && it.notification.group == group && it.tag != childTag }
+-      .mapNotNull { NotificationCompat.getContentTitle(it.notification) }
+     val inboxStyle = NotificationCompat.InboxStyle()
+-    (siblingTitles + listOfNotNull(NotificationCompat.getContentTitle(childNotification))).forEach { inboxStyle.addLine(it) }
++    for (child in children.asReversed().take(2)) {
++      val title = NotificationCompat.getContentTitle(child)
++      val text = NotificationCompat.getContentText(child)
++      inboxStyle.addLine(listOfNotNull(title, text).joinToString(" "))
++    }
+ 
+     val summaryNotification = builder
+-      .setContentTitle(context.applicationInfo.loadLabel(context.packageManager))
++      .setContentTitle(NotificationCompat.getContentTitle(childNotification))
++      .setWhen(childNotification.`when`)
+       .setStyle(inboxStyle)
+       .setGroup(group)
+       .setGroupSummary(true)
+       .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
++      .setOnlyAlertOnce(true)
+       .build()
+ 
+     notificationManager.notify("$group$GROUP_SUMMARY_TAG_SUFFIX", GROUP_SUMMARY_NOTIFICATION_ID, summaryNotification)
+@@ -228,10 +279,15 @@ open class ExpoPresentationDelegate(
+ 
+     for (summary in activeNotifications.filter { isGroupSummary(it) }) {
+       val groupKey = summary.notification.group ?: continue
+-      val hasGroupMembers = activeNotifications.any {
+-        !isGroupSummary(it) && it.notification.group == groupKey
++      val members = activeNotifications.filter {
++        !isGroupSummary(it) && desiredGroup(it.notification) == groupKey
+       }
+-      if (!hasGroupMembers) {
++      if (members.size < 2) {
++        members.singleOrNull()?.let { remaining ->
++          // Cancelling the summary also cancels its grouped children. Move the
++          // survivor out of the group first and retain its tap/delete intents.
++          notificationManager.notify(remaining.tag, remaining.id, withGroup(remaining.notification, null, quietUpdate = true))
++        }
+         notificationManager.cancel(summary.tag, summary.id)
+       }
+     }
+diff --git a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/model/RemoteNotificationContent.kt b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/model/RemoteNotificationContent.kt
+index cc9e5592..ee9567c0 100644
+--- a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/model/RemoteNotificationContent.kt
++++ b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/model/RemoteNotificationContent.kt
+@@ -68,7 +68,7 @@ class RemoteNotificationContent(private val remoteMessage: RemoteMessage) : INot
+   override val categoryId = notificationData.categoryId
+ 
+   // FCM's notification payload has no group field.
+-  override val group = notificationData.group
++  override val group = notificationData.group ?: AGENT_ALERT_GROUP.takeIf { body?.has("whip_notify") == true }
+ 
+   override val isSticky = notificationData.isSticky
+ 
+@@ -83,6 +83,8 @@ class RemoteNotificationContent(private val remoteMessage: RemoteMessage) : INot
+   }
+ 
+   companion object CREATOR : Parcelable.Creator<RemoteNotificationContent> {
++    private const val AGENT_ALERT_GROUP = "whip-agent-chats"
++
+     override fun createFromParcel(parcel: Parcel): RemoteNotificationContent {
+       return RemoteNotificationContent(parcel)
+     }
