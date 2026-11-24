@@ -292,7 +292,7 @@ export const en = {
   'speech.openai': "OpenAI TTS",
   'speech.openaiVoice': "OpenAI TTS voice",
   'speech.openaiCopy': "Uses gpt-4o-mini-tts to generate AI speech. Speech text is sent to OpenAI; an internet connection and your shared OpenAI API key are required, and API charges apply. Local-only calls keep using offline speech.",
-  'speech.backend': 'Speech backend',
+  'speech.backend': 'TTS provider',
   'speech.activeBackend': 'Currently using {{backend}} for speech.',
   'speech.system': 'System',
   'speech.phonon': 'Phonon (local, English)',

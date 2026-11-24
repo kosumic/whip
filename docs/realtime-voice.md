@@ -2,14 +2,15 @@
 
 In **Settings → OpenAI**, save your OpenAI Platform API key and configure
 the Realtime model, voice and turn detection. This single key also serves
-OpenAI text-to-speech. Select **OpenAI API** in the **Voice** card to use it
-for conversations; choose the speech backend separately in **Speech backend**.
+OpenAI text-to-speech. In **Settings → Voice**, select **OpenAI API** under
+**Voice call provider** for conversations. The **TTS provider** setting controls
+read-aloud and announcements.
 Then open a connected coding-agent chat and start its call.
 OpenAI selection is disabled until an API key is saved and while credentials
 are being updated or their presence cannot be checked. Removing the key resets
 the saved conversation provider to Local and OpenAI TTS to System, even with
 Settings closed. A key lookup error or key replacement preserves the selection.
-Local is always selectable. Speech backend tabs open that backend's configuration,
+Local is always selectable. The **TTS provider** tabs open each provider's configuration,
 including setup when it is unavailable. Speech uses System until the chosen
 backend has a saved API key or an installed Phonon model on a supported device;
 the setup tab stays open and identifies the active fallback. Completing setup

@@ -226,9 +226,8 @@ and owner-scoped cancellation; queue and lease decisions are covered in Rust.
 
 ## Optional local speech (#263)
 
-Settings has a separate **OpenAI TTS** card with its own expansion state, voice
-picker, API key controls, and preview. **Use OpenAI TTS** selects the backend;
-System and Phonon remain in the **Speech backend** card. OpenAI TTS uses the
+In **Settings → Voice → TTS provider**, choose **System**, **Phonon (local, English)**, or **OpenAI TTS**.
+To enable OpenAI, save an API key under **Settings → OpenAI**. OpenAI TTS uses the
 [OpenAI Speech API](https://developers.openai.com/api/docs/guides/text-to-speech)
 with `gpt-4o-mini-tts`, 13 built-in voices, and streaming 24 kHz PCM. The default
 voice is Marin. Voice and backend selections persist independently. The API key
@@ -262,7 +261,7 @@ admission lives in `voice_credentials`. Replacing or deleting the key stops
 OpenAI playback and invalidates pending synthesis. The legacy `phonon` storage
 directory is retained so existing backend preferences and downloads survive.
 
-Settings → Speech backend defaults to **System**. Voice also contains
+**TTS provider** defaults to **System**. Voice also contains
 the voice announcements toggle. Choosing **Download
 Phonon** explicitly installs Phonon 31M English and one default voice. Opening
 settings, starting the app, or opening chat never downloads model weights.
@@ -273,7 +272,7 @@ speech, and an unavailable model or a load failure before any audio also falls
 back to system speech. The settings status explains the fallback. Errors after
 partial playback stop that utterance instead of repeating its beginning.
 
-Speech backend contains separate pickers for installed system TTS voices and Phonon
+**TTS provider** contains separate pickers for installed system TTS voices and Phonon
 voices. System choices come from the platform speech engine and retain their
 language and network requirement. The saved system voice applies to chat and
 announcements; an explicit device-tool language still takes precedence when

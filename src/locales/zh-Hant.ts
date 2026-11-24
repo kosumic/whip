@@ -307,7 +307,7 @@ export const zhHant: Record<string, string> = {
   'speech.openai': "OpenAI TTS",
   'speech.openaiVoice': "OpenAI TTS 聲音",
   'speech.openaiCopy': "使用 gpt-4o-mini-tts 產生 AI 語音。朗讀文字會傳送給 OpenAI；需要網路連線與共用的 OpenAI API 金鑰，並產生 API 費用。僅限本機的通話仍使用離線語音。",
-  'speech.backend': '語音引擎',
+  'speech.backend': '文字轉語音供應商',
   'speech.activeBackend': '目前使用 {{backend}} 朗讀。',
   'speech.system': '系統',
   'speech.phonon': 'Phonon（本機，英語）',
