@@ -33,12 +33,10 @@ static void configureRecoveryDirectory() {
     NSURL *support = [[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory
                                                           inDomains:NSUserDomainMask].firstObject;
     NSURL *directory = [support URLByAppendingPathComponent:@"WhipReverseControl" isDirectory:YES];
-    // Durable data is backed up. Keep it separate from disposable conversations
-    // and device-bound reverse-control recovery data excluded below.
+    // Durable data inherits the app's backup policy from Library.
     NSURL *appData = [support URLByAppendingPathComponent:@"WhipAppData" isDirectory:YES];
     if ([[NSFileManager defaultManager] createDirectoryAtURL:appData
                                 withIntermediateDirectories:YES attributes:nil error:nil]) {
-        [appData setResourceValue:@NO forKey:NSURLIsExcludedFromBackupKey error:nil];
         whip_set_app_data_directory(appData.path.UTF8String);
     }
     if ([[NSFileManager defaultManager] createDirectoryAtURL:directory

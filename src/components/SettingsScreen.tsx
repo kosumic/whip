@@ -7,6 +7,7 @@ import ChevronDown from 'lucide-react-native/icons/chevron-down';
 import ChevronRight from 'lucide-react-native/icons/chevron-right';
 import ChevronUp from 'lucide-react-native/icons/chevron-up';
 import Code2 from 'lucide-react-native/icons/code-xml';
+import CloudUpload from 'lucide-react-native/icons/cloud-upload';
 import Fingerprint from 'lucide-react-native/icons/fingerprint-pattern';
 import Gamepad2 from 'lucide-react-native/icons/gamepad-2';
 import History from 'lucide-react-native/icons/rotate-ccw-clock';
@@ -28,9 +29,9 @@ import Volume1 from 'lucide-react-native/icons/volume-1';
 import Volume2 from 'lucide-react-native/icons/volume-2';
 import X from 'lucide-react-native/icons/x';
 import type { LucideIcon } from 'lucide-react-native';
-import { useContext, useEffect, useState, type Ref } from 'react';
+import { useContext, useEffect, useRef, useState, type Ref } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
-import { Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, View, type ViewInstance } from 'react-native';
+import { Alert, Image, Modal, NativeModules, Platform, Pressable, ScrollView, StyleSheet, View, type ViewInstance } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -342,6 +343,7 @@ export function SettingsSection(props: SettingsSectionProps) {
         />
         <SettingRow title={t('settings.biometricForKeys')} icon={Fingerprint} copy={t(Platform.OS === 'ios' ? 'settings.biometricForKeysCopyIos' : 'settings.biometricForKeysCopy')} value={props.biometricForKeys} onChange={props.onBiometricForKeysChange} divided />
         <SettingRow title={t('settings.biometricOnResume')} icon={Fingerprint} copy={t(Platform.OS === 'ios' ? 'settings.biometricOnResumeCopyIos' : 'settings.biometricOnResumeCopy')} value={props.biometricOnResume} onChange={props.onBiometricOnResumeChange} divided />
+        {(Platform.OS === 'android' || Platform.OS === 'ios') && <DeviceBackupSetting />}
       </CollapsibleSectionCard>
 
       <CollapsibleSectionCard
@@ -1249,7 +1251,56 @@ function SettingRow({ title, icon, copy, value, onChange, onDetailsPress, divide
   if (locked) {
     return <Button accessibilityHint={copy} accessibilityLabel={`${title}, Rancher`} className={divided ? 'min-h-16 justify-start rounded-none border-t border-border px-3.5 py-2' : 'min-h-16 justify-start rounded-none px-3.5 py-2'} size="content" variant="ghost" onPress={hapticPress(() => { void onLockedPress?.(); })}>{label}<RancherBadge /><Icon as={ChevronRight} className="ml-1 text-muted-foreground" size={18} /></Button>;
   }
-  return <View className={divided ? 'min-h-16 flex-row items-center border-t border-border px-3.5 py-2' : 'min-h-16 flex-row items-center px-3.5 py-2'}>{label}<Switch checked={value} disabled={disabled} onCheckedChange={onChange} /></View>;
+  return <View className={divided ? 'min-h-16 flex-row items-center border-t border-border px-3.5 py-2' : 'min-h-16 flex-row items-center px-3.5 py-2'}>{label}<Switch accessibilityLabel={title} checked={value} disabled={disabled} onCheckedChange={onChange} /></View>;
+}
+
+function DeviceBackupSetting() {
+  const { t } = useTranslation();
+  const [enabled, setEnabled] = useState<boolean | null>();
+  const [busy, setBusy] = useState(false);
+  const [readAttempt, setReadAttempt] = useState(0);
+  const writing = useRef(false);
+  const native = (Platform.OS === 'android' ? NativeModules.HerdrCredentialVault : NativeModules.WhipBackup) as {
+    getDeviceBackupEnabled(): Promise<boolean>;
+    setDeviceBackupEnabled(value: boolean): Promise<boolean>;
+  } | undefined;
+
+  useEffect(() => {
+    let active = true;
+    async function read() {
+      try {
+        const value = await native?.getDeviceBackupEnabled();
+        if (active) setEnabled(value ?? null);
+      } catch {
+        if (active) setEnabled(null);
+      }
+    }
+    void read();
+    return () => { active = false; };
+  }, [native, readAttempt]);
+
+  async function change(value: boolean) {
+    if (!native || writing.current) return;
+    writing.current = true;
+    setBusy(true);
+    try {
+      setEnabled(await native.setDeviceBackupEnabled(value));
+    } catch {
+      Alert.alert(t('settings.deviceBackupError'));
+      setEnabled(undefined);
+      setReadAttempt(attempt => attempt + 1);
+    } finally {
+      writing.current = false;
+      setBusy(false);
+    }
+  }
+
+  const title = t('settings.deviceBackup');
+  const copy = t('settings.deviceBackupCopy');
+  if (enabled === undefined) return null;
+  if (enabled === null) return <ActionRow title={title} copy={copy} icon={CloudUpload}
+    value={t('voiceUsage.retry')} onPress={() => setReadAttempt(attempt => attempt + 1)} divided />;
+  return <SettingRow title={title} copy={copy} icon={CloudUpload} value={enabled} disabled={busy} onChange={change} divided />;
 }
 
 function SettingIcon({ icon }: { icon: LucideIcon }) {

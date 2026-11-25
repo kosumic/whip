@@ -34,6 +34,7 @@ backup enabled and the same Google account throughout.
 ```bash
 adb install android/app/build/outputs/apk/release/app-release.apk
 # Trust host A in Whip and verify Known SSH hosts reports 1.
+# Turn on Settings → Security → Back up app data in Whip.
 adb shell bmgr enabled
 adb shell bmgr backupnow io.github.kaminarios.whip
 adb shell bmgr list sets

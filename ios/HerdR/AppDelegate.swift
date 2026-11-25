@@ -14,6 +14,11 @@ class AppDelegate: ExpoAppDelegate, ExpoReactNativeFactoryProvider {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
+    do {
+      try WhipBackup.applySavedPreference()
+    } catch {
+      NSLog("Could not apply Whip's device backup preference: %@", error.localizedDescription)
+    }
     let requiresDesignCompatibility =
       (Bundle.main.object(forInfoDictionaryKey: "UIDesignRequiresCompatibility") as? Bool) ?? false
     let glassEffectClass = NSClassFromString("UIGlassEffect")

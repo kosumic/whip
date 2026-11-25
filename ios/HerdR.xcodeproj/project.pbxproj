@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A24000000000000000000001 /* WhipBackup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A24000000000000000000002 /* WhipBackup.swift */; };
+		A24000000000000000000003 /* WhipBackupBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A24000000000000000000004 /* WhipBackupBridge.m */; };
 		A22000000000000000000001 /* WhipSpeechPlayback.m in Sources */ = {isa = PBXBuildFile; fileRef = A22000000000000000000002 /* WhipSpeechPlayback.m */; };
 		A1B000000000000000000001 /* WhipBrowser.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B000000000000000000002 /* WhipBrowser.m */; };
 		A1D000000000000000000001 /* WhipDevice.m in Sources */ = {isa = PBXBuildFile; fileRef = A1D000000000000000000002 /* WhipDevice.m */; };
@@ -25,6 +27,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A24000000000000000000002 /* WhipBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WhipBackup.swift; path = HerdR/WhipBackup.swift; sourceTree = "<group>"; };
+		A24000000000000000000004 /* WhipBackupBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = WhipBackupBridge.m; path = HerdR/WhipBackupBridge.m; sourceTree = "<group>"; };
 		A22000000000000000000002 /* WhipSpeechPlayback.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = WhipSpeechPlayback.m; path = HerdR/WhipSpeechPlayback.m; sourceTree = "<group>"; };
 		A22000000000000000000003 /* WhipSpeechPlayback.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = WhipSpeechPlayback.h; path = HerdR/WhipSpeechPlayback.h; sourceTree = "<group>"; };
 		A1B000000000000000000002 /* WhipBrowser.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = WhipBrowser.m; path = HerdR/WhipBrowser.m; sourceTree = "<group>"; };
@@ -67,6 +71,8 @@
 				A1C026000000000000000001 /* AppIcon.icon */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				761780EC2CA45674006654EE /* AppDelegate.swift */,
+				A24000000000000000000002 /* WhipBackup.swift */,
+				A24000000000000000000004 /* WhipBackupBridge.m */,
 				A23000000000000000000002 /* SceneDelegate.swift */,
 				A1B000000000000000000002 /* WhipBrowser.m */,
 				A1D000000000000000000002 /* WhipDevice.m */,
@@ -347,6 +353,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
+				A24000000000000000000001 /* WhipBackup.swift in Sources */,
+				A24000000000000000000003 /* WhipBackupBridge.m in Sources */,
 				A23000000000000000000001 /* SceneDelegate.swift in Sources */,
 				A1B000000000000000000001 /* WhipBrowser.m in Sources */,
 				A1D000000000000000000001 /* WhipDevice.m in Sources */,

@@ -46,6 +46,28 @@ class CredentialVaultModule(
 
   override fun getName(): String = "HerdrCredentialVault"
 
+  override fun initialize() {
+    super.initialize()
+    backUpLocalRecoveryKey()
+  }
+
+  @ReactMethod
+  fun getDeviceBackupEnabled(promise: Promise) {
+    promise.resolve(DeviceBackup.enabled(context))
+  }
+
+  @ReactMethod
+  fun setDeviceBackupEnabled(enabled: Boolean, promise: Promise) {
+    try {
+      DeviceBackup.setEnabled(context, enabled)
+    } catch (error: Exception) {
+      promise.reject("E_DEVICE_BACKUP", error)
+      return
+    }
+    promise.resolve(enabled)
+    if (enabled) backUpLocalRecoveryKey()
+  }
+
   @ReactMethod
   fun isBackupAvailable(promise: Promise) {
     backup.request { blockstore.isEndToEndEncryptionAvailable() }
@@ -63,7 +85,7 @@ class CredentialVaultModule(
     if (existing != null) {
       try {
         promise.resolve(encrypt(existing, plaintext, credentialId))
-        refreshCloudRecovery(existing)
+        backUpLocalRecoveryKey(existing)
       } catch (error: Throwable) {
         promise.reject("E_CREDENTIAL_VAULT_ENCRYPT", error)
       }
@@ -71,18 +93,22 @@ class CredentialVaultModule(
     }
 
     val recoveryKey = ByteArray(RECOVERY_KEY_BYTES).also(SecureRandom()::nextBytes)
-    storeInitialRecoveryKey(
-      recoveryKey,
-      onSuccess = {
-        try {
-          installLocalRecoveryKey(recoveryKey)
-          promise.resolve(encrypt(recoveryKey, plaintext, credentialId))
-        } catch (error: Throwable) {
-          promise.reject("E_CREDENTIAL_VAULT_ENCRYPT", error)
-        }
-      },
-      onFailure = { promise.reject(OptionalCredentialBackup.ERROR_CODE, it) },
-    )
+    fun install(pendingBackup: Boolean) {
+      try {
+        installLocalRecoveryKey(recoveryKey, pendingBackup)
+        promise.resolve(encrypt(recoveryKey, plaintext, credentialId))
+      } catch (error: Throwable) {
+        promise.reject("E_CREDENTIAL_VAULT_ENCRYPT", error)
+      }
+    }
+    if (DeviceBackup.enabled(context)) {
+      storeRecoveryKey(recoveryKey, onSuccess = { install(false) }, onFailure = {
+        if (DeviceBackup.enabled(context)) promise.reject(OptionalCredentialBackup.ERROR_CODE, it)
+        else install(true)
+      })
+    } else {
+      install(true)
+    }
   }
 
   @ReactMethod
@@ -314,46 +340,50 @@ class CredentialVaultModule(
       .addOnFailureListener { finishUnlockError(OptionalCredentialBackup.ERROR_CODE, it) }
   }
 
-  private fun storeInitialRecoveryKey(
+  private fun storeRecoveryKey(
     recoveryKey: ByteArray,
+    cloudOnly: Boolean = false,
+    expectedWrappedKey: String? = null,
     onSuccess: () -> Unit,
-    onFailure: (Throwable) -> Unit,
+    onFailure: (Throwable) -> Unit = { Log.w(TAG, OptionalCredentialBackup.UNAVAILABLE_MESSAGE) },
   ) {
-    backup.request { blockstore.isEndToEndEncryptionAvailable() }.addOnCompleteListener { encryptionTask ->
-      if (!encryptionTask.isSuccessful) {
-        onFailure(OptionalCredentialBackup.Unavailable())
-        return@addOnCompleteListener
-      }
-      val cloudEnabled = encryptionTask.result == true
+    backup.request { blockstore.isEndToEndEncryptionAvailable() }.addOnSuccessListener { cloudEnabled ->
+      if (cloudOnly && !cloudEnabled) return@addOnSuccessListener
       val request = StoreBytesData.Builder()
         .setKey(BLOCK_STORE_KEY)
         .setBytes(recoveryKey)
         .setShouldBackupToCloud(cloudEnabled)
         .build()
-      backup.request { blockstore.storeBytes(request) }
-        .addOnSuccessListener { onSuccess() }
-        .addOnFailureListener(onFailure)
-    }
+      backup.request {
+        synchronized(DeviceBackup) {
+          check(DeviceBackup.enabled(context))
+          check(expectedWrappedKey == null || preferences.getString(WRAPPED_RECOVERY_KEY, null) == expectedWrappedKey)
+          blockstore.storeBytes(request)
+        }
+      }.addOnSuccessListener { onSuccess() }.addOnFailureListener(onFailure)
+    }.addOnFailureListener(onFailure)
   }
 
-  private fun refreshCloudRecovery(recoveryKey: ByteArray) {
-    backup.request { blockstore.isEndToEndEncryptionAvailable() }
-      .addOnSuccessListener { available ->
-        if (!available) return@addOnSuccessListener
-        val request = StoreBytesData.Builder()
-          .setKey(BLOCK_STORE_KEY)
-          .setBytes(recoveryKey)
-          .setShouldBackupToCloud(true)
-          .build()
-        backup.request { blockstore.storeBytes(request) }
-          .addOnFailureListener { Log.w(TAG, OptionalCredentialBackup.UNAVAILABLE_MESSAGE) }
+  // A key first created during opt-out still protects local recovery entries.
+  // Enroll it on opt-in, retry on launch, and refresh enrolled keys on edits.
+  private fun backUpLocalRecoveryKey(keyForRefresh: ByteArray? = null) {
+    if (!DeviceBackup.enabled(context)) return
+    val pending = preferences.getBoolean(RECOVERY_KEY_PENDING_BACKUP, false)
+    if (!pending && keyForRefresh == null) return
+    val wrapped = preferences.getString(WRAPPED_RECOVERY_KEY, null) ?: return
+    val recoveryKey = keyForRefresh ?: readLocalRecoveryKey() ?: return
+    storeRecoveryKey(recoveryKey, cloudOnly = !pending, expectedWrappedKey = wrapped, onSuccess = {
+      synchronized(this) {
+        if (pending && preferences.getString(WRAPPED_RECOVERY_KEY, null) == wrapped) {
+          preferences.edit { remove(RECOVERY_KEY_PENDING_BACKUP) }
+        }
       }
-      .addOnFailureListener { Log.w(TAG, OptionalCredentialBackup.UNAVAILABLE_MESSAGE) }
+    })
   }
 
   @SuppressLint("ApplySharedPref")
   @Synchronized
-  private fun installLocalRecoveryKey(recoveryKey: ByteArray) {
+  private fun installLocalRecoveryKey(recoveryKey: ByteArray, pendingBackup: Boolean = false) {
     require(recoveryKey.size == RECOVERY_KEY_BYTES) { "Invalid recovery key size" }
     val cipher = Cipher.getInstance(AES_TRANSFORMATION)
     cipher.init(Cipher.ENCRYPT_MODE, getOrCreateWrappingKey())
@@ -365,6 +395,7 @@ class CredentialVaultModule(
     // Persist before returning encrypted credentials so the recovery key cannot lag behind them.
     preferences.edit(commit = true) {
       putString(WRAPPED_RECOVERY_KEY, encode(payload))
+      putBoolean(RECOVERY_KEY_PENDING_BACKUP, pendingBackup)
     }
   }
 
@@ -561,6 +592,7 @@ class CredentialVaultModule(
     private const val RECOVERY_KEY_BYTES = 32
     private const val LOCAL_PREFERENCES = "herdr_credential_vault_local"
     private const val WRAPPED_RECOVERY_KEY = "wrapped_recovery_key_v1"
+    private const val RECOVERY_KEY_PENDING_BACKUP = "recovery_key_pending_backup"
     private const val WRAPPING_KEY_ALIAS = "io.github.kaminarios.whip.credential-vault.wrap.v1"
     private const val AUTHENTICATION_KEY_ALIAS = "io.github.kaminarios.whip.biometric-gate.v1"
     private const val BLOCK_STORE_KEY = "io.github.kaminarios.whip.credential-vault.recovery.v1"

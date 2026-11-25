@@ -34,6 +34,8 @@
       android:icon="@mipmap/ic_launcher_whip_adaptive"
       android:roundIcon="@mipmap/ic_launcher_whip_adaptive_round"
       android:allowBackup="true"
+      android:backupAgent=".WhipBackupAgent"
+      android:fullBackupOnly="true"
       android:localeConfig="@xml/locales_config"
       android:fullBackupContent="@xml/backup_rules"
       android:dataExtractionRules="@xml/data_extraction_rules"

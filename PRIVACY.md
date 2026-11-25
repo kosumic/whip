@@ -17,7 +17,9 @@ Whip may process or store:
 
 Host credentials use Android Keystore-backed or iOS Keychain-backed storage and request a when-unlocked, this-device-only accessibility policy where the platform supports it. Global SSH keychain labels and fingerprints are ordinary app metadata; their private keys and passphrases remain in the platform credential store and require device authentication before the keychain is opened.
 
-On supported Android devices, Whip also stores AES-GCM-encrypted credential ciphertext in app data and places the recovery token in Android Block Store. Block Store availability, device transfer, cloud backup, and restore timing are controlled by Google Play services and the user's device/account settings. Global keychain secrets are not copied to Block Store. iOS does not use Whip's Android credential-recovery path.
+To include Whip's app data in future device backups, turn on **Settings → Security → Back up app data**. Backup defaults to off until you opt in. Your backup provider manages copies it already holds.
+
+On supported Android devices, Whip also stores AES-GCM-encrypted credential ciphertext in app data and, when app backup is enabled, places the recovery token in Android Block Store. Block Store availability, device transfer, cloud backup, and restore timing are controlled by Google Play services and the user's device/account settings. Global keychain secrets are not copied to Block Store. iOS does not use Whip's Android credential-recovery path.
 
 ## Network communication
 

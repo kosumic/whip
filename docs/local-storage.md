@@ -81,8 +81,13 @@ are serialized on the same worker. Host deletion and session authority guards
 remain intact, and future admitted saves can cache newly synchronized history.
 Durable app data and credentials are untouched.
 
-Android backs up the database directory, including Turso WAL files and retained
-legacy AsyncStorage databases. iOS backs up Application Support/WhipAppData.
+Settings → Security → Back up app data controls whether Whip participates in
+future device backups. It defaults to off when there is no saved choice.
+Android's backup agent reads the device-local choice before including the
+database directory, Turso WAL files, retained legacy AsyncStorage databases
+and files allowed by the backup rules.
+On iOS the setting applies to Documents and Library, including
+Application Support/WhipAppData. Cache directories retain their own exclusions.
 Existing files (backgrounds, usage and browser downloads), credential Keychain
 services, Block Store recovery and device-only wrapped recovery keys stay in their
 original stores. No plaintext credential import, cloud connection or sync occurs.
