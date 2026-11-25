@@ -8,7 +8,6 @@ mod identity;
 pub(super) mod live;
 #[cfg(test)]
 mod media;
-pub(in crate::realtime_voice) mod prepared;
 #[cfg(test)]
 mod transport;
 use super::{ClientEvent, RealtimeSocket, RealtimeVoiceAdapter, recovery};

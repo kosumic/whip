@@ -605,7 +605,7 @@ async fn full_live_playback(
     let play_cue = !matches!(audio, TestAudio::WithoutCue);
     let _storage = test_storage().await?;
     if prepared {
-        assert!(voice::webrtc::prepared::configure(true));
+        assert!(voice::ffi::whip_realtime_prepare(true));
         tokio::time::sleep(Duration::from_secs(2)).await;
     }
     let credential = authorized_credential()?;

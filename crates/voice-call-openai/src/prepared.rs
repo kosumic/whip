@@ -1,4 +1,4 @@
-//! Optional, credential-free HTTPS preparation for both voice backends.
+//! Optional, credential-free preparation for OpenAI voice calls.
 //!
 //! Hosts enable this only while foregrounded and eligible to call. Preparation
 //! uses the same HTTP pool as call creation, without creating a provider session.
@@ -18,6 +18,20 @@ pub async fn reachable() -> bool {
     }
 }
 static PREPARATION: Mutex<Preparation> = Mutex::new(Preparation { task: None });
+static WEBRTC_PREPARATION: Mutex<()> = Mutex::new(());
+
+/// Start or stop HTTPS pool and local DTLS certificate preparation together.
+///
+/// Enable from the host's Tokio runtime and disable when the host is no longer
+/// eligible to prepare. Both workers are process-wide and best effort. The
+/// return value reports whether both workers could be scheduled when enabled.
+/// Preparation creates no provider session, peer, or audio devices.
+pub fn configure_webrtc(enabled: bool) -> bool {
+    let _guard = WEBRTC_PREPARATION.lock();
+    let media = voice_call_media::prepared::configure(enabled);
+    let http = configure(enabled);
+    media && http
+}
 
 /// Start or stop best-effort HTTPS preparation on the caller's Tokio runtime.
 /// Returns whether preparation could be scheduled, not whether the network is

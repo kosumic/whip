@@ -8,6 +8,7 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 use std::time::{Duration, Instant};
+use voice_call_openai::prepared;
 
 static NEXT: AtomicU64 = AtomicU64::new(1);
 static CALLS: OnceLock<Mutex<HashMap<u64, Arc<RealtimeVoiceAdapter>>>> = OnceLock::new();
@@ -95,7 +96,7 @@ pub extern "C" fn whip_voice_credentials_updating(updating: bool) {
     let calls = calls().lock();
     crate::voice_credentials::updating(updating);
     if updating {
-        super::webrtc::prepared::clear();
+        prepared::configure_webrtc(false);
         for call in calls.values() {
             call.close();
         }
@@ -105,7 +106,14 @@ pub extern "C" fn whip_voice_credentials_updating(updating: bool) {
 /// Prepare local WebRTC resources and anonymous HTTPS; no key, mic or API session.
 #[unsafe(no_mangle)]
 pub extern "C" fn whip_realtime_prepare(enabled: bool) -> bool {
-    super::webrtc::prepared::configure(enabled)
+    if !enabled {
+        return prepared::configure_webrtc(false);
+    }
+    let Ok(runtime) = crate::runtime() else {
+        return false;
+    };
+    let _guard = runtime.enter();
+    prepared::configure_webrtc(true)
 }
 
 /// # Safety
