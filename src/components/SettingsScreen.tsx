@@ -7,7 +7,6 @@ import ChevronDown from 'lucide-react-native/icons/chevron-down';
 import ChevronRight from 'lucide-react-native/icons/chevron-right';
 import ChevronUp from 'lucide-react-native/icons/chevron-up';
 import Code2 from 'lucide-react-native/icons/code-xml';
-import CloudUpload from 'lucide-react-native/icons/cloud-upload';
 import Fingerprint from 'lucide-react-native/icons/fingerprint-pattern';
 import Gamepad2 from 'lucide-react-native/icons/gamepad-2';
 import History from 'lucide-react-native/icons/rotate-ccw-clock';
@@ -86,6 +85,7 @@ import { removeTerminalBackgroundImage, selectTerminalBackgroundImage } from '@/
 import { getBillingRolloutPolicy } from '../billing/rollout';
 import { hapticPress, IconButton } from './app-ui';
 import { ConfirmationPopup } from './ConfirmationPopup';
+import { DeviceBackupDetails } from './DeviceBackupDetails';
 import { ChatCacheSetting } from './ChatCacheSetting';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { GlassButton, GlassIconBadge } from './GlassControls';
@@ -1296,11 +1296,18 @@ function DeviceBackupSetting() {
   }
 
   const title = t('settings.deviceBackup');
-  const copy = t('settings.deviceBackupCopy');
   if (enabled === undefined) return null;
-  if (enabled === null) return <ActionRow title={title} copy={copy} icon={CloudUpload}
-    value={t('voiceUsage.retry')} onPress={() => setReadAttempt(attempt => attempt + 1)} divided />;
-  return <SettingRow title={title} copy={copy} icon={CloudUpload} value={enabled} disabled={busy} onChange={change} divided />;
+  return (
+    <DeviceBackupDetails>
+      {enabled === null ? (
+        <Button variant="ghost" onPress={hapticPress(() => setReadAttempt(attempt => attempt + 1))}>
+          <Text>{t('voiceUsage.retry')}</Text>
+        </Button>
+      ) : (
+        <Switch accessibilityLabel={title} checked={enabled} disabled={busy} onCheckedChange={change} />
+      )}
+    </DeviceBackupDetails>
+  );
 }
 
 function SettingIcon({ icon }: { icon: LucideIcon }) {
