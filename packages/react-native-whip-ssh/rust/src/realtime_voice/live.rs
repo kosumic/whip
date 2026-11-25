@@ -113,6 +113,7 @@ impl State {
             let transcript = output.live_transcript.as_mut()?;
             let request = transcript.microphone_request(self.through, pending.offset)?;
             transcript.admit(pending.offset);
+            drop(output);
             request
         };
         self.through = pending.offset;
