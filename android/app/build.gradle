@@ -303,6 +303,9 @@ dependencies {
 
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
+    if (findProperty('expo.gif.enabled') == 'true') {
+        implementation("com.facebook.fresco:animated-gif:${expoLibs.versions.fresco.get()}")
+    }
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("androidx.core:core-telecom:1.1.0")
     implementation("androidx.webkit:webkit:1.18.0")
