@@ -289,6 +289,7 @@ fn command(root: &str, action: &str) -> Result<serde_json::Value, String> {
                 if current.preferences.voice == voice {
                     current.select_voice(DEFAULT_VOICE)?;
                 }
+                drop(current);
                 Ok(())
             })?;
             return Ok(state.lock().status());
