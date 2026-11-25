@@ -1,14 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { DOMParser } from '@xmldom/xmldom';
 
 const projectFile = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
 
-test('Android backup includes the AsyncStorage database for legacy and modern restore', () => {
+test('Android enables legacy and modern backup rules for the app', () => {
   const manifest = projectFile('android/app/src/main/AndroidManifest.xml');
-  const backupRules = projectFile('android/app/src/main/res/xml/backup_rules.xml');
-  const extractionRules = projectFile(
-    'android/app/src/main/res/xml/data_extraction_rules.xml',
-  );
   const packageJson = JSON.parse(projectFile('package.json')) as {
     dependencies?: Record<string, string>;
   };
@@ -20,16 +17,21 @@ test('Android backup includes the AsyncStorage database for legacy and modern re
   expect(manifest).toContain(
     'android:dataExtractionRules="@xml/data_extraction_rules"',
   );
-  expect(backupRules).toMatch(/<include\s+domain="database"\s+path="\."\s*\/>/);
+});
 
-  const cloudBackup = extractionRules.match(
-    /<cloud-backup>([\s\S]*?)<\/cloud-backup>/,
-  )?.[1];
-  const deviceTransfer = extractionRules.match(
-    /<device-transfer>([\s\S]*?)<\/device-transfer>/,
-  )?.[1];
-  expect(cloudBackup).toMatch(/<include\s+domain="database"\s+path="\."\s*\/>/);
-  expect(deviceTransfer).toMatch(
-    /<include\s+domain="database"\s+path="\."\s*\/>/,
-  );
+test.each([
+  ['full-backup-content', 'backup_rules.xml'],
+  ['cloud-backup', 'data_extraction_rules.xml'],
+  ['device-transfer', 'data_extraction_rules.xml'],
+])('%s includes the databases and both background image folders', (section, resource) => {
+  const xml = projectFile(`android/app/src/main/res/xml/${resource}`);
+  const policy = new DOMParser().parseFromString(xml, 'application/xml').getElementsByTagName(section)[0];
+  const includes = Array.from(policy.getElementsByTagName('include'), entry => [
+    entry.getAttribute('domain'), entry.getAttribute('path'),
+  ]);
+  expect(includes).toEqual(expect.arrayContaining([
+    ['database', '.'],
+    ['file', 'app-backgrounds/'],
+    ['file', 'terminal-backgrounds/'],
+  ]));
 });

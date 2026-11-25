@@ -2,7 +2,8 @@
 <full-backup-content>
     <!-- Rust's whip-app.db contains durable data and encrypted credential backups. Legacy AsyncStorage databases remain included for direct upgrades and restores. -->
     <include domain="database" path="." />
-    <!-- User-selected terminal backgrounds and local usage history. -->
+    <!-- User-selected backgrounds and local usage history. -->
+    <include domain="file" path="app-backgrounds/" />
     <include domain="file" path="terminal-backgrounds/" />
     <include domain="file" path="usage/usage.json" />
 </full-backup-content>
