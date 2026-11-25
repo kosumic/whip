@@ -24,7 +24,7 @@ export function requestChatPresentation(
   generation: number,
 ): AgentChatPresentation {
   if (current.phase === AgentChatPresentationPhase.Warm) {
-    // Keep the mounted viewport's identity, but restore it before revealing it.
+    // Reuse the viewport so it can reveal retained rows immediately.
     return { ...current, phase: AgentChatPresentationPhase.PreparingViewport };
   }
   if (chatPresentationRequested(current)) return current;

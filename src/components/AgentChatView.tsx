@@ -854,7 +854,8 @@ export function AgentChatView({
   const [followEnd, setFollowEndState] = useState(
     savedViewport?.followEnd ?? true,
   );
-  const [viewportReady, setViewportReady] = useState(false);
+  // Once this conversation has rows to show, restoring its position can finish on screen.
+  const [rowsReadyToShow, setRowsReadyToShow] = useState(false);
   const { scrolling, beginScroll, endScroll, resetScroll } = useScrollActivity();
   // These refs belong to this binding/generation, and survive warm reuse.
   const savedViewportRef = useRef<SavedChatViewport | null>(
@@ -924,8 +925,6 @@ export function AgentChatView({
     viewportLaidOut: false,
     positionConfirmed: false,
   });
-  const initialViewportReadyCallbackRef = useRef(onInitialViewportReady);
-  initialViewportReadyCallbackRef.current = onInitialViewportReady;
   const [preparation, setPreparation] = useState(() => ({
     identity: sourceIdentity, source: searchSource, store: rowStore,
     resetVersion: rowStore.resetVersion, generation: 0,
@@ -938,6 +937,12 @@ export function AgentChatView({
     || preparation.source !== searchSource || preparation.store !== rowStore
     || preparation.resetVersion !== rowStore.resetVersion || transcriptRestarted;
   const projectionCurrent = state.revision === undefined || rowStore.transcriptRevision <= state.revision;
+  const rowsMatchTranscript = !preparationChanged && projectionCurrent;
+  const rowsPresentable = rowsMatchTranscript && rowStore.ready && rowsReadyToShow;
+  const takeScrollControl = () => {
+    // A new reading position chosen by the user supersedes the pending restore.
+    if (rowsPresentable) initialViewportRef.current.ready = true;
+  };
   const suspendedAtEndRef = useRef(false);
   const activationStartedRef = useRef(performance.now());
   const activationPathRef = useRef('cold-mount');
@@ -1033,9 +1038,10 @@ export function AgentChatView({
   }, [updatePinnedPrompt]);
 
   const revealSearchMatch = () => {
-    if (pendingSearch.current && visible && initialViewportRef.current.ready) {
+    if (pendingSearch.current && visible && rowsPresentable) {
       const index = rowStore.indexOf(pendingSearch.current);
       if (index < 0) return;
+      takeScrollControl();
       pendingSearch.current = null;
       const scroll = list.current?.scrollToIndex({
         index, animated: false, viewOffset: contentInsets.top + searchBarHeight,
@@ -1101,6 +1107,7 @@ export function AgentChatView({
   };
 
   const scrollToLatest = (animated: boolean) => {
+    takeScrollControl();
     const current = scrollGeometryRef.current;
     scrollInteractionRef.current = {
       kind: ChatScrollInteractionKind.Idle,
@@ -1190,15 +1197,13 @@ export function AgentChatView({
         offset: geometry.offset, followEnd: followEndRef.current,
       };
     }
-    // Initial/returning viewports have already aligned to the remapped saved anchor.
-    setViewportReady(true);
+    setRowsReadyToShow(true);
     recordInitialViewportReadiness('ready');
     recordAgentChatDiagnostic('viewport-ready', {
       latestBlockId: latestBlockIdRef.current,
       source,
       turnCount: turns.length,
     });
-    initialViewportReadyCallbackRef.current?.();
   };
 
   const updateInitialEndPosition = (
@@ -1274,7 +1279,7 @@ export function AgentChatView({
       kind: ChatScrollInteractionKind.Idle,
       lastOffset: geometry.offset,
     };
-    // A scroll request is not a position report. Keep Chat hidden until confirmed.
+    // Native confirmation finishes restoration and allows the next checkpoint to be saved.
     list.current?.scrollToOffset({ offset: targetOffset, animated: false });
   };
 
@@ -1291,7 +1296,6 @@ export function AgentChatView({
       readiness.measuredLatestBlockId = null;
       readiness.viewableLatestBlockId = null;
     }
-    setViewportReady(false);
   };
 
   const remeasureViewport = (reason: string) => {
@@ -1305,6 +1309,7 @@ export function AgentChatView({
   const updateViewportPreparation = useEffectEvent(() => {
     previousTranscriptRevisionRef.current = state.revision;
     if (!preparationChanged) return;
+    setRowsReadyToShow(false);
     const identityChanged = preparation.identity !== sourceIdentity;
     const reason = identityChanged ? 'identity-changed'
       : transcriptRestarted ? 'transcript-restarted' : 'row-source-reset';
@@ -1332,7 +1337,7 @@ export function AgentChatView({
     // Retained chats share changing composer/chrome clearance. FlashList lays
     // out their spacers without discarding already measured conversation rows.
     // Only a cold viewport still needs a fresh load/position confirmation.
-    if (!initialViewportRef.current.ready && !continuouslyVisible && (!active || activeRef.current !== active)) {
+    if (!rowsReadyToShow && !continuouslyVisible && (!active || activeRef.current !== active)) {
       remeasureViewport('content-insets-changed');
     }
   });
@@ -1382,7 +1387,6 @@ export function AgentChatView({
         // Keep existing rows visible while catching up; normal content-size
         // callbacks continue following later asynchronous row projections.
         if (followEndRef.current && !readiness.atEnd) list.current?.scrollToEnd({ animated: false });
-        initialViewportReadyCallbackRef.current?.();
         return;
       }
       activationPathRef.current = 'retained-preparation';
@@ -1469,6 +1473,7 @@ export function AgentChatView({
     scrollInteractionRef.current = { ...interaction, lastOffset: offset };
   };
   const beginUserScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    takeScrollControl();
     beginScroll();
     pendingSearch.current = null;
     recordAgentChatDiagnostic('viewport-drag-start', {
@@ -1516,6 +1521,7 @@ export function AgentChatView({
       scrollbarDragRef.current = null;
       return;
     }
+    takeScrollControl();
     beginScroll();
     scrollInteractionRef.current = {
       kind: ChatScrollInteractionKind.Idle,
@@ -1568,6 +1574,7 @@ export function AgentChatView({
       ),
     );
     if (desiredOffset === current.offset) return;
+    takeScrollControl();
     updateScrollGeometry({ ...current, offset: desiredOffset });
     updateFollowFromUserScroll(current.offset, desiredOffset, currentMaxOffset);
     scrollInteractionRef.current = {
@@ -1608,8 +1615,11 @@ export function AgentChatView({
     [openFile, openWebLink, state.transcript.info?.directory],
   );
 
-  const viewportVisible = visible && !preparationChanged && projectionCurrent
-    && (Boolean(rowStore.error) || (viewportReady && (continuouslyVisible || !active || activeRef.current || retainedPositionSafe())));
+  const notifyViewportReady = useEffectEvent(() => onInitialViewportReady?.());
+  useLayoutEffect(() => {
+    if (rowsPresentable && (active || prewarm)) notifyViewportReady();
+  }, [active, prewarm, rowsPresentable]);
+  const viewportVisible = visible && (rowsPresentable || (rowsMatchTranscript && Boolean(rowStore.error)));
 
   useEffect(() => {
     if (!viewportVisible) return;
@@ -1769,6 +1779,7 @@ export function AgentChatView({
           onEndReachedThreshold={0}
           onLoad={() => {
             initialViewportRef.current.itemsLoaded = true;
+            if (savedViewportRef.current) setRowsReadyToShow(true);
             if (!initialViewportRef.current.positionConfirmed) confirmListPosition();
             recordInitialViewportReadiness('items-loaded');
             alignLoadedInitialViewport();
@@ -1800,6 +1811,7 @@ export function AgentChatView({
             className="absolute left-4 right-4 z-20 flex-row items-center gap-2 rounded-xl bg-purple-950 px-3"
             style={{ top: pinnedPromptTop, height: CHAT_CONTEXT_HEIGHT }}
             onPress={hapticPress(() => {
+              takeScrollControl();
               pendingSearch.current = null;
               setFollowEnd(false);
               scrollInteractionRef.current = {

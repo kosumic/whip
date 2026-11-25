@@ -236,7 +236,7 @@ describe('initial Chat presentation lifecycle', () => {
     expect(chatPresentationVisible(reopened)).toBe(false);
   });
 
-  test('reopening keeps the warm viewport mounted but prepares its saved position before reveal', () => {
+  test('reopening reuses the warm viewport and reveals it when its rows can be shown', () => {
     const preparing = requestChatPresentation(
       dormantChatPresentation(),
       agentTranscriptReadiness(transcriptState('stale')),

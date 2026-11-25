@@ -2500,15 +2500,15 @@ describe('AgentChatView warm viewport restoration', () => {
     expect(scrollToOffset).not.toHaveBeenCalled();
   });
 
-  test.each(['width', 'height'] as const)('%s changes revalidate retained geometry', change => {
+  test.each(['width', 'height'] as const)('%s changes revalidate retained geometry with the chat visible', change => {
     update(false);
     act(() => { chatViewport(renderer).props.onLayout({ nativeEvent: { layout: {
       width: change === 'width' ? 500 : 300,
       height: change === 'height' ? 300 : 400,
     } } }); });
     update(true);
-    expect(onReady).not.toHaveBeenCalled();
-    expect(chatViewport(renderer).parent?.props.style.opacity).toBe(0);
+    expect(onReady).toHaveBeenCalledTimes(1);
+    expect(chatViewport(renderer).parent?.props.style.opacity).toBe(1);
     act(() => {
       flatList(renderer).props.onContentSizeChange(0, 1_200);
       flatList(renderer).props.onViewableItemsChanged({
@@ -2522,14 +2522,16 @@ describe('AgentChatView warm viewport restoration', () => {
     expect(chatViewport(renderer).parent?.props.style.opacity).toBe(1);
   });
 
-  test('leaving near bottom restores the exact bottom before reveal', () => {
+  test('leaving near bottom shows the conversation while restoring the exact bottom', () => {
     userScrollTo(560);
     expect(latestButtons()).toHaveLength(0);
     update(false);
+    observeCommits = true;
     update(true);
     expect(scrollToOffset).toHaveBeenCalledWith({ offset: 600, animated: false });
-    expect(onReady).not.toHaveBeenCalled();
-    expect(chatViewport(renderer).parent?.props.style.opacity).toBe(0);
+    expect(onReady).toHaveBeenCalledTimes(1);
+    expect(committedOpacities).toContain(1);
+    expect(committedOpacities).not.toContain(0);
     act(() => { flatList(renderer).props.onScroll(scrollEvent(600, 1_000)); });
     expect(onReady).toHaveBeenCalledTimes(1);
     expect(latestButtons()).toHaveLength(0);
@@ -2558,13 +2560,30 @@ describe('AgentChatView warm viewport restoration', () => {
     act(() => { flatList(renderer).props.onScroll(scrollEvent(800, 1_500)); });
     update(true);
     expect(scrollToOffset).toHaveBeenCalledWith({ offset: 250, animated: false });
-    expect(onReady).not.toHaveBeenCalled();
-    expect(chatViewport(renderer).parent?.props.style.opacity).toBe(0);
+    expect(onReady).toHaveBeenCalledTimes(1);
+    expect(chatViewport(renderer).parent?.props).toMatchObject({ pointerEvents: 'auto', style: { opacity: 1 } });
     act(() => { flatList(renderer).props.onScroll(scrollEvent(250, 1_500)); });
     expect(onReady).toHaveBeenCalledTimes(1);
     expect(chatViewport(renderer).parent?.props.style.opacity).toBe(1);
     expect(latestButtons()).toHaveLength(1);
     expect(scrollToEnd).not.toHaveBeenCalled();
+  });
+
+  test('scrolling during restoration keeps the new reading position', () => {
+    const save = jest.fn();
+    overrides.onSaveViewport = save;
+    update(true);
+    userScrollTo(250);
+    update(false);
+    act(() => { flatList(renderer).props.onScroll(scrollEvent(500, 1_000)); });
+    update(true);
+    expect(scrollToOffset).toHaveBeenLastCalledWith({ offset: 250, animated: false });
+    scrollToOffset.mockClear();
+    userScrollTo(150);
+    act(() => { flatList(renderer).props.onContentSizeChange(0, 1_200); });
+    expect(scrollToOffset).not.toHaveBeenCalled();
+    update(false);
+    expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 150, followEnd: false }));
   });
 
   test('restoring a manual position does not wait for an offscreen final turn to measure', () => {
@@ -2605,7 +2624,7 @@ describe('AgentChatView warm viewport restoration', () => {
   });
 });
 
-test('an evicted viewport restores expanded blocks and its block-relative position before reveal', () => {
+test('an evicted viewport shows reloaded rows while restoring its expanded blocks and reading position', () => {
   let renderer: ReactTestRenderer;
   let rows: ReactTestRenderer;
   let saved: ChatViewportState | undefined;
@@ -2664,8 +2683,8 @@ test('an evicted viewport restores expanded blocks and its block-relative positi
   expect(flatList(renderer!).props.initialScrollIndex).toBe(0);
   load();
   expect(scrollToOffset).toHaveBeenLastCalledWith({ offset: 350, animated: false });
-  expect(onReady).not.toHaveBeenCalled();
-  expect(chatViewport(renderer!).parent?.props.style.opacity).toBe(0);
+  expect(onReady).toHaveBeenCalledTimes(1);
+  expect(chatViewport(renderer!).parent?.props.style.opacity).toBe(1);
   act(() => {
     flatList(renderer).props.onScroll(scrollEvent(350, 1_000));
     rows = create(renderedBlocks(renderer));
