@@ -342,7 +342,7 @@ prompt.
 
 The CLI uses versioned registry dependencies with local development paths.
 Publish `tailcat-client` 0.1.1 (offline validation support), then
-`whipair-protocol` 0.2.1 before publishing a CLI release that uses them.
+`whipair-protocol` 0.3.0 before publishing a CLI release that uses them.
 Each library has a tag-triggered crates.io workflow. See the
 [protocol release instructions](../crates/whipair-protocol/README.md).
 
@@ -351,6 +351,9 @@ workflow verifies the crate version, formatting, Clippy, tests, and package
 contents before publishing. Crates.io trusts only `publish-whipair.yml` in
 `kosumic/whip` with the protected `crates-io` environment. The workflow
 uses a short-lived OIDC credential; GitHub stores no crates.io API token.
+For a crates.io-only release, dispatch this workflow with the desired
+version after its dependency is published. A `whipair-v*` tag additionally
+starts the distribution workflow below.
 
 The [`Publish whipair packages`](https://github.com/kosumic/whip/actions/workflows/publish-whipair-packages.yml)
 workflow builds native PyPI wheels and npm binaries for macOS and Linux on
@@ -394,8 +397,8 @@ Commit those changes, then push a tag whose version matches `Cargo.toml`
 exactly:
 
 ```bash
-git tag whipair-v0.1.7
-git push origin whipair-v0.1.7
+git tag whipair-v0.1.8
+git push origin whipair-v0.1.8
 ```
 
 ## License

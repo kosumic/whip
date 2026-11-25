@@ -5,6 +5,7 @@ version in sync. Public Rust struct changes can require a breaking version bump,
 including before 1.0. Publish registry dependencies before their consumers:
 
 - `agent-transcript-core` before `agent-transcript-view`.
+- `whipair-protocol` before `whipair`.
 - `herdr-protocol` before `whip-notify`.
 - `audio-ingress` before `voice-call-media`.
 - `native-credentials`, `audio-ingress`, and `voice-call-media` before
@@ -28,6 +29,17 @@ workflows. The shared GitHub release helper verifies the registry artifact's
 checksum and its license against the tagged manifest before attaching it to a
 GitHub release. Releases do not replace the mobile app's latest release.
 Whip Notify retains its separate binary release workflow and installer tag.
+
+## November 25, 2026 releases
+
+| Crate | Version | Changes |
+| --- | --- | --- |
+| `whipair-protocol` | `0.3.0` | Move the public SSH key types to `ssh-key` 0.7.0-rc.12 (#455). |
+| `whipair` | `0.1.8` | Use the shared bounded enrollment exchange and update SSH dependencies (#455, #459). |
+| `agent-transcript-core` | `0.4.0` | Record image inspections and expandable context-compaction summaries. Rust callers must account for the new fields on `AgentToolState` and `AgentTranscriptPart::Notice`. |
+| `agent-transcript-view` | `0.3.0` | Project image inspections and compaction summaries and group completed tool runs. Exhaustive matches must handle `AgentChatRowContent::ToolGroup`. |
+| `herdr-protocol` | `0.2.4` | Skip redundant document refreshes and expose freshness-checked projection (#490). |
+| `voice-call-controls` | `0.1.1` | Parse spoken microphone requests and expose the function tool schema. |
 
 ## November 16, 2026 patch releases
 

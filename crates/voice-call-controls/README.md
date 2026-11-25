@@ -41,7 +41,7 @@ cargo run --locked --manifest-path crates/voice-call-controls/Cargo.toml --examp
 ```
 
 The example demonstrates another host without migrating GymAmi. Add the registry
-dependency `voice-call-controls = "0.1.0"`, or use a path/pinned Git revision while
+dependency `voice-call-controls = "0.1.1"`, or use a path/pinned Git revision while
 developing. Versioned releases use `voice-call-controls-v<version>` tags through
 the standalone-library publishing workflow; see
 [crate releases](../../docs/crate-releases.md).

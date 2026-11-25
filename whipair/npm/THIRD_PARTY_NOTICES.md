@@ -60,7 +60,7 @@ Apache License 2.0 (Apache-2.0)
 
 Used by:
 - cmov 0.5.4
-- ctutils 0.4.5
+- ctutils 0.4.8
 - qrcode 0.14.1
 - zeroize 1.9.0
 
@@ -3077,10 +3077,10 @@ Apache License 2.0 (Apache-2.0)
 Used by:
 - aes-gcm 0.11.0
 - aes 0.9.2
-- argon2 0.6.0-rc.8
+- argon2 0.6.0
 - base16ct 1.0.0
 - base64ct 1.8.3
-- blake2 0.11.0-rc.6
+- blake2 0.11.0
 - block-buffer 0.10.4
 - block-buffer 0.12.1
 - block-padding 0.4.2
@@ -3132,7 +3132,7 @@ Used by:
 - sponge-cursor 0.1.0
 - ssh-cipher 0.3.0
 - ssh-encoding 0.3.0
-- ssh-key 0.7.0-rc.11
+- ssh-key 0.7.0-rc.12
 - universal-hash 0.6.1
 - wnaf 0.14.0
 
@@ -3980,7 +3980,7 @@ Used by:
 - rand 0.8.7
 - russh-cryptovec 0.62.0
 - russh-util 0.52.0
-- russh 0.65.0
+- russh 0.65.2
 - rustversion 1.0.23
 - semver 1.0.28
 - serde 1.0.229
@@ -4637,8 +4637,8 @@ MIT License (MIT)
 
 Used by:
 - tailcat-client 0.1.1
-- whipair-protocol 0.2.1
-- whipair 0.1.7
+- whipair-protocol 0.3.0
+- whipair 0.1.8
 
 MIT License
 

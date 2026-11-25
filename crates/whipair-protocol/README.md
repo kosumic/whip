@@ -31,7 +31,7 @@ nix develop -c cargo test --locked --manifest-path crates/whipair-protocol/Cargo
 ```
 
 Dependencies specify both a local path and registry version. Publish
-`tailcat-client` 0.1.1 before `whipair-protocol` 0.2.1, then publish Whipair.
+`tailcat-client` 0.1.1 before `whipair-protocol` 0.3.0, then publish Whipair.
 The `Publish whipair-protocol to crates.io` workflow runs on
 `whipair-protocol-v*` tags and supports manual dispatch. Bootstrap the first
 release with a short-lived crates.io publishing token, then configure its

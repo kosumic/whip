@@ -7,7 +7,7 @@ No SSH, sockets, Tokio runtime, UniFFI, mobile dependencies, or process/global s
 
 ```toml
 [dependencies]
-herdr-protocol = "0.2.3"
+herdr-protocol = "0.2.4"
 ```
 
 ```rust
