@@ -654,7 +654,8 @@ impl VoiceChat {
             }
             let tools: Vec<TranscriptTool> = serde_json::from_str(&turn.tools_json)
                 .map_err(|_| "Invalid voice transcript tool details".to_owned())?;
-            for tool in tools.into_iter().take(64) {
+            for mut tool in tools.into_iter().take(64) {
+                tool.event.from_coding_agent = true;
                 state
                     .history
                     .event(&format!("tool:{}:{}", turn.id, tool.id), tool.event);
@@ -1101,8 +1102,10 @@ mod tests {
         session
             .transcript(AgentTranscriptKind::Codex, true, false, vec![current])
             .unwrap();
-        assert!(session.view().events_json.contains("cargo check"));
-        assert!(session.view().events_json.contains("passed"));
+        let events: Vec<crate::voice_history::Caption> =
+            serde_json::from_str(&session.view().events_json).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event.as_ref().unwrap().kind, "delegation");
         assert_eq!(session.next_speech().as_deref(), Some("A spoken reply."));
         assert!(session.next_speech().is_none());
         let saved = std::mem::take(&mut session.state.lock().history).into_captions();

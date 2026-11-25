@@ -585,6 +585,7 @@ fn tool_events(
                 crate::agent_transcript::AgentToolStatus::Error => "failed",
             };
             let mut event = crate::voice_history::Event::new("tool", prefix(tool, MAX_ID), status);
+            event.from_coding_agent = true;
             event.input = Some(state.input_json.as_ref().map_or_else(
                 || bounded_json(&state.input),
                 |input| prefix(input, MAX_TEXT).to_owned(),

@@ -120,6 +120,30 @@ test('uses structured shell arguments and preserves nested input when copying', 
   act(() => renderer.unmount());
 });
 
+test('expanding and closing a tool group preserves individual details and the following caption', () => {
+  let renderer!: ReactTestRenderer;
+  const tool = (id: string): VoiceTranscriptMessage => ({
+    id, role: 'assistant', text: '', active: false, spokenUtf16: 0,
+    event: { kind: 'tool', name: 'shell', status: 'completed', input: id },
+  });
+  const messages = [
+    { ...tool('one'), toolGroup: { id: 'group', count: 2, tools: ['Shell'] } },
+    tool('two'), reply,
+  ];
+  act(() => { renderer = create(<VoiceTranscript messages={messages} reducedMotion />); });
+  const toggle = () => { renderer.root.findByProps({ testID: 'chat-tool-group' }).props.onPress(); };
+  const cards = () => renderer.root.findAllByType(Pressable).filter(node => node.props.testID === 'agent-tool-toggle');
+  expect(cards()).toHaveLength(0);
+  expect(renderer.root.findByProps({ accessibilityLabel: reply.text })).toBeDefined();
+  act(toggle);
+  expect(cards()).toHaveLength(2);
+  act(() => { cards()[1].props.onPress(); });
+  act(toggle);
+  act(toggle);
+  expect(cards()[1].props.accessibilityState.expanded).toBe(true);
+  act(() => renderer.unmount());
+});
+
 test('updates a running tool to an error without losing its expanded details', () => {
   let renderer!: ReactTestRenderer;
   const message: VoiceTranscriptMessage = { ...reply, id: 'tool', text: '', active: false,

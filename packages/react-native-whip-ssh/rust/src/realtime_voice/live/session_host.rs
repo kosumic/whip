@@ -406,13 +406,14 @@ impl Delegate for App<'_> {
     }
     async fn tick(&mut self, session: &mut Session<'_>) -> Result<Flow, &'static str> {
         self.forward_updates(session).await?;
-        let idle = self.adapter.tasks.is_empty()
+        let turn_idle = self.adapter.tasks.is_empty()
             && self.adapter.state.pending.is_empty()
             && self.backend.as_ref().is_none_or(|backend| !backend.busy())
             && {
                 let output = self.owner.output.lock();
                 !output.live_speaking() && output.generated == output.played
-            }
+            };
+        let idle = turn_idle
             && self.last_input.elapsed() > Duration::from_secs(2)
             && self.owner.view.lock().level < 0.02;
         if self.owner.continuity_tick(idle)? {
@@ -450,6 +451,7 @@ impl Delegate for App<'_> {
                 }
             };
             let mut view = owner.view.lock();
+            view.turn_working = !turn_idle || speaking;
             view.phase = if speaking {
                 "speaking"
             } else if view.muted {

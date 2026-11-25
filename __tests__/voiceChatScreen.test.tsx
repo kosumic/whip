@@ -50,6 +50,7 @@ jest.mock('lucide-react-native/icons/audio-lines', () => 'AudioLines');
 jest.mock('lucide-react-native/icons/mic-off', () => 'MicOff');
 jest.mock('lucide-react-native/icons/message-square', () => 'MessageSquare');
 jest.mock('lucide-react-native/icons/chevron-down', () => 'ChevronDown');
+jest.mock('lucide-react-native/icons/chevron-right', () => 'ChevronRight');
 jest.mock('lucide-react-native/icons/check', () => 'Check');
 jest.mock('lucide-react-native/icons/copy', () => 'Copy');
 jest.mock('lucide-react-native/icons/skip-forward', () => 'SkipForward');

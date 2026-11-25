@@ -83,6 +83,7 @@ import { SelectableChatText } from './SelectableChatText';
 import { ChatComposerSelection } from './ChatComposerSelection';
 import { textValue } from '../lib/toolOutput';
 import { ChatToolCard, ToolInputDetails, ToolMetadata, ToolOutputBlock, toolPresentation } from './ChatToolCard';
+import { ChatToolGroup } from './ChatToolGroup';
 import { formatFullTime, MetadataLine } from './TranscriptMetadata';
 import { OverlayScrollbar, type OverlayScrollbarDragEvent } from './OverlayScrollbar';
 import { Button } from './ui/button';
@@ -770,22 +771,12 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
   readAloud?: ChatReadAloudControl;
   visible: boolean;
 }) {
-  const { colors } = useTheme();
   const toggle = () => onToggle(block.id);
-  const { t } = useTranslation();
   const markdownImages = useMemo(() => ({ client: imageClient, directory, active, visible }), [imageClient, directory, active, visible]);
   const content = () => {
     switch (block.type) {
       case 'user': return <UserPrompt message={block.message} imageClient={imageClient} directory={directory} active={active} visible={visible} />;
-      case 'toolGroup': {
-        const label = t('chat.toolGroup', { count: block.count, tools: block.tools.join(', ') });
-        const Chevron = expanded ? ChevronDown : ChevronRight;
-        return <Pressable testID="chat-tool-group" accessibilityRole="button" accessibilityLabel={label}
-          accessibilityState={{ expanded }} onPress={hapticPress(toggle)} className="min-h-11 flex-row items-center gap-2">
-          <Chevron size={14} color={colors.textTertiary} />
-          <Text numberOfLines={1} className="min-w-0 flex-1 text-[12px] text-muted-foreground">{label}</Text>
-        </Pressable>;
-      }
+      case 'toolGroup': return <ChatToolGroup count={block.count} tools={block.tools} expanded={expanded} onToggle={toggle} />;
       case 'part': return <View className="gap-1">
         {block.message?.createdAt !== undefined && <Text className="text-[9px] text-muted-foreground">Assistant · {new Date(block.message.createdAt).toLocaleTimeString()}</Text>}
         <AssistantPart part={block.part} directory={directory} streaming={active && block.streaming} expanded={expanded} onToggle={toggle} active={active} onLinkPress={onLinkPress}

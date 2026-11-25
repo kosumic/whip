@@ -5,10 +5,11 @@ import ChevronDown from 'lucide-react-native/icons/chevron-down';
 import Check from 'lucide-react-native/icons/check';
 import Copy from 'lucide-react-native/icons/copy';
 import { useCopyFeedback } from '../hooks/useCopyFeedback';
-import { voiceToolPart, type VoiceTranscriptMessage } from '../lib/voiceTranscript';
+import { voiceToolPart, type VoiceTranscriptMessage, type VoiceToolGroup } from '../lib/voiceTranscript';
 import { Text } from './ui/text';
 import { SPEECH_CAPTION_COLORS, SPEECH_CAPTION_WEIGHT } from '../lib/speechCaptionStyle';
 import { ChatToolCard } from './ChatToolCard';
+import { ChatToolGroup } from './ChatToolGroup';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { useTheme } from '../theme';
 
@@ -43,6 +44,29 @@ export function VoiceTranscript({ messages, reducedMotion, playback = true, cont
   contentInsets?: { top: number; bottom: number };
 }) {
   const { t } = useTranslation();
+  const { colors } = useTheme();
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  const toggle = (id: string) => setExpanded(previous => {
+    const next = new Set(previous);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const rows = useMemo(() => {
+    const result: (VoiceTranscriptMessage | VoiceToolGroup)[] = [];
+    for (let index = 0; index < messages.length; index++) {
+      const message = messages[index];
+      const group = playback ? message.toolGroup : undefined;
+      if (group && group.count > 1) {
+        result.push(group);
+        if (!expanded.has(group.id)) {
+          index += group.count - 1;
+          continue;
+        }
+      }
+      result.push(message);
+    }
+    return result;
+  }, [messages, expanded, playback]);
   const scroll = useRef<ScrollViewInstance>(null);
   const positions = useRef(new Map<string, { y: number; lines?: readonly { text: string; y: number }[] }>());
   const height = useRef(0);
@@ -91,8 +115,12 @@ export function VoiceTranscript({ messages, reducedMotion, playback = true, cont
           following.current = true; setDetached(false);
         }
       }} scrollEventThrottle={100}>
-      {messages.map(message => {
-        if (message.event) return <TranscriptEvent key={message.id} message={message} active={playback && !reducedMotion} />;
+      {rows.map(message => {
+        if ('tools' in message) return <View key={message.id} style={[styles.tool, { backgroundColor: colors.canvas }]}>
+          <ChatToolGroup count={message.count} tools={message.tools} expanded={expanded.has(message.id)} onToggle={() => toggle(message.id)} />
+        </View>;
+        if (message.event) return <TranscriptEvent key={message.id} message={message} active={playback && !reducedMotion}
+          expanded={expanded.has(message.id)} onToggle={() => toggle(message.id)} />;
         const [heard, current, upcoming] = spokenTextParts(message);
         return <View key={message.id} style={message.role === 'user' ? styles.userTurn : styles.assistant}
           onLayout={event => { positions.current.set(message.id, { ...positions.current.get(message.id), y: event.nativeEvent.layout.y }); follow(); }}>
@@ -121,20 +149,21 @@ function TranscriptCopyButton({ text }: { text: string }) {
   </Pressable>;
 }
 
-function TranscriptEvent({ message, active }: { message: VoiceTranscriptMessage; active: boolean }) {
+function TranscriptEvent({ message, active, expanded, onToggle }: {
+  message: VoiceTranscriptMessage; active: boolean; expanded: boolean; onToggle: () => void;
+}) {
   const { t } = useTranslation();
   const { colors } = useTheme();
-  const [expanded, setExpanded] = useState(false);
   const event = message.event!;
   const { kind, name, status, input, output } = event;
   const item = useMemo(() => kind === 'tool' ? voiceToolPart(message.id, { kind, name, status, input, output }) : null,
     [message.id, kind, name, status, input, output]);
   // Chat content follows the app theme; give it a matching surface on the dark call screen.
   if (item) return <View style={[styles.tool, { backgroundColor: colors.canvas }]}><ChatToolCard item={item}
-    expanded={expanded} onToggle={() => setExpanded(value => !value)} active={active}
+    expanded={expanded} onToggle={onToggle} active={active}
     onLinkPress={url => reportBackgroundFailure(Linking.openURL(url), 'voice-transcript-link')} /></View>;
   return <View style={styles.event}>
-    <Pressable accessibilityRole="button" accessibilityState={{ expanded }} onPress={() => setExpanded(value => !value)}>
+    <Pressable accessibilityRole="button" accessibilityState={{ expanded }} onPress={onToggle}>
       <Text style={styles.eventType}>{t('voiceTranscript.delegation')}</Text>
       <Text style={styles.eventName}>{event.name}</Text>
       <Text style={styles.eventStatus}>{event.status.replaceAll('_', ' ')}</Text>

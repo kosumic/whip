@@ -37,7 +37,8 @@ pub(crate) fn groupable_tool(part: &AgentTranscriptPart) -> Option<&str> {
     }
 }
 
-pub(crate) struct ToolGroup {
+/// A consecutive run of successful tools, with an exclusive end index.
+pub struct ToolGroup {
     pub id: String,
     pub start: usize,
     pub end: usize,
@@ -46,7 +47,7 @@ pub(crate) struct ToolGroup {
 
 /// Anchor at the following visible boundary, so extending either end of a run
 /// (including history pagination) does not change its identity.
-pub(crate) fn tool_groups<'a>(
+pub fn tool_groups<'a>(
     turn: &str,
     rows: impl Iterator<Item = (&'a str, Option<&'a str>)>,
 ) -> Vec<ToolGroup> {

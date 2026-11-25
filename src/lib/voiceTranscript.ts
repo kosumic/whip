@@ -21,6 +21,14 @@ export interface VoiceTranscriptMessage extends VoiceTranscriptEntry {
   /** Estimated native playback cursor; absent from durable transcript data. */
   spokenUtf16: number;
   active: boolean;
+  /** On the first message of a collapsible run in the native call view. */
+  toolGroup?: VoiceToolGroup;
+}
+
+export interface VoiceToolGroup {
+  id: string;
+  count: number;
+  tools: string[];
 }
 
 /** Adapt the compact voice event to the shared chat tool presentation. */

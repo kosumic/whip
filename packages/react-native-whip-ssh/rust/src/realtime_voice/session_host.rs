@@ -504,6 +504,7 @@ impl Delegate for App<'_> {
         if owner.ready.load(Ordering::Acquire) {
             let output = owner.output.lock();
             let mut view = owner.view.lock();
+            view.turn_working = !idle;
             view.phase = if output.generated > output.played {
                 "speaking"
             } else if view.muted {

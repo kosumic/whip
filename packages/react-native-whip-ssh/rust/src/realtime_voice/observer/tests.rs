@@ -397,6 +397,15 @@ fn shared_projection_includes_structured_questions_but_never_users_tools_or_reas
     let (owner, _commands) = crate::realtime_voice::playback_owner_with_commands()
         .unwrap_or_else(|error| panic!("{error}"));
     owner.agent_events(&batch.events);
+    let direct = crate::voice_history::Event::new("tool", "shell", "completed");
+    owner
+        .output
+        .lock()
+        .transcript
+        .event("voice-call", direct.clone());
+    let visible = crate::realtime_voice::ffi::snapshot(&owner).unwrap();
+    assert_eq!(visible["messages"].as_array().unwrap().len(), 1);
+    assert_eq!(visible["messages"][0]["id"], "event:voice-call");
     assert_eq!(
         owner
             .output
@@ -406,11 +415,21 @@ fn shared_projection_includes_structured_questions_but_never_users_tools_or_reas
             .iter()
             .filter(|caption| caption.event.is_some())
             .count(),
-        1
+        2
     );
     owner.output.lock().live_transcript =
         Some(crate::realtime_voice::live::captions::Transcript::default());
     owner.agent_events(&batch.events);
+    owner
+        .output
+        .lock()
+        .live_transcript
+        .as_mut()
+        .unwrap()
+        .event("voice-call", direct);
+    let visible = crate::realtime_voice::ffi::snapshot(&owner).unwrap();
+    assert_eq!(visible["messages"].as_array().unwrap().len(), 1);
+    assert_eq!(visible["messages"][0]["id"], "event:voice-call");
     assert_eq!(
         owner
             .output
@@ -422,7 +441,7 @@ fn shared_projection_includes_structured_questions_but_never_users_tools_or_reas
                 .iter()
                 .filter(|fragment| fragment.event.is_some())
                 .count()),
-        Some(1)
+        Some(2)
     );
     assert_eq!(
         batch.events[0]
@@ -448,6 +467,35 @@ fn shared_projection_includes_structured_questions_but_never_users_tools_or_reas
             .map(|event| event.status.as_str()),
         Some("completed")
     );
+}
+
+#[test]
+fn coding_agent_tool_traffic_cannot_evict_voice_actions_from_the_call_screen() {
+    use crate::voice_history::{Conversation, Event};
+    let mut realtime = crate::realtime_voice::transcript::Transcript::default();
+    let mut live = crate::realtime_voice::live::captions::Transcript::default();
+    let mut local = Conversation::default();
+    let handoff = Event::new("delegation", "Coding agent", "submitted");
+    realtime.event("handoff", handoff.clone());
+    live.event("handoff", handoff.clone());
+    local.event("handoff", handoff);
+
+    let mut tool = Event::new("tool", "shell", "completed");
+    tool.from_coding_agent = true;
+    tool.output = Some("x".repeat(4096));
+    for i in 0..128 {
+        let id = format!("command-{i}");
+        realtime.event(&id, tool.clone());
+        live.event(&id, tool.clone());
+        local.event(&id, tool.clone());
+    }
+    assert_eq!(realtime.snapshot().len(), 1);
+    assert_eq!(realtime.snapshot()[0].id, "event:handoff");
+    assert_eq!(live.messages()[0]["id"], "event:handoff");
+    let local: Vec<crate::voice_history::Caption> =
+        serde_json::from_str(&local.events_json()).unwrap();
+    assert_eq!(local.len(), 1);
+    assert_eq!(local[0].id, "handoff");
 }
 
 #[test]

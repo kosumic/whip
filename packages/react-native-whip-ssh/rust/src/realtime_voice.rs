@@ -300,6 +300,8 @@ pub(super) struct View {
     #[serde(skip_serializing_if = "Option::is_none")]
     resumed_context_truncated: Option<bool>,
     phase: &'static str,
+    #[serde(skip)]
+    turn_working: bool,
     muted: bool,
     level: f32,
     playback_level: f32,
@@ -805,6 +807,7 @@ impl RealtimeVoiceAdapter {
             view: Mutex::new(View {
                 resumed_context_truncated: None,
                 phase: "starting",
+                turn_working: false,
                 muted: config.preview,
                 level: 0.0,
                 playback_level: 0.0,

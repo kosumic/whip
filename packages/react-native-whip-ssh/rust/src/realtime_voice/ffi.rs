@@ -417,6 +417,7 @@ pub(crate) fn snapshot(call: &RealtimeVoiceAdapter) -> Option<serde_json::Value>
     view.playback = playback;
     view.signal = signal;
     (view.capture_packets, view.capture_gaps) = call.input.diagnostics();
+    let working = view.turn_working && !matches!(view.phase, "error" | "closed");
     let mut value = serde_json::to_value(&*view).ok();
     drop(view);
     if let Some(value) = &mut value {
@@ -437,6 +438,12 @@ pub(crate) fn snapshot(call: &RealtimeVoiceAdapter) -> Option<serde_json::Value>
         let messages = transcript.messages();
         value["liveCaptionTiming"] = transcript.timing(&messages);
         value["messages"] = messages;
+    }
+    if let Some(messages) = value
+        .as_mut()
+        .and_then(|view| view["messages"].as_array_mut())
+    {
+        super::transcript::group_call_tools(messages, working);
     }
     value
 }

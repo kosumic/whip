@@ -146,10 +146,6 @@ impl Transcript {
         if let Some(index) = self.turns.iter().position(|turn| turn.message.id == id) {
             return self.turns.get_mut(index);
         }
-        self.trim();
-        if self.turns.len() == MAX_MESSAGES {
-            self.turns.pop_front();
-        }
         self.turns.push_back(Turn {
             message: Message {
                 id,
@@ -187,8 +183,11 @@ impl Transcript {
                         .map_or(0, crate::voice_history::Event::bytes)
             })
             .sum();
-        while bytes > MAX_BYTES {
-            if let Some(turn) = self.turns.pop_front() {
+        while self.turns.len() > MAX_MESSAGES || bytes > MAX_BYTES {
+            let index = crate::voice_history::eviction_index(
+                self.turns.iter().map(|turn| turn.message.event.as_ref()),
+            );
+            if let Some(turn) = self.turns.remove(index) {
                 bytes -= turn.message.text.len()
                     + turn
                         .message
@@ -314,6 +313,9 @@ impl Transcript {
             turn.samples = samples;
             turn.advance(turn.played);
         }
+        if self.turns.len() > MAX_MESSAGES {
+            self.trim();
+        }
     }
 
     pub fn played(&mut self, item: &str, index: u32, played: usize) {
@@ -356,24 +358,34 @@ impl Transcript {
         }
     }
 
-    pub fn snapshot(&self) -> Vec<Message> {
+    fn messages(&self) -> impl Iterator<Item = &Message> {
         self.turns
             .iter()
-            .filter(|turn| !turn.message.text.is_empty())
-            .map(|turn| turn.message.clone())
+            .map(|turn| &turn.message)
+            .filter(|message| !message.text.is_empty())
+    }
+
+    pub fn snapshot(&self) -> Vec<Message> {
+        self.messages()
+            .filter(|message| {
+                message
+                    .event
+                    .as_ref()
+                    .is_none_or(|event| !event.from_coding_agent)
+            })
+            .cloned()
             .collect()
     }
 
     pub(super) fn saved_captions(&self) -> Vec<crate::voice_history::Caption> {
-        self.snapshot()
-            .into_iter()
+        self.messages()
             .map(|message| crate::voice_history::Caption {
-                id: message.id,
+                id: message.id.clone(),
                 role: message.role.into(),
-                text: message.text,
+                text: message.text.clone(),
                 start_ms: None,
                 end_ms: None,
-                event: message.event,
+                event: message.event.clone(),
             })
             .collect()
     }
@@ -444,6 +456,42 @@ impl Transcript {
             }
             event.status = status.into();
             turn.message.text = format!("{} · {}", event.name, event.status);
+        }
+    }
+}
+
+/// The user captions delimit voice turns. The newest turn stays expanded while
+/// the provider is working, including when the microphone is muted.
+pub(super) fn group_call_tools(messages: &mut [serde_json::Value], working: bool) {
+    let mut turns = messages
+        .chunk_by_mut(|_, next| next["role"] != "user")
+        .peekable();
+    while let Some(turn) = turns.next() {
+        if working && turns.peek().is_none() {
+            break;
+        }
+        // A bounded transcript can begin midway through a turn.
+        let turn_id = if turn[0]["role"] == "user" {
+            turn[0]["id"].as_str().unwrap_or_default()
+        } else {
+            ""
+        };
+        let groups = agent_transcript_view::rows::tool_groups(
+            turn_id,
+            turn.iter().map(|message| {
+                let event = &message["event"];
+                let eligible = matches!(event["kind"].as_str(), Some("tool" | "delegation"))
+                    && matches!(event["status"].as_str(), Some("completed" | "responded"));
+                let tool = event["name"]
+                    .as_str()
+                    .filter(|name| eligible && !agent_transcript_core::is_question_tool(name));
+                (message["id"].as_str().unwrap_or_default(), tool)
+            }),
+        );
+        for group in groups {
+            turn[group.start]["toolGroup"] = serde_json::json!({
+                "id": group.id, "count": group.end - group.start, "tools": group.tools
+            });
         }
     }
 }

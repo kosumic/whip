@@ -41,6 +41,9 @@ pub(crate) struct Caption {
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub(crate) struct Event {
+    /// The live call UI only presents actions initiated by the voice assistant.
+    #[serde(skip)]
+    pub from_coding_agent: bool,
     pub kind: String,
     pub name: String,
     pub status: String,
@@ -69,6 +72,7 @@ impl Event {
     }
     pub fn new(kind: &str, name: &str, status: &str) -> Self {
         Self {
+            from_coding_agent: false,
             kind: kind.into(),
             name: name.into(),
             status: status.into(),
@@ -83,9 +87,11 @@ impl Event {
         ) {
             "unknown"
         } else if value.get("error").is_some_and(|value| !value.is_null())
-            || value["result"]["exit_code"]
-                .as_i64()
-                .is_some_and(|code| code != 0)
+            || [value, &value["result"]].iter().any(|result| {
+                ["exit_code", "exit_status"]
+                    .iter()
+                    .any(|key| result[*key].as_i64().is_some_and(|code| code != 0))
+            })
         {
             "failed"
         } else {
@@ -96,6 +102,7 @@ impl Event {
                 Some("unknown") => "unknown",
                 Some("queued" | "not_started") => "queued",
                 Some("completed" | "succeeded" | "finished") => "completed",
+                Some("failed") => "failed",
                 _ if self.kind == "delegation" => "unknown",
                 _ => "completed",
             }
@@ -110,6 +117,15 @@ impl Event {
 pub(crate) struct Conversation {
     messages: VecDeque<Caption>,
 }
+
+/// Agent activity can fill a bounded archive during a single voice turn.
+/// Evict hidden tools first so they cannot push speech or voice actions off screen.
+pub(crate) fn eviction_index<'a>(mut events: impl Iterator<Item = Option<&'a Event>>) -> usize {
+    events
+        .position(|event| event.is_some_and(|event| event.from_coding_agent))
+        .unwrap_or(0)
+}
+
 impl Conversation {
     pub fn user(&mut self, text: &str) {
         self.append(USER, text);
@@ -185,7 +201,12 @@ impl Conversation {
             &self
                 .messages
                 .iter()
-                .filter(|message| message.event.is_some())
+                .filter(|message| {
+                    message
+                        .event
+                        .as_ref()
+                        .is_some_and(|event| !event.from_coding_agent)
+                })
                 .collect::<Vec<_>>(),
         )
         .unwrap_or_else(|_| "[]".into())
@@ -199,7 +220,8 @@ impl Conversation {
                 .sum::<usize>()
                 > MAX_BYTES
         {
-            self.messages.pop_front();
+            let index = eviction_index(self.messages.iter().map(|message| message.event.as_ref()));
+            self.messages.remove(index);
         }
     }
 }
@@ -422,6 +444,13 @@ mod tests {
         }
         event.result(&serde_json::json!({"completion":"completed"}));
         assert_eq!(event.status, "completed");
+    }
+
+    #[test]
+    fn a_finished_terminal_job_with_a_nonzero_exit_remains_a_failed_tool() {
+        let mut event = Event::new("tool", "terminal_read", "running");
+        event.result(&serde_json::json!({"completion":"finished","result":{"exit_status":1}}));
+        assert_eq!(event.status, "failed");
     }
     fn call(index: usize, model: &str) -> SavedCall {
         let mut conversation = Conversation::default();

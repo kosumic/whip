@@ -28,10 +28,13 @@ Local conversations stay in the remote coding agent's existing history and
 are excluded from **Settings → Saved voice chats**. That separate list retains
 Realtime and GPT-Live calls. Waiting filler and earlier agent history are
 excluded from the active voice transcript, and microphone audio is never stored.
-Delegations and the matched agent turn's tools appear as expandable transcript
-rows with status, bounded input and available results. The active Local call
-uses the same chat renderer as cloud calls and saved cloud chats.
-Tool details never enter the local speech queue.
+The call screen shows the voice assistant's own actions, including its delegation
+to the coding agent. Open the coding agent's chat to see the tools it runs.
+As in Chat View, the current turn shows individual tools while work is in progress.
+Once the turn is idle or a new prompt starts, two or more consecutive successful
+calls collapse into an expandable group. Questions and failures stay visible.
+The active Local call uses the same chat renderer as cloud calls and saved
+cloud chats. Tool details never enter the local speech queue.
 
 Normal turn-taking resumes after generation and playback have both drained.
 If the first reply takes more than two seconds, Whip speaks a short, randomly

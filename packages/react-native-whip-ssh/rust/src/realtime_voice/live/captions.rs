@@ -80,17 +80,28 @@ impl Transcript {
         self.fragments.push(fragment);
         self.fragments
             .sort_by(|a, b| a.start_ms.total_cmp(&b.start_ms));
+        self.trim();
+        Ok(())
+    }
+
+    fn trim(&mut self) {
         while self.bytes > MAX_BYTES || self.fragments.len() > MAX_FRAGMENTS {
-            let removed = self.fragments.remove(0);
+            let index = crate::voice_history::eviction_index(
+                self.fragments
+                    .iter()
+                    .map(|fragment| fragment.event.as_ref()),
+            );
+            let removed = self.fragments.remove(index);
             self.bytes -= removed.text.len()
                 + removed
                     .event
                     .as_ref()
                     .map_or(0, crate::voice_history::Event::bytes);
             self.admitted.remove(&removed.id);
-            self.discarded_through = self.discarded_through.max(removed.end_ms);
+            if !removed.event.is_some_and(|event| event.from_coding_agent) {
+                self.discarded_through = self.discarded_through.max(removed.end_ms);
+            }
         }
-        Ok(())
     }
 
     pub(super) fn request(&self, after: f64, offset: f64) -> Result<String, &'static str> {
@@ -185,6 +196,13 @@ impl Transcript {
         // Each speaker grows independently; original fragments retain timing.
         let mut bubbles: Vec<(Fragment, usize, bool)> = Vec::new();
         for fragment in &self.fragments {
+            if fragment
+                .event
+                .as_ref()
+                .is_some_and(|event| event.from_coding_agent)
+            {
+                continue;
+            }
             let (spoken, active) = self.progress(fragment);
             let previous = bubbles
                 .iter()
@@ -389,6 +407,7 @@ impl Transcript {
                 + event.bytes();
             fragment.text = text;
             fragment.event = Some(event);
+            self.trim();
         } else {
             let at = self
                 .fragments

@@ -3,6 +3,46 @@ use serde_json::{Value, json};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
+#[test]
+fn voice_tools_group_after_a_new_prompt_or_idle_and_keep_actionable_rows_visible() {
+    let tool = |id: &str, name: &str, status: &str| {
+        json!({
+            "id": id, "role": "assistant", "event": {"kind":"tool", "name":name, "status":status}
+        })
+    };
+    let messages = vec![
+        json!({"id":"user1","role":"user"}),
+        tool("one", "functions.exec_command", "completed"),
+        tool("two", "bash", "completed"),
+        tool("ask", "functions.request_user_input", "completed"),
+        tool("three", "read_file", "completed"),
+        tool("failed", "shell", "failed"),
+        json!({"id":"user2","role":"user"}),
+        tool("four", "shell", "completed"),
+        tool("five", "read", "completed"),
+        tool("pending", "read", "requested"),
+    ];
+    let groups = |working| {
+        let mut messages = messages.clone();
+        group_call_tools(&mut messages, working);
+        messages
+            .into_iter()
+            .filter(|row| row.get("toolGroup").is_some())
+            .map(|row| (row["id"].clone(), row["toolGroup"].clone()))
+            .collect::<Vec<_>>()
+    };
+    let active = groups(true);
+    let idle = groups(false);
+    assert_eq!(active.len(), 1);
+    assert_eq!(idle.len(), 2);
+    assert_eq!(active[0], idle[0]);
+    assert_eq!(active[0].0, "one");
+    assert_eq!(active[0].1["count"], 2);
+    assert_eq!(active[0].1["tools"], json!(["Shell"]));
+    assert_eq!(idle[1].0, "four");
+    assert_eq!(idle[1].1["tools"], json!(["Shell", "Read"]));
+}
+
 fn event(kind: &str, fields: Value) -> Result<ServerEvent, Box<dyn std::error::Error>> {
     let mut value = json!({"type":kind,"event_id":"event","response_id":"response","item_id":"reply","output_index":0,"content_index":0});
     value
