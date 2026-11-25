@@ -1311,6 +1311,7 @@ describe('native HostRuntime adapter', () => {
       update: { revision: 99n, deltas: [{ tag: 'StatusChanged', inner: { status: 5 } }] },
     });
     expect(handler).not.toHaveBeenCalled();
+    expect(runtime.hasAgentChatRoute('terminal-1', result.binding.bindingToken)).toBe(true);
     mockAgentEventSink.event({
       runtimeId: 'runtime-agent',
       runtimeIncarnation: 7n,
@@ -1329,6 +1330,7 @@ describe('native HostRuntime adapter', () => {
       update: { revision: 6n, deltas: [] },
     });
     expect(handler).toHaveBeenCalledTimes(1);
+    expect(runtime.hasAgentChatRoute('terminal-1', result.binding.bindingToken)).toBe(false);
   });
 
   it('routes transcript events by native runtime incarnation', async () => {

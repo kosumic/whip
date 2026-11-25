@@ -263,6 +263,8 @@ function setup(agent: ChatAgent) {
       return result.binding;
     }),
     agentChatBindingIsCurrent: jest.fn(() => false),
+    hasAgentChatRoute: (terminalId: string, token: string) =>
+      handlers.has(terminalId) && bindings.get(terminalId)?.bindingToken === token,
     currentAgentChat: jest.fn(
       (terminalId: string, handler?: (event: NativeAgentTranscriptUpdate) => void): NativeAgentChatBinding | undefined => {
         if (handler) handlers.set(terminalId, handler);

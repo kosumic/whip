@@ -22,6 +22,7 @@ function makeHost(id: string, incarnation = 1) {
   const transport: NativeTranscriptTransport = {
     runtimeId: id, runtimeIncarnation: incarnation, hostState: jest.fn(() => state),
     currentAgentChat: jest.fn((_terminal, listener) => { handler = listener; return binding; }),
+    hasAgentChatRoute: (terminalId, token) => Boolean(handler) && terminalId === binding.terminalId && token === binding.bindingToken,
     preloadAgentChat: jest.fn(), openAgentChat: jest.fn(), startAgentChat: jest.fn(), detachAgentChat: jest.fn(), agentTranscript: jest.fn(),
     agentChatBindingIsCurrent: jest.fn((_terminal, token, revision) => token === binding.bindingToken && binding.state.revision === revision),
   };
@@ -127,6 +128,62 @@ test('unrelated host status and connection recovery retain immutable history wit
   expect(runtime.transport.agentTranscript).not.toHaveBeenCalled();
   expect(runtime.transport.detachAgentChat).not.toHaveBeenCalled();
   expect(agentTranscriptService.titles.title(transcriptTitleKey(runtime.id, runtime.pane))).toBe('Saved title');
+});
+
+test.each(['before', 'after'] as const)('a cache notification %s a queued message preserves incremental delivery', async order => {
+  const runtime = makeHost('one');
+  snapshot = descriptors([runtime]);
+  await setup([runtime]).render();
+  const { binding, transport } = runtime;
+  const message = { id: 'reply', role: 'assistant' as const, parts: [], diffs: [] };
+  binding.state = { ...binding.state, revision: 2, messages: [message] };
+  const deliver = () => runtime.emit({
+    key: binding.transcriptKey, runtimeIncarnation: binding.runtimeIncarnation, revision: 2,
+    deltas: [{ type: 'message-upserted', index: 0, message }],
+  });
+
+  if (order === 'after') deliver();
+  await act(async () => cache.notify());
+  if (order === 'before') deliver();
+
+  expect(agentTranscriptService.getState(binding.bindingToken)).toMatchObject({
+    revision: 2, transcript: { messages: [message] },
+  });
+  expect(transport.currentAgentChat).toHaveBeenCalledTimes(1); // Initial attachment only.
+  expect(transport.agentTranscript).not.toHaveBeenCalled();
+});
+
+test('a replacement transport for the same resident binding takes over incremental delivery', async () => {
+  const old = makeHost('one');
+  snapshot = descriptors([old]);
+  const fixture = setup([old]);
+  await fixture.render();
+  const replacement = makeHost(old.id);
+  fixture.runtimesRef.current.set(old.id, { client: { activeNative: replacement.transport } } as never);
+  await fixture.render();
+  replacement.emit({ key: replacement.binding.transcriptKey, runtimeIncarnation: 1, revision: 2,
+    deltas: [{ type: 'status-changed', status: 'stale' }] });
+  expect(agentTranscriptService.getState(old.binding.bindingToken)).toMatchObject({ revision: 2, status: 'stale' });
+});
+
+test('a resident chat recovers a missed message after its first history read fails', async () => {
+  const runtime = makeHost('one');
+  snapshot = descriptors([runtime]);
+  await setup([runtime]).render();
+  const { binding, transport } = runtime;
+  const missed = { id: 'missed', role: 'user' as const, parts: [], diffs: [] };
+  binding.state = { ...binding.state, revision: 3, messages: [missed] };
+  jest.mocked(transport.agentTranscript).mockImplementationOnce(() => { throw new Error('temporarily unavailable'); });
+  runtime.emit({ key: binding.transcriptKey, runtimeIncarnation: 1, revision: 3,
+    deltas: [{ type: 'status-changed', status: 'live' }] });
+  expect(agentTranscriptService.getState(binding.bindingToken)?.status).toBe('stale');
+
+  await act(async () => cache.notify());
+  expect(agentTranscriptService.getState(binding.bindingToken)).toMatchObject({
+    revision: 3, status: 'live', transcript: { messages: [missed] },
+  });
+  await act(async () => cache.notify());
+  expect(transport.currentAgentChat).toHaveBeenCalledTimes(2);
 });
 
 test('native invalidation fences late events and older residency snapshots without unbinding twice', async () => {

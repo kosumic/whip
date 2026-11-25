@@ -29,6 +29,7 @@ export type NativeTranscriptTransport = Pick<
   | 'agentChatBindingIsCurrent'
   | 'currentAgentChat'
   | 'detachAgentChat'
+  | 'hasAgentChatRoute'
   | 'openAgentChat'
   | 'preloadAgentChat'
   | 'startAgentChat'
@@ -78,6 +79,7 @@ interface TranscriptEntry {
   listeners: Map<string, Set<Listener>>;
   state: AgentChatState;
   deleted: boolean;
+  needsResync: boolean;
   starting: Set<string>;
 }
 
@@ -173,7 +175,12 @@ export class NativeTranscriptService {
     for (const descriptor of snapshot.bindings) {
       const host = hosts.find(item => item.hostSessionId === descriptor.hostSessionId &&
         item.transport.runtimeIncarnation === descriptor.runtimeIncarnation);
-      if (host) this.reconcile(host.hostSessionId, descriptor.terminalId, host.transport);
+      if (!host) continue;
+      const entry = this.entryForBinding(descriptor.bindingToken);
+      // The binding can stay resident while a newer message waits in the event queue.
+      if (entry?.transport === host.transport && !entry.needsResync &&
+        host.transport.hasAgentChatRoute(descriptor.terminalId, descriptor.bindingToken)) continue;
+      this.readCurrentBinding(host.hostSessionId, descriptor.terminalId, host.transport);
     }
     for (const entry of this.entries.values()) {
       const host = hosts.find(item => item.hostSessionId === entry.hostSessionId &&
@@ -298,6 +305,15 @@ export class NativeTranscriptService {
       // current render cache. Unrelated host events need no history projection.
       return { type: 'bound', binding: previousBinding, state: previousEntry.state };
     }
+    return this.readCurrentBinding(hostSessionId, terminalId, transport);
+  }
+
+  private readCurrentBinding(
+    hostSessionId: string,
+    terminalId: string,
+    transport: NativeTranscriptTransport,
+  ): AgentChatProjection {
+    const terminalKey = this.terminalKey(hostSessionId, terminalId);
     const boundEntry: { current?: TranscriptEntry } = {};
     const binding = transport.currentAgentChat(terminalId, event => {
       if (event.runtimeIncarnation === boundEntry.current?.runtimeIncarnation) {
@@ -355,6 +371,7 @@ export class NativeTranscriptService {
         listeners: new Map(),
         state: activationState,
         deleted: false,
+        needsResync: false,
         starting: new Set(),
       };
       this.entries.set(entryKey, entry);
@@ -562,6 +579,7 @@ export class NativeTranscriptService {
       try {
         this.acceptState(entry, entry.transport.agentTranscript(event.key));
       } catch (error) {
+        entry.needsResync = true;
         this.publish(entry, {
           ...entry.state,
           status: 'stale',
@@ -582,6 +600,7 @@ export class NativeTranscriptService {
   }
 
   private publish(entry: TranscriptEntry, state: AgentChatState, baseline = false): void {
+    if (baseline) entry.needsResync = false;
     entry.state = state;
     for (const binding of entry.bindings.values()) {
       this.titles.observeBinding(entry.hostSessionId, binding, state);

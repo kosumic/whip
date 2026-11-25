@@ -23,8 +23,9 @@ React holds presentation state, callback routes and immutable transcript/row
 projections. `NativeTranscriptService` forwards leases and applies native
 residency snapshots. It never selects cache victims or opens speculative
 candidates from host metadata. A snapshot contains terminal IDs, native binding
-tokens and runtime incarnations. Unchanged bindings use the existing native
-revision check, so unrelated host updates do not request transcript bodies.
+tokens and runtime incarnations. An attached binding receives queued transcript
+updates through its event handler. Applying a residency snapshot reads history
+when attaching the handler or recovering a failed transcript resync.
 `AgentChatRows` remains the incremental row owner.
 
 Native specifications live in

@@ -84,6 +84,7 @@ function fakeTransport(initial = state()) {
       return result.type === 'bound' ? result.binding : undefined;
     }),
     agentChatBindingIsCurrent: jest.fn(() => false),
+    hasAgentChatRoute: (terminalId, token) => Boolean(handler) && terminalId === nextOpen?.terminalId && token === nextOpen.bindingToken,
     openAgentChat: jest.fn((terminalId, nextHandler) => {
       handler = nextHandler;
       if (!nextOpen) {

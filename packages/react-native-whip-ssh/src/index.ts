@@ -3306,6 +3306,12 @@ export class NativeHostRuntime {
     );
   }
 
+  hasAgentChatRoute(terminalId: string, bindingToken: string): boolean {
+    const route = this.agentChatRoutes.get(terminalId);
+    return route?.bindingToken === bindingToken &&
+      agentTranscriptHandlers.get(this.transcriptRoute)?.has(route.transcriptKey) === true;
+  }
+
   private routeAgentChat(
     terminalId: string,
     binding: NativeAgentChatBinding,
