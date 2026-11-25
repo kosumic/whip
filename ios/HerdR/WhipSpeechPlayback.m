@@ -912,7 +912,7 @@ static void WhipWakeAutomaticSpeech(void)
 {
   id turn = callToken ? [WhipVoiceCall.shared playbackKey:callToken] : nil;
   // A call started muted can reach a spoken turn before its first capture.
-  // Its output must still borrow CallKit's owner rather than activate a second session.
+  // Activate the conversation's audio session for that first spoken turn.
   if (turn && !WhipVoiceCall.shared.active) {
     [WhipVoiceCall.shared activateAudio:callToken resolve:^(id value) {
       [self startLocalChat:owner label:label callToken:callToken resolve:resolve reject:reject];
@@ -1135,6 +1135,14 @@ static void WhipWakeAutomaticSpeech(void)
   self.audioActive = YES;
   return YES;
 }
+- (void)stopLocalChatForTurn:(id)turn
+{
+  [self cancelPendingSpeech:^BOOL(WhipPendingSpeech *pending) {
+    return pending.localOnly && pending.turn == turn;
+  } reason:WhipSpeechStopped];
+  if (self.localOnly && self.turn == turn && self.kind == WhipSpeechChat)
+    [self stopOwner:self.owner kind:WhipSpeechChat];
+}
 - (BOOL)stopOwner:(NSString *)owner kind:(enum WhipSpeechKind)kind
 {
   NSString *reason = kind == WhipSpeechChat && [owner isEqualToString:WhipAutomaticOwner] ? WhipSpeechReplaced : WhipSpeechStopped;
@@ -1212,7 +1220,7 @@ static void WhipWakeAutomaticSpeech(void)
 {
   if (!self.audioActive) return;
   self.audioActive = NO;
-  if (WhipVoiceCall.shared.active) return; // CallKit retains the session between conversation turns.
+  if (WhipVoiceCall.shared.active) return; // The conversation retains audio between turns.
   NSError *error = nil;
   if (![AVAudioSession.sharedInstance setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:&error])
     NSLog(@"[SpeechPlayback] Could not release audio session: %@", error.localizedDescription);

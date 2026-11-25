@@ -29,6 +29,7 @@ FOUNDATION_EXPORT NSString *const WhipSpeechCaption;
 - (void)preview:(NSString *)owner text:(NSString *)text language:(NSString *)language resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
 - (void)speakDevice:(NSString *)owner request:(NSString *)request text:(NSString *)text language:(NSString *)language rate:(double)rate resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;
 - (BOOL)stopOwner:(NSString *)owner kind:(enum WhipSpeechKind)kind;
+- (void)stopLocalChatForTurn:(id)turn;
 - (void)cancelDeviceRequest:(NSString *)request;
 - (void)stopDevice;
 - (void)stop;

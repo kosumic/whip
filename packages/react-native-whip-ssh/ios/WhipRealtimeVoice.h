@@ -14,7 +14,6 @@ int32_t WhipReadOpenAiVoiceCredential(void *context, uint8_t *destination, size_
 @property(nonatomic, readonly) id playbackKey;
 - (BOOL)shake;
 - (void)invalidate;
-- (void)callAudioActive:(BOOL)active token:(NSString *)token;
 - (void)credentialsUpdating:(BOOL)updating;
 - (void)prepare:(BOOL)enabled;
 - (void)start:(NSString *)token config:(NSString *)config resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject;

@@ -40,7 +40,7 @@ end
 target = project.new_target(:unit_test_bundle, 'SpeechTests', :ios, '16.4')
 target.add_dependency(host)
 target.add_system_frameworks(%w[UIKit AVFoundation CoreMotion UserNotifications XCTest])
-%w[ios/HerdR/WhipSpeechPlayback.m ios/HerdR/HerdrBackground.m ios/Tests/WhipSpeechPlaybackTests.m ios/Tests/WhipSpeechPresentationTests.m ios/Tests/WhipDownloadExecutionTests.m ios/Tests/WhipCallPlaybackBoundaryTests.mm ios/Tests/WhipAudioInterruptionTests.mm].each do |path|
+%w[ios/HerdR/WhipSpeechPlayback.m ios/HerdR/HerdrBackground.m ios/Tests/WhipSpeechPlaybackTests.m ios/Tests/WhipSpeechPresentationTests.m ios/Tests/WhipDownloadExecutionTests.m ios/Tests/WhipCallPlaybackBoundaryTests.mm].each do |path|
   target.source_build_phase.add_file_reference(project.main_group.new_file(File.join(root, path)))
 end
 target.build_configurations.each do |config|
@@ -65,7 +65,7 @@ target.build_configurations.each do |config|
   })
 end
 native = project.new_target(:static_library, 'VoiceAdapterCompile', :ios, '16.4')
-native.add_system_frameworks(%w[UIKit AVFoundation CallKit Security])
+native.add_system_frameworks(%w[UIKit AVFoundation Security])
 %w[WhipVoiceCall.mm WhipRealtimeVoice.mm].each do |name|
   native.source_build_phase.add_file_reference(project.main_group.new_file(File.join(root, 'packages', 'react-native-whip-ssh', 'ios', name)))
 end
@@ -79,9 +79,20 @@ native.build_configurations.each do |config|
   })
 end
 target.add_dependency(native)
+voice = project.new_target(:unit_test_bundle, 'VoiceCallTests', :ios, '16.4')
+voice.add_dependency(host)
+voice.add_system_frameworks(%w[AVFoundation XCTest])
+%w[packages/react-native-whip-ssh/ios/WhipVoiceCall.mm ios/Tests/WhipVoiceCallTests.mm].each do |path|
+  voice.source_build_phase.add_file_reference(project.main_group.new_file(File.join(root, path)))
+end
+voice.build_configurations.each do |config|
+  config.build_settings.merge!(target.build_settings(config.name))
+  config.build_settings['PRODUCT_BUNDLE_IDENTIFIER'] = 'io.github.kaminarios.whip.voice-call-tests'
+end
 project.save
 scheme = Xcodeproj::XCScheme.new
 scheme.configure_with_targets(host, target)
+scheme.add_test_target(voice)
 scheme.save_as(project.path, 'SpeechTests', true)
 ENV['DEVELOPER_DIR'] ||= '/Applications/Xcode.app/Contents/Developer'
 ENV['PATH'] = "/usr/bin:/bin:/usr/sbin:/sbin:#{ENV['PATH']}"

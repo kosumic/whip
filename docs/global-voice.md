@@ -277,10 +277,10 @@ unavailable while locked; a rejected replacement cannot interrupt the current on
 The locked call UI stays hidden. Protected credentials and SSH workflows retain
 their existing authentication checks. Continuing an authorized conversation does
 not authorize new protected UI actions or agent approvals. Android retains its
-microphone/media foreground service and notification; iOS retains CallKit and
-background audio. OS interruptions, permission loss and system lifecycle limits
-still apply. Explicit Hang Up ends the call even while locked, and unlock never
-resurrects it. Native session rotation and bounded connection recovery apply to
+microphone/media foreground service and notification. On iOS, Whip owns the
+audio session and uses background audio. OS interruptions, permission loss and
+system lifecycle limits still apply. Hang Up in Whip ends the call.
+Native session rotation and bounded connection recovery apply to
 all user-started cloud voice calls, including agent and terminal scopes and
 GPT-Live. See [the logical call lifecycle](realtime-voice.md#logical-calls-and-fresh-provider-sessions-378)
 for retirement, retries, fresh authority and separate provider-session billing.

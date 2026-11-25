@@ -19,7 +19,7 @@ Pod::Spec.new do |s|
   # Expose the C highlighting API to Swift without importing the C++/JSI bridge.
   s.module_map = "ios/WhipSsh.modulemap"
   s.vendored_frameworks = "build/WhipSsh.xcframework"
-  s.frameworks = ["CoreFoundation", "Security", "LocalAuthentication", "Network", "CallKit", "AVFoundation"]
+  s.frameworks = ["CoreFoundation", "Security", "LocalAuthentication", "Network", "AVFoundation"]
   s.libraries = "resolv"
   s.dependency    "uniffi-bindgen-react-native", "0.31.0-3"
 

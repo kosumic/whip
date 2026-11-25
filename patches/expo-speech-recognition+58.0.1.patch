@@ -236,7 +236,7 @@ index 4643d991..33d28c01 100644
 +  audioChunkToken?: string;
 +  /** Whip-owned native PCM sink. Audio never enters JS when set. */
 +  audioIngressHandle?: string;
-+  /** CallKit owns audio activation and routing for this request. */
++  /** Whip owns audio activation and routing for this request. */
 +  iosAudioSessionManaged?: boolean;
      /**
       * [Default: false] Include punctuation in the recognition results. This applies to full stops and commas.
@@ -498,7 +498,7 @@ index 4a55ac7a..479d3a0d 100644
 +  audioChunkToken?: string;
 +  /** Whip-owned native PCM sink. Audio never enters JS when set. */
 +  audioIngressHandle?: string;
-+  /** CallKit owns audio activation and routing for this request. */
++  /** Whip owns audio activation and routing for this request. */
 +  iosAudioSessionManaged?: boolean;
    /**
     * [Default: false] Include punctuation in the recognition results. This applies to full stops and commas.

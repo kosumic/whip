@@ -43,14 +43,11 @@ is locked waits for unlock. Permanent focus loss, output removal, service teardo
 device failure, or a recovery timeout ends the call.
 
 On iOS, interruption began gates PCM immediately and pauses the engine/player.
-Interruption ended must contain `ShouldResume`, and CallKit must also have granted
-an active audio session. Both callback orders are supported. Configuration-change
-notifications cannot restart an unauthorized/suspended engine. Recovery waits for
-protected data if locked, flushes queued output, resets conversion and the input
-device timestamp boundary, then restarts the existing graph. CallKit activation
-does not reapply the initial speaker override. CallKit reset, denied recovery,
-route loss, engine failure, and timeout are terminal. Local calls without the
-Realtime recovery owner end explicitly on CallKit deactivation.
+For realtime calls, Whip waits for an interruption-ended event with `ShouldResume`
+and for protected data to become available. It reactivates the audio session,
+restarts the existing graph and discards stale audio. Recovery preserves the
+speaker selection. A media-services reset, denied recovery, route loss, engine
+failure or timeout ends the call. An interruption ends an active local call.
 
 Both platforms bound recovery to 60 seconds. Terminal errors display **Voice chat
 ended** and provide **Start new call**. Existing call-history resume restores saved
@@ -59,7 +56,7 @@ text into a fresh call; it does not resurrect provider state or replay old tools
 ## Diagnostics
 
 `WhipVoiceCall` / `WhipRealtimeAudio` on Android and `WhipVoice` on iOS record
-platform focus/interruption type, CallKit activation/deactivation/reset, route
+platform focus requests, interruptions, route
 reasons, service lifecycle, device failures and recovery outcomes. Session tokens,
 native handles and Rust provider-attempt generations correlate transitions.
 Repeated focus/interruption/route diagnostics have per-call budgets; Rust logs
@@ -106,10 +103,9 @@ headset removal, and failure to reopen devices. Confirm one provider/native hand
 survives transient recovery, no stale output is audible, and permanent loss offers
 a working new call. End every test call afterward.
 
-On iOS, also test an incoming call/decline, CallKit deactivation/reactivation,
-AVAudioSession interruption with and without `ShouldResume`, and media-service
-reset. These require real device validation; passing policy tests alone does not
-verify AVAudioEngine/CallKit behavior.
+On iOS, test an incoming phone call, audio interruptions with and without
+`ShouldResume`, and a media-services reset. Use a physical device to verify
+audio capture and playout after recovery.
 
 ## Validation recorded for this change
 

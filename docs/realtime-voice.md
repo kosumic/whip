@@ -141,7 +141,7 @@ authenticated media connection is ready, not on SNAP's early channel-open event.
 The peer driver serializes mutations and drains each output batch; event,
 packet, TCP connection and send queues are bounded. Dependency tracing is
 disabled around peer creation and its worker to avoid logging sensitive wire data.
-iOS retains AVAudioEngine voice processing, CallKit routing and native
+iOS retains AVAudioEngine voice processing, AVAudioSession routing and native
 playback acknowledgements. There is no automatic WebSocket fallback. The
 explicit WebSocket configuration remains available to native integrations.
 Broad acoustic/route qualification remains acceptance work. Local-peer tests exercise
@@ -244,8 +244,7 @@ playback epochs, captions, prompts, function IDs, unsent delegations and pending
 approvals before another generation can use them. No conversation context is
 copied into the new provider session. Global instructions and settings are
 retained; a new protected action obtains fresh authority only while unlocked.
-Unlock never replays a denied action. Hang Up, including notification/CallKit
-controls, cancels native retry waits and drains in-flight creation so a returned
+Unlock never replays a denied action. Hang Up in Whip or from the Android notification cancels native retry waits and drains in-flight creation so a returned
 call identity can still be retired. It is terminal for the logical call.
 
 `continuity` diagnostics expose connected/reconnecting/failed/ended status, the
@@ -405,10 +404,10 @@ registration or changing communication mode. Android does not depend on a
 vendor echo effect that may be ineffective on a media route. iOS uses
 `AVAudioEngine` voice-processing I/O, an `AVAudioConverter`
 for the microphone's hardware format, and `AVAudioPlayerNode` playback. The
-existing iOS CallKit owner retains call audio routing and focus.
+iOS voice session retains audio routing and focus.
 
 Output-only previews share the bounded Rust actor and native players, but skip
-recorders, microphone permission and CallKit/foreground call startup. They use
+recorders, microphone permission and full-duplex voice session startup. They use
 media focus/playback sessions and the shared Rust speech lease, so local speech
 cannot overlap them. Every Realtime session uses `server_vad`; preview disables
 automatic responses and interruptions and exposes no tools.

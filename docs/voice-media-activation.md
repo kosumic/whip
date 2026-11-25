@@ -9,15 +9,15 @@ audio focus. Native adapters activate audio at these boundaries:
 | Android Realtime / Live call | Rust reports transport `mediaReady`, both native devices initialize, then focus is granted before playout and capture start | The entire live call, including silence, mute, listening, barge-in and AEC |
 | Android output-only Realtime / Live preview | The first nonempty Rust PCM packet is held by the playback worker before requesting focus and starting its track | Until preview ends or fails |
 | Local turn-based call | Local model preparation and recognition permission/context preflight finish; shared call audio activates immediately before recognition starts | Across recognition cycles, waiting, and spoken turns; a muted call can activate through its first spoken turn |
-| iOS PCM read-aloud | First PCM is ready; activate the session, start the prepared engine, and schedule/play the buffer on main | Until completion or cancellation; active calls borrow CallKit's session |
-| iOS Realtime / Live call | Rust reports transport `mediaReady`; request CallKit activation, then create/start voice-processing capture/playout in its activation callback | CallKit owns activation, interruptions, recovery authorization and deactivation |
+| iOS PCM read-aloud | First PCM is ready; activate the session, start the prepared engine, and schedule/play the buffer on main | Until completion or cancellation; call speech borrows the conversation’s audio session |
+| iOS Realtime / Live call | Rust reports transport `mediaReady`. Whip activates `AVAudioSession` and starts voice-processing capture and playout | Whip releases the session on hang-up and reactivates it after an interruption when iOS permits recovery |
 | iOS Realtime / Live preview | Retain the first nonempty PCM buffer, activate the session and engine, then submit that buffer before reading more | Until preview completes or is cancelled |
 
 Full-duplex activation never waits for an assistant response. Waiting that long
 would prevent live input, barge-in, and a continuous echo reference. Local calls
 likewise retain their call owner between turns instead of reacquiring per reply.
-On iOS, a call's reservation and its CallKit activation are separate: credential,
-network and local model work can finish before other apps lose their audio.
+On iOS, credentials, network setup and local model loading can finish before
+Whip activates the audio session.
 
 Android `TextToSpeech.speak` and direct iOS `AVSpeechSynthesizer` playback do not
 provide the prepare/play split used by these PCM paths. Their narrow practical
@@ -43,7 +43,7 @@ silence while listening is intentional. System TTS marks its start callback as
 they do not measure acoustic output at a microphone.
 
 iOS uses monotonic `at_s` timestamps. PCM's first-output marker is explicitly
-`boundary=scheduled`; CallKit owns the actual activation timing. These are software
+`boundary=scheduled`. These are software
 boundaries, not proof of acoustic first-sample timing.
 
 ## Validation
@@ -67,5 +67,5 @@ transient, ducking and permanent focus loss after activation.
 
 On macOS, `nix develop -c ruby scripts/test-ios-speech.rb` runs arm64 simulator
 adapter tests and compiles both voice adapters. Physical-device checks remain
-necessary for CallKit, Bluetooth, interruptions, uninterrupted listening/AEC and
+necessary for audio routing, Bluetooth, interruptions, uninterrupted listening/AEC and
 first-phoneme audio. Simulator/unit-test results cannot establish those behaviors.

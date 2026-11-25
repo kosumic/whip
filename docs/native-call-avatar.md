@@ -14,11 +14,7 @@ Android's small notification icon continues to identify Whip.
 See [`Person.Builder.setIcon`](https://developer.android.com/reference/android/app/Person.Builder#setIcon(android.graphics.drawable.Icon))
 and [`Notification.CallStyle`](https://developer.android.com/reference/android/app/Notification.CallStyle).
 
-iOS CallKit's [`CXCallUpdate`](https://developer.apple.com/documentation/callkit/cxcallupdate)
-has no API for a callee avatar. Its
-[`iconTemplateImageData`](https://developer.apple.com/documentation/callkit/cxproviderconfiguration/icontemplateimagedata)
-configures the button that opens the calling app, rather than a callee photo.
-Whip therefore leaves the iOS system avatar under the system's control.
+On iOS, Whip presents voice controls inside the app.
 
 ## OpenAI asset attribution
 

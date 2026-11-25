@@ -74,8 +74,7 @@
         },
         "ITSAppUsesNonExemptEncryption": false,
         "UIBackgroundModes": [
-          "audio",
-          "voip"
+          "audio"
         ],
         "NSBonjourServices": [
           "_expo._tcp"

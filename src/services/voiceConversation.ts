@@ -134,7 +134,7 @@ export class VoiceConversation {
       this.playback = getSpeechPlayback();
       this.sounds = new VoiceCallSoundPlayer(this.playback, () => !this.closed && this.core?.view().phase === 'listening' && Boolean(this.input?.started));
       this.sounds.preload();
-      if (!this.playback.startLocalChatSpeech || !this.playback.startVoiceCall) throw new Error('Install an updated Whip build for system voice calls.');
+      if (!this.playback.startLocalChatSpeech || !this.playback.startVoiceCall) throw new Error('Install an updated Whip build for voice calls.');
       await composerSpeechInput.authorizeLocal();
       if (this.closed) return;
       this.canInterrupt = await composerSpeechInput.supportsPlaybackMonitoring();
@@ -155,7 +155,7 @@ export class VoiceConversation {
         recordDiagnostic('warn', 'VoiceChat', 'playback-stopped', { reason: event.reason, error: event.error });
         this.view = { ...this.view, error: event.error ?? null };
         // A shake, route change, or speech-player failure stops this reply.
-        // The system call and the next conversational turn stay available.
+        // The voice call and the next conversational turn stay available.
         this.core.acknowledgeSpeech(event.token, '0', 'stopped');
         this.apply();
       });
@@ -519,7 +519,6 @@ export class VoiceConversation {
     const call = this.callToken;
     this.callToken = undefined;
     // Hang up immediately, including when recognizer shutdown is still draining.
-    // CallKit deactivation may itself be what releases a stalled audio engine.
     const endedCall = Promise.allSettled(call && this.playback ? [this.playback.endVoiceCall(call)] : []);
     const closingSound = endedCall.then(async () => {
       await stoppedSound;

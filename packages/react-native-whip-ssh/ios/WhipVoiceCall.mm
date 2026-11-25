@@ -3,41 +3,28 @@
 #import "../cpp/WhipSpeechPolicy.h"
 #import "../../../ios/HerdR/WhipSpeechPlayback.h"
 #import <AVFoundation/AVFoundation.h>
-#import <CallKit/CallKit.h>
 
 NSString *const WhipVoiceCallEvent = @"WhipVoiceCall";
 static NSString *const WhipCallError = @"E_VOICE_CALL";
 
-@interface WhipVoiceCall () <CXProviderDelegate, AVAudioPlayerDelegate>
-@property(nonatomic, strong) CXProvider *provider;
-@property(nonatomic, strong) CXCallController *controller;
-@property(nonatomic, strong) NSUUID *uuid;
+@interface WhipVoiceCall () <AVAudioPlayerDelegate>
 @property(nonatomic, copy) NSString *token;
-@property(nonatomic, copy) NSString *label;
 @property(nonatomic, readwrite) BOOL active;
 @property(nonatomic, readwrite) BOOL muted;
 @property(nonatomic, copy) RCTPromiseResolveBlock ready;
 @property(nonatomic, copy) RCTPromiseRejectBlock failed;
-@property(nonatomic, strong) NSTimer *timeout;
 @property(nonatomic, strong) NSTimer *authority;
-@property(nonatomic, strong) NSMutableArray *endings;
-@property(nonatomic, strong) NSMutableSet<NSUUID *> *mirroredMuteActions;
-@property(nonatomic) BOOL ending;
-@property(nonatomic) BOOL audioActive;
 @property(nonatomic) BOOL soundOwnsSession;
 @property(nonatomic, strong) AVAudioPlayer *soundPlayer;
-@property(nonatomic, copy) NSString *pendingSoundURI;
 @property(nonatomic, copy) RCTPromiseResolveBlock soundDone;
 @property(nonatomic, copy) RCTPromiseRejectBlock soundFailed;
 @property(nonatomic, strong) NSTimer *soundTimeout;
 @property(nonatomic, strong) id playbackTurn;
-@property(nonatomic, strong) id closingTurn;
-@property(nonatomic) BOOL startRequested;
 @end
 
 @implementation WhipVoiceCall
-- (BOOL)owns:(NSString *)token { return self.playbackTurn && !self.ending && [self.token isEqualToString:token]; }
-- (id)playbackKey:(NSString *)token { return !token ? (self.closingTurn ?: self.playbackTurn) : [self.token isEqualToString:token] ? self.playbackTurn : nil; }
+- (BOOL)owns:(NSString *)token { return self.playbackTurn && [self.token isEqualToString:token]; }
+- (id)playbackKey:(NSString *)token { return (!token || [self.token isEqualToString:token]) ? self.playbackTurn : nil; }
 + (instancetype)shared
 {
   static WhipVoiceCall *call;
@@ -48,27 +35,19 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
 - (instancetype)init
 {
   if ((self = [super init])) {
-    CXProviderConfiguration *configuration = [CXProviderConfiguration new];
-    configuration.supportsVideo = NO;
-    configuration.maximumCallGroups = 1;
-    configuration.maximumCallsPerCallGroup = 1;
-    configuration.supportedHandleTypes = [NSSet setWithObject:@(CXHandleTypeGeneric)];
-    configuration.includesCallsInRecents = NO;
-    _provider = [[CXProvider alloc] initWithConfiguration:configuration];
-    [_provider setDelegate:self queue:dispatch_get_main_queue()];
-    _controller = [CXCallController new];
-    _endings = [NSMutableArray new];
-    _mirroredMuteActions = [NSMutableSet new];
-    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(routeChanged:) name:AVAudioSessionRouteChangeNotification object:nil];
+    NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
+    [center addObserver:self selector:@selector(routeChanged:) name:AVAudioSessionRouteChangeNotification object:nil];
+    [center addObserver:self selector:@selector(interrupted:) name:AVAudioSessionInterruptionNotification object:nil];
+    [center addObserver:self selector:@selector(mediaServicesReset:) name:AVAudioSessionMediaServicesWereResetNotification object:nil];
   }
   return self;
 }
 - (void)start:(NSString *)token label:(NSString *)label resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
   if (!whip_voice_session_current(token.UTF8String)) { reject(WhipCallError, @"The voice call was cancelled.", nil); return; }
-  if (self.token || self.audioActive) { reject(WhipCallError, @"A voice call is already active.", nil); return; }
+  if (self.token) { reject(WhipCallError, @"A voice call is already active.", nil); return; }
   [self stopSound];
-  self.token = token; self.label = label; self.uuid = NSUUID.UUID;
+  self.token = token;
   self.ready = resolve; self.failed = reject;
   __weak WhipVoiceCall *weakSelf = self;
   self.authority = [NSTimer timerWithTimeInterval:0.25 repeats:YES block:^(NSTimer *timer) {
@@ -88,7 +67,7 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
   if ([WhipSpeechPlayback.shared deferPlayback:turn block:^{ [self activateCall:token turn:turn]; }]) return;
   [WhipSpeechPlayback.shared startPlayback:turn];
   // Reserve the playback owner while credentials/models/transport prepare.
-  // CallKit activation is requested only when live capture/playout can start.
+  // Capture or playout activates the audio session when its media is ready.
   RCTPromiseResolveBlock ready = self.ready;
   self.ready = nil; self.failed = nil;
   if (ready) ready(nil);
@@ -96,82 +75,45 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
 - (void)activateAudio:(NSString *)token resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
   if (![self owns:token]) { reject(WhipCallError, @"The voice call was cancelled.", nil); return; }
+  if (!whip_voice_session_current(token.UTF8String)) {
+    [self clear:nil]; reject(WhipCallError, @"The voice call was cancelled.", nil); return;
+  }
   if (self.active) { resolve(nil); return; }
-  if (self.startRequested) { reject(WhipCallError, @"Voice audio is already activating.", nil); return; }
-  self.ready = resolve; self.failed = reject;
-  self.startRequested = YES;
-  NSLog(@"WhipVoice event=media_ready token=%@ at_s=%.3f", token, NSProcessInfo.processInfo.systemUptime);
-  NSLog(@"WhipVoice event=focus_request token=%@ at_s=%.3f owner=callkit", token, NSProcessInfo.processInfo.systemUptime);
-  CXStartCallAction *action = [[CXStartCallAction alloc] initWithCallUUID:self.uuid handle:[[CXHandle alloc] initWithType:CXHandleTypeGeneric value:self.label]];
-  action.video = NO;
-  __weak WhipVoiceCall *weakSelf = self;
-  self.timeout = [NSTimer scheduledTimerWithTimeInterval:15 repeats:NO block:^(NSTimer *timer) {
-    if ([weakSelf.token isEqualToString:token]) [weakSelf fail:@"The system voice call did not activate."];
-  }];
-  [self.controller requestTransaction:[[CXTransaction alloc] initWithAction:action] completion:^(NSError *error) {
-    dispatch_async(dispatch_get_main_queue(), ^{ if (error && [weakSelf.token isEqualToString:token]) [weakSelf fail:error.localizedDescription]; });
-  }];
-}
-- (void)provider:(CXProvider *)provider performStartCallAction:(CXStartCallAction *)action
-{
-  if (![action.callUUID isEqual:self.uuid]) { [action fail]; return; }
-  if (!whip_voice_session_current(self.token.UTF8String)) { [action fail]; [self clear:nil]; return; }
+  AVAudioSession *audio = AVAudioSession.sharedInstance;
   NSError *error = nil;
-  if (![AVAudioSession.sharedInstance setCategory:AVAudioSessionCategoryPlayAndRecord mode:AVAudioSessionModeVoiceChat
-       options:AVAudioSessionCategoryOptionAllowBluetooth error:&error]) {
-    [action fail]; [self fail:error.localizedDescription]; return;
+  NSLog(@"WhipVoice event=media_ready token=%@ at_s=%.3f", token, NSProcessInfo.processInfo.systemUptime);
+  NSLog(@"WhipVoice event=focus_request token=%@ at_s=%.3f owner=voice", token, NSProcessInfo.processInfo.systemUptime);
+  // VoiceChat mode enables hands-free Bluetooth routes.
+  if (![audio setCategory:AVAudioSessionCategoryPlayAndRecord mode:AVAudioSessionModeVoiceChat
+      options:0 error:&error] || ![audio setActive:YES error:&error]) {
+    NSString *message = error.localizedDescription ?: @"Voice audio could not start.";
+    [self clear:message]; reject(WhipCallError, message, error); return;
   }
-  // The ready cue includes haptic feedback after microphone capture starts.
-  [AVAudioSession.sharedInstance setAllowHapticsAndSystemSoundsDuringRecording:YES error:nil];
-  CXCallUpdate *update = [CXCallUpdate new];
-  update.remoteHandle = action.handle; update.localizedCallerName = self.label;
-  update.hasVideo = NO; update.supportsHolding = NO; update.supportsGrouping = NO;
-  update.supportsUngrouping = NO; update.supportsDTMF = NO;
-  [provider reportCallWithUUID:self.uuid updated:update];
-  [provider reportOutgoingCallWithUUID:self.uuid startedConnectingAtDate:NSDate.date];
-  // CallKit activates the audio session; speech I/O starts only in didActivate.
-  [action fulfill];
-}
-- (void)provider:(CXProvider *)provider didActivateAudioSession:(AVAudioSession *)audioSession
-{
-  NSLog(@"WhipVoice event=callkit_activate token=%@", self.token);
-  self.audioActive = YES;
-  if (!self.token) return;
-  if (!whip_voice_session_current(self.token.UTF8String)) {
-    [self end:self.token resolve:^(id value) {} reject:^(NSString *code, NSString *message, NSError *error) {}];
-    return;
-  }
-  BOOL firstActivation = self.ready != nil;
   self.active = YES;
-  if (self.muted) [self mirrorMuted];
-  [WhipRealtimeVoice.shared callAudioActive:YES token:self.token];
-  // Start hands-free unless the user already has a headset connected. Leaving
-  // defaultToSpeaker unset allows the speaker control to return to the receiver.
-  BOOL external = NO;
-  for (AVAudioSessionPortDescription *port in audioSession.currentRoute.outputs) {
-    external |= ![port.portType isEqualToString:AVAudioSessionPortBuiltInReceiver] &&
-      ![port.portType isEqualToString:AVAudioSessionPortBuiltInSpeaker];
+  [audio setAllowHapticsAndSystemSoundsDuringRecording:YES error:nil];
+  // Start hands-free on the built-in route. Preserve a connected headset.
+  for (AVAudioSessionPortDescription *port in audio.currentRoute.outputs) {
+    if ([port.portType isEqualToString:AVAudioSessionPortBuiltInReceiver]) {
+      [audio overrideOutputAudioPort:AVAudioSessionPortOverrideSpeaker error:nil];
+      break;
+    }
   }
-  if (firstActivation && !external) [audioSession overrideOutputAudioPort:AVAudioSessionPortOverrideSpeaker error:nil];
-  [self.timeout invalidate]; self.timeout = nil;
-  [provider reportOutgoingCallWithUUID:self.uuid connectedAtDate:NSDate.date];
-  RCTPromiseResolveBlock ready = self.ready;
-  self.ready = nil; self.failed = nil;
-  if (ready) ready(nil);
   [self routeChanged:nil];
+  resolve(nil);
 }
-- (void)provider:(CXProvider *)provider didDeactivateAudioSession:(AVAudioSession *)audioSession
+- (void)interrupted:(NSNotification *)notification
 {
-  NSLog(@"WhipVoice event=callkit_deactivate token=%@ ending=%d", self.token, self.ending);
-  self.audioActive = NO;
-  self.active = NO;
-  if (self.token && self.startRequested && !self.ending) {
-    if (WhipRealtimeVoice.shared.playbackKey) [WhipRealtimeVoice.shared callAudioActive:NO token:self.token];
-    else [self fail:@"Audio recovery was not authorized. Start a new call or resume from call history."];
+  if (!self.active || [notification.userInfo[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue] != AVAudioSessionInterruptionTypeBegan) return;
+  [self stopSound];
+  // Realtime can pause and recover its engine. Local recognition ends.
+  if (WhipRealtimeVoice.shared.playbackKey != self.playbackTurn) {
+    [self clear:@"Voice audio was interrupted. Start a new call or resume from call history."];
   }
-  id closing = self.closingTurn; self.closingTurn = nil;
-  [WhipSpeechPlayback.shared finishPlayback:closing];
-  if (self.pendingSoundURI) [self startSound:self.pendingSoundURI inCall:NO];
+}
+- (void)mediaServicesReset:(NSNotification *)notification
+{
+  [self stopSound];
+  if (self.token) [self clear:@"The system reset voice audio. Start a new call."];
 }
 
 - (void)playSound:(NSString *)uri inCall:(BOOL)inCall resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
@@ -184,15 +126,7 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
   self.soundTimeout = [NSTimer scheduledTimerWithTimeInterval:5 repeats:NO block:^(NSTimer *timer) {
     [weakSelf finishSound:[NSError errorWithDomain:WhipCallError code:1 userInfo:@{NSLocalizedDescriptionKey: @"Voice call sound timed out."}]];
   }];
-  // clear: resolves hang-up before CallKit deactivates audio. Wait for that
-  // callback so it cannot cut off the closing piano cue halfway through.
-  if (!inCall && self.audioActive) self.pendingSoundURI = uri;
-  else [self startSound:uri inCall:inCall];
-}
-- (void)startSound:(NSString *)uri inCall:(BOOL)inCall
-{
   NSURL *url = [NSURL URLWithString:uri];
-  self.pendingSoundURI = nil;
   NSError *error = nil;
   AVAudioSession *audio = AVAudioSession.sharedInstance;
   if (!inCall) {
@@ -215,8 +149,8 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
   RCTPromiseRejectBlock failed = self.soundFailed;
   self.soundDone = nil; self.soundFailed = nil;
   [self.soundTimeout invalidate]; self.soundTimeout = nil;
-  [self.soundPlayer stop]; self.soundPlayer = nil; self.pendingSoundURI = nil;
-  if (self.soundOwnsSession && !self.audioActive && !self.token) {
+  [self.soundPlayer stop]; self.soundPlayer = nil;
+  if (self.soundOwnsSession) {
     [AVAudioSession.sharedInstance setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:nil];
   }
   self.soundOwnsSession = NO;
@@ -230,71 +164,21 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
 { if (player == self.soundPlayer) [self finishSound:error]; }
 - (void)end:(NSString *)token resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
-  if (![self.token isEqualToString:token]) { resolve(nil); return; }
-  [self.endings addObject:[resolve copy]];
-  if (!self.startRequested) { [self clear:nil]; return; }
-  if (self.ending) return;
-  self.ending = YES;
-  NSUUID *uuid = self.uuid;
-  CXEndCallAction *action = [[CXEndCallAction alloc] initWithCallUUID:uuid];
-  __weak WhipVoiceCall *weakSelf = self;
-  [self.controller requestTransaction:[[CXTransaction alloc] initWithAction:action] completion:^(NSError *error) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-      if (error && [weakSelf.token isEqualToString:token]) {
-        [weakSelf.provider reportCallWithUUID:uuid endedAtDate:NSDate.date reason:CXCallEndedReasonFailed];
-        [weakSelf clear:nil];
-      }
-    });
-  }];
-}
-- (void)provider:(CXProvider *)provider performEndCallAction:(CXEndCallAction *)action
-{
-  if ([action.callUUID isEqual:self.uuid]) [self clear:nil];
-  [action fulfill];
+  if ([self.token isEqualToString:token]) [self clear:nil];
+  resolve(nil);
 }
 - (void)mute:(NSString *)token muted:(BOOL)muted resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
-  if (![self.token isEqualToString:token]) { reject(WhipCallError, @"The voice call has ended.", nil); return; }
-  if (!self.startRequested) {
-    self.muted = muted;
-    [WhipRealtimeVoice.shared mute:token muted:muted];
-    [self emit:@{@"type": @"muted", @"muted": @(muted)}];
-    resolve(nil); return;
-  }
-  CXSetMutedCallAction *action = [[CXSetMutedCallAction alloc] initWithCallUUID:self.uuid muted:muted];
-  [self.controller requestTransaction:[[CXTransaction alloc] initWithAction:action] completion:^(NSError *error) {
-    if (error) reject(WhipCallError, error.localizedDescription, error); else resolve(nil);
-  }];
-}
-- (void)provider:(CXProvider *)provider performSetMutedCallAction:(CXSetMutedCallAction *)action
-{
-  if (![action.callUUID isEqual:self.uuid]) { [action fail]; return; }
-  if ([self.mirroredMuteActions containsObject:action.UUID]) {
-    [self.mirroredMuteActions removeObject:action.UUID];
-    [action fulfill];
-    return;
-  }
-  self.muted = action.muted;
-  [WhipRealtimeVoice.shared mute:self.token muted:action.muted];
-  [self emit:@{@"type": @"muted", @"muted": @(action.muted)}];
-  [action fulfill];
+  if (![self owns:token]) { reject(WhipCallError, @"The voice call has ended.", nil); return; }
+  [WhipRealtimeVoice.shared mute:token muted:muted];
+  [self syncMuted:token muted:muted];
+  resolve(nil);
 }
 - (void)syncMuted:(NSString *)token muted:(BOOL)muted
 {
-  if (![self.token isEqualToString:token] || self.muted == muted) return;
+  if (![self owns:token] || self.muted == muted) return;
   self.muted = muted;
   [self emit:@{@"type": @"muted", @"muted": @(muted)}];
-  if (self.active) [self mirrorMuted];
-}
-- (void)mirrorMuted
-{
-  // Reflect native tools/timers in system CallKit UI without treating its
-  // callback as a manual override (which would cancel the Rust deadline).
-  CXSetMutedCallAction *action = [[CXSetMutedCallAction alloc] initWithCallUUID:self.uuid muted:self.muted];
-  [self.mirroredMuteActions addObject:action.UUID];
-  [self.controller requestTransaction:[[CXTransaction alloc] initWithAction:action] completion:^(NSError *error) {
-    if (error) dispatch_async(dispatch_get_main_queue(), ^{ [self.mirroredMuteActions removeObject:action.UUID]; });
-  }];
 }
 - (void)speaker:(NSString *)token enabled:(BOOL)speaker resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
@@ -307,6 +191,11 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
 }
 - (void)routeChanged:(NSNotification *)notification
 {
+  if (!NSThread.isMainThread) {
+    dispatch_async(dispatch_get_main_queue(), ^{ [self routeChanged:nil]; });
+    return;
+  }
+  if (!self.active) return;
   BOOL speaker = NO;
   for (AVAudioSessionPortDescription *port in AVAudioSession.sharedInstance.currentRoute.outputs) {
     speaker |= [port.portType isEqualToString:AVAudioSessionPortBuiltInSpeaker];
@@ -330,36 +219,19 @@ static NSString *const WhipCallError = @"E_VOICE_CALL";
   id turn = self.playbackTurn;
   [WhipSpeechPlayback.shared cancelPlayback:turn];
   [WhipRealtimeVoice.shared stop:self.token];
-  self.muted = NO;
-  [self.mirroredMuteActions removeAllObjects];
+  [WhipSpeechPlayback.shared stopLocalChatForTurn:turn];
+  [self stopSound];
+  if (self.active) {
+    NSError *deactivationError = nil;
+    if (![AVAudioSession.sharedInstance setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:&deactivationError])
+      NSLog(@"WhipVoice event=deactivation_error error=%@", deactivationError.localizedDescription);
+  }
   [self emit:error ? @{@"type": @"ended", @"error": error} : @{@"type": @"ended"}];
   RCTPromiseRejectBlock failed = self.failed;
   self.ready = nil; self.failed = nil;
-  [self.timeout invalidate]; self.timeout = nil;
-  self.active = NO; self.token = nil; self.uuid = nil; self.label = nil;
-  self.playbackTurn = nil; self.startRequested = NO;
-  if (self.audioActive) self.closingTurn = turn;
-  else [WhipSpeechPlayback.shared finishPlayback:turn];
-  self.ending = NO;
-  NSArray *endings = [self.endings copy];
-  [self.endings removeAllObjects];
+  self.active = NO; self.muted = NO; self.token = nil; self.playbackTurn = nil;
+  [WhipSpeechPlayback.shared finishPlayback:turn];
   if (failed) failed(WhipCallError, error ?: @"Voice call ended before activation.", nil);
-  for (RCTPromiseResolveBlock ended in endings) ended(nil);
 }
-- (void)fail:(NSString *)error
-{
-  if (self.uuid && self.startRequested) [self.provider reportCallWithUUID:self.uuid endedAtDate:NSDate.date reason:CXCallEndedReasonFailed];
-  [self clear:error ?: @"The system voice call failed."];
-}
-- (void)providerDidReset:(CXProvider *)provider {
-  NSLog(@"WhipVoice event=callkit_reset token=%@", self.token);
-  // Reset may have no matching didDeactivate callback. Do not leave the next
-  // call permanently waiting on an audio session that no longer exists.
-  self.audioActive = NO; self.active = NO;
-  id closing = self.closingTurn; self.closingTurn = nil;
-  [WhipSpeechPlayback.shared finishPlayback:closing];
-  [self fail:@"The system reset voice chat."];
-}
-- (void)provider:(CXProvider *)provider timedOutPerformingAction:(CXAction *)action { [self fail:@"The system voice call timed out."]; }
-- (void)invalidate { [self stopSound]; if (self.token) [self fail:@"Voice chat ended."]; }
+- (void)invalidate { [self stopSound]; if (self.token) [self clear:@"Voice chat ended."]; }
 @end

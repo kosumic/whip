@@ -97,7 +97,7 @@ session preserve the pending turn. A different transcript session is treated as
 a conversation replacement, so another conversation's replies cannot be spoken.
 Stopping the speech player by shaking the phone or changing its route skips the
 current reply and keeps the call available for the next turn. Speech-engine
-errors remain visible without hanging up the system call.
+errors remain visible and the conversation stays open.
 
 The orb renders a local WebGL cloud field with flowing detail and microphone
 level response, using the existing WebView dependency. Both its scale and cloud
@@ -138,8 +138,8 @@ callbacks, while they share the call's audio queue slot. Finishing or skipping
 a speech chunk retains that slot until hang-up; unrelated audio waits for the
 call to end. Speech startup rejects an ended or replaced call token.
 
-iOS uses CallKit for activation, routing, system hang-up and mute. Repeated mute
-notifications preserve capture and pending speech. No phone number is dialed.
+On iOS and iPadOS, Whip starts an in-app voice conversation in every storefront.
+Use the voice screen to mute, change the speaker route, or end the conversation.
 
 An active conversation continues when Whip is backgrounded or the screen locks.
 Android keeps an ongoing call notification and a microphone foreground service.
@@ -153,13 +153,13 @@ waiting for a terminal viewport or editor acknowledgement. They retain the same
 ordering, destination checks, and history as foreground composer submissions.
 Herdr submission readiness follows the host connection; releasing its terminal
 viewport in the background does not mark the native send queue offline.
-iOS uses CallKit's activated audio session and the existing audio background mode.
-Another call taking audio control ends the conversation. Start voice chat while
-Whip is in the foreground, after granting microphone and speech permissions.
+Whip activates a play-and-record audio session in voice chat mode and uses the
+iOS audio background mode. An audio interruption ends a local conversation.
+Start voice chat in the foreground after granting microphone and speech permissions.
 
 Platform references: [Android media volume](https://developer.android.com/media/platform/output),
 [Android audio focus](https://developer.android.com/media/optimize/audio-focus)
-and [Apple CallKit](https://developer.apple.com/documentation/callkit).
+and [Apple AVAudioSession](https://developer.apple.com/documentation/avfaudio/avaudiosession).
 
 ## Existing speech infrastructure
 
@@ -375,9 +375,9 @@ buffer; provider recovery does not replay retired commands. After native
 transport/audio shutdown, the adapter reads the final snapshot (including usage)
 before acknowledging cleanup and ending local accounting.
 
-Permissions, CallKit/Android call service, native recognizers/TTS and audio-route
+Permissions, the iOS audio session, Android call service, native recognizers/TTS and audio-route
 changes remain platform effects. React backgrounding or tab changes do not own
-call lifetime. Android's foreground call service and iOS's active CallKit/audio
+call lifetime. Android's foreground call service and iOS's active audio
 session can sustain the supported native media paths while JS is suspended;
 Local recognition still depends on OS recognizer support. Neither platform can
 promise survival after OS process termination. Native interruption handlers stop
