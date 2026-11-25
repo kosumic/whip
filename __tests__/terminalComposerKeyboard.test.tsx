@@ -1428,7 +1428,7 @@ describe.each(['android', 'ios'] as const)(
         list.props.onContentSizeChange(400, 1000);
         list.props.onLoad();
       });
-      expect(chatRoot.props.pointerEvents).toBe('none');
+      expect(chatRoot.props.pointerEvents).toBe('auto');
       act(() => {
         list.props.onScroll(scrollEvent(600));
       });
