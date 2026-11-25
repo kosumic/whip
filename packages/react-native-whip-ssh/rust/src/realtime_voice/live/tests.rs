@@ -99,6 +99,87 @@ fn fragment(id: &str, role: &str, text: &str, start: f64, end: f64) -> captions:
         event: None,
     }
 }
+
+#[test]
+fn spoken_correction_mutes_this_call_for_one_minute() -> Result<(), &'static str> {
+    let (owner, mut commands) = crate::realtime_voice::playback_owner_with_commands()?;
+    let mut transcript = captions::Transcript::default();
+    transcript.append(fragment(
+        "first",
+        "user",
+        "Be quiet for one minute.",
+        0.0,
+        100.0,
+    ))?;
+    transcript.append(fragment(
+        "reply",
+        "assistant",
+        "I'll stay quiet.",
+        200.0,
+        2400.0,
+    ))?;
+    transcript.append(fragment(
+        "correction",
+        "user",
+        "No, I mean mute the microphone",
+        2000.0,
+        3200.0,
+    ))?;
+    transcript.append(fragment(
+        "duration",
+        "user",
+        " for one minute.",
+        3200.0,
+        4100.0,
+    ))?;
+    owner.output.lock().live_transcript = Some(transcript);
+    let mut state = State::default();
+    let pending = |offset| Pending {
+        id: "turn".into(),
+        offset,
+        received: Instant::now(),
+    };
+    assert!(state.microphone(&owner, &pending(300.0)).is_none());
+
+    let before = Instant::now();
+    let ack = state
+        .microphone(&owner, &pending(4100.0))
+        .ok_or("Missing microphone command")??;
+    assert_eq!(ack.duration_minutes, Some(1.0));
+    assert!(ack.muted && owner.view.lock().muted);
+    assert!(matches!(
+        commands.try_recv(),
+        Ok(super::super::Command::Mute(true))
+    ));
+    assert!(state.microphone(&owner, &pending(4100.0)).is_none());
+    owner.microphone_tick(before + Duration::from_secs(59));
+    assert!(owner.view.lock().muted);
+    owner.microphone_tick(Instant::now() + Duration::from_mins(1));
+    assert!(!owner.view.lock().muted);
+    assert!(matches!(
+        commands.try_recv(),
+        Ok(super::super::Command::Mute(false))
+    ));
+    owner.close();
+    Ok(())
+}
+
+#[test]
+fn a_backchannel_cannot_turn_negated_user_speech_into_a_mute_command() -> Result<(), &'static str> {
+    let mut transcript = captions::Transcript::default();
+    transcript.append(fragment("negation", "user", "Don't ", 0.0, 300.0))?;
+    transcript.append(fragment("backchannel", "assistant", "Mhm.", 250.0, 350.0))?;
+    transcript.append(fragment(
+        "rest",
+        "user",
+        "mute my mic for one minute.",
+        400.0,
+        1400.0,
+    ))?;
+    assert!(transcript.microphone_request(0.0, 1400.0).is_none());
+    Ok(())
+}
+
 #[test]
 fn late_caption_fragments_preserve_speaker_order_and_repeated_words() -> Result<(), &'static str> {
     let mut captions = captions::Transcript::default();

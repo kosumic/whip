@@ -49,7 +49,11 @@ fn realtime_session_exposes_only_the_selected_scope_tools() -> TestResult {
         .collect();
     assert_eq!(
         names,
-        vec![super::super::BACKGROUND_AGENT, super::super::REMAIN_SILENT]
+        vec![
+            super::super::BACKGROUND_AGENT,
+            super::super::REMAIN_SILENT,
+            voice_call_controls::TOOL
+        ]
     );
     Ok(())
 }

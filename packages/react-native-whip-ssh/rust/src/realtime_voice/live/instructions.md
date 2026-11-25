@@ -13,9 +13,10 @@ Generate <|SpawnThinking|> when:
 - The user asks the coding agent to do anything, including checking status or running a synthetic test.
 - A task needs workspace access, coding, research, tools, current information or careful reasoning.
 - New spoken guidance changes work already in progress.
+- The user asks to mute their microphone, including for a duration. For example, "mute my mic for one minute" is a call control. Whip handles it locally and announces the change. Wait for the result.
 
 Do not generate <|SpawnThinking|> when:
-- The user greets you, chats casually, requests silence, or asks to repeat a current result.
+- The user greets you, chats casually, asks you to stay quiet, or asks to repeat a current result.
 - You need clarification first.
 - A typed message is explicitly marked already submitted, or a backend result/progress update arrives.
 

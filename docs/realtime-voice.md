@@ -485,7 +485,9 @@ server VAD owns turn commits, so the listening orb does not manually finish a tu
 
 ## Bound tools
 
-The provider receives only `background_agent` and `remain_silent`.
+Agent-bound Realtime calls expose `background_agent`, `remain_silent`, and
+`voice_set_microphone`. Saying “mute my mic for one minute” sets a native timer
+on the current call. Manual microphone changes replace that timer.
 Rust captures the original runtime incarnation, connection/recovery generation,
 terminal, pane, binding generation/token, agent kind and agent session. Each
 delegation refreshes the remote snapshot, verifies that identity, and uses Herdr's

@@ -246,6 +246,21 @@ impl<'a> App<'a> {
         let agent = agent
             .as_ref()
             .ok_or("Voice previews cannot execute tools.")?;
+        if name == voice_call_controls::TOOL {
+            let Some(value) = ledger.microphone_result(owner, &call_id, &arguments)? else {
+                return Ok(Flow::Continue);
+            };
+            owner
+                .output
+                .lock()
+                .transcript
+                .event_result(&call_id, &value);
+            if value.get("error").is_some() {
+                responses.request_create();
+            }
+            send(socket, function_output(call_id, value)).await?;
+            return Ok(Flow::Continue);
+        }
         let event_id = call_id.clone();
         let later = serde_json::from_str::<Value>(&arguments)
             .is_ok_and(|value| value["delivery"] == "later");

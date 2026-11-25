@@ -391,21 +391,17 @@ impl WhipToolSession {
                 microphone::TOOL => {
                     let request =
                         microphone::Request::parse(arguments).map_err(BrowserError::invalid)?;
-                    let duration = request.duration().map_err(BrowserError::invalid)?;
                     let owner = self.microphone.lock().upgrade().ok_or_else(|| {
                         BrowserError::new(ErrorCode::Cancelled, "The global voice call has ended")
                     })?;
                     self.check()?;
-                    owner.set_microphone(request.muted, duration).map_err(|_| {
+                    let result = owner.apply_microphone_request(&request).map_err(|_| {
                         BrowserError::new(
                             ErrorCode::Cancelled,
                             "The microphone control is unavailable",
                         )
                     })?;
-                    Ok(json!(microphone::Acknowledgement::new(
-                        request.muted,
-                        duration
-                    )))
+                    Ok(json!(result))
                 }
                 HOSTS_LIST => {
                     application::Action::parse(application::LIST, &args)?;
@@ -587,11 +583,7 @@ pub(crate) fn base_instructions(shizuku_access: bool) -> String {
 pub(crate) fn schemas(shizuku_access: bool) -> Vec<Value> {
     let string = || json!({"type":"string","maxLength":256});
     let mut tools = vec![
-        json!({
-            "type": "function", "name": microphone::TOOL,
-            "description": "Mute or unmute the user's microphone in this global call immediately, without confirmation. Optional positive duration_minutes (up to 60) automatically unmutes; omit for indefinite mute. Unmuting must omit duration_minutes. Whip speaks the state change locally.",
-            "parameters": microphone::parameters(),
-        }),
+        microphone::tool_schema(),
         schema(
             HOSTS_LIST,
             "List saved host metadata and connection status, without credentials or instructions.",

@@ -11,6 +11,39 @@ fn active(call_id: u64) -> Context {
 }
 
 #[test]
+fn spoken_microphone_commands_require_a_direct_request_and_a_valid_duration()
+-> Result<(), &'static str> {
+    for (text, seconds) in [
+        ("Mute my mic for thirty seconds.", 30),
+        ("Could you please mute me for 2.5 minutes?", 150),
+        ("Please mute the microphone for twenty-five minutes.", 1500),
+    ] {
+        let request = Request::from_spoken(text).ok_or("Missing microphone command")??;
+        assert!(request.muted);
+        assert_eq!(request.duration()?, Some(Duration::from_secs(seconds)));
+    }
+    for text in [
+        "Stay quiet for one minute.",
+        "Write a test for 'mute my mic for one minute'.",
+        "Don't mute my mic.",
+        "Mute the speaker for one minute.",
+    ] {
+        assert!(Request::from_spoken(text).is_none(), "{text}");
+    }
+    for text in [
+        "Mute my mic for 61 minutes.",
+        "Mute me for zero seconds.",
+        "Mute me for a while.",
+    ] {
+        assert!(
+            Request::from_spoken(text).is_some_and(|result| result.is_err()),
+            "{text}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn strict_bounded_requests_and_wire_acknowledgements() -> Result<(), String> {
     for (arguments, expected) in [
         (r#"{"muted":true}"#, None),

@@ -103,6 +103,33 @@ enum Admission {
 }
 
 impl State {
+    fn microphone(
+        &mut self,
+        owner: &RealtimeVoiceAdapter,
+        pending: &Pending,
+    ) -> Option<Result<voice_call_controls::Acknowledgement, &'static str>> {
+        let request = {
+            let mut output = owner.output.lock();
+            let transcript = output.live_transcript.as_mut()?;
+            let request = transcript.microphone_request(self.through, pending.offset)?;
+            transcript.admit(pending.offset);
+            request
+        };
+        self.through = pending.offset;
+        let result = request.and_then(|request| owner.apply_microphone_request(&request));
+        let value = match &result {
+            Ok(ack) => serde_json::json!(ack),
+            Err(error) => serde_json::json!({"error":error}),
+        };
+        if let Some(transcript) = owner.output.lock().live_transcript.as_mut() {
+            let mut event =
+                crate::voice_history::Event::new("tool", voice_call_controls::TOOL, "running");
+            event.result(&value);
+            transcript.event(&pending.id, event);
+        }
+        Some(result)
+    }
+
     fn delegate(
         &mut self,
         delegation: &api::Delegation,
@@ -374,6 +401,17 @@ impl LiveVoiceAdapter {
         let Some(pending) = state.pending.pop_front() else {
             return Ok(());
         };
+        if let Some(result) = state.microphone(owner, &pending) {
+            let (message, channel) = match result {
+                Ok(_) => (
+                    "Whip applied the microphone change and announces it locally.",
+                    Channel::Thinking,
+                ),
+                Err(error) => (error, Channel::Commentary),
+            };
+            append(socket, Some(&pending.id), message, channel).await?;
+            return Ok(());
+        }
         if state.uncertain || pending.offset < state.through {
             append(socket,Some(&pending.id),"No new request was sent. The previous result or transcript ordering is uncertain; inspect the agent chat. Never replay it.",Channel::Commentary).await?;
             return Ok(());

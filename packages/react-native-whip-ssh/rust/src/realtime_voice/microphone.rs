@@ -3,6 +3,28 @@ use super::{Command, Duration, Instant, Ordering, RealtimeVoiceAdapter};
 use std::collections::VecDeque;
 use voice_call_controls::{Context, Policy};
 
+impl super::ToolLedger {
+    pub(super) fn microphone_result(
+        &mut self,
+        owner: &RealtimeVoiceAdapter,
+        call_id: &str,
+        arguments: &str,
+    ) -> Result<Option<serde_json::Value>, &'static str> {
+        let result = match self.begin(call_id, voice_call_controls::TOOL, arguments) {
+            Err("duplicate") => return Ok(None),
+            Err("limit") => return Err("Realtime tool limit reached. Start a new call."),
+            Err(error) => Err(error),
+            Ok(_) => voice_call_controls::Request::parse(arguments)
+                .map_err(|_| "invalid_arguments")
+                .and_then(|request| owner.apply_microphone_request(&request)),
+        };
+        Ok(Some(match result {
+            Ok(ack) => serde_json::json!(ack),
+            Err(error) => serde_json::json!({"error":error}),
+        }))
+    }
+}
+
 const OUTPUT_TAIL: Duration = Duration::from_millis(500);
 // A real pause in the continuous GPT-Live PCM stream is a speech boundary.
 const BOUNDARY_QUIET_MS: usize = 160;
@@ -95,6 +117,18 @@ impl State {
 }
 
 impl RealtimeVoiceAdapter {
+    pub(crate) fn apply_microphone_request(
+        &self,
+        request: &voice_call_controls::Request,
+    ) -> Result<voice_call_controls::Acknowledgement, &'static str> {
+        let duration = request.duration()?;
+        self.set_microphone(request.muted, duration)?;
+        Ok(voice_call_controls::Acknowledgement::new(
+            request.muted,
+            duration,
+        ))
+    }
+
     fn microphone_context(&self) -> Context {
         Context {
             call_id: self.speech.id(),

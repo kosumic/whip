@@ -7,6 +7,27 @@ mod provider;
 mod scheduling;
 
 #[test]
+fn replayed_agent_tool_cannot_rearm_a_timer_after_manual_unmute() -> Result<(), &'static str> {
+    let (owner, _commands) = playback_owner_with_commands()?;
+    let mut ledger = crate::realtime_voice::ToolLedger::default();
+    let arguments = r#"{"muted":true,"duration_minutes":1}"#;
+    assert_eq!(
+        ledger.microphone_result(&owner, "mute", arguments)?,
+        Some(serde_json::json!({"muted":true,"duration_minutes":1.0}))
+    );
+    assert!(owner.view.lock().muted);
+    owner.set_microphone(false, None)?;
+    assert!(
+        ledger
+            .microphone_result(&owner, "mute", arguments)?
+            .is_none()
+    );
+    assert!(!owner.view.lock().muted);
+    owner.close();
+    Ok(())
+}
+
+#[test]
 fn timed_mute_cannot_expire_into_capture_while_audio_is_suspended() -> Result<(), &'static str> {
     let (owner, _commands) = playback_owner_with_commands()?;
     owner.set_microphone(true, Some(Duration::from_secs(60)))?;

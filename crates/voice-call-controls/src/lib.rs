@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 
+mod spoken;
+
 pub const TOOL: &str = "voice_set_microphone";
 pub const MAX_MINUTES: u32 = 60;
 pub const MAX_ARGUMENTS: usize = 16 * 1024;
@@ -26,6 +28,14 @@ pub fn parameters() -> Value {
         },
         "required": ["muted"],
         "additionalProperties": false
+    })
+}
+
+pub fn tool_schema() -> Value {
+    json!({
+        "type": "function", "name": TOOL,
+        "description": "Mute or unmute the user's microphone in this call immediately. For a timed mute, set duration_minutes (up to 60). Omit the duration for indefinite mute or unmute. Whip announces changes locally.",
+        "parameters": parameters(),
     })
 }
 

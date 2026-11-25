@@ -412,7 +412,7 @@ fn public_session_configuration_preserves_voice_and_server_vad_settings()
         let tools = event["session"]["tools"]
             .as_array()
             .ok_or("missing voice tools")?;
-        assert_eq!(tools.len(), 2);
+        assert_eq!(tools.len(), 3);
         assert_eq!(tools[0]["name"], BACKGROUND_AGENT);
         assert_eq!(tools[0]["parameters"]["required"], json!(["prompt"]));
         assert_eq!(
@@ -420,6 +420,7 @@ fn public_session_configuration_preserves_voice_and_server_vad_settings()
             json!(["now", "later"])
         );
         assert_eq!(tools[1]["name"], REMAIN_SILENT);
+        assert_eq!(tools[2]["name"], voice_call_controls::TOOL);
         config.validate_audio(serde_json::from_value(event["session"]["audio"].clone())?)?;
         let mut wrong_audio = event["session"]["audio"].clone();
         wrong_audio["output"]["format"]["rate"] = json!(48_000);

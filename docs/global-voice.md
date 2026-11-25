@@ -174,7 +174,7 @@ Global Realtime and GPT-Live calls also expose `voice_set_microphone`:
 The optional duration is a positive number of **minutes**, including fractional
 minutes, bounded at 60. A duration on unmute, unknown fields, nonnumeric values,
 zero and negative values are rejected natively. No confirmation is required.
-Agent-bound and terminal calls do not expose this tool.
+Agent-bound OpenAI calls also support timed microphone mute. Terminal calls retain manual microphone control.
 
 The native Rust call owner keeps the authoritative microphone intent and
 deadline. Tools and manual controls update it; the call screen, Android service

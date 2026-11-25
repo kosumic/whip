@@ -11,7 +11,12 @@ are unclear, ask a short clarification instead of inventing a request.
 
 ## Delegation
 
-For actions, tasks, research, current information, or anything requiring tools,
+For requests to mute or unmute the user's microphone, call voice_set_microphone
+directly. For "mute my mic for one minute", set muted to true and duration_minutes
+to 1. Whip announces the change. A request for you to stay quiet only affects
+your replies.
+
+For other actions, tasks, research, current information, or anything requiring tools,
 always call background_agent. This is the default action, including questions
 such as "What's the gold price now?" Pass the user's own words as prompt,
 preserving intent and constraints; do not rewrite the request into a new task.

@@ -10,6 +10,7 @@ const MAX_BYTES: usize = 64 * 1024;
 const MAX_REQUEST: usize = 8 * 1024;
 const USER: &str = "user";
 const ASSISTANT: &str = "assistant";
+const UTTERANCE_GAP_MS: f64 = 1200.0;
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -146,6 +147,48 @@ impl Transcript {
         Ok(prompt)
     }
 
+    pub(super) fn microphone_request(
+        &self,
+        after: f64,
+        offset: f64,
+    ) -> Option<Result<voice_call_controls::Request, &'static str>> {
+        if after < self.discarded_through {
+            return None;
+        }
+        // Earlier small talk can still be unadmitted. Only the current user's
+        // utterance can operate the microphone, including a spoken correction.
+        let mut turn_start = after;
+        let mut previous_user: Option<&Fragment> = None;
+        let mut assistant_replied = false;
+        for fragment in self
+            .fragments
+            .iter()
+            .filter(|f| f.event.is_none() && f.start_ms >= after && f.start_ms <= offset)
+        {
+            match fragment.role.as_str() {
+                USER if !self.admitted.contains(&fragment.id) => {
+                    if assistant_replied
+                        && previous_user.is_some_and(|user| {
+                            fragment.start_ms - user.end_ms > UTTERANCE_GAP_MS
+                                || user.text.trim_end().ends_with(['.', '?', '!'])
+                        })
+                    {
+                        turn_start = fragment.start_ms;
+                    }
+                    previous_user = Some(fragment);
+                    assistant_replied = false;
+                }
+                // The user can interrupt a reply. A backchannel overlapping
+                // the user's words must never split off a negation.
+                ASSISTANT if previous_user.is_some_and(|user| fragment.start_ms >= user.end_ms) => {
+                    assistant_replied = true;
+                }
+                _ => {}
+            }
+        }
+        voice_call_controls::Request::from_spoken(&self.spoken_request(turn_start, offset).ok()?)
+    }
+
     /// Freeze public speech at the delegation's timeline boundary. Request
     /// selection and offset admission remain independent of the shared context
     /// acknowledgment cursor. Tool events never enter the quoted context.
@@ -212,7 +255,7 @@ impl Transcript {
                 && bubbles[index + 1..]
                     .iter()
                     .all(|(bubble, _, _)| bubble.event.is_none())
-                && fragment.start_ms <= bubbles[index].0.end_ms + 1200.0
+                && fragment.start_ms <= bubbles[index].0.end_ms + UTTERANCE_GAP_MS
                 && bubbles[index].0.text.len() + fragment.text.len() <= super::super::MAX_TEXT
             {
                 let (bubble, heard, playing) = &mut bubbles[index];

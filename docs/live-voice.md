@@ -67,6 +67,11 @@ Duplicate IDs/events and previously admitted speech cannot submit work again.
 Missing, truncated or backwards context asks the user to use the agent chat.
 A call admits at most eight pending/running requests and 128 delegation IDs.
 
+In an agent call, say “mute my mic for one minute” to pause microphone input.
+Whip recognizes direct English microphone commands in the delegated user
+captions and applies them to the current call. The mic reopens when the timer
+expires. Tapping the mic button overrides the timer immediately.
+
 The existing pinned `PinnedAgent` integration validates host, connection,
 terminal, pane, agent kind and conversation before and after dispatch. Idle
 agents start work; running Codex tasks can receive corrections. Unsupported

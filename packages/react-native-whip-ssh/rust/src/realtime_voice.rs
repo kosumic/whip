@@ -280,6 +280,7 @@ impl Config {
             vec![
                 json!({"type":"function","name":BACKGROUND_AGENT,"description":PROMPT_DESCRIPTION,"parameters":{"type":"object","properties":{"prompt":{"type":"string","maxLength":8192},"delivery":{"type":"string","enum":["now","later"],"description":"Default now: start or steer. Choose later only for an explicit request to defer work."}},"required":["prompt"],"additionalProperties":false}}),
                 silence_tool(),
+                voice_call_controls::tool_schema(),
             ]
         };
         typed(json!({"type":"session.update","session":{
@@ -1536,7 +1537,8 @@ impl ToolLedger {
         use voice_call_openai::tools::Access;
         let access = match name {
             BACKGROUND_AGENT => Access::Mutate,
-            REMAIN_SILENT => Access::Read,
+            // These controls are independent of an uncertain remote agent submission.
+            REMAIN_SILENT | voice_call_controls::TOOL => Access::Read,
             _ => Access::Unknown,
         };
         self.0.begin(id, arguments, access)
