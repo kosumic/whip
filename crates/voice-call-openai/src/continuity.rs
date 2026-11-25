@@ -1,4 +1,5 @@
 //! Logical-call policy. No audio, credentials, prompts or tool state survive here.
+use crate::recovery::Failure;
 use serde::Serialize;
 use std::time::Duration;
 use tokio::time::Instant;
@@ -11,6 +12,30 @@ const RETRY_WINDOW: Duration = Duration::from_secs(120);
 const MAX_RETRIES: u32 = 5;
 const HISTORY: usize = 16;
 pub const EXHAUSTED: &str = "Voice connection recovery exhausted. Please call again.";
+
+/// Select a replacement after the previous provider session is retired.
+/// The host still decides whether this call can recover and whether it ever
+/// reached readiness. A failure during cleanup must be handled by the caller
+/// before considering replacement.
+pub fn replacement(
+    enabled: bool,
+    established: bool,
+    requested: Option<Reason>,
+    result: Result<(), Failure>,
+) -> Result<Option<Reason>, Failure> {
+    match result {
+        Ok(()) => Ok(requested.filter(|_| enabled)),
+        Err(failure) if failure.message == crate::recovery::CLEANUP_FAILED => Err(failure),
+        Err(failure)
+            if enabled
+                && established
+                && (failure.retryable || connection_lost(failure.message)) =>
+        {
+            Ok(Some(Reason::ConnectionLost))
+        }
+        Err(failure) => Err(failure),
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -187,6 +212,35 @@ pub fn connection_lost(message: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn replacement_requires_readiness_for_failure_and_never_replays_uncertain_cleanup() {
+        let lost = Failure {
+            message: "Voice network ended.",
+            retryable: false,
+        };
+        let setup = Failure {
+            message: "The replacement transport could not start.",
+            retryable: true,
+        };
+        let cleanup = Failure {
+            message: crate::recovery::CLEANUP_FAILED,
+            retryable: true,
+        };
+        assert!(replacement(true, false, None, Err(lost)).is_err());
+        assert!(replacement(false, true, None, Err(lost)).is_err());
+        assert!(replacement(true, true, None, Err(cleanup)).is_err());
+        for failure in [lost, setup] {
+            assert!(matches!(
+                replacement(true, true, None, Err(failure)),
+                Ok(Some(Reason::ConnectionLost))
+            ));
+        }
+        assert!(matches!(
+            replacement(true, true, Some(Reason::Lifetime), Ok(())),
+            Ok(Some(Reason::Lifetime))
+        ));
+    }
     #[tokio::test(start_paused = true)]
     async fn two_rotations_use_fresh_creation_deadlines() {
         let mut call = Policy::default();

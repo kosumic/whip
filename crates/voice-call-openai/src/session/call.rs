@@ -207,7 +207,9 @@ impl Call {
         } else {
             Ok(())
         };
-        result.and(finalized).and(cleanup)
+        // A lost connection must never mask an unconfirmed retirement and
+        // allow the host to create another session.
+        cleanup.and(result).and(finalized)
     }
 }
 

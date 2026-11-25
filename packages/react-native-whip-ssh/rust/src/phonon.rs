@@ -1,7 +1,6 @@
 //! Whip's native speech boundary; model storage and inference live in phonon-local.
 use crate::speech_backend::{MAX_TEXT_UNITS, PcmCallback};
-pub(super) use phonon_local::{ARTIFACTS, DEFAULT_VOICE, REVISION, download, voices};
-use phonon_local::{Model, Synthesizer};
+pub(super) use phonon_local::{DEFAULT_VOICE, voices};
 use std::{
     ffi::{CStr, c_char, c_void},
     sync::{
@@ -25,17 +24,12 @@ pub extern "C" fn whip_phonon_set_supported(supported: bool) {
     );
 }
 
-static SYNTH: LazyLock<Synthesizer> = LazyLock::new(Synthesizer::default);
 static INFERENCE_POOL: LazyLock<()> = LazyLock::new(|| {
     // Preserve Whip's phone budget before xn first uses Rayon.
     let _ = rayon::ThreadPoolBuilder::new()
         .num_threads(2)
         .build_global();
 });
-
-pub(super) fn clear_model() {
-    SYNTH.clear();
-}
 
 fn synthesize(
     lease: u64,
@@ -49,13 +43,9 @@ fn synthesize(
     if !crate::speech_playback::is_current(lease) {
         return Ok(false);
     }
-    let (path, generation, voice) = crate::speech_backend::phonon_model()?;
-    let report = SYNTH.synthesize(
-        Model {
-            directory: &path,
-            generation,
-            voice: &voice,
-        },
+    let (installation, voice) = crate::speech_backend::phonon_model()?;
+    let report = installation.synthesize(
+        &voice,
         text,
         || crate::speech_playback::is_current(lease),
         |chunk| {

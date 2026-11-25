@@ -40,6 +40,8 @@ Whip Notify retains its separate binary release workflow and installer tag.
 | `agent-transcript-view` | `0.3.0` | Project image inspections and compaction summaries and group completed tool runs. Exhaustive matches must handle `AgentChatRowContent::ToolGroup`. |
 | `herdr-protocol` | `0.2.4` | Skip redundant document refreshes and expose freshness-checked projection (#490). |
 | `voice-call-controls` | `0.1.1` | Parse spoken microphone requests and expose the function tool schema. |
+| `voice-call-openai` | `0.2.2` | Opt-in WebRTC warm-up, GPT-Live tool response tracking, and shared call replacement decisions. |
+| `phonon-local` | `0.1.1` | Shared installation, progress, cancellation, and synthesis-cache lifecycle. Distributed by Git tag. |
 
 ## November 16, 2026 patch releases
 

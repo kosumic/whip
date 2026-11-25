@@ -7,9 +7,12 @@ independent model cache. It has no Whip, React Native, JNI, settings, audio-devi
 or application lifecycle dependency.
 
 Construction, catalog inspection, verification, and synthesis never download.
-Only `download::install` and `download::install_voice` access the network. These
-blocking operations must run on a worker outside an async runtime. The host
-serializes downloads/removal per root and chooses writable private storage.
+Downloads occur only on explicit request. `Installation` owns download progress,
+cancellation, file removal, and the synthesis cache for one app-private storage
+root. Open it once per root and clone it to share ownership. Hosts keep their own
+voice preferences and fallback, and run open, clear, removal, and synthesis on
+workers. Direct users of `download::install` and `download::install_voice` run
+these blocking functions outside an async runtime and serialize disk operations.
 
 ```rust,no_run
 use phonon_local::{download, Model, Synthesizer, REVISION, DEFAULT_VOICE};
@@ -94,19 +97,16 @@ native drain still need device validation; see issue #480's validation record.
 
 ## Distribution and provenance
 
-Version 0.1.0 is maintained in this repository. An independent host can consume
+Version 0.1.1 is maintained in this repository. An independent host can consume
 the reviewed extraction commit with Cargo's `git` + `rev` dependency and
-`version = "0.1.0"`; no adjacent Whip checkout or relative path is required:
+`version = "0.1.1"`; no adjacent Whip checkout or relative path is required:
 
 ```toml
-# Replace REVIEWED_COMMIT with the merged extraction commit for issue #480.
-phonon-local = { git = "https://github.com/kosumic/whip", rev = "REVIEWED_COMMIT", version = "0.1.0" }
+phonon-local = { git = "https://github.com/kosumic/whip", tag = "phonon-local-v0.1.1", version = "0.1.1" }
 ```
 
-Releases can use immutable `phonon-local-v0.1.0` tags after review. This extraction
-does not publish a tag or crates.io package. The official iOS runtime is a pinned Git
-dependency, so crates.io packaging needs a separately verified registry release
-of that runtime first; do not silently replace the pin to enable publication.
+The official iOS runtime is a pinned Git dependency, so crates.io packaging needs
+a separately verified registry release of that runtime first.
 
 Source: AGPL-3.0-or-later, Whip contributors; see `LICENSE` and `NOTICE`.
 Runtime/model/voice licenses remain separate; see `THIRD_PARTY_NOTICES.md` and

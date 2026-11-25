@@ -4238,7 +4238,7 @@ dependencies = [
 
 [[package]]
 name = "phonon-local"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "fs2",
  "parking_lot",
@@ -7677,7 +7677,7 @@ dependencies = [
 
 [[package]]
 name = "voice-call-openai"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "audio-ingress",
  "base64 0.22.1",

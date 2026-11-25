@@ -1,6 +1,8 @@
 //! Bounded, call-scoped tool admission. Catalog and execution belong to the host.
 use std::collections::HashSet;
 
+pub mod live;
+
 pub const MAX_CALLS: usize = 128;
 pub const MAX_ARGUMENT_BYTES: usize = 64 * 1024;
 #[derive(Clone, Copy, PartialEq, Eq)]

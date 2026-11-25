@@ -22,6 +22,13 @@ immediately and every 30 seconds after completion, with a five-second timeout.
 Preparation reads no credentials and creates no voice session. Call startup
 never waits for it, and idle connections can expire and reconnect normally.
 
+For GPT-Live Responses delegation, `tools::live::LiveTools` admits only
+attributed, completed tool batches within caller-supplied limits. Execute the
+returned batch under the application's authorization policy, report completion
+with its response key, and use `take_continuation` to gate subsequent responses.
+`continuity::replacement` selects eligible provider replacements after
+retirement. The host retains its native audio, history, and pending-input policy.
+
 ## Make a call from another app
 
 Use `Call` for an owned connection and lifecycle. It supports native WebRTC and
@@ -227,7 +234,7 @@ stock WebRTC peer over real local transport.
 Add the provider and media crates to your Cargo dependencies:
 
 ```toml
-voice-call-openai = "0.2.1"
+voice-call-openai = "0.2.2"
 voice-call-media = "0.2.0"
 ```
 

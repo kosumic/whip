@@ -13,10 +13,12 @@ mod coreml;
 #[cfg(not(target_os = "ios"))]
 mod cpu;
 pub mod download;
+mod installation;
 mod synthesis;
 pub mod voices;
 
 pub use artifacts::{ARTIFACTS, Artifact, COREML_ARTIFACT, DEFAULT_VOICE, REVISION, SAMPLE_RATE};
+pub use installation::{Installation, InstallationStatus, VoiceDownload};
 pub use synthesis::{Model, PCM_CHUNK_SAMPLES, SynthesisReport, Synthesizer};
 
 #[cfg(target_os = "ios")]

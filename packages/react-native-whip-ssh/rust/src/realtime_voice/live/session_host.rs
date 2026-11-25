@@ -19,7 +19,7 @@ pub(super) struct App<'a> {
     adapter: &'a mut LiveVoiceAdapter,
     commands: &'a mut mpsc::Receiver<super::super::Command>,
     cancellation: watch::Receiver<bool>,
-    backend: Option<global::Backend>,
+    backend: Option<voice_call_openai::tools::live::LiveTools>,
     started: Instant,
     last_input: Instant,
     active: bool,
@@ -50,7 +50,7 @@ impl<'a> App<'a> {
             adapter,
             commands,
             cancellation: owner.cancel.subscribe(),
-            backend: config.global.then(global::Backend::default),
+            backend: config.global.then(global::backend),
             started: Instant::now(),
             last_input: Instant::now(),
             active: false,
@@ -196,7 +196,7 @@ impl Delegate for App<'_> {
                         let backend = backend
                             .as_mut()
                             .ok_or("Global Live backend is unavailable.")?;
-                        backend.finished(&results)?;
+                        backend.finished(&results.key)?;
                         for item in results.items {
                             send(socket, Command::ResponseItemCreate { item }).await?;
                         }
@@ -379,9 +379,9 @@ impl Delegate for App<'_> {
                 {
                     let global = owner.global_session(config.global_shizuku_access);
                     let owner = owner.clone();
-                    tasks.spawn(
-                        async move { Completion::Global(batch.execute(global, owner).await) },
-                    );
+                    tasks.spawn(async move {
+                        Completion::Global(global::execute(batch, global, owner).await)
+                    });
                 }
                 if let api::ResponseEvent::OutputTextDone { text, .. } = event {
                     let text = public_text(&super::super::limit_text(text));

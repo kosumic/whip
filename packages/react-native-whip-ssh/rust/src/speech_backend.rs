@@ -2,19 +2,16 @@
 //! Provider-specific synthesis lives in phonon and openai_tts.
 use crate::{
     openai_tts,
-    phonon::{self, ARTIFACTS, DEFAULT_VOICE, REVISION, download, supported, voices},
+    phonon::{self, DEFAULT_VOICE, supported, voices},
 };
 use parking_lot::Mutex;
+use phonon_local::Installation;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeSet,
     ffi::{CStr, CString, c_char, c_void},
     fs,
     path::{Path, PathBuf},
-    sync::{
-        Arc, LazyLock,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, LazyLock},
 };
 
 pub(crate) const MAX_TEXT_UNITS: usize = 3_000;
@@ -61,32 +58,18 @@ impl Default for Preferences {
     }
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct VoiceDownload {
-    id: String,
-    downloaded_bytes: u64,
-    total_bytes: u64,
-}
-
 struct State {
     root: PathBuf,
+    installation: Installation,
     preferences: Preferences,
-    installed: bool,
-    downloading: bool,
-    downloaded_bytes: u64,
-    cancel: Arc<AtomicBool>,
     error: Option<String>,
     fallback: Option<String>,
     runtime_failed: bool,
-    generation: u64,
-    installed_voices: BTreeSet<String>,
-    voice_download: Option<VoiceDownload>,
 }
 
 impl State {
     fn open(root: &Path) -> Result<Self, String> {
-        fs::create_dir_all(root).map_err(|e| e.to_string())?;
+        let installation = Installation::open(root)?;
         let (mut preferences, mut error) = match fs::read(root.join("preferences.json")) {
             Ok(bytes) => match serde_json::from_slice(&bytes) {
                 Ok(preferences) => (preferences, None),
@@ -98,42 +81,26 @@ impl State {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => (Preferences::default(), None),
             Err(e) => (Preferences::default(), Some(e.to_string())),
         };
-        let installed_voices: BTreeSet<_> = voices::CATALOG
-            .iter()
-            .filter(|voice| voices::installed(root, &voice.id))
-            .map(|voice| voice.id.clone())
-            .collect();
         if voices::CATALOG.is_empty() {
             error = Some(
                 "The voice catalog is unavailable. The default Phonon voice remains available."
                     .into(),
             );
         }
-        if preferences.voice != DEFAULT_VOICE && !installed_voices.contains(&preferences.voice) {
+        if !installation.has_voice(&preferences.voice) {
             preferences.voice = DEFAULT_VOICE.into();
             error = Some("The saved Phonon voice is unavailable. Using the default voice.".into());
         }
-        let installed = download::verify(root.join(REVISION).as_path()).is_ok();
-        let downloaded_bytes = if installed {
-            total_bytes()
-        } else {
-            download::partial_bytes(root)
-        };
+        let installed = installation.status().installed;
         let mut state = Self {
             root: root.into(),
+            installation,
             preferences,
-            installed,
-            downloading: false,
-            downloaded_bytes,
-            cancel: Arc::default(),
             error,
             fallback: None,
             runtime_failed: false,
-            generation: 0,
-            installed_voices,
-            voice_download: None,
         };
-        if !state.installed || !supported() {
+        if !installed || !supported() {
             state.fallback_from(Backend::Phonon)?;
         }
         Ok(state)
@@ -147,7 +114,7 @@ impl State {
     }
 
     fn select(&mut self, backend: Backend) -> Result<(), String> {
-        if backend == Backend::Phonon && (!supported() || !self.installed) {
+        if backend == Backend::Phonon && (!supported() || !self.installation.status().installed) {
             return Err("Download and install Phonon on a supported device first".into());
         }
         let preferences = Preferences {
@@ -170,7 +137,7 @@ impl State {
     }
 
     fn select_voice(&mut self, voice: &str) -> Result<(), String> {
-        if voice != DEFAULT_VOICE && !voices::installed(&self.root, voice) {
+        if !self.installation.has_voice(voice) {
             return Err("Download this Phonon voice first".into());
         }
         self.save(Preferences {
@@ -206,6 +173,7 @@ impl State {
     }
 
     fn status(&self) -> serde_json::Value {
+        let status = self.installation.status();
         serde_json::json!({
             "backend": self.preferences.backend, "voice": self.preferences.voice, "supported": supported(),
             "systemVoice": self.preferences.system_voice,
@@ -213,24 +181,21 @@ impl State {
             "openaiVoices": openai_tts::VOICES,
             "previewText": self.preferences.preview_text,
             "maxTextUnits": MAX_TEXT_UNITS,
-            "voiceDownload": self.voice_download,
+            "voiceDownload": status.voice_download,
             "voices": voices::CATALOG.iter().map(|voice| serde_json::json!({
                 "id": voice.id, "name": voice.name, "language": voice.locale,
                 "description": voice.description, "bytes": voice.bytes,
-                "installed": self.installed_voices.contains(&voice.id),
+                "installed": status.installed_voices.contains(&voice.id),
             })).collect::<Vec<_>>(),
-            "installed": self.installed, "downloading": self.downloading,
-            "downloadedBytes": self.downloaded_bytes, "totalBytes": total_bytes(),
-            "error": self.error, "fallback": self.fallback,
-            "requiredStorageBytes": if cfg!(target_os = "ios") { 600_000_000u64 } else { total_bytes() },
+            "installed": status.installed, "downloading": status.downloading,
+            "downloadedBytes": status.downloaded_bytes, "totalBytes": Installation::total_bytes(),
+            "error": status.error.or_else(|| self.error.clone()), "fallback": self.fallback,
+            "requiredStorageBytes": if cfg!(target_os = "ios") { 600_000_000u64 } else { Installation::total_bytes() },
         })
     }
 }
 
-fn total_bytes() -> u64 {
-    ARTIFACTS.iter().map(|a| a.bytes).sum()
-}
-
+static OPERATIONS: Mutex<()> = Mutex::new(());
 static STATE: LazyLock<Mutex<Option<Arc<Mutex<State>>>>> = LazyLock::new(Mutex::default);
 fn state() -> Result<Arc<Mutex<State>>, String> {
     STATE
@@ -252,83 +217,37 @@ fn command(root: &str, action: &str) -> Result<serde_json::Value, String> {
             .cloned()
             .ok_or("Speech backend is not initialized")?
     };
+    let _operation = (action != "status").then(|| OPERATIONS.lock());
     let mut current = state.lock();
+    let installation = current.installation.clone();
     match action {
         "status" => {}
         "system" => {
             current.select(Backend::System)?;
             drop(current);
-            phonon::clear_model();
+            installation.clear();
             return Ok(state.lock().status());
         }
         "phonon" => current.select(Backend::Phonon)?,
         "openai" => current.select(Backend::Openai)?,
         "system-if-openai" => current.fallback_from(Backend::Openai)?,
-        "cancel" => current.cancel.store(true, Ordering::Release),
+        "cancel" => installation.cancel_download(),
         "download" => {
             if !supported() {
                 return Err("Phonon requires Android arm64 or iOS 18 or later. System speech remains available on this device.".into());
             }
-            if current.voice_download.is_some() {
-                return Err("Wait for the voice download or cancel it first".into());
-            }
-            if !current.downloading && !current.installed {
-                current.cancel = Arc::default();
-                current.downloading = true;
+            let shared = state.clone();
+            if installation.download_model(move |voice| shared.lock().select_voice(voice))? {
                 current.error = None;
-                let root = current.root.clone();
-                let cancel = current.cancel.clone();
-                let download_state = state.clone();
-                std::thread::Builder::new()
-                    .name("phonon-download".into())
-                    .spawn(move || {
-                        let result = download::install(&root, &cancel, |bytes| {
-                            download_state.lock().downloaded_bytes = bytes;
-                        });
-                        let mut done = download_state.lock();
-                        done.downloading = false;
-                        done.installed = result.is_ok();
-                        done.error = result.err().filter(|_| !cancel.load(Ordering::Acquire));
-                        if done.installed {
-                            done.installed_voices.clear();
-                            if let Err(error) = done.select_voice(DEFAULT_VOICE) {
-                                done.error = Some(error);
-                            }
-                        }
-                        done.downloaded_bytes = if done.installed {
-                            total_bytes()
-                        } else {
-                            download::partial_bytes(&root)
-                        };
-                    })
-                    .map_err(|e| {
-                        current.downloading = false;
-                        e.to_string()
-                    })?;
             }
         }
         "delete" => {
-            if current.downloading || current.voice_download.is_some() {
-                return Err("Cancel the download before removing Phonon".into());
-            }
-            current.fallback_from(Backend::Phonon)?;
-            // Invalidate a cached model without waiting for a cancelled inference on the UI thread.
-            current.generation = current.generation.wrapping_add(1);
-            let root = current.root.clone();
             drop(current);
-            // Wait on the settings worker for model compilation/generation to
-            // release its files before deleting them. Never hold STATE while
-            // waiting for the Phonon model; synthesis may publish fallback status.
-            phonon::clear_model();
-            remove_phonon_files(&root)?;
+            installation.remove_model(|| state.lock().fallback_from(Backend::Phonon))?;
             let mut current = state.lock();
-            current.installed = false;
-            current.downloaded_bytes = 0;
             current.error = None;
-            current.installed_voices.clear();
             current.select_voice(DEFAULT_VOICE)?;
-            drop(current);
-            return Ok(state.lock().status());
+            return Ok(current.status());
         }
         _ if action.starts_with(PREVIEW_TEXT_COMMAND) => {
             let text = serde_json::from_str(&action[PREVIEW_TEXT_COMMAND.len()..])
@@ -351,102 +270,32 @@ fn command(root: &str, action: &str) -> Result<serde_json::Value, String> {
             current.save(preferences)?;
         }
         _ if action.starts_with("voice:") => {
-            if !current.installed || !supported() {
+            if !installation.status().installed || !supported() {
                 return Err("Install Phonon on a supported device before choosing a voice".into());
             }
-            if current.downloading || current.voice_download.is_some() {
-                return Err(
-                    "Wait for the download or cancel it before choosing another voice".into(),
-                );
-            }
             let id = action.trim_start_matches("voice:");
-            if id == DEFAULT_VOICE || voices::installed(&current.root, id) {
-                current.select_voice(id)?;
-            } else {
-                let voice = voices::find(id)?;
-                current.cancel = Arc::default();
+            let shared = state.clone();
+            if installation.download_voice(id, move |voice| shared.lock().select_voice(voice))? {
                 current.error = None;
-                current.voice_download = Some(VoiceDownload {
-                    id: voice.id.clone(),
-                    downloaded_bytes: 0,
-                    total_bytes: voice.bytes,
-                });
-                let root = current.root.clone();
-                let cancel = current.cancel.clone();
-                let shared = state.clone();
-                std::thread::Builder::new()
-                    .name("phonon-voice-download".into())
-                    .spawn(move || {
-                        let result = download::install_voice(&root, voice, &cancel, |bytes| {
-                            if let Some(progress) = &mut shared.lock().voice_download {
-                                progress.downloaded_bytes = bytes;
-                            }
-                        });
-                        let mut done = shared.lock();
-                        done.voice_download = None;
-                        match result {
-                            Ok(()) => {
-                                done.installed_voices.insert(voice.id.clone());
-                                if cfg!(target_os = "ios") {
-                                    done.generation = done.generation.wrapping_add(1);
-                                }
-                                done.error = done.select_voice(&voice.id).err();
-                            }
-                            Err(error) if !cancel.load(Ordering::Acquire) => {
-                                done.error = Some(error);
-                            }
-                            Err(_) => {}
-                        }
-                    })
-                    .map_err(|error| {
-                        current.voice_download = None;
-                        error.to_string()
-                    })?;
+            } else {
+                current.select_voice(id)?;
             }
         }
         _ if action.starts_with("remove-voice:") => {
-            if current.voice_download.is_some() {
-                return Err("Cancel the voice download first".into());
-            }
-            let voice = voices::find(action.trim_start_matches("remove-voice:"))?;
-            if current.preferences.voice == voice.id {
-                current.select_voice(DEFAULT_VOICE)?;
-            }
-            current.generation = current.generation.wrapping_add(1);
-            let path = voices::path(&current.root, &voice.id);
-            let partial = voices::partial(&current.root, &voice.id);
+            let id = action.trim_start_matches("remove-voice:");
             drop(current);
-            phonon::clear_model();
-            for file in [path, partial] {
-                match fs::remove_file(file) {
-                    Ok(()) => {}
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(error) => return Err(error.to_string()),
+            installation.remove_voice(id, |voice| {
+                let mut current = state.lock();
+                if current.preferences.voice == voice {
+                    current.select_voice(DEFAULT_VOICE)?;
                 }
-            }
-            let mut current = state.lock();
-            current.installed_voices.remove(&voice.id);
-            return Ok(current.status());
+                Ok(())
+            })?;
+            return Ok(state.lock().status());
         }
         _ => return Err("Unknown speech backend action".into()),
     }
     Ok(current.status())
-}
-
-// Call only after cancelling playback and releasing the crate's model cache.
-fn remove_phonon_files(root: &Path) -> Result<(), String> {
-    for directory in [
-        root.join(REVISION),
-        download::staging(root),
-        root.join("voice-downloads"),
-    ] {
-        match fs::remove_dir_all(directory) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.to_string()),
-        }
-    }
-    Ok(())
 }
 
 pub(crate) type PcmCallback = unsafe extern "C" fn(*mut c_void, *const f32, usize) -> bool;
@@ -637,17 +486,10 @@ pub unsafe extern "C" fn whip_speech_backend_free(value: *mut c_char) {
     }
 }
 
-pub(super) fn phonon_model() -> Result<(PathBuf, u64, String), String> {
+pub(super) fn phonon_model() -> Result<(Installation, String), String> {
     let state = state()?;
     let state = state.lock();
-    if !state.installed {
-        return Err("Phonon files are missing; using system speech".into());
-    }
-    Ok((
-        state.root.join(REVISION),
-        state.generation,
-        state.preferences.voice.clone(),
-    ))
+    Ok((state.installation.clone(), state.preferences.voice.clone()))
 }
 
 pub(super) fn phonon_succeeded() {
@@ -672,7 +514,7 @@ pub(super) fn phonon_available(language: &str) -> bool {
     if state.preferences.backend != Backend::Phonon {
         return false;
     }
-    if !state.installed || state.runtime_failed {
+    if !state.installation.status().installed || state.runtime_failed {
         state
             .fallback
             .get_or_insert_with(|| "Phonon files are unavailable. Using system speech.".into());
@@ -694,6 +536,7 @@ pub(super) fn phonon_available(language: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use phonon_local::{ARTIFACTS, REVISION, download};
 
     #[test]
     fn removing_phonon_clears_models_and_partials_but_preserves_host_preferences() {
@@ -709,13 +552,13 @@ mod tests {
             fs::create_dir_all(&directory).unwrap();
             fs::write(directory.join("fixture"), b"partial").unwrap();
         }
-        remove_phonon_files(root.path()).unwrap();
-        remove_phonon_files(root.path()).unwrap();
+        state.installation.remove_model(|| Ok(())).unwrap();
+        state.installation.remove_model(|| Ok(())).unwrap();
         let restored = State::open(root.path()).unwrap();
         assert_eq!(restored.status()["backend"], "openai");
         assert_eq!(restored.status()["openaiVoice"], "cedar");
-        assert!(!restored.installed);
-        assert_eq!(restored.downloaded_bytes, 0);
+        assert!(!restored.installation.status().installed);
+        assert_eq!(restored.installation.status().downloaded_bytes, 0);
         assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
     }
 
@@ -762,8 +605,8 @@ mod tests {
         assert_eq!(restored.status()["openaiVoice"], "cedar");
         restored.select(Backend::Openai).unwrap();
         assert_eq!(restored.status()["backend"], "openai");
-        assert!(!restored.downloading);
-        assert!(!restored.installed);
+        assert!(!restored.installation.status().downloading);
+        assert!(!restored.installation.status().installed);
         assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
         assert!(restored.select_openai_voice("unknown").is_err());
         assert_eq!(restored.status()["openaiVoice"], "cedar");
@@ -857,8 +700,8 @@ mod tests {
         assert_eq!(restored.preferences.voice, DEFAULT_VOICE);
         assert_eq!(restored.preferences.system_voice, "system-voice");
         assert!(restored.error.is_some());
-        assert!(!restored.downloading);
-        assert!(restored.voice_download.is_none());
+        assert!(!restored.installation.status().downloading);
+        assert!(restored.installation.status().voice_download.is_none());
     }
 
     #[test]
@@ -866,8 +709,8 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let mut state = State::open(directory.path()).unwrap();
         assert_eq!(state.status()["backend"], "system");
-        assert!(!state.installed);
-        assert!(!state.downloading);
+        assert!(!state.installation.status().installed);
+        assert!(!state.installation.status().downloading);
         assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
         assert!(state.select(Backend::Phonon).is_err());
         assert_eq!(state.status()["backend"], "system");
@@ -883,12 +726,12 @@ mod tests {
         )
         .unwrap();
         let mut state = State::open(directory.path()).unwrap();
-        assert!(!state.installed);
-        assert!(!state.downloading);
-        assert_eq!(state.downloaded_bytes, 3);
+        assert!(!state.installation.status().installed);
+        assert!(!state.installation.status().downloading);
+        assert_eq!(state.installation.status().downloaded_bytes, 3);
         state.select(Backend::System).unwrap();
         let restored = State::open(directory.path()).unwrap();
         assert_eq!(restored.status()["backend"], "system");
-        assert_eq!(restored.downloaded_bytes, 3);
+        assert_eq!(restored.installation.status().downloaded_bytes, 3);
     }
 }

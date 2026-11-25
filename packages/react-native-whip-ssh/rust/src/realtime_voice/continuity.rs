@@ -4,10 +4,7 @@ use super::{
     RealtimeVoiceAdapter, ToolCompletion, WhipToolSession, live, mpsc, recovery, terminal,
     transcript,
 };
-use voice_call_openai::{
-    continuity::{Reason, connection_lost},
-    session::Audio,
-};
+use voice_call_openai::{continuity::Reason, session::Audio};
 
 impl RealtimeVoiceAdapter {
     pub(super) fn provider_expiry(&self, session: &impl serde::Serialize) {
@@ -267,22 +264,20 @@ impl RealtimeVoiceAdapter {
             }
             clean?; // A failed/uncertain hangup never admits a new session.
             let reason = self.replacement.lock().take();
-            let reason = match (reason, result) {
-                (Some(reason), Ok(())) if self.continuity_enabled => reason,
-                (_, Err(error))
-                    if self.continuity_enabled
-                        && established
-                        && (connection_lost(error)
-                            || self.failure.lock().is_some_and(|failure| failure.retryable)) =>
-                {
-                    Reason::ConnectionLost
-                }
-                (_, result) => {
-                    if result.is_ok() {
-                        self.close();
-                    }
-                    return result;
-                }
+            let result = result.map_err(|message| voice_call_openai::recovery::Failure {
+                message,
+                retryable: self.failure.lock().is_some_and(|failure| failure.retryable),
+            });
+            let Some(reason) = voice_call_openai::continuity::replacement(
+                self.continuity_enabled,
+                established,
+                reason,
+                result,
+            )
+            .map_err(|failure| failure.message)?
+            else {
+                self.close();
+                return Ok(());
             };
             let stable = self.continuity.lock().replacing(reason);
             {
