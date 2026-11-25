@@ -854,7 +854,7 @@ export function AgentChatView({
   const [followEnd, setFollowEndState] = useState(
     savedViewport?.followEnd ?? true,
   );
-  // Once this conversation has rows to show, restoring its position can finish on screen.
+  // FlashList reports its first paint independently of scroll restoration.
   const [rowsReadyToShow, setRowsReadyToShow] = useState(false);
   const { scrolling, beginScroll, endScroll, resetScroll } = useScrollActivity();
   // These refs belong to this binding/generation, and survive warm reuse.
@@ -1055,7 +1055,6 @@ export function AgentChatView({
     top: CHAT_CONTENT_TOP_GAP + searchBarHeight,
     bottom: CHAT_CONTENT_BOTTOM_GAP,
   });
-  const previousPaddingRef = useRef(contentPadding);
   const viewportWidthRef = useRef<number | undefined>(undefined);
   const maxOffset = Math.max(0, scrollGeometry.contentHeight - scrollGeometry.viewportHeight);
   const awayFromLatest = !followEnd && !nearEnd(scrollGeometry.offset, maxOffset);
@@ -1197,7 +1196,6 @@ export function AgentChatView({
         offset: geometry.offset, followEnd: followEndRef.current,
       };
     }
-    setRowsReadyToShow(true);
     recordInitialViewportReadiness('ready');
     recordAgentChatDiagnostic('viewport-ready', {
       latestBlockId: latestBlockIdRef.current,
@@ -1302,7 +1300,7 @@ export function AgentChatView({
     invalidateViewport(reason, true);
     initialViewportRef.current.itemsLoaded = false;
     // A remounted list guarantees fresh measurement/load/viewability callbacks,
-    // even when reflow or inset changes leave its total content height unchanged.
+    // even when a width change leaves its total content height unchanged.
     setPreparation(current => ({ ...current, generation: current.generation + 1 }));
   };
 
@@ -1329,21 +1327,6 @@ export function AgentChatView({
   useLayoutEffect(() => {
     updateViewportPreparation();
   }, [sourceIdentity, searchSource, rowStore, rowStore.resetVersion, state.revision]);
-
-  const updateViewportPadding = useEffectEvent(() => {
-    const previous = previousPaddingRef.current;
-    previousPaddingRef.current = contentPadding;
-    if (previous.top === contentPadding.top && previous.bottom === contentPadding.bottom) return;
-    // Retained chats share changing composer/chrome clearance. FlashList lays
-    // out their spacers without discarding already measured conversation rows.
-    // Only a cold viewport still needs a fresh load/position confirmation.
-    if (!rowsReadyToShow && !continuouslyVisible && (!active || activeRef.current !== active)) {
-      remeasureViewport('content-insets-changed');
-    }
-  });
-  useLayoutEffect(() => {
-    updateViewportPadding();
-  }, [contentPadding.top, contentPadding.bottom]);
 
   const retainedPositionSafe = () => {
     const saved = savedViewportRef.current;
@@ -1616,10 +1599,11 @@ export function AgentChatView({
   );
 
   const notifyViewportReady = useEffectEvent(() => onInitialViewportReady?.());
+  const viewportPresentable = rowsPresentable || (rowsMatchTranscript && Boolean(rowStore.error));
   useLayoutEffect(() => {
-    if (rowsPresentable && (active || prewarm)) notifyViewportReady();
-  }, [active, prewarm, rowsPresentable]);
-  const viewportVisible = visible && (rowsPresentable || (rowsMatchTranscript && Boolean(rowStore.error)));
+    if (viewportPresentable && (active || prewarm)) notifyViewportReady();
+  }, [active, prewarm, viewportPresentable]);
+  const viewportVisible = visible && viewportPresentable;
 
   useEffect(() => {
     if (!viewportVisible) return;
@@ -1676,7 +1660,7 @@ export function AgentChatView({
           if (heightChanged && !widthChanged) confirmListPosition();
         }}
       >
-        {projectionCurrent && (rowStore.ready || rowStore.error) && <FlashList
+        {projectionCurrent && rowStore.ready && <FlashList
           key={preparation.generation}
           ref={list}
           onCommitLayoutEffect={() => {
@@ -1779,7 +1763,7 @@ export function AgentChatView({
           onEndReachedThreshold={0}
           onLoad={() => {
             initialViewportRef.current.itemsLoaded = true;
-            if (savedViewportRef.current) setRowsReadyToShow(true);
+            setRowsReadyToShow(true);
             if (!initialViewportRef.current.positionConfirmed) confirmListPosition();
             recordInitialViewportReadiness('items-loaded');
             alignLoadedInitialViewport();

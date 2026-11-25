@@ -860,12 +860,12 @@ describe('AgentChatView floating transcript notice', () => {
 
   test('native row errors stay visible and inactive chats do not announce notices', () => {
     const error = 'Could not load transcript rows';
-    jest.mocked(useNativeChatRows).mockImplementation((...args) => {
-      const store = useMockChatRows(...args);
-      store.error = error;
-      return store;
-    });
-    act(() => { renderer = create(view(state)); });
+    const onReady = jest.fn();
+    const store = new ChatRowStore();
+    store.error = error;
+    jest.mocked(useNativeChatRows).mockReturnValue(store);
+    act(() => { renderer = create(<AgentChatView {...view(state).props} onInitialViewportReady={onReady} />); });
+    expect(onReady).toHaveBeenCalledTimes(1);
     expect(notices()[0].props.accessibilityLabel).toBe(error);
     act(() => { renderer.update(view(state, false)); });
     expect(notices()).toHaveLength(0);
@@ -2209,25 +2209,26 @@ describe('AgentChatView auto-follow', () => {
   });
 });
 
-test('a priority conversation prepares while hidden and opens using the same ready list', () => {
+test.each([true, false])('a chat rendered offscreen opens immediately on tab selection (already at end=%s)', atEnd => {
   const state = chatState([TURN]);
   const onReady = jest.fn();
   const scrollToOffset = jest.fn();
+  const offset = atEnd ? 600 : 250;
   let renderer!: ReactTestRenderer;
   const element = (active: boolean) => <AgentChatView {...chatView(state, active, onReady).props} prewarm />;
   try {
     act(() => {
       renderer = create(element(false), {
         createNodeMock: node => node.type === 'FlashList'
-          ? { scrollToOffset, getAbsoluteLastScrollOffset: () => 600 } : null,
+          ? { scrollToOffset, getAbsoluteLastScrollOffset: () => offset } : null,
       });
     });
     const list = flatList(renderer);
     act(() => {
       chatViewport(renderer).props.onLayout({ nativeEvent: { layout: { height: 400 } } });
       list.props.onContentSizeChange(0, 1_000);
-      list.props.onScroll(scrollEvent(600, 1_000));
-      list.props.onViewableItemsChanged({ viewableItems: [{ item: finalBlock(renderer, TURN), isViewable: true }] });
+      list.props.onScroll(scrollEvent(offset, 1_000));
+      list.props.onViewableItemsChanged({ viewableItems: atEnd ? [{ item: finalBlock(renderer, TURN), isViewable: true }] : [] });
       list.props.onLoad();
     });
     expect(onReady).toHaveBeenCalledTimes(1);
@@ -2239,7 +2240,8 @@ test('a priority conversation prepares while hidden and opens using the same rea
     expect(flatList(renderer)).toBe(list);
     expect(chatViewport(renderer).parent?.props.style.opacity).toBe(1);
     expect(onReady).toHaveBeenCalledTimes(1);
-    expect(scrollToOffset).not.toHaveBeenCalled();
+    if (atEnd) expect(scrollToOffset).not.toHaveBeenCalled();
+    else expect(scrollToOffset).toHaveBeenCalledWith({ offset: 600, animated: false });
   } finally {
     act(() => renderer?.unmount());
   }
@@ -2764,7 +2766,7 @@ describe.each(['codex', 'opencode', 'claude'] as const)('AgentChatView initial v
     });
   };
 
-  test('layout and content measurement are insufficient without the latest turn at the end', () => {
+  test('layout and content measurement alone do not report that messages have painted', () => {
     const onReady = jest.fn();
     renderChat(chatState([TURN]), onReady);
 
@@ -2790,22 +2792,37 @@ describe.each(['codex', 'opencode', 'claude'] as const)('AgentChatView initial v
     expect(onReady).toHaveBeenCalledTimes(1);
   });
 
-  test('an early end callback cannot claim bottom before the FlashList offset confirms it', () => {
+  test('an early end callback still scrolls towards the bottom with the chat visible', () => {
     const onReady = jest.fn();
     renderChat(chatState([TURN]), onReady);
     layoutAndMeasure(1_000);
     reportViewableTurns([TURN]);
     reportEndReached(0);
-    expect(onReady).not.toHaveBeenCalled();
+    expect(onReady).toHaveBeenCalledTimes(1);
     expect(scrollToOffset).toHaveBeenCalledWith({ offset: 600, animated: false });
     reportEndReached();
     expect(onReady).toHaveBeenCalledTimes(1);
   });
 
-  test('first open aligns a tall final turn while hidden and waits for the native bottom', () => {
+  test('a rebuilt list shows loaded messages even if native scroll confirmation never arrives', () => {
     const onReady = jest.fn();
-    renderChat(chatState([TURN]), onReady);
+    const state = chatState([TURN]);
+    renderChat(state, onReady);
+    layoutAndMeasure(1_000);
     reportViewableTurns([TURN]);
+    reportEndReached();
+    expect(onReady).toHaveBeenCalledTimes(1);
+    act(() => renderer.unmount());
+
+    // Reopen the same transcript with a new list and no saved viewport.
+    onReady.mockClear();
+    getAbsoluteLastScrollOffset.mockReturnValue(0);
+    renderChat(state, onReady);
+    const props = renderer.root.findByType(AgentChatView).props as Parameters<typeof AgentChatView>[0];
+    act(() => renderer.update(<AgentChatView {...props} active={false} prewarm />));
+    const list = flatList(renderer);
+    act(() => renderer.update(<AgentChatView {...props} contentInsets={{ ...CONTENT_INSETS, bottom: 100 }} />));
+    expect(flatList(renderer)).toBe(list);
     layoutAndMeasure(1_000);
 
     act(() => {
@@ -2818,22 +2835,12 @@ describe.each(['codex', 'opencode', 'claude'] as const)('AgentChatView initial v
       animated: false,
       offset: 600,
     });
-    expect(onReady).not.toHaveBeenCalled();
-    expect(chatViewport(renderer).parent?.props.style.opacity).toBe(0);
-    expect(chatViewport(renderer).parent?.props).toMatchObject({
-      collapsable: false,
-      pointerEvents: 'none',
-    });
-    act(() => { flatList(renderer).props.onScroll(scrollEvent(400, 1_000)); });
-    expect(onReady).not.toHaveBeenCalled();
-    act(() => { flatList(renderer).props.onScroll(scrollEvent(600, 1_000)); });
     expect(onReady).toHaveBeenCalledTimes(1);
     expect(chatViewport(renderer).parent?.props.style.opacity).toBe(1);
     expect(chatViewport(renderer).parent?.props).toMatchObject({
       collapsable: false,
       pointerEvents: 'auto',
     });
-    const props = renderer.root.findByType(AgentChatView).props as Parameters<typeof AgentChatView>[0];
     act(() => renderer.update(<AgentChatView {...props} active={false} />));
     expect(chatViewport(renderer).parent?.props).toMatchObject({
       collapsable: false,
@@ -2856,7 +2863,7 @@ describe.each(['codex', 'opencode', 'claude'] as const)('AgentChatView initial v
     expect(onReady).toHaveBeenCalledTimes(1);
   });
 
-  test('a long transcript cannot become ready while only an early turn is viewable', () => {
+  test('a long transcript stays visible while only an early turn is on screen', () => {
     const onReady = jest.fn();
     const turns = Array.from({ length: 100 }, (_value, index): TranscriptTurn => ({
       assistants: [],
@@ -2871,13 +2878,14 @@ describe.each(['codex', 'opencode', 'claude'] as const)('AgentChatView initial v
     reportEndReached(19_600);
 
     reportViewableTurns([turns[0]]);
-    expect(onReady).not.toHaveBeenCalled();
+    expect(onReady).toHaveBeenCalledTimes(1);
+    expect(chatViewport(renderer).parent?.props.style.opacity).toBe(1);
 
     reportViewableTurns([turns[99]]);
     expect(onReady).toHaveBeenCalledTimes(1);
   });
 
-  test('requires the final block, not an earlier block of the same turn, before revealing chat', () => {
+  test('shows a turn even when its final block has not reported viewability', () => {
     const onReady = jest.fn();
     renderChat(chatState([SHELL_TURN]), onReady);
     layoutAndMeasure(2_000);
@@ -2888,12 +2896,12 @@ describe.each(['codex', 'opencode', 'claude'] as const)('AgentChatView initial v
         viewableItems: [{ item: list.props.data[0], isViewable: true }],
       });
     });
-    expect(onReady).not.toHaveBeenCalled();
+    expect(onReady).toHaveBeenCalledTimes(1);
     reportViewableTurns([SHELL_TURN]);
     expect(onReady).toHaveBeenCalledTimes(1);
   });
 
-  test('remeasures a long transcript with a growing tall final turn before reveal', () => {
+  test('remeasures a growing final turn while its transcript stays visible', () => {
     const onReady = jest.fn();
     const turns = Array.from({ length: 100 }, (_, index) => ({ ...TURN, id: `turn-${index}` }));
     renderChat(chatState(turns), onReady);
@@ -2904,8 +2912,8 @@ describe.each(['codex', 'opencode', 'claude'] as const)('AgentChatView initial v
     act(() => { flatList(renderer).props.onContentSizeChange(0, 21_000); });
     expect(scrollToOffset).toHaveBeenLastCalledWith({ offset: 20_600, animated: false });
     act(() => { flatList(renderer).props.onScroll(scrollEvent(19_600, 21_000)); });
-    expect(onReady).not.toHaveBeenCalled();
-    expect(chatViewport(renderer).parent?.props.style.opacity).toBe(0);
+    expect(onReady).toHaveBeenCalledTimes(1);
+    expect(chatViewport(renderer).parent?.props.style.opacity).toBe(1);
     act(() => { flatList(renderer).props.onScroll(scrollEvent(20_600, 21_000)); });
     expect(onReady).toHaveBeenCalledTimes(1);
     expect(chatViewport(renderer).parent?.props.style.opacity).toBe(1);
