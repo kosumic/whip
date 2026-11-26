@@ -64,12 +64,11 @@ fn delegated_progress_requires_an_active_receipt_with_the_original_turn_epoch_an
         .ok_or("missing receipt")?
         .terminal = true;
     assert!(!pinned.progress_matches("call", "turn", 7, 11));
-    {
-        let mut receipts = pinned.receipts.lock();
-        let receipt = receipts.get_mut("call").ok_or("missing receipt")?;
-        receipt.terminal = false;
-        receipt.lost = true;
-    }
+    let mut receipts = pinned.receipts.lock();
+    let receipt = receipts.get_mut("call").ok_or("missing receipt")?;
+    receipt.terminal = false;
+    receipt.lost = true;
+    drop(receipts);
     assert!(!pinned.progress_matches("call", "turn", 7, 11));
     Ok(())
 }

@@ -255,15 +255,12 @@ impl Subscription {
                 state.dropped |= is_context;
                 continue;
             }
-            match pending.content {
-                Content::Context(text, turn) => {
-                    if let Some(turn) = turn {
-                        turns.push((pending.source, turn, pending.epoch, pending.revision));
-                    }
-                    bytes += text.len();
-                    context.push(text);
+            if let Content::Context(text, turn) = pending.content {
+                if let Some(turn) = turn {
+                    turns.push((pending.source, turn, pending.epoch, pending.revision));
                 }
-                _ => {}
+                bytes += text.len();
+                context.push(text);
             }
         }
         if !context.is_empty() {
