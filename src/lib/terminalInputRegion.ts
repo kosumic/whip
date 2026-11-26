@@ -11,7 +11,8 @@ export function terminalInputBottomRow(buffer: InputRegionBuffer, rows: number):
   // Leave manually scrolled history alone when the input is outside the viewport.
   if (cursorRow < 0 || cursorRow >= rows) return null;
   for (let row = rows - 1; row > cursorRow; row--) {
-    if (buffer.getLine(buffer.viewportY + row)?.translateToString(true)) return row;
+    // xterm trims empty cells, but preserves literal spaces written by a repaint.
+    if (buffer.getLine(buffer.viewportY + row)?.translateToString(true).trim()) return row;
   }
   return cursorRow;
 }

@@ -1,3 +1,4 @@
+import { Terminal } from '@xterm/xterm';
 import { terminalInputBottomRow } from '../src/lib/terminalInputRegion';
 import { TERMINAL_CURSOR_CLEARANCE, terminalViewportLayout } from '../src/lib/floatingChrome';
 
@@ -24,8 +25,23 @@ test('Codex footer below the prompt clears the keyboard controls without resizin
   expect(layout.terminalInsets).toEqual({ top: 0, bottom: 50 });
 });
 
-test('an ordinary shell prompt does not lift the blank rows below it', () => {
-  expect(terminalInputBottomRow(buffer(2, { 39: '   ' }), 40)).toBe(2);
+test('opening the keyboard keeps a fresh shell prompt in place when the repaint fills blank rows with spaces', async () => {
+  const terminal = new Terminal({ cols: 40, rows: 40, allowProposedApi: true });
+  try {
+    // A full screen repaint can write literal spaces, then restore the cursor to the prompt.
+    await new Promise<void>(resolve => terminal.write(`\x1b[${terminal.rows};1H${' '.repeat(terminal.cols)}\x1b[3;1H> `, resolve));
+    const cellHeight = 20;
+    const bottomRow = terminalInputBottomRow(terminal.buffer.active, terminal.rows)!;
+    expect(bottomRow).toBe(2);
+    const layout = terminalViewportLayout({
+      composerExpanded: false, composerHeight: 0, composerVisible: false,
+      controlBarHeight: 50, keyboardInset: 300, topInset: 0,
+      cursorBottom: (bottomRow + 1) * cellHeight, viewportHeight: terminal.rows * cellHeight,
+    });
+    expect(layout.terminalTranslateY).toBe(0);
+  } finally {
+    terminal.dispose();
+  }
 });
 
 test('footer coordinates use the visible buffer window after scrollback advances', () => {
