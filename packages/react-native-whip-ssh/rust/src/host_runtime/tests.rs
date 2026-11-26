@@ -2439,12 +2439,12 @@ fn authoritative_snapshot_rebinds_session_and_detaches_on_normal_shell() {
 }
 
 #[test]
-fn chat_identity_read_detects_resume_without_events_or_submitted_input() {
+fn agent_identity_read_detects_resume_without_events_or_submitted_input() {
     let _guard = EVENT_SINK_TEST_LOCK.lock();
     crate::runtime().unwrap().block_on(async {
         let first = "11111111-1111-4111-8111-111111111111";
         let second = "22222222-2222-4222-8222-222222222222";
-        let inner = connected_runtime_inner("chat-identity-resume");
+        let inner = connected_runtime_inner("agent-identity-resume");
         let runtime = HostRuntime {
             inner: inner.clone(),
         };
@@ -2460,7 +2460,7 @@ fn chat_identity_read_detects_resume_without_events_or_submitted_input() {
         response.cwd = Some("/stale-cwd".into());
         response.focused = !before_pane.focused;
         let pane_id = before_pane.pane_id.clone();
-        let result = chat_identity::read_pane_identity_using(inner.clone(), &pane_id, |request| {
+        let result = agent_identity::read_pane_identity_using(inner.clone(), &pane_id, |request| {
             assert_eq!(
                 request,
                 HerdrControlRequest::PaneGet {
@@ -2496,7 +2496,7 @@ fn chat_identity_read_detects_resume_without_events_or_submitted_input() {
         assert_eq!(refreshed.scroll, before_pane.scroll);
         assert_eq!(refreshed.focused, before_pane.focused);
 
-        chat_identity::read_pane_identity_using(inner.clone(), &pane_id, |_| async {
+        agent_identity::read_pane_identity_using(inner.clone(), &pane_id, |_| async {
             Ok(HerdrControlResult::PaneInfo { pane: response })
         })
         .await
@@ -2510,7 +2510,7 @@ fn chat_identity_read_detects_resume_without_events_or_submitted_input() {
             rebound.binding_token
         );
 
-        let failed = chat_identity::read_pane_identity_using(inner.clone(), &pane_id, |_| async {
+        let failed = agent_identity::read_pane_identity_using(inner.clone(), &pane_id, |_| async {
             Err(HerdrControlError::TransportDisconnected(
                 "metadata read failed".into(),
             ))
@@ -2526,12 +2526,129 @@ fn chat_identity_read_detects_resume_without_events_or_submitted_input() {
 }
 
 #[test]
-fn late_chat_identity_read_cannot_restore_a_replaced_or_detached_session() {
+fn agent_identity_read_discovers_and_removes_sessions_without_opening_transcripts() {
     let _guard = EVENT_SINK_TEST_LOCK.lock();
     crate::runtime().unwrap().block_on(async {
         let first = "11111111-1111-4111-8111-111111111111";
         let second = "22222222-2222-4222-8222-222222222222";
-        let inner = connected_runtime_inner("chat-identity-stale");
+        let inner = connected_runtime_inner("agent-identity-unbound");
+        let runtime = HostRuntime {
+            inner: inner.clone(),
+        };
+        let snapshot = agent_chat_snapshot(None, None);
+        let before_pane = snapshot.panes[0].clone();
+        let terminal_id = before_pane.terminal_id.clone();
+        let pane_id = before_pane.pane_id.clone();
+        install_agent_chat_snapshot(&inner, snapshot);
+
+        for session in [Some(first), None, Some(second)] {
+            let mut response =
+                agent_chat_snapshot(session.map(|id| ("codex", id)), None).panes[0].clone();
+            let mut expected = before_pane.clone();
+            expected.agent_session.clone_from(&response.agent_session);
+            response.cwd = Some("/stale-cwd".into());
+            response.focused = !before_pane.focused;
+            response.agent_status = HerdrAgentStatus::Blocked;
+            agent_identity::read_pane_identity_using(inner.clone(), &pane_id, |_| async {
+                Ok(HerdrControlResult::PaneInfo { pane: response })
+            })
+            .await
+            .unwrap();
+
+            assert_eq!(
+                inner
+                    .state
+                    .lock()
+                    .host_state
+                    .projection()
+                    .snapshot
+                    .unwrap()
+                    .panes[0],
+                expected
+            );
+            assert!(runtime.current_agent_chat(terminal_id.clone()).is_none());
+            assert!(!inner.agents.has_terminal_binding(&terminal_id));
+        }
+
+        let opened = bound(runtime.open_agent_chat(terminal_id.clone()).unwrap());
+        assert_eq!(opened.session_id, second);
+        agent_identity::read_pane_identity_using(inner.clone(), &pane_id, |_| async {
+            Ok(HerdrControlResult::PaneInfo { pane: before_pane })
+        })
+        .await
+        .unwrap();
+        assert!(runtime.current_agent_chat(terminal_id.clone()).is_none());
+        assert!(
+            inner
+                .agents
+                .state(&opened.transcript_key.as_str().into())
+                .is_none()
+        );
+        assert!(matches!(
+            runtime.open_agent_chat(terminal_id).unwrap(),
+            AgentChatOpenResult::NoChat { .. }
+        ));
+    });
+}
+
+#[test]
+fn agent_identity_read_survives_transcript_detachment_without_reopening_chat() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    crate::runtime().unwrap().block_on(async {
+        let first = "11111111-1111-4111-8111-111111111111";
+        let second = "22222222-2222-4222-8222-222222222222";
+        let inner = connected_runtime_inner("agent-identity-detached");
+        let runtime = HostRuntime {
+            inner: inner.clone(),
+        };
+        let snapshot = agent_chat_snapshot(Some(("codex", first)), None);
+        let mut response = snapshot.panes[0].clone();
+        let terminal_id = response.terminal_id.clone();
+        let pane_id = response.pane_id.clone();
+        response.agent_session.as_mut().unwrap().value = second.into();
+        install_agent_chat_snapshot(&inner, snapshot);
+        let original = bound(runtime.open_agent_chat(terminal_id.clone()).unwrap());
+
+        agent_identity::read_pane_identity_using(inner.clone(), &pane_id, |_| async {
+            inner.agents.close_terminal(&terminal_id.as_str().into());
+            Ok(HerdrControlResult::PaneInfo {
+                pane: response.clone(),
+            })
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(
+            inner
+                .state
+                .lock()
+                .host_state
+                .projection()
+                .snapshot
+                .unwrap()
+                .panes[0],
+            response
+        );
+        assert!(runtime.current_agent_chat(terminal_id.clone()).is_none());
+        assert!(
+            inner
+                .agents
+                .state(&original.transcript_key.as_str().into())
+                .is_none()
+        );
+        let reopened = bound(runtime.open_agent_chat(terminal_id).unwrap());
+        assert_eq!(reopened.session_id, second);
+        assert_ne!(reopened.binding_token, original.binding_token);
+    });
+}
+
+#[test]
+fn late_agent_identity_read_cannot_restore_a_replaced_or_removed_session() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    crate::runtime().unwrap().block_on(async {
+        let first = "11111111-1111-4111-8111-111111111111";
+        let second = "22222222-2222-4222-8222-222222222222";
+        let inner = connected_runtime_inner("agent-identity-stale");
         let runtime = HostRuntime {
             inner: inner.clone(),
         };
@@ -2542,7 +2659,7 @@ fn late_chat_identity_read_cannot_restore_a_replaced_or_detached_session() {
         install_agent_chat_snapshot(&inner, snapshot);
         runtime.open_agent_chat(terminal_id.clone()).unwrap();
         let replacement = agent_chat_snapshot(Some(("codex", second)), None);
-        chat_identity::read_pane_identity_using(inner.clone(), &pane_id, |_| async {
+        agent_identity::read_pane_identity_using(inner.clone(), &pane_id, |_| async {
             install_agent_chat_snapshot(&inner, replacement.clone());
             Ok(HerdrControlResult::PaneInfo {
                 pane: obsolete_response.clone(),
@@ -2558,27 +2675,26 @@ fn late_chat_identity_read_cannot_restore_a_replaced_or_detached_session() {
             second
         );
 
-        let before = inner.state.lock().host_state.projection();
-        chat_identity::read_pane_identity_using(inner.clone(), &pane_id, |_| async {
-            inner.agents.close_terminal(&terminal_id.as_str().into());
-            Ok(HerdrControlResult::PaneInfo {
-                pane: obsolete_response.clone(),
-            })
-        })
-        .await
-        .unwrap();
-        assert_eq!(inner.state.lock().host_state.projection(), before);
-        assert!(runtime.current_agent_chat(terminal_id.clone()).is_none());
-        // A caller can still read pane metadata after detachment, but the
-        // response must not rebind Chat or change the authoritative session.
-        chat_identity::read_pane_identity_using(inner.clone(), &pane_id, |_| async {
+        agent_identity::read_pane_identity_using(inner.clone(), &pane_id, |_| async {
+            install_agent_chat_snapshot(&inner, agent_chat_snapshot(None, None));
             Ok(HerdrControlResult::PaneInfo {
                 pane: obsolete_response,
             })
         })
         .await
         .unwrap();
-        assert_eq!(inner.state.lock().host_state.projection(), before);
+        assert!(
+            inner
+                .state
+                .lock()
+                .host_state
+                .projection()
+                .snapshot
+                .unwrap()
+                .panes[0]
+                .agent_session
+                .is_none()
+        );
         assert!(runtime.current_agent_chat(terminal_id).is_none());
     });
 }

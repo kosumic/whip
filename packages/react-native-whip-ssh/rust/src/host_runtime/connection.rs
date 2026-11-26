@@ -13,7 +13,7 @@ use super::{
     HostRuntimeEvent, HostRuntimeStatus, HostSshConfig, HostSshCredential,
     INITIAL_PERSISTENT_RECONNECT_DELAY_MS, INITIAL_RECONNECT_DELAY_MS,
     MAX_PERSISTENT_RECONNECT_DELAY_MS, MAX_RECONNECT_ATTEMPTS, MAX_RECONNECT_DELAY_MS,
-    RuntimeDiagnosticOperation, RuntimeInner, agent_view, begin_host_state_sync, chat_identity,
+    RuntimeDiagnosticOperation, RuntimeInner, agent_identity, agent_view, begin_host_state_sync,
     clear_latency_transport, emit, emit_diagnostic, emit_diagnostic_started, emit_host_state,
     emit_slow_or_failed_diagnostic, invalidate_remote_operations, log_lifecycle,
     measure_host_latency_inner, publish_lifecycle_status, reconcile_control_result,
@@ -930,7 +930,7 @@ pub(super) async fn control_request_inner(
         _ => {}
     }
     let result = if let HerdrControlRequest::PaneGet { pane_id } = &request {
-        chat_identity::read_pane_identity_using(inner.clone(), pane_id, |request| {
+        agent_identity::read_pane_identity_using(inner.clone(), pane_id, |request| {
             let replay = request_replay(&request);
             request_on_runtime(inner.herdr.clone(), request, replay)
         })

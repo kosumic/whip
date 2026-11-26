@@ -1,4 +1,7 @@
-//! Recover Codex session-only changes that Herdr event streams can omit.
+//! Recover agent-session changes that Herdr event streams can omit.
+//!
+//! HostState owns identity admission and stale-response checks independently of
+//! transcript consumers. Publishing accepted changes reconciles existing bindings.
 
 use std::future::Future;
 use std::sync::Arc;
@@ -26,27 +29,18 @@ where
         state
             .host_state
             .terminal_id_for_pane(pane_id)
-            .and_then(|terminal_id| {
-                if !inner.agents.has_terminal_binding(&terminal_id) {
-                    return None;
-                }
-                state
-                    .host_state
-                    .begin_agent_session_read(&terminal_id)
-                    .map(|token| (terminal_id, token))
-            })
+            .and_then(|terminal_id| state.host_state.begin_agent_session_read(&terminal_id))
     };
     let result = send(HerdrControlRequest::PaneGet {
         pane_id: pane_id.to_owned(),
     })
     .await?;
-    if let Some((terminal_id, token)) = identity_read
+    if let Some(token) = identity_read
         && let HerdrControlResult::PaneInfo { pane } = &result
     {
         let changed = {
             let mut state = inner.state.lock();
             state.connection == HostConnectionState::Connected
-                && inner.agents.has_terminal_binding(&terminal_id)
                 && state.host_state.complete_agent_session_read(token, pane)
         };
         if changed {

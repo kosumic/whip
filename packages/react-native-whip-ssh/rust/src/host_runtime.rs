@@ -3,9 +3,9 @@
 mod actions;
 mod agent_controls;
 pub use agent_controls::AgentControlView;
+mod agent_identity;
 mod agent_view;
 mod agents;
-mod chat_identity;
 mod connection;
 mod core_attention;
 mod core_projection;
