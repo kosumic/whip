@@ -62,8 +62,9 @@ It survives tool changes and returning to the bottom, and resets for a new turn.
 Only the visible inline status ticks once per second; it does not rerender the message
 list. A broad highlight travels left to right across “Working,” with a one-second
 sweep every four seconds after a 600 ms initial delay, following Codex's
-`summary_shimmer.rs`. The elapsed text stays steady. Shimmer and spinner respect
-reduced motion.
+`summary_shimmer.rs`. Running tool titles use the same sweep every two seconds
+in the transcript and pinned activity bar. The elapsed time and pinned tool
+details stay steady. The shimmer respects reduced motion.
 
 Prompt context follows Codex CLI's `transcript_view/prompt_header.rs`. Reasoning
 summary formatting follows `chatwidget/streaming.rs` and elapsed status follows

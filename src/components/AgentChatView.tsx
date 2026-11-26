@@ -35,7 +35,6 @@ import type { ChatSearchInitialTarget } from 'react-native-whip-ssh/src/chatSear
 import { useCopyFeedback } from '../hooks/useCopyFeedback';
 import type { ChatReadAloudControl } from '../hooks/useChatReadAloud';
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
-import { useDecorativeProgress } from '../hooks/useDecorativeProgress';
 import { AnimationVisibilityContext } from '../lib/animationVisibility';
 import { useChatSearch } from '../hooks/useChatSearch';
 import { useChatActivity, type ChatActivity, type ChatToolActivity } from '../hooks/useChatActivity';
@@ -57,7 +56,7 @@ import { useCommittedCallbacks } from '../hooks/useCommittedCallbacks';
 import { TranscriptMarkdownImages } from '../hooks/useTranscriptMarkdownImages';
 import { nativeTranscriptLookup } from '../lib/nativeAgentTranscript';
 import { markdownImageTargets } from '../lib/markdownRemoteLinks';
-import { CHAT_WORKING_LABEL, CHAT_WORKING_SHIMMER_PERIOD_MS, workingShimmerOpacity } from '../lib/chatWorkingAnimation';
+import { CHAT_TOOL_SHIMMER_PERIOD_MS, CHAT_WORKING_LABEL, CHAT_WORKING_SHIMMER_PERIOD_MS } from '../lib/chatWorkingAnimation';
 import type { ChatViewportState } from '../lib/chatViewportState';
 import { chatAgentDisplayName, type ChatAgent } from '../lib/agentChatSession';
 import {
@@ -83,6 +82,7 @@ import { SelectableChatText } from './SelectableChatText';
 import { ChatComposerSelection } from './ChatComposerSelection';
 import { textValue } from '../lib/toolOutput';
 import { ChatToolCard, ToolInputDetails, ToolMetadata, ToolOutputBlock, toolPresentation } from './ChatToolCard';
+import { ChatShimmerText } from './ChatShimmerText';
 import { ChatToolGroup } from './ChatToolGroup';
 import { formatFullTime, MetadataLine } from './TranscriptMetadata';
 import { OverlayScrollbar, type OverlayScrollbarDragEvent } from './OverlayScrollbar';
@@ -133,8 +133,8 @@ const CHAT_CONTEXT_HEIGHT = 44;
 const CHAT_CONTEXT_GAP = 8;
 const CHAT_ACTIVITY_TINT_OPACITY = 0.6;
 const CHAT_WORKING_TICK_MS = 1_000;
-const CHAT_WORKING_LETTERS = Array.from(CHAT_WORKING_LABEL);
 const CHAT_WORKING_TEXT_CLASS = 'text-[12px] font-medium leading-4 text-foreground';
+const CHAT_ACTIVITY_TEXT_CLASS = 'text-[12px] leading-5 text-foreground';
 const CHAT_MAINTAIN_VISIBLE_CONTENT_POSITION = {
   startRenderingFromBottom: true,
 } as const;
@@ -283,18 +283,6 @@ function currentActivity(blocks: ChatRow[], state: AgentChatState, turn?: Transc
   return { summary: summary ?? progress, tool: question ?? tool, promptId };
 }
 
-function WorkingLetter({ letter, index, progress, reduceMotion }: {
-  letter: string;
-  index: number;
-  progress: SharedValue<number>;
-  reduceMotion: boolean;
-}) {
-  const style = useAnimatedStyle(() => ({
-    opacity: reduceMotion ? 1 : workingShimmerOpacity(progress.value, index),
-  }), [index, reduceMotion]);
-  return <Animated.View style={style}><Text className={CHAT_WORKING_TEXT_CLASS}>{letter}</Text></Animated.View>;
-}
-
 function ChatWorkingStatus({ startedAt, active }: { startedAt?: number; active: boolean }) {
   const { colors } = useTheme();
   const visible = useContext(AnimationVisibilityContext);
@@ -302,7 +290,6 @@ function ChatWorkingStatus({ startedAt, active }: { startedAt?: number; active: 
   const reduceMotion = useReducedMotion();
   const [fallbackStartedAt] = useState(Date.now);
   const [now, setNow] = useState(fallbackStartedAt);
-  const progress = useDecorativeProgress(running && !reduceMotion, CHAT_WORKING_SHIMMER_PERIOD_MS, false);
   useEffect(() => {
     if (!running) return;
     setNow(Date.now());
@@ -316,17 +303,17 @@ function ChatWorkingStatus({ startedAt, active }: { startedAt?: number; active: 
     <View testID="chat-inline-working" className="min-h-11 flex-row items-center gap-2">
       <ActivityIndicator animating={running && !reduceMotion} hidesWhenStopped={false} size={13} color={colors.textTertiary} />
       <View testID="chat-working-status" accessible accessibilityLabel={label} className="flex-row items-center">
-        {CHAT_WORKING_LETTERS.map((letter, index) => (
-          <WorkingLetter key={index} letter={letter} index={index} progress={progress} reduceMotion={reduceMotion} />
-        ))}
+        <ChatShimmerText text={CHAT_WORKING_LABEL} periodMs={CHAT_WORKING_SHIMMER_PERIOD_MS}
+          active={running} textClassName={CHAT_WORKING_TEXT_CLASS} />
         <Text className="text-[12px] font-medium leading-4 text-muted-foreground">{` (${duration})`}</Text>
       </View>
     </View>
   );
 }
 
-function ChatActivityStrip({ activity, onPress }: {
+function ChatActivityStrip({ activity, runningToolId, onPress }: {
   activity: ChatActivity;
+  runningToolId?: string;
   onPress: () => void;
 }) {
   const { colors } = useTheme();
@@ -349,9 +336,19 @@ function ChatActivityStrip({ activity, onPress }: {
         onPress={hapticPress(onPress)}
       >
         <ActivityIndicator animating={visible && !reduceMotion} hidesWhenStopped={false} size={13} color={colors.textTertiary} />
-        <Text numberOfLines={1} className="min-w-0 flex-1 text-[12px] leading-5 text-foreground">
-          {activity.title}{activity.detail ? ` · ${activity.detail}` : ''}
-        </Text>
+        {runningToolId && !reduceMotion ? (
+          <View className="min-w-0 flex-1 flex-row items-center">
+            <ChatShimmerText key={runningToolId} text={activity.title} periodMs={CHAT_TOOL_SHIMMER_PERIOD_MS}
+              active={visible} textClassName={CHAT_ACTIVITY_TEXT_CLASS} />
+            {activity.detail ? (
+              <Text numberOfLines={1} className={cn('min-w-0 shrink', CHAT_ACTIVITY_TEXT_CLASS)}>{` · ${activity.detail}`}</Text>
+            ) : null}
+          </View>
+        ) : (
+          <Text numberOfLines={1} className={cn('min-w-0 flex-1', CHAT_ACTIVITY_TEXT_CLASS)}>
+            {activity.title}{activity.detail ? ` · ${activity.detail}` : ''}
+          </Text>
+        )}
         <ArrowDown size={16} color={colors.textSecondary} />
       </Pressable>
     </GlassSurface>
@@ -532,7 +529,7 @@ function AssistantPart({
       </TranscriptNoticeCard>
     );
   }
-  if (part.type === 'tool') return <ChatToolCard item={part} directory={directory} expanded={expanded} onToggle={onToggle} active={active} onLinkPress={onLinkPress} />;
+  if (part.type === 'tool') return <ChatToolCard item={part} directory={directory} expanded={expanded} onToggle={onToggle} active={active} onLinkPress={onLinkPress} animateRunningTitle />;
   if (part.type === 'plan') {
     return <View className="w-full py-1"><Text className="mb-2 text-[13px] font-medium leading-5 text-foreground">Plan</Text><MarkdownText content={part.text} variant="transcript" onLinkPress={({ url }) => onLinkPress(url)} /></View>;
   }
@@ -1817,6 +1814,7 @@ export function AgentChatView({
           {activity && (
             <ChatActivityStrip
               activity={activity}
+              runningToolId={candidates?.tool?.id}
               onPress={() => {
                 pendingSearch.current = null;
                 setFollowEnd(true);

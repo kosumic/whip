@@ -9,6 +9,8 @@ jest.mock('expo-localization', () => ({ getLocales: () => [] }));
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
 jest.mock('react-native', () => ({ Image: 'Image', Modal: 'Modal', ActivityIndicator: 'ActivityIndicator', Pressable: 'Pressable', ScrollView: 'ScrollView', View: 'View' }));
 jest.mock('react-native-safe-area-context', () => ({ SafeAreaView: 'SafeAreaView' }));
+jest.mock('../src/components/ChatShimmerText', () => ({ ChatShimmerText: 'ChatShimmerText' }));
+jest.mock('../src/components/app-ui', () => ({ useReducedMotion: () => false }));
 jest.mock('../src/components/ZoomableImagePreview', () => ({ ZoomableImagePreview: 'ZoomableImagePreview' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
 jest.mock('../src/components/NativeCodeBlock', () => ({ NativeCodeBlock: 'NativeCodeBlock' }));

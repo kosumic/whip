@@ -1,7 +1,7 @@
-import { CHAT_WORKING_LABEL, CHAT_WORKING_SHIMMER_PERIOD_MS, workingShimmerOpacity } from '../src/lib/chatWorkingAnimation';
+import { CHAT_TOOL_SHIMMER_PERIOD_MS, CHAT_WORKING_LABEL, CHAT_WORKING_SHIMMER_PERIOD_MS, chatShimmerOpacity } from '../src/lib/chatWorkingAnimation';
 
-const frame = (milliseconds: number) => Array.from(CHAT_WORKING_LABEL, (_, index) =>
-  workingShimmerOpacity((milliseconds % CHAT_WORKING_SHIMMER_PERIOD_MS) / CHAT_WORKING_SHIMMER_PERIOD_MS, index));
+const frame = (milliseconds: number, label = CHAT_WORKING_LABEL, period = CHAT_WORKING_SHIMMER_PERIOD_MS) =>
+  Array.from(label, (_, index) => chatShimmerOpacity(milliseconds % period, index, label.length));
 
 test('the highlight travels from the first letter through the middle to the last letter', () => {
   const brightest = (milliseconds: number) => {
@@ -19,6 +19,14 @@ test('the wave has an initial delay and a quiet gap before the next left-to-righ
   const dim = Array.from(CHAT_WORKING_LABEL, () => 0.5);
   for (const ms of [0, 599, 1600, 3600, 4600]) expect(frame(ms)).toEqual(dim);
   expect(frame(5100)).toEqual(frame(1100));
+});
+
+test('tool titles repeat the same sweep every two seconds', () => {
+  const toolFrame = (milliseconds: number) => frame(milliseconds, 'Shell', CHAT_TOOL_SHIMMER_PERIOD_MS);
+  const dim = [0.5, 0.5, 0.5, 0.5, 0.5];
+  expect(toolFrame(1100)[2]).toBe(1);
+  expect(toolFrame(2000)).toEqual(dim);
+  expect(toolFrame(3100)).toEqual(toolFrame(1100));
 });
 
 test('adjacent letters overlap smoothly instead of flashing the entire word', () => {

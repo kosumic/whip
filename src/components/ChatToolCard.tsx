@@ -19,21 +19,25 @@ import type { TranscriptToolPart } from '../agentChat';
 import { useCopyFeedback } from '../hooks/useCopyFeedback';
 import { TranscriptMarkdownImages } from '../hooks/useTranscriptMarkdownImages';
 import { isRunningTool as isRunning } from '../lib/agentChatBlocks';
+import { CHAT_TOOL_SHIMMER_PERIOD_MS } from '../lib/chatWorkingAnimation';
 import { parseJsonToolOutput, textValue } from '../lib/toolOutput';
 import { cn } from '../lib/utils';
 import { hapticPress } from '../services/interactionFeedback';
 import { useTheme } from '../theme';
+import { useReducedMotion } from './app-ui';
 import { ChatFileDiff as ToolFileDiffBlock } from './ChatFileDiff';
 import { ChatPromptImage } from './ChatPromptImage';
+import { ChatShimmerText } from './ChatShimmerText';
 import { JsonOutputViewer } from './JsonOutputViewer';
 import { MarkdownText } from './MarkdownText';
 import { NativeCodeBlock } from './NativeCodeBlock';
-import { SearchText } from './SearchText';
+import { ChatSearchQuery, SearchText } from './SearchText';
 import { formatElapsed, formatFullTime, MetadataLine } from './TranscriptMetadata';
 import { Text } from './ui/text';
 
 const SMALL_ICON_HIT_SLOP = 8;
 const TOOL_HEADER_PREVIEW_LENGTH = 160;
+const TOOL_TITLE_TEXT_CLASS = 'text-[13px] font-medium leading-5 text-foreground';
 const LEADING_EXECUTABLE_PATH = /^[^\s"'`\\|;&<>()=$]*\/([^/\s"'`\\|;&<>()=$]+)(?=\s|[|;&<>()]|$)/;
 
 type ToolKind = 'command' | 'file' | 'mcp' | 'web' | 'other';
@@ -147,12 +151,26 @@ function toolHeaderPreview(text: string): string {
   return preview.length < text.length ? `${preview}…` : preview;
 }
 
-export function ChatToolCard({ item, expanded, onToggle, active, onLinkPress, directory, heading }: BlockExpansion & {
+function RunningToolTitle({ title, active }: { title: string; active: boolean }) {
+  const searchQuery = useContext(ChatSearchQuery);
+  const reduceMotion = useReducedMotion();
+  if (!active || reduceMotion || searchQuery) {
+    return (
+      <Text numberOfLines={1} className={cn('min-w-0 shrink', TOOL_TITLE_TEXT_CLASS)}>
+        <SearchText text={title} />
+      </Text>
+    );
+  }
+  return <ChatShimmerText text={title} periodMs={CHAT_TOOL_SHIMMER_PERIOD_MS} active textClassName={TOOL_TITLE_TEXT_CLASS} />;
+}
+
+export function ChatToolCard({ item, expanded, onToggle, active, onLinkPress, directory, heading, animateRunningTitle }: BlockExpansion & {
   item: TranscriptToolPart;
   active: boolean;
   onLinkPress: (url: string) => void;
   directory?: string;
   heading?: Pick<ToolPresentation, 'title' | 'subtitle'>;
+  animateRunningTitle?: boolean;
 }) {
   const { t } = useTranslation();
   const imageContext = useContext(TranscriptMarkdownImages);
@@ -201,6 +219,11 @@ export function ChatToolCard({ item, expanded, onToggle, active, onLinkPress, di
   const displayedTitle = toolHeaderPreview(presentation.title);
   const displayedArgs = presentation.args.map(toolHeaderPreview);
   const TitleIcon = presentation.icon;
+  const running = isRunning(item);
+  const showRunningTitle = running && animateRunningTitle;
+  const accessibilityLabel = TitleIcon || showRunningTitle
+    ? [displayedTitle, ...(running ? [] : [displayedSubtitle, ...displayedArgs])].filter(Boolean).join(', ')
+    : undefined;
   return (
     <View
       className={cn('min-h-11 w-full overflow-hidden rounded-md px-2', failed ? 'bg-destructive/10' : 'bg-primary/10')}
@@ -208,9 +231,7 @@ export function ChatToolCard({ item, expanded, onToggle, active, onLinkPress, di
       <Pressable
         testID="agent-tool-toggle"
         accessibilityRole="button"
-        accessibilityLabel={TitleIcon
-          ? [displayedTitle, !isRunning(item) && displayedSubtitle, ...(!isRunning(item) ? displayedArgs : [])].filter(Boolean).join(', ')
-          : undefined}
+        accessibilityLabel={accessibilityLabel}
         accessibilityState={{ expanded }}
         disabled={!hasDetail && !presentation.href}
         className="min-h-11 flex-row items-center py-1"
@@ -218,7 +239,7 @@ export function ChatToolCard({ item, expanded, onToggle, active, onLinkPress, di
           if (presentation.href) onLinkPress(presentation.href);
         }}
       >
-        {isRunning(item) && (
+        {running && (
           <View className="mr-1.5 size-4 items-center justify-center">
             <ActivityIndicator animating={active} size={13} color={colors.textTertiary} />
           </View>
@@ -229,13 +250,16 @@ export function ChatToolCard({ item, expanded, onToggle, active, onLinkPress, di
           </View>
         )}
         <View className="min-w-0 shrink flex-row items-center gap-1.5">
-          {TitleIcon
-            ? <TitleIcon size={16} color={colors.text} />
-            : <Text numberOfLines={1} className="shrink-0 text-[13px] font-medium leading-5 text-foreground">
+          {TitleIcon && <TitleIcon size={16} color={colors.text} />}
+          {showRunningTitle ? (
+            <RunningToolTitle title={displayedTitle} active={active && (imageContext?.visible ?? true)} />
+          ) : !TitleIcon && (
+            <Text numberOfLines={1} className={cn('shrink-0', TOOL_TITLE_TEXT_CLASS)}>
               <SearchText text={displayedTitle} />
-            </Text>}
-          {images.length > 0 && <Text className="text-[13px] font-medium text-foreground"><SearchText text={displayedTitle} /></Text>}
-          {displayedSubtitle && !isRunning(item) && (
+            </Text>
+          )}
+          {!showRunningTitle && images.length > 0 && <Text className="text-[13px] font-medium text-foreground"><SearchText text={displayedTitle} /></Text>}
+          {displayedSubtitle && !running && (
             <>
               <Text className="text-[11px] leading-5 text-muted-foreground">·</Text>
               <Text numberOfLines={1} className="min-w-0 shrink text-[13px] leading-5 text-muted-foreground">
@@ -243,19 +267,19 @@ export function ChatToolCard({ item, expanded, onToggle, active, onLinkPress, di
               </Text>
             </>
           )}
-          {!isRunning(item) && displayedArgs.map((arg, index) => (
+          {!running && displayedArgs.map((arg, index) => (
             <Text key={presentation.args[index]} numberOfLines={1} className="shrink text-[12px] leading-5 text-muted-foreground">
               <SearchText text={arg} />
             </Text>
           ))}
         </View>
-        {changes && !isRunning(item) && (
+        {changes && !running && (
           <View className="ml-2 shrink-0 flex-row gap-1.5">
             <Text className="font-mono text-[11px] leading-5" style={{ color: colors.done }}>+{changes.additions}</Text>
             <Text className="font-mono text-[11px] leading-5" style={{ color: colors.error }}>−{changes.deletions}</Text>
           </View>
         )}
-        {presentation.href && !isRunning(item) && (
+        {presentation.href && !running && (
           <Pressable accessibilityLabel={`Open ${toolHeaderPreview(presentation.href)}`} className="ml-1 size-7 items-center justify-center" hitSlop={SMALL_ICON_HIT_SLOP} onPress={event => { event.stopPropagation(); onLinkPress(presentation.href!); }}>
             <ExternalLink size={14} color={colors.textTertiary} />
           </Pressable>
