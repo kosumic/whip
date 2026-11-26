@@ -1606,6 +1606,7 @@ describe('AgentChatView pinned context', () => {
     { y: 0, height: 100 }, { y: 100, height: 500 },
     { y: 600, height: 300 }, { y: 900, height: 400 }, { y: 1300, height: 1 },
   ];
+  let rowLayouts: typeof layouts;
   const pinnedPrompts = () => renderer.root.findAllByProps({ testID: 'chat-pinned-prompt' });
   const activityStrips = () => renderer.root.findAllByProps({ testID: 'chat-pinned-activity' });
   const workingLabel = (): string => renderer.root.findByProps({ testID: 'chat-working-status' }).props.accessibilityLabel;
@@ -1629,6 +1630,7 @@ describe('AgentChatView pinned context', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     scrollToIndex.mockReset(); scrollToEnd.mockReset(); scrollToOffset.mockReset();
+    rowLayouts = layouts;
     const latest = {
       ...SHELL_TURN.assistants[0],
       parts: SHELL_TURN.assistants[0].parts.map(part => part.type === 'tool'
@@ -1642,8 +1644,13 @@ describe('AgentChatView pinned context', () => {
       renderer = create(view(), {
         createNodeMock: element => element.type === 'FlashList' ? {
           scrollToIndex, scrollToEnd, scrollToOffset,
-          getLayout: (index: number) => layouts[index],
+          getLayout: (index: number) => rowLayouts[index],
+          getChildContainerDimensions: () => {
+            const last = rowLayouts[rowLayouts.length - 1];
+            return { height: last.y + last.height };
+          },
           getFirstItemOffset: () => 40,
+          getWindowSize: () => ({ height: 400 }),
           getAbsoluteLastScrollOffset: () => 1600,
         } : null,
       });
@@ -1660,6 +1667,14 @@ describe('AgentChatView pinned context', () => {
   afterEach(() => {
     act(() => { renderer.unmount(); });
     jest.useRealTimers();
+  });
+
+  test('keeps a single visible prompt inline at the end of a bottom-aligned conversation', () => {
+    turn = { ...turn, status: 'idle', assistants: [earlierAnswer], messages: [firstPrompt, earlierAnswer] };
+    rowLayouts = [{ y: 0, height: 100 }, { y: 100, height: 79 }, { y: 179, height: 1 }];
+    act(() => { renderer.update(view({ agentStatus: 'idle' })); });
+    act(() => { flatList(renderer).props.onScroll(scrollEvent(210, 610)); });
+    expect(pinnedPrompts()).toHaveLength(0);
   });
 
   test('follows the prompt above the screen, including follow-ups within a single turn, and yields to visible prompts', () => {
@@ -2644,6 +2659,8 @@ test('an evicted viewport shows reloaded rows while restoring its expanded block
         scrollToEnd: jest.fn(), scrollToOffset,
         getFirstVisibleIndex: () => 0,
         getFirstItemOffset: () => 30,
+        getWindowSize: () => ({ height: 400 }),
+        getChildContainerDimensions: () => ({ height: 760 }),
         getAbsoluteLastScrollOffset: () => 0,
         getLayout: () => layout,
       } : null,
@@ -2965,6 +2982,8 @@ describe.each(['opencode', 'codex', 'claude'] as const)('shared tool expansion l
       scrollToEnd, scrollToOffset, scrollToIndex,
       getFirstVisibleIndex: () => firstVisibleIndex,
       getFirstItemOffset: () => 30,
+      getWindowSize: () => ({ height: 400 }),
+      getChildContainerDimensions: () => ({ height: 760 }),
       getAbsoluteLastScrollOffset: () => 600,
       getLayout: () => ({ x: 0, y: 200, width: 300, height: 500 }),
     } : null });

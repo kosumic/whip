@@ -219,18 +219,24 @@ function usePinnedPrompt(store: ChatRowStore, state: AgentChatState, list: RefOb
   const [promptId, setPromptId] = useState<string | null>(null);
   const currentId = useRef<string | null>(null);
   const update = useCallback((offset: number) => {
-    const edge = offset + top - (list.current?.getFirstItemOffset?.() ?? 0);
+    const flashList = list.current;
+    const firstItemOffset = flashList?.getFirstItemOffset?.() ?? 0;
+    // FlashList inserts a margin after the header when bottom-aligning short content.
+    const rowsTop = prompts.length > 0 && flashList?.getLayout?.(0)
+      ? Math.max(firstItemOffset, flashList.getWindowSize().height - flashList.getChildContainerDimensions().height)
+      : firstItemOffset;
+    const edge = offset + top - rowsTop;
     let low = 0;
     let high = prompts.length;
     while (low < high) {
       const mid = Math.floor((low + high) / 2);
-      const layout = list.current?.getLayout?.(store.indexOf(prompts[mid].id));
+      const layout = flashList?.getLayout?.(store.indexOf(prompts[mid].id));
       if (!layout) return;
       if (layout.y <= edge) low = mid + 1;
       else high = mid;
     }
     const candidate = prompts[low - 1];
-    const layout = candidate && list.current?.getLayout?.(store.indexOf(candidate.id));
+    const layout = candidate && flashList?.getLayout?.(store.indexOf(candidate.id));
     // A partially visible prompt supplies its own context, including long prompts.
     const nextId = layout && layout.y + layout.height <= edge ? candidate.id : null;
     if (currentId.current === nextId) return;
