@@ -235,6 +235,15 @@ export const GENERATED_OPEN_SOURCE_LICENSES = [
     licenseAsset: require("../../assets/licenses/generated/b569f629d00f2626.txt"),
   },
   {
+    id: "npm-xterm-addon-unicode11-0-10-0-beta-331",
+    category: "npm",
+    projectName: "@xterm/addon-unicode11",
+    sourceUrl: "https://github.com/xtermjs/xterm.js/tree/master/addons/addon-unicode11",
+    attribution: "Direct npm dependency · version 0.10.0-beta.331",
+    licenseName: "MIT",
+    licenseAsset: require("../../assets/licenses/generated/e256f01188af527e.txt"),
+  },
+  {
     id: "npm-xterm-xterm-6-1-0-beta-336",
     category: "npm",
     projectName: "@xterm/xterm",

@@ -88,9 +88,23 @@ const jetBrainsMonoLicense = resolve(
 const cjkRegular = resolve(terminalFonts, fontManifest.cjk.regularFile);
 const cjkLicense = resolve(terminalFonts, fontManifest.cjk.licenseFile);
 const cjkRanges = JSON.parse(await readFile(resolve(root, 'assets/gui-fonts/WhipChatCJK.ranges.json'), 'utf8')) as [number, number][];
-const cjkUnicodeRange = cjkRanges.map(([start, end]) =>
+const cssUnicodeRange = (ranges: [number, number][]) => ranges.map(([start, end]) =>
   `U+${start.toString(16)}${start === end ? '' : '-' + end.toString(16)}`,
 ).join(', ');
+const cjkUnicodeRange = cssUnicodeRange(cjkRanges);
+// A bundled monochrome glyph can win before the WebView tries its system emoji font.
+const emojiPresentation = /\p{Emoji_Presentation}/u;
+const maxUnicodeCodePoint = 0x10ffff;
+const symbolRanges: [number, number][] = [];
+let symbolRangeStart = 0;
+for (let codePoint = 0; codePoint <= maxUnicodeCodePoint; codePoint += 1) {
+  if (emojiPresentation.test(String.fromCodePoint(codePoint))) {
+    if (symbolRangeStart < codePoint) symbolRanges.push([symbolRangeStart, codePoint - 1]);
+    symbolRangeStart = codePoint + 1;
+  }
+}
+symbolRanges.push([symbolRangeStart, maxUnicodeCodePoint]);
+const symbolUnicodeRange = cssUnicodeRange(symbolRanges);
 const previewFontFaces = `
     @font-face { font-family: WhipInter; src: url('markdown-Inter-Regular.ttf'); font-weight: 400; }
     @font-face { font-family: WhipInter; src: url('markdown-Inter-Bold.ttf'); font-weight: 700; }
@@ -179,6 +193,10 @@ await Promise.all([
   copyTerminalAsset(
     resolve(root, 'node_modules/@xterm/addon-serialize/lib/addon-serialize.js'),
     'addon-serialize.js',
+  ),
+  copyTerminalAsset(
+    resolve(root, 'node_modules/@xterm/addon-unicode11/lib/addon-unicode11.js'),
+    'addon-unicode11.js',
   ),
   copyTerminalAsset(
     resolve(root, 'node_modules/pele/dist/pele.global.js'),
@@ -328,6 +346,7 @@ const terminalSessionHtml = `<!doctype html>
       font-style: normal;
       font-weight: 400;
       font-display: block;
+      unicode-range: ${symbolUnicodeRange};
     }
     @font-face {
       font-family: '${fontManifest.cjk.cssFamily}';
@@ -374,6 +393,7 @@ const terminalSessionHtml = `<!doctype html>
   <script src="addon-fit.js"></script>
   <script src="addon-image.js"></script>
   <script src="addon-serialize.js"></script>
+  <script src="addon-unicode11.js"></script>
   <script>
     ${installAndroidImeBridge.toString()}
     ${createTerminalPasteBridge.toString()}
@@ -410,6 +430,7 @@ const terminalSessionHtml = `<!doctype html>
       cursorBlink: true,
       cursorStyle: 'bar',
       showCursorImmediately: nativeKeyboardInput,
+      allowProposedApi: true,
       allowTransparency: true,
       linkHandler: { activate: (_event, link) => send({ type: 'open-link', link }) },
       fontFamily: terminalFontFamily,
@@ -429,6 +450,8 @@ const terminalSessionHtml = `<!doctype html>
         brightCyan: '#a4daff', brightWhite: '#c0caf5'
       }
     });
+    terminal.loadAddon(new Unicode11Addon.Unicode11Addon());
+    terminal.unicode.activeVersion = '11';
     const fit = new FitAddon.FitAddon();
     terminal.loadAddon(fit);
     const images = new ImageAddon.ImageAddon({
@@ -1961,6 +1984,7 @@ const terminalHtml = `<!doctype html>
   <script src="addon-fit.js"></script>
   <script src="addon-image.js"></script>
   <script src="addon-serialize.js"></script>
+  <script src="addon-unicode11.js"></script>
   <script>
     const terminalMarkup = ${JSON.stringify(terminalSessionMarkup).replaceAll('<', '\\u003c')};
     const createTerminalSession = (root, report) => {

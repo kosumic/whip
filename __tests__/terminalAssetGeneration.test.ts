@@ -49,6 +49,7 @@ test('recreates both complete asset directories from source inputs alone', () =>
     'addon-fit.js': 'node_modules/@xterm/addon-fit/lib/addon-fit.js',
     'addon-image.js': 'node_modules/@xterm/addon-image/lib/addon-image.js',
     'addon-serialize.js': 'node_modules/@xterm/addon-serialize/lib/addon-serialize.js',
+    'addon-unicode11.js': 'node_modules/@xterm/addon-unicode11/lib/addon-unicode11.js',
     'pele.global.js': 'node_modules/pele/dist/pele.global.js',
     'pele-LICENSE.txt': 'node_modules/pele/LICENSE',
     'codemirror-LICENSE.txt': 'node_modules/codemirror/LICENSE',

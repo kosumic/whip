@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Script } from 'node:vm';
 import { FitAddon } from '@xterm/addon-fit';
+import { Unicode11Addon } from '@xterm/addon-unicode11';
 import type { Terminal } from '@xterm/xterm';
 
 export const TERMINAL_ASSET_KEY = 'test-terminal';
@@ -76,6 +77,7 @@ export async function terminalAssetRuntime(asset: string, userAgent: string, mul
   let resizeListener = (_size: { cols: number; rows: number }) => {};
   const terminal = {
     options: { fontSize: 8, scrollbar: { showScrollbar: false } },
+    unicode: { register: jest.fn(), activeVersion: '6' },
     dimensions: { css: { cell: { width: 8, height: 16 } } },
     element: { ...element(), parentElement: parent, ownerDocument: { defaultView: window } },
     cols: 0,
@@ -137,6 +139,7 @@ export async function terminalAssetRuntime(asset: string, userAgent: string, mul
     FitAddon: { FitAddon: jest.fn(() => fit) },
     ImageAddon: { ImageAddon: jest.fn(() => ({})) },
     SerializeAddon: { SerializeAddon: jest.fn(() => ({ serialize })) },
+    Unicode11Addon: { Unicode11Addon },
     atob,
     MouseEvent: class {
       constructor(readonly type: string, options: Record<string, unknown>) {
