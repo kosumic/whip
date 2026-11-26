@@ -24,6 +24,7 @@ import { emptyTranscript, type AgentChatState, type TranscriptTurn } from '../sr
 import { SCROLL_IDLE_MS } from '../src/hooks/useScrollActivity';
 import {
   TERMINAL_CURSOR_CLEARANCE,
+  TERMINAL_FLOATING_ACTION_GAP,
   terminalControlBarInset,
   terminalSessionChromeHeight,
 } from '../src/lib/floatingChrome';
@@ -1872,6 +1873,39 @@ describe.each(['android', 'ios'] as const)(
       expect(ui('TerminalRendererHost')).toBe(terminal);
       expect(terminalHandle.fit).not.toHaveBeenCalled();
       act(() => renderer.update(<TerminalScreen {...props} visible={false} />));
+    });
+
+    test('jump to latest stays just above the controls as the keyboard and terminal canvas move', async () => {
+      const sessionChromeInset = terminalSessionChromeHeight(2);
+      mount({ sessionChromeInset });
+      const terminal = ui('TerminalRendererHost');
+      const latest = renderer.root.findByProps({ accessibilityLabel: 'Jump to latest terminal output' });
+      const latestBottom = () => {
+        const buttonBottom: number = latest.props.style[0]?.bottom ?? 0;
+        const parentStyle: { bottom?: number; transform?: [{ translateY: number }] } = latest.parent!.props.style;
+        return buttonBottom + (parentStyle.bottom ?? 0) - (parentStyle.transform?.[0].translateY ?? 0);
+      };
+      const restingBottom = controlBarHeight + sessionChromeInset + TERMINAL_FLOATING_ACTION_GAP;
+      const keyboardBottom = controlBarHeight + keyboardHeight + TERMINAL_FLOATING_ACTION_GAP;
+      expect(latestBottom()).toBe(restingBottom);
+
+      await press('enableKeyboard');
+      emitKeyboard(true);
+      expect(latestBottom()).toBe(keyboardBottom);
+      act(() => { terminal.props.onCursorGeometry(target, 780, screenHeight); });
+      expect(terminal.parent!.props.style.transform[0].translateY).toBeLessThan(0);
+      expect(latestBottom()).toBe(keyboardBottom);
+      act(() => { terminal.props.onCursorGeometry(target, null, screenHeight); });
+      expect(latestBottom()).toBe(keyboardBottom);
+
+      const intermediateHeight = 150;
+      act(() => moveKeyboard(intermediateHeight));
+      expect(latestBottom()).toBe(keyboardBottom - (keyboardOcclusion - intermediateHeight));
+      act(() => endKeyboard(false));
+      expect(latestBottom()).toBe(restingBottom);
+      act(() => commitKeyboardState(false));
+      expect(latestBottom()).toBe(restingBottom);
+      expectTouchEnabled(latest);
     });
   },
 );

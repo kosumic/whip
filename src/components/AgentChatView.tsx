@@ -1825,7 +1825,7 @@ export function AgentChatView({
           {awayFromLatest && !scrolling && !activity && (
             <Button
               accessibilityLabel="Jump to latest"
-              className={LATEST_BUTTON_CLASS_NAME}
+              className={cn('absolute', LATEST_BUTTON_CLASS_NAME)}
               style={[
                 { bottom: latestButtonBottom - contentInsets.bottom },
                 latestButtonStyle(colors),

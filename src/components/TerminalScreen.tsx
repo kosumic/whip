@@ -75,6 +75,7 @@ import {
   contentInsetsWithSessionChrome,
   LATEST_BUTTON_CLASS_NAME,
   LATEST_BUTTON_ICON_SIZE,
+  TERMINAL_FLOATING_ACTION_GAP,
   terminalInsetsWithTopPull,
   terminalControlBarInset,
   terminalKeyboardOffset,
@@ -675,6 +676,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const composerStyle = useAnimatedStyle(() => ({ bottom: animatedComposerBottom.value }));
     const animatedOverlayBottom = useDerivedValue(() => animatedComposerBottom.value
       + (anyComposerVisible && !composeExpanded ? Math.max(0, composerHeight) : 0));
+    const terminalLatestButtonStyle = useAnimatedStyle(() => ({
+      bottom: animatedOverlayBottom.value + TERMINAL_FLOATING_ACTION_GAP,
+    }));
     const voiceChatDockStyle = useAnimatedStyle(() => ({ bottom: voiceComposerVisible
       ? animatedComposerBottom.value : animatedOverlayBottom.value }));
     const expandedComposerStyle = useAnimatedStyle(() => ({
@@ -733,11 +737,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       }),
       [alternateScreen, scrollPosition, terminalVisualInsets],
     );
-    const terminalLatestButtonOffset = terminalLatestButtonBottom({
-      sessionChromeInset,
-      sessionChromeVisible,
-      terminalBottomInset: controlBarHeight,
-    });
     const viewportLatestButtonBottom = terminalLatestButtonBottom({
       sessionChromeInset,
       sessionChromeVisible,
@@ -2133,25 +2132,28 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 onDragStart={beginTerminalScrollbarDrag}
               />
             )}
-            {activeTarget &&
-              !chatControl &&
-              !scrolling &&
-              terminalLatestButtonVisible(alternateScreen, atVisualBottom) && (
+          </Animated.View>
+          {activeTarget &&
+            !chatControl &&
+            !scrolling &&
+            terminalLatestButtonVisible(alternateScreen, atVisualBottom) && (
+              <Animated.View
+                className="absolute inset-x-0"
+                pointerEvents="box-none"
+                style={terminalLatestButtonStyle}
+              >
                 <Button
                   accessibilityLabel="Jump to latest terminal output"
                   className={LATEST_BUTTON_CLASS_NAME}
-                  style={[
-                    { bottom: terminalLatestButtonOffset },
-                    latestButtonStyle(appColors),
-                  ]}
+                  style={latestButtonStyle(appColors)}
                   variant="secondary"
                   size="icon"
                   onPress={jumpTerminalToLatest}
                 >
                   <ArrowDown size={LATEST_BUTTON_ICON_SIZE} color={appColors.text} />
                 </Button>
-              )}
-          </Animated.View>
+              </Animated.View>
+            )}
           {(viewportOverlay || chatViewEnabled) && (
             <>
               {chatViewEnabled && (
