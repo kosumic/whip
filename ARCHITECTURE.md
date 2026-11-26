@@ -129,8 +129,8 @@ and borrow the connection's current owned session; no string-key session alias
 is published for React Native.
 
 `HostState` owns workspace/tab/pane topology, layouts, server focus, derived
-agent status, snapshot sync generations, monotonic state revisions, and
-freshness. Snapshot requests carry both connection and sync generations. Events
+agent status and session identity, snapshot sync generations, monotonic state
+revisions, and freshness. Snapshot requests carry both connection and sync generations. Events
 that arrive while a snapshot is in flight are applied immediately and buffered,
 then replayed over the accepted snapshot so an older response cannot erase
 already-observed changes. Herdr does not currently expose a single revision
@@ -140,6 +140,13 @@ limit with delays. `pane.output_changed` is treated as a non-projecting
 notification: terminal/transcript bytes and activity use their dedicated
 streams, so known-pane output does not mutate the host projection revision or
 send a redundant full snapshot.
+
+Pane metadata reads can recover agent-session changes omitted by Herdr events,
+even before a transcript is bound or after its consumer detaches. `HostState`
+admits these identity-only updates using the connection and sync generations,
+state revision, and pane topology captured for the read. Late responses cannot
+overwrite newer host state. Existing transcript bindings follow accepted host
+identity changes; transcript residency does not authorize host metadata updates.
 
 Successful Herdr mutations are reconciled into Rust-owned `HostState`, and
 React Native consumes the resulting projection without routinely requesting a

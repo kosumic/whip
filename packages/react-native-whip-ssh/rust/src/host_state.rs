@@ -3248,6 +3248,126 @@ mod tests {
     }
 
     #[test]
+    fn agent_session_read_updates_only_identity_and_rejects_foreign_targets() {
+        let mut state = synced_state();
+        let sync = state.begin_sync(1);
+        state.complete_sync(
+            sync,
+            snapshot_with_agent_status(HerdrAgentStatus::Working),
+            11,
+        );
+        let original = state.projection();
+        let mut response = original.snapshot.as_ref().unwrap().panes[0].clone();
+        response.agent_session = agent("p1", HerdrAgentKind::Codex, "replacement").agent_session;
+        response.agent_status = HerdrAgentStatus::Blocked;
+        response.cwd = Some("/stale-cwd".into());
+        response.focused = !response.focused;
+        response.title = Some("stale title".into());
+
+        for field in ["pane", "terminal", "workspace", "tab"] {
+            let token = state.begin_agent_session_read("term-p1").unwrap();
+            let mut foreign = response.clone();
+            match field {
+                "pane" => foreign.pane_id = "other-pane".into(),
+                "terminal" => foreign.terminal_id = "other-terminal".into(),
+                "workspace" => foreign.workspace_id = "other-workspace".into(),
+                "tab" => foreign.tab_id = "other-tab".into(),
+                _ => unreachable!(),
+            }
+            assert!(
+                !state.complete_agent_session_read(token, &foreign),
+                "{field}"
+            );
+            assert_eq!(state.projection(), original, "{field}");
+        }
+
+        for identity in [response.agent_session.clone(), None] {
+            let before = state.projection();
+            response.agent_session = identity.clone();
+            let token = state.begin_agent_session_read("term-p1").unwrap();
+            assert!(state.complete_agent_session_read(token, &response));
+            let after = state.projection();
+            assert!(after.revision > before.revision);
+            let mut expected = before;
+            expected.revision = after.revision;
+            let snapshot = expected.snapshot.as_mut().unwrap();
+            snapshot.panes[0].agent_session.clone_from(&identity);
+            snapshot.agents[0].agent_session = identity;
+            assert_eq!(after, expected);
+            let token = state.begin_agent_session_read("term-p1").unwrap();
+            assert!(!state.complete_agent_session_read(token, &response));
+            assert_eq!(state.projection(), after);
+        }
+    }
+
+    #[test]
+    fn agent_session_read_rejects_newer_revisions_syncs_connections_and_pane_lifecycles() {
+        type HostTransition = fn(&mut HostState);
+        let races: &[(&str, HostTransition)] = &[
+            ("newer metadata", |state| {
+                let mut updated = state.snapshot.as_ref().unwrap().panes[0].clone();
+                updated.cwd = Some("/newer-cwd".into());
+                state.apply_event(1, HerdrEvent::PaneUpdated { pane: updated }, 12);
+            }),
+            ("sync pending", |state| {
+                state.begin_sync(1);
+                assert!(state.begin_agent_session_read("term-p1").is_none());
+            }),
+            ("sync completed", |state| {
+                let sync = state.begin_sync(1);
+                state.complete_sync(sync, snapshot(), 12);
+            }),
+            ("reconnected", |state| {
+                state.connection_installed(2);
+                assert!(state.begin_agent_session_read("term-p1").is_none());
+                let sync = state.begin_sync(2);
+                state.complete_sync(sync, snapshot(), 12);
+            }),
+            ("pane removed", |state| {
+                state.apply_event(
+                    1,
+                    HerdrEvent::PaneClosed {
+                        workspace_id: "w1".into(),
+                        pane_id: "p1".into(),
+                    },
+                    12,
+                );
+                assert!(state.begin_agent_session_read("term-p1").is_none());
+            }),
+            ("pane closed locally", |state| {
+                state.apply_control_result(
+                    1,
+                    &HerdrControlRequest::PaneClose {
+                        pane_id: "p1".into(),
+                    },
+                    &HerdrControlResult::Ok,
+                );
+                assert!(state.begin_agent_session_read("term-p1").is_none());
+            }),
+            ("terminal replaced", |state| {
+                let mut updated = state.snapshot.as_ref().unwrap().panes[0].clone();
+                updated.terminal_id = "replacement-terminal".into();
+                state.apply_event(1, HerdrEvent::PaneUpdated { pane: updated }, 12);
+                assert!(state.begin_agent_session_read("term-p1").is_none());
+            }),
+        ];
+        for (name, race) in races {
+            let mut state = synced_state();
+            let token = state.begin_agent_session_read("term-p1").unwrap();
+            let mut response = state.snapshot.as_ref().unwrap().panes[0].clone();
+            response.agent_session =
+                agent("p1", HerdrAgentKind::Codex, "old-session").agent_session;
+            race(&mut state);
+            let before = state.projection();
+            assert!(
+                !state.complete_agent_session_read(token, &response),
+                "{name}"
+            );
+            assert_eq!(state.projection(), before, "{name}");
+        }
+    }
+
+    #[test]
     fn full_snapshot_projects_agent_session_identity_onto_the_pane() {
         let mut incoming = snapshot();
         incoming
