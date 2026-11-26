@@ -1482,24 +1482,6 @@ async fn deliver_pending_observations(
 }
 
 impl RealtimeVoiceAdapter {
-    fn context_delivery(
-        &self,
-        agent: Option<&PinnedAgent>,
-        source: &observer::SourceId,
-        turn: Option<&str>,
-        epoch: u64,
-        revision: u64,
-    ) -> observer::DeliveryDecision {
-        if let Some(agent) = agent {
-            return agent.context_delivery(source, turn, epoch, revision);
-        }
-        self.global
-            .lock()
-            .as_ref()
-            .map_or(observer::DeliveryDecision::Ignore, |global| {
-                global.context_delivery(source, turn, epoch, revision)
-            })
-    }
     pub(crate) fn agent_result_fallback(&self, value: &Value) {
         self.view.lock().backend_text = Some(live::public_result(value));
     }

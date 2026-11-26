@@ -303,7 +303,7 @@ fn borrowed_row_recovery_uses_latest_revision_and_cannot_revive_a_disposed_viewp
 }
 
 #[test]
-fn voice_observer_uses_native_commits_recovers_concurrent_producers_and_revokes_old_bindings()
+fn voice_observer_ignores_announcements_recovers_concurrent_producers_and_revokes_old_bindings()
 -> Result<(), Box<dyn std::error::Error>> {
     use crate::realtime_voice::observer::{Scope, SourceId, Subscription};
     fn announcements(enabled: bool) {
@@ -328,7 +328,7 @@ fn voice_observer_uses_native_commits_recovers_concurrent_producers_and_revokes_
         }
     }
     let _restore = Restore(crate::automatic_speech::tracking_enabled());
-    announcements(true);
+    announcements(false);
     let core = materialized_cores("Historical answer")
         .into_iter()
         .next()
@@ -344,7 +344,7 @@ fn voice_observer_uses_native_commits_recovers_concurrent_producers_and_revokes_
         binding_generation: binding.binding_generation,
     };
     let call = Subscription::new(Scope::Pinned(id.clone()));
-    assert!(call.take(true, Instant::now()).context.is_none());
+    assert!(call.take(Instant::now()).context.is_none());
     let append = |item: &str, text: &str| -> Result<_, Box<dyn std::error::Error>> {
         let line = format!(
             "{}\n",
@@ -376,29 +376,77 @@ fn voice_observer_uses_native_commits_recovers_concurrent_producers_and_revokes_
         &manager.inner,
         binding.transcript_key.clone(),
         epoch,
-        second.clone(),
+        second,
     );
     let text = call
-        .take(true, Instant::now() + Duration::from_secs(1))
+        .take(Instant::now() + Duration::from_secs(1))
         .context
         .ok_or("no live updates")?;
     assert!(text.contains("First independent update."));
     assert!(text.contains("Second independent update."));
     assert!(!text.contains("Historical answer"));
     assert_eq!(text.matches("First independent update.").count(), 1);
+    assert_eq!(text.matches("Second independent update.").count(), 1);
     assert!(
-        call.take(true, Instant::now() + Duration::from_secs(2))
+        call.take(Instant::now() + Duration::from_secs(2))
             .context
             .is_none()
     );
+    let mut delivered_at = Instant::now() + Duration::from_secs(3);
+    let mut previously_seen = vec![
+        "Historical answer",
+        "First independent update.",
+        "Second independent update.",
+    ];
+    for (item, text, queued_enabled, delivered_enabled) in [
+        (
+            "disabled-queued",
+            "Queued with announcements disabled.",
+            false,
+            true,
+        ),
+        (
+            "enabled-queued",
+            "Queued with announcements enabled.",
+            true,
+            false,
+        ),
+    ] {
+        announcements(queued_enabled);
+        let (epoch, update) = append(item, text)?;
+        emit(
+            &manager.inner,
+            binding.transcript_key.clone(),
+            epoch,
+            update,
+        );
+        // Changing the audible preference cannot drop or replay call context.
+        announcements(delivered_enabled);
+        let delivered = call
+            .take(delivered_at)
+            .context
+            .ok_or("lost queued context")?;
+        assert_eq!(delivered.matches(text).count(), 1);
+        for &previous in &previously_seen {
+            assert!(
+                !delivered.contains(previous),
+                "Replayed context: {previous}"
+            );
+        }
+        previously_seen.push(text);
+        delivered_at += Duration::from_secs(1);
+        assert!(call.take(delivered_at).context.is_none());
+        delivered_at += Duration::from_secs(1);
+    }
     drop(call);
     let replacement = Subscription::new(Scope::Pinned(id));
-    assert!(replacement.take(true, Instant::now()).context.is_none());
+    assert!(replacement.take(Instant::now()).context.is_none());
+    let (epoch, late) = append("retired", "Output from a retired binding.")?;
     manager.detach_terminal(&binding.terminal_id)?;
-    emit(&manager.inner, binding.transcript_key, epoch, second);
+    emit(&manager.inner, binding.transcript_key, epoch, late);
     assert!(
         replacement
-            .take(true, Instant::now() + Duration::from_secs(1))
+            .take(Instant::now() + Duration::from_secs(1))
             .context
             .is_none()
     );

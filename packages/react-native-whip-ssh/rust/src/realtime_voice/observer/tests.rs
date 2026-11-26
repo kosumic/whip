@@ -78,7 +78,6 @@ fn update(
     revision: u64,
     messages: &[AgentTranscriptMessage],
     reset: bool,
-    enabled: bool,
 ) {
     observer.0.lock().accept(
         source,
@@ -92,12 +91,11 @@ fn update(
         }),
         messages.iter(),
         reset,
-        enabled,
     );
 }
 fn take(observer: &Subscription) -> Batch {
     let now = observer.0.lock().last_batch.max(Instant::now()) + BATCH_INTERVAL;
-    observer.take(true, now)
+    observer.take(now)
 }
 fn records(batch: &Batch) -> Vec<serde_json::Value> {
     batch
@@ -114,20 +112,12 @@ fn reader_recovery_keeps_unsent_prose_and_delivers_gap_text_once() {
     let source = source("host", "pane", AgentTranscriptKind::Codex);
     let call = observer(Scope::Pinned(source.id.clone()));
     let history = message("old", "Historical answer.", true);
-    update(
-        &call,
-        &source,
-        1,
-        1,
-        std::slice::from_ref(&history),
-        true,
-        true,
-    );
+    update(&call, &source, 1, 1, std::slice::from_ref(&history), true);
     let before_pause = [
         history.clone(),
         message("answer", "First sentence. ", false),
     ];
-    update(&call, &source, 1, 2, &before_pause, false, true);
+    update(&call, &source, 1, 2, &before_pause, false);
     call.0.lock().accept(
         &source,
         1,
@@ -140,7 +130,6 @@ fn reader_recovery_keeps_unsent_prose_and_delivers_gap_text_once() {
         }),
         before_pause.iter(),
         false,
-        true,
     );
     assert!(
         take(&call).context.is_none(),
@@ -150,19 +139,19 @@ fn reader_recovery_keeps_unsent_prose_and_delivers_gap_text_once() {
         history,
         message("answer", "First sentence. Recovered sentence.", true),
     ];
-    update(&call, &source, 1, 4, &recovered, false, true);
+    update(&call, &source, 1, 4, &recovered, false);
     let text = records(&take(&call))
         .into_iter()
         .map(|record| record["text"].as_str().unwrap().to_owned())
         .collect::<Vec<_>>()
         .join(" ");
     assert_eq!(text, "First sentence. Recovered sentence.");
-    update(&call, &source, 1, 5, &recovered, false, true);
+    update(&call, &source, 1, 5, &recovered, false);
     assert!(
         take(&call).context.is_none(),
         "Recovery never repeats the delivered answer"
     );
-    update(&call, &source, 2, 6, &recovered, true, true);
+    update(&call, &source, 2, 6, &recovered, true);
     assert!(
         take(&call).context.is_none(),
         "Replacement history remains silent"
@@ -191,11 +180,7 @@ fn reset_projections_of_the_same_history_forward_new_text_without_replaying_hist
             &crate::AgentTranscriptUpdate::reset(state.clone()),
         );
     };
-    let read = || {
-        call.take_for_call(true, Instant::now() + BATCH_INTERVAL, |_, _, _, _| {
-            DeliveryDecision::Allow
-        })
-    };
+    let read = || call.take(Instant::now() + BATCH_INTERVAL);
     publish(&state);
     assert!(read().context.is_none());
     state.revision += 1;
@@ -230,7 +215,6 @@ fn global_and_pinned_calls_baseline_and_attribute_independent_agents_with_identi
                 1,
                 &[message("old", "Old answer.", true)],
                 true,
-                true,
             );
         }
         assert!(take(call).context.is_none());
@@ -245,7 +229,6 @@ fn global_and_pinned_calls_baseline_and_attribute_independent_agents_with_identi
                     message("same-id", "New answer.", true),
                 ],
                 false,
-                true,
             );
         }
     }
@@ -275,7 +258,6 @@ fn preexisting_work_streams_only_new_stable_prose_and_rewrites_do_not_replay() {
             1,
             &[message("work", "Already running. ", false)],
             true,
-            true,
         );
         update(
             &call,
@@ -288,7 +270,6 @@ fn preexisting_work_streams_only_new_stable_prose_and_rewrites_do_not_replay() {
                 false,
             )],
             false,
-            true,
         );
         let first = records(&take(&call));
         assert_eq!(first.len(), 1);
@@ -309,7 +290,6 @@ fn preexisting_work_streams_only_new_stable_prose_and_rewrites_do_not_replay() {
                 true,
             )],
             false,
-            true,
         );
         let tail = records(&take(&call));
         assert_eq!(tail.len(), 1);
@@ -326,7 +306,6 @@ fn preexisting_work_streams_only_new_stable_prose_and_rewrites_do_not_replay() {
             4,
             &[message("work", "Rewritten response.", true)],
             false,
-            true,
         );
         assert!(take(&call).context.is_none());
     }
@@ -340,7 +319,7 @@ fn shared_projection_includes_structured_questions_but_never_users_tools_or_reas
         AgentTranscriptKind::Codex,
     );
     let call = observer(Scope::Pinned(source.id.clone()));
-    update(&call, &source, 1, 1, &[], true, true);
+    update(&call, &source, 1, 1, &[], true);
     let mut assistant = message(
         "answer",
         "**Public** [prose](https://example.com).\n```sh\nprivate_code\n```",
@@ -371,15 +350,7 @@ fn shared_projection_includes_structured_questions_but_never_users_tools_or_reas
     assistant.parts.push(tool("tool", "private_output"));
     let mut user = message("user", "private_user_prompt", true);
     user.role = AgentMessageRole::User;
-    update(
-        &call,
-        &source,
-        1,
-        2,
-        &[user, assistant.clone()],
-        false,
-        true,
-    );
+    update(&call, &source, 1, 2, &[user, assistant.clone()], false);
     let batch = take(&call);
     let context = batch.context.as_deref().unwrap_or_default();
     assert!(context.contains("Public prose."));
@@ -450,14 +421,14 @@ fn shared_projection_includes_structured_questions_but_never_users_tools_or_reas
             .and_then(|event| event.output.as_deref()),
         Some("private_output")
     );
-    update(&call, &source, 1, 3, &[assistant.clone()], false, true);
+    update(&call, &source, 1, 3, &[assistant.clone()], false);
     assert!(take(&call).events.is_empty());
     // Exhausting model-context capacity must still retain local tool outcomes.
     call.0.lock().sources.get_mut(&source.id).unwrap().exhausted = true;
     if let Some(AgentTranscriptPart::Tool { state, .. }) = assistant.parts.last_mut() {
         state.status = AgentToolStatus::Completed;
     }
-    update(&call, &source, 1, 4, &[assistant], false, true);
+    update(&call, &source, 1, 4, &[assistant], false);
     let finished = take(&call);
     assert!(finished.context.is_none());
     assert_eq!(
@@ -506,57 +477,50 @@ fn global_tool_traffic_never_enters_call_history_or_displaces_speakable_context(
         AgentTranscriptKind::OpenCode,
         AgentTranscriptKind::Pi,
     ] {
-        for enabled in [false, true] {
-            let one = source("one", "pane", agent);
-            let two = source("two", "pane", agent);
-            let global = observer(Scope::Global);
-            let pinned = observer(Scope::Pinned(one.id.clone()));
-            let mut busy = message("work", "", true);
-            for id in 0..64 {
-                busy.parts
-                    .push(tool(&format!("tool-{id}"), &"private_output".repeat(1024)));
-            }
-            for call in [&global, &pinned] {
-                for source in [&one, &two] {
-                    update(call, source, 1, 1, &[], true, enabled);
-                    update(call, source, 1, 2, &[busy.clone()], false, enabled);
-                }
-                update(
-                    call,
-                    &one,
-                    1,
-                    3,
-                    &[busy.clone(), message("answer", "Useful update.", true)],
-                    false,
-                    enabled,
-                );
-            }
-            let batch = global.take(enabled, Instant::now() + BATCH_INTERVAL);
-            assert!(batch.events.is_empty());
-            if enabled {
-                let content = records(&batch);
-                assert_eq!(content.len(), 1);
-                assert_eq!(content[0]["text"], "Useful update.");
-                let text = batch.context.as_deref().unwrap();
-                assert!(!text.contains("private_output"));
-                assert!(!text.contains("private_arguments"));
-                assert!(!text.contains("dropped or truncated"));
-            } else {
-                assert!(batch.context.is_none());
-            }
-            // Agent-bound calls retain their pinned agent's tool history,
-            // independently of the announcements preference and context budget.
-            assert!(!pinned.take_events().is_empty());
-            assert!(global.take_events().is_empty());
+        let one = source("one", "pane", agent);
+        let two = source("two", "pane", agent);
+        let global = observer(Scope::Global);
+        let pinned = observer(Scope::Pinned(one.id.clone()));
+        let mut busy = message("work", "", true);
+        for id in 0..64 {
+            busy.parts
+                .push(tool(&format!("tool-{id}"), &"private_output".repeat(1024)));
         }
+        for call in [&global, &pinned] {
+            for source in [&one, &two] {
+                update(call, source, 1, 1, &[], true);
+                update(call, source, 1, 2, &[busy.clone()], false);
+            }
+            update(
+                call,
+                &one,
+                1,
+                3,
+                &[busy.clone(), message("answer", "Useful update.", true)],
+                false,
+            );
+        }
+        let batch = global.take(Instant::now() + BATCH_INTERVAL);
+        assert!(batch.events.is_empty());
+        let content = records(&batch);
+        assert_eq!(content.len(), 1);
+        assert_eq!(content[0]["text"], "Useful update.");
+        let text = batch.context.as_deref().unwrap();
+        assert!(!text.contains("private_output"));
+        assert!(!text.contains("private_arguments"));
+        assert!(!text.contains("dropped or truncated"));
+        // Agent-bound calls retain only their pinned agent's tool history,
+        // independently of the context budget.
+        assert!(!pinned.take_events().is_empty());
+        assert!(global.take_events().is_empty());
     }
 }
 
 #[test]
-fn source_epoch_resets_preference_boundaries_and_call_replacement_never_replay() {
+fn source_epoch_resets_and_call_replacement_never_replay() {
     let source = source("host", "pane", AgentTranscriptKind::Codex);
     let call = observer(Scope::Global);
-    update(&call, &source, 1, 1, &[], true, true);
+    update(&call, &source, 1, 1, &[], true);
     update(
         &call,
         &source,
@@ -564,7 +528,6 @@ fn source_epoch_resets_preference_boundaries_and_call_replacement_never_replay()
         2,
         &[message("queued", "Before reset.", true)],
         false,
-        true,
     );
     update(
         &call,
@@ -572,7 +535,6 @@ fn source_epoch_resets_preference_boundaries_and_call_replacement_never_replay()
         2,
         1,
         &[message("catchup", "Catchup history.", true)],
-        true,
         true,
     );
     update(
@@ -582,7 +544,6 @@ fn source_epoch_resets_preference_boundaries_and_call_replacement_never_replay()
         3,
         &[message("late", "Old callback.", true)],
         false,
-        true,
     );
     assert!(take(&call).context.is_none());
     update(
@@ -592,9 +553,8 @@ fn source_epoch_resets_preference_boundaries_and_call_replacement_never_replay()
         2,
         &[
             message("catchup", "Catchup history.", true),
-            message("muted", "Disabled announcements.", true),
+            message("queued", "Queued output.", true),
         ],
-        false,
         false,
     );
     update(
@@ -603,15 +563,14 @@ fn source_epoch_resets_preference_boundaries_and_call_replacement_never_replay()
         2,
         3,
         &[
-            message("muted", "Disabled announcements.", true),
+            message("queued", "Queued output.", true),
             message("fresh", "Fresh output.", true),
         ],
         false,
-        true,
     );
     let text = take(&call).context.unwrap_or_default();
     assert!(text.contains("Fresh output."));
-    assert!(!text.contains("Disabled announcements."));
+    assert!(text.contains("Queued output."));
     let replacement = observer(Scope::Global);
     update(
         &replacement,
@@ -620,7 +579,6 @@ fn source_epoch_resets_preference_boundaries_and_call_replacement_never_replay()
         3,
         &[message("fresh", "Fresh output.", true)],
         true,
-        true,
     );
     assert!(take(&replacement).context.is_none());
     let original = source.id.clone();
@@ -628,7 +586,7 @@ fn source_epoch_resets_preference_boundaries_and_call_replacement_never_replay()
     rebound.id.binding_generation += 1;
     rebound.id.binding_token.push_str("new");
     let pinned = observer(Scope::Pinned(original));
-    update(&pinned, &rebound, 3, 1, &[], true, true);
+    update(&pinned, &rebound, 3, 1, &[], true);
     update(
         &pinned,
         &rebound,
@@ -636,7 +594,6 @@ fn source_epoch_resets_preference_boundaries_and_call_replacement_never_replay()
         2,
         &[message("other", "Wrong binding.", true)],
         false,
-        true,
     );
     assert!(take(&pinned).context.is_none());
 }
@@ -645,11 +602,11 @@ fn source_epoch_resets_preference_boundaries_and_call_replacement_never_replay()
 fn provider_backpressure_batches_bounds_expires_and_never_retries_dropped_content() {
     let source = source("host", "pane", AgentTranscriptKind::Codex);
     let call = observer(Scope::Global);
-    update(&call, &source, 1, 1, &[], true, true);
+    update(&call, &source, 1, 1, &[], true);
     let mut history = Vec::new();
     for revision in 2..400 {
         history.push(message(&format!("m{revision}"), &"語".repeat(200), true));
-        update(&call, &source, 1, revision, &history, false, true);
+        update(&call, &source, 1, revision, &history, false);
     }
     let mut bytes = 0;
     for _ in 0..MAX_PENDING {
@@ -663,7 +620,7 @@ fn provider_backpressure_batches_bounds_expires_and_never_retries_dropped_conten
     assert!(take(&call).context.is_none());
     // A separate call has budget available, but old waiting updates still expire.
     let expiring = observer(Scope::Global);
-    update(&expiring, &source, 1, 1, &[], true, true);
+    update(&expiring, &source, 1, 1, &[], true);
     update(
         &expiring,
         &source,
@@ -671,11 +628,10 @@ fn provider_backpressure_batches_bounds_expires_and_never_retries_dropped_conten
         2,
         &[message("stale", "Stale queued update.", true)],
         false,
-        true,
     );
     assert!(
         expiring
-            .take(true, Instant::now() + MAX_AGE + BATCH_INTERVAL)
+            .take(Instant::now() + MAX_AGE + BATCH_INTERVAL)
             .context
             .is_none()
     );
@@ -686,7 +642,7 @@ fn provider_backpressure_batches_bounds_expires_and_never_retries_dropped_conten
 fn chunks_preserve_utf16_source_offsets_and_quoted_untrusted_content() {
     let source = source("host", "pane", AgentTranscriptKind::Codex);
     let call = observer(Scope::Global);
-    update(&call, &source, 1, 1, &[], true, true);
+    update(&call, &source, 1, 1, &[], true);
     let text = "Hello 你好 👋 world. ".repeat(40);
     update(
         &call,
@@ -695,7 +651,6 @@ fn chunks_preserve_utf16_source_offsets_and_quoted_untrusted_content() {
         2,
         &[message("unicode", &text, true)],
         false,
-        true,
     );
     let mut count = 0;
     for _ in 0..20 {
@@ -722,14 +677,14 @@ fn a_long_preexisting_progress_part_does_not_hide_a_new_final_answer() {
     let source = source("host", "pane", AgentTranscriptKind::Codex);
     let call = observer(Scope::Pinned(source.id.clone()));
     let mut running = message("work", &"Old progress. ".repeat(1000), false);
-    update(&call, &source, 1, 1, &[running.clone()], true, true);
+    update(&call, &source, 1, 1, &[running.clone()], true);
     running.parts.push(AgentTranscriptPart::Text {
         id: "final".into(),
         text: "The final answer is ready.".into(),
         timestamp_ms: None,
     });
     running.completed_at_ms = Some(1);
-    update(&call, &source, 1, 2, &[running], false, true);
+    update(&call, &source, 1, 2, &[running], false);
     let batch = take(&call);
     let records = records(&batch);
     assert_eq!(records.len(), 1);
@@ -738,10 +693,10 @@ fn a_long_preexisting_progress_part_does_not_hide_a_new_final_answer() {
 }
 
 #[test]
-fn disabled_announcements_keep_only_explicitly_correlated_delegation_content_on_the_shared_path() {
+fn independent_and_delegated_updates_share_quiet_context_and_keep_their_turn_identity() {
     let source = source("host", "pane", AgentTranscriptKind::Codex);
     let call = observer(Scope::Pinned(source.id.clone()));
-    update(&call, &source, 1, 1, &[], true, false);
+    update(&call, &source, 1, 1, &[], true);
     let messages = [
         message("independent", "Independent task output.", true),
         message("answer", "Delegated task answer.", true),
@@ -771,30 +726,23 @@ fn disabled_announcements_keep_only_explicitly_correlated_delegation_content_on_
         &window,
         messages.iter(),
         false,
-        false,
     );
-    // Transcript delivery can beat remote acceptance. Hold briefly rather than
-    // either guessing correlation or losing a fast delegated answer.
+    let batch = call.take(Instant::now() + BATCH_INTERVAL);
+    let records = records(&batch);
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0]["text"], "Independent task output.");
+    assert_eq!(records[1]["text"], "Delegated task answer.");
+    assert_eq!(
+        batch.turns,
+        vec![
+            (source.id.clone(), "outside".into(), 1, 2),
+            (source.id, "submitted".into(), 1, 2),
+        ]
+    );
+    assert!(batch.context.as_deref().unwrap().starts_with(GUIDANCE));
     assert!(
-        call.take_for_call(false, Instant::now(), |_, _, _, _| DeliveryDecision::Wait)
+        call.take(Instant::now() + BATCH_INTERVAL * 2)
             .context
             .is_none()
-    );
-    let batch = call.take_for_call(false, Instant::now() + BATCH_INTERVAL, |id, turn, _, _| {
-        if *id == source.id && turn == Some("submitted") {
-            DeliveryDecision::Allow
-        } else {
-            DeliveryDecision::Ignore
-        }
-    });
-    let records = records(&batch);
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0]["text"], "Delegated task answer.");
-    assert!(
-        call.take_for_call(true, Instant::now() + BATCH_INTERVAL * 2, |_, _, _, _| {
-            DeliveryDecision::Allow
-        })
-        .context
-        .is_none()
     );
 }

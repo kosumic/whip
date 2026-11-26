@@ -97,19 +97,7 @@ impl<'a> App<'a> {
         }
         super::deliver_pending_observations(self.owner, session, self.agent.as_deref()).await;
         if let Some(updates) = &self.updates {
-            let batch = updates.take_for_call(
-                crate::automatic_speech::tracking_enabled(),
-                Instant::now(),
-                |source, turn, epoch, revision| {
-                    self.owner.context_delivery(
-                        self.agent.as_deref(),
-                        source,
-                        turn,
-                        epoch,
-                        revision,
-                    )
-                },
-            );
+            let batch = updates.take(Instant::now());
             self.owner.agent_events(&batch.events);
             let delivered = if let Some(text) = batch.context {
                 self.owner.view.lock().backend_text = Some(text.clone());

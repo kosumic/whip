@@ -74,19 +74,7 @@ impl<'a> App<'a> {
         )
         .await;
         if let Some(updates) = &self.updates {
-            let batch = updates.take_for_call(
-                crate::automatic_speech::tracking_enabled(),
-                Instant::now(),
-                |source, turn, epoch, revision| {
-                    self.owner.context_delivery(
-                        self.agent.map(AsRef::as_ref),
-                        source,
-                        turn,
-                        epoch,
-                        revision,
-                    )
-                },
-            );
+            let batch = updates.take(Instant::now());
             self.owner.agent_events(&batch.events);
             if let Some(text) = batch.context {
                 self.owner.view.lock().backend_text = Some(text.clone());

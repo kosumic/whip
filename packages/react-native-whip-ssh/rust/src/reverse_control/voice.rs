@@ -214,29 +214,6 @@ impl WhipToolSession {
             .collect()
     }
 
-    pub(crate) fn context_delivery(
-        &self,
-        source: &crate::realtime_voice::observer::SourceId,
-        turn: Option<&str>,
-        epoch: u64,
-        revision: u64,
-    ) -> crate::realtime_voice::observer::DeliveryDecision {
-        use crate::realtime_voice::observer::DeliveryDecision;
-        let mut waiting = false;
-        for agent in self.observed_delegations.lock().iter() {
-            match agent.context_delivery(source, turn, epoch, revision) {
-                DeliveryDecision::Allow => return DeliveryDecision::Allow,
-                DeliveryDecision::Wait => waiting = true,
-                DeliveryDecision::Ignore => {}
-            }
-        }
-        if waiting {
-            DeliveryDecision::Wait
-        } else {
-            DeliveryDecision::Ignore
-        }
-    }
-
     pub(crate) fn check(&self) -> Result<(), BrowserError> {
         if self.closed.load(Ordering::Acquire) || self.started.elapsed() >= LIFETIME {
             return Err(BrowserError::new(
