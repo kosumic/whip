@@ -1784,7 +1784,7 @@ describe.each(['android', 'ios'] as const)(
         act(() => { ui('TerminalRendererHost').props.onBufferModeChange(target, true); });
       }
       const canvas = (): number => ui('TerminalRendererHost').parent!.props.style.transform[0].translateY;
-      const restingInsets = { top: sessionChromeInset, bottom: restingClearance };
+      const restingInsets = { top: sessionChromeInset / 2, bottom: restingClearance };
 
       // Cover both an untouched grid and a WebView already pulled to its bottom boundary.
       for (const boundaryReveal of [0, restingClearance]) {
