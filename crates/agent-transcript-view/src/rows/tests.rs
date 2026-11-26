@@ -100,7 +100,7 @@ fn host_activity_keeps_tools_visible_across_assistant_turns_until_idle_or_a_new_
         "Assistant",
         json!([
             tool("read", "Read", "Completed"),
-            tool("shell", "functions.exec_command", "Completed")
+            tool("shell", "terminal_exec", "Completed")
         ]),
     );
     // A provider can append an assistant-only turn. It is not a new user turn.

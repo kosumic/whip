@@ -5,7 +5,7 @@ import ChevronDown from 'lucide-react-native/icons/chevron-down';
 import Check from 'lucide-react-native/icons/check';
 import Copy from 'lucide-react-native/icons/copy';
 import { useCopyFeedback } from '../hooks/useCopyFeedback';
-import { voiceToolPart, type VoiceTranscriptMessage, type VoiceToolGroup } from '../lib/voiceTranscript';
+import { voiceToolPart, type VoiceTranscriptEvent, type VoiceTranscriptMessage, type VoiceToolGroup } from '../lib/voiceTranscript';
 import { Text } from './ui/text';
 import { SPEECH_CAPTION_COLORS, SPEECH_CAPTION_WEIGHT } from '../lib/speechCaptionStyle';
 import { ChatToolCard } from './ChatToolCard';
@@ -44,7 +44,9 @@ export function VoiceTranscript({ messages, reducedMotion, playback = true, cont
   contentInsets?: { top: number; bottom: number };
 }) {
   const { t } = useTranslation();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
+  // Light tool cards need their own surface over the dark call canvas.
+  const toolSurface = isDark ? undefined : { backgroundColor: colors.canvas };
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const toggle = (id: string) => setExpanded(previous => {
     const next = new Set(previous);
@@ -115,14 +117,23 @@ export function VoiceTranscript({ messages, reducedMotion, playback = true, cont
           following.current = true; setDetached(false);
         }
       }} scrollEventThrottle={100}>
-      {rows.map(message => {
-        if ('tools' in message) return <View key={message.id} style={[styles.tool, { backgroundColor: colors.canvas }]}>
-          <ChatToolGroup count={message.count} tools={message.tools} expanded={expanded.has(message.id)} onToggle={() => toggle(message.id)} />
-        </View>;
-        if (message.event) return <TranscriptEvent key={message.id} message={message} active={playback && !reducedMotion}
-          expanded={expanded.has(message.id)} onToggle={() => toggle(message.id)} />;
+      {rows.map((message, index) => {
+        const previous = rows[index - 1];
+        const rowSpacing = index > 0 && styles.rowGap;
+        const group = 'tools' in message;
+        const toolEvent = group ? undefined : message.event;
+        if (group || toolEvent) {
+          const followsTool = previous && ('tools' in previous || previous.event);
+          const spacing = followsTool ? styles.toolGap : rowSpacing;
+          return <View key={message.id} style={[styles.tool, toolSurface, spacing]}>
+            {group
+              ? <ChatToolGroup count={message.count} tools={message.tools} expanded={expanded.has(message.id)} onToggle={() => toggle(message.id)} />
+              : toolEvent && <TranscriptEvent id={message.id} event={toolEvent} active={playback && !reducedMotion}
+                expanded={expanded.has(message.id)} onToggle={() => toggle(message.id)} />}
+          </View>;
+        }
         const [heard, current, upcoming] = spokenTextParts(message);
-        return <View key={message.id} style={message.role === 'user' ? styles.userTurn : styles.assistant}
+        return <View key={message.id} style={[message.role === 'user' ? styles.userTurn : styles.assistant, rowSpacing]}
           onLayout={event => { positions.current.set(message.id, { ...positions.current.get(message.id), y: event.nativeEvent.layout.y }); follow(); }}>
           {message.role === 'user' ? <View style={styles.user}><Text selectable style={styles.userText}>{message.text}</Text></View>
             : !playback ? <Text selectable accessibilityLabel={message.text} style={[styles.assistantText, styles.heard]}>{message.text}</Text>
@@ -149,35 +160,22 @@ function TranscriptCopyButton({ text }: { text: string }) {
   </Pressable>;
 }
 
-function TranscriptEvent({ message, active, expanded, onToggle }: {
-  message: VoiceTranscriptMessage; active: boolean; expanded: boolean; onToggle: () => void;
+function TranscriptEvent({ id, event, active, expanded, onToggle }: {
+  id: string; event: VoiceTranscriptEvent; active: boolean; expanded: boolean; onToggle: () => void;
 }) {
   const { t } = useTranslation();
-  const { colors } = useTheme();
-  const event = message.event!;
   const { kind, name, status, input, output } = event;
-  const item = useMemo(() => kind === 'tool' ? voiceToolPart(message.id, { kind, name, status, input, output }) : null,
-    [message.id, kind, name, status, input, output]);
-  // Chat content follows the app theme; give it a matching surface on the dark call screen.
-  if (item) return <View style={[styles.tool, { backgroundColor: colors.canvas }]}><ChatToolCard item={item}
-    expanded={expanded} onToggle={onToggle} active={active}
-    onLinkPress={url => reportBackgroundFailure(Linking.openURL(url), 'voice-transcript-link')} /></View>;
-  return <View style={styles.event}>
-    <Pressable accessibilityRole="button" accessibilityState={{ expanded }} onPress={onToggle}>
-      <Text style={styles.eventType}>{t('voiceTranscript.delegation')}</Text>
-      <Text style={styles.eventName}>{event.name}</Text>
-      <Text style={styles.eventStatus}>{event.status.replaceAll('_', ' ')}</Text>
-    </Pressable>
-    {expanded && <View style={styles.eventDetails}>
-      {event.input && <><Text style={styles.eventType}>{t('voiceTranscript.input')}</Text><Text selectable style={styles.eventBody}>{event.input}</Text></>}
-      {event.output && <><Text style={styles.eventType}>{t('voiceTranscript.result')}</Text><Text selectable style={styles.eventBody}>{event.output}</Text></>}
-    </View>}
-  </View>;
+  const item = useMemo(() => voiceToolPart(id, { kind, name, status, input, output }), [id, kind, name, status, input, output]);
+  const heading = kind === 'delegation' ? { title: `${t('voiceTranscript.delegation')} · ${name}`, subtitle: item.state.title } : undefined;
+  return <ChatToolCard item={item} heading={heading} expanded={expanded} onToggle={onToggle} active={active}
+    onLinkPress={url => reportBackgroundFailure(Linking.openURL(url), 'voice-transcript-link')} />;
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, minHeight: 0 },
-  content: { paddingHorizontal: 24, gap: 28 },
+  content: { paddingHorizontal: 24 },
+  rowGap: { marginTop: 28 },
+  toolGap: { marginTop: 12 },
   userTurn: { alignSelf: 'flex-end', maxWidth: '88%' },
   user: { backgroundColor: COLORS.bubble, borderRadius: 20, paddingHorizontal: 18, paddingVertical: 12 },
   assistant: { alignSelf: 'stretch' },
@@ -189,10 +187,4 @@ const styles = StyleSheet.create({
   upcoming: { ...SPEECH_TYPE, color: COLORS.upcoming },
   latest: { position: 'absolute', alignSelf: 'center', backgroundColor: COLORS.bubble, borderRadius: 22, padding: 12 },
   tool: { alignSelf: 'stretch', borderRadius: 6 },
-  event: { alignSelf: 'stretch', borderWidth: 1, borderColor: '#383838', borderRadius: 12, padding: 14, gap: 10 },
-  eventType: { color: COLORS.accent, fontSize: 12, lineHeight: 18 },
-  eventName: { color: COLORS.text, fontSize: 16, lineHeight: 24 },
-  eventStatus: { color: COLORS.upcoming, fontSize: 13, lineHeight: 20 },
-  eventDetails: { gap: 6, paddingTop: 8 },
-  eventBody: { color: COLORS.text, fontSize: 14, lineHeight: 22 },
 });

@@ -88,27 +88,33 @@ test('renders delegation and tool status with expandable input and results besid
   let renderer!: ReactTestRenderer;
   const delegation: VoiceTranscriptMessage = { id: 'delegation', role: 'assistant', text: 'Codex · submitted', active: false, spokenUtf16: 0,
     event: { kind: 'delegation', name: 'Codex', status: 'submitted', input: 'Check the build' } };
-  const tool: VoiceTranscriptMessage = { id: 'tool', role: 'assistant', text: 'terminal_exec · completed', active: false, spokenUtf16: 0,
-    event: { kind: 'tool', name: 'terminal_exec', status: 'completed', input: 'cargo check', output: 'Build passed' } };
+  const tool: VoiceTranscriptMessage = { id: 'tool', role: 'assistant', text: 'tool · completed', active: false, spokenUtf16: 0,
+    event: { kind: 'tool', name: 'tool', status: 'completed', input: 'list sessions', output: 'Two sessions' } };
   act(() => { renderer = create(<VoiceTranscript messages={[delegation, tool]} reducedMotion />); });
-  expect(JSON.stringify(renderer.toJSON())).toContain('voiceTranscript.delegation');
+  const cards = () => renderer.root.findAllByType(Pressable).filter(node => node.props.testID === 'agent-tool-toggle');
+  expect(cards()).toHaveLength(2);
+  expect(JSON.stringify(renderer.toJSON())).toContain('voiceTranscript.delegation · Codex');
   expect(JSON.stringify(renderer.toJSON())).toContain('submitted');
-  act(() => { renderer.root.findByProps({ testID: 'agent-tool-toggle' }).props.onPress(); });
+  act(() => { cards()[0].props.onPress(); });
   act(() => { renderer.root.findByProps({ accessibilityLabel: 'Tool input details' }).props.onPress(); });
-  expect(JSON.stringify(renderer.toJSON())).toContain('cargo check');
-  expect(JSON.stringify(renderer.toJSON())).toContain('Build passed');
   act(() => { renderer.root.findAllByType(Pressable).find(node => node.props.accessibilityLabel === 'Copy tool input')!.props.onPress(); });
-  expect(copyTextWithHaptic).toHaveBeenLastCalledWith('cargo check');
+  expect(copyTextWithHaptic).toHaveBeenLastCalledWith('Check the build');
+  act(() => { cards()[0].props.onPress(); cards()[1].props.onPress(); });
+  act(() => { renderer.root.findByProps({ accessibilityLabel: 'Tool input details' }).props.onPress(); });
+  expect(JSON.stringify(renderer.toJSON())).toContain('list sessions');
+  expect(JSON.stringify(renderer.toJSON())).toContain('Two sessions');
+  act(() => { renderer.root.findAllByType(Pressable).find(node => node.props.accessibilityLabel === 'Copy tool input')!.props.onPress(); });
+  expect(copyTextWithHaptic).toHaveBeenLastCalledWith('list sessions');
   act(() => { renderer.root.findAllByType(Pressable).find(node => node.props.accessibilityLabel === 'Copy tool output')!.props.onPress(); });
-  expect(copyTextWithHaptic).toHaveBeenLastCalledWith('Build passed');
+  expect(copyTextWithHaptic).toHaveBeenLastCalledWith('Two sessions');
   act(() => renderer.unmount());
 });
 
-test('uses structured shell arguments and preserves nested input when copying', () => {
+test.each(['shell', 'terminal_exec'])('renders %s as a chat command and preserves nested input when copying', name => {
   let renderer!: ReactTestRenderer;
   const input = JSON.stringify({ command: 'cargo check', options: { cwd: '/repo' } });
   const message: VoiceTranscriptMessage = { ...reply, id: 'shell', text: '', active: false,
-    event: { kind: 'tool', name: 'shell', status: 'completed', input, output: 'Build passed' } };
+    event: { kind: 'tool', name, status: 'completed', input, output: 'Build passed' } };
   act(() => { renderer = create(<VoiceTranscript messages={[message]} reducedMotion />); });
   expect(renderer.root.findByProps({ testID: 'agent-tool-toggle' }).props.accessibilityLabel).toBe('Shell, cargo check');
   act(() => { renderer.root.findByProps({ testID: 'agent-tool-toggle' }).props.onPress(); });

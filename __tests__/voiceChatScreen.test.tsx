@@ -19,10 +19,13 @@ jest.mock('../src/services/voiceSessionManager', () => {
   }) };
 });
 jest.mock('../src/components/VoiceOrb', () => ({ VoiceOrb: 'VoiceOrb' }));
-jest.mock('../src/components/ChatToolCard', () => ({ ChatToolCard: 'ChatToolCard' }));
+jest.mock('../src/components/MarkdownText', () => ({ MarkdownText: 'MarkdownText' }));
+jest.mock('../src/components/ChatFileDiff', () => ({ ChatFileDiff: 'ChatFileDiff' }));
+jest.mock('../src/components/ChatPromptImage', () => ({ ChatPromptImage: 'ChatPromptImage' }));
+jest.mock('../src/services/remoteFileTransfer', () => ({ cacheRemoteFile: jest.fn() }));
 jest.mock('react-native-css-interop/jsx-runtime', () => jest.requireActual('react/jsx-runtime'));
 jest.mock('react-native', () => ({
-  ActivityIndicator: 'ActivityIndicator', Modal: 'Modal', Pressable: 'Pressable', View: 'View', ScrollView: 'ScrollView',
+  ActivityIndicator: 'ActivityIndicator', Modal: 'Modal', Pressable: 'Pressable', View: 'View', ScrollView: 'ScrollView', Text: 'Text',
   StyleSheet: { create: (styles: unknown) => styles },
 }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
@@ -52,7 +55,15 @@ jest.mock('lucide-react-native/icons/message-square', () => 'MessageSquare');
 jest.mock('lucide-react-native/icons/chevron-down', () => 'ChevronDown');
 jest.mock('lucide-react-native/icons/chevron-right', () => 'ChevronRight');
 jest.mock('lucide-react-native/icons/check', () => 'Check');
+jest.mock('lucide-react-native/icons/circle-alert', () => 'CircleAlert');
 jest.mock('lucide-react-native/icons/copy', () => 'Copy');
+jest.mock('lucide-react-native/icons/external-link', () => 'ExternalLink');
+jest.mock('lucide-react-native/icons/file', () => 'File');
+jest.mock('lucide-react-native/icons/file-diff', () => 'FileDiff');
+jest.mock('lucide-react-native/icons/file-plus', () => 'FilePlus');
+jest.mock('lucide-react-native/icons/link', () => 'Link');
+jest.mock('lucide-react-native/icons/search', () => 'Search');
+jest.mock('lucide-react-native/icons/square-terminal', () => 'SquareTerminal');
 jest.mock('lucide-react-native/icons/skip-forward', () => 'SkipForward');
 jest.mock('lucide-react-native/icons/x', () => 'X');
 jest.mock('lucide-react-native/icons/volume-2', () => 'Volume2');
@@ -79,6 +90,12 @@ function press(label: string) {
 }
 
 const renderedText = () => renderer.root.findAllByType(Text).map(node => node.props.children);
+
+function renderedStrings(tree: ReturnType<ReactTestRenderer['toJSON']> | string): string[] {
+  if (typeof tree === 'string') return [tree];
+  if (Array.isArray(tree)) return tree.flatMap(renderedStrings);
+  return tree?.children?.flatMap(renderedStrings) ?? [];
+}
 
 beforeEach(async () => {
   jest.clearAllMocks();
@@ -312,13 +329,13 @@ test.each(['speaking', 'error'] as const)('Live shows the backend result once in
   act(() => publish({ ...listening, provider: 'openai', liveSeconds: 29, backendText, phase, messages,
     error: phase === 'error' ? 'Voice delivery failed.' : null }));
   expect(renderer.root.findByProps({ accessibilityLabel: caption })).toBeDefined();
-  expect(renderedText()).not.toContain(backendText);
+  const backendResults = () => renderedStrings(renderer.toJSON()).filter(text => text === backendText);
+  expect(backendResults()).toHaveLength(0);
 
-  const details = renderer.root.findAllByProps({ accessibilityRole: 'button' })
-    .find(node => node.props.accessibilityState?.expanded === false);
-  expect(details).toBeDefined();
-  act(() => { details?.props.onPress(); });
-  expect(renderedText().filter(text => text === backendText)).toHaveLength(1);
+  const details = renderer.root.findByProps({ testID: 'agent-tool-toggle' });
+  expect(details.props.accessibilityState.expanded).toBe(false);
+  act(() => { details.props.onPress(); });
+  expect(backendResults()).toHaveLength(1);
 });
 
 test('a terminal voice error offers a working fresh call without closing the screen', async () => {

@@ -40,16 +40,30 @@ export function voiceToolPart(id: string, event: VoiceTranscriptEvent): Transcri
       if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') input[key] = value;
     }
   }
-  const status = event.status === 'failed' || event.status === 'error' ? 'error'
-    : event.status === 'pending' || event.status === 'requested' ? 'pending'
-    : event.status === 'running' ? 'running' : 'completed';
+  const title = event.status.replaceAll('_', ' ');
+  const status = toolStatus(event.status);
   return {
     type: 'tool', id, callId: id, tool: event.name,
     state: {
-      status, input, inputJson: event.input, title: event.status.replaceAll('_', ' '),
+      status, input, inputJson: event.input, title,
       output: status === 'error' ? undefined : event.output,
-      error: status === 'error' ? event.output : undefined,
+      error: status === 'error' ? event.output || title : undefined,
       files: [], diagnostics: [], loaded: [],
     },
   };
+}
+
+function toolStatus(status: string): TranscriptToolPart['state']['status'] {
+  switch (status) {
+    case 'error':
+    case 'failed':
+    case 'not_admitted':
+    case 'rejected': return 'error';
+    case 'pending':
+    case 'queued':
+    case 'requested': return 'pending';
+    case 'admitted':
+    case 'running': return 'running';
+    default: return 'completed';
+  }
 }

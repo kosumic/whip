@@ -60,7 +60,9 @@ pub fn tool_groups<'a>(
             let tool = tool.rsplit(" · ").next().unwrap_or(tool);
             let tool = tool.rsplit('.').next().unwrap_or(tool);
             let tool = match tool.to_ascii_lowercase().as_str() {
-                "bash" | "shell" | "exec_command" | "command" | "terminal" => "Shell",
+                "bash" | "shell" | "exec_command" | "command" | "terminal" | "terminal_exec" => {
+                    "Shell"
+                }
                 "read" | "read_file" => "Read",
                 "edit" | "patch" | "apply_patch" => "Edit",
                 "write" | "write_file" => "Write",

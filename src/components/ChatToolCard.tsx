@@ -70,7 +70,7 @@ function primitiveArgs(
 
 function toolKind(name: string): ToolKind {
   if (/^(?:patch|edit|write|file|read)$/i.test(name)) return 'file';
-  if (/^(?:shell|bash|command|terminal)$/i.test(name)) return 'command';
+  if (/^(?:shell|bash|command|terminal|terminal_exec)$/i.test(name)) return 'command';
   if (/web|search|fetch|open_page/i.test(name)) return 'web';
   if (/mcp| · /.test(name)) return 'mcp';
   return 'other';
@@ -147,13 +147,19 @@ function toolHeaderPreview(text: string): string {
   return preview.length < text.length ? `${preview}…` : preview;
 }
 
-export function ChatToolCard({ item, expanded, onToggle, active, onLinkPress, directory }: BlockExpansion & { item: TranscriptToolPart; active: boolean; onLinkPress: (url: string) => void; directory?: string }) {
+export function ChatToolCard({ item, expanded, onToggle, active, onLinkPress, directory, heading }: BlockExpansion & {
+  item: TranscriptToolPart;
+  active: boolean;
+  onLinkPress: (url: string) => void;
+  directory?: string;
+  heading?: Pick<ToolPresentation, 'title' | 'subtitle'>;
+}) {
   const { t } = useTranslation();
   const imageContext = useContext(TranscriptMarkdownImages);
   const images = item.state.viewedImages ?? [];
   const { colors } = useTheme();
   const failed = item.state.status === 'error';
-  const presentation = toolPresentation(item, t);
+  const presentation: ToolPresentation = heading ? { ...heading, args: [], kind: 'other' } : toolPresentation(item, t);
   const name = item.tool.toLowerCase();
   const files = item.state.files;
   // Keep tool file diffs collapsed until the user selects a file.
