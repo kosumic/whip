@@ -354,40 +354,6 @@ impl PinnedAgent {
             .collect()
     }
 
-    pub(crate) fn context_delivery(
-        &self,
-        source: &crate::realtime_voice::observer::SourceId,
-        turn: Option<&str>,
-        epoch: u64,
-        revision: u64,
-    ) -> crate::realtime_voice::observer::DeliveryDecision {
-        use crate::realtime_voice::observer::DeliveryDecision;
-        if *source != self.source_id() {
-            return DeliveryDecision::Ignore;
-        }
-        let receipts = self.receipts.lock();
-        if turn.is_some_and(|turn| {
-            receipts.values().any(|receipt| {
-                receipt.accepted
-                    && !receipt.lost
-                    && receipt.epoch == Some(epoch)
-                    && receipt
-                        .after_revision
-                        .is_some_and(|before| revision > before)
-                    && receipt.turn_id.as_deref() == Some(turn)
-            })
-        }) {
-            return DeliveryDecision::Allow;
-        }
-        if receipts.values().any(|receipt| {
-            receipt.pending && receipt.epoch.is_none_or(|expected| expected == epoch)
-        }) {
-            DeliveryDecision::Wait
-        } else {
-            DeliveryDecision::Ignore
-        }
-    }
-
     fn check_state(&self, require_fresh: bool) -> Result<(), HerdrControlError> {
         if !super::runtimes()
             .read()

@@ -33,12 +33,10 @@ fn lost_completion_observation_does_not_disable_submissions_but_an_uncertain_wri
 }
 
 #[test]
-fn delegated_context_and_progress_require_the_original_source_epoch_and_post_admission_revision()
+fn delegated_progress_requires_an_active_receipt_with_the_original_turn_epoch_and_later_revision()
 -> Result<(), Box<dyn std::error::Error>> {
-    use crate::realtime_voice::observer::DeliveryDecision;
     let _guard = terminal_delivery_test_guard();
     let (_runtime, pinned, _) = fixture("voice-receipt-generation")?;
-    let source = pinned.source_id();
     pinned.receipts.lock().insert(
         "call".into(),
         Receipt {
@@ -49,29 +47,16 @@ fn delegated_context_and_progress_require_the_original_source_epoch_and_post_adm
             ..Receipt::default()
         },
     );
-    assert_eq!(
-        pinned.context_delivery(&source, Some("turn"), 7, 11),
-        DeliveryDecision::Allow
-    );
     assert!(pinned.progress_matches("call", "turn", 7, 11));
+    assert!(!pinned.progress_matches("unknown", "turn", 7, 11));
     for (turn, epoch, revision) in [
         ("other", 7, 11),
         ("turn", 8, 11),
         ("turn", 7, 10),
         ("turn", 7, 9),
     ] {
-        assert_eq!(
-            pinned.context_delivery(&source, Some(turn), epoch, revision),
-            DeliveryDecision::Ignore
-        );
         assert!(!pinned.progress_matches("call", turn, epoch, revision));
     }
-    let mut other = source.clone();
-    other.binding_generation += 1;
-    assert_eq!(
-        pinned.context_delivery(&other, Some("turn"), 7, 11),
-        DeliveryDecision::Ignore
-    );
     pinned
         .receipts
         .lock()
@@ -79,20 +64,13 @@ fn delegated_context_and_progress_require_the_original_source_epoch_and_post_adm
         .ok_or("missing receipt")?
         .terminal = true;
     assert!(!pinned.progress_matches("call", "turn", 7, 11));
-    assert_eq!(
-        pinned.context_delivery(&source, Some("turn"), 7, 11),
-        DeliveryDecision::Allow
-    );
-    pinned
-        .receipts
-        .lock()
-        .get_mut("call")
-        .ok_or("missing receipt")?
-        .lost = true;
-    assert_eq!(
-        pinned.context_delivery(&source, Some("turn"), 7, 11),
-        DeliveryDecision::Ignore
-    );
+    {
+        let mut receipts = pinned.receipts.lock();
+        let receipt = receipts.get_mut("call").ok_or("missing receipt")?;
+        receipt.terminal = false;
+        receipt.lost = true;
+    }
+    assert!(!pinned.progress_matches("call", "turn", 7, 11));
     Ok(())
 }
 

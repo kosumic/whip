@@ -1,5 +1,6 @@
 //! Call-owned, read-only observation of native transcript commits. Ingestion
 //! never waits for a provider. History is used only for silent baselines.
+//! Live call context is independent of automatic announcement/playback settings.
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     sync::{Arc, LazyLock, Weak},
@@ -30,14 +31,6 @@ const MAX_CALL_BYTES: usize = 256 * 1024;
 const MAX_BATCH_BYTES: usize = 4096;
 const MAX_AGE: Duration = Duration::from_secs(30);
 const BATCH_INTERVAL: Duration = Duration::from_millis(500);
-const CORRELATION_GRACE: Duration = Duration::from_secs(5);
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum DeliveryDecision {
-    Allow,
-    Wait,
-    Ignore,
-}
 pub(crate) struct Window<'a> {
     pub revision: u64,
     pub messages: Vec<&'a AgentTranscriptMessage>,
@@ -129,7 +122,7 @@ struct Cursor {
 }
 
 enum Content {
-    Context(String, Option<String>, bool),
+    Context(String, Option<String>),
     Tool(crate::voice_history::Caption),
 }
 struct Pending {
@@ -214,7 +207,6 @@ impl Subscription {
                             .into_iter()
                             .rev(),
                         true,
-                        false,
                     );
                 }
             });
@@ -227,17 +219,7 @@ impl Subscription {
         subscription
     }
 
-    #[cfg(test)]
-    pub(crate) fn take(&self, enabled: bool, now: Instant) -> Batch {
-        self.take_for_call(enabled, now, |_, _, _, _| DeliveryDecision::Ignore)
-    }
-
-    pub(super) fn take_for_call(
-        &self,
-        enabled: bool,
-        now: Instant,
-        mut delegated: impl FnMut(&SourceId, Option<&str>, u64, u64) -> DeliveryDecision,
-    ) -> Batch {
+    pub(crate) fn take(&self, now: Instant) -> Batch {
         let events = self.take_events();
         let mut state = self.0.lock();
         let mut context = Vec::new();
@@ -261,25 +243,7 @@ impl Subscription {
                 .is_some_and(|cursor| cursor.live && cursor.epoch == front.epoch);
             let expired = now.duration_since(front.at) > MAX_AGE;
             let is_context = matches!(front.content, Content::Context(..));
-            let permitted = match &front.content {
-                Content::Context(_, turn, unsolicited) if !enabled || !unsolicited => {
-                    match delegated(&front.source, turn.as_deref(), front.epoch, front.revision) {
-                        DeliveryDecision::Allow => true,
-                        DeliveryDecision::Wait
-                            if now.duration_since(front.at) < CORRELATION_GRACE =>
-                        {
-                            break;
-                        }
-                        _ => false,
-                    }
-                }
-                _ => true,
-            };
-            if valid
-                && !expired
-                && is_context
-                && permitted
-                && (!ready || bytes + front.bytes > MAX_BATCH_BYTES)
+            if valid && !expired && is_context && (!ready || bytes + front.bytes > MAX_BATCH_BYTES)
             {
                 break;
             }
@@ -292,7 +256,7 @@ impl Subscription {
                 continue;
             }
             match pending.content {
-                Content::Context(text, turn, _) if permitted => {
+                Content::Context(text, turn) => {
                     if let Some(turn) = turn {
                         turns.push((pending.source, turn, pending.epoch, pending.revision));
                     }
@@ -342,10 +306,6 @@ impl Observer {
         self.dropped |= bounded_push(&mut self.pending, &mut self.pending_bytes, pending);
     }
 
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "Authoritative borrowed commit with explicit reset and preference"
-    )]
     fn accept<'a>(
         &mut self,
         source: &Source,
@@ -354,7 +314,6 @@ impl Observer {
         view: &Window<'_>,
         messages: impl Iterator<Item = &'a AgentTranscriptMessage>,
         reset: bool,
-        enabled: bool,
     ) {
         if !self.scope.includes(&source.id) {
             return;
@@ -475,7 +434,6 @@ impl Observer {
                                     record,
                                     turn.filter(|_| view.provider_turns)
                                         .map(|turn| turn.id.clone()),
-                                    enabled,
                                 ),
                             },
                         );
@@ -713,7 +671,6 @@ pub(crate) fn bound(
                 .into_iter()
                 .rev(),
             true,
-            false,
         );
     });
 }
@@ -727,7 +684,6 @@ pub(crate) fn accept(
     view: &Window<'_>,
     update: &crate::AgentTranscriptUpdate,
 ) {
-    let enabled = crate::automatic_speech::tracking_enabled();
     let mut registry = REGISTRY.lock();
     let sources: Vec<_> = registry
         .sources
@@ -774,7 +730,6 @@ pub(crate) fn accept(
                         .into_iter()
                         .rev(),
                     reset,
-                    enabled,
                 );
             } else {
                 // Use current authoritative records, never a stale producer's copy.
@@ -792,7 +747,6 @@ pub(crate) fn accept(
                         _ => None,
                     }),
                     false,
-                    enabled,
                 );
             }
         });

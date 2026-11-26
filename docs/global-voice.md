@@ -129,12 +129,14 @@ prove that the same question is still pending. This reader is absent from
 agent-bound calls and the ordinary MCP catalog; the existing MCP terminal-output
 operation `agents.read` retains its separate launch-scoped authorization.
 
-When **Voice announcements** is enabled, both provider modes also receive new
-assistant prose and structured questions as quiet background context. Global
-calls observe eligible agents on already-connected hosts, including agents
-whose Chat View has never been opened. Disabling announcements stops unsolicited
-updates; explicitly delegated answers still use the same event path after their
-source and provider turn are correlated. Agent-bound calls observe only their
+Both provider modes receive new assistant prose and structured questions as
+quiet background context independently of **Voice announcements**. That setting
+controls automatic spoken announcements and read-aloud, not the call's access to
+live agent context. Global calls observe eligible agents on already-connected
+hosts, including agents whose Chat View has never been opened. Independent updates
+and delegated answers use the same event path; background context never establishes
+delegation completion, which still requires the original correlated provider-turn
+receipt. Agent-bound calls observe only their
 original pinned binding, including tasks started before the call or through
 ordinary typed input. User messages are included only in explicit history and
 bounded agent-bound startup context. Normal tool payloads, reasoning, plans,
