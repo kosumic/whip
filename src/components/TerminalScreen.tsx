@@ -721,7 +721,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           insets: viewportLayout.terminalInsets,
           sessionChromeInset,
           sessionChromeVisible: true,
-        }), sessionChromeInset),
+        }), sessionChromeInset / 2),
       [sessionChromeInset, viewportLayout.terminalInsets],
     );
     const terminalVisualViewport = useMemo(
