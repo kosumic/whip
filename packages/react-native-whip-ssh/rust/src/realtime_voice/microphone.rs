@@ -41,6 +41,29 @@ pub(super) struct State {
     capture_after: Option<Instant>,
 }
 
+#[derive(Clone, Copy, serde::Serialize)]
+pub(super) struct Announcement {
+    pub id: u64,
+    pub lease: u64,
+    pub text: AnnouncementText,
+    pub cancelled: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+pub(super) enum AnnouncementText {
+    Muted,
+    Unmuted,
+}
+
+impl AnnouncementText {
+    pub fn as_c_str(self) -> &'static std::ffi::CStr {
+        match self {
+            Self::Muted => c"Muted",
+            Self::Unmuted => c"Unmuted",
+        }
+    }
+}
+
 impl State {
     pub fn new(call_id: u64, muted: bool) -> Self {
         Self {
@@ -75,14 +98,16 @@ impl State {
         self.policy.muted() || self.speaking || self.capture_after.is_some_and(|after| now < after)
     }
 
-    pub fn announcement(&self, lease: u64) -> Option<serde_json::Value> {
-        self.announcements.front().map(|muted| {
-            serde_json::json!({
-                "id": self.announcement_id,
-                "lease": lease,
-                "text": if *muted { "Muted" } else { "Unmuted" },
-                "cancelled": self.cancelled,
-            })
+    pub fn announcement(&self, lease: u64) -> Option<Announcement> {
+        self.announcements.front().map(|muted| Announcement {
+            id: self.announcement_id,
+            lease,
+            text: if *muted {
+                AnnouncementText::Muted
+            } else {
+                AnnouncementText::Unmuted
+            },
+            cancelled: self.cancelled,
         })
     }
 
@@ -255,10 +280,10 @@ impl RealtimeVoiceAdapter {
             }
         }
         let mut view = self.view.lock();
-        view.muted = muted;
-        view.level = 0.0;
-        if matches!(view.phase, "listening" | "muted") {
-            view.phase = if muted { "muted" } else { "listening" };
+        view.fields.muted = muted;
+        view.fields.level = 0.0;
+        if matches!(view.fields.phase, "listening" | "muted") {
+            view.fields.phase = if muted { "muted" } else { "listening" };
         }
     }
 

@@ -167,6 +167,7 @@ pub(crate) fn playback_owner_with_commands() -> Result<
         .ok_or("Speech lease unavailable")?;
     let (commands, receiver) = tokio::sync::mpsc::channel(8);
     let (cancel, _) = watch::channel(false);
+    let changes = watch::Sender::new(1);
     Ok((
         Arc::new(RealtimeVoiceAdapter {
             session_id: None,
@@ -178,45 +179,33 @@ pub(crate) fn playback_owner_with_commands() -> Result<
             live: false,
             media: Mutex::new(None),
             input_health: Mutex::new(voice::health::Input::new()?),
-            view: Mutex::new(voice::View {
-                resumed_context_truncated: None,
-                phase: "listening",
-                turn_working: false,
-                muted: false,
-                level: 0.0,
-                playback_level: 0.0,
-                text: String::new(),
-                user_text: String::new(),
-                error: None,
-                input_tokens: 0,
-                output_tokens: 0,
-                estimated_usd: None,
-                cost_incomplete: false,
-                messages: Vec::new(),
-                playback: voice::transcript::Timing::default(),
-                signal: voice::echo::Signal::default(),
-                startup: startup::Timings::default(),
-                media: voice::MediaDiagnostics::default(),
-                media_ready: true,
-                recovery: recovery::State::Active,
-                startup_attempt: 0,
-                capture_packets: 0,
-                capture_gaps: 0,
-                caption_events: 0,
-                capture_level: 0.0,
-                uploaded_packets: 0,
-                server_events: 0,
-                input_speech_events: 0,
-                input_stalled: false,
-                live_command_errors: 0,
-                live_error: None,
-                tool: None,
-                backend_text: None,
-                live_seconds: None,
-                usage_finalized: false,
-                captions: None,
-            }),
-            output: Mutex::new(voice::Output::default()),
+            view: voice::presentation::Observed::new(
+                voice::View {
+                    text: voice::presentation::TextFields::default(),
+                    fields: voice::presentation::Fields {
+                        phase: "listening",
+                        muted: false,
+                        ..Default::default()
+                    },
+                    startup: startup::Timings::default(),
+                    media: voice::MediaDiagnostics::default(),
+                    media_ready: true,
+                    recovery: recovery::State::Active,
+                    startup_attempt: 0,
+                    caption_events: 0,
+                    capture_level: 0.0,
+                    uploaded_packets: 0,
+                    server_events: 0,
+                    input_speech_events: 0,
+                    input_stalled: false,
+                    live_command_errors: 0,
+                    live_error: None,
+                    tool: None,
+                    captions: None,
+                },
+                &changes,
+            ),
+            output: voice::presentation::Observed::new(voice::Output::default(), &changes),
             echo: Mutex::new(None),
             commands,
             input: crate::audio_ingress::NativeIngress::realtime(24_000, voice::FRAME * 4, 32)?,
@@ -234,7 +223,12 @@ pub(crate) fn playback_owner_with_commands() -> Result<
             global: Mutex::new(None),
             updates: Mutex::new(None),
             global_instructions: String::new(),
-            continuity: Mutex::default(),
+            continuity: voice::presentation::Observed::new(
+                voice_call_openai::continuity::Policy::default(),
+                &changes,
+            ),
+            presentation: Mutex::default(),
+            changes,
             continuity_enabled: true,
             retiring: AtomicBool::new(false),
             failure: Mutex::new(None),
@@ -251,7 +245,7 @@ fn starting_owner() -> Result<Arc<RealtimeVoiceAdapter>, &'static str> {
     {
         let mut view = owner.view.lock();
         view.media_ready = false;
-        view.phase = "starting";
+        view.fields.phase = "starting";
     }
     Ok(owner)
 }
@@ -299,7 +293,7 @@ async fn two_rotations_keep_the_device_lease_and_fence_retired_audio_and_failure
         owner.continuity.lock().replacing(Reason::Lifetime);
         // Mute intent survives even though retirement suppresses native capture.
         owner.set_microphone(true, None)?;
-        assert!(owner.view.lock().muted);
+        assert!(owner.view.lock().fields.muted);
     }
     owner.close();
     assert!(!owner.capture(
@@ -328,7 +322,7 @@ async fn established_transport_failure_requests_recovery_without_releasing_micro
     assert!(owner.speech.is_current());
     owner.close();
     attempt.fail("late failure".into());
-    assert_eq!(owner.view.lock().phase, "closed");
+    assert_eq!(owner.view.lock().fields.phase, "closed");
     Ok(())
 }
 
@@ -385,7 +379,7 @@ async fn native_audio_failure_retires_full_playback_and_rejects_late_pcm()
         assert_eq!(output.played, 0);
     }
     assert!(owner.closed.load(Ordering::Acquire));
-    assert_eq!(owner.view.lock().phase, "error");
+    assert_eq!(owner.view.lock().fields.phase, "error");
     assert!(!host.current());
     owner.close();
     Ok(())
@@ -405,7 +399,7 @@ async fn live_listening_requires_session_confirmation_devices_and_fresh_uploaded
             owner.view.lock().startup.settings_confirmed = Some(10);
         }
         voice::webrtc::media_connected(&owner);
-        assert_eq!(owner.view.lock().phase, "starting");
+        assert_eq!(owner.view.lock().fields.phase, "starting");
         if !session_first {
             assert!(!owner.ready.load(Ordering::Acquire));
             assert!(owner.capture(
@@ -418,7 +412,7 @@ async fn live_listening_requires_session_confirmation_devices_and_fresh_uploaded
             voice::webrtc::media_connected(&owner);
         }
         assert!(owner.ready.load(Ordering::Acquire));
-        assert_eq!(owner.view.lock().phase, "starting");
+        assert_eq!(owner.view.lock().fields.phase, "starting");
         assert!(owner.capture(
             &[222; voice::FRAME],
             owner.input.generation(),
@@ -428,7 +422,7 @@ async fn live_listening_requires_session_confirmation_devices_and_fresh_uploaded
         tokio::time::timeout(Duration::from_secs(1), owner.next_capture(&mut packet)).await??;
         assert_eq!(packet.samples, [222; voice::FRAME]);
         voice::webrtc::input_started(&owner);
-        assert_eq!(owner.view.lock().phase, "listening");
+        assert_eq!(owner.view.lock().fields.phase, "listening");
     }
     Ok(())
 }
@@ -444,7 +438,7 @@ async fn early_microphone_discards_startup_audio_and_accepts_fresh_audio_in_eith
         } else {
             voice::webrtc::media_connected(&owner);
         }
-        assert_eq!(owner.view.lock().phase, "starting");
+        assert_eq!(owner.view.lock().fields.phase, "starting");
         assert!(owner.capture(
             &[111; voice::FRAME],
             owner.input.generation(),
@@ -458,7 +452,7 @@ async fn early_microphone_discards_startup_audio_and_accepts_fresh_audio_in_eith
             voice::webrtc::devices_started(&owner);
         }
         // Listening still requires a packet actually sent, not merely an open mic.
-        assert_eq!(owner.view.lock().phase, "starting");
+        assert_eq!(owner.view.lock().fields.phase, "starting");
         assert!(owner.capture(
             &[222; voice::FRAME],
             owner.input.generation(),
@@ -468,7 +462,7 @@ async fn early_microphone_discards_startup_audio_and_accepts_fresh_audio_in_eith
         tokio::time::timeout(Duration::from_secs(1), owner.next_capture(&mut packet)).await??;
         assert_eq!(packet.samples, [222; voice::FRAME]);
         voice::webrtc::input_started(&owner);
-        assert_eq!(owner.view.lock().phase, "listening");
+        assert_eq!(owner.view.lock().fields.phase, "listening");
     }
     Ok(())
 }
@@ -478,11 +472,11 @@ fn early_device_completion_preserves_mute_and_cannot_reopen_a_closed_call()
 -> Result<(), Box<dyn std::error::Error>> {
     let _device_audio = DEVICE_AUDIO_TEST.blocking_lock();
     let owner = starting_owner()?;
-    owner.view.lock().muted = true;
+    owner.view.lock().fields.muted = true;
     owner.input.set_muted(true);
     voice::webrtc::devices_started(&owner);
     voice::webrtc::media_connected(&owner);
-    assert_eq!(owner.view.lock().phase, "muted");
+    assert_eq!(owner.view.lock().fields.phase, "muted");
     assert!(owner.capture(
         &[111; voice::FRAME],
         owner.input.generation(),
@@ -493,7 +487,7 @@ fn early_device_completion_preserves_mute_and_cannot_reopen_a_closed_call()
     owner.close();
     voice::webrtc::media_connected(&owner);
     voice::webrtc::devices_started(&owner);
-    assert_eq!(owner.view.lock().phase, "closed");
+    assert_eq!(owner.view.lock().fields.phase, "closed");
     assert!(!owner.view.lock().media_ready);
     assert!(!owner.capture(
         &[222; voice::FRAME],
@@ -661,7 +655,7 @@ async fn full_live_playback(
         if started.elapsed() > Duration::from_secs(100) {
             break;
         }
-        if ready_at.is_none() && owner.view.lock().phase == "listening" {
+        if ready_at.is_none() && owner.view.lock().fields.phase == "listening" {
             let view = owner.view.lock();
             assert_eq!(view.startup.prepared_client, prepared);
             assert!(view.startup.settings_confirmed.is_some());
@@ -746,14 +740,14 @@ async fn full_live_playback(
         view.uploaded_packets,
         view.caption_events,
         view.server_events,
-        view.usage_finalized,
-        view.phase,
-        view.error
+        view.fields.usage_finalized,
+        view.fields.phase,
+        view.fields.error
     );
     let reliable = view.media.reliable_rtp_packets == view.media.rtp_packets;
     let late_packets = view.media.late_packets;
-    let phase = view.phase;
-    let error = view.error;
+    let phase = view.fields.phase;
+    let error = view.fields.error;
     drop(view);
     result?;
     assert_ne!(phase, "error", "Native call failed: {error:?}");
@@ -994,7 +988,7 @@ async fn public_realtime_call_rotates_twice_and_recovers_without_replacing_devic
     owner.ready.store(false, Ordering::Release);
     {
         let mut view = owner.view.lock();
-        view.phase = "starting";
+        view.fields.phase = "starting";
         view.media_ready = false;
     }
     let input_id = owner.input.id();
@@ -1036,7 +1030,7 @@ async fn public_realtime_call_rotates_twice_and_recovers_without_replacing_devic
             if !owner.speech.is_current() { return Err("The device speech lease changed"); }
             let (phase, confirmed, uploaded, error) = {
                 let view = owner.view.lock();
-                (view.phase, view.startup.settings_confirmed.is_some(), view.uploaded_packets, view.error)
+                (view.fields.phase, view.startup.settings_confirmed.is_some(), view.uploaded_packets, view.fields.error)
             };
             if let Some(error) = error { return Err(error); }
             saw_reconnecting |= phase == "reconnecting";
@@ -1091,7 +1085,7 @@ async fn public_realtime_call_rotates_twice_and_recovers_without_replacing_devic
     result?;
     stopped?;
     assert!(owner.stopped.load(Ordering::Acquire));
-    assert_eq!(owner.view.lock().phase, "closed");
+    assert_eq!(owner.view.lock().fields.phase, "closed");
     assert_eq!(ready_sessions.len(), 4);
     eprintln!(
         "Realtime continuity passed: rotations=2 recoveries=1 ready_sessions={} peak={peak} elapsed_ms={} hangup_drained=true",

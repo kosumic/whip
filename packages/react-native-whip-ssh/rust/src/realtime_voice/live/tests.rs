@@ -146,16 +146,16 @@ fn spoken_correction_mutes_this_call_for_one_minute() -> Result<(), &'static str
         .microphone(&owner, &pending(4100.0))
         .ok_or("Missing microphone command")??;
     assert_eq!(ack.duration_minutes, Some(1.0));
-    assert!(ack.muted && owner.view.lock().muted);
+    assert!(ack.muted && owner.view.lock().fields.muted);
     assert!(matches!(
         commands.try_recv(),
         Ok(super::super::Command::Mute(true))
     ));
     assert!(state.microphone(&owner, &pending(4100.0)).is_none());
     owner.microphone_tick(before + Duration::from_secs(59));
-    assert!(owner.view.lock().muted);
+    assert!(owner.view.lock().fields.muted);
     owner.microphone_tick(Instant::now() + Duration::from_mins(1));
-    assert!(!owner.view.lock().muted);
+    assert!(!owner.view.lock().fields.muted);
     assert!(matches!(
         commands.try_recv(),
         Ok(super::super::Command::Mute(false))

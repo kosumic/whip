@@ -78,7 +78,7 @@ impl<'a> App<'a> {
             let batch = updates.take(Instant::now());
             self.owner.agent_events(&batch.events);
             if let Some(text) = batch.context {
-                self.owner.view.lock().backend_text = Some(text.clone());
+                self.owner.view.lock().text.set_backend(Some(text.clone()));
                 if super::super::deliver_agent_context(session, &text)
                     .await
                     .is_err()
@@ -117,11 +117,11 @@ impl Delegate for App<'_> {
             }
             Work::Command(super::super::Command::Skip) => {
                 session.interrupt(&**self.owner).await?;
-                self.owner.view.lock().playback_level = 0.0;
+                self.owner.view.lock().fields.playback_level = 0.0;
             }
             Work::Command(super::super::Command::SuspendAudio) => {
                 session.suspend_audio(&**self.owner).await?;
-                self.owner.view.lock().playback_level = 0.0;
+                self.owner.view.lock().fields.playback_level = 0.0;
             }
             Work::Command(super::super::Command::Submitted(text)) => {
                 if let Some(backend) = self.backend.as_mut() {
@@ -158,7 +158,7 @@ impl Delegate for App<'_> {
                             transcript.event_result(&id, &serde_json::json!({"completion":value["completion"], "error":value["error"], "result":text}));
                         }
                         // Text fallback survives failed voice/context delivery.
-                        owner.view.lock().backend_text = Some(text.clone());
+                        owner.view.lock().text.set_backend(Some(text.clone()));
                         if let Some(object) = value.as_object_mut() {
                             object.remove("assistant_output");
                         }
@@ -273,9 +273,10 @@ impl Delegate for App<'_> {
                 self.last_input = Instant::now();
                 {
                     let mut view = owner.view.lock();
-                    view.user_text = super::super::limit_text(delta.clone());
-                    if view.error == Some(voice_call_openai::live::errors::COMMAND_REJECTED) {
-                        view.error = None;
+                    view.text.set_user(super::super::limit_text(delta.clone()));
+                    if view.fields.error == Some(voice_call_openai::live::errors::COMMAND_REJECTED)
+                    {
+                        view.fields.error = None;
                     }
                 }
                 owner.view.lock().caption_events += 1;
@@ -296,7 +297,7 @@ impl Delegate for App<'_> {
                 start_ms,
                 end_ms,
             } => {
-                super::super::bounded_text(&mut owner.view.lock().text, &delta);
+                owner.view.lock().text.append(&delta);
                 if let Some(transcript) = owner.output.lock().live_transcript.as_mut() {
                     transcript.append(captions::Fragment {
                         id: event_id,
@@ -381,7 +382,7 @@ impl Delegate for App<'_> {
                         event.output = Some(text.clone());
                         transcript.event(id, event);
                     }
-                    owner.view.lock().backend_text = Some(text);
+                    owner.view.lock().text.set_backend(Some(text));
                 }
             }
             _ => {}
@@ -400,7 +401,7 @@ impl Delegate for App<'_> {
             };
         let idle = turn_idle
             && self.last_input.elapsed() > Duration::from_secs(2)
-            && self.owner.view.lock().level < 0.02;
+            && self.owner.view.lock().fields.level < 0.02;
         if self.owner.continuity_tick(idle)? {
             return Ok(Flow::Stop);
         }
@@ -436,10 +437,10 @@ impl Delegate for App<'_> {
                 }
             };
             let mut view = owner.view.lock();
-            view.turn_working = !turn_idle || speaking;
-            view.phase = if speaking {
+            view.fields.turn_working = !turn_idle || speaking;
+            view.fields.phase = if speaking {
                 "speaking"
-            } else if view.muted {
+            } else if view.fields.muted {
                 "muted"
             } else if config.webrtc && view.startup.first_input.is_none() {
                 "starting"
@@ -469,7 +470,7 @@ fn record_rejection(
         let mut view = owner.view.lock();
         view.live_command_errors = provider.command_errors;
         view.live_error.clone_from(&provider.last_error);
-        view.error = Some(voice_call_openai::live::errors::COMMAND_REJECTED);
+        view.fields.error = Some(voice_call_openai::live::errors::COMMAND_REJECTED);
     }
     if let Some(transcript) = owner.output.lock().live_transcript.as_mut() {
         let mut event =
@@ -489,10 +490,14 @@ fn confirm_start(owner: &RealtimeVoiceAdapter, config: &Config) -> bool {
         );
         if !config.webrtc {
             view.media_ready = true;
-            view.phase = if view.muted { "muted" } else { "listening" };
+            view.fields.phase = if view.fields.muted {
+                "muted"
+            } else {
+                "listening"
+            };
             view.recovery = super::super::recovery::State::Active;
         }
-        view.muted
+        view.fields.muted
     };
     if config.webrtc {
         super::super::webrtc::media_connected(owner);

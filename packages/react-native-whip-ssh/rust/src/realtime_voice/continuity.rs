@@ -27,9 +27,9 @@ impl RealtimeVoiceAdapter {
             if self.closed.load(Ordering::Acquire) {
                 return;
             }
-            view.phase = "reconnecting";
-            view.level = 0.0;
-            view.playback_level = 0.0;
+            view.fields.phase = "reconnecting";
+            view.fields.level = 0.0;
+            view.fields.playback_level = 0.0;
         }
         let mut policy = self.continuity.lock();
         if !self.closed.load(Ordering::Acquire) {
@@ -91,7 +91,7 @@ impl RealtimeVoiceAdapter {
             return Ok(false);
         }
         let mut policy = self.continuity.lock();
-        if self.ready.load(Ordering::Acquire) {
+        if self.ready.load(Ordering::Acquire) && !policy.is_connected() {
             policy.connected();
         }
         if let Some(reason) = policy.rotation(idle) {
@@ -149,7 +149,7 @@ impl RealtimeVoiceAdapter {
             update
         };
         config.restore_history().await?;
-        self.view.lock().resumed_context_truncated = config
+        self.view.lock().fields.resumed_context_truncated = config
             .continuation
             .as_ref()
             .map(|context| context.truncated);
@@ -275,20 +275,20 @@ impl RealtimeVoiceAdapter {
             let stable = self.continuity.lock().replacing(reason);
             {
                 let mut view = self.view.lock();
-                view.phase = "reconnecting";
-                view.level = 0.0;
-                view.playback_level = 0.0;
-                view.text.clear();
-                view.user_text.clear();
+                view.fields.phase = "reconnecting";
+                view.fields.level = 0.0;
+                view.fields.playback_level = 0.0;
+                view.text.clear_assistant();
+                view.text.set_user(String::new());
                 view.startup.first_input = None;
                 view.startup.settings_confirmed = None;
-                view.usage_finalized = false;
-                view.input_tokens = 0;
-                view.output_tokens = 0;
-                view.estimated_usd = None;
-                view.cost_incomplete = false;
-                view.backend_text = None;
-                view.live_seconds = None;
+                view.fields.usage_finalized = false;
+                view.fields.input_tokens = 0;
+                view.fields.output_tokens = 0;
+                view.fields.estimated_usd = None;
+                view.fields.cost_incomplete = false;
+                view.text.set_backend(None);
+                view.fields.live_seconds = None;
                 view.tool = None;
             }
             // Captions and function IDs belong to their saved session, never to

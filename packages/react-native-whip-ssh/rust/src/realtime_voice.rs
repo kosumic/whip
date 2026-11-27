@@ -20,6 +20,7 @@ mod live;
 pub(crate) mod microphone;
 mod models;
 pub(crate) mod observer;
+mod presentation;
 mod processing;
 mod recovery;
 mod response;
@@ -298,36 +299,17 @@ impl Config {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct View {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    resumed_context_truncated: Option<bool>,
-    phase: &'static str,
     #[serde(skip)]
-    turn_working: bool,
-    muted: bool,
-    level: f32,
-    playback_level: f32,
-    text: String,
-    user_text: String,
-    error: Option<&'static str>,
-    input_tokens: u64,
-    output_tokens: u64,
-    estimated_usd: Option<f64>,
-    cost_incomplete: bool,
+    fields: presentation::Fields,
+    #[serde(skip)]
+    text: presentation::TextFields,
     tool: Option<String>,
-    backend_text: Option<String>,
-    live_seconds: Option<f64>,
-    usage_finalized: bool,
     captions: Option<captions::Diagnostics>,
-    messages: Vec<transcript::Message>,
-    playback: transcript::Timing,
-    signal: echo::Signal,
     startup: startup::Timings,
     media: MediaDiagnostics,
     media_ready: bool,
     recovery: recovery::State,
     startup_attempt: u64,
-    capture_packets: u64,
-    capture_gaps: u64,
     caption_events: u64,
     capture_level: f32,
     uploaded_packets: u64,
@@ -659,9 +641,11 @@ pub(crate) struct RealtimeVoiceAdapter {
     webrtc: bool,
     live: bool,
     media: Mutex<Option<webrtc::Handle>>,
-    view: Mutex<View>,
+    changes: watch::Sender<u64>,
+    presentation: Mutex<presentation::Cache>,
+    view: presentation::Observed<View>,
     input_health: Mutex<health::Input>,
-    output: Mutex<Output>,
+    output: presentation::Observed<Output>,
     echo: Mutex<Option<echo::MediaEchoCanceller>>,
     commands: mpsc::Sender<Command>,
     input: Arc<crate::audio_ingress::NativeIngress>,
@@ -678,7 +662,7 @@ pub(crate) struct RealtimeVoiceAdapter {
     speech: crate::speech_playback::RealtimeSpeechLease,
     global: Mutex<Option<Arc<WhipToolSession>>>,
     updates: Mutex<Option<observer::Subscription>>,
-    continuity: Mutex<voice_call_openai::continuity::Policy>,
+    continuity: presentation::Observed<voice_call_openai::continuity::Policy>,
     continuity_enabled: bool,
     retiring: AtomicBool,
     failure: Mutex<Option<recovery::Failure>>,
@@ -696,7 +680,7 @@ impl From<&'static str> for StartError {
 }
 impl RealtimeVoiceAdapter {
     pub(crate) fn submit_context(&self, text: String) -> bool {
-        if self.view.lock().phase == "reconnecting" {
+        if self.view.lock().fields.phase == "reconnecting" {
             return true;
         }
         !self.closed.load(Ordering::Acquire)
@@ -795,6 +779,7 @@ impl RealtimeVoiceAdapter {
                 .map(|agent| observer::Scope::Pinned(agent.source_id()))
         };
         let updates = scope.map(observer::Subscription::new);
+        let changes = watch::Sender::new(1);
         let adapter = Arc::new(Self {
             session_id: config.session_id.clone(),
             cue: Mutex::default(),
@@ -805,50 +790,41 @@ impl RealtimeVoiceAdapter {
             live: config.live,
             media: Mutex::new(None),
             input_health: Mutex::new(health::Input::new()?),
-            view: Mutex::new(View {
-                resumed_context_truncated: None,
-                phase: "starting",
-                turn_working: false,
-                muted: config.preview,
-                level: 0.0,
-                playback_level: 0.0,
-                text: String::new(),
-                user_text: String::new(),
-                error: None,
-                input_tokens: 0,
-                output_tokens: 0,
-                estimated_usd: None,
-                cost_incomplete: false,
-                messages: Vec::new(),
-                playback: transcript::Timing::default(),
-                signal: echo::Signal::default(),
-                startup: startup::Timings::default(),
-                media: MediaDiagnostics::default(),
-                media_ready: false,
-                recovery: recovery::State::Starting,
-                startup_attempt: 0,
-                capture_packets: 0,
-                capture_gaps: 0,
-                caption_events: 0,
-                capture_level: 0.0,
-                uploaded_packets: 0,
-                server_events: 0,
-                input_speech_events: 0,
-                input_stalled: false,
-                live_command_errors: 0,
-                live_error: None,
-                tool: None,
-                backend_text: None,
-                live_seconds: None,
-                usage_finalized: false,
-                captions: (!config.preview && !config.live)
-                    .then(|| captions::Diagnostics::pending(config.language)),
-            }),
-            output: Mutex::new(Output {
-                live_transcript: (config.live && !config.preview)
-                    .then(live::captions::Transcript::default),
-                ..Output::default()
-            }),
+            view: presentation::Observed::new(
+                View {
+                    text: presentation::TextFields::default(),
+                    fields: presentation::Fields {
+                        phase: "starting",
+                        muted: config.preview,
+                        ..Default::default()
+                    },
+                    startup: startup::Timings::default(),
+                    media: MediaDiagnostics::default(),
+                    media_ready: false,
+                    recovery: recovery::State::Starting,
+                    startup_attempt: 0,
+                    caption_events: 0,
+                    capture_level: 0.0,
+                    uploaded_packets: 0,
+                    server_events: 0,
+                    input_speech_events: 0,
+                    input_stalled: false,
+                    live_command_errors: 0,
+                    live_error: None,
+                    tool: None,
+                    captions: (!config.preview && !config.live)
+                        .then(|| captions::Diagnostics::pending(config.language)),
+                },
+                &changes,
+            ),
+            output: presentation::Observed::new(
+                Output {
+                    live_transcript: (config.live && !config.preview)
+                        .then(live::captions::Transcript::default),
+                    ..Output::default()
+                },
+                &changes,
+            ),
             echo: Mutex::new(
                 config
                     .software_echo_cancellation
@@ -875,7 +851,12 @@ impl RealtimeVoiceAdapter {
                 .unwrap_or_default(),
             global: Mutex::new(global),
             updates: Mutex::new(updates),
-            continuity: Mutex::default(),
+            continuity: presentation::Observed::new(
+                voice_call_openai::continuity::Policy::default(),
+                &changes,
+            ),
+            presentation: Mutex::default(),
+            changes,
             continuity_enabled: !config.preview && config.webrtc,
             retiring: AtomicBool::new(false),
             failure: Mutex::new(None),
@@ -929,7 +910,7 @@ impl RealtimeVoiceAdapter {
             }
             if let Some(id) = &owner.session_id {
                 crate::voice_session_coordinator().backend_ended(id, None);
-                if let Some(view) = ffi::snapshot(&owner) {
+                if let Ok(view) = owner.presentation() {
                     crate::voice_session_coordinator().save_realtime(id, view);
                 }
             }
@@ -967,12 +948,12 @@ impl RealtimeVoiceAdapter {
         }
         let mut view = self.view.lock();
         if !self.closed.swap(true, Ordering::AcqRel) {
-            view.phase = "error";
+            view.fields.phase = "error";
             view.recovery = recovery::State::Ended;
-            view.error = Some(error);
-            view.level = 0.0;
-            view.playback_level = 0.0;
-            view.cost_incomplete = true;
+            view.fields.error = Some(error);
+            view.fields.level = 0.0;
+            view.fields.playback_level = 0.0;
+            view.fields.cost_incomplete = true;
         }
         drop(view);
         self.microphone.lock().cancel();
@@ -996,8 +977,8 @@ impl RealtimeVoiceAdapter {
             self.ready.store(false, Ordering::Release);
             view.media_ready = false;
             view.recovery = recovery::State::Ended;
-            if view.phase != "error" {
-                view.phase = "closed";
+            if view.fields.phase != "error" {
+                view.fields.phase = "closed";
             }
         }
         self.microphone.lock().cancel();
@@ -1010,7 +991,8 @@ impl RealtimeVoiceAdapter {
             self.microphone.lock().cancel_speech();
         }
         if self.retiring.load(Ordering::Acquire)
-            || !self.ready.load(Ordering::Acquire) && self.view.lock().phase == "reconnecting"
+            || !self.ready.load(Ordering::Acquire)
+                && self.view.lock().fields.phase == "reconnecting"
         {
             // No old prompt or control may enter the next provider session.
             // Microphone intent was already published under its own lock.
@@ -1102,8 +1084,8 @@ impl RealtimeVoiceAdapter {
         }
         let monitoring = {
             let mut view = self.view.lock();
-            view.level = peak(&packet.samples);
-            !self.live && view.phase == "listening" && !view.muted
+            view.fields.level = peak(&packet.samples);
+            !self.live && view.fields.phase == "listening" && !view.fields.muted
         };
         self.input_health.lock().capture(
             &packet.samples,
@@ -1158,12 +1140,12 @@ impl RealtimeVoiceAdapter {
         )
         .await
         {
-            self.view.lock().error.get_or_insert(error);
+            self.view.lock().fields.error.get_or_insert(error);
         }
         {
             let mut view = self.view.lock();
-            view.estimated_usd = costs.estimated_usd();
-            view.cost_incomplete = costs.is_partial();
+            view.fields.estimated_usd = costs.estimated_usd();
+            view.fields.cost_incomplete = costs.is_partial();
         }
         result
     }
@@ -1218,7 +1200,7 @@ impl RealtimeVoiceAdapter {
         } else {
             self.ready.store(true, Ordering::Release);
             self.record_listening(started);
-            self.view.lock().phase = "listening";
+            self.view.lock().fields.phase = "listening";
         }
     }
 
@@ -1472,7 +1454,11 @@ async fn deliver_pending_observations(
                 output.transcript.event_result(&id, &value);
             }
         }
-        owner.view.lock().backend_text = Some(live::public_result(&value));
+        owner
+            .view
+            .lock()
+            .text
+            .set_backend(Some(live::public_result(&value)));
         // Quiet context failure must not cancel the original observer. The
         // local tool row and text fallback already retain this status.
         let _ = deliver_agent_context(session, &format!("Delegation status for {id}: {value}. This is a pending observation, not completion or a new request. Do not resubmit it. Observation continues; approval controls remain in Whip.")).await;
@@ -1481,7 +1467,10 @@ async fn deliver_pending_observations(
 
 impl RealtimeVoiceAdapter {
     pub(crate) fn agent_result_fallback(&self, value: &Value) {
-        self.view.lock().backend_text = Some(live::public_result(value));
+        self.view
+            .lock()
+            .text
+            .set_backend(Some(live::public_result(value)));
     }
     fn agent_events(&self, events: &[crate::voice_history::Caption]) {
         let mut output = self.output.lock();

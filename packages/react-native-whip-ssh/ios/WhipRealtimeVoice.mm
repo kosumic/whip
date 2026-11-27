@@ -268,34 +268,33 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
     self.epoch = currentEpoch; _announcementBoundary.reset(currentEpoch); self.queued = 0;
     [self.player play];
   }
-  char *json = (++self.ticks % 10 == 0) ? whip_realtime_view(call) : nullptr;
-  if (json) {
-    NSData *data = [NSData dataWithBytes:json length:strlen(json)];
-    NSDictionary *view = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-    whip_realtime_free(json);
-    BOOL mediaReady = [view[@"mediaReady"] boolValue];
+  if (++self.ticks % 10 == 0) {
+    WhipRealtimeControlState state = whip_realtime_control_state(call);
+    BOOL mediaReady = state.media_ready;
     if (mediaReady && !self.transportReady) NSLog(@"WhipVoice event=media_ready token=%@ at_s=%.3f", token, NSProcessInfo.processInfo.systemUptime);
     self.transportReady = mediaReady;
-    NSDictionary *announcement = _mediaStarted.load() && [view[@"microphoneAnnouncement"] isKindOfClass:NSDictionary.class] ? view[@"microphoneAnnouncement"] : nil;
-    if (!self.preview && [announcement[@"cancelled"] boolValue]) {
-      NSNumber *identity = announcement[@"id"];
+    const char *announcement = _mediaStarted.load() ? state.announcement_text : nullptr;
+    if (!self.preview && announcement && state.cancelled) {
+      NSNumber *identity = @(state.announcement_id);
       dispatch_async(dispatch_get_main_queue(), ^{
         if (self->_call.load() != call || ![self.announcementId isEqual:identity]) return;
         self.announcementId = nil;
         [WhipSpeechPlayback.shared cancelCallAnnouncement];
         whip_realtime_announcement_finished(call, identity.unsignedLongLongValue);
       });
-    } else if (!self.preview && announcement && ![self.announcementId isEqual:announcement[@"id"]] &&
+    } else if (!self.preview && announcement && ![self.announcementId isEqual:@(state.announcement_id)] &&
                _announcementBoundary.drained() &&
-               whip_realtime_announcement_start(call, [announcement[@"id"] unsignedLongLongValue])) {
-      NSNumber *identity = announcement[@"id"];
+               whip_realtime_announcement_start(call, state.announcement_id)) {
+      NSNumber *identity = @(state.announcement_id);
+      NSString *text = [NSString stringWithUTF8String:announcement];
+      uint64_t lease = state.lease;
       self.announcementId = identity;
       dispatch_async(dispatch_get_main_queue(), ^{
         if (self->_call.load() != call || ![self.announcementId isEqual:identity]) {
           whip_realtime_announcement_finished(call, identity.unsignedLongLongValue);
           return;
         }
-        [WhipSpeechPlayback.shared speakCallAnnouncement:[announcement[@"lease"] unsignedLongLongValue] text:announcement[@"text"] beforePlayback:^BOOL {
+        [WhipSpeechPlayback.shared speakCallAnnouncement:lease text:text beforePlayback:^BOOL {
           return whip_realtime_announcement_playing(call, identity.unsignedLongLongValue);
         } completed:^{
           whip_realtime_announcement_finished(call, identity.unsignedLongLongValue);
@@ -307,13 +306,13 @@ int32_t WhipReadOpenAiVoiceCredential(void *, uint8_t *destination, size_t capac
         if (self->_call.load() == call && !self.announcementId) [WhipSpeechPlayback.shared cancelCallAnnouncement];
       });
     }
-    if (!self.preview && view[@"muted"]) {
-      BOOL muted = [view[@"muted"] boolValue];
+    if (!self.preview) {
+      BOOL muted = state.muted;
       dispatch_async(dispatch_get_main_queue(), ^{
         if (self->_call.load() == call) [WhipVoiceCall.shared syncMuted:token muted:muted];
       });
     }
-    if ([view[@"phase"] isEqualToString:@"error"] || [view[@"phase"] isEqualToString:@"closed"]) {
+    if (state.ended) {
       dispatch_async(dispatch_get_main_queue(), ^{
         if (self->_call.load() != call) return;
         BOOL preview = self.preview;

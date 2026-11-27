@@ -39,6 +39,7 @@ impl From<Fragment> for crate::voice_history::Caption {
 
 #[derive(Default)]
 pub(in crate::realtime_voice) struct Transcript {
+    pub(in crate::realtime_voice) revision: u64,
     fragments: Vec<Fragment>,
     bytes: usize,
     admitted: HashSet<String>,
@@ -78,6 +79,7 @@ impl Transcript {
                 .event
                 .as_ref()
                 .map_or(0, crate::voice_history::Event::bytes);
+        self.revision += u64::from(fragment.event.as_ref().is_none_or(|e| !e.from_coding_agent));
         self.fragments.push(fragment);
         self.fragments
             .sort_by(|a, b| a.start_ms.total_cmp(&b.start_ms));
@@ -100,6 +102,7 @@ impl Transcript {
                     .map_or(0, crate::voice_history::Event::bytes);
             self.admitted.remove(&removed.id);
             if !removed.event.is_some_and(|event| event.from_coding_agent) {
+                self.revision += 1;
                 self.discarded_through = self.discarded_through.max(removed.end_ms);
             }
         }
@@ -235,53 +238,17 @@ impl Transcript {
         }
     }
 
-    pub(in crate::realtime_voice) fn messages(&self) -> serde_json::Value {
-        // Each speaker grows independently; original fragments retain timing.
-        let mut bubbles: Vec<(Fragment, usize, bool)> = Vec::new();
-        for fragment in &self.fragments {
-            if fragment
-                .event
-                .as_ref()
-                .is_some_and(|event| event.from_coding_agent)
-            {
-                continue;
-            }
-            let (spoken, active) = self.progress(fragment);
-            let previous = bubbles
-                .iter()
-                .rposition(|(bubble, _, _)| bubble.role == fragment.role && bubble.event.is_none());
-            if let Some(index) = previous
-                && fragment.event.is_none()
-                && bubbles[index + 1..]
-                    .iter()
-                    .all(|(bubble, _, _)| bubble.event.is_none())
-                && fragment.start_ms <= bubbles[index].0.end_ms + UTTERANCE_GAP_MS
-                && bubbles[index].0.text.len() + fragment.text.len() <= super::super::MAX_TEXT
-            {
-                let (bubble, heard, playing) = &mut bubbles[index];
-                if *heard == bubble.text.encode_utf16().count() {
-                    *heard += spoken;
-                }
-                *playing |= active;
-                bubble.text.push_str(&fragment.text);
-                bubble.end_ms = bubble.end_ms.max(fragment.end_ms);
-            } else {
-                bubbles.push((fragment.clone(), spoken, active));
-            }
+    pub(in crate::realtime_voice) fn message_snapshot(&self) -> MessageSnapshot {
+        MessageSnapshot {
+            fragments: self.fragments.clone(),
+            heard: self.heard.clone(),
+            playing: self.playback_origin.is_some(),
         }
-        serde_json::Value::Array(
-            bubbles
-                .iter()
-                .map(|(fragment, spoken, active)| {
-                    serde_json::json!({
-                        "id":fragment.id,"role":fragment.role,"text":fragment.text,
-                        "startMs":fragment.start_ms,"endMs":fragment.end_ms,
-                        "spokenUtf16":spoken,"active":active,
-                        "event":fragment.event,
-                    })
-                })
-                .collect(),
-        )
+    }
+
+    #[cfg(test)]
+    pub(in crate::realtime_voice) fn messages(&self) -> serde_json::Value {
+        self.message_snapshot().messages()
     }
 
     /// Locate provider speech before it enters the device queue. Caption text
@@ -344,11 +311,26 @@ impl Transcript {
                 );
             let samples = u32::try_from(elapsed).unwrap_or(u32::MAX);
             let rate = u32::try_from(super::super::RATE).unwrap_or(u32::MAX);
-            *end = *start + f64::from(samples) * 1000.0 / f64::from(rate);
+            let through = *start + f64::from(samples) * 1000.0 / f64::from(rate);
+            let from = end.min(through);
+            let to = end.max(through);
+            if from < to
+                && self.fragments.iter().rev().any(|f| {
+                    f.role == ASSISTANT
+                        && f.event.is_none()
+                        && f.start_ms >= *start
+                        && f.start_ms < to
+                        && f.end_ms >= from
+                })
+            {
+                self.revision += 1;
+            }
+            *end = through;
         }
     }
 
     pub(in crate::realtime_voice) fn stop(&mut self) {
+        self.revision += u64::from(self.playback_origin.is_some());
         self.playback_origin = None;
         self.caption_origin = None;
         self.playback_samples = 0;
@@ -358,63 +340,36 @@ impl Transcript {
     }
 
     /// Fixed timing/count fields only; never export transcript text or IDs.
+    #[cfg(test)]
     pub(in crate::realtime_voice) fn timing(
         &self,
         messages: &serde_json::Value,
     ) -> serde_json::Value {
-        let latest = messages.as_array().and_then(|messages| {
-            messages
-                .iter()
-                .rev()
-                .find(|message| message["role"] == ASSISTANT && message["event"].is_null())
-        });
+        let mut timing = self.clock_timing();
+        let (text, spoken) = latest_lengths(messages);
+        timing["textUtf16"] = text.into();
+        timing["spokenUtf16"] = spoken.into();
+        timing
+    }
+
+    pub(in crate::realtime_voice) fn clock_timing(&self) -> serde_json::Value {
         let fragment = self
             .fragments
             .iter()
             .rev()
-            .find(|fragment| fragment.role == ASSISTANT && fragment.event.is_none());
+            .find(|f| f.role == ASSISTANT && f.event.is_none());
         serde_json::json!({
             "decodedMs": self.received_samples.saturating_mul(1000) / super::super::RATE,
             "heardPcmMs": self.playback_samples.saturating_mul(1000) / super::super::RATE,
             "sourceMs": self.heard.last().map(|(_, end)| end),
             "fragmentStartMs": fragment.map(|fragment| fragment.start_ms),
             "fragmentEndMs": fragment.map(|fragment| fragment.end_ms),
-            "textUtf16": latest.and_then(|message| message["text"].as_str()).map_or(0, |text| text.encode_utf16().count()),
-            "spokenUtf16": latest.and_then(|message| message["spokenUtf16"].as_u64()).unwrap_or(0),
             "sourceClock": self.source_clock.is_some(),
         })
     }
 
-    #[allow(
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss,
-        reason = "A clamped nonnegative fraction intentionally rounds down the bounded UTF-16 length"
-    )]
     fn progress(&self, fragment: &Fragment) -> (usize, bool) {
-        if fragment.role != ASSISTANT || fragment.event.is_some() {
-            return (0, false);
-        }
-        let Some((_, through)) = self
-            .heard
-            .iter()
-            .find(|(start, end)| *start <= fragment.start_ms && *end > fragment.start_ms)
-        else {
-            return (0, false);
-        };
-        let fraction = if fragment.end_ms <= fragment.start_ms {
-            1.0
-        } else {
-            ((through - fragment.start_ms) / (fragment.end_ms - fragment.start_ms)).clamp(0.0, 1.0)
-        };
-        let length = u32::try_from(fragment.text.encode_utf16().count()).unwrap_or(u32::MAX);
-        let spoken = (f64::from(length) * fraction) as usize;
-        let active = self.playback_origin.is_some()
-            && self.heard.last().is_some_and(|range| {
-                range.0 <= fragment.start_ms
-                    && range.1 > fragment.start_ms
-                    && range.1 < fragment.end_ms
-            });
-        (spoken, active)
+        progress(&self.heard, self.playback_origin.is_some(), fragment)
     }
 
     pub(super) fn snapshot(&self) -> Vec<Fragment> {
@@ -448,6 +403,11 @@ impl Transcript {
                         .map_or(0, crate::voice_history::Event::bytes),
             ) + text.len()
                 + event.bytes();
+            let old = fragment.event.as_ref();
+            self.revision += u64::from(
+                old != Some(&event)
+                    && (old.is_none_or(|e| !e.from_coding_agent) || !event.from_coding_agent),
+            );
             fragment.text = text;
             fragment.event = Some(event);
             self.trim();
@@ -478,4 +438,104 @@ impl Transcript {
             self.event(id, event);
         }
     }
+}
+
+pub(in crate::realtime_voice) struct MessageSnapshot {
+    fragments: Vec<Fragment>,
+    heard: Vec<(f64, f64)>,
+    playing: bool,
+}
+
+impl MessageSnapshot {
+    pub(in crate::realtime_voice) fn messages(self) -> serde_json::Value {
+        // Each speaker grows independently; original fragments retain timing.
+        let mut bubbles: Vec<(Fragment, usize, bool)> = Vec::new();
+        for fragment in self.fragments {
+            if fragment
+                .event
+                .as_ref()
+                .is_some_and(|event| event.from_coding_agent)
+            {
+                continue;
+            }
+            let (spoken, active) = progress(&self.heard, self.playing, &fragment);
+            let previous = bubbles
+                .iter()
+                .rposition(|(bubble, _, _)| bubble.role == fragment.role && bubble.event.is_none());
+            if let Some(index) = previous
+                && fragment.event.is_none()
+                && bubbles[index + 1..]
+                    .iter()
+                    .all(|(bubble, _, _)| bubble.event.is_none())
+                && fragment.start_ms <= bubbles[index].0.end_ms + UTTERANCE_GAP_MS
+                && bubbles[index].0.text.len() + fragment.text.len() <= super::super::MAX_TEXT
+            {
+                let (bubble, heard, playing) = &mut bubbles[index];
+                if *heard == bubble.text.encode_utf16().count() {
+                    *heard += spoken;
+                }
+                *playing |= active;
+                bubble.text.push_str(&fragment.text);
+                bubble.end_ms = bubble.end_ms.max(fragment.end_ms);
+            } else {
+                bubbles.push((fragment, spoken, active));
+            }
+        }
+        serde_json::Value::Array(
+            bubbles
+                .iter()
+                .map(|(fragment, spoken, active)| {
+                    serde_json::json!({
+                        "id":fragment.id,"role":fragment.role,"text":fragment.text,
+                        "startMs":fragment.start_ms,"endMs":fragment.end_ms,
+                        "spokenUtf16":spoken,"active":active,
+                        "event":fragment.event,
+                    })
+                })
+                .collect(),
+        )
+    }
+}
+
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "A clamped nonnegative fraction intentionally rounds down the bounded UTF-16 length"
+)]
+fn progress(heard: &[(f64, f64)], playing: bool, fragment: &Fragment) -> (usize, bool) {
+    if fragment.role != ASSISTANT || fragment.event.is_some() {
+        return (0, false);
+    }
+    let Some((_, through)) = heard
+        .iter()
+        .find(|(start, end)| *start <= fragment.start_ms && *end > fragment.start_ms)
+    else {
+        return (0, false);
+    };
+    let fraction = if fragment.end_ms <= fragment.start_ms {
+        1.0
+    } else {
+        ((through - fragment.start_ms) / (fragment.end_ms - fragment.start_ms)).clamp(0.0, 1.0)
+    };
+    let length = u32::try_from(fragment.text.encode_utf16().count()).unwrap_or(u32::MAX);
+    let spoken = (f64::from(length) * fraction) as usize;
+    let active = playing
+        && heard.last().is_some_and(|range| {
+            range.0 <= fragment.start_ms && range.1 > fragment.start_ms && range.1 < fragment.end_ms
+        });
+    (spoken, active)
+}
+
+pub(in crate::realtime_voice) fn latest_lengths(messages: &serde_json::Value) -> (usize, u64) {
+    let latest = messages.as_array().and_then(|rows| {
+        rows.iter()
+            .rev()
+            .find(|row| row["role"] == ASSISTANT && row["event"].is_null())
+    });
+    (
+        latest
+            .and_then(|m| m["text"].as_str())
+            .map_or(0, |text| text.encode_utf16().count()),
+        latest.and_then(|m| m["spokenUtf16"].as_u64()).unwrap_or(0),
+    )
 }

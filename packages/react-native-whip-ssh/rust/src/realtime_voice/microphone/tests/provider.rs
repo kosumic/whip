@@ -111,7 +111,7 @@ async fn recovered_realtime_unmute_clears_provider_input_at_the_original_deadlin
     owner.retiring.store(false, Ordering::Release);
     owner.ready.store(true, Ordering::Release);
     // Readiness can precede the first captured packet clearing this UI phase.
-    owner.view.lock().phase = "reconnecting";
+    owner.view.lock().fields.phase = "reconnecting";
     owner.microphone_tick(deadline);
     let crate::realtime_voice::Command::Mute(muted) = controls.try_recv()? else {
         return Err("Missing unmute control".into());
@@ -176,7 +176,7 @@ async fn recovered_live_unmute_waits_for_matching_ack_and_newer_intent_wins() ->
     )
     .await?;
     owner.ready.store(true, Ordering::Release);
-    owner.view.lock().phase = "muted";
+    owner.view.lock().fields.phase = "muted";
     // Startup restores the retained mute to the replacement provider.
     session.mute(&*owner, owner.is_muted()).await?;
     let mute = wire(&mut commands).await?;
@@ -204,7 +204,7 @@ async fn recovered_live_unmute_waits_for_matching_ack_and_newer_intent_wins() ->
         acknowledge(&mut session, &mut events, &owner, &unmute).await?,
         [false]
     );
-    assert!(owner.view.lock().muted);
+    assert!(owner.view.lock().fields.muted);
     assert!(!owner.input.accepts(owner.input.generation()));
 
     owner.set_microphone(false, None)?;
@@ -222,7 +222,7 @@ async fn recovered_live_unmute_waits_for_matching_ack_and_newer_intent_wins() ->
     );
     assert!(owner.input.accepts(owner.input.generation()));
     owner.microphone_tick(deadline + Duration::from_secs(600));
-    assert!(!owner.view.lock().muted);
+    assert!(!owner.view.lock().fields.muted);
     assert!(owner.microphone.lock().policy.deadline().is_none());
     owner.close();
     Ok(())

@@ -5,7 +5,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-// PCM16, mono, 24000 Hz. Lifecycle/control only uses JSON. Audio is borrowed.
+// PCM16, mono, 24000 Hz. Audio is borrowed.
 enum { WhipRealtimeSampleRate = 24000, WhipRealtimeFrame = 480, WhipRealtimeMaxFrame = 1920 };
 // Read callback: positive UTF-8 byte count, or a typed negative status. Never JS.
 enum WhipVoiceCredentialStatus { WhipVoiceCredentialMissing = -1, WhipVoiceCredentialLocked = -2, WhipVoiceCredentialUnavailable = -3, WhipVoiceCredentialFailed = -4 };
@@ -34,6 +34,14 @@ void whip_realtime_cue_stop(uint64_t call, uint64_t generation);
 void whip_realtime_mix_cue(uint64_t call, int16_t *samples, size_t count);
 void whip_realtime_played(uint64_t call, uint64_t epoch, uint64_t samples);
 uint64_t whip_realtime_epoch(uint64_t call);
+typedef struct {
+    bool ended, reconnecting, media_ready, muted;
+    uint64_t announcement_id, lease;
+    const char *announcement_text; // Static UTF-8, or NULL when absent.
+    bool cancelled;
+} WhipRealtimeControlState;
+WhipRealtimeControlState whip_realtime_control_state(uint64_t call);
+char *whip_realtime_diagnostics(uint64_t call);
 char *whip_realtime_view(uint64_t call);
 void whip_realtime_free(char *value);
 #ifdef __cplusplus

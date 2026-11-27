@@ -87,7 +87,6 @@ internal object RealtimeVoice {
     var captureMuted = VoiceCallService.muted(token)
     var captionDiagnostic: String? = null
     var startupDiagnostic: String? = null
-    var audioDiagnostic: String? = null
     var audioDiagnosticAtMs = 0L
     @Volatile var capturedSamples = 0L
     @Volatile var rejectedCapture = 0L
@@ -205,73 +204,36 @@ internal object RealtimeVoice {
           }
           val audioAllowed = preview || VoiceCallService.audioAllowed(token) &&
             (!session.suspended || !context.getSystemService(KeyguardManager::class.java).isDeviceLocked)
-          val view = Core.view(session.call)
-          val state = JSONObject(view)
-          val phase = state.optString("phase")
-          val announcement = state.optJSONObject("microphoneAnnouncement")
-          if (!preview && announcement?.optBoolean("cancelled") == true) {
+          val state = Core.controlState(session.call)
+          val announcement = state.announcementText
+          if (!preview && state.cancelled) {
             session.announcement?.cancel()
-            Core.announcementFinished(session.call, announcement.getLong("id"))
-          } else if (!preview && announcement != null && announcement.getLong("id") != session.announcementId &&
+            Core.announcementFinished(session.call, state.announcementId)
+          } else if (!preview && announcement != null && state.announcementId != session.announcementId &&
             session.announcementBoundary.admit(session.output?.playbackHeadPosition?.toLong()?.and(0xffffffffL) ?: 0L) {
-              Core.announcementStart(session.call, announcement.getLong("id"))
+              Core.announcementStart(session.call, state.announcementId)
             }) {
-            val id = announcement.getLong("id")
+            val id = state.announcementId
             session.announcementId = id
             val speaker = session.announcement ?: CallAnnouncementSpeaker(context).also { session.announcement = it }
-            speaker.speak(announcement.getLong("lease"), announcement.getString("text"),
+            speaker.speak(state.lease, announcement,
               { Core.announcementPlaying(session.call, id) }) {
               Core.announcementFinished(session.call, id)
             }
           } else if (announcement == null) session.announcement?.cancel()
-          if (!preview && state.has("muted")) VoiceCallService.syncMuted(token, state.getBoolean("muted"))
-          if (!preview) VoiceCallService.reconnecting(token, phase == "reconnecting")
+          if (!preview) VoiceCallService.syncMuted(token, state.muted)
+          if (!preview) VoiceCallService.reconnecting(token, state.reconnecting)
           // Negotiation and settings preflight own no focus. Activate duplex
           // capture/playout as soon as transport is ready, before any response.
-          if (phase != "error" && phase != "closed" && session.output == null && audioAllowed && state.optBoolean("mediaReady")) {
+          if (!state.ended && session.output == null && audioAllowed && state.mediaReady) {
             try { openDevices(session) } catch (_: Exception) {
               Core.control(session.call, Core.AUDIO_FAILED); stop(token)
               if (!preview) VoiceCallService.end(token)
               return
             }
           }
-          if (!preview) state.optJSONObject("startup")?.let { timings ->
-            // Fixed numeric durations only. Never log the enclosing call view.
-            val preparedClient = if (timings.optBoolean("preparedClient")) 1 else 0
-            val diagnostic = "preparedClient=$preparedClient " + listOf("preparationMs", "credentialsMs", "offerMs", "configurationMs", "negotiationMs", "websocketMs", "settingsConfirmedMs", "listeningMs", "firstInputMs")
-              .filter { !timings.isNull(it) }.joinToString(" ") { "$it=${timings.optLong(it)}" }
-            if (session.startupDiagnostic != diagnostic) {
-              session.startupDiagnostic = diagnostic
-              Log.i(LOG_TAG, "Startup $diagnostic")
-            }
-          }
-          state.optJSONObject("captions")?.let { captions ->
-            // These fields are Rust-owned enums/constants, never transcripts,
-            // raw provider data, prompts, credentials or session identifiers.
-            val diagnostic = "Captions status=${captions.optString("status")} requested=${captions.optString("requestedLanguage")} confirmed=${captions.optString("confirmedLanguage")} languageConfirmed=${captions.optBoolean("languageConfirmed")} model=${captions.optString("confirmedModel")} promptAbsent=${captions.optBoolean("promptAbsent")}"
-            if (session.captionDiagnostic != diagnostic) {
-              session.captionDiagnostic = diagnostic
-              Log.i(LOG_TAG, diagnostic)
-            }
-          }
-          val audioDiagnostic = "phase=$phase speechEvents=${state.optLong("inputSpeechEvents")} inputStalled=${state.optBoolean("inputStalled")} liveCommandErrors=${state.optLong("liveCommandErrors")} gaps=${state.optLong("captureGaps")} captionEvents=${state.optLong("captionEvents")} messages=${state.optJSONArray("messages")?.length() ?: 0}"
-          val diagnosticNow = SystemClock.elapsedRealtime()
-          val diagnosticInterval = if (session.capturedSamples < Core.RATE * EARLY_DIAGNOSTIC_SECONDS) EARLY_DIAGNOSTIC_INTERVAL_MS else DIAGNOSTIC_INTERVAL_MS
-          if (session.audioDiagnostic != audioDiagnostic || diagnosticNow - session.audioDiagnosticAtMs >= diagnosticInterval) {
-            session.audioDiagnostic = audioDiagnostic
-            session.audioDiagnosticAtMs = diagnosticNow
-            val playback = state.optJSONObject("playback")
-            val signal = state.optJSONObject("signal")
-            val media = state.optJSONObject("media")
-            val underruns = try { session.output?.underrunCount ?: 0 } catch (_: Exception) { 0 }
-            val bufferFrames = try { session.output?.bufferSizeInFrames ?: 0 } catch (_: Exception) { 0 }
-            val startFrames = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-              try { session.output?.startThresholdInFrames ?: 0 } catch (_: Exception) { 0 }
-            } else bufferFrames
-            val counters = "rawRms=${signal?.optDouble("rawRms")} processedRms=${signal?.optDouble("processedRms")} processingDrops=${signal?.optLong("droppedFrames")} receivedMs=${playback?.optLong("receivedMs")} heardMs=${playback?.optLong("heardMs")} durationMs=${playback?.optLong("expectedMs")} captionUtf16=${playback?.optLong("textUtf16")} spokenUtf16=${playback?.optLong("spokenUtf16")} media=${media?.toString()} nativeAudioSamples=${session.playedAudioSamples} nativeAudioPeak=${session.playedAudioPeak} playbackUnderruns=$underruns playbackQueuedMs=${session.playbackQueuedMs} playbackBufferFrames=$bufferFrames playbackStartFrames=$startFrames liveCaptions=${state.optJSONObject("liveCaptionTiming")}"
-            Log.w(LOG_TAG, "Audio deviceSamples=${session.capturedSamples} rejected=${session.rejectedCapture} ageMs=${session.captureAgeNs / 1_000_000} devicePosition=${session.deviceFramePosition} capturePackets=${state.optLong("capturePackets")} uploadedPackets=${state.optLong("uploadedPackets")} rawLevel=${state.optDouble("captureLevel")} processedLevel=${state.optDouble("level")} events=${state.optLong("serverEvents")} $audioDiagnostic liveError=${state.optJSONObject("liveError")} $counters")
-          }
-          if (phase == "error" || phase == "closed") {
+          logDiagnostics(session)
+          if (state.ended) {
             stop(token)
             if (!preview) VoiceCallService.end(token)
           } else main.postDelayed(this, 100)
@@ -290,6 +252,44 @@ internal object RealtimeVoice {
         main.post { promise.reject(if (failure is CredentialFailure) failure.code else "E_REALTIME", "Realtime audio could not start. Check the saved API credential and device audio support.") }
       }, "WhipRealtimeFailedStart").start()
     }
+  }
+
+  private fun logDiagnostics(session: Session) {
+    val now = SystemClock.elapsedRealtime()
+    val interval = if (session.capturedSamples < Core.RATE * EARLY_DIAGNOSTIC_SECONDS) EARLY_DIAGNOSTIC_INTERVAL_MS else DIAGNOSTIC_INTERVAL_MS
+    if (now - session.audioDiagnosticAtMs < interval) return
+    session.audioDiagnosticAtMs = now
+    val state = JSONObject(Core.diagnostics(session.call))
+    if (!session.preview) state.optJSONObject("startup")?.let { timings ->
+      // Fixed numeric durations only. Never log the enclosing call view.
+      val preparedClient = if (timings.optBoolean("preparedClient")) 1 else 0
+      val diagnostic = "preparedClient=$preparedClient " + listOf("preparationMs", "credentialsMs", "offerMs", "configurationMs", "negotiationMs", "websocketMs", "settingsConfirmedMs", "listeningMs", "firstInputMs")
+        .filter { !timings.isNull(it) }.joinToString(" ") { "$it=${timings.optLong(it)}" }
+      if (session.startupDiagnostic != diagnostic) {
+        session.startupDiagnostic = diagnostic
+        Log.i(LOG_TAG, "Startup $diagnostic")
+      }
+    }
+    state.optJSONObject("captions")?.let { captions ->
+      // These fields are Rust-owned enums/constants, never transcripts,
+      // raw provider data, prompts, credentials or session identifiers.
+      val diagnostic = "Captions status=${captions.optString("status")} requested=${captions.optString("requestedLanguage")} confirmed=${captions.optString("confirmedLanguage")} languageConfirmed=${captions.optBoolean("languageConfirmed")} model=${captions.optString("confirmedModel")} promptAbsent=${captions.optBoolean("promptAbsent")}"
+      if (session.captionDiagnostic != diagnostic) {
+        session.captionDiagnostic = diagnostic
+        Log.i(LOG_TAG, diagnostic)
+      }
+    }
+    val audioDiagnostic = "phase=${state.optString("phase")} speechEvents=${state.optLong("inputSpeechEvents")} inputStalled=${state.optBoolean("inputStalled")} liveCommandErrors=${state.optLong("liveCommandErrors")} gaps=${state.optLong("captureGaps")} captionEvents=${state.optLong("captionEvents")}"
+    val playback = state.optJSONObject("playback")
+    val signal = state.optJSONObject("signal")
+    val media = state.optJSONObject("media")
+    val underruns = try { session.output?.underrunCount ?: 0 } catch (_: Exception) { 0 }
+    val bufferFrames = try { session.output?.bufferSizeInFrames ?: 0 } catch (_: Exception) { 0 }
+    val startFrames = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+      try { session.output?.startThresholdInFrames ?: 0 } catch (_: Exception) { 0 }
+    } else bufferFrames
+    val counters = "rawRms=${signal?.optDouble("rawRms")} processedRms=${signal?.optDouble("processedRms")} processingDrops=${signal?.optLong("droppedFrames")} receivedMs=${playback?.optLong("receivedMs")} heardMs=${playback?.optLong("heardMs")} durationMs=${playback?.optLong("expectedMs")} captionUtf16=${playback?.optLong("textUtf16")} spokenUtf16=${playback?.optLong("spokenUtf16")} media=${media?.toString()} nativeAudioSamples=${session.playedAudioSamples} nativeAudioPeak=${session.playedAudioPeak} playbackUnderruns=$underruns playbackQueuedMs=${session.playbackQueuedMs} playbackBufferFrames=$bufferFrames playbackStartFrames=$startFrames liveCaptions=${state.optJSONObject("liveCaptionTiming")}"
+    Log.w(LOG_TAG, "Audio deviceSamples=${session.capturedSamples} rejected=${session.rejectedCapture} ageMs=${session.captureAgeNs / 1_000_000} devicePosition=${session.deviceFramePosition} capturePackets=${state.optLong("capturePackets")} uploadedPackets=${state.optLong("uploadedPackets")} rawLevel=${state.optDouble("captureLevel")} processedLevel=${state.optDouble("level")} events=${state.optLong("serverEvents")} $audioDiagnostic liveError=${state.optJSONObject("liveError")} $counters")
   }
 
   @SuppressLint("MissingPermission")

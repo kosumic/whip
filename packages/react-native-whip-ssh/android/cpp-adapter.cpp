@@ -202,6 +202,25 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_whipssh_RealtimeVoiceNative_played(JNIEnv *, jclass, jlong call, jlong epoch, jlong samples) { whip_realtime_played(call, epoch, samples); }
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_whipssh_RealtimeVoiceNative_epoch(JNIEnv *, jclass, jlong call) { return static_cast<jlong>(whip_realtime_epoch(call)); }
+extern "C" JNIEXPORT jobject JNICALL
+Java_com_whipssh_RealtimeVoiceNative_controlState(JNIEnv *env, jclass, jlong call) {
+    const auto state = whip_realtime_control_state(call);
+    auto type = env->FindClass("com/whipssh/RealtimeVoiceNative$ControlState");
+    if (!type) return nullptr;
+    auto init = env->GetMethodID(type, "<init>", "(ZZZZJJLjava/lang/String;Z)V");
+    if (!init) return nullptr;
+    auto text = state.announcement_text ? env->NewStringUTF(state.announcement_text) : nullptr;
+    if (env->ExceptionCheck()) return nullptr;
+    return env->NewObject(type, init, state.ended, state.reconnecting, state.media_ready, state.muted,
+                          static_cast<jlong>(state.announcement_id), static_cast<jlong>(state.lease), text, state.cancelled);
+}
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_whipssh_RealtimeVoiceNative_diagnostics(JNIEnv *env, jclass, jlong call) {
+    auto *value = whip_realtime_diagnostics(call);
+    const std::string json(value ? value : "{}");
+    whip_realtime_free(value);
+    return speechString(env, json);
+}
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_whipssh_RealtimeVoiceNative_view(JNIEnv *env, jclass, jlong call) {
     auto *value = whip_realtime_view(call);

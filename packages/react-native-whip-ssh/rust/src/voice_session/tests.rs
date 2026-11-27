@@ -124,10 +124,9 @@ async fn observation_coalesces_updates_and_rejects_a_second_waiter() -> Result<(
 {
     let core = Arc::new(VoiceSessionCoordinator::default());
     let id = admit(&core, "Realtime")?;
-    core.save_realtime(
-        &id,
-        json!({"phase":"listening","level":0.0,"capturePackets":1}),
-    );
+    let (call, _commands) = crate::realtime_voice::playback_owner_with_commands()
+        .map_err(|_| VoiceSessionError::Cancelled)?;
+    core.bind_realtime(&id, &call, false)?;
     let first: Value = decode(&core.snapshot(&id)?)?;
     let revision = first["revision"]
         .as_str()
@@ -141,30 +140,47 @@ async fn observation_coalesces_updates_and_rejects_a_second_waiter() -> Result<(
     };
     tokio::task::yield_now().await;
     assert!(core.wait_view(id.clone(), revision.clone()).await.is_err());
-    core.save_realtime(
-        &id,
-        json!({"phase":"listening","level":0.0,"capturePackets":100}),
-    );
+    voice_call_openai::session::Audio::uploaded(&*call);
+    call.set_microphone(false, None)
+        .map_err(|_| VoiceSessionError::Cancelled)?;
     tokio::time::advance(Duration::from_millis(100)).await;
     tokio::task::yield_now().await;
-    assert!(!waiting.is_finished(), "diagnostics do not wake JS");
-    core.save_realtime(&id, json!({"phase":"speaking","text":"first"}));
-    core.save_realtime(&id, json!({"phase":"speaking","text":"latest"}));
+    assert!(
+        !waiting.is_finished(),
+        "diagnostics and unchanged mute intent do not wake JS"
+    );
+    call.set_microphone(true, None)
+        .map_err(|_| VoiceSessionError::Cancelled)?;
     tokio::time::advance(Duration::from_millis(100)).await;
     let update: Value = decode(&waiting.await.map_err(|_| VoiceSessionError::Cancelled)??)?;
-    assert_eq!(update["view"]["text"], "latest");
+    assert_eq!(update["view"]["muted"], true);
+    assert!(update["view"].get("capturePackets").is_none());
     assert_ne!(update["revision"], revision);
+    let latest = update["revision"]
+        .as_str()
+        .ok_or(VoiceSessionError::InvalidCommand)?
+        .to_owned();
+    let idle: Value = decode(&core.wait_view(id.clone(), latest.clone()).await?)?;
+    assert_eq!(idle["revision"], latest);
+    assert!(idle["view"].is_null());
+    assert_eq!(idle["ended"], false);
     Ok(())
 }
 #[tokio::test(start_paused = true)]
 async fn teardown_returns_final_usage_and_releases_observation_after_acknowledgement()
--> Result<(), VoiceSessionError> {
+-> Result<(), Box<dyn std::error::Error>> {
     let core = VoiceSessionCoordinator::default();
     let id = admit(&core, "Live")?;
     core.end(id.clone(), None);
     core.save_realtime(
         &id,
-        json!({"phase":"closed","usageFinalized":true,"estimatedUsd":0.25}),
+        (
+            2,
+            serde_json::value::to_raw_value(
+                &json!({"phase":"closed","usageFinalized":true,"estimatedUsd":0.25}),
+            )?
+            .into(),
+        ),
     );
     let final_view: Value = decode(&core.wait_view(id.clone(), "0".into()).await?)?;
     assert_eq!(final_view["ended"], true);
@@ -172,7 +188,13 @@ async fn teardown_returns_final_usage_and_releases_observation_after_acknowledge
     assert_eq!(final_view["view"]["estimatedUsd"], 0.25);
     core.acknowledge(id.clone(), "closed".into())?;
     assert!(core.inner.lock().observations.is_empty());
-    core.save_realtime(&id, json!({"phase":"listening"}));
+    core.save_realtime(
+        &id,
+        (
+            3,
+            serde_json::value::to_raw_value(&json!({"phase":"listening"}))?.into(),
+        ),
+    );
     assert!(core.inner.lock().observations.is_empty());
     Ok(())
 }

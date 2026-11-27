@@ -1,8 +1,6 @@
 //! Whip's bounded playback-only sample over the shared provider driver.
 use super::{update_usage, usage};
-use crate::realtime_voice::{
-    Config, PREVIEW_AUDIO_LIMIT, PREVIEW_TIMEOUT, RealtimeVoiceAdapter, bounded_text,
-};
+use crate::realtime_voice::{Config, PREVIEW_AUDIO_LIMIT, PREVIEW_TIMEOUT, RealtimeVoiceAdapter};
 use oai_rt_rs::live::{self as api, Command, Nullable, ServerEvent};
 use parking_lot::Mutex;
 use std::{
@@ -139,7 +137,7 @@ impl Delegate for Preview<'_> {
         match frame.event {
             ServerEvent::Started { .. } => {
                 self.owner.view.lock().media_ready = true;
-                self.owner.view.lock().phase = "muted";
+                self.owner.view.lock().fields.phase = "muted";
                 self.owner.ready.store(true, Ordering::Release);
                 session.mute(self.audio, true).await?;
                 session
@@ -156,7 +154,7 @@ impl Delegate for Preview<'_> {
                 update_usage(self.owner, self.usage);
             }
             ServerEvent::OutputTranscriptDelta { delta, .. } => {
-                bounded_text(&mut self.owner.view.lock().text, &delta);
+                self.owner.view.lock().text.append(&delta);
             }
             ServerEvent::Closed {
                 usage: reported,
@@ -199,7 +197,7 @@ impl Preview<'_> {
         if self.audio.sample.lock().quiet(Instant::now()) && drained {
             return Ok(Flow::Stop);
         }
-        self.owner.view.lock().phase = if drained { "muted" } else { "speaking" };
+        self.owner.view.lock().fields.phase = if drained { "muted" } else { "speaking" };
         Ok(Flow::Continue)
     }
 }

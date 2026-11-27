@@ -342,7 +342,7 @@ pub unsafe extern "C" fn whip_realtime_read(
     }
     if count > 0 {
         let mut view = call.view.lock();
-        view.playback_level = peak(&samples[..count]);
+        view.fields.playback_level = peak(&samples[..count]);
         view.media.read_samples += u64::try_from(count).unwrap_or(u64::MAX);
     }
     count
@@ -405,59 +405,138 @@ pub extern "C" fn whip_realtime_view(id: u64) -> *mut c_char {
     let Some(call) = call(id) else {
         return std::ptr::null_mut();
     };
-    snapshot(&call)
-        .and_then(|value| serde_json::to_string(&value).ok())
+    native_view(&call)
         .and_then(|value| CString::new(value).ok())
         .map_or(std::ptr::null_mut(), CString::into_raw)
 }
 
-pub(crate) fn snapshot(call: &RealtimeVoiceAdapter) -> Option<serde_json::Value> {
-    let (messages, playback) = {
+/// Control state borrowed by the native audio owner. Announcement text points
+/// to a static UTF-8 literal and is null when the queue is empty.
+#[repr(C)]
+pub struct ControlState {
+    ended: bool,
+    reconnecting: bool,
+    media_ready: bool,
+    muted: bool,
+    announcement_id: u64,
+    lease: u64,
+    announcement_text: *const c_char,
+    cancelled: bool,
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn whip_realtime_control_state(id: u64) -> ControlState {
+    let mut state = ControlState {
+        ended: true,
+        reconnecting: false,
+        media_ready: false,
+        muted: false,
+        announcement_id: 0,
+        lease: 0,
+        announcement_text: std::ptr::null(),
+        cancelled: false,
+    };
+    if let Some(call) = call(id) {
+        let view = call.view.lock();
+        state.ended = matches!(view.fields.phase, "closed" | "error");
+        state.reconnecting = view.fields.phase == "reconnecting" && !call.is_suspended();
+        state.media_ready = view.media_ready;
+        state.muted = view.fields.muted;
+        drop(view);
+        if let Some(announcement) = call.microphone.lock().announcement(call.speech.id()) {
+            state.announcement_id = announcement.id;
+            state.lease = announcement.lease;
+            state.announcement_text = announcement.text.as_c_str().as_ptr();
+            state.cancelled = announcement.cancelled;
+        }
+    }
+    state
+}
+
+fn diagnostics(call: &RealtimeVoiceAdapter) -> Option<serde_json::Value> {
+    let (playback, live_timing) = {
         let output = call.output.lock();
-        (output.transcript.snapshot(), output.transcript.timing())
+        (
+            output.transcript.timing(),
+            output
+                .live_transcript
+                .as_ref()
+                .map(super::live::captions::Transcript::clock_timing),
+        )
     };
     let signal = call.echo.lock().as_ref().map_or_else(
         super::echo::Signal::default,
         super::echo::MediaEchoCanceller::diagnostics,
     );
-    let mut view = call.view.lock();
-    view.messages = messages;
-    view.playback = playback;
-    view.signal = signal;
-    (view.capture_packets, view.capture_gaps) = call.input.diagnostics();
-    let working = view.turn_working && !matches!(view.phase, "error" | "closed");
-    let mut value = serde_json::to_value(&*view).ok();
+    let view = call.view.lock();
+    let mut value = serde_json::to_value(&*view).ok()?;
     drop(view);
-    if let Some(value) = &mut value {
-        if call.suspended.load(Ordering::Acquire) && !call.closed.load(Ordering::Acquire) {
-            value["phase"] = "suspended".into();
-            value["level"] = 0.into();
-            value["playbackLevel"] = 0.into();
-        }
-        value["microphoneAnnouncement"] = call
-            .microphone
-            .lock()
-            .announcement(call.speech.id())
-            .unwrap_or_default();
-        value["continuity"] =
-            serde_json::to_value(&call.continuity.lock().diagnostics).unwrap_or_default();
+    let (packets, gaps) = call.input.diagnostics();
+    value["capturePackets"] = packets.into();
+    value["captureGaps"] = gaps.into();
+    value["signal"] = serde_json::to_value(signal).ok()?;
+    value["playback"] = serde_json::to_value(playback).ok()?;
+    if let Some(timing) = live_timing {
+        value["liveCaptionTiming"] = timing;
     }
-    if let (Some(value), Some(transcript)) = (&mut value, &call.output.lock().live_transcript) {
-        let messages = transcript.messages();
-        value["liveCaptionTiming"] = transcript.timing(&messages);
-        value["messages"] = messages;
+    Some(value)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn whip_realtime_diagnostics(id: u64) -> *mut c_char {
+    call(id)
+        .and_then(|call| {
+            let mut value = diagnostics(&call)?;
+            let fields = call.view.lock().fields;
+            value["phase"] = fields.phase.into();
+            value["level"] = fields.level.into();
+            Some(value)
+        })
+        .and_then(|value| CString::new(value.to_string()).ok())
+        .map_or(std::ptr::null_mut(), CString::into_raw)
+}
+
+fn native_view(call: &RealtimeVoiceAdapter) -> Option<String> {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct NativeView<'a> {
+        #[serde(flatten)]
+        fields: super::presentation::Fields,
+        #[serde(flatten)]
+        text: super::presentation::TextFields,
+        #[serde(flatten)]
+        diagnostics: serde_json::Value,
+        messages: &'a serde_json::value::RawValue,
+        microphone_announcement: Option<super::microphone::Announcement>,
+        continuity: voice_call_openai::continuity::Diagnostics,
     }
-    if let Some(messages) = value
-        .as_mut()
-        .and_then(|view| view["messages"].as_array_mut())
-    {
-        super::transcript::group_call_tools(messages, working);
+    let mut diagnostics = diagnostics(call)?;
+    let (fields, text) = call.fields();
+    let working = fields.working();
+    let messages = call.presentation.lock().messages(call, working).ok()?;
+    if let Some(live) = diagnostics.get_mut("liveCaptionTiming") {
+        live["textUtf16"] = messages.text_utf16.into();
+        live["spokenUtf16"] = messages.spoken_utf16.into();
     }
-    value
+    let microphone_announcement = call.microphone.lock().announcement(call.speech.id());
+    let continuity = call.continuity.lock().diagnostics.clone();
+    serde_json::to_string(&NativeView {
+        fields,
+        text,
+        diagnostics,
+        messages: &messages.raw,
+        microphone_announcement,
+        continuity,
+    })
+    .ok()
+}
+
+#[cfg(test)]
+pub(crate) fn snapshot(call: &RealtimeVoiceAdapter) -> Option<serde_json::Value> {
+    serde_json::from_str(&native_view(call)?).ok()
 }
 
 /// # Safety
-/// value must be null or a live result from whip_realtime_view, freed once.
+/// value must be null or a live result from whip_realtime_view or whip_realtime_diagnostics, freed once.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn whip_realtime_free(value: *mut c_char) {
     if !value.is_null() {

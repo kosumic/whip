@@ -32,7 +32,7 @@ impl Audio for RealtimeVoiceAdapter {
             && crate::voice_credentials::generation() == self.credential_generation
     }
     fn set_muted(&self, muted: bool) -> Result<(), &'static str> {
-        self.view.lock().level = 0.0;
+        self.view.lock().fields.level = 0.0;
         // Live can acknowledge an older command after a newer user/tool mute.
         // Provider acknowledgements may gate capture, never replace intent.
         self.input

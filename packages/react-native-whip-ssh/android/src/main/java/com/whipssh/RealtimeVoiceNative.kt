@@ -33,5 +33,12 @@ object RealtimeVoiceNative {
   @JvmStatic external fun cueStop(call: Long, generation: Long)
   @JvmStatic external fun played(call: Long, epoch: Long, samples: Long)
   @JvmStatic external fun epoch(call: Long): Long
+  @androidx.annotation.Keep
+  class ControlState(
+    val ended: Boolean, val reconnecting: Boolean, val mediaReady: Boolean, val muted: Boolean,
+    val announcementId: Long, val lease: Long, val announcementText: String?, val cancelled: Boolean,
+  )
+  @JvmStatic external fun controlState(call: Long): ControlState
+  @JvmStatic external fun diagnostics(call: Long): String
   @JvmStatic external fun view(call: Long): String
 }

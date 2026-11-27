@@ -66,15 +66,19 @@ pub(super) fn devices_started(owner: &RealtimeVoiceAdapter) {
     }
     owner.ready.store(true, Ordering::Release);
     view.recovery = recovery::State::Active;
-    if owner.allow_input && !view.muted && view.startup.first_input.is_none() {
+    if owner.allow_input && !view.fields.muted && view.startup.first_input.is_none() {
         // Accept capture now; advertise listening after its first encoded
         // packet has reached the media sender, rather than at device open.
-        if view.phase != "reconnecting" {
-            view.phase = "starting";
+        if view.fields.phase != "reconnecting" {
+            view.fields.phase = "starting";
         }
         return;
     }
-    view.phase = if view.muted { "muted" } else { "listening" };
+    view.fields.phase = if view.fields.muted {
+        "muted"
+    } else {
+        "listening"
+    };
     view.startup.listening.get_or_insert_with(|| {
         owner
             .client_elapsed_ms
@@ -89,11 +93,11 @@ pub(super) fn input_started(owner: &RealtimeVoiceAdapter) {
     let mut view = owner.view.lock();
     view.startup.first_input.get_or_insert(elapsed);
     view.startup.listening.get_or_insert(elapsed);
-    if matches!(view.phase, "starting" | "reconnecting")
+    if matches!(view.fields.phase, "starting" | "reconnecting")
         && view.media_ready
-        && !view.muted
+        && !view.fields.muted
         && (!owner.live || view.startup.settings_confirmed.is_some())
     {
-        view.phase = "listening";
+        view.fields.phase = "listening";
     }
 }

@@ -342,7 +342,7 @@ impl LiveVoiceAdapter {
         {
             let fragments = if config.preview {
                 let mut transcript = crate::voice_history::Conversation::default();
-                transcript.assistant(&owner.view.lock().text);
+                transcript.assistant(owner.view.lock().text.assistant());
                 transcript.into_captions()
             } else {
                 owner
@@ -362,7 +362,7 @@ impl LiveVoiceAdapter {
             )
             .await
             {
-                owner.view.lock().error = Some(error);
+                owner.view.lock().fields.error = Some(error);
             }
         }
         update_usage(&owner, &adapter.usage);
@@ -574,9 +574,9 @@ pub(super) fn public_result(value: &Value) -> String {
 
 fn update_usage(owner: &RealtimeVoiceAdapter, usage: &usage::Usage) {
     let mut view = owner.view.lock();
-    view.estimated_usd = usage.estimate();
-    view.live_seconds = Some(usage.provider.seconds);
-    view.usage_finalized = usage.provider.finalized;
+    view.fields.estimated_usd = usage.estimate();
+    view.fields.live_seconds = Some(usage.provider.seconds);
+    view.fields.usage_finalized = usage.provider.finalized;
 }
 
 pub(super) fn public_text(text: &str) -> String {

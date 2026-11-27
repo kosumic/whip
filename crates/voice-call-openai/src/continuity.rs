@@ -40,7 +40,7 @@ pub enum Reason {
     ConnectionLost,
 }
 
-#[derive(Clone, Copy, Default, Serialize)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Status {
     #[default]
@@ -51,7 +51,7 @@ pub enum Status {
     Ended,
 }
 
-#[derive(Default, Serialize)]
+#[derive(Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Diagnostics {
     pub status: Status,
@@ -61,7 +61,7 @@ pub struct Diagnostics {
     pub sessions: u64,
     pub attempts: Vec<Attempt>,
 }
-#[derive(Serialize)]
+#[derive(Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Attempt {
     pub generation: u64,
@@ -99,6 +99,9 @@ impl Policy {
             (now + after + DRAIN).min(now + remaining.saturating_sub(Duration::from_secs(30))),
         );
         self.diagnostics.sessions += 1;
+    }
+    pub fn is_connected(&self) -> bool {
+        self.connected.is_some() && self.diagnostics.status == Status::Connected
     }
     pub fn connected(&mut self) {
         self.connected.get_or_insert_with(Instant::now);

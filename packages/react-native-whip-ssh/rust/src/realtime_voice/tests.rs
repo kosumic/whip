@@ -746,3 +746,45 @@ fn resumed_terminal_configuration_cannot_redirect_to_a_new_target_or_scope()
     assert!(config.accept_history(restored()).is_err());
     Ok(())
 }
+
+#[test]
+fn presentation_observes_voice_tool_rows_and_ignores_private_agent_rows()
+-> Result<(), Box<dyn std::error::Error>> {
+    use crate::voice_history::Event;
+    for live in [false, true] {
+        let (call, _commands) = playback_owner_with_commands()?;
+        call.output.lock().live_transcript = live.then(live::captions::Transcript::default);
+        let mut changes = call.changes();
+        let record = |id, event| {
+            let mut output = call.output.lock();
+            if let Some(transcript) = &mut output.live_transcript {
+                transcript.event(id, event);
+            } else {
+                output.transcript.event(id, event);
+            }
+        };
+        let mut private = Event::new("tool", "agent tool", "requested");
+        private.from_coding_agent = true;
+        record("private", private);
+        assert!(!changes.has_changed()?);
+
+        record("public", Event::new("tool", "voice tool", "requested"));
+        assert!(changes.has_changed()?);
+        changes.borrow_and_update();
+        let (_, snapshot) = call.presentation()?;
+        let view: Value = serde_json::from_str(snapshot.get())?;
+        assert_eq!(
+            view["messages"].as_array().ok_or("missing messages")?.len(),
+            1
+        );
+        assert_eq!(view["messages"][0]["event"]["name"], "voice tool");
+
+        record("public", Event::new("tool", "voice tool", "completed"));
+        assert!(changes.has_changed()?);
+        let (_, snapshot) = call.presentation()?;
+        let view: Value = serde_json::from_str(snapshot.get())?;
+        assert_eq!(view["messages"][0]["event"]["status"], "completed");
+        call.close();
+    }
+    Ok(())
+}

@@ -11,6 +11,7 @@ impl RealtimeVoiceAdapter {
         }
         *interruption = Some(Instant::now());
         self.suspended.store(true, Ordering::Release);
+        self.changes.send_modify(|revision| *revision += 1);
         self.input.discard();
         self.cue.lock().clear();
         // The normal skip protocol truncates at the heard position and cancels
@@ -30,6 +31,7 @@ impl RealtimeVoiceAdapter {
         self.output.lock().clear();
         self.input.discard();
         self.suspended.store(false, Ordering::Release);
+        self.changes.send_modify(|revision| *revision += 1);
         drop(interruption);
         tracing::info!(call_id = ?self.session_id, attempt = self.attempt.load(Ordering::Acquire), event = "audio_resumed");
     }

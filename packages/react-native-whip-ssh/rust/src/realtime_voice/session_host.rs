@@ -2,10 +2,10 @@
 use super::{
     Arc, BACKGROUND_AGENT, BoundTargets, Command, Config, Instant, JoinSet, Ordering,
     PREVIEW_AUDIO_LIMIT, PREVIEW_TIMEOUT, PinnedAgent, REMAIN_SILENT, RealtimeVoiceAdapter,
-    ServerEvent, ToolCompletion, ToolLedger, Value, bounded_text, cost, delegation, feedback,
-    feedback_message, function_output, global_submitted_message, global_tools, handoff_context,
-    json, limit_text, live, mpsc, next_response, preview_response, send, spawn_delegation,
-    submitted_message, terminal, terminal_submitted_message, watch,
+    ServerEvent, ToolCompletion, ToolLedger, Value, cost, delegation, feedback, feedback_message,
+    function_output, global_submitted_message, global_tools, handoff_context, json, limit_text,
+    live, mpsc, next_response, preview_response, send, spawn_delegation, submitted_message,
+    terminal, terminal_submitted_message, watch,
 };
 use voice_call_openai::recovery::Failure;
 use voice_call_openai::session::{Delegate, Event, Flow, Session};
@@ -101,7 +101,7 @@ impl<'a> App<'a> {
             let batch = updates.take(Instant::now());
             self.owner.agent_events(&batch.events);
             let delivered = if let Some(text) = batch.context {
-                self.owner.view.lock().backend_text = Some(text.clone());
+                self.owner.view.lock().text.set_backend(Some(text.clone()));
                 if super::deliver_agent_context(session, &text).await.is_err() {
                     updates.delivery_failed();
                     false
@@ -322,12 +322,12 @@ impl Delegate for App<'_> {
                 }
                 Command::Skip => {
                     session.interrupt(&**self.owner).await?;
-                    self.owner.view.lock().playback_level = 0.0;
-                    self.owner.view.lock().phase = "listening";
+                    self.owner.view.lock().fields.playback_level = 0.0;
+                    self.owner.view.lock().fields.phase = "listening";
                 }
                 Command::SuspendAudio => {
                     session.suspend_audio(&**self.owner).await?;
-                    self.owner.view.lock().playback_level = 0.0;
+                    self.owner.view.lock().fields.playback_level = 0.0;
                 }
                 Command::Mute(muted) => {
                     let current = self.owner.microphone.lock().policy.muted();
@@ -407,7 +407,11 @@ impl Delegate for App<'_> {
                 "followup"
             });
         }
-        owner.view.lock().backend_text = Some(live::public_result(&value));
+        owner
+            .view
+            .lock()
+            .text
+            .set_backend(Some(live::public_result(&value)));
         if let Some(object) = value.as_object_mut() {
             object.remove("assistant_output");
         }
@@ -486,7 +490,7 @@ impl Delegate for App<'_> {
             if owner.output.lock().generated == 0 {
                 return Err("OpenAI returned no playable voice preview audio.".into());
             }
-            owner.view.lock().phase = "closed";
+            owner.view.lock().fields.phase = "closed";
             owner.closed.store(true, Ordering::Release);
             return Ok(Flow::Stop);
         }
@@ -508,10 +512,10 @@ impl Delegate for App<'_> {
         if owner.ready.load(Ordering::Acquire) {
             let output = owner.output.lock();
             let mut view = owner.view.lock();
-            view.turn_working = !idle;
-            view.phase = if output.generated > output.played {
+            view.fields.turn_working = !idle;
+            view.fields.phase = if output.generated > output.played {
                 "speaking"
-            } else if view.muted {
+            } else if view.fields.muted {
                 "muted"
             } else if owner.webrtc && owner.allow_input && view.startup.first_input.is_none() {
                 "starting"
@@ -521,13 +525,16 @@ impl Delegate for App<'_> {
                 "listening"
             };
             if output.generated == output.played {
-                view.playback_level = 0.0;
+                view.fields.playback_level = 0.0;
             }
         }
 
         let monitoring = {
             let view = owner.view.lock();
-            !config.preview && owner.allow_input && view.phase == "listening" && !view.muted
+            !config.preview
+                && owner.allow_input
+                && view.fields.phase == "listening"
+                && !view.fields.muted
         };
         let stalled = owner
             .input_health
@@ -535,12 +542,12 @@ impl Delegate for App<'_> {
             .stalled(Instant::now(), monitoring);
         let mut view = owner.view.lock();
         view.input_stalled = stalled;
-        if stalled && view.error.is_none() {
+        if stalled && view.fields.error.is_none() {
             // Local VAD is evidence, not proof of a broken server. Warn without
             // replaying speech, clearing a turn, or creating a paid replacement.
-            view.error = Some(super::health::WARNING);
-        } else if !stalled && view.error == Some(super::health::WARNING) {
-            view.error = None;
+            view.fields.error = Some(super::health::WARNING);
+        } else if !stalled && view.fields.error == Some(super::health::WARNING) {
+            view.fields.error = None;
         }
         drop(view);
 
@@ -597,8 +604,8 @@ impl Delegate for App<'_> {
         }
         if costs.observe(&event) {
             let mut view = owner.view.lock();
-            view.estimated_usd = costs.estimated_usd();
-            view.cost_incomplete = costs.is_partial();
+            view.fields.estimated_usd = costs.estimated_usd();
+            view.fields.cost_incomplete = costs.is_partial();
         }
         if !config.webrtc || !matches!(event, ServerEvent::ResponseOutputAudioDone { .. }) {
             owner.output.lock().transcript.observe(&event, ignored);
@@ -656,14 +663,14 @@ impl Delegate for App<'_> {
                 }
             }
             ServerEvent::ResponseCreated { .. } => {
-                owner.view.lock().text.clear();
+                owner.view.lock().text.clear_assistant();
             }
             ServerEvent::ResponseDone { response: done, .. }
             | ServerEvent::ResponseCancelled { response: done, .. } => {
                 if let Some(usage) = done.usage {
                     let mut view = owner.view.lock();
-                    view.input_tokens += u64::from(usage.input_tokens);
-                    view.output_tokens += u64::from(usage.output_tokens);
+                    view.fields.input_tokens += u64::from(usage.input_tokens);
+                    view.fields.output_tokens += u64::from(usage.output_tokens);
                 }
                 if config.preview {
                     if !matches!(done.status, oai_rt_rs::ResponseStatus::Completed)
@@ -698,14 +705,14 @@ impl Delegate for App<'_> {
             }
             ServerEvent::InputAudioBufferSpeechStarted { item_id, .. } => {
                 *input_item = item_id;
-                owner.view.lock().text.clear();
-                owner.view.lock().user_text.clear();
+                owner.view.lock().text.clear_assistant();
+                owner.view.lock().text.set_user(String::new());
             }
             ServerEvent::ResponseOutputAudioTranscriptDelta {
                 response_id, delta, ..
             } => {
                 if !ignored.contains(&response_id) {
-                    bounded_text(&mut owner.view.lock().text, &delta);
+                    owner.view.lock().text.append(&delta);
                 }
             }
             ServerEvent::InputAudioTranscriptionCompleted {
@@ -714,11 +721,11 @@ impl Delegate for App<'_> {
                 ..
             } => {
                 if item_id == *input_item {
-                    owner.view.lock().user_text = limit_text(transcript);
+                    owner.view.lock().text.set_user(limit_text(transcript));
                 }
             }
             ServerEvent::InputAudioTranscriptionFailed { .. } => {
-                owner.view.lock().error =
+                owner.view.lock().fields.error =
                     Some("OpenAI could not transcribe this turn. Voice audio is still connected.");
             }
 

@@ -61,6 +61,16 @@ enum PaceSource {
 }
 
 impl Turn {
+    fn visible_progress(&self) -> Option<(usize, bool)> {
+        (!self.message.text.is_empty()
+            && self
+                .message
+                .event
+                .as_ref()
+                .is_none_or(|e| !e.from_coding_agent))
+        .then_some((self.message.spoken_utf16, self.message.active))
+    }
+
     fn observe_pace(&mut self, pace: &mut pacing::Pace) {
         if self.stopped || !self.text_done {
             return;
@@ -115,6 +125,7 @@ impl Turn {
 
 #[derive(Default)]
 pub(super) struct Transcript {
+    pub(super) revision: u64,
     turns: VecDeque<Turn>,
     pace: pacing::Pace,
 }
@@ -188,6 +199,7 @@ impl Transcript {
                 self.turns.iter().map(|turn| turn.message.event.as_ref()),
             );
             if let Some(turn) = self.turns.remove(index) {
+                self.revision += u64::from(turn.visible_progress().is_some());
                 bytes -= turn.message.text.len()
                     + turn
                         .message
@@ -201,6 +213,7 @@ impl Transcript {
     }
 
     pub fn observe(&mut self, event: &ServerEvent, ignored: &HashSet<String>) {
+        let mut changed = false;
         match event {
             ServerEvent::ResponseDone { response, .. } if !ignored.contains(&response.id) => {
                 if let Some(audio) = duration::estimate(response)
@@ -208,11 +221,15 @@ impl Transcript {
                         turn.message.id == assistant_id(audio.item, audio.index) && !turn.stopped
                     })
                 {
-                    turn.message.text = super::limit_text(audio.transcript.to_owned());
+                    let text = super::limit_text(audio.transcript.to_owned());
+                    let before = turn.visible_progress();
+                    changed = turn.message.text != text;
+                    turn.message.text = text;
                     turn.timing.update(&turn.message.text);
                     turn.text_done = true;
                     turn.expected_samples = Some(audio.samples);
                     turn.advance(turn.played);
+                    changed |= before != turn.visible_progress();
                 }
             }
             ServerEvent::InputAudioBufferSpeechStarted { item_id, .. }
@@ -231,7 +248,9 @@ impl Transcript {
                     .iter_mut()
                     .find(|turn| turn.message.id == format!("user:{item_id}"))
                 {
-                    turn.message.text = super::limit_text(transcript.clone());
+                    let text = super::limit_text(transcript.clone());
+                    changed = turn.message.text != text;
+                    turn.message.text = text;
                     turn.text_done = true;
                     turn.text_failed = false;
                 }
@@ -242,7 +261,9 @@ impl Transcript {
                     .iter_mut()
                     .find(|turn| turn.message.id == format!("user:{item_id}") && !turn.text_done)
                 {
+                    let length = turn.message.text.len();
                     super::bounded_text(&mut turn.message.text, delta);
+                    changed = length != turn.message.text.len();
                 }
             }
             ServerEvent::InputAudioTranscriptionFailed { item_id, .. } => {
@@ -265,10 +286,14 @@ impl Transcript {
                     && !turn.stopped
                     && !turn.text_done
                 {
+                    let length = turn.message.text.len();
                     super::bounded_text(&mut turn.message.text, delta);
+                    changed = length != turn.message.text.len();
                     turn.timing.update(&turn.message.text);
+                    let before = turn.visible_progress();
                     turn.observe_stream_pace();
                     turn.advance(turn.played);
+                    changed |= before != turn.visible_progress();
                 }
             }
             ServerEvent::ResponseOutputAudioTranscriptDone {
@@ -281,10 +306,14 @@ impl Transcript {
                 if let Some(turn) = self.turn(assistant_id(item_id, *content_index), ASSISTANT)
                     && !turn.stopped
                 {
-                    turn.message.text = super::limit_text(transcript.clone());
+                    let text = super::limit_text(transcript.clone());
+                    changed = turn.message.text != text;
+                    turn.message.text = text;
+                    let before = turn.visible_progress();
                     turn.timing.update(&turn.message.text);
                     turn.text_done = true;
                     turn.advance(turn.played);
+                    changed |= before != turn.visible_progress();
                 }
             }
             ServerEvent::ResponseOutputAudioDone {
@@ -294,12 +323,15 @@ impl Transcript {
                 ..
             } if !ignored.contains(response_id) => {
                 if let Some(turn) = self.turn(assistant_id(item_id, *content_index), ASSISTANT) {
+                    let before = turn.visible_progress();
                     turn.audio_done = true;
                     turn.advance(turn.played);
+                    changed |= before != turn.visible_progress();
                 }
             }
-            _ => {}
+            _ => return,
         }
+        self.revision += u64::from(changed);
         for turn in &mut self.turns {
             turn.observe_pace(&mut self.pace);
         }
@@ -310,8 +342,10 @@ impl Transcript {
         if let Some(turn) = self.turn(assistant_id(item, index), ASSISTANT)
             && !turn.stopped
         {
+            let before = turn.visible_progress();
             turn.samples = samples;
             turn.advance(turn.played);
+            self.revision += u64::from(before != turn.visible_progress());
         }
         if self.turns.len() > MAX_MESSAGES {
             self.trim();
@@ -324,7 +358,9 @@ impl Transcript {
             .iter_mut()
             .find(|turn| turn.message.id == assistant_id(item, index))
         {
+            let before = turn.visible_progress();
             turn.advance(played);
+            self.revision += u64::from(before != turn.visible_progress());
         }
     }
 
@@ -334,16 +370,20 @@ impl Transcript {
             .iter_mut()
             .find(|turn| turn.message.id == assistant_id(item, index))
         {
+            let before = turn.visible_progress();
             turn.audio_done = true;
             turn.advance(turn.played);
             turn.observe_pace(&mut self.pace);
+            self.revision += u64::from(before != turn.visible_progress());
         }
     }
 
     pub fn stop(&mut self) {
         for turn in &mut self.turns {
             if turn.message.role == ASSISTANT {
+                let before = turn.visible_progress();
                 turn.stop();
+                self.revision += u64::from(before != turn.visible_progress());
             }
         }
     }
@@ -354,7 +394,9 @@ impl Transcript {
             .iter_mut()
             .find(|turn| turn.message.id == assistant_id(item, index))
         {
+            let before = turn.visible_progress();
             turn.stop();
+            self.revision += u64::from(before != turn.visible_progress());
         }
     }
 
@@ -425,9 +467,12 @@ impl Transcript {
             {
                 return;
             }
+            let changed = turn.message.event.as_ref() != Some(&event)
+                && (turn.visible_progress().is_some() || !event.from_coding_agent);
             turn.message.text = format!("{} · {}", event.name, event.status);
             turn.message.event = Some(event);
             turn.text_done = true;
+            self.revision += u64::from(changed);
         }
         self.trim();
     }
@@ -440,6 +485,7 @@ impl Transcript {
         {
             event.result(value);
             turn.message.text = format!("{} · {}", event.name, event.status);
+            self.revision += u64::from(!event.from_coding_agent);
         }
         self.trim();
     }
@@ -454,8 +500,12 @@ impl Transcript {
             if status == "not_admitted" && event.status != "requested" {
                 return;
             }
+            if status == event.status {
+                return;
+            }
             event.status = status.into();
             turn.message.text = format!("{} · {}", event.name, event.status);
+            self.revision += u64::from(!event.from_coding_agent);
         }
     }
 }

@@ -7,7 +7,9 @@ use crate::host_runtime::{
 };
 use crate::{VoiceChat, realtime_voice::RealtimeVoiceAdapter};
 use parking_lot::Mutex;
-use serde_json::{Value, json};
+#[cfg(test)]
+use serde_json::Value;
+use serde_json::{json, value::RawValue};
 pub(crate) use state::Source;
 use state::{Ack, Mode, Phase, Request, Scope, State};
 use std::{
@@ -18,6 +20,7 @@ use std::{
     },
     time::Duration,
 };
+use tokio::sync::watch;
 
 const EFFECT_VERSION: u8 = 1;
 const MAX_TOKEN_BYTES: usize = 256;
@@ -47,10 +50,17 @@ impl Resource {
         }
     }
 }
+#[derive(serde::Serialize)]
+struct ViewEnvelope<'a> {
+    revision: String,
+    view: Option<&'a RawValue>,
+    ended: bool,
+}
+
 #[derive(Default)]
 struct Observation {
     revision: u64,
-    view: Value,
+    view: Option<Arc<RawValue>>,
     waiting: bool,
 }
 #[derive(Default)]
@@ -72,6 +82,7 @@ pub struct VoiceSessionCoordinator {
     inner: Mutex<Inner>,
     observer: Mutex<Option<Arc<dyn VoiceSessionObserver>>>,
     notified: AtomicBool,
+    lifecycle: watch::Sender<()>,
 }
 static COORDINATOR: LazyLock<Arc<VoiceSessionCoordinator>> =
     LazyLock::new(|| Arc::new(VoiceSessionCoordinator::default()));
@@ -192,6 +203,7 @@ impl VoiceSessionCoordinator {
             resource.cancel();
         }
         if changed {
+            self.lifecycle.send_replace(());
             wake_transcript_cache();
         }
         let observer = self.observer.lock().clone();
@@ -240,6 +252,7 @@ impl VoiceSessionCoordinator {
             }
         }
         drop(inner);
+        self.lifecycle.send_replace(());
         Ok(())
     }
     pub(crate) fn backend_ended(&self, id: &str, error: Option<String>) {
@@ -248,35 +261,58 @@ impl VoiceSessionCoordinator {
         // cancellation, so reconcile again when their shutdown has drained.
         wake_transcript_cache();
     }
-    pub(crate) fn save_realtime(&self, id: &str, view: Value) {
+    pub(crate) fn save_realtime(&self, id: &str, snapshot: (u64, Arc<RawValue>)) {
         let mut inner = self.inner.lock();
         if inner.state.phase(id).is_some() {
-            Self::observe(&mut inner, id, presentation(view));
+            let observed = inner.observations.entry(id.into()).or_default();
+            if snapshot.0 >= observed.revision {
+                observed.revision = snapshot.0;
+                observed.view = Some(snapshot.1);
+            }
         }
+        drop(inner);
+        self.lifecycle.send_replace(());
     }
-    fn observe(inner: &mut Inner, id: &str, view: Value) {
-        let observed = inner.observations.entry(id.into()).or_default();
-        if observed.view != view {
-            observed.revision += 1;
-            observed.view = view;
-        }
-    }
+
     fn snapshot(&self, id: &str) -> Result<String, VoiceSessionError> {
+        self.snapshot_since(id, None)
+    }
+
+    fn snapshot_since(&self, id: &str, since: Option<u64>) -> Result<String, VoiceSessionError> {
         let resource = self.inner.lock().resources.get(id).cloned();
-        let view = match resource {
-            Some(Resource::Realtime(call)) => crate::realtime_voice::ffi::snapshot(&call),
+        let snapshot = match resource {
+            Some(Resource::Realtime(call)) => Some(
+                call.presentation()
+                    .map_err(|_| VoiceSessionError::InvalidCommand)?,
+            ),
             _ => None,
         };
-        let mut inner = self.inner.lock();
-        if let Some(view) = view
-            && inner.state.is_current(id)
-        {
-            Self::observe(&mut inner, id, presentation(view));
-        }
-        let observed = inner.observations.get(id);
-        encode(
-            &json!({ "revision": observed.map_or(0, |view| view.revision).to_string(), "view": observed.map(|view| &view.view), "ended": !inner.state.is_current(id) }),
-        )
+        let (revision, view, ended) = {
+            let mut inner = self.inner.lock();
+            let ended = !inner.state.is_current(id);
+            if let Some((revision, view)) = snapshot
+                && !ended
+            {
+                let observed = inner.observations.entry(id.into()).or_default();
+                if revision >= observed.revision {
+                    observed.revision = revision;
+                    observed.view = Some(view);
+                }
+            }
+            let observed = inner.observations.get(id);
+            let snapshot = (
+                observed.map_or(0, |o| o.revision),
+                observed.and_then(|o| o.view.clone()),
+                ended,
+            );
+            drop(inner);
+            snapshot
+        };
+        encode(&ViewEnvelope {
+            revision: revision.to_string(),
+            view: view.as_deref().filter(|_| ended || Some(revision) != since),
+            ended,
+        })
     }
 }
 
@@ -482,63 +518,62 @@ impl VoiceSessionCoordinator {
 
 impl VoiceSessionCoordinator {
     async fn wait_view(&self, id: String, revision: String) -> Result<String, VoiceSessionError> {
+        let mut lifecycle = self.lifecycle.subscribe();
+        let revision = revision.parse::<u64>().ok();
         {
             let mut inner = self.inner.lock();
-            if inner.state.phase(&id).is_none() {
+            if !inner.state.is_current(&id) {
                 drop(inner);
                 return self.snapshot(&id);
             }
             let observed = inner.observations.entry(id.clone()).or_default();
-            if observed.waiting {
+            if std::mem::replace(&mut observed.waiting, true) {
                 return Err(VoiceSessionError::InvalidCommand);
             }
-            observed.waiting = true;
             drop(inner);
         }
         let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
-        let result = loop {
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            let snapshot = self.snapshot(&id)?;
-            let value: Value = decode(&snapshot)?;
-            if value["revision"].as_str() != Some(&revision)
-                || value["ended"] == true
-                || tokio::time::Instant::now() >= deadline
-            {
-                break Ok(snapshot);
+        let coalesce_until = tokio::time::Instant::now() + Duration::from_millis(100);
+        loop {
+            lifecycle.borrow_and_update();
+            let (current, saved, changes) = {
+                let inner = self.inner.lock();
+                let changes = match inner.resources.get(&id) {
+                    Some(Resource::Realtime(call)) => Some(call.changes()),
+                    _ => None,
+                };
+                (
+                    inner.state.is_current(&id),
+                    inner.observations.get(&id).map_or(0, |o| o.revision),
+                    changes,
+                )
+            };
+            if !current {
+                break;
             }
-        };
+            let mut backend = changes;
+            let latest = backend.as_mut().map_or(saved, |rx| *rx.borrow_and_update());
+            if Some(latest) != revision {
+                tokio::time::sleep_until(coalesce_until).await;
+                break;
+            }
+            tokio::select! {
+                _ = lifecycle.changed() => {},
+                _ = async {
+                    match &mut backend {
+                        Some(rx) => { let _ = rx.changed().await; }
+                        None => std::future::pending().await,
+                    }
+                } => {},
+                _ = tokio::time::sleep_until(deadline) => break,
+            }
+        }
+        let result = self.snapshot_since(&id, revision);
         if let Some(observed) = self.inner.lock().observations.get_mut(&id) {
             observed.waiting = false;
         }
         result
     }
-}
-
-// Diagnostics/counters change every audio frame. They must not wake presentation.
-fn presentation(mut view: Value) -> Value {
-    const FIELDS: &[&str] = &[
-        "phase",
-        "muted",
-        "level",
-        "playbackLevel",
-        "text",
-        "userText",
-        "error",
-        "inputTokens",
-        "outputTokens",
-        "estimatedUsd",
-        "costIncomplete",
-        "messages",
-        "backendText",
-        "liveSeconds",
-        "usageFinalized",
-        "resumedContextTruncated",
-        "continuity",
-    ];
-    if let Some(object) = view.as_object_mut() {
-        object.retain(|key, _| FIELDS.contains(&key.as_str()));
-    }
-    view
 }
 
 #[cfg(test)]

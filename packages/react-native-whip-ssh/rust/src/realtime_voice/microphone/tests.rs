@@ -15,14 +15,14 @@ fn replayed_agent_tool_cannot_rearm_a_timer_after_manual_unmute() -> Result<(), 
         ledger.microphone_result(&owner, "mute", arguments)?,
         Some(serde_json::json!({"muted":true,"duration_minutes":1.0}))
     );
-    assert!(owner.view.lock().muted);
+    assert!(owner.view.lock().fields.muted);
     owner.set_microphone(false, None)?;
     assert!(
         ledger
             .microphone_result(&owner, "mute", arguments)?
             .is_none()
     );
-    assert!(!owner.view.lock().muted);
+    assert!(!owner.view.lock().fields.muted);
     owner.close();
     Ok(())
 }
@@ -109,16 +109,16 @@ fn expiry_changes_shared_view_and_coalesces_unheard_state_without_ending_the_cal
         .policy
         .deadline()
         .ok_or("Missing deadline")?;
-    assert!(owner.view.lock().muted);
+    assert!(owner.view.lock().fields.muted);
     owner.microphone_tick(
         deadline
             .checked_sub(Duration::from_millis(1))
             .ok_or("Invalid deadline")?,
     );
-    assert!(owner.view.lock().muted);
+    assert!(owner.view.lock().fields.muted);
     owner.microphone_tick(deadline);
-    assert!(!owner.view.lock().muted);
-    assert_eq!(owner.view.lock().phase, "listening");
+    assert!(!owner.view.lock().fields.muted);
+    assert_eq!(owner.view.lock().fields.phase, "listening");
     assert!(!owner.closed.load(Ordering::Acquire));
     assert_eq!(owner.microphone.lock().announcements, [false]);
     owner.microphone_tick(deadline + Duration::from_secs(600));
@@ -146,18 +146,18 @@ fn manual_and_overlapping_agent_commands_replace_the_deadline_without_duplicate_
         .deadline()
         .ok_or("Missing replacement deadline")?;
     owner.microphone_tick(old);
-    assert!(owner.view.lock().muted);
+    assert!(owner.view.lock().fields.muted);
     assert_eq!(owner.microphone.lock().announcements, [true]);
     // The UI/system call control follows exactly the same path as the tool.
     owner.set_microphone(false, None)?;
     owner.set_microphone(true, None)?;
     owner.microphone_tick(new);
-    assert!(owner.view.lock().muted);
+    assert!(owner.view.lock().fields.muted);
     assert!(owner.microphone.lock().policy.deadline().is_none());
     assert_eq!(owner.microphone.lock().announcements, [true]);
     owner.set_microphone(false, None)?;
     owner.microphone_tick(new + Duration::from_secs(600));
-    assert!(!owner.view.lock().muted);
+    assert!(!owner.view.lock().fields.muted);
     owner.close();
     Ok(())
 }
@@ -180,7 +180,7 @@ fn hangup_and_permanent_failures_never_allow_an_old_timer_to_unmute() -> Result<
             owner.retire_session();
             end(&owner);
             owner.microphone_tick(deadline);
-            assert!(owner.view.lock().muted);
+            assert!(owner.view.lock().fields.muted);
             assert!(owner.microphone.lock().policy.deadline().is_none());
             assert!(owner.microphone.lock().announcements.is_empty());
             owner.close();
@@ -203,9 +203,9 @@ fn repeated_manual_mute_cancels_timer_and_old_provider_ack_cannot_reopen_capture
     owner.set_microphone(true, None)?;
     owner.set_muted(false)?; // Stale Live unmute acknowledgement.
     assert!(!owner.input.accepts(owner.input.generation()));
-    assert!(owner.view.lock().muted);
+    assert!(owner.view.lock().fields.muted);
     owner.microphone_tick(deadline);
-    assert!(owner.view.lock().muted);
+    assert!(owner.view.lock().fields.muted);
     assert_eq!(owner.microphone.lock().announcements, [true]);
     owner.close();
     Ok(())
@@ -232,8 +232,8 @@ fn concurrent_commands_and_a_replacement_owner_cannot_be_reversed_by_old_deadlin
         .ok_or("Missing deadline")?;
     let (replacement, _replacement_commands) = playback_owner_with_commands()?;
     owner.microphone_tick(deadline);
-    assert!(owner.view.lock().muted);
-    assert!(!replacement.view.lock().muted);
+    assert!(owner.view.lock().fields.muted);
+    assert!(!replacement.view.lock().fields.muted);
     assert!(owner.microphone.lock().policy.deadline().is_none());
     owner.close();
     replacement.close();
@@ -273,17 +273,17 @@ fn reconnect_and_rotation_preserve_the_deadline_and_retire_old_transition_speech
             assert!(!owner.input.accepts(owner.input.generation()));
             owner.retiring.store(false, Ordering::Release);
             owner.ready.store(true, Ordering::Release);
-            owner.view.lock().phase = "muted";
+            owner.view.lock().fields.phase = "muted";
             owner.microphone_tick(
                 deadline
                     .checked_sub(Duration::from_millis(1))
                     .ok_or("Invalid deadline")?,
             );
-            assert!(owner.view.lock().muted);
+            assert!(owner.view.lock().fields.muted);
             assert_eq!(owner.microphone.lock().policy.deadline(), Some(deadline));
         }
         owner.microphone_tick(deadline);
-        assert!(!owner.view.lock().muted);
+        assert!(!owner.view.lock().fields.muted);
         assert_eq!(owner.microphone.lock().announcements, [false]);
         assert!(owner.microphone.lock().policy.deadline().is_none());
         // Realtime resumes immediately; GPT-Live still needs its provider ack.
@@ -316,15 +316,15 @@ fn expiry_waits_through_provider_retirement_and_startup_until_ready() -> Result<
         for retiring in [true, false] {
             owner.retiring.store(retiring, Ordering::Release);
             owner.microphone_tick(deadline);
-            assert!(owner.view.lock().muted);
+            assert!(owner.view.lock().fields.muted);
             assert_eq!(owner.microphone.lock().policy.deadline(), Some(deadline));
             assert!(owner.microphone.lock().announcements.is_empty());
             assert!(!owner.input.accepts(owner.input.generation()));
         }
         owner.ready.store(true, Ordering::Release);
-        owner.view.lock().phase = "muted";
+        owner.view.lock().fields.phase = "muted";
         owner.microphone_tick(deadline + Duration::from_secs(600));
-        assert!(!owner.view.lock().muted);
+        assert!(!owner.view.lock().fields.muted);
         assert_eq!(owner.microphone.lock().announcements, [false]);
         assert_eq!(owner.input.accepts(owner.input.generation()), !live);
         owner.microphone_tick(deadline + Duration::from_secs(601));
@@ -359,12 +359,12 @@ fn recovery_controls_replace_expired_deadlines_without_reopening_inactive_captur
             );
             // A delayed command must not republish intent over a later control.
             owner.command(crate::realtime_voice::Command::Mute(!muted));
-            assert_eq!(owner.view.lock().muted, muted);
+            assert_eq!(owner.view.lock().fields.muted, muted);
             owner.retiring.store(false, Ordering::Release);
             owner.ready.store(true, Ordering::Release);
             owner.set_muted(muted)?; // Replacement session's startup synchronization.
             owner.microphone_tick(deadline + Duration::from_secs(600));
-            assert_eq!(owner.view.lock().muted, muted);
+            assert_eq!(owner.view.lock().fields.muted, muted);
             assert_eq!(owner.input.accepts(owner.input.generation()), !muted);
             if muted {
                 owner.set_muted(false)?; // Old unmute acknowledgement cannot win.
@@ -393,7 +393,7 @@ fn revoked_credentials_cancel_the_deadline_even_during_recovery() -> Result<(), 
     owner.microphone_tick(deadline);
     assert!(owner.microphone.lock().policy.deadline().is_none());
     assert!(owner.microphone.lock().announcements.is_empty());
-    assert!(owner.view.lock().muted);
+    assert!(owner.view.lock().fields.muted);
     assert!(!owner.input.accepts(owner.input.generation()));
     owner.close();
     Ok(())
@@ -413,9 +413,9 @@ fn waiting_unmute_captures_but_admitted_speech_and_its_tail_do_not() -> Result<(
         .lock()
         .announcement(owner.speech.id())
         .ok_or("Missing cue")?;
-    let id = announcement["id"].as_u64().ok_or("Missing identity")?;
-    assert_eq!(announcement["text"], "Unmuted");
-    assert_eq!(announcement["lease"], owner.speech.id());
+    let id = announcement.id;
+    assert_eq!(announcement.text, super::AnnouncementText::Unmuted);
+    assert_eq!(announcement.lease, owner.speech.id());
     owner.read_output(&mut [0; 480]); // Reserve idle output.
     assert!(owner.announcement_start(id));
     assert!(!owner.announcement_start(id));
@@ -446,8 +446,9 @@ fn cancelled_announcement_callbacks_cannot_consume_speech_for_a_new_transition()
     assert_eq!(
         state
             .announcement(owner.speech.id())
-            .ok_or("Missing speech")?["text"],
-        "Unmuted"
+            .ok_or("Missing speech")?
+            .text,
+        super::AnnouncementText::Unmuted
     );
     drop(state);
     owner.close();
