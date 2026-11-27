@@ -1,5 +1,6 @@
 //! Native 24kHz PCM/Opus bridge. Device callbacks and audio never cross JavaScript.
 use super::{audio_track::EncodedAudio, playout::Playout, transport::Transport};
+use crate::Failure;
 use crate::{Host, RATE, capture_worker};
 use std::time::{Duration, Instant};
 use tokio::sync::watch;
@@ -14,7 +15,7 @@ pub async fn run(
     owner: &impl Host,
     peer: &mut Transport,
     mut stop: watch::Receiver<bool>,
-) -> Result<(), &'static str> {
+) -> Result<(), Failure> {
     let rate = u32::try_from(RATE).map_err(|_| "Invalid voice sample rate.")?;
     let mut encoder = opus::Encoder::new(rate, opus::Channels::Mono, opus::Application::Voip)
         .map_err(|_| "Voice encoder could not start.")?;
@@ -38,7 +39,7 @@ pub async fn run(
             biased;
             _ = stop.changed() => return Ok(()),
             _ = tick.tick() => {
-                if !*peer.ready.borrow() { return Err(peer.failure.borrow().unwrap_or("Realtime media connection ended.")); }
+                if !*peer.ready.borrow() { return Err(peer.failure.borrow().unwrap_or(Failure::transport("Realtime media connection ended."))); }
                 if peer.statistics.has_changed().unwrap_or(false) {
                     let network = peer.statistics.borrow_and_update().clone();
                     owner.statistics(crate::Statistics { network: Some(network), ..Default::default() });

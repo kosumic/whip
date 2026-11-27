@@ -10,7 +10,7 @@ pub(super) async fn run(
     identity: Arc<Mutex<Identity>>,
     stop: watch::Receiver<bool>,
     attempt: &Arc<recovery::Attempt>,
-) -> Result<(), &'static str> {
+) -> Result<(), recovery::Failure> {
     voice_call_openai::media::run(
         &AppHost {
             owner: owner.clone(),

@@ -98,6 +98,6 @@ pub async fn run(
     peer: &mut Transport,
     identity: Arc<Mutex<Identity>>,
     stop: watch::Receiver<bool>,
-) -> Result<(), &'static str> {
+) -> Result<(), crate::recovery::Failure> {
     voice_call_media::run(&MediaHost { owner, identity }, peer, stop).await
 }

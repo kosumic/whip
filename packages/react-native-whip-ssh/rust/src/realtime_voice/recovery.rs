@@ -59,10 +59,7 @@ impl Attempt {
         }
         self.errors.send_replace(Some(error));
         if self.active.load(Ordering::Acquire) {
-            if self.owner.continuity_enabled
-                && (error.retryable
-                    || voice_call_openai::continuity::connection_lost(error.message))
-            {
+            if self.owner.continuity_enabled && error.retryable {
                 *self.owner.failure.lock() = Some(error);
                 self.owner.ready.store(false, Ordering::Release);
                 self.owner.input.set_muted(true);

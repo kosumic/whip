@@ -6,6 +6,8 @@ pub mod audio_track;
 pub mod capture_worker;
 mod driver;
 pub mod echo;
+mod failure;
+pub use failure::Failure;
 pub mod health;
 pub mod incoming;
 mod jitter;

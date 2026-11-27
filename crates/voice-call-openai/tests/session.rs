@@ -4,6 +4,7 @@ use futures::SinkExt;
 use serde_json::json;
 use std::sync::{Arc, atomic::Ordering};
 use tokio_tungstenite::tungstenite::Message;
+use voice_call_openai::recovery::Failure;
 use voice_call_openai::session::{
     Call, Config, Delegate, Event, Flow, LiveConfig, Session, Transport,
 };
@@ -84,24 +85,23 @@ struct Observer<'a> {
     rejections: usize,
     transcripts: usize,
     unmute_on_start: Option<&'a support::App>,
+    pending_text: Option<&'static str>,
 }
 impl Delegate for Observer<'_> {
-    type Work = ();
-    async fn next_work(&mut self) -> Option<()> {
+    type Work = &'static str;
+    async fn next_work(&mut self) -> Option<Self::Work> {
+        if self.events > 0
+            && let Some(text) = self.pending_text.take()
+        {
+            return Some(text);
+        }
         std::future::pending().await
     }
-    fn work(
-        &mut self,
-        _: &mut Session<'_>,
-        _: (),
-    ) -> impl std::future::Future<Output = Result<Flow, &'static str>> + Send {
-        std::future::ready(Ok(Flow::Stop))
+    async fn work(&mut self, session: &mut Session<'_>, text: Self::Work) -> Result<Flow, Failure> {
+        session.send_text(text).await?;
+        Ok(Flow::Continue)
     }
-    async fn event(
-        &mut self,
-        session: &mut Session<'_>,
-        event: Event,
-    ) -> Result<Flow, &'static str> {
+    async fn event(&mut self, session: &mut Session<'_>, event: Event) -> Result<Flow, Failure> {
         self.events += 1;
         if let Event::Live(frame) = event {
             match frame.event {
@@ -214,7 +214,7 @@ async fn authentication_and_startup_rejections_still_fail_the_live_call() -> flo
         );
         assert_eq!(
             call.run(&audio, &mut Observer::default()).await,
-            Err(expected)
+            Err(expected.into())
         );
     }
     Ok(())
@@ -267,7 +267,7 @@ async fn a_rejected_unmute_never_reopens_capture_or_replays_the_command() -> flo
     };
     assert_eq!(
         call.run(&audio, &mut observer).await,
-        Err(voice_call_openai::live::errors::MICROPHONE_REJECTED)
+        Err(voice_call_openai::live::errors::MICROPHONE_REJECTED.into())
     );
     assert!(audio.is_muted());
     assert_eq!(observer.final_seconds, Some(3.0));
@@ -318,9 +318,39 @@ async fn wrong_provider_model_ends_the_call_without_opening_capture() -> flows::
     let mut observer = Observer::default();
     assert_eq!(
         call.run(&audio, &mut observer).await,
-        Err(voice_call_openai::models::MISMATCH)
+        Err(voice_call_openai::models::MISMATCH.into())
     );
     assert_eq!(observer.events, 0);
     assert!(audio.rendered().is_empty());
+    Ok(())
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_sideband_close_recovers_with_or_without_a_pending_user_command() -> flows::TestResult {
+    use voice_call_openai::continuity::{Reason, replacement};
+
+    for pending_text in [None, Some("hello")] {
+        let audio = support::App::new(true)?;
+        let (mut socket, commands, mut events) = voice_call_openai::RealtimeSocket::relay();
+        events
+            .send(Ok(Message::Text(
+                flows::settings("session.updated").to_string().into(),
+            )))
+            .await?;
+        events.send(Ok(Message::Close(None))).await?;
+        drop(commands);
+        let mut session = Session::realtime(&mut socket, flows::realtime_config(), true);
+        let mut observer = Observer {
+            pending_text,
+            ..Default::default()
+        };
+        let result = session.drive(&audio, &mut observer).await;
+        assert!(session.ready());
+        assert!(observer.pending_text.is_none());
+        assert_eq!(
+            replacement(true, session.ready(), None, result)?,
+            Some(Reason::ConnectionLost)
+        );
+    }
     Ok(())
 }

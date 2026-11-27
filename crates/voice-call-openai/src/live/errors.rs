@@ -5,6 +5,8 @@ use serde::Serialize;
 pub const COMMAND_REJECTED: &str = "GPT-Live could not complete that request. The call is still connected; no request was replayed.";
 pub const MICROPHONE_REJECTED: &str =
     "GPT-Live rejected the microphone change. The microphone remains muted. Start a new call.";
+pub const DISCONNECTED_BEFORE_FINAL_USAGE: crate::recovery::Failure =
+    crate::recovery::Failure::transport("GPT-Live disconnected before final usage was confirmed.");
 pub const CONTENT_ENDED: &str = "GPT-Live ended the call because of a content restriction.";
 
 /// Safe protocol metadata for a host's diagnostics, never provider prose.

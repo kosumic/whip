@@ -25,12 +25,7 @@ pub fn replacement(
 ) -> Result<Option<Reason>, Failure> {
     match result {
         Ok(()) => Ok(requested.filter(|_| enabled)),
-        Err(failure) if failure.message == crate::recovery::CLEANUP_FAILED => Err(failure),
-        Err(failure)
-            if enabled
-                && established
-                && (failure.retryable || connection_lost(failure.message)) =>
-        {
+        Err(failure) if enabled && established && failure.retryable => {
             Ok(Some(Reason::ConnectionLost))
         }
         Err(failure) => Err(failure),
@@ -167,75 +162,22 @@ impl Policy {
     }
 }
 
-/// Positive allowlist: auth, quota, settings, uncertain POSTs, audio failures and
-/// cleanup errors remain terminal. Never classify arbitrary provider text.
-pub fn connection_lost(message: &str) -> bool {
-    matches!(
-        message,
-        "Voice network connection did not recover."
-            | voice_call_media::health::STALLED
-            | crate::socket::Heartbeat::STALLED
-            | "Voice media connection ended."
-            | "Voice media connection closed."
-            | "Voice media is not connected."
-            | "Voice event channel ended."
-            | "Voice UDP send failed."
-            | "Voice source interface is unavailable."
-            | "Voice network ended."
-            | "Voice network receive failed."
-            | "Voice TCP connection is unavailable."
-            | "Voice TCP peer is unavailable."
-            | "Voice TCP address is unavailable."
-            | "Voice TCP accept failed."
-            | "Voice network interfaces are unavailable."
-            | "No usable voice network interface is available."
-            | "No voice network interface is available."
-            | "Voice peer timed out."
-            | "Voice peer output failed."
-            | "Voice peer ended."
-            | "OpenAI Realtime disconnected. Start a new call."
-            | "OpenAI Realtime connection failed."
-            | "OpenAI Realtime ended the call."
-            | "Realtime send timed out."
-            | "Realtime connection failed."
-            | "Realtime sideband write timed out."
-            | "Realtime sideband disconnected."
-            | "Voice sideband disconnected."
-            | "Voice sideband pong timed out."
-            | "GPT-Live control upload timed out."
-            | "GPT-Live control connection ended."
-            | "GPT-Live disconnected before final usage was confirmed."
-            | "GPT-Live ended the call."
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn replacement_requires_readiness_for_failure_and_never_replays_uncertain_cleanup() {
-        let lost = Failure {
-            message: "Voice network ended.",
-            retryable: false,
-        };
-        let setup = Failure {
-            message: "The replacement transport could not start.",
-            retryable: true,
-        };
-        let cleanup = Failure {
-            message: crate::recovery::CLEANUP_FAILED,
-            retryable: true,
-        };
+        let lost = Failure::transport("Connection unavailable.");
+        let cleanup = Failure::from(crate::recovery::CLEANUP_FAILED);
         assert!(replacement(true, false, None, Err(lost)).is_err());
         assert!(replacement(false, true, None, Err(lost)).is_err());
         assert!(replacement(true, true, None, Err(cleanup)).is_err());
-        for failure in [lost, setup] {
-            assert!(matches!(
-                replacement(true, true, None, Err(failure)),
-                Ok(Some(Reason::ConnectionLost))
-            ));
-        }
+        assert!(matches!(
+            replacement(true, true, None, Err(lost)),
+            Ok(Some(Reason::ConnectionLost))
+        ));
+        assert!(replacement(true, true, None, Err(Failure::from(lost.message))).is_err());
         assert!(matches!(
             replacement(true, true, Some(Reason::Lifetime), Ok(())),
             Ok(Some(Reason::Lifetime))
@@ -291,22 +233,5 @@ mod tests {
         call.replacing(Reason::ConnectionLost);
         assert!(call.retry(0).is_ok());
         assert_eq!(call.diagnostics.retry_count, 1);
-    }
-    #[test]
-    fn only_known_transport_errors_allow_replacement() {
-        assert!(connection_lost("Voice network connection did not recover."));
-        assert!(connection_lost(voice_call_media::health::STALLED));
-        for message in [
-            crate::recovery::CLEANUP_FAILED,
-            crate::live::errors::CONTENT_ENDED,
-            crate::live::errors::MICROPHONE_REJECTED,
-            "Realtime call creation outcome is unknown. Start a new call manually.",
-            "OpenAI Realtime quota or rate limit reached.",
-            "Voice credentials were revoked.",
-            "invalid settings",
-            "audio interrupted",
-        ] {
-            assert!(!connection_lost(message));
-        }
     }
 }

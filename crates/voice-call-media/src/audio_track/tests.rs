@@ -4,7 +4,8 @@ use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, watch};
 
 #[tokio::test]
-async fn capture_jitter_and_mute_preserve_the_twenty_ms_source_grid() -> Result<(), &'static str> {
+async fn capture_jitter_and_mute_preserve_the_twenty_ms_source_grid() -> Result<(), crate::Failure>
+{
     let (sender, mut receiver) = mpsc::channel(8);
     let output = tokio::spawn(async move {
         let mut frames = Vec::new();
@@ -78,7 +79,7 @@ async fn stalled_sender_ends_within_the_capture_deadline() {
                 at: Instant::now()
             })
             .await,
-        Err("voice audio sender stalled")
+        Err("voice audio sender stalled".into())
     );
     assert!(start.elapsed() <= SEND_TIMEOUT);
 }
@@ -94,13 +95,13 @@ async fn transport_failure_survives_an_in_flight_audio_acknowledgement() -> Resu
         };
         drop(complete);
         tokio::task::yield_now().await;
-        failure.send_replace(Some("Voice UDP send failed."));
+        failure.send_replace(Some(crate::Failure::transport("Voice UDP send failed.")));
         Ok(())
     });
     let mut audio = AudioTrack::new(sender, failed);
     assert_eq!(
         audio.send_muted_silence(Instant::now()).await,
-        Err("Voice UDP send failed.")
+        Err(crate::Failure::transport("Voice UDP send failed."))
     );
     worker.await.map_err(|_| "Transport fixture failed")??;
     Ok(())

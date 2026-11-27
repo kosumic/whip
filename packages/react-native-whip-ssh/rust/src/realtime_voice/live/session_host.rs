@@ -6,6 +6,7 @@ use super::{
 };
 use oai_rt_rs::live::ServerEvent;
 use tokio::sync::watch;
+use voice_call_openai::recovery::Failure;
 use voice_call_openai::session::{Delegate, Event, Flow, Session};
 
 pub(super) enum Work {
@@ -57,7 +58,7 @@ impl<'a> App<'a> {
             updates,
         }
     }
-    async fn forward_updates(&mut self, session: &mut Session<'_>) -> Result<(), &'static str> {
+    async fn forward_updates(&mut self, session: &mut Session<'_>) -> Result<(), Failure> {
         if let Some(updates) = &self.updates {
             self.owner.agent_events(&updates.take_events());
         }
@@ -105,7 +106,7 @@ impl Delegate for App<'_> {
         completion = self.adapter.tasks.join_next(), if !self.adapter.tasks.is_empty() => completion.map(Work::Completion),
         }
     }
-    async fn work(&mut self, session: &mut Session<'_>, work: Work) -> Result<Flow, &'static str> {
+    async fn work(&mut self, session: &mut Session<'_>, work: Work) -> Result<Flow, Failure> {
         self.forward_updates(session).await?;
         match work {
             Work::Command(super::super::Command::Mute(muted)) => {
@@ -194,13 +195,9 @@ impl Delegate for App<'_> {
         }
         Ok(Flow::Continue)
     }
-    async fn event(
-        &mut self,
-        session: &mut Session<'_>,
-        event: Event,
-    ) -> Result<Flow, &'static str> {
+    async fn event(&mut self, session: &mut Session<'_>, event: Event) -> Result<Flow, Failure> {
         let Event::Live(frame) = event else {
-            return Err("Invalid voice protocol.");
+            return Err("Invalid voice protocol.".into());
         };
         self.active = session.ready();
         let Self {
@@ -216,7 +213,7 @@ impl Delegate for App<'_> {
             usage,
         } = adapter;
         let voice_call_openai::session::Protocol::Live(provider) = &mut session.protocol else {
-            return Err("Invalid voice protocol.");
+            return Err("Invalid voice protocol.".into());
         };
         let socket = &mut *session.socket;
         owner.view.lock().server_events += 1;
@@ -254,12 +251,12 @@ impl Delegate for App<'_> {
                 usage.observe(final_usage.seconds, confirmed)?;
                 update_usage(owner, usage);
                 if !confirmed {
-                    return Err("GPT-Live disconnected before final usage was confirmed.");
+                    return Err(voice_call_openai::live::errors::DISCONNECTED_BEFORE_FINAL_USAGE);
                 }
                 if matches!(reason, api::CloseReason::Content) {
-                    return Err(voice_call_openai::live::errors::CONTENT_ENDED);
+                    return Err(voice_call_openai::live::errors::CONTENT_ENDED.into());
                 }
-                return Err("GPT-Live ended the call.");
+                return Err(Failure::transport("GPT-Live ended the call."));
             }
             ServerEvent::UsageUpdated {
                 usage: reported, ..
@@ -334,7 +331,7 @@ impl Delegate for App<'_> {
                     if delegation.target != api::DelegationTarget::Responses
                         || delegation.response_id.is_none()
                     {
-                        return Err("Global GPT-Live requires Responses delegation.");
+                        return Err("Global GPT-Live requires Responses delegation.".into());
                     }
                 } else if state.delegate(&delegation, offset_ms, tasks.len())? == Admission::Full {
                     if let Some(transcript) = owner.output.lock().live_transcript.as_mut() {
@@ -392,7 +389,7 @@ impl Delegate for App<'_> {
 
         Ok(Flow::Continue)
     }
-    async fn tick(&mut self, session: &mut Session<'_>) -> Result<Flow, &'static str> {
+    async fn tick(&mut self, session: &mut Session<'_>) -> Result<Flow, Failure> {
         self.forward_updates(session).await?;
         let turn_idle = self.adapter.tasks.is_empty()
             && self.adapter.state.pending.is_empty()
@@ -419,7 +416,7 @@ impl Delegate for App<'_> {
         let LiveVoiceAdapter { state, tasks, .. } = adapter;
         let socket = &mut *session.socket;
         if !owner.speech.is_current() {
-            return Err("Voice audio was replaced by another speech session.");
+            return Err("Voice audio was replaced by another speech session.".into());
         }
         if let Some(agent) = agent {
             agent

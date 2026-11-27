@@ -4,7 +4,7 @@ pub(in crate::realtime_voice) async fn start(
     owner: Arc<RealtimeVoiceAdapter>,
     key: &native_credentials::NativeCredential,
     session: serde_json::Value,
-) -> Result<(super::super::RealtimeSocket, String), &'static str> {
+) -> Result<(super::super::RealtimeSocket, String), recovery::Failure> {
     let attempt = recovery::Attempt::new(owner.clone());
     let host = Arc::new(super::host::AppHost {
         owner: owner.clone(),

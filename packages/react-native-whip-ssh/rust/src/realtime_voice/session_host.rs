@@ -7,6 +7,7 @@ use super::{
     json, limit_text, live, mpsc, next_response, preview_response, send, spawn_delegation,
     submitted_message, terminal, terminal_submitted_message, watch,
 };
+use voice_call_openai::recovery::Failure;
 use voice_call_openai::session::{Delegate, Event, Flow, Session};
 
 pub(super) enum Work {
@@ -81,7 +82,7 @@ impl<'a> App<'a> {
             updates,
         }
     }
-    async fn forward_updates(&mut self, session: &mut Session<'_>) -> Result<(), &'static str> {
+    async fn forward_updates(&mut self, session: &mut Session<'_>) -> Result<(), Failure> {
         if let Some(updates) = &self.updates {
             self.owner.agent_events(&updates.take_events());
         }
@@ -127,7 +128,7 @@ impl<'a> App<'a> {
         socket: &mut super::RealtimeSocket,
         responses: &mut super::response::ResponseCreateQueue,
         call: delegation::Invocation,
-    ) -> Result<Flow, &'static str> {
+    ) -> Result<Flow, Failure> {
         let Self {
             owner,
             agent,
@@ -169,7 +170,7 @@ impl<'a> App<'a> {
             match global_calls.begin(&call_id, &arguments, voice_call_openai::tools::Access::Read) {
                 Ok(_) => {}
                 Err("duplicate") => return Ok(Flow::Continue),
-                Err(_) => return Err("Global tool admission failed."),
+                Err(_) => return Err("Global tool admission failed.".into()),
             }
             let Ok(global) = owner.global_session(self.config.global_shizuku_access) else {
                 send(
@@ -302,7 +303,7 @@ impl Delegate for App<'_> {
         completion = self.tools.join_next(), if !self.tools.is_empty() => completion.map(Work::Tool),
         }
     }
-    async fn work(&mut self, session: &mut Session<'_>, work: Work) -> Result<Flow, &'static str> {
+    async fn work(&mut self, session: &mut Session<'_>, work: Work) -> Result<Flow, Failure> {
         self.forward_updates(session).await?;
         if let Work::Command(command) = work {
             match command {
@@ -352,7 +353,7 @@ impl Delegate for App<'_> {
             ..
         } = self;
         let voice_call_openai::session::Protocol::Realtime(state) = &mut session.protocol else {
-            return Err("Invalid voice protocol.");
+            return Err("Invalid voice protocol.".into());
         };
         let socket = &mut *session.socket;
         let responses = &mut state.responses;
@@ -436,7 +437,7 @@ impl Delegate for App<'_> {
 
         Ok(Flow::Continue)
     }
-    async fn tick(&mut self, session: &mut Session<'_>) -> Result<Flow, &'static str> {
+    async fn tick(&mut self, session: &mut Session<'_>) -> Result<Flow, Failure> {
         self.forward_updates(session).await?;
         let idle = self.tools.is_empty()
             && self.deferred.len() == 0
@@ -462,13 +463,13 @@ impl Delegate for App<'_> {
             ..
         } = self;
         let voice_call_openai::session::Protocol::Realtime(state) = &mut session.protocol else {
-            return Err("Invalid voice protocol.");
+            return Err("Invalid voice protocol.".into());
         };
         let socket = &mut *session.socket;
         let responses = &mut state.responses;
 
         if !owner.speech.is_current() {
-            return Err("Voice audio was replaced by another speech session.");
+            return Err("Voice audio was replaced by another speech session.".into());
         }
         if let Some(agent) = &agent {
             agent
@@ -479,11 +480,11 @@ impl Delegate for App<'_> {
             terminal.forward_feedback(owner, socket, responses).await?;
         }
         if config.preview && started.elapsed() > PREVIEW_TIMEOUT {
-            return Err("Voice preview timed out. Please try again.");
+            return Err("Voice preview timed out. Please try again.".into());
         }
         if *preview_done && owner.playback_drained() {
             if owner.output.lock().generated == 0 {
-                return Err("OpenAI returned no playable voice preview audio.");
+                return Err("OpenAI returned no playable voice preview audio.".into());
             }
             owner.view.lock().phase = "closed";
             owner.closed.store(true, Ordering::Release);
@@ -545,13 +546,9 @@ impl Delegate for App<'_> {
 
         Ok(Flow::Continue)
     }
-    async fn event(
-        &mut self,
-        session: &mut Session<'_>,
-        event: Event,
-    ) -> Result<Flow, &'static str> {
+    async fn event(&mut self, session: &mut Session<'_>, event: Event) -> Result<Flow, Failure> {
         let Event::Realtime(event) = event else {
-            return Err("Invalid voice protocol.");
+            return Err("Invalid voice protocol.".into());
         };
         let Self {
             owner,
@@ -566,7 +563,7 @@ impl Delegate for App<'_> {
             ..
         } = self;
         let voice_call_openai::session::Protocol::Realtime(state) = &mut session.protocol else {
-            return Err("Invalid voice protocol.");
+            return Err("Invalid voice protocol.".into());
         };
         let socket = &mut *session.socket;
         let responses = &mut state.responses;
@@ -672,7 +669,9 @@ impl Delegate for App<'_> {
                     if !matches!(done.status, oai_rt_rs::ResponseStatus::Completed)
                         || (!config.webrtc && owner.output.lock().generated == 0)
                     {
-                        return Err("OpenAI did not complete the voice preview. Please try again.");
+                        return Err(
+                            "OpenAI did not complete the voice preview. Please try again.".into(),
+                        );
                     }
                     *preview_done = true;
                 }
@@ -694,7 +693,7 @@ impl Delegate for App<'_> {
                 }
                 *last_audio_response = Some(response_id);
                 if config.preview && owner.output.lock().generated > PREVIEW_AUDIO_LIMIT {
-                    return Err("Voice preview exceeded its audio limit.");
+                    return Err("Voice preview exceeded its audio limit.".into());
                 }
             }
             ServerEvent::InputAudioBufferSpeechStarted { item_id, .. } => {

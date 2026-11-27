@@ -1,4 +1,5 @@
 //! Bounded UDP/TCP I/O for the Sans-I/O peer. TCP uses RFC 4571 framing.
+use crate::Failure;
 use std::{
     collections::{HashMap, HashSet},
     net::{IpAddr, SocketAddr},
@@ -56,15 +57,17 @@ pub(super) struct Network {
     stop: watch::Sender<bool>,
 }
 impl Network {
-    pub async fn bind() -> Result<Self, &'static str> {
+    pub async fn bind() -> Result<Self, Failure> {
         let interfaces: HashSet<_> = if_addrs::get_if_addrs()
-            .map_err(|_| "Voice network interfaces are unavailable.")?
+            .map_err(|_| Failure::transport("Voice network interfaces are unavailable."))?
             .into_iter()
             .map(|interface| interface.ip())
             .filter(is_usable_interface)
             .collect();
         if interfaces.is_empty() || interfaces.len() > MAX_LOCAL_CANDIDATES / 3 {
-            return Err("No usable voice network interface is available.");
+            return Err(Failure::transport(
+                "No usable voice network interface is available.",
+            ));
         }
         let mut udp = HashMap::new();
         for ip in &interfaces {
@@ -94,7 +97,7 @@ impl Network {
             stop,
         })
     }
-    pub fn candidates(&self) -> Result<Vec<Candidate>, &'static str> {
+    pub fn candidates(&self) -> Result<Vec<Candidate>, Failure> {
         let mut candidates = Vec::new();
         for local in self.udp.keys() {
             let candidate = Candidate::host(*local, Protocol::Udp)
@@ -142,11 +145,13 @@ impl Network {
                 );
             }
             if candidates.len() > MAX_LOCAL_CANDIDATES {
-                return Err("Too many local voice candidates.");
+                return Err("Too many local voice candidates.".into());
             }
         }
         if candidates.is_empty() {
-            return Err("No voice network interface is available.");
+            return Err(Failure::transport(
+                "No voice network interface is available.",
+            ));
         }
         Ok(candidates)
     }
@@ -170,18 +175,18 @@ impl Network {
             });
         }
     }
-    pub async fn send(&mut self, packet: Transmit) -> Result<(), &'static str> {
+    pub async fn send(&mut self, packet: Transmit) -> Result<(), Failure> {
         self.reap();
         match packet.proto {
             Protocol::Udp => {
                 let socket = self
                     .udp
                     .get(&packet.source)
-                    .ok_or("Voice source interface is unavailable.")?;
+                    .ok_or(Failure::transport("Voice source interface is unavailable."))?;
                 socket
                     .send_to(&packet.contents, packet.destination)
                     .await
-                    .map_err(|_| "Voice UDP send failed.")?;
+                    .map_err(|_| Failure::transport("Voice UDP send failed."))?;
             }
             Protocol::Tcp => {
                 let pair = (packet.source, packet.destination);
@@ -208,34 +213,34 @@ impl Network {
                 }
                 self.connections
                     .get(&pair)
-                    .ok_or("Voice TCP connection is unavailable.")?
+                    .ok_or(Failure::transport("Voice TCP connection is unavailable."))?
                     .try_send(packet.contents.to_vec())
                     .map_err(|_| "Voice TCP send queue is full.")?;
             }
-            _ => return Err("Unsupported voice transport protocol."),
+            _ => return Err("Unsupported voice transport protocol.".into()),
         }
         Ok(())
     }
-    pub async fn receive(&mut self) -> Result<Packet, &'static str> {
+    pub async fn receive(&mut self) -> Result<Packet, Failure> {
         loop {
             self.reap();
             let event = tokio::select! {
                 biased;
-                event=self.receiver.recv()=>event.ok_or("Voice network ended.")?,
+                event=self.receiver.recv()=>event.ok_or(Failure::transport("Voice network ended."))?,
                 accepted=self.tcp4.accept()=>self.accepted(accepted)?,
                 accepted=async{match &self.tcp6{Some(listener)=>listener.accept().await,None=>std::future::pending().await}}=>self.accepted(accepted)?,
             };
             match event {
                 Event::Packet(packet) => return Ok(packet),
-                Event::Failed => return Err("Voice network receive failed."),
+                Event::Failed => return Err(Failure::transport("Voice network receive failed.")),
                 Event::Rejected => {}
                 Event::Accept(stream, permit) => {
                     let remote = stream
                         .peer_addr()
-                        .map_err(|_| "Voice TCP peer is unavailable.")?;
+                        .map_err(|_| Failure::transport("Voice TCP peer is unavailable."))?;
                     let local = stream
                         .local_addr()
-                        .map_err(|_| "Voice TCP address is unavailable.")?;
+                        .map_err(|_| Failure::transport("Voice TCP address is unavailable."))?;
                     let (sender, receiver) = mpsc::channel(CAPACITY);
                     self.connections.insert((local, remote), sender);
                     self.workers.spawn(tcp::run(
@@ -254,8 +259,8 @@ impl Network {
     fn accepted(
         &self,
         accepted: std::io::Result<(TcpStream, SocketAddr)>,
-    ) -> Result<Event, &'static str> {
-        let (stream, _) = accepted.map_err(|_| "Voice TCP accept failed.")?;
+    ) -> Result<Event, Failure> {
+        let (stream, _) = accepted.map_err(|_| Failure::transport("Voice TCP accept failed."))?;
         let Ok(permit) = self.permits.clone().try_acquire_owned() else {
             return Ok(Event::Rejected);
         };

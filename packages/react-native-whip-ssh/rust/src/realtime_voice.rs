@@ -1122,7 +1122,7 @@ impl RealtimeVoiceAdapter {
         targets: BoundTargets,
         commands: &mut mpsc::Receiver<Command>,
         tools: &mut JoinSet<ToolCompletion>,
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), recovery::Failure> {
         let mut costs = cost::CurrentChat::start(&config)?;
         let model = config.model()?.id.clone();
         let voice = config.voice.clone();
@@ -1138,9 +1138,7 @@ impl RealtimeVoiceAdapter {
                 result = self.run_events(config, &mut socket, configuration_started, targets, commands, tools, &mut costs) => result,
             }
         };
-        if self.continuity_enabled
-            && result.is_err_and(voice_call_openai::continuity::connection_lost)
-        {
+        if self.continuity_enabled && result.is_err_and(|error| error.retryable) {
             self.recovering(voice_call_openai::continuity::Reason::ConnectionLost);
         }
         self.retire_session();
@@ -1183,7 +1181,7 @@ impl RealtimeVoiceAdapter {
         commands: &mut mpsc::Receiver<Command>,
         tools: &mut JoinSet<ToolCompletion>,
         costs: &mut cost::CurrentChat,
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), recovery::Failure> {
         let settings = voice_call_openai::session::RealtimeConfig {
             model: config.model()?.id.clone(),
             audio: config.audio_settings()?,
@@ -1426,7 +1424,7 @@ fn agent_context_message(text: &str) -> Result<ClientEvent, &'static str> {
 async fn deliver_agent_context(
     session: &mut voice_call_openai::session::Session<'_>,
     text: &str,
-) -> Result<(), &'static str> {
+) -> Result<(), recovery::Failure> {
     tokio::time::timeout(voice_call_media::capture_worker::SEND_TIMEOUT, async {
         match session.protocol {
             voice_call_openai::session::Protocol::Realtime(_) => {
@@ -1506,7 +1504,7 @@ fn preview_response(config: &Config) -> Result<ClientEvent, &'static str> {
     }}))
 }
 
-async fn send<S>(socket: &mut S, event: ClientEvent) -> Result<(), &'static str>
+async fn send<S>(socket: &mut S, event: ClientEvent) -> Result<(), recovery::Failure>
 where
     S: futures::Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
 {

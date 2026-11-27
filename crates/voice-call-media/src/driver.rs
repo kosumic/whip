@@ -1,5 +1,6 @@
 //! One owner serializes every peer mutation and completely drains its output before the next.
 use super::{audio_track::OPUS_PAYLOAD_TYPE, incoming::Ingress, network::Network};
+use crate::Failure;
 use std::{sync::Arc, time::Instant};
 use str0m::{
     Candidate, Event, Input, Output, Rtc, RtcConfig,
@@ -32,26 +33,28 @@ impl ConnectionHealth {
         self.disconnected
             .map_or(next, |at| next.min(at + DISCONNECT_TIMEOUT))
     }
-    fn check(&self, now: Instant) -> Result<(), &'static str> {
+    fn check(&self, now: Instant) -> Result<(), Failure> {
         if self
             .disconnected
             .is_some_and(|at| now.duration_since(at) >= DISCONNECT_TIMEOUT)
         {
-            return Err("Voice network connection did not recover.");
+            return Err(Failure::transport(
+                "Voice network connection did not recover.",
+            ));
         }
-        self.remote.check(now)
+        self.remote.check(now).map_err(Failure::transport)
     }
 }
 pub(super) enum Command {
     Answer {
         sdp: String,
-        complete: oneshot::Sender<Result<(), &'static str>>,
+        complete: oneshot::Sender<Result<(), Failure>>,
     },
     Audio {
         data: Vec<u8>,
         timestamp: u32,
         at: Instant,
-        complete: oneshot::Sender<Result<(), &'static str>>,
+        complete: oneshot::Sender<Result<(), Failure>>,
     },
 }
 pub(super) struct Driver {
@@ -65,7 +68,7 @@ pub(super) struct Driver {
     ingress: Ingress,
     ready: watch::Sender<bool>,
     primary_started: watch::Sender<Option<String>>,
-    failure: watch::Sender<Option<&'static str>>,
+    failure: watch::Sender<Option<Failure>>,
     statistics: watch::Sender<super::health::Statistics>,
     health: ConnectionHealth,
     input_protocol: Option<Protocol>,
@@ -85,13 +88,13 @@ impl Driver {
         ingress: Ingress,
         ready: watch::Sender<bool>,
         primary_started: watch::Sender<Option<String>>,
-        failure: watch::Sender<Option<&'static str>>,
+        failure: watch::Sender<Option<Failure>>,
         statistics: watch::Sender<super::health::Statistics>,
         commands: mpsc::Receiver<Command>,
         stop: watch::Receiver<bool>,
         protocol: Option<Protocol>,
         transport_config: crate::TransportConfig,
-    ) -> Result<(Self, String, bool), &'static str> {
+    ) -> Result<(Self, String, bool), Failure> {
         let mut network = Network::bind().await?;
         let candidates = network.candidates()?;
         let (rtc, pending, mid, channel, offer, prepared_client) =
@@ -137,7 +140,7 @@ impl Driver {
                     });
                     let (offer, pending) = change.apply().ok_or("Voice offer is unavailable.")?;
                     initial_drain(&mut rtc)?;
-                    Ok::<_, &'static str>((
+                    Ok::<_, Failure>((
                         rtc,
                         pending,
                         mid,
@@ -174,25 +177,25 @@ impl Driver {
             prepared_client,
         ))
     }
-    pub async fn run(mut self) -> Result<(), &'static str> {
+    pub async fn run(mut self) -> Result<(), Failure> {
         let result = self.drive().await;
         let reason = result
             .as_ref()
             .err()
             .copied()
-            .unwrap_or("Voice media connection closed.");
+            .unwrap_or(crate::transport::CONNECTION_CLOSED);
         if self.failure.borrow().is_none() {
             self.failure.send_replace(Some(reason));
         }
         if result.is_err() {
-            tracing::info!(reason, "Voice WebRTC transport ended");
+            tracing::info!(%reason, "Voice WebRTC transport ended");
         }
         self.ready.send_replace(false);
         self.network.close().await;
         result
     }
-    async fn drive(&mut self) -> Result<(), &'static str> {
-        let mut complete: Option<oneshot::Sender<Result<(), &'static str>>> = None;
+    async fn drive(&mut self) -> Result<(), Failure> {
+        let mut complete: Option<oneshot::Sender<Result<(), Failure>>> = None;
         loop {
             self.health.check(Instant::now())?;
             let next = self.drain().await?;
@@ -201,7 +204,7 @@ impl Driver {
                 let _: Result<_, _> = complete.send(Ok(()));
             }
             if !self.rtc.is_alive() {
-                return Err("Voice media connection ended.");
+                return Err(Failure::transport("Voice media connection ended."));
             }
             tokio::select! {
                 biased;
@@ -212,12 +215,12 @@ impl Driver {
                 },
                 command=self.commands.recv()=>match command {
                     Some(Command::Answer{sdp,complete:respond})=>{
-                        let result=self.answer(&sdp);
+                        let result=self.answer(&sdp).map_err(Failure::from);
                         if let Err(error)=result {let _=respond.send(Err(error));return Err(error);}
                         complete=Some(respond);
                     }
                     Some(Command::Audio{data,timestamp,at,complete:respond})=>{
-                        if !*self.ready.borrow(){let _=respond.send(Err(self.failure.borrow().unwrap_or("Voice media is not connected.")));continue;}
+                        if !*self.ready.borrow(){let _=respond.send(Err(self.failure.borrow().unwrap_or(Failure::transport("Voice media is not connected."))));continue;}
                         let mut direct=self.rtc.direct_api();
                         let stream=direct.stream_tx_by_mid(self.mid,None).ok_or("Voice send stream is unavailable.")?;
                         stream.write_rtp(RtpWrite::new(OPUS_PAYLOAD_TYPE.into(),self.sequence.into(),timestamp,at,data));
@@ -236,7 +239,7 @@ impl Driver {
                     }
                 },
                 _=tokio::time::sleep_until(deadline.into())=>{
-                    self.rtc.handle_input(Input::Timeout(Instant::now())).map_err(|_|"Voice peer timed out.")?;
+                    self.rtc.handle_input(Input::Timeout(Instant::now())).map_err(|_|Failure::transport("Voice peer timed out."))?;
                 },
             }
         }
@@ -263,12 +266,12 @@ impl Driver {
             .accept_answer(pending, answer)
             .map_err(|_| "Voice answer was rejected.")
     }
-    async fn drain(&mut self) -> Result<Instant, &'static str> {
+    async fn drain(&mut self) -> Result<Instant, Failure> {
         loop {
             match self
                 .rtc
                 .poll_output()
-                .map_err(|_| "Voice peer output failed.")?
+                .map_err(|_| Failure::transport("Voice peer output failed."))?
             {
                 Output::Timeout(deadline) => return Ok(deadline),
                 Output::Transmit(packet) => self.network.send(packet).await?,
@@ -290,7 +293,7 @@ impl Driver {
                     // the call owner. Keep the peer alive until it retires the
                     // session and collects final usage on the sideband.
                     self.failure
-                        .send_replace(Some("Voice event channel ended."));
+                        .send_replace(Some(Failure::transport("Voice event channel ended.")));
                     self.ready.send_replace(false);
                 }
                 Output::Event(Event::RtpPacket(packet)) => {

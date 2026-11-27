@@ -1,4 +1,5 @@
 //! One bounded wire interface for a direct WebSocket or a WebRTC sideband.
+use crate::recovery::Failure;
 use futures::{Sink, SinkExt, Stream, StreamExt, channel::mpsc};
 use serde::Deserialize;
 use std::{
@@ -10,12 +11,14 @@ use tokio_tungstenite::{
     tungstenite::{Error, Message, Utf8Bytes},
 };
 
+const SIDEBAND_DISCONNECTED: Failure = Failure::transport("Voice sideband disconnected.");
+
 pub type RawSocket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 pub type Events = mpsc::Sender<Result<Message, Error>>;
 
 /// The transport owns WebSocket control frames, as in Codex's WsStream.
 /// Reflected PCM is never admitted to the application queue: RTP owns audio.
-pub async fn next_sideband_event(socket: &mut RawSocket) -> Result<Message, &'static str> {
+pub async fn next_sideband_event(socket: &mut RawSocket) -> Result<Message, Failure> {
     loop {
         let event = next_sideband_frame(socket).await?;
         if !matches!(event, Message::Pong(_)) {
@@ -24,14 +27,14 @@ pub async fn next_sideband_event(socket: &mut RawSocket) -> Result<Message, &'st
     }
 }
 
-pub(crate) async fn next_sideband_frame(socket: &mut RawSocket) -> Result<Message, &'static str> {
+pub(crate) async fn next_sideband_frame(socket: &mut RawSocket) -> Result<Message, Failure> {
     loop {
         match socket.next().await {
             Some(Ok(Message::Ping(payload))) => {
                 tokio::time::timeout(super::IO_TIMEOUT, socket.send(Message::Pong(payload)))
                     .await
-                    .map_err(|_| "Voice sideband pong timed out.")?
-                    .map_err(|_| "Voice sideband disconnected.")?;
+                    .map_err(|_| Failure::transport("Voice sideband pong timed out."))?
+                    .map_err(|_| SIDEBAND_DISCONNECTED)?;
             }
             Some(Ok(message @ Message::Pong(_))) => return Ok(message),
             Some(Ok(Message::Frame(_))) => {}
@@ -54,7 +57,7 @@ pub(crate) async fn next_sideband_frame(socket: &mut RawSocket) -> Result<Messag
                 }
             }
             Some(Ok(message)) => return Ok(message),
-            Some(Err(_)) | None => return Err("Voice sideband disconnected."),
+            Some(Err(_)) | None => return Err(SIDEBAND_DISCONNECTED),
         }
     }
 }
@@ -68,7 +71,8 @@ pub(crate) struct Heartbeat {
 }
 impl Heartbeat {
     const INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
-    pub(crate) const STALLED: &'static str = "Voice event channel stopped responding.";
+    pub(crate) const STALLED: Failure =
+        Failure::transport("Voice event channel stopped responding.");
     pub fn new(now: tokio::time::Instant) -> Self {
         Self {
             next: now + Self::INTERVAL,
@@ -76,7 +80,7 @@ impl Heartbeat {
             sequence: 0,
         }
     }
-    pub fn poll(&mut self, now: tokio::time::Instant) -> Result<Option<[u8; 8]>, &'static str> {
+    pub fn poll(&mut self, now: tokio::time::Instant) -> Result<Option<[u8; 8]>, Failure> {
         if let Some((_, sent)) = self.pending {
             return if now.duration_since(sent) >= Self::INTERVAL {
                 Err(Self::STALLED)
@@ -118,18 +122,20 @@ impl Socket {
     pub async fn receive_text(
         &mut self,
         message: Option<Result<Message, Error>>,
-    ) -> Result<Option<Utf8Bytes>, &'static str> {
+    ) -> Result<Option<Utf8Bytes>, Failure> {
         let message = message
-            .ok_or("OpenAI Realtime disconnected. Start a new call.")?
-            .map_err(|_| "OpenAI Realtime connection failed.")?;
+            .ok_or(Failure::transport(
+                "OpenAI Realtime disconnected. Start a new call.",
+            ))?
+            .map_err(|_| Failure::transport("OpenAI Realtime connection failed."))?;
         match message {
             Message::Text(text) => return Ok(Some(text)),
-            Message::Close(_) => return Err("OpenAI Realtime ended the call."),
+            Message::Close(_) => return Err(Failure::transport("OpenAI Realtime ended the call.")),
             Message::Ping(payload) => {
                 tokio::time::timeout(super::IO_TIMEOUT, self.send(Message::Pong(payload)))
                     .await
-                    .map_err(|_| "Realtime send timed out.")?
-                    .map_err(|_| "Realtime connection failed.")?;
+                    .map_err(|_| Failure::transport("Realtime send timed out."))?
+                    .map_err(|_| Failure::transport("Realtime connection failed."))?;
             }
             _ => {}
         }
@@ -187,7 +193,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_matching_pong_keeps_an_idle_call_alive_but_unrelated_pongs_do_not()
-    -> Result<(), &'static str> {
+    -> Result<(), Failure> {
         let mut heartbeat = Heartbeat::new(tokio::time::Instant::now());
         for _ in 0..5 {
             tokio::time::advance(Heartbeat::INTERVAL).await;

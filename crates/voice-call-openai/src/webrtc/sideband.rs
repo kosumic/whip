@@ -22,7 +22,7 @@ pub(super) async fn connect(
 /// and Realtime's REST call retirement are separate provider responsibilities.
 pub(super) async fn close(socket: &mut socket::RawSocket) -> bool {
     matches!(
-        tokio::time::timeout(CLOSE_TIMEOUT, socket.close(None)).await,
+        tokio::time::timeout(CLOSE_TIMEOUT, futures::SinkExt::close(socket)).await,
         Ok(Ok(()) | Err(Error::ConnectionClosed | Error::AlreadyClosed))
     )
 }
@@ -63,6 +63,30 @@ mod tests {
             .ok_or("cancelled")?
             .map_err(|e| e.message)?;
         assert!(close(&mut socket).await);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_peer_initiated_close_finishes_the_sideband_handshake()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use futures::StreamExt;
+        use tokio_tungstenite::tungstenite::Message;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let url = format!("ws://{}", listener.local_addr()?);
+        let peer = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await?;
+            let mut server = tokio_tungstenite::accept_async(stream).await?;
+            server.close(None).await?;
+            server.next().await.transpose()
+        });
+        let (mut socket, _) = tokio_tungstenite::connect_async(url).await?;
+        assert_eq!(socket.next().await.transpose()?, Some(Message::Close(None)));
+        assert!(close(&mut socket).await);
+        assert_eq!(
+            tokio::time::timeout(CLOSE_TIMEOUT, peer).await???,
+            Some(Message::Close(None))
+        );
         Ok(())
     }
 

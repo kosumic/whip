@@ -7,6 +7,7 @@ use std::{sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 use voice_call_media::{Capture, FRAME};
+use voice_call_openai::recovery::Failure;
 use voice_call_openai::{
     ServerEvent,
     captions::Language,
@@ -37,11 +38,7 @@ impl Delegate for Application {
     async fn next_work(&mut self) -> Option<Action> {
         self.controls.recv().await
     }
-    async fn work(
-        &mut self,
-        session: &mut Session<'_>,
-        action: Action,
-    ) -> Result<Flow, &'static str> {
+    async fn work(&mut self, session: &mut Session<'_>, action: Action) -> Result<Flow, Failure> {
         match action {
             Action::Mute(muted) => session.mute(&*self.audio, muted).await?,
             Action::Interrupt => session.interrupt(&*self.audio).await?,
@@ -50,11 +47,7 @@ impl Delegate for Application {
         }
         Ok(Flow::Continue)
     }
-    async fn event(
-        &mut self,
-        session: &mut Session<'_>,
-        event: Event,
-    ) -> Result<Flow, &'static str> {
+    async fn event(&mut self, session: &mut Session<'_>, event: Event) -> Result<Flow, Failure> {
         let notice = match event {
             Event::Realtime(ServerEvent::SessionCreated { .. }) => "created",
             Event::Realtime(ServerEvent::SessionUpdated { .. }) => "ready",
@@ -164,7 +157,7 @@ pub fn realtime_config() -> RealtimeConfig {
         },
     }
 }
-fn settings(kind: &str) -> Value {
+pub(super) fn settings(kind: &str) -> Value {
     json!({"type":kind,"event_id":kind,"session":{
         "id":"session","object":"realtime.session","type":"realtime","model":"custom-realtime",
         "expires_at":2_000_000_000,"output_modalities":["audio"],
@@ -188,7 +181,7 @@ pub async fn realtime_automatic_continuation(webrtc: bool) -> TestResult {
         let mut application = app(audio.clone(), receiver, notices);
         let mut session = Session::realtime(&mut socket, config, webrtc);
         session.drive(&*audio, &mut application).await?;
-        Ok::<_, &'static str>(application)
+        Ok::<_, Failure>(application)
     });
     let mut confirmed = settings("session.updated");
     confirmed["session"]["audio"]["input"]["turn_detection"] = vad;
@@ -227,7 +220,7 @@ pub async fn webrtc_continuation(completion: &str) -> TestResult {
         let mut application = app(audio.clone(), receiver, notices);
         let mut session = Session::realtime(&mut socket, realtime_config(), true);
         session.drive(&*audio, &mut application).await?;
-        Ok::<_, &'static str>(application)
+        Ok::<_, Failure>(application)
     });
     emit(&mut events, settings("session.updated")).await?;
     notice(&mut observer, "ready").await?;
@@ -292,7 +285,7 @@ pub async fn realtime() -> TestResult {
     let runner_audio = audio.clone();
     let runner = tokio::spawn(async move {
         call.run(&*runner_audio, &mut application).await?;
-        Ok::<_, &'static str>(application)
+        Ok::<_, Failure>(application)
     });
     emit(&mut events, settings("session.created")).await?;
     notice(&mut observer, "created").await?;
@@ -370,7 +363,7 @@ pub async fn live() -> TestResult {
     let runner_audio = audio.clone();
     let runner = tokio::spawn(async move {
         call.run(&*runner_audio, &mut application).await?;
-        Ok::<_, &'static str>(application)
+        Ok::<_, Failure>(application)
     });
     emit(
         &mut events,

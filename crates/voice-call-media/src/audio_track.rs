@@ -3,6 +3,7 @@
 // Adapted from Codex at 021fccb046508938c4754982efccfb51d6e8356e.
 //! A bounded Opus sender with a continuous 48kHz RTP clock across mute and callback jitter.
 use super::driver::Command;
+use crate::Failure;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot, watch};
 pub const OPUS_PAYLOAD_TYPE: u8 = 111;
@@ -18,7 +19,7 @@ pub struct EncodedAudio {
 mod tests;
 pub struct AudioTrack {
     sender: mpsc::Sender<Command>,
-    failure: watch::Receiver<Option<&'static str>>,
+    failure: watch::Receiver<Option<Failure>>,
     end: Option<Instant>,
     timestamp: u32,
     silence: Option<Vec<u8>>,
@@ -26,7 +27,7 @@ pub struct AudioTrack {
 impl AudioTrack {
     pub(super) fn new(
         sender: mpsc::Sender<Command>,
-        failure: watch::Receiver<Option<&'static str>>,
+        failure: watch::Receiver<Option<Failure>>,
     ) -> Self {
         Self {
             sender,
@@ -36,7 +37,7 @@ impl AudioTrack {
             silence: None,
         }
     }
-    pub async fn send_muted_silence(&mut self, at: Instant) -> Result<(), &'static str> {
+    pub async fn send_muted_silence(&mut self, at: Instant) -> Result<(), Failure> {
         if self.end.is_some_and(|end| at < end) {
             return Ok(());
         }
@@ -61,7 +62,7 @@ impl AudioTrack {
         })
         .await
     }
-    pub async fn send(&mut self, frame: EncodedAudio) -> Result<(), &'static str> {
+    pub async fn send(&mut self, frame: EncodedAudio) -> Result<(), Failure> {
         let skipped = self
             .end
             .map(|end| frame.at.saturating_duration_since(end).as_millis() / PACKET.as_millis())
@@ -99,12 +100,14 @@ impl AudioTrack {
         Ok(())
     }
 
-    async fn failure_reason(&mut self) -> &'static str {
+    async fn failure_reason(&mut self) -> Failure {
         // The in-flight acknowledgement may drop just before the driver's
         // terminal cause is published. Retain that cause within SEND_TIMEOUT.
         if self.failure.borrow().is_none() {
             let _ = self.failure.changed().await;
         }
-        self.failure.borrow().unwrap_or("voice media sender ended")
+        self.failure
+            .borrow()
+            .unwrap_or(Failure::transport("voice media sender ended"))
     }
 }

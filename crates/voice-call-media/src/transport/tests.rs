@@ -217,7 +217,7 @@ async fn malformed_answer_is_redacted_and_peer_remains_closable() -> TestResult 
     assert_eq!(
         peer.apply_answer("synthetic-private-invalid-sdp".into())
             .await,
-        Err("Invalid voice answer.")
+        Err("Invalid voice answer.".into())
     );
     peer.close().await?;
     drop(peer);
@@ -231,7 +231,7 @@ async fn untrusted_answer_candidate_count_is_bounded_before_negotiation() -> Tes
     let answer = "a=candidate:1 1 udp 1 127.0.0.1 5000 typ host\r\n".repeat(33);
     assert_eq!(
         peer.apply_answer(answer).await,
-        Err("Too many voice candidates.")
+        Err("Too many voice candidates.".into())
     );
     peer.close().await?;
     drop(peer);

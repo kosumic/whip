@@ -163,9 +163,9 @@ pub async fn start(
     owner: Arc<impl Host>,
     key: &impl crate::Credential,
     session: Value,
-) -> Result<(socket::Socket, super::Handle, String), &'static str> {
+) -> Result<(socket::Socket, super::Handle, String), recovery::Failure> {
     if !owner.current() {
-        return Err(recovery::CANCELLED);
+        return Err(recovery::CANCELLED.into());
     }
     let attempt = owner.clone();
     let (socket, commands, events) = socket::Socket::relay();
@@ -176,7 +176,7 @@ pub async fn start(
     owner.timing(Timing::Offer(startup::elapsed(offered)));
     if !owner.current() {
         peer.close().await?;
-        return Err(recovery::CANCELLED);
+        return Err(recovery::CANCELLED.into());
     }
     let created = Instant::now();
     // Retain the POST through cancellation so a returned session can be retired.
@@ -186,7 +186,7 @@ pub async fn start(
     if !owner.current() {
         call.retire().await?;
         peer.close().await?;
-        return Err(recovery::CANCELLED);
+        return Err(recovery::CANCELLED.into());
     }
     let (stop, stopped) = watch::channel(false);
     let primary = forward_primary_start(
@@ -209,7 +209,7 @@ pub async fn start(
         let _ = peer.close().await;
         drop(peer);
         let _ = sideband.await;
-        return Err("GPT-Live WebRTC negotiation failed.");
+        return Err("GPT-Live WebRTC negotiation failed.".into());
     }
     owner.timing(Timing::Negotiation(startup::elapsed(negotiated)));
     if let Err(error) = attempt.activate() {
@@ -218,7 +218,11 @@ pub async fn start(
         let _ = peer.close().await;
         drop(peer);
         let _ = sideband.await;
-        return Err(error.message);
+        // Startup retirement here is best effort.
+        return Err(recovery::Failure {
+            retryable: false,
+            ..error
+        });
     }
     let closed = call.closed.clone();
     let id = call.id.clone();
@@ -228,7 +232,7 @@ pub async fn start(
         let mut stopped = stopped;
         let result = media::run(&*media_owner, &mut peer, media_identity, stopped.clone()).await;
         if let Err(error) = result {
-            attempt.fail(error.into());
+            attempt.fail(error);
         }
         if attempt.collecting_usage() {
             let _ = peer.incoming.set_suppressed(true);
@@ -256,7 +260,7 @@ pub async fn start(
         }
         let retired = call.retire().await;
         let drained = peer.close().await;
-        retired.and(drained)
+        retired.and(drained).map_err(Into::into)
     });
     let handle = Handle {
         identity,
@@ -282,7 +286,7 @@ fn forward_primary_start(
     mut started: watch::Receiver<Option<String>>,
     mut events: socket::Events,
     mut stop: watch::Receiver<bool>,
-) -> JoinHandle<Result<(), &'static str>> {
+) -> JoinHandle<Result<(), recovery::Failure>> {
     tokio::spawn(async move {
         let ready = tokio::select! {
             biased;
@@ -295,7 +299,7 @@ fn forward_primary_start(
             biased;
             _ = stop.changed() => Ok(()),
             result = events.send(Ok(Message::Text(ready.into()))) => result
-                .map_err(|_| "GPT-Live startup consumer ended."),
+                .map_err(|_| "GPT-Live startup consumer ended.".into()),
         }
     })
 }
@@ -306,23 +310,23 @@ fn spawn_sideband(
     mut events: socket::Events,
     mut stop: watch::Receiver<bool>,
     attempt: Arc<impl Host>,
-) -> JoinHandle<Result<(), &'static str>> {
+) -> JoinHandle<Result<(), recovery::Failure>> {
     tokio::spawn(async move {
         let started = Instant::now();
         let Some(connected) = super::sideband::connect(request, &mut stop).await else {
             return Ok(());
         };
         let result = async {
-            let mut socket = connected.map_err(|error| error.message)?;
+            let mut socket = connected?;
             attempt.timing(Timing::Sideband(startup::elapsed(started)));
-            let result: Result<(), &'static str> = loop {
+            let result: Result<(), recovery::Failure> = loop {
                 tokio::select! {
                     biased;
                     _ = stop.changed() => break Ok(()),
                     command = commands.next() => {
                         let Some(command) = command else { break Ok(()); };
                         tokio::time::timeout(voice::IO_TIMEOUT, socket.send(command)).await
-                            .map_err(|_| "GPT-Live control upload timed out.")?.map_err(|_| "GPT-Live control connection ended.")?;
+                            .map_err(|_| recovery::Failure::transport("GPT-Live control upload timed out."))?.map_err(|_| recovery::Failure::transport("GPT-Live control connection ended."))?;
                     }
                     event = socket::next_sideband_event(&mut socket) => {
                         let event = event?;
@@ -343,7 +347,7 @@ fn spawn_sideband(
             result
         }.await;
         if let Err(error) = result {
-            attempt.fail(error.into());
+            attempt.fail(error);
         }
         result
     })

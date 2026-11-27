@@ -81,10 +81,10 @@ impl RealtimeVoiceAdapter {
         self.output.lock().clear();
     }
 
-    pub(super) fn continuity_tick(&self, idle: bool) -> Result<bool, &'static str> {
+    pub(super) fn continuity_tick(&self, idle: bool) -> Result<bool, recovery::Failure> {
         self.interruption_tick(std::time::Instant::now());
         if let Some(error) = *self.failure.lock() {
-            return Err(error.message);
+            return Err(error);
         }
         if !self.continuity_enabled {
             self.microphone_tick(std::time::Instant::now());
@@ -238,10 +238,7 @@ impl RealtimeVoiceAdapter {
                             .await
                     }
                     Ok(_) => Ok(()),
-                    Err(error) => {
-                        *self.failure.lock() = Some(error);
-                        Err(error.message)
-                    }
+                    Err(error) => Err(error),
                 }
             };
             let connected = self.view.lock().startup.settings_confirmed.is_some();
@@ -264,10 +261,6 @@ impl RealtimeVoiceAdapter {
             }
             clean?; // A failed/uncertain hangup never admits a new session.
             let reason = self.replacement.lock().take();
-            let result = result.map_err(|message| voice_call_openai::recovery::Failure {
-                message,
-                retryable: self.failure.lock().is_some_and(|failure| failure.retryable),
-            });
             let Some(reason) = voice_call_openai::continuity::replacement(
                 self.continuity_enabled,
                 established,

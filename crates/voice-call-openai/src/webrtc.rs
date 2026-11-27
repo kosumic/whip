@@ -16,12 +16,14 @@ use std::{
 use tokio::{sync::watch, task::JoinHandle};
 use tokio_tungstenite::tungstenite::Message;
 
+const SIDEBAND_DISCONNECTED: recovery::Failure =
+    recovery::Failure::transport("Realtime sideband disconnected.");
 const EVENT_CONSUMER_STALLED: &str = "Realtime event consumer stalled.";
 
 pub struct Handle {
     identity: Arc<Mutex<identity::Identity>>,
     stop: watch::Sender<bool>,
-    workers: Vec<JoinHandle<Result<(), &'static str>>>,
+    workers: Vec<JoinHandle<Result<(), recovery::Failure>>>,
     live_closed: Option<Arc<std::sync::atomic::AtomicBool>>,
 }
 impl Handle {
@@ -45,7 +47,7 @@ impl Handle {
         for mut task in self.workers {
             match tokio::time::timeout(recovery::WORKER_DRAIN_TIMEOUT, &mut task).await {
                 Ok(Ok(Ok(()))) => {}
-                Ok(Ok(Err(message))) if crate::continuity::connection_lost(message) => {}
+                Ok(Ok(Err(error))) if error.retryable => {}
                 Ok(_) => clean = false,
                 Err(_) => {
                     task.abort();
@@ -65,31 +67,30 @@ impl Handle {
 async fn retire(
     owner: &impl Host,
     stop: &watch::Sender<bool>,
-    mut sideband: JoinHandle<Result<(), &'static str>>,
+    mut sideband: JoinHandle<Result<(), recovery::Failure>>,
     peer: &mut transport::Transport,
     call: &api::Call,
-    message: &'static str,
-    retryable: bool,
+    failure: recovery::Failure,
 ) -> recovery::Failure {
     owner.retiring();
     stop.send_replace(true);
     // A normal sideband read failure is why we may be retiring. A panicked or
     // timed-out worker cannot establish that retirement finished.
-    let worker_clean =
+    let worker_failure =
         match tokio::time::timeout(std::time::Duration::from_secs(3), &mut sideband).await {
-            Ok(Ok(Err(recovery::CLEANUP_FAILED))) => false,
-            Ok(result) => result.is_ok(),
+            Ok(Ok(result)) => result.err().filter(|error| !error.retryable),
+            Ok(Err(_)) => Some(recovery::CLEANUP_FAILED.into()),
             Err(_) => {
                 sideband.abort();
                 let _ = sideband.await;
-                false
+                Some(recovery::CLEANUP_FAILED.into())
             }
         };
     // Ask the server to retire the call while its media transport still exists.
     let call_clean = call.hangup().await.is_ok();
     let peer_clean = peer.close().await.is_ok();
-    if worker_clean && peer_clean && call_clean {
-        recovery::Failure { message, retryable }
+    if peer_clean && call_clean {
+        worker_failure.unwrap_or(failure)
     } else {
         recovery::CLEANUP_FAILED.into()
     }
@@ -162,8 +163,10 @@ pub async fn start(
             sideband,
             &mut peer,
             &call,
-            "Realtime WebRTC negotiation failed. Check your network.",
-            retryable,
+            recovery::Failure {
+                message: "Realtime WebRTC negotiation failed. Check your network.",
+                retryable,
+            },
         )
         .await);
     }
@@ -172,16 +175,7 @@ pub async fn start(
     // Match Codex: start media after negotiation while the sideband connects
     // independently. Its effective settings are still validated by run().
     if let Err(error) = attempt.activate() {
-        return Err(retire(
-            &*owner,
-            &stop,
-            sideband,
-            &mut peer,
-            &call,
-            error.message,
-            false,
-        )
-        .await);
+        return Err(retire(&*owner, &stop, sideband, &mut peer, &call, error).await);
     }
     let media_owner = owner.clone();
     let media_identity = identity.clone();
@@ -189,7 +183,7 @@ pub async fn start(
         let mut stopped = stopped;
         let result = media::run(&*media_owner, &mut peer, media_identity, stopped.clone()).await;
         if let Err(error) = result {
-            attempt.fail(error.into());
+            attempt.fail(error);
         }
         if attempt.collecting_usage() {
             // The audio worker has stopped. Retain the transport and sideband
@@ -207,7 +201,7 @@ pub async fn start(
         if peer_clean && call_clean {
             Ok(())
         } else {
-            Err(recovery::CLEANUP_FAILED)
+            Err(recovery::CLEANUP_FAILED.into())
         }
     });
     let handle = Handle {
@@ -247,7 +241,7 @@ fn spawn_sideband(
     update: ClientEvent,
     identity: Arc<Mutex<identity::Identity>>,
     attempt: Arc<impl Host>,
-) -> JoinHandle<Result<(), &'static str>> {
+) -> JoinHandle<Result<(), recovery::Failure>> {
     tokio::spawn(async move {
         let started = Instant::now();
         let Some(result) = sideband::connect(request, &mut stop).await else {
@@ -266,17 +260,14 @@ fn spawn_sideband(
                         Ok(()) => {
                             relay_sideband(&mut socket, commands, events, &mut stop, identity).await
                         }
-                        Err(message) => Err(recovery::Failure {
-                            message,
-                            retryable: true,
-                        }),
+                        Err(error) => Err(error),
                     }
                 } else {
                     Ok(())
                 };
                 if !sideband::close(&mut socket).await {
                     attempt.fail(recovery::CLEANUP_FAILED.into());
-                    return Err(recovery::CLEANUP_FAILED);
+                    return Err(recovery::CLEANUP_FAILED.into());
                 }
                 result
             }
@@ -285,7 +276,7 @@ fn spawn_sideband(
         if let Err(error) = result {
             attempt.fail(error);
         }
-        result.map_err(|error| error.message)
+        result
     })
 }
 
@@ -307,14 +298,14 @@ async fn relay_sideband(
                 if let Some(payload) = heartbeat.poll(tokio::time::Instant::now())? {
                     tokio::time::timeout(super::IO_TIMEOUT, socket.send(Message::Ping(payload.to_vec().into()))).await
                         .map_err(|_| socket::Heartbeat::STALLED)?
-                        .map_err(|_| "Realtime sideband disconnected.")?;
+                        .map_err(|_| SIDEBAND_DISCONNECTED)?;
                 }
             }
             command = commands.next() => {
                 let Some(command) = command else { return Ok(()); };
                 tokio::time::timeout(super::IO_TIMEOUT, socket.send(command)).await
-                    .map_err(|_| recovery::Failure { message: "Realtime sideband write timed out.", retryable: true })?
-                    .map_err(|_| recovery::Failure { message: "Realtime sideband disconnected.", retryable: true })?;
+                    .map_err(|_| recovery::Failure::transport("Realtime sideband write timed out."))?
+                    .map_err(|_| SIDEBAND_DISCONNECTED)?;
             }
             event = socket::next_sideband_frame(socket) => {
                 let event = event?;
@@ -390,11 +381,11 @@ mod tests {
             server.abort();
             let _ = server.await;
             let expected = if blocked_consumer {
-                EVENT_CONSUMER_STALLED
+                EVENT_CONSUMER_STALLED.into()
             } else {
                 socket::Heartbeat::STALLED
             };
-            assert_eq!(result.map_err(|error| error.message), Err(expected));
+            assert_eq!(result, Err(expected));
             assert!(tokio::time::Instant::now() - started <= std::time::Duration::from_secs(21));
         }
         Ok(())

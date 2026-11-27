@@ -3,6 +3,7 @@ use futures::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use std::future::{Future, ready};
 use tokio_tungstenite::tungstenite::Message;
+use voice_call_openai::recovery::Failure;
 use voice_call_openai::{
     RealtimeSocket,
     session::{Delegate, Event, Flow, LiveConfig, RealtimeConfig, Session},
@@ -25,7 +26,7 @@ impl Delegate for Acknowledgements {
         &mut self,
         _: &mut Session<'_>,
         (): (),
-    ) -> impl Future<Output = Result<Flow, &'static str>> + Send {
+    ) -> impl Future<Output = Result<Flow, Failure>> + Send {
         ready(Ok(Flow::Stop))
     }
 
@@ -33,7 +34,7 @@ impl Delegate for Acknowledgements {
         &mut self,
         _: &mut Session<'_>,
         event: Event,
-    ) -> impl Future<Output = Result<Flow, &'static str>> + Send {
+    ) -> impl Future<Output = Result<Flow, Failure>> + Send {
         use oai_rt_rs::live::ServerEvent;
         if let Event::Live(frame) = event {
             match frame.event {

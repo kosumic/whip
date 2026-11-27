@@ -141,7 +141,11 @@ impl Call {
     /// Run through hangup and bounded final accounting, then retire media. Stop
     /// by returning Flow::Stop (or None from next_work); keep this future alive
     /// until cleanup finishes. Native devices and tool tasks remain app-owned.
-    pub async fn run(mut self, audio: &impl Audio, delegate: &mut impl Delegate) -> Result {
+    pub async fn run(
+        mut self,
+        audio: &impl Audio,
+        delegate: &mut impl Delegate,
+    ) -> Result<(), crate::recovery::Failure> {
         let bridge = MediaAudio {
             audio,
             media: self.media.as_ref(),
@@ -209,7 +213,8 @@ impl Call {
         };
         // A lost connection must never mask an unconfirmed retirement and
         // allow the host to create another session.
-        cleanup.and(result).and(finalized)
+        cleanup?;
+        result.and(finalized)
     }
 }
 

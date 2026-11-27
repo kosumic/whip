@@ -24,22 +24,4 @@ pub enum State {
     Ended,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct Failure {
-    pub message: &'static str,
-    pub retryable: bool,
-}
-impl std::fmt::Display for Failure {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(self.message)
-    }
-}
-impl std::error::Error for Failure {}
-impl From<&'static str> for Failure {
-    fn from(message: &'static str) -> Self {
-        Self {
-            message,
-            retryable: false,
-        }
-    }
-}
+pub use voice_call_media::Failure;

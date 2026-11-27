@@ -245,7 +245,7 @@ impl LiveVoiceAdapter {
         key: &native_credentials::NativeCredential,
         agent: Option<Arc<PinnedAgent>>,
         commands: &mut mpsc::Receiver<super::Command>,
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), super::recovery::Failure> {
         let mut session = Self::session(&config)?;
         if config.global {
             global::configure(&config, &mut session, owner.global_instructions.clone())?;
@@ -298,7 +298,7 @@ impl LiveVoiceAdapter {
                 .drive(&owner, &config, agent.as_ref(), &mut provider, commands)
                 .await
         } else {
-            Err("Open a connected coding agent before calling GPT-Live.")
+            Err("Open a connected coding agent before calling GPT-Live.".into())
         };
         // Keep safe error metadata even when startup/auth/microphone rejection
         // prevents delivery to the application event callback.
@@ -309,9 +309,7 @@ impl LiveVoiceAdapter {
         }
         // Dropping observation futures never invokes remote cancel. Dispatched
         // agent prompts continue; only this call's unsent pending requests stop.
-        if owner.continuity_enabled
-            && result.is_err_and(voice_call_openai::continuity::connection_lost)
-        {
+        if owner.continuity_enabled && result.is_err_and(|error| error.retryable) {
             owner.recovering(voice_call_openai::continuity::Reason::ConnectionLost);
         }
         owner.retire_session();
@@ -380,7 +378,7 @@ impl LiveVoiceAdapter {
         agent: Option<&Arc<PinnedAgent>>,
         session: &mut voice_call_openai::session::Session<'_>,
         commands: &mut mpsc::Receiver<super::Command>,
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), super::recovery::Failure> {
         let mut app = session_host::App::new(owner, config, agent, self, commands);
         session.drive(&**owner, &mut app).await
     }
@@ -391,7 +389,7 @@ impl LiveVoiceAdapter {
         socket: &mut super::RealtimeSocket,
         state: &mut State,
         tasks: &mut JoinSet<Completion>,
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), super::recovery::Failure> {
         if state
             .pending
             .front()
@@ -503,6 +501,7 @@ impl LiveVoiceAdapter {
                 |seconds, finalized| usage.observe(seconds, finalized),
             )
             .await
+            .map_err(|error| error.message)
     }
 }
 
@@ -512,7 +511,7 @@ async fn append(
     id: Option<&str>,
     text: &str,
     channel: Channel,
-) -> Result<(), &'static str> {
+) -> Result<(), super::recovery::Failure> {
     voice_call_openai::live::commands::append_context_with_prefix(
         socket,
         id,
@@ -525,7 +524,7 @@ async fn append(
 async fn send(
     socket: &mut super::RealtimeSocket,
     command: Command,
-) -> Result<String, &'static str> {
+) -> Result<String, super::recovery::Failure> {
     let kind = command.kind();
     let id = voice_call_openai::live::send_with_prefix(socket, command, EVENT_PREFIX).await?;
     if kind != "session.input_audio.append" {

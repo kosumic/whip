@@ -1,4 +1,5 @@
 //! Typed GPT-Live commands on the same bounded socket used by Realtime.
+use crate::recovery::Failure;
 use futures::SinkExt;
 use oai_rt_rs::live::{self as api, ClientEvent, Command, Field, Nullable};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -18,7 +19,7 @@ pub async fn append_context_with_prefix(
     text: &str,
     channel: Context,
     prefix: &str,
-) -> Result<(), &'static str> {
+) -> Result<(), Failure> {
     for chunk in chunks(text) {
         let delegation_id = Nullable(id.map(str::to_owned));
         let content = chunk.into();
@@ -62,8 +63,10 @@ pub async fn send_with_prefix(
     socket: &mut crate::RealtimeSocket,
     command: Command,
     prefix: &str,
-) -> Result<String, &'static str> {
+) -> Result<String, Failure> {
     let id = format!("{prefix}:{}", SEQUENCE.fetch_add(1, Ordering::Relaxed));
+    // A lost session.start acknowledgement can leave a billable session running.
+    let retryable = !matches!(command, Command::Start { .. });
     let event = ClientEvent {
         event_id: Field::Value(id.clone()),
         command,
@@ -76,14 +79,17 @@ pub async fn send_with_prefix(
         socket.send(Message::Text(text.into())),
     )
     .await
-    .map_err(|_| "GPT-Live upload timed out.")?
-    .map_err(|_| "GPT-Live connection ended.")?;
+    .map_err(|_| Failure {
+        message: "GPT-Live upload timed out.",
+        retryable,
+    })?
+    .map_err(|_| Failure {
+        message: "GPT-Live connection ended.",
+        retryable,
+    })?;
     Ok(id)
 }
 
-pub async fn send(
-    socket: &mut crate::RealtimeSocket,
-    command: Command,
-) -> Result<String, &'static str> {
+pub async fn send(socket: &mut crate::RealtimeSocket, command: Command) -> Result<String, Failure> {
     send_with_prefix(socket, command, super::EVENT_PREFIX).await
 }

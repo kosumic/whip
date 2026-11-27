@@ -42,11 +42,7 @@ async fn public_live_webrtc_api_smoke() -> Result<(), Box<dyn std::error::Error>
     drop(credential);
     let created = startup::elapsed(started);
     let (mut sideband, connected) = tokio::try_join!(
-        async {
-            voice::connect_request(call.attach.clone())
-                .await
-                .map_err(|error| error.message)
-        },
+        voice::connect_request(call.attach.clone()),
         peer.apply_answer(call.answer.clone())
     )?;
     assert_eq!(connected, AnswerOutcome::Ready);
@@ -869,11 +865,7 @@ async fn public_realtime_sideband_identifies_native_playback()
         &format!("wss://api.openai.com/v1/realtime?call_id={}", call.id),
     )?;
     let (mut sideband, connected) = tokio::try_join!(
-        async {
-            voice::connect_request(request)
-                .await
-                .map_err(|error| error.message)
-        },
+        voice::connect_request(request),
         peer.apply_answer(call.answer.clone())
     )?;
     drop(credential);

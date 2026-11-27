@@ -157,7 +157,7 @@ impl Session {
         tools: &mut tokio::task::JoinSet<super::ToolCompletion>,
         responses: &mut super::response::ResponseCreateQueue,
         call: (String, String, String),
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), super::recovery::Failure> {
         let (call_id, name, arguments) = call;
         if !self.admit(&call_id)? {
             return Ok(());
@@ -188,7 +188,7 @@ impl Session {
         responses: &mut super::response::ResponseCreateQueue,
         call_id: String,
         value: Value,
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), super::recovery::Failure> {
         self.target.check()?;
         let silent = value == json!({});
         super::send(socket, super::function_output(call_id, value)).await?;
@@ -203,7 +203,7 @@ impl Session {
         owner: &super::RealtimeVoiceAdapter,
         socket: &mut super::RealtimeSocket,
         responses: &mut super::response::ResponseCreateQueue,
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), super::recovery::Failure> {
         self.target.check()?;
         for value in self.feedback() {
             if let Some(id) = value["job_id"].as_str() {

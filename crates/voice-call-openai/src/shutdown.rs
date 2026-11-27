@@ -20,7 +20,7 @@ pub async fn collect(
 ) {
     let collect = async {
         if !credentials_current() {
-            return Ok::<(), &'static str>(());
+            return Ok::<(), crate::recovery::Failure>(());
         }
         // Preserve explicit null: typed Option fields can omit it on encoding,
         // which would leave automatic VAD responses enabled during shutdown.

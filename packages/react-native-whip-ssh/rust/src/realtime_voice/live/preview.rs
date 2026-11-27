@@ -11,6 +11,7 @@ use std::{
 };
 use tokio::sync::{mpsc, watch};
 use voice_call_media::Capture;
+use voice_call_openai::recovery::Failure;
 use voice_call_openai::session::{Audio, Delegate, Event, Flow, Session};
 const QUIET: Duration = Duration::from_secs(2);
 const AUDIBLE: u16 = 64;
@@ -127,16 +128,12 @@ impl Delegate for Preview<'_> {
         &mut self,
         _: &mut Session<'_>,
         _: (),
-    ) -> impl std::future::Future<Output = Result<Flow, &'static str>> + Send {
+    ) -> impl std::future::Future<Output = Result<Flow, Failure>> + Send {
         std::future::ready(Ok(Flow::Stop))
     }
-    async fn event(
-        &mut self,
-        session: &mut Session<'_>,
-        event: Event,
-    ) -> Result<Flow, &'static str> {
+    async fn event(&mut self, session: &mut Session<'_>, event: Event) -> Result<Flow, Failure> {
         let Event::Live(frame) = event else {
-            return Err("Invalid preview protocol.");
+            return Err("Invalid preview protocol.".into());
         };
         self.owner.view.lock().server_events += 1;
         match frame.event {
@@ -168,10 +165,10 @@ impl Delegate for Preview<'_> {
             } => {
                 self.usage
                     .observe(reported.seconds, reason != api::CloseReason::ConnectionLost)?;
-                return Err("GPT-Live closed before the voice preview finished.");
+                return Err("GPT-Live closed before the voice preview finished.".into());
             }
             ServerEvent::DelegationCreated { .. } => {
-                return Err("Voice previews cannot delegate work.");
+                return Err("Voice previews cannot delegate work.".into());
             }
             _ => {}
         }
@@ -180,17 +177,17 @@ impl Delegate for Preview<'_> {
     fn tick(
         &mut self,
         session: &mut Session<'_>,
-    ) -> impl std::future::Future<Output = Result<Flow, &'static str>> + Send {
+    ) -> impl std::future::Future<Output = Result<Flow, Failure>> + Send {
         std::future::ready(self.tick_state(session))
     }
 }
 impl Preview<'_> {
-    fn tick_state(&mut self, session: &Session<'_>) -> Result<Flow, &'static str> {
+    fn tick_state(&mut self, session: &Session<'_>) -> Result<Flow, Failure> {
         if !self.owner.speech.is_current() {
-            return Err("Voice preview was replaced by another speech session.");
+            return Err("Voice preview was replaced by another speech session.".into());
         }
         if self.started.elapsed() > PREVIEW_TIMEOUT {
-            return Err("Voice preview timed out. Please try again.");
+            return Err("Voice preview timed out. Please try again.".into());
         }
         if !session.ready() {
             return Ok(Flow::Continue);
@@ -212,7 +209,7 @@ pub(super) async fn drive(
     session: &mut Session<'_>,
     usage: &mut usage::Usage,
     commands: &mut mpsc::Receiver<super::super::Command>,
-) -> Result<(), &'static str> {
+) -> Result<(), Failure> {
     let audio = PreviewAudio {
         owner,
         sample: Mutex::new(Sample::default()),

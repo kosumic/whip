@@ -87,7 +87,7 @@ impl Dispatch<'_> {
         socket: &mut S,
         agent: &Arc<PinnedAgent>,
         call: Invocation,
-    ) -> Result<bool, &'static str>
+    ) -> Result<bool, super::recovery::Failure>
     where
         S: futures::Sink<Message, Error = Error> + Unpin,
     {
@@ -97,7 +97,7 @@ impl Dispatch<'_> {
         {
             Ok(mutation) => mutation,
             Err("duplicate") => return Ok(false),
-            Err("limit") => return Err("Realtime tool limit reached. Start a new call."),
+            Err("limit") => return Err("Realtime tool limit reached. Start a new call.".into()),
             Err(error) => {
                 send(
                     socket,

@@ -176,9 +176,8 @@ frames every ten seconds, with a ten-second reply deadline. Unrelated events
 and stale pongs cannot satisfy that check. These control frames remain outside
 the application event queue. Media independently monitors remote RTP receiver
 progress, so local send completion and healthy ICE keepalives do not hide a
-one-way audio failure. Both explicit failures are recognized by the existing
-`continuity::connection_lost` allowlist; the host still owns acknowledged
-retirement and any replacement, with no replay of speech or tool work.
+one-way audio failure. Both checks report transport loss through `recovery::Failure::retryable`.
+The host confirms retirement before replacing a session.
 An application event consumer that cannot accept a queued event within the
 existing ten-second I/O budget fails explicitly instead of blocking the relay
 and its health checks indefinitely. This application failure is not classified
@@ -208,8 +207,8 @@ All workers have bounded cleanup deadlines; keep the host runtime alive until
 cleanup completes. A Live call's fallback retirement reattaches only to close
 that known session and never replays application commands.
 
-`recovery::Failure::retryable` is set only when a failed attempt was safely
-retired. A host may start a fresh attempt under its own bounded retry policy
+After confirmed cleanup, a host may use `recovery::Failure::retryable` to
+start a fresh attempt under its own bounded retry policy
 (Whip permits one startup retry). Never replay an established conversation or
 an uncertain call-creation/tool request. `Host::current` must reject superseded
 attempts; credential replacement must invalidate the host's call ownership.

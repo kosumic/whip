@@ -6,6 +6,7 @@ mod live;
 mod realtime;
 pub use call::{Call, Config, Transport};
 
+use crate::recovery::Failure;
 use crate::{ClientEvent, RealtimeSocket, ServerEvent};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use futures::StreamExt;
@@ -15,7 +16,7 @@ use voice_call_media::{Capture, FRAME, capture_worker};
 pub use live::{Live, LiveConfig};
 pub use realtime::{Realtime, RealtimeConfig};
 
-pub type Result<T = ()> = std::result::Result<T, &'static str>;
+pub type Result<T = (), E = &'static str> = std::result::Result<T, E>;
 
 /// Native audio and cancellation policy. Mute must invalidate the capture
 /// generation even for a rapid mute/unmute; render must enforce bounded playback.
@@ -60,16 +61,19 @@ pub trait Delegate: Send {
         &mut self,
         session: &mut Session<'_>,
         work: Self::Work,
-    ) -> impl Future<Output = Result<Flow>> + Send;
+    ) -> impl Future<Output = Result<Flow, Failure>> + Send;
     fn event(
         &mut self,
         session: &mut Session<'_>,
         event: Event,
-    ) -> impl Future<Output = Result<Flow>> + Send;
+    ) -> impl Future<Output = Result<Flow, Failure>> + Send;
     /// Accounting-only callbacks during shutdown. Never dispatch application work.
     fn usage(&mut self, _event: &ServerEvent) {}
     fn live_usage(&mut self, _seconds: f64, _finalized: bool) {}
-    fn tick(&mut self, session: &mut Session<'_>) -> impl Future<Output = Result<Flow>> + Send {
+    fn tick(
+        &mut self,
+        session: &mut Session<'_>,
+    ) -> impl Future<Output = Result<Flow, Failure>> + Send {
         async {
             session.continue_response().await?;
             Ok(Flow::Continue)
@@ -141,19 +145,22 @@ impl<'a> Session<'a> {
             _ => Err("Not a GPT-Live session."),
         }
     }
-    pub async fn send(&mut self, event: ClientEvent) -> Result {
+    pub async fn send(&mut self, event: ClientEvent) -> Result<(), Failure> {
         if !matches!(self.protocol, Protocol::Realtime(_)) {
-            return Err("Not a Realtime session.");
+            return Err("Not a Realtime session.".into());
         }
         crate::events::send_with_prefix(self.socket, event, &self.prefix).await
     }
-    pub async fn send_live(&mut self, command: oai_rt_rs::live::Command) -> Result<String> {
+    pub async fn send_live(
+        &mut self,
+        command: oai_rt_rs::live::Command,
+    ) -> Result<String, Failure> {
         if !matches!(self.protocol, Protocol::Live(_)) {
-            return Err("Not a GPT-Live session.");
+            return Err("Not a GPT-Live session.".into());
         }
         crate::live::send_with_prefix(self.socket, command, &self.prefix).await
     }
-    pub async fn continue_response(&mut self) -> Result {
+    pub async fn continue_response(&mut self) -> Result<(), Failure> {
         if !self.ready() {
             return Ok(());
         }
@@ -168,12 +175,12 @@ impl<'a> Session<'a> {
     }
     /// Realtime creates a user turn; Live appends session-wide factual context.
     /// Backend Responses inputs and tool results use explicit typed Live commands.
-    pub async fn send_text(&mut self, text: &str) -> Result {
+    pub async fn send_text(&mut self, text: &str) -> Result<(), Failure> {
         if !self.ready() {
-            return Err("Voice session is not ready.");
+            return Err("Voice session is not ready.".into());
         }
         if text.trim().is_empty() || text.len() > crate::tools::MAX_ARGUMENT_BYTES {
-            return Err("Invalid voice text input.");
+            return Err("Invalid voice text input.".into());
         }
         match &mut self.protocol {
             Protocol::Realtime(state) => {
@@ -188,12 +195,16 @@ impl<'a> Session<'a> {
             Protocol::Live(_) => self.append_context(None, text, Context::Thinking).await,
         }
     }
-    pub async fn tool_result(&mut self, call_id: String, value: serde_json::Value) -> Result {
+    pub async fn tool_result(
+        &mut self,
+        call_id: String,
+        value: serde_json::Value,
+    ) -> Result<(), Failure> {
         self.realtime_state()?.responses.request_create();
         self.send(crate::tools::function_output(call_id, value))
             .await
     }
-    pub async fn mute(&mut self, audio: &impl Audio, muted: bool) -> Result {
+    pub async fn mute(&mut self, audio: &impl Audio, muted: bool) -> Result<(), Failure> {
         self.capture_reset = true;
         match &mut self.protocol {
             Protocol::Realtime(state) => {
@@ -219,7 +230,7 @@ impl<'a> Session<'a> {
     }
     /// Device loss discards an unfinished utterance without changing mute intent
     /// or retiring the provider conversation and its tool ledger.
-    pub async fn suspend_audio(&mut self, audio: &impl Audio) -> Result {
+    pub async fn suspend_audio(&mut self, audio: &impl Audio) -> Result<(), Failure> {
         self.capture_reset = true;
         if let Protocol::Realtime(state) = &mut self.protocol {
             state.responses.clear_input();
@@ -228,7 +239,7 @@ impl<'a> Session<'a> {
         }
         self.interrupt(audio).await
     }
-    pub async fn interrupt(&mut self, audio: &impl Audio) -> Result {
+    pub async fn interrupt(&mut self, audio: &impl Audio) -> Result<(), Failure> {
         match &mut self.protocol {
             Protocol::Realtime(state) => {
                 let active = state.responses.active().cloned();
@@ -276,9 +287,9 @@ impl<'a> Session<'a> {
         id: Option<&str>,
         text: &str,
         channel: Context,
-    ) -> Result {
+    ) -> Result<(), Failure> {
         if !matches!(self.protocol, Protocol::Live(_)) {
-            return Err("Not a GPT-Live session.");
+            return Err("Not a GPT-Live session.".into());
         }
         crate::live::commands::append_context_with_prefix(
             self.socket,
@@ -294,7 +305,7 @@ impl<'a> Session<'a> {
         &mut self,
         credentials_current: impl Fn() -> bool + Sync,
         mut usage: impl FnMut(f64, bool) -> Result + Send,
-    ) -> Result {
+    ) -> Result<(), Failure> {
         if self.live_state()?.usage.finalized {
             let state = self.live_state()?;
             usage(state.usage.seconds, true)?;
@@ -302,7 +313,7 @@ impl<'a> Session<'a> {
         }
         let finish = async {
             if !credentials_current() {
-                return Err("Voice credentials were revoked.");
+                return Err("Voice credentials were revoked.".into());
             }
             self.send_live(oai_rt_rs::live::Command::Close).await?;
             loop {
@@ -330,7 +341,7 @@ impl<'a> Session<'a> {
                         return if state.usage.finalized {
                             Ok(())
                         } else {
-                            Err("GPT-Live final usage is unavailable.")
+                            Err("GPT-Live final usage is unavailable.".into())
                         };
                     }
                     oai_rt_rs::live::ServerEvent::UsageUpdated {
@@ -352,14 +363,18 @@ impl<'a> Session<'a> {
             }
         };
         tokio::select! { biased;
-            () = revoked => Err("Voice credentials were revoked."),
+            () = revoked => Err("Voice credentials were revoked.".into()),
             result = tokio::time::timeout(LIVE_CLOSE_TIMEOUT, finish) => result.map_err(|_| "GPT-Live final usage timed out.")?,
         }
     }
 
     /// The only session receive/capture loop, shared by Whip and standalone apps.
     /// No established session or uncertain tool/call creation is automatically replayed.
-    pub async fn drive(&mut self, audio: &impl Audio, delegate: &mut impl Delegate) -> Result {
+    pub async fn drive(
+        &mut self,
+        audio: &impl Audio,
+        delegate: &mut impl Delegate,
+    ) -> Result<(), Failure> {
         let period = if matches!(self.protocol, Protocol::Realtime(_)) {
             Duration::from_millis(250)
         } else {
@@ -371,7 +386,7 @@ impl<'a> Session<'a> {
         let mut pending = capture_worker::Pending::new(audio);
         loop {
             if !audio.credentials_current() {
-                return Err("Voice credentials were revoked.");
+                return Err("Voice credentials were revoked.".into());
             }
             if !audio.current() {
                 return Ok(());
@@ -426,8 +441,8 @@ impl<'a> Session<'a> {
                         if !self.webrtc && let Protocol::Realtime(state) = &mut self.protocol
                             && let Some(event) = state.truncate.take() { self.send(event).await?; }
                         if delegate.event(self, event).await? == Flow::Stop { return Ok(()); }
-                        if failed { return Err("OpenAI could not generate a response. Check quota and model access."); }
-                        if closed { return if self.live_state()?.usage.finalized { Ok(()) } else { Err("GPT-Live disconnected before final usage was confirmed.") }; }
+                        if failed { return Err("OpenAI could not generate a response. Check quota and model access.".into()); }
+                        if closed { return if self.live_state()?.usage.finalized { Ok(()) } else { Err(crate::live::errors::DISCONNECTED_BEFORE_FINAL_USAGE) }; }
                     }
                 }
                 _ = tokio::task::yield_now(), if !self.webrtc && pending.ready() && matches!(self.protocol, Protocol::Realtime(_)) => {
@@ -449,7 +464,7 @@ impl<'a> Session<'a> {
             Protocol::Live(state) => state.control.started,
         }
     }
-    async fn upload(&mut self, audio: &impl Audio, samples: &[i16]) -> Result {
+    async fn upload(&mut self, audio: &impl Audio, samples: &[i16]) -> Result<(), Failure> {
         let bytes: Vec<_> = samples
             .iter()
             .flat_map(|sample| sample.to_le_bytes())
@@ -465,7 +480,7 @@ impl<'a> Session<'a> {
                     }),
                 )
                 .await
-                .map_err(|_| "Realtime audio upload timed out.")??;
+                .map_err(|_| Failure::transport("Realtime audio upload timed out."))??;
             }
             Protocol::Live(_) => {
                 self.send_live(oai_rt_rs::live::Command::InputAudioAppend { audio: encoded })

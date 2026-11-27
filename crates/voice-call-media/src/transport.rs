@@ -8,6 +8,7 @@ use super::{
     driver::{Command, Driver},
     incoming::Incoming,
 };
+use crate::Failure;
 use std::time::Duration;
 use tokio::{
     sync::{mpsc, oneshot, watch},
@@ -15,6 +16,7 @@ use tokio::{
 };
 use tracing::instrument::WithSubscriber;
 const WAIT: Duration = Duration::from_secs(15);
+pub(crate) const CONNECTION_CLOSED: Failure = Failure::transport("Voice media connection closed.");
 const CLOSE_WAIT: Duration = Duration::from_secs(3);
 #[derive(Debug, PartialEq)]
 pub enum AnswerOutcome {
@@ -26,24 +28,24 @@ pub struct Transport {
     pub audio: AudioTrack,
     pub ready: watch::Receiver<bool>,
     pub primary_started: watch::Receiver<Option<String>>,
-    pub failure: watch::Receiver<Option<&'static str>>,
+    pub failure: watch::Receiver<Option<Failure>>,
     pub statistics: watch::Receiver<crate::health::Statistics>,
     pub prepared_client: bool,
     runtime: tokio::runtime::Handle,
     offer: String,
     commands: mpsc::Sender<Command>,
     stop: watch::Sender<bool>,
-    worker: Option<JoinHandle<Result<(), &'static str>>>,
+    worker: Option<JoinHandle<Result<(), Failure>>>,
 }
 impl Transport {
-    pub async fn new() -> Result<Self, &'static str> {
+    pub async fn new() -> Result<Self, Failure> {
         Self::configured(crate::TransportConfig::default()).await
     }
-    pub async fn configured(config: crate::TransportConfig) -> Result<Self, &'static str> {
+    pub async fn configured(config: crate::TransportConfig) -> Result<Self, Failure> {
         Self::with_config(config, None).await
     }
     #[cfg(test)]
-    async fn with_protocol(protocol: Option<str0m::net::Protocol>) -> Result<Self, &'static str> {
+    async fn with_protocol(protocol: Option<str0m::net::Protocol>) -> Result<Self, Failure> {
         Self::with_config(
             crate::TransportConfig {
                 first_event_kind: Some("session.started".into()),
@@ -56,7 +58,7 @@ impl Transport {
     async fn with_config(
         config: crate::TransportConfig,
         protocol: Option<str0m::net::Protocol>,
-    ) -> Result<Self, &'static str> {
+    ) -> Result<Self, Failure> {
         let (incoming, ingress) = Incoming::new();
         let (ready, connected) = watch::channel(false);
         let (primary_started, started) = watch::channel(None);
@@ -101,16 +103,16 @@ impl Transport {
     pub fn offer(&self) -> String {
         self.offer.clone()
     }
-    pub async fn apply_answer(&self, sdp: String) -> Result<AnswerOutcome, &'static str> {
+    pub async fn apply_answer(&self, sdp: String) -> Result<AnswerOutcome, Failure> {
         let (complete, result) = oneshot::channel();
         self.commands
             .send(Command::Answer { sdp, complete })
             .await
-            .map_err(|_| "Voice peer ended.")?;
+            .map_err(|_| Failure::transport("Voice peer ended."))?;
         result.await.map_err(|_| "Voice answer failed.")??;
         match tokio::time::timeout(WAIT, self.ready.clone().wait_for(|ready| *ready)).await {
             Ok(Ok(_)) => Ok(AnswerOutcome::Ready),
-            Ok(Err(_)) => Err("Voice media connection closed."),
+            Ok(Err(_)) => Err(CONNECTION_CLOSED),
             Err(_) => Ok(AnswerOutcome::TimedOut),
         }
     }

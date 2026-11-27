@@ -36,7 +36,10 @@ async fn cancelled_startup_creates_neither_realtime_nor_live_provider_sessions()
         json!({"model":"custom-live-model"}),
     )
     .await;
-    assert_eq!(result.err().ok_or("cancelled Live connected")?, CANCELLED);
+    assert_eq!(
+        result.err().ok_or("cancelled Live connected")?,
+        CANCELLED.into()
+    );
     assert_eq!(credential.0.load(Ordering::Relaxed), 0);
     app.input.close();
     Ok(())
