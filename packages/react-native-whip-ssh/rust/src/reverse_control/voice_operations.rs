@@ -160,7 +160,7 @@ impl WhipToolSession {
         dispatched: &AtomicBool,
     ) -> Result<Value, BrowserError> {
         let result = self
-            .guarded(self.operation_inner(name, args, dispatched))
+            .guarded(Box::pin(self.operation_inner(name, args, dispatched)))
             .await;
         result.map_err(|mut error| {
             if dispatched.load(Ordering::Acquire) && error.details.get("outcome_unknown").is_none()
