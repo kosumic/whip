@@ -1,5 +1,5 @@
 import { appStorage } from '../services/appStorage';
-import { bestEffortCleanup } from '../services/backgroundOperations';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 
 const STORAGE_KEY = 'whip.browser.tabs.v1';
 const MAX_SAVED_SESSIONS = 30;
@@ -87,8 +87,7 @@ export class BrowserArchive {
     const encoded = JSON.stringify(this.list());
     const write = () => this.storage.setItem(STORAGE_KEY, encoded);
     this.write = this.write.then(write, write);
-    // Storage failure must not turn a browser navigation into an unhandled rejection.
-    bestEffortCleanup(this.write, 'browser-archive-write');
+    reportBackgroundFailure(this.write, 'browser-archive-write');
     this.changed();
   }
   save(value: Omit<SavedBrowserSession, 'updatedAt'>) {
@@ -112,7 +111,13 @@ export class BrowserArchive {
   }
   remove(id: string) {
     this.touched.add(id);
-    if (this.records.delete(id)) this.persist();
+    const removed = this.records.delete(id);
+    if (removed) this.persist();
+    return removed;
+  }
+  forget(id: string) {
+    if (!this.remove(id)) this.persist();
+    return this.write;
   }
   flush = () => this.write;
   load(): Promise<void> {

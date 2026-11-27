@@ -16,7 +16,7 @@ import { Button } from '../components/ui/button';
 import { Text } from '../components/ui/text';
 import { ConfirmationPopup } from '../components/ConfirmationPopup';
 import { useTheme } from '../theme';
-import { bestEffortCleanup } from '../services/backgroundOperations';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 
 enum Section {
   Connection = 'connection',
@@ -260,7 +260,7 @@ export function BrowserSiteInfo({
             variant="secondary"
             accessibilityLabel="Open app permission settings"
             onPress={() =>
-              bestEffortCleanup(
+              reportBackgroundFailure(
                 Linking.openSettings(),
                 'browser-permission-settings',
               )

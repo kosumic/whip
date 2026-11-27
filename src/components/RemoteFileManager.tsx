@@ -70,7 +70,6 @@ import { Button } from './ui/button';
 import { Switch } from './ui/switch';
 import { Text } from './ui/text';
 
-const REMOTE_PREVIEW_CLOSE_CONTEXT = 'remote-preview-close';
 const EMPTY_GIT_STATUS: readonly RemoteGitStatusEntry[] = [];
 
 type GitDiscoveryState =
@@ -254,7 +253,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       const previous = previewRef.current;
       if (previous?.cached && previous.cached !== next?.cached) previous.cached.dispose();
       if (previous?.filePreview && previous.filePreview !== next?.filePreview) {
-        bestEffortCleanup(client.native.stopPreview(previous.filePreview.id), REMOTE_PREVIEW_CLOSE_CONTEXT);
+        bestEffortCleanup(client.native.stopPreview(previous.filePreview.id));
       }
       previewRef.current = next;
       setPreview(next);
@@ -446,7 +445,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     () => () => {
       const current = previewRef.current;
       current?.cached?.dispose();
-      if (current?.filePreview) bestEffortCleanup(client.native.stopPreview(current.filePreview.id), REMOTE_PREVIEW_CLOSE_CONTEXT);
+      if (current?.filePreview) bestEffortCleanup(client.native.stopPreview(current.filePreview.id));
       previewRef.current = null;
     },
     [client],
@@ -714,7 +713,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       }
       if (request !== requestRef.current) {
         cached?.dispose();
-        if (filePreview) bestEffortCleanup(client.native.stopPreview(filePreview.id), REMOTE_PREVIEW_CLOSE_CONTEXT);
+        if (filePreview) bestEffortCleanup(client.native.stopPreview(filePreview.id));
         return;
       }
       replacePreview({
@@ -727,7 +726,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       if (kind === 'pdf' && filePreview) await openPdfBrowser(filePreview.url, request);
     } catch (reason) {
       cached?.dispose();
-      if (filePreview) bestEffortCleanup(client.native.stopPreview(filePreview.id), REMOTE_PREVIEW_CLOSE_CONTEXT);
+      if (filePreview) bestEffortCleanup(client.native.stopPreview(filePreview.id));
       if (request === requestRef.current) {
         replacePreview({ ...loadingPreview, error: String(reason) });
       }

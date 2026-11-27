@@ -36,7 +36,7 @@ import {
   shouldOpenHostSwipe,
 } from '@/src/lib/hostSwipeActions';
 import type { CredentialRecoveryStatus } from '@/src/services/credentialVault';
-import { bestEffortCleanup, reportBackgroundFailure } from '@/src/services/backgroundOperations';
+import { reportBackgroundFailure } from '@/src/services/backgroundOperations';
 import { remoteNotificationStates, subscribeRemoteNotifications } from '@/src/services/remoteNotifications';
 import { statusColor, useTheme } from '@/src/theme';
 import type { HostProfile } from '@/src/types';
@@ -114,7 +114,7 @@ export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId
           <View className="flex-row items-center gap-2">
             <GlobalCallButton />
             {supportsBrowserControl() && (
-              <IconButton icon={Globe2} accessibilityLabel={t('terminal.openBrowser')} onPress={() => bestEffortCleanup(browserRegistry.openLocal(), 'browser-open-local')} />
+              <IconButton icon={Globe2} accessibilityLabel={t('terminal.openBrowser')} onPress={() => reportBackgroundFailure(browserRegistry.openLocal(), 'browser-open-local')} />
             )}
             <IconButton icon={KeyRound} accessibilityLabel={t('settings.globalKeychain')} onPress={onManageGlobalKeychain} />
             <IconButton icon={Plus} accessibilityLabel={t('hosts.add')} onPress={onAdd} />

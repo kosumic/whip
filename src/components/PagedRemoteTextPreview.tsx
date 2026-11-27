@@ -10,7 +10,8 @@ import { useAppGlassEnabled } from '@/src/lib/glassContext';
 import { cn } from '@/src/lib/utils';
 import type { HerdrClient } from '@/src/services/HerdrClient';
 import { loadRemoteContentProgress, saveRemoteContentProgress, type RemoteContentIdentity, type RemotePagedTextProgress } from '@/src/services/remoteContentProgress';
-import { bestEffortCleanup, reportBackgroundFailure } from '@/src/services/backgroundOperations';
+import { reportBackgroundFailure } from '@/src/services/backgroundOperations';
+import { settledPromise } from '@/src/lib/promises';
 import { renderCjkText } from './CjkText';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
@@ -249,7 +250,7 @@ const TextPage = memo(function TextPageBlock({ reader, index, pageHeight, initia
       if (!value.eof) {
         // Prefetch one page, without growing the list or recursively reading ahead.
         // A failed prefetch is reported when that page is actually requested.
-        bestEffortCleanup(reader.readPage(value.next.pageIndex), 'paged-text-prefetch');
+        void settledPromise(reader.readPage(value.next.pageIndex));
       }
     }).catch(reason => { if (active) setError(String(reason)); });
     return () => { active = false; };

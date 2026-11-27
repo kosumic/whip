@@ -26,12 +26,13 @@ import {
   type BrowserSiteData,
 } from './native';
 import { browserLibrary } from './library';
+import { runBrowserDeletion } from './runBrowserDeletion';
 import { BrowserTunnelingSetting } from './BrowserTunnelingSetting';
 import { ConfirmationPopup } from '../components/ConfirmationPopup';
 import { Button } from '../components/ui/button';
 import { Text } from '../components/ui/text';
 import { Input } from '../components/ui/input';
-import { bestEffortCleanup } from '../services/backgroundOperations';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 
 const EMPTY_SITE_DATA: BrowserSiteData = {
   hasCookies: false,
@@ -88,11 +89,11 @@ export function BrowserSettings({
   useEffect(() => {
     if (!supportsBrowserControl()) return;
     let cancelled = false;
-    bestEffortCleanup(
+    reportBackgroundFailure(
       defaultBrowserUserAgent().then(agent => {
         if (!cancelled) setNativeAgent(agent);
       }),
-      'Read browser user agent',
+      'browser-default-user-agent',
     );
     return () => {
       cancelled = true;
@@ -494,7 +495,13 @@ export function BrowserSettings({
                 </Button>
                 <Button
                   variant="ghost"
-                  onPress={() => browserArchive.remove(record.id)}
+                  onPress={() => {
+                    void runBrowserDeletion(
+                      () => browserArchive.forget(record.id),
+                      t('browser.removeEntryFailed'),
+                      t,
+                    );
+                  }}
                 >
                   <Text>{t('browser.forget')}</Text>
                 </Button>

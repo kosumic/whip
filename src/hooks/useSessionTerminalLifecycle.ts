@@ -232,10 +232,7 @@ export function useSessionTerminalLifecycle({
           client?.native.closeReverseControlSession(entry.identity.sessionId);
         }
       }
-      bestEffortCleanup(
-        browserRegistry.closeTerminal(sessionId, terminalId),
-        'browser-terminal-close',
-      );
+      bestEffortCleanup(browserRegistry.closeTerminal(sessionId, terminalId));
       client?.terminal.closeTerminalBridge(terminalId);
       terminals.close(sessionId, terminalId);
     },

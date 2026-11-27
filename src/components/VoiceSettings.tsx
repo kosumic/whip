@@ -113,7 +113,7 @@ export function VoiceSettings({ localCallSettings, announcementSettings, openAiC
 
   const stopPreview = useCallback(() => {
     previewSequence.current += 1;
-    bestEffortCleanup(stopPreviewPlayback(previewOwner.current), 'voice-preview-stop');
+    bestEffortCleanup(stopPreviewPlayback(previewOwner.current));
     setPreviewing(false);
   }, []);
 
@@ -165,7 +165,7 @@ export function VoiceSettings({ localCallSettings, announcementSettings, openAiC
       mounted.current = false; request.current += 1;
       unsubscribe();
       savePreviewText();
-      bestEffortCleanup(stopPreviewPlayback(owner), 'voice-preview-unmount');
+      bestEffortCleanup(stopPreviewPlayback(owner));
     };
   }, [loadSystemVoices, run, savePreviewText]);
   useEffect(() => {

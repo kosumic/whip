@@ -25,7 +25,7 @@ import {
 } from 'react-native';
 import { BROWSER_ACTION_TIMEOUT_MS } from '../src/browser/controller';
 import { browserArchive } from '../src/browser/archive';
-import type { BrowserSavedDownload } from '../src/browser/library';
+import { browserLibrary, type BrowserSavedDownload } from '../src/browser/library';
 import { LOCAL_BROWSER_RUNTIME_ID } from '../src/browser/routing';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { browserSearchHistory } from '../src/browser/searchHistory';
@@ -1826,6 +1826,23 @@ describe('browser QR scanning and recent searches', () => {
     await press('Open browser menu');
     await press('Close browser');
     expect(browserRegistry.visibleId).toBeNull();
+  });
+
+  test('a bookmark write failure stays in the menu and can be retried', async () => {
+    await act(async () => {
+      session.entry.controller.tab().url = 'https://example.test/docs';
+      browserRegistry.changed();
+    });
+    jest.mocked(browserLibrary.bookmark).mockRejectedValueOnce(new Error('disk full'));
+    await press('Open browser menu');
+    await press('Bookmark current page');
+    expect(view.root.findByProps({ accessibilityRole: 'alert' }).children).toContain(
+      'Could not save bookmark.',
+    );
+    expect(control('Bookmark current page')).toBeDefined();
+    await press('Bookmark current page');
+    expect(control('Search bookmarks')).toBeDefined();
+    expect(view.root.findAllByProps({ accessibilityRole: 'alert' })).toHaveLength(0);
   });
 
   test('system browser opens the original page URL and retains the in-app tab', async () => {

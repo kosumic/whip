@@ -5,7 +5,7 @@ import {
   backgroundMonitoringActive,
   observeBackgroundNotificationPulses,
 } from './backgroundMonitoring';
-import { bestEffortCleanup } from './backgroundOperations';
+import { reportBackgroundFailure } from './backgroundOperations';
 import { recordNetworkDiagnostic } from './networkDiagnostics';
 import {
   notificationConsumerState,
@@ -58,9 +58,9 @@ export function observeNotificationConsumer(enabled: boolean): () => void {
       running = false;
     }
   };
-  const tick = () => bestEffortCleanup(pulse(), 'notification-lease-pulse');
+  const tick = () => reportBackgroundFailure(pulse(), 'notification-lease-pulse');
   const refreshToken = () =>
-    bestEffortCleanup(
+    reportBackgroundFailure(
       refreshRemotePushTokens(),
       'notification-push-token-refresh',
     );
@@ -91,7 +91,7 @@ export function observeNotificationConsumer(enabled: boolean): () => void {
     }
   };
   const readState = () =>
-    bestEffortCleanup(refresh(), 'notification-registration-read');
+    reportBackgroundFailure(refresh(), 'notification-registration-read');
   const unsubscribe = subscribeRemoteNotifications(readState);
   const foreground = AppState.addEventListener('change', state => {
     if (watchingToken && state === 'active') refreshToken();

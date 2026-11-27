@@ -16,7 +16,7 @@ describe('background operation semantics', () => {
   });
 
   test('best-effort cleanup intentionally absorbs failures', async () => {
-    bestEffortCleanup(Promise.reject(new Error('already closed')), 'preview-close');
+    bestEffortCleanup(Promise.reject(new Error('already closed')));
     await Promise.resolve();
 
     expect(console.error).not.toHaveBeenCalled();

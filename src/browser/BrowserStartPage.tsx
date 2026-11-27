@@ -8,7 +8,7 @@ import { Button } from '../components/ui/button';
 import { Text } from '../components/ui/text';
 import { Input } from '../components/ui/input';
 import { useTheme } from '../theme';
-import { bestEffortCleanup } from '../services/backgroundOperations';
+import { runBrowserDeletion } from './runBrowserDeletion';
 import { BrowserFavicon } from './BrowserFavicon';
 
 export function BrowserStartPage({
@@ -47,12 +47,13 @@ export function BrowserStartPage({
               accessibilityLabel={t('browser.visitSite', { site: site.title })}
               accessibilityHint={t('browser.removeShortcutHint')}
               onPress={() => onOpen(site.url)}
-              onLongPress={() =>
-                bestEffortCleanup(
-                  browserLibrary.removeShortcut(site.url),
-                  'browser-shortcut-remove',
-                )
-              }
+              onLongPress={() => {
+                void runBrowserDeletion(
+                  () => browserLibrary.removeShortcut(site.url),
+                  t('browser.removeEntryFailed'),
+                  t,
+                );
+              }}
             >
               <View className="size-12 items-center justify-center rounded-2xl bg-muted">
                 <BrowserFavicon url={site.url} runtimeId={runtimeId} />

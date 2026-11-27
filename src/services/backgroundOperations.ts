@@ -20,11 +20,8 @@ function isExpectedCancellation(error: unknown): boolean {
       && EXPECTED_CANCELLATION_CODES.has(candidate.code));
 }
 
-/** Explicitly discards a failure from a non-critical teardown operation. */
-export function bestEffortCleanup(
-  promise: Promise<unknown>,
-  _context: string,
-): void {
+/** Discards a failure from disposable cleanup. */
+export function bestEffortCleanup(promise: Promise<unknown>): void {
   // eslint-disable-next-line no-restricted-syntax -- This utility is the intentional rejection sink.
   promise.catch(() => undefined);
 }

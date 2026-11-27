@@ -129,9 +129,9 @@ jest.mock('../src/services/remoteFileTransfer', () => ({ cacheRemoteFile: jest.f
 jest.mock('../src/services/savedRemoteDestination', () => ({ revealSavedRemoteDestination: jest.fn() }));
 jest.mock('../src/services/backgroundOperations', () => ({
   bestEffortCleanup: jest.fn(),
-  reportBackgroundFailure: jest.fn((promise: Promise<unknown>, context: string) => {
+  reportBackgroundFailure: jest.fn((promise: Promise<unknown>) => {
     jest.requireActual<typeof import('../src/services/backgroundOperations')>('../src/services/backgroundOperations')
-      .bestEffortCleanup(promise, context);
+      .bestEffortCleanup(promise);
   }),
 }));
 jest.mock('../src/services/operationalDiagnostics', () => ({

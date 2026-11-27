@@ -185,7 +185,7 @@ export class BrowserController {
     const live = this.operations.tabs();
     for (const tab of [...this.tabs]) {
       if (!live.some(view => view.id === tab.id))
-        bestEffortCleanup(this.closeTab(tab.id), 'browser-native-tab-close');
+        bestEffortCleanup(this.closeTab(tab.id));
     }
     for (const view of live) {
       const tab = this.tabs.find(item => item.id === view.id);
@@ -216,10 +216,7 @@ export class BrowserController {
       tab.loading = !tab.htmlPreview && tab.url !== 'about:blank';
       tab.loadError = null;
       for (const preview of tab.previews.values())
-        bestEffortCleanup(
-          this.previews.stopPreview(preview.id),
-          'browser-route-preview-stop',
-        );
+        bestEffortCleanup(this.previews.stopPreview(preview.id));
       tab.previews.clear();
     }
     this.changed();

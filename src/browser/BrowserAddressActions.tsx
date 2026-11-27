@@ -5,7 +5,7 @@ import Pencil from 'lucide-react-native/icons/pencil';
 import Share2 from 'lucide-react-native/icons/share-2';
 import { Button } from '../components/ui/button';
 import { Text } from '../components/ui/text';
-import { bestEffortCleanup } from '../services/backgroundOperations';
+import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { copyTextWithHaptic } from '../services/interactionFeedback';
 import { useTheme } from '../theme';
 
@@ -32,7 +32,7 @@ export function BrowserAddressActions({
         disabled={disabled}
         onPress={() => {
           if (url)
-            bestEffortCleanup(
+            reportBackgroundFailure(
               Share.share({ message: url }),
               'browser-address-share',
             );

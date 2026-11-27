@@ -204,7 +204,7 @@ export class BrowserRegistry {
           !this.reconnectingRoutes.has(id)
         ) {
           this.reconnectingRoutes.add(id);
-          bestEffortCleanup(
+          reportBackgroundFailure(
             this.routing.disconnect(id),
             'browser-route-suspend',
           );
@@ -214,7 +214,10 @@ export class BrowserRegistry {
           ? this.entries.get(this.visibleId)
           : undefined;
         if (visible?.identity.runtimeId === id && this.routing)
-          bestEffortCleanup(this.routing.activate(id), 'browser-route-restore');
+          reportBackgroundFailure(
+            this.routing.activate(id),
+            'browser-route-restore',
+          );
       }
     }
     if (changed) this.changed();
@@ -560,10 +563,7 @@ export class BrowserRegistry {
               pane.terminal_id === entry.identity.terminalId,
           )
         ) {
-          bestEffortCleanup(
-            this.close(entry.identity.sessionId),
-            'browser-preview-pane-close',
-          );
+          bestEffortCleanup(this.close(entry.identity.sessionId));
         }
       }
     }
@@ -573,10 +573,7 @@ export class BrowserRegistry {
         entry.identity.runtimeId === runtime.runtimeId &&
         !authorized.has(entry.identity.sessionId)
       )
-        bestEffortCleanup(
-          this.close(entry.identity.sessionId),
-          'browser-reconcile-close',
-        );
+        bestEffortCleanup(this.close(entry.identity.sessionId));
     for (const identity of sessions) this.ensure(identity, runtime);
   }
   async event(event: BrowserBridgeEvent, runtime: BrowserRuntime) {

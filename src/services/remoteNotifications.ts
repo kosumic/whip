@@ -24,7 +24,7 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { appStorage } from './appStorage';
 import { waitForNotificationRegistration } from './notificationRegistration';
-import { bestEffortCleanup } from './backgroundOperations';
+import { settledPromise } from '../lib/promises';
 import type { AgentNotificationTarget } from '../lib/notificationNavigation';
 
 const SERVICE = 'dev.whip.notification-keys.v1';
@@ -177,7 +177,7 @@ const platform: NotificationPlatform = {
     platformEffect(() => {
       const verification = waitForNotificationRegistration(deviceId);
       // The native PUT can fail before the proof future is polled.
-      bestEffortCleanup(verification.promise, 'notification-proof-listener');
+      void settledPromise(verification.promise);
       verifications.set(deviceId, verification);
     }),
   verificationProof: (deviceId, options) =>

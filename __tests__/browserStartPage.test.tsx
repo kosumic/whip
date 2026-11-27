@@ -1,4 +1,5 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { Alert } from 'react-native';
 import { createInstance } from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import { BrowserStartPage } from '../src/browser/BrowserStartPage';
@@ -14,7 +15,11 @@ import { zhHant } from '../src/locales/zh-Hant';
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );
-jest.mock('react-native', () => ({ View: 'View', ScrollView: 'ScrollView' }));
+jest.mock('react-native', () => ({
+  Alert: { alert: jest.fn() },
+  View: 'View',
+  ScrollView: 'ScrollView',
+}));
 jest.mock('../src/theme', () => ({
   useTheme: () => ({ colors: { text: 'black' } }),
 }));
@@ -36,6 +41,7 @@ jest.mock('../src/browser/library', () => ({
     shortcuts: () => [{ url: 'https://x.com/', title: 'X', visitedAt: 0n }],
     bookmarks: () => [{ url: 'https://x.com/', title: 'X', visitedAt: 0n }],
     history: () => [{ url: 'https://x.com/', title: 'X', visitedAt: 0n }],
+    clearHistory: jest.fn(async () => undefined),
     addShortcut: jest.fn(async () => undefined),
     removeShortcut: jest.fn(async () => undefined),
   },
@@ -95,6 +101,31 @@ test('start page opens and removes shortcuts, and validates a new shortcut befor
     expect(
       view.root.findAllByProps({ accessibilityLabel: 'Shortcut address' }),
     ).toHaveLength(0);
+  } finally {
+    await act(async () => view.unmount());
+  }
+});
+
+test('clearing browsing history shows a storage failure and lets the user retry', async () => {
+  jest.mocked(browserLibrary.clearHistory).mockRejectedValueOnce(new Error('disk full'));
+  let view!: ReactTestRenderer;
+  await act(async () => {
+    view = create(<BrowserLibraryScreen kind="history" onOpen={jest.fn()} />);
+  });
+  try {
+    const clear = view.root.findAllByType('Button' as never).find(button =>
+      button.findByType('Text' as never).children.includes('Clear browsing history'),
+    )!;
+    await act(async () => clear.props.onPress());
+    expect(Alert.alert).toHaveBeenCalledWith(
+      'Could not clear history.',
+      undefined,
+      expect.any(Array),
+    );
+    const buttons = jest.mocked(Alert.alert).mock.lastCall?.[2];
+    await act(async () => buttons?.find(button => button.text === 'Retry')?.onPress?.());
+    expect(browserLibrary.clearHistory).toHaveBeenCalledTimes(2);
+    expect(Alert.alert).toHaveBeenCalledTimes(1);
   } finally {
     await act(async () => view.unmount());
   }

@@ -5,7 +5,7 @@ import { browserLibrary } from './library';
 import { Button } from '../components/ui/button';
 import { Text } from '../components/ui/text';
 import { Input } from '../components/ui/input';
-import { bestEffortCleanup } from '../services/backgroundOperations';
+import { runBrowserDeletion } from './runBrowserDeletion';
 
 export function BrowserLibraryScreen({
   kind,
@@ -38,12 +38,13 @@ export function BrowserLibraryScreen({
       {kind === 'history' && entries.length > 0 && (
         <Button
           variant="secondary"
-          onPress={() =>
-            bestEffortCleanup(
-              browserLibrary.clearHistory(),
-              'browser-history-clear',
-            )
-          }
+          onPress={() => {
+            void runBrowserDeletion(
+              browserLibrary.clearHistory,
+              t('browser.clearHistoryFailed'),
+              t,
+            );
+          }}
         >
           <Text>{t('browser.clearHistory')}</Text>
         </Button>
@@ -83,14 +84,16 @@ export function BrowserLibraryScreen({
             accessibilityLabel={t('browser.removeSite', {
               site: site.title || site.url,
             })}
-            onPress={() =>
-              bestEffortCleanup(
-                kind === 'bookmarks'
-                  ? browserLibrary.removeBookmark(site.url)
-                  : browserLibrary.removeHistory(site.url),
-                'browser-library-remove',
-              )
-            }
+            onPress={() => {
+              void runBrowserDeletion(
+                () =>
+                  kind === 'bookmarks'
+                    ? browserLibrary.removeBookmark(site.url)
+                    : browserLibrary.removeHistory(site.url),
+                t('browser.removeEntryFailed'),
+                t,
+              );
+            }}
           >
             <Text>{t('common.remove')}</Text>
           </Button>

@@ -8,6 +8,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   BackHandler,
@@ -86,6 +87,7 @@ import { useBrowserDownloads } from './useBrowserDownloads';
 import { BrowserSiteInfo } from './BrowserSiteInfo';
 import { browserDisplayAddress } from './siteInfo';
 import { browserLibrary } from './library';
+import { runBrowserDeletion } from './runBrowserDeletion';
 import { terminalWebLinkTarget } from '../lib/terminalLinks';
 import { useTheme } from '../theme';
 import { Button } from '../components/ui/button';
@@ -333,7 +335,7 @@ const TabRenderer = memo(function BrowserTabRenderer({
           if (current()) {
             entry.controller.loadEnd(tab.id);
             if (!tab.loadError && tab.url !== 'about:blank')
-              bestEffortCleanup(
+              reportBackgroundFailure(
                 browserLibrary.visit(tab.url, tab.title),
                 'browser-history-write',
               );
@@ -391,13 +393,14 @@ export function BrowserSurface({
 }: {
   runtimes: readonly BrowserRuntime[];
 }) {
+  const { t } = useTranslation();
   const revision = useSyncExternalStore(
     browserRegistry.subscribe,
     browserRegistry.getSnapshot,
   );
   useSyncExternalStore(browserLibrary.subscribe, browserLibrary.getSnapshot);
   useEffect(() => {
-    bestEffortCleanup(browserLibrary.load(), 'browser-library-load');
+    reportBackgroundFailure(browserLibrary.load(), 'browser-library-load');
   }, []);
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -522,7 +525,7 @@ export function BrowserSurface({
   useEffect(() => {
     if (!supportsBrowserControl()) return;
     let cancelled = false;
-    bestEffortCleanup(
+    reportBackgroundFailure(
       browserRegistry.loadArchive().then(() => {
         if (cancelled) return;
         browserRegistry.registerRuntimes(runtimes);
@@ -531,7 +534,6 @@ export function BrowserSurface({
           if (!live.has(owned.identity.runtimeId))
             bestEffortCleanup(
               browserRegistry.closeHost(owned.identity.runtimeId),
-              'browser-host-close',
             );
         }
         for (const runtime of runtimes) browserRegistry.reconcile(runtime);
@@ -543,7 +545,7 @@ export function BrowserSurface({
     };
   }, [runtimes]);
   useEffect(() => {
-    bestEffortCleanup(browserRegistry.trimViews(), 'browser-view-budget');
+    reportBackgroundFailure(browserRegistry.trimViews(), 'browser-view-budget');
   }, [revision]);
   useEffect(() => {
     if (entry && tab?.lifecycle === 'suspended')
@@ -557,7 +559,7 @@ export function BrowserSurface({
     const timer = setInterval(() => {
       const cutoff = Date.now() - settings.idleMinutes * 60000;
       for (const owned of browserRegistry.entries.values())
-        bestEffortCleanup(
+        reportBackgroundFailure(
           owned.controller.suspendInactive(
             cutoff,
             owned === entry ? tab?.id : undefined,
@@ -589,13 +591,16 @@ export function BrowserSurface({
   }, [dismissPanel, entry, panel]);
   useEffect(() => {
     if (!supportsBrowserControl()) return;
-    bestEffortCleanup(browserPreferences.load(), 'browser-preferences-load');
-    bestEffortCleanup(browserRegistry.loadArchive(), 'browser-archive-load');
-    bestEffortCleanup(
+    reportBackgroundFailure(
+      browserPreferences.load(),
+      'browser-preferences-load',
+    );
+    reportBackgroundFailure(browserRegistry.loadArchive(), 'browser-archive-load');
+    reportBackgroundFailure(
       browserSearchHistory.load(),
       'browser-search-history-load',
     );
-    bestEffortCleanup(
+    reportBackgroundFailure(
       defaultBrowserUserAgent().then(setNativeAgent),
       'browser-default-user-agent',
     );
@@ -633,7 +638,7 @@ export function BrowserSurface({
     try {
       const url = browserOmniboxAddress(value, settings.searchEngine);
       if (url === browserSearchUrl(value.trim(), settings.searchEngine)) {
-        bestEffortCleanup(
+        reportBackgroundFailure(
           browserSearchHistory.record(value),
           'browser-search-history-write',
         );
@@ -947,14 +952,18 @@ export function BrowserSurface({
                         }}
                         variant="ghost"
                         className="h-14 justify-start rounded-xl px-3"
-                        onPress={() => {
-                          bestEffortCleanup(
-                            browserPreferences.set({
+                        onPress={async () => {
+                          setError(null);
+                          try {
+                            await browserPreferences.set({
                               searchEngine: engine.id,
-                            }),
-                            'browser-search-engine-save',
-                          );
-                          setPanel(null);
+                            });
+                            setPanel(current =>
+                              current === BrowserPanel.Engines ? null : current,
+                            );
+                          } catch {
+                            setError(t('browser.saveSettingFailed'));
+                          }
                         }}
                       >
                         <SearchEngineIcon engine={engine.id} />
@@ -1077,16 +1086,22 @@ export function BrowserSurface({
                         disabled={!tab || tab.url === 'about:blank'}
                         variant="ghost"
                         className="h-14 justify-start px-3"
-                        onPress={() => {
-                          if (tab)
-                            bestEffortCleanup(
-                              browserLibrary.bookmark(
-                                tab.url,
-                                tab.title || new URL(tab.url).hostname,
-                              ),
-                              'browser-bookmark-save',
+                        onPress={async () => {
+                          if (!tab || tab.url === 'about:blank') return;
+                          setError(null);
+                          try {
+                            await browserLibrary.bookmark(
+                              tab.url,
+                              tab.title || new URL(tab.url).hostname,
                             );
-                          setPanel(BrowserPanel.Bookmarks);
+                            setPanel(current =>
+                              current === BrowserPanel.Menu
+                                ? BrowserPanel.Bookmarks
+                                : current,
+                            );
+                          } catch {
+                            setError(t('browser.saveBookmarkFailed'));
+                          }
                         }}
                       >
                         <Bookmark size={20} color={colors.text} />
@@ -1189,9 +1204,10 @@ export function BrowserSurface({
                     variant="ghost"
                     size="sm"
                     onPress={() => {
-                      bestEffortCleanup(
-                        browserSearchHistory.clear(),
-                        'browser-search-history-clear',
+                      void runBrowserDeletion(
+                        () => browserSearchHistory.clear(),
+                        t('browser.clearHistoryFailed'),
+                        t,
                       );
                     }}
                   >
@@ -1214,9 +1230,10 @@ export function BrowserSurface({
                         void submitAddress(query);
                       }}
                       onLongPress={() => {
-                        bestEffortCleanup(
-                          browserSearchHistory.remove(query),
-                          'browser-search-history-remove',
+                        void runBrowserDeletion(
+                          () => browserSearchHistory.remove(query),
+                          t('browser.removeEntryFailed'),
+                          t,
                         );
                       }}
                     >

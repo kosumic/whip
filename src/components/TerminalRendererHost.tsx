@@ -52,7 +52,7 @@ import {
 } from '../lib/terminalRendererLru';
 import type { TerminalPreferences } from '../services/devicePreferences';
 import { TerminalResidencyEndReason, type TerminalResidencyEnd } from '../lib/terminalResidency';
-import { bestEffortCleanup } from '../services/backgroundOperations';
+import { bestEffortCleanup, reportBackgroundFailure } from '../services/backgroundOperations';
 import type { TerminalAttachmentId } from '../services/TerminalBridgeController';
 import { networkErrorMessage, recordNetworkDiagnostic } from '../services/networkDiagnostics';
 import { recordTerminalKeyboardDiagnostic } from '../services/terminalKeyboardDiagnostics';
@@ -406,7 +406,6 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
           ? client.terminal.releaseTerminal(session.terminalId, attachmentId)
           : client.terminal.detachTerminal(session.terminalId, attachmentId)
       )),
-      'terminal-controller-release',
     );
   }, []);
 
@@ -1312,7 +1311,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       : null;
     inject(`window.herdrActivate(${JSON.stringify(key)});`);
     for (const [entryKey,entry] of entries.current) {
-      bestEffortCleanup(Promise.resolve().then(() => entry.target.client.terminal.focusTerminal(entry.target.session.terminalId,entryKey===key)), 'terminal-focus');
+      reportBackgroundFailure(Promise.resolve().then(() => entry.target.client.terminal.focusTerminal(entry.target.session.terminalId,entryKey===key)), 'terminal-focus');
     }
   }, [inject, renderingEnabled, visible]);
 
