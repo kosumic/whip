@@ -199,10 +199,10 @@ existing policy below: an already authorized call keeps running, but locked
 tool requests cannot obtain fresh capability authority.
 
 Each actual state change queues a spoken “Muted” or “Unmuted”
-announcement using the speech backend and voice selected in Settings. Speech
-is synthesized on each transition, without bundled recordings or an audio
-cache. System TTS and Phonon run locally; selecting OpenAI TTS makes the normal
-speech request for each announcement, using existing credential protections.
+announcement using the speech backend and voice selected in Settings. System
+TTS and Phonon synthesize locally. OpenAI TTS caches each completed cue on the
+device for the selected voice. Replaying a cached cue uses the same credential
+and cancellation checks and incurs no additional API charge.
 Mute state changes do not wait for synthesis. Native playback borrows the call's
 speech lease without replacing or completing it. Repeating the same state
 changes only the deadline. Unheard rapid flips coalesce to the latest intent.

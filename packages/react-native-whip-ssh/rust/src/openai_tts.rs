@@ -1,6 +1,8 @@
 //! OpenAI Speech API -> bounded 24 kHz native PCM. No keys or audio cross JS.
 //! https://developers.openai.com/api/docs/guides/text-to-speech
 use native_credentials::NativeCredential;
+mod cache;
+pub(crate) use cache::CachedPhrase;
 mod stream;
 use crate::app_database::{
     NativeVoiceUsageSession, VoiceUsageItem, VoiceUsageMode, VoiceUsageScope,
@@ -84,6 +86,7 @@ pub(super) fn speak(
     text: &str,
     voice: &str,
     (credential, revision): (NativeCredential, u64),
+    cached_phrase: Option<CachedPhrase>,
     mut output: impl FnMut(&[f32]) -> bool,
 ) -> Result<bool, String> {
     let current = || {
@@ -96,6 +99,24 @@ pub(super) fn speak(
     if !VOICES.contains(&voice) {
         return Err("Choose a supported OpenAI TTS voice.".into());
     }
+    let mut sink = |pcm: &[f32]| current() && output(pcm);
+    let generate =
+        |sink: &mut dyn FnMut(&[f32]) -> bool| request(text, voice, credential, &current, sink);
+    let completed = if let Some(entry) = cached_phrase {
+        entry.play(&mut sink, generate)?
+    } else {
+        generate(&mut sink)?
+    };
+    Ok(completed && current())
+}
+
+fn request(
+    text: &str,
+    voice: &str,
+    credential: NativeCredential,
+    current: &impl Fn() -> bool,
+    mut output: &mut dyn FnMut(&[f32]) -> bool,
+) -> Result<bool, String> {
     let authorization = credential.authorization();
     let mut header =
         HeaderValue::from_bytes(&authorization).map_err(|_| "Invalid OpenAI API key.")?;
@@ -157,7 +178,7 @@ pub(super) fn speak(
                     finalized: false,
                 },
             );
-            let Some(mut response) = cancellable(request.send(), &current).await? else {
+            let Some(mut response) = cancellable(request.send(), current).await? else {
                 return Ok(false);
             };
             match response.status() {
@@ -178,25 +199,25 @@ pub(super) fn speak(
             let mut decoder = PcmDecoder::default();
             let mut stream = stream::SpeechStream::default();
             loop {
-                let Some(chunk) = cancellable(response.chunk(), &current).await? else {
+                let Some(chunk) = cancellable(response.chunk(), current).await? else {
                     return Ok(false);
                 };
                 let Some(chunk) = chunk else {
                     break;
                 };
                 let accepted = if event_stream {
-                    stream.push(&chunk, &mut |pcm| current() && output(pcm), &mut |item| {
+                    stream.push(&chunk, &mut output, &mut |item| {
                         accounting.record(USAGE_ITEM_ID.into(), item);
                     })?
                 } else {
-                    decoder.push(&chunk, |pcm| current() && output(pcm))?
+                    decoder.push(&chunk, &mut output)?
                 };
                 if !accepted {
                     return Ok(false);
                 }
             }
             if event_stream {
-                if !stream.finish(&mut |pcm| current() && output(pcm), &mut |item| {
+                if !stream.finish(&mut output, &mut |item| {
                     accounting.record(USAGE_ITEM_ID.into(), item);
                 })? {
                     return Ok(false);

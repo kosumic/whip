@@ -56,7 +56,7 @@ pub unsafe extern "C" fn whip_speech_caption_start(
 pub(crate) fn synthesize(
     id: u64,
     text: &str,
-    mut generate: impl FnMut(&str, &mut dyn FnMut(&[f32]) -> bool) -> i32,
+    mut generate: impl FnMut(&str, bool, &mut dyn FnMut(&[f32]) -> bool) -> i32,
     mut sink: impl FnMut(&[f32]) -> bool,
 ) -> i32 {
     let prefix = {
@@ -68,11 +68,11 @@ pub(crate) fn synthesize(
             .map(|caption| caption.timeline.prefix_bytes)
     };
     let Some(prefix) = prefix else {
-        return generate(text, &mut sink);
+        return generate(text, false, &mut sink);
     };
     let mut frames = 0;
     if prefix > 0 {
-        let result = generate(&text[..prefix], &mut |pcm| {
+        let result = generate(&text[..prefix], true, &mut |pcm| {
             frames += pcm.len();
             sink(pcm)
         });
@@ -82,7 +82,7 @@ pub(crate) fn synthesize(
     }
     let mut aligned = prefix == 0;
     let mut cancelled = false;
-    let result = generate(&text[prefix..], &mut |pcm| {
+    let result = generate(&text[prefix..], false, &mut |pcm| {
         // Some voices start the response with silence. Keep that silence on the
         // prefix side of the boundary, without trimming or changing playback.
         const AUDIBLE_SAMPLE: f32 = 0.001;

@@ -35,7 +35,8 @@ fn pcm_handoff_waits_for_played_prefix_and_response_silence_at_every_rate() {
                 let result = synthesize(
                     id,
                     &spoken,
-                    |text, sink| {
+                    |text, is_prefix, sink| {
+                        assert_eq!(is_prefix, text == prefix);
                         segments.push(text.to_owned());
                         let pcm = if text == prefix {
                             vec![0.1; prefix_frames]
@@ -114,7 +115,7 @@ fn streaming_response_clock_starts_from_zero_after_a_slow_prefix() {
         synthesize(
             id,
             &spoken,
-            |text, sink| {
+            |text, _, sink| {
                 let duration = if text == prefix { RATE * 10 } else { RATE };
                 i32::from(
                     (0..duration)
@@ -154,7 +155,7 @@ fn interrupted_prefix_does_not_generate_or_highlight_response() {
             synthesize(
                 id,
                 &spoken,
-                |text, sink| {
+                |text, _, sink| {
                     requested.push(text.to_owned());
                     assert!(!sink(&[0.2; 100]));
                     result
@@ -176,7 +177,7 @@ fn late_pcm_from_interrupted_chat_cannot_align_the_next_chat() {
     synthesize(
         old_id,
         &spoken,
-        |text, sink| {
+        |text, _, sink| {
             if text == "Old tab: " {
                 new_id = start("Next tab: ", RESPONSE).0;
             }
@@ -222,7 +223,7 @@ fn fast_speech_uses_generated_duration_before_native_queue_completion() {
         synthesize(
             id,
             &spoken,
-            |_, sink| i32::from(sink(&vec![0.2; duration])),
+            |_, _, sink| i32::from(sink(&vec![0.2; duration])),
             |_| true
         ),
         1
@@ -260,7 +261,7 @@ fn measured_duration_corrects_streaming_drift_only_when_more_audio_plays() {
     synthesize(
         id,
         &spoken,
-        |_, sink| i32::from(sink(&vec![0.2; duration])),
+        |_, _, sink| i32::from(sink(&vec![0.2; duration])),
         |_| {
             before = whip_speech_caption_progress(id, RATE / 2, duration, false);
             true
@@ -285,7 +286,7 @@ fn continuation_without_prefix_has_a_fresh_clock_and_original_offsets() {
     synthesize(
         id,
         &spoken,
-        |_, sink| i32::from(sink(&[0.2; 100])),
+        |_, _, sink| i32::from(sink(&[0.2; 100])),
         |_| true,
     );
     assert_eq!(
@@ -297,7 +298,7 @@ fn continuation_without_prefix_has_a_fresh_clock_and_original_offsets() {
     synthesize(
         next,
         &continuation,
-        |text, _| {
+        |text, _, _| {
             requested.push(text.to_owned());
             1
         },
@@ -318,7 +319,7 @@ fn prefix_only_audio_never_highlights_a_response() {
     synthesize(
         id,
         &spoken,
-        |_, sink| i32::from(sink(&[0.2; 100])),
+        |_, _, sink| i32::from(sink(&[0.2; 100])),
         |_| true,
     );
     assert_eq!(whip_speech_caption_progress(id, 100, 100, true), 0);

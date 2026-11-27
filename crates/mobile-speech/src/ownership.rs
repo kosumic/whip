@@ -119,7 +119,16 @@ impl Arbiter {
 
     #[must_use]
     pub fn is_current(&self, id: LeaseId) -> bool {
-        self.active.as_ref().is_some_and(|active| active.id == id)
+        self.owner(id).is_some()
+    }
+
+    /// Class and owner of a lease that still holds playback.
+    #[must_use]
+    pub fn owner(&self, id: LeaseId) -> Option<(u8, &str)> {
+        self.active
+            .as_ref()
+            .filter(|lease| lease.id == id)
+            .map(|lease| (lease.class, lease.owner.as_str()))
     }
 
     pub fn complete(&mut self, id: LeaseId) -> bool {

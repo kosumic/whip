@@ -93,6 +93,14 @@ impl SpeechPlayback {
     fn is_current(&self, id: u64) -> bool {
         mobile_speech::LeaseId::new(id).is_some_and(|id| self.0.is_current(id))
     }
+    fn is_tts_announcement(&self, id: u64) -> bool {
+        mobile_speech::LeaseId::new(id)
+            .and_then(|id| self.0.owner(id))
+            .is_some_and(|(kind, owner)| {
+                kind == SpeechKind::Announcement as u8
+                    || (kind == SpeechKind::Chat as u8 && owner == REALTIME_OWNER)
+            })
+    }
     fn complete(&mut self, id: u64) -> bool {
         mobile_speech::LeaseId::new(id).is_some_and(|id| self.0.complete(id))
     }
@@ -112,6 +120,7 @@ impl SpeechPlayback {
 }
 
 static PLAYBACK: LazyLock<Mutex<SpeechPlayback>> = LazyLock::new(Mutex::default);
+const REALTIME_OWNER: &str = "openai-realtime";
 
 /// Realtime output shares admission with local previews, chat and device speech.
 pub(crate) struct RealtimeSpeechLease {
@@ -130,7 +139,7 @@ impl RealtimeSpeechLease {
         } else {
             SpeechKind::Chat
         };
-        let id = PLAYBACK.lock().claim(kind, "openai-realtime", "");
+        let id = PLAYBACK.lock().claim(kind, REALTIME_OWNER, "");
         if id == 0 {
             return None;
         }
@@ -212,6 +221,12 @@ pub unsafe extern "C" fn whip_alert_speech_free(value: *mut c_char) {
 
 pub(crate) fn is_current(lease: u64) -> bool {
     PLAYBACK.lock().is_current(lease)
+}
+
+/// In-call announcements borrow the Realtime chat lease. The call's own
+/// conversational audio comes from the Realtime provider rather than TTS.
+pub(crate) fn is_tts_announcement(lease: u64) -> bool {
+    PLAYBACK.lock().is_tts_announcement(lease)
 }
 
 /// # Safety
@@ -338,6 +353,20 @@ mod tests {
         assert!(speech.is_current(device));
         assert!(speech.complete(device));
         assert_ne!(speech.claim_status_at_boundary("alert", 0), 0);
+    }
+
+    #[test]
+    fn only_announcements_and_borrowed_call_leases_qualify_for_phrase_reuse() {
+        let mut speech = SpeechPlayback::default();
+        let device = speech.claim(Device, "launch", "request");
+        assert!(!speech.is_tts_announcement(device));
+        let reader = speech.claim(Chat, "reader", "");
+        assert!(!speech.is_tts_announcement(reader));
+        let alert = speech.claim_status_at_boundary("alert", reader);
+        assert!(speech.is_tts_announcement(alert));
+        let call = speech.claim(Chat, super::REALTIME_OWNER, "");
+        assert!(speech.is_tts_announcement(call));
+        assert!(!speech.is_tts_announcement(alert));
     }
 
     #[test]

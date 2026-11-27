@@ -237,6 +237,16 @@ from native credential storage to Rust. Speech text is sent to OpenAI and API
 charges apply. Local-only conversations keep their offline speech policy.
 OpenAI failures stop the utterance rather than silently choosing another voice.
 
+Whip caches short OpenAI TTS announcements, voice preview samples, and the
+spoken tab-name prefix before a chat reply. The first request streams as usual.
+Later uses of the same text, model, and voice replay the audio locally, including
+after app restart, without creating another API request or usage record. The
+cache is invalidated whenever the selected OpenAI TTS voice changes, including
+when switching back to an earlier voice. It keeps up to 64 clips in
+backup-excluded app storage, replacing the oldest when full. Each holds up to
+eight seconds of audio for up to 160 UTF-16 text units. Chat replies and
+Phone Use speech continue to stream directly.
+
 OpenAI speech and conversation share a native memory cache of the saved credential, held in a zeroing Rust buffer. Android warms it from the existing encrypted slot at native-module initialization and after credential changes, so background and screen-locked announcements can read it immediately. Replacement or deletion first clears the old cache and blocks credential admission until the vault mutation finishes; missing or failed reads are not cached. Temporary request copies and evicted cached keys are cleared after use. No saved key is returned to JS or logged, and no new plaintext file is written. Android can also refill the cache while backgrounded or screen-locked, subject to Android Keystore access rules; iOS vault access rules are unchanged.
 
 OpenAI TTS requests, including read-aloud and previews, now appear in Usage &

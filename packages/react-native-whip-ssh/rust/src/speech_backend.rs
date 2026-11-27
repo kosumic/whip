@@ -43,6 +43,7 @@ struct Preferences {
     voice: String,
     system_voice: String,
     openai_voice: String,
+    openai_voice_generation: u64,
     preview_text: Option<String>,
 }
 
@@ -53,6 +54,7 @@ impl Default for Preferences {
             voice: DEFAULT_VOICE.into(),
             system_voice: String::new(),
             openai_voice: openai_tts::DEFAULT_VOICE.into(),
+            openai_voice_generation: 0,
             preview_text: None,
         }
     }
@@ -163,13 +165,27 @@ impl State {
         if !openai_tts::VOICES.contains(&voice) {
             return Err("Choose a supported OpenAI TTS voice".into());
         }
+        if self.preferences.openai_voice == voice {
+            self.fallback = None;
+            return Ok(());
+        }
         let preferences = Preferences {
             openai_voice: voice.into(),
+            openai_voice_generation: self.preferences.openai_voice_generation.wrapping_add(1),
             ..self.preferences.clone()
         };
         self.save(preferences)?;
         self.fallback = None;
         Ok(())
+    }
+
+    fn cached_phrase(&self, text: &str) -> Option<openai_tts::CachedPhrase> {
+        openai_tts::CachedPhrase::new(
+            &self.root,
+            self.preferences.openai_voice_generation,
+            &self.preferences.openai_voice,
+            text,
+        )
     }
 
     fn status(&self) -> serde_json::Value {
@@ -361,19 +377,15 @@ pub unsafe extern "C" fn whip_speech_pcm_speak(
     crate::speech_captions::synthesize(
         caption_id,
         text,
-        |segment, sink| {
-            let Ok(segment) = CString::new(segment) else {
-                return -1;
-            };
-            let mut sink = PcmSink(sink);
+        |segment, is_prefix, sink| {
             // SAFETY: All borrowed strings and contexts live for the synchronous
             // call. The adapter consumes each PCM slice before returning.
             unsafe {
                 pcm_speak_segment(
                     lease,
-                    segment.as_ptr(),
-                    consume_pcm,
-                    (&raw mut sink).cast(),
+                    segment,
+                    is_prefix || crate::speech_playback::is_tts_announcement(lease),
+                    sink,
                     reader,
                     credential_context,
                 )
@@ -397,42 +409,44 @@ unsafe extern "C" fn consume_pcm(context: *mut c_void, samples: *const f32, coun
 
 unsafe fn pcm_speak_segment(
     lease: u64,
-    text: *const c_char,
-    callback: PcmCallback,
-    context: *mut c_void,
+    text: &str,
+    cacheable: bool,
+    sink: &mut dyn FnMut(&[f32]) -> bool,
     reader: Option<native_credentials::ReadCredential>,
     credential_context: *mut c_void,
 ) -> i32 {
     let Ok(shared) = state() else {
         return -1;
     };
-    let preferences = shared.lock().preferences.clone();
-    let voice = match preferences.backend {
+    let settings = shared.lock();
+    let (voice, cached_phrase) = match settings.preferences.backend {
         Backend::System => return -1,
         Backend::Phonon => {
-            // SAFETY: This entrypoint has the same PCM contract as Phonon.
-            return unsafe { phonon::whip_phonon_speak(lease, text, callback, context) };
+            drop(settings);
+            let Ok(text) = CString::new(text) else {
+                return -1;
+            };
+            let mut sink = PcmSink(sink);
+            // SAFETY: The string and borrowed sink are live throughout synthesis.
+            return unsafe {
+                phonon::whip_phonon_speak(lease, text.as_ptr(), consume_pcm, (&raw mut sink).cast())
+            };
         }
-        Backend::Openai => preferences.openai_voice,
+        Backend::Openai => (
+            settings.preferences.openai_voice.clone(),
+            if cacheable {
+                settings.cached_phrase(text)
+            } else {
+                None
+            },
+        ),
     };
-    if text.is_null() {
-        return -1;
-    }
-    // SAFETY: The caller guarantees a live NUL-terminated text string.
-    let Ok(text) = (unsafe { CStr::from_ptr(text) }).to_str() else {
-        return -1;
-    };
+    drop(settings);
     let result = (|| {
-        if text.encode_utf16().count() > MAX_TEXT_UNITS {
-            return Err("Speech text exceeds the utterance limit".into());
-        }
         // SAFETY: The native caller supplies the synchronous reader/context.
         let credential = unsafe { crate::voice_credentials::read(reader, credential_context) }
             .map_err(crate::voice_credentials::message)?;
-        openai_tts::speak(lease, text, &voice, credential, |samples| {
-            // SAFETY: Samples are borrowed only for this synchronous callback.
-            unsafe { callback(context, samples.as_ptr(), samples.len()) }
-        })
+        openai_tts::speak(lease, text, &voice, credential, cached_phrase, sink)
     })();
     match result {
         Ok(completed) => {
@@ -611,6 +625,49 @@ mod tests {
         assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
         assert!(restored.select_openai_voice("unknown").is_err());
         assert_eq!(restored.status()["openaiVoice"], "cedar");
+    }
+
+    #[test]
+    fn changing_the_openai_voice_invalidates_clips_even_after_switching_back_and_restarting() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut state = State::open(directory.path()).unwrap();
+        let phrase = "Muted";
+        let original = state.cached_phrase(phrase).unwrap();
+        assert!(
+            original
+                .play(&mut |_| true, |out| Ok(out(&[0.25])))
+                .unwrap()
+        );
+        state
+            .select_openai_voice(openai_tts::DEFAULT_VOICE)
+            .unwrap();
+        assert!(
+            state
+                .cached_phrase(phrase)
+                .unwrap()
+                .play(&mut |_| true, |_| panic!("same voice should hit"))
+                .unwrap()
+        );
+        state.select_openai_voice("cedar").unwrap();
+        state
+            .select_openai_voice(openai_tts::DEFAULT_VOICE)
+            .unwrap();
+        let restored = State::open(directory.path()).unwrap();
+        let mut played = Vec::new();
+        assert!(
+            restored
+                .cached_phrase(phrase)
+                .unwrap()
+                .play(
+                    &mut |pcm| {
+                        played.extend_from_slice(pcm);
+                        true
+                    },
+                    |out| Ok(out(&[0.5]))
+                )
+                .unwrap()
+        );
+        assert_eq!(played, [0.5]);
     }
 
     #[test]
