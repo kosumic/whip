@@ -451,11 +451,14 @@ struct ConnectionDisconnect {
     reason: String,
 }
 
+const MAX_SOCKET_CONNECTIONS: usize = 128;
+
 struct ConnectionLifecycle {
     alive: AtomicBool,
     disconnected: watch::Sender<Option<Arc<ConnectionDisconnect>>>,
     sftp_init: tokio::sync::Mutex<()>,
-    session_open: tokio::sync::Mutex<()>,
+    session_open: Arc<tokio::sync::Mutex<()>>,
+    socket_opens: Arc<Semaphore>,
     commands: Semaphore,
     sftp: RwLock<Option<Arc<SftpSession>>>,
 }
@@ -467,7 +470,8 @@ impl Default for ConnectionLifecycle {
             alive: AtomicBool::new(true),
             disconnected,
             sftp_init: tokio::sync::Mutex::new(()),
-            session_open: tokio::sync::Mutex::new(()),
+            session_open: Arc::default(),
+            socket_opens: Arc::new(Semaphore::new(MAX_SOCKET_CONNECTIONS)),
             commands: Semaphore::new(MAX_CONCURRENT_COMMANDS),
             sftp: RwLock::new(None),
         }

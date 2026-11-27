@@ -183,6 +183,7 @@ pub(super) fn accept_channel(
             return Ok(());
         }
         reply.accept().await;
+        let mut source = channel.into_stream();
         tokio::spawn(async move {
             let _permit = permit;
             let forward = async {
@@ -192,7 +193,6 @@ pub(super) fn accept_channel(
                     return;
                 };
                 let _ = target.set_nodelay(true);
-                let mut source = channel.into_stream();
                 let _ = tokio::io::copy_bidirectional(&mut source, &mut target).await;
             };
             tokio::select! {

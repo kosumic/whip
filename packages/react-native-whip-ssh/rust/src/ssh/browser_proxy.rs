@@ -5,10 +5,9 @@ use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::watch;
 
-use super::{Session, TransportError, forwards};
+use super::{MAX_SOCKET_CONNECTIONS, Session, TransportError, forwards};
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
-const MAX_CONNECTIONS: usize = 128;
 async fn destination<S: AsyncRead + AsyncWrite + Unpin>(
     stream: &mut S,
 ) -> std::io::Result<(String, u16)> {
@@ -65,6 +64,27 @@ async fn destination<S: AsyncRead + AsyncWrite + Unpin>(
 async fn reply<S: AsyncWrite + Unpin>(stream: &mut S, status: u8) -> std::io::Result<()> {
     stream.write_all(&[5, status, 0, 1, 0, 0, 0, 0, 0, 0]).await
 }
+
+async fn proxy_connection<S: AsyncRead + AsyncWrite + Unpin>(
+    local: &mut S,
+    session: &Session,
+    port: u16,
+) -> std::io::Result<()> {
+    let (host, remote_port) = tokio::time::timeout(HANDSHAKE_TIMEOUT, destination(local)).await??;
+    let opened = tokio::time::timeout(
+        HANDSHAKE_TIMEOUT,
+        session.open_tcpip(&host, remote_port, port),
+    )
+    .await;
+    let Ok(Ok(channel)) = opened else {
+        return reply(local, 5).await;
+    };
+    let mut remote = channel.into_stream();
+    reply(local, 0).await?;
+    tokio::io::copy_bidirectional(local, &mut remote).await?;
+    Ok(())
+}
+
 pub(super) async fn open(key: String, session: Arc<Session>) -> Result<u16, TransportError> {
     session.ensure_alive()?;
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
@@ -73,7 +93,7 @@ pub(super) async fn open(key: String, session: Arc<Session>) -> Result<u16, Tran
     forwards()
         .write()
         .insert((key.clone(), port), cancel_tx.clone());
-    let limit = Arc::new(tokio::sync::Semaphore::new(MAX_CONNECTIONS));
+    let limit = Arc::new(tokio::sync::Semaphore::new(MAX_SOCKET_CONNECTIONS));
     tokio::spawn(async move {
         loop {
             tokio::select! {
@@ -85,13 +105,7 @@ pub(super) async fn open(key: String, session: Arc<Session>) -> Result<u16, Tran
                     let session = session.clone(); let mut cancelled = cancel.clone();
                     tokio::spawn(async move {
                         let _permit = permit;
-                        let connection = async {
-                            let Ok(Ok((host, remote_port))) = tokio::time::timeout(HANDSHAKE_TIMEOUT, destination(&mut local)).await else { return };
-                            let channel = tokio::time::timeout(HANDSHAKE_TIMEOUT, session.open_tcpip(&host, remote_port, port)).await;
-                            let Ok(Ok(channel)) = channel else { let _ = reply(&mut local, 5).await; return };
-                            if reply(&mut local, 0).await.is_err() { return; }
-                            let mut remote = channel.into_stream(); let _ = tokio::io::copy_bidirectional(&mut local, &mut remote).await;
-                        };
+                        let connection = proxy_connection(&mut local, &session, port);
                         tokio::select! { _ = cancelled.changed() => {}, _ = session.lifecycle.disconnected() => {}, _ = connection => {} }
                     });
                 }
@@ -113,6 +127,40 @@ pub(super) async fn open(key: String, session: Arc<Session>) -> Result<u16, Tran
 mod tests {
     use super::super::reverse_forward::tests::Fixture;
     use super::*;
+
+    #[test]
+    fn failed_socks_success_reply_closes_the_target_connection()
+    -> Result<(), Box<dyn std::error::Error>> {
+        crate::runtime()?.block_on(async {
+            let fixture = Fixture::new(true, Duration::ZERO).await?;
+            let target = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
+            let (mut client, mut local) = tokio::io::duplex(64);
+            let connection = proxy_connection(&mut local, &fixture.ssh.inner, 0);
+            tokio::pin!(connection);
+            client.write_all(&[5, 1, 0]).await?;
+            let mut greeting = [0; 2];
+            tokio::select! {
+                result = &mut connection => panic!("proxy ended during greeting: {result:?}"),
+                read = client.read_exact(&mut greeting) => read?,
+            };
+            assert_eq!(greeting, [5, 0]);
+            client.write_all(&[5, 1, 0, 1, 127, 0, 0, 1]).await?;
+            client.write_u16(target.local_addr()?.port()).await?;
+            drop(client);
+            let error = tokio::time::timeout(Duration::from_secs(2), connection)
+                .await?
+                .err()
+                .ok_or("SOCKS reply succeeded after disconnect")?;
+            assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
+            let (mut socket, _) =
+                tokio::time::timeout(Duration::from_secs(2), target.accept()).await??;
+            assert_eq!(
+                tokio::time::timeout(Duration::from_secs(2), socket.read(&mut [0])).await??,
+                0
+            );
+            Ok(())
+        })
+    }
 
     #[test]
     fn proxy_moves_http_bytes_over_ssh_and_closes_streams_on_stop()

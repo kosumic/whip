@@ -11,9 +11,15 @@ impl super::Session {
     pub(super) async fn open_unix_stream(
         &self,
         path: &str,
-    ) -> Result<russh::Channel<client::Msg>, russh::Error> {
+    ) -> Result<SessionChannel, russh::Error> {
         if !self.builtin_tailcat_ssh {
-            return self.handle.channel_open_direct_streamlocal(path).await;
+            let handle = self.handle.clone();
+            let path = path.to_owned();
+            return self
+                .open_socket_channel(
+                    async move { handle.channel_open_direct_streamlocal(path).await },
+                )
+                .await;
         }
         self.open_socket_bridge(&format!("-U -- {}", crate::remote_ops::shell_quote(path)))
             .await
@@ -24,16 +30,21 @@ impl super::Session {
         host: &str,
         port: u16,
         origin_port: u16,
-    ) -> Result<russh::Channel<client::Msg>, russh::Error> {
+    ) -> Result<SessionChannel, russh::Error> {
         if !self.builtin_tailcat_ssh {
+            let handle = self.handle.clone();
+            let host = host.to_owned();
             return self
-                .handle
-                .channel_open_direct_tcpip(
-                    host,
-                    u32::from(port),
-                    "127.0.0.1",
-                    u32::from(origin_port),
-                )
+                .open_socket_channel(async move {
+                    handle
+                        .channel_open_direct_tcpip(
+                            host,
+                            u32::from(port),
+                            "127.0.0.1",
+                            u32::from(origin_port),
+                        )
+                        .await
+                })
                 .await;
         }
         self.open_socket_bridge(&format!(
@@ -43,22 +54,19 @@ impl super::Session {
         .await
     }
 
-    async fn open_socket_bridge(
-        &self,
-        destination: &str,
-    ) -> Result<russh::Channel<client::Msg>, russh::Error> {
+    async fn open_socket_bridge(&self, destination: &str) -> Result<SessionChannel, russh::Error> {
         let channel = self.open_session().await?;
         // -N closes the socket's write half at stdin EOF while preserving reads.
         channel
             .exec(true, format!("exec nc -N {destination}"))
             .await?;
-        Ok(channel.into_channel())
+        Ok(channel)
     }
 }
 
 use super::{
     CommandOutput, ExecDelivery, LengthFormat, NEXT_TEMP_ID, REMOTE_HOME_COMMAND, RemoteForward,
-    Session, SftpEntry, SftpFileServer, SftpMetadata, ShellCommand, ShellDelivery,
+    Session, SessionChannel, SftpEntry, SftpFileServer, SftpMetadata, ShellCommand, ShellDelivery,
     SshConnectionConfig, SshFailure, SshSession, SshShellClose, StreamCommand, TransportError,
     UnixSocketDelivery, browser_proxy, close_local_forward_for_key, connect_sftp_on,
     directory_download, disconnect_key, exec_channel_command_for_key, execute_on, latency_on,
@@ -166,7 +174,7 @@ impl SshSession {
         self.inner
             .open_tcpip(host, port, 0)
             .await
-            .map(russh::Channel::into_stream)
+            .map(SessionChannel::into_stream)
             .map_err(TransportError::from)
             .map_err(Into::into)
     }

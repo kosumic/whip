@@ -36,6 +36,7 @@ struct ServerState {
     fail_sftp: AtomicBool,
     command_env: Option<std::collections::BTreeMap<String, String>>,
     deny_streamlocal: AtomicBool,
+    tcp_confirmation: parking_lot::Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
     reject_sessions: AtomicUsize,
     session_attempts: AtomicUsize,
     session_limit: AtomicUsize,
@@ -620,6 +621,10 @@ impl server::Handler for ForwardServer {
         let Ok(mut target) = TcpStream::connect((host, port)).await else {
             return Ok(());
         };
+        let confirmation = self.state.tcp_confirmation.lock().take();
+        if let Some(confirmation) = confirmation {
+            let _ = confirmation.await;
+        }
         reply.accept().await;
         tokio::spawn(async move {
             let mut stream = channel.into_stream();
@@ -873,6 +878,69 @@ async fn wait_until(check: impl Fn() -> bool) -> Result<(), Box<dyn Error>> {
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
     Ok(())
+}
+
+#[test]
+fn cancelled_direct_tcp_open_closes_the_late_channel() -> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let fixture = Fixture::new(true, Duration::ZERO).await?;
+        let target = TcpListener::bind((BIND_ADDRESS, 0)).await?;
+        let (confirm, hold) = tokio::sync::oneshot::channel();
+        *fixture.state.tcp_confirmation.lock() = Some(hold);
+        // Accepting the target socket proves the open reached the server.
+        // Leaving the select drops the caller before the server can confirm.
+        let (mut socket, _) = tokio::select! {
+            _ = fixture.ssh.open_direct_tcpip(BIND_ADDRESS, target.local_addr()?.port()) =>
+                panic!("channel open completed before confirmation"),
+            socket = tokio::time::timeout(Duration::from_secs(2), target.accept()) => socket??,
+        };
+        confirm
+            .send(())
+            .map_err(|()| "server dropped confirmation")?;
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(2), socket.read(&mut [0])).await??,
+            0
+        );
+        assert!(fixture.ssh.is_alive());
+        Ok(())
+    })
+}
+
+#[test]
+fn reverse_forward_closes_accepted_channel_when_target_refuses() -> Result<(), Box<dyn Error>> {
+    crate::runtime()?.block_on(async {
+        let fixture = Fixture::new(true, Duration::ZERO).await?;
+        // Reserve the port without listening so the forwarded connection is refused.
+        let target = tokio::net::TcpSocket::new_v4()?;
+        target.bind((Ipv4Addr::LOCALHOST, 0).into())?;
+        let forward = fixture
+            .ssh
+            .open_remote_forward(target.local_addr()?.port())
+            .await?;
+        let handle = fixture
+            .state
+            .handle
+            .read()
+            .clone()
+            .ok_or("missing server handle")?;
+        let channel = tokio::time::timeout(
+            Duration::from_secs(2),
+            handle.channel_open_forwarded_tcpip(
+                BIND_ADDRESS,
+                u32::from(forward.port),
+                BIND_ADDRESS,
+                1234,
+            ),
+        )
+        .await??;
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(2), channel.into_stream().read(&mut [0]))
+                .await??,
+            0
+        );
+        assert!(fixture.ssh.is_alive());
+        Ok(())
+    })
 }
 
 #[test]

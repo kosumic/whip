@@ -1,4 +1,4 @@
-//! Session channels retain ownership across cancelled opens and setup failures.
+//! SSH channels retain ownership across cancelled opens and setup failures.
 use super::{Session, client};
 use std::ops::{Deref, DerefMut};
 
@@ -10,7 +10,7 @@ impl SessionChannel {
     }
 
     /// Transfer cleanup to an established stream or a spawned channel loop.
-    pub(super) fn into_channel(mut self) -> russh::Channel<client::Msg> {
+    fn into_channel(mut self) -> russh::Channel<client::Msg> {
         self.0
             .take()
             .unwrap_or_else(|| unreachable!("channel already transferred"))
@@ -65,25 +65,41 @@ impl Drop for SessionChannel {
 
 impl Session {
     pub(super) async fn open_session(&self) -> Result<SessionChannel, russh::Error> {
+        let gate = self.lifecycle.session_open.clone().lock_owned().await;
         let handle = self.handle.clone();
-        let lifecycle = self.lifecycle.clone();
-        let (mut reply, result) = tokio::sync::oneshot::channel();
-        tokio::spawn(async move {
-            let opening = tokio::select! {
-                gate = lifecycle.session_open.lock() => gate,
-                () = reply.closed() => return,
-            };
-            if reply.is_closed() {
-                return;
-            }
-            // Keep a pending confirmation alive after cancellation. Otherwise
-            // russh leaves the eventual server channel open with no owner.
-            // The shared gate bounds pending confirmations to one per connection.
-            let channel = handle.channel_open_session().await.map(SessionChannel::new);
-            drop(opening);
-            // A failed delivery drops the owned channel and closes it.
-            let _ = reply.send(channel);
-        });
-        result.await.map_err(|_| russh::Error::Disconnect)?
+        open_owned(gate, async move { handle.channel_open_session().await }).await
     }
+
+    pub(super) async fn open_socket_channel(
+        &self,
+        open: impl Future<Output = Result<russh::Channel<client::Msg>, russh::Error>> + Send + 'static,
+    ) -> Result<SessionChannel, russh::Error> {
+        // Slow socket destinations must not hold up shell and command opens.
+        let slot = self
+            .lifecycle
+            .socket_opens
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|_| russh::Error::Disconnect)?;
+        open_owned(slot, open).await
+    }
+}
+
+async fn open_owned(
+    slot: impl Send + 'static,
+    open: impl Future<Output = Result<russh::Channel<client::Msg>, russh::Error>> + Send + 'static,
+) -> Result<SessionChannel, russh::Error> {
+    let (reply, result) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        if reply.is_closed() {
+            return;
+        }
+        // Once requested, keep the slot and await confirmation even if the caller
+        // goes away. A failed delivery then drops and closes the owned channel.
+        let channel = open.await.map(SessionChannel::new);
+        drop(slot);
+        let _ = reply.send(channel);
+    });
+    result.await.map_err(|_| russh::Error::Disconnect)?
 }
