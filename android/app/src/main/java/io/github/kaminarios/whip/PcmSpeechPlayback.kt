@@ -47,6 +47,8 @@ object PcmSpeechPlayback {
   @Volatile private var credentials: WhipVoiceCredentials? = null
   @Volatile var systemVoice: String = ""
     private set
+  @Volatile var phononSelected = false
+    private set
 
   fun command(context: Context, action: String, promise: Promise? = null) {
     if (action.startsWith("stt-cancel:")) {
@@ -68,6 +70,7 @@ object PcmSpeechPlayback {
           if (promise == null) Log.w("SpeechPCM", error)
         } else {
           if (status.has("systemVoice")) systemVoice = status.optString("systemVoice")
+          if (status.has("backend")) phononSelected = status.getString("backend") == "phonon"
           promise?.resolve(value)
         }
       } catch (error: Exception) {

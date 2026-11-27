@@ -11,6 +11,7 @@ FOUNDATION_EXPORT NSString *const WhipSpeechCaption;
 /** Main-thread OS playback shared by chat, announcements, and device tools. */
 @interface WhipSpeechPlayback : NSObject
 + (instancetype)shared;
+- (void)setMicrophoneAnnouncements:(NSDictionary<NSString *, NSString *> *)phrases language:(NSString *)language;
 - (void)speakCallAnnouncement:(uint64_t)lease text:(NSString *)text completed:(dispatch_block_t)completed;
 - (void)speakCallAnnouncement:(uint64_t)lease text:(NSString *)text beforePlayback:(BOOL (^)(void))beforePlayback completed:(dispatch_block_t)completed;
 - (void)cancelCallAnnouncement;

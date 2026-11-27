@@ -8,6 +8,7 @@ import { fr } from './locales/fr';
 import { ja } from './locales/ja';
 import { zhHans } from './locales/zh-Hans';
 import { zhHant } from './locales/zh-Hant';
+import { setMicrophoneAnnouncements } from './services/speechPlayback';
 import {
   operationalErrorDetails,
   recordOperationalDiagnostic,
@@ -31,6 +32,14 @@ export function languageForLocale(locale: LocalePreference | undefined): Support
 export function deviceLanguage(): SupportedLanguage {
   return languageForLocale(getLocales()[0]);
 }
+
+i18n.on('languageChanged', language => {
+  const t = i18n.getFixedT(language);
+  setMicrophoneAnnouncements(language, {
+    Muted: t('voiceChat.cueMuted'),
+    Unmuted: t('voiceChat.cueUnmuted'),
+  });
+});
 
 i18n.use(initReactI18next).init({
   resources: {

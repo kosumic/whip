@@ -200,7 +200,8 @@ tool requests cannot obtain fresh capability authority.
 
 Each actual state change queues a spoken “Muted” or “Unmuted”
 announcement using the speech backend and voice selected in Settings. System
-TTS and Phonon synthesize locally. OpenAI TTS caches each completed cue on the
+TTS and OpenAI TTS use Whip’s app language, including changes during a call.
+Phonon speaks the English cues. OpenAI TTS caches each completed cue on the
 device for the selected voice. Replaying a cached cue uses the same credential
 and cancellation checks and incurs no additional API charge.
 Mute state changes do not wait for synthesis. Native playback borrows the call's

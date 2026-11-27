@@ -173,6 +173,7 @@ static NSString *voiceCallToken;
 @end
 
 @interface WhipSpeechPlayback (TestEngine) <AVSpeechSynthesizerDelegate>
+@property(nonatomic) BOOL phononSelected;
 + (NSData *)alertRingtoneData;
 @property(nonatomic, strong) AVSpeechUtterance *utterance;
 @property(nonatomic, strong) NSTimer *timer;
@@ -191,16 +192,17 @@ static NSString *voiceCallToken;
 @interface TestCallAnnouncement : NSObject
 @property(nonatomic) uint64_t lease;
 @property(nonatomic, copy) NSString *text;
+@property(nonatomic, copy) NSString *language;
 @property(nonatomic, copy) NSString *voice;
 @property(nonatomic, copy) dispatch_block_t completed;
 @property(nonatomic, copy) BOOL (^beforePlayback)(void);
 @property(nonatomic) BOOL cancelled;
-- (void)start:(uint64_t)lease text:(NSString *)text voice:(NSString *)voice beforePlayback:(BOOL (^)(void))beforePlayback completed:(dispatch_block_t)completed;
+- (void)start:(uint64_t)lease text:(NSString *)text language:(NSString *)language voice:(NSString *)voice beforePlayback:(BOOL (^)(void))beforePlayback completed:(dispatch_block_t)completed;
 - (void)cancel;
 @end
 @implementation TestCallAnnouncement
-- (void)start:(uint64_t)lease text:(NSString *)text voice:(NSString *)voice beforePlayback:(BOOL (^)(void))beforePlayback completed:(dispatch_block_t)completed
-{ self.lease = lease; self.text = text; self.voice = voice; self.beforePlayback = beforePlayback; self.completed = completed; }
+- (void)start:(uint64_t)lease text:(NSString *)text language:(NSString *)language voice:(NSString *)voice beforePlayback:(BOOL (^)(void))beforePlayback completed:(dispatch_block_t)completed
+{ self.lease = lease; self.text = text; self.language = language; self.voice = voice; self.beforePlayback = beforePlayback; self.completed = completed; }
 - (void)cancel { self.cancelled = YES; self.beforePlayback = nil; self.completed = nil; }
 @end
 
@@ -349,13 +351,20 @@ static NSString *voiceCallToken;
   XCTAssertEqual(completions, 1u);
   XCTAssertEqual(activeLease, lease);
   self.player.systemVoice = @"selected-voice-b";
-  [self.player speakCallAnnouncement:lease text:@"Muted" completed:^{ completions++; }];
+  [self.player setMicrophoneAnnouncements:@{@"Muted": @"Micro coupé", @"Unmuted": @"Micro activé"} language:@"fr"];
+  [self.player speakCallAnnouncement:lease text:@"Unmuted" completed:^{ completions++; }];
   XCTAssertTrue(first.cancelled);
   XCTAssertEqual(self.player.callAnnouncements.count, 2u);
   TestCallAnnouncement *second = self.player.callAnnouncements.lastObject;
-  XCTAssertEqualObjects(second.text, @"Muted");
+  XCTAssertEqualObjects(second.text, @"Micro activé");
+  XCTAssertEqualObjects(second.language, @"fr");
   XCTAssertEqualObjects(second.voice, @"selected-voice-b");
   XCTAssertEqual(second.lease, lease);
+  self.player.phononSelected = YES;
+  [self.player speakCallAnnouncement:lease text:@"Unmuted" completed:^{ completions++; }];
+  TestCallAnnouncement *phonon = self.player.callAnnouncements.lastObject;
+  XCTAssertEqualObjects(phonon.text, @"Unmuted");
+  XCTAssertEqualObjects(phonon.language, @"en");
   [self.player cancelCallAnnouncement];
   XCTAssertTrue(second.cancelled);
   XCTAssertNil(second.completed);

@@ -7,6 +7,7 @@ import { ja } from '../src/locales/ja';
 import { zhHans } from '../src/locales/zh-Hans';
 import { zhHant } from '../src/locales/zh-Hant';
 import i18n, { languageForLocale } from '../src/i18n';
+import { NativeModules } from 'react-native';
 
 const translatedLocales = { es, fr, ja, 'zh-Hans': zhHans, 'zh-Hant': zhHant };
 
@@ -15,6 +16,25 @@ function placeholders(value: string): string[] {
 }
 
 describe('localization resources', () => {
+  it('updates both native microphone cues when the app language changes', async () => {
+    const setMicrophoneAnnouncements = jest.fn();
+    const original = NativeModules.HerdrBackground;
+    const language = i18n.language;
+    NativeModules.HerdrBackground = { setMicrophoneAnnouncements };
+    try {
+      for (const [locale, resource] of Object.entries({ en, ...translatedLocales })) {
+        await i18n.changeLanguage(locale);
+        expect(setMicrophoneAnnouncements).toHaveBeenLastCalledWith(locale, {
+          Muted: resource['voiceChat.cueMuted'],
+          Unmuted: resource['voiceChat.cueUnmuted'],
+        });
+      }
+    } finally {
+      NativeModules.HerdrBackground = original;
+      await i18n.changeLanguage(language);
+    }
+  });
+
   it.each(Object.entries(translatedLocales))('keeps %s in sync with the English source catalog', (_language, resource) => {
     expect(Object.keys(resource).sort()).toEqual(Object.keys(en).sort());
     for (const key of Object.keys(en) as (keyof typeof en)[]) {

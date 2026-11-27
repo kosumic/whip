@@ -191,6 +191,8 @@ Agent status announcements use the current conversation's cached session title,
 for example, "Fix keyboard latency finished" or "Fix keyboard latency needs attention".
 Without a title for that exact host, pane, terminal, and session, they retain the
 tab-and-agent announcement. Reading the cache does not open or load a transcript.
+Phonon always uses the English status wording and keeps the original session,
+tab, and agent names. The notification itself follows the app language.
 
 Every admitted session receives a new Rust lease. Native initialization,
 utterance callbacks, and targeted cancellation validate that lease or owner.
@@ -302,7 +304,8 @@ collapsing its active card, or leaving Settings, and cannot displace an active
 chat or device-tool speech lease.
 Backend choices are grouped together, with the selected backend's voice picker
 visually nested below them. Preview text is an editable input prefilled with
-the default sample on first use. User edits, including an empty input, persist
+the default sample on first use. Selecting Phonon switches the default sample
+to English. User edits, including an empty input, persist
 in the Rust speech preferences. Preview speaks exactly the input's contents;
 an empty or whitespace-only input disables playback. Previews retain
 announcement admission but use the chat budget's thirty-second minimum before

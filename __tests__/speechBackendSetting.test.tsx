@@ -19,9 +19,13 @@ jest.mock('../src/components/ui/switch', () => ({ Switch: 'Switch' }));
 jest.mock('lucide-react-native/icons/volume-2', () => 'Volume2');
 jest.mock('lucide-react-native/icons/check', () => 'Check');
 jest.mock('react-i18next', () => ({ useTranslation: () => ({
-  t: (key: string, options?: { backend?: string }) => key === 'speech.activeBackend' ? `${key}:${options?.backend}` : key,
+  t: (key: string, options?: { backend?: string; lng?: string }) => {
+    if (key === 'speech.activeBackend') return `${key}:${options?.backend}`;
+    if (key === 'speech.previewText' && options?.lng) return options.lng === 'en' ? 'Hello.' : 'Bonjour.';
+    return key;
+  },
 }) }));
-jest.mock('../src/i18n', () => ({ deviceLanguage: () => 'en' }));
+jest.mock('../src/i18n', () => ({ deviceLanguage: () => 'fr' }));
 jest.mock('../src/components/GlassControls', () => ({ GlassButton: 'GlassButton' }));
 jest.mock('../src/components/SettingsDetails', () => ({ DetailsTitle: 'DetailsTitle' }));
 jest.mock('../src/components/ui/input', () => ({ Input: 'Input' }));
@@ -277,6 +281,17 @@ test('opening unconfigured Phonon switches speech to System and activates Phonon
   await act(async () => listener(status));
   expect(status.backend).toBe('phonon');
   expect(renderer.root.findByProps({ title: 'speech.phononVoice' }).props.disabled).toBe(false);
+});
+
+test('switching to Phonon replaces the default preview with an English sample', async () => {
+  status = { ...status, supported: true, installed: true, previewText: null };
+  await act(async () => renderer.update(<VoiceSettings key="default-preview" />));
+  const sample = () => renderer.root.findByProps({ title: 'settings.voice' }).findByProps({ accessibilityLabel: 'speech.previewTextLabel' }).props.value;
+  expect(sample()).toBe('Bonjour.');
+  await act(async () => press('speech.phonon'));
+  expect(sample()).toBe('Hello.');
+  await act(async () => press('speech.preview'));
+  expect(speakPreview).toHaveBeenCalledWith(expect.any(String), 'Hello.', 'en-US');
 });
 
 test('completing Phonon setup leaves System selected after navigating away', async () => {

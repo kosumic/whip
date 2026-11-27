@@ -78,10 +78,14 @@ const SPEECH_END: Record<SpeechEndReason, LocalAlertSpeechEnd> = {
   interrupted: LocalAlertSpeechEnd.Interrupted,
   busy: LocalAlertSpeechEnd.Busy,
 };
-const ALERT_LABELS = {
-  needsAttention: (name: string) => i18n.t('alerts.needsAttention', { name }),
-  finished: (name: string) => i18n.t('alerts.finished', { name }),
-};
+function alertLabels(lng?: string) {
+  return {
+    needsAttention: (name: string) => i18n.t('alerts.needsAttention', { name, lng }),
+    finished: (name: string) => i18n.t('alerts.finished', { name, lng }),
+  };
+}
+const ALERT_LABELS = alertLabels();
+const ENGLISH_ALERT_LABELS = alertLabels('en');
 
 export type AgentAlertDelivery = AgentAlertLevel | 'brief';
 type AlertTarget = Pick<AgentNotificationTarget, 'hostId' | 'paneId'>;
@@ -247,12 +251,16 @@ function alertRequest(
         ? agentNotificationTitle(agent, undefined, ALERT_LABELS, sessionTitle)
         : title
       : undefined,
+    englishAnnouncement: speak && i18n.resolvedLanguage !== 'en'
+      ? agentNotificationTitle(agent, sessionTitle ? undefined : tabName, ENGLISH_ALERT_LABELS, sessionTitle)
+      : undefined,
     language:
       {
         'zh-Hant': 'zh-TW',
         'zh-Hans': 'zh-CN',
         ja: 'ja-JP',
         es: 'es-ES',
+        fr: 'fr-FR',
         en: 'en-US',
       }[i18n.resolvedLanguage || 'en'] || 'en-US',
     delivery: DELIVERY[delivery],

@@ -260,6 +260,8 @@ export const ja = {
   'voiceChat.waiting': "エージェントの応答待ち…",
   'voiceChat.speaking': "読み上げ中",
   'voiceChat.muted': "マイクはミュート中",
+  'voiceChat.cueMuted': 'ミュートしました',
+  'voiceChat.cueUnmuted': 'ミュートを解除しました',
   'voiceChat.closed': "音声チャット終了",
   'voiceChat.error': "音声チャットが終了しました",
   'voiceChat.suspended': "音声が中断されました · 再開を待機中",

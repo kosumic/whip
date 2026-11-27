@@ -36,10 +36,21 @@ pub struct LocalAlertRequest {
     pub title: String,
     pub body: String,
     pub announcement: Option<String>,
+    pub english_announcement: Option<String>,
     pub language: String,
     pub delivery: LocalAlertDelivery,
     pub persistent_timeout_ms: u32,
     pub android: bool,
+}
+
+impl LocalAlertRequest {
+    fn spoken(&self, english_only: bool) -> Option<(&str, &str)> {
+        let announcement = self.announcement.as_deref()?;
+        if english_only && let Some(english) = self.english_announcement.as_deref() {
+            return Some((english, "en-US"));
+        }
+        Some((announcement, &self.language))
+    }
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -345,10 +356,13 @@ impl CoordinatorState {
         self.waiting.remove(index);
         self.announcement = Some(token.clone());
         let alert = self.alerts.get(&token)?;
+        let (text, language) = alert
+            .request
+            .spoken(crate::speech_backend::phonon_selected())?;
         Some(NativeAnnouncement {
             token,
-            text: alert.request.announcement.clone()?,
-            language: alert.request.language.clone(),
+            text: text.into(),
+            language: language.into(),
             lease,
         })
     }

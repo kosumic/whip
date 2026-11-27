@@ -13,7 +13,19 @@ import java.util.Locale
 
 /** Borrows the call's speech lease; never claims or completes that lease. */
 internal class CallAnnouncementSpeaker(private val context: Context) {
-  private class Request(val lease: Long, val text: String, val id: String, val beforePlayback: () -> Boolean, val done: () -> Unit)
+  companion object {
+    private var language = Locale.ENGLISH
+    private var translations: Map<String, Any?> = emptyMap()
+
+    fun setTranslations(tag: String, phrases: Map<String, Any?>) {
+      language = Locale.forLanguageTag(tag)
+      translations = phrases
+    }
+  }
+
+  private class Request(val lease: Long, var text: String, val id: String, val beforePlayback: () -> Boolean, val done: () -> Unit) {
+    var locale: Locale = Locale.ENGLISH
+  }
   private val main = Handler(Looper.getMainLooper())
   private var request: Request? = null
   private var engine: TextToSpeech? = null
@@ -39,7 +51,10 @@ internal class CallAnnouncementSpeaker(private val context: Context) {
 
   private fun start(next: Request) {
     try {
-      pcm = SpeechPolicy.pcmEnabled(Locale.getDefault().toLanguageTag(), false)
+      if (!PcmSpeechPlayback.phononSelected) {
+        (translations[next.text] as? String)?.let { next.text = it; next.locale = language }
+      }
+      pcm = SpeechPolicy.pcmEnabled(next.locale.toLanguageTag(), false)
       if (pcm) {
         PcmSpeechPlayback.startGuarded(next.lease, next.text, VoiceCallService.audioAttributes, next.beforePlayback) { completed, _, error ->
           finish(next, if (completed) null else error ?: "Call announcement was interrupted")
@@ -72,7 +87,7 @@ internal class CallAnnouncementSpeaker(private val context: Context) {
     try {
       val tts = checkNotNull(engine)
       tts.setAudioAttributes(VoiceCallService.audioAttributes)
-      check(SpeechPlayback.configureSystemVoice(tts, Locale.getDefault(), false, 1.0))
+      check(SpeechPlayback.configureSystemVoice(tts, next.locale, true, 1.0))
       if (!next.beforePlayback()) { finish(next, null); return }
       check(tts.speak(next.text, TextToSpeech.QUEUE_FLUSH, null, next.id) != TextToSpeech.ERROR)
     } catch (_: Exception) { finish(next, "The configured system voice could not start") }

@@ -13,6 +13,7 @@ fn request(host: &str, pane: &str, status: HerdrAgentStatus, speak: bool) -> Loc
         title: "Agent".into(),
         body: "Status".into(),
         announcement: speak.then(|| format!("{pane} {status:?}")),
+        english_announcement: None,
         language: "en-US".into(),
         delivery: LocalAlertDelivery::Persistent,
         persistent_timeout_ms: 45_000,
@@ -21,6 +22,18 @@ fn request(host: &str, pane: &str, status: HerdrAgentStatus, speak: bool) -> Loc
 }
 fn done(pane: &str) -> LocalAlertRequest {
     request("host", pane, HerdrAgentStatus::Done, true)
+}
+
+#[test]
+fn phonon_speaks_the_english_status_and_respects_silent_alerts() {
+    let mut alert = done("pane");
+    alert.language = "fr-FR".into();
+    alert.announcement = Some("Projet a terminé".into());
+    alert.english_announcement = Some("Projet finished".into());
+    assert_eq!(alert.spoken(true), Some(("Projet finished", "en-US")));
+    assert_eq!(alert.spoken(false), Some(("Projet a terminé", "fr-FR")));
+    alert.announcement = None;
+    assert_eq!(alert.spoken(true), None);
 }
 fn one(mut effects: Vec<LocalAlertEffect>) -> LocalAlertEffect {
     assert_eq!(effects.len(), 1, "{effects:?}");

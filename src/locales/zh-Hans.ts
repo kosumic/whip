@@ -260,6 +260,8 @@ export const zhHans = {
   'voiceChat.waiting': "正在等待智能体…",
   'voiceChat.speaking': "正在朗读",
   'voiceChat.muted': "麦克风已静音",
+  'voiceChat.cueMuted': '已静音',
+  'voiceChat.cueUnmuted': '已取消静音',
   'voiceChat.closed': "语音聊天已结束",
   'voiceChat.error': "语音聊天已结束",
   'voiceChat.suspended': "音频已中断 · 等待恢复",

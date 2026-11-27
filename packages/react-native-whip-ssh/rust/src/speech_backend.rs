@@ -317,6 +317,10 @@ fn command(root: &str, action: &str) -> Result<serde_json::Value, String> {
 
 pub(crate) type PcmCallback = unsafe extern "C" fn(*mut c_void, *const f32, usize) -> bool;
 
+pub(crate) fn phonon_selected() -> bool {
+    state().is_ok_and(|state| state.lock().preferences.backend == Backend::Phonon)
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn whip_speech_network_selected() -> bool {
     state().is_ok_and(|state| state.lock().preferences.backend.uses_network())

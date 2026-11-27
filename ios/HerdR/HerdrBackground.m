@@ -75,6 +75,8 @@ RCT_EXPORT_METHOD(stopVoiceCallSound:(RCTPromiseResolveBlock)resolve reject:(RCT
 { [WhipVoiceCall.shared stopSound]; resolve(nil); }
 RCT_EXPORT_METHOD(setVoiceCallMuted:(NSString *)token muted:(BOOL)muted resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 { [WhipVoiceCall.shared mute:token muted:muted resolve:resolve reject:reject]; }
+RCT_EXPORT_METHOD(setMicrophoneAnnouncements:(NSString *)language phrases:(NSDictionary *)phrases)
+{ [WhipSpeechPlayback.shared setMicrophoneAnnouncements:phrases language:language]; }
 RCT_EXPORT_METHOD(setVoiceCallSpeaker:(NSString *)token speaker:(BOOL)speaker resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 { [WhipVoiceCall.shared speaker:token enabled:speaker resolve:resolve reject:reject]; }
 RCT_EXPORT_METHOD(speechBackendCommand:(NSString *)action resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)

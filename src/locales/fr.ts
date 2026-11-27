@@ -262,6 +262,8 @@ export const fr = {
   'voiceChat.waiting': "En attente de l’agent…",
   'voiceChat.speaking': "Lecture",
   'voiceChat.muted': "Micro coupé",
+  'voiceChat.cueMuted': 'Micro coupé',
+  'voiceChat.cueUnmuted': 'Micro activé',
   'voiceChat.closed': "Conversation terminée",
   'voiceChat.error': "Conversation vocale terminée",
   'voiceChat.suspended': "Audio interrompu · en attente de reprise",

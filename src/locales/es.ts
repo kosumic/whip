@@ -260,6 +260,8 @@ export const es = {
   'voiceChat.waiting': "Esperando al agente…",
   'voiceChat.speaking': "Hablando",
   'voiceChat.muted': "Micrófono silenciado",
+  'voiceChat.cueMuted': 'Micrófono silenciado',
+  'voiceChat.cueUnmuted': 'Micrófono activado',
   'voiceChat.closed': "Chat de voz finalizado",
   'voiceChat.error': "Chat de voz finalizado",
   'voiceChat.suspended': "Audio interrumpido · esperando para reanudar",

@@ -66,7 +66,6 @@ export function VoiceSettings({ localCallSettings, announcementSettings, openAiC
   const previewSequence = useRef(0);
   const [previewText, setPreviewText] = useState('');
   const previewTextRef = useRef('');
-  const previewTextInitialized = useRef(false);
   const previewTextEdited = useRef(false);
   const [previewTextReady, setPreviewTextReady] = useState(false);
   const [previewTextError, setPreviewTextError] = useState<string>();
@@ -185,8 +184,7 @@ export function VoiceSettings({ localCallSettings, announcementSettings, openAiC
   const previewLanguage = status?.backend === 'phonon' ? 'en-US' : status?.backend === 'openai' ? '' : systemVoices?.find(voice => voice.id === status?.systemVoice)?.language ?? '';
   const defaultPreviewText = t('speech.previewText', { lng: status?.backend === 'phonon' ? 'en' : previewLanguage || deviceLanguage() });
   useEffect(() => {
-    if (!status || previewTextInitialized.current) return;
-    previewTextInitialized.current = true;
+    if (!status || previewTextEdited.current) return;
     const text = status.previewText ?? defaultPreviewText;
     previewTextRef.current = text;
     setPreviewText(text);

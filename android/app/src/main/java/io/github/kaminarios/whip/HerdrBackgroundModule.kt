@@ -22,6 +22,7 @@ import android.util.Log
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.ReadableArray
+import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
@@ -321,6 +322,12 @@ class HerdrBackgroundModule(
     player?.release()
     stopCue?.invoke()
     if (error == null) promise?.resolve(null) else promise?.reject(CALL_SOUND_ERROR, error)
+  }
+
+  @ReactMethod
+  fun setMicrophoneAnnouncements(language: String, phrases: ReadableMap) {
+    val translations = phrases.toHashMap()
+    mainHandler.post { CallAnnouncementSpeaker.setTranslations(language, translations) }
   }
 
   @ReactMethod

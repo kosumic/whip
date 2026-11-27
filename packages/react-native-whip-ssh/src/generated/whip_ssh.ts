@@ -15053,6 +15053,7 @@ export type LocalAlertRequest = {
   title: string;
   body: string;
   announcement?: string;
+  englishAnnouncement?: string;
   language: string;
   delivery: LocalAlertDelivery;
   persistentTimeoutMs: number;
@@ -15090,6 +15091,7 @@ const FfiConverterTypeLocalAlertRequest = (() => {
         title: FfiConverterString.read(from),
         body: FfiConverterString.read(from),
         announcement: FfiConverterOptionalString.read(from),
+        englishAnnouncement: FfiConverterOptionalString.read(from),
         language: FfiConverterString.read(from),
         delivery: FfiConverterTypeLocalAlertDelivery.read(from),
         persistentTimeoutMs: FfiConverterUInt32.read(from),
@@ -15106,6 +15108,7 @@ const FfiConverterTypeLocalAlertRequest = (() => {
       FfiConverterString.write(value.title, into);
       FfiConverterString.write(value.body, into);
       FfiConverterOptionalString.write(value.announcement, into);
+      FfiConverterOptionalString.write(value.englishAnnouncement, into);
       FfiConverterString.write(value.language, into);
       FfiConverterTypeLocalAlertDelivery.write(value.delivery, into);
       FfiConverterUInt32.write(value.persistentTimeoutMs, into);
@@ -15124,6 +15127,7 @@ const FfiConverterTypeLocalAlertRequest = (() => {
         FfiConverterString.allocationSize(value.title) +
         FfiConverterString.allocationSize(value.body) +
         FfiConverterOptionalString.allocationSize(value.announcement) +
+        FfiConverterOptionalString.allocationSize(value.englishAnnouncement) +
         FfiConverterString.allocationSize(value.language) +
         FfiConverterTypeLocalAlertDelivery.allocationSize(value.delivery) +
         FfiConverterUInt32.allocationSize(value.persistentTimeoutMs) +

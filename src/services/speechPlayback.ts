@@ -1,5 +1,13 @@
 import { NativeModules } from 'react-native';
 
+/** Rust emits these two cue names even while JS is suspended. */
+type MicrophonePhrases = Record<'Muted' | 'Unmuted', string>;
+
+export function setMicrophoneAnnouncements(language: string, phrases: MicrophonePhrases): void {
+  const native = NativeModules?.HerdrBackground as NativeSpeechPlayback | undefined;
+  native?.setMicrophoneAnnouncements?.(language, phrases);
+}
+
 /** Presentation metadata only; transcript revisions flow entirely inside Rust. */
 export function setAutomaticSpeechBinding(bindingToken: string, hostId: string, tabName: string): void {
   const native = NativeModules?.HerdrBackground as NativeSpeechPlayback | undefined;
@@ -9,6 +17,7 @@ export function setAutomaticSpeechBinding(bindingToken: string, hostId: string, 
 export type SpeechEndReason = 'completed' | 'stopped' | 'shake' | 'replaced' | 'interrupted' | 'busy';
 
 export interface NativeSpeechPlayback {
+  setMicrophoneAnnouncements?(language: string, phrases: MicrophonePhrases): void;
   automaticSpeechControl(action: 'enable' | 'pause' | 'read-while-locked', value: boolean): Promise<void>;
   automaticSpeechBinding(bindingToken: string, hostId: string, tabName: string): void;
   speechBackendCommand(action: SpeechBackendAction | SpeechInputAction | 'system-voices'): Promise<string>;

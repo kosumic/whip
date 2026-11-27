@@ -260,6 +260,8 @@ export const zhHant: Record<string, string> = {
   'voiceChat.waiting': "正在等待代理程式…",
   'voiceChat.speaking': "正在朗讀",
   'voiceChat.muted': "麥克風已靜音",
+  'voiceChat.cueMuted': '已靜音',
+  'voiceChat.cueUnmuted': '已取消靜音',
   'voiceChat.closed': "語音聊天已結束",
   'voiceChat.error': "語音聊天已結束",
   'voiceChat.suspended': "音訊已中斷 · 等待恢復",

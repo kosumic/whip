@@ -252,7 +252,7 @@ static AVSpeechSynthesisVoice *WhipConfiguredSystemVoice(NSString *identifier, N
 @property(nonatomic, strong) NSTimer *timer;
 @property(nonatomic, copy) dispatch_block_t completed;
 @property(nonatomic) BOOL active;
-- (void)start:(uint64_t)lease text:(NSString *)text voice:(NSString *)voice beforePlayback:(BOOL (^)(void))beforePlayback completed:(dispatch_block_t)completed;
+- (void)start:(uint64_t)lease text:(NSString *)text language:(NSString *)language voice:(NSString *)voice beforePlayback:(BOOL (^)(void))beforePlayback completed:(dispatch_block_t)completed;
 - (void)cancel;
 @end
 
@@ -264,7 +264,7 @@ static AVSpeechSynthesisVoice *WhipConfiguredSystemVoice(NSString *identifier, N
   [self cancel];
   if (completed) completed();
 }
-- (void)start:(uint64_t)lease text:(NSString *)text voice:(NSString *)voice beforePlayback:(BOOL (^)(void))beforePlayback completed:(dispatch_block_t)completed
+- (void)start:(uint64_t)lease text:(NSString *)text language:(NSString *)language voice:(NSString *)voice beforePlayback:(BOOL (^)(void))beforePlayback completed:(dispatch_block_t)completed
 {
   [self cancel];
   self.active = YES;
@@ -275,7 +275,6 @@ static AVSpeechSynthesisVoice *WhipConfiguredSystemVoice(NSString *identifier, N
     NSLog(@"Whip call announcement timed out");
     [weakSelf finish];
   }];
-  NSString *language = AVSpeechSynthesisVoice.currentLanguageCode;
   if (whip_speech_pcm_enabled(language.UTF8String, false)) {
     WhipPcmSpeechAudio *player = [WhipPcmSpeechAudio new];
     player.lease = lease;
@@ -298,7 +297,7 @@ static AVSpeechSynthesisVoice *WhipConfiguredSystemVoice(NSString *identifier, N
     self.speech = [AVSpeechSynthesizer new];
     self.speech.delegate = self;
     self.utterance = [AVSpeechUtterance speechUtteranceWithString:text];
-    self.utterance.voice = WhipConfiguredSystemVoice(voice, language, NO);
+    self.utterance.voice = WhipConfiguredSystemVoice(voice, language, YES);
     if (!self.utterance.voice) { [self finish]; return; }
     if (beforePlayback && !beforePlayback()) { [self finish]; return; }
     [self.speech speakUtterance:self.utterance];
@@ -321,6 +320,9 @@ static AVSpeechSynthesisVoice *WhipConfiguredSystemVoice(NSString *identifier, N
 
 @interface WhipSpeechPlayback () <AVSpeechSynthesizerDelegate, AVAudioPlayerDelegate>
 @property(nonatomic, strong) WhipCallAnnouncement *callAnnouncement;
+@property(nonatomic, copy) NSDictionary<NSString *, NSString *> *microphonePhrases;
+@property(nonatomic, copy) NSString *microphoneLanguage;
+@property(nonatomic) BOOL phononSelected;
 @property(nonatomic, strong) AVSpeechSynthesizer *speech;
 @property(nonatomic, strong) AVSpeechUtterance *utterance;
 @property(nonatomic, copy) NSDictionary *captionSource;
@@ -541,6 +543,7 @@ static void WhipWakeAutomaticSpeech(void)
     if (!status || status[@"commandError"]) reject(WhipSpeechError, status[@"commandError"] ?: @"Speech backend unavailable", error);
     else dispatch_async(dispatch_get_main_queue(), ^{
       if (status[@"systemVoice"]) self.systemVoice = status[@"systemVoice"];
+      if (status[@"backend"]) self.phononSelected = [status[@"backend"] isEqualToString:@"phonon"];
       resolve(value);
     });
   });
@@ -1001,6 +1004,11 @@ static void WhipWakeAutomaticSpeech(void)
 {
   return [self play:text language:language rate:rate started:nil];
 }
+- (void)setMicrophoneAnnouncements:(NSDictionary<NSString *, NSString *> *)phrases language:(NSString *)language
+{
+  self.microphonePhrases = phrases;
+  self.microphoneLanguage = language;
+}
 - (void)speakCallAnnouncement:(uint64_t)lease text:(NSString *)text completed:(dispatch_block_t)completed
 {
   [self speakCallAnnouncement:lease text:text beforePlayback:nil completed:completed];
@@ -1009,7 +1017,9 @@ static void WhipWakeAutomaticSpeech(void)
 {
   [self cancelCallAnnouncement];
   self.callAnnouncement = [self newCallAnnouncement];
-  [self.callAnnouncement start:lease text:text voice:self.systemVoice beforePlayback:beforePlayback completed:completed];
+  NSString *localized = self.phononSelected ? nil : self.microphonePhrases[text];
+  [self.callAnnouncement start:lease text:localized ?: text language:localized ? self.microphoneLanguage : @"en"
+    voice:self.systemVoice beforePlayback:beforePlayback completed:completed];
 }
 - (WhipCallAnnouncement *)newCallAnnouncement { return [WhipCallAnnouncement new]; }
 - (void)cancelCallAnnouncement

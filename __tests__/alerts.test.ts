@@ -62,9 +62,10 @@ jest.mock('../src/i18n', () => ({
   __esModule: true,
   default: {
     resolvedLanguage: 'en',
-    t: (key: string, options?: { name?: string; status?: string }) => {
+    t(key: string, options?: { name?: string; status?: string; lng?: string }) {
       if (key === 'alerts.needsAttention')
-        return `${options?.name} needs attention`;
+        return (options?.lng ?? this.resolvedLanguage) === 'zh-Hant'
+          ? `${options?.name} 需要處理` : `${options?.name} needs attention`;
       if (key === 'alerts.finished') return `${options?.name} finished`;
       if (key === 'alerts.agentState') return `Agent is ${options?.status}`;
       return key;
@@ -606,7 +607,8 @@ test('preserves conversation title and language and rejects the prior session ti
   );
   expect(mockNative.alert).toHaveBeenLastCalledWith(
     expect.objectContaining({
-      announcement: 'Fix keyboard latency needs attention',
+      announcement: 'Fix keyboard latency 需要處理',
+      englishAnnouncement: 'Fix keyboard latency needs attention',
       language: 'zh-TW',
       status: HerdrAgentStatus.Blocked,
       sessionIdentity: JSON.stringify([
@@ -631,8 +633,9 @@ test('preserves conversation title and language and rejects the prior session ti
   );
   expect(mockNative.alert).toHaveBeenLastCalledWith(
     expect.objectContaining({
-      announcement: 'work · codex needs attention',
+      announcement: 'work · codex 需要處理',
       language: 'zh-TW',
+      englishAnnouncement: 'work · codex needs attention',
     }),
   );
 });
