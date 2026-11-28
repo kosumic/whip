@@ -189,6 +189,7 @@
     "Repair Herdr ${…} integration?",
     "This changes the integration for your user on the remote host. The running",
     "Update Herdr ${…} integration?",
+    "antigravity_cli",
     "herdr integration install",
     "process may need to be restarted before Chat is available."
   ],

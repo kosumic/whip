@@ -29,11 +29,13 @@ use ids::{PaneId, SessionId, TerminalId, TranscriptKey};
 use crate::agent_transcript::{
     AgentCacheError, AgentTranscriptDelta, AgentTranscriptKind, AgentTranscriptState,
     AgentTranscriptStatus, AgentTranscriptUpdate, AgentTurnStatus, CodexInheritedHistory,
-    FileTranscriptCore, OpenCodeProtocol, OpenCodeSessionCore, OpenCodeV2Page, OpenCodeV2Snapshot,
-    OpenCodeV2Sync, parse_open_code_cursor,
+    FileTranscriptCore, OpenCodeProtocol, OpenCodeV2Page, OpenCodeV2Snapshot, OpenCodeV2Sync,
+    parse_open_code_cursor,
 };
 #[cfg(test)]
-use crate::agent_transcript::{ClaudeSessionCore, CodexSessionCore, PiSessionCore};
+use crate::agent_transcript::{
+    ClaudeSessionCore, CodexSessionCore, OpenCodeSessionCore, PiSessionCore,
+};
 use crate::herdr_api::HerdrAgentStatus;
 use crate::herdr_connection::{ConnectionExecStream, HerdrConnection};
 use crate::transcript_database::{TranscriptDatabase, TranscriptIdentity};
