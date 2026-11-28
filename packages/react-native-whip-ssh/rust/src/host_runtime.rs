@@ -686,7 +686,8 @@ pub(crate) fn authoritative_agent_chat_identity(
 ) -> Option<AuthoritativeAgentChatIdentity> {
     let session = pane.agent_session.as_ref()?;
     if session.kind != HerdrAgentSessionKind::Id
-        && !(session.agent.eq_ignore_ascii_case("pi")
+        && !((session.agent.eq_ignore_ascii_case("pi")
+            || session.agent.eq_ignore_ascii_case("agy"))
             && session.kind == HerdrAgentSessionKind::Path)
     {
         return None;
@@ -695,6 +696,8 @@ pub(crate) fn authoritative_agent_chat_identity(
         AgentTranscriptKind::Claude
     } else if session.agent.eq_ignore_ascii_case("codex") {
         AgentTranscriptKind::Codex
+    } else if session.agent.eq_ignore_ascii_case("agy") {
+        AgentTranscriptKind::Agy
     } else if session.agent.eq_ignore_ascii_case("pi") {
         AgentTranscriptKind::Pi
     } else if session.agent.eq_ignore_ascii_case("opencode") {

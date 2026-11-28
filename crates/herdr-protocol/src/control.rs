@@ -41,12 +41,20 @@ impl HerdrAgentStatus {
 }
 
 impl HerdrAgentKind {
+    pub fn integration_target(self) -> &'static str {
+        match self {
+            Self::Agy => "antigravity_cli",
+            _ => self.as_str(),
+        }
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Claude => "claude",
             Self::Codex => "codex",
             Self::OpenCode => "opencode",
             Self::Pi => "pi",
+            Self::Agy => "agy",
         }
     }
 }
@@ -162,7 +170,7 @@ struct AgentTarget<'a> {
 
 #[derive(Serialize)]
 struct IntegrationInstallParams {
-    target: HerdrAgentKind,
+    target: &'static str,
 }
 
 impl HerdrControlRequest {
@@ -373,7 +381,9 @@ impl HerdrControlRequest {
             Self::IntegrationInstall { kind } => line(WireRequest {
                 id,
                 method,
-                params: IntegrationInstallParams { target: *kind },
+                params: IntegrationInstallParams {
+                    target: kind.integration_target(),
+                },
             }),
         }
     }
@@ -1564,6 +1574,28 @@ mod tests {
             )
             .unwrap(),
             "{\"id\":\"android_5\",\"method\":\"agent.focus\",\"params\":{\"target\":\"codex-1\"}}\n"
+        );
+    }
+
+    #[test]
+    fn agy_launch_and_hook_install_use_their_respective_wire_names() {
+        let kind = HerdrAgentKind::Agy;
+        let launch = HerdrControlRequest::AgentStart {
+            name: "chat".into(),
+            kind,
+            pane_id: "pane".into(),
+            args: Vec::new(),
+        };
+        let install = HerdrControlRequest::IntegrationInstall { kind };
+        let params = |request: HerdrControlRequest| {
+            serde_json::from_slice::<Value>(&request.encode("test").unwrap()).unwrap()["params"]
+                .clone()
+        };
+        assert_eq!(params(launch)["kind"], "agy");
+        assert_eq!(params(install)["target"], "antigravity_cli");
+        assert_eq!(
+            serde_json::from_value::<HerdrAgentKind>(serde_json::json!("antigravity_cli")).unwrap(),
+            kind
         );
     }
 

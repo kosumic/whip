@@ -24,14 +24,7 @@ pub fn decode_cached_transcript(
     bytes: &[u8],
 ) -> Result<AgentTranscriptState, AgentCacheError> {
     let session_id = session_id.into();
-    let mut state = match agent {
-        AgentTranscriptKind::Claude => ClaudeSessionCore::new(session_id).restore_cache(bytes)?,
-        AgentTranscriptKind::Pi => PiSessionCore::new(session_id).restore_cache(bytes)?,
-        AgentTranscriptKind::Codex => CodexSessionCore::new(session_id).restore_cache(bytes)?,
-        AgentTranscriptKind::OpenCode => {
-            OpenCodeSessionCore::new(session_id).restore_cache(bytes)?
-        }
-    };
+    let mut state = SessionCore::new(agent, session_id).restore_cache(bytes)?;
     state.status = AgentTranscriptStatus::Stale;
     state.error = None;
     Ok(state)

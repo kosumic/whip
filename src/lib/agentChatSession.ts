@@ -4,7 +4,7 @@ import type { PaneInfo } from '../types';
 
 export type ChatAgent = RuntimeAgentKind;
 
-const CHAT_AGENT_NAMES: Record<ChatAgent, string> = { claude: 'Claude', codex: 'Codex', opencode: 'OpenCode', pi: 'Pi' };
+const CHAT_AGENT_NAMES: Record<ChatAgent, string> = { claude: 'Claude', codex: 'Codex', opencode: 'OpenCode', pi: 'Pi', agy: 'Antigravity CLI' };
 type ChatPane = Pick<PaneInfo, 'agent' | 'display_agent' | 'agent_session'>;
 
 export function chatAgentDisplayName(agent: ChatAgent): string {
@@ -33,6 +33,7 @@ export function chatAgentForPane(pane: ChatPane | undefined): ChatAgent | null {
   const agent = pane?.agent?.trim() || pane?.display_agent?.trim() || '';
   if (/^claude(?:\s+code)?$/i.test(agent)) return 'claude';
   if (/^codex$/i.test(agent)) return 'codex';
+  if (/^(?:agy|antigravity(?:[- ]cli)?)$/i.test(agent)) return 'agy';
   if (/^pi$/i.test(agent)) return 'pi';
   if (/^open\s*-?\s*code$/i.test(agent)) return 'opencode';
   return null;

@@ -86,6 +86,7 @@ fn every_provider_and_saved_replay_preserve_source_and_project_the_request() {
         AgentTranscriptKind::Codex,
         AgentTranscriptKind::OpenCode,
         AgentTranscriptKind::Pi,
+        AgentTranscriptKind::Agy,
     ] {
         let mut core = SessionCore::new(kind, session);
         if let SessionCore::OpenCode(core) = &mut core {
@@ -100,6 +101,9 @@ fn every_provider_and_saved_replay_preserve_source_and_project_the_request() {
             .unwrap();
         } else {
             let records = match kind {
+                AgentTranscriptKind::Agy => vec![
+                    json!({"type":"USER_INPUT","step_index":0,"content":format!("<USER_REQUEST>{text}</USER_REQUEST>")}),
+                ],
                 AgentTranscriptKind::Claude => vec![
                     json!({"type":"user", "uuid":"user", "sessionId":session, "message":{"role":"user","content":text}}),
                 ],

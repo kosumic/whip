@@ -108,7 +108,7 @@ where
     match request(HerdrControlRequest::IntegrationList).await? {
         HerdrControlResult::IntegrationList { integrations } => Ok(integrations
             .iter()
-            .find(|integration| integration.target == kind.as_str())
+            .find(|integration| integration.target == kind.integration_target())
             .map_or(
                 AgentIntegrationStatus::Unknown,
                 |integration| match integration.state {
@@ -204,6 +204,7 @@ pub(super) fn normalize_tab_launch(
         "codex" => HerdrAgentKind::Codex,
         "opencode" => HerdrAgentKind::OpenCode,
         "pi" => HerdrAgentKind::Pi,
+        "agy" => HerdrAgentKind::Agy,
         _ => return Ok(HerdrTabLaunch::Command { command }),
     };
     args.remove(0);

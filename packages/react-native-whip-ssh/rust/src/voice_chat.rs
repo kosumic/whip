@@ -636,6 +636,7 @@ impl VoiceChat {
                     AgentTranscriptKind::Codex => "Codex",
                     AgentTranscriptKind::OpenCode => "OpenCode",
                     AgentTranscriptKind::Pi => "Pi",
+                    AgentTranscriptKind::Agy => "Antigravity CLI",
                 },
                 if turn.failed {
                     "failed"
@@ -1198,6 +1199,7 @@ mod tests {
             AgentTranscriptKind::Codex,
             AgentTranscriptKind::OpenCode,
             AgentTranscriptKind::Pi,
+            AgentTranscriptKind::Agy,
         ] {
             let session = conversation();
             session
@@ -1265,6 +1267,7 @@ mod tests {
             AgentTranscriptKind::Codex,
             AgentTranscriptKind::OpenCode,
             AgentTranscriptKind::Pi,
+            AgentTranscriptKind::Agy,
         ] {
             let session = conversation();
             session
@@ -1385,6 +1388,7 @@ mod tests {
             AgentTranscriptKind::Codex,
             AgentTranscriptKind::OpenCode,
             AgentTranscriptKind::Pi,
+            AgentTranscriptKind::Agy,
         ] {
             let session = conversation();
             session
@@ -1417,6 +1421,7 @@ mod tests {
             AgentTranscriptKind::Codex,
             AgentTranscriptKind::OpenCode,
             AgentTranscriptKind::Pi,
+            AgentTranscriptKind::Agy,
         ] {
             let session = conversation();
             submit(&session, "Hello");

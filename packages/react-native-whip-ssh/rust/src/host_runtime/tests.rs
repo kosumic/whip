@@ -2323,6 +2323,15 @@ fn agent_chat_resolution_uses_authoritative_agent_sessions() {
         .unwrap();
     assert_eq!(by_id.session_id, "pi-session");
     assert_ne!(by_id.binding_token, pi.binding_token);
+    install_agent_chat_snapshot(&inner, agent_chat_snapshot(Some(("agy", codex)), None));
+    let agy = runtime
+        .current_agent_chat("terminal-pane-1".into())
+        .unwrap();
+    assert_eq!(agy.agent, AgentTranscriptKind::Agy);
+    assert_eq!(
+        agy.transcript_key,
+        format!("agent-chat-resolution\nagy\n{codex}")
+    );
     assert!(matches!(
         crate::runtime()
             .unwrap()

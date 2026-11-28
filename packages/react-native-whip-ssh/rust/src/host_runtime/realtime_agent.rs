@@ -98,6 +98,7 @@ impl PinnedAgent {
             crate::AgentTranscriptKind::Codex => "codex",
             crate::AgentTranscriptKind::OpenCode => "opencode",
             crate::AgentTranscriptKind::Pi => "pi",
+            crate::AgentTranscriptKind::Agy => "agy",
         };
         if pinned.binding.terminal_id.as_str() != source.terminal_id || agent != source.agent {
             return Err(changed());
@@ -423,6 +424,7 @@ impl PinnedAgent {
             AgentTranscriptKind::Codex => "codex",
             AgentTranscriptKind::OpenCode => "opencode",
             AgentTranscriptKind::Pi => "pi",
+            AgentTranscriptKind::Agy => "agy",
         };
         let agent = &value["agent"];
         if agent["pane_id"].as_str() != Some(self.binding.pane_id.as_str())

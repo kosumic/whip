@@ -520,6 +520,7 @@ pub fn agent_kind(app: &str) -> Option<&'static str> {
         "codex" => Some("codex"),
         "opencode" => Some("opencode"),
         "pi" => Some("pi"),
+        "agy" | "antigravity" | "antigravity-cli" => Some("agy"),
         _ => None,
     }
 }

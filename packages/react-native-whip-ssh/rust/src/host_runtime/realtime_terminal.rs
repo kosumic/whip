@@ -514,7 +514,7 @@ impl PinnedTerminal {
 fn is_coding_agent(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "codex" | "claude" | "claude-code" | "opencode" | "pi"
+        "codex" | "claude" | "claude-code" | "opencode" | "pi" | "agy"
     )
 }
 

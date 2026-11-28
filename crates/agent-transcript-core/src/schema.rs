@@ -11,6 +11,7 @@ pub enum AgentTranscriptKind {
     Codex,
     OpenCode,
     Pi,
+    Agy,
 }
         );
         $apply!(Enum,

@@ -94,7 +94,7 @@ export function AgentIntegrationInstallSheet({
               selectable
               className="ml-2.5 min-w-0 flex-1 font-mono text-[12px]"
             >
-              herdr integration install {integration?.agent}
+              herdr integration install {integration?.agent === 'agy' ? 'antigravity_cli' : integration?.agent}
             </Text>
           </View>
 

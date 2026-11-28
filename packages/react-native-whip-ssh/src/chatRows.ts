@@ -1,6 +1,7 @@
+import { transcriptKinds } from './transcriptKinds';
 import {
   AgentChatRows, AgentChatRowContent_Tags, AgentChatRowPatch_Tags,
-  AgentChatRowSpacing, AgentChatPartKind, AgentTranscriptKind,
+  AgentChatRowSpacing, AgentChatPartKind,
   type AgentChatRowsLike, type AgentChatRow,
 } from './generated-entry';
 import type { HostRuntimeConnection, RuntimeAgentKind } from './index';
@@ -28,7 +29,6 @@ const PART_KIND = {
   [AgentChatPartKind.Text]: 'text', [AgentChatPartKind.Reasoning]: 'reasoning', [AgentChatPartKind.Tool]: 'tool',
   [AgentChatPartKind.Plan]: 'plan', [AgentChatPartKind.Notice]: 'notice',
 } as const;
-const AGENT = { claude: AgentTranscriptKind.Claude, codex: AgentTranscriptKind.Codex, pi: AgentTranscriptKind.Pi, opencode: AgentTranscriptKind.OpenCode } as const;
 
 function row(value: AgentChatRow): ChatRow {
   const base = { id: value.id, turnId: value.turnId, spacing: SPACING[value.spacing] };
@@ -52,7 +52,7 @@ export class NativeChatRows implements ChatRowsOwner {
   private readonly owner: AgentChatRowsLike;
   constructor(source: ChatRowsSource) {
     this.owner = source.type === 'live' ? source.runtime.agentChatRows(source.key)
-      : AgentChatRows.forSaved(source.namespace, AGENT[source.agent], source.sessionId);
+      : AgentChatRows.forSaved(source.namespace, transcriptKinds[source.agent], source.sessionId);
   }
   async poll(after: number, transcriptRevision: number, working: boolean, expanded: readonly string[]): Promise<ChatRowUpdate> {
     const value = await this.owner.poll(BigInt(after), BigInt(transcriptRevision), working, [...expanded]);

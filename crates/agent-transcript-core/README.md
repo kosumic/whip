@@ -2,7 +2,7 @@
 
 MIT-licensed, offline Rust library for coding-agent transcript parsing,
 normalization, incremental updates, and versioned checkpoints. Supports Claude
-Code, Codex legacy and paginated rollouts, OpenCode v1/v2, and Pi.
+Code, Codex legacy and paginated rollouts, OpenCode v1/v2, Pi, and Antigravity CLI.
 
 ```toml
 [dependencies]
@@ -51,7 +51,7 @@ cargo test --locked
 
 | Input | Providers | Input contract |
 | --- | --- | --- |
-| `SourceRecords::Jsonl` | Claude Code, Codex, Pi | Byte chunks with the generation returned by `bind_source` |
+| `SourceRecords::Jsonl` | Claude Code, Codex, Pi, Antigravity CLI | Byte chunks with the generation returned by `bind_source` |
 | `SourceRecords::Export` | OpenCode v1 | Authoritative session export and its opening database cursor |
 | `SourceRecords::Events` | OpenCode v1 | Incremental event JSON and the remote cursor |
 | `SourceRecords::Projected` | OpenCode v2 | Snapshot or sparse projected-message changes, validated by the crate |
@@ -59,7 +59,7 @@ cargo test --locked
 `TranscriptIngestResult` contains normalized updates, a malformed-record count,
 and file progress when applicable. Incompatible formats return a typed error.
 Apply deltas in order and use their revision; a reset replaces the prior state.
-Direct `ClaudeSessionCore`, `CodexSessionCore`, `PiSessionCore`, and
+Direct `AgySessionCore`, `ClaudeSessionCore`, `CodexSessionCore`, `PiSessionCore`, and
 `OpenCodeSessionCore` APIs remain available for provider-specific integration.
 `FileTranscriptCore` and `JsonlTranscriptAdapter` support generic file ingestion
 and additional adapters without introducing another state owner.

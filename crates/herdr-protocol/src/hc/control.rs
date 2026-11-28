@@ -10,9 +10,9 @@ use super::{
     wire::Kind,
 };
 use crate::control::{
-    HerdrAgentKind, HerdrControlRequest as Command, HerdrControlResult as ResultValue,
-    HerdrPaneInfo, HerdrPaneReadFormat, HerdrPaneReadResult, HerdrPaneReadSource,
-    HerdrPaneZoomResult, HerdrSplitDirection,
+    HerdrControlRequest as Command, HerdrControlResult as ResultValue, HerdrPaneInfo,
+    HerdrPaneReadFormat, HerdrPaneReadResult, HerdrPaneReadSource, HerdrPaneZoomResult,
+    HerdrSplitDirection,
 };
 use std::collections::BTreeSet;
 
@@ -361,12 +361,7 @@ impl Client {
                 pane_id,
                 args,
             } => {
-                let command = match kind {
-                    HerdrAgentKind::Claude => "claude",
-                    HerdrAgentKind::Codex => "codex",
-                    HerdrAgentKind::OpenCode => "opencode",
-                    HerdrAgentKind::Pi => "pi",
-                };
+                let command = kind.as_str();
                 let argv: Vec<_> = std::iter::once(command.into()).chain(args).collect();
                 let old = location(&p, &pane_id)?.clone();
                 let terminal = self

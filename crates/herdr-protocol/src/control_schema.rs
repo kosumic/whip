@@ -24,6 +24,8 @@ pub enum HerdrAgentKind {
     #[serde(rename = "opencode")]
     OpenCode,
     Pi,
+    #[serde(alias = "antigravity_cli")]
+    Agy,
 }
 
         );

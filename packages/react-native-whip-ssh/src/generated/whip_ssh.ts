@@ -3634,6 +3634,7 @@ export enum AgentTranscriptKind {
   Codex,
   OpenCode,
   Pi,
+  Agy,
 }
 
 const FfiConverterTypeAgentTranscriptKind = (() => {
@@ -3650,6 +3651,8 @@ const FfiConverterTypeAgentTranscriptKind = (() => {
           return AgentTranscriptKind.OpenCode;
         case 4:
           return AgentTranscriptKind.Pi;
+        case 5:
+          return AgentTranscriptKind.Agy;
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
       }
@@ -3664,6 +3667,8 @@ const FfiConverterTypeAgentTranscriptKind = (() => {
           return ordinalConverter.write(3, into);
         case AgentTranscriptKind.Pi:
           return ordinalConverter.write(4, into);
+        case AgentTranscriptKind.Agy:
+          return ordinalConverter.write(5, into);
       }
     }
     allocationSize(value: TypeName): number {
@@ -6255,6 +6260,7 @@ export enum HerdrAgentKind {
   Codex,
   OpenCode,
   Pi,
+  Agy,
 }
 
 const FfiConverterTypeHerdrAgentKind = (() => {
@@ -6271,6 +6277,8 @@ const FfiConverterTypeHerdrAgentKind = (() => {
           return HerdrAgentKind.OpenCode;
         case 4:
           return HerdrAgentKind.Pi;
+        case 5:
+          return HerdrAgentKind.Agy;
         default:
           throw new UniffiInternalError.UnexpectedEnumCase();
       }
@@ -6285,6 +6293,8 @@ const FfiConverterTypeHerdrAgentKind = (() => {
           return ordinalConverter.write(3, into);
         case HerdrAgentKind.Pi:
           return ordinalConverter.write(4, into);
+        case HerdrAgentKind.Agy:
+          return ordinalConverter.write(5, into);
       }
     }
     allocationSize(value: TypeName): number {

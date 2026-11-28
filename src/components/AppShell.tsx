@@ -148,7 +148,7 @@ export function AppShell({
       const agent = chatAgentForPane(pane);
       const identity = pane?.agent_session;
       if (!pane || !agent || !identity?.value.trim() ||
-        (identity.kind !== 'id' && !(agent === 'pi' && identity.kind === 'path'))) continue;
+        (identity.kind !== 'id' && !((agent === 'pi' || agent === 'agy') && identity.kind === 'path'))) continue;
       const key = terminalRendererKey(item.hostId, pane.terminal_id);
       if (targets.some(target => target.key === key)) continue;
       targets.push({

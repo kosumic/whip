@@ -37,6 +37,10 @@ fn cores() -> Vec<AgentSessionCore> {
             )[..],
         ),
         (
+            AgentSessionCore::new(AgentTranscriptKind::Agy, SESSION),
+            &b"{\"step_index\":0,\"type\":\"USER_INPUT\",\"content\":\"Question\"}\n"[..],
+        ),
+        (
             AgentSessionCore::Pi(Box::new(PiSessionCore::new("pi-session"))),
             &include_bytes!(
                 "../../../../../crates/agent-transcript-core/tests/fixtures/pi/main.jsonl"
@@ -96,6 +100,12 @@ fn append(manager: &AgentSessionManager, key: &TranscriptKey, index: u64, text: 
                             "content":[{"type":"text", "text":text}]
                         }
                     }),
+                    AgentTranscriptKind::Agy => {
+                        json!({"step_index":index, "type":"PLANNER_RESPONSE",
+                            "source":"MODEL", "status":"DONE", "content":text,
+                            "created_at":format!("2026-10-27T12:01:{index:02}Z")
+                        })
+                    }
                     AgentTranscriptKind::OpenCode => unreachable!(),
                 };
                 let file = core.file().unwrap();

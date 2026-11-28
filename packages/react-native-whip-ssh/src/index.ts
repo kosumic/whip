@@ -1,3 +1,4 @@
+import { transcriptKinds, type RuntimeAgentKind } from './transcriptKinds';
 import {type HerdrBackend,toNativeHerdrBackend,fromNativeHerdrBackend} from './herdrBackend';
 export { NativeTranscriptCache, type NativeTranscriptCacheBinding, type NativeTranscriptCacheSnapshot } from './transcriptCache';
 import { type AuthMode, fromNativeHostAuthMode, toNativeHostAuthMode } from './hostAuthMode';
@@ -533,7 +534,7 @@ export type RuntimeConnectionState =
   | 'disconnecting'
   | 'failed';
 
-export type RuntimeAgentKind = 'claude' | 'codex' | 'opencode' | 'pi';
+export type { RuntimeAgentKind } from './transcriptKinds';
 
 export type RuntimeTabLaunch =
   | { type: 'shell' }
@@ -1556,6 +1557,8 @@ function runtimeAgentKind(kind: RuntimeAgentKind): HerdrAgentKind {
       return HerdrAgentKind.Codex;
     case 'opencode':
       return HerdrAgentKind.OpenCode;
+    case 'agy':
+      return HerdrAgentKind.Agy;
     case 'pi':
       return HerdrAgentKind.Pi;
   }
@@ -1802,17 +1805,11 @@ function nativeAgentDetails(
   };
 }
 
-const CHAT_AGENT_TO_NATIVE = {
-  claude: AgentTranscriptKind.Claude,
-  codex: AgentTranscriptKind.Codex,
-  opencode: AgentTranscriptKind.OpenCode,
-  pi: AgentTranscriptKind.Pi,
-} as const;
-
 const CHAT_AGENT_FROM_NATIVE: Record<AgentTranscriptKind, NativeAgentTranscriptState['agent']> = {
   [AgentTranscriptKind.Claude]: 'claude',
   [AgentTranscriptKind.Codex]: 'codex',
   [AgentTranscriptKind.OpenCode]: 'opencode',
+  [AgentTranscriptKind.Agy]: 'agy',
   [AgentTranscriptKind.Pi]: 'pi',
 };
 
@@ -1837,7 +1834,7 @@ export async function readSavedAgentTranscript(
   kind: RuntimeAgentKind,
   sessionId: string,
 ): Promise<NativeAgentTranscriptState | undefined> {
-  const state = await readSavedAgentTranscriptRust(namespace, CHAT_AGENT_TO_NATIVE[kind], sessionId);
+  const state = await readSavedAgentTranscriptRust(namespace, transcriptKinds[kind], sessionId);
   return state ? nativeAgentTranscript(state) : undefined;
 }
 
@@ -2625,6 +2622,8 @@ function apiResult(value: HerdrControlResult): RuntimeHerdrResult {
             ? 'claude'
             : value.inner.install.kind === HerdrAgentKind.Codex
             ? 'codex'
+            : value.inner.install.kind === HerdrAgentKind.Agy
+            ? 'agy'
             : value.inner.install.kind === HerdrAgentKind.Pi
             ? 'pi'
             : 'opencode',

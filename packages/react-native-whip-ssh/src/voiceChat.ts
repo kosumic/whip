@@ -1,11 +1,11 @@
+import { transcriptKinds } from './transcriptKinds';
 import { nativeVoiceSessions, voiceSourceIdentity } from './voiceSession';
-import { AgentTranscriptKind, VoiceChat, VoiceChatPhase } from './generated-entry';
+import { VoiceChat, VoiceChatPhase } from './generated-entry';
 import type { RuntimeAgentKind } from './index';
 import type { TerminalSubmissionQueue } from './generated-entry';
 import type { VoiceTranscriptEntry } from '../../../src/lib/voiceTranscript';
 
 export type LocalVoiceSource = { runtimeId: string; incarnation: bigint; terminalId: string; paneId: string; agent: RuntimeAgentKind; queue: TerminalSubmissionQueue; targetKey: string };
-const AGENT = { claude: AgentTranscriptKind.Claude, codex: AgentTranscriptKind.Codex, opencode: AgentTranscriptKind.OpenCode, pi: AgentTranscriptKind.Pi } as const;
 const EFFECT_VERSION = 1;
 export type VoiceSpeechEffect =
   | { type: 'start'; token: string; filler: boolean }
@@ -48,7 +48,7 @@ export class NativeVoiceChat {
   ended(input: bigint) { this.core.recognitionEnded(input); }
   submitText(text: string) { this.core.submitText(text); }
   connect(source: LocalVoiceSource, changed: () => void, playbackCapacity: number) {
-    this.core.connect(source.runtimeId, source.incarnation, source.terminalId, source.paneId, source.queue, source.targetKey, { changed }, playbackCapacity, AGENT[source.agent]);
+    this.core.connect(source.runtimeId, source.incarnation, source.terminalId, source.paneId, source.queue, source.targetKey, { changed }, playbackCapacity, transcriptKinds[source.agent]);
   }
   takeEffects(): VoiceSpeechEffect[] {
     const effects = JSON.parse(this.core.takeEffects()) as (VoiceSpeechEffect & { version: number })[];

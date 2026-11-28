@@ -1,5 +1,6 @@
 //! Rust-owned lifecycle for remote coding-agent transcript sessions.
 
+pub(crate) mod agy;
 mod codex_history;
 mod codex_title;
 mod diagnostics;
@@ -27,11 +28,12 @@ use ids::{PaneId, SessionId, TerminalId, TranscriptKey};
 
 use crate::agent_transcript::{
     AgentCacheError, AgentTranscriptDelta, AgentTranscriptKind, AgentTranscriptState,
-    AgentTranscriptStatus, AgentTranscriptUpdate, AgentTurnStatus, ClaudeSessionCore,
-    CodexInheritedHistory, CodexSessionCore, FileTranscriptCore, OpenCodeProtocol,
-    OpenCodeSessionCore, OpenCodeV2Page, OpenCodeV2Snapshot, OpenCodeV2Sync, PiSessionCore,
-    parse_open_code_cursor,
+    AgentTranscriptStatus, AgentTranscriptUpdate, AgentTurnStatus, CodexInheritedHistory,
+    FileTranscriptCore, OpenCodeProtocol, OpenCodeSessionCore, OpenCodeV2Page, OpenCodeV2Snapshot,
+    OpenCodeV2Sync, parse_open_code_cursor,
 };
+#[cfg(test)]
+use crate::agent_transcript::{ClaudeSessionCore, CodexSessionCore, PiSessionCore};
 use crate::herdr_api::HerdrAgentStatus;
 use crate::herdr_connection::{ConnectionExecStream, HerdrConnection};
 use crate::transcript_database::{TranscriptDatabase, TranscriptIdentity};
@@ -694,6 +696,7 @@ impl AgentSessionManager {
         identity: AuthoritativeAgentChatIdentity,
     ) -> Result<BoundAgentChat, AgentSessionError> {
         match identity.agent {
+            AgentTranscriptKind::Agy => agy::validate(identity.session_id.as_str())?,
             AgentTranscriptKind::Pi => validate_pi_session(identity.session_id.as_str())?,
             AgentTranscriptKind::Claude => {
                 validate_claude_session_id(identity.session_id.as_str())?;
@@ -764,20 +767,7 @@ impl AgentSessionManager {
             let active = transcript_active(&terminals, &state.agent_statuses);
             let done = transcript_done(&terminals, &state.agent_statuses, false);
             let session = state.sessions.entry(key.clone()).or_insert_with(|| {
-                let core = match identity.agent {
-                    AgentTranscriptKind::Pi => AgentSessionCore::Pi(Box::new(PiSessionCore::new(
-                        identity.session_id.clone(),
-                    ))),
-                    AgentTranscriptKind::Claude => AgentSessionCore::Claude(Box::new(
-                        ClaudeSessionCore::new(identity.session_id.clone()),
-                    )),
-                    AgentTranscriptKind::Codex => AgentSessionCore::Codex(Box::new(
-                        CodexSessionCore::new(identity.session_id.clone()),
-                    )),
-                    AgentTranscriptKind::OpenCode => AgentSessionCore::OpenCode(Box::new(
-                        OpenCodeSessionCore::new(identity.session_id.clone()),
-                    )),
-                };
+                let core = AgentSessionCore::new(identity.agent, identity.session_id.clone());
                 SessionRuntime {
                     key: key.clone(),
                     session_id: identity.session_id.clone(),
@@ -1009,6 +999,7 @@ impl AgentSessionManager {
         if should_start {
             let label = match kind {
                 AgentTranscriptKind::Claude => "Opening Claude transcript",
+                AgentTranscriptKind::Agy => "Opening Antigravity CLI transcript",
                 AgentTranscriptKind::Pi => "Opening Pi transcript",
                 AgentTranscriptKind::Codex => "Opening Codex transcript",
                 AgentTranscriptKind::OpenCode => "Opening OpenCode transcript",
@@ -1363,6 +1354,9 @@ impl AgentSessionManager {
             };
             let archive = if session.terminals.len() == 1 {
                 let blob = match &session.core {
+                    AgentSessionCore::Agy(core) if core.committable_offset() > 0 => {
+                        Some(core.cache_blob()?)
+                    }
                     AgentSessionCore::Pi(core) if core.committable_offset() > 0 => {
                         Some(core.cache_blob()?)
                     }
@@ -1665,6 +1659,7 @@ impl AgentSessionManager {
                 match operation.3 {
                     AgentTranscriptKind::Claude
                     | AgentTranscriptKind::Codex
+                    | AgentTranscriptKind::Agy
                     | AgentTranscriptKind::Pi => {
                         manager
                             .resolve_and_open(key, operation.0, operation.1, operation.3)
@@ -1687,6 +1682,7 @@ impl AgentSessionManager {
     ) {
         let result = async {
             let command = match agent {
+                AgentTranscriptKind::Agy => agy::find_command(session_id.as_str()),
                 AgentTranscriptKind::Pi => pi_transcript_find_command(session_id.as_str()),
                 AgentTranscriptKind::Claude => claude_transcript_find_command(session_id.as_str()),
                 _ => codex_rollout_find_command(session_id.as_str()),
@@ -1709,6 +1705,7 @@ impl AgentSessionManager {
                 )
             })?;
             let path = match agent {
+                AgentTranscriptKind::Agy => agy::resolve_path(&output, session_id.as_str()),
                 AgentTranscriptKind::Pi => resolve_pi_path(&output, session_id.as_str()),
                 AgentTranscriptKind::Claude => resolve_claude_path(&output, session_id.as_str()),
                 _ => resolve_rollout_path(&output, session_id.as_str()),
@@ -2215,6 +2212,7 @@ impl AgentSessionManager {
                         AgentSessionCore::OpenCode(core) => Some(core.mark_live_update()),
                         AgentSessionCore::Claude(_)
                         | AgentSessionCore::Codex(_)
+                        | AgentSessionCore::Agy(_)
                         | AgentSessionCore::Pi(_) => None,
                     }
                 })

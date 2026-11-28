@@ -104,9 +104,9 @@ pub(super) fn manager_with_core(core: AgentSessionCore) -> (AgentSessionManager,
             agent: core.kind(),
             session_id: match core.kind() {
                 AgentTranscriptKind::Claude | AgentTranscriptKind::Codex => SESSION.into(),
-                AgentTranscriptKind::OpenCode | AgentTranscriptKind::Pi => {
-                    core.state().session_id.into()
-                }
+                AgentTranscriptKind::OpenCode
+                | AgentTranscriptKind::Pi
+                | AgentTranscriptKind::Agy => core.state().session_id.into(),
             },
         })
         .unwrap();

@@ -1,5 +1,5 @@
+import { transcriptKinds } from './transcriptKinds';
 import {
-  AgentTranscriptKind,
   ChatSpeechPart,
   ChatSpeechQueue,
   chatSpeechResponseAvailable,
@@ -19,13 +19,6 @@ export interface ChatSpeechChunk {
   startUtf16: number;
 }
 import type { NativeAgentTranscriptMessage, NativeAgentTranscriptPart, RuntimeAgentKind } from './index';
-
-const AGENT = {
-  claude: AgentTranscriptKind.Claude,
-  codex: AgentTranscriptKind.Codex,
-  opencode: AgentTranscriptKind.OpenCode,
-  pi: AgentTranscriptKind.Pi,
-} as const;
 
 function speechPart(part: NativeAgentTranscriptPart): ChatSpeechPart[] {
   switch (part.type) {
@@ -54,7 +47,7 @@ export function speechMessages(messages: readonly NativeAgentTranscriptMessage[]
 }
 
 export function canReadChatResponse(kind: RuntimeAgentKind, messages: readonly NativeAgentTranscriptMessage[]): boolean {
-  return chatSpeechResponseAvailable(AGENT[kind], speechMessages(messages));
+  return chatSpeechResponseAvailable(transcriptKinds[kind], speechMessages(messages));
 }
 
 export function formatChatSpeech(tabName: string, text: string): string {
@@ -65,7 +58,7 @@ export class NativeAutomaticChatSpeechQueue {
   private readonly queue = new AutomaticChatSpeechQueue();
 
   update(key: string, kind: RuntimeAgentKind, tabName: string, live: boolean, baseline: boolean, messages: readonly NativeAgentTranscriptMessage[]): void {
-    this.queue.update(key, AGENT[kind], tabName, live, baseline, speechMessages(messages), BigInt(Date.now()));
+    this.queue.update(key, transcriptKinds[kind], tabName, live, baseline, speechMessages(messages), BigInt(Date.now()));
   }
 
   next(): { key: string; text: string } | undefined { return this.queue.next(BigInt(Date.now())); }
@@ -80,11 +73,11 @@ export class NativeChatSpeechQueue {
   private readonly queue = new ChatSpeechQueue();
 
   update(kind: RuntimeAgentKind, live: boolean, messages: readonly NativeAgentTranscriptMessage[]): void {
-    this.queue.update(AGENT[kind], live, speechMessages(messages));
+    this.queue.update(transcriptKinds[kind], live, speechMessages(messages));
   }
 
   readResponse(kind: RuntimeAgentKind, messages: readonly NativeAgentTranscriptMessage[]): boolean {
-    return this.queue.readResponse(AGENT[kind], speechMessages(messages));
+    return this.queue.readResponse(transcriptKinds[kind], speechMessages(messages));
   }
 
   next(): string | undefined {

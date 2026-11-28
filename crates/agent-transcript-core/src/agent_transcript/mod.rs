@@ -1,5 +1,6 @@
 //! Agent-independent transcript domain model and agent-specific adapters.
 
+mod agy;
 mod claude;
 mod codex;
 mod content;
@@ -14,6 +15,7 @@ mod pi;
 mod projection;
 mod title;
 
+pub use agy::*;
 pub use claude::*;
 pub use codex::*;
 pub use jsonl::*;
