@@ -71,8 +71,8 @@ reached. Source replacement discards the old projection and byte cursor.
 
 ## Tolerated limitations
 
-Unknown records and content blocks contribute no chat bubbles. Image/document
-payloads, redacted thinking, tool-reference blocks, queue events, file-history
+Chat View displays supported user images and image inspection results. Unknown
+content blocks, document bodies, redacted thinking, tool-reference blocks, queue events, file-history
 snapshots, and subagent bodies are ignored. Rich tool objects are inspected only
 for known useful fields; arbitrary diagnostics and background-task
 lifecycle metadata are not inferred. Explicitly unrelated session records are

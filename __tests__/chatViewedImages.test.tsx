@@ -1,6 +1,6 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import type { TranscriptToolPart } from '../src/agentChat';
-import { ChatToolCard } from '../src/components/ChatToolCard';
+import { ChatToolCard, toolPresentation } from '../src/components/ChatToolCard';
 import { TranscriptMarkdownImages } from '../src/hooks/useTranscriptMarkdownImages';
 import { cacheRemoteFile, type CachedRemoteFile, type RemoteFileClient } from '../src/services/remoteFileTransfer';
 import '../src/i18n';
@@ -58,6 +58,14 @@ beforeEach(() => {
   download.mockResolvedValue({ uri: URI, dispose } as unknown as CachedRemoteFile);
 });
 afterEach(() => { if (renderer) act(() => renderer.unmount()); });
+
+test('Antigravity tool cards show the shell command or the changed filename', () => {
+  const present = (tool: string, input: TranscriptToolPart['state']['input']) =>
+    toolPresentation({ ...item, tool, state: { ...item.state, viewedImages: [], input } });
+  expect(present('run_command', { CommandLine: 'cargo test' })).toMatchObject({ title: 'Shell', subtitle: 'cargo test' });
+  expect(present('edit_file', { Path: '/repo/lib.rs', Target: 'before', Replacement: 'after' }))
+    .toMatchObject({ title: 'Edit', subtitle: 'lib.rs', args: [] });
+});
 
 test('shows compact viewed activity and fetches a preview only after expansion', async () => {
   await act(async () => { renderer = create(row(false)); });

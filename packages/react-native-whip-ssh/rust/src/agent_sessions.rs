@@ -1661,11 +1661,13 @@ impl AgentSessionManager {
                 match operation.3 {
                     AgentTranscriptKind::Claude
                     | AgentTranscriptKind::Codex
-                    | AgentTranscriptKind::Agy
                     | AgentTranscriptKind::Pi => {
                         manager
                             .resolve_and_open(key, operation.0, operation.1, operation.3)
                             .await;
+                    }
+                    AgentTranscriptKind::Agy => {
+                        agy::follow(manager, key, operation.0, operation.1).await;
                     }
                     AgentTranscriptKind::OpenCode => {
                         manager.sync_opencode(key, operation.0, operation.1).await;
@@ -1684,7 +1686,6 @@ impl AgentSessionManager {
     ) {
         let result = async {
             let command = match agent {
-                AgentTranscriptKind::Agy => agy::find_command(session_id.as_str()),
                 AgentTranscriptKind::Pi => pi_transcript_find_command(session_id.as_str()),
                 AgentTranscriptKind::Claude => claude_transcript_find_command(session_id.as_str()),
                 _ => codex_rollout_find_command(session_id.as_str()),
@@ -1707,7 +1708,6 @@ impl AgentSessionManager {
                 )
             })?;
             let path = match agent {
-                AgentTranscriptKind::Agy => agy::resolve_path(&output, session_id.as_str()),
                 AgentTranscriptKind::Pi => resolve_pi_path(&output, session_id.as_str()),
                 AgentTranscriptKind::Claude => resolve_claude_path(&output, session_id.as_str()),
                 _ => resolve_rollout_path(&output, session_id.as_str()),
@@ -2454,18 +2454,14 @@ impl AgentSessionManager {
                 (update, cache)
             };
             if let Some((blob, source_generation, cursor)) = cache_candidate {
-                let checkpoint = state.next_checkpoint;
-                state.next_checkpoint = state.next_checkpoint.saturating_add(1);
-                let token = format!("checkpoint-{checkpoint}");
-                state.checkpoints.insert(
-                    token.clone(),
-                    PendingCheckpoint {
-                        session_key: key.to_owned(),
-                        source_generation,
-                        offset: cursor,
-                    },
+                queue_checkpoint(
+                    &self.inner,
+                    &mut state,
+                    key,
+                    source_generation,
+                    cursor,
+                    blob,
                 );
-                persist_checkpoint(&self.inner, &state, key, token, blob);
             }
             let emission = update;
             drop(state);
@@ -2566,6 +2562,11 @@ impl AgentSessionManager {
                     session.retry_running = true;
                     (core.mark_discovery_retry_update(reason), Some(delay))
                 }
+                (AgentSessionCore::Agy(core), SessionFailureKind::SourceUnavailable) => {
+                    session.retry_running = true;
+                    let delay = session.activity.poll_delay(FILE_SOURCE_POLL_DELAY);
+                    (core.mark_unavailable_update(reason), Some(delay))
+                }
                 (core, SessionFailureKind::SourceUnavailable) => {
                     (core.mark_unavailable_update(reason), None)
                 }
@@ -2660,6 +2661,27 @@ fn completes_turn(update: &AgentTranscriptUpdate) -> bool {
                     && matches!(turn.status, AgentTurnStatus::Idle | AgentTurnStatus::Error | AgentTurnStatus::Interrupted)
         )
     })
+}
+
+fn queue_checkpoint(
+    manager: &Arc<AgentSessionManagerInner>,
+    state: &mut ManagerState,
+    key: &TranscriptKey,
+    source_generation: u64,
+    offset: u64,
+    blob: Vec<u8>,
+) {
+    let token = format!("checkpoint-{}", state.next_checkpoint);
+    state.next_checkpoint = state.next_checkpoint.saturating_add(1);
+    state.checkpoints.insert(
+        token.clone(),
+        PendingCheckpoint {
+            session_key: key.clone(),
+            source_generation,
+            offset,
+        },
+    );
+    persist_checkpoint(manager, state, key, token, blob);
 }
 
 fn persist_checkpoint(
@@ -2961,18 +2983,14 @@ fn stream_data(context: u64, bytes: Vec<u8>) {
             }
         };
         if let Some((blob, offset)) = cache_candidate {
-            let checkpoint = state.next_checkpoint;
-            state.next_checkpoint = state.next_checkpoint.saturating_add(1);
-            let token = format!("checkpoint-{checkpoint}");
-            state.checkpoints.insert(
-                token.clone(),
-                PendingCheckpoint {
-                    session_key: context_value.session_key.clone(),
-                    source_generation: context_value.source_generation,
-                    offset,
-                },
+            queue_checkpoint(
+                &manager,
+                &mut state,
+                &context_value.session_key,
+                context_value.source_generation,
+                offset,
+                blob,
             );
-            persist_checkpoint(&manager, &state, &context_value.session_key, token, blob);
         }
         drop(state);
         update

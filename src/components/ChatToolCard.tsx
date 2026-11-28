@@ -72,6 +72,23 @@ function primitiveArgs(
   }).slice(0, 2);
 }
 
+const toolCardNames: Record<string, string> = {
+  run_command: 'shell',
+  read_file: 'read',
+  view_file: 'read',
+  write_file: 'write',
+  write_to_file: 'write',
+  create_file: 'write',
+  edit_file: 'edit',
+  replace_file_content: 'edit',
+  multi_replace_file_content: 'edit',
+};
+
+function cardName(tool: string): string {
+  const name = tool.toLowerCase();
+  return Object.hasOwn(toolCardNames, name) ? toolCardNames[name] : name;
+}
+
 function toolKind(name: string): ToolKind {
   if (/^(?:patch|edit|write|file|read)$/i.test(name)) return 'file';
   if (/^(?:shell|bash|command|terminal|terminal_exec)$/i.test(name)) return 'command';
@@ -86,10 +103,10 @@ export function toolPresentation(item: TranscriptToolPart, t: TFunction = transl
     return { title: t('chat.viewed'), icon: File, subtitle: images.length === 1 ? filename(images[0].label) : t('chat.imageCount', { count: images.length }), args: [], kind: 'file' };
   }
   const input = item.state.input;
-  const name = item.tool.toLowerCase();
+  const name = cardName(item.tool);
   const kind = toolKind(name);
-  const command = textValue(input.command)?.trim();
-  const path = textValue(input.path)?.trim();
+  const command = textValue(input.command ?? input.CommandLine)?.trim();
+  const path = textValue(input.path ?? input.Path ?? input.AbsolutePath ?? input.TargetFile)?.trim();
   const query = textValue(input.query)?.trim();
   const url = textValue(input.url)?.trim();
   const description = textValue(input.description)?.trim();
@@ -107,7 +124,8 @@ export function toolPresentation(item: TranscriptToolPart, t: TFunction = transl
     return {
       ...action,
       subtitle: filename(path) || item.state.title,
-      args: primitiveArgs(input, ['path', 'old_string', 'new_string', 'content']),
+      args: primitiveArgs(input, ['path', 'Path', 'AbsolutePath', 'TargetFile', 'old_string', 'new_string', 'content',
+        'Content', 'CodeContent', 'Target', 'Replacement', 'TargetContent', 'ReplacementContent', 'ReplacementChunks']),
       kind,
     };
   }
@@ -178,7 +196,7 @@ export function ChatToolCard({ item, expanded, onToggle, active, onLinkPress, di
   const { colors } = useTheme();
   const failed = item.state.status === 'error';
   const presentation: ToolPresentation = heading ? { ...heading, args: [], kind: 'other' } : toolPresentation(item, t);
-  const name = item.tool.toLowerCase();
+  const name = cardName(item.tool);
   const files = item.state.files;
   // Keep tool file diffs collapsed until the user selects a file.
   // This state belongs to the tool card so closing and reopening the card

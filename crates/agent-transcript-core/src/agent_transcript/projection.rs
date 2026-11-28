@@ -161,7 +161,7 @@ fn push_prompt_text(
     }
 }
 
-fn is_prompt_image(source: &str) -> bool {
+pub(super) fn is_prompt_image(source: &str) -> bool {
     if source.starts_with("data:image/") {
         return true;
     }
@@ -380,7 +380,11 @@ pub fn is_question_tool(tool: &str) -> bool {
             .unwrap_or(tool)
             .to_ascii_lowercase()
             .as_str(),
-        "question" | "askuserquestion" | "request_user_input" | "request_user_input_async"
+        "question"
+            | "ask_question"
+            | "askuserquestion"
+            | "request_user_input"
+            | "request_user_input_async"
     )
 }
 
@@ -397,7 +401,8 @@ pub(crate) fn transcript_questions(questions: Option<&Value>) -> Vec<AgentQuesti
                     .or_else(|| nonempty(question.get("title")))?
                     .to_owned(),
                 multiple: question.get("multiSelect").and_then(Value::as_bool) == Some(true)
-                    || question.get("multiple").and_then(Value::as_bool) == Some(true),
+                    || question.get("multiple").and_then(Value::as_bool) == Some(true)
+                    || question.get("is_multi_select").and_then(Value::as_bool) == Some(true),
                 options: question
                     .get("options")
                     .and_then(Value::as_array)

@@ -60,12 +60,16 @@ pub fn tool_groups<'a>(
             let tool = tool.rsplit(" · ").next().unwrap_or(tool);
             let tool = tool.rsplit('.').next().unwrap_or(tool);
             let tool = match tool.to_ascii_lowercase().as_str() {
-                "bash" | "shell" | "exec_command" | "command" | "terminal" | "terminal_exec" => {
-                    "Shell"
-                }
-                "read" | "read_file" => "Read",
-                "edit" | "patch" | "apply_patch" => "Edit",
-                "write" | "write_file" => "Write",
+                "bash" | "shell" | "exec_command" | "run_command" | "command" | "terminal"
+                | "terminal_exec" => "Shell",
+                "read" | "read_file" | "view_file" => "Read",
+                "edit"
+                | "patch"
+                | "apply_patch"
+                | "edit_file"
+                | "replace_file_content"
+                | "multi_replace_file_content" => "Edit",
+                "write" | "write_file" | "write_to_file" | "create_file" => "Write",
                 _ => tool,
             };
             if !tools.iter().any(|name| name == tool) {

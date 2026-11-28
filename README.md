@@ -189,7 +189,7 @@ Use **Unregister** to stop push for this device on the selected host/session. **
 
 Chat View supports **Claude Code, Codex, OpenCode (v1 and v2), Pi, and Antigravity CLI (`agy`)** panes. Tap the book icon in the terminal controls to replace that terminal with a full-screen, native transcript; tap it again to return to the same warm terminal. Each terminal remembers its own Terminal or Chat View across tab switches and app restarts. Offline hosts restore cached Chat when available.
 
-For an `agy` pane, Whip uses the conversation reported by Herdr's Antigravity CLI hook. If Chat View prompts you to install the hook, install it and restart `agy` in that pane.
+For an `agy` pane, Whip uses the conversation reported by Herdr's Antigravity CLI hook. If Chat View prompts you to install the hook, install it and restart `agy` in that pane. [Antigravity transcript support](docs/agy-chat-view.md)
 
 - Read a normalized, OpenCode-style conversation instead of terminal scrollback, including user prompts, Markdown responses, plans, reasoning, an inline **Working** indicator, token and timing metadata, attachments, and images.
 - Keep the relevant user prompt pinned while reading earlier replies. Tap it to reveal the original message. When you scroll away from live output, a compact activity strip can show the agent's current tool or progress; tap it to return to the latest output and resume following. See [chat interactions](docs/agent-chat-interactions.md) for details.

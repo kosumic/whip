@@ -89,6 +89,28 @@ impl<A: JsonlTranscriptAdapter> JsonlSessionCore<A> {
     pub fn invalidate_source(&mut self) {
         self.cursor.source = None;
     }
+    /// A verified multi-file snapshot has no resumable byte offset. Its cache
+    /// cursor identifies the published generation for persistence callbacks.
+    pub(super) fn publish_snapshot(&mut self, adapter: A) -> Option<AgentTranscriptUpdate> {
+        let before = self.state();
+        self.adapter = adapter;
+        self.history_gate.complete();
+        let deltas = projection_delta(&before, &self.state());
+        self.cursor.source = None;
+        if deltas.is_empty() {
+            return None;
+        }
+        advance_revision(&mut self.revision);
+        let cursor = self.revision;
+        self.cursor.committed = 0;
+        self.cursor.initial_history_end = Some(cursor);
+        self.cursor.framer.reset(cursor);
+        self.cursor.generation = self.cursor.generation.saturating_add(1);
+        Some(AgentTranscriptUpdate {
+            revision: self.revision,
+            deltas,
+        })
+    }
     pub fn initial_history_caught_up(&self) -> bool {
         self.cursor.caught_up()
     }

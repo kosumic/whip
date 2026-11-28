@@ -27,8 +27,8 @@ with event definitions in `packages/schema/src/session-event.ts` and the
 
 V2 projects user text, assistant text and reasoning, tool inputs/results/errors,
 task plans, and shell messages into the existing native chat model. Model-only
-context and timeline control messages are skipped. As in the v1 adapter, user
-file attachments are not rendered as chat attachments.
+context and timeline control messages are skipped. Both adapters render
+supported image attachments. Other file attachments have no native preview.
 
 Both versions show one “Context compacted” notice for each completed
 compaction. Tap it to read the summary when OpenCode supplies text. V1
